@@ -1,0 +1,5 @@
+- U.S. Navy veteran transitioning to ML/AI Engineering
+- Currently pursuing B.A. in Computer Science (expected Apr 2027)
+- Windows 11, PowerShell environment
+- GPU: NVIDIA RTX 4090 (24GB VRAM)
+- Values: discipline, systematic approach, deep understanding over surface-level shortcuts

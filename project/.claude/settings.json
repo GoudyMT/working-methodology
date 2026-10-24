@@ -1,0 +1,23 @@
+{
+  "worktree": {
+    "baseRef": "head"
+  },
+  "permissions": {
+    "ask": ["Bash(git push *)", "PowerShell(git push *)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["{{PROJECT_DIR}}/.claude/guard-outward.cjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
