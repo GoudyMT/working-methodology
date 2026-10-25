@@ -1,0 +1,10 @@
+{
+  "name": "frontend-design",
+  "version": "58267944f921",
+  "commit": "58267944f92187b7d6a1c822165c96c81c864806",
+  "marketplace": "claude-plugins-official",
+  "author": "Anthropic",
+  "repository": "https://github.com/anthropics/claude-plugins-official",
+  "license": "Apache-2.0",
+  "snapshotAt": "2026-10-25"
+}

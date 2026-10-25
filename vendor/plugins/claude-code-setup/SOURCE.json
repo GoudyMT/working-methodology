@@ -1,0 +1,10 @@
+{
+  "name": "claude-code-setup",
+  "version": "1.0.0",
+  "commit": null,
+  "marketplace": "claude-plugins-official",
+  "author": "Anthropic",
+  "repository": "https://github.com/anthropics/claude-plugins-official",
+  "license": "Apache-2.0",
+  "snapshotAt": "2026-10-25"
+}

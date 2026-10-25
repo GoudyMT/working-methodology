@@ -1,0 +1,22 @@
+{
+  "name": "cloudflare-skills",
+  "version": null,
+  "commit": null,
+  "author": "Cloudflare, Inc.",
+  "repository": "https://github.com/cloudflare/skills",
+  "license": "Apache-2.0",
+  "skills": [
+    "agents-sdk",
+    "cloudflare",
+    "cloudflare-email-service",
+    "cloudflare-one",
+    "cloudflare-one-migrations",
+    "durable-objects",
+    "sandbox-sdk",
+    "turnstile-spin",
+    "web-perf",
+    "workers-best-practices",
+    "wrangler"
+  ],
+  "snapshotAt": "2026-10-25"
+}

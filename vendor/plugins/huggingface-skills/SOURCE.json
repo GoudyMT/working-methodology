@@ -1,0 +1,10 @@
+{
+  "name": "huggingface-skills",
+  "version": "1.0.35",
+  "commit": "c3ff942be3e07116b475253f0a8fc4f54682c1a8",
+  "marketplace": "claude-plugins-official",
+  "author": "Hugging Face",
+  "repository": "https://github.com/huggingface/skills",
+  "license": "Apache-2.0",
+  "snapshotAt": "2026-10-25"
+}

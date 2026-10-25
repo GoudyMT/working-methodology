@@ -1,17 +1,43 @@
 {
   "ownerName": "Max",
   "ownerProfileFile": "owner-profile.md",
-  "thirdPartySkills": [
-    "agents-sdk",
-    "cloudflare",
-    "cloudflare-email-service",
-    "cloudflare-one",
-    "cloudflare-one-migrations",
-    "durable-objects",
-    "sandbox-sdk",
-    "turnstile-spin",
-    "web-perf",
-    "workers-best-practices",
-    "wrangler"
-  ]
+  "vendor": {
+    "plugins": [
+      "superpowers",
+      "frontend-design",
+      "skill-creator",
+      "security-guidance",
+      "claude-code-setup",
+      "huggingface-skills",
+      "data-engineering"
+    ],
+    "skillGroups": [
+      {
+        "name": "cloudflare-skills",
+        "source": "https://github.com/cloudflare/skills",
+        "license": "Apache-2.0",
+        "copyright": "Cloudflare, Inc.",
+        "licenseFrom": "plugin:skill-creator",
+        "skills": [
+          "agents-sdk",
+          "cloudflare",
+          "cloudflare-email-service",
+          "cloudflare-one",
+          "cloudflare-one-migrations",
+          "durable-objects",
+          "sandbox-sdk",
+          "turnstile-spin",
+          "web-perf",
+          "workers-best-practices",
+          "wrangler"
+        ]
+      }
+    ],
+    "credits": {
+      "data-engineering": {
+        "author": "Astronomer",
+        "repository": "https://github.com/astronomer/agents"
+      }
+    }
+  }
 }

@@ -19,9 +19,10 @@ working style as memory.
 | `memory/` | `~/.claude/projects/<project>/memory/` | The owner's working style as subject files, with `MEMORY.md` as the index. |
 | `NEW-PROJECT.md` | - | Entry point for a project that starts from nothing. |
 | `EXISTING-PROJECT.md` | - | Entry point for a project that already exists: orient, map, find gaps, then adopt. |
-| `THIRD-PARTY.md` | - | Plugins and skills the kit links to instead of copying. |
-| `scripts/kit.mjs` | - | The one tool: install, fold-back, bump, scrub. Tests in `tests/`. |
-| `kit.config.json` | - | The owner's name (the one settings line) and the third-party skill list. |
+| `THIRD-PARTY.md` | - | The plugins and skills the kit uses, their makers and licenses, and how to restore them. |
+| `vendor/` | - | A credited backup copy of each third-party plugin and skill, with `CREDITS.md`. |
+| `scripts/kit.mjs` | - | The one tool: install, fold-back, bump, snapshot, restore, scrub. Tests in `tests/`. |
+| `kit.config.json` | - | The owner's name (the one settings line) and the third-party backup list. |
 | `owner-profile.md` | - | A few lines about the owner, placed into the global rules. |
 
 Every rule says "the owner". The name lives only in `kit.config.json`.

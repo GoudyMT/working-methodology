@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { install, foldBack, bump, scrub, projectSlug, render } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, projectSlug, render } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -150,4 +150,70 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   assert.equal(hits.filter((h) => h.file === 'kit.config.json' || h.file === 'owner-profile.md').length, 0);
   fs.rmSync(path.join(kit, 'project/leak.md'));
   assert.deepEqual(scrub({ kit }), []);
+});
+
+// Snapshot fixtures: a fake installed plugin and a fake third-party skill, laid out the way
+// Claude Code stores them (plugins/installed_plugins.json -> installPath; skills/<name>/).
+function addThirdParty({ kit, home }) {
+  const pluginDir = path.join(home, 'plugins/cache/market/toolbox/2.0.0');
+  const put = (p, body) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, body); };
+  put(path.join(pluginDir, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'toolbox', version: '2.0.0', author: { name: 'Jo Smith' } }));
+  put(path.join(pluginDir, 'LICENSE'), 'MIT License\n\nCopyright (c) Jo Smith\n');
+  put(path.join(pluginDir, 'skills/sharpen/SKILL.md'), 'sharpen\n');
+  put(path.join(pluginDir, '.in_use'), 'lock\n');
+  put(path.join(home, 'plugins/installed_plugins.json'), JSON.stringify({ version: 2, plugins: {
+    // Claude Code keeps one entry per scope; the newest one is the copy in use.
+    'toolbox@market': [
+      { scope: 'user', installPath: pluginDir, version: '2.0.0', gitCommitSha: 'abc123', lastUpdated: '2026-10-20T00:00:00Z' },
+      { scope: 'project', installPath: pluginDir, version: '1.0.0', gitCommitSha: 'old', lastUpdated: '2026-01-01T00:00:00Z' },
+    ],
+  } }));
+  put(path.join(home, 'plugins/known_marketplaces.json'), JSON.stringify({ market: { source: { source: 'github', repo: 'owner/market' } } }));
+  put(path.join(home, 'skills/vendor-skill/SKILL.md'), 'vendor\n');
+  const config = JSON.parse(read(path.join(kit, 'kit.config.json')));
+  config.vendor = {
+    plugins: ['toolbox', 'gone-plugin'],
+    skillGroups: [{ name: 'vendor-pack', source: 'https://example.com/pack', license: 'Apache-2.0',
+      copyright: 'Pack Authors', licenseFrom: 'plugin:toolbox', skills: ['vendor-skill'] }],
+    // A plugin whose metadata leaves out its maker gets the credit written in by hand.
+    credits: { toolbox: { author: 'Jo Smith and Co' } },
+  };
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify(config));
+}
+
+test('snapshot keeps a credited copy of each third-party plugin and skill', () => {
+  const ctx = makeKit();
+  addThirdParty(ctx);
+  const r = snapshot({ kit: ctx.kit, home: ctx.home, date: '2026-10-25' });
+  const v = path.join(ctx.kit, 'vendor');
+  assert.equal(read(path.join(v, 'plugins/toolbox/skills/sharpen/SKILL.md')), 'sharpen\n');
+  assert.equal(fs.existsSync(path.join(v, 'plugins/toolbox/.in_use')), false);
+  const src = JSON.parse(read(path.join(v, 'plugins/toolbox/SOURCE.json')));
+  assert.deepEqual([src.version, src.commit, src.author, src.license], ['2.0.0', 'abc123', 'Jo Smith and Co', 'MIT']);
+  assert.equal(read(path.join(v, 'skills/vendor-pack/vendor-skill/SKILL.md')), 'vendor\n');
+  assert.match(read(path.join(v, 'skills/vendor-pack/LICENSE')), /MIT License/);
+  const credits = read(path.join(v, 'CREDITS.md'));
+  assert.match(credits, /toolbox.*Jo Smith.*MIT.*https:\/\/github\.com\/owner\/market/);
+  assert.match(credits, /vendor-pack.*Pack Authors.*Apache-2\.0.*https:\/\/example\.com\/pack/);
+  assert.deepEqual(r.missing, ['gone-plugin']);
+});
+
+test('restore brings a lost skill back from the snapshot and never overwrites one that exists', () => {
+  const ctx = makeKit();
+  addThirdParty(ctx);
+  snapshot({ kit: ctx.kit, home: ctx.home });
+  fs.rmSync(path.join(ctx.home, 'skills/vendor-skill'), { recursive: true });
+  fs.mkdirSync(path.join(ctx.home, 'skills/sharpen'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.home, 'skills/sharpen/SKILL.md'), 'mine\n');
+  assert.deepEqual(restore({ kit: ctx.kit, home: ctx.home, name: 'vendor-pack' }), { restored: ['vendor-skill'], kept: [] });
+  assert.equal(read(path.join(ctx.home, 'skills/vendor-skill/SKILL.md')), 'vendor\n');
+  assert.deepEqual(restore({ kit: ctx.kit, home: ctx.home, name: 'toolbox' }), { restored: [], kept: ['sharpen'] });
+  assert.equal(read(path.join(ctx.home, 'skills/sharpen/SKILL.md')), 'mine\n');
+});
+
+test('scrub leaves the third-party snapshot alone', () => {
+  const ctx = makeKit();
+  fs.mkdirSync(path.join(ctx.kit, 'vendor/plugins/x'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.kit, 'vendor/plugins/x/README.md'), 'caf\u00e9 by someone\n');
+  assert.deepEqual(scrub({ kit: ctx.kit }), []);
 });

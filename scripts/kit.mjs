@@ -17,7 +17,9 @@ const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
 // Files that hold the owner's details on purpose, and folders that are not kit content.
 const SCRUB_SKIP = new Set(['kit.config.json', 'owner-profile.md', 'scrub.local.json']);
-const SCRUB_SKIP_DIRS = new Set(['.git', 'node_modules', 'reports']);
+// vendor/ holds third-party work kept as-is, with its own credits; it is not the owner's content.
+const SCRUB_SKIP_DIRS = new Set(['.git', 'node_modules', 'reports', 'vendor']);
+const SNAPSHOT_SKIP = new Set(['.git', 'node_modules', '.in_use']);
 const PATH_PATTERN = /[A-Za-z]:\\+Users\\+|\/Users\/[^/\s]+|\/home\/[^/\s]+/;
 
 const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
@@ -45,6 +47,11 @@ export function render(text, { ownerName, ownerProfile, projectDir } = {}) {
   if (projectDir !== undefined) out = out.replaceAll('{{PROJECT_DIR}}', projectDir);
   return out;
 }
+
+const thirdPartySkills = (config) => [
+  ...(config.thirdPartySkills || []),
+  ...((config.vendor && config.vendor.skillGroups) || []).flatMap((g) => g.skills),
+];
 
 function loadKit(kit) {
   const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
@@ -199,7 +206,7 @@ export function foldBack(ctx) {
   const known = new Set(entries.map((e) => e.key));
   const scan = ctx.target === 'user'
     ? ['agents', 'skills'].flatMap((d) => walk(path.join(ctx.home, d)).map((f) => toPosix(path.relative(ctx.home, f))))
-        .filter((k) => !(kitInfo.config.thirdPartySkills || []).some((s) => k.startsWith(`skills/${s}/`)))
+        .filter((k) => !thirdPartySkills(kitInfo.config).some((s) => k.startsWith(`skills/${s}/`)))
     : walk(memoryDir).map((f) => 'memory/' + toPosix(path.relative(memoryDir, f)));
   for (const key of scan) {
     if (known.has(key)) continue;
@@ -264,6 +271,129 @@ export function scrub({ kit }) {
   return hits;
 }
 
+function copyTree(from, to) {
+  fs.rmSync(to, { recursive: true, force: true });
+  fs.cpSync(from, to, { recursive: true, filter: (src) => !SNAPSHOT_SKIP.has(path.basename(src)) });
+}
+
+function licenseName(dir) {
+  const p = path.join(dir, 'LICENSE');
+  if (!fs.existsSync(p)) return 'unknown';
+  const head = fs.readFileSync(p, 'utf8').slice(0, 200);
+  return /MIT License/.test(head) ? 'MIT' : /Apache License/.test(head) ? 'Apache-2.0' : 'see LICENSE';
+}
+
+/**
+ * Keep a credited copy of each third-party plugin and skill in vendor/, so the kit can still
+ * restore them if a source is deleted or unreachable. Each copy carries its LICENSE and a
+ * SOURCE.json (version, commit, author, license, where it came from); vendor/CREDITS.md lists all.
+ *
+ * Args:
+ *     ctx: { kit, home, date } - what to copy comes from kit.config.json "vendor"
+ *
+ * Returns:
+ *     { plugins, skills, missing } - names copied, and names not found on this machine
+ */
+export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 10) }) {
+  const { config } = loadKit(kit);
+  const want = config.vendor || {};
+  const vendor = path.join(kit, 'vendor');
+  const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
+  const installed = fs.existsSync(installedPath) ? JSON.parse(fs.readFileSync(installedPath, 'utf8')).plugins || {} : {};
+  const marketsPath = path.join(home, 'plugins', 'known_marketplaces.json');
+  const markets = fs.existsSync(marketsPath) ? JSON.parse(fs.readFileSync(marketsPath, 'utf8')) : {};
+  const marketUrl = (m) => {
+    const src = markets[m] && markets[m].source;
+    return src && src.source === 'github' && src.repo ? `https://github.com/${src.repo}` : `marketplace: ${m}`;
+  };
+  const out = { plugins: [], skills: [], missing: [] };
+  const credits = [];
+  const pluginDirs = {};
+  for (const name of want.plugins || []) {
+    const key = Object.keys(installed).find((k) => k.startsWith(name + '@'));
+    // One entry per scope (user, each project); the most recently updated is the copy in use.
+    const entry = key && [...installed[key]].sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)))[0];
+    if (!entry || !fs.existsSync(entry.installPath)) { out.missing.push(name); continue; }
+    const dest = path.join(vendor, 'plugins', name);
+    copyTree(entry.installPath, dest);
+    pluginDirs[name] = dest;
+    const metaPath = path.join(dest, '.claude-plugin', 'plugin.json');
+    const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
+    const market = key.split('@')[1];
+    const source = {
+      name, version: entry.version || meta.version || null, commit: entry.gitCommitSha || null,
+      marketplace: market, author: (meta.author && meta.author.name) || 'unknown',
+      repository: meta.repository || meta.homepage || marketUrl(market),
+      license: meta.license || licenseName(dest), snapshotAt: date,
+    };
+    Object.assign(source, (want.credits || {})[name]);
+    fs.writeFileSync(path.join(dest, 'SOURCE.json'), JSON.stringify(source, null, 2) + '\n');
+    credits.push(source);
+    out.plugins.push(name);
+  }
+  for (const group of want.skillGroups || []) {
+    const dest = path.join(vendor, 'skills', group.name);
+    fs.rmSync(dest, { recursive: true, force: true });
+    const copied = [];
+    for (const skill of group.skills) {
+      const from = path.join(home, 'skills', skill);
+      if (!fs.existsSync(from)) { out.missing.push(skill); continue; }
+      copyTree(from, path.join(dest, skill));
+      copied.push(skill);
+    }
+    if (!copied.length) continue;
+    // A source with no LICENSE file on this machine gets the standard text of its license, copied
+    // from a plugin that ships the same license, so the credit travels with the copy.
+    const fromPlugin = group.licenseFrom && group.licenseFrom.startsWith('plugin:') && pluginDirs[group.licenseFrom.slice(7)];
+    if (fromPlugin && fs.existsSync(path.join(fromPlugin, 'LICENSE'))) fs.copyFileSync(path.join(fromPlugin, 'LICENSE'), path.join(dest, 'LICENSE'));
+    const source = { name: group.name, version: null, commit: null, author: group.copyright, repository: group.source,
+      license: group.license, skills: copied, snapshotAt: date };
+    fs.writeFileSync(path.join(dest, 'SOURCE.json'), JSON.stringify(source, null, 2) + '\n');
+    credits.push(source);
+    out.skills.push(...copied);
+  }
+  const rows = credits.map((c) => `| ${c.name} | ${c.author} | ${c.license} | ${c.repository} | ${c.version || '-'} | ${c.snapshotAt} |`);
+  fs.mkdirSync(vendor, { recursive: true });
+  fs.writeFileSync(path.join(vendor, 'CREDITS.md'), [
+    '# Credits',
+    '',
+    "These are other people's work, kept here as a backup copy under their own licenses. Each folder keeps its",
+    'LICENSE and a SOURCE.json. Install from the source when it is up; restore from here only when it is not.',
+    'Anything built on one of these copies credits it and records what was changed.',
+    '',
+    '| Name | Author | License | Source | Version | Copied |',
+    '|---|---|---|---|---|---|',
+    ...rows,
+    '',
+  ].join('\n'));
+  return out;
+}
+
+/**
+ * Bring a lost third-party skill back from vendor/ into ~/.claude/skills. For a plugin, its
+ * skills come back as plain skills (its hooks and commands stay in vendor/plugins/<name>).
+ * A skill folder that already exists is kept, never overwritten.
+ *
+ * Returns:
+ *     { restored, kept } - skill names
+ */
+export function restore({ kit, home, name }) {
+  const vendor = path.join(kit, 'vendor');
+  const plugin = path.join(vendor, 'plugins', name, 'skills');
+  const group = path.join(vendor, 'skills', name);
+  const root = fs.existsSync(plugin) ? plugin : fs.existsSync(group) ? group : null;
+  if (!root) throw new Error(`no snapshot named ${name} in vendor/`);
+  const out = { restored: [], kept: [] };
+  for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    const dest = path.join(home, 'skills', e.name);
+    if (fs.existsSync(dest)) { out.kept.push(e.name); continue; }
+    fs.cpSync(path.join(root, e.name), dest, { recursive: true });
+    out.restored.push(e.name);
+  }
+  return out;
+}
+
 function main(argv) {
   const kit = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const home = process.env.KIT_CLAUDE_HOME || path.join(os.homedir(), '.claude');
@@ -288,6 +418,13 @@ function main(argv) {
     console.log(`    report: ${out}`);
   } else if (cmd === 'bump') {
     console.log(`Kit is now ${bump({ kit, level: target, note: arg })}`);
+  } else if (cmd === 'snapshot') {
+    const r = snapshot({ kit, home });
+    console.log(`Snapshot: ${r.plugins.length} plugin(s), ${r.skills.length} skill(s) -> vendor/`);
+    if (r.missing.length) console.log(`    not found on this machine: ${r.missing.join(', ')}`);
+  } else if (cmd === 'restore') {
+    const r = restore({ kit, home, name: target });
+    console.log(`restored: ${r.restored.join(', ') || 'none'}; kept (already there): ${r.kept.join(', ') || 'none'}`);
   } else if (cmd === 'scrub') {
     const hits = scrub({ kit });
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.kind}`);
@@ -297,6 +434,7 @@ function main(argv) {
     console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force]');
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
+    console.log('       node scripts/kit.mjs snapshot | restore <name>');
     console.log('       node scripts/kit.mjs scrub');
     process.exitCode = cmd ? 1 : 0;
   }
