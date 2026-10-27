@@ -53,6 +53,8 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
 ## 6. Start working
 
 Every session after this one starts with the Post-Compact Orientation Protocol in `_Working Standards.md`:
-fresh reads of the reading order, a visible checklist, then the first action confirmed with the owner.
+fresh reads of the reading order, a visible checklist, then the first action confirmed with the owner. Every
+session ends with the pre-compact closeout, whose rule sort (scan step 5b) sends portable rule changes back to
+the kit.
 
 When the project's standards improve, fold them back into the kit (README, "Update pipeline").

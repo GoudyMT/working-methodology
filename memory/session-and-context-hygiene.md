@@ -27,5 +27,6 @@ metadata:
 **Codify a standard where it is read at session start** so it applies without reminders. Append a new correction the same session.
 
 **Temporary files do not outlive their job.** Delete scratch scripts, screenshots and drafts once served.
+**Rule sort at every closeout.** List each rule or workflow change from the session, tag it project-only or portable, and send the portable ones to the kit fold-back. Why: an improvement left in one project is lost to the next.
 
 Related: [[autonomous-loop-mode]], [[verification-and-evidence]].

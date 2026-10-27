@@ -19,5 +19,6 @@ metadata:
 - **A test runner may reuse a server already on its port** and test a stale build. Check who owns the process; never kill the owner's.
 - **Verify state you were told** ("landed", "tests pass"). A commit reported as landed can be silently swept into the next one.
 - **A step failing in one second is a script error** until its log says otherwise.
+- **Cadence, not strictness.** Hook = related tests only; full gate once per phase and before each PR; size once per batch; a small fix set gets one combined fix check and re-sweep. See the standards, "Test and Review Cadence".
 
 Related: [[testing-discipline]], [[git-and-pr-workflow]], [[shell-and-tooling]].

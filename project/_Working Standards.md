@@ -238,7 +238,7 @@ One outward doc per major phase telling WHY its tools and conventions were chose
 
 ## Pre-Compact and Post-Compact Hygiene Ritual
 
-**Keyword `begin pre-compact`** (standing) triggers the Pre-Compact Closeout: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, and REMOTE branches (merged and equal to its squash -> delete; open or no PR -> report); (5) the handoff message.
+**Keyword `begin pre-compact`** (standing) triggers the Pre-Compact Closeout: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, and REMOTE branches (merged and equal to its squash -> delete; open or no PR -> report); (5) the rule sort for the kit (scan step 5b); (6) the handoff message.
 
 ### Pre-Compact Scan
 
@@ -249,7 +249,7 @@ One outward doc per major phase telling WHY its tools and conventions were chose
 3. **Size-cap table** `| item | words | cap | status |` - the four whole-file rows + every capped line touched - counted, never estimated; fix OVER rows and re-emit all-`ok`. Satisfied only when the all-`ok` table is shown.
 4. **Loop-learnings check** - this session's lessons captured; the handoff names open lessons + any regression.
 5. **Temp files** that have served are deleted.
-5b. **Kit fold-back check** - if this session changed a standard, a skill, an agent role or a working-style memory, say so in the handoff and run the methodology kit's fold-back (`/methodology-kit fold-back`) before the project closes, so the next project starts from it. Why: methods improve inside projects; without this step the improvement stays in one project.
+5b. **Rule sort for the kit (every project, standing):** list each rule, standard or workflow change made this session (standards, skills, agent roles, working-style memory) and tag it `project-only` or `portable`. Portable ones go to the methodology kit's fold-back (`/methodology-kit fold-back`), with the owner, before or right after the compact; project-only ones stay in the project. Emit the tagged list; a session with none says "no rule changes". Why: methods improve inside projects; without this step the improvement stays in one project.
 6. Generate the handoff.
 
 ### Post-Compact Orientation Protocol (MANDATORY first action)
@@ -365,6 +365,19 @@ Never raise a limit to make a run pass, never before steps 1-2. Keep a margin la
 ### CI Gate
 
 **"Green" = every step of every CI workflow file**, not a remembered subset. Run the FULL local gate before every PR (the hook is a subset), read each exit code, ship CI / config changes inside the PR that needs them, and re-run the dependency audit right before handing over merge commands. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->
+
+### Test and Review Cadence (how often, never how strict)
+
+Why: running the whole suite on every commit and re-running every check after each small fix spends most of a session's wall time without catching more. The test rules never change - test first, break check, full gate before every PR; only the cadence does.
+
+- **Commit hook:** lint, type check and only the tests related to the staged files. The full suite runs at each phase's full gate and in CI.
+- **Full gate:** once at the end of each phase, not after every fix batch, and always before a PR.
+- **Size budgets:** measured once per integration batch, not after each pick; bisect only when a line is over.
+- **Unchanged builder commits:** a commit carried over with every file proved byte-equal skips the hook re-run (bypassing the hook only for that case, and only on the owner's explicit yes); the phase gate covers the integration.
+- **Team mode:** batch mode (the main session leads) for features under about 5 units; orchestrated mode only above that.
+- **Fix sets:** a small fix set gets one checker that does the fix check AND the re-sweep; a large fix set keeps both passes.
+- **Reviewers:** every PR, large or small, gets practical reviewers sized to its stakes, and each reviewer is held to its step limit in the brief and the meter; a role over its limit is a contract miss.
+- **Crashes:** a machine crash (access violation, segfault, spawn failure) is logged (date, step, what else ran), not investigated; when crashes come often, ask the owner to free the CPU or say when the machine is free.
 
 ### Sub-Agent Verification Step
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.0 - 2026-10-27
+- Rule sort for the kit at every pre-compact closeout; test and review cadence rules (related-tests hook, full gate per phase, combined fix check, reviewer limits, crash log).
+
 ## 0.2.0 - 2026-10-25
 - Keep a credited backup of every third-party plugin and skill in vendor/, with snapshot and restore commands.
 
