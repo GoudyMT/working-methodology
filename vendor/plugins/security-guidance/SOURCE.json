@@ -1,10 +1,10 @@
 {
   "name": "security-guidance",
-  "version": "2.0.16",
-  "commit": "af59ee3a1051a29dda4a2e7a2af221aa457ae08b",
+  "version": "2.0.17",
+  "commit": "41f619d61b999adec1a1c8deb97d1a5b6ac35bb6",
   "marketplace": "claude-plugins-official",
   "author": "David Dworken",
   "repository": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/security-guidance",
   "license": "Apache-2.0",
-  "snapshotAt": "2026-10-25"
+  "snapshotAt": "2026-10-27"
 }

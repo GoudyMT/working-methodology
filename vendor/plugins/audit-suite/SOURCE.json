@@ -1,0 +1,11 @@
+{
+  "name": "audit-suite",
+  "version": "1.1.0",
+  "commit": null,
+  "marketplace": "desktop app catalog",
+  "author": "Orbit",
+  "repository": "https://github.com/Recusive/Orbit-plugin",
+  "license": "MIT",
+  "snapshotAt": "2026-10-27",
+  "licenseNote": "MIT is stated in its README; its repository has no LICENSE file. It bundles skills credited to Vercel (vercel-react-best-practices) and to Emil Kowalski (emil-design-engineering)."
+}

@@ -1,10 +1,10 @@
 {
   "name": "skill-creator",
-  "version": "58267944f921",
-  "commit": "58267944f92187b7d6a1c822165c96c81c864806",
+  "version": "41f619d61b99",
+  "commit": "41f619d61b999adec1a1c8deb97d1a5b6ac35bb6",
   "marketplace": "claude-plugins-official",
   "author": "Anthropic",
   "repository": "https://github.com/anthropics/claude-plugins-official",
   "license": "Apache-2.0",
-  "snapshotAt": "2026-10-25"
+  "snapshotAt": "2026-10-27"
 }

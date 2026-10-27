@@ -1,0 +1,11 @@
+{
+  "name": "design",
+  "version": "1.2.0",
+  "commit": null,
+  "marketplace": "desktop app catalog",
+  "author": "Anthropic",
+  "repository": "https://github.com/anthropics/knowledge-work-plugins",
+  "license": "Apache-2.0",
+  "snapshotAt": "2026-10-27",
+  "licenseNote": "No LICENSE file ships with the plugin; the Apache-2.0 text comes from its source repository license."
+}

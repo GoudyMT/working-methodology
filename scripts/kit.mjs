@@ -100,7 +100,7 @@ function renderEntry(kitInfo, entry, projectDir) {
   });
 }
 
-const readStamp = (p) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : { files: {} });
+const readStamp = (p) => ({ files: {}, ...(fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {}) });
 
 /**
  * Copy the kit into ~/.claude (target 'user') or a project (target 'project').
@@ -271,6 +271,9 @@ export function scrub({ kit }) {
   return hits;
 }
 
+/** Expand %VAR% and ${VAR} so a config path can name the user's own folders without spelling them out. */
+const expandEnv = (p) => p.replace(/%([A-Za-z_]+)%|\$\{([A-Za-z_]+)\}/g, (m, a, b) => process.env[a || b] ?? m);
+
 function copyTree(from, to) {
   fs.rmSync(to, { recursive: true, force: true });
   fs.cpSync(from, to, { recursive: true, filter: (src) => !SNAPSHOT_SKIP.has(path.basename(src)) });
@@ -309,24 +312,39 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
   const out = { plugins: [], skills: [], missing: [] };
   const credits = [];
   const pluginDirs = {};
+  // Plugins the desktop app delivers (an organization's catalog) live outside the plugin cache, in
+  // folders named by id; they are found by the name in their plugin.json.
+  const rootPlugins = {};
+  for (const root of (want.pluginRoots || []).map(expandEnv)) {
+    for (const file of walk(root)) {
+      if (!file.endsWith(path.join('.claude-plugin', 'plugin.json'))) continue;
+      const dir = path.dirname(path.dirname(file));
+      try { rootPlugins[JSON.parse(fs.readFileSync(file, 'utf8')).name] ??= dir; } catch { /* not a plugin */ }
+    }
+  }
   for (const name of want.plugins || []) {
     const key = Object.keys(installed).find((k) => k.startsWith(name + '@'));
     // One entry per scope (user, each project); the most recently updated is the copy in use.
-    const entry = key && [...installed[key]].sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)))[0];
+    const entry = key ? [...installed[key]].sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)))[0]
+      : rootPlugins[name] ? { installPath: rootPlugins[name] } : null;
     if (!entry || !fs.existsSync(entry.installPath)) { out.missing.push(name); continue; }
     const dest = path.join(vendor, 'plugins', name);
     copyTree(entry.installPath, dest);
     pluginDirs[name] = dest;
     const metaPath = path.join(dest, '.claude-plugin', 'plugin.json');
     const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
-    const market = key.split('@')[1];
+    const market = key ? key.split('@')[1] : 'desktop app catalog';
     const source = {
       name, version: entry.version || meta.version || null, commit: entry.gitCommitSha || null,
       marketplace: market, author: (meta.author && meta.author.name) || 'unknown',
       repository: meta.repository || meta.homepage || marketUrl(market),
       license: meta.license || licenseName(dest), snapshotAt: date,
     };
-    Object.assign(source, (want.credits || {})[name]);
+    const { licenseFrom, ...credit } = (want.credits || {})[name] || {};
+    Object.assign(source, credit);
+    // Same rule as skill groups: no LICENSE shipped -> the standard text from a plugin with that license.
+    const fromPlugin = licenseFrom && licenseFrom.startsWith('plugin:') && pluginDirs[licenseFrom.slice(7)];
+    if (fromPlugin && !fs.existsSync(path.join(dest, 'LICENSE'))) fs.copyFileSync(path.join(fromPlugin, 'LICENSE'), path.join(dest, 'LICENSE'));
     fs.writeFileSync(path.join(dest, 'SOURCE.json'), JSON.stringify(source, null, 2) + '\n');
     credits.push(source);
     out.plugins.push(name);
@@ -352,7 +370,7 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
     credits.push(source);
     out.skills.push(...copied);
   }
-  const rows = credits.map((c) => `| ${c.name} | ${c.author} | ${c.license} | ${c.repository} | ${c.version || '-'} | ${c.snapshotAt} |`);
+  const rows = credits.map((c) => `| ${c.name} | ${c.author} | ${c.license} | ${c.repository} | ${c.version || '-'} | ${c.snapshotAt} | ${[c.licenseNote, c.note].filter(Boolean).join(' ') || '-'} |`);
   fs.mkdirSync(vendor, { recursive: true });
   fs.writeFileSync(path.join(vendor, 'CREDITS.md'), [
     '# Credits',
@@ -361,8 +379,8 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
     'LICENSE and a SOURCE.json. Install from the source when it is up; restore from here only when it is not.',
     'Anything built on one of these copies credits it and records what was changed.',
     '',
-    '| Name | Author | License | Source | Version | Copied |',
-    '|---|---|---|---|---|---|',
+    '| Name | Author | License | Source | Version | Copied | Notes |',
+    '|---|---|---|---|---|---|---|',
     ...rows,
     '',
   ].join('\n'));
@@ -381,9 +399,16 @@ export function restore({ kit, home, name }) {
   const vendor = path.join(kit, 'vendor');
   const plugin = path.join(vendor, 'plugins', name, 'skills');
   const group = path.join(vendor, 'skills', name);
+  const out = { restored: [], kept: [] };
+  const single = path.join(vendor, 'plugins', name);
+  if (!fs.existsSync(plugin) && fs.existsSync(path.join(single, 'SKILL.md'))) {
+    const dest = path.join(home, 'skills', name);
+    if (fs.existsSync(dest)) out.kept.push(name);
+    else { fs.cpSync(single, dest, { recursive: true }); out.restored.push(name); }
+    return out;
+  }
   const root = fs.existsSync(plugin) ? plugin : fs.existsSync(group) ? group : null;
   if (!root) throw new Error(`no snapshot named ${name} in vendor/`);
-  const out = { restored: [], kept: [] };
   for (const e of fs.readdirSync(root, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;
     const dest = path.join(home, 'skills', e.name);
@@ -392,6 +417,143 @@ export function restore({ kit, home, name }) {
     out.restored.push(e.name);
   }
   return out;
+}
+
+const semverAbove = (a, b) => {
+  const [x, y] = [a, b].map((v) => String(v).split('.').map(Number));
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+};
+
+/**
+ * What a session should know at start: whether the kit has moved past this project, and which
+ * skills apply to the cases this project turned on. The session-start hook adds it to Claude's
+ * context, so nothing depends on anyone remembering to check.
+ *
+ * Args:
+ *     ctx: { kit, home, projectDir }
+ *
+ * Returns:
+ *     the message text (one or more lines)
+ */
+export function sessionStartReport({ kit, home, projectDir }) {
+  const lines = [];
+  const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
+  const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
+  if (!stamp.version) {
+    lines.push(`This project has no kit install record. Run /methodology-kit existing to adopt kit ${kitVersion}.`);
+  } else if (semverAbove(kitVersion, stamp.version)) {
+    const log = fs.readFileSync(path.join(kit, 'CHANGELOG.md'), 'utf8');
+    const newer = [...log.matchAll(/^## (\d+\.\d+\.\d+)/gm)].filter((m) => semverAbove(m[1], stamp.version)).length;
+    lines.push(`Kit ${kitVersion} has ${newer} newer change(s) than this project (${stamp.version}). Run /methodology-kit update.`);
+  }
+  if (stamp.version) {
+    const r = foldBack({ kit, home, target: 'project', projectDir });
+    const held = [...r.foldBack, ...r.conflict].filter((k) => !k.startsWith('memory/'));
+    if (held.length) lines.push(`${held.length} kit file(s) changed in this project, so update leaves them alone: ${held.join(', ')}. Merge kit changes into them by hand.`);
+  }
+  const catalogPath = path.join(projectDir, '.claude', 'kit', 'skill-cases.json');
+  const localPath = path.join(projectDir, '.claude', 'skill-cases.local.json');
+  if (fs.existsSync(catalogPath)) {
+    const { cases } = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    const on = fs.existsSync(localPath) ? JSON.parse(fs.readFileSync(localPath, 'utf8')).on || [] : null;
+    if (!on) {
+      lines.push(`No skill cases chosen yet for this project. Ask the owner which apply (${cases.map((c) => c.id).join(', ')}) and record them in .claude/skill-cases.local.json.`);
+    } else {
+      const active = cases.filter((c) => on.includes(c.id));
+      if (active.length) {
+        lines.push('Skills by case for this project - load them when the case applies, and read a community skill before its first use:');
+        for (const c of active) lines.push(`- ${c.name} (${c.when}): ${c.skills.join(', ')}`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+/** Installed plugins whose version differs from the backup copy in vendor/. */
+export function vendorDrift({ kit, home }) {
+  const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
+  if (!fs.existsSync(installedPath)) return [];
+  const installed = JSON.parse(fs.readFileSync(installedPath, 'utf8')).plugins || {};
+  const out = [];
+  for (const [key, entries] of Object.entries(installed)) {
+    const name = key.split('@')[0];
+    const sourcePath = path.join(kit, 'vendor', 'plugins', name, 'SOURCE.json');
+    if (!fs.existsSync(sourcePath)) continue;
+    const newest = [...entries].sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)))[0];
+    const backup = JSON.parse(fs.readFileSync(sourcePath, 'utf8')).version;
+    if (newest.version && backup && newest.version !== backup) out.push({ name, backup, installed: newest.version });
+  }
+  return out;
+}
+
+// Never copied into a vault, whatever the include list says: a vault is private, but a secret in git history is
+// a secret forever.
+const VAULT_NEVER = [/(^|\/)\.env(\.|$)/, /(^|\/)\.dev\.vars$/, /\.(key|pem|p12|pfx)$/i, /(^|\/)secrets?\//i, /(^|\/)node_modules\//];
+
+/**
+ * Back up a project's private, gitignored notes (the vault) into its own git repository, as a local commit.
+ * Pushing that repository to its private remote is the owner's call, never this function's.
+ *
+ * Args:
+ *     ctx: { projectDir, date } - the project's .kit/vault.json gives { dir, include: [git pathspecs] }
+ *
+ * Returns:
+ *     { configured, changed, committed, dir }
+ */
+export function vaultBackup({ projectDir, date = new Date().toISOString().slice(0, 10) }) {
+  const cfgPath = path.join(projectDir, '.kit', 'vault.json');
+  if (!fs.existsSync(cfgPath)) return { configured: false, changed: [], committed: false };
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  const dir = path.resolve(projectDir, cfg.dir);
+  const git = (cwd, ...args) => spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const listed = git(projectDir, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', ...(cfg.include || ['*.md']));
+  if (listed.status !== 0) throw new Error(`git ls-files failed in ${projectDir}: ${listed.stderr.trim()}`);
+  const files = listed.stdout.split('\0').filter(Boolean).filter((f) => !VAULT_NEVER.some((re) => re.test(f)));
+  const changed = [];
+  for (const rel of files) {
+    const src = path.join(projectDir, rel), dest = path.join(dir, rel);
+    const body = fs.readFileSync(src);
+    if (fs.existsSync(dest) && fs.readFileSync(dest).equals(body)) continue;
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, body);
+    changed.push(rel);
+  }
+  if (!fs.existsSync(path.join(dir, '.git'))) git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'add', '-A');
+  const pending = git(dir, 'status', '--porcelain').stdout.trim();
+  let committed = false;
+  if (pending) {
+    // Commit as the project's own git identity, so the vault's history matches the project's.
+    const who = (k) => git(projectDir, 'config', k).stdout.trim();
+    const id = [who('user.name') && `-c`, who('user.name') && `user.name=${who('user.name')}`,
+      who('user.email') && `-c`, who('user.email') && `user.email=${who('user.email')}`].filter(Boolean);
+    const c = spawnSync('git', [...id, '-C', dir, 'commit', '-q', '-m', `chore: vault backup ${date}`], { encoding: 'utf8' });
+    committed = c.status === 0;
+  }
+  return { configured: true, changed, committed, dir };
+}
+
+/**
+ * What is waiting for the kit before a compact: fold-back in report mode for this project and
+ * ~/.claude. It never changes a file outside the kit's reports/ folder; the owner sorts each item.
+ */
+export function preCompactReport({ kit, home, projectDir }) {
+  const waiting = [];
+  for (const target of ['project', 'user']) {
+    if (target === 'user' && !fs.existsSync(path.join(home, STAMP_USER))) continue;
+    const r = foldBack({ kit, home, target, projectDir });
+    waiting.push(...r.foldBack, ...r.conflict, ...r.added);
+  }
+  const lines = [waiting.length
+    ? `${waiting.length} rule change(s) waiting for the kit: ${waiting.join(', ')}. Sort them in the closeout's rule sort (project-only or portable), then /methodology-kit fold-back for the portable ones.`
+    : 'No rule changes waiting for the kit.'];
+  const vault = vaultBackup({ projectDir });
+  if (!vault.configured) lines.push('No vault backup set up for this project. Set one up (NEW-PROJECT.md step 3b) so the private notes are never lost.');
+  else if (vault.committed) lines.push(`Vault backup: ${vault.changed.length} file(s) changed, committed in ${vault.dir}. Push on the owner's go.`);
+  const drift = vendorDrift({ kit, home });
+  if (drift.length) lines.push(`${drift.length} third-party plugin(s) changed since the backup: ${drift.map((d) => `${d.name} (${d.backup} -> ${d.installed})`).join(', ')}. Review, then run snapshot.`);
+  return lines.join('\n');
 }
 
 function main(argv) {

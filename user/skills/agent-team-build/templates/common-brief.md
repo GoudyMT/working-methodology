@@ -5,8 +5,8 @@ they are your whole world: you do not have the overseer's conversation.
 
 ## 1. Rules for every brief you write
 
-- Paste the project's rules block VERBATIM (the project brief says where it lives) into every builder and checker
-  brief. Never summarize it.
+- Every builder and checker brief opens with the "Project rules" read instruction from the templates: the agent
+  reads the rules block from the project's standards file itself. Never paste or summarize the block.
 - Add to every brief as well: never `cd` into a subfolder (absolute paths, `git -C`); never type an escape sequence
   into a tool parameter or a script (build characters with `String.fromCharCode`; a filter that needs a quote or a
   pattern goes in a small script file or the Grep tool); web tools are WebSearch and WebFetch on HTML pages only -

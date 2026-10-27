@@ -3,7 +3,10 @@
     "baseRef": "head"
   },
   "permissions": {
-    "ask": ["Bash(git push *)", "PowerShell(git push *)"]
+    "ask": [
+      "Bash(git push *)",
+      "PowerShell(git push *)"
+    ]
   },
   "hooks": {
     "PreToolUse": [
@@ -13,8 +16,40 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["{{PROJECT_DIR}}/.claude/guard-outward.cjs"],
+            "args": [
+              "{{PROJECT_DIR}}/.claude/guard-outward.cjs"
+            ],
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{PROJECT_DIR}}/.claude/kit-hook.cjs",
+              "session-start"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{PROJECT_DIR}}/.claude/kit-hook.cjs",
+              "pre-compact"
+            ],
+            "timeout": 30
           }
         ]
       }

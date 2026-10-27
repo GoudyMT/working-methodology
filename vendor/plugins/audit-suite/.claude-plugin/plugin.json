@@ -1,0 +1,25 @@
+{
+  "name": "audit-suite",
+  "version": "1.1.0",
+  "description": "16 skills: 10 expert audit lenses + full-audit orchestrator + 5 bundled reference skills. Review plans and code through the eyes of Design, UX, Frontend, Backend, Structural, Repo, Production, DX, Performance, and Accessibility engineers. Includes emil-design-engineering, vercel-react-best-practices, web-animation-design, web-design-guidelines, and make-interfaces-feel-better — zero external dependencies.",
+  "author": {
+    "name": "Orbit",
+    "url": "https://orbit.build"
+  },
+  "homepage": "https://orbit.build/plugin",
+  "repository": "https://github.com/Recusive/Orbit-plugin",
+  "license": "MIT",
+  "keywords": [
+    "audit",
+    "code-review",
+    "plan-review",
+    "accessibility",
+    "performance",
+    "design",
+    "ux",
+    "frontend",
+    "backend",
+    "production-readiness"
+  ],
+  "skills": "./skills/"
+}

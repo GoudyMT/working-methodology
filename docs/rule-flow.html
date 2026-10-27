@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rule Flow Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Archivo:wght@600;800&display=swap">
+<style>
+/* Layout: a field-manual page - one numbered route across the top, the three layers below, then the special cases. */
+:root{
+  --bg:#f3f5f2; --panel:#ffffff; --ink:#1b2420; --muted:#5a6660; --line:#c9d2cc;
+  --accent:#2f6b4f; --accent-soft:#e1ede6; --plan:#8a5a12; --plan-soft:#f6ecd9; --owner:#3d4f8f; --owner-soft:#e3e7f5;
+  --display:'Archivo',system-ui,sans-serif; --body:'IBM Plex Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121815; --panel:#1a221e; --ink:#e4ebe6; --muted:#9aa8a0; --line:#33403a;
+  --accent:#7cc4a0; --accent-soft:#1f3329; --plan:#e0b062; --plan-soft:#33291a; --owner:#9fb0ee; --owner-soft:#232a44; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121815; --panel:#1a221e; --ink:#e4ebe6; --muted:#9aa8a0; --line:#33403a;
+  --accent:#7cc4a0; --accent-soft:#1f3329; --plan:#e0b062; --plan-soft:#33291a; --owner:#9fb0ee; --owner-soft:#232a44; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55}
+.wrap{max-width:1080px;margin:0 auto;padding-block:32px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:36px}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(28px,4vw,40px);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-family:var(--display);font-weight:600;font-size:20px;margin:0 0 14px;text-wrap:balance}
+.lede{color:var(--muted);max-width:65ch;margin:8px 0 0}
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:14px;font-size:13px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.d-live{background:var(--accent)} .d-plan{background:var(--plan)} .d-owner{background:var(--owner)}
+.route{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;counter-reset:s}
+.step{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--accent);border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:6px;min-width:0;position:relative}
+.step.plan{border-top-color:var(--plan)} .step.owner{border-top-color:var(--owner)}
+.step .n{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.step b{font-size:15px;font-weight:600}
+.step p{margin:0;font-size:13px;color:var(--muted)}
+.tag{align-self:flex-start;font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:3px;letter-spacing:.03em}
+.t-live{background:var(--accent-soft);color:var(--accent)} .t-plan{background:var(--plan-soft);color:var(--plan)} .t-owner{background:var(--owner-soft);color:var(--owner)}
+.step:not(:last-child)::after{content:"\2192";position:absolute;right:-12px;top:44%;color:var(--muted);font-size:14px}
+.loop{margin-top:10px;font-size:13px;color:var(--muted);font-family:var(--mono)}
+.layers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.layer{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;min-width:0}
+.layer h3{margin:0 0 4px;font-size:16px}
+.layer .where{font-family:var(--mono);font-size:12px;color:var(--muted);word-break:break-word}
+.layer ul{margin:10px 0 0;padding-left:18px;font-size:14px}
+.layer li{margin:3px 0}
+.reach{margin-top:10px;font-size:13px;padding:8px 10px;border-radius:4px;background:var(--accent-soft);color:var(--ink)}
+.gap{border:1px dashed var(--plan);background:var(--plan-soft);border-radius:6px;padding:14px 16px;font-size:14px}
+.gap strong{color:var(--plan)}
+.tablewrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:none}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;min-width:0}
+.card h3{margin:0 0 6px;font-size:16px}
+.card p,.card li{font-size:14px;margin:0}
+.card ul{padding-left:18px;margin:6px 0 0}
+code{font-family:var(--mono);font-size:.9em}
+@media (max-width:860px){.route{grid-template-columns:repeat(2,minmax(0,1fr))}.step::after{display:none}.layers,.cols{grid-template-columns:1fr}}
+@media (max-width:420px){.route{grid-template-columns:1fr}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>How a new rule travels</h1>
+    <p class="lede">When we find a better way to work in one project (a format, a skill, a tool or a check), this is the route it takes into the shared kit, and from the kit into every other project.</p>
+    <div class="legend">
+      <span class="chip"><span class="dot d-live"></span>Works today</span>
+            <span class="chip"><span class="dot d-owner"></span>The owner decides</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>The route</h2>
+    <div class="route">
+      <div class="step"><span class="n">1</span><b>We find a better way</b><p>During work in a project. Saved at once to that project's standards; notes point to it.</p><span class="tag t-live">today</span></div>
+      <div class="step"><span class="n">2</span><b>Rule sort</b><p>At each pre-compact, every new rule is tagged "this project only" or "every project".</p><span class="tag t-live">today</span></div>
+      <div class="step"><span class="n">3</span><b>Kit report</b><p>A hook runs fold-back in report mode before the compact: "N rules waiting for the kit".</p><span class="tag t-live">hook, today</span></div>
+      <div class="step owner"><span class="n">4</span><b>The owner decides</b><p>Each rule, one at a time: general (goes to the kit) or project detail (stays).</p><span class="tag t-owner">owner's yes</span></div>
+      <div class="step"><span class="n">5</span><b>Kit release</b><p>Written into the kit without project details, tested, version bumped. New rules start as a trial. Pushed only on the owner's go.</p><span class="tag t-live">today</span></div>
+      <div class="step"><span class="n">6</span><b>Every project catches up</b><p>A hook at session start: "kit has N newer rules, run update". New projects start from the latest kit.</p><span class="tag t-live">hook, today</span></div>
+    </div>
+    <p class="loop">6 feeds back into 1: a project that pulls the update keeps working, finds the next improvement, and the loop repeats.</p>
+  </section>
+
+  <section>
+    <h2>GitHub version (for the kit README)</h2>
+    <div class="tablewrap" style="padding:12px">
+<pre class="mermaid">
+flowchart LR
+    subgraph P["One project"]
+        A["1. We find a better way<br/>saved to the project's standards"]
+        B["2. Rule sort at pre-compact<br/>project only or every project"]
+        K["Backup of private files<br/>private repo, on owner's go"]
+    end
+    subgraph R["Review"]
+        C["3. Kit report<br/>hook before each compact"]
+        D{"4. Owner decides<br/>each rule"}
+    end
+    subgraph M["Methodology kit"]
+        E["5. Kit release<br/>generalized, tested, versioned<br/>new rules start as a trial"]
+    end
+    subgraph X["Every project"]
+        F["6. Session-start check<br/>kit has N newer rules, run update<br/>lists files update skipped"]
+    end
+    A --> B --> C --> D
+    B -. "project only" .-> A
+    B --> K
+    D -- "general" --> E
+    D -- "project detail" --> A
+    E --> F
+    F -- "next improvement" --> A
+</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>The three places a rule can live</h2>
+    <div class="layers">
+      <div class="layer">
+        <h3>Your global setup</h3>
+        <div class="where">~/.claude/CLAUDE.md, ~/.claude/skills, ~/.claude/agents</div>
+        <ul><li>Coding and communication standards</li><li>Skills such as agent-team-build and human-factor</li><li>Agent roles: builder, checker, orchestrator</li></ul>
+        <div class="reach">Reach: every project, at once.</div>
+      </div>
+      <div class="layer">
+        <h3>One project's rules</h3>
+        <div class="where">_Working Standards.md, CLAUDE.md, AGENTS.md, project notes</div>
+        <ul><li>Its privacy and legal limits</li><li>Its size budgets and full gate</li><li>Its restrained UI and motion style</li></ul>
+        <div class="reach">Reach: this project only. Private files, never pushed.</div>
+      </div>
+      <div class="layer">
+        <h3>The methodology kit</h3>
+        <div class="where">kitDir from ~/.claude/kit-install.json</div>
+        <ul><li>The general version of every rule</li><li>Templates, tools, skills, hooks</li><li>Versioned, tested, released on your go</li></ul>
+        <div class="reach">Reach: every project that runs update, and every new project.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="gap">
+    <strong>The gap this closes.</strong> Fold-back and update existed, but nothing ran them on their own, so a rule reached the kit only if someone remembered. Steps 3 and 6 make the reminder automatic. The kit installs both hooks, the rule sort and the items below into every project, so none of it can be skipped by mistake.
+  </section>
+
+  <section>
+    <h2>Six safeguards that keep the system healthy</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Safeguard</th><th>What it prevents</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><b>Backup of private files</b><br>The project's private standards, plans and notes go to a private GitHub repo at each pre-compact, on the owner's go.</td><td>Losing every decision if one disk fails.</td><td><span class="tag t-live">today</span></td></tr>
+          <tr><td><b>One home per rule</b><br>A rule lives in the standards file; notes only point to it.</td><td>Two copies drifting apart.</td><td><span class="tag t-live">today</span></td></tr>
+          <tr><td><b>Merge and retire</b><br>Each kit release merges or removes old rules under a size cap; every rule says why.</td><td>A rulebook too long for anyone to read.</td><td><span class="tag t-live">today</span></td></tr>
+          <tr><td><b>Twice means a guard</b><br>A slip that repeats becomes a hook or a test.</td><td>The same mistake coming back despite a written rule.</td><td><span class="tag t-live">today</span></td></tr>
+          <tr><td><b>One source for agent rules</b><br>Briefs pull the rules block from one file.</td><td>Agents working from an old copy.</td><td><span class="tag t-live">today</span></td></tr>
+          <tr><td><b>Trial before standard</b><br>A new kit rule becomes standard after a second project uses it cleanly.</td><td>One project's bad idea reaching every project.</td><td><span class="tag t-live">today</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="loop">The session-start check also lists files the update skipped because a project changed them, so no project drifts quietly.</p>
+  </section>
+
+  <section>
+    <h2>Skills by situation</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>When the work is</th><th>Skills that load</th><th>Scope</th></tr></thead>
+        <tbody>
+          <tr><td>UI or UX design, a visual review</td><td>Design (Anthropic), ux-ui-audit, VectorLab UI/UX, audit-suite, frontend-design, human-factor</td><td>Every project; each one sets its own style</td></tr>
+          <tr><td>Motion, in a project with a restrained style</td><td>VectorLab motion, audit-suite web animation, under that project's own rules (for example: CSS only, transform and opacity, reduced motion respected, inside size limits)</td><td>That project only</td></tr>
+          <tr><td>A feature with 3+ units of work</td><td>agent-team-build (batch under ~5 units, orchestrated above)</td><td>Every project</td></tr>
+          <tr><td>Starting or updating a project</td><td>methodology-kit (new, existing, update, fold-back)</td><td>Every project</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cols">
+    <div class="card">
+      <h3>Credit where it is due</h3>
+      <p>A credits file lists every community skill we use: name, author, source and license. The kit's tests fail if a skill is in use without its entry.</p>
+    </div>
+    <div class="card">
+      <h3>A safe offline copy</h3>
+      <ul><li>Each community skill is read and reviewed before first use.</li><li>A pinned copy lives in the kit, where its license allows it.</li><li>Work never depends on a remote plugin that could change or go offline.</li><li>An update arrives only through a reviewed kit release.</li></ul>
+    </div>
+  </section>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default" });</script>
+</body>
+</html>

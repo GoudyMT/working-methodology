@@ -1,0 +1,23 @@
+{
+  "name": "vectorlab",
+  "owner": {
+    "name": "VectorLab",
+    "url": "https://vectorlab.com.au"
+  },
+  "description": "VectorLab UI/UX and taste skills for AI coding agents.",
+  "plugins": [
+    {
+      "name": "vectorlab-ux-skills",
+      "source": "./",
+      "description": "UI/UX, microcopy, and visual taste skills: low-friction, high-taste interfaces.",
+      "category": "design",
+      "keywords": [
+        "ux",
+        "ui",
+        "microcopy",
+        "taste",
+        "accessibility"
+      ]
+    }
+  ]
+}

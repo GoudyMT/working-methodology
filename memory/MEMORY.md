@@ -1,22 +1,22 @@
-- [Communication style](communication-style.md) - plain short prose to the owner, test hand-off frame, link files, say waits aloud
-- [Collaboration and decisions](collaboration-and-decisions.md) - decide what the records answer after the impact test; full option lists; justify pivots
-- [Goals and design thinking](goals-and-design-thinking.md) - explore the goal, map it to the right layer, measure first, build-gates, seam-first
-- [Testing discipline](testing-discipline.md) - strict test-first, tests never yield, test value, realistic fixtures, failure paths
-- [Verification and evidence](verification-and-evidence.md) - label guess vs proven, get data before fixing, verify the output artifact
-- [Measurement and evals](measurement-and-evals.md) - validate the instrument first, controls, held-out splits, user-first eval questions
-- [Review and sweeps](review-and-sweeps.md) - pre-PR sweep, the swarm contract, two passes only, op-test before push
-- [Findings pipeline](findings-pipeline.md) - a finding is a hypothesis; truth bar; a fix is new code; findings ride inside the PR
-- [Scope and value](scope-and-value.md) - plan the whole cycle, parking lot, value tiers, trim before asking for budget
-- [Quality gates](quality-gates.md) - green means every CI workflow step; full gate before every PR; audits age
-- [Git and PR workflow](git-and-pr-workflow.md) - one-line typed commits, no AI trailer, branch tiers and names, branch cleanup
-- [Outward writing](outward-writing.md) - start from the format; PR body sizes; claim-audited release notes; dash-free public prose
-- [Release and deploy](release-and-deploy.md) - semver, tag the tested SHA, post-merge online check, config drift, fix forward
-- [Agent teams](agent-teams.md) - lead, builders, checkers, scanners; briefs, sandboxes, commit lock; honest split economics
-- [Autonomous loop mode](autonomous-loop-mode.md) - keyword-gated TDD loop; self-correct mechanics, escalate choices; visual checkpoints
-- [Visual and UX design](visual-and-ux-design.md) - wireframe first with real data; match existing idioms; design for human error
-- [Security and privacy](security-and-privacy.md) - two-tier security gate, live keys on dev servers, machine guards, zero operator cost
-- [Session and context hygiene](session-and-context-hygiene.md) - fresh-read orientation, compact per large step, closeout, plan as record
-- [Remote and outward actions](remote-and-outward-actions.md) - nothing pushed or merged without the owner; show-then-run when remote
-- [Shell and tooling](shell-and-tooling.md) - PowerShell 5.1 dialect, Git for Windows hook traps, crash and hang handling
-- [Code and comment style](code-and-comment-style.md) - self-contained comments, ASCII-only source, comment out then delete
-- [Project threads style](project-threads-style.md) - answer first, one question per decision, visible milestones, small memory files
+- [Communication style](communication-style.md) - how the owner wants prose: test hand-off frame, say what a run is, link files, hand-done steps; pointers for plain words and rundowns
+- [Collaboration and decisions](collaboration-and-decisions.md) - pointers: deciding alone, the impact test, option lists, justified pivots
+- [Goals and design thinking](goals-and-design-thinking.md) - pointers: goal before mechanism, right layer, build-gates, seam-first
+- [Testing discipline](testing-discipline.md) - pointers: test-first, tests never yield, test value, fixtures, failure paths
+- [Verification and evidence](verification-and-evidence.md) - pointers: guess vs proven, data before fixing, output artifacts
+- [Measurement and evals](measurement-and-evals.md) - pointers: instrument first, controls, held-out splits, user-first eval questions
+- [Review and sweeps](review-and-sweeps.md) - pointers: pre-PR sweep, the swarm contract, two passes, op-test, device test
+- [Findings pipeline](findings-pipeline.md) - pointers: a finding is a hypothesis, truth bar, root fixes, findings ride in the PR
+- [Scope and value](scope-and-value.md) - pointers: whole-cycle planning, parking lot, value tiers, size budgets
+- [Quality gates](quality-gates.md) - pointers: green means every CI step, full gate before every PR, cadence
+- [Git and PR workflow](git-and-pr-workflow.md) - pointers: commits, branch tiers and names, branch cleanup, PR body first
+- [Outward writing](outward-writing.md) - pointers: start from the format, PR body sizes, release claims, dash-free prose
+- [Release and deploy](release-and-deploy.md) - pointers: releases, post-merge check, deploy config
+- [Agent teams](agent-teams.md) - pointers: team roles and mechanics, model tiers, when to delegate
+- [Autonomous loop mode](autonomous-loop-mode.md) - pointers: the keyword-gated TDD loop and its graduated lessons
+- [Visual and UX design](visual-and-ux-design.md) - pointers: wireframe first, real data, idioms, design for human error
+- [Security and privacy](security-and-privacy.md) - pointers: security cadence, live keys on dev servers, push guard, zero operator cost
+- [Session and context hygiene](session-and-context-hygiene.md) - pointers: orientation, compaction, closeout, the plan as record
+- [Remote and outward actions](remote-and-outward-actions.md) - pointers: outward acts are the owner's; show-then-run when remote
+- [Shell and tooling](shell-and-tooling.md) - PowerShell 5.1 and Git for Windows facts; pointers for commit and crash handling
+- [Code and comment style](code-and-comment-style.md) - pointers: self-contained comments, ASCII-only source, comment out then delete
+- [Project threads style](project-threads-style.md) - how the owner wants threads: one question per decision, visible milestones; pointers for the rest

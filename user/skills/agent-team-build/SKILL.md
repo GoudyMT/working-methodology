@@ -66,8 +66,10 @@ unmarked.
 
 In orchestrated mode the main session is the **overseer** above the lead (`orchestrated.md`, "The layers").
 
-The agents skip the CLAUDE.md files (`omitClaudeMd`), so each brief must carry the adapter's "Rules every
-brief carries" block, pasted verbatim. That block is how privacy, legal and test rules reach every agent.
+The agents skip the CLAUDE.md files (`omitClaudeMd`), so each brief tells the agent to READ the adapter's
+"Rules every brief carries" block from the project's standards file before anything else. That block is how
+privacy, legal and test rules reach every agent. It has one home: a brief points to it and never carries a
+hand-pasted copy, because a pasted copy goes stale the day the rule changes.
 
 ## The flow
 

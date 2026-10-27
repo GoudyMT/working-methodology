@@ -1,0 +1,16 @@
+.DS_Store
+node_modules/
+.scratch/
+*.log
+.idea/
+.vscode/
+.cursor/
+brief.md
+
+# Local eval apps — do not ship with the catalog
+examples/greenfield/
+examples/brownfield/
+
+# Local planning and eval notes
+tasks/
+tests/

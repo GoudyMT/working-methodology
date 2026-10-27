@@ -1,6 +1,7 @@
 {
   "ownerName": "Max",
   "ownerProfileFile": "owner-profile.md",
+  "standardsCapBytes": 90000,
   "vendor": {
     "plugins": [
       "superpowers",
@@ -9,7 +10,11 @@
       "security-guidance",
       "claude-code-setup",
       "huggingface-skills",
-      "data-engineering"
+      "data-engineering",
+      "design",
+      "ux-ui-audit",
+      "vectorlab-ux-skills",
+      "audit-suite"
     ],
     "skillGroups": [
       {
@@ -37,7 +42,20 @@
       "data-engineering": {
         "author": "Astronomer",
         "repository": "https://github.com/astronomer/agents"
+      },
+      "design": {
+        "repository": "https://github.com/anthropics/knowledge-work-plugins",
+        "license": "Apache-2.0",
+        "licenseFrom": "plugin:skill-creator",
+        "licenseNote": "No LICENSE file ships with the plugin; the Apache-2.0 text comes from its source repository license."
+      },
+      "audit-suite": {
+        "license": "MIT",
+        "licenseNote": "MIT is stated in its README; its repository has no LICENSE file. It bundles skills credited to Vercel (vercel-react-best-practices) and to Emil Kowalski (emil-design-engineering)."
       }
-    }
+    },
+    "pluginRoots": [
+      "%APPDATA%/Claude/rpm"
+    ]
   }
 }

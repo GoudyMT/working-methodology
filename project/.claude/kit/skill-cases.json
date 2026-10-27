@@ -1,0 +1,93 @@
+{
+  "about": "Skills by case. Each project turns cases on in .claude/skill-cases.local.json ({\"on\": [\"ui-ux\", ...]}); the session-start hook lists the skills for the cases that are on. Community skills are read before first use. The kit owns this file; projects do not edit it.",
+  "cases": [
+    {
+      "id": "ui-ux",
+      "name": "UI/UX design or review",
+      "when": "a screen, flow, component, form, error message or UI copy is designed, built or reviewed",
+      "skills": [
+        "human-factor",
+        "frontend-design:frontend-design",
+        "design:design-critique",
+        "design:accessibility-review",
+        "design:ux-copy",
+        "design:design-system",
+        "ux-ui-audit:ux-ui-audit",
+        "vectorlab-ux-skills:ux-audit",
+        "audit-suite:audit-as-ux-eng",
+        "audit-suite:audit-as-design-eng",
+        "audit-suite:audit-as-a11y-eng"
+      ],
+      "notes": "The VectorLab skills (spacing, typography, forms, errors, empty-states, motion and the rest) load one by one as their topic comes up. A project's own visual style (for example a restrained motion rule) is project-only and lives in that project's standards."
+    },
+    {
+      "id": "feature-build",
+      "name": "Building a feature",
+      "when": "new behaviour is planned and built",
+      "skills": [
+        "superpowers:brainstorming",
+        "superpowers:writing-plans",
+        "superpowers:test-driven-development",
+        "agent-team-build",
+        "superpowers:verification-before-completion"
+      ]
+    },
+    {
+      "id": "debugging",
+      "name": "Debugging",
+      "when": "a bug, a failing test or unexpected behaviour",
+      "skills": [
+        "superpowers:systematic-debugging"
+      ]
+    },
+    {
+      "id": "review",
+      "name": "Review before a PR",
+      "when": "a branch is ready for its Pre-PR Deep Sweep",
+      "skills": [
+        "superpowers:requesting-code-review",
+        "superpowers:receiving-code-review",
+        "audit-suite:full-audit",
+        "security-review"
+      ]
+    },
+    {
+      "id": "security",
+      "name": "Security-sensitive work",
+      "when": "auth, crypto, secrets, input handling or anything that sends data off the device",
+      "skills": [
+        "security-review",
+        "audit-suite:audit-as-prod-readiness"
+      ]
+    },
+    {
+      "id": "ml-data",
+      "name": "ML and data work",
+      "when": "models, datasets, training, evals or data pipelines",
+      "skills": [
+        "huggingface-skills:hf-cli",
+        "huggingface-skills:huggingface-best",
+        "data-engineering:analyzing-data"
+      ]
+    },
+    {
+      "id": "cloudflare",
+      "name": "Cloudflare platform",
+      "when": "Workers, KV, R2, D1, Wrangler or other Cloudflare services",
+      "skills": [
+        "cloudflare",
+        "wrangler",
+        "workers-best-practices"
+      ]
+    },
+    {
+      "id": "teaching",
+      "name": "Learning the decisions",
+      "when": "the owner wants a decision explained",
+      "skills": [
+        "teacher",
+        "teacher-sync"
+      ]
+    }
+  ]
+}

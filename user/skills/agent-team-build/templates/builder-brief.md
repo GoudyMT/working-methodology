@@ -2,9 +2,10 @@
 
 You are building ONE unit. Everything you need is below; you have no other context.
 
-## Project rules (pasted verbatim from the adapter's "Rules every brief carries")
+## Project rules (one source - read it, never a pasted copy)
 
-<paste the block here - never summarize it>
+Before anything else, read `<project folder>/_Working Standards.md`, section "Rules every brief carries", in
+full, with the Read tool. Those rules bind you. If you cannot read it, stop and report that.
 
 ## Setup
 

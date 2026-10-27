@@ -1,0 +1,25 @@
+{
+  "name": "orbit-plugin",
+  "metadata": {
+    "description": "10 expert audit lenses + full-audit orchestrator + 5 bundled reference skills for reviewing plans and code."
+  },
+  "owner": {
+    "name": "Orbit",
+    "url": "https://orbit.build"
+  },
+  "plugins": [
+    {
+      "name": "audit-suite",
+      "description": "16 skills: 10 expert audit lenses + full-audit orchestrator + 5 bundled reference skills. Review plans and code through the eyes of Design, UX, Frontend, Backend, Structural, Repo, Production, DX, Performance, and Accessibility engineers.",
+      "version": "1.1.0",
+      "author": {
+        "name": "Orbit",
+        "url": "https://orbit.build"
+      },
+      "source": "./",
+      "category": "development",
+      "homepage": "https://orbit.build/plugin",
+      "tags": ["audit", "code-review", "plan-review", "accessibility", "performance", "design", "ux", "frontend", "backend", "production-readiness"]
+    }
+  ]
+}

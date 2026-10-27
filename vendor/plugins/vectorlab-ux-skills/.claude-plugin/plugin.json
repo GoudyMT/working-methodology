@@ -1,0 +1,46 @@
+{
+  "name": "vectorlab-ux-skills",
+  "displayName": "VectorLab UI/UX Skills",
+  "version": "1.0.0",
+  "description": "VectorLab UI/UX, microcopy, and visual taste skills: low-friction, high-taste interfaces for any frontend stack.",
+  "author": {
+    "name": "VectorLab",
+    "url": "https://vectorlab.com.au"
+  },
+  "homepage": "https://vectorlab.com.au",
+  "repository": "https://github.com/VectorLabAU/skills",
+  "license": "MIT",
+  "keywords": [
+    "ux",
+    "ui",
+    "microcopy",
+    "taste",
+    "accessibility",
+    "forms",
+    "animation",
+    "skills"
+  ],
+  "skills": [
+    "./skills/setup/setup-ui-ux-skills",
+    "./skills/audit/ux-audit",
+    "./skills/visual-taste/spacing",
+    "./skills/visual-taste/typography",
+    "./skills/visual-taste/colour-palette",
+    "./skills/visual-taste/anti-slop",
+    "./skills/visual-taste/viewports",
+    "./skills/interaction/page-patterns",
+    "./skills/interaction/surfaces",
+    "./skills/interaction/forms",
+    "./skills/interaction/keyboard",
+    "./skills/interaction/icon-buttons",
+    "./skills/interaction/defaults",
+    "./skills/voice/verbs",
+    "./skills/voice/errors",
+    "./skills/voice/labels",
+    "./skills/feedback/loaders",
+    "./skills/feedback/empty-states",
+    "./skills/animation/motion",
+    "./skills/animation/transitions",
+    "./skills/animation/reduced-motion"
+  ]
+}

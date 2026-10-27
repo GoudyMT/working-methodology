@@ -19,9 +19,11 @@ changed there; it lists it instead. If it lists one, run `fold-back user` (see t
 node <kit folder>/scripts/kit.mjs install project <project folder>
 ```
 
-This copies the standards, the four tracking files, `_Templates/`, the tools and `.claude/settings.json` (with
-the push guard pointed at this folder), and seeds the working-style memory into Claude Code's memory folder for
-this project. It writes `.kit/kit-version.json`, the record that later updates and fold-backs read.
+This copies the standards, the four tracking files, `_Templates/`, the tools and `.claude/settings.json`, and
+seeds the working-style memory into Claude Code's memory folder for this project. The settings wire three hooks
+pointed at this folder: the push guard, and the kit hook at session start and before each compact (`_Working
+Standards.md` "Kit Standards" #1). It writes `.kit/kit-version.json`, the record that later updates and
+fold-backs read.
 
 Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-PARTY.md).
 
@@ -30,6 +32,26 @@ Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-
 - **A (default):** commit the code, keep the governance files local. Add `*.md` (with exceptions for README,
   LICENSE, docs that ship), `.claude/` and `.kit/` to `.gitignore`. Private notes never reach the remote.
 - **B:** commit everything. Fine for a private repo that only the owner reads.
+
+## 3b. Set up the vault backup
+
+The private notes (whatever git does not track) are backed up to their own private repository at every compact.
+Pick a folder beside the project, for example `<project folder>-vault`, and write `.kit/vault.json`:
+
+```json
+{ "dir": "../<project name>-vault", "include": ["*.md"] }
+```
+
+`include` takes git pathspecs (`*.md`, `notes/`). Secret files (`.env*`, `.dev.vars`, keys, `secrets/`) are
+never copied, whatever the list says. On the owner's go, make the private remote once
+(`gh repo create <owner>/<project>-vault --private --source <vault folder>`); after that the hook commits locally
+and each push waits for the owner's go.
+
+## 3c. Turn on the skill cases
+
+Read `.claude/kit/skill-cases.json` with the owner and record the cases this project needs in
+`.claude/skill-cases.local.json`, for example `{ "on": ["ui-ux", "feature-build", "debugging", "review"] }`.
+The session-start hook then lists the skills for those cases every session.
 
 ## 4. Fill the project adapters
 

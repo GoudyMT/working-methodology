@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { install, foldBack, bump, scrub, snapshot, restore, projectSlug, render } from '../scripts/kit.mjs';
+import { spawnSync } from 'node:child_process';
+import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, vaultBackup, projectSlug, render } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -216,4 +217,255 @@ test('scrub leaves the third-party snapshot alone', () => {
   fs.mkdirSync(path.join(ctx.kit, 'vendor/plugins/x'), { recursive: true });
   fs.writeFileSync(path.join(ctx.kit, 'vendor/plugins/x/README.md'), 'caf\u00e9 by someone\n');
   assert.deepEqual(scrub({ kit: ctx.kit }), []);
+});
+
+test('snapshot also finds plugins outside the plugin cache and fills a missing license', () => {
+  const ctx = makeKit();
+  addThirdParty(ctx);
+  // A plugin delivered by the desktop app lives in its own folder, found by its plugin.json name.
+  const root = path.join(ctx.home, 'app-plugins');
+  const dir = path.join(root, 'org1', 'plugin_abc');
+  fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'designer', version: '1.2.0', author: { name: 'Studio' } }));
+  fs.mkdirSync(path.join(dir, 'skills/critique'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'skills/critique/SKILL.md'), 'critique\n');
+  const config = JSON.parse(read(path.join(ctx.kit, 'kit.config.json')));
+  config.vendor.pluginRoots = [root];
+  config.vendor.plugins.push('designer');
+  config.vendor.credits.designer = { repository: 'https://example.com/designer', license: 'Apache-2.0', licenseFrom: 'plugin:toolbox' };
+  fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify(config));
+  const r = snapshot({ kit: ctx.kit, home: ctx.home });
+  assert.ok(r.plugins.includes('designer'));
+  const v = path.join(ctx.kit, 'vendor/plugins/designer');
+  assert.equal(read(path.join(v, 'skills/critique/SKILL.md')), 'critique\n');
+  assert.match(read(path.join(v, 'LICENSE')), /MIT License/);
+  assert.equal(JSON.parse(read(path.join(v, 'SOURCE.json'))).repository, 'https://example.com/designer');
+});
+
+function hashTree(dir) {
+  const out = {};
+  const walkAll = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+    const p = path.join(d, e.name);
+    if (e.isDirectory()) walkAll(p); else out[p] = read(p);
+  } };
+  if (fs.existsSync(dir)) walkAll(dir);
+  return out;
+}
+
+test('fold-back only reports: it changes no file in the project, ~/.claude or the kit', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'project', projectDir: proj });
+  install({ kit, home, target: 'user' });
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, improved\n');
+  const before = [hashTree(kit), hashTree(home), hashTree(proj)];
+  foldBack({ kit, home, target: 'project', projectDir: proj });
+  foldBack({ kit, home, target: 'user' });
+  assert.deepEqual([hashTree(kit), hashTree(home), hashTree(proj)], before);
+});
+
+function caseKit() {
+  const ctx = makeKit();
+  const catalog = { cases: [
+    { id: 'ui-ux', name: 'UI/UX design or review', when: 'a screen, flow or copy changes', skills: ['design:design-critique', 'human-factor'] },
+    { id: 'debugging', name: 'Debugging', when: 'a bug or failing test', skills: ['superpowers:systematic-debugging'] },
+  ] };
+  fs.mkdirSync(path.join(ctx.kit, 'project/.claude/kit'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.kit, 'project/.claude/kit/skill-cases.json'), JSON.stringify(catalog));
+  fs.writeFileSync(path.join(ctx.kit, 'CHANGELOG.md'), '# Changelog\n\n## 1.0.0 - 2026-01-01\n- first\n');
+  install({ kit: ctx.kit, home: ctx.home, target: 'project', projectDir: ctx.proj });
+  return ctx;
+}
+
+test('session start says when the kit has newer rules, and how many', () => {
+  const { kit, home, proj } = caseKit();
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /newer/);
+  bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
+  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update\./);
+});
+
+test('session start lists the skills for the cases this project turned on', () => {
+  const { kit, home, proj } = caseKit();
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /No skill cases chosen yet/);
+  fs.writeFileSync(path.join(proj, '.claude/skill-cases.local.json'), JSON.stringify({ on: ['ui-ux'] }));
+  const msg = sessionStartReport({ kit, home, projectDir: proj });
+  assert.match(msg, /UI\/UX design or review \(a screen, flow or copy changes\): design:design-critique, human-factor/);
+  assert.doesNotMatch(msg, /systematic-debugging/);
+});
+
+test('pre-compact counts what is waiting for the kit', () => {
+  const { kit, home, proj } = caseKit();
+  install({ kit, home, target: 'user' });
+  assert.match(preCompactReport({ kit, home, projectDir: proj }), /No rule changes waiting for the kit\./);
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, improved\n');
+  fs.writeFileSync(path.join(home, 'projects', projectSlug(proj), 'memory', 'new-lesson.md'), 'lesson\n');
+  assert.match(preCompactReport({ kit, home, projectDir: proj }), /2 rule change\(s\) waiting for the kit: _Working Standards\.md, memory\/new-lesson\.md\. Sort them/);
+});
+
+test('the hook script prints a user message and context for Claude, and never fails the session', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { kit, home, proj } = caseKit();
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
+  // The hook loads the kit's own tool from the kit folder, as it does on a real machine.
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  const hook = path.resolve('project/.claude/kit-hook.cjs');
+  const run = (mode, env) => spawnSync(process.execPath, [hook, mode], { cwd: proj, input: '{}', encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj, ...env } });
+  const start = run('session-start');
+  assert.equal(start.status, 0);
+  const out = JSON.parse(start.stdout);
+  assert.match(out.hookSpecificOutput.additionalContext, /No skill cases chosen yet/);
+  assert.equal(out.hookSpecificOutput.hookEventName, 'SessionStart');
+  const pre = run('pre-compact');
+  assert.equal(pre.status, 0);
+  assert.match(JSON.parse(pre.stdout).systemMessage, /waiting for the kit/);
+  // A missing kit is a warning, not a failed session.
+  const lost = run('session-start', { KIT_CLAUDE_HOME: path.join(home, 'nowhere') });
+  assert.equal(lost.status, 0);
+  assert.match(JSON.parse(lost.stdout).systemMessage, /kit not found/i);
+});
+
+test('every backup in the real kit credits its source', () => {
+  const vendor = path.resolve('vendor');
+  const credits = read(path.join(vendor, 'CREDITS.md'));
+  const dirs = ['plugins', 'skills'].flatMap((d) => fs.readdirSync(path.join(vendor, d)).map((n) => path.join(vendor, d, n)));
+  assert.ok(dirs.length > 0);
+  for (const dir of dirs) {
+    const name = path.basename(dir);
+    const src = JSON.parse(read(path.join(dir, 'SOURCE.json')));
+    for (const field of ['author', 'license', 'repository']) {
+      assert.ok(src[field] && src[field] !== 'unknown', `${name}: ${field} is missing`);
+    }
+    assert.ok(fs.existsSync(path.join(dir, 'LICENSE')) || src.licenseNote, `${name}: no LICENSE file and no licenseNote`);
+    assert.match(credits, new RegExp(`\\| ${name} \\|`), `${name}: not in CREDITS.md`);
+  }
+});
+
+test('every skill the case map names exists in the kit, its backups or Claude Code itself', () => {
+  const { cases } = JSON.parse(read(path.resolve('project/.claude/kit/skill-cases.json')));
+  const BUILT_IN = new Set(['security-review']);
+  const skillDirs = (root) => {
+    const names = new Set();
+    const look = (d) => { if (!fs.existsSync(d)) return; for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      if (fs.existsSync(path.join(d, e.name, 'SKILL.md'))) names.add(e.name);
+      look(path.join(d, e.name));
+    } };
+    look(root);
+    return names;
+  };
+  const own = skillDirs(path.resolve('user/skills'));
+  const groups = skillDirs(path.resolve('vendor/skills'));
+  for (const c of cases) {
+    for (const s of c.skills) {
+      const [plugin, skill] = s.includes(':') ? s.split(':') : [null, s];
+      // A one-skill plugin may keep its SKILL.md at the plugin root instead of under skills/.
+      const pluginRoot = plugin && path.resolve('vendor/plugins', plugin);
+      const found = plugin ? skillDirs(path.join(pluginRoot, 'skills')).has(skill) || (skill === plugin && fs.existsSync(path.join(pluginRoot, 'SKILL.md')))
+        : own.has(skill) || groups.has(skill) || BUILT_IN.has(skill);
+      assert.ok(found, `case ${c.id}: skill ${s} not found`);
+    }
+  }
+});
+
+test('session start names the kit files this project changed, which update leaves alone', () => {
+  const { kit, home, proj } = caseKit();
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /1 kit file\(s\) changed in this project, so update leaves them alone: _Working Standards\.md\./);
+});
+
+test('pre-compact says when an installed third-party plugin moved past its backup', () => {
+  const ctx = caseKit();
+  addThirdParty(ctx);
+  snapshot({ kit: ctx.kit, home: ctx.home });
+  assert.doesNotMatch(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /third-party plugin/);
+  const file = path.join(ctx.home, 'plugins/installed_plugins.json');
+  const data = JSON.parse(read(file));
+  data.plugins['toolbox@market'][0].version = '2.1.0';
+  fs.writeFileSync(file, JSON.stringify(data));
+  assert.match(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /1 third-party plugin\(s\) changed since the backup: toolbox \(2\.0\.0 -> 2\.1\.0\)\. Review, then run snapshot\./);
+});
+
+test('brief templates point to the one rules block and never carry a pasted copy', () => {
+  for (const t of ['builder-brief.md', 'checker-brief.md']) {
+    const body = read(path.resolve('user/skills/agent-team-build/templates', t));
+    assert.match(body, /read `<project folder>\/_Working Standards\.md`, section "Rules every brief carries"/);
+    assert.doesNotMatch(body, /paste the block/i);
+  }
+});
+
+function gitProject() {
+  const ctx = caseKit();
+  const git = (...a) => spawnSync('git', ['-C', ctx.proj, ...a], { encoding: 'utf8' });
+  git('init', '-q');
+  fs.writeFileSync(path.join(ctx.proj, '.gitignore'), '*.md\n.env\n.dev.vars\nnotes/\n');
+  fs.writeFileSync(path.join(ctx.proj, 'notes.md'), 'my notes\n');
+  fs.mkdirSync(path.join(ctx.proj, 'notes'));
+  fs.writeFileSync(path.join(ctx.proj, 'notes/plan.md'), 'plan\n');
+  fs.writeFileSync(path.join(ctx.proj, '.env'), 'API_KEY=secret\n');
+  fs.writeFileSync(path.join(ctx.proj, '.dev.vars'), 'TOKEN=secret\n');
+  fs.writeFileSync(path.join(ctx.proj, 'app.js'), 'code\n');
+  ctx.vault = path.join(path.dirname(ctx.proj), 'vault');
+  // A careless include list that names secret files must still never copy them.
+  fs.writeFileSync(path.join(ctx.proj, '.kit/vault.json'), JSON.stringify({ dir: ctx.vault, include: ['*.md', '.env', '.dev.vars'] }));
+  return ctx;
+}
+
+test('vault backup copies the private notes, never a secret, and commits without pushing', () => {
+  const { kit, home, proj, vault } = gitProject();
+  const r = vaultBackup({ projectDir: proj, date: '2026-10-27' });
+  assert.equal(read(path.join(vault, 'notes.md')), 'my notes\n');
+  assert.equal(read(path.join(vault, 'notes/plan.md')), 'plan\n');
+  assert.equal(read(path.join(vault, '_Working Standards.md')), 'rules\n');
+  for (const secret of ['.env', '.dev.vars', 'app.js']) assert.equal(fs.existsSync(path.join(vault, secret)), false, secret);
+  assert.ok(r.committed);
+  const log = spawnSync('git', ['-C', vault, 'log', '--oneline'], { encoding: 'utf8' }).stdout;
+  assert.match(log, /chore: vault backup 2026-10-27/);
+  assert.equal(spawnSync('git', ['-C', vault, 'remote'], { encoding: 'utf8' }).stdout.trim(), '');
+  // A second backup with nothing new makes no commit.
+  assert.equal(vaultBackup({ projectDir: proj, date: '2026-10-27' }).committed, false);
+  fs.writeFileSync(path.join(proj, 'notes.md'), 'my notes, more\n');
+  assert.match(preCompactReport({ kit, home, projectDir: proj }), /Vault backup: 1 file\(s\) changed, committed in .*vault\. Push on the owner's go\./);
+});
+
+test('pre-compact reminds a project with no vault backup to set one up', () => {
+  const { kit, home, proj } = caseKit();
+  assert.match(preCompactReport({ kit, home, projectDir: proj }), /No vault backup set up/);
+});
+
+// The kit's own standards, checked the way Kit Standards #3 and #5 say: one home per rule, a why in every rule
+// section, and a size cap. These read the real kit files, not a fixture.
+const STANDARDS = () => read(path.resolve('project/_Working Standards.md'));
+const words = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean);
+const shingles = (w, n = 8) => { const s = new Set(); for (let i = 0; i + n <= w.length; i++) s.add(w.slice(i, i + n).join(' ')); return s; };
+
+test('kit memory points to the standards instead of repeating them', () => {
+  const ruleText = shingles(words(STANDARDS()));
+  const repeats = [];
+  for (const f of fs.readdirSync(path.resolve('memory')).filter((n) => n !== 'MEMORY.md')) {
+    const body = read(path.resolve('memory', f)).split(/^---$/m).slice(2).join('---');
+    for (const line of body.split('\n')) {
+      if ([...shingles(words(line))].some((s) => ruleText.has(s))) repeats.push(`${f}: ${line.slice(0, 70)}`);
+    }
+  }
+  assert.deepEqual(repeats, []);
+});
+
+test('every rule section in the standards says why', () => {
+  const EXEMPT = new Set(['Critical Rules Priority Index', 'Handoff Message Structure', 'REQUIRED FIRST ACTIONS',
+    'Working Mode: Plan (default)', 'State Snapshot', 'Newly-Established Working Standards',
+    'Critical In-Flight Context (do NOT lose)', 'Reading Order (mandatory, in order)', 'Next Step (REQUIRED)',
+    'Anti-Hallucination Discipline', 'Project Adapter (FILL-IN TEMPLATE)', 'What This File Is Not']);
+  const missing = STANDARDS().split(/^(?=#{2,3} )/m)
+    .filter((s) => /^#{2,3} /.test(s))
+    .filter((s) => !EXEMPT.has(s.split('\n')[0].replace(/^#+ /, '').trim()))
+    .filter((s) => !/why/i.test(s))
+    .map((s) => s.split('\n')[0]);
+  assert.deepEqual(missing, []);
+});
+
+test('the standards stay under the kit size cap', () => {
+  const cap = JSON.parse(read(path.resolve('kit.config.json'))).standardsCapBytes;
+  assert.ok(cap > 0, 'kit.config.json needs standardsCapBytes');
+  assert.ok(Buffer.byteLength(STANDARDS()) <= cap, `standards are ${Buffer.byteLength(STANDARDS())} bytes, cap ${cap}`);
 });

@@ -8,7 +8,9 @@
 
 One line per loop run (or per session with loops). The trend is the accuracy signal: corrections per loop falling, regressions = 0.
 
-Format: `- <date>: <N> loop(s) - <scope> (<N> commits <first>..<last>), <N> halts (<what>), <N> corrections, <N> regressions (<which L-NN>), <new lessons>.`
+Format: `- <date>: <N> loop(s) - <scope> (<N> commits <first>..<last>), <N> halts (<what>), <N> corrections, <N> regressions (<which L-NN>), <new lessons>, <N> guards added (<which L-NN -> hook / test / lint>).`
+
+A lesson that recurs once becomes a guard, not more text (`_Working Standards.md` "Kit Standards" #6); the entry's `Guard:` line names it.
 
 -
 
@@ -38,6 +40,7 @@ Format: `- <date> <feature> (builder <model>, checker <model>): units <N> | firs
 - Root cause:    <1 line>
 - Rule (never/always): <1 line, actionable>
 - Recurred: 0
+- Guard: - (required once Recurred >= 1: the hook, test, lint rule or script that now catches it)
 - Graduated to: -
 ```
 
