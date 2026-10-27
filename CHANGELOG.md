@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.1 - 2026-10-27
+- Rule-conflict fixes: a fix after an Op-Test re-runs only the touched suites (the final gate covers the rest); a feature PR keeps the Pre-PR Deep Sweep reviewer floor, with sizing above it; a retry alone means no other gate, hook or agent test running.
+
 ## 0.6.0 - 2026-10-27
 - Speed review: copy lines and a size-raise band settled at plan approval, one check-in per phase; one review lead for the whole tail; a CPU load guard (.claude/load-guard.cjs, 40% over 3 s, --force overrides); the commit hook runs the fast suite plus related browser tests, everything on config, lockfile or deletion, proved by a known-bad control; E2E beside the non-building gate steps; every pick runs the hook; size checks once per batch; a combined fix check only for at most 2 roots, none above low. One session per prong; agents only for parallel or wide work or an independent review; every plan has an Execution approach section. Skills by case: at most two per unit, with design, motion and review sets apart. Promoted directly by the owner.
 
