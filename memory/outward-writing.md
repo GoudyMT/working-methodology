@@ -11,5 +11,6 @@ The outward-writing rules live in the standards; this file points to them.
 - PR body sizes, audits, lived examples -> _Working Standards.md "PR Body Standard"
 - Dash-free prose the owner publishes -> _Working Standards.md "PR Body Standard"
 - Release notes: kind, claims, readers -> _Working Standards.md "Release Notes"
+- Summary, not tallies, in PR bodies -> _Working Standards.md "PR Body Standard"
 
 Related: [[git-and-pr-workflow]], [[release-and-deploy]], [[communication-style]].

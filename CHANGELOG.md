@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.5.0 - 2026-10-27
+- Summary, not tallies: PR bodies and other outward summaries state the end result; a number stays only when it is the result or the reader acts on it. Promoted directly by the owner.
+
 ## 0.4.0 - 2026-10-27
 - Kit standard: session-start and pre-compact kit hooks, rule sort, skills by case, credited backups of the UI/UX skills, vault backup, one home per rule (memory as pointers), briefs read one rules block, merge-and-retire under a size cap, slips become guards, trial before standard; the rule-flow map; a per-message check so a session running in parallel hears about a kit release made meanwhile. Promoted directly by the owner.
 

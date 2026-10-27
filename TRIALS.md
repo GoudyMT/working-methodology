@@ -13,3 +13,4 @@ is reworked or retired at the next kit release.
 - 0.4.0: the kit hooks, the rule sort, one home per rule, briefs from one source, merge-and-retire, slips become
   guards, trial before standard, skills by case, credited backups, vault backup. The owner made these standard at
   once, so they skip the trial.
+- 0.5.0: summary, not tallies, in PR bodies and other outward summaries.

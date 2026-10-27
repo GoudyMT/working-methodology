@@ -10,7 +10,7 @@
 
 ## Standard (large: a feature, sub-project or arc)
 
-> **Detailed, not a wall.** For engineers, in plain speak: short active sentences, one idea per bullet. Never cut a detail to make the body shorter; move evidence into a fold (`<details>`). Changes read as a **before / after table**; design decisions and the review result stay **on screen**; the file list, every gate figure and the enumerated clean checks go in **folds**. Ceilings: <!-- PROJECT ADAPTER A16: e.g. at most 1,550 words in all, 850 on screen, 240 characters per bullet --> `<total>` words, `<on screen>` on screen, `<chars>` per bullet. Audit: `<audit command> <body> "<title>"`.
+> **Detailed, not a wall.** For engineers, in plain speak: short active sentences, one idea per bullet. Never cut a detail to make the body shorter; move evidence into a fold (`<details>`). Changes read as a **before / after table**; design decisions and the review result stay **on screen**; the file list, every gate result and the enumerated clean checks go in **folds**. State the end result, not per-step tallies: keep a number only when it is the result or the reader acts on it (`_Working Standards.md` "PR Body Standard"). Ceilings: <!-- PROJECT ADAPTER A16: e.g. at most 1,550 words in all, 850 on screen, 240 characters per bullet --> `<total>` words, `<on screen>` on screen, `<chars>` per bullet. Audit: `<audit command> <body> "<title>"`.
 
 ```md
 ## <Area>: <one line of what this builds>
@@ -40,13 +40,13 @@
 
 ### Verification
 
-- <the gate in one line, with the unit and E2E counts>.
+- <the gate in one line: what ran and that it passed>.
 - <the production build used and attacked: engines and checks held>.
 - <tests failed first; break-check result>.
 - <the honest limit, e.g. a device class not verified>.
 
 <details>
-<summary>Every gate, with its figures</summary>
+<summary>Every gate and its result</summary>
 
 | Check | Result |
 |---|---|
