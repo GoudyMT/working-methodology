@@ -5,6 +5,14 @@
 - **Approved by the user:** <date> | pending
 - **Cost estimate (dollars):** <each phase: its estimate and its pause line> | batch mode: <the whole run>
 
+## Execution approach (approved with the plan)
+
+| Phase | Approach (direct / agents and their roles / separate sessions) | Why, and the source | Expected time | Expected cost |
+|---|---|---|---|---|
+| | | | | |
+
+Settled at approval too: the copy lines and the size-raise band, and one scheduled check-in per phase.
+
 ## Units
 
 | Id | Title | Files (exact; mark new files) | Tests to write first, and the failure each must show | Done when | Runs | Built by |

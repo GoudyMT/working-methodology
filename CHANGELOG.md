@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.6.0 - 2026-10-27
-- Speed review: decide copy and size ranges at plan approval with one check-in per phase; one review lead; a CPU load guard (.claude/load-guard.cjs); prove the related-tests hook; independent gate steps side by side; every builder commit runs the hook; combined fix check only for at most 2 low-severity findings. One session per prong; the main session builds small and medium features; the plan states the agent plan and why. Promoted directly by the owner.
+- Speed review: copy lines and a size-raise band settled at plan approval, one check-in per phase; one review lead for the whole tail; a CPU load guard (.claude/load-guard.cjs, 40% over 3 s, --force overrides); the commit hook runs the fast suite plus related browser tests, everything on config, lockfile or deletion, proved by a known-bad control; E2E beside the non-building gate steps; every pick runs the hook; size checks once per batch; a combined fix check only for at most 2 roots, none above low. One session per prong; agents only for parallel or wide work or an independent review; every plan has an Execution approach section. Skills by case: at most two per unit, with design, motion and review sets apart. Promoted directly by the owner.
 
 ## 0.5.0 - 2026-10-27
 - Summary, not tallies: PR bodies and other outward summaries state the end result; a number stays only when it is the result or the reader acts on it. Promoted directly by the owner.

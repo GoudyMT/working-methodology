@@ -1,24 +1,47 @@
 {
-  "about": "Skills by case. Each project turns cases on in .claude/skill-cases.local.json ({\"on\": [\"ui-ux\", ...]}); the session-start hook lists the skills for the cases that are on. Community skills are read before first use. The kit owns this file; projects do not edit it.",
+  "about": "Skills by case. Each project turns cases on in .claude/skill-cases.local.json ({\"on\": [\"ui-design\", ...]}); the session-start hook lists the skills for the cases that are on. Load at most two skills per unit of work; design-time, motion and review-time sets stay apart. Community skills are read before first use. The kit owns this file; projects do not edit it.",
   "cases": [
     {
-      "id": "ui-ux",
-      "name": "UI/UX design or review",
-      "when": "a screen, flow, component, form, error message or UI copy is designed, built or reviewed",
+      "id": "ui-design",
+      "name": "UI/UX design",
+      "when": "a screen, flow, component, form, error message or UI copy is being designed or built",
       "skills": [
         "human-factor",
         "frontend-design:frontend-design",
-        "design:design-critique",
-        "design:accessibility-review",
         "design:ux-copy",
         "design:design-system",
+        "vectorlab-ux-skills:spacing",
+        "vectorlab-ux-skills:typography",
+        "vectorlab-ux-skills:forms",
+        "vectorlab-ux-skills:errors",
+        "vectorlab-ux-skills:empty-states"
+      ],
+      "notes": "Pick the one or two that fit the unit. A project's own visual style lives in that project's standards."
+    },
+    {
+      "id": "ui-motion",
+      "name": "Motion",
+      "when": "a transition or animation is added or changed",
+      "skills": [
+        "vectorlab-ux-skills:motion",
+        "vectorlab-ux-skills:reduced-motion",
+        "audit-suite:web-animation-design"
+      ],
+      "notes": "Each project sets its own motion limits; a restrained style is project-only."
+    },
+    {
+      "id": "ui-review",
+      "name": "UI/UX review",
+      "when": "a built screen or flow is reviewed before a PR",
+      "skills": [
+        "design:design-critique",
+        "design:accessibility-review",
         "ux-ui-audit:ux-ui-audit",
         "vectorlab-ux-skills:ux-audit",
         "audit-suite:audit-as-ux-eng",
-        "audit-suite:audit-as-design-eng",
-        "audit-suite:audit-as-a11y-eng"
-      ],
-      "notes": "The VectorLab skills (spacing, typography, forms, errors, empty-states, motion and the rest) load one by one as their topic comes up. A project's own visual style (for example a restrained motion rule) is project-only and lives in that project's standards."
+        "audit-suite:audit-as-a11y-eng",
+        "human-factor"
+      ]
     },
     {
       "id": "feature-build",

@@ -1,12 +1,13 @@
 // Load guard: refuses to start the commit hook or the full gate while the CPU is busy, and names what is using it.
 // Why: a starved machine times tests out and crashes runners, and those false failures cost more than the wait.
-// Usage: node .claude/load-guard.cjs && <the check>. LOAD_GUARD_MAX sets the busy limit in percent (default 70).
+// Usage: node .claude/load-guard.cjs [--force] && <the check>. LOAD_GUARD_MAX sets the busy limit in percent
+// (default 40, averaged over 3 s). --force is the owner's override: it skips the check.
 // Exit 0 = quiet enough (prints nothing); exit 1 = busy (the reason goes to stderr).
 const os = require('os');
 const { spawnSync } = require('child_process');
 
-const DEFAULT_MAX = 70;
-const SAMPLE_MS = 1000;
+const DEFAULT_MAX = 40;
+const SAMPLE_MS = 3000;
 
 /** Percent of CPU time spent busy across all cores over one sample window. */
 async function busyPercent(ms = SAMPLE_MS) {
@@ -46,6 +47,7 @@ function checkLoad({ busy, threshold, top }) {
 }
 
 async function main() {
+	if (process.argv.includes('--force')) return;
 	const threshold = process.env.LOAD_GUARD_MAX !== undefined ? Number(process.env.LOAD_GUARD_MAX) : DEFAULT_MAX;
 	const busy = await busyPercent();
 	const r = checkLoad({ busy, threshold, top: busy > threshold ? topProcesses() : [] });
@@ -55,5 +57,5 @@ async function main() {
 	}
 }
 
-module.exports = { checkLoad, busyPercent, topProcesses };
+module.exports = { checkLoad, busyPercent, topProcesses, DEFAULT_MAX, SAMPLE_MS };
 if (require.main === module) main();

@@ -50,7 +50,7 @@ and each push waits for the owner's go.
 ## 3c. Turn on the skill cases
 
 Read `.claude/kit/skill-cases.json` with the owner and record the cases this project needs in
-`.claude/skill-cases.local.json`, for example `{ "on": ["ui-ux", "feature-build", "debugging", "review"] }`.
+`.claude/skill-cases.local.json`, for example `{ "on": ["ui-design", "ui-review", "feature-build", "debugging", "review"] }`.
 The session-start hook then lists the skills for those cases every session.
 
 ## 4. Fill the project adapters

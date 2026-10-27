@@ -466,7 +466,7 @@ export function sessionStartReport({ kit, home, projectDir }) {
     } else {
       const active = cases.filter((c) => on.includes(c.id));
       if (active.length) {
-        lines.push('Skills by case for this project - load them when the case applies, and read a community skill before its first use:');
+        lines.push('Skills by case for this project - load at most two per unit of work, keep design-time, motion and review-time sets apart, and read a community skill before its first use:');
         for (const c of active) lines.push(`- ${c.name} (${c.when}): ${c.skills.join(', ')}`);
       }
     }

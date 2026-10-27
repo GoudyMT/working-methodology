@@ -534,4 +534,14 @@ test('the load guard script blocks or passes on the real machine', () => {
   const block = run(-1);
   assert.equal(block.status, 1);
   assert.match(block.stderr, /CPU is \d+% busy \(limit -1%\)\. Using it most: \S/);
+  // --force is the owner's override: it runs even on a busy machine.
+  const forced = spawnSync(process.execPath, [script, '--force'], { encoding: 'utf8', env: { ...process.env, LOAD_GUARD_MAX: '-1' } });
+  assert.equal(forced.status, 0);
+});
+
+test('the load guard defaults to 40% over a 3-second average', async () => {
+  const { createRequire } = await import('node:module');
+  const guard = createRequire(import.meta.url)(path.resolve('project/.claude/load-guard.cjs'));
+  assert.equal(guard.DEFAULT_MAX, 40);
+  assert.equal(guard.SAMPLE_MS, 3000);
 });

@@ -2,7 +2,8 @@
 
 Read this when `SKILL.md` "Choose a mode" picks orchestrated mode. Everything in `SKILL.md` still applies; this file
 adds the layer above the team. In orchestrated mode the main session is the **overseer**. The work comes in
-**prongs**: a prong is one feature or fix batch with its own branch, worktree and pull request, run in three phases
+**prongs**: a prong is one feature or fix batch with its own branch, worktree and pull request - and its own session,
+which reports completion back to the main session (never several prongs in one session) - run in three phases
 (plan, build, review). Each phase of a prong is led by an `orchestrator` agent that designs and runs its own team.
 
 ## The layers

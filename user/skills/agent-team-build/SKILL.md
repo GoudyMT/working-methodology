@@ -22,10 +22,16 @@ where the main session leads the team, and orchestrated, where the main session 
 
 ## Choose a mode
 
-- **Orchestrated** for five or more units with a full pre-PR deep review, or for more than one prong at a time
-  (only after the readiness bar in `orchestrated.md` passes). Read `orchestrated.md` before planning.
+The plan's "Execution approach" section names the mode for each phase, with the reasoning, its source and the
+expected time and cost; the user approves it with the plan. Agents are for genuinely parallel or wide work, or an
+independent review; the main session builds small and medium features itself.
+
+- **Orchestrated** for five or more units with a full pre-PR deep review (only after the readiness bar in
+  `orchestrated.md` passes). Read `orchestrated.md` before planning.
 - **Batch** for three or four units, or a scaled-down review.
-- **The lead directly** under three units.
+- **The lead directly** under three units, and for any small or medium feature.
+- **Several prongs at once:** each prong runs in its own session, which reports its completion back to the main
+  session. Never run several prongs in one session: it slows every one of them.
 
 Why: in the one comparison measured (on different work, so not a controlled test), the orchestrator layer cut the
 main session's spend from 50.4M to 18.2M input-equivalent tokens and cost 19.0M itself - about a quarter less in
@@ -97,8 +103,9 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
    choice that belongs to the lead or the user). A FIX goes back to the same builder (resume it with `SendMessage`,
    so it keeps its context). At most 2 FIX rounds; then the lead finishes the unit itself or escalates.
 5. **Integrate (lead).** Apply the units onto the feature branch in plan order (cherry-pick from each builder's
-   branch, with a blob check per file against the builder's commit) and resolve any conflict. Build and run the
-   size checks after EACH cherry-pick: units that each fit alone can overflow a budget together. A trim pass's brief
+   branch, with a blob check per file against the builder's commit) and resolve any conflict. Every pick goes through the commit hook. Run the size checks once
+   per batch, after all picks: units that each fit alone can overflow a budget together; only when a budget is over,
+   bisect by re-checking per pick. A trim pass's brief
    carries an allow-list of what may be trimmed; the lead diffs each trim commit against it before keeping it, and a
    line outside it is reverted and the run stops for the user. Run the project's **full gate** - every step its CI
    runs. A red gate is a finding: diagnose with data, fix the root, one change per commit. Remove the finished
@@ -109,7 +116,8 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
    ceiling and a stop rule: at most 8 findings, each under 80 words, and the first counter-example in each area,
    then move on. Findings go through the project's finding pipeline, one root per
    commit. Then ONE fix check - a single checker on the fix commits, briefed from the checker brief's fix-check
-   variant - and a re-sweep of the touched areas only, once, its contract approved the same way. Then
+   variant - and a re-sweep of the touched areas only, once, its contract approved the same way. The two may merge
+   into one checker only when the fixes cover at most 2 roots, none above low. Then
    one visual check with the user if anything visible changed. Outward acts (push, pull request, merge, release)
    wait for the user.
 7. **Record (lead).** The plan's progress, ticked with evidence; the scoreboard line; the rundown.
