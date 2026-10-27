@@ -58,7 +58,7 @@ Global standards win on conflict, except a deliberate project override named her
 5. **Solo developer + AI** - decisions fit one person building; AI extends capability, not judgment. Why: the owner is the reviewer of last resort.
 6. **Privacy and security above all.** Why: a privacy failure cannot be patched out of users' lives.
 7. **Cross-examine decisions** for overlaps, gaps, contradictions before locking. Why: a contradiction found after the lock costs everything built on it.
-8. **Plain words to the owner.** Prose to the owner (chat, visible thinking) follows Simplified Technical English (ASD-STE100) + Zinsser: short plain active sentences, consistent terms, warm. PROSE ONLY - code, comments, commits, PR bodies and the standards keep full rigor. **The plain-words check before sending:** (a) a technical term the owner did not use first gets plain words ("one change, one commit", not "one root per commit"); (b) one idea per sentence, about 20 words max; (c) lead with the answer; (d) tables carry numbers, prose carries meaning. Hardest in loop summaries, relayed agent reports and decision prompts. Why: the owner's time goes to decisions, not decoding.
+8. **Plain words to the owner.** Prose to the owner (chat, visible thinking) follows Simplified Technical English (ASD-STE100) + Zinsser: short plain active sentences, consistent terms, warm. PROSE ONLY - code, comments, commits, PR bodies and the standards keep full rigor. **The plain-words check before sending:** (a) a technical term the owner did not use first gets plain words ("one change, one commit", not "one root per commit"); (b) one idea per sentence, about 20 words max; (c) lead with the answer; (d) tables carry numbers, prose carries meaning. Why: the owner's time goes to decisions, not decoding.
 
 ## Collaborative Design Locks (Non-Negotiable)
 
@@ -173,7 +173,7 @@ Why: the log's job is narrative + latest state; old detail is noise once source-
 
 ### Status Files Rot Silently
 
-Drift concentrates in CATEGORY sections (security, testing, CI, a11y, launch readiness) - the session-end batch walks the work, and no session owns a category. (1) Never mix TASKS (checked by the session doing them) and acceptance CRITERIA (confirmed by an AUDIT at a gate) in one list; label each. (2) Stamp `Last verified against the codebase: YYYY-MM-DD` - an unaudited box is a CLAIM. (3) No descriptions in a status file - fresh narrative makes rotting boxes read as current. Re-verify the version's boxes at each Pre-PR Deep Sweep (dimension 6) and the launch gate. Why: a record with a known error rate gets replaced by memory, which never announces its own.
+Drift concentrates in CATEGORY sections (security, testing, CI, launch readiness), which no session owns. (1) Never mix TASKS (checked by the session doing them) and acceptance CRITERIA (confirmed by an AUDIT at a gate) in one list; label each. (2) Stamp `Last verified against the codebase: YYYY-MM-DD` - an unaudited box is a CLAIM. (3) No descriptions in a status file. Re-verify the boxes at each Pre-PR Deep Sweep and the launch gate. Why: a record with a known error rate gets replaced by memory, which never announces its own.
 
 ## Tracking-File Batching
 
@@ -183,7 +183,7 @@ Update tracking files ONLY at a real milestone, session end (owner declares), th
 
 ## Engineering Decisions Documents (Optional, Public Repos)
 
-One outward doc per major phase on WHY its tools and conventions were chosen: Overview / Stack at a Glance / Decisions and Reasoning (per tool: what, why, alternatives, trade-offs, ADR link) / How the Pieces Fit / Standards Adopted / Further Reading / Revision Notes. A hard word cap counted by ONE named tool; trim narrative, never a technical fact; honest trade-offs; no AI tool references; link, don't restate; polish at section end only. Why: unwritten judgment is invisible. <!-- PROJECT ADAPTER A22: location, cap, counter, public style. -->
+One outward doc per major phase on WHY its tools and conventions were chosen: Overview / Stack at a Glance / Decisions and Reasoning (per tool: what, why, alternatives, trade-offs, ADR link) / How the Pieces Fit / Standards Adopted / Further Reading / Revision Notes. A hard word cap counted by ONE named tool; trim narrative, never a fact; honest trade-offs; no AI tool references; link, don't restate. Why: unwritten judgment is invisible. <!-- PROJECT ADAPTER A22: location, cap, counter, public style. -->
 
 ## Context Engineering Discipline
 
@@ -318,17 +318,21 @@ Never raise a limit to make a run pass. Keep a margin larger than CI's build-to-
 
 ### CI Gate
 
-**"Green" = every step of every CI workflow file**, not a remembered subset - or name the skipped step and why. Run the FULL local gate before every PR, however small (the hook is a subset; "reasoned unaffected" is not "ran it green"); copy each command from a full read of the workflow (a folded run block is one command; a failure in an untouched file -> diff your command against it); the exit code is the gate - echo it, never filter output through an invented pattern; re-run the dependency audit right before the PR and before handing over merge commands. Never run build steps beside E2E (shared folders and servers); a test runner may reuse a server already on its port and test a stale build - check who owns it, never kill the owner's. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->
+**"Green" = every step of every CI workflow file**, not a remembered subset - or name the skipped step and why. Run the FULL local gate before every PR, however small ("reasoned unaffected" is not "ran it green"); copy each command from a full read of the workflow (a folded run block is one command); the exit code is the gate - echo it, never filter output through an invented pattern; re-run the dependency audit before the PR and before merge commands. A test runner may reuse a server already on its port and test a stale build - check who owns it, never kill the owner's. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->
 
 ### Test and Review Cadence
 
-Why: the whole suite on every commit and every check after each small fix spends most of a session's wall time without catching more. How often, never how strict: test first, break check and the full gate before every PR never change.
+Why: waiting on decisions and re-running checks cost most of a run's wall time, not the testing itself. How often, never how strict: test first, break check and the full gate before every PR never change.
 
-- **Commit hook:** lint, type check and only the tests related to the staged files; the full suite runs at each phase's full gate and in CI. **Full gate:** once at each phase end, and always before a PR. **Size budgets:** once per integration batch; bisect only when a line is over.
-- **Unchanged builder commits:** a carried-over commit with every file proved byte-equal skips the hook re-run (only that case, on the owner's explicit yes); the phase gate covers the integration.
-- **Team mode:** batch mode (the main session leads) under about 5 units; orchestrated above that. **Fix sets:** a small one gets one checker doing the fix check AND the re-sweep; a large one keeps both passes.
-- **Reviewers:** every PR gets practical reviewers sized to its stakes, each held to its step limit in the brief and the meter; a role over its limit is a contract miss.
-- **Crashes:** a machine crash (access violation, segfault, spawn failure) failing a step in seconds is logged (date, step, what else ran), not investigated; retry once alone, reported; after two identical ones propose a restart; when frequent, ask the owner to free the CPU. A loaded machine times out import-heavy tests: wait for quiet, never raise a limit. Time a re-run just above its clean time; queue no file edit behind a run that might hang.
+- **Decide up front:** copy and any size-raise range are decided at plan approval; one check-in per phase, no other stops.
+- **Commit hook:** lint, type check and the tests related to the staged files. Run in full any suite whose tests read source as text, and the whole suite on any deletion. Before relying on it, break one test on purpose and see the hook go red.
+- **Full gate:** once per phase end and before every PR; independent steps run side by side (never a build beside E2E: they share folders and servers), every step still runs. **Size budgets:** once per batch; bisect only when a line is over.
+- **Load guard:** the commit hook and the full gate first run `node .claude/load-guard.cjs`, which refuses a busy CPU and names what is using it. Why: a starved machine fails tests falsely.
+- **Every commit runs the hook,** builder commits included. Why: a unit passing alone can break a sibling once stacked.
+- **Team mode:** batch (the main session leads) under about 5 units, orchestrated above. **One review lead** runs the whole tail: review, fixes, hands-on test, design calls.
+- **Fix sets:** one checker may do the fix check and the re-sweep together only for at most 2 low-severity findings; otherwise run both. Why: the separate re-sweep catches half-done fixes.
+- **Reviewers:** every PR gets practical reviewers sized to its stakes, held to their step limits; over the limit is a contract miss. Keep the top model as reviewer until the scoreboard shows a cheaper one holds.
+- **Crashes:** a crash failing a step in seconds (access violation, segfault, spawn failure) is logged (date, step, what else ran), not investigated; retry once alone; after two identical ones propose a restart. A loaded machine times out heavy tests: wait for quiet, never raise a limit.
 
 ### Sub-Agent Verification Step
 
@@ -375,7 +379,7 @@ An opt-in overlay for mechanical TDD work, under graduated trust; the default st
 
 **Loop-First Scoping (mandatory).** At the start of every substantive task, state the verdict: the mechanical slices (test shape, implementation and commit message all pre-determined) vs the parts needing a choice or a human eye. Not looping is valid; not considering is a miss; never manufacture work to loop. **The bar never moves to fit the loop:** raise it or loop less. Why: the loop offloads grind; it must never buy speed with integrity.
 
-**Self-Correction Boundary - self-correct mechanics, escalate choices.** Self-correct (log the lesson; ~2 attempts): an anchor miss (re-read the bytes); a typo or wrong import; an API differing from the guess (read the installed types); an under-tested implied branch (add the test). Hard stop and escalate even when a fix is reachable: a decision, name, format or style outside the plan; an integrity-LOWERING test change; an off-contract file or unverified visual; a 4th visual increment; a spec / ADR / public-interface change; an unexpected test result; non-convergence; a call for the owner's visual / legal eye; the end of the tasks or the goal. Why: "self-correct more" must never become silent drift.
+**Self-Correction Boundary - self-correct mechanics, escalate choices.** Self-correct (log the lesson; ~2 attempts): an anchor miss, a typo or wrong import, an API differing from the guess (read the installed types), an under-tested implied branch. Hard stop and escalate even when a fix is reachable: a decision, name, format or style outside the plan; an integrity-LOWERING test change; an off-contract file or unverified visual; a 4th visual increment; a spec / ADR / public-interface change; an unexpected test result; non-convergence; a call for the owner's visual / legal eye; the end of the tasks or the goal. Why: "self-correct more" must never become silent drift.
 
 **State machine.** OFF by default and after every compact. Armed only by the owner's exact phrase **"begin loop workflow"**, after a clean orientation, a learnings scan in Claude's report, an agreed contract (for files or visuals), and the owner's comfort. ANY owner message mid-loop halts it. Why: a persistent keyword outlives the context that justified it.
 
@@ -513,7 +517,7 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this 
 5. **Context is per-role** - the files, rule and spec clause its lens needs; boilerplate makes generic agents.
 6. **The diff is not the blast radius** - code a change was MODELLED ON ("mirrors X", copied, generalized from) gets its own role: inherited or introduced?
 
-**Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL (false negatives cost more in privacy-first work). **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role. In an orchestrated team the contract reaches the owner via the overseer; every sweep and re-sweep is the owner's to approve.
+**Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL. **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role. In an orchestrated team the contract reaches the owner via the overseer; every sweep and re-sweep is the owner's to approve.
 
 ### Patterns and Dispatch
 
@@ -529,7 +533,9 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this 
 - **Model tiers:** top (e.g. Opus) for high-stakes reasoning, design, security, checking; mid (e.g. Sonnet) for coding and analysis; small (e.g. Haiku) for narrow high-volume scans, re-checked by the requester (moving a lead's own reading to them cost more, measured). Pin exact versions in role files; a change is the owner's call.
 - **Constraints:** agents inherit permissions (a research brief names the web tools allowed; a shared browser pane is not one); they see no chat history (self-contained briefs); their claims are direct-read verified before any lock; findings come back in the final message, not files. **Own the role:** re-weigh each find with fuller context (a real miss, or an artifact of narrow scope?), never relay it as praise. Decisions, locking and design stay with the owner in the main conversation.
 
-**Dispatch - default is direct execution** (inside an approved Agent-Team batch, builders are the default). Dispatch when ANY apply: real complexity (3+ files, architecture, subtle correctness); security stakes; independent review adds signal; parallel-safe work; context isolation. Direct when ALL apply: mechanical; failure = "doesn't compile / test fails"; precise plan; under ~30 minutes; no security stakes. Hybrid: direct build + one read-only spec reviewer. Record tokens, time, and whether the reviewer caught something real; recalibrate after 3-5 dispatches. **Split economics:** delegation always costs more total compute and buys a longer main session - worth it for large mechanical multi-file builds, not small coupled work. Why: agent overhead earns its keep only on proportional value.
+**Dispatch - default is direct execution.** The main session builds small and medium features itself; agents only where they pay off: real complexity (3+ files, architecture, subtle correctness), security stakes, review that adds signal, parallel-safe work, context isolation. Hybrid: direct build + one read-only reviewer. Delegation costs more total compute; it pays for large mechanical multi-file builds, not small coupled work. Record tokens, time and real catches; recalibrate after 3-5 dispatches.
+
+**One session per prong.** Parallel prongs each run in their own contained session and report completion back to the main session; never several prongs in one session. **The plan's brief states the session and agent plan and why** before execution starts. Why: three prongs in one session bogged it down; agent overhead earns its keep only on proportional value.
 
 ### Agent-Team Build: Project Adapter (TEMPLATE)
 
@@ -631,7 +637,7 @@ Run BEFORE touching code when a test fails, a build breaks, or behaviour surpris
 
 ## Probe Scope
 
-**A passed probe proves only what it ran.** List it beside the real use row by row (model, tools, depth, place, length, load, data), each **MATCHED** (run as the real use will), **GATED** (a new probe passes before anything builds on it) or **CANARY** (the first small real run shows it; name what to watch); no row unmarked. Assumptions only a real test can settle (browser behaviour, a third-party API's limits, platform isolation) are gates that pass first. Ship the de-risked local part first; put the risky integration behind its probes. Why: necessary is not sufficient.
+**A passed probe proves only what it ran.** List it beside the real use row by row (model, tools, depth, place, length, load, data), each **MATCHED** (run as the real use will), **GATED** (a new probe passes before anything builds on it) or **CANARY** (the first small real run shows it; name what to watch); no row unmarked. Assumptions only a real test can settle are gates that pass first. Ship the de-risked local part first; put the risky integration behind its probes. Why: necessary is not sufficient.
 
 ## Snag Response: Least-Invasive Path, No Padding
 

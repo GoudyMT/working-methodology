@@ -516,3 +516,22 @@ test('the hook script speaks at a message only when there is news', async () => 
   assert.match(out.hookSpecificOutput.additionalContext, /was released while this session ran/);
   assert.match(out.systemMessage, /was released while this session ran/);
 });
+
+test('the load guard refuses a busy CPU and names what is using it', async () => {
+  const { createRequire } = await import('node:module');
+  const guard = createRequire(import.meta.url)(path.resolve('project/.claude/load-guard.cjs'));
+  const busy = guard.checkLoad({ busy: 92, threshold: 70, top: ['node', 'chrome', 'vitest'] });
+  assert.equal(busy.ok, false);
+  assert.match(busy.message, /CPU is 92% busy \(limit 70%\)\. Using it most: node, chrome, vitest\. Free the CPU or wait, then run again\./);
+  assert.equal(guard.checkLoad({ busy: 40, threshold: 70, top: [] }).ok, true);
+});
+
+test('the load guard script blocks or passes on the real machine', () => {
+  const script = path.resolve('project/.claude/load-guard.cjs');
+  const run = (max) => spawnSync(process.execPath, [script], { encoding: 'utf8', env: { ...process.env, LOAD_GUARD_MAX: String(max) } });
+  const pass = run(101);
+  assert.equal(pass.status, 0);
+  const block = run(-1);
+  assert.equal(block.status, 1);
+  assert.match(block.stderr, /CPU is \d+% busy \(limit -1%\)\. Using it most: \S/);
+});

@@ -68,7 +68,9 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
 
 1. Write the master design spec (`docs/superpowers/specs/`), the first ADRs (`docs/decisions/`, from
    `_Templates/_Decision Record Template.md`), and a Success Charter for the first version.
-2. Set up the gate first: tests, lint, type checks and CI, so "green" means something from day one.
+2. Set up the gate first: tests, lint, type checks and CI, so "green" means something from day one. The commit
+   hook and the full gate start with `node .claude/load-guard.cjs`, and the hook's related-tests selection is
+   proved by breaking one test on purpose (`_Working Standards.md` "Test and Review Cadence").
 3. Seed the tracking files: `_Working Memory.md` (session 1), `_Active Plan.md` (the first concrete action),
    `_Master Roadmap.md` (the versions as checkboxes), `_Session Log.md` (session 1).
 

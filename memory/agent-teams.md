@@ -15,5 +15,6 @@ The team rules live in the standards; this file points to them.
 - When to delegate, honest split economics -> _Working Standards.md "Patterns and Dispatch"
 - Team sweeps still reach the owner -> _Working Standards.md "The Swarm Contract (NO swarm without one)"
 - No agent ever acts on the remote -> _Working Standards.md "Git: Local Work vs Outward Acts"
+- One session per prong; agents only when they pay off; the plan states why -> _Working Standards.md "Patterns and Dispatch"
 
 Related: [[review-and-sweeps]], [[autonomous-loop-mode]], [[remote-and-outward-actions]].

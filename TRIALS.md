@@ -14,3 +14,6 @@ is reworked or retired at the next kit release.
   guards, trial before standard, skills by case, credited backups, vault backup. The owner made these standard at
   once, so they skip the trial.
 - 0.5.0: summary, not tallies, in PR bodies and other outward summaries.
+- 0.6.0: the speed review (decide copy and size ranges at plan approval, one review lead, the load guard, a proved
+  related-tests hook, side-by-side gate steps, no skipped builder checks, a bounded combined fix check), and one
+  session per prong with agents only where they pay off.
