@@ -438,8 +438,12 @@ const semverAbove = (a, b) => {
  */
 export function sessionStartReport({ kit, home, projectDir }) {
   const lines = [];
+  const ahead = remoteKitAhead(kit);
+  if (ahead > 0) lines.push(`The kit on GitHub is ${ahead} commit(s) ahead of the kit folder. Run git pull in ${toPosix(kit)}, then /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
+  // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.
+  if (stamp.version) writeNotice(projectDir, kitVersion);
   if (!stamp.version) {
     lines.push(`This project has no kit install record. Run /methodology-kit existing to adopt kit ${kitVersion}.`);
   } else if (semverAbove(kitVersion, stamp.version)) {
@@ -532,6 +536,45 @@ export function vaultBackup({ projectDir, date = new Date().toISOString().slice(
     committed = c.status === 0;
   }
   return { configured: true, changed, committed, dir };
+}
+
+const NOTICE = path.join('.kit', 'last-kit-notice.json');
+function writeNotice(projectDir, version) {
+  fs.mkdirSync(path.join(projectDir, '.kit'), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, NOTICE), JSON.stringify({ version }) + '\n');
+}
+
+/**
+ * How many commits the kit's upstream (its GitHub repo) has that the kit folder lacks. A fetch that fails or
+ * takes too long counts as 0: an offline machine must still start its session.
+ */
+function remoteKitAhead(kit) {
+  const git = (...a) => spawnSync('git', ['-C', kit, ...a], { encoding: 'utf8', timeout: 8000 });
+  if (git('rev-parse', '--abbrev-ref', '@{u}').status !== 0) return 0;
+  if (git('fetch', '--quiet').status !== 0) return 0;
+  const n = Number(git('rev-list', '--count', 'HEAD..@{u}').stdout.trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * The per-message check: when the kit gets a newer release while this session runs (another project
+ * folded a rule back), say so once per new version. It reads two small files, so it costs almost nothing.
+ *
+ * Returns:
+ *     the message, or '' when there is nothing new to say
+ */
+export function promptCheckReport({ kit, projectDir }) {
+  const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
+  if (!stamp.version) return '';
+  const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
+  if (!semverAbove(kitVersion, stamp.version)) return '';
+  const noticePath = path.join(projectDir, NOTICE);
+  const last = fs.existsSync(noticePath) ? JSON.parse(fs.readFileSync(noticePath, 'utf8')).version : null;
+  if (last === kitVersion) return '';
+  writeNotice(projectDir, kitVersion);
+  const log = fs.readFileSync(path.join(kit, 'CHANGELOG.md'), 'utf8');
+  const newer = [...log.matchAll(/^## (\d+\.\d+\.\d+)/gm)].filter((m) => semverAbove(m[1], stamp.version)).length;
+  return `Kit ${kitVersion} was released while this session ran: ${newer} newer change(s) than this project (${stamp.version}). Run /methodology-kit update at the next stopping point.`;
 }
 
 /**

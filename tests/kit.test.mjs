@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, vaultBackup, projectSlug, render } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -468,4 +468,51 @@ test('the standards stay under the kit size cap', () => {
   const cap = JSON.parse(read(path.resolve('kit.config.json'))).standardsCapBytes;
   assert.ok(cap > 0, 'kit.config.json needs standardsCapBytes');
   assert.ok(Buffer.byteLength(STANDARDS()) <= cap, `standards are ${Buffer.byteLength(STANDARDS())} bytes, cap ${cap}`);
+});
+
+test('a running session hears about a new kit release once, at the next message', () => {
+  const { kit, home, proj } = caseKit();
+  assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
+  // Another project releases the kit while this session runs.
+  bump({ kit, level: 'minor', note: 'from the other project', date: '2026-03-01' });
+  assert.match(promptCheckReport({ kit, projectDir: proj }), /Kit 1\.1\.0 was released while this session ran: 1 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update at the next stopping point\./);
+  assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
+  bump({ kit, level: 'patch', note: 'again', date: '2026-03-02' });
+  assert.match(promptCheckReport({ kit, projectDir: proj }), /Kit 1\.1\.1 was released/);
+  // Session start already said it, so the next message stays quiet.
+  bump({ kit, level: 'patch', note: 'third', date: '2026-03-03' });
+  sessionStartReport({ kit, home, projectDir: proj });
+  assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
+});
+
+test('session start says when the kit on GitHub is ahead of the kit folder', () => {
+  const { kit, home, proj } = caseKit();
+  const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' });
+  git(kit, 'init', '-q', '-b', 'main'); git(kit, 'add', '-A'); git(kit, 'commit', '-q', '-m', 'kit');
+  const remote = path.join(path.dirname(kit), 'remote.git');
+  spawnSync('git', ['clone', '-q', '--bare', kit, remote]);
+  git(kit, 'remote', 'add', 'origin', remote); git(kit, 'fetch', '-q', 'origin'); git(kit, 'branch', '-q', '-u', 'origin/main');
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /GitHub/);
+  // A release pushed from another machine.
+  const other = path.join(path.dirname(kit), 'other');
+  spawnSync('git', ['clone', '-q', remote, other]);
+  fs.writeFileSync(path.join(other, 'VERSION'), '1.2.0\n');
+  git(other, 'commit', '-q', '-am', 'release'); git(other, 'push', '-q');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /The kit on GitHub is 1 commit\(s\) ahead of the kit folder\. Run git pull in .* then \/methodology-kit update\./);
+});
+
+test('the hook script speaks at a message only when there is news', async () => {
+  const { kit, home, proj } = caseKit();
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  const run = () => spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: '{}', encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
+  const quiet = run();
+  assert.equal(quiet.status, 0);
+  assert.equal(quiet.stdout, '');
+  bump({ kit, level: 'minor', note: 'news', date: '2026-03-01' });
+  const out = JSON.parse(run().stdout);
+  assert.equal(out.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+  assert.match(out.hookSpecificOutput.additionalContext, /was released while this session ran/);
+  assert.match(out.systemMessage, /was released while this session ran/);
 });

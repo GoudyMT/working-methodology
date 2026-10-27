@@ -21,9 +21,9 @@ node <kit folder>/scripts/kit.mjs install project <project folder>
 
 This copies the standards, the four tracking files, `_Templates/`, the tools and `.claude/settings.json`, and
 seeds the working-style memory into Claude Code's memory folder for this project. The settings wire three hooks
-pointed at this folder: the push guard, and the kit hook at session start and before each compact (`_Working
-Standards.md` "Kit Standards" #1). It writes `.kit/kit-version.json`, the record that later updates and
-fold-backs read.
+pointed at this folder: the push guard, and the kit hook at session start, on each message and before
+each compact (`_Working Standards.md` "Kit Standards" #1). It writes `.kit/kit-version.json`, the record
+that later updates and fold-backs read.
 
 Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-PARTY.md).
 

@@ -83,8 +83,10 @@ project adopts the kit for the first time, after reading the dry run.
 Every project the kit installs gets these, wired in `.claude/settings.json`, so none of them depends on anyone
 remembering (`_Working Standards.md` "Kit Standards"):
 
-- **At session start:** says when the kit has newer rules and how many, lists kit files this project changed
+- **At session start:** fetches the kit's GitHub repo and says if it is ahead of the kit folder, says when the kit has newer rules and how many, lists kit files this project changed
   (update leaves them alone), and lists the skills for this project's cases. Claude and the owner both see it.
+- **On each message:** if another project released a kit update while this session runs, says so once per new
+  version, so a project running in parallel never works for hours on old rules. It adds about 0.15 s.
 - **Before each compact:** counts the rule changes waiting for the kit, backs up the private vault to its own git
   repository (a local commit; the push waits for the owner), and flags third-party plugins that moved past their
   backup.

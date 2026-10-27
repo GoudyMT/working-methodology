@@ -53,6 +53,21 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{PROJECT_DIR}}/.claude/kit-hook.cjs",
+              "prompt"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
