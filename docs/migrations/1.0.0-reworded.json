@@ -3,8 +3,8 @@
   "lines": [
     {
       "id": "kit-standards",
-      "before": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> _Working Standards.md \"Section\"`), never a restated copy.",
-      "after": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> rule:<id>`, the fixed ID after the rule's heading), never a restated copy.",
+      "before": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> _Working Standards.md \"Section\"`), never a restated copy. Why: two copies drift, and the stale one gets followed. *Check: tests flag kit memory lines that repeat this file's wording.*",
+      "after": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> rule:<id>`, the fixed ID after the rule's heading), never a restated copy. Why: two copies drift, and the stale one gets followed. *Check: tests flag kit memory lines that repeat this file's wording.*",
       "why": "The pointer form changed to the rule ID; the old form is what the link check now refuses."
     }
   ]

@@ -626,3 +626,27 @@ test('every rule pointer in the kit names a rule ID that exists', () => {
   assert.deepEqual(broken, []);
   assert.deepEqual(byWords, []);
 });
+
+// Plan rule-modules, Phase 1: the split moves text, it never loses or copies it. Every non-blank line of the
+// 0.7.0 standards (read from its tag) appears exactly as often across the rule modules, after removing what the
+// migration added on purpose: frontmatter, each module's title line, the {#id} after headings, and the lines
+// recorded in docs/migrations/1.0.0-reworded.json with their reason.
+const RULE_DIR = () => path.resolve('rules');
+const moduleFiles = () => fs.readdirSync(RULE_DIR()).filter((n) => n.endsWith('.md')).map((n) => path.join(RULE_DIR(), n));
+const bodyOf = (text) => text.replace(/^---\n[\s\S]*?\n---\n/, '');
+test('the split keeps every line of 0.7.0 exactly once', () => {
+  const old = spawnSync('git', ['show', 'v0.7.0:project/_Working Standards.md'], { encoding: 'utf8' });
+  assert.equal(old.status, 0, 'the v0.7.0 tag must exist locally');
+  const reworded = JSON.parse(read(path.resolve('docs/migrations/1.0.0-reworded.json'))).lines;
+  const swap = new Map(reworded.map((r) => [r.before, r.after]));
+  const count = (ls) => ls.filter((l) => l.trim()).reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
+  const want = count(old.stdout.split('\n').map((l) => swap.get(l) ?? l));
+  const got = count(moduleFiles().flatMap((f) => {
+    const ls = bodyOf(read(f)).split('\n');
+    if (path.basename(f) !== 'core.md') ls.splice(ls.findIndex((l) => /^# /.test(l)), 1);
+    return ls.map((l) => l.replace(/^(#{2,3} .*?) \{#[^}]+\}$/, '$1'));
+  }));
+  const lost = [...want].filter(([l, n]) => (got.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
+  const extra = [...got].filter(([l, n]) => (want.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
+  assert.deepEqual({ lost, extra }, { lost: [], extra: [] });
+});
