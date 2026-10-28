@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -544,4 +544,24 @@ test('the load guard defaults to 40% over a 3-second average', async () => {
   const guard = createRequire(import.meta.url)(path.resolve('project/.claude/load-guard.cjs'));
   assert.equal(guard.DEFAULT_MAX, 40);
   assert.equal(guard.SAMPLE_MS, 3000);
+});
+
+// measure models how Claude Code loads a project at session start (memory docs): CLAUDE.md, its @imports up to
+// four hops, and rules with no paths field. A path in an import ends at the first unescaped space.
+test('measure counts what a session loads at start, the way Claude Code reads imports', () => {
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'measure-'));
+  const w = (rel, body) => { fs.mkdirSync(path.dirname(path.join(proj, rel)), { recursive: true }); fs.writeFileSync(path.join(proj, rel), body); };
+  w('CLAUDE.md', '# P\n@AGENTS.md\n@_Start Here.md\n@_Working\\ Standards.md\n`@not-an-import.md`\n```\n@in-a-fence.md\n```\n');
+  w('AGENTS.md', 'core\n@AGENTS.md\n');
+  w('_Start Here.md', 'start\n');
+  w('_Working Standards.md', 'rules\n');
+  w('not-an-import.md', 'x\n');
+  w('in-a-fence.md', 'x\n');
+  w('.claude/rules/always.md', 'always\n');
+  w('.claude/rules/tests.md', '---\npaths:\n  - "**/*.test.*"\n---\nwhen tests\n');
+  const r = measure({ projectDir: proj });
+  assert.deepEqual(r.files.map((f) => f.file).sort(), ['.claude/rules/always.md', 'AGENTS.md', 'CLAUDE.md', '_Working Standards.md']);
+  assert.equal(r.total, r.files.reduce((s, f) => s + f.bytes, 0));
+  // An unescaped space cuts the path, so this import finds no file: the start file never loads.
+  assert.deepEqual(r.unresolved, [{ from: 'CLAUDE.md', import: '_Start' }]);
 });

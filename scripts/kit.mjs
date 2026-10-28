@@ -599,6 +599,50 @@ export function preCompactReport({ kit, home, projectDir }) {
   return lines.join('\n');
 }
 
+/**
+ * Measure what Claude Code loads for a project at session start: CLAUDE.md, its @imports, and rules with no
+ * paths field. Follows the memory docs: imports nest up to four hops, a path ends at the first unescaped space,
+ * and imports inside code spans or fenced blocks are skipped.
+ *
+ * Args:
+ *     ctx: { projectDir }
+ *
+ * Returns:
+ *     { files: [{ file, bytes }], total, unresolved: [{ from, import }] }
+ */
+export function measure({ projectDir }) {
+  const root = path.resolve(projectDir);
+  const files = [], unresolved = [], seen = new Set();
+  const rel = (p) => toPosix(path.relative(root, p));
+  const load = (file, depth) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const text = fs.readFileSync(file, 'utf8');
+    files.push({ file: rel(file), bytes: Buffer.byteLength(text) });
+    if (depth >= 4) return;
+    let fenced = false;
+    for (const line of text.split('\n')) {
+      if (/^\s*```/.test(line)) { fenced = !fenced; continue; }
+      if (fenced) continue;
+      for (const m of line.replace(/`[^`]*`/g, '').matchAll(/(?:^|\s)@((?:\\ |\S)+)/g)) {
+        const name = m[1].replace(/\\ /g, ' ');
+        const target = name.startsWith('~/') ? path.join(os.homedir(), name.slice(2)) : path.resolve(path.dirname(file), name);
+        if (fs.existsSync(target) && fs.statSync(target).isFile()) load(target, depth + 1);
+        else unresolved.push({ from: rel(file), import: name });
+      }
+    }
+  };
+  for (const start of ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md']) {
+    const p = path.join(root, start);
+    if (fs.existsSync(p)) load(p, 0);
+  }
+  for (const p of walk(path.join(root, '.claude', 'rules')).filter((f) => f.endsWith('.md'))) {
+    const front = fs.readFileSync(p, 'utf8').match(/^---\n([\s\S]*?)\n---/);
+    if (!(front && /^paths:/m.test(front[1]))) load(p, 0);
+  }
+  return { files, total: files.reduce((s, f) => s + f.bytes, 0), unresolved };
+}
+
 function main(argv) {
   const kit = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const home = process.env.KIT_CLAUDE_HOME || path.join(os.homedir(), '.claude');
@@ -630,6 +674,11 @@ function main(argv) {
   } else if (cmd === 'restore') {
     const r = restore({ kit, home, name: target });
     console.log(`restored: ${r.restored.join(', ') || 'none'}; kept (already there): ${r.kept.join(', ') || 'none'}`);
+  } else if (cmd === 'measure') {
+    const r = measure({ projectDir: target || path.join(kit, 'project') });
+    for (const f of r.files) console.log(`${String(f.bytes).padStart(8)}  ${f.file}`);
+    console.log(`${String(r.total).padStart(8)}  loaded at session start`);
+    for (const u of r.unresolved) console.log(`    import not found: @${u.import} (in ${u.from})`);
   } else if (cmd === 'scrub') {
     const hits = scrub({ kit });
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.kind}`);
@@ -640,6 +689,7 @@ function main(argv) {
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');
+    console.log('       node scripts/kit.mjs measure [project folder]');
     console.log('       node scripts/kit.mjs scrub');
     process.exitCode = cmd ? 1 : 0;
   }
