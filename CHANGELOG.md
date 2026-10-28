@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.0 - 2026-10-28
+- Agent access: a role table sets each agent role's tools, denied tools and the rules it starts with (builder and checker get them as preloaded skills). Guards back it: the builder's edit fence (its own worktree, and its unit's file list kept in git's folder), the checker's clean-tree stop (blocks once, names only changes made while it ran, never asks for a restore), and a git pre-push hook that holds the push line for any AI tool that marks its shell (turn on with core.hooksPath). All proved with known-good and known-bad tests and live in Claude Code; role files must stay user level, or Claude Code skips their hooks. Recall 9/10, no lower than the baseline.
+
 ## 1.0.0 - 2026-10-28
 - Rule modules: the standards became a core (written out as AGENTS.md) plus 12 modules that load by file or on demand, moved word for word (0 lines lost or copied; 16 reworded and 1 added, each recorded in docs/migrations). Every rule has a fixed ID; pointers use rule:<id>; find and tags look rules up; build writes Claude Code's files from the tool-neutral rules/; install retires the old file only when unchanged and replaced; fold-back reads a project still on one standards file. CLAUDE.md imports now resolve (0.7.0's never loaded the standards). Session start 44,531 bytes. Promoted directly by the owner (plan approval).
 

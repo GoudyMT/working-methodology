@@ -83,8 +83,12 @@ always its own row). Nothing moved between modules.
       let a listed one through; the checker's stop caught a file it wrote and the checker restored it. The unit
       list moved into the worktree's git folder so it is never committed (727ec24).
 - [x] Role-table test; briefs cite rule IDs, the unit list and the push go (727ec24).
-- [ ] Gate: guards proved with known-good and known-bad controls; recall >= baseline; install between the main project
-      batches.
+- [x] Independent review: 8 findings (4 high, 2 medium, 2 low); 7 fixed with a failing test each (cf75850), 1
+      kept by design (the retired conservation test); one short re-check found nothing broken. A live rerun
+      added one small fix (40e0a95).
+- [x] Gate: guards proved with known-good and known-bad controls; 71 tests green; recall 9/10 >= baseline 9
+      (`docs/evals/results/recall-scores.md`). Bumped to 1.1.0.
+- [ ] Push and tag on the owner's go; install into ~/.claude between the main project's batches.
 
 ### Phase 3: formats as skills (plan C) - release 1.2.0
 
