@@ -88,7 +88,7 @@ always its own row). Nothing moved between modules.
       added one small fix (40e0a95).
 - [x] Gate: guards proved with known-good and known-bad controls; 71 tests green; recall 9/10 >= baseline 9
       (`docs/evals/results/recall-scores.md`). Bumped to 1.1.0.
-- [ ] Push and tag on the owner's go; install into ~/.claude between the main project's batches.
+- [x] Pushed and tagged v1.1.0 on the owner's go (2026-10-28); installed into ~/.claude (4 created, 4 updated).
 
 ### Phase 3: formats as skills (plan C) - release 1.2.0
 
