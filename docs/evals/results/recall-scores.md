@@ -18,4 +18,19 @@ against its frozen key (1 = every key item named, else 0) without knowing which 
 - Borderline calls by the scorer: question 3 and question 10 counted in substance for both kit runs; scored
   word for word, 1.0.0 would be 9 and 0.7.0 8.
 
+## 1.1.0 (2026-10-28)
+
+A fresh install of the 1.1.0 candidate, run the same way. A new scorer saw it and the 1.0.0 answers relabeled X and
+Y, with project names and times hidden.
+
+| Run | Score |
+|---|---|
+| Kit 1.1.0 | 9 / 10 |
+| Kit 1.0.0, rescored | 9 / 10 |
+
+- Gate met: 1.1.0 is no lower than the 0.7.0 baseline (9).
+- Both missed question 3 under this scorer (neither said a compaction summary is not a re-read); the first scorer
+  counted that in substance. The one-point drop for 1.0.0 is the scorer, not the kit: the same answers scored 10
+  before. Strict and lenient readings put 1.1.0 between 8 and 10, and 1.0.0 between 7 and 10.
+
 Raw answers are kept in `reports/evals/`, which git ignores: they quote local paths of the scratch projects.
