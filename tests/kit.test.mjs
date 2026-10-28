@@ -850,14 +850,20 @@ test('the builder edit fence allows edits in its worktree and blocks edits outsi
   assert.equal(out.status, 2);
   assert.match(out.stderr, /outside this builder's worktree/);
 });
-test('the builder edit fence keeps to the unit file list when the worktree has one', () => {
+test('the builder edit fence keeps to the unit file list in its own worktree git folder, never a tracked file', () => {
   const dir = gitTree();
-  fs.mkdirSync(path.join(dir, '.kit'));
-  fs.writeFileSync(path.join(dir, '.kit', 'unit-files.txt'), 'a.js\nsrc/b.js\n');
-  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'src', 'b.js') } }).status, 0);
-  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'c.js') } });
+  const wt = path.join(dir, '.claude', 'worktrees', 'unit-1');
+  spawnSync('git', ['-C', dir, 'worktree', 'add', '-q', wt], { encoding: 'utf8' });
+  // Written the way the builder brief says: into the path git names for this worktree.
+  const listPath = spawnSync('git', ['-C', wt, 'rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(listPath, 'a.js\nsrc/b.js\n');
+  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: wt, tool_input: { file_path: path.join(wt, 'src', 'b.js') } }).status, 0);
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: wt, tool_input: { file_path: path.join(wt, 'c.js') } });
   assert.equal(out.status, 2);
   assert.match(out.stderr, /not in this unit's file list/);
+  // The list never shows as a change to commit, and it binds only its own worktree.
+  assert.equal(spawnSync('git', ['-C', wt, 'status', '--porcelain'], { encoding: 'utf8' }).stdout, '');
+  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'c.js') } }).status, 0);
 });
 test('the checker clean-tree stop passes an untouched tree and catches a changed file', () => {
   const dir = gitTree();

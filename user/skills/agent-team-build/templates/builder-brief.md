@@ -13,6 +13,10 @@ it in `<project folder>/_Working Standards.md`. Those rules bind you. If you can
 - **Base commit:** `<full hash>` - confirm HEAD equals it; if not, reset YOUR worktree to it and say so.
 - **Setup commands:** <shell prefix; dependency install>
 - **Ports and environment for this unit:** <e.g. a browser-test port of its own>
+- **Unit file list:** before your first edit, write every path from "Files you may change" and "Files you may
+  create", one per line relative to your worktree, to the file that `git rev-parse --path-format=absolute
+  --git-path kit-unit-files.txt` names (use the shell: it sits in git's folder, outside your worktree). Your edit
+  fence (rule:agent-role-table) then blocks any other file. Never change the list; a file missing from it is a stop.
 
 ## The unit
 

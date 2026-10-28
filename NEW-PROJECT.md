@@ -25,6 +25,15 @@ pointed at this folder: the push guard, and the kit hook at session start, on ea
 each compact (rule:kit-standards #1). It writes `.kit/kit-version.json`, the record
 that later updates and fold-backs read.
 
+Then turn on the git push guard, so a push by any AI tool waits for the owner's go (rule:outward-acts):
+
+```bash
+git -C <project folder> config core.hooksPath .githooks
+```
+
+If the project already runs git hooks from another folder (husky, lefthook), add the check in
+`.githooks/pre-push` to that pre-push hook instead.
+
 Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-PARTY.md).
 
 ## 3. Decide what git tracks (a choice for the owner)

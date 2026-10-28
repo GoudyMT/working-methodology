@@ -1,7 +1,8 @@
 // The builder's edit fence (rule:agent-role-table): a PreToolUse hook on Edit and Write in the builder role file.
 // A builder works in its own git worktree; an edit outside it would land in someone else's checkout. When the
-// worktree holds .kit/unit-files.txt (one path per line, relative to the worktree), edits are also kept to that
-// list. Exit 2 blocks the tool call and tells the builder why; anything unexpected lets the call through, since
+// worktree has a unit file list (one path per line, relative to the worktree) at `git rev-parse --git-path
+// kit-unit-files.txt`, edits are also kept to that list. That path is inside the worktree's own git folder, so the
+// list is never committed and binds only its own worktree. Exit 2 blocks the tool call and tells the builder why; anything unexpected lets the call through, since
 // the fence is a guard, not the only check (the checker and the lead's integration still review the unit).
 const fs = require('fs');
 const path = require('path');
@@ -21,11 +22,12 @@ function main() {
 		process.stderr.write(`Blocked: ${target} is outside this builder's worktree (${root}). Edit only files of your unit, in your worktree.\n`);
 		return 2;
 	}
-	const listFile = path.join(root, '.kit', 'unit-files.txt');
-	if (fs.existsSync(listFile)) {
+	const gitPath = spawnSync('git', ['-C', root, 'rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' });
+	const listFile = gitPath.status === 0 ? gitPath.stdout.trim() : '';
+	if (listFile && fs.existsSync(listFile)) {
 		const allowed = fs.readFileSync(listFile, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => l.split(path.sep).join('/'));
 		if (!allowed.includes(rel.split(path.sep).join('/'))) {
-			process.stderr.write(`Blocked: ${rel} is not in this unit's file list (.kit/unit-files.txt). Report it to the lead instead of editing it.\n`);
+			process.stderr.write(`Blocked: ${rel} is not in this unit's file list (git rev-parse --git-path kit-unit-files.txt). Report it to the lead instead of editing it.\n`);
 			return 2;
 		}
 	}

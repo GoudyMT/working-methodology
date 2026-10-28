@@ -27,8 +27,8 @@ role files in the project's `.claude/agents/` ran no hooks at all; see the first
 |---|---|
 | Role files copied into the project, run with `claude -p` | No hook ran (a logging hook wrote nothing). The docs say project-level agent hooks run only once the folder is trusted, and a `-p` session never counts as trusted; user-level role files and `--agents` definitions run them without that step. The kit installs role files user level. |
 | Logging hook, agent passed with `--agents` | The hook ran on the agent's Write and logged its input. |
-| Builder writes `allowed.txt` (on `.kit/unit-files.txt`) in its worktree | Written ("ok" in the worktree copy). |
-| Builder writes `notallowed.txt` in its worktree | Blocked by the fence: "Blocked: notallowed.txt is not in this unit's file list (.kit/unit-files.txt). Report it to the lead instead of editing it." |
+| Builder writes `allowed.txt` (on its unit list, then at `.kit/unit-files.txt`; the list moved to the worktree's git folder after this run, so it is never committed) in its worktree | Written ("ok" in the worktree copy). |
+| Builder writes `notallowed.txt` in its worktree | Blocked by the fence: "Blocked: notallowed.txt is not in this unit's file list (.kit/unit-files.txt). Report it to the lead instead of editing it." (the message then named the old place) |
 | Builder writes a file in the main checkout by absolute path | Blocked first by Claude Code's own worktree isolation, so the fence's outside-the-worktree check is proven by the unit test, not here. |
 | Checker runs `git status --short`, then `echo probe > checker-probe.txt`, then stops | The write ran; at the stop the clean-tree hook blocked and named `?? checker-probe.txt`. The checker removed the file and reported it as a finding; the tree matched its start. |
 

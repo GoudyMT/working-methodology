@@ -55,7 +55,7 @@ Present the plan as A/B/C choices and stop. On the owner's go:
 3. Seed the tracking files from the state map. Set up the vault backup and the skill cases (NEW-PROJECT.md steps
    3b and 3c). If the project keeps its own `.claude/settings.json`, add the kit hook's SessionStart, UserPromptSubmit and
    PreCompact entries to it by hand (copy them from the kit's `project/.claude/settings.json`), so the kit check cannot be
-   missed.
+   missed. Turn on the git push guard (NEW-PROJECT.md step 2).
 4. Run the gate again and show it green.
 
 ## 6. Fold back what the project taught

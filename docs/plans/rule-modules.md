@@ -116,3 +116,5 @@ names it. 15. Tools change -> adapters name their docs, re-checked each release.
 - Outputs for Copilot, Cursor, Codex, Gemini CLI and .agents/skills - each when that tool is used.
 - the main project on the new layout - the owner's later choice.
 - Meaning-based search - at 2 lookup misses or about 500 KB of rules.
+- The owner's goal for the kit (2026-10-28): a whole feature built by agents inside the guardrails, in the formats, following the rules 9 times in 10, with the 10th caught. Phases 2-3 serve it; measure it on a real feature run after 1.2.0.
+- Size-budget increases done automatically (the owner wants to explore it) - plan after 1.1.0, against rule:size-budgets.
