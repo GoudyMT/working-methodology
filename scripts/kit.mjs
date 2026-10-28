@@ -651,6 +651,61 @@ export function ledger(text, map) {
   return rows;
 }
 
+/** Split a rule module into its frontmatter (id, load, paths, when) and its body. */
+export function parseModule(text) {
+  const m = text.match(/^---\n([\s\S]*?)\n---\n/);
+  if (!m) throw new Error('rule module has no frontmatter');
+  const meta = { paths: [] };
+  for (const line of m[1].split('\n')) {
+    const item = line.match(/^\s+- "(.*)"$/);
+    if (item) { meta.paths.push(item[1]); continue; }
+    const kv = line.match(/^(\w+):\s*(.*)$/);
+    if (kv && kv[2]) meta[kv[1]] = kv[2];
+  }
+  return { meta, body: text.slice(m[0].length).replace(/^\n/, '') };
+}
+
+/**
+ * Write Claude Code's files from the tool-neutral rule sources in rules/. The core becomes AGENTS.md (which
+ * CLAUDE.md imports, and which other AI tools read on their own), with an index of the modules. Modules that
+ * load by file pattern go to .claude/rules with a paths field; the rest go to standards/, read on demand.
+ * standards/INDEX.md lists every rule ID and its file, which is how a `rule:<id>` pointer is looked up.
+ *
+ * Args:
+ *     ctx: { kit }
+ *
+ * Returns:
+ *     Map of kit-relative output path -> text
+ */
+export function build({ kit }) {
+  const dir = path.join(kit, 'rules');
+  const mods = fs.readdirSync(dir).filter((n) => n.endsWith('.md')).sort()
+    .map((n) => ({ src: `rules/${n}`, ...parseModule(fs.readFileSync(path.join(dir, n), 'utf8')) }));
+  const core = mods.find((m) => m.meta.id === 'core');
+  const rest = mods.filter((m) => m !== core);
+  const where = (m) => (m === core ? 'AGENTS.md' : m.meta.load === 'files' ? `.claude/rules/${m.meta.id}.md` : `standards/${m.meta.id}.md`);
+  const stamp = (srcs) => `<!-- Written by kit.mjs build from ${srcs}. Edit the source in the kit and run build; a change made here is overwritten. -->\n`;
+  const out = new Map();
+  const head = fs.readFileSync(path.join(dir, '_parts', 'agents-head.md'), 'utf8');
+  const moduleIndex = ['## Rule Modules', '',
+    'Each module below holds the rules for one kind of work. Read it at the moment the last column names; a file',
+    'module also loads by itself in Claude Code when a matching file is opened. A pointer `rule:<id>` names a rule',
+    'by its fixed ID; `standards/INDEX.md` lists every ID and its file.', '',
+    '| Module | File | Read it |', '|---|---|---|',
+    ...rest.map((m) => `| ${m.meta.id} | \`${where(m)}\` | ${m.meta.when} |`), ''];
+  out.set('project/AGENTS.md', stamp('rules/_parts/agents-head.md, rules/core.md and the module list') +
+    head.trimEnd() + '\n\n---\n\n' + core.body.trimEnd() + '\n\n' + moduleIndex.join('\n'));
+  for (const m of rest) {
+    const front = m.meta.load === 'files' ? ['---', 'paths:', ...m.meta.paths.map((p) => `  - "${p}"`), '---', ''].join('\n') : '';
+    out.set(`project/${where(m)}`, front + stamp(m.src) + '\n' + m.body);
+  }
+  const rows = mods.flatMap((m) => headings(m.body).map((h) => `| ${h.id} | ${h.title} | \`${where(m)}\` |`));
+  out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
+    'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
+    'that rule in the file named.', '', '| ID | Rule | File |', '|---|---|---|', ...rows, ''].join('\n'));
+  return out;
+}
+
 /**
  * Measure what Claude Code loads for a project at session start: CLAUDE.md, its @imports, and rules with no
  * paths field. Follows the memory docs: imports nest up to four hops, a path ends at the first unescaped space,
@@ -731,17 +786,13 @@ function main(argv) {
     for (const f of r.files) console.log(`${String(f.bytes).padStart(8)}  ${f.file}`);
     console.log(`${String(r.total).padStart(8)}  loaded at session start`);
     for (const u of r.unresolved) console.log(`    import not found: @${u.import} (in ${u.from})`);
-  } else if (cmd === 'ledger') {
-    const text = fs.readFileSync(path.join(kit, 'project', '_Working Standards.md'), 'utf8');
-    const rows = ledger(text, JSON.parse(fs.readFileSync(path.join(kit, 'docs', 'migrations', '1.0.0-modules.json'), 'utf8')));
-    const out = path.join(kit, 'docs', 'migrations', '1.0.0-ledger.md');
-    const body = ['# Ledger: 0.7.0 standards -> 1.0.0 modules', '',
-      'Every rule heading of the 0.7.0 standards file, its fixed ID and its new home. Written by `kit.mjs ledger`.', '',
-      `Preamble (${rows.preamble} lines before the first heading) -> core`, '',
-      '| ID | Heading | Level | Module | Lines |', '|---|---|---|---|---|',
-      ...rows.map((r) => `| ${r.id} | ${r.title} | ${r.level === 2 ? '##' : '###'} | ${r.module} | ${r.lines} |`), ''];
-    fs.writeFileSync(out, body.join('\n'));
-    console.log(`ledger: ${rows.length} headings -> ${out}`);
+  } else if (cmd === 'build') {
+    const out = build({ kit });
+    for (const [rel, text] of out) {
+      fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
+      fs.writeFileSync(path.join(kit, rel), text);
+    }
+    console.log(`build: wrote ${out.size} file(s) from rules/`);
   } else if (cmd === 'scrub') {
     const hits = scrub({ kit });
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.kind}`);
@@ -752,7 +803,7 @@ function main(argv) {
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');
-    console.log('       node scripts/kit.mjs measure [project folder]');
+    console.log('       node scripts/kit.mjs build | measure [project folder]');
     console.log('       node scripts/kit.mjs scrub');
     process.exitCode = cmd ? 1 : 0;
   }

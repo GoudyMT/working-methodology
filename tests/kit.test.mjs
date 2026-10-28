@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger, build, parseModule } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -437,8 +437,9 @@ test('pre-compact reminds a project with no vault backup to set one up', () => {
 });
 
 // The kit's own standards, checked the way Kit Standards #3 and #5 say: one home per rule, a why in every rule
-// section, and a size cap. These read the real kit files, not a fixture.
-const STANDARDS = () => read(path.resolve('project/_Working Standards.md'));
+// section, and size caps. These read the real rule modules in rules/, not a fixture.
+const STANDARDS = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).sort()
+  .map((n) => read(path.resolve('rules', n)).replace(/^---\n[\s\S]*?\n---\n/, '')).join('\n');
 const words = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean);
 const shingles = (w, n = 8) => { const s = new Set(); for (let i = 0; i + n <= w.length; i++) s.add(w.slice(i, i + n).join(' ')); return s; };
 
@@ -467,10 +468,21 @@ test('every rule section in the standards says why', () => {
   assert.deepEqual(missing, []);
 });
 
-test('the standards stay under the kit size cap', () => {
-  const cap = JSON.parse(read(path.resolve('kit.config.json'))).standardsCapBytes;
-  assert.ok(cap > 0, 'kit.config.json needs standardsCapBytes');
-  assert.ok(Buffer.byteLength(STANDARDS()) <= cap, `standards are ${Buffer.byteLength(STANDARDS())} bytes, cap ${cap}`);
+// The caps the owner set (plan rule-modules): per module, for AGENTS.md, and for all a session loads at start.
+test('the rules stay under their size caps and every start import resolves', () => {
+  const caps = JSON.parse(read(path.resolve('kit.config.json'))).caps;
+  assert.ok(caps && caps.module > 0 && caps.agentsMd > 0 && caps.sessionStart > 0, 'kit.config.json needs caps');
+  const over = [];
+  for (const n of fs.readdirSync(path.resolve('rules')).filter((x) => x.endsWith('.md') && x !== 'core.md')) {
+    const b = Buffer.byteLength(read(path.resolve('rules', n)));
+    if (b > caps.module) over.push(`${n}: ${b} > ${caps.module}`);
+  }
+  const agents = Buffer.byteLength(read(path.resolve('project/AGENTS.md')));
+  if (agents > caps.agentsMd) over.push(`AGENTS.md: ${agents} > ${caps.agentsMd}`);
+  const start = measure({ projectDir: path.resolve('project') });
+  if (start.total > caps.sessionStart) over.push(`session start: ${start.total} > ${caps.sessionStart}`);
+  assert.deepEqual(over, []);
+  assert.deepEqual(start.unresolved, []);
 });
 
 test('a running session hears about a new kit release once, at the next message', () => {
@@ -571,7 +583,7 @@ test('measure counts what a session loads at start, the way Claude Code reads im
 
 // Plan rule-modules, Phase 1: every rule heading carries a fixed ID, so pointers survive renames and moves.
 // Headings inside code blocks (the handoff template) are examples, not rules, and carry none.
-const ruleFiles = () => [path.resolve('project/_Working Standards.md')];
+const ruleFiles = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('rules', n));
 test('every rule heading has a unique, plain-word ID', () => {
   const seen = new Map(), bad = [];
   for (const f of ruleFiles()) {
@@ -592,13 +604,11 @@ test('headings skips headings inside code blocks and reads the ID after the titl
 });
 
 const MODULE_MAP = () => JSON.parse(read(path.resolve('docs/migrations/1.0.0-modules.json')));
-test('the ledger places every 0.7.0 rule in exactly one module, with its line count', () => {
-  const text = read(path.resolve('project/_Working Standards.md'));
-  const rows = ledger(text, MODULE_MAP());
-  assert.deepEqual(rows.map((r) => r.id), headings(text).map((h) => h.id));
-  for (const r of rows) assert.ok(r.module && r.lines > 0, `${r.id}: ${JSON.stringify(r)}`);
-  // Every line of the file belongs to one row or to the preamble that opens the core.
-  assert.equal(rows.reduce((s, r) => s + r.lines, 0) + rows.preamble, text.split('\n').length);
+test('the saved ledger matches where each rule lives now', () => {
+  const rows = [...read(path.resolve('docs/migrations/1.0.0-ledger.md')).matchAll(/^\| ([a-z0-9-]+) \| .+? \| #{2,3} \| ([a-z-]+) \| \d+ \|$/gm)];
+  assert.equal(rows.length, 70);
+  const wrong = rows.filter(([, id, mod]) => !headings(read(path.resolve('rules', `${mod}.md`))).some((h) => h.id === id)).map(([, id, mod]) => `${id} not in ${mod}`);
+  assert.deepEqual(wrong, []);
 });
 
 test('the ledger refuses a section the map leaves out or a map entry with no section', () => {
@@ -649,4 +659,30 @@ test('the split keeps every line of 0.7.0 exactly once', () => {
   const lost = [...want].filter(([l, n]) => (got.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
   const extra = [...got].filter(([l, n]) => (want.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
   assert.deepEqual({ lost, extra }, { lost: [], extra: [] });
+});
+
+// Plan rule-modules, Phase 1: the kit keeps one tool-neutral source (rules/) and writes Claude Code's files from
+// it. What install copies must be exactly what a fresh build writes, and each output names its source.
+test('build writes AGENTS.md, path rules, on-demand modules and the index from rules/', () => {
+  const out = build({ kit: path.resolve('.') });
+  const mods = moduleFiles().map((f) => parseModule(read(f)).meta);
+  assert.ok(out.has('project/AGENTS.md') && out.has('project/standards/INDEX.md'));
+  for (const m of mods.filter((m) => m.id !== 'core')) {
+    const where = m.load === 'files' ? `project/.claude/rules/${m.id}.md` : `project/standards/${m.id}.md`;
+    assert.ok(out.has(where), `${m.id} -> ${where}`);
+    assert.match(out.get('project/AGENTS.md'), new RegExp(`\| ${m.id} \|`), `AGENTS.md index lists ${m.id}`);
+  }
+  for (const [rel, text] of out) assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
+  // A path rule keeps Claude Code's paths field first, or it would load every session.
+  assert.match(out.get('project/.claude/rules/testing.md'), /^---\npaths:\n  - "\*\*\/\*\.test\.\*"/);
+  // Every rule ID is in the index exactly once.
+  const index = out.get('project/standards/INDEX.md');
+  for (const f of moduleFiles()) for (const h of headings(read(f))) {
+    assert.equal(index.split(`| ${h.id} |`).length - 1, 1, `${h.id} once in the index`);
+  }
+});
+
+test('the written-out files in project/ match a fresh build', () => {
+  const stale = [...build({ kit: path.resolve('.') })].filter(([rel, text]) => !fs.existsSync(path.resolve(rel)) || read(path.resolve(rel)) !== text).map(([rel]) => rel);
+  assert.deepEqual(stale, [], 'run node scripts/kit.mjs build');
 });
