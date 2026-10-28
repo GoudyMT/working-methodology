@@ -89,7 +89,7 @@ GitHub renders markdown inside a fold only after a blank line below `</summary>`
 
 ## Lean (chore / docs / small / non-behavioural)
 
-> **A small body for every small PR.** A 1-2 sentence framing, at most 3 changes (what and why, never a file list), 3 gates (the proof; the full local gate as ONE line; the sweep exemption with the review dimensions), notes of one sentence or none. Ceilings: <!-- PROJECT ADAPTER A16: e.g. at most 180 words and 18 non-empty lines --> `<words>` words, `<lines>` non-empty lines. A dependency bump names only the figures it can move (audit, budgets) in the gate line. Audit: `<lean audit command> <body> "<title>"`.
+> **A small body for every small PR.** A 1-2 sentence framing, at most 3 changes (what and why, never a file list), 3 gates (the proof; the full local gate as ONE line; the sweep tier (rule:sweep-tiers) with the review dimensions), notes of one sentence or none. Ceilings: <!-- PROJECT ADAPTER A16: e.g. at most 180 words and 18 non-empty lines --> `<words>` words, `<lines>` non-empty lines. A dependency bump names only the figures it can move (audit, budgets) in the gate line. Audit: `<lean audit command> <body> "<title>"`.
 
 ```md
 ## <Area>: <one line of what changed>

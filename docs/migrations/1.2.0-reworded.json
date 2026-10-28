@@ -1,1 +1,19 @@
-{ "lines": [] }
+{
+  "lines": [
+    {
+      "before": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.",
+      "after": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (the feature and launch-gate tiers; a fix or triage sweep re-checks as rule:sweep-tiers says) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.",
+      "why": "the Two passes rule now names the tiers it covers, so it agrees with rule:sweep-tiers"
+    },
+    {
+      "before": "**Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm) - the Pre-PR Deep Sweep; trivial chore / docs / one-line PRs get a light pass or a stated exemption; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.",
+      "after": "**Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.",
+      "why": "trigger 1 now hands the size call to rule:sweep-tiers instead of its own light pass or exemption"
+    },
+    {
+      "before": "- **Lean:** 1-2 sentence framing, <= 3 changes (what and why, no file lists), 3 gates (the proof; the full gate as one line; the sweep exemption by dimension), <= 1 sentence of notes.",
+      "after": "- **Lean:** 1-2 sentence framing, <= 3 changes (what and why, no file lists), 3 gates (the proof; the full gate as one line; the sweep tier and its result by dimension, rule:sweep-tiers), <= 1 sentence of notes.",
+      "why": "a Lean body reports its triage or fix sweep; an exemption is left only for a PR with no code and no public text"
+    }
+  ]
+}

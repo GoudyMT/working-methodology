@@ -720,7 +720,11 @@ test('the sweep audit holds each report to its tier', () => {
   const none = runAudit('pre-pr-sweep', base + '\nNo secrets or personal data in the diff.\n');
   assert.equal(none.status, 1);
   assert.match(none.stdout, /Tier/);
-  const triage = base + '- **Tier:** triage\n\nNo secrets or personal data in the diff. Every dimension not touched.\n';
+  // A triage report still names each dimension, "not touched" or its finding (rule:sweep-tiers).
+  const bare = runAudit('pre-pr-sweep', base + '- **Tier:** triage\n\nNo secrets or personal data in the diff.\n');
+  assert.equal(bare.status, 1, 'a triage label alone skips nothing');
+  assert.match(bare.stdout, /dimension/);
+  const triage = base + '- **Tier:** triage\n\nNo secrets or personal data in the diff. Privacy, supply chain, legal, code security, gaps and version alignment: not touched.\n';
   const ok = runAudit('pre-pr-sweep', triage);
   assert.equal(ok.status, 0, ok.stdout);
   const noCheck = runAudit('pre-pr-sweep', triage.replace('No secrets or personal data in the diff. ', ''));

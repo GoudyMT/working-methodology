@@ -45,7 +45,7 @@ Formats in `_Templates/_PR Body Template.md`: **Standard** for features, design 
 **How: the pr-body skill** (steps, two examples, the audit run).
 
 - **Hard rules (outward-facing):** ASCII; no AI / agent / tool references (reviews described BY DIMENSION + verdict); no links to gitignored vault docs; value-led title `<Area>: <line>`, H1 = the title.
-- **Lean:** 1-2 sentence framing, <= 3 changes (what and why, no file lists), 3 gates (the proof; the full gate as one line; the sweep exemption by dimension), <= 1 sentence of notes.
+- **Lean:** 1-2 sentence framing, <= 3 changes (what and why, no file lists), 3 gates (the proof; the full gate as one line; the sweep tier and its result by dimension, rule:sweep-tiers), <= 1 sentence of notes.
 - **Summary, not tallies:** outward summaries state the end result, and each thing once. No per-step tallies (size raises, finding, test or mutant counts); keep a number only if it is the result or the reader acts on it. Test each line: who reads it, and why care? Detail stays in the sweep report and plan. Why: tallies bury the result.
 - **Standard:** before / after table; decisions and review result on screen; file list, gate results and clean checks in folds; total, on-screen and per-bullet ceilings ("wall of text" = on-screen words and bullet length); plain engineer speak.
 - **Never inflate a small PR.** The audit script (sections, width, word caps, banned words, ASCII) runs with every body; it cannot see content drift, so keep the conventions of the lived bodies (below; a budget raise states the final old -> new and its basis; a proof gate claims only what ran). Body + audit go to the owner BEFORE any push or PR command. After a trim, reread for flow. <!-- PROJECT ADAPTER A16 -->

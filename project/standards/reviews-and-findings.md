@@ -14,7 +14,7 @@
 - **G5 Blast radius** (-> the owner's go): files, shipped vs new, public interfaces, other callers, the revert story; a shipped-code fix in a feature branch is scope creep until the owner says otherwise.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (the feature and launch-gate tiers; a fix or triage sweep re-checks as rule:sweep-tiers says) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
@@ -29,7 +29,7 @@
 
 A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract (as is the red-team). Why: a sweep without a clear trigger never happens.
 
-**Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm) - the Pre-PR Deep Sweep; trivial chore / docs / one-line PRs get a light pass or a stated exemption; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.
+**Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.
 
 **Done iff** a report exists at `<sweep folder>/YYYY-MM-DD-<milestone>.md` with date, milestone, branch / commit; each dimension PASS or with findings; every high / critical dispositioned (`FIXED <commit>` / `DEFERRED <where>` / `ACCEPTED <why>`); for the deep tier, "still aligned with the version goals? YES/NO + evidence". <!-- PROJECT ADAPTER A22 -->
 
@@ -48,12 +48,13 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 **Modifiers add roles at any tier, and never lower one:** security-sensitive code (auth, locks, crypto, permissions, secrets, personal data) gets the security swarm of >= 3 distinct angles; a new dependency or external data flow gets a supply-chain role and a privacy role (trigger 2); public, legal or cited text gets a content role that checks each claim against its source and license; data the user keeps (storage formats, migrations, deletion) gets a role on data loss and the upgrade path from the last release.
 
-**Re-sweep by tier:** feature and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. The light pass in trigger 1 is the triage tier; a stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill** (steps per tier, an example report per tier, the audit).
+**Re-sweep by tier:** feature and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill** (steps per tier, an example report per tier, the audit).
 
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 
 Why: a solo builder reviewing their own diff sees what they meant, not what they wrote.
 **How: the pre-pr-sweep skill** (steps, example reports, the audit).
+The roles below are the feature and launch-gate tiers' floor; a fix or triage sweep runs the roles rule:sweep-tiers gives it.
 - **Adversarial vulnerability swarm:** >= 3 top-tier security agents with DISTINCT angles.
 - **A Test Value agent** ruling keep / cut / repoint on every added or edited test (the use guarded, a break check where in doubt); retired when reviews stop finding fluff.
 - **Every high / critical independently re-checked** - an input to the controller's adjudication. **Dimension 6 mandatory.** **Covers the branch HEAD** - an older report does not count; re-run or sweep the delta.
