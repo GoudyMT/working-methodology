@@ -710,3 +710,50 @@ test('find also matches the tags a module gives its rules, and every rule has ta
   });
   assert.deepEqual(untagged, []);
 });
+
+// Plan rule-modules, Phase 1: when the kit retires a file it once installed, install removes it only if the
+// project left it as installed (after a backup); a changed copy is reported for fold-back; a file of the same
+// name that the kit never installed belongs to the project and is left alone.
+function retireKit() {
+  const ctx = makeKit();
+  install({ kit: ctx.kit, home: ctx.home, target: 'project', projectDir: ctx.proj });
+  fs.rmSync(path.join(ctx.kit, 'project/_Working Standards.md'));
+  const cfg = JSON.parse(read(path.join(ctx.kit, 'kit.config.json')));
+  fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: ['_Working Standards.md'] } }));
+  return ctx;
+}
+test('install removes a retired file the project left alone, and keeps a backup', () => {
+  const { kit, home, proj } = retireKit();
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(r.retired, ['_Working Standards.md']);
+  assert.equal(fs.existsSync(path.join(proj, '_Working Standards.md')), false);
+  assert.equal(read(path.join(r.backupDir, '_Working Standards.md')), 'rules\n');
+  assert.equal(JSON.parse(read(path.join(proj, '.kit/kit-version.json'))).files['_Working Standards.md'], undefined);
+});
+test('install keeps a retired file the project changed, and says so', () => {
+  const { kit, home, proj } = retireKit();
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(r.retired, []);
+  assert.equal(read(path.join(proj, '_Working Standards.md')), 'my own rules\n');
+  assert.match(r.skipped.find((s) => s.file === '_Working Standards.md').reason, /retired by the kit.*changed here/);
+});
+test('install never removes a retired name the kit did not install', () => {
+  const { kit, home, proj } = makeKit();
+  fs.writeFileSync(path.join(proj, 'own.md'), 'the project\'s own\n');
+  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: ['own.md'] } }));
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(r.retired, []);
+  assert.equal(read(path.join(proj, 'own.md')), 'the project\'s own\n');
+});
+test('install retires a user-level file the same way', () => {
+  const { kit, home } = makeKit();
+  install({ kit, home, target: 'user' });
+  fs.rmSync(path.join(kit, 'user/agents/builder.md'));
+  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { user: ['agents/builder.md'] } }));
+  const r = install({ kit, home, target: 'user' });
+  assert.deepEqual(r.retired, ['agents/builder.md']);
+  assert.equal(fs.existsSync(path.join(home, 'agents/builder.md')), false);
+});

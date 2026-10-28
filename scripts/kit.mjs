@@ -154,12 +154,34 @@ export function install(ctx) {
       skipped.push({ file: entry.key, reason });
     }
   }
+  // Retired files: only ones this kit installed (they are in the stamp) and the owner left as installed are
+  // removed, after a backup. A changed copy holds the owner's work, so it stays and is reported.
+  const retired = [];
+  const { memoryDir } = plan(ctx);
+  for (const key of ((kitInfo.config.retired || {})[ctx.target] || [])) {
+    const base = stamp.files[key];
+    const dest = key.startsWith('memory/') && memoryDir ? path.join(memoryDir, key.slice(7))
+      : path.join(ctx.target === 'user' ? ctx.home : ctx.projectDir, key);
+    if (!base || !fs.existsSync(dest)) { if (!fs.existsSync(dest)) delete files[key]; continue; }
+    if (sha(fs.readFileSync(dest, 'utf8')) !== base) {
+      skipped.push({ file: key, reason: 'retired by the kit, but changed here - run fold-back, then remove it by hand' });
+      continue;
+    }
+    if (!ctx.dryRun) {
+      const keep = path.join(backupDir, key);
+      fs.mkdirSync(path.dirname(keep), { recursive: true });
+      fs.copyFileSync(dest, keep);
+      fs.rmSync(dest);
+    }
+    retired.push(key);
+    delete files[key];
+  }
   if (!ctx.dryRun) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), installedAt: new Date().toISOString(), files };
     fs.writeFileSync(stampPath, JSON.stringify(out, null, 2) + '\n');
   }
-  return { created, updated, replaced, skipped, backupDir: replaced.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
 }
 
 function diffText(a, b) {
@@ -805,8 +827,9 @@ function main(argv) {
   if (cmd === 'install') {
     const r = install({ kit, home, target, projectDir, dryRun, force });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ''}`);
-    console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, replaced: ${r.replaced.length}, skipped: ${r.skipped.length}`);
+    console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
     for (const f of r.replaced) console.log(`    replaced ${f}`);
+    for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
   } else if (cmd === 'fold-back') {
