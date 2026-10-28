@@ -495,8 +495,10 @@ const semverAbove = (a, b) => {
  * Returns:
  *     the message text (one or more lines)
  */
-export function sessionStartReport({ kit, home, projectDir }) {
+export function sessionStartReport({ kit, home, projectDir, source }) {
   const lines = [];
+  // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
+  if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - fresh reads of the Reading Order before any edit.');
   const ahead = remoteKitAhead(kit);
   if (ahead > 0) lines.push(`The kit on GitHub is ${ahead} commit(s) ahead of the kit folder. Run git pull in ${toPosix(kit)}, then /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();

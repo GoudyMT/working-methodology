@@ -772,3 +772,10 @@ test('fold-back maps an old single standards file to kit rules by heading', () =
   assert.deepEqual(r.oldLayout.projectOnly, ['Our Own Rule']);
   assert.match(r.report, /## Old single standards file: sections changed here \(1\)\n\n- rule:alpha \(core\): Alpha Rule/);
 });
+
+// After a compact, the post-compact orientation lives in a module that may not be loaded, so session start names it.
+test('session start after a compact names the orientation rule and where it lives', () => {
+  const { kit, home, proj } = caseKit();
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'compact' }), /rule:post-compact-orientation/);
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'startup' }), /post-compact-orientation/);
+});

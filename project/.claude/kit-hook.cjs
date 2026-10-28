@@ -33,7 +33,10 @@ async function main() {
 		return;
 	}
 	const lib = await import(pathToFileURL(path.join(kit, 'scripts', 'kit.mjs')).href);
-	const ctx = { kit, home: HOME, projectDir: PROJECT };
+	// Claude Code passes the hook input on stdin; for SessionStart, source is startup, resume, clear or compact.
+	let source;
+	try { source = JSON.parse(fs.readFileSync(0, 'utf8') || '{}').source; } catch { source = undefined; }
+	const ctx = { kit, home: HOME, projectDir: PROJECT, source };
 	if (MODE === 'session-start') {
 		const text = lib.sessionStartReport(ctx);
 		if (text) emit(text);
