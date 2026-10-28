@@ -761,7 +761,7 @@ export function build({ kit }) {
   const rest = mods.filter((m) => m !== core);
   const where = (m) => (m === core ? 'AGENTS.md' : m.meta.load === 'files' ? `.claude/rules/${m.meta.id}.md` : `standards/${m.meta.id}.md`);
   // Install never overwrites a file the project changed, so the note says what holds in each place.
-  const stamp = (srcs) => `<!-- Written by kit.mjs build from ${srcs}, in the layout of the Claude Code memory docs (code.claude.com/docs/en/memory). In the kit, edit the source, not this file. In a project, fill the adapter slots here; install keeps your changes, and fold-back carries rule changes back to the kit. -->\n`;
+  const stamp = (srcs) => `<!-- Written by kit.mjs build from ${srcs} (layout: code.claude.com/docs/en/memory). Kit: edit the source. Project: fill adapter slots here; install keeps your changes. -->\n`;
   const out = new Map();
   const head = fs.readFileSync(path.join(dir, '_parts', 'agents-head.md'), 'utf8');
   const moduleIndex = ['## Rule Modules', '',

@@ -1,4 +1,4 @@
-<!-- Written by kit.mjs build from rules/_parts/agents-head.md, rules/core.md and the module list, in the layout of the Claude Code memory docs (code.claude.com/docs/en/memory). In the kit, edit the source, not this file. In a project, fill the adapter slots here; install keeps your changes, and fold-back carries rule changes back to the kit. -->
+<!-- Written by kit.mjs build from rules/_parts/agents-head.md, rules/core.md and the module list (layout: code.claude.com/docs/en/memory). Kit: edit the source. Project: fill adapter slots here; install keeps your changes. -->
 # AGENTS - <PROJECT NAME> (AI & Collaborators)
 
 > The project's entry point for every AI tool: the owner's non-negotiables, the read order, then the core rules and the index of rule modules. Written by the kit's build; a **durable handoff** when chat context resets or a tool reads only the repo root.

@@ -35,9 +35,7 @@
 @_Working\ Memory.md
 @_Active\ Plan.md
 
-(The `@filename` syntax tells Claude Code to inline these files at session start. A space in a file name needs a
-backslash before it, or the import stops at the space and the file never loads. AGENTS.md holds the core rules
-and the index of rule modules; read a module at the moment its row names.)
+(`@file` inlines a file at session start; a space in its name needs a backslash, or the file never loads.)
 
 Additionally read the last entry in [`_Session Log.md`](_Session Log.md) for the most recent state and resume point.
 

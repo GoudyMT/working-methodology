@@ -1,4 +1,4 @@
-<!-- Written by kit.mjs build from rules/ (every module), in the layout of the Claude Code memory docs (code.claude.com/docs/en/memory). In the kit, edit the source, not this file. In a project, fill the adapter slots here; install keeps your changes, and fold-back carries rule changes back to the kit. -->
+<!-- Written by kit.mjs build from rules/ (every module) (layout: code.claude.com/docs/en/memory). Kit: edit the source. Project: fill adapter slots here; install keeps your changes. -->
 
 # Rule Index
 
