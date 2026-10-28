@@ -10,6 +10,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | multi-agent-discipline | Multi-Agent Discipline | `standards/agent-teams.md` | agents, subagents, parallel, swarm, fan-out |
 | swarm-contract | The Swarm Contract (NO swarm without one) | `standards/agent-teams.md` | many agents, roles, review agents, approval table |
 | patterns-and-dispatch | Patterns and Dispatch | `standards/agent-teams.md` | dispatch, sessions, prongs, worktrees |
+| agent-role-table | Agent Role Table | `standards/agent-teams.md` | agent roles, access, tools, permissions, preloaded rules |
 | agent-team-adapter | Agent-Team Build: Project Adapter (TEMPLATE) | `standards/agent-teams.md` | agent team, builders, checkers, brief rules |
 | code-standards | Code Standards | `.claude/rules/code.md` | code style, naming, comments, conventions |
 | size-budgets | Size Budgets: Trim Before You Ask | `.claude/rules/code.md` | bundle, bytes, bloat, over budget, trim |

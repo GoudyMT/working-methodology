@@ -5,6 +5,8 @@ model: claude-opus-5-5
 effort: xhigh
 omitClaudeMd: true
 tools: Read, Grep, Glob, Bash, PowerShell
+disallowedTools: Edit, Write, WebFetch, WebSearch, Agent
+skills: checker-rules
 color: purple
 ---
 

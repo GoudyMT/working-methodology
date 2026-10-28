@@ -781,6 +781,33 @@ export function build({ kit }) {
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
     'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
     '| ID | Rule | File | Also called |', '|---|---|---|---|', ...rows, ''].join('\n'));
+  // Each agent role that starts with rules gets them as a skill its role file preloads (rule:agent-role-table).
+  // A rule's text runs from its heading to the next heading of the same or a higher level.
+  const sectionText = (id) => {
+    for (const m of mods) {
+      const lines = m.body.split('\n');
+      const hs = headings(m.body);
+      const i = hs.findIndex((h) => h.id === id);
+      if (i < 0) continue;
+      const next = hs.slice(i + 1).find((h) => h.level <= hs[i].level);
+      return lines.slice(hs[i].line - 1, next ? next.line - 1 : lines.length).join('\n').trimEnd();
+    }
+    throw new Error(`role table names an unknown rule: ${id}`);
+  };
+  const teams = mods.find((m) => m.meta.id === 'agent-teams');
+  const table = teams ? teams.body.slice(teams.body.indexOf('{#agent-role-table}')) : '';
+  for (const [, role, ids] of table.matchAll(/^\| (\w+) \| [^|]+ \| [^|]+ \| [^|]+ \| ([^|]+) \|$/gm)) {
+    if (ids.trim() === 'none' || role === 'Role') continue;
+    const list = ids.split(',').map((s) => s.trim());
+    out.set(`user/skills/${role}-rules/SKILL.md`, ['---', `name: ${role}-rules`,
+      `description: The general rules a ${role} agent works under, preloaded at its start by its role file. Not for direct use.`,
+      'user-invocable: false', '---', '',
+      stamp(`rules/ (rule:agent-role-table; ${list.join(', ')})`).trimEnd(), '',
+      `# ${role[0].toUpperCase()}${role.slice(1)} Rules`, '',
+      `These are the kit's general rules for the ${role} role. The project's own filled "Rules every brief carries" block`,
+      '(rule:agent-team-adapter, named in your brief) adds the project\'s values and wins where it differs.', '',
+      ...list.map((id) => sectionText(id) + '\n'), ''].join('\n'));
+  }
   return out;
 }
 

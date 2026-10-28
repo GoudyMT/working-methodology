@@ -6,6 +6,8 @@ effort: high
 isolation: worktree
 omitClaudeMd: true
 tools: Read, Edit, Write, Grep, Glob, Bash, PowerShell
+disallowedTools: WebFetch, WebSearch, Agent
+skills: builder-rules
 color: blue
 ---
 

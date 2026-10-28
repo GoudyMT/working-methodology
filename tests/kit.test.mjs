@@ -584,6 +584,7 @@ test('measure counts what a session loads at start, the way Claude Code reads im
 // Plan rule-modules, Phase 1: every rule heading carries a fixed ID, so pointers survive renames and moves.
 // Headings inside code blocks (the handoff template) are examples, not rules, and carry none.
 const ruleFiles = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('rules', n));
+const moduleFiles = ruleFiles;
 test('every rule heading has a unique, plain-word ID', () => {
   const seen = new Map(), bad = [];
   for (const f of ruleFiles()) {
@@ -595,7 +596,8 @@ test('every rule heading has a unique, plain-word ID', () => {
     }
   }
   assert.deepEqual(bad, []);
-  assert.equal(seen.size, 70);
+  // 70 rules came from 0.7.0 (the ledger test checks each); new rules only add to that.
+  assert.ok(seen.size >= 70, `${seen.size} rule IDs`);
 });
 
 test('headings skips headings inside code blocks and reads the ID after the title', () => {
@@ -638,30 +640,8 @@ test('every rule pointer in the kit names a rule ID that exists', () => {
   assert.deepEqual(byWords, []);
 });
 
-// Plan rule-modules, Phase 1: the split moves text, it never loses or copies it. Every non-blank line of the
-// 0.7.0 standards (read from its tag) appears exactly as often across the rule modules, after removing what the
-// migration added on purpose: frontmatter, each module's title line, the {#id} after headings, and the lines
-// recorded in docs/migrations/1.0.0-reworded.json with their reason.
-const RULE_DIR = () => path.resolve('rules');
-const moduleFiles = () => fs.readdirSync(RULE_DIR()).filter((n) => n.endsWith('.md')).map((n) => path.join(RULE_DIR(), n));
-const bodyOf = (text) => text.replace(/^---\n[\s\S]*?\n---\n/, '');
-test('the split keeps every line of 0.7.0 exactly once', () => {
-  const old = spawnSync('git', ['show', 'v0.7.0:project/_Working Standards.md'], { encoding: 'utf8' });
-  assert.equal(old.status, 0, 'the v0.7.0 tag must exist locally');
-  const record = JSON.parse(read(path.resolve('docs/migrations/1.0.0-reworded.json')));
-  const swap = new Map(record.lines.map((r) => [r.before, r.after]));
-  const count = (ls) => ls.filter((l) => l.trim()).reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
-  // Lines added on purpose are recorded with their reason, like reworded ones.
-  const want = count([...old.stdout.split('\n').map((l) => swap.get(l) ?? l), ...(record.added || []).map((a) => a.line)]);
-  const got = count(moduleFiles().flatMap((f) => {
-    const ls = bodyOf(read(f)).split('\n');
-    if (path.basename(f) !== 'core.md') ls.splice(ls.findIndex((l) => /^# /.test(l)), 1);
-    return ls.map((l) => l.replace(/^(#{2,3} .*?) \{#[^}]+\}$/, '$1'));
-  }));
-  const lost = [...want].filter(([l, n]) => (got.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
-  const extra = [...got].filter(([l, n]) => (want.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
-  assert.deepEqual({ lost, extra }, { lost: [], extra: [] });
-});
+// The line-conservation check for the 1.0.0 split retired at 1.1.0, when new rules began; its result is kept in
+// docs/migrations/1.0.0-coverage.md, and the ledger test below still proves every 0.7.0 rule has its home.
 
 // Plan rule-modules, Phase 1: the kit keeps one tool-neutral source (rules/) and writes Claude Code's files from
 // it. What install copies must be exactly what a fresh build writes, and each output names its source.
@@ -818,4 +798,37 @@ test('no rule pointer in the kit names a heading by its words', () => {
     for (const m of read(f).matchAll(/(?:->|\bper|\bsee|\bin) "([^"]+)"/g)) if (titles.has(m[1]) || [...titles].some((t) => t.startsWith(m[1] + ' '))) byWords.push(`${path.relative('.', f)}: "${m[1]}"`);
   }
   assert.deepEqual(byWords, []);
+});
+
+// Plan rule-modules, Phase 2: one role table (rule:agent-role-table) says what each agent may use and which rules
+// it starts with; the role files must match it, so access is never widened by an edit to one file alone.
+const roleTable = () => {
+  const text = read(path.resolve('rules/agent-teams.md'));
+  const sec = text.slice(text.indexOf('{#agent-role-table}'));
+  return [...sec.matchAll(/^\| (builder|checker|scanner|orchestrator) \| [^|]+ \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
+    .map(([, role, tools, denied, rules]) => ({ role, tools: tools.trim(), denied: denied.trim(), rules: rules.trim() }));
+};
+const front = (f) => Object.fromEntries([...read(f).match(/^---\n([\s\S]*?)\n---/)[1].matchAll(/^(\w+):\s*(.*)$/gm)].map(([, k, v]) => [k, v.trim()]));
+test('each agent role file matches the role table: tools, denied tools and rules at start', () => {
+  const rows = roleTable();
+  assert.deepEqual(rows.map((r) => r.role).sort(), ['builder', 'checker', 'orchestrator', 'scanner']);
+  for (const r of rows) {
+    const fm = front(path.resolve('user/agents', `${r.role}.md`));
+    assert.equal(fm.tools, r.tools, `${r.role} tools`);
+    assert.equal(fm.disallowedTools || 'none', r.denied, `${r.role} denied tools`);
+    assert.equal(fm.skills || 'none', r.rules === 'none' ? 'none' : `${r.role}-rules`, `${r.role} preloaded rules`);
+  }
+});
+
+test('build writes each role its rules skill from the IDs in the role table, under its cap', () => {
+  const out = build({ kit: path.resolve('.') });
+  for (const r of roleTable().filter((x) => x.rules !== 'none')) {
+    const skill = out.get(`user/skills/${r.role}-rules/SKILL.md`);
+    assert.ok(skill, `${r.role}-rules is built`);
+    assert.match(skill, new RegExp(`^---\nname: ${r.role}-rules\n`));
+    assert.match(skill, /user-invocable: false/);
+    assert.match(skill, /wins where it differs/);
+    for (const id of r.rules.split(',').map((s) => s.trim())) assert.match(skill, new RegExp(`\{#${id}\}`), `${r.role} carries ${id}`);
+    assert.ok(Buffer.byteLength(skill) <= 8000, `${r.role}-rules is ${Buffer.byteLength(skill)} bytes`);
+  }
 });

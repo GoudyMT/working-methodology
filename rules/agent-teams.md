@@ -6,6 +6,7 @@ tags:
   multi-agent-discipline: agents, subagents, parallel, swarm, fan-out
   swarm-contract: many agents, roles, review agents, approval table
   patterns-and-dispatch: dispatch, sessions, prongs, worktrees
+  agent-role-table: agent roles, access, tools, permissions, preloaded rules
   agent-team-adapter: agent team, builders, checkers, brief rules
 ---
 
@@ -48,6 +49,19 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this 
 **Dispatch - default is direct execution:** the main session builds small and medium features; agents are for genuinely parallel or wide work, or an independent review (delegation costs more total compute). Record tokens, time and real catches; recalibrate after 3-5 dispatches.
 
 **One session per prong:** each parallel prong runs in its own session, reporting completion to the main session. **Every plan has an "Execution approach" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down; agents earn their keep only on proportional value.
+
+### Agent Role Table {#agent-role-table}
+
+Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in the kit's `user/agents/` must match it (a test checks), and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.
+
+| Role | Job | Tools | Denied tools | Rules at start |
+|---|---|---|---|---|
+| builder | Builds one unit test-first in its own worktree | Read, Edit, Write, Grep, Glob, Bash, PowerShell | WebFetch, WebSearch, Agent | edit-discipline, test-integrity, test-value |
+| checker | Checks one finished unit; never edits | Read, Grep, Glob, Bash, PowerShell | Edit, Write, WebFetch, WebSearch, Agent | test-integrity, test-value, anti-hallucination, enumerate-before-you-count |
+| scanner | Lists, counts and checks across files | Read, Grep, Glob | none | none |
+| orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |
+
+The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook, so it holds for any AI.
 
 ### Agent-Team Build: Project Adapter (TEMPLATE) {#agent-team-adapter}
 
