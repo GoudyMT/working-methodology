@@ -2,7 +2,7 @@
 
 Use this format for every new session entry in [`_Session Log.md`](../_Session Log.md).
 
-**Newest at top.** New entries go directly below the header section, above the most recent prior session. In the SAME edit, move the now-third-newest full entry to the archive and leave its 1-2 line summary (`_Working Standards.md` "Session Log Compression Pattern").
+**Newest at top.** New entries go directly below the header section, above the most recent prior session. In the SAME edit, move the now-third-newest full entry to the archive and leave its 1-2 line summary (rule:session-log-compression).
 
 ---
 

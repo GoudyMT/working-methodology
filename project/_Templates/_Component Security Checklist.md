@@ -1,6 +1,6 @@
 # Component Security Checklist
 
-Complete this checklist BEFORE marking any component "complete", per `_Working Standards.md` "Security Standards" and the design spec's security section.
+Complete this checklist BEFORE marking any component "complete", per rule:security-standards and the design spec's security section.
 
 Copy it into each Component Spec under "Security Considerations".
 
@@ -46,7 +46,7 @@ Copy it into each Component Spec under "Security Considerations".
 
 - [ ] **New dependencies audited** (the package manager's audit) before adding. A known vulnerability = no install.
 - [ ] **Provenance verified.** Known maintainers, active project, reasonable adoption.
-- [ ] **Size budget respected** (`_Working Standards.md` "Size Budgets").
+- [ ] **Size budget respected** (rule:size-budgets).
 - [ ] **Tree-shakable imports** where the ecosystem supports it.
 
 ### Tests

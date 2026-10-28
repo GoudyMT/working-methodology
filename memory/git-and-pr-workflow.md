@@ -7,13 +7,13 @@ metadata:
 
 The git rules live in the standards; this file points to them.
 
-- One-line typed commits, no trailer -> _Working Standards.md "Commit Message Format"
-- Commits delegated in-cycle, sample first -> _Working Standards.md "Git: Local Work vs Outward Acts"
-- Staged-diff scan before every commit -> _Working Standards.md "Security Standards"
-- Isolation tier, branch-first, branch names -> _Working Standards.md "Branching"
-- Retiring merged branches, unsetting upstreams -> _Working Standards.md "Branching"
-- The work PR carries the bump -> _Working Standards.md "Release Notes"
-- PR body shown before any push -> _Working Standards.md "PR Body Standard"
-- A settled standard beats a plan line -> _Working Standards.md "Instruction Priority"
+- One-line typed commits, no trailer -> rule:commit-message-format
+- Commits delegated in-cycle, sample first -> rule:outward-acts
+- Staged-diff scan before every commit -> rule:security-standards
+- Isolation tier, branch-first, branch names -> rule:branching
+- Retiring merged branches, unsetting upstreams -> rule:branching
+- The work PR carries the bump -> rule:release-notes
+- PR body shown before any push -> rule:pr-body
+- A settled standard beats a plan line -> rule:instruction-priority
 
 Related: [[outward-writing]], [[quality-gates]], [[remote-and-outward-actions]], [[release-and-deploy]].

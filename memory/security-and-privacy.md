@@ -7,11 +7,11 @@ metadata:
 
 The security rules live in the standards; this file points to them.
 
-- Privacy first, secrets, the two-tier cadence -> _Working Standards.md "Security Standards"
-- Dev servers holding live keys -> _Working Standards.md "Security Standards"
-- Dependency advisories and lockfile hygiene -> _Working Standards.md "Security Standards"
-- Zero operator cost -> _Working Standards.md "Security Standards"
-- The push guard backs the rule -> _Working Standards.md "Git: Local Work vs Outward Acts"
-- Safety-critical constants from the official source -> _Working Standards.md "Anti-Hallucination Discipline (Standing)"
+- Privacy first, secrets, the two-tier cadence -> rule:security-standards
+- Dev servers holding live keys -> rule:security-standards
+- Dependency advisories and lockfile hygiene -> rule:security-standards
+- Zero operator cost -> rule:security-standards
+- The push guard backs the rule -> rule:outward-acts
+- Safety-critical constants from the official source -> rule:anti-hallucination
 
 Related: [[review-and-sweeps]], [[remote-and-outward-actions]], [[release-and-deploy]].

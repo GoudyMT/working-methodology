@@ -7,12 +7,12 @@ metadata:
 
 The design-thinking rules live in the standards; this file points to them.
 
-- Goal over mechanism; the right layer -> _Working Standards.md "Goal Before Mechanism"
-- Capability check, tier order, deciding measurement -> _Working Standards.md "Goal Before Mechanism"
-- Success Charter for uncertain work -> _Working Standards.md "Success Charter (Define Success Before Building)"
-- Empirical build-gates; de-risked part first -> _Working Standards.md "Probe Scope"
-- Seam-first builds for later modes -> _Working Standards.md "Dual-Horizon Recommendations"
-- Root fix over the lazy shortcut -> _Working Standards.md "Re-Plan on Failure"
-- No usage-scaling cost without revenue -> _Working Standards.md "Security Standards"
+- Goal over mechanism; the right layer -> rule:goal-before-mechanism
+- Capability check, tier order, deciding measurement -> rule:goal-before-mechanism
+- Success Charter for uncertain work -> rule:success-charter
+- Empirical build-gates; de-risked part first -> rule:probe-scope
+- Seam-first builds for later modes -> rule:dual-horizon
+- Root fix over the lazy shortcut -> rule:re-plan-on-failure
+- No usage-scaling cost without revenue -> rule:security-standards
 
 Related: [[collaboration-and-decisions]], [[measurement-and-evals]], [[visual-and-ux-design]].

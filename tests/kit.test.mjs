@@ -389,7 +389,10 @@ test('pre-compact says when an installed third-party plugin moved past its backu
 test('brief templates point to the one rules block and never carry a pasted copy', () => {
   for (const t of ['builder-brief.md', 'checker-brief.md']) {
     const body = read(path.resolve('user/skills/agent-team-build/templates', t));
-    assert.match(body, /read `<project folder>\/_Working Standards\.md`, section "Rules every brief carries"/);
+    // Both forms: the rule ID through the index, and the single file a project not yet moved still has.
+    assert.match(body, /read the "Rules every brief carries" item of rule:agent-team-adapter/);
+    assert.match(body, /`<project folder>\/standards\/INDEX\.md` names its file/);
+    assert.match(body, /still on one standards file keeps\nit in `<project folder>\/_Working Standards\.md`/);
     assert.doesNotMatch(body, /paste the block/i);
   }
 });
@@ -602,4 +605,24 @@ test('the ledger refuses a section the map leaves out or a map entry with no sec
   const map = { modules: [{ id: 'core', sections: ['a'] }] };
   assert.throws(() => ledger('## A {#a}\nx\n## B {#b}\ny\n', map), /not placed: b/);
   assert.throws(() => ledger('## A {#a}\nx\n', { modules: [{ id: 'core', sections: ['a', 'zz'] }] }), /no such section: zz/);
+});
+
+// Plan rule-modules, Phase 1: every pointer to a rule names its fixed ID, and every ID it names exists.
+// A pointer to a heading by its words breaks the day the heading is renamed or moved.
+const KIT_TEXT_FILES = () => {
+  const skip = new Set(['.git', 'node_modules', 'vendor', 'reports', 'migrations', 'evals', 'plans']);
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? (skip.has(e.name) ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]);
+  return walk(path.resolve('.')).filter((f) => /\.(md|mjs|cjs|html|json)$/.test(f) && !f.endsWith('CHANGELOG.md'));
+};
+test('every rule pointer in the kit names a rule ID that exists', () => {
+  const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
+  const broken = [], byWords = [];
+  for (const f of KIT_TEXT_FILES()) {
+    const text = read(f);
+    for (const m of text.matchAll(/\brule:([a-z0-9-]+)/g)) if (!ids.has(m[1])) broken.push(`${path.relative('.', f)}: rule:${m[1]}`);
+    for (const m of text.matchAll(/_Working Standards\.md`?\]?(?:\([^)]*\))?(?:,? section)? "([^"]+)"/g)) byWords.push(`${path.relative('.', f)}: "${m[1]}"`);
+  }
+  assert.deepEqual(broken, []);
+  assert.deepEqual(byWords, []);
 });

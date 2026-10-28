@@ -74,7 +74,7 @@ export function buildItems(input: Input): Item[];
 - [...]
 
 ### Human error
-- [Exact-entry fields: how a person sees and fixes a typo; how a person who forgets recovers - `_Working Standards.md` "Design for Human Error"]
+- [Exact-entry fields: how a person sees and fixes a typo; how a person who forgets recovers - rule:design-for-human-error]
 
 ## Data Model
 
@@ -94,7 +94,7 @@ export function buildItems(input: Input): Item[];
 
 ## Testing Plan
 
-[Each test names the real use or failure it guards - `_Working Standards.md` "Test Value".]
+[Each test names the real use or failure it guards - rule:test-value.]
 
 **Unit tests:**
 - [Acceptance criteria as test specs]

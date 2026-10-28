@@ -2,8 +2,9 @@
 
 ## Project rules (one source - read it, never a pasted copy)
 
-Before anything else, read `<project folder>/_Working Standards.md`, section "Rules every brief carries", in
-full, with the Read tool. Those rules bind you. If you cannot read it, stop and report that.
+Before anything else, read the "Rules every brief carries" item of rule:agent-team-adapter in full, with the
+Read tool: `<project folder>/standards/INDEX.md` names its file. A project still on one standards file keeps
+it in `<project folder>/_Working Standards.md`. Those rules bind you. If you cannot read it, stop and report that.
 
 ## The goal and the plan unit
 

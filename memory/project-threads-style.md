@@ -5,10 +5,10 @@ metadata:
   type: feedback
 ---
 
-- Lead with the answer; plain sentences -> _Working Standards.md "The Owner's Rules"
-- ASCII only, so no em dashes -> _Working Standards.md "Code Standards"
-- Waits said aloud in the reply -> _Working Standards.md "Delegated Decisions (amends rule 1)"
-- Memory file shape and size -> _Working Standards.md "Correction & Learning Loop"
+- Lead with the answer; plain sentences -> rule:owners-rules
+- ASCII only, so no em dashes -> rule:code-standards
+- Waits said aloud in the reply -> rule:delegated-decisions
+- Memory file shape and size -> rule:correction-loop
 
 How the owner wants threads to read (preferences, kept here):
 - **One plain question per decision.** One short line per option, then a recommendation. Do not stack several decisions in one question.

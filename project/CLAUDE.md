@@ -10,7 +10,7 @@
 
 ## Critical Hard Rules (Read First)
 
-1. **Default mode: Plan for design.** Lock A/B/C decisions with the owner before execution. Decisions the project's records already answer are delegated to Claude - impact test first, then a `Decided alone` report at the end of the workflow (`_Working Standards.md` "Delegated Decisions"). Once locked, edits proceed under Edit Discipline. Explicit per-file approval still required for high-stakes changes per Edit Discipline criteria.
+1. **Default mode: Plan for design.** Lock A/B/C decisions with the owner before execution. Decisions the project's records already answer are delegated to Claude - impact test first, then a `Decided alone` report at the end of the workflow (rule:delegated-decisions). Once locked, edits proceed under Edit Discipline. Explicit per-file approval still required for high-stakes changes per Edit Discipline criteria.
 2. **One issue at a time.** Bulk instructions ("complete all todos") do NOT override per-issue locks.
 3. **Privacy and security ABOVE all else.** <!-- PROJECT ADAPTER A4/A5: the data boundary and product red lines, e.g. "Personal data never leaves the device by default. No third-party trackers. No ads, ever." -->
 4. **Domain hard boundaries:** <!-- PROJECT ADAPTER A2: the legal / licensing / product lines this project never crosses. Fill in or write "none beyond the general rules". -->

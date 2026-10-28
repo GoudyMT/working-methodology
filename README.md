@@ -81,7 +81,7 @@ project adopts the kit for the first time, after reading the dry run.
 ## What runs on its own
 
 Every project the kit installs gets these, wired in `.claude/settings.json`, so none of them depends on anyone
-remembering (`_Working Standards.md` "Kit Standards"):
+remembering (rule:kit-standards):
 
 - **At session start:** fetches the kit's GitHub repo and says if it is ahead of the kit folder, says when the kit has newer rules and how many, lists kit files this project changed
   (update leaves them alone), and lists the skills for this project's cases. Claude and the owner both see it.

@@ -7,9 +7,9 @@ metadata:
 
 The release rules live in the standards; this file points to them.
 
-- Drafting, versioning, tagging, publishing a release -> _Working Standards.md "Release Notes"
-- The post-merge online check -> _Working Standards.md "Post-Merge Check"
-- Hand deploys, config drift, rollbacks -> _Working Standards.md "Post-Merge Check"
-- Placeholders and masked ids in config -> _Working Standards.md "Security Standards"
+- Drafting, versioning, tagging, publishing a release -> rule:release-notes
+- The post-merge online check -> rule:post-merge-check
+- Hand deploys, config drift, rollbacks -> rule:post-merge-check
+- Placeholders and masked ids in config -> rule:security-standards
 
 Related: [[outward-writing]], [[git-and-pr-workflow]], [[remote-and-outward-actions]].

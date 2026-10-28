@@ -7,10 +7,10 @@ metadata:
 
 The outward-writing rules live in the standards; this file points to them.
 
-- Start every outward piece from its format -> _Working Standards.md "PR Body Standard"
-- PR body sizes, audits, lived examples -> _Working Standards.md "PR Body Standard"
-- Dash-free prose the owner publishes -> _Working Standards.md "PR Body Standard"
-- Release notes: kind, claims, readers -> _Working Standards.md "Release Notes"
-- Summary, not tallies, in PR bodies -> _Working Standards.md "PR Body Standard"
+- Start every outward piece from its format -> rule:pr-body
+- PR body sizes, audits, lived examples -> rule:pr-body
+- Dash-free prose the owner publishes -> rule:pr-body
+- Release notes: kind, claims, readers -> rule:release-notes
+- Summary, not tallies, in PR bodies -> rule:pr-body
 
 Related: [[git-and-pr-workflow]], [[release-and-deploy]], [[communication-style]].

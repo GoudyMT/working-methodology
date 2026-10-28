@@ -106,7 +106,7 @@ Use this format for every new Architecture Decision Record (ADR) in `<docs/decis
 - **Status is mutable; the file is not deleted.** ADRs are history.
 - **Filename never changes** after creation. If the decision evolves, link forward via `superseded by`.
 - **Link bidirectionally.** When ADR-005 supersedes ADR-002, set ADR-002's status to `superseded by [ADR-005]` AND list ADR-002 in ADR-005's Related ADRs.
-- **A code deviation from an accepted ADR** gets an inline `> SUPERSEDED (<date>): ...` marker in the SAME session if the full amendment is batched (`_Working Standards.md` "Locked-Decision Drift Markers").
+- **A code deviation from an accepted ADR** gets an inline `> SUPERSEDED (<date>): ...` marker in the SAME session if the full amendment is batched (rule:sdd-triangle, "Locked-Decision Drift Markers").
 - **Considered Options must be honest.** If only one real option existed, say so and explain why - never fabricate alternatives.
 - **Length:** aim for 300-800 words. Longer = bundling or padding; shorter = probably under-explained.
 

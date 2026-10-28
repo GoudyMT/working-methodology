@@ -5,10 +5,10 @@ metadata:
   type: reference
 ---
 
-- Commands in the owner's shell dialect -> _Working Standards.md "Anti-Hallucination Discipline (Standing)"
-- Committing on a shared machine -> _Working Standards.md "Pre-Commit Discipline"
-- Crashes, loaded machines, timed re-runs -> _Working Standards.md "Test and Review Cadence"
-- Empty CLI errors; known symptoms first -> _Working Standards.md "Failure Response Discipline (Triage Before Fixing)"
+- Commands in the owner's shell dialect -> rule:anti-hallucination
+- Committing on a shared machine -> rule:pre-commit
+- Crashes, loaded machines, timed re-runs -> rule:test-and-review-cadence
+- Empty CLI errors; known symptoms first -> rule:failure-response
 
 **Windows PowerShell 5.1 facts** (the dialect for commands handed to the owner, whatever the code fence says):
 - Chain with `; if ($?) { ... }`, never `&&`. Use `2>$null`, `$env:VAR='x'; cmd`; no head, tail, which, touch.

@@ -5,9 +5,9 @@ metadata:
   type: feedback
 ---
 
-- Plain-words prose and the pre-send check -> _Working Standards.md "The Owner's Rules"
-- Rundown at stopping points; waits aloud -> _Working Standards.md "Delegated Decisions (amends rule 1)"
-- Ask the owner for live values -> _Working Standards.md "Anti-Hallucination Discipline (Standing)"
+- Plain-words prose and the pre-send check -> rule:owners-rules
+- Rundown at stopping points; waits aloud -> rule:delegated-decisions
+- Ask the owner for live values -> rule:anti-hallucination
 
 How the owner wants to be talked to (preferences, kept here):
 - **Frame every test or review hand-off:** "Testing now / Expect to see / Not yet (which step adds it)". Without it a reviewer cannot tell a deferred feature from a bug.

@@ -1,6 +1,6 @@
 # Trial Rules
 
-A new kit rule ships as a trial (`_Working Standards.md` "Kit Standards" #7). It becomes standard once a second
+A new kit rule ships as a trial (rule:kit-standards #7). It becomes standard once a second
 project has used it cleanly, or when the owner promotes it directly. A trial that a project could not use cleanly
 is reworked or retired at the next kit release.
 

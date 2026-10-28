@@ -22,7 +22,7 @@ node <kit folder>/scripts/kit.mjs install project <project folder>
 This copies the standards, the four tracking files, `_Templates/`, the tools and `.claude/settings.json`, and
 seeds the working-style memory into Claude Code's memory folder for this project. The settings wire three hooks
 pointed at this folder: the push guard, and the kit hook at session start, on each message and before
-each compact (`_Working Standards.md` "Kit Standards" #1). It writes `.kit/kit-version.json`, the record
+each compact (rule:kit-standards #1). It writes `.kit/kit-version.json`, the record
 that later updates and fold-backs read.
 
 Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-PARTY.md).
@@ -70,7 +70,7 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
    `_Templates/_Decision Record Template.md`), and a Success Charter for the first version.
 2. Set up the gate first: tests, lint, type checks and CI, so "green" means something from day one. The commit
    hook and the full gate start with `node .claude/load-guard.cjs`, and the hook's related-tests selection is
-   proved by breaking one test on purpose (`_Working Standards.md` "Test and Review Cadence").
+   proved by breaking one test on purpose (rule:test-and-review-cadence).
 3. Seed the tracking files: `_Working Memory.md` (session 1), `_Active Plan.md` (the first concrete action),
    `_Master Roadmap.md` (the versions as checkboxes), `_Session Log.md` (session 1).
 

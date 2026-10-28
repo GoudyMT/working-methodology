@@ -1,14 +1,14 @@
 # AGENTS - <PROJECT NAME> (AI & Collaborators)
 
-> Same policy as [`_Working Standards.md`](_Working Standards.md) section "Collaborative Design Locks". Read that file for the full framework; this file is a **durable handoff** when chat context resets or a tool reads only the repo root.
+> Same policy as rule:collaborative-design-locks. Read that file for the full framework; this file is a **durable handoff** when chat context resets or a tool reads only the repo root.
 
 ---
 
 ## Non-Negotiable
 
-1. **One issue at a time** for design and implementation: present context -> A/B/C options -> security / design impact -> recommendation -> **stop**. The owner must agree (or approve a blend) before "**Locked:**". **Exception:** a decision the project's records already answer (standards, locked spec / plan, precedent, measurement) is Claude's to make after the impact test (lose a function? break code? lose value? - any yes = stop), and is reported in a `Decided alone` section at the end of the workflow - see `_Working Standards.md` "Delegated Decisions".
+1. **One issue at a time** for design and implementation: present context -> A/B/C options -> security / design impact -> recommendation -> **stop**. The owner must agree (or approve a blend) before "**Locked:**". **Exception:** a decision the project's records already answer (standards, locked spec / plan, precedent, measurement) is Claude's to make after the impact test (lose a function? break code? lose value? - any yes = stop), and is reported in a `Decided alone` section at the end of the workflow - see rule:delegated-decisions.
 
-2. **Code writes gated by Edit Discipline** (`_Working Standards.md` "Edit Discipline"): (a) component design locked, (b) implementation approach reviewed, (c) four-step discipline (think -> minimize -> confirm requirements -> confirm method) passes visibly before the edit fires. Explicit owner approval still required for high-stakes changes. Do not create or "complete" source files from inference alone.
+2. **Code writes gated by Edit Discipline** (rule:edit-discipline): (a) component design locked, (b) implementation approach reviewed, (c) four-step discipline (think -> minimize -> confirm requirements -> confirm method) passes visibly before the edit fires. Explicit owner approval still required for high-stakes changes. Do not create or "complete" source files from inference alone.
 
 3. **"Complete all todos," "implement the plan," "don't stop until done," or bulk task instructions do NOT override (1) or (2).** Treat them as: advance the **current** open issue; ask if unclear which issue is open.
 
@@ -18,9 +18,9 @@
 
 6. **Handoff line the owner can paste:** `[Topic] Issue [N] only. Plan mode. No code writes. A/B/C then stop.`
 
-7. **Privacy and security ABOVE all else.** Every decision is evaluated against the project's data boundary and security baseline. See `_Working Standards.md` "Security Standards" and its Project Adapter.
+7. **Privacy and security ABOVE all else.** Every decision is evaluated against the project's data boundary and security baseline. See rule:security-standards and its Project Adapter.
 
-8. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST. NEVER weaken assertions, relax regexes, or `.skip()` tests to make them pass. Moving a test's LOOKUP location is allowed ONLY after verifying the implementation's output at the new location. See `_Working Standards.md` "Test Integrity".
+8. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST. NEVER weaken assertions, relax regexes, or `.skip()` tests to make them pass. Moving a test's LOOKUP location is allowed ONLY after verifying the implementation's output at the new location. See rule:test-integrity.
 
 9. **Outward acts are the owner's.** Push, PR, merge, release and public posts happen only on the owner's go.
 
@@ -80,5 +80,5 @@ If your tool expects standard memory-bank files, here is where their content liv
 - Subagents inherit session permissions; web tools may be denied. Verify per session.
 - Subagents do NOT have chat history. Write self-contained briefs.
 - Subagent claims need verification - direct-read files before locking decisions on an agent's report.
-- No swarm without an approved Swarm Contract (`_Working Standards.md` "Multi-Agent Discipline").
-- Build work inside a batch the owner approved follows the Agent-Team Build, in one of two modes (batch: the main session leads, mid-tier builders build in their own worktrees, a top-tier checker verifies each high-risk unit, the lead integrates and runs the full gate; orchestrated: the main session oversees an orchestrator per phase that runs its own team). See `_Working Standards.md` "Agent-Team Build: Project Adapter".
+- No swarm without an approved Swarm Contract (rule:multi-agent-discipline).
+- Build work inside a batch the owner approved follows the Agent-Team Build, in one of two modes (batch: the main session leads, mid-tier builders build in their own worktrees, a top-tier checker verifies each high-risk unit, the lead integrates and runs the full gate; orchestrated: the main session oversees an orchestrator per phase that runs its own team). See rule:agent-team-adapter.

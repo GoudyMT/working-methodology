@@ -7,11 +7,11 @@ metadata:
 
 The scope rules live in the standards; this file points to them.
 
-- Plan the whole cycle; batch planning -> _Working Standards.md "Session Workflow"
-- Audit a long branch against the objective -> _Working Standards.md "Session Workflow"
-- Parking lot and pre-PR idea triage -> _Working Standards.md "Parking Lot + Pre-PR Idea Triage"
-- Value tiers; stop when returns shrink -> _Working Standards.md "Features First; Findings Ride Inside the PR"
-- Size budgets: trim before asking -> _Working Standards.md "Size Budgets: Trim Before You Ask"
-- No repeated boilerplate in user copy -> _Working Standards.md "Visual Design Collaboration"
+- Plan the whole cycle; batch planning -> rule:session-workflow
+- Audit a long branch against the objective -> rule:session-workflow
+- Parking lot and pre-PR idea triage -> rule:parking-lot
+- Value tiers; stop when returns shrink -> rule:features-first
+- Size budgets: trim before asking -> rule:size-budgets
+- No repeated boilerplate in user copy -> rule:visual-design-collaboration
 
 Related: [[findings-pipeline]], [[goals-and-design-thinking]].

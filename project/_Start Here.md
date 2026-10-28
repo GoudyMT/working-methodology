@@ -48,9 +48,9 @@ Tell the owner which mode you are in:
 
 **Default mode is Plan.** Start in Plan until the owner says otherwise.
 
-**Collaborative design locks (non-negotiable):** work proceeds **one issue at a time** with the owner's explicit lock before the next. "Complete the plan" / "finish all todos" never overrides that. Full detail: [`_Working Standards.md`](_Working Standards.md) "Collaborative Design Locks".
+**Collaborative design locks (non-negotiable):** work proceeds **one issue at a time** with the owner's explicit lock before the next. "Complete the plan" / "finish all todos" never overrides that. Full detail: rule:collaborative-design-locks.
 
-**Branch-first (non-negotiable):** feature work belongs on `<type>/<name>`, not `main`. Confirm the branch before the first edit to a tracked file; if on `main`, branch first. Gitignored vault `.md` is exempt. Full rule: [`_Working Standards.md`](_Working Standards.md) "Branching" -> Branch-First Discipline.
+**Branch-first (non-negotiable):** feature work belongs on `<type>/<name>`, not `main`. Confirm the branch before the first edit to a tracked file; if on `main`, branch first. Gitignored vault `.md` is exempt. Full rule: rule:branching -> Branch-First Discipline.
 
 ---
 

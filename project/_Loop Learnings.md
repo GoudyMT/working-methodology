@@ -1,6 +1,6 @@
 # Loop Learnings - <PROJECT NAME>
 
-> Lessons from **Loop Workflow Mode** and Agent-Team builds (see [`_Working Standards.md`](_Working Standards.md) "Loop Workflow Mode"). Capture ONLY behaviour-changing lessons - a correction the owner made, a plan under-spec that forced a stop, a test / code anomaly + root cause, a near-miss on standards, a visual that looked wrong while tests passed. NOT routine green tasks or gate-stops that worked as designed. A recurrence = **REGRESSION** (hard stop + loud flag + scoreboard bump). Confirmed or recurring lessons graduate to `_Working Standards.md` and move to `_Archive/_Loop Learnings Archive.md`. This file holds open lessons only.
+> Lessons from **Loop Workflow Mode** and Agent-Team builds (see rule:loop-workflow-mode). Capture ONLY behaviour-changing lessons - a correction the owner made, a plan under-spec that forced a stop, a test / code anomaly + root cause, a near-miss on standards, a visual that looked wrong while tests passed. NOT routine green tasks or gate-stops that worked as designed. A recurrence = **REGRESSION** (hard stop + loud flag + scoreboard bump). Confirmed or recurring lessons graduate to `_Working Standards.md` and move to `_Archive/_Loop Learnings Archive.md`. This file holds open lessons only.
 
 ---
 
@@ -10,7 +10,7 @@ One line per loop run (or per session with loops). The trend is the accuracy sig
 
 Format: `- <date>: <N> loop(s) - <scope> (<N> commits <first>..<last>), <N> halts (<what>), <N> corrections, <N> regressions (<which L-NN>), <new lessons>, <N> guards added (<which L-NN -> hook / test / lint>).`
 
-A lesson that recurs once becomes a guard, not more text (`_Working Standards.md` "Kit Standards" #6); the entry's `Guard:` line names it.
+A lesson that recurs once becomes a guard, not more text (rule:kit-standards #6); the entry's `Guard:` line names it.
 
 -
 

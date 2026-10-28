@@ -7,11 +7,11 @@ metadata:
 
 The evidence rules live in the standards; this file points to them.
 
-- Guess vs proven; cheap facts first -> _Working Standards.md "Anti-Hallucination Discipline (Standing)"
-- Everything handed over is a claim -> _Working Standards.md "Anti-Hallucination Discipline (Standing)"
-- Derived copies, added claims, docblocks -> _Working Standards.md "Anti-Hallucination Discipline (Standing)"
-- Ignore-file searches, curated links, device claims -> _Working Standards.md "Anti-Hallucination Discipline (Standing)"
-- Get data before fixing -> _Working Standards.md "Failure Response Discipline (Triage Before Fixing)"
-- Output artifacts; one check per property -> _Working Standards.md "Test-Driven Development (TDD)"
+- Guess vs proven; cheap facts first -> rule:anti-hallucination
+- Everything handed over is a claim -> rule:anti-hallucination
+- Derived copies, added claims, docblocks -> rule:anti-hallucination
+- Ignore-file searches, curated links, device claims -> rule:anti-hallucination
+- Get data before fixing -> rule:failure-response
+- Output artifacts; one check per property -> rule:tdd
 
 Related: [[measurement-and-evals]], [[testing-discipline]], [[findings-pipeline]].

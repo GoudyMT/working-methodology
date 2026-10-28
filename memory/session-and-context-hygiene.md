@@ -7,14 +7,14 @@ metadata:
 
 The hygiene rules live in the standards; this file points to them.
 
-- Tracking files, one job each -> _Working Standards.md "Per-Tracking-File Unique Function + Anti-Duplication"
-- The plan file is the progress record -> _Working Standards.md "Per-Tracking-File Unique Function + Anti-Duplication"
-- Lean ledgers and file caps -> _Working Standards.md "Tracking File Size Caps (Hard Limits)"
-- Fresh-read orientation after a compact -> _Working Standards.md "Post-Compact Orientation Protocol (MANDATORY first action)"
-- Compact after each large step -> _Working Standards.md "Session Workflow"
-- The pre-compact closeout -> _Working Standards.md "Pre-Compact and Post-Compact Hygiene Ritual"
-- Temp files and the rule sort -> _Working Standards.md "Pre-Compact Scan"
-- Ask instead of assuming -> _Working Standards.md "The Owner's Rules"
-- Corrections codified the same session -> _Working Standards.md "Correction & Learning Loop"
+- Tracking files, one job each -> rule:tracking-file-functions
+- The plan file is the progress record -> rule:tracking-file-functions
+- Lean ledgers and file caps -> rule:tracking-file-size-caps
+- Fresh-read orientation after a compact -> rule:post-compact-orientation
+- Compact after each large step -> rule:session-workflow
+- The pre-compact closeout -> rule:compact-ritual
+- Temp files and the rule sort -> rule:pre-compact-scan
+- Ask instead of assuming -> rule:owners-rules
+- Corrections codified the same session -> rule:correction-loop
 
 Related: [[autonomous-loop-mode]], [[verification-and-evidence]].
