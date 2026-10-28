@@ -6,6 +6,30 @@
       "before": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> _Working Standards.md \"Section\"`), never a restated copy. Why: two copies drift, and the stale one gets followed. *Check: tests flag kit memory lines that repeat this file's wording.*",
       "after": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> rule:<id>`, the fixed ID after the rule's heading), never a restated copy. Why: two copies drift, and the stale one gets followed. *Check: tests flag kit memory lines that repeat this file's wording.*",
       "why": "The pointer form changed to the rule ID; the old form is what the link check now refuses."
+    },
+    {
+      "id": "core",
+      "before": "**Start:** read `_Start Here.md` -> `_Working Standards.md` -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory.",
+      "after": "**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory.",
+      "why": "The core rules now live in AGENTS.md; the module index there names the rest."
+    },
+    {
+      "id": "post-compact-orientation",
+      "before": "   [x] _Working Standards.md - Edit Discipline + this protocol intact",
+      "after": "   [x] AGENTS.md - Edit Discipline + the module index intact",
+      "why": "The orientation checklist names the file that now holds Edit Discipline."
+    },
+    {
+      "id": "handoff-message-structure",
+      "before": "Run the Post-Compact Orientation Protocol in `_Working Standards.md` (fresh reads of the Reading Order,",
+      "after": "Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,",
+      "why": "The handoff template points at the rule by its ID."
+    },
+    {
+      "id": "handoff-message-structure",
+      "before": "1. _Start Here.md  2. _Working Standards.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md",
+      "after": "1. _Start Here.md  2. AGENTS.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md",
+      "why": "The reading order names the file that now holds the core rules."
     }
   ]
 }

@@ -141,4 +141,4 @@ export function buildItems(input: Input): Item[];
 - Implementation code (source tree)
 - Tests (alongside source)
 - Cross-component architecture (master design spec or ADRs)
-- Process methodology (`_Working Standards.md`)
+- Process methodology (`AGENTS.md` and the rule modules)

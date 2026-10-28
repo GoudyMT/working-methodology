@@ -12,7 +12,7 @@
 
 **Resume Point:** <next action, <= 40 words>. -> [`_Active Plan.md`](_Active Plan.md) Resume Point
 
-**How We Work:** [`_Working Standards.md`](_Working Standards.md) - read FIRST every session.
+**How We Work:** [`AGENTS.md`](AGENTS.md) - the core rules and the module index, loaded every session.
 
 ## Project Identity
 
@@ -47,4 +47,4 @@
 
 ## Working Preferences
 
-Inherited from the owner's global CLAUDE.md. Project-specific overrides + additions in [`_Working Standards.md`](_Working Standards.md).
+Inherited from the owner's global CLAUDE.md. Project-specific overrides + additions in [`AGENTS.md`](AGENTS.md) and the rule modules it lists.

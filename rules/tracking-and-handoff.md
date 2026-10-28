@@ -102,7 +102,7 @@ Why: the recurring drift is treating reminders and the summary as a re-read, the
    ```
    Post-Compact Orientation Protocol:
    [x] _Start Here.md - reading order matches handoff
-   [x] _Working Standards.md - Edit Discipline + this protocol intact
+   [x] AGENTS.md - Edit Discipline + the module index intact
    [x] _Loop Learnings.md - N open lessons, 0 recurred
    [x] _Working Memory.md - Last Session = N, Resume Point = X (matches handoff)
    [x] _Active Plan.md - Resume Point = Y (matches handoff)
@@ -122,7 +122,7 @@ One self-contained message: any command the owner must run first in its own code
 # <PROJECT NAME> - Continuation Handoff
 
 ## REQUIRED FIRST ACTIONS
-Run the Post-Compact Orientation Protocol in `_Working Standards.md` (fresh reads of the Reading Order,
+Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
 visible checklist, scans) and confirm mode + first action with the owner. This handoff is a CACHE.
 
 ## Working Mode: Plan (default)
@@ -140,7 +140,7 @@ visible checklist, scans) and confirm mode + first action with the owner. This h
 - Corrections caught mid-session:
 
 ## Reading Order (mandatory, in order)
-1. _Start Here.md  2. _Working Standards.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md
+1. _Start Here.md  2. AGENTS.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md
 5. _Active Plan.md  6. Last Session Log entry  7. (spec / ADR / plan for the next issue)
 
 ## Next Step (REQUIRED)

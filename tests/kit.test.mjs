@@ -779,3 +779,17 @@ test('session start after a compact names the orientation rule and where it live
   assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'compact' }), /rule:post-compact-orientation/);
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'startup' }), /post-compact-orientation/);
 });
+
+// The old single standards file is gone from the kit. A mention of it is allowed only where the kit speaks of a
+// project still on that file (the old-layout fold-back and the brief fallback).
+test('nothing in the kit points at the retired standards file, except about projects still on it', () => {
+  const left = [];
+  for (const f of KIT_TEXT_FILES()) {
+    // A mention may wrap, so the line before it counts as its context.
+    read(f).split('\n').forEach((l, i, all) => {
+      const ctx = `${all[i - 1] || ''} ${l}`;
+      if (l.includes('_Working Standards.md') && !/one standards file|single standards file|old layout|"retired"/i.test(ctx)) left.push(`${path.relative('.', f)}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(left, []);
+});

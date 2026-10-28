@@ -1,6 +1,6 @@
 # Session Log - <PROJECT NAME>
 
-> **Unique job: historical narrative - WHAT happened WHEN.** Commit hashes are recorded here once. Latest 2 sessions at full detail per [`_Templates/_Session Log Template.md`](_Templates/_Session Log Template.md); older sessions compressed to 1-2 lines + pointers per "Session Log Compression Pattern" in `_Working Standards.md`. Whole file <= 10 sessions.
+> **Unique job: historical narrative - WHAT happened WHEN.** Commit hashes are recorded here once. Latest 2 sessions at full detail per [`_Templates/_Session Log Template.md`](_Templates/_Session Log Template.md); older sessions compressed to 1-2 lines + pointers per rule:session-log-compression. Whole file <= 10 sessions.
 >
 > **Newest at top.** New entries go directly below this header. Compression MOVES the full entry to the archive first; it never deletes it.
 >

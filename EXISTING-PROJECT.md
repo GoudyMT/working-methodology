@@ -51,7 +51,7 @@ Present the plan as A/B/C choices and stop. On the owner's go:
 1. Run the install for real. New files land; existing ones stay.
 2. Merge each listed file by hand: keep the project's specifics, add the kit's rules, and fill the adapters
    (see NEW-PROJECT.md step 4). The pre-compact closeout must carry the rule sort for the kit
-   (`_Working Standards.md`, scan step 5b), even when the project keeps its own standards.
+   (rule:pre-compact-scan, step 5b), even when the project keeps its own standards.
 3. Seed the tracking files from the state map. Set up the vault backup and the skill cases (NEW-PROJECT.md steps
    3b and 3c). If the project keeps its own `.claude/settings.json`, add the kit hook's SessionStart, UserPromptSubmit and
    PreCompact entries to it by hand (copy them from the kit's `project/.claude/settings.json`), so the kit check cannot be

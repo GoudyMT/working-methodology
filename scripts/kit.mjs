@@ -267,6 +267,7 @@ export function foldBack(ctx) {
   }
   const where = ctx.target === 'user' ? '~/.claude' : path.basename(path.resolve(ctx.projectDir));
   const list = (title, items) => `## ${title} (${items.length})\n\n${items.map((i) => `- ${i}`).join('\n') || '- none'}\n`;
+  // A project still on the old layout (one standards file) folds back section by section.
   const oldFile = ctx.target === 'project' ? path.join(ctx.projectDir, '_Working Standards.md') : null;
   const oldParts = [];
   if (oldFile && fs.existsSync(oldFile) && fs.existsSync(path.join(ctx.kit, 'rules'))) {

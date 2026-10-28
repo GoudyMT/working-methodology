@@ -60,7 +60,7 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
 - `_Start Here.md`: what the project is, who it serves, the reading order.
 - `CLAUDE.md`: the project's hard rules. The general ones stay; add the domain boundaries (legal limits,
   data rules, content sources) the project must never cross.
-- `_Working Standards.md`, "Project Adapter": the stack, the full gate command (what CI runs), size budgets,
+- rule:project-adapter (`standards/project-adapter.md`): the stack, the full gate command (what CI runs), size budgets,
   test devices, the deploy model, the branch and release conventions.
 - `AGENTS.md`: the same hard rules for other AI tools.
 
@@ -76,7 +76,7 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
 
 ## 6. Start working
 
-Every session after this one starts with the Post-Compact Orientation Protocol in `_Working Standards.md`:
+Every session after this one starts with the Post-Compact Orientation Protocol (rule:post-compact-orientation):
 fresh reads of the reading order, a visible checklist, then the first action confirmed with the owner. Every
 session ends with the pre-compact closeout, whose rule sort (scan step 5b) sends portable rule changes back to
 the kit.

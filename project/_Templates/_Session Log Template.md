@@ -21,7 +21,7 @@ Use this format for every new session entry in [`_Session Log.md`](../_Session L
 
 ### Flagged for Next Session
 - **Resume Point:** [1 line + link]
-- **Read first:** [`_Start Here.md`](../_Start Here.md) -> [`_Working Standards.md`](../_Working Standards.md) -> [`_Loop Learnings.md`](../_Loop Learnings.md) -> [`_Working Memory.md`](../_Working Memory.md) -> [`_Active Plan.md`](../_Active Plan.md) -> [this entry] -> [other files]
+- **Read first:** [`_Start Here.md`](../_Start Here.md) -> [`AGENTS.md`](../AGENTS.md) -> [`_Loop Learnings.md`](../_Loop Learnings.md) -> [`_Working Memory.md`](../_Working Memory.md) -> [`_Active Plan.md`](../_Active Plan.md) -> [this entry] -> [other files]
 - **Open items / blockers:** [if any]
 ```
 
@@ -43,10 +43,10 @@ Use this format for every new session entry in [`_Session Log.md`](../_Session L
 
 - Full design content (design docs / ADRs)
 - Research summaries (research artifacts)
-- Methodology notes (`_Working Standards.md`)
+- Methodology notes (the rule modules)
 - Task lists (`_Master Roadmap.md`)
 - Bulky narration (link to source-of-truth files instead)
-- Process retrospectives (add to `_Working Standards.md` once established as rules)
+- Process retrospectives (add to the right rule module once established as rules)
 
 ---
 
@@ -65,7 +65,7 @@ Use this format for every new session entry in [`_Session Log.md`](../_Session L
 > "**Local-first data as architecture, not policy** - the backend cannot see personal data even if compromised -> [ADR-004](../docs/decisions/004-local-first-data.md)"
 
 **X Files Changed audit list:**
-> "Files changed this session: `_Working Standards.md` (added 3 rules), `_Master Roadmap.md` (updated status), `_Working Memory.md` (refreshed dashboard)..."
+> "Files changed this session: `.claude/rules/testing.md` (added 3 rules), `_Master Roadmap.md` (updated status), `_Working Memory.md` (refreshed dashboard)..."
 
 **OK Lean:**
 > Link from each Completed bullet to the relevant file; no separate Files Changed section.

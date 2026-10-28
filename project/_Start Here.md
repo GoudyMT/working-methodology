@@ -25,7 +25,7 @@
 | Order | File | What You Learn |
 |---|---|---|
 | **1** | This file (`_Start Here.md`) | Orientation, reading order, working mode |
-| **2** | [`_Working Standards.md`](_Working Standards.md) | **HOW we work.** Methodology, code / security / test standards, design locks, compact hygiene. **Non-negotiable.** |
+| **2** | [`AGENTS.md`](AGENTS.md) + [`standards/INDEX.md`](standards/INDEX.md) | **HOW we work.** Methodology, code / security / test standards, design locks, compact hygiene. **Non-negotiable.** |
 | **3** | [`_Loop Learnings.md`](_Loop Learnings.md) | **OPEN LESSONS.** Lessons that must not recur (a repeat = regression). Small; read every session. |
 | **4** | [`_Working Memory.md`](_Working Memory.md) | **WHAT the state is.** Dashboard: last session, current phase, resume point, session index. |
 | **5** | [`_Active Plan.md`](_Active Plan.md) | **WHERE we are.** Current focus and the exact next action. |
@@ -54,7 +54,7 @@ Tell the owner which mode you are in:
 
 ---
 
-## How We Work (Summary - Full Detail in [`_Working Standards.md`](_Working Standards.md))
+## How We Work (Summary - Full Detail in [`AGENTS.md`](AGENTS.md) and the rule modules it lists)
 
 1. **One issue at a time.** A/B/C with pros / cons, validated against the spec and security standards, an honest recommendation; wait for the owner's lock.
 2. **Structured options, not inline prose.** The owner picks, we lock, we move on.
@@ -72,7 +72,7 @@ Tell the owner which mode you are in:
 <!-- PROJECT ADAPTER: 5-10 one-line load-bearing decisions, each with its ADR link. Keep them pointers, not restatements. -->
 
 - **<Decision>** - <one line> -> <ADR link>
-- **Domain hard boundaries:** <fill in, from `_Working Standards.md` Project Adapter A2>
+- **Domain hard boundaries:** <fill in, from rule:project-adapter A2>
 
 ---
 
@@ -81,7 +81,7 @@ Tell the owner which mode you are in:
 ```
 <project root>/
   _Start Here.md                  <- YOU ARE HERE
-  _Working Standards.md           <- Read FIRST
+  AGENTS.md                       <- Read FIRST (core rules + module index)
   _Loop Learnings.md              <- Open lessons (a repeat = regression)
   _Working Memory.md              <- Project state dashboard
   _Active Plan.md                 <- Current focus + next action
@@ -131,7 +131,7 @@ If unclear which issue is open: **one clarification question** to the owner befo
 ## What This File Is Not
 
 - Not the design - read the spec.
-- Not the methodology - read `_Working Standards.md`.
+- Not the methodology - read `AGENTS.md` and the modules it lists.
 - Not the state - read `_Working Memory.md`.
 
 This file is the **entry point**. It tells you what to read next.

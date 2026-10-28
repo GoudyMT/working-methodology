@@ -68,5 +68,5 @@ hurdle. A design that chose maximum strength on paper (six random words) was rep
 optional short PIN with honest copy and a backup as recovery. An earlier rule from the same owner: when a person
 cannot see whether they typed the right thing and keeps failing, they stop and never try again.
 
-Related standards: "Design for Human Error" and "Visual Design Collaboration" in the project's
-`_Working Standards.md`.
+Related standards: "Design for Human Error" and "Visual Design Collaboration" in the project's rules
+(rule:design-for-human-error, rule:visual-design-collaboration).

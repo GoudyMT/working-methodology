@@ -1,6 +1,6 @@
 # Loop Learnings - <PROJECT NAME>
 
-> Lessons from **Loop Workflow Mode** and Agent-Team builds (see rule:loop-workflow-mode). Capture ONLY behaviour-changing lessons - a correction the owner made, a plan under-spec that forced a stop, a test / code anomaly + root cause, a near-miss on standards, a visual that looked wrong while tests passed. NOT routine green tasks or gate-stops that worked as designed. A recurrence = **REGRESSION** (hard stop + loud flag + scoreboard bump). Confirmed or recurring lessons graduate to `_Working Standards.md` and move to `_Archive/_Loop Learnings Archive.md`. This file holds open lessons only.
+> Lessons from **Loop Workflow Mode** and Agent-Team builds (see rule:loop-workflow-mode). Capture ONLY behaviour-changing lessons - a correction the owner made, a plan under-spec that forced a stop, a test / code anomaly + root cause, a near-miss on standards, a visual that looked wrong while tests passed. NOT routine green tasks or gate-stops that worked as designed. A recurrence = **REGRESSION** (hard stop + loud flag + scoreboard bump). Confirmed or recurring lessons graduate to rule:graduated-loop-lessons and move to `_Archive/_Loop Learnings Archive.md`. This file holds open lessons only.
 
 ---
 
@@ -52,9 +52,9 @@ Format: `- <date> <feature> (builder <model>, checker <model>): units <N> | firs
 
 ---
 
-## Graduated -> _Working Standards.md
+## Graduated -> rule:graduated-loop-lessons
 
-General lessons already carried as standing rules in `_Working Standards.md` ("Loop Workflow Mode" -> "Graduated loop lessons" unless noted). A recurrence of any of these is still a REGRESSION.
+General lessons already carried as standing rules in rule:graduated-loop-lessons (unless noted). A recurrence of any of these is still a REGRESSION.
 
 - Find everything a change invalidates, repo-wide (source, tests, E2E, public docs), before the first edit -> #1
 - A test must be able to fail: break the code and see red on an assertion, not a crash -> #2

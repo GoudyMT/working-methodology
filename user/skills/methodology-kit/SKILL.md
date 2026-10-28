@@ -50,8 +50,8 @@ Arguments: $ARGUMENTS
 
 ## Rules
 
-- Every project the kit sets up or adopts carries the rule sort in its pre-compact closeout (`_Working Standards.md`,
-  scan step 5b). When adopting a project that keeps its own standards, add the step there.
+- Every project the kit sets up or adopts carries the rule sort in its pre-compact closeout (rule:pre-compact-scan,
+  step 5b). When adopting a project that keeps its own standards, add the step there.
 - Never overwrite a file the owner changed; the tool skips it, and so do you, unless the owner says so.
 - Never push, publish or make the kit's repository public without the owner's explicit go.
 - Nothing personal leaves the kit's private files (`kit.config.json`, `owner-profile.md`, `scrub.local.json`).
