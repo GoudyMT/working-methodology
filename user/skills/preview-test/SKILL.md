@@ -22,7 +22,8 @@ devices.
 
 ## The rule
 
-**Who tests the preview, by stakes.** Every user-facing PR: the lead checks the deployed preview in phone and desktop emulation (headers, security policy, workers, layout), shown as shots. The owner's real device only for: a new or often-used surface; touch, keyboard or installed-app behaviour; device-only paths (downloads, file imports, sharing); screen-reader checks. Why: emulation cannot prove a device's fonts, system UI, keyboard or storage, so the owner's time goes where only a hand can tell.
+Read rule:preview-test in full first (the project's reviews-and-findings rules), above all who tests the preview
+by stakes. This skill adds the steps, the record, the examples and the audit; it never restates the rule.
 
 ## The record
 

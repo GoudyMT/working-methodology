@@ -643,8 +643,9 @@ test('every rule pointer in the kit names a rule ID that exists', () => {
 // The line-conservation check for the 1.0.0 split retired at 1.1.0, when new rules began; its result is kept in
 // docs/migrations/1.0.0-coverage.md, and the ledger test below still proves every 0.7.0 rule has its home.
 
-// Plan rule-modules, Phase 3: six formats move out of the modules into skills, move only. Every rule line of
-// 1.1.0 must still appear exactly as often across the modules and those skills (none lost, none copied), except
+// Plan rule-modules, Phase 3: six formats get skills, and the rules stay in the modules (the owner chose this over
+// moving them, so every tool keeps every rule). Every rule line of 1.1.0 must still appear exactly as often across
+// the modules and those skills (none lost, none copied into a skill), except
 // the lines recorded as reworded. New lines (a skill's steps, a module's one-line pointer) are free. Lines with no
 // word in them (a table divider, a code fence) carry no rule, and every skill reuses them, so they are not counted.
 const FORMAT_SKILLS = ['pr-body', 'release-notes', 'closeout', 'preview-test', 'pre-pr-sweep', 'adr'];
@@ -706,13 +707,28 @@ test('the release notes audit passes clean notes and names each public-prose fau
 });
 test('the sweep report audit passes a done report and names each missing part', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
-  const good = `# Sweep: offline sync\n\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | low | slow list | DEFERRED roadmap |\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const good = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | low | slow list | DEFERRED roadmap |\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
   const ok = runAudit('pre-pr-sweep', good);
   assert.equal(ok.status, 0, ok.stdout + ok.stderr);
   const bad = good.replace('- **Date:** 2026-03-04\n', '').replace('## 3. Legal and content', '## 3. Other').replace('FIXED 9f8e7d6', 'will fix').replace('YES - only', 'probably - only');
   const out = runAudit('pre-pr-sweep', bad);
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
+});
+test('the sweep audit holds each report to its tier', () => {
+  const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
+  const none = runAudit('pre-pr-sweep', base + '\nNo secrets or personal data in the diff.\n');
+  assert.equal(none.status, 1);
+  assert.match(none.stdout, /Tier/);
+  const triage = base + '- **Tier:** triage\n\nNo secrets or personal data in the diff. Every dimension not touched.\n';
+  const ok = runAudit('pre-pr-sweep', triage);
+  assert.equal(ok.status, 0, ok.stdout);
+  const noCheck = runAudit('pre-pr-sweep', triage.replace('No secrets or personal data in the diff. ', ''));
+  assert.equal(noCheck.status, 1);
+  assert.match(noCheck.stdout, /secrets/);
+  const fix = runAudit('pre-pr-sweep', base + '- **Tier:** fix\n\nPrivacy, supply chain, legal: not touched. Code security PASS. Gaps PASS.\n');
+  assert.equal(fix.status, 1, 'a fix tier still gives the alignment verdict');
+  assert.match(fix.stdout, /YES or NO/);
 });
 test('the preview test audit passes a full record and names each missing part', () => {
   const good = '## Preview test - Offline sync, #12 (2026-03-04)\n\n- **Build:** the host\'s preview for `feature/offline-sync` at `a1b2c3d`; the lead opened it first.\n- **Who, by stakes:** the lead in emulation only; no new surface, no device-only path.\n- **Setup:** phone emulation and desktop; made-up details only; nothing sent.\n\n| Check | Result |\n|---|---|\n| Headers and security policy | same as production |\n| Layout: plan list | clipped at 320 px |\n\n- **Shots:** phone-list.png, desktop-list.png\n- **Result:** FAIL - the list clip goes to the finding pipeline.\n';
@@ -769,8 +785,9 @@ test('the push guard names the PR body skill', () => {
 
 // Review findings on the 1.2.0 audits: each test is the failing input the review reported.
 test('the handoff and ADR audits refuse empty fields that only look filled', () => {
-  const skill = read(path.resolve('user/skills/closeout/SKILL.md'));
-  const template = skill.split('## The handoff')[1].split('```')[1];
+  // The unfilled template, as rule:handoff-message-structure gives it.
+  const rule = read(path.resolve('rules/tracking-and-handoff.md'));
+  const template = rule.split('{#handoff-message-structure}')[1].split('```')[1];
   const out = runAudit('closeout', template);
   assert.equal(out.status, 1, 'the unfilled template is not a handoff');
   assert.match(out.stdout, /Git line/);
@@ -781,7 +798,7 @@ test('the handoff and ADR audits refuse empty fields that only look filled', () 
   for (const want of [/chosen option/, /Dual-Horizon/, /two options/]) assert.match(a.stdout, want);
 });
 test('the sweep audit catches an open high in a severity column or a finding bullet', () => {
-  const head = '# Sweep\n\n- **Branch:** feature/x at a1b2c3d (2026-03-04)\n\nPrivacy PASS. Supply chain PASS. Legal PASS. Code security PASS. Gaps PASS. Version goal alignment: YES.\n\n';
+  const head = '# Sweep\n\n- **Tier:** fix\n- **Branch:** feature/x at a1b2c3d (2026-03-04)\n\nPrivacy PASS. Supply chain PASS. Legal PASS. Code security PASS. Gaps PASS. Version goal alignment: YES.\n\n';
   const col = runAudit('pre-pr-sweep', head + '| ID | Finding | Severity | Disposition |\n|---|---|---|---|\n| S1 | Low-level parser lets a crafted file overwrite the key store | high | open |\n');
   assert.equal(col.status, 1);
   assert.match(col.stdout, /finding S1/);

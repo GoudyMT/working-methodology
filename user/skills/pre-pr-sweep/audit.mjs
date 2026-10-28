@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// Sweep report audit (rule:milestone-sweep, "Done iff"): a date, the branch and a commit, all six dimensions, every
-// high or critical finding dispositioned, and the version-goal verdict. It cannot prove the agents ran.
+// Sweep report audit (rule:milestone-sweep, "Done iff", held to the report's tier by rule:sweep-tiers): the tier, a
+// date, the branch and a commit, every high or critical finding dispositioned; feature, fix and launch-gate reports
+// also name all six dimensions and give the version-goal verdict; a triage report names its secrets and
+// personal-data check. It cannot prove the agents ran.
 //
 // Usage: node audit.mjs <report.md>
 // Exit 0 = clean; 1 = faults, one per line.
@@ -8,22 +10,31 @@ import fs from 'node:fs';
 
 const [file] = process.argv.slice(2);
 if (!file) {
-  console.log('Usage: node audit.mjs <report.md>');
-  process.exit(2);
+	console.log('Usage: node audit.mjs <report.md>');
+	process.exit(2);
 }
 const text = fs.readFileSync(file, 'utf8');
 const lines = text.split('\n');
 const faults = [];
+
+const tier = ((text.match(/\*\*Tier:\*\*[ \t]*(feature|fix|triage|launch gate)\b/i) || [])[1] || '').toLowerCase();
+if (!tier) faults.push('Tier: name it on the report - feature, fix, triage or launch gate (rule:sweep-tiers)');
 
 if (!/\b\d{4}-\d{2}-\d{2}\b/.test(lines.slice(0, 20).join('\n'))) faults.push('no date near the top (YYYY-MM-DD)');
 // The branch is named outright, or in the `type/name` at `<commit>` form reports use.
 const branchLine = (l) => (/branch/i.test(l) || /\b[\w.-]+\/[\w.-]+`? at `?[0-9a-f]/.test(l)) && /\b[0-9a-f]{7,40}\b/.test(l);
 if (!lines.some(branchLine)) faults.push('no line naming the branch and its commit');
 
-// The six fixed dimensions, by the words each one is named with.
-const DIMENSIONS = [/privacy|data boundary/i, /supply chain|bundle|dependenc/i, /legal|content|licen[cs]e/i,
-	/security/i, /gaps|scaling/i, /version goal|alignment/i];
-DIMENSIONS.forEach((re, i) => { if (!re.test(text)) faults.push(`dimension ${i + 1} is not named`); });
+if (tier === 'triage') {
+	// A triage pass is short, but it always says the diff was checked for secrets and personal data.
+	if (!/secrets?/i.test(text) || !/personal data|PII/i.test(text)) faults.push('triage: name the secrets and personal-data check of the diff');
+} else {
+	// The six fixed dimensions, by the words each one is named with.
+	const DIMENSIONS = [/privacy|data boundary/i, /supply chain|bundle|dependenc/i, /legal|content|licen[cs]e/i,
+		/security/i, /gaps|scaling/i, /version goal|alignment/i];
+	DIMENSIONS.forEach((re, i) => { if (!re.test(text)) faults.push(`dimension ${i + 1} is not named`); });
+	if (!lines.some((l) => /align|version goal/i.test(l) && /\b(YES|NO)\b/.test(l))) faults.push('the version-goal verdict must say YES or NO');
+}
 
 // Every high or critical finding carries a disposition: each row of a findings table, and each finding bullet
 // ("- **S1 (high)** - ..."). A table with a Severity column is read by that column; otherwise a row's severity is
@@ -47,8 +58,6 @@ lines.forEach((l, i) => {
 		if (m && ['high', 'critical'].includes(severity(m[2])) && !disposed(l)) flag(m[1]);
 	}
 });
-
-if (!lines.some((l) => /align|version goal/i.test(l) && /\b(YES|NO)\b/.test(l))) faults.push('the version-goal verdict must say YES or NO');
 
 if (faults.length) {
 	console.log(faults.join('\n'));

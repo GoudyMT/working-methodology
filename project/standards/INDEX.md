@@ -54,6 +54,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | finding-pipeline | The Finding Pipeline (Sweep Finding -> Fix) | `standards/reviews-and-findings.md` | findings, review results, fix findings, triage |
 | features-first | Features First; Findings Ride Inside the PR | `standards/reviews-and-findings.md` | fix-only pr, findings in the pr |
 | milestone-sweep | Milestone Project Sweep (Periodic Multi-Agent Audit) | `standards/reviews-and-findings.md` | audit, sweep, milestone, review dimensions |
+| sweep-tiers | Sweep Tiers | `standards/reviews-and-findings.md` | sweep size, light sweep, fix sweep, triage sweep, feature sweep, launch gate |
 | pre-pr-deep-sweep | Pre-PR Deep Sweep | `standards/reviews-and-findings.md` | before pr, deep review, security agents |
 | pre-push-op-test | Pre-Push Op-Test | `standards/reviews-and-findings.md` | use the app, break it, manual test, before push |
 | preview-test | Preview Test Before Merge | `standards/reviews-and-findings.md` | preview link, staging, version url |

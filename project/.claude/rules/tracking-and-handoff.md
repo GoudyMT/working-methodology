@@ -71,7 +71,16 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 
 ### Pre-Compact Scan {#pre-compact-scan}
 
-**How: the closeout skill** (the scan's steps 0-6, the handoff shape, two example handoffs, the audit). The must-haves: every scan step is shown pass or fail, the size-cap table is counted, and the rule sort for the kit (step 5b) runs every time. Why: a check not shown did not happen.
+0. **ASCII scan** of this session's edits (any non-ASCII byte). 0b. **Comment-label scan** of every touched source file: phase / task / session / ADR labels reworded to the MECHANISM. Emit pass / fail - a check not shown did not happen.
+1. **Anti-duplication scan** - hashes in the Session Log only, locks in ADRs, next actions in the Active Plan, statuses in the Roadmap.
+2. Audit the Roadmap, dashboard, Active Plan and current log entry against caps and template.
+3. **Size-cap table** `| item | words | cap | status |` - the four whole-file rows + every capped line touched - counted, never estimated; OVER rows fixed; done only when the all-`ok` table is shown.
+4. **Loop-learnings check** - lessons captured; the handoff names open lessons + any regression.
+5. **Temp files** (screenshots, scratch scripts, logs, backups, drafts) that have served are deleted.
+5b. **Rule sort for the kit (standing):** each rule, standard or workflow change this session (skills, agent roles, working-style memory too), tagged `project-only` or `portable`; portable ones go to `/methodology-kit fold-back` with the owner, around the compact. Emit the list, or "no rule changes". Why: without this step an improvement stays in one project.
+6. Generate the handoff.
+
+**How: the closeout skill** (steps, two example handoffs, the handoff audit).
 
 ### Post-Compact Orientation Protocol (MANDATORY first action) {#post-compact-orientation}
 
@@ -96,4 +105,37 @@ Why: the recurring drift is treating reminders and the summary as a re-read, the
 
 ### Handoff Message Structure {#handoff-message-structure}
 
-**How: the closeout skill** holds the handoff shape: one self-contained message, any command the owner must run first in its own code block, then one copyable text block with fixed sections (first actions, state, reading order, next step).
+One self-contained message: any command the owner must run first in its own code block, then one copyable text block:
+
+```
+# <PROJECT NAME> - Continuation Handoff
+
+## REQUIRED FIRST ACTIONS
+Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
+visible checklist, scans) and confirm mode + first action with the owner. This handoff is a CACHE.
+
+## Working Mode: Plan (default)
+
+## State Snapshot
+- Current component / version:
+- Locked this session: (1 line each + link)
+- Open issues:
+- Git: (branch, HEAD, pushed or not, open PRs)
+
+## Newly-Established Working Standards
+
+## Critical In-Flight Context (do NOT lose)
+- Decisions awaiting the owner:
+- Corrections caught mid-session:
+
+## Reading Order (mandatory, in order)
+1. _Start Here.md  2. AGENTS.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md
+5. _Active Plan.md  6. Last Session Log entry  7. (spec / ADR / plan for the next issue)
+
+## Next Step (REQUIRED)
+- What:  - Why:  - Source: Active Plan Resume Point; Roadmap milestone advanced
+- Deviation (if any): what changed from the plan-of-record + why
+
+## Anti-Hallucination Discipline
+- Every claim verified by file read; vault state wins over this handoff.
+```

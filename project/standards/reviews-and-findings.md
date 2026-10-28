@@ -35,11 +35,29 @@ A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm C
 
 **Six fixed dimensions:** (1) privacy / data boundary - runtime leaks, third-party calls; (2) supply chain + bundle - dependency risk, build scripts, budgets; (3) legal / content + licenses (A2), citation fidelity; (4) code security + pattern consistency; (5) gaps + scaling - untested paths, deferred-now-load-bearing items, scale assumptions, new-test value; (6) version goal alignment - scope creep, drift from locks, overbuilding (the verdict). Plus any milestone-specific one; read-only reviewers per dimension -> a report grouped by when to act.
 
+### Sweep Tiers {#sweep-tiers}
+
+Every sweep has a tier, set at plan approval (the lead proposes, the owner may change it) and named on the report's first lines as `- **Tier:** <tier>`. When unsure, the higher tier. Why: one size of sweep is too heavy for a typo and too light for a new surface, and a tier named in the open is one the owner can correct.
+
+| Tier | When | Agents | Must cover | Report |
+|---|---|---|---|---|
+| **Feature** | a new feature, an expansion, a sub-project, a new surface or behaviour | a Swarm Contract (rule:swarm-contract): the Pre-PR Deep Sweep's roles below, more by risk region | all six dimensions; every high / critical re-checked; the alignment verdict | the full report |
+| **Fix** | a fix or a change to existing behaviour in a known area; a targeted object (one component, one flow) | 2-3: one on the fix (its root, and whether it holds), one on its blast radius (callers, the code it was modelled on), plus Test Value when tests change | each dimension PASS, its findings, or "not touched" and why; the alignment verdict | a short report |
+| **Triage** | a chore, docs, config, a bump with no new package, a one-line change, a batch of small recorded fixes | 1, fast and read-only, with a call cap in its brief | the diff's secrets and personal-data check; each dimension "not touched" or its finding | a few lines, in the sweep folder or the PR body's gates |
+| **Launch gate** | before any public major version (trigger 3) | per surface, under a Swarm Contract | every surface, all six dimensions, the alignment verdict | the full report |
+
+**Modifiers add roles at any tier, and never lower one:** security-sensitive code (auth, locks, crypto, permissions, secrets, personal data) gets the security swarm of >= 3 distinct angles; a new dependency or external data flow gets a supply-chain role and a privacy role (trigger 2); public, legal or cited text gets a content role that checks each claim against its source and license; data the user keeps (storage formats, migrations, deletion) gets a role on data loss and the upgrade path from the last release.
+
+**Re-sweep by tier:** feature and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. The light pass in trigger 1 is the triage tier; a stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill** (steps per tier, an example report per tier, the audit).
+
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 
 Why: a solo builder reviewing their own diff sees what they meant, not what they wrote.
-
-**How: the pre-pr-sweep skill** (its steps, the full rule, two example reports, the audit). The must-haves: the agents run this session against the branch HEAD, and the report exists, with every high and critical finding dispositioned, before the PR. No report -> no PR.
+**How: the pre-pr-sweep skill** (steps, example reports, the audit).
+- **Adversarial vulnerability swarm:** >= 3 top-tier security agents with DISTINCT angles.
+- **A Test Value agent** ruling keep / cut / repoint on every added or edited test (the use guarded, a break check where in doubt); retired when reviews stop finding fluff.
+- **Every high / critical independently re-checked** - an input to the controller's adjudication. **Dimension 6 mandatory.** **Covers the branch HEAD** - an older report does not count; re-run or sweep the delta.
+- **Anti-hallucination clause:** satisfied ONLY by the agents actually running THIS session AND the report existing with their findings, dispositions and verdict - never by the controller's read, a recalled sweep, or "it looks fine". No report -> no PR.
 
 ### Pre-Push Op-Test {#pre-push-op-test}
 
@@ -55,7 +73,9 @@ Satisfied ONLY by the walk and testers running this session with results in the 
 
 A user-facing PR is used on the host's own build of the branch before merge, on the device the stakes call for (below): open the link yourself first; made-up details only; nothing sent (previews may hold live secrets: -> Security "Secrets"). Why: the production platform and a real device are what local tests cannot imitate. <!-- PROJECT ADAPTER A19/A20 -->
 
-**How: the preview-test skill** (who tests by stakes, its steps, two example records, the audit). The must-have: every user-facing PR is checked on the deployed preview before merge, at least in phone and desktop emulation.
+**How: the preview-test skill** (steps, the record, two examples, the audit).
+
+**Who tests the preview, by stakes.** Every user-facing PR: the lead checks the deployed preview in phone and desktop emulation (headers, security policy, workers, layout), shown as shots. The owner's real device only for: a new or often-used surface; touch, keyboard or installed-app behaviour; device-only paths (downloads, file imports, sharing); screen-reader checks. Why: emulation cannot prove a device's fonts, system UI, keyboard or storage, so the owner's time goes where only a hand can tell.
 
 ### Visible Tracking {#visible-tracking}
 
