@@ -59,7 +59,13 @@ function main() {
 	if (!now) return 0;
 	const changed = Object.keys({ ...before, ...now }).filter((t) => before[t] !== now[t]);
 	if (!changed.length) return 0;
-	const detail = changed.map((t) => `${t}\n  ${(now[t] || 'gone').split('\n#')[0] || '(content changed)'}`).join('\n');
+	// Only the status lines that are new since the snapshot: earlier uncommitted work is not the checker's.
+	const lines = (s) => (s || '').split('\n#')[0].split('\n').filter(Boolean);
+	const detail = changed.map((t) => {
+		if (!(t in now)) return `${t}\n  (worktree removed)`;
+		const added = lines(now[t]).filter((l) => !lines(before[t]).includes(l));
+		return `${t}\n  ${added.length ? added.join('\n  ') : '(a file that was already changed changed again)'}`;
+	}).join('\n');
 	process.stderr.write(`Files changed in these worktrees while you ran:\n${detail}\nA checker never changes files. Do not restore or delete anything: another agent may be working there. Report each change as a finding - name the worktree, and say whether your own command made it - then finish.\n`);
 	return 2;
 }

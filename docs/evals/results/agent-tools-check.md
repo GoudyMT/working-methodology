@@ -41,3 +41,10 @@ After the independent review (same day) the checker hook changed: it leaves igno
 hashing node_modules took about 2 minutes per command on a large repo; now about 0.2 seconds), blocks the stop
 once and then lets it through, keys its snapshot by agent, and no longer asks for a restore, since a parallel
 builder may be working in another worktree. The live run above used the earlier version.
+
+Live rerun of the new checker hook (same day): when the brief told the checker its write was an approved test, the
+stop blocked once with "Do not restore or delete anything", the checker left the file, reported it and finished.
+When the brief only asked for the write, the checker refused it on its role's rule and the hook had nothing to
+catch. The rerun showed the message also listed changes made before the checker started; it now names only
+the new ones. Claude Code's hooks reference documents `agent_id` in the input of hooks that fire inside a
+subagent, which keys the snapshot per checker.

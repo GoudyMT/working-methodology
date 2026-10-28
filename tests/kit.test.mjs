@@ -927,6 +927,17 @@ test('the checker clean-tree stop blocks once, never asks for a restore, and let
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'SubagentStop', stop_hook_active: true }).status, 0);
   assert.equal(fs.readdirSync(os.tmpdir()).filter((f) => f.includes(s.session_id.replace(/[^\w-]/g, ''))).length, 0, 'no snapshot left behind');
 });
+test('the checker clean-tree stop names only what changed while it ran, not earlier uncommitted work', () => {
+  const dir = gitTree();
+  fs.writeFileSync(path.join(dir, 'before.js'), 'the builder left this\n');
+  const s = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
+  runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'PreToolUse' });
+  fs.writeFileSync(path.join(dir, 'probe.txt'), 'the checker wrote this\n');
+  const out = runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'SubagentStop' });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /probe\.txt/);
+  assert.doesNotMatch(out.stderr, /before\.js/);
+});
 test('two checkers in one session keep separate snapshots', () => {
   const dir = gitTree();
   const sid = `t-${Date.now()}-${Math.random()}`;
