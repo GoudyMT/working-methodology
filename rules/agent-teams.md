@@ -61,7 +61,7 @@ Each agent role gets only the tools its job needs and starts with the rules that
 | scanner | Lists, counts and checks across files | Read, Grep, Glob | none | none |
 | orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |
 
-The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook, so it holds for any AI. Role files stay user level (`~/.claude/agents/`): Claude Code skips the hooks of a project-level agent file until that folder is trusted, and never runs them in a `-p` session, so a copy in a project silently drops its guards.
+The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook (once `core.hooksPath` points at `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips the hooks of a project-level agent file until that folder is trusted, and never runs them in a `-p` session, so a copy in a project silently drops its guards.
 
 ### Agent-Team Build: Project Adapter (TEMPLATE) {#agent-team-adapter}
 

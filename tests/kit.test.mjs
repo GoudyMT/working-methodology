@@ -900,6 +900,69 @@ test('the checker clean-tree stop also catches a second edit to a file that was 
   fs.writeFileSync(path.join(dir, 'a.js'), 'and changed again by the checker\n');
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' }).status, 2);
 });
+// Review findings on the 1.1.0 guards: each test is the failing input the review reported.
+test('the checker clean-tree stop lets the unit tests write their ignored caches', () => {
+  const dir = gitTree();
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'cache/\n');
+  spawnSync('git', ['-C', dir, 'add', '.gitignore'], { encoding: 'utf8' });
+  spawnSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'ignore'], { encoding: 'utf8' });
+  const s = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
+  runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'PreToolUse' });
+  fs.mkdirSync(path.join(dir, 'cache'));
+  fs.writeFileSync(path.join(dir, 'cache', 'run.json'), '{}\n');
+  const out = runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' });
+  assert.equal(out.status, 0, out.stderr);
+});
+test('the checker clean-tree stop blocks once, never asks for a restore, and lets the stop through after', () => {
+  const dir = gitTree();
+  const s = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
+  runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'PreToolUse' });
+  fs.writeFileSync(path.join(dir, 'b.js'), 'new\n');
+  const out = runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'SubagentStop' });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /b\.js/);
+  assert.match(out.stderr, /Do not restore or delete/);
+  assert.doesNotMatch(out.stderr, /Restore it/);
+  // Claude Code marks the second stop attempt; the checker has been told, so it may finish.
+  assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'SubagentStop', stop_hook_active: true }).status, 0);
+  assert.equal(fs.readdirSync(os.tmpdir()).filter((f) => f.includes(s.session_id.replace(/[^\w-]/g, ''))).length, 0, 'no snapshot left behind');
+});
+test('two checkers in one session keep separate snapshots', () => {
+  const dir = gitTree();
+  const sid = `t-${Date.now()}-${Math.random()}`;
+  runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-a', hook_event_name: 'PreToolUse' });
+  fs.writeFileSync(path.join(dir, 'a.js'), 'changed while checker A ran\n');
+  runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-b', hook_event_name: 'PreToolUse' });
+  assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-b', hook_event_name: 'SubagentStop' }).status, 0);
+  assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-a', hook_event_name: 'SubagentStop' }).status, 2);
+});
+test('the builder edit fence follows a symlinked or junctioned worktree path', () => {
+  const dir = gitTree();
+  const link = `${dir}-link`;
+  fs.symlinkSync(dir, link, 'junction');
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: link, tool_input: { file_path: path.join(link, 'a.js') } });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: link, tool_input: { file_path: path.join(os.tmpdir(), 'elsewhere.js') } }).status, 2);
+});
+test('the builder edit fence reads hand-written unit list spellings', () => {
+  const dir = gitTree();
+  const listPath = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(listPath, './src/b.js\r\nlib\\c.js\n');
+  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'src', 'b.js') } }).status, 0);
+  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'lib', 'c.js') } }).status, 0);
+  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'src', 'd.js') } }).status, 2);
+  if (process.platform === 'win32') {
+    assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'SRC', 'B.js') } }).status, 0, 'Windows paths ignore case');
+  }
+});
+test('the git pre-push hook is executable, in the kit and where install writes it', () => {
+  assert.match(spawnSync('git', ['ls-files', '-s', 'project/.githooks/pre-push'], { encoding: 'utf8' }).stdout, /^100755 /);
+  if (process.platform !== 'win32') {
+    const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'hookmode-'));
+    install({ kit: path.resolve('.'), target: 'project', projectDir: proj, home: fs.mkdtempSync(path.join(os.tmpdir(), 'home-')) });
+    assert.ok(fs.statSync(path.join(proj, '.githooks', 'pre-push')).mode & 0o111, 'git skips a hook without the execute bit');
+  }
+});
 test('the checker clean-tree stop sees a change in another worktree of the same repo', () => {
   const dir = gitTree();
   const other = path.join(path.dirname(dir), `${path.basename(dir)}-wt`);

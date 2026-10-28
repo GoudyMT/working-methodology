@@ -131,6 +131,8 @@ export function install(ctx) {
       if (ctx.dryRun) return;
       fs.mkdirSync(path.dirname(entry.dest), { recursive: true });
       fs.writeFileSync(entry.dest, want);
+      // Git skips a hook without the execute bit on macOS and Linux (Windows ignores the bit).
+      if (/(^|[\\/])\.githooks[\\/]/.test(entry.dest)) fs.chmodSync(entry.dest, 0o755);
     };
     if (!fs.existsSync(entry.dest)) {
       write(); created.push(entry.key); files[entry.key] = wantHash;

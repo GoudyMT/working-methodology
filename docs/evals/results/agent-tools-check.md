@@ -36,3 +36,8 @@ role files in the project's `.claude/agents/` ran no hooks at all; see the first
   a write apart from a read in a shell command is not reliable, so that stays the role's rule plus this catch.
 - The checker escalated that a read-only role ran the brief's write at all. That is the right report: the brief
   here ordered a write on purpose.
+
+After the independent review (same day) the checker hook changed: it leaves ignored files out (test caches, and
+hashing node_modules took about 2 minutes per command on a large repo; now about 0.2 seconds), blocks the stop
+once and then lets it through, keys its snapshot by agent, and no longer asks for a restore, since a parallel
+builder may be working in another worktree. The live run above used the earlier version.

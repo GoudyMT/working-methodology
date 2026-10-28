@@ -75,6 +75,8 @@ and switched off its hooks. These steps make that impossible:
 1. Make a new folder under your scratchpad and `git clone` your worktree into it (or `git init` it). A clone
    has its own config and branches. Never `git worktree add`: a worktree shares both with the main checkout.
 2. Stop on the first error: start a bash script with `set -euo pipefail` and enter with `cd "<dir>" || exit 1`.
+   Write the script and every sandbox file with the shell: your edit fence blocks Edit and Write outside your
+   worktree, and that block is right.
 3. Before the first write, confirm `git rev-parse --show-toplevel` is that folder. If it is not, stop.
 4. Give git a Windows path (`cygpath -w`). Never set `MSYS_NO_PATHCONV`: with it, git and the shell read the
    same `/c/...` path as two different folders.

@@ -8,6 +8,20 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+// The real path, through any symlink or junction: git reports the worktree's real path, so the target must be
+// compared the same way. A file not yet written resolves through its nearest existing folder.
+function real(p) {
+	const rest = [];
+	while (!fs.existsSync(p) && path.dirname(p) !== p) { rest.unshift(path.basename(p)); p = path.dirname(p); }
+	return path.join(fs.realpathSync.native(p), ...rest);
+}
+
+// One spelling for a path inside the worktree: forward slashes, no leading ./, and no case on Windows.
+const norm = (p) => {
+	const s = p.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '');
+	return process.platform === 'win32' ? s.toLowerCase() : s;
+};
+
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
 	const file = input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path);
@@ -15,8 +29,8 @@ function main() {
 	const cwd = input.cwd || process.cwd();
 	const top = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 	if (top.status !== 0) return 0;
-	const root = path.resolve(top.stdout.trim());
-	const target = path.resolve(cwd, file);
+	const root = real(path.resolve(top.stdout.trim()));
+	const target = real(path.resolve(cwd, file));
 	const rel = path.relative(root, target);
 	if (rel.startsWith('..') || path.isAbsolute(rel)) {
 		process.stderr.write(`Blocked: ${target} is outside this builder's worktree (${root}). Edit only files of your unit, in your worktree.\n`);
@@ -25,8 +39,8 @@ function main() {
 	const gitPath = spawnSync('git', ['-C', root, 'rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' });
 	const listFile = gitPath.status === 0 ? gitPath.stdout.trim() : '';
 	if (listFile && fs.existsSync(listFile)) {
-		const allowed = fs.readFileSync(listFile, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => l.split(path.sep).join('/'));
-		if (!allowed.includes(rel.split(path.sep).join('/'))) {
+		const allowed = fs.readFileSync(listFile, 'utf8').split(/\r?\n/).map(norm).filter(Boolean);
+		if (!allowed.includes(norm(rel))) {
 			process.stderr.write(`Blocked: ${rel} is not in this unit's file list (git rev-parse --git-path kit-unit-files.txt). Report it to the lead instead of editing it.\n`);
 			return 2;
 		}
