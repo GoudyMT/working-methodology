@@ -162,15 +162,15 @@ export function install(ctx) {
   // replacement is in place, or the project would lose the rules both hold.
   const retiredList = (kitInfo.config.retired || {})[ctx.target] || [];
   const replacedBy = Array.isArray(retiredList) ? {} : retiredList;
-  for (const key of Object.keys(replacedBy).length ? Object.keys(replacedBy) : retiredList) {
+  for (const key of Array.isArray(retiredList) ? retiredList : Object.keys(retiredList)) {
     const base = stamp.files[key];
     const heir = replacedBy[key];
-    if (heir && skipped.some((s) => s.file === heir) && base && fs.existsSync(path.join(ctx.target === 'user' ? ctx.home : ctx.projectDir, key))) {
-      skipped.push({ file: key, reason: `retired by the kit, but kept until ${heir} is merged (it was skipped above)` });
-      continue;
-    }
     const dest = key.startsWith('memory/') && memoryDir ? path.join(memoryDir, key.slice(7))
       : path.join(ctx.target === 'user' ? ctx.home : ctx.projectDir, key);
+    if (heir && skipped.some((s) => s.file === heir) && base && fs.existsSync(dest)) {
+      skipped.push({ file: key, reason: `retired by the kit, but kept while ${heir} is skipped: merge ${heir}, then remove this file by hand` });
+      continue;
+    }
     if (!base || !fs.existsSync(dest)) { if (!fs.existsSync(dest)) delete files[key]; continue; }
     if (sha(fs.readFileSync(dest, 'utf8')) !== base) {
       skipped.push({ file: key, reason: 'retired by the kit, but changed here - run fold-back, then remove it by hand' });

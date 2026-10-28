@@ -32,25 +32,41 @@ One unit, one commit. Nothing pushed, tagged or installed over the main project'
 
 - [x] Restore point: 0.7.0 pushed, tag v0.7.0 on GitHub (`git ls-remote --tags origin` shows v0.7.0).
 - [x] Measure command: `kit.mjs measure` (commit 36a9c4e; 37 tests pass).
-- [ ] Recall questions approved by the owner and frozen (`docs/evals/recall-questions.md`).
-- [ ] Baseline run on 0.7.0 and a no-rules control run, saved.
-- [ ] Lookup questions written (`docs/evals/lookup-questions.md`).
+- [x] Recall questions approved by the owner and frozen (2026-10-28).
+- [ ] Baseline run on 0.7.0 and a no-rules control run, saved. BLOCKED: the claude CLI on this PC is not signed
+      in (every answer read "Not logged in"); the empty runs were discarded and the runner now stops on a failed
+      session. Runs once the owner signs the CLI in.
+- [x] Lookup questions written (`docs/evals/lookup-questions.md`).
 
 ### Phase 1: rule IDs and modules (plans B and A) - release 1.0.0
 
-- [ ] IDs on all 70 headings outside code blocks; uniqueness test.
-- [ ] Ledger (`kit.mjs ledger`) -> `docs/migrations/1.0.0-ledger.md`.
-- [ ] Pointers: 137 memory pointers and 44 files to `rule:<id>`; link-check test.
-- [ ] Index and find; freshness test; find fixtures.
-- [ ] Split, move only; line-conservation test against v0.7.0; ID set unchanged.
-- [ ] Build step: AGENTS.md, .claude/rules, standards/; CLAUDE.md imports AGENTS.md; kit hook names
-      tracking-and-handoff after a compact; build-freshness test; every import resolves.
-- [ ] Retired files in install (unchanged -> backed up and removed; changed -> reported), project and user.
-- [ ] Old-layout fold-back through the ledger; fixture test.
-- [ ] Tests that read the standards read all modules; brief templates carry both pointer forms.
-- [ ] Kit Standards and docs updated (the only rewording, its own commit).
-- [ ] Live checks in a scratch project and home: AGENTS.md loads; a path rule loads on a matching read.
-- [ ] Gate: 0 lines lost or duplicated, 0 broken pointers, tests green, recall >= baseline, start <= 45,000.
+- [x] IDs on all 70 headings outside code blocks; uniqueness test (febb2e9).
+- [x] Ledger -> `docs/migrations/1.0.0-ledger.md` (6f88839); a test checks it against where rules live now.
+- [x] Pointers: 161 pointers (137 in memory) to `rule:<id>`; link-check test (3522367). It found one pointer
+      already broken in 0.7.0 ("Locked-Decision Drift Markers", fixed to rule:sdd-triangle).
+- [x] Find with tags; index freshness through the build test; find fixtures (6242c68). Lookups: 8 of 10 in the
+      top 3 (was 5 of 10 before tags). Caveat: the same author wrote the questions and the tags, so this is not a
+      clean held-out number; copied query phrases were removed from the tags.
+- [x] Split, move only (c2ecd69); conservation test proved by a lost-line and a copied-line control;
+      `docs/migrations/1.0.0-coverage.md`: 0 lost, 0 duplicated, 16 reworded and 1 added line, each recorded.
+- [x] Build step (4a922f7): AGENTS.md, .claude/rules, standards/, INDEX.md; CLAUDE.md imports resolve; kit
+      hook names the orientation rule after a compact (1db0643); build-freshness test.
+- [x] Retired files (7907361), project and user; the old file waits until AGENTS.md lands (0307229).
+- [x] Old-layout fold-back, fixture test; run on the main project as a report: 22 sections differ (e1ce078).
+- [x] Tests that read the standards read all modules; brief templates carry both pointer forms.
+- [x] Kit Standards #3-#5 and new #11, start files, templates and guides (9163fc3, 218e882).
+- [x] Install check without Claude: a real 0.7.0 install upgrades cleanly; the old file retires, or stays and is
+      reported when edited.
+- [ ] Live checks in Claude Code (AGENTS.md loads; a path rule loads on a matching read). BLOCKED on the CLI
+      sign-in, like the recall runs.
+- [x] Independent review: 8 findings (2 medium, 6 low); all acted on (0307229, c8cefe1) except headroom, now
+      469 bytes under the cap. The short re-check found 3 small gaps (an empty retired map, the memory path in
+      the keep check, one quoted pointer); all fixed.
+- [ ] Gate: 0 lost or duplicated (met), 0 broken pointers (met), 56 tests green (met), session start 44,531
+      bytes (met), recall >= baseline (waits on the CLI sign-in).
+
+Deviation: the plan doc counted 11 modules; the map it approved has 12 besides the core (project-adapter was
+always its own row). Nothing moved between modules.
 
 ### Phase 2: agent access (plan D) - release 1.1.0
 

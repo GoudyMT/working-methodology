@@ -90,6 +90,12 @@
       "before": "6. **The tool shell's runtime** - see \"Command environment\".",
       "after": "6. **The tool shell's runtime** - see rule:project-adapter (A23, the owner's shell).",
       "why": "The old name pointed at no heading; the shell lives in adapter A23."
+    },
+    {
+      "id": "tracking-file-functions",
+      "before": "**Keyword `begin pre-compact`** (standing) runs the Closeout: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per \"Branching\"; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, sent to the coordinating session, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.",
+      "after": "**Keyword `begin pre-compact`** (standing) runs the Closeout: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, sent to the coordinating session, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.",
+      "why": "Pointer by ID (re-check finding)."
     }
   ],
   "added": [

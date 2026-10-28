@@ -806,7 +806,7 @@ test('install keeps a retired file while the file that replaces it was skipped',
   const r = install({ kit, home, target: 'project', projectDir: proj });
   assert.deepEqual(r.retired, []);
   assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules\n');
-  assert.match(r.skipped.find((s) => s.file === '_Working Standards.md').reason, /kept until AGENTS\.md is merged/);
+  assert.match(r.skipped.find((s) => s.file === '_Working Standards.md').reason, /kept while AGENTS\.md is skipped/);
 });
 
 // Review finding: a pointer written as -> "Heading Title" breaks when the heading is renamed; every rule pointer
@@ -815,7 +815,7 @@ test('no rule pointer in the kit names a heading by its words', () => {
   const titles = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.title)));
   const byWords = [];
   for (const f of KIT_TEXT_FILES()) {
-    for (const m of read(f).matchAll(/-> "([^"]+)"/g)) if (titles.has(m[1]) || [...titles].some((t) => t.startsWith(m[1] + ' '))) byWords.push(`${path.relative('.', f)}: "${m[1]}"`);
+    for (const m of read(f).matchAll(/(?:->|\bper|\bsee|\bin) "([^"]+)"/g)) if (titles.has(m[1]) || [...titles].some((t) => t.startsWith(m[1] + ' '))) byWords.push(`${path.relative('.', f)}: "${m[1]}"`);
   }
   assert.deepEqual(byWords, []);
 });
