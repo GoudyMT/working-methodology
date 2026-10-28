@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.0 - 2026-10-28
+- Format skills: PR body, release notes, closeout, preview test, Pre-PR sweep and ADR each get a skill with steps, examples adapted from real pieces and an audit script. The rules stay in the project's rule modules (any AI keeps them); each skill points to its rule. Sweeps now have tiers (feature, fix, triage, launch gate) with modifiers that add roles, and the sweep audit holds a report to its tier. The push guard reminds Claude of the PR body skill. Recall 9/10, level with 1.1.0.
+
 ## 1.1.0 - 2026-10-28
 - Size budgets are now opt-in per project, chosen at kit setup (adapter A12; `none` turns them off). Agent access: a role table sets each agent role's tools, denied tools and the rules it starts with (builder and checker get them as preloaded skills). Guards back it: the builder's edit fence (its own worktree, and its unit's file list kept in git's folder), the checker's clean-tree stop (blocks once, names only changes made while it ran, never asks for a restore), and a git pre-push hook that holds the push line for any AI tool that marks its shell (turn on with core.hooksPath). All proved with known-good and known-bad tests and live in Claude Code; role files must stay user level, or Claude Code skips their hooks. Recall 9/10, no lower than the baseline.
 

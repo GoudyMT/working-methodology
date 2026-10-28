@@ -49,3 +49,18 @@ answers by a new scorer.
 - The runs differ in substance only on question 10: the 1.1.0 answer named ">= 3 security agents from distinct
   angles"; the 1.2.0 answer did not. That line moved from the module into the user-level pre-pr-sweep skill,
   which a session reading only the project's files does not see. This is the cost the review also found.
+
+## 1.2.0, revised (2026-10-28)
+
+After the owner chose to keep the rule text in the modules (skills point to it), a fresh install was run and
+scored blind against the 1.1.0 answers by another new scorer.
+
+| Run | Score |
+|---|---|
+| Kit 1.2.0, revised | 9 / 10 |
+| Kit 1.1.0, rescored | 9 / 10 |
+
+- Gate met: no lower than the 0.7.0 baseline (9), and level with 1.1.0 under the same scorer.
+- The question-10 detail the moved version lost (>= 3 security agents from distinct angles) is back.
+- Both runs miss question 3 the same way as in earlier scoring. The run started before the last three
+  wording amendments (sweep tiers), which do not touch any recalled item.

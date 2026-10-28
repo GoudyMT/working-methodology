@@ -92,10 +92,22 @@ always its own row). Nothing moved between modules.
 
 ### Phase 3: formats as skills (plan C) - release 1.2.0
 
-- [ ] Six skills (PR body, release notes, closeout, preview test, sweep, ADR) in the open SKILL.md format.
-- [ ] Move only; coverage test again.
-- [ ] Spec checks: names, description <= 1,024 characters, SKILL.md < 500 lines, live rule IDs.
-- [ ] Live trigger check; gate: coverage, tests green, recall >= baseline.
+- [x] Six skills (PR body, release notes, closeout, preview test, sweep, ADR) in the open SKILL.md format, each
+      with steps, examples adapted from real pieces and an audit with good and bad controls (bc83d34).
+- [x] ~~Move only~~ -> **rules stay in the modules** (the owner's call, 2026-10-28, option A): moving put
+      must-haves where only Claude Code reads them; the review found it and recall lost a sweep detail. Skills
+      point to their rule; the coverage test now proves no 1.1.0 line was lost or copied into a skill (ebcdebe).
+- [x] Spec checks: names, description <= 1,024 characters, SKILL.md < 500 lines, live rule IDs, the module
+      naming its skill; the push guard names the PR body skill to Claude (additionalContext).
+- [x] Live trigger check: a plain "write the PR description" request loaded the skill, and its audit ended
+      PASSED (`docs/evals/results/live-checks-1.2.0.md`).
+- [x] Sweep tiers (the owner's ask, 2026-10-28): feature, fix, triage, launch gate, with modifiers; the sweep
+      audit holds a report to its tier (ebcdebe, 203742b).
+- [x] Independent review: 8 findings, all fixed (ddc9a43); one short re-check: 3 wording clashes with the tiers
+      and 1 audit gap, fixed (203742b).
+- [x] Gate: 86 tests green, coverage holds, session start 44,610 bytes, recall 9/10 = 1.1.0 under one scorer.
+      Bumped to 1.2.0.
+- [ ] Push and tag on the owner's go; install into ~/.claude between the main project's batches.
 
 ## Risks covered (one line each; the check runs before the release that could cause it)
 
@@ -130,3 +142,7 @@ names it. 15. Tools change -> adapters name their docs, re-checked each release.
 - Meaning-based search - at 2 lookup misses or about 500 KB of rules.
 - The owner's goal for the kit (2026-10-28): the whole build automated, from start to finished product, matching the owner's expectations 9 times in 10 with the 10th caught. That includes every stop that needs the owner (size raises, push requests and the rest). The stops exist for trust: the output must match the owner's formats and styles, so drift goes down for one agent or many. Anthropic tools come first. Phases 2-3 serve this goal; measure it on a real feature run after 1.2.0.
 - Size-budget increases done automatically (the owner wants to explore it) - plan after 1.1.0, against rule:size-budgets.
+- The kit's PR body audits still require phrases from the project they came from ("the PII boundary", "the
+  corpus and the served documents are unchanged"); make those phrase lists adapter values (A16) - next kit
+  release that touches the PR body audits.
+- Format skills for other tools (.agents/skills) - with the other-tool outputs above.
