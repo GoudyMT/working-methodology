@@ -38,8 +38,9 @@ const dims = ['privacy', 'supply chain', 'legal', 'code security', 'secrets or a
 const missing = dims.filter((d) => !body.replace(/\s+/g, ' ').includes(d));
 row('review names the dimensions', missing.length === 0, missing.length ? `missing ${missing}` : dims.join(', '));
 
-// The template's own "**Notes** - " marker is structure; every other spaced dash is prose.
-const spacedDash = lines.flatMap((l, i) => (/ - |--/.test(l.replace(/^- /, '').replace('**Notes** - ', '')) ? [i + 1] : []));
+// The template's own "**Notes** - " marker is structure, and inline code (`node --flag`) is code; every other
+// spaced dash is prose.
+const spacedDash = lines.flatMap((l, i) => (/ - |--/.test(l.replace(/`[^`]*`/g, '').replace(/^- /, '').replace('**Notes** - ', '')) ? [i + 1] : []));
 row('no spaced dashes in prose', spacedDash.length === 0, spacedDash.length ? `lines ${spacedDash}` : 'none');
 
 // Every small PR (docs, chore, test, a dependency or security bump, any minor update) gets the small body: short,

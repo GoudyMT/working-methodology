@@ -741,6 +741,21 @@ test('the ADR audit passes a full record and names each missing part', () => {
   assert.equal(out.status, 1);
   for (const want of [/Status/, /Dual-Horizon/, /ADR-NNN/]) assert.match(out.stdout, want);
 });
+// Found by the Phase 3 live check: a command flag in inline code (`node --flag`) is code, not a prose dash.
+test('the PR body audits read a dash inside inline code as code, and still catch a prose dash', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prdash-'));
+  const lean = (notes) => `## Math: add a subtract function\n\nThe math module can now subtract.\n\n**Changes**\n- New \`sub(a, b)\` export.\n\n**Gates**\n- [x] The test passes.\n- [x] Full local gate green.\n- [x] Sweep exempt by dimension: privacy, supply chain, legal, code security; no secrets or account information.\n\n**Notes** - ${notes}\n`;
+  const dashes = (script, text, title) => {
+    const f = path.join(dir, 'b.md');
+    fs.writeFileSync(f, text);
+    return spawnSync('node', [path.resolve('project/.claude', script), f, title], { encoding: 'utf8' }).stdout.split('\n').find((l) => l.includes('no spaced dashes'));
+  };
+  assert.match(dashes('pr-body-audit-lean.mjs', lean('run it with `node --experimental-default-type=module math.test.js`.'), 'feat: add a subtract function'), /^PASS/);
+  assert.match(dashes('pr-body-audit-lean.mjs', lean('it runs -- for now -- by hand.'), 'feat: add a subtract function'), /^FAIL/);
+  const std = (line) => `## Math: subtract\n\nFraming.\n\n### Summary\n\n${line}\n`;
+  assert.match(dashes('pr-body-audit.mjs', std('Run `node --test` to check.'), 'Math: subtract'), /^PASS/);
+  assert.match(dashes('pr-body-audit.mjs', std('It runs -- for now -- by hand.'), 'Math: subtract'), /^FAIL/);
+});
 test('the push guard names the PR body skill', () => {
   const ask = (command) => {
     const r = spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' });
