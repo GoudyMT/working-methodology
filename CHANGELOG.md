@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.0 - 2026-10-28
+- Rule modules: the standards became a core (written out as AGENTS.md) plus 12 modules that load by file or on demand, moved word for word (0 lines lost or copied; 16 reworded and 1 added, each recorded in docs/migrations). Every rule has a fixed ID; pointers use rule:<id>; find and tags look rules up; build writes Claude Code's files from the tool-neutral rules/; install retires the old file only when unchanged and replaced; fold-back reads a project still on one standards file. CLAUDE.md imports now resolve (0.7.0's never loaded the standards). Session start 44,531 bytes. Promoted directly by the owner (plan approval).
+
 ## 0.7.0 - 2026-10-28
 - One size request per plan with one end check (trim or lower); the preview tested by stakes (emulation by default, the owner's device where only a hand can tell); PR bodies say each thing once; the closeout sends the handoff to the coordinating session and closes the thread; a merge-and-retire pass to stay under the cap. Promoted directly by the owner.
 

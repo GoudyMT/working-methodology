@@ -19,3 +19,5 @@ is reworked or retired at the next kit release.
   session per prong with agents only where they pay off.
 - 0.7.0: one size request per plan with one end check (trim or lower), and the preview tested by stakes (emulation
   by default, the owner's device for the cases a hand must judge).
+- 1.0.0: rule modules - the core and modules, rule IDs, find and tags, the build, safe retire, old-layout fold-back
+  (plan rule-modules, approved by the owner).
