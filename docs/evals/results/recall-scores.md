@@ -34,3 +34,18 @@ Y, with project names and times hidden.
   before. Strict and lenient readings put 1.1.0 between 8 and 10, and 1.0.0 between 7 and 10.
 
 Raw answers are kept in `reports/evals/`, which git ignores: they quote local paths of the scratch projects.
+
+## 1.2.0 candidate (2026-10-28)
+
+A fresh install of the 1.2.0 candidate (format skills built, rule text moved), scored blind against the 1.1.0
+answers by a new scorer.
+
+| Run | Score (strict) |
+|---|---|
+| Kit 1.2.0 candidate | 8 / 10 |
+| Kit 1.1.0, rescored | 8 / 10 |
+
+- Both missed question 3 (the summary is not a re-read) and question 10 (the report linked in the PR).
+- The runs differ in substance only on question 10: the 1.1.0 answer named ">= 3 security agents from distinct
+  angles"; the 1.2.0 answer did not. That line moved from the module into the user-level pre-pr-sweep skill,
+  which a session reading only the project's files does not see. This is the cost the review also found.
