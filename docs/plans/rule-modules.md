@@ -73,11 +73,16 @@ always its own row). Nothing moved between modules.
 
 ### Phase 2: agent access (plan D) - release 1.1.0
 
-- [ ] Tools check: each role, foreground and background, records its real tools and what rules it sees.
-- [ ] Role table in agent-teams.
-- [ ] Builder and checker rules as preloaded skills (<= 8,000 bytes each; project standards win).
-- [ ] Guards: builder edit-scope hook; push guard as a git pre-push hook; checker tree check.
-- [ ] Role-table test; briefs cite rule IDs.
+- [x] Tools check: each role, foreground and background, records its real tools and what rules it sees
+      (f0ca1e9, `docs/evals/results/agent-tools-check.md`): every role got its allowlist; none sees the core rules.
+- [x] Role table in agent-teams (c523ce4).
+- [x] Builder and checker rules as preloaded skills: builder-rules 6,431 bytes, checker-rules 7,785 (c523ce4);
+      live, the builder's context holds "# Builder Rules".
+- [x] Guards: builder edit fence, checker clean-tree stop, git pre-push hook (1485cda, 789823f), each with a
+      known-good and known-bad unit test. Live in Claude Code (4798177): the fence blocked an off-list file and
+      let a listed one through; the checker's stop caught a file it wrote and the checker restored it. The unit
+      list moved into the worktree's git folder so it is never committed (727ec24).
+- [x] Role-table test; briefs cite rule IDs, the unit list and the push go (727ec24).
 - [ ] Gate: guards proved with known-good and known-bad controls; recall >= baseline; install between the main project
       batches.
 
@@ -109,6 +114,9 @@ names it. 15. Tools change -> adapters name their docs, re-checked each release.
   only CLAUDE.md and AGENTS.md load: 11,267 bytes in the kit template and 14,339 in the main project, not the 115,012
   and 350,712 bytes assumed. This session's own loaded-file list matches. The standards were reaching sessions
   only when read on purpose. Phase 1's build writes imports that resolve, and a test fails on any that do not.
+- 2026-10-28, Phase 2: hooks in a project-level agent file did not run in a `claude -p` check. Claude Code runs
+  them only in a trusted folder, never in `-p`; user-level role files run them. The kit installs role files user
+  level, so the rule now says to keep them there (rule:agent-role-table).
 
 ## Parking lot
 
