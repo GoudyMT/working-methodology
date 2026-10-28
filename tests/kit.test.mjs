@@ -886,3 +886,20 @@ test('the builder and checker role files wire their guards to the installed hook
   assert.match(checker, /matcher: "Bash\|PowerShell"[\s\S]*clean-tree\.cjs[\s\S]*Stop:[\s\S]*clean-tree\.cjs/);
   assert.equal(render('node "{{CLAUDE_HOME}}/kit-hooks/x.cjs"', { claudeHome: 'D:/home-of-pat/.claude' }), 'node "D:/home-of-pat/.claude/kit-hooks/x.cjs"');
 });
+test('the checker clean-tree stop also catches a second edit to a file that was already changed', () => {
+  const dir = gitTree();
+  fs.writeFileSync(path.join(dir, 'a.js'), 'changed by the builder, not committed\n');
+  const s = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
+  runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'PreToolUse' });
+  fs.writeFileSync(path.join(dir, 'a.js'), 'and changed again by the checker\n');
+  assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' }).status, 2);
+});
+test('the checker clean-tree stop sees a change in another worktree of the same repo', () => {
+  const dir = gitTree();
+  const other = path.join(path.dirname(dir), `${path.basename(dir)}-wt`);
+  spawnSync('git', ['-C', dir, 'worktree', 'add', '-q', other], { encoding: 'utf8' });
+  const s = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
+  runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'PreToolUse' });
+  fs.writeFileSync(path.join(other, 'a.js'), 'changed in the builder worktree\n');
+  assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' }).status, 2);
+});
