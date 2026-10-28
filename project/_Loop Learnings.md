@@ -61,15 +61,15 @@ General lessons already carried as standing rules in rule:graduated-loop-lessons
 - Never push escapes through a shell or a tool parameter; build non-ASCII at run time -> #3
 - Anchor every edit on freshly read bytes -> #4
 - Thrown errors carry static opaque codes, never interpolated input -> #5
-- The tool shell's runtime needs its own command prefix -> "Command environment" (#6)
+- The tool shell's runtime needs its own command prefix -> rule:project-adapter A23 (#6)
 - Never `cd` into a subfolder; the only `cd` is to the project root -> #7
 - Stop the preview server before any rebuild; show unreachable states on a throwaway route -> #8
-- A number or rule handed to an agent is computed or quoted (file:line) first -> "Anti-Hallucination Discipline"
-- A claim about how often something happens is measured before it is said -> "Anti-Hallucination Discipline"
-- Never chain a commit after a commit that failed -> "Pre-Commit Discipline"
-- A capped search is not an absence; a grep that finds your own new text is not verification -> "Enumerate Before You Count"
-- A walkthrough on a dev server blocks every route that reaches an outside service -> "Security Standards"
+- A number or rule handed to an agent is computed or quoted (file:line) first -> rule:anti-hallucination
+- A claim about how often something happens is measured before it is said -> rule:anti-hallucination
+- Never chain a commit after a commit that failed -> rule:pre-commit
+- A capped search is not an absence; a grep that finds your own new text is not verification -> rule:enumerate-before-you-count
+- A walkthrough on a dev server blocks every route that reaches an outside service -> rule:security-standards
 - A multi-file edit script does every read and check first, then all writes; back up first -> keep as a loop lesson until it recurs
 - An agent's isolated worktree may start from `main`, not your branch: set the base and have builders report it -> Agent-Team adapter field 9
-- A surviving mutation is dead only after its case was built and run, not argued -> "Test Value"
-- Scope loop-worthiness BEFORE proposing a loop count -> "Loop-First Scoping"
+- A surviving mutation is dead only after its case was built and run, not argued -> rule:test-value
+- Scope loop-worthiness BEFORE proposing a loop count -> rule:loop-workflow-mode

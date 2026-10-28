@@ -27,7 +27,7 @@ tags:
 
 # Working Standards - <PROJECT NAME>
 
-> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** at the end (A1-A25) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.
+> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A25) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.
 
 **Last Updated:** <YYYY-MM-DD> (<what changed>)
 
@@ -38,7 +38,7 @@ tags:
 On conflict, the higher tier wins (after Instruction Priority).
 
 **Tier 0 - Identity (violation = project failure / legal exposure)**
-1. Privacy & security above all -> "Security Standards", A3/A4
+1. Privacy & security above all -> rule:security-standards, A3/A4
 2. Domain hard boundaries -> A2, CLAUDE.md, AGENTS.md
 
 **Tier 1 - Collaboration integrity (violation = wrong work + lost trust)**
@@ -71,7 +71,7 @@ On conflict, the higher tier wins (after Instruction Priority).
 
 1. The owner's explicit instructions in chat
 2. The owner's global CLAUDE.md
-3. This file
+3. These standards: AGENTS.md and the rule modules it lists
 4. Default tool behaviour
 
 Global wins over this file except a deliberate override named here (e.g. Edit Discipline's authority to edit directly). A harness reminder asking for what a locked convention forbids (an AI trailer, an attribution line) loses - say so. A plan line never overrides a settled standard; the plan is corrected. Why: one tie-break order stops rule sources being argued case by case.
@@ -141,7 +141,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 
 **Work:** one issue at a time; context before options; scope loop-worthiness; **plan the whole cycle before branching** (every task, edge case, what is in and out) so work lands in one branch; with >2 units left, plan the rest as one batch (one-question investigators -> small probes -> one plan resolving cross-unit interactions -> one pass). Why: piecemeal planning splits a feature across PRs. **Audit a long branch against the objective:** commits grouped by what they buy the user, overhead named, the cumbersome fix cut.
 
-**End:** the session-end batch (-> "Per-Tracking-File Unique Function") -> ADRs for locked architecture -> the Pre-Compact ritual if near the limit. **Compact after each major task** (a shipped PR or large step into new territory), not for rework of the current step. Why: drift grows with context length.
+**End:** the session-end batch (-> rule:tracking-file-functions) -> ADRs for locked architecture -> the Pre-Compact ritual if near the limit. **Compact after each major task** (a shipped PR or large step into new territory), not for rework of the current step. Why: drift grows with context length.
 
 ## Context Engineering Discipline {#context-engineering}
 
@@ -171,7 +171,7 @@ Why: an unverified fact handed on is inherited by every reader.
 
 ## Correction & Learning Loop {#correction-loop}
 
-On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in this file the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.
+On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in its rule module the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.
 
 ## Autonomous Fixes {#autonomous-fixes}
 
@@ -205,4 +205,4 @@ Read the Session Workflow start files in order; resume from the first OPEN issue
 
 ## What This File Is Not {#what-this-file-is-not}
 
-Not the design spec (A22), not the roadmap (`_Master Roadmap.md`), not the history (`_Session Log.md`). It is HOW we work. When in doubt about which file to read: this one first.
+Not the design spec (A22), not the roadmap (`_Master Roadmap.md`), not the history (`_Session Log.md`). It is HOW we work. When in doubt about which file to read: AGENTS.md first, then the module its Rule Modules table names.

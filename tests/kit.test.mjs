@@ -794,3 +794,28 @@ test('nothing in the kit points at the retired standards file, except about proj
   }
   assert.deepEqual(left, []);
 });
+
+// Review finding: retiring the old standards file before its replacement landed would leave a project with no
+// core rules at session start. A retired file waits until the file that replaces it is in place.
+test('install keeps a retired file while the file that replaces it was skipped', () => {
+  const { kit, home, proj } = retireKit();
+  fs.writeFileSync(path.join(kit, 'project/AGENTS.md'), 'core rules\n');
+  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: { '_Working Standards.md': 'AGENTS.md' } } }));
+  fs.writeFileSync(path.join(proj, 'AGENTS.md'), 'the project\'s own agents file\n');
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(r.retired, []);
+  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules\n');
+  assert.match(r.skipped.find((s) => s.file === '_Working Standards.md').reason, /kept until AGENTS\.md is merged/);
+});
+
+// Review finding: a pointer written as -> "Heading Title" breaks when the heading is renamed; every rule pointer
+// in the kit uses its ID instead.
+test('no rule pointer in the kit names a heading by its words', () => {
+  const titles = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.title)));
+  const byWords = [];
+  for (const f of KIT_TEXT_FILES()) {
+    for (const m of read(f).matchAll(/-> "([^"]+)"/g)) if (titles.has(m[1]) || [...titles].some((t) => t.startsWith(m[1] + ' '))) byWords.push(`${path.relative('.', f)}: "${m[1]}"`);
+  }
+  assert.deepEqual(byWords, []);
+});

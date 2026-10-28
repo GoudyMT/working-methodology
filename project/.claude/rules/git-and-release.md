@@ -3,13 +3,13 @@ paths:
   - ".github/**"
   - "CHANGELOG.md"
 ---
-<!-- Written by kit.mjs build from rules/git-and-release.md. Edit the source in the kit and run build; a change made here is overwritten. -->
+<!-- Written by kit.mjs build from rules/git-and-release.md, in the layout of the Claude Code memory docs (code.claude.com/docs/en/memory). In the kit, edit the source, not this file. In a project, fill the adapter slots here; install keeps your changes, and fold-back carries rule changes back to the kit. -->
 
 # Git and Release
 
 ## Pre-Commit Discipline {#pre-commit}
 
-Every commit passes the hook (-> "Test and Review Cadence"). **Never `--no-verify`.** One commit per call, foreground, never parallel, output unfiltered to a log; preview servers and test browsers stopped first. After a failure or a killed hook, check the half-state (status, log, stash list, index lock, leftover test processes) before a retry; never chain a commit after a failed one. Why: chained commands run on whatever the failure left staged. <!-- PROJECT ADAPTER A9/A15 -->
+Every commit passes the hook (-> rule:test-and-review-cadence). **Never `--no-verify`.** One commit per call, foreground, never parallel, output unfiltered to a log; preview servers and test browsers stopped first. After a failure or a killed hook, check the half-state (status, log, stash list, index lock, leftover test processes) before a retry; never chain a commit after a failed one. Why: chained commands run on whatever the failure left staged. <!-- PROJECT ADAPTER A9/A15 -->
 
 ### Commit Message Format {#commit-message-format}
 

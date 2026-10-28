@@ -3,7 +3,7 @@ id: code
 load: files
 paths:
   - "src/**"
-when: Before writing code, and when a source file is opened.
+when: Before writing code, and when a source file is opened (the patterns are a default; set them per project in rule:project-adapter).
 tags:
   code-standards: code style, naming, comments, conventions
   size-budgets: bundle, bytes, bloat, over budget, trim

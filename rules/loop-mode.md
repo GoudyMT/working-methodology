@@ -58,6 +58,6 @@ Standing; a repeat is a regression. Why: each cost a real slip before it graduat
 3. **Never push escapes through a shell or tool parameter** - the Edit tool on fresh bytes, never `sed` or heredocs; prove a check fires (true on a bad character, false on ASCII) before trusting its silence.
 4. **Anchor every edit on freshly read bytes** - formatters change bytes; line-scoped directives go where a formatter cannot split them.
 5. **Static opaque error codes** slip in new error paths and helpers; check CI-only gates too.
-6. **The tool shell's runtime** - see "Command environment".
+6. **The tool shell's runtime** - see rule:project-adapter (A23, the owner's shell).
 7. **Never `cd` into a subfolder** - use quoted absolute paths or `git -C`; the only `cd` is to the root.
 8. **Stop the preview before any rebuild;** unreachable states: "Visual-correctness gate".

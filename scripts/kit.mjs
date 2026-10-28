@@ -158,8 +158,17 @@ export function install(ctx) {
   // removed, after a backup. A changed copy holds the owner's work, so it stays and is reported.
   const retired = [];
   const { memoryDir } = plan(ctx);
-  for (const key of ((kitInfo.config.retired || {})[ctx.target] || [])) {
+  // The config lists retired files, or maps each to the file that replaces it; a retired file waits until its
+  // replacement is in place, or the project would lose the rules both hold.
+  const retiredList = (kitInfo.config.retired || {})[ctx.target] || [];
+  const replacedBy = Array.isArray(retiredList) ? {} : retiredList;
+  for (const key of Object.keys(replacedBy).length ? Object.keys(replacedBy) : retiredList) {
     const base = stamp.files[key];
+    const heir = replacedBy[key];
+    if (heir && skipped.some((s) => s.file === heir) && base && fs.existsSync(path.join(ctx.target === 'user' ? ctx.home : ctx.projectDir, key))) {
+      skipped.push({ file: key, reason: `retired by the kit, but kept until ${heir} is merged (it was skipped above)` });
+      continue;
+    }
     const dest = key.startsWith('memory/') && memoryDir ? path.join(memoryDir, key.slice(7))
       : path.join(ctx.target === 'user' ? ctx.home : ctx.projectDir, key);
     if (!base || !fs.existsSync(dest)) { if (!fs.existsSync(dest)) delete files[key]; continue; }
@@ -751,7 +760,8 @@ export function build({ kit }) {
   const core = mods.find((m) => m.meta.id === 'core');
   const rest = mods.filter((m) => m !== core);
   const where = (m) => (m === core ? 'AGENTS.md' : m.meta.load === 'files' ? `.claude/rules/${m.meta.id}.md` : `standards/${m.meta.id}.md`);
-  const stamp = (srcs) => `<!-- Written by kit.mjs build from ${srcs}. Edit the source in the kit and run build; a change made here is overwritten. -->\n`;
+  // Install never overwrites a file the project changed, so the note says what holds in each place.
+  const stamp = (srcs) => `<!-- Written by kit.mjs build from ${srcs}, in the layout of the Claude Code memory docs (code.claude.com/docs/en/memory). In the kit, edit the source, not this file. In a project, fill the adapter slots here; install keeps your changes, and fold-back carries rule changes back to the kit. -->\n`;
   const out = new Map();
   const head = fs.readFileSync(path.join(dir, '_parts', 'agents-head.md'), 'utf8');
   const moduleIndex = ['## Rule Modules', '',

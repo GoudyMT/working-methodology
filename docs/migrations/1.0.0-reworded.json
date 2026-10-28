@@ -42,6 +42,54 @@
       "before": "5. **Merge and retire at each kit release.** Before a kit version bump, merge overlapping rules, retire rules nothing uses, and keep this file under the kit's size cap. Every rule carries a one-line why. Why: a standards file that only grows stops being read. *Check: tests enforce the size cap and a why in every rule section.*",
       "after": "5. **Merge and retire at each kit release.** Before a kit version bump, merge overlapping rules, retire rules nothing uses, and keep each module, AGENTS.md and the session-start load under their caps (`kit.config.json` caps), merging inside one module at a time. Every rule carries a one-line why. Why: a standards file that only grows stops being read. *Check: tests enforce the size cap and a why in every rule section.*",
       "why": "The single size cap became per-module caps."
+    },
+    {
+      "id": "core",
+      "before": "> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** at the end (A1-A25) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.",
+      "after": "> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A25) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.",
+      "why": "The adapter is now its own module."
+    },
+    {
+      "id": "critical-rules-priority-index",
+      "before": "1. Privacy & security above all -> \"Security Standards\", A3/A4",
+      "after": "1. Privacy & security above all -> rule:security-standards, A3/A4",
+      "why": "Pointer by ID (review finding)."
+    },
+    {
+      "id": "instruction-priority",
+      "before": "3. This file",
+      "after": "3. These standards: AGENTS.md and the rule modules it lists",
+      "why": "\"This file\" no longer covers the modules."
+    },
+    {
+      "id": "session-workflow",
+      "before": "**End:** the session-end batch (-> \"Per-Tracking-File Unique Function\") -> ADRs for locked architecture -> the Pre-Compact ritual if near the limit. **Compact after each major task** (a shipped PR or large step into new territory), not for rework of the current step. Why: drift grows with context length.",
+      "after": "**End:** the session-end batch (-> rule:tracking-file-functions) -> ADRs for locked architecture -> the Pre-Compact ritual if near the limit. **Compact after each major task** (a shipped PR or large step into new territory), not for rework of the current step. Why: drift grows with context length.",
+      "why": "Pointer by ID (review finding)."
+    },
+    {
+      "id": "correction-loop",
+      "before": "On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in this file the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.",
+      "after": "On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in its rule module the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.",
+      "why": "Rules live in modules; AGENTS.md is written by the build."
+    },
+    {
+      "id": "what-this-file-is-not",
+      "before": "Not the design spec (A22), not the roadmap (`_Master Roadmap.md`), not the history (`_Session Log.md`). It is HOW we work. When in doubt about which file to read: this one first.",
+      "after": "Not the design spec (A22), not the roadmap (`_Master Roadmap.md`), not the history (`_Session Log.md`). It is HOW we work. When in doubt about which file to read: AGENTS.md first, then the module its Rule Modules table names.",
+      "why": "The standards are now a core plus modules."
+    },
+    {
+      "id": "pre-commit",
+      "before": "Every commit passes the hook (-> \"Test and Review Cadence\"). **Never `--no-verify`.** One commit per call, foreground, never parallel, output unfiltered to a log; preview servers and test browsers stopped first. After a failure or a killed hook, check the half-state (status, log, stash list, index lock, leftover test processes) before a retry; never chain a commit after a failed one. Why: chained commands run on whatever the failure left staged. <!-- PROJECT ADAPTER A9/A15 -->",
+      "after": "Every commit passes the hook (-> rule:test-and-review-cadence). **Never `--no-verify`.** One commit per call, foreground, never parallel, output unfiltered to a log; preview servers and test browsers stopped first. After a failure or a killed hook, check the half-state (status, log, stash list, index lock, leftover test processes) before a retry; never chain a commit after a failed one. Why: chained commands run on whatever the failure left staged. <!-- PROJECT ADAPTER A9/A15 -->",
+      "why": "Pointer by ID (review finding)."
+    },
+    {
+      "id": "loop-workflow-mode",
+      "before": "6. **The tool shell's runtime** - see \"Command environment\".",
+      "after": "6. **The tool shell's runtime** - see rule:project-adapter (A23, the owner's shell).",
+      "why": "The old name pointed at no heading; the shell lives in adapter A23."
     }
   ],
   "added": [

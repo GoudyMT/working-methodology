@@ -2,7 +2,7 @@
 paths:
   - "**/*.{svelte,tsx,jsx,vue,css,html}"
 ---
-<!-- Written by kit.mjs build from rules/design-and-ux.md. Edit the source in the kit and run build; a change made here is overwritten. -->
+<!-- Written by kit.mjs build from rules/design-and-ux.md, in the layout of the Claude Code memory docs (code.claude.com/docs/en/memory). In the kit, edit the source, not this file. In a project, fill the adapter slots here; install keeps your changes, and fold-back carries rule changes back to the kit. -->
 
 # Design and UX
 
