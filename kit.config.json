@@ -1,7 +1,7 @@
 {
   "ownerName": "Max",
   "ownerProfileFile": "owner-profile.md",
-  "standardsCapBytes": 90000,
+  "standardsCapBytes": 92000,
   "vendor": {
     "plugins": [
       "superpowers",

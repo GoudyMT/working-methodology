@@ -1,4 +1,4 @@
-# Rule recall test (DRAFT - waiting for the owner's approval, then frozen)
+# Rule recall test (approved by the owner 2026-10-28; frozen)
 
 Ten situations a session meets in real work. Each is asked in a fresh Claude Code session in a scratch project
 installed from the kit, with no hints. The answer is saved word for word and scored against its key: 1 point

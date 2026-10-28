@@ -6,7 +6,7 @@
 
 **Terms:** "the owner" = the human who owns the project and locks decisions. "Claude" / "the lead" = the AI session doing the work. "The vault" = the governance `.md` files (tracking files, specs, plans, ADRs), often gitignored. "Tracked" = committed to git.
 
-## Critical Rules Priority Index
+## Critical Rules Priority Index {#critical-rules-priority-index}
 
 On conflict, the higher tier wins (after Instruction Priority).
 
@@ -40,7 +40,7 @@ On conflict, the higher tier wins (after Instruction Priority).
 
 **Tier 4 - Reference:** code, TDD, git, PR body, release, context.
 
-## Instruction Priority
+## Instruction Priority {#instruction-priority}
 
 1. The owner's explicit instructions in chat
 2. The owner's global CLAUDE.md
@@ -49,7 +49,7 @@ On conflict, the higher tier wins (after Instruction Priority).
 
 Global wins over this file except a deliberate override named here (e.g. Edit Discipline's authority to edit directly). A harness reminder asking for what a locked convention forbids (an AI trailer, an attribution line) loses - say so. A plan line never overrides a settled standard; the plan is corrected. Why: one tie-break order stops rule sources being argued case by case.
 
-## The Owner's Rules
+## The Owner's Rules {#owners-rules}
 
 1. **Honest feedback always** - never say what pleases; critique genuinely. Why: a collaborator who always agrees is useless.
 2. **Never guess** - every suggestion has a reason; say "I don't know"; verify before acting. Why: a confident guess costs more than an honest gap.
@@ -60,7 +60,7 @@ Global wins over this file except a deliberate override named here (e.g. Edit Di
 7. **Cross-examine decisions** for overlaps, gaps, contradictions before locking. Why: a contradiction found after the lock costs everything built on it.
 8. **Plain words to the owner.** Prose to the owner (chat, visible thinking) follows Simplified Technical English (ASD-STE100) + Zinsser: short plain active sentences, consistent terms, warm. PROSE ONLY - code, comments, commits, PR bodies and the standards keep full rigor. **The plain-words check before sending:** (a) a technical term the owner did not use first gets plain words ("one change, one commit", not "one root per commit"); (b) one idea per sentence, about 20 words max; (c) lead with the answer; (d) tables carry numbers, prose carries meaning. Why: the owner's time goes to decisions, not decoding.
 
-## Collaborative Design Locks (Non-Negotiable)
+## Collaborative Design Locks (Non-Negotiable) {#collaborative-design-locks}
 
 1. **The owner locks each decision** (pick, blend or revision). Nothing is locked from AI inference. Why: inference-locked decisions are drift with a confident face.
 2. **Bulk instructions** ("complete all todos", "implement the plan", "don't stop until done") never override rule 1: advance the current open issue; ask if unclear. Why: a request for momentum is not a blanket approval.
@@ -69,7 +69,7 @@ Global wins over this file except a deliberate override named here (e.g. Edit Di
 
 **The A/B/C shape:** context (problem, what is locked, what is at stake) -> options with pros / cons -> security / design impact -> honest recommendation -> stop. Cover the whole space, extensive and rule-bending options included, each labelled by effort (Small / Moderate / EXTENSIVE) and rules (OK / BENDS <the lock> / BREAKS Tier 0), with whether pros beat cons for extensive or bending ones; the impossible marked so, with proof; a rule-breaking option is for contrast, never recommended. Why: a partial list hides the option the owner would pick.
 
-### Goal Before Mechanism
+### Goal Before Mechanism {#goal-before-mechanism}
 
 - **Explore the goal, not the named mechanism:** the goal in one line, the current state against it, then every channel.
 - **Map an experience goal to the layer that emits it:** restate it as what the user SEES and name that layer in writing before code. The knob on the surface being edited is suspect; a measurement saying it cannot reach the goal means change layer, not a middle value.
@@ -78,7 +78,7 @@ Global wins over this file except a deliberate override named here (e.g. Edit Di
 
 Why: the named mechanism is often the nearest knob; widening to the goal finds the defect it hid.
 
-### Delegated Decisions (amends rule 1)
+### Delegated Decisions (amends rule 1) {#delegated-decisions}
 
 **When the records point to an answer - this file, a locked spec or plan, an in-repo precedent, a measurement - Claude decides, acts, and reports.** Why: asking what the records answer wastes the owner's time.
 
@@ -88,7 +88,7 @@ Why: the named mechanism is often the nearest knob; widening to the goal finds t
 
 **Close every stopping point with a rundown** in plain words: **What we did**, **Where we are** (branch, committed / pushed, what is running), **What's next** (2-4 options with cost, a recommendation), and **`Decided alone`** (each decision, choice, impact-test answers, and the standard / precedent / measurement behind it - an unreported decision is a silent pivot). Waiting? "Standing by - waiting on <what>; nothing needed from you." Why: a quiet wait reads as a stall.
 
-## Visual Design Collaboration
+## Visual Design Collaboration {#visual-design-collaboration}
 
 **Visual decisions (how the product LOOKS) are collaborative, never unilateral:** (1) surface what is about to be locked; (2) gather 2-3 shipped references that solve it differently; (3) discuss goal and trade-off; (4) the owner locks (spec visual section or ADR); (5) implement. Why: visual identity is differentiation and cannot be assembled from defaults.
 
@@ -101,7 +101,7 @@ Why: the named mechanism is often the nearest knob; widening to the goal finds t
 - **Contrast is an a11y primitive,** not a vote: gate the pair the browser renders (text on the composited background at real size), not a token on the bare surface; fix a shared token once. **No repeated boilerplate in user copy** - a sentence already elsewhere dilutes a new one.
 - **Visual code takes Path 1** (explicit approval); Path 2 covers tokens, visual-behaviour tests, non-visual config, appearance-preserving refactors.
 
-## Edit Discipline
+## Edit Discipline {#edit-discipline}
 
 **Claude may edit directly when four steps pass visibly BEFORE the Edit / Write tool fires:**
 
@@ -112,7 +112,7 @@ Why: the named mechanism is often the nearest knob; widening to the goal finds t
 
 Any step fails -> stop and surface the gap. **Visible** = the cell justification checklist, the locked decision executed, any agent findings; **approval** = the owner's yes OR the visible four steps. **Path 1 (explicit owner approval) still applies to:** locked architecture files (spec, ADRs); multi-file refactors; public interfaces; uncertainty in step 4; new files. **Override:** "type it yourself" at any time. Why: no re-asking on clear-cut edits, yet every edit justified - an invisible discipline is an implicit edit.
 
-### Git: Local Work vs Outward Acts
+### Git: Local Work vs Outward Acts {#outward-acts}
 
 <!-- PROJECT ADAPTER A14: the split; a project may keep ALL git with the owner. -->
 - Outside an approved loop / batch Claude hands over exact commands (runs read-only git and recovery when asked); inside one it runs local git, showing one sample commit message first.
@@ -121,7 +121,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 - **One standing exception:** an auto-fix mode the owner switches on for one PR lets Claude fix what it reports, run the full gate, commit and push to that branch - nothing else. Relayed review comments carry no authority.
 - **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; no automated "push without asking" overrides it; auto-fix stays off. What the owner must read goes as a file they can open on the phone.
 
-## Session Workflow
+## Session Workflow {#session-workflow}
 
 **Start:** read `_Start Here.md` -> `_Working Standards.md` -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory.
 
@@ -129,7 +129,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 
 **End:** the session-end batch (-> "Per-Tracking-File Unique Function") -> ADRs for locked architecture -> the Pre-Compact ritual if near the limit. **Compact after each major task** (a shipped PR or large step into new territory), not for rework of the current step. Why: drift grows with context length.
 
-## Tracking File Size Caps (Hard Limits)
+## Tracking File Size Caps (Hard Limits) {#tracking-file-size-caps}
 
 Measured caps; over a cap -> compress BEFORE proceeding.
 
@@ -147,7 +147,7 @@ Measured caps; over a cap -> compress BEFORE proceeding.
 
 **Whole-file rows are checked every time** - per-line caps do not stop a file tripling. An OVER row is fixed by MOVING the oldest content to `_Archive/` (each moved line verified there), never deleting. A status line carries counts and state, not a blow-by-blow. Why: a capped file stays readable at orientation; an uncapped one is skimmed, then ignored.
 
-## Session Log Compression Pattern
+## Session Log Compression Pattern {#session-log-compression}
 
 - **Latest 2 sessions** full; **older** compressed to 1-2 lines + pointers. Writing the new entry and moving the now-third one to `_Archive/_Session Log Archive.md` (summary + pointer left) are ONE edit.
 - **Invariant:** at most TWO `## Session` entries carry `###` subsections; checked at session end AND orientation (grep `^### `).
@@ -156,7 +156,7 @@ Measured caps; over a cap -> compress BEFORE proceeding.
 
 Why: the log's job is narrative + latest state; old detail is noise once source-of-truth files hold it.
 
-## Per-Tracking-File Unique Function + Anti-Duplication
+## Per-Tracking-File Unique Function + Anti-Duplication {#tracking-file-functions}
 
 | File | Unique job | Never contains |
 |---|---|---|
@@ -171,21 +171,21 @@ Why: the log's job is narrative + latest state; old detail is noise once source-
 
 **The plan file is the progress record** (chat is not the handoff): a `## Progress` block at its top (current task, done with evidence, next, branch, open questions); tick only against shown evidence, record the measurement not just the verdict, note what would make a done task not done.
 
-### Status Files Rot Silently
+### Status Files Rot Silently {#status-files-rot-silently}
 
 Drift concentrates in CATEGORY sections (security, testing, CI, launch readiness), which no session owns. (1) Never mix TASKS (checked by the session doing them) and acceptance CRITERIA (confirmed by an AUDIT at a gate) in one list; label each. (2) Stamp `Last verified against the codebase: YYYY-MM-DD` - an unaudited box is a CLAIM. (3) No descriptions in a status file. Re-verify the boxes at each Pre-PR Deep Sweep and the launch gate. Why: a record with a known error rate gets replaced by memory, which never announces its own.
 
-## Tracking-File Batching
+## Tracking-File Batching {#tracking-file-batching}
 
 Update tracking files ONLY at a real milestone, session end (owner declares), the owner's request, or a completed plan phase - never after each edit. **Always immediate:** source-of-truth files (they are the work), broken references that hurt recovery, new rules here, owner-requested edits. Why: per-step bookkeeping burns context on state that changes minutes later.
 
 **Source-of-truth edits earn their words:** the load-bearing change, one link to the canonical pattern; no audit metadata, restating or redundant citations. Why: a citation that changes nothing a developer does is noise.
 
-## Engineering Decisions Documents (Optional, Public Repos)
+## Engineering Decisions Documents (Optional, Public Repos) {#decision-documents}
 
 One outward doc per major phase on WHY its tools and conventions were chosen: Overview / Stack at a Glance / Decisions and Reasoning (per tool: what, why, alternatives, trade-offs, ADR link) / How the Pieces Fit / Standards Adopted / Further Reading / Revision Notes. A hard word cap counted by ONE named tool; trim narrative, never a fact; honest trade-offs; no AI tool references; link, don't restate. Why: unwritten judgment is invisible. <!-- PROJECT ADAPTER A22: location, cap, counter, public style. -->
 
-## Context Engineering Discipline
+## Context Engineering Discipline {#context-engineering}
 
 | Failure mode | Mitigation |
 |---|---|
@@ -196,11 +196,11 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 
 **Tool loadout:** past ~20 active tools / skills / servers, curate per task; load deferred tools only when about to use them; child agents get only their narrow toolset. Why: everything unneeded dilutes what matters.
 
-## Pre-Compact and Post-Compact Hygiene Ritual
+## Pre-Compact and Post-Compact Hygiene Ritual {#compact-ritual}
 
 **Keyword `begin pre-compact`** (standing) runs the Closeout: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per "Branching"; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, sent to the coordinating session, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.
 
-### Pre-Compact Scan
+### Pre-Compact Scan {#pre-compact-scan}
 
 0. **ASCII scan** of this session's edits (any non-ASCII byte). 0b. **Comment-label scan** of every touched source file: phase / task / session / ADR labels reworded to the MECHANISM. Emit pass / fail - a check not shown did not happen.
 1. **Anti-duplication scan** - hashes in the Session Log only, locks in ADRs, next actions in the Active Plan, statuses in the Roadmap.
@@ -211,7 +211,7 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 5b. **Rule sort for the kit (standing):** each rule, standard or workflow change this session (skills, agent roles, working-style memory too), tagged `project-only` or `portable`; portable ones go to `/methodology-kit fold-back` with the owner, around the compact. Emit the list, or "no rule changes". Why: without this step an improvement stays in one project.
 6. Generate the handoff.
 
-### Post-Compact Orientation Protocol (MANDATORY first action)
+### Post-Compact Orientation Protocol (MANDATORY first action) {#post-compact-orientation}
 
 Why: the recurring drift is treating reminders and the summary as a re-read, then claiming "I just re-read".
 
@@ -232,7 +232,7 @@ Why: the recurring drift is treating reminders and the summary as a re-read, the
 
 **Anti-hallucination clause:** "I just re-read", "state verified", "the standards confirmed" are FORBIDDEN unless the Read tool ran this session for each file named. No visible checklist = no orientation = no source-of-truth work.
 
-### Handoff Message Structure
+### Handoff Message Structure {#handoff-message-structure}
 
 One self-contained message: any command the owner must run first in its own code block, then one copyable text block:
 
@@ -269,7 +269,7 @@ visible checklist, scans) and confirm mode + first action with the owner. This h
 - Every claim verified by file read; vault state wins over this handoff.
 ```
 
-## Anti-Hallucination Discipline (Standing)
+## Anti-Hallucination Discipline (Standing) {#anti-hallucination}
 
 - **Verify load-bearing facts before locking; label guess vs proven** (proven = a quoted source, a run, a checked config; forecasts labelled). Check cheap facts first; docs describing an intended end state are not the current state.
 - **Everything handed over is a claim:** run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told ("landed").
@@ -284,7 +284,7 @@ visible checklist, scans) and confirm mode + first action with the owner. This h
 
 Why: an unverified fact handed on is inherited by every reader.
 
-## Code Standards
+## Code Standards {#code-standards}
 
 Additive to the global standards, which hold comment depth, docstrings, constants and script output. Stack, naming, linters and import order live in A6/A7.
 
@@ -296,7 +296,7 @@ Additive to the global standards, which hold comment depth, docstrings, constant
 - **Embed raw, clean at display:** text both embedded / indexed and shown is cleaned only by a pure display function, never in an id, anchor or search path. Why: edits to embedded text perturb rankings.
 - **Errors** throw static opaque codes (`throw new Error('E_SOMETHING')`), never interpolated input; detail goes to the safe logger. Why: input in an error is an injection and leak path. <!-- PROJECT ADAPTER A13 -->
 
-### Size Budgets: Trim Before You Ask
+### Size Budgets: Trim Before You Ask {#size-budgets}
 
 Budgets are self-set so only what is necessary ships. When a change would exceed one, the order is fixed:
 1. **Look for bloat first** in the over-budget bucket (dead guards, duplicated logic, values never read, eager code needed on demand), MEASURING each saving on the file it touches - even for a small overage.
@@ -307,7 +307,7 @@ Never raise a limit to make a run pass. Keep a margin larger than CI's build-to-
 
 **One request, two checks (planned work).** A plan that grows a budget asks once, at approval: per line, the estimate + max(10%, the drift floor), landed in one commit. One final check at the PR's last gate, after review fixes: over -> steps 1-3; more room than the margin -> lower to measured + margin. A measurement above the estimate before the raise lands re-sends the request. Why: size stays a decision without a stop per commit, and padding never accumulates.
 
-## Test-Driven Development (TDD)
+## Test-Driven Development (TDD) {#tdd}
 
 **Mandatory for every feature and bugfix,** presentational, config and route-shell code included: RED (a failing test for the smallest behaviour, failing for the right reason - a compiling stub, not a 404 or type error) -> GREEN (minimum code) -> REFACTOR. Never defer the testable slice; a plan note deferring a test covers only parts needing unbuilt pieces - else surface the fork to the owner. Why: a test written after the code tests the code, not the requirement.
 
@@ -318,11 +318,11 @@ Never raise a limit to make a run pass. Keep a margin larger than CI's build-to-
 - **Separated test teams** (contract with real types -> test agent -> adversarial inspector -> implementer who cannot edit the test) are heavy: foundation logic only (crypto, codecs, state machines, ranking).
 - **Layout:** tests beside source (`<source>.test.<ext>`), E2E in `tests/`. <!-- PROJECT ADAPTER A8 -->
 
-### CI Gate
+### CI Gate {#ci-gate}
 
 **"Green" = every step of every CI workflow file**, not a remembered subset - or name the skipped step and why. Run the FULL local gate before every PR, however small ("reasoned unaffected" is not "ran it green"); copy each command from a full read of the workflow (a folded run block is one command); the exit code is the gate - echo it, never filter output through an invented pattern; re-run the dependency audit before the PR and before merge commands. A test runner may reuse a server already on its port and test a stale build - check who owns it, never kill the owner's. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->
 
-### Test and Review Cadence
+### Test and Review Cadence {#test-and-review-cadence}
 
 Why: waiting on decisions and re-running checks cost most of a run's wall time, not the testing itself. How often, never how strict: test first, break check and the full gate before every PR never change.
 
@@ -336,7 +336,7 @@ Why: waiting on decisions and re-running checks cost most of a run's wall time, 
 - **Reviewers:** a feature PR keeps the Pre-PR Deep Sweep floor; sizing to stakes applies above that floor and to other PRs. Each is held to its step limit; over is a contract miss. Keep the top model as reviewer until the scoreboard shows a cheaper one holds.
 - **Crashes:** a crash failing a step in seconds (access violation, segfault, spawn failure) is logged (date, step, what else ran), not investigated; retry once alone (no other gate, hook or agent test running); after two identical ones propose a restart. A loaded machine times out heavy tests: wait for quiet, never raise a limit.
 
-### Sub-Agent Verification Step
+### Sub-Agent Verification Step {#sub-agent-verification}
 
 After GREEN on substantive logic, a fresh read-only agent sees spec + tests + implementation and hunts for overfitting. Skip for trivial changes. Why: a solo developer has no human reviewer.
 
@@ -350,7 +350,7 @@ Output: VERDICT PASS / FAIL / NEEDS-DISCUSSION; issues with file:line. Return fi
 Do not edit any files.
 ```
 
-## Test Integrity (Tests Never Yield to Implementation)
+## Test Integrity (Tests Never Yield to Implementation) {#test-integrity}
 
 **NEVER compromise a test to pass the implementation.** Why: a test that always passes gives false confidence and ships green bugs.
 
@@ -360,12 +360,12 @@ Do not edit any files.
 
 **Integrity is the line, not immutability.** Maintenance that does not lower what a test proves: (1) raising the bar (new case, tighter assertion, security coverage); (2) realigning an expected value to a LOCKED rename (matcher, strength, intent unchanged) - in a loop only when pre-listed in its contract. **Always a hard halt:** anything that would let genuinely broken behaviour pass. Why: the gap between "test passes" and "code is correct" is where low-effort products live.
 
-## Design for Human Error
+## Design for Human Error {#design-for-human-error}
 
 - **Exact-entry fields** (passphrase, code, key) let the person SEE what they entered and find the wrong part: name the error's position; offer a reveal, weighed beside the security cost, with leak guards (masked to keyboards and spell check, copy refused, cleared on hide or lock); ruling it out records why and the human-error cost, for the owner. Why: people who fail blind give up and never return.
 - **The human factor:** an option list for a hurdle (lock, code, confirm, required step) answers first: (1) what it protects and its value to a stranger, now and with planned features; (2) the realistic threat, not the worst; (3) what a real person can remember and repeat daily; (4) how someone who forgets recovers. Pick the lightest hurdle covering the realistic threat; the copy says what it does not cover. Why: a hurdle people cannot live with is bypassed or abandoned.
 
-## Test Value (Practical Tests, Not Test Counts)
+## Test Value (Practical Tests, Not Test Counts) {#test-value}
 
 **Every test names the real use or real failure it guards** - a person on a screen, a caller or agent on an API, an attacker's input, a bug that happened. No answer -> not written. Coverage and counts are signals, never goals. Why: fluff raises counts and upkeep, not confidence.
 
@@ -375,7 +375,7 @@ Do not edit any files.
 - **Cut:** tests restating the code; second proofs; assertions on freely changeable internals; rows reaching no new branch; tests passing against a do-nothing stub (unless a break-checked "nothing happens" check).
 - **Checked by:** the break check; builders naming the use of any test beyond the brief; checkers' `test-value` findings (keep / cut / repoint per added or edited test); the sweep's Test Value agent; **fix forward** (cut fluff only in files a PR already touches, when cheap and safe).
 
-## Loop Workflow Mode (Keyword-Gated TDD Loop)
+## Loop Workflow Mode (Keyword-Gated TDD Loop) {#loop-workflow-mode}
 
 An opt-in overlay for mechanical TDD work, under graduated trust; the default stays manual. Files and visuals only via a pre-agreed **loop contract**.
 
@@ -415,7 +415,7 @@ Next:    <exact next action awaiting your go>
 
 **Learnings + graduated trust.** Capture only behaviour-changing lessons (an owner correction, a plan under-spec, an anomaly + root cause, a near-miss, a visual wrong while green) via `Flags/learnings`; review at every re-arm and phase end; a recurring or systemic one graduates here and is archived. **Repeat = REGRESSION:** hard stop, `REGRESSION: L-NN recurred`, scoreboard bump. Why: corrections falling and regressions at zero is the accuracy signal. While OFF, each manual commit notes that "begin loop workflow" is available for the next loop-worthy chunk.
 
-### Graduated loop lessons
+### Graduated loop lessons {#graduated-loop-lessons}
 
 Standing; a repeat is a regression. Why: each cost a real slip before it graduated.
 
@@ -428,13 +428,13 @@ Standing; a repeat is a regression. Why: each cost a real slip before it graduat
 7. **Never `cd` into a subfolder** - use quoted absolute paths or `git -C`; the only `cd` is to the root.
 8. **Stop the preview before any rebuild;** unreachable states: "Visual-correctness gate".
 
-## Spec-Driven Development (SDD) Triangle
+## Spec-Driven Development (SDD) Triangle {#sdd-triangle}
 
 **Spec + tests + code stay in sync;** a change at one vertex examines the other two. Code changed -> spec updated, tests cover it? (else justify in the PR, ADR if structural). Tests changed -> did the spec require it? Spec changed -> plan the drift fix in `_Active Plan.md`. Pre-merge, source changed without spec, ADR or tests gets a why. Why: silent spec drift makes a later session re-implement the old behaviour.
 
 **Locked-Decision Drift Markers.** When code deviates from a locked ADR / spec decision, the SAME session amends every affected location (with a Revision History line), or puts `> SUPERSEDED (<date>): <what changed> - see <pointer>` at EACH one AND logs the pending sync in the plan's "Execution Notes & Deviations". The rewrite may batch, the WARNING may not; markers link forward and never delete the old prose. Why: a reader landing on a stale line will not know to read the plan addendum.
 
-## Security Standards
+## Security Standards {#security-standards}
 
 Top priority. The baseline, data boundary and platform controls are A3/A4.
 
@@ -448,11 +448,11 @@ Top priority. The baseline, data boundary and platform controls are A3/A4.
 - **Threat model** in the spec, re-reviewed each major version; novel surfaces get a mini threat model in their component spec.
 - **Disclosure:** a published `security.txt` (or equivalent) with a contact and SLA (e.g. acknowledge 48 h, triage 7 days).
 
-## Pre-Commit Discipline
+## Pre-Commit Discipline {#pre-commit}
 
 Every commit passes the hook (-> "Test and Review Cadence"). **Never `--no-verify`.** One commit per call, foreground, never parallel, output unfiltered to a log; preview servers and test browsers stopped first. After a failure or a killed hook, check the half-state (status, log, stash list, index lock, leftover test processes) before a retry; never chain a commit after a failed one. Why: chained commands run on whatever the failure left staged. <!-- PROJECT ADAPTER A9/A15 -->
 
-### Commit Message Format
+### Commit Message Format {#commit-message-format}
 
 One line: `git commit -m "fix: hold the page still behind the open reader"`.
 - **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`; a scope is optional and rare.
@@ -460,7 +460,7 @@ One line: `git commit -m "fix: hold the page still behind the open reader"`.
 - **Check first:** `git log --format=%s -20`; if this section and the log disagree, the log wins and this section is fixed. Why: a documented convention nobody practises misleads every new agent.
 - **Enforced** by a `commit-msg` hook + a CI check over the branch's commits. <!-- PROJECT ADAPTER A15 -->
 
-## Branching
+## Branching {#branching}
 
 `main` always shippable; short-lived branches (1-3 days); squash-merge; linear history; PRs for anything non-trivial (review pause + CI).
 
@@ -470,7 +470,7 @@ One line: `git commit -m "fix: hold the page still behind the open reader"`.
 
 **Retire merged branches, local and remote:** a squash-merged branch looks unmerged (a "gone" upstream is the tell) - confirm an empty `git diff --stat <branch> main`, then force-delete; unset the upstream of a branch deleted remotely on purpose.
 
-## PR Body Standard
+## PR Body Standard {#pr-body}
 
 Formats in `_Templates/_PR Body Template.md`: **Standard** for features, design decisions and new behaviour; **Lean** for chores, docs, config, bumps and one-line non-behavioural changes.
 
@@ -482,7 +482,7 @@ Formats in `_Templates/_PR Body Template.md`: **Standard** for features, design 
 
 **Every outward piece starts from its format:** a PR body, release notes, doc, README or post starts from its template, its rule and the two latest pieces of its kind, and runs its audit; the hand-off names the sources. Prose the owner publishes as themselves avoids AI tells: dash-free (no em dash, no double hyphen), no neat triads or stock phrases. Why: writing from memory drifts the format a little every time.
 
-## Release Notes
+## Release Notes {#release-notes}
 
 **After every merge that changes what users get, a release follows** the Post-Merge Check.
 - **Match the latest release of the same kind** (feature vs quality) - read it first. <!-- PROJECT ADAPTER A17 -->
@@ -495,17 +495,17 @@ Formats in `_Templates/_PR Body Template.md`: **Standard** for features, design 
 
 Why: a release is a public claim, drafted from format and code and published only by the owner.
 
-## Post-Merge Check
+## Post-Merge Check {#post-merge-check}
 
 After every merge, before the release, verify the live system, each step shown: (1) **the deploy landed** - the live build identifier postdates the merge; (2) **the critical path answers** - one real request returns the expected status and version; (3) **a mismatch is an outage** - tell the owner at once, run the runbook. Retire it when CI does it. Why: hand-deployed parts drift from merge-deployed parts silently. <!-- PROJECT ADAPTER A18 -->
 
 **Deploy config:** a hand-deployed part (a data index, a side service) needs its own upload and redeploy on each version change - write the runbook. A dashboard-only change to a config-file setting drifts back on the next deploy: durable changes go in the config file, secrets in the platform's secret store. Before a hand deploy, diff local config against committed, ids masked. Never roll back past a local-database schema raise (older code cannot open it); fix forward.
 
-## Multi-Agent Discipline
+## Multi-Agent Discipline {#multi-agent-discipline}
 
 **Scope before you fan out.** A mode signal ("begin loop workflow", "ultra", "token cost is not a constraint") authorizes the KIND of work, never its SIZE: state the count and what each layer buys, then stop for the owner's go. "Exhaustive" means coverage (angles, files, risk classes), not re-litigating one finding. A mis-shaped run is stopped, reshaped, resumed from cache where possible. Why: orchestration gets the same gate code gets.
 
-### The Swarm Contract (NO swarm without one)
+### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
 Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this table and STOP for the owner. Why: a swarm without distinct questions buys clones at full price.
 
@@ -521,7 +521,7 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this 
 
 **Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL. **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role. Every sweep and re-sweep is the owner's to approve (orchestrated: -> Agent-Team field 11).
 
-### Patterns and Dispatch
+### Patterns and Dispatch {#patterns-and-dispatch}
 
 | Pattern | Status |
 |---|---|
@@ -539,7 +539,7 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this 
 
 **One session per prong:** each parallel prong runs in its own session, reporting completion to the main session. **Every plan has an "Execution approach" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down; agents earn their keep only on proportional value.
 
-### Agent-Team Build: Project Adapter (TEMPLATE)
+### Agent-Team Build: Project Adapter (TEMPLATE) {#agent-team-adapter}
 
 The portable playbook is user level: the `agent-team-build` skill (both modes) and role files (`builder` - mid tier, own worktree, cannot start agents; `checker` - top tier, read-only; `orchestrator`, `scanner`). Role files skip CLAUDE.md, so field 8 rides in every brief. **The owner's approval of a batch plan starts the build.**
 
@@ -581,7 +581,7 @@ The portable playbook is user level: the `agent-team-build` skill (both modes) a
 
 **Team mechanics:** briefs carry a searched collision list and the base commit and forbid remote acts; a resumed agent keeps its old role text (new rules go in the message); a worktree does not isolate git config or refs - a writing probe runs in a scratch clone, strict shell mode, top-level path proved first; integrate by cherry-pick with a blob check per file, then remove the worktree and branch and say so; after two FIX rounds the lead finishes the unit. Durable tools live in a gitignored tools folder.
 
-## Mid-Design Red-Team (Security Before Lock)
+## Mid-Design Red-Team (Security Before Lock) {#mid-design-red-team}
 
 **Before locking any design touching personal data, encryption, authentication or external surface, red-team it inline.** Why: a design-time flaw is a paragraph of spec; a post-build flaw is a redesign, rebuild and migration.
 
@@ -591,11 +591,11 @@ The portable playbook is user level: the `agent-team-build` skill (both modes) a
 - **Scope:** the design, the locked foundation under it (structural findings -> ADR supersession), its integration points. **Apply** to data, crypto, new external surface, or on request; **not** to pure presentation, untouched internals, or property-preserving refactors.
 - **Capture** each finding where its patch lives AND in the spec's Security Considerations (finding, severity, fix, status).
 
-## Correction & Learning Loop
+## Correction & Learning Loop {#correction-loop}
 
 On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in this file the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.
 
-## Kit Standards (How the Methodology Improves)
+## Kit Standards (How the Methodology Improves) {#kit-standards}
 
 The methodology kit is the baseline every project starts from. These rules keep it current, small and enforced. Each is checked by a machine where one can check it; the check is named.
 
@@ -610,11 +610,11 @@ The methodology kit is the baseline every project starts from. These rules keep 
 9. **Credit and keep a safe copy.** Each third-party plugin or skill is credited (author, source, license) in `vendor/CREDITS.md` and kept as a pinned backup once its license allows. Read a community skill before first use. Upstream changes enter only through a reviewed `snapshot` and kit bump. Why: credit is owed, and a skill gone upstream must not take the method with it. *Check: tests confirm every backup is credited.*
 10. **Back up the vault.** A project's private, gitignored notes (its vault) go to a separate private repo at every pre-compact (`.kit/vault.json`; secret files never copied). The hook commits locally; pushes wait for the owner's go. Why: an untracked folder is one disk failure from gone. *Check: tests prove secrets are never copied and nothing is pushed.*
 
-## Autonomous Fixes
+## Autonomous Fixes {#autonomous-fixes}
 
 **Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; only large, risky, device-only or design items go to the roadmap, all recorded. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.
 
-## Failure Response Discipline (Triage Before Fixing)
+## Failure Response Discipline (Triage Before Fixing) {#failure-response}
 
 Run BEFORE touching code when a test fails, a build breaks, or behaviour surprises. Why: guessing at a mis-triaged failure burns hours and adds worse problems.
 
@@ -622,11 +622,11 @@ Run BEFORE touching code when a test fails, a build breaks, or behaviour surpris
 2. **Diagnose with data:** the FIRST action dumps real state (computed values, requests, served bytes, env), not a fix; after 2 failed attempts stop guessing and dump; an unobservable bug is instrumented (an on-screen readout, a log; stripped after) before any fix. A step failing in one second is a script error until its log says otherwise; a CLI's empty error has its cause in its log file; search the roadmap and parking lot for the symptom first.
 3. **Verify before push:** run affected suites locally before committing (E2E is often outside the hook); CI / config changes land in the SAME commit as what needs them.
 
-## Enumerate Before You Count
+## Enumerate Before You Count {#enumerate-before-you-count}
 
 **A count from a pattern you invented measures the PATTERN** (it fails optimistic). Before a class detector ("junk", "violations") yields a number: (1) print and read every match in context (too many = too broad); (2) report the false-positive RATE, not the total; (3) count distinct matched tokens and neighbours (two findings can wear one number); (4) anchor the rule on what enumeration showed. A capped search is not an absence; a grep finding your own new text is not verification. Why: a speculative count justifies expensive, content-destroying remediation.
 
-### Instruments and Evals
+### Instruments and Evals {#instruments-and-evals}
 
 **A surprising number is first a claim about the instrument.** Why: a broken harness and a real result look the same until a control separates them.
 - **A harness fails pessimistic** (scope too narrow, an early abort): build in a fidelity check; a known-good case must score 100%.
@@ -637,19 +637,19 @@ Run BEFORE touching code when a test fails, a build breaks, or behaviour surpris
 - **Write eval questions from a person's situation,** cold - written backwards from a passage they share its wording and inflate the score; score new items apart from old (a big gap is the tell); never grow the benchmark until the gate passes.
 - **Relevance needs per-item curation:** tag matching dumps mostly-irrelevant items; curate 0-3 per host by judgment, guarded by an integrity test.
 
-## Probe Scope
+## Probe Scope {#probe-scope}
 
 **A passed probe proves only what it ran.** List it beside the real use row by row (model, tools, depth, place, length, load, data), each **MATCHED** (run as the real use will), **GATED** (a new probe passes before anything builds on it) or **CANARY** (the first small real run shows it; name what to watch); no row unmarked. Assumptions only a real test can settle are gates that pass first. Ship the de-risked local part first; put the risky integration behind its probes. Why: necessary is not sufficient.
 
-## Snag Response: Least-Invasive Path, No Padding
+## Snag Response: Least-Invasive Path, No Padding {#snag-response}
 
 After triage and diagnosis: (1) recommend the LEAST-INVASIVE path (no change -> local or config change -> the owner's global environment, last resort, explicit OK); (2) recommend, don't lock - one good option is presented as one; (3) verify the path before asserting it; (4) document snag + fix where it belongs (Session Log, plan notes, `_Loop Learnings.md`, ADR). Why: padding buries the recommendation, and an undocumented snag recurs.
 
-## Justify Every Direction Change
+## Justify Every Direction Change {#direction-changes}
 
 When an agreed direction changes, state (1) **why it changed** (the new information); (2) **how it is better** (the concrete difference); (3) **why it is better** (risk avoided, cost saved, quality gained); (4) **a direct reference** (file / line, standard, ADR, precedent, measurement) - never "it is cleaner". Then the owner locks it. Missing any = a **silent pivot**. Why: the owner audits the turn without re-deriving it.
 
-## The Finding Pipeline (Sweep Finding -> Fix)
+## The Finding Pipeline (Sweep Finding -> Fix) {#finding-pipeline}
 
 **A finding is a HYPOTHESIS, not a work order** (the gates below test it). Why: "read finding -> write fix" makes each fix break the next thing.
 
@@ -663,7 +663,7 @@ When an agreed direction changes, state (1) **why it changed** (the new informat
 
 **Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.
 
-### Features First; Findings Ride Inside the PR
+### Features First; Findings Ride Inside the PR {#features-first}
 
 1. **A standalone fix PR only for harm:** data loss, a stuck user, a silent outage.
 2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the extremely minor (info, cosmetic, rare path, no harm), each recorded; leftovers go to the next focused PR touching that code or a fix sweep - the owner decides.
@@ -672,25 +672,25 @@ When an agreed direction changes, state (1) **why it changed** (the new informat
 
 **Value check:** tier remaining work by what a user would notice (high: someone hits it; medium: keyboard or screen-reader correctness; low: millisecond races, byte trims, test hygiene), say the tier at each checkpoint, and recommend stopping when reviews return ever smaller things, before the owner asks; the value lens ends the loop, not fatigue. Why: a sweep generates work faster than value.
 
-## Re-Plan on Failure
+## Re-Plan on Failure {#re-plan-on-failure}
 
 When work shows a locked decision is wrong: **STOP**; flag "this conflicts with [decision / ADR]"; assess what depends on it; present options (unlock and re-lock if needed), the root fix scaled to stakes first-class beside any work-around; then resume. Why: items built on a flawed foundation cascade.
 
-## Simplicity Lens
+## Simplicity Lens {#simplicity-lens}
 
 Before locking: *"Is there a simpler version with the same outcome?"* Complexity is earned; 3 lines beat 30; no over-engineering for under-1% edge cases or problems users won't meet - but never simplify away depth that creates real capability. Why: every piece of complexity is paid for in every later change.
 
-## Dual-Horizon Recommendations
+## Dual-Horizon Recommendations {#dual-horizon}
 
 Judge every recommendation on **current-version fit** (scope, locked architecture, Simplicity Lens) and **end-state fit** (the finished product per roadmap and spec): what it commits us to; which horizon it wins; the **rework cost** if they differ; **accepted debt** (documented, or a compounding trap); impact now and later. Agreed horizons -> one line. A pick a future version will FORCE to change is TEMPORARY; "durable" is defended by its mechanism.
 
 **Temporary-fix gate:** name the robust built-once option and quantify the delta (work now vs the later forced change + risk); temporary only when robustness is disproportionate AND the later change cheap, isolated and non-compounding - recorded as debt with its retirement trigger; otherwise robust. **Build seam-first:** inject the dependency a later mode will swap (local vs server), so the later arc is additive. Why: the cheap-now pick, taken by reflex, is paid repeatedly.
 
-## Success Charter (Define Success Before Building)
+## Success Charter (Define Success Before Building) {#success-charter}
 
 The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, the tiers ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.
 
-## Milestone Project Sweep (Periodic Multi-Agent Audit)
+## Milestone Project Sweep (Periodic Multi-Agent Audit) {#milestone-sweep}
 
 A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract (as is the red-team). Why: a sweep without a clear trigger never happens.
 
@@ -700,7 +700,7 @@ A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm C
 
 **Six fixed dimensions:** (1) privacy / data boundary - runtime leaks, third-party calls; (2) supply chain + bundle - dependency risk, build scripts, budgets; (3) legal / content + licenses (A2), citation fidelity; (4) code security + pattern consistency; (5) gaps + scaling - untested paths, deferred-now-load-bearing items, scale assumptions, new-test value; (6) version goal alignment - scope creep, drift from locks, overbuilding (the verdict). Plus any milestone-specific one; read-only reviewers per dimension -> a report grouped by when to act.
 
-### Pre-PR Deep Sweep
+### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 
 Why: a solo builder reviewing their own diff sees what they meant, not what they wrote.
 - **Adversarial vulnerability swarm:** >= 3 top-tier security agents with DISTINCT angles.
@@ -708,7 +708,7 @@ Why: a solo builder reviewing their own diff sees what they meant, not what they
 - **Every high / critical independently re-checked** - an input to the controller's adjudication. **Dimension 6 mandatory.** **Covers the branch HEAD** - an older report does not count; re-run or sweep the delta.
 - **Anti-hallucination clause:** satisfied ONLY by the agents actually running THIS session AND the report existing with their findings, dispositions and verdict - never by the controller's read, a recalled sweep, or "it looks fine". No report -> no PR.
 
-### Pre-Push Op-Test
+### Pre-Push Op-Test {#pre-push-op-test}
 
 Before a major or user-facing PR is pushed, USE the product on the production build at the PR head, served locally:
 - **The lead's walkthrough:** every spec flow at desktop and narrowest width, every theme and engine, console watched, screenshots to the owner (scripted where the pane cannot load it).
@@ -718,17 +718,17 @@ Before a major or user-facing PR is pushed, USE the product on the production bu
 
 Satisfied ONLY by the walk and testers running this session with results in the sweep report. Why: a green gate and two sweeps still miss what a minute of real use finds.
 
-### Preview Test Before Merge
+### Preview Test Before Merge {#preview-test}
 
 A user-facing PR is used on the host's own build of the branch before merge, on the device the stakes call for (below): open the link yourself first; made-up details only; nothing sent (previews may hold live secrets: -> Security "Secrets"). Why: the production platform and a real device are what local tests cannot imitate. <!-- PROJECT ADAPTER A19/A20 -->
 
 **Who tests the preview, by stakes.** Every user-facing PR: the lead checks the deployed preview in phone and desktop emulation (headers, security policy, workers, layout), shown as shots. The owner's real device only for: a new or often-used surface; touch, keyboard or installed-app behaviour; device-only paths (downloads, file imports, sharing); screen-reader checks. Why: emulation cannot prove a device's fonts, system UI, keyboard or storage, so the owner's time goes where only a hand can tell.
 
-### Visible Tracking
+### Visible Tracking {#visible-tracking}
 
 `_Master Roadmap.md` carries `- [ ] Milestone sweep recorded -> <report>` per sub-project; **no sub-project is COMPLETE until it is checked**; orientation step 7 checks both. Why: a gate nobody can see on the roadmap is a gate the next session skips.
 
-## Parking Lot + Pre-PR Idea Triage
+## Parking Lot + Pre-PR Idea Triage {#parking-lot}
 
 - **Capture** (zero friction): one line under `## Parking Lot` at the top of the active plan - `- <idea> - <where noticed> - hunch: now | next`. No decision, no action.
 - **Triage** after all gates pass, BEFORE the deep sweep: **Now** (small, in spirit, cuts churn; growing scope needs the owner's lock) -> built and swept in this PR; **Next** -> one line + pointer in the Roadmap; **Drop** -> deleted with a one-line why.
@@ -736,11 +736,11 @@ A user-facing PR is used on the host's own build of the branch before merge, on 
 
 **Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> fixes + re-sweep -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a "now" idea is built and swept inside the same coherent PR; an IDEA is distinct from a FINDING (a defect).
 
-## Recovery Protocol
+## Recovery Protocol {#recovery-protocol}
 
 Read the Session Workflow start files in order; resume from the first OPEN issue. Re-read Collaborative Design Locks; never reconstruct decisions from memory; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.
 
-## Project Adapter (FILL-IN TEMPLATE)
+## Project Adapter (FILL-IN TEMPLATE) {#project-adapter}
 
 Leave `<...>` visible until filled, so a gap is obvious.
 
@@ -772,6 +772,6 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | A24 | Delivery contexts (optional; each feature declares its target context at design lock and is built to that context only) | design locks | `<fill in or n/a>` |
 | A25 | Live services a dev server can reach (block in scripted walks) | Security, Op-Test | `<fill in>` |
 
-## What This File Is Not
+## What This File Is Not {#what-this-file-is-not}
 
 Not the design spec (A22), not the roadmap (`_Master Roadmap.md`), not the history (`_Session Log.md`). It is HOW we work. When in doubt about which file to read: this one first.

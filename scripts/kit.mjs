@@ -600,6 +600,27 @@ export function preCompactReport({ kit, home, projectDir }) {
 }
 
 /**
+ * List the rule headings (## and ###) of a standards file, with the fixed ID written after the title as
+ * `{#id}`. Headings inside fenced code blocks are examples (the handoff template), not rules, and are skipped.
+ *
+ * Args:
+ *     text: the file's text
+ *
+ * Returns:
+ *     [{ level, title, id, line }] - id is null when the heading has none; line counts from 1
+ */
+export function headings(text) {
+  const out = [];
+  let fenced = false;
+  text.split('\n').forEach((l, i) => {
+    if (/^\s*```/.test(l)) { fenced = !fenced; return; }
+    const m = !fenced && l.match(/^(#{2,3}) (.*?)(?: \{#([^}]+)\})?\s*$/);
+    if (m) out.push({ level: m[1].length, title: m[2], id: m[3] || null, line: i + 1 });
+  });
+  return out;
+}
+
+/**
  * Measure what Claude Code loads for a project at session start: CLAUDE.md, its @imports, and rules with no
  * paths field. Follows the memory docs: imports nest up to four hops, a path ends at the first unescaped space,
  * and imports inside code spans or fenced blocks are skipped.

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -458,7 +458,7 @@ test('every rule section in the standards says why', () => {
     'Anti-Hallucination Discipline', 'Project Adapter (FILL-IN TEMPLATE)', 'What This File Is Not']);
   const missing = STANDARDS().split(/^(?=#{2,3} )/m)
     .filter((s) => /^#{2,3} /.test(s))
-    .filter((s) => !EXEMPT.has(s.split('\n')[0].replace(/^#+ /, '').trim()))
+    .filter((s) => !EXEMPT.has(s.split('\n')[0].replace(/^#+ /, '').replace(/ \{#[^}]+\}$/, '').trim()))
     .filter((s) => !/why/i.test(s))
     .map((s) => s.split('\n')[0]);
   assert.deepEqual(missing, []);
@@ -564,4 +564,26 @@ test('measure counts what a session loads at start, the way Claude Code reads im
   assert.equal(r.total, r.files.reduce((s, f) => s + f.bytes, 0));
   // An unescaped space cuts the path, so this import finds no file: the start file never loads.
   assert.deepEqual(r.unresolved, [{ from: 'CLAUDE.md', import: '_Start' }]);
+});
+
+// Plan rule-modules, Phase 1: every rule heading carries a fixed ID, so pointers survive renames and moves.
+// Headings inside code blocks (the handoff template) are examples, not rules, and carry none.
+const ruleFiles = () => [path.resolve('project/_Working Standards.md')];
+test('every rule heading has a unique, plain-word ID', () => {
+  const seen = new Map(), bad = [];
+  for (const f of ruleFiles()) {
+    for (const h of headings(read(f))) {
+      if (!h.id) { bad.push(`no ID: ${h.title}`); continue; }
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(h.id)) bad.push(`not plain words: ${h.id}`);
+      if (seen.has(h.id)) bad.push(`duplicate: ${h.id}`);
+      seen.set(h.id, f);
+    }
+  }
+  assert.deepEqual(bad, []);
+  assert.equal(seen.size, 70);
+});
+
+test('headings skips headings inside code blocks and reads the ID after the title', () => {
+  const hs = headings('## One {#one}\n```\n## Not a rule\n```\n### Two: more (x) {#two}\n## Three\n');
+  assert.deepEqual(hs.map((h) => [h.level, h.title, h.id]), [[2, 'One', 'one'], [3, 'Two: more (x)', 'two'], [2, 'Three', null]]);
 });
