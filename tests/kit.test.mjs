@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger, build, parseModule } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -685,4 +685,28 @@ test('build writes AGENTS.md, path rules, on-demand modules and the index from r
 test('the written-out files in project/ match a fresh build', () => {
   const stale = [...build({ kit: path.resolve('.') })].filter(([rel, text]) => !fs.existsSync(path.resolve(rel)) || read(path.resolve(rel)) !== text).map(([rel]) => rel);
   assert.deepEqual(stale, [], 'run node scripts/kit.mjs build');
+});
+
+test('find ranks a rule by its ID, then its title, then its text', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'find-'));
+  fs.mkdirSync(path.join(root, 'rules'));
+  fs.writeFileSync(path.join(root, 'rules', 'git.md'), '---\nid: git\nload: on-demand\nwhen: x\n---\n\n# Git\n\n## Branching {#branching}\nName a branch by its type.\n\n### Commit Message Format {#commit-message-format}\nOne line, type then subject.\n');
+  fs.writeFileSync(path.join(root, 'rules', 'core.md'), '---\nid: core\nload: always\nwhen: x\n---\n\n## Edit Discipline {#edit-discipline}\nThink before a commit.\n');
+  assert.equal(findRules({ kit: root, query: 'commit message' })[0].id, 'commit-message-format');
+  assert.equal(findRules({ kit: root, query: 'what should I call my branch' })[0].id, 'branching');
+  assert.deepEqual(findRules({ kit: root, query: 'edit-discipline' }).map((r) => [r.id, r.module]), [['edit-discipline', 'core']]);
+  assert.deepEqual(findRules({ kit: root, query: 'nothing matches this' }), []);
+});
+
+test('find also matches the tags a module gives its rules, and every rule has tags', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'find-tags-'));
+  fs.mkdirSync(path.join(root, 'rules'));
+  fs.writeFileSync(path.join(root, 'rules', 'code.md'), '---\nid: code\nload: on-demand\nwhen: x\ntags:\n  size-budgets: bundle, bytes, bloat\n---\n\n## Size Budgets {#size-budgets}\nTrim first.\n\n## Naming {#naming}\nPlain names.\n');
+  assert.deepEqual(parseModule(read(path.join(root, 'rules', 'code.md'))).meta.tags, { 'size-budgets': ['bundle', 'bytes', 'bloat'] });
+  assert.equal(findRules({ kit: root, query: 'the bundle grew' })[0].id, 'size-budgets');
+  const untagged = ruleFiles().flatMap((f) => {
+    const { meta, body } = parseModule(read(f));
+    return headings(body).filter((h) => !(meta.tags && meta.tags[h.id] && meta.tags[h.id].length)).map((h) => h.id);
+  });
+  assert.deepEqual(untagged, []);
 });

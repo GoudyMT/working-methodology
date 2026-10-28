@@ -7,6 +7,17 @@ paths:
   - "_Active Plan.md"
   - "_Master Roadmap.md"
 when: Before a compact or session end, after a compact, and when a tracking file is opened.
+tags:
+  tracking-file-size-caps: size limit, too long, line limit, log length, tracking files
+  session-log-compression: compress, old entries, history, log
+  tracking-file-functions: tracking files, duplicate, restate, pointer, one job
+  status-files-rot-silently: stale, out of date, status
+  tracking-file-batching: when to update, batch updates, milestone
+  decision-documents: decisions, public repo, engineering notes
+  compact-ritual: compact, compaction, closeout, end of session
+  pre-compact-scan: before compact, scan, closeout checks
+  post-compact-orientation: after compact, resume, re-read, orientation
+  handoff-message-structure: handoff, continuation, summary, next session
 ---
 
 # Tracking Files and Handoff

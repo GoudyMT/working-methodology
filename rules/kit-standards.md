@@ -2,6 +2,8 @@
 id: kit-standards
 load: on-demand
 when: Before changing a rule or the kit.
+tags:
+  kit-standards: kit, methodology, change a rule, briefs, one home
 ---
 
 # Kit Standards

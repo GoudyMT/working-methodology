@@ -5,6 +5,13 @@ paths:
   - ".github/**"
   - "CHANGELOG.md"
 when: Before a commit, branch, PR, merge or release.
+tags:
+  pre-commit: before commit, commit checks, staged
+  commit-message-format: commit message, subject line, type
+  branching: branch name, naming, git branch
+  pr-body: pull request description, pr text, body
+  release-notes: release, changelog, version notes
+  post-merge-check: after merge, deploy check, live
 ---
 
 # Git and Release

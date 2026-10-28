@@ -4,6 +4,9 @@ load: files
 paths:
   - "src/**"
 when: Before writing code, and when a source file is opened.
+tags:
+  code-standards: code style, naming, comments, conventions
+  size-budgets: bundle, bytes, bloat, over budget, trim
 ---
 
 # Code

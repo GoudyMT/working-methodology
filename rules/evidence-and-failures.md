@@ -2,6 +2,12 @@
 id: evidence-and-failures
 load: on-demand
 when: When something fails, a number surprises, or a probe is planned.
+tags:
+  failure-response: failure, error, broken, triage, debug
+  enumerate-before-you-count: numbers, counts, metrics, surprising results
+  instruments-and-evals: eval, benchmark, measurement, harness, results
+  probe-scope: probe, experiment, investigation scope
+  snag-response: stuck, blocker, workaround, snag
 ---
 
 # Evidence and Failures

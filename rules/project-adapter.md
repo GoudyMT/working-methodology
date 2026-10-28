@@ -2,6 +2,8 @@
 id: project-adapter
 load: on-demand
 when: Before an agent batch; filled in per project.
+tags:
+  project-adapter: project values, stack, adapter, fill in
 ---
 
 # Project Adapter

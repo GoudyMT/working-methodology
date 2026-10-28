@@ -2,6 +2,9 @@
 id: loop-mode
 load: on-demand
 when: When the owner turns loop mode on.
+tags:
+  loop-workflow-mode: loop, autonomous, keyword
+  graduated-loop-lessons: lessons, learned, regression
 ---
 
 # Loop Mode

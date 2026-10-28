@@ -6,6 +6,14 @@ paths:
   - "**/*.spec.*"
   - "tests/**"
 when: Before planning or writing tests, and when a test file is opened.
+tags:
+  tdd: test first, test-driven, red green, write tests
+  ci-gate: ci, pipeline, checks, green
+  test-and-review-cadence: when to run tests, hook, full gate, review
+  sub-agent-verification: agent results, verify agent, check builder
+  test-integrity: failing test, weaken, skip, assertion
+  test-value: useful tests, fluff, test count, coverage
+  sdd-triangle: spec, drift, adr, superseded
 ---
 
 # Testing

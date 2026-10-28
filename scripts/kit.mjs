@@ -651,14 +651,19 @@ export function ledger(text, map) {
   return rows;
 }
 
-/** Split a rule module into its frontmatter (id, load, paths, when) and its body. */
+/**
+ * Split a rule module into its frontmatter and its body. Frontmatter: id, load, when, a `paths` list, and a
+ * `tags` block of `  <rule id>: word, word` lines - the other words people use for that rule, for search.
+ */
 export function parseModule(text) {
   const m = text.match(/^---\n([\s\S]*?)\n---\n/);
   if (!m) throw new Error('rule module has no frontmatter');
-  const meta = { paths: [] };
+  const meta = { paths: [], tags: {} };
   for (const line of m[1].split('\n')) {
     const item = line.match(/^\s+- "(.*)"$/);
     if (item) { meta.paths.push(item[1]); continue; }
+    const tag = line.match(/^\s+([a-z0-9-]+):\s*(.+)$/);
+    if (tag) { meta.tags[tag[1]] = tag[2].split(',').map((w) => w.trim()).filter(Boolean); continue; }
     const kv = line.match(/^(\w+):\s*(.*)$/);
     if (kv && kv[2]) meta[kv[1]] = kv[2];
   }
@@ -699,11 +704,51 @@ export function build({ kit }) {
     const front = m.meta.load === 'files' ? ['---', 'paths:', ...m.meta.paths.map((p) => `  - "${p}"`), '---', ''].join('\n') : '';
     out.set(`project/${where(m)}`, front + stamp(m.src) + '\n' + m.body);
   }
-  const rows = mods.flatMap((m) => headings(m.body).map((h) => `| ${h.id} | ${h.title} | \`${where(m)}\` |`));
+  const rows = mods.flatMap((m) => headings(m.body).map((h) => `| ${h.id} | ${h.title} | \`${where(m)}\` | ${(m.meta.tags[h.id] || []).join(', ')} |`));
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
-    'that rule in the file named.', '', '| ID | Rule | File |', '|---|---|---|', ...rows, ''].join('\n'));
+    'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
+    '| ID | Rule | File | Also called |', '|---|---|---|---|', ...rows, ''].join('\n'));
   return out;
+}
+
+// Words that say nothing about which rule is meant.
+const FIND_STOP = new Set(['a', 'an', 'the', 'is', 'it', 'its', 'i', 'my', 'me', 'we', 'our', 'to', 'of', 'in', 'on',
+  'for', 'and', 'or', 'do', 'does', 'what', 'how', 'when', 'where', 'should', 'can', 'could', 'be', 'from', 'with',
+  'this', 'that', 'ok', 'look', 'looks', 'too', 'so', 'before', 'after', 'about', 'rule', 'rules']);
+const findWords = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter((w) => w && !FIND_STOP.has(w));
+// A query word matches a rule word that is the same, or that one starts with the other (4+ letters): "branch" finds
+// "branching", "tests" finds "test".
+const wordHit = (q, w) => q === w || (q.length >= 4 && w.length >= 4 && (w.startsWith(q) || q.startsWith(w)));
+
+/**
+ * Find rules by ID or by words, across the rule modules in rules/. An exact ID returns that rule alone. Otherwise
+ * each rule scores 3 per query word in its ID, 2 in its title or tags, and 1 when its own text holds the word.
+ *
+ * Args:
+ *     ctx: { kit, query, limit }
+ *
+ * Returns:
+ *     [{ id, title, module, score }] best first, at most `limit` (default 5)
+ */
+export function findRules({ kit, query, limit = 5 }) {
+  const dir = path.join(kit, 'rules');
+  const rules = fs.readdirSync(dir).filter((n) => n.endsWith('.md')).flatMap((n) => {
+    const { meta, body } = parseModule(fs.readFileSync(path.join(dir, n), 'utf8'));
+    const lines = body.split('\n');
+    const hs = headings(body);
+    return hs.map((h, i) => ({ id: h.id, title: h.title, module: meta.id, tags: (meta.tags[h.id] || []).join(' '),
+      text: lines.slice(h.line, i + 1 < hs.length ? hs[i + 1].line - 1 : lines.length).join(' ') }));
+  });
+  const exact = rules.find((r) => r.id === query.trim().replace(/^rule:/, ''));
+  if (exact) return [{ id: exact.id, title: exact.title, module: exact.module, score: Infinity }];
+  const qs = findWords(query);
+  return rules.map((r) => {
+    const idw = r.id.split('-'), tw = findWords(`${r.title} ${r.tags}`), bw = findWords(r.text);
+    const score = qs.reduce((s, q) => s + (idw.some((w) => wordHit(q, w)) ? 3 : 0) + (tw.some((w) => wordHit(q, w)) ? 2 : 0)
+      + (bw.some((w) => wordHit(q, w)) ? 1 : 0), 0);
+    return { id: r.id, title: r.title, module: r.module, score };
+  }).filter((r) => r.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 /**
@@ -786,6 +831,10 @@ function main(argv) {
     for (const f of r.files) console.log(`${String(f.bytes).padStart(8)}  ${f.file}`);
     console.log(`${String(r.total).padStart(8)}  loaded at session start`);
     for (const u of r.unresolved) console.log(`    import not found: @${u.import} (in ${u.from})`);
+  } else if (cmd === 'find') {
+    const hits = findRules({ kit, query: argv.slice(1).join(' ') });
+    for (const h of hits) console.log(`rule:${h.id}  ${h.title}  (${h.module})`);
+    if (!hits.length) console.log('No rule matched. Try other words, or read project/standards/INDEX.md.');
   } else if (cmd === 'build') {
     const out = build({ kit });
     for (const [rel, text] of out) {
@@ -803,7 +852,7 @@ function main(argv) {
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');
-    console.log('       node scripts/kit.mjs build | measure [project folder]');
+    console.log('       node scripts/kit.mjs build | measure [project folder] | find <words or rule ID>');
     console.log('       node scripts/kit.mjs scrub');
     process.exitCode = cmd ? 1 : 0;
   }

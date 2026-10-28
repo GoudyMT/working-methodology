@@ -2,6 +2,15 @@
 id: reviews-and-findings
 load: on-demand
 when: Before a sweep, a review or a PR, and when handling a finding.
+tags:
+  finding-pipeline: findings, review results, fix findings, triage
+  features-first: fix-only pr, findings in the pr
+  milestone-sweep: audit, sweep, milestone, review dimensions
+  pre-pr-deep-sweep: before pr, deep review, security agents
+  pre-push-op-test: use the app, break it, manual test, before push
+  preview-test: preview link, staging, version url
+  visible-tracking: progress, checklist, visible
+  parking-lot: ideas, later, out of scope, parking lot
 ---
 
 # Reviews and Findings

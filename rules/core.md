@@ -2,6 +2,27 @@
 id: core
 load: always
 when: Every session.
+tags:
+  critical-rules-priority-index: priorities, most important, which rule wins
+  instruction-priority: conflict, which instruction wins, override
+  owners-rules: owner, preferences, standing orders
+  collaborative-design-locks: decide, lock, options, approval, one issue, bulk instructions
+  goal-before-mechanism: goal, purpose, why, mechanism, options
+  delegated-decisions: decide alone, records answer, impact test
+  edit-discipline: edit, write code, change files, approval before writing
+  outward-acts: push, pull request, merge, release, tag, publish, remote
+  session-workflow: session, start, end, workflow
+  context-engineering: context window, tokens, load, size
+  anti-hallucination: guess, verify, invented, made up, re-read claims
+  correction-loop: corrections, feedback, mistakes, learn
+  autonomous-fixes: fix without asking, small fixes
+  direction-changes: pivot, change direction, justify
+  re-plan-on-failure: plan failed, replan
+  simplicity-lens: simple, simpler, over-engineering
+  dual-horizon: short term, long term, rework cost
+  success-charter: success criteria, define done, measurable
+  recovery-protocol: lost context, new chat, recover
+  what-this-file-is-not: scope of standards
 ---
 
 # Working Standards - <PROJECT NAME>

@@ -4,6 +4,9 @@ load: files
 paths:
   - "**/*.{svelte,tsx,jsx,vue,css,html}"
 when: Before any visual or UX decision, and when a UI file is opened.
+tags:
+  visual-design-collaboration: visual, layout, wireframe, mockup, screen, color, contrast
+  design-for-human-error: mistakes, typo, mistype, forgiving, recover
 ---
 
 # Design and UX

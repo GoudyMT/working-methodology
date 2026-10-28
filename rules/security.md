@@ -2,6 +2,9 @@
 id: security
 load: on-demand
 when: At a design lock, before a commit, and for any code that touches data, auth or secrets.
+tags:
+  security-standards: security, secrets, privacy, owasp, keys
+  mid-design-red-team: red team, threat, attack, design review
 ---
 
 # Security

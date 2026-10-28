@@ -3,77 +3,77 @@
 # Rule Index
 
 Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read
-that rule in the file named.
+that rule in the file named. To search, look for your words in the Rule and Also called columns.
 
-| ID | Rule | File |
-|---|---|---|
-| multi-agent-discipline | Multi-Agent Discipline | `standards/agent-teams.md` |
-| swarm-contract | The Swarm Contract (NO swarm without one) | `standards/agent-teams.md` |
-| patterns-and-dispatch | Patterns and Dispatch | `standards/agent-teams.md` |
-| agent-team-adapter | Agent-Team Build: Project Adapter (TEMPLATE) | `standards/agent-teams.md` |
-| code-standards | Code Standards | `.claude/rules/code.md` |
-| size-budgets | Size Budgets: Trim Before You Ask | `.claude/rules/code.md` |
-| critical-rules-priority-index | Critical Rules Priority Index | `AGENTS.md` |
-| instruction-priority | Instruction Priority | `AGENTS.md` |
-| owners-rules | The Owner's Rules | `AGENTS.md` |
-| collaborative-design-locks | Collaborative Design Locks (Non-Negotiable) | `AGENTS.md` |
-| goal-before-mechanism | Goal Before Mechanism | `AGENTS.md` |
-| delegated-decisions | Delegated Decisions (amends rule 1) | `AGENTS.md` |
-| edit-discipline | Edit Discipline | `AGENTS.md` |
-| outward-acts | Git: Local Work vs Outward Acts | `AGENTS.md` |
-| session-workflow | Session Workflow | `AGENTS.md` |
-| context-engineering | Context Engineering Discipline | `AGENTS.md` |
-| anti-hallucination | Anti-Hallucination Discipline (Standing) | `AGENTS.md` |
-| correction-loop | Correction & Learning Loop | `AGENTS.md` |
-| autonomous-fixes | Autonomous Fixes | `AGENTS.md` |
-| direction-changes | Justify Every Direction Change | `AGENTS.md` |
-| re-plan-on-failure | Re-Plan on Failure | `AGENTS.md` |
-| simplicity-lens | Simplicity Lens | `AGENTS.md` |
-| dual-horizon | Dual-Horizon Recommendations | `AGENTS.md` |
-| success-charter | Success Charter (Define Success Before Building) | `AGENTS.md` |
-| recovery-protocol | Recovery Protocol | `AGENTS.md` |
-| what-this-file-is-not | What This File Is Not | `AGENTS.md` |
-| visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` |
-| design-for-human-error | Design for Human Error | `.claude/rules/design-and-ux.md` |
-| failure-response | Failure Response Discipline (Triage Before Fixing) | `standards/evidence-and-failures.md` |
-| enumerate-before-you-count | Enumerate Before You Count | `standards/evidence-and-failures.md` |
-| instruments-and-evals | Instruments and Evals | `standards/evidence-and-failures.md` |
-| probe-scope | Probe Scope | `standards/evidence-and-failures.md` |
-| snag-response | Snag Response: Least-Invasive Path, No Padding | `standards/evidence-and-failures.md` |
-| pre-commit | Pre-Commit Discipline | `.claude/rules/git-and-release.md` |
-| commit-message-format | Commit Message Format | `.claude/rules/git-and-release.md` |
-| branching | Branching | `.claude/rules/git-and-release.md` |
-| pr-body | PR Body Standard | `.claude/rules/git-and-release.md` |
-| release-notes | Release Notes | `.claude/rules/git-and-release.md` |
-| post-merge-check | Post-Merge Check | `.claude/rules/git-and-release.md` |
-| kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` |
-| loop-workflow-mode | Loop Workflow Mode (Keyword-Gated TDD Loop) | `standards/loop-mode.md` |
-| graduated-loop-lessons | Graduated loop lessons | `standards/loop-mode.md` |
-| project-adapter | Project Adapter (FILL-IN TEMPLATE) | `standards/project-adapter.md` |
-| finding-pipeline | The Finding Pipeline (Sweep Finding -> Fix) | `standards/reviews-and-findings.md` |
-| features-first | Features First; Findings Ride Inside the PR | `standards/reviews-and-findings.md` |
-| milestone-sweep | Milestone Project Sweep (Periodic Multi-Agent Audit) | `standards/reviews-and-findings.md` |
-| pre-pr-deep-sweep | Pre-PR Deep Sweep | `standards/reviews-and-findings.md` |
-| pre-push-op-test | Pre-Push Op-Test | `standards/reviews-and-findings.md` |
-| preview-test | Preview Test Before Merge | `standards/reviews-and-findings.md` |
-| visible-tracking | Visible Tracking | `standards/reviews-and-findings.md` |
-| parking-lot | Parking Lot + Pre-PR Idea Triage | `standards/reviews-and-findings.md` |
-| security-standards | Security Standards | `standards/security.md` |
-| mid-design-red-team | Mid-Design Red-Team (Security Before Lock) | `standards/security.md` |
-| tdd | Test-Driven Development (TDD) | `.claude/rules/testing.md` |
-| ci-gate | CI Gate | `.claude/rules/testing.md` |
-| test-and-review-cadence | Test and Review Cadence | `.claude/rules/testing.md` |
-| sub-agent-verification | Sub-Agent Verification Step | `.claude/rules/testing.md` |
-| test-integrity | Test Integrity (Tests Never Yield to Implementation) | `.claude/rules/testing.md` |
-| test-value | Test Value (Practical Tests, Not Test Counts) | `.claude/rules/testing.md` |
-| sdd-triangle | Spec-Driven Development (SDD) Triangle | `.claude/rules/testing.md` |
-| tracking-file-size-caps | Tracking File Size Caps (Hard Limits) | `.claude/rules/tracking-and-handoff.md` |
-| session-log-compression | Session Log Compression Pattern | `.claude/rules/tracking-and-handoff.md` |
-| tracking-file-functions | Per-Tracking-File Unique Function + Anti-Duplication | `.claude/rules/tracking-and-handoff.md` |
-| status-files-rot-silently | Status Files Rot Silently | `.claude/rules/tracking-and-handoff.md` |
-| tracking-file-batching | Tracking-File Batching | `.claude/rules/tracking-and-handoff.md` |
-| decision-documents | Engineering Decisions Documents (Optional, Public Repos) | `.claude/rules/tracking-and-handoff.md` |
-| compact-ritual | Pre-Compact and Post-Compact Hygiene Ritual | `.claude/rules/tracking-and-handoff.md` |
-| pre-compact-scan | Pre-Compact Scan | `.claude/rules/tracking-and-handoff.md` |
-| post-compact-orientation | Post-Compact Orientation Protocol (MANDATORY first action) | `.claude/rules/tracking-and-handoff.md` |
-| handoff-message-structure | Handoff Message Structure | `.claude/rules/tracking-and-handoff.md` |
+| ID | Rule | File | Also called |
+|---|---|---|---|
+| multi-agent-discipline | Multi-Agent Discipline | `standards/agent-teams.md` | agents, subagents, parallel, swarm, fan-out |
+| swarm-contract | The Swarm Contract (NO swarm without one) | `standards/agent-teams.md` | many agents, roles, review agents, approval table |
+| patterns-and-dispatch | Patterns and Dispatch | `standards/agent-teams.md` | dispatch, sessions, prongs, worktrees |
+| agent-team-adapter | Agent-Team Build: Project Adapter (TEMPLATE) | `standards/agent-teams.md` | agent team, builders, checkers, brief rules |
+| code-standards | Code Standards | `.claude/rules/code.md` | code style, naming, comments, conventions |
+| size-budgets | Size Budgets: Trim Before You Ask | `.claude/rules/code.md` | bundle, bytes, bloat, over budget, trim |
+| critical-rules-priority-index | Critical Rules Priority Index | `AGENTS.md` | priorities, most important, which rule wins |
+| instruction-priority | Instruction Priority | `AGENTS.md` | conflict, which instruction wins, override |
+| owners-rules | The Owner's Rules | `AGENTS.md` | owner, preferences, standing orders |
+| collaborative-design-locks | Collaborative Design Locks (Non-Negotiable) | `AGENTS.md` | decide, lock, options, approval, one issue, bulk instructions |
+| goal-before-mechanism | Goal Before Mechanism | `AGENTS.md` | goal, purpose, why, mechanism, options |
+| delegated-decisions | Delegated Decisions (amends rule 1) | `AGENTS.md` | decide alone, records answer, impact test |
+| edit-discipline | Edit Discipline | `AGENTS.md` | edit, write code, change files, approval before writing |
+| outward-acts | Git: Local Work vs Outward Acts | `AGENTS.md` | push, pull request, merge, release, tag, publish, remote |
+| session-workflow | Session Workflow | `AGENTS.md` | session, start, end, workflow |
+| context-engineering | Context Engineering Discipline | `AGENTS.md` | context window, tokens, load, size |
+| anti-hallucination | Anti-Hallucination Discipline (Standing) | `AGENTS.md` | guess, verify, invented, made up, re-read claims |
+| correction-loop | Correction & Learning Loop | `AGENTS.md` | corrections, feedback, mistakes, learn |
+| autonomous-fixes | Autonomous Fixes | `AGENTS.md` | fix without asking, small fixes |
+| direction-changes | Justify Every Direction Change | `AGENTS.md` | pivot, change direction, justify |
+| re-plan-on-failure | Re-Plan on Failure | `AGENTS.md` | plan failed, replan |
+| simplicity-lens | Simplicity Lens | `AGENTS.md` | simple, simpler, over-engineering |
+| dual-horizon | Dual-Horizon Recommendations | `AGENTS.md` | short term, long term, rework cost |
+| success-charter | Success Charter (Define Success Before Building) | `AGENTS.md` | success criteria, define done, measurable |
+| recovery-protocol | Recovery Protocol | `AGENTS.md` | lost context, new chat, recover |
+| what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
+| visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
+| design-for-human-error | Design for Human Error | `.claude/rules/design-and-ux.md` | mistakes, typo, mistype, forgiving, recover |
+| failure-response | Failure Response Discipline (Triage Before Fixing) | `standards/evidence-and-failures.md` | failure, error, broken, triage, debug |
+| enumerate-before-you-count | Enumerate Before You Count | `standards/evidence-and-failures.md` | numbers, counts, metrics, surprising results |
+| instruments-and-evals | Instruments and Evals | `standards/evidence-and-failures.md` | eval, benchmark, measurement, harness, results |
+| probe-scope | Probe Scope | `standards/evidence-and-failures.md` | probe, experiment, investigation scope |
+| snag-response | Snag Response: Least-Invasive Path, No Padding | `standards/evidence-and-failures.md` | stuck, blocker, workaround, snag |
+| pre-commit | Pre-Commit Discipline | `.claude/rules/git-and-release.md` | before commit, commit checks, staged |
+| commit-message-format | Commit Message Format | `.claude/rules/git-and-release.md` | commit message, subject line, type |
+| branching | Branching | `.claude/rules/git-and-release.md` | branch name, naming, git branch |
+| pr-body | PR Body Standard | `.claude/rules/git-and-release.md` | pull request description, pr text, body |
+| release-notes | Release Notes | `.claude/rules/git-and-release.md` | release, changelog, version notes |
+| post-merge-check | Post-Merge Check | `.claude/rules/git-and-release.md` | after merge, deploy check, live |
+| kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` | kit, methodology, change a rule, briefs, one home |
+| loop-workflow-mode | Loop Workflow Mode (Keyword-Gated TDD Loop) | `standards/loop-mode.md` | loop, autonomous, keyword |
+| graduated-loop-lessons | Graduated loop lessons | `standards/loop-mode.md` | lessons, learned, regression |
+| project-adapter | Project Adapter (FILL-IN TEMPLATE) | `standards/project-adapter.md` | project values, stack, adapter, fill in |
+| finding-pipeline | The Finding Pipeline (Sweep Finding -> Fix) | `standards/reviews-and-findings.md` | findings, review results, fix findings, triage |
+| features-first | Features First; Findings Ride Inside the PR | `standards/reviews-and-findings.md` | fix-only pr, findings in the pr |
+| milestone-sweep | Milestone Project Sweep (Periodic Multi-Agent Audit) | `standards/reviews-and-findings.md` | audit, sweep, milestone, review dimensions |
+| pre-pr-deep-sweep | Pre-PR Deep Sweep | `standards/reviews-and-findings.md` | before pr, deep review, security agents |
+| pre-push-op-test | Pre-Push Op-Test | `standards/reviews-and-findings.md` | use the app, break it, manual test, before push |
+| preview-test | Preview Test Before Merge | `standards/reviews-and-findings.md` | preview link, staging, version url |
+| visible-tracking | Visible Tracking | `standards/reviews-and-findings.md` | progress, checklist, visible |
+| parking-lot | Parking Lot + Pre-PR Idea Triage | `standards/reviews-and-findings.md` | ideas, later, out of scope, parking lot |
+| security-standards | Security Standards | `standards/security.md` | security, secrets, privacy, owasp, keys |
+| mid-design-red-team | Mid-Design Red-Team (Security Before Lock) | `standards/security.md` | red team, threat, attack, design review |
+| tdd | Test-Driven Development (TDD) | `.claude/rules/testing.md` | test first, test-driven, red green, write tests |
+| ci-gate | CI Gate | `.claude/rules/testing.md` | ci, pipeline, checks, green |
+| test-and-review-cadence | Test and Review Cadence | `.claude/rules/testing.md` | when to run tests, hook, full gate, review |
+| sub-agent-verification | Sub-Agent Verification Step | `.claude/rules/testing.md` | agent results, verify agent, check builder |
+| test-integrity | Test Integrity (Tests Never Yield to Implementation) | `.claude/rules/testing.md` | failing test, weaken, skip, assertion |
+| test-value | Test Value (Practical Tests, Not Test Counts) | `.claude/rules/testing.md` | useful tests, fluff, test count, coverage |
+| sdd-triangle | Spec-Driven Development (SDD) Triangle | `.claude/rules/testing.md` | spec, drift, adr, superseded |
+| tracking-file-size-caps | Tracking File Size Caps (Hard Limits) | `.claude/rules/tracking-and-handoff.md` | size limit, too long, line limit, log length, tracking files |
+| session-log-compression | Session Log Compression Pattern | `.claude/rules/tracking-and-handoff.md` | compress, old entries, history, log |
+| tracking-file-functions | Per-Tracking-File Unique Function + Anti-Duplication | `.claude/rules/tracking-and-handoff.md` | tracking files, duplicate, restate, pointer, one job |
+| status-files-rot-silently | Status Files Rot Silently | `.claude/rules/tracking-and-handoff.md` | stale, out of date, status |
+| tracking-file-batching | Tracking-File Batching | `.claude/rules/tracking-and-handoff.md` | when to update, batch updates, milestone |
+| decision-documents | Engineering Decisions Documents (Optional, Public Repos) | `.claude/rules/tracking-and-handoff.md` | decisions, public repo, engineering notes |
+| compact-ritual | Pre-Compact and Post-Compact Hygiene Ritual | `.claude/rules/tracking-and-handoff.md` | compact, compaction, closeout, end of session |
+| pre-compact-scan | Pre-Compact Scan | `.claude/rules/tracking-and-handoff.md` | before compact, scan, closeout checks |
+| post-compact-orientation | Post-Compact Orientation Protocol (MANDATORY first action) | `.claude/rules/tracking-and-handoff.md` | after compact, resume, re-read, orientation |
+| handoff-message-structure | Handoff Message Structure | `.claude/rules/tracking-and-handoff.md` | handoff, continuation, summary, next session |

@@ -2,6 +2,11 @@
 id: agent-teams
 load: on-demand
 when: Before any agent batch, swarm or fan-out.
+tags:
+  multi-agent-discipline: agents, subagents, parallel, swarm, fan-out
+  swarm-contract: many agents, roles, review agents, approval table
+  patterns-and-dispatch: dispatch, sessions, prongs, worktrees
+  agent-team-adapter: agent team, builders, checkers, brief rules
 ---
 
 # Agent Teams
