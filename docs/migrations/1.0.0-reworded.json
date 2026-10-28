@@ -1,0 +1,11 @@
+{
+  "note": "Lines of the 0.7.0 standards changed on purpose during the 1.0.0 migration, each with its reason. The line-conservation check allows exactly these and nothing else. Heading lines that only gained a {#id} are not listed.",
+  "lines": [
+    {
+      "id": "kit-standards",
+      "before": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> _Working Standards.md \"Section\"`), never a restated copy.",
+      "after": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> rule:<id>`, the fixed ID after the rule's heading), never a restated copy.",
+      "why": "The pointer form changed to the rule ID; the old form is what the link check now refuses."
+    }
+  ]
+}
