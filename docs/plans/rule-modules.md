@@ -68,6 +68,9 @@ One unit, one commit. Nothing pushed, tagged or installed over the main project'
 Deviation: the plan doc counted 11 modules; the map it approved has 12 besides the core (project-adapter was
 always its own row). Nothing moved between modules.
 
+- [x] Released: 1.0.0 pushed and tagged v1.0.0 on the owner's go (2026-10-28); installed into ~/.claude (4 files
+      updated, 0 skipped) while the main project was paused.
+
 ### Phase 2: agent access (plan D) - release 1.1.0
 
 - [ ] Tools check: each role, foreground and background, records its real tools and what rules it sees.
