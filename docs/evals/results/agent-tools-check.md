@@ -16,3 +16,23 @@ reports, not a reading of the harness.
 - No role sees the core rules, because each role file sets `omitClaudeMd: true`. A role gets rules only from its
   brief or from skills preloaded at start - which is what Phase 2 adds.
 - The builder needs a git repository with at least one commit, since it runs in its own worktree.
+
+## The guards in live agents (Phase 2, unit 3)
+
+Run 2026-10-28 with the claude CLI 2.1.302 in the same scratch project. The guard scripts were the kit's own
+files; the role definitions were the installed builder and checker, passed with `--agents` (a test copy of the
+role files in the project's `.claude/agents/` ran no hooks at all; see the first row).
+
+| Check | What happened |
+|---|---|
+| Role files copied into the project, run with `claude -p` | No hook ran (a logging hook wrote nothing). The docs say project-level agent hooks run only once the folder is trusted, and a `-p` session never counts as trusted; user-level role files and `--agents` definitions run them without that step. The kit installs role files user level. |
+| Logging hook, agent passed with `--agents` | The hook ran on the agent's Write and logged its input. |
+| Builder writes `allowed.txt` (on `.kit/unit-files.txt`) in its worktree | Written ("ok" in the worktree copy). |
+| Builder writes `notallowed.txt` in its worktree | Blocked by the fence: "Blocked: notallowed.txt is not in this unit's file list (.kit/unit-files.txt). Report it to the lead instead of editing it." |
+| Builder writes a file in the main checkout by absolute path | Blocked first by Claude Code's own worktree isolation, so the fence's outside-the-worktree check is proven by the unit test, not here. |
+| Checker runs `git status --short`, then `echo probe > checker-probe.txt`, then stops | The write ran; at the stop the clean-tree hook blocked and named `?? checker-probe.txt`. The checker removed the file and reported it as a finding; the tree matched its start. |
+
+- The checker guard catches a change at the stop, as designed; it does not refuse the command before it runs. Telling
+  a write apart from a read in a shell command is not reliable, so that stays the role's rule plus this catch.
+- The checker escalated that a read-only role ran the brief's write at all. That is the right report: the brief
+  here ordered a write on purpose.
