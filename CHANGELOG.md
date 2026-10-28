@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.7.0 - 2026-10-28
+- One size request per plan with one end check (trim or lower); the preview tested by stakes (emulation by default, the owner's device where only a hand can tell); PR bodies say each thing once; the closeout sends the handoff to the coordinating session and closes the thread; a merge-and-retire pass to stay under the cap. Promoted directly by the owner.
+
 ## 0.6.1 - 2026-10-27
 - Rule-conflict fixes: a fix after an Op-Test re-runs only the touched suites (the final gate covers the rest); a feature PR keeps the Pre-PR Deep Sweep reviewer floor, with sizing above it; a retry alone means no other gate, hook or agent test running.
 

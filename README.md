@@ -112,7 +112,7 @@ latest kit; an existing one catches up with one command.
    the kit has never seen, such as a fresh memory or skill) and missing, and writes a report with the diffs to
    `reports/`.
 2. The owner picks what is general enough for the kit. Claude writes it in, generalized.
-3. `node --test tests/` and `node scripts/kit.mjs scrub` must both pass.
+3. `node --test tests/kit.test.mjs` and `node scripts/kit.mjs scrub` must both pass.
 4. Merge and retire before the bump. A new rule goes in as a trial (`TRIALS.md`) unless the owner promotes it.
    `node scripts/kit.mjs bump minor "<what changed>"` raises `VERSION` and adds a `CHANGELOG.md` entry.
 5. Commit, then push on the owner's go. Other projects pull it with `install project`.

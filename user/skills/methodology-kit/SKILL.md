@@ -36,7 +36,7 @@ Arguments: $ARGUMENTS
    project names, paths, session numbers or private details; the rule plus one line of why. Put the owner's name
    back as `{{OWNER_NAME}}` where a rendered file had it. A rule goes into `<kitDir>/project/_Working
    Standards.md` (its one home); the matching memory subject file gets a pointer line, never a copy.
-4. Run the kit's checks: `node --test tests/` and `node scripts/kit.mjs scrub`. Both must pass. Before a version
+4. Run the kit's checks: `node --test tests/kit.test.mjs` and `node scripts/kit.mjs scrub`. Both must pass. Before a version
    bump, do the merge-and-retire pass (`_Working Standards.md` "Kit Standards" #5); the tests enforce the size cap,
    a why in every rule section, and memory that points instead of repeating.
    A brand-new rule goes in as a trial: mark it `[trial]` in the CHANGELOG note and add a row to `TRIALS.md`

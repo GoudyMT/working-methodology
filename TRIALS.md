@@ -17,3 +17,5 @@ is reworked or retired at the next kit release.
 - 0.6.0: the speed review (decide copy and size ranges at plan approval, one review lead, the load guard, a proved
   related-tests hook, side-by-side gate steps, no skipped builder checks, a bounded combined fix check), and one
   session per prong with agents only where they pay off.
+- 0.7.0: one size request per plan with one end check (trim or lower), and the preview tested by stakes (emulation
+  by default, the owner's device for the cases a hand must judge).
