@@ -191,9 +191,11 @@ function main() {
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
 					permissionDecision: 'ask',
-					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.' + prNote,
+					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.',
 				},
 			};
+			// The reason on an "ask" is shown to the user; added context is what reaches Claude.
+			if (prNote) output.hookSpecificOutput.additionalContext = prNote.trim();
 			process.stdout.write(JSON.stringify(output));
 		}
 		// The decision is out before the log is touched: a log that cannot be written must never cost the ask.

@@ -42,7 +42,9 @@ for (const h of heads) {
 }
 
 if (!field('Shots')) faults.push('Shots: list the screenshots');
-if (!/^(PASS|FAIL)\b/.test(field('Result'))) faults.push('Result: PASS or FAIL');
+// One verdict, not the template's "PASS | FAIL - <...>" placeholder.
+const result = field('Result');
+if (!/^(PASS|FAIL)\b/.test(result) || /PASS\s*\|\s*FAIL|<[^>]*>/.test(result)) faults.push('Result: PASS or FAIL');
 
 if (faults.length) {
 	console.log(faults.join('\n'));

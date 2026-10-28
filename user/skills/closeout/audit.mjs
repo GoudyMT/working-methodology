@@ -33,8 +33,9 @@ const body = (s) => {
 	return lines.slice(at + 1, end < 0 ? undefined : end).join('\n');
 };
 if (!/orientation/i.test(body('REQUIRED FIRST ACTIONS'))) faults.push('REQUIRED FIRST ACTIONS must name the orientation protocol');
-if (!/^- Git:\s*\S/m.test(body('State Snapshot'))) faults.push('State Snapshot: fill in the Git line (branch, HEAD, pushed or not, open PRs)');
-if (!/What:\s*\S/.test(body('Next Step'))) faults.push('Next Step: say what comes next');
+// "[ \t]" and not "\s": a filled field has text on its own line, not the next line's text.
+if (!/^- Git:[ \t]*[^\s(]/m.test(body('State Snapshot'))) faults.push('State Snapshot: fill in the Git line (branch, HEAD, pushed or not, open PRs)');
+if (!/What:[ \t]*[^\s-]/.test(body('Next Step'))) faults.push('Next Step: say what comes next');
 lines.forEach((l, i) => { if (/[^\x00-\x7F]/.test(l)) faults.push(`line ${i + 1}: non-ASCII character`); });
 
 if (faults.length) {

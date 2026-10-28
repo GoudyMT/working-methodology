@@ -21,8 +21,12 @@ if (!/\*\*Date:\*\*\s*\d{4}-\d{2}-\d{2}/.test(text)) faults.push('Date: YYYY-MM-
 for (const s of ['Context and Problem Statement', 'Decision Drivers', 'Considered Options', 'Decision Outcome', 'Pros and Cons of the Options']) {
 	if (!new RegExp(`^## ${s}`, 'm').test(text)) faults.push(`missing section: ${s}`);
 }
-if (!/\*\*Chosen option:\*\*\s*\S/.test(text)) faults.push('Decision Outcome: name the chosen option');
-if (!/^### Dual-Horizon/m.test(text) || !/Impact now:\*\*\s*\S/.test(text) || !/Impact later:\*\*\s*\S/.test(text)) faults.push('Dual-Horizon: fill in the impact now and later');
+// "[ \t]" and not "\s": a filled field has text on its own line, not the next line's text.
+if (!/\*\*Chosen option:\*\*[ \t]*\S/.test(text)) faults.push('Decision Outcome: name the chosen option');
+if (!/^### Dual-Horizon/m.test(text) || !/Impact now:\*\*[ \t]*\S/.test(text) || !/Impact later:\*\*[ \t]*\S/.test(text)) faults.push('Dual-Horizon: fill in the impact now and later');
+// At least two real options: numbered lines under Considered Options.
+const options = (text.split(/^## Considered Options/m)[1] || '').split(/^## /m)[0].match(/^\d+\. \S/gm) || [];
+if (options.length < 2) faults.push('Considered Options: list at least two options');
 if (!/^### Consequences/m.test(text)) faults.push('missing section: Consequences');
 
 if (faults.length) {

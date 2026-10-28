@@ -759,11 +759,54 @@ test('the PR body audits read a dash inside inline code as code, and still catch
 test('the push guard names the PR body skill', () => {
   const ask = (command) => {
     const r = spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' });
-    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+    // The note goes to Claude as added context: an "ask" reason is shown to the user, not the model.
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext || '' : '';
   };
   assert.match(ask('gh pr create --title "x" --body-file b.md'), /pr-body skill/);
   assert.match(ask('git push -u origin feature/x'), /pr-body skill/);
   assert.doesNotMatch(ask('gh release create v1.2.0'), /pr-body skill/, 'a release is not a PR');
+});
+
+// Review findings on the 1.2.0 audits: each test is the failing input the review reported.
+test('the handoff and ADR audits refuse empty fields that only look filled', () => {
+  const skill = read(path.resolve('user/skills/closeout/SKILL.md'));
+  const template = skill.split('## The handoff')[1].split('```')[1];
+  const out = runAudit('closeout', template);
+  assert.equal(out.status, 1, 'the unfilled template is not a handoff');
+  assert.match(out.stdout, /Git line/);
+  assert.match(out.stdout, /Next Step/);
+  const adr = '# ADR-007: Store plans on the device\n\n- **Status:** accepted\n- **Date:** 2026-02-01\n\n## Context and Problem Statement\nx\n\n## Decision Drivers\n- x\n\n## Considered Options\n\n## Decision Outcome\n\n**Chosen option:**\n\n### Dual-Horizon\n- **Impact now:**\n- **Impact later:**\n\n### Consequences\nx\n\n## Pros and Cons of the Options\nx\n';
+  const a = runAudit('adr', adr);
+  assert.equal(a.status, 1);
+  for (const want of [/chosen option/, /Dual-Horizon/, /two options/]) assert.match(a.stdout, want);
+});
+test('the sweep audit catches an open high in a severity column or a finding bullet', () => {
+  const head = '# Sweep\n\n- **Branch:** feature/x at a1b2c3d (2026-03-04)\n\nPrivacy PASS. Supply chain PASS. Legal PASS. Code security PASS. Gaps PASS. Version goal alignment: YES.\n\n';
+  const col = runAudit('pre-pr-sweep', head + '| ID | Finding | Severity | Disposition |\n|---|---|---|---|\n| S1 | Low-level parser lets a crafted file overwrite the key store | high | open |\n');
+  assert.equal(col.status, 1);
+  assert.match(col.stdout, /finding S1/);
+  const bullet = runAudit('pre-pr-sweep', head + '- **S1 (high)** - the token is logged. Not yet fixed.\n');
+  assert.equal(bullet.status, 1);
+  assert.match(bullet.stdout, /finding S1/);
+  assert.equal(runAudit('pre-pr-sweep', head + '- **S1 (high)** - the token is logged. FIXED a1b2c3d.\n').status, 0);
+});
+test('the release notes audit catches build-process AI words, bug tallies and encoded note links, not product AI features', () => {
+  const caught = runAudit('release-notes', 'Written and reviewed by a coding agent and an assistant model. Fixed 14 bugs. See [plan](../_Active%20Plan.md).\n', ['1.0.0']);
+  assert.equal(caught.status, 1);
+  for (const want of [/AI or tool/, /tally/, /gitignored/]) assert.match(caught.stdout, want);
+  const feature = runAudit('release-notes', 'Ask now answers with your own AI key, from any LLM provider you choose.\n', ['1.0.0']);
+  assert.equal(feature.status, 0, feature.stdout);
+});
+test('the PR body audits read fenced code as code', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prfence-'));
+  const f = path.join(dir, 'b.md');
+  fs.writeFileSync(f, '## Math: subtract\n\nFraming.\n\n### Summary\n\n```\nnode --test\n```\n');
+  const line = spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, 'Math: subtract'], { encoding: 'utf8' }).stdout.split('\n').find((l) => l.includes('no spaced dashes'));
+  assert.match(line, /^PASS/);
+});
+test('the preview test audit refuses the template placeholder as a result', () => {
+  const rec = '## Preview test - x, #1 (2026-03-04)\n\n- **Build:** the preview for `feature/x` at `a1b2c3d`\n- **Who, by stakes:** the lead in emulation only\n- **Setup:** made-up details only; nothing sent.\n\n| Check | Result |\n|---|---|\n| Layout | fine |\n\n- **Shots:** a.png\n- **Result:** PASS | FAIL - <what goes to the finding pipeline>\n';
+  assert.equal(runAudit('preview-test', rec).status, 1);
 });
 
 // Plan rule-modules, Phase 1: the kit keeps one tool-neutral source (rules/) and writes Claude Code's files from

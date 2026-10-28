@@ -25,15 +25,28 @@ const DIMENSIONS = [/privacy|data boundary/i, /supply chain|bundle|dependenc/i, 
 	/security/i, /gaps|scaling/i, /version goal|alignment/i];
 DIMENSIONS.forEach((re, i) => { if (!re.test(text)) faults.push(`dimension ${i + 1} is not named`); });
 
-// Every high or critical row of a findings table carries a disposition. A row's severity is its first severity
-// word, so "medium (the re-check; claimed high)" counts as medium.
-const severity = (l) => ((l.match(/\b(critical|high|medium|low)\b/i) || [])[1] || '').toLowerCase();
-for (const l of lines.filter((l) => /^\|/.test(l) && ['high', 'critical'].includes(severity(l)))) {
-	if (!/\bFIXED [0-9a-f]{7,40}\b|\bDEFERRED \S|\bACCEPTED \S/.test(l)) {
-		const id = l.split('|')[1].trim();
-		faults.push(`finding ${id}: a high or critical finding needs FIXED <commit>, DEFERRED <where> or ACCEPTED <why>`);
+// Every high or critical finding carries a disposition: each row of a findings table, and each finding bullet
+// ("- **S1 (high)** - ..."). A table with a Severity column is read by that column; otherwise a row's severity is
+// its first severity word, so "medium (the re-check; claimed high)" counts as medium. "Low-level" is not "low".
+const SEV = /\b(critical|high|medium|low)\b(?!-)/i;
+const severity = (s) => ((s.match(SEV) || [])[1] || '').toLowerCase();
+const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bDEFERRED \S|\bACCEPTED \S/.test(l);
+const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit>, DEFERRED <where> or ACCEPTED <why>`);
+let sevCol = -1;
+lines.forEach((l, i) => {
+	if (/^\|/.test(l)) {
+		const cells = l.split('|').slice(1, -1).map((c) => c.trim());
+		// A header row (the next line is the divider) sets which column holds severity, or none.
+		if (/^\|[\s|:-]+\|$/.test((lines[i + 1] || '').trim())) { sevCol = cells.findIndex((c) => /^severity$/i.test(c)); return; }
+		if (/^\|[\s|:-]+\|$/.test(l.trim())) return;
+		const sev = sevCol >= 0 ? severity(cells[sevCol] || '') : severity(l);
+		if (['high', 'critical'].includes(sev) && !disposed(l)) flag(cells[0]);
+	} else {
+		sevCol = -1;
+		const m = l.match(/^\s*[-*] \*\*([A-Z]+[\w.-]*\d)\b([^*]*)\*\*/);
+		if (m && ['high', 'critical'].includes(severity(m[2])) && !disposed(l)) flag(m[1]);
 	}
-}
+});
 
 if (!lines.some((l) => /align|version goal/i.test(l) && /\b(YES|NO)\b/.test(l))) faults.push('the version-goal verdict must say YES or NO');
 

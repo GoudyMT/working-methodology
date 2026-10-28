@@ -19,9 +19,12 @@ const each = (re, what) => lines.forEach((l, i) => { if (re.test(l)) faults.push
 
 each(/[^\x00-\x7F]/, 'non-ASCII character (public prose is ASCII)');
 each(/(^|[^-])--([^-]|$)/, 'double hyphen (public prose is dash-free)');
-each(/\b(AI|Claude|ChatGPT|GPT|LLM|Copilot|subagents?)\b/, 'AI or tool reference');
-each(/\]\((?:\.\/)?(?:_[^)]*|docs\/(?:plans|sweeps|superpowers)\/[^)]*)\)/, 'link into gitignored notes');
-each(/\b\d[\d,]* (?:tests?|mutants?|findings?)\b|\b(?:vitest|playwright|eslint|test suite|lint)\b/i, 'test or tooling tally (say what users get)');
+// How the release was made is never public prose: tool names, agent words, and "written by AI" phrasing. A product
+// feature that uses AI ("answers with your own AI key") is a claim about the product, so bare "AI" is not flagged.
+each(/\b(Claude|ChatGPT|GPT-?\d*|Copilot|subagents?|coding agents?|AI agents?|assistant model|language model)\b/i, 'AI or tool reference');
+each(/\b(written|generated|built|reviewed|drafted|made|coded) (by|with) (an? )?(AI|LLM|model|agent)/i, 'AI or tool reference (how it was made)');
+each(/\]\((?:\.\.?\/)*(?:_|docs\/(?:plans|sweeps|superpowers)\/)[^)]*\)/, 'link into gitignored notes');
+each(/\b\d[\d,]* (?:tests?|mutants?|findings?)\b|\b(?:fixed|closed|resolved) \d[\d,]* (?:bugs?|issues?|defects?)\b|\b(?:vitest|playwright|eslint|test suite|lint)\b/i, 'test or tooling tally (say what users get)');
 
 const pkg = path.join(process.cwd(), 'package.json');
 if (fs.existsSync(pkg)) {

@@ -90,9 +90,10 @@ const summaries = (body.match(/<summary>.+<\/summary>/g) ?? []).length;
 const blankAfter = lines.every((l, i) => !/<\/summary>$/.test(l.trim()) || lines[i + 1] === '');
 row('every fold closes, has a summary and a blank line', opens === closes && opens === summaries && blankAfter, `${opens} open, ${closes} close, ${summaries} summaries`);
 
-// Inline code (`node --flag`) is code, not a prose dash.
+// Inline code (`node --flag`) and fenced code blocks are code, not a prose dash.
+const inFence = lines.map(((open) => (l) => { if (/^\s*```/.test(l)) { open = !open; return true; } return open; })(false));
 const dashed = lines.flatMap((l, i) => {
-	if (isFoldTag(l)) return [];
+	if (isFoldTag(l) || inFence[i]) return [];
 	const prose = l.replace(/`[^`]*`/g, '');
 	if (isTable(l)) return /^\|[\s|:-]+\|$/.test(l.trim()) ? [] : / - /.test(prose) ? [i + 1] : [];
 	return / - |--/.test(prose.replace(/^\s*- /, '')) ? [i + 1] : [];

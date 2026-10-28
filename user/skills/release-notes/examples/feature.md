@@ -3,8 +3,8 @@
 Know how current the exchange rates are, and find a money coach.
 
 A feature release. About now says when the app's exchange rates were captured, and the first-budget step on the
-Plan page points to two free money coaching programs. Behind the scenes, the app now checks its own online
-rate lookups.
+Plan page points to two free money coaching programs. If online rates ever stop working, that is now
+caught within a week.
 
 **Try it: https://budget.example**
 
@@ -14,8 +14,8 @@ rate lookups.
   the rate as it read then, and each central bank's official page has the latest.
 - **Coaches on the first-budget step.** The step for setting up your first monthly budget now links two free
   programs that pair you with a volunteer money coach.
-- **Online lookups check themselves.** After every update and once a week, the app's own build checks that
-  online rate lookups still work, and tells the maintainer if they do not.
+- **Online rates stay working.** If online rate lookups break after an update, it is caught and fixed within a
+  week, not left until someone reports it.
 - **Clearer wording.** The Resources page now calls the links that are not from a public body "trusted free
   programs".
 
