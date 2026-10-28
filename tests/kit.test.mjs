@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -586,4 +586,20 @@ test('every rule heading has a unique, plain-word ID', () => {
 test('headings skips headings inside code blocks and reads the ID after the title', () => {
   const hs = headings('## One {#one}\n```\n## Not a rule\n```\n### Two: more (x) {#two}\n## Three\n');
   assert.deepEqual(hs.map((h) => [h.level, h.title, h.id]), [[2, 'One', 'one'], [3, 'Two: more (x)', 'two'], [2, 'Three', null]]);
+});
+
+const MODULE_MAP = () => JSON.parse(read(path.resolve('docs/migrations/1.0.0-modules.json')));
+test('the ledger places every 0.7.0 rule in exactly one module, with its line count', () => {
+  const text = read(path.resolve('project/_Working Standards.md'));
+  const rows = ledger(text, MODULE_MAP());
+  assert.deepEqual(rows.map((r) => r.id), headings(text).map((h) => h.id));
+  for (const r of rows) assert.ok(r.module && r.lines > 0, `${r.id}: ${JSON.stringify(r)}`);
+  // Every line of the file belongs to one row or to the preamble that opens the core.
+  assert.equal(rows.reduce((s, r) => s + r.lines, 0) + rows.preamble, text.split('\n').length);
+});
+
+test('the ledger refuses a section the map leaves out or a map entry with no section', () => {
+  const map = { modules: [{ id: 'core', sections: ['a'] }] };
+  assert.throws(() => ledger('## A {#a}\nx\n## B {#b}\ny\n', map), /not placed: b/);
+  assert.throws(() => ledger('## A {#a}\nx\n', { modules: [{ id: 'core', sections: ['a', 'zz'] }] }), /no such section: zz/);
 });

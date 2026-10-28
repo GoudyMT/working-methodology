@@ -621,6 +621,37 @@ export function headings(text) {
 }
 
 /**
+ * Place each rule heading of a standards file in its module, from a module map (## sections are mapped;
+ * ### subsections go with their parent). The ledger is the record that every rule has one new home.
+ *
+ * Args:
+ *     text: the standards file's text
+ *     map: { modules: [{ id, sections: [## section IDs] }] }
+ *
+ * Returns:
+ *     [{ id, title, level, module, lines }] with a `preamble` property: the line count before the first heading
+ */
+export function ledger(text, map) {
+  const owner = new Map();
+  for (const m of map.modules) for (const s of m.sections) owner.set(s, m.id);
+  const hs = headings(text);
+  const known = new Set(hs.filter((h) => h.level === 2).map((h) => h.id));
+  for (const s of owner.keys()) if (!known.has(s)) throw new Error(`no such section: ${s}`);
+  const total = text.split('\n').length;
+  let parent = null;
+  const rows = hs.map((h, i) => {
+    if (h.level === 2) {
+      if (!owner.has(h.id)) throw new Error(`not placed: ${h.id}`);
+      parent = owner.get(h.id);
+    }
+    const end = i + 1 < hs.length ? hs[i + 1].line : total + 1;
+    return { id: h.id, title: h.title, level: h.level, module: parent, lines: end - h.line };
+  });
+  rows.preamble = hs.length ? hs[0].line - 1 : total;
+  return rows;
+}
+
+/**
  * Measure what Claude Code loads for a project at session start: CLAUDE.md, its @imports, and rules with no
  * paths field. Follows the memory docs: imports nest up to four hops, a path ends at the first unescaped space,
  * and imports inside code spans or fenced blocks are skipped.
@@ -700,6 +731,17 @@ function main(argv) {
     for (const f of r.files) console.log(`${String(f.bytes).padStart(8)}  ${f.file}`);
     console.log(`${String(r.total).padStart(8)}  loaded at session start`);
     for (const u of r.unresolved) console.log(`    import not found: @${u.import} (in ${u.from})`);
+  } else if (cmd === 'ledger') {
+    const text = fs.readFileSync(path.join(kit, 'project', '_Working Standards.md'), 'utf8');
+    const rows = ledger(text, JSON.parse(fs.readFileSync(path.join(kit, 'docs', 'migrations', '1.0.0-modules.json'), 'utf8')));
+    const out = path.join(kit, 'docs', 'migrations', '1.0.0-ledger.md');
+    const body = ['# Ledger: 0.7.0 standards -> 1.0.0 modules', '',
+      'Every rule heading of the 0.7.0 standards file, its fixed ID and its new home. Written by `kit.mjs ledger`.', '',
+      `Preamble (${rows.preamble} lines before the first heading) -> core`, '',
+      '| ID | Heading | Level | Module | Lines |', '|---|---|---|---|---|',
+      ...rows.map((r) => `| ${r.id} | ${r.title} | ${r.level === 2 ? '##' : '###'} | ${r.module} | ${r.lines} |`), ''];
+    fs.writeFileSync(out, body.join('\n'));
+    console.log(`ledger: ${rows.length} headings -> ${out}`);
   } else if (cmd === 'scrub') {
     const hits = scrub({ kit });
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.kind}`);

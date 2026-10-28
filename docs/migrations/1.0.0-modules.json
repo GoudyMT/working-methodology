@@ -1,0 +1,92 @@
+{
+  "note": "The approved module map (plan rule-modules). Each module lists the ## section IDs it takes; ### subsections move with their parent. Used once, by the split; after it, each module's own frontmatter is the record.",
+  "modules": [
+    {
+      "id": "core",
+      "load": "always",
+      "when": "Every session.",
+      "sections": ["critical-rules-priority-index", "instruction-priority", "owners-rules", "collaborative-design-locks",
+        "edit-discipline", "session-workflow", "context-engineering", "anti-hallucination", "correction-loop",
+        "autonomous-fixes", "direction-changes", "re-plan-on-failure", "simplicity-lens", "dual-horizon",
+        "success-charter", "recovery-protocol", "what-this-file-is-not"]
+    },
+    {
+      "id": "tracking-and-handoff",
+      "load": "files",
+      "paths": ["_Session Log.md", "_Working Memory.md", "_Active Plan.md", "_Master Roadmap.md"],
+      "when": "Before a compact or session end, after a compact, and when a tracking file is opened.",
+      "sections": ["tracking-file-size-caps", "session-log-compression", "tracking-file-functions", "tracking-file-batching",
+        "decision-documents", "compact-ritual"]
+    },
+    {
+      "id": "testing",
+      "load": "files",
+      "paths": ["**/*.test.*", "**/*.spec.*", "tests/**"],
+      "when": "Before planning or writing tests, and when a test file is opened.",
+      "sections": ["tdd", "test-integrity", "test-value", "sdd-triangle"]
+    },
+    {
+      "id": "agent-teams",
+      "load": "on-demand",
+      "when": "Before any agent batch, swarm or fan-out.",
+      "sections": ["multi-agent-discipline"]
+    },
+    {
+      "id": "reviews-and-findings",
+      "load": "on-demand",
+      "when": "Before a sweep, a review or a PR, and when handling a finding.",
+      "sections": ["finding-pipeline", "milestone-sweep", "parking-lot"]
+    },
+    {
+      "id": "git-and-release",
+      "load": "files",
+      "paths": [".github/**", "CHANGELOG.md"],
+      "when": "Before a commit, branch, PR, merge or release.",
+      "sections": ["pre-commit", "branching", "pr-body", "release-notes", "post-merge-check"]
+    },
+    {
+      "id": "loop-mode",
+      "load": "on-demand",
+      "when": "When the owner turns loop mode on.",
+      "sections": ["loop-workflow-mode"]
+    },
+    {
+      "id": "evidence-and-failures",
+      "load": "on-demand",
+      "when": "When something fails, a number surprises, or a probe is planned.",
+      "sections": ["failure-response", "enumerate-before-you-count", "probe-scope", "snag-response"]
+    },
+    {
+      "id": "security",
+      "load": "on-demand",
+      "when": "At a design lock, before a commit, and for any code that touches data, auth or secrets.",
+      "sections": ["security-standards", "mid-design-red-team"]
+    },
+    {
+      "id": "kit-standards",
+      "load": "on-demand",
+      "when": "Before changing a rule or the kit.",
+      "sections": ["kit-standards"]
+    },
+    {
+      "id": "design-and-ux",
+      "load": "files",
+      "paths": ["**/*.{svelte,tsx,jsx,vue,css,html}"],
+      "when": "Before any visual or UX decision, and when a UI file is opened.",
+      "sections": ["visual-design-collaboration", "design-for-human-error"]
+    },
+    {
+      "id": "code",
+      "load": "files",
+      "paths": ["src/**"],
+      "when": "Before writing code, and when a source file is opened.",
+      "sections": ["code-standards"]
+    },
+    {
+      "id": "project-adapter",
+      "load": "on-demand",
+      "when": "Before an agent batch; filled in per project.",
+      "sections": ["project-adapter"]
+    }
+  ]
+}
