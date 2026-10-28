@@ -648,10 +648,11 @@ const bodyOf = (text) => text.replace(/^---\n[\s\S]*?\n---\n/, '');
 test('the split keeps every line of 0.7.0 exactly once', () => {
   const old = spawnSync('git', ['show', 'v0.7.0:project/_Working Standards.md'], { encoding: 'utf8' });
   assert.equal(old.status, 0, 'the v0.7.0 tag must exist locally');
-  const reworded = JSON.parse(read(path.resolve('docs/migrations/1.0.0-reworded.json'))).lines;
-  const swap = new Map(reworded.map((r) => [r.before, r.after]));
+  const record = JSON.parse(read(path.resolve('docs/migrations/1.0.0-reworded.json')));
+  const swap = new Map(record.lines.map((r) => [r.before, r.after]));
   const count = (ls) => ls.filter((l) => l.trim()).reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
-  const want = count(old.stdout.split('\n').map((l) => swap.get(l) ?? l));
+  // Lines added on purpose are recorded with their reason, like reworded ones.
+  const want = count([...old.stdout.split('\n').map((l) => swap.get(l) ?? l), ...(record.added || []).map((a) => a.line)]);
   const got = count(moduleFiles().flatMap((f) => {
     const ls = bodyOf(read(f)).split('\n');
     if (path.basename(f) !== 'core.md') ls.splice(ls.findIndex((l) => /^# /.test(l)), 1);

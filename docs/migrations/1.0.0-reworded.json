@@ -4,8 +4,8 @@
     {
       "id": "kit-standards",
       "before": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> _Working Standards.md \"Section\"`), never a restated copy. Why: two copies drift, and the stale one gets followed. *Check: tests flag kit memory lines that repeat this file's wording.*",
-      "after": "3. **One home per rule.** A rule lives in this file only. Memory, notes, briefs and tracking files hold a pointer (`-> rule:<id>`, the fixed ID after the rule's heading), never a restated copy. Why: two copies drift, and the stale one gets followed. *Check: tests flag kit memory lines that repeat this file's wording.*",
-      "why": "The pointer form changed to the rule ID; the old form is what the link check now refuses."
+      "after": "3. **One home per rule.** A rule lives in one rule module, under one heading with a fixed ID. Memory, notes, briefs and tracking files hold a pointer (`-> rule:<id>`, the fixed ID after the rule's heading), never a restated copy. Why: two copies drift, and the stale one gets followed. *Check: tests flag kit memory lines that repeat this file's wording.*",
+      "why": "The pointer form changed to the rule ID; the old form is what the link check now refuses. The standards became rule modules."
     },
     {
       "id": "core",
@@ -30,6 +30,25 @@
       "before": "1. _Start Here.md  2. _Working Standards.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md",
       "after": "1. _Start Here.md  2. AGENTS.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md",
       "why": "The reading order names the file that now holds the core rules."
+    },
+    {
+      "id": "kit-standards",
+      "before": "4. **Briefs read their rules from one source.** Every agent brief tells the agent to read the \"Rules every brief carries\" block from this file; nobody pastes it. Why: a pasted block goes stale the day a rule changes. *Check: tests read the brief templates.*",
+      "after": "4. **Briefs read their rules from one source.** Every agent brief tells the agent to read the \"Rules every brief carries\" item of rule:agent-team-adapter; nobody pastes it. Why: a pasted block goes stale the day a rule changes. *Check: tests read the brief templates.*",
+      "why": "The block moved into a module and is found by its ID."
+    },
+    {
+      "id": "kit-standards",
+      "before": "5. **Merge and retire at each kit release.** Before a kit version bump, merge overlapping rules, retire rules nothing uses, and keep this file under the kit's size cap. Every rule carries a one-line why. Why: a standards file that only grows stops being read. *Check: tests enforce the size cap and a why in every rule section.*",
+      "after": "5. **Merge and retire at each kit release.** Before a kit version bump, merge overlapping rules, retire rules nothing uses, and keep each module, AGENTS.md and the session-start load under their caps (`kit.config.json` caps), merging inside one module at a time. Every rule carries a one-line why. Why: a standards file that only grows stops being read. *Check: tests enforce the size cap and a why in every rule section.*",
+      "why": "The single size cap became per-module caps."
+    }
+  ],
+  "added": [
+    {
+      "id": "kit-standards",
+      "line": "11. **One source, written out per tool.** Rules are edited only in the kit's `rules/` (plain Markdown with neutral frontmatter: id, load, paths, when, tags); `kit.mjs build` writes each tool's files - today Claude Code's `AGENTS.md`, `.claude/rules/` and `standards/`. Each tool's output names the docs it follows and is re-checked against them at every kit release. Why: one tool-neutral source lets any AI use the rules, and a hand edit to a written-out copy is overwritten. *Check: the build-freshness test.*",
+      "why": "Plan rule-modules: the one-source rule and the adapter re-check."
     }
   ]
 }

@@ -34,8 +34,9 @@ Arguments: $ARGUMENTS
    is a general rule (it belongs in the kit) or a project detail (it stays). Present A/B/C and stop.
 3. For each item the owner keeps: write it into the kit's own file, GENERALIZED - "the owner" for the name, no
    project names, paths, session numbers or private details; the rule plus one line of why. Put the owner's name
-   back as `{{OWNER_NAME}}` where a rendered file had it. A rule goes into `<kitDir>/project/_Working
-   Standards.md` (its one home); the matching memory subject file gets a pointer line, never a copy.
+   back as `{{OWNER_NAME}}` where a rendered file had it. A rule goes into its module in `<kitDir>/rules/` (its one
+   home; `node scripts/kit.mjs find <words>` picks the module), with an `{#id}` and tags; then run `node
+   scripts/kit.mjs build`. The matching memory subject file gets a `rule:<id>` pointer line, never a copy.
 4. Run the kit's checks: `node --test tests/kit.test.mjs` and `node scripts/kit.mjs scrub`. Both must pass. Before a version
    bump, do the merge-and-retire pass (rule:kit-standards #5); the tests enforce the size cap,
    a why in every rule section, and memory that points instead of repeating.
