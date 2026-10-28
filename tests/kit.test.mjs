@@ -620,7 +620,8 @@ test('the ledger refuses a section the map leaves out or a map entry with no sec
 // Plan rule-modules, Phase 1: every pointer to a rule names its fixed ID, and every ID it names exists.
 // A pointer to a heading by its words breaks the day the heading is renamed or moved.
 const KIT_TEXT_FILES = () => {
-  const skip = new Set(['.git', 'node_modules', 'vendor', 'reports', 'migrations', 'evals', 'plans']);
+  // tests/ holds fixture pointers to rules that exist only in temp kits.
+  const skip = new Set(['.git', 'node_modules', 'vendor', 'reports', 'migrations', 'evals', 'plans', 'tests']);
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? (skip.has(e.name) ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]);
   return walk(path.resolve('.')).filter((f) => /\.(md|mjs|cjs|html|json)$/.test(f) && !f.endsWith('CHANGELOG.md'));
@@ -756,4 +757,18 @@ test('install retires a user-level file the same way', () => {
   const r = install({ kit, home, target: 'user' });
   assert.deepEqual(r.retired, ['agents/builder.md']);
   assert.equal(fs.existsSync(path.join(home, 'agents/builder.md')), false);
+});
+
+// Plan rule-modules, Phase 1: a project still on one standards file (the owner's main project) keeps folding
+// rules back. Its sections are matched to kit rules by heading; a changed one is a fold-back candidate with its
+// kit ID, and a heading the kit lacks is the project's own.
+test('fold-back maps an old single standards file to kit rules by heading', () => {
+  const { kit, home, proj } = makeKit();
+  fs.mkdirSync(path.join(kit, 'rules'));
+  fs.writeFileSync(path.join(kit, 'rules', 'core.md'), '---\nid: core\nload: always\nwhen: x\n---\n\n## Alpha Rule {#alpha}\nkit text\n\n### Sub Rule {#sub}\nsame\n\n## Beta {#beta}\nsame\n');
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), '# Std\n\n## Alpha Rule\nproject text\n\n### Sub Rule\nsame\n\n## Beta\nsame\n\n## Our Own Rule\nlocal\n');
+  const r = foldBack({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(r.oldLayout.changed.map((c) => [c.id, c.module]), [['alpha', 'core']]);
+  assert.deepEqual(r.oldLayout.projectOnly, ['Our Own Rule']);
+  assert.match(r.report, /## Old single standards file: sections changed here \(1\)\n\n- rule:alpha \(core\): Alpha Rule/);
 });

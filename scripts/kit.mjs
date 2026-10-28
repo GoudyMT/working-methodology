@@ -204,6 +204,35 @@ function diffText(a, b) {
  *     candidate for the kit); update: changed in the kit only; conflict: changed in both, or
  *     never installed and different; added: files here the kit has never seen; report: markdown.
  */
+/**
+ * Compare a project's old single standards file with the kit's rule modules, section by section. Sections are
+ * matched by heading title (IDs and trailing spaces ignored); each section is its own lines up to the next heading.
+ *
+ * Returns:
+ *     { changed: [{ id, module, title }], projectOnly: [title] }
+ */
+function oldLayoutFoldBack(kit, oldText) {
+  const sectionsOf = (text) => {
+    const lines = text.split('\n');
+    const hs = headings(text);
+    return hs.map((h, i) => ({ ...h, text: lines.slice(h.line, i + 1 < hs.length ? hs[i + 1].line - 1 : lines.length)
+      .map((l) => l.trimEnd()).join('\n').trim() }));
+  };
+  const kitRules = new Map();
+  const dir = path.join(kit, 'rules');
+  for (const n of fs.readdirSync(dir).filter((x) => x.endsWith('.md'))) {
+    const { meta, body } = parseModule(fs.readFileSync(path.join(dir, n), 'utf8'));
+    for (const s of sectionsOf(body)) kitRules.set(s.title, { ...s, module: meta.id });
+  }
+  const changed = [], projectOnly = [];
+  for (const s of sectionsOf(oldText)) {
+    const k = kitRules.get(s.title);
+    if (!k) projectOnly.push(s.title);
+    else if (k.text !== s.text) changed.push({ id: k.id, module: k.module, title: s.title });
+  }
+  return { changed, projectOnly };
+}
+
 export function foldBack(ctx) {
   const kitInfo = loadKit(ctx.kit);
   const { entries, stampPath, memoryDir } = plan(ctx);
@@ -238,6 +267,13 @@ export function foldBack(ctx) {
   }
   const where = ctx.target === 'user' ? '~/.claude' : path.basename(path.resolve(ctx.projectDir));
   const list = (title, items) => `## ${title} (${items.length})\n\n${items.map((i) => `- ${i}`).join('\n') || '- none'}\n`;
+  const oldFile = ctx.target === 'project' ? path.join(ctx.projectDir, '_Working Standards.md') : null;
+  const oldParts = [];
+  if (oldFile && fs.existsSync(oldFile) && fs.existsSync(path.join(ctx.kit, 'rules'))) {
+    out.oldLayout = oldLayoutFoldBack(ctx.kit, fs.readFileSync(oldFile, 'utf8'));
+    oldParts.push(list('Old single standards file: sections changed here', out.oldLayout.changed.map((c) => `rule:${c.id} (${c.module}): ${c.title}`)),
+      list('Old single standards file: sections the kit does not have', out.oldLayout.projectOnly));
+  }
   out.report = [
     `# Fold-back report: ${where}`,
     `Kit ${kitInfo.version}; installed here at ${stamp.version || 'never'}.`,
@@ -246,6 +282,7 @@ export function foldBack(ctx) {
     list('Conflict: merge by hand', out.conflict),
     list('New here: the kit has never seen these', out.added),
     list('Missing here: installed once, now deleted', out.missing),
+    ...oldParts,
     '## Details\n',
     ...diffs,
   ].join('\n\n');
