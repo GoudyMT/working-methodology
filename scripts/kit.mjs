@@ -40,11 +40,12 @@ export function projectSlug(projectDir) {
 }
 
 /** Fill the kit's placeholders; a placeholder with no value is left as it is. */
-export function render(text, { ownerName, ownerProfile, projectDir } = {}) {
+export function render(text, { ownerName, ownerProfile, projectDir, claudeHome } = {}) {
   let out = text;
   if (ownerName !== undefined) out = out.replaceAll('{{OWNER_NAME}}', ownerName);
   if (ownerProfile !== undefined) out = out.replaceAll('{{OWNER_PROFILE}}', ownerProfile);
   if (projectDir !== undefined) out = out.replaceAll('{{PROJECT_DIR}}', projectDir);
+  if (claudeHome !== undefined) out = out.replaceAll('{{CLAUDE_HOME}}', claudeHome);
   return out;
 }
 
@@ -91,12 +92,13 @@ function plan({ kit, home, target, projectDir }) {
   return { entries, stampPath: path.join(projectDir, STAMP_PROJECT), memoryDir };
 }
 
-function renderEntry(kitInfo, entry, projectDir) {
+function renderEntry(kitInfo, entry, projectDir, home) {
   const text = fs.readFileSync(entry.src, 'utf8');
   return render(text, {
     ownerName: kitInfo.config.ownerName,
     ownerProfile: kitInfo.ownerProfile,
     projectDir: projectDir ? toPosix(path.resolve(projectDir)) : undefined,
+    claudeHome: home ? toPosix(path.resolve(home)) : undefined,
   });
 }
 
@@ -123,7 +125,7 @@ export function install(ctx) {
   const created = [], updated = [], replaced = [], skipped = [];
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
   for (const entry of entries) {
-    const want = renderEntry(kitInfo, entry, ctx.projectDir);
+    const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home);
     const wantHash = sha(want);
     const write = () => {
       if (ctx.dryRun) return;
@@ -249,7 +251,7 @@ export function foldBack(ctx) {
   const out = { foldBack: [], update: [], conflict: [], added: [], missing: [] };
   const diffs = [];
   for (const entry of entries) {
-    const want = renderEntry(kitInfo, entry, ctx.projectDir);
+    const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home);
     const base = stamp.files[entry.key];
     if (!fs.existsSync(entry.dest)) { if (base) out.missing.push(entry.key); continue; }
     const curText = fs.readFileSync(entry.dest, 'utf8');

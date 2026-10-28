@@ -832,3 +832,57 @@ test('build writes each role its rules skill from the IDs in the role table, und
     assert.ok(Buffer.byteLength(skill) <= 8000, `${r.role}-rules is ${Buffer.byteLength(skill)} bytes`);
   }
 });
+
+// Plan rule-modules, Phase 2 guards. Each is driven the way Claude Code runs it (hook input as JSON on stdin) and
+// proved with a known-good and a known-bad case.
+const runHook = (script, input, env = {}) => spawnSync('node', [path.resolve(script)], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, ...env } });
+function gitTree() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fence-'));
+  const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+  g('init', '-q'); fs.writeFileSync(path.join(dir, 'a.js'), 'a\n'); g('add', '-A'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+  return dir;
+}
+test('the builder edit fence allows edits in its worktree and blocks edits outside it', () => {
+  const dir = gitTree();
+  const ok = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+  assert.equal(ok.status, 0, ok.stderr);
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_name: 'Write', tool_input: { file_path: path.join(os.tmpdir(), 'elsewhere.js') } });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /outside this builder's worktree/);
+});
+test('the builder edit fence keeps to the unit file list when the worktree has one', () => {
+  const dir = gitTree();
+  fs.mkdirSync(path.join(dir, '.kit'));
+  fs.writeFileSync(path.join(dir, '.kit', 'unit-files.txt'), 'a.js\nsrc/b.js\n');
+  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'src', 'b.js') } }).status, 0);
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'c.js') } });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /not in this unit's file list/);
+});
+test('the checker clean-tree stop passes an untouched tree and catches a changed file', () => {
+  const dir = gitTree();
+  const base = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
+  assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...base, hook_event_name: 'PreToolUse' }).status, 0);
+  assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...base, hook_event_name: 'Stop' }).status, 0);
+  const s2 = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
+  runHook('user/kit-hooks/clean-tree.cjs', { ...s2, hook_event_name: 'PreToolUse' });
+  fs.writeFileSync(path.join(dir, 'a.js'), 'changed by the checker\n');
+  const out = runHook('user/kit-hooks/clean-tree.cjs', { ...s2, hook_event_name: 'Stop' });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /a\.js/);
+});
+test('the git pre-push hook stops an AI agent without approval and lets the owner push', () => {
+  const hook = path.resolve('project/.githooks/pre-push');
+  const sh = (env) => spawnSync('sh', [hook], { encoding: 'utf8', env: { PATH: process.env.PATH, ...env } });
+  assert.equal(sh({}).status, 0, 'the owner in a plain terminal');
+  assert.notEqual(sh({ AI_AGENT: 'some-tool' }).status, 0, 'an agent without approval');
+  assert.notEqual(sh({ CLAUDECODE: '1' }).status, 0, 'Claude Code without approval');
+  assert.equal(sh({ CLAUDECODE: '1', KIT_PUSH_APPROVED: '1' }).status, 0, 'after the owner said go');
+});
+
+test('the builder and checker role files wire their guards to the installed hook scripts', () => {
+  assert.match(read(path.resolve('user/agents/builder.md')), /matcher: "Edit\|Write\|NotebookEdit"\n      hooks:\n        - type: command\n          command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/edit-fence\.cjs"/);
+  const checker = read(path.resolve('user/agents/checker.md'));
+  assert.match(checker, /matcher: "Bash\|PowerShell"[\s\S]*clean-tree\.cjs[\s\S]*Stop:[\s\S]*clean-tree\.cjs/);
+  assert.equal(render('node "{{CLAUDE_HOME}}/kit-hooks/x.cjs"', { claudeHome: 'D:/home-of-pat/.claude' }), 'node "D:/home-of-pat/.claude/kit-hooks/x.cjs"');
+});

@@ -7,6 +7,16 @@ omitClaudeMd: true
 tools: Read, Grep, Glob, Bash, PowerShell
 disallowedTools: Edit, Write, WebFetch, WebSearch, Agent
 skills: checker-rules
+hooks:
+  PreToolUse:
+    - matcher: "Bash|PowerShell"
+      hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/clean-tree.cjs"
+  Stop:
+    - hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/clean-tree.cjs"
 color: purple
 ---
 

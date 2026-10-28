@@ -1,0 +1,9 @@
+#!/bin/sh
+# Pushes are the owner's (rule:outward-acts). Claude Code's own guard asks first; this git hook holds the same line
+# for any AI tool that marks its shell (AI_AGENT, or CLAUDECODE for Claude Code), and leaves the owner's own
+# terminal alone. After the owner's go, the agent pushes with KIT_PUSH_APPROVED=1 set for that one command.
+if [ -n "$AI_AGENT$CLAUDECODE" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
+  echo "Push blocked: an AI agent is pushing without the owner's go. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
+  exit 1
+fi
+exit 0

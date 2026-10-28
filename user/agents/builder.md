@@ -8,6 +8,12 @@ omitClaudeMd: true
 tools: Read, Edit, Write, Grep, Glob, Bash, PowerShell
 disallowedTools: WebFetch, WebSearch, Agent
 skills: builder-rules
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write|NotebookEdit"
+      hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/edit-fence.cjs"
 color: blue
 ---
 
