@@ -69,7 +69,8 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
 - `_Start Here.md`: what the project is, who it serves, the reading order.
 - `CLAUDE.md`: the project's hard rules. The general ones stay; add the domain boundaries (legal limits,
   data rules, content sources) the project must never cross.
-- rule:project-adapter (`standards/project-adapter.md`): the stack, the full gate command (what CI runs), size budgets,
+- rule:project-adapter (`standards/project-adapter.md`): the stack, the full gate command (what CI runs), size budgets
+  (ask the owner whether this project wants them at all; `none` turns rule:size-budgets off),
   test devices, the deploy model, the branch and release conventions.
 - `AGENTS.md`: the same hard rules for other AI tools.
 

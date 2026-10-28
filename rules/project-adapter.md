@@ -25,7 +25,7 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | A9 | **Commands:** lint / format / type-check / unit / E2E / build / audit / full gate | Pre-Commit, CI Gate, team field 2 | `<fill in>` |
 | A10 | CI workflow files; CI-only scanners | CI Gate | `<fill in>` |
 | A11 | Tool-shell command prefix | Loop, team field 3 | `<fill in>` |
-| A12 | **Size budgets** + check commands + CI drift margin | Size Budgets | `<fill in>` |
+| A12 | **Size budgets** (opt-in, chosen at kit setup): each budget + check commands + CI drift margin, or `none` | Size Budgets | `<fill in>` |
 | A13 | Safe logger + error-code lint rules | Code Standards | `<fill in>` |
 | A14 | Git split + push guard + its check | Edit Discipline | `<fill in>` |
 | A15 | Commit hook + commit-message check | Commit format | `<fill in>` |

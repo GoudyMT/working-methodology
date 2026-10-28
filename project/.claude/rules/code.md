@@ -20,6 +20,8 @@ Additive to the global standards, which hold comment depth, docstrings, constant
 
 ### Size Budgets: Trim Before You Ask {#size-budgets}
 
+**Opt-in per project:** this rule and the size-raise band (rule:test-and-review-cadence) apply only where the project adapter's A12 row names budgets, a choice made when the kit is first applied to a new or existing project. A12 set to `none` turns both off. Why: budgets fit a project that ships to slow phones or has a hard size limit, not every project.
+
 Budgets are self-set so only what is necessary ships. When a change would exceed one, the order is fixed:
 1. **Look for bloat first** in the over-budget bucket (dead guards, duplicated logic, values never read, eager code needed on demand), MEASURING each saving on the file it touches - even for a small overage.
 2. **Prove each removal changes nothing** (the impact test): one trim per `perf:` commit through the full gate; a probe where no test can observe it; a breaking trim is reverted. **Security code is never a trim candidate:** the trim brief is an allow-list of files and functions, each trim commit diffed against it.
