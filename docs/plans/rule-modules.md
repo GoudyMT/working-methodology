@@ -33,7 +33,7 @@ One unit, one commit. Nothing pushed, tagged or installed over the main project'
 - [x] Restore point: 0.7.0 pushed, tag v0.7.0 on GitHub (`git ls-remote --tags origin` shows v0.7.0).
 - [x] Measure command: `kit.mjs measure` (commit 36a9c4e; 37 tests pass).
 - [x] Recall questions approved by the owner and frozen (2026-10-28).
-- [ ] Baseline run on 0.7.0 and a no-rules control run, saved. BLOCKED: the claude CLI on this PC is not signed
+- [x] Baseline run on 0.7.0 and a no-rules control run, saved after the owner signed the CLI in (first attempt
       in (every answer read "Not logged in"); the empty runs were discarded and the runner now stops on a failed
       session. Runs once the owner signs the CLI in.
 - [x] Lookup questions written (`docs/evals/lookup-questions.md`).
@@ -57,13 +57,13 @@ One unit, one commit. Nothing pushed, tagged or installed over the main project'
 - [x] Kit Standards #3-#5 and new #11, start files, templates and guides (9163fc3, 218e882).
 - [x] Install check without Claude: a real 0.7.0 install upgrades cleanly; the old file retires, or stays and is
       reported when edited.
-- [ ] Live checks in Claude Code (AGENTS.md loads; a path rule loads on a matching read). BLOCKED on the CLI
-      sign-in, like the recall runs.
+- [x] Live checks in Claude Code: AGENTS.md loads; the testing module loads only after a test file is read
+      (`docs/evals/results/live-checks-1.0.0.md`).
 - [x] Independent review: 8 findings (2 medium, 6 low); all acted on (0307229, c8cefe1) except headroom, now
       469 bytes under the cap. The short re-check found 3 small gaps (an empty retired map, the memory path in
       the keep check, one quoted pointer); all fixed.
-- [ ] Gate: 0 lost or duplicated (met), 0 broken pointers (met), 56 tests green (met), session start 44,531
-      bytes (met), recall >= baseline (waits on the CLI sign-in).
+- [x] Gate met: 0 lost or duplicated, 0 broken pointers, 56 tests green, session start 44,531 bytes, recall
+      10/10 vs baseline 9/10 and control 0/10, scored blind (`docs/evals/results/recall-scores.md`).
 
 Deviation: the plan doc counted 11 modules; the map it approved has 12 besides the core (project-adapter was
 always its own row). Nothing moved between modules.

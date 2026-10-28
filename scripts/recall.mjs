@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const QUESTIONS = path.join(KIT, 'docs', 'evals', 'recall-questions.md');
-const OUT_DIR = path.join(KIT, 'docs', 'evals', 'results');
+// Raw answers quote local paths, so they stay in the gitignored reports folder; only scores are committed.
+const OUT_DIR = path.join(KIT, 'reports', 'evals');
 const MAX_TURNS = '8';
 
 function questions() {
