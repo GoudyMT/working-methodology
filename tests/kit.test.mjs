@@ -643,6 +643,114 @@ test('every rule pointer in the kit names a rule ID that exists', () => {
 // The line-conservation check for the 1.0.0 split retired at 1.1.0, when new rules began; its result is kept in
 // docs/migrations/1.0.0-coverage.md, and the ledger test below still proves every 0.7.0 rule has its home.
 
+// Plan rule-modules, Phase 3: six formats move out of the modules into skills, move only. Every rule line of
+// 1.1.0 must still appear exactly as often across the modules and those skills (none lost, none copied), except
+// the lines recorded as reworded. New lines (a skill's steps, a module's one-line pointer) are free. Lines with no
+// word in them (a table divider, a code fence) carry no rule, and every skill reuses them, so they are not counted.
+const FORMAT_SKILLS = ['pr-body', 'release-notes', 'closeout', 'preview-test', 'pre-pr-sweep', 'adr'];
+const noFront = (t) => t.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+const plainLine = (l) => l.replace(/^(#{1,4} .*?) \{#[^}]+\}$/, '$1');
+test('the format skills keep every 1.1.0 rule line exactly once', () => {
+  const names = spawnSync('git', ['ls-tree', '--name-only', 'v1.1.0', 'rules/'], { encoding: 'utf8' });
+  assert.equal(names.status, 0, 'the v1.1.0 tag must exist locally');
+  const reworded = JSON.parse(read(path.resolve('docs/migrations/1.2.0-reworded.json'))).lines;
+  const swap = new Map(reworded.map((r) => [r.before, r.after]));
+  const count = (ls) => ls.filter((l) => /[A-Za-z0-9]/.test(l)).reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
+  const want = count(names.stdout.split('\n').filter((n) => n.endsWith('.md')).flatMap((n) =>
+    noFront(spawnSync('git', ['show', `v1.1.0:${n}`], { encoding: 'utf8' }).stdout).split('\n').map((l) => plainLine(swap.get(l) ?? l))));
+  const now = [...ruleFiles(), ...FORMAT_SKILLS.map((s) => path.resolve('user/skills', s, 'SKILL.md')).filter((f) => fs.existsSync(f))];
+  const got = count(now.flatMap((f) => noFront(read(f)).split('\n').map(plainLine)));
+  const lost = [...want].filter(([l, n]) => (got.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
+  const copied = [...want].filter(([l, n]) => (got.get(l) || 0) > n).map(([l]) => l.slice(0, 80));
+  assert.deepEqual({ lost, copied }, { lost: [], copied: [] });
+});
+test('each format skill meets the open skill spec and its module keeps a one-line rule naming it', () => {
+  const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
+  for (const s of FORMAT_SKILLS) {
+    const file = path.resolve('user/skills', s, 'SKILL.md');
+    assert.ok(fs.existsSync(file), `${s}: SKILL.md exists`);
+    const text = read(file);
+    const front = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1];
+    assert.equal(front.match(/^name: (.*)$/m)[1].trim(), s, `${s}: name matches its folder`);
+    assert.match(s, /^[a-z0-9]+(-[a-z0-9]+)*$/);
+    const desc = front.match(/^description: (.*)$/m)[1].trim();
+    assert.ok(desc.length > 0 && desc.length <= 1024, `${s}: description 1-1,024 characters`);
+    assert.ok(text.split('\n').length < 500, `${s}: under 500 lines`);
+    const home = text.match(/\brule:([a-z0-9-]+)/);
+    assert.ok(home && ids.has(home[1]), `${s}: names the live rule it serves`);
+    // The module keeps the rule's heading and ID, and one line that sends the reader to the skill.
+    const mod = ruleFiles().map(read).find((t) => t.includes(`{#${home[1]}}`));
+    const section = mod.split(`{#${home[1]}}`)[1].split(/\n#{1,3} /)[0];
+    assert.match(section, new RegExp(`\\b${s} skill\\b`), `${s}: rule:${home[1]} names the skill`);
+  }
+});
+// Each format audit passes a clean piece and names every fault in a bad one.
+const runAudit = (skill, text, args = [], cwd) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-'));
+  const file = path.join(dir, 'piece.md');
+  fs.writeFileSync(file, text);
+  return spawnSync('node', [path.resolve('user/skills', skill, 'audit.mjs'), file, ...args], { encoding: 'utf8', cwd: cwd || dir });
+};
+test('the release notes audit passes clean notes and names each public-prose fault', () => {
+  const good = '## What is new\n\n- Plans now sync between your phone and laptop.\n- Limits: syncing needs both devices online once.\n';
+  const ok = runAudit('release-notes', good, ['1.4.0']);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  const bad = 'Faster sync \u2014 now with Claude help -- see [plan](_Active Plan.md). 212 tests pass.\n';
+  const out = runAudit('release-notes', bad, ['1.4.0']);
+  assert.equal(out.status, 1);
+  for (const want of [/non-ASCII/, /double hyphen/, /AI or tool/, /gitignored/, /test or tooling/]) assert.match(out.stdout, want);
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-'));
+  fs.writeFileSync(path.join(proj, 'package.json'), '{ "version": "1.3.2" }\n');
+  assert.match(runAudit('release-notes', good, ['1.4.0'], proj).stdout, /package\.json says 1\.3\.2/);
+  assert.equal(runAudit('release-notes', good, ['1.3.2'], proj).status, 0);
+});
+test('the sweep report audit passes a done report and names each missing part', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const good = `# Sweep: offline sync\n\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | low | slow list | DEFERRED roadmap |\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const ok = runAudit('pre-pr-sweep', good);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  const bad = good.replace('- **Date:** 2026-03-04\n', '').replace('## 3. Legal and content', '## 3. Other').replace('FIXED 9f8e7d6', 'will fix').replace('YES - only', 'probably - only');
+  const out = runAudit('pre-pr-sweep', bad);
+  assert.equal(out.status, 1);
+  for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
+});
+test('the preview test audit passes a full record and names each missing part', () => {
+  const good = '## Preview test - Offline sync, #12 (2026-03-04)\n\n- **Build:** the host\'s preview for `feature/offline-sync` at `a1b2c3d`; the lead opened it first.\n- **Who, by stakes:** the lead in emulation only; no new surface, no device-only path.\n- **Setup:** phone emulation and desktop; made-up details only; nothing sent.\n\n| Check | Result |\n|---|---|\n| Headers and security policy | same as production |\n| Layout: plan list | clipped at 320 px |\n\n- **Shots:** phone-list.png, desktop-list.png\n- **Result:** FAIL - the list clip goes to the finding pipeline.\n';
+  const ok = runAudit('preview-test', good);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  const bad = good.replace(', #12 (', ' (').replace('`feature/offline-sync` at `a1b2c3d`', 'the branch').replace('made-up details only; nothing sent', 'real account').replace('| clipped at 320 px |', '|  |').replace('- **Shots:** phone-list.png, desktop-list.png\n', '');
+  const out = runAudit('preview-test', bad);
+  assert.equal(out.status, 1);
+  for (const want of [/pull request/, /Build/, /made-up/, /Layout: plan list/, /Shots/]) assert.match(out.stdout, want);
+});
+test('the handoff audit passes a full handoff and names each missing or empty part', () => {
+  const good = '# Field Notes - Continuation Handoff\n\n## REQUIRED FIRST ACTIONS\nRun the Post-Compact Orientation Protocol and confirm mode + first action with the owner.\n\n## Working Mode: Plan (default)\n\n## State Snapshot\n- Current component / version: sync 1.2\n- Git: feature/sync at a1b2c3d, pushed, PR #12 open\n\n## Newly-Established Working Standards\nnone\n\n## Critical In-Flight Context (do NOT lose)\n- Decisions awaiting the owner: none\n\n## Reading Order (mandatory, in order)\n1. _Start Here.md\n\n## Next Step (REQUIRED)\n- What: run the preview test  - Why: merge needs it\n\n## Anti-Hallucination Discipline\n- Every claim verified by file read.\n';
+  const ok = runAudit('closeout', good);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  const bad = good.replace('## Reading Order (mandatory, in order)\n1. _Start Here.md\n\n', '').replace('- Git: feature/sync at a1b2c3d, pushed, PR #12 open', '- Git:').replace('Run the Post-Compact Orientation Protocol and', 'Read the files and');
+  const out = runAudit('closeout', bad);
+  assert.equal(out.status, 1);
+  for (const want of [/Reading Order/, /Git/, /orientation/i]) assert.match(out.stdout, want);
+});
+test('the ADR audit passes a full record and names each missing part', () => {
+  const good = '# ADR-007: Store plans on the device\n\n- **Status:** accepted\n- **Date:** 2026-02-01\n\n## Context and Problem Statement\nWhere do plans live?\n\n## Decision Drivers\n- Privacy\n\n## Considered Options\n1. **Option A:** device\n2. **Option B:** server\n\n## Decision Outcome\n\n**Chosen option:** Option A\n\n### Why\nPrivacy.\n\n### Dual-Horizon\n- **Impact now:** none\n- **Impact later:** sync needs a design\n\n### Consequences\n**Positive:**\n- private\n\n## Pros and Cons of the Options\n### Option A\n- good\n';
+  const ok = runAudit('adr', good);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  const bad = good.replace('accepted', 'maybe').replace('### Dual-Horizon\n- **Impact now:** none\n- **Impact later:** sync needs a design\n\n', '').replace('# ADR-007: Store', '# Store');
+  const out = runAudit('adr', bad);
+  assert.equal(out.status, 1);
+  for (const want of [/Status/, /Dual-Horizon/, /ADR-NNN/]) assert.match(out.stdout, want);
+});
+test('the push guard names the PR body skill', () => {
+  const ask = (command) => {
+    const r = spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+  };
+  assert.match(ask('gh pr create --title "x" --body-file b.md'), /pr-body skill/);
+  assert.match(ask('git push -u origin feature/x'), /pr-body skill/);
+  assert.doesNotMatch(ask('gh release create v1.2.0'), /pr-body skill/, 'a release is not a PR');
+});
+
 // Plan rule-modules, Phase 1: the kit keeps one tool-neutral source (rules/) and writes Claude Code's files from
 // it. What install copies must be exactly what a fresh build writes, and each output names its source.
 test('build writes AGENTS.md, path rules, on-demand modules and the index from rules/', () => {

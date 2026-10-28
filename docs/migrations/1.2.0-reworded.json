@@ -1,0 +1,14 @@
+{
+  "lines": [
+    {
+      "before": "- **Never inflate a small PR.** The audit script (sections, width, word caps, banned words, ASCII) runs with every body; it cannot see content drift, so keep the conventions of the lived bodies (below; a budget raise states the final old -> new and its basis; a proof gate claims only what ran). Body + audit go to the owner BEFORE any push or PR command. After a trim, reread for flow. <!-- PROJECT ADAPTER A16 -->",
+      "after": "- **Never inflate a small PR.** The audit script (sections, width, word caps, banned words, ASCII) runs with every body; it cannot see content drift, so keep the conventions of the lived bodies (below; a budget raise states the final old -> new and its basis; a proof gate claims only what ran). Body + audit go to the owner BEFORE any push or PR command. After a trim, reread for flow.",
+      "why": "the adapter marker moved to the module line that names the skill, where the project fills it in"
+    },
+    {
+      "before": "- **Match the latest release of the same kind** (feature vs quality) - read it first. <!-- PROJECT ADAPTER A17 -->",
+      "after": "- **Match the latest release of the same kind** (feature vs quality) - read it first.",
+      "why": "the adapter marker moved to the module line that names the skill, where the project fills it in"
+    }
+  ]
+}

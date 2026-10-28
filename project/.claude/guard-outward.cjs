@@ -174,10 +174,14 @@ function main() {
 	process.stdin.on('end', () => {
 		let reason = '';
 		let toolName = '';
+		let prNote = '';
 		try {
 			const input = JSON.parse(raw);
 			toolName = String(input.tool_name ?? '');
 			reason = decide(input);
+			// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
+			const command = String((input.tool_input && input.tool_input.command) ?? '');
+			if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = ' Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
 		} catch {
 			// A guard that cannot read the command asks rather than lets it through.
 			reason = 'the guard could not read this command';
@@ -187,7 +191,7 @@ function main() {
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
 					permissionDecision: 'ask',
-					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.',
+					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.' + prNote,
 				},
 			};
 			process.stdout.write(JSON.stringify(output));

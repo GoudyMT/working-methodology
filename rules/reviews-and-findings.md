@@ -51,10 +51,8 @@ A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm C
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 
 Why: a solo builder reviewing their own diff sees what they meant, not what they wrote.
-- **Adversarial vulnerability swarm:** >= 3 top-tier security agents with DISTINCT angles.
-- **A Test Value agent** ruling keep / cut / repoint on every added or edited test (the use guarded, a break check where in doubt); retired when reviews stop finding fluff.
-- **Every high / critical independently re-checked** - an input to the controller's adjudication. **Dimension 6 mandatory.** **Covers the branch HEAD** - an older report does not count; re-run or sweep the delta.
-- **Anti-hallucination clause:** satisfied ONLY by the agents actually running THIS session AND the report existing with their findings, dispositions and verdict - never by the controller's read, a recalled sweep, or "it looks fine". No report -> no PR.
+
+**How: the pre-pr-sweep skill** (its steps, the full rule, two example reports, the audit). The must-haves: the agents run this session against the branch HEAD, and the report exists, with every high and critical finding dispositioned, before the PR. No report -> no PR.
 
 ### Pre-Push Op-Test {#pre-push-op-test}
 
@@ -70,7 +68,7 @@ Satisfied ONLY by the walk and testers running this session with results in the 
 
 A user-facing PR is used on the host's own build of the branch before merge, on the device the stakes call for (below): open the link yourself first; made-up details only; nothing sent (previews may hold live secrets: -> Security "Secrets"). Why: the production platform and a real device are what local tests cannot imitate. <!-- PROJECT ADAPTER A19/A20 -->
 
-**Who tests the preview, by stakes.** Every user-facing PR: the lead checks the deployed preview in phone and desktop emulation (headers, security policy, workers, layout), shown as shots. The owner's real device only for: a new or often-used surface; touch, keyboard or installed-app behaviour; device-only paths (downloads, file imports, sharing); screen-reader checks. Why: emulation cannot prove a device's fonts, system UI, keyboard or storage, so the owner's time goes where only a hand can tell.
+**How: the preview-test skill** (who tests by stakes, its steps, two example records, the audit). The must-have: every user-facing PR is checked on the deployed preview before merge, at least in phone and desktop emulation.
 
 ### Visible Tracking {#visible-tracking}
 

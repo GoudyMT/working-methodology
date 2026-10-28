@@ -85,4 +85,6 @@ Do not edit any files.
 
 **Spec + tests + code stay in sync;** a change at one vertex examines the other two. Code changed -> spec updated, tests cover it? (else justify in the PR, ADR if structural). Tests changed -> did the spec require it? Spec changed -> plan the drift fix in `_Active Plan.md`. Pre-merge, source changed without spec, ADR or tests gets a why. Why: silent spec drift makes a later session re-implement the old behaviour.
 
+**A structural decision gets an ADR: the adr skill** (MADR format from the project's template, numbered, indexed, the audit, two examples).
+
 **Locked-Decision Drift Markers.** When code deviates from a locked ADR / spec decision, the SAME session amends every affected location (with a Revision History line), or puts `> SUPERSEDED (<date>): <what changed> - see <pointer>` at EACH one AND logs the pending sync in the plan's "Execution Notes & Deviations". The rewrite may batch, the WARNING may not; markers link forward and never delete the old prose. Why: a reader landing on a stale line will not know to read the plan addendum.
