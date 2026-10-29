@@ -67,8 +67,8 @@ function finalReport(input) {
 		try { entry = JSON.parse(lines[i]); } catch { continue; } // a half-written line
 		const content = entry.message && entry.message.content;
 		if (entry.type === 'user') {
-			const toolResults = Array.isArray(content) && content.every((b) => b.type === 'tool_result');
-			if (toolResults) continue;
+			// Tool results (with any note riding on them) and hook notes are not a new prompt.
+			if (entry.isMeta || (Array.isArray(content) && content.some((b) => b.type === 'tool_result'))) continue;
 			return null; // a real prompt: the latest turn has no report yet
 		}
 		if (entry.type !== 'assistant' || !Array.isArray(content)) continue;

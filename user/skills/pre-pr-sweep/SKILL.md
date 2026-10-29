@@ -20,10 +20,13 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    higher one. List the modifiers the change hits (security-sensitive, a new dependency or data flow, public or
    legal text, data the user keeps); each adds its role.
 2. **The Swarm Contract** (rule:swarm-contract): emit its table for the owner to read, and write the same roles as
-   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header). Run
-   `node <this skill's folder>/approve.mjs <contract.json> --log <sweep folder>/sweep-approvals.jsonl`
-   (rule:sweep-auto-approval). APPROVED: go on. ASK THE OWNER: stop and show the owner the reasons it printed.
-   First push and launch gate always stop for the owner.
+   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header). Commit the work first, then,
+   from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
+   (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). APPROVED: go on.
+   ASK THE OWNER: stop and show the owner the reasons it printed. First push and launch gate always stop for the
+   owner. **Limits:** it stops slips, not a determined workaround: deleting or rewriting the log, a false `--base`,
+   clearing the AI-shell marker, or invented outcome numbers would get past it, and each is a stop-and-tell-the-owner
+   event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
    and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline.
@@ -34,7 +37,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    check for a fix, none for triage unless it found something. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --tokens <used> --findings <n>
-   --real <n after triage> --duplicates <n repeated between roles> --log <same log>`. A bug later found in code the
+   --real <n after triage> --duplicates <n repeated between roles>`. A bug later found in code the
    sweep passed: `--escape "<what>"`. `--summary` prints the trial so far; put its line in the rundown.
 
 ## The audit

@@ -1819,3 +1819,35 @@ test('the leak guard lets an agent open its own message to its tasker with the p
   const buried = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', agent_id: 'b2', agent_type: 'builder', tool_input: { to: 'lead', message: `done. ps: ${FAKE_PHRASE}` } });
   assert.match(buried.stdout, /deny/, 'only an opening line counts as the agent\'s own');
 });
+// Found in the re-check: the floor read only committed work in the contract's own checkout.
+test('the approval script asks the owner when the work is not committed or the diff is empty', () => {
+  const dir = sweepRepo({ 'README.md': 'w\n' });
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?', { budget: 20000 })] };
+  fs.writeFileSync(path.join(dir, 'src.js'), 'new\n');
+  assert.match(approveRun(one, dir).stdout, /not committed/i);
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  g(empty, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(empty, 'README.md'), 'x\n');
+  commitAll(empty, 'base', true);
+  fs.mkdirSync(path.join(empty, 'sweeps'));
+  fs.writeFileSync(path.join(empty, '.gitignore'), 'sweeps/\n');
+  commitAll(empty, 'ignore', true);
+  g(empty, 'checkout', '-q', '-b', 'side');
+  g(empty, 'branch', '-f', 'main', 'HEAD');
+  assert.match(approveRun(one, empty).stdout, /no changes/i);
+  const r = approveRun(featureContract());
+  assert.equal(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1', CLAUDECODE: '' }).status, 1, 'an emptied marker is still an AI shell');
+});
+test('the canary skips a hook note after the hand-back', () => {
+  const dir = canaryRepo();
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tr-')), 'agent.jsonl');
+  const lines = [
+    { type: 'user', message: { content: 'brief' } },
+    { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'SubagentHandback', input: { message: `${FAKE_PHRASE}\nok` } }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }, { type: 'text', text: '<system-reminder>note</system-reminder>' }] } },
+    { type: 'user', isMeta: true, message: { content: 'hook note' } },
+  ];
+  fs.writeFileSync(f, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'm1', agent_transcript_path: f }).status, 0);
+  assert.equal(canaryLog(dir).pop().result, 'hit');
+});

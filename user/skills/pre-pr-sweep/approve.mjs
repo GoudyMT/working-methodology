@@ -109,8 +109,14 @@ function diffFacts() {
 	const all = names('ACDMRT');
 	const added = names('A');
 	const lines = git('diff', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
+	// Work not yet committed would not be in the diff the floor reads; the contract's own folder is left out.
+	const own = git('rev-parse', '--show-prefix').stdout.trim();
+	const dirty = git('status', '--porcelain', '--', ':(top)', `:(top,exclude)${own || '.kit-none'}`).stdout.split('\n').filter(Boolean);
 	return {
 		base,
+		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
+		dirty,
+		changed: all.length,
 		deps: all.some((f) => DEP_FILE.test(f)),
 		tests: all.some((f) => TEST_FILE.test(f)),
 		addedSource: added.filter((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f)),
@@ -130,6 +136,8 @@ function check(c, facts) {
 	if (!CAPS[tier]) return [`unknown tier "${c.tier}"`];
 	const why = [];
 	if (!facts) why.push('cannot read the branch diff against its base (pass --base <ref>)');
+	else if (facts.dirty.length) why.push(`work not committed (${facts.dirty[0].slice(3)}): commit it, so the diff shows the whole change`);
+	else if (!facts.changed) why.push(`no changes against ${facts.base}: run it from the branch's own checkout, or pass the right --base`);
 	else {
 		if (tier !== 'feature' && facts.addedSource.length) why.push(`an added source file (${facts.addedSource[0]}) is feature work, not ${tier}`);
 		if (tier === 'triage' && (facts.added.length || facts.lines > TRIAGE_MAX_LINES)) why.push(`${facts.lines} changed lines, ${facts.added.length} added files: more than a triage change`);
@@ -173,7 +181,8 @@ function decide() {
 	const raw = fs.readFileSync(contractFile, 'utf8');
 	const c = JSON.parse(raw);
 	const s = state();
-	const why = check(c, diffFacts());
+	const facts = diffFacts();
+	const why = check(c, facts);
 	const open = s.log.filter((e) => e.kind === 'decision' && e.decision === 'approved').pop();
 	const reported = open && s.log.some((e) => e.kind === 'outcome' && e.decisionAt === open.time);
 	if (s.paused) why.unshift(`auto-approval is paused: ${s.paused}`);
@@ -182,7 +191,7 @@ function decide() {
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
 	} else if (open && !reported) why.unshift(`log the outcome of the last approved sweep first (${open.contract})`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why };
+	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: facts && facts.base, head: facts && facts.head };
 	write(entry);
 	if (why.length) {
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
@@ -228,7 +237,7 @@ function main() {
 	if (has('--summary')) return summary();
 	if (has('--resume')) {
 		// An AI tool's shell carries one of these; the owner's own terminal does not (the push guard's same line).
-		if (process.env.CLAUDECODE || process.env.AI_AGENT || process.env.KIT_OWNER_RESUME !== '1') {
+		if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_RESUME !== '1') {
 			console.log('Only the owner resumes auto-approval, from their own terminal: review the log, then run KIT_OWNER_RESUME=1 node approve.mjs --resume.');
 			return 1;
 		}
