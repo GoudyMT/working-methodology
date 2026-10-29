@@ -1893,7 +1893,7 @@ test('the size band end check lowers padding and fails a line over its limit', (
 });
 test('the size band rejects a band it cannot read as whole numbers, and a line with no limit', () => {
   const bad = (b) => bandRun('apply', { band: { ...band, ...b }, measured: { page: 101000, lazy: 16000, files: 80 }, limits: band.limit });
-  for (const b of [{ limit: { lazy: 16040, files: 80 } }, { raise: { page: '6000' } }, { raise: { page: 10.5 } }, { base: { page: -1, lazy: 16000, files: 80 } }]) {
+  for (const b of [{ limit: { lazy: 16040, files: 80 } }, { raise: { page: '6000' } }, { raise: { page: 10.5 } }, { base: { page: -1, lazy: 16000, files: 80 } }, { counts: ['fils'] }]) {
     const r = bad(b);
     assert.equal(r.status, 2, JSON.stringify(b) + r.stdout);
     assert.match(r.stdout, /band/i);

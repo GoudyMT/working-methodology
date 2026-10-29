@@ -10,7 +10,8 @@
 // Files, all JSON objects keyed by budget line:
 //   band:     { "base": {...}, "limit": {...}, "raise": {...}, "counts": ["<count line>", ...] }
 //             base = the sizes when the request was asked; limit = the limits when it was approved; raise = the
-//             approved raise per line (a line not listed may not grow past its limit)
+//             approved raise per line (a line not listed may not grow past its limit). base and limit name every
+//             line in limits, so the band is checked whole; counts names lines in limits
 //   measured: this build's sizes (from the project's own size checks, on a build that measures the same every time)
 //   limits:   the limits in force now
 //
@@ -27,6 +28,8 @@ const mode = args[0];
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const load = (name) => JSON.parse(fs.readFileSync(opt(name), 'utf8'));
 const bytes = (n) => `${n.toLocaleString('en-US')} B`;
+let countLines = new Set();
+const unit = (line, n) => (countLines.has(line) ? `${n.toLocaleString('en-US')} files` : bytes(n));
 
 function main() {
 	if ((mode !== 'apply' && mode !== 'final') || !opt('--band') || !opt('--measured') || !opt('--limits')) {
@@ -37,6 +40,7 @@ function main() {
 	const measured = load('--measured');
 	const limits = load('--limits');
 	const counts = new Set(band.counts || []);
+	countLines = counts;
 	const raise = band.raise || {};
 	// Every number the arithmetic reads must be a whole, non-negative number, or a limit could be written from a
 	// string or a missing value. A band read wrong would let a limit rise past what was approved.
@@ -48,6 +52,7 @@ function main() {
 		if (!whole(band.limit?.[line])) wrong.push(`limit.${line}`);
 	}
 	for (const [line, n] of Object.entries(raise)) if (!whole(n) || !(line in limits)) wrong.push(`raise.${line}`);
+	for (const line of counts) if (!(line in limits)) wrong.push(`counts.${line}`);
 	if (wrong.length) {
 		console.log(`SIZE BAND: the band or the limits cannot be read as whole numbers: ${wrong.join(', ')}. Nothing written.`);
 		return 2;
@@ -79,7 +84,7 @@ function main() {
 		for (const r of refusals) console.log(`    ${r}`);
 		return 1;
 	}
-	for (const line of Object.keys(next)) if (next[line] !== limits[line]) console.log(`    ${line}: ${bytes(limits[line])} -> ${bytes(next[line])} (measured ${bytes(measured[line])})`);
+	for (const line of Object.keys(next)) if (next[line] !== limits[line]) console.log(`    ${line}: ${unit(line, limits[line])} -> ${unit(line, next[line])} (measured ${unit(line, measured[line])})`);
 	console.log(JSON.stringify({ limits: next }));
 	return 0;
 }
