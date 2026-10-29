@@ -19,5 +19,5 @@ app), which it logged as "unchecked" in the first long real run. The owner's go,
 - [x] approve.mjs: rules, clones, caps, log, outcome, escape, pause, resume, summary (3 tests red first).
 - [x] rule:sweep-auto-approval; swarm-contract line amended; pre-pr-sweep steps 2 and 6.
 - [x] Review and short re-check, both fixed; real-transcript checks; recall 9/10; bump to 1.5.0.
-- [ ] Push and install on the owner's go.
+- [x] Pushed with tag v1.5.0 and installed in ~/.claude on the owner's go (2026-10-29).
 - [ ] Trial: 10 auto-approved sweeps, then the owner's review of the log.
