@@ -34,8 +34,8 @@ commit. The owner's design, 2026-10-29.
 
 ## Progress
 
-- [ ] Failing tests: exclude block (write, replace, keep owner lines, tracked mode, no git), clean `git status`
+- [x] Failing tests: exclude block (write, replace, keep owner lines, tracked mode, no git), clean `git status`
       after install, the check (pass + each fail), the hook (first push blocked/allowed, later push unchecked).
-- [ ] Install block, check script, hook, rules, setup docs.
+- [x] Install block, check script, hook, rules, setup docs; plus a pre-commit check, hooks on at install, review fixes.
 - [ ] Live run in a scratch repo; independent review and one short re-check; bump to 1.4.0; push and install on
       the owner's go.

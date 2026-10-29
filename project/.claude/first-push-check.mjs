@@ -73,7 +73,7 @@ function main(staged) {
 			...secretValues(git('diff', '--cached', '--no-color', '-U0').stdout).map((v) => `${v.kind} in ${v.file}`),
 		];
 		if (!bad.length) return 0;
-		console.error('Commit blocked (rule:kit-stays-local). Unstage each with git restore --staged <path>:');
+		console.error('Commit blocked (rule:kit-stays-local). Unstage each with git rm --cached -q <path> (the file stays on disk):');
 		for (const b of bad) console.error(`    ${b}`);
 		return 1;
 	}
