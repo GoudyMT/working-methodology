@@ -216,16 +216,22 @@ function keepKitLocal(projectDir, keys) {
   const old = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
   const own = old.replace(/\n?# kit:begin[\s\S]*?# kit:end\n?/g, '\n').replace(/^\n+/, '');
   const tracking = path.join(projectDir, '.kit', 'tracking.json');
-  const tracked = fs.existsSync(tracking) && JSON.parse(fs.readFileSync(tracking, 'utf8')).kit === 'tracked';
+  const cfg = fs.existsSync(tracking) ? JSON.parse(fs.readFileSync(tracking, 'utf8')) : {};
   // Anchored to the repo root; glob and comment characters in a name are escaped so each line names one path.
   const line = (p) => '/' + (prefix + p).replace(/[\\*?[\]!#]/g, (c) => '\\' + c);
-  const block = tracked ? '' : ['# kit:begin - the methodology kit stays local (rule:kit-stays-local); install rewrites this block',
-    ...[...keys, '.kit/', '.claude/worktrees/'].sort().map(line), '# kit:end'].join('\n') + '\n';
+  // The never list is the owner's own globs, kept here too so it stays private (a .gitignore is pushed).
+  const neverLines = (cfg.never || []).map((p) => '/' + prefix + p.replace(/^\/+/, ''));
+  const kitLines = cfg.kit === 'tracked' ? [] : [...keys, '.kit/', '.claude/worktrees/'].sort().map(line);
+  const block = kitLines.length + neverLines.length ? ['# kit:begin - kept local by the methodology kit (rule:kit-stays-local); install rewrites this block',
+    ...kitLines, ...neverLines, '# kit:end'].join('\n') + '\n' : '';
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, (own.trimEnd() ? own.trimEnd() + '\n' : '') + block);
   // The kit's git hooks hold the line for any tool (the commit check, the push guard, the first push gate). Another
   // hook manager already set stays; the setup says to add the kit's checks to it.
   if (!git('config', 'core.hooksPath').stdout.trim()) git('config', 'core.hooksPath', `${prefix}.githooks`);
+  // A project whose history is already on a remote had its first push before the kit came: the gate is done.
+  const remotes = git('for-each-ref', '--format=%(refname)', 'refs/remotes/').stdout.split('\n').filter(Boolean);
+  if (remotes.some((r) => git('merge-base', 'HEAD', r).status === 0)) fs.writeFileSync(path.join(common.stdout.trim(), 'kit-first-push-done'), '');
 }
 
 function diffText(a, b) {

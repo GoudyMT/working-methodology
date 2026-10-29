@@ -38,23 +38,28 @@ Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-
 
 ## 3. Keep the kit local; decide what git tracks (rule:kit-stays-local)
 
-The kit lives in this folder, ready to use, and never in the repo by default. The install already listed every
-kit path in a marked block of `.git/info/exclude` (local, never pushed); `git status` shows only the project.
-Run `git init` before the install, or run the install again after it, so the block is written.
+The kit lives in this folder, ready to use, and never in the repo by default. Run `git init` before the install
+(or run the install again after it). The install lists every kit path in a marked block of `.git/info/exclude`
+(local, never pushed) and turns on the kit's git hooks; `git status` then shows only the project.
 
-1. Write `.kit/tracking.json` with the owner:
+1. Write `.kit/tracking.json` with the owner, then run the install again so the block picks up the never list:
    ```json
-   { "kit": "local", "track": ["src/**", "README.md"], "never": ["<course or client material>/**"] }
+   { "kit": "local", "track": ["src/**", "README.md"], "never": ["<course or client material>"] }
    ```
-   `track` is every file the owner wants in the repo, kit files chosen to show growth included; `never` is
-   every path that must never be committed (another party's material, private notes). Put `never` paths in
-   `.gitignore` too, before the first commit.
+   `track` is every file and folder the owner wants in the repo, kit files chosen to show growth included.
+   `never` is every path that must never be committed (another party's material, private notes); the install
+   keeps it in the private exclude block, not a `.gitignore` that would publish the names.
+   `reviewedSecrets` (optional) lists files whose secret-shaped lines the owner checked and judged safe.
 2. Add each chosen kit file on purpose: `git add -f <file>`. Once tracked, git keeps tracking it.
-3. Committing the whole kit (`"kit": "tracked"`, then install again) is the owner's explicit choice, for a
+3. Every commit, from any tool, runs the commit check: staging a kit file not in `track`, a `never` path or a
+   secret-shaped file or value is blocked.
+4. Before the first push: the first push gate (rule:first-push-gate). Make the remote **private** first; run the
+   deep sweep at the first-push tier and `node .claude/first-push-check.mjs`; push; check what landed on the
+   host; only then make it public. The pre-push hook holds the first push until the check clears the commit.
+5. Committing the whole kit (`"kit": "tracked"`, then install again) is the owner's explicit choice, for a
    private repo only.
-4. Before the first push to a remote: the first push gate (rule:first-push-gate) - the deep sweep at the
-   first-push tier and `node .claude/first-push-check.mjs`. The pre-push hook (step 2) holds the first push
-   until the check passes for the commit being pushed.
+6. On another computer, a fresh clone has no kit: run the install there, which writes the block and the hooks
+   again (it sees the project was already pushed, so the first push gate is done).
 
 ## 3b. Set up the vault backup
 

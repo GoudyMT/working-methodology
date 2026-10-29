@@ -1434,7 +1434,7 @@ test('the first push check fails on a never path, a missing tracked file, a secr
   assert.ok(!r.stdout.includes(secret), 'a secret value is never printed');
 });
 test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', () => {
-  const dir = readyProject();
+  const dir = readyProject({ track: ['main.py'] });
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
   g(bare, 'init', '-q', '--bare');
   g(dir, 'remote', 'add', 'origin', bare);
@@ -1487,7 +1487,7 @@ test('the pre-commit hook blocks staging a kit file, a never path or a secret fi
   assert.equal(commit().status, 0, 'a kit file the owner chose to track');
 });
 test('the first push check fails on a never path that is in the folder but not ignored', () => {
-  const dir = readyProject({ never: ['school/**'] });
+  const dir = readyProject({ track: ['main.py'], never: ['school/**'] });
   fs.mkdirSync(path.join(dir, 'school'));
   fs.writeFileSync(path.join(dir, 'school', 'rubric.txt'), 'graded\n');
   const r = firstPush(dir);
@@ -1496,4 +1496,98 @@ test('the first push check fails on a never path that is in the folder but not i
   fs.writeFileSync(path.join(dir, '.gitignore'), 'school/\n');
   commitAll(dir, 'ignore school');
   assert.equal(firstPush(dir).status, 0, firstPush(dir).stdout);
+});
+// Found in review of the first push gate: each of these let a slip through or blocked a clean push.
+test('the first push check sees a file added while resolving a merge', () => {
+  const dir = readyProject({ track: ['main.py'], never: ['school/**'] });
+  g(dir, 'checkout', '-q', '-b', 'side');
+  fs.writeFileSync(path.join(dir, 'side.txt'), 's\n');
+  commitAll(dir, 'side');
+  g(dir, 'checkout', '-q', '-');
+  fs.writeFileSync(path.join(dir, 'main.py'), 'print(3)\n');
+  commitAll(dir, 'main');
+  g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '-q', '--no-commit', 'side');
+  fs.mkdirSync(path.join(dir, 'school'));
+  fs.writeFileSync(path.join(dir, 'school', 'inmerge.txt'), 'x\n');
+  g(dir, 'add', '-f', 'school/inmerge.txt');
+  g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'merge', '--no-verify');
+  g(dir, 'rm', '-rq', '--cached', 'school');
+  commitAll(dir, 'drop it', true);
+  const r = firstPush(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /school\/inmerge\.txt/);
+});
+test('the first push check reads a folder-style never entry, and fails an empty or ignored track entry', () => {
+  for (const never of ['school/', 'school']) {
+    const dir = readyProject({ track: ['main.py'], never: [never] });
+    fs.mkdirSync(path.join(dir, 'school'));
+    fs.writeFileSync(path.join(dir, 'school', 'rubric.txt'), 'graded\n');
+    g(dir, 'add', '-f', 'school/rubric.txt');
+    commitAll(dir, 'slip', true);
+    assert.match(firstPush(dir).stdout, /FAIL  no never-list path[\s\S]*school\/rubric\.txt/, never);
+  }
+  assert.match(firstPush(readyProject()).stdout, /FAIL  every file in track is tracked[\s\S]*track is empty/);
+  const dir = readyProject({ track: ['main.py', 'src/**'] });
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'a.py'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'src', 'b.py'), 'b\n');
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'src/b.py\n');
+  commitAll(dir, 'src');
+  assert.match(firstPush(dir).stdout, /FAIL  every file in track is tracked[\s\S]*src\/b\.py/);
+});
+test('the first push check finds the kit\'s own folder in history and lets reviewed secret hits pass', () => {
+  const dir = readyProject({ track: ['main.py'] });
+  g(dir, 'add', '-f', '.kit/kit-version.json');
+  commitAll(dir, 'slip', true);
+  assert.match(firstPush(dir).stdout, /\.kit\/kit-version\.json/);
+  const ok = readyProject({ track: ['main.py', 'robots.js'], reviewedSecrets: ['robots.js'] });
+  fs.writeFileSync(path.join(ok, 'robots.js'), `const ROBOTS_TOKEN = '${'public-robots-'.repeat(2)}';\n`);
+  commitAll(ok, 'robots', true);
+  assert.equal(firstPush(ok).status, 0, firstPush(ok).stdout);
+});
+test('the first push gate stays on when the new remote already has a README, and lets a tag of the cleared commit go', () => {
+  const dir = readyProject({ track: ['main.py'] });
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  g(bare, 'init', '-q', '--bare');
+  const seed = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-'));
+  g(seed, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(seed, 'README.md'), '# made on the host\n');
+  commitAll(seed, 'readme');
+  g(seed, 'push', '-q', bare, 'main');
+  g(dir, 'remote', 'add', 'origin', bare);
+  g(dir, 'fetch', '-q', 'origin');
+  const push = (sha, ref = 'refs/heads/main') => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+    input: `${ref} ${sha} ${ref} ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+  const head = g(dir, 'rev-parse', 'HEAD').stdout.trim();
+  assert.notEqual(push(head).status, 0, 'the fetched README branch does not end the gate');
+  assert.equal(firstPush(dir).status, 0);
+  g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'tag', '-a', 'v0.1', '-m', 'first');
+  assert.equal(push(g(dir, 'rev-parse', 'v0.1').stdout.trim(), 'refs/tags/v0.1').status, 0, 'an annotated tag of the cleared commit');
+  // Once the cleared commit is on the remote, later pushes are left to the commit check.
+  g(dir, 'update-ref', 'refs/remotes/origin/main', head);
+  fs.writeFileSync(path.join(dir, 'main.py'), 'print(9)\n');
+  commitAll(dir, 'later');
+  assert.equal(push(g(dir, 'rev-parse', 'HEAD').stdout.trim()).status, 0);
+});
+test('the install keeps the never list private in the exclude block', () => {
+  const dir = readyProject({ track: ['main.py'], never: ['school/**'] });
+  kitInstall(dir);
+  assert.match(read(excludeFile(dir)), /^\/school\/\*\*$/m);
+  fs.mkdirSync(path.join(dir, 'school'));
+  fs.writeFileSync(path.join(dir, 'school', 'x.txt'), 'x\n');
+  assert.equal(g(dir, 'status', '--porcelain').stdout.trim(), '');
+});
+test('a project already pushed before the kit came is not held by the first push gate', () => {
+  const origin = readyProject({ track: ['main.py'] });
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  g(bare, 'init', '-q', '--bare');
+  g(origin, 'push', '-q', '--no-verify', bare, 'HEAD:refs/heads/main');
+  const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'clone-'));
+  g(clone, 'clone', '-q', bare, '.');
+  kitInstall(clone);
+  fs.writeFileSync(path.join(clone, 'main.py'), 'print(5)\n');
+  commitAll(clone, 'work');
+  const r = spawnSync('sh', [path.join(clone, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: clone,
+    input: `refs/heads/main ${g(clone, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+  assert.equal(r.status, 0, r.stderr);
 });

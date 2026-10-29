@@ -18,31 +18,33 @@ const git = (...a) => spawnSync('git', ['-C', PROJECT, '-c', 'core.quotePath=fal
 const SECRET_FILE = /(^|\/)(\.env(\.(?!example$|sample$|template$)[^/]+)?|\.dev\.vars|id_rsa|id_ed25519|credentials\.json)$|\.(pem|key|p12|pfx)$|(^|\/)secrets\//i;
 const SECRET_VALUE = [
 	['anthropic key', /sk-ant-[A-Za-z0-9_-]{20,}/],
-	['openai-style key', /\bsk-[A-Za-z0-9]{32,}/],
+	['openai-style key', /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}/],
+	['stripe-style key', /\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}/],
 	['github token', /\bgh[pousr]_[A-Za-z0-9]{30,}/],
 	['aws access key', /\bAKIA[0-9A-Z]{16}\b/],
 	['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
 	['assigned secret', /(api[_-]?key|secret|token|password|bearer)["']?\s*[:=]\s*["'][^"'\s]{16,}["']/i],
 ];
 
-// A glob from tracking.json, relative to the project folder: ** crosses folders, * and ? stay inside one.
+// A glob from tracking.json, relative to the project folder: ** crosses folders, * and ? stay inside one. Like a
+// .gitignore line, a name also covers everything under it, so "school", "school/" and "school/**" agree.
 function globRe(glob, prefix) {
-	const body = (prefix + glob).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*');
-	return new RegExp(`^${body}$`);
+	const body = (prefix + glob.replace(/\/+$/, '')).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*');
+	return new RegExp(`^${body}(?:/.*)?$`);
 }
 
 // Secret-shaped values in the added lines of a patch, by kind, file and commit; the value itself is never kept.
 function secretValues(patch) {
-	const values = [];
+	const values = new Map();
 	let commit = 'staged', file = '';
 	for (const line of patch.split('\n')) {
 		if (line.startsWith('@@') && !line.startsWith('@@ ')) commit = line.slice(2);
 		else if (line.startsWith('+++ b/')) file = line.slice(6);
 		else if (line.startsWith('+') && !line.startsWith('+++')) {
-			for (const [kind, re] of SECRET_VALUE) if (re.test(line)) values.push(`${kind} in ${file} (${commit})`);
+			for (const [kind, re] of SECRET_VALUE) if (re.test(line)) values.set(`${kind}|${file}|${commit}`, { kind, file, commit });
 		}
 	}
-	return [...new Set(values)];
+	return [...values.values()];
 }
 
 function main(staged) {
@@ -60,14 +62,15 @@ function main(staged) {
 	const stamp = path.join(PROJECT, '.kit', 'kit-version.json');
 	const kitFiles = new Set(existsSync(stamp) ? Object.keys(JSON.parse(readFileSync(stamp, 'utf8')).files || {}).filter((k) => !k.startsWith('memory/')).map((k) => prefix + k) : []);
 
-	const kitOnly = (p) => kitFiles.has(p) && !track.some((r) => r.test(p));
+	// The kit's files, plus its own folders the stamp does not list (the stamp itself names the owner's paths).
+	const kitOnly = (p) => (kitFiles.has(p) || p.startsWith(`${prefix}.kit/`) || p.startsWith(`${prefix}.claude/worktrees/`)) && !track.some((r) => r.test(p));
 	if (staged) {
 		const added = git('diff', '--cached', '--no-renames', '--name-only', '--diff-filter=A').stdout.split('\n').filter(Boolean);
 		const bad = [
 			...added.filter(kitOnly).map((p) => `${p}: a kit file; to show it, list it in track in .kit/tracking.json first`),
 			...added.filter((p) => never.some((r) => r.test(p))).map((p) => `${p}: on the never list`),
 			...added.filter((p) => SECRET_FILE.test(p)).map((p) => `${p}: a secret-shaped file`),
-			...secretValues(git('diff', '--cached', '--no-color', '-U0').stdout),
+			...secretValues(git('diff', '--cached', '--no-color', '-U0').stdout).map((v) => `${v.kind} in ${v.file}`),
 		];
 		if (!bad.length) return 0;
 		console.error('Commit blocked (rule:kit-stays-local). Unstage each with git restore --staged <path>:');
@@ -75,25 +78,36 @@ function main(staged) {
 		return 1;
 	}
 
-	// Every path in every commit, with the first commit that added it.
+	// Every path in every commit's full tree, with the first commit that held it. Whole trees, not diffs: git log
+	// shows no changes for a merge, so a file added while resolving one would hide from a diff-based scan.
 	const seen = new Map();
-	let commit = '';
-	for (const line of git('log', '--all', '--reverse', '--no-renames', '--name-only', '--diff-filter=A', '--pretty=format:@@%h').stdout.split('\n')) {
-		if (line.startsWith('@@')) commit = line.slice(2);
-		else if (line && !seen.has(line)) seen.set(line, commit);
+	const trees = new Set();
+	for (const line of git('log', '--all', '--reverse', '--format=%H %T').stdout.split('\n').filter(Boolean)) {
+		const [commit, tree] = line.split(' ');
+		if (trees.has(tree)) continue;
+		trees.add(tree);
+		for (const p of git('ls-tree', '-r', '-z', '--name-only', tree).stdout.split('\0').filter(Boolean)) if (!seen.has(p)) seen.set(p, commit.slice(0, 7));
 	}
-	const inTree = git('ls-tree', '-r', '--full-tree', '--name-only', 'HEAD').stdout.split('\n').filter(Boolean);
-	const loose = git('ls-files', '--others', '--exclude-standard', '--full-name').stdout.split('\n').filter(Boolean);
+	const list = (...a) => git(...a).stdout.split('\0').filter(Boolean);
+	const inTree = list('ls-tree', '-r', '-z', '--full-tree', '--name-only', 'HEAD');
+	const loose = list('ls-files', '-z', '--others', '--exclude-standard', '--full-name');
+	const ignored = list('ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--full-name');
+	const reviewed = (cfg.reviewedSecrets || []).map((g) => globRe(g, prefix));
 
 	const checks = [];
 	const check = (name, bad) => checks.push({ name, bad });
-	check('no kit file in any commit (unless listed in track)', [...seen].filter(([p]) => kitOnly(p)).map(([p, c]) => `${p} (added in ${c})`));
-	check('no never-list path in any commit', [...seen].filter(([p]) => never.some((r) => r.test(p))).map(([p, c]) => `${p} (added in ${c})`));
-	check('no secret-shaped file in any commit', [...seen].filter(([p]) => SECRET_FILE.test(p)).map(([p, c]) => `${p} (added in ${c})`));
-	check('no secret-shaped value in any commit', secretValues(git('log', '--all', '-p', '--no-color', '-U0', '--pretty=format:@@%h').stdout));
+	check('no kit file in any commit (unless listed in track)', [...seen].filter(([p]) => kitOnly(p)).map(([p, c]) => `${p} (in ${c})`));
+	check('no never-list path in any commit', [...seen].filter(([p]) => never.some((r) => r.test(p))).map(([p, c]) => `${p} (in ${c})`));
+	check('no secret-shaped file in any commit', [...seen].filter(([p]) => SECRET_FILE.test(p)).map(([p, c]) => `${p} (in ${c})`));
+	// -m shows each merge's changes too. A hit the owner has looked at and judged safe is listed in reviewedSecrets.
+	check('no secret-shaped value in any commit', secretValues(git('log', '--all', '-m', '-p', '--no-color', '-U0', '--pretty=format:@@%h').stdout)
+		.filter((v) => !reviewed.some((r) => r.test(v.file))).map((v) => `${v.kind} in ${v.file} (${v.commit}); if you checked it and it is safe, list the file in reviewedSecrets`));
 	// A never-listed file that sits in the folder unignored is one `git add -A` away from a commit.
-	check('every never-list path in the folder is ignored', loose.filter((p) => never.some((r) => r.test(p))).map((p) => `${p}: add it to .gitignore`));
-	check('every file in track is tracked', cfg.track.filter((g, i) => !inTree.some((p) => track[i].test(p))).map((g) => `${g} matches no tracked file`));
+	check('every never-list path in the folder is ignored', loose.filter((p) => never.some((r) => r.test(p))).map((p) => `${p}: run the kit install again, which adds the never list to the exclude block`));
+	check('every file in track is tracked', cfg.track.length ? [
+		...cfg.track.filter((g, i) => !inTree.some((p) => track[i].test(p))).map((g) => `${g} matches no tracked file`),
+		...ignored.filter((p) => track.some((r) => r.test(p))).map((p) => `${p}: wanted (in track) but ignored; add it with git add -f`),
+	] : ['track is empty: list every file or folder you want in the repo in .kit/tracking.json']);
 	const exclude = path.join(common, 'info', 'exclude');
 	const hasBlock = existsSync(exclude) && /^# kit:begin/m.test(readFileSync(exclude, 'utf8'));
 	check('the kit exclude block is in place', cfg.kit === 'tracked' || hasBlock ? [] : ['.git/info/exclude has no kit block: run the kit install again']);
