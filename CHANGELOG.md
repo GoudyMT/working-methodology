@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.0 - 2026-10-29
+- Size asks: a portable size-band script applies a plan's approved size raise from measured sizes and asks only when a measured size passes what is allowed. The margin is headroom, never a reason to ask; a line the plan did not raise is left alone while under its limit; a file count is raised exactly; a band that cannot be read as whole numbers is refused. The size rule now says to ask once from a measurement (never an estimate) and drops the drift floor where measuring builds are identical. Found from false one-byte asks in a real run.
+
 ## 1.5.0 - 2026-10-29
 - The agent canary now checks agents in the Claude desktop app, where a report is handed back through a tool: the hook reads it from the latest turn of the agent's own transcript (checked on real transcripts: right phrase hit, wrong phrase miss). Sweep auto-approval: a script approves a Swarm Contract that stays inside its tier's rules, with no tokens, and sends anything else to the owner with the reason; the branch's diff sets the tier floor and modifiers, caps only go down, the log is chained in the repo's git folder, only the owner resumes from their own terminal, and a 10-sweep trial pauses on an overrun, repeated findings or an escaped bug. Recall 9/10.
 
