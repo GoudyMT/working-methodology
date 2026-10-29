@@ -28,18 +28,17 @@ each(/\]\((?:\.\.?\/)*(?:_|docs\/(?:plans|sweeps|superpowers)\/)[^)]*\)/, 'link 
 each(/\b\d[\d,]* (?:tests?|mutants?|findings?)\b|\b(?:fixed|closed|resolved) \d[\d,]* (?:bugs?|issues?|defects?)\b|\b(?:vitest|playwright|eslint|test suite|lint)\b/i, 'test or tooling tally (say what users get)');
 
 // The agents' confirmation phrase never goes out (rule:agent-canary). It is read from the project's main checkout,
-// the way the project's own .claude/canary-phrase.mjs reads it; this skill is user level, so it keeps its own copy.
+// from the file the rule index names for rule:agent-team-adapter, the way the project's own
+// .claude/canary-phrase.mjs reads it; this skill is user level, so it keeps its own copy.
 const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
 if (common.status === 0) {
   const root = path.dirname(common.stdout.trim());
-  const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-  for (const f of ['standards/agent-teams.md', '.claude/rules/agent-teams.md', 'AGENTS.md']) {
-    const p = path.join(root, f);
-    const m = fs.existsSync(p) && fs.readFileSync(p, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
-    if (!m) continue;
-    if (norm(text).includes(norm(m[1]))) faults.push('the agents\' confirmation phrase appears; it never goes in public text');
-    break;
-  }
+  const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const index = path.join(root, 'standards', 'INDEX.md');
+  const row = fs.existsSync(index) && fs.readFileSync(index, 'utf8').match(/^\|\s*agent-team-adapter\s*\|[^|\n]*\|\s*`([^`]+)`/m);
+  const p = path.join(root, row ? row[1] : 'standards/agent-teams.md');
+  const m = fs.existsSync(p) && fs.readFileSync(p, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
+  if (m && words(text).includes(words(m[1]))) faults.push('the agents\' confirmation phrase appears; it never goes in public text');
 }
 
 const pkg = path.join(process.cwd(), 'package.json');

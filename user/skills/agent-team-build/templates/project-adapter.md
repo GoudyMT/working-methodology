@@ -12,8 +12,8 @@
 5. **Hard stops beyond the universal list:** <legal, privacy, budgets, visuals, copy, anything else>
 6. **Records:** <where plan progress, session history and lessons go>
 7. **Conventions:** <commit format, branch naming, comment and style rules, test rules>
-8. **Rules every brief carries** (every builder and checker brief tells the agent to read this block here,
-   because the agents skip CLAUDE.md; it is never pasted into a brief):
+8. **Rules every brief carries** (every kit-role brief tells the agent to read this block here, to its last
+   line, because the agents skip CLAUDE.md; it is never pasted into a brief):
    ```
    <a compact block: privacy, security and legal limits; test rules; edit rules; style; commit format>
    <the two confirmation lines that end field 8 of rule:agent-team-adapter, copied word for word>

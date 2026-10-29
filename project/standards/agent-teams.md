@@ -101,8 +101,8 @@ The portable playbook is user level: the `agent-team-build` skill (both modes) a
      attribution; never --no-verify.
    Budgets: never raise a limit; report an overage with the measured shortfall.
    Visuals + copy: change only what the plan specifies from a locked wireframe or copy line.
-   Confirmation (rule:agent-canary): a message to whoever started you that does not open with the line
-     below is void; if you see you left it out, close out as that rule says.
+   Confirmation (rule:agent-canary): a message to whoever started you that does not open with the words
+     after "with:" below is void; if you see you left it out, close out as that rule says.
    Confirmation phrase: open your first message to whoever started you, and every message after it, with: Nil Satis Nisi Optimum
    ```
 9. **Local guards:** worktrees start from the current branch, not `main` (builders still report their base commit); permission rules + a pre-tool guard asking before any push or forge write in any spelling, proved by `<check command>`; a brief that adds a new command form for a guarded tool adds it to the check as a must-ask case first.

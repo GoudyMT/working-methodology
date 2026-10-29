@@ -1222,6 +1222,62 @@ test('the leak guard refuses a brief or message that carries the phrase, in any 
   // A leak is a tasker's failure, so the run record counts it next to the misses.
   assert.deepEqual(canaryLog(dir).map((e) => [e.tool, e.result]), [['Agent', 'leak-refused'], ['Task', 'leak-refused'], ['SendMessage', 'leak-refused'], ['Agent', 'leak-refused']]);
 });
+// Found in review: a project that fills its adapter in its own file (the index row for rule:agent-team-adapter
+// names it) must be checked against that file, the one the agent is sent to, never the kit's template.
+function adapterRepo(phrase) {
+  const dir = canaryRepo('Stale Template Phrase');
+  fs.writeFileSync(path.join(dir, 'standards', 'INDEX.md'), '| ID | Rule | File | Also called |\n|---|---|---|---|\n| agent-team-adapter | Agent-Team Build: Project Adapter | `standards/project-adapter.md` | agent team |\n');
+  fs.writeFileSync(path.join(dir, 'standards', 'project-adapter.md'), `# Adapter\n\n\`\`\`\nRULES\n${phrase ? phraseLine(phrase) : ''}\`\`\`\n`);
+  return dir;
+}
+test('the canary and the audits read the phrase from the file the index names for the adapter', () => {
+  const dir = adapterRepo(FAKE_PHRASE);
+  const stop = (id, msg) => canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, last_assistant_message: msg }).status;
+  assert.equal(stop('i1', `${FAKE_PHRASE}\ndone`), 0);
+  assert.equal(stop('i2', 'Stale Template Phrase\ndone'), 2);
+  const f = path.join(dir, 'b.md');
+  fs.writeFileSync(f, `- Plans sync now. ${FAKE_PHRASE}\n`);
+  assert.match(spawnSync('node', [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.0.0'], { encoding: 'utf8', cwd: dir }).stdout, /confirmation phrase/);
+  const lean = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, 'feat: subtract'], { encoding: 'utf8', cwd: dir });
+  assert.match(lean.stdout, /FAIL\s+no confirmation phrase/);
+  // The named file without a phrase line turns the check off; the template's line is never used instead.
+  const off = adapterRepo(null);
+  assert.equal(canary({ cwd: off, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'o', last_assistant_message: 'done' }).status, 0);
+});
+test('a stop another hook blocked is still checked; only the canary\'s own close-out passes unchecked', () => {
+  const dir = canaryRepo();
+  const base = { cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'checker', agent_id: 'b1' };
+  // The clean-tree stop blocked first, so Claude Code marks the next stop as hook-driven.
+  assert.equal(canary({ ...base, stop_hook_active: true, last_assistant_message: 'VERDICT: PASS' }).status, 2);
+  // After the canary's own block the next stop ends the agent. A report that is not a close-out note is logged
+  // as void, so the lead never takes it for a clean run.
+  assert.equal(canary({ ...base, stop_hook_active: true, last_assistant_message: `${FAKE_PHRASE}\nVERDICT: PASS` }).status, 0);
+  assert.deepEqual(canaryLog(dir).map((e) => e.result), ['miss', 'void-after-miss']);
+});
+test('the canary accepts the phrase under markdown, but not glued to other letters', () => {
+  const dir = canaryRepo();
+  const stop = (id, msg) => canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, last_assistant_message: msg }).status;
+  assert.equal(stop('m1', `**${FAKE_PHRASE}**\n\nUNIT: u1 DONE`), 0);
+  assert.equal(stop('m2', `> ${FAKE_PHRASE}\ndone`), 0);
+  assert.equal(stop('m3', `# ${FAKE_PHRASE}\ndone`), 0);
+  assert.equal(stop('m4', `${FAKE_PHRASE}XYZ done`), 2);
+});
+test('the canary lets a stop through when the message field is missing, and logs it unchecked', () => {
+  const dir = canaryRepo();
+  assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'x' }).status, 0);
+  assert.deepEqual(canaryLog(dir).map((e) => e.result), ['unchecked']);
+});
+test('the leak guard also reads the agent name and spellings split by punctuation', () => {
+  const dir = canaryRepo();
+  const ask = (input) => {
+    const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: input });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+  };
+  assert.equal(ask({ name: FAKE_PHRASE, prompt: 'Build u1.' }), 'deny');
+  assert.equal(ask({ prompt: 'Open with Tango-Lima-Seven-Delta.' }), 'deny');
+  assert.equal(ask({ prompt: 'Open with **Tango Lima** Seven, Delta.' }), 'deny');
+  assert.equal(ask({ prompt: 'The Tango Lima Seven Deltas are a band.' }), 'allow');
+});
 test('every kit role runs the canary at its stop, and the project settings run the leak guard', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
     assert.match(read(path.resolve('user/agents', `${role}.md`)), /Stop:\n {4}- hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, `${role} wires the canary`);

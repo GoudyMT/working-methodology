@@ -55,8 +55,10 @@ context; for a role with a cache setting (`experimental.cacheTtl`), confirm the 
 lifetime (for one hour, `ephemeral_1h_input_tokens` in the usage); and, for the builder, confirm its worktree starts
 from the current branch; and confirm the guards run: a builder Write to a file off its unit list is blocked, and
 the checker's stop catches a file it wrote (rule:agent-role-table; a role file copied into a project loses its
-hooks); and confirm the agent canary (rule:agent-canary): one agent that read its rules opens with the right
-line, and one given a rules copy without its last line is stopped and closes out. Agent files edited mid-turn may only take effect on the next turn, so re-check after any
+hooks); and confirm the agent canary (rule:agent-canary): the file the rule index names for
+rule:agent-team-adapter ends its field 8 block with the two confirmation lines (a filled adapter copies them in from
+the kit's template; without them the check is off), one agent that read its rules opens with the right line, and
+one given a rules copy without its last line is stopped and closes out. Agent files edited mid-turn may only take effect on the next turn, so re-check after any
 edit. Give every role a short tool list: it cuts start-up context and removes outward tools.
 
 A passed probe proves only what it ran. Before building on one, list it beside the real use - model, tools, depth,
@@ -128,8 +130,10 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
    `<git common dir>/kit-canary.log`; the rundown.
 
 **The canary (rule:agent-canary).** The hook checks each agent message; the lead never asks for, writes or quotes
-the phrase. A "Closed out: <folder>" report is void: start a fresh agent of the same role with the same brief plus
-the resume line from the rule; after the second failed cycle on a unit, stop and tell the user.
+the phrase. Before using any report, check `kit-canary.log` for that agent: a `miss` voids the report whatever it
+says, a "Closed out: <unit id>" note included. Start a fresh agent of the same role with the same brief plus the
+rule's pick-up steps; after the second failed cycle on a unit, stop and tell the user. The hook sees the last
+message of each turn, which is what the lead receives.
 
 ## Who decides
 
