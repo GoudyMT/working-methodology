@@ -51,6 +51,10 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 **Re-sweep by tier:** feature, first push and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill** (steps per tier, an example report per tier, the audit).
 
+### Sweep Auto-Approval {#sweep-auto-approval}
+
+A feature, fix or triage sweep's Swarm Contract (also written as data) is approved by the pre-pr-sweep skill's `approve.mjs`, never an agent: same contract, same answer, no tokens. It approves only when the tier's and modifiers' roles are there, each role has its own question (no near-copies), context, finding shape and budget, and count and budgets fit the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome (tokens, findings, real, repeated) is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.
+
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 
 Why: a solo builder reviewing their own diff sees what they meant, not what they wrote.

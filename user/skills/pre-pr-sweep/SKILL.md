@@ -19,8 +19,11 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 1. **Set the tier at plan approval:** feature, fix, triage, launch gate or first push, from rule:sweep-tiers; when unsure, the
    higher one. List the modifiers the change hits (security-sensitive, a new dependency or data flow, public or
    legal text, data the user keeps); each adds its role.
-2. **Feature, first push and launch gate:** emit the Swarm Contract table (rule:swarm-contract) and stop for the owner's
-   approval. **Fix and triage:** the roles the tier names, plus any modifier's, stated in the plan.
+2. **The Swarm Contract** (rule:swarm-contract): emit its table for the owner to read, and write the same roles as
+   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header). Run
+   `node <this skill's folder>/approve.mjs <contract.json> --log <sweep folder>/sweep-approvals.jsonl`
+   (rule:sweep-auto-approval). APPROVED: go on. ASK THE OWNER: stop and show the owner the reasons it printed.
+   First push and launch gate always stop for the owner.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
    and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline.
@@ -30,6 +33,9 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
    check for a fix, none for triage unless it found something. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
+6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --tokens <used> --findings <n>
+   --real <n after triage> --duplicates <n repeated between roles> --log <same log>`. A bug later found in code the
+   sweep passed: `--escape "<what>"`. `--summary` prints the trial so far; put its line in the rundown.
 
 ## The audit
 

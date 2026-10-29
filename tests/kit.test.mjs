@@ -1662,3 +1662,79 @@ test('the canary reads a report handed back through a tool, from the agent trans
   assert.equal(stop('h3', path.join(os.tmpdir(), 'no-such-transcript.jsonl')), 0, 'no readable report stays unchecked');
   assert.deepEqual(canaryLog(dir).map((e) => e.result), ['hit', 'miss', 'unchecked']);
 });
+
+// Sweep auto-approval (rule:sweep-auto-approval): a script approves a Swarm Contract that stays inside the tier's
+// rules, at no token cost, logs every decision, and hands back to the owner on anything outside them.
+const APPROVE = path.resolve('user/skills/pre-pr-sweep/approve.mjs');
+const role = (kind, question, extra = {}) => ({ role: `${kind} reviewer`, kind, question, context: ['src/sync.ts', 'rule:pre-pr-deep-sweep'], finding: 'file:line, scenario, proof', budget: 60000, ...extra });
+const featureContract = () => ({ tier: 'feature', modifiers: [], roles: [
+  role('security', 'Can a crafted import file reach storage without validation?'),
+  role('security', 'Does any new route leak personal data in logs or errors?'),
+  role('security', 'Can the lock screen be bypassed by restoring an old backup?'),
+  role('test-value', 'Does each new test guard a real use through its real seam?'),
+  role('novel-lens', 'What did every other role structurally miss?'),
+] });
+function approveRun(contract, ...args) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const f = path.join(dir, 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(contract));
+  const log = path.join(dir, 'approvals.jsonl');
+  const r = spawnSync('node', [APPROVE, f, '--log', log, ...args], { encoding: 'utf8' });
+  return { ...r, dir, f, log };
+}
+test('the approval script approves a contract inside the tier rules and logs it', () => {
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /APPROVED/);
+  const line = JSON.parse(read(r.log).trim());
+  assert.equal(line.decision, 'approved');
+  assert.equal(line.tier, 'feature');
+  assert.equal(line.agents, 5);
+});
+test('the approval script hands back to the owner on anything outside the rules, naming what broke', () => {
+  const cases = [
+    [(c) => { c.roles.pop(); }, /novel/i],
+    [(c) => { c.roles.splice(0, 1); }, /security/i],
+    [(c) => { c.roles[1].question = c.roles[0].question.replace('Can', 'Could'); }, /clone|same question/i],
+    [(c) => { c.roles.push(role('astrology', 'What do the stars say about this diff?')); }, /kind/i],
+    [(c) => { c.roles[0].budget = 10 ** 7; }, /budget/i],
+    [(c) => { c.roles[2].context = []; }, /context/i],
+    [(c) => { c.tier = 'first push'; }, /owner/i],
+    [(c) => { c.tier = 'launch gate'; }, /owner/i],
+    [(c) => { c.modifiers = ['new-dependency']; }, /supply-chain/i],
+  ];
+  for (const [change, why] of cases) {
+    const c = featureContract();
+    change(c);
+    const r = approveRun(c);
+    assert.equal(r.status, 1, `${why}: ${r.stdout}`);
+    assert.match(r.stdout, /ASK THE OWNER/);
+    assert.match(r.stdout, why);
+    assert.equal(JSON.parse(read(r.log).trim()).decision, 'owner');
+  }
+  const triage = approveRun({ tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?', { budget: 20000 }), role('triage', 'Is any dimension touched?', { budget: 20000 })] });
+  assert.equal(triage.status, 1, 'a triage sweep is one agent');
+});
+test('the approval trial pauses for the owner on an overrun, repeated findings, an escape, or after 10 sweeps', () => {
+  const r = approveRun(featureContract());
+  const again = (...a) => spawnSync('node', [APPROVE, r.f, '--log', r.log, ...a], { encoding: 'utf8' });
+  assert.equal(again('--outcome', '--tokens', String(5 * 60000 * 1.3), '--findings', '6', '--real', '5', '--duplicates', '0').status, 0);
+  const paused = again();
+  assert.equal(paused.status, 1);
+  assert.match(paused.stdout, /paused/i);
+  assert.notEqual(spawnSync('node', [APPROVE, '--resume', '--log', r.log], { encoding: 'utf8', env: { PATH: process.env.PATH } }).status, 0, 'only the owner resumes');
+  assert.equal(spawnSync('node', [APPROVE, '--resume', '--log', r.log], { encoding: 'utf8', env: { PATH: process.env.PATH, KIT_OWNER_RESUME: '1' } }).status, 0);
+  assert.equal(again().status, 0, 'approving again after the owner resumed');
+  assert.equal(again('--outcome', '--tokens', '100000', '--findings', '6', '--real', '4', '--duplicates', '2').status, 0);
+  assert.match(again().stdout, /paused/i, 'a third of the findings repeated');
+  const t = approveRun(featureContract());
+  const run = (...a) => spawnSync('node', [APPROVE, t.f, '--log', t.log, ...a], { encoding: 'utf8' });
+  for (let i = 1; i < 10; i++) assert.equal(run().status, 0, `approval ${i + 1}`);
+  const due = run();
+  assert.equal(due.status, 1);
+  assert.match(due.stdout, /trial review/i);
+  const e = approveRun(featureContract());
+  spawnSync('node', [APPROVE, e.f, '--log', e.log, '--escape', 'a sync bug shipped in code this sweep passed'], { encoding: 'utf8' });
+  assert.match(spawnSync('node', [APPROVE, e.f, '--log', e.log], { encoding: 'utf8' }).stdout, /paused/i);
+  assert.match(spawnSync('node', [APPROVE, '--summary', '--log', t.log], { encoding: 'utf8' }).stdout, /approved: 10/);
+});

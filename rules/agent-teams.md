@@ -19,7 +19,7 @@ tags:
 
 ### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
-Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this table and STOP for the owner. Why: a swarm without distinct questions buys clones at full price.
+Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this table and STOP for the owner (or rule:sweep-auto-approval clears it). Why: a swarm without distinct questions buys clones at full price.
 
 | # | Role | The distinct question ONLY this role asks | Context injected | What a finding looks like | Token budget |
 |---|---|---|---|---|---|
@@ -63,18 +63,18 @@ Each agent role gets only the tools its job needs and starts with the rules that
 | reviewer | Reviews one sweep role or dimension; never edits | Read, Grep, Glob, Bash, PowerShell, WebFetch, WebSearch | Edit, Write, Agent | anti-hallucination, enumerate-before-you-count |
 | orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |
 
-The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook (once `core.hooksPath` points at `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips the hooks of a project-level agent file until that folder is trusted, and never runs them in a `-p` session, so a copy in a project silently drops its guards.
+The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook (once `core.hooksPath` points at `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards.
 
 ### Agent Canary {#agent-canary}
 
 Every kit-role agent opens each message to whoever started it with the phrase on the last line of field 8's block, which it finds only by opening that block with Read (role files and preloaded rules are injected, so never there). Why: an agent that skipped or lost its rules does not know it drifted.
 
-- **The tasker never asks for, writes or quotes the phrase** (briefs, messages, replies, PR bodies, releases, commits). A guard refuses a brief or message carrying it; the PR body and release audits fail on it.
-- **The check is a hook:** `canary.cjs`, the Stop hook in every role file. A miss voids the run; the hook sends the close-out steps, never the phrase.
-- **Close-out (the agent):** stop editing; commit nothing half-done; leave the changes in place; reply "Closed out: <unit id>" with a note (done, half-done, next step, files touched, last test run). (An isolated agent cannot write outside its worktree.)
-- **Pick-up (the lead):** save the note and the old worktree's unfinished work (`git -C <worktree> add -A -N`, then `diff HEAD --binary`) as `note.md` and `work.patch` in `<git common dir>/kit-handoff/<unit id>/`; start a fresh agent of the same role, same brief, plus: read `note.md`, `git apply` `work.patch`, check `git status` against the note, then continue. A voided report is never used; the fresh agent redoes or re-checks that work.
+- **The tasker never asks for, writes or quotes the phrase**, anywhere. A guard refuses a brief or message carrying it; the PR body and release audits fail on it.
+- **The check is a hook:** `canary.cjs`, the Stop hook in every role file; it reads a tool hand-back from the agent transcript. A miss voids the run; the hook sends the close-out steps, never the phrase.
+- **Close-out (the agent):** stop editing; commit nothing half-done; leave the changes in place; reply "Closed out: <unit id>" with a note (done, half-done, next step, files touched, last test run). (An isolated agent cannot write elsewhere.)
+- **Pick-up (the lead):** save the note and the old worktree's unfinished work (`git -C <worktree> add -A -N`, then `diff HEAD --binary`) as `note.md` and `work.patch` in `<git common dir>/kit-handoff/<unit id>/`; start a fresh agent (same role and brief) plus: read `note.md`, `git apply` `work.patch`, check `git status` against the note, then continue. Nothing from a voided report is used unchecked.
 - **Two strikes:** after the second failed cycle on the same unit, the run stops and the owner is told.
-- **Log:** each check is a line in `<git common dir>/kit-canary.log`; the lead copies the counts to the scoreboard. False alarms (the checker shows the agent did read) above 1 in 10: fix the wording first.
+- **Log:** each check is a line in `<git common dir>/kit-canary.log`; the lead copies the counts to the scoreboard; `unchecked` = the check did not run; find out why. False alarms (the checker shows the agent did read) above 1 in 10: fix the wording first.
 - **Not checked:** built-in agent types, which never read the rule files; sweeps use the reviewer role.
 
 ### Agent-Team Build: Project Adapter (TEMPLATE) {#agent-team-adapter}

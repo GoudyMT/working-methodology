@@ -1,0 +1,14 @@
+{
+  "lines": [
+    {
+      "before": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this table and STOP for the owner. Why: a swarm without distinct questions buys clones at full price.",
+      "after": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this table and STOP for the owner (or rule:sweep-auto-approval clears it). Why: a swarm without distinct questions buys clones at full price.",
+      "why": "a sweep inside its tier's rules may be approved by the approval script instead of waiting for the owner"
+    },
+    {
+      "before": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook (once `core.hooksPath` points at `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips the hooks of a project-level agent file until that folder is trusted, and never runs them in a `-p` session, so a copy in a project silently drops its guards.",
+      "after": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook (once `core.hooksPath` points at `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards.",
+      "why": "shortened to fit the module cap; same meaning (project-level agent hooks are skipped until trusted and in -p)"
+    }
+  ]
+}
