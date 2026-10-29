@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.0 - 2026-10-29
+- The agent canary now checks agents in the Claude desktop app, where a report is handed back through a tool: the hook reads it from the latest turn of the agent's own transcript (checked on real transcripts: right phrase hit, wrong phrase miss). Sweep auto-approval: a script approves a Swarm Contract that stays inside its tier's rules, with no tokens, and sends anything else to the owner with the reason; the branch's diff sets the tier floor and modifiers, caps only go down, the log is chained in the repo's git folder, only the owner resumes from their own terminal, and a 10-sweep trial pauses on an overrun, repeated findings or an escaped bug. Recall 9/10.
+
 ## 1.4.0 - 2026-10-29
 - The kit stays local: the install keeps every kit path and the owner's never list out of git in the folder's own exclude file (never pushed), turns on the kit's git hooks, and .kit/tracking.json names what the owner wants tracked (growth files added on purpose) and what must never be committed. Every commit runs a check that blocks staging a kit file, a never path or a secret-shaped file or value, from any tool. Before the first push, a strict check reads every commit a push can carry (merges included) and the pre-push hook lets only the commit it cleared go out; a new first-push sweep tier goes with it. Proved live: a clean push, a slip in history blocked, an agent's slip blocked, a host-made README not ending the gate. Recall 8/10, level with 1.2.0.
 
