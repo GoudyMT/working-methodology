@@ -193,8 +193,36 @@ export function install(ctx) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), installedAt: new Date().toISOString(), files };
     fs.writeFileSync(stampPath, JSON.stringify(out, null, 2) + '\n');
+    if (ctx.target === 'project') keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')));
   }
   return { created, updated, replaced, retired, skipped, backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
+}
+
+/**
+ * Keep the kit out of git (rule:kit-stays-local): a marked block in the repo's own exclude file lists every kit
+ * path. The exclude file is never pushed, so even the list stays private. A reinstall replaces the block and keeps
+ * the owner's own lines; `"kit": "tracked"` in .kit/tracking.json removes it. A folder without git is left alone.
+ *
+ * Args:
+ *     projectDir: the project folder
+ *     keys: the installed kit paths, relative to the project folder
+ */
+function keepKitLocal(projectDir, keys) {
+  const git = (...a) => spawnSync('git', ['-C', projectDir, ...a], { encoding: 'utf8' });
+  const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
+  if (common.status !== 0) return;
+  const prefix = git('rev-parse', '--show-prefix').stdout.trim();
+  const file = path.join(common.stdout.trim(), 'info', 'exclude');
+  const old = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  const own = old.replace(/\n?# kit:begin[\s\S]*?# kit:end\n?/g, '\n').replace(/^\n+/, '');
+  const tracking = path.join(projectDir, '.kit', 'tracking.json');
+  const tracked = fs.existsSync(tracking) && JSON.parse(fs.readFileSync(tracking, 'utf8')).kit === 'tracked';
+  // Anchored to the repo root; glob and comment characters in a name are escaped so each line names one path.
+  const line = (p) => '/' + (prefix + p).replace(/[\\*?[\]!#]/g, (c) => '\\' + c);
+  const block = tracked ? '' : ['# kit:begin - the methodology kit stays local (rule:kit-stays-local); install rewrites this block',
+    ...[...keys, '.kit/', '.claude/worktrees/'].sort().map(line), '# kit:end'].join('\n') + '\n';
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, (own.trimEnd() ? own.trimEnd() + '\n' : '') + block);
 }
 
 function diffText(a, b) {

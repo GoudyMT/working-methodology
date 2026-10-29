@@ -8,6 +8,11 @@ release discipline), the session system that keeps long AI-assisted work from dr
 orientation protocol, pre-compact closeout), the agent-team build method, the skills, the tools, and the owner's
 working style as memory.
 
+**The kit stays local.** It lives in each project's working folder, ready to use and continue, but never in that
+project's repo unless the owner tracks a chosen file on purpose to show growth. The install keeps every kit path
+out of git in the folder's own `.git/info/exclude`, and a strict check runs before the first push to a remote
+(rule:kit-stays-local, rule:first-push-gate).
+
 ## How a new rule travels
 
 ```mermaid

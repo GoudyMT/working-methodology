@@ -735,6 +735,14 @@ test('the sweep audit holds each report to its tier', () => {
   const fix = runAudit('pre-pr-sweep', base + '- **Tier:** fix\n\nPrivacy, supply chain, legal: not touched. Code security PASS. Gaps PASS.\n');
   assert.equal(fix.status, 1, 'a fix tier still gives the alignment verdict');
   assert.match(fix.stdout, /YES or NO/);
+  // The first push tier (rule:first-push-gate) also records the check's result and the owner's review of what
+  // is tracked.
+  const first = base + '- **Tier:** first push\n\nPrivacy, supply chain, legal, code security, gaps: PASS. Version alignment: YES.\n';
+  const bareFirst = runAudit('pre-pr-sweep', first);
+  assert.equal(bareFirst.status, 1);
+  assert.match(bareFirst.stdout, /first-push-check/);
+  const fullFirst = runAudit('pre-pr-sweep', first + 'First push check: PASS at a1b2c3d. Tracked files reviewed by the owner: yes.\n');
+  assert.equal(fullFirst.status, 0, fullFirst.stdout);
 });
 test('the preview test audit passes a full record and names each missing part', () => {
   const good = '## Preview test - Offline sync, #12 (2026-03-04)\n\n- **Build:** the host\'s preview for `feature/offline-sync` at `a1b2c3d`; the lead opened it first.\n- **Who, by stakes:** the lead in emulation only; no new surface, no device-only path.\n- **Setup:** phone emulation and desktop; made-up details only; nothing sent.\n\n| Check | Result |\n|---|---|\n| Headers and security policy | same as production |\n| Layout: plan list | clipped at 320 px |\n\n- **Shots:** phone-list.png, desktop-list.png\n- **Result:** FAIL - the list clip goes to the finding pipeline.\n';
@@ -1338,4 +1346,110 @@ test('the checker clean-tree stop sees a change in another worktree of the same 
   runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'PreToolUse' });
   fs.writeFileSync(path.join(other, 'a.js'), 'changed in the builder worktree\n');
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' }).status, 2);
+});
+
+// The kit stays local (rule:kit-stays-local): the install keeps every kit path out of git in the folder's own
+// exclude file, so the kit is there to use but never committed unless the owner tracks a file on purpose.
+const g = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+const commitAll = (dir, msg) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', msg); };
+function localProject() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-'));
+  g(dir, 'init', '-q');
+  fs.writeFileSync(path.join(dir, 'main.py'), 'print(1)\n');
+  return dir;
+}
+const excludeFile = (dir) => path.join(dir, '.git', 'info', 'exclude');
+const kitInstall = (dir) => install({ kit: path.resolve('.'), target: 'project', projectDir: dir, home: fs.mkdtempSync(path.join(os.tmpdir(), 'home-')) });
+test('the install keeps every kit file out of git, and git status shows only the project', () => {
+  const dir = localProject();
+  fs.mkdirSync(path.join(dir, '.git', 'info'), { recursive: true });
+  fs.writeFileSync(excludeFile(dir), '# my own line\n*.log\n');
+  kitInstall(dir);
+  const text = read(excludeFile(dir));
+  assert.match(text, /^\*\.log$/m, 'the owner\'s own lines stay');
+  assert.match(text, /^# kit:begin/m);
+  assert.deepEqual(g(dir, 'status', '--porcelain', '--untracked-files=all').stdout.trim().split('\n'), ['?? main.py']);
+  // A reinstall replaces the block, never adds a second one.
+  kitInstall(dir);
+  assert.equal(read(excludeFile(dir)).match(/# kit:begin/g).length, 1);
+});
+test('the owner can choose to track the kit, and a folder without git is left alone', () => {
+  const dir = localProject();
+  kitInstall(dir);
+  fs.writeFileSync(path.join(dir, '.kit', 'tracking.json'), '{ "kit": "tracked" }\n');
+  kitInstall(dir);
+  assert.doesNotMatch(read(excludeFile(dir)), /kit:begin/);
+  const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'nogit-'));
+  kitInstall(plain);
+  assert.ok(!fs.existsSync(path.join(plain, '.git')), 'the install never makes a repo');
+});
+
+// The first push gate (rule:first-push-gate): one strict check before the first push to a remote.
+const firstPush = (dir) => spawnSync('node', [path.join(dir, '.claude', 'first-push-check.mjs')], { encoding: 'utf8', cwd: dir });
+function readyProject(tracking) {
+  const dir = localProject();
+  kitInstall(dir);
+  if (tracking) fs.writeFileSync(path.join(dir, '.kit', 'tracking.json'), JSON.stringify(tracking));
+  commitAll(dir, 'init');
+  return dir;
+}
+test('the first push check passes a clean history and records the commit it checked', () => {
+  const dir = readyProject({ track: ['main.py', '_Session Log.md'] });
+  g(dir, 'add', '-f', '_Session Log.md');
+  commitAll(dir, 'show growth');
+  const r = firstPush(dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(read(path.join(dir, '.git', 'kit-first-push-ok')).trim(), g(dir, 'rev-parse', 'HEAD').stdout.trim());
+});
+test('the first push check fails on a kit file anywhere in history, even after it was deleted', () => {
+  const dir = readyProject();
+  g(dir, 'add', '-f', 'AGENTS.md');
+  commitAll(dir, 'oops');
+  g(dir, 'rm', '-q', '--cached', 'AGENTS.md');
+  commitAll(dir, 'remove it');
+  const r = firstPush(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /AGENTS\.md/);
+  assert.ok(!fs.existsSync(path.join(dir, '.git', 'kit-first-push-ok')));
+});
+test('the first push check fails on a never path, a missing tracked file, a secret and a missing exclude block', () => {
+  const dir = readyProject({ track: ['report.pdf'], never: ['school/**'] });
+  fs.mkdirSync(path.join(dir, 'school'));
+  fs.writeFileSync(path.join(dir, 'school', 'rubric.txt'), 'graded\n');
+  const secret = 'sk-ant-' + 'a1B2'.repeat(8);
+  fs.writeFileSync(path.join(dir, 'config.py'), `KEY = "${secret}"\n`);
+  fs.writeFileSync(path.join(dir, '.env'), 'X=1\n');
+  commitAll(dir, 'more');
+  fs.writeFileSync(excludeFile(dir), '');
+  const r = firstPush(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /school\/rubric\.txt/);
+  assert.match(r.stdout, /report\.pdf/);
+  assert.match(r.stdout, /config\.py/);
+  assert.match(r.stdout, /\.env/);
+  assert.match(r.stdout, /exclude/i);
+  assert.ok(!r.stdout.includes(secret), 'a secret value is never printed');
+});
+test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', () => {
+  const dir = readyProject();
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  g(bare, 'init', '-q', '--bare');
+  g(dir, 'remote', 'add', 'origin', bare);
+  const sha = g(dir, 'rev-parse', 'HEAD').stdout.trim();
+  const hook = () => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/main ${sha} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+  const blocked = hook();
+  assert.notEqual(blocked.status, 0);
+  assert.match(blocked.stderr, /first-push-check/);
+  assert.equal(firstPush(dir).status, 0);
+  assert.equal(hook().status, 0, 'the checked commit may go');
+  fs.writeFileSync(path.join(dir, 'main.py'), 'print(2)\n');
+  commitAll(dir, 'after the check');
+  const later = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+  assert.notEqual(later.status, 0, 'a commit made after the check is checked again');
+  g(dir, 'update-ref', 'refs/remotes/origin/main', sha);
+  const after = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${sha}\n`, env: { PATH: process.env.PATH } });
+  assert.equal(after.status, 0, 'once the remote has a branch, the gate is done');
 });

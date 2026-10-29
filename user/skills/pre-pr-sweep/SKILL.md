@@ -16,10 +16,10 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 
 ## Steps
 
-1. **Set the tier at plan approval:** feature, fix, triage or launch gate, from rule:sweep-tiers; when unsure, the
+1. **Set the tier at plan approval:** feature, fix, triage, launch gate or first push, from rule:sweep-tiers; when unsure, the
    higher one. List the modifiers the change hits (security-sensitive, a new dependency or data flow, public or
    legal text, data the user keeps); each adds its role.
-2. **Feature and launch gate:** emit the Swarm Contract table (rule:swarm-contract) and stop for the owner's
+2. **Feature, first push and launch gate:** emit the Swarm Contract table (rule:swarm-contract) and stop for the owner's
    approval. **Fix and triage:** the roles the tier names, plus any modifier's, stated in the plan.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
    and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
@@ -27,7 +27,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
    gates), with `- **Tier:** <tier>` on its first lines, in the shape of the example for its tier. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.
-5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature and launch gate, the fix
+5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
    check for a fix, none for triage unless it found something. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 

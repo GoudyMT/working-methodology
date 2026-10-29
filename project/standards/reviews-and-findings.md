@@ -44,11 +44,12 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 | **Feature** | a new feature, an expansion, a sub-project, a new surface or behaviour | a Swarm Contract (rule:swarm-contract): the Pre-PR Deep Sweep's roles below, more by risk region | all six dimensions; every high / critical re-checked; the alignment verdict | the full report |
 | **Fix** | a fix or a change to existing behaviour in a known area; a targeted object (one component, one flow) | 2-3: one on the fix (its root, and whether it holds), one on its blast radius (callers, the code it was modelled on), plus Test Value when tests change | each dimension PASS, its findings, or "not touched" and why; the alignment verdict | a short report |
 | **Triage** | a chore, docs, config, a bump with no new package, a one-line change, a batch of small recorded fixes | 1, fast and read-only, with a call cap in its brief | the diff's secrets and personal-data check; each dimension "not touched" or its finding | a few lines, in the sweep folder or the PR body's gates |
+| **First push** | the first push to a new remote, once | the deep sweep's roles plus a history role: every commit, not just the diff | all six dimensions; rule:first-push-gate passes; the owner reviews what is tracked | the full report |
 | **Launch gate** | before any public major version (trigger 3) | per surface, under a Swarm Contract | every surface, all six dimensions, the alignment verdict | the full report |
 
 **Modifiers add roles at any tier, and never lower one:** security-sensitive code (auth, locks, crypto, permissions, secrets, personal data) gets the security swarm of >= 3 distinct angles; a new dependency or external data flow gets a supply-chain role and a privacy role (trigger 2); public, legal or cited text gets a content role that checks each claim against its source and license; data the user keeps (storage formats, migrations, deletion) gets a role on data loss and the upgrade path from the last release.
 
-**Re-sweep by tier:** feature and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill** (steps per tier, an example report per tier, the audit).
+**Re-sweep by tier:** feature, first push and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill** (steps per tier, an example report per tier, the audit).
 
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 

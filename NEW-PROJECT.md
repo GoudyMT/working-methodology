@@ -36,11 +36,25 @@ If the project already runs git hooks from another folder (husky, lefthook), add
 
 Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-PARTY.md).
 
-## 3. Decide what git tracks (a choice for the owner)
+## 3. Keep the kit local; decide what git tracks (rule:kit-stays-local)
 
-- **A (default):** commit the code, keep the governance files local. Add `*.md` (with exceptions for README,
-  LICENSE, docs that ship), `.claude/` and `.kit/` to `.gitignore`. Private notes never reach the remote.
-- **B:** commit everything. Fine for a private repo that only the owner reads.
+The kit lives in this folder, ready to use, and never in the repo by default. The install already listed every
+kit path in a marked block of `.git/info/exclude` (local, never pushed); `git status` shows only the project.
+Run `git init` before the install, or run the install again after it, so the block is written.
+
+1. Write `.kit/tracking.json` with the owner:
+   ```json
+   { "kit": "local", "track": ["src/**", "README.md"], "never": ["<course or client material>/**"] }
+   ```
+   `track` is every file the owner wants in the repo, kit files chosen to show growth included; `never` is
+   every path that must never be committed (another party's material, private notes). Put `never` paths in
+   `.gitignore` too, before the first commit.
+2. Add each chosen kit file on purpose: `git add -f <file>`. Once tracked, git keeps tracking it.
+3. Committing the whole kit (`"kit": "tracked"`, then install again) is the owner's explicit choice, for a
+   private repo only.
+4. Before the first push to a remote: the first push gate (rule:first-push-gate) - the deep sweep at the
+   first-push tier and `node .claude/first-push-check.mjs`. The pre-push hook (step 2) holds the first push
+   until the check passes for the commit being pushed.
 
 ## 3b. Set up the vault backup
 

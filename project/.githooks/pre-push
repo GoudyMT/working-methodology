@@ -6,4 +6,16 @@ if [ -n "$AI_AGENT$CLAUDECODE" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
   echo "Push blocked: an AI agent is pushing without the owner's go. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
   exit 1
 fi
+# The first push gate (rule:first-push-gate), for everyone: while the remote has no branches, only the commit
+# .claude/first-push-check.mjs passed may go out.
+if [ -n "$1" ] && [ -z "$(git for-each-ref "refs/remotes/$1")" ]; then
+  checked=$(cat "$(git rev-parse --git-common-dir)/kit-first-push-ok" 2>/dev/null)
+  while read -r lref lsha rref rsha; do
+    case "$lsha" in *[!0]*) ;; *) continue ;; esac
+    if [ "$lsha" != "$checked" ]; then
+      echo "First push blocked (rule:first-push-gate): run node .claude/first-push-check.mjs, fix what it finds, then push the commit it cleared." >&2
+      exit 1
+    fi
+  done
+fi
 exit 0
