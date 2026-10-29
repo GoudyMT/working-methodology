@@ -7,7 +7,7 @@
 //   once with close-out steps that never name the phrase; the stop after the close-out goes through. Every result
 //   is logged to <git common dir>/kit-canary.log, one JSON line each, for the run record.
 // - PreToolUse on Agent, Task and SendMessage (the leak guard): a brief or message that carries the phrase is
-//   denied, so no tasker can hand an agent the phrase it is meant to find by reading.
+//   denied and logged, so no tasker can hand an agent the phrase it is meant to find by reading.
 // A project with no phrase line has the check off. Anything unexpected lets the call through: the checker and the
 // lead's review still stand behind it.
 const fs = require('fs');
@@ -56,6 +56,7 @@ function main() {
 		const t = input.tool_input || {};
 		const text = norm([t.prompt, t.message, t.description].filter(Boolean).join(' '));
 		if (text.includes(phrase)) {
+			log(found.commonDir, { tool: input.tool_name || 'unknown', session: input.session_id || '', result: 'leak-refused' });
 			process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
 				permissionDecisionReason: 'A brief or message to an agent must never carry the confirmation phrase: the agent finds it by reading its rules (rule:agent-canary). Remove it and send again.' } }));
 		}

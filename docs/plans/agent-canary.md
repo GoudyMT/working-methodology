@@ -42,5 +42,6 @@ agent picks up. The owner's design, 2026-10-29; decisions below are the owner's 
       phrase never in the hook's own messages, one home for the phrase in the kit, role wiring, audits.
 - [x] rule:agent-canary section (no phrase), field 8 phrase line, reviewer role in the role table and files.
 - [x] canary.cjs (check + guard), role wiring, project settings, audits, brief templates and sweep skill.
-- [ ] Live test in a scratch project: hit; miss with close-out and a fresh agent picking up; leak refused.
+- [x] Live test in a scratch project: hit; miss with close-out and a fresh agent picking up; leak refused
+      (docs/evals/results/live-checks-1.3.0.md; run 2 changed the close-out).
 - [ ] Recall, independent review and one short re-check; bump to 1.3.0; push and install on the owner's go.

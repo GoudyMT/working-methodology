@@ -1219,6 +1219,8 @@ test('the leak guard refuses a brief or message that carries the phrase, in any 
   assert.equal(ask('SendMessage', 'message', `Remember: ${FAKE_PHRASE.toUpperCase()}`), 'deny');
   const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: FAKE_PHRASE } });
   assert.ok(!r.stdout.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'the refusal must not repeat the phrase');
+  // A leak is a tasker's failure, so the run record counts it next to the misses.
+  assert.deepEqual(canaryLog(dir).map((e) => [e.tool, e.result]), [['Agent', 'leak-refused'], ['Task', 'leak-refused'], ['SendMessage', 'leak-refused'], ['Agent', 'leak-refused']]);
 });
 test('every kit role runs the canary at its stop, and the project settings run the leak guard', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
