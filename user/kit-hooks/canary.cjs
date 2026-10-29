@@ -53,25 +53,37 @@ const CLOSE_OUT = [
 ].join('\n');
 
 // The agent's final report. A text reply arrives as last_assistant_message. Where the agent hands its report back
-// through a tool call instead (the desktop app's hand-back tool, or SendMessage), the stop event carries no text, so
-// the report is read from the last assistant entry of the agent's own transcript: its text, else the `message` of
-// its last tool call. Null when there is no report to read.
+// through a tool call instead (the desktop app's hand-back tool), the stop event carries no text, so the report is
+// read from the end of the agent's own transcript, within its latest turn only: walking back past tool results and
+// thinking-only entries, the first assistant entry with content decides. Its hand-back message is the report; else
+// its text, when it calls no tool (text before a tool call is narration). A message to another agent is never the
+// report. Null when there is no report to read (logged "unchecked").
 function finalReport(input) {
 	if (typeof input.last_assistant_message === 'string' && input.last_assistant_message.trim()) return input.last_assistant_message;
-	try {
-		const lines = fs.readFileSync(input.agent_transcript_path, 'utf8').trim().split('\n');
-		for (let i = lines.length - 1; i >= 0; i--) {
-			const entry = JSON.parse(lines[i]);
-			const content = entry.type === 'assistant' && entry.message && entry.message.content;
-			if (!Array.isArray(content)) continue;
-			const text = content.filter((b) => b.type === 'text' && b.text.trim()).map((b) => b.text).join('\n');
-			if (text) return text;
-			const call = content.filter((b) => b.type === 'tool_use' && b.input && typeof b.input.message === 'string').pop();
-			if (call) return call.input.message;
+	let lines;
+	try { lines = fs.readFileSync(input.agent_transcript_path, 'utf8').split('\n'); } catch { return null; }
+	for (let i = lines.length - 1; i >= 0; i--) {
+		let entry;
+		try { entry = JSON.parse(lines[i]); } catch { continue; } // a half-written line
+		const content = entry.message && entry.message.content;
+		if (entry.type === 'user') {
+			const toolResults = Array.isArray(content) && content.every((b) => b.type === 'tool_result');
+			if (toolResults) continue;
+			return null; // a real prompt: the latest turn has no report yet
 		}
-	} catch { /* no readable transcript */ }
+		if (entry.type !== 'assistant' || !Array.isArray(content)) continue;
+		if (content.every((b) => b.type === 'thinking' || b.type === 'redacted_thinking')) continue;
+		const handback = content.find((b) => b.type === 'tool_use' && b.name === 'SubagentHandback' && b.input && typeof b.input.message === 'string');
+		if (handback) return handback.input.message;
+		if (content.some((b) => b.type === 'tool_use')) return null;
+		const text = content.filter((b) => b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n');
+		return text.trim() ? text : null;
+	}
 	return null;
 }
+
+// Kit roles that report up and task no one; an orchestrator and the main session are taskers.
+const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer'];
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
@@ -82,7 +94,9 @@ function main() {
 
 	if (input.hook_event_name === 'PreToolUse') {
 		const t = input.tool_input || {};
-		if (words([t.prompt, t.message, t.description, t.name].filter(Boolean).join(' ')).includes(phrase)) {
+		// An agent's own message to its tasker opens with the phrase, as its rules say: that is the check, not a leak.
+		const ownReport = input.tool_name === 'SendMessage' && REPORTING_ROLES.includes(input.agent_type) && words(t.message).startsWith(phrase);
+		if (!ownReport && words([t.prompt, t.message, t.description, t.name].filter(Boolean).join(' ')).includes(phrase)) {
 			log(found.commonDir, { tool: input.tool_name || 'unknown', session: input.session_id || '', result: 'leak-refused' });
 			process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
 				permissionDecisionReason: 'A brief or message to an agent must never carry the confirmation phrase: the agent finds it by reading its rules (rule:agent-canary). Remove it and send again.' } }));

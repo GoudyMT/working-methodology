@@ -1782,3 +1782,40 @@ test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, 
   approveIn(e.dir, [e.f, '--escape', 'a sync bug shipped in code this sweep passed']);
   assert.match(approveIn(e.dir, [e.f]).stdout, /paused/i);
 });
+// Found in review of the hand-back fix: the report is the latest turn's hand-back, never an earlier turn, a message
+// to another agent, or narration before a thinking-only entry.
+test('the canary reads only the latest turn of the transcript, and prefers the hand-back', () => {
+  const dir = canaryRepo();
+  const say = (content) => ({ type: 'assistant', message: { role: 'assistant', content } });
+  const handback = (message) => say([{ type: 'tool_use', name: 'SubagentHandback', input: { message } }]);
+  const prompt = (text) => ({ type: 'user', message: { role: 'user', content: text } });
+  const toolResult = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } };
+  const file = (entries, tail = '') => {
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tr-')), 'agent.jsonl');
+    fs.writeFileSync(f, entries.map((l) => JSON.stringify(l)).join('\n') + '\n' + tail);
+    return f;
+  };
+  const stop = (id, f) => canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, agent_transcript_path: f }).status;
+  // A resumed agent: its first turn's report had the phrase; this turn's does not.
+  assert.equal(stop('r1', file([prompt('brief'), handback(`${FAKE_PHRASE}\nturn one`), prompt('follow-up'), say([{ type: 'text', text: 'Let me check.' }]), toolResult, handback('turn two, no phrase')])), 2);
+  // A message to another agent that carries the phrase is not the report.
+  assert.equal(stop('r2', file([prompt('brief'), say([{ type: 'tool_use', name: 'SendMessage', input: { to: 'peer', message: `${FAKE_PHRASE} hi` } }]), toolResult, handback('report, no phrase')])), 2);
+  // A thinking-only entry after the hand-back does not send the reader back to earlier narration.
+  assert.equal(stop('r3', file([prompt('brief'), say([{ type: 'text', text: 'Let me read the files.' }]), toolResult, handback(`${FAKE_PHRASE}\ndone`), say([{ type: 'thinking', thinking: '' }])])), 0);
+  // Text and the hand-back in one entry: the hand-back is the report.
+  assert.equal(stop('r4', file([prompt('brief'), say([{ type: 'text', text: 'Done, handing back.' }, { type: 'tool_use', name: 'SubagentHandback', input: { message: `${FAKE_PHRASE}\nok` } }])])), 0);
+  // A half-written last line is skipped, not a reason to stop reading.
+  assert.equal(stop('r5', file([prompt('brief'), handback(`${FAKE_PHRASE}\nok`)], '{"type":"assist')), 0);
+});
+test('the leak guard lets an agent open its own message to its tasker with the phrase, and nobody else', () => {
+  const dir = canaryRepo();
+  const send = (extra) => {
+    const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', tool_input: { to: 'lead', message: `${FAKE_PHRASE}\nUNIT u1 DONE` }, ...extra });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+  };
+  assert.equal(send({ agent_id: 'b1', agent_type: 'builder' }), 'allow');
+  assert.equal(send({}), 'deny', 'the main session is a tasker');
+  assert.equal(send({ agent_id: 'o1', agent_type: 'orchestrator' }), 'deny', 'an orchestrator tasks its own team');
+  const buried = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', agent_id: 'b2', agent_type: 'builder', tool_input: { to: 'lead', message: `done. ps: ${FAKE_PHRASE}` } });
+  assert.match(buried.stdout, /deny/, 'only an opening line counts as the agent\'s own');
+});
