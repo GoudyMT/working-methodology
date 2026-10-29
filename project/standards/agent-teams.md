@@ -20,7 +20,7 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this 
 5. **Context is per-role** - the files, rule and spec clause its lens needs; boilerplate makes generic agents.
 6. **The diff is not the blast radius** - code a change was MODELLED ON ("mirrors X", copied, generalized from) gets its own role: inherited or introduced?
 
-**Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL. **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role. Every sweep and re-sweep is the owner's to approve (orchestrated: -> Agent-Team field 11).
+**Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL. **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role. Sweeps and re-sweeps: the owner approves, or rule:sweep-auto-approval (orchestrated: field 11).
 
 ### Patterns and Dispatch {#patterns-and-dispatch}
 
