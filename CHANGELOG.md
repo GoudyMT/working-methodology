@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.0 - 2026-10-29
+- Agent canary: every kit agent opens each message to whoever started it with a confirmation phrase it can only learn by reading its rules block to the last line. A Stop hook checks each agent's message and, on a miss, has the agent stop and reply with a close-out note; the lead saves the hand-off and a fresh agent picks up. After two failed cycles on a unit the run stops. A guard refuses any brief or message that carries the phrase, and the PR body and release audits fail on it. Every check is logged. A new reviewer role runs sweep agents so they are checked too. Proved live with a hit, a miss with close-out and pick-up, and a refused leak. Recall 8/10, level with 1.2.0 under the same scorer.
+
 ## 1.2.0 - 2026-10-28
 - Format skills: PR body, release notes, closeout, preview test, Pre-PR sweep and ADR each get a skill with steps, examples adapted from real pieces and an audit script. The rules stay in the project's rule modules (any AI keeps them); each skill points to its rule. Sweeps now have tiers (feature, fix, triage, launch gate) with modifiers that add roles, and the sweep audit holds a report to its tier. The push guard reminds Claude of the PR body skill. Recall 9/10, level with 1.1.0.
 

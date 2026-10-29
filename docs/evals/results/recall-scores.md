@@ -64,3 +64,18 @@ scored blind against the 1.1.0 answers by another new scorer.
 - The question-10 detail the moved version lost (>= 3 security agents from distinct angles) is back.
 - Both runs miss question 3 the same way as in earlier scoring. The run started before the last three
   wording amendments (sweep tiers), which do not touch any recalled item.
+
+## 1.3.0 (2026-10-29)
+
+A fresh install of the 1.3.0 source, scored blind against the revised 1.2.0 answers by a new scorer.
+
+| Run | Score |
+|---|---|
+| Kit 1.3.0 | 8 / 10 |
+| Kit 1.2.0, revised, rescored | 8 / 10 |
+
+- Gate met: level with 1.2.0 under the same scorer. This scorer was stricter than the last one (it scored the
+  same 1.2.0 answers 8, not 9).
+- Both runs miss the same two questions the same way: question 3 (never says the summary and reminders are not a
+  re-read) and question 10 (names the sweep report but not that it is linked in the PR). The canary rule touches
+  neither.
