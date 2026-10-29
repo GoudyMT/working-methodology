@@ -79,3 +79,15 @@ A fresh install of the 1.3.0 source, scored blind against the revised 1.2.0 answ
 - Both runs miss the same two questions the same way: question 3 (never says the summary and reminders are not a
   re-read) and question 10 (names the sweep report but not that it is linked in the PR). The canary rule touches
   neither.
+
+## 1.4.0 (2026-10-29)
+
+A fresh install of the 1.4.0 source, scored blind against the revised 1.2.0 answers by a new scorer.
+
+| Run | Score |
+|---|---|
+| Kit 1.4.0 | 8 / 10 |
+| Kit 1.2.0, revised, rescored | 8 / 10 |
+
+- Gate met: level with 1.2.0 under the same scorer.
+- The same two misses as 1.3.0 (question 3: the summary is not a re-read; question 10: the report linked in the PR).

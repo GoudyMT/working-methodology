@@ -17,18 +17,23 @@ commit. The owner's design, 2026-10-29.
 
 ## Design
 
-- **`.kit/tracking.json`** (optional): `{ "kit": "local" | "tracked", "track": [globs], "never": [globs] }`.
-  `track` lists the files the owner wants in the repo (growth files from the kit are force-added with `git add -f`);
-  `never` lists extra paths that must never be committed (school material, private notes).
+- **`.kit/tracking.json`**: `{ "kit": "local" | "tracked", "track": [...], "never": [...], "reviewedSecrets": [...] }`.
+  `track` lists what the owner wants in the repo (growth files from the kit are force-added with `git add -f`);
+  `never` lists paths that must never be committed; `reviewedSecrets` lists files whose secret-shaped lines the
+  owner checked. Entries read like .gitignore lines: a name covers everything under it.
 - **Install** (`kit.mjs install project`): in a git folder, writes a `# kit:begin` / `# kit:end` block in
-  `<git dir>/info/exclude` with every installed kit path plus `/.kit/` and `/.claude/worktrees/`. A reinstall
-  replaces the block; the owner's own lines stay. `"kit": "tracked"` removes the block.
-- **`.claude/first-push-check.mjs`** (project): the checklist. Fails on any of: a kit path (not in `track`) in any
-  commit; a `never` path in any commit; a secret-shaped file name or value in any commit (values never printed);
-  a `track` glob with no tracked file; the exclude block missing while the kit is local. Lists untracked files that
-  are not ignored, as items to decide. On a pass it writes `<git dir>/kit-first-push-ok` with the checked HEAD.
-- **Pre-push hook:** while the remote has no branches (`refs/remotes/<remote>/` empty), every pushed commit must be
-  the one the check passed; otherwise the push is blocked with the command to run.
+  `<git dir>/info/exclude` with every installed kit path, `/.kit/`, `/.claude/worktrees/` and the never list. A
+  reinstall replaces the block; the owner's own lines stay. `"kit": "tracked"` drops the kit lines. It sets
+  `core.hooksPath` to the kit hooks unless another hook manager is set, and leaves a done mark when every root
+  commit of HEAD is already on a remote (the project was pushed before the kit came).
+- **Pre-commit hook** (every commit, any tool): `first-push-check.mjs --staged` blocks staging a kit file not in
+  `track`, a never path, or a secret-shaped file or value.
+- **`.claude/first-push-check.mjs`** (the first push): one pass over every commit a push can carry (branches, tags,
+  remotes; merges included; not the stash). Fails on a kit, never or secret path or a secret value in any commit; an
+  empty `track`, a `track` entry with no tracked file, a named `track` file that is ignored; a never file sitting
+  unignored; the exclude block missing. Lists untracked files to decide. On a pass it records the cleared commit.
+- **Pre-push hook:** until the cleared commit is on a remote branch (or every root commit pushed is already on a
+  remote), only the cleared commit, its ancestors and its tags may go out.
 - **Rule:** rule:kit-stays-local and rule:first-push-gate in the git-and-release module; the sweep tiers name the
   first push (the deep sweep plus the check). Setup step 3 of NEW-PROJECT and EXISTING-PROJECT states the goal.
 
@@ -37,5 +42,6 @@ commit. The owner's design, 2026-10-29.
 - [x] Failing tests: exclude block (write, replace, keep owner lines, tracked mode, no git), clean `git status`
       after install, the check (pass + each fail), the hook (first push blocked/allowed, later push unchecked).
 - [x] Install block, check script, hook, rules, setup docs; plus a pre-commit check, hooks on at install, review fixes.
-- [ ] Live run in a scratch repo; independent review and one short re-check; bump to 1.4.0; push and install on
+- [x] Live runs (docs/evals/results/live-checks-1.4.0.md); review and re-check, both fixed; recall 8/10; bump to 1.4.0.
+- [ ] Push and install on
       the owner's go.

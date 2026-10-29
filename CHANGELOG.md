@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.4.0 - 2026-10-29
+- The kit stays local: the install keeps every kit path and the owner's never list out of git in the folder's own exclude file (never pushed), turns on the kit's git hooks, and .kit/tracking.json names what the owner wants tracked (growth files added on purpose) and what must never be committed. Every commit runs a check that blocks staging a kit file, a never path or a secret-shaped file or value, from any tool. Before the first push, a strict check reads every commit a push can carry (merges included) and the pre-push hook lets only the commit it cleared go out; a new first-push sweep tier goes with it. Proved live: a clean push, a slip in history blocked, an agent's slip blocked, a host-made README not ending the gate. Recall 8/10, level with 1.2.0.
+
 ## 1.3.0 - 2026-10-29
 - Agent canary: every kit agent opens each message to whoever started it with a confirmation phrase it can only learn by reading its rules block to the last line. A Stop hook checks each agent's message and, on a miss, has the agent stop and reply with a close-out note; the lead saves the hand-off and a fresh agent picks up. After two failed cycles on a unit the run stops. A guard refuses any brief or message that carries the phrase, and the PR body and release audits fail on it. Every check is logged. A new reviewer role runs sweep agents so they are checked too. Proved live with a hit, a miss with close-out and pick-up, and a refused leak. Recall 8/10, level with 1.2.0 under the same scorer.
 
