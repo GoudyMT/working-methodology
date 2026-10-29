@@ -107,7 +107,7 @@ always its own row). Nothing moved between modules.
       and 1 audit gap, fixed (203742b).
 - [x] Gate: 86 tests green, coverage holds, session start 44,610 bytes, recall 9/10 = 1.1.0 under one scorer.
       Bumped to 1.2.0.
-- [ ] Push and tag on the owner's go; install into ~/.claude between the main project's batches.
+- [x] Pushed and tagged v1.2.0 on the owner's go (2026-10-29); installed into ~/.claude (24 files created).
 
 ## Risks covered (one line each; the check runs before the release that could cause it)
 
