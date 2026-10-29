@@ -220,7 +220,8 @@ function keepKitLocal(projectDir, keys) {
   // Anchored to the repo root; glob and comment characters in a name are escaped so each line names one path.
   const line = (p) => '/' + (prefix + p).replace(/[\\*?[\]!#]/g, (c) => '\\' + c);
   // The never list is the owner's own globs, kept here too so it stays private (a .gitignore is pushed).
-  const neverLines = (cfg.never || []).map((p) => '/' + prefix + p.replace(/^\/+/, ''));
+  // Only the folder prefix is escaped; git drops trailing spaces from a pattern, so they are trimmed to match.
+  const neverLines = (cfg.never || []).map((p) => line('') + p.trim().replace(/^\/+/, ''));
   const kitLines = cfg.kit === 'tracked' ? [] : [...keys, '.kit/', '.claude/worktrees/'].sort().map(line);
   const block = kitLines.length + neverLines.length ? ['# kit:begin - kept local by the methodology kit (rule:kit-stays-local); install rewrites this block',
     ...kitLines, ...neverLines, '# kit:end'].join('\n') + '\n' : '';
@@ -229,9 +230,13 @@ function keepKitLocal(projectDir, keys) {
   // The kit's git hooks hold the line for any tool (the commit check, the push guard, the first push gate). Another
   // hook manager already set stays; the setup says to add the kit's checks to it.
   if (!git('config', 'core.hooksPath').stdout.trim()) git('config', 'core.hooksPath', `${prefix}.githooks`);
-  // A project whose history is already on a remote had its first push before the kit came: the gate is done.
-  const remotes = git('for-each-ref', '--format=%(refname)', 'refs/remotes/').stdout.split('\n').filter(Boolean);
-  if (remotes.some((r) => git('merge-base', 'HEAD', r).status === 0)) fs.writeFileSync(path.join(common.stdout.trim(), 'kit-first-push-done'), '');
+  // A project whose own first commits are already on a remote had its first push before the kit came: the gate is
+  // done. Sharing history is not enough: a host-made README pulled in shares history while nothing of ours is out.
+  const hasRemote = git('for-each-ref', '--count=1', 'refs/remotes/').stdout.trim();
+  const head = git('rev-parse', '-q', '--verify', 'HEAD').stdout.trim();
+  if (hasRemote && head && !git('rev-list', '--max-parents=0', 'HEAD', '--not', '--remotes').stdout.trim()) {
+    fs.writeFileSync(path.join(common.stdout.trim(), 'kit-first-push-done'), '');
+  }
 }
 
 function diffText(a, b) {

@@ -8,8 +8,9 @@ if [ -n "$AI_AGENT$CLAUDECODE" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
 fi
 # The first push gate (rule:first-push-gate), for any pusher whose git runs this hook: until the project's first push
 # has landed, only the commit .claude/first-push-check.mjs cleared (or one of its ancestors, or a tag of it) may go
-# out. The gate is done once that commit is on a remote branch, or when the install found the project already
-# pushed (the done mark). A branch the host made on its own (a README) does not end it.
+# out. The gate is done once that commit is on a remote branch, or once every first (root) commit being pushed is
+# already on a remote (the project was pushed before the kit came; the install leaves a done mark for that too). A
+# branch the host made on its own (a README) does not end it: its root is not ours.
 common=$(git rev-parse --git-common-dir)
 if [ ! -f "$common/kit-first-push-done" ]; then
   checked=$(cat "$common/kit-first-push-ok" 2>/dev/null)
@@ -19,6 +20,10 @@ if [ ! -f "$common/kit-first-push-done" ]; then
     while read -r lref lsha rref rsha; do
       case "$lsha" in *[!0]*) ;; *) continue ;; esac
       commit=$(git rev-parse -q --verify "$lsha^{commit}")
+      if [ -n "$commit" ] && [ -n "$(git for-each-ref --count=1 refs/remotes/)" ] && [ -z "$(git rev-list --max-parents=0 "$commit" --not --remotes)" ]; then
+        : > "$common/kit-first-push-done"
+        continue
+      fi
       if [ -z "$checked" ] || [ -z "$commit" ] || ! git merge-base --is-ancestor "$commit" "$checked"; then
         echo "First push blocked (rule:first-push-gate): run node .claude/first-push-check.mjs, fix what it finds, then push the commit it cleared." >&2
         exit 1

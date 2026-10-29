@@ -1527,7 +1527,9 @@ test('the first push check reads a folder-style never entry, and fails an empty 
     assert.match(firstPush(dir).stdout, /FAIL  no never-list path[\s\S]*school\/rubric\.txt/, never);
   }
   assert.match(firstPush(readyProject()).stdout, /FAIL  every file in track is tracked[\s\S]*track is empty/);
-  const dir = readyProject({ track: ['main.py', 'src/**'] });
+  // A file named outright in track that git ignores is a wanted file left out (ignored files inside a tracked
+  // folder are fine: see the next test but one).
+  const dir = readyProject({ track: ['main.py', 'src/**', 'src/b.py'] });
   fs.mkdirSync(path.join(dir, 'src'));
   fs.writeFileSync(path.join(dir, 'src', 'a.py'), 'a\n');
   fs.writeFileSync(path.join(dir, 'src', 'b.py'), 'b\n');
@@ -1590,4 +1592,52 @@ test('a project already pushed before the kit came is not held by the first push
   const r = spawnSync('sh', [path.join(clone, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: clone,
     input: `refs/heads/main ${g(clone, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.equal(r.status, 0, r.stderr);
+});
+// Found in the re-check: the done mark and the track check each had a case that let a slip out or blocked for good.
+test('a new project that pulled the host README before the install is still held by the gate', () => {
+  const dir = readyProject({ track: ['main.py'] });
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  g(bare, 'init', '-q', '--bare');
+  const seed = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-'));
+  g(seed, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(seed, 'README.md'), '# made on the host\n');
+  commitAll(seed, 'readme');
+  g(seed, 'push', '-q', bare, 'main');
+  g(dir, 'remote', 'add', 'origin', bare);
+  g(dir, 'fetch', '-q', 'origin');
+  g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '-q', '--no-verify', '--allow-unrelated-histories', '-m', 'take readme', 'origin/main');
+  kitInstall(dir);
+  const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+  assert.notEqual(r.status, 0, 'our own first commit is not on the host yet');
+});
+test('a project pushed by URL before the kit is let through once a fetch shows its history on the remote', () => {
+  const dir = readyProject({ track: ['main.py'] });
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  g(bare, 'init', '-q', '--bare');
+  g(dir, 'push', '-q', '--no-verify', bare, 'HEAD:refs/heads/main');
+  g(dir, 'remote', 'add', 'origin', bare);
+  g(dir, 'fetch', '-q', 'origin');
+  fs.writeFileSync(path.join(dir, 'main.py'), 'print(7)\n');
+  commitAll(dir, 'more');
+  const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+  assert.equal(r.status, 0, r.stderr);
+});
+test('the track check accepts ignored files inside a tracked folder, and never says to force-add a secret', () => {
+  const dir = readyProject({ track: ['main.py', 'src/'] });
+  fs.mkdirSync(path.join(dir, 'src', '__pycache__'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src', 'a.py'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'src', '.env'), 'X=1\n');
+  fs.writeFileSync(path.join(dir, 'src', '__pycache__', 'a.pyc'), 'c\n');
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.env\n__pycache__/\n');
+  commitAll(dir, 'src');
+  const r = firstPush(dir);
+  assert.equal(r.status, 0, r.stdout);
+});
+test('a stash is never pushed, so the first push check leaves it out', () => {
+  const dir = readyProject({ track: ['main.py'] });
+  fs.writeFileSync(path.join(dir, '.env'), 'X=1\n');
+  g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'stash', 'push', '-q', '-u');
+  assert.equal(firstPush(dir).status, 0, firstPush(dir).stdout);
 });

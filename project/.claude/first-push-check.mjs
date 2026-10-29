@@ -29,7 +29,7 @@ const SECRET_VALUE = [
 // A glob from tracking.json, relative to the project folder: ** crosses folders, * and ? stay inside one. Like a
 // .gitignore line, a name also covers everything under it, so "school", "school/" and "school/**" agree.
 function globRe(glob, prefix) {
-	const body = (prefix + glob.replace(/\/+$/, '')).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*');
+	const body = (prefix + glob.trim().replace(/\/+$/, '')).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*');
 	return new RegExp(`^${body}(?:/.*)?$`);
 }
 
@@ -78,20 +78,20 @@ function main(staged) {
 		return 1;
 	}
 
-	// Every path in every commit's full tree, with the first commit that held it. Whole trees, not diffs: git log
-	// shows no changes for a merge, so a file added while resolving one would hide from a diff-based scan.
+	// Every path any commit added, with the first commit that added it, in one pass. -m shows a merge's changes
+	// against each parent, so a file added while resolving a merge is seen too; -z keeps odd names whole. Only what
+	// a push can carry is read (branches, tags, remotes): a stash never leaves the machine.
+	const REFS = ['--branches', '--tags', '--remotes'];
 	const seen = new Map();
-	const trees = new Set();
-	for (const line of git('log', '--all', '--reverse', '--format=%H %T').stdout.split('\n').filter(Boolean)) {
-		const [commit, tree] = line.split(' ');
-		if (trees.has(tree)) continue;
-		trees.add(tree);
-		for (const p of git('ls-tree', '-r', '-z', '--name-only', tree).stdout.split('\0').filter(Boolean)) if (!seen.has(p)) seen.set(p, commit.slice(0, 7));
+	let commit = '';
+	for (const t of git('log', ...REFS, '--reverse', '-m', '--no-renames', '--name-only', '--diff-filter=A', '-z', '--format=%x01%h').stdout.split('\0')) {
+		const p = t.replace(/^\n+/, '');
+		if (p.startsWith('\u0001')) commit = p.slice(1);
+		else if (p && !seen.has(p)) seen.set(p, commit);
 	}
 	const list = (...a) => git(...a).stdout.split('\0').filter(Boolean);
 	const inTree = list('ls-tree', '-r', '-z', '--full-tree', '--name-only', 'HEAD');
 	const loose = list('ls-files', '-z', '--others', '--exclude-standard', '--full-name');
-	const ignored = list('ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--full-name');
 	const reviewed = (cfg.reviewedSecrets || []).map((g) => globRe(g, prefix));
 
 	const checks = [];
@@ -100,13 +100,16 @@ function main(staged) {
 	check('no never-list path in any commit', [...seen].filter(([p]) => never.some((r) => r.test(p))).map(([p, c]) => `${p} (in ${c})`));
 	check('no secret-shaped file in any commit', [...seen].filter(([p]) => SECRET_FILE.test(p)).map(([p, c]) => `${p} (in ${c})`));
 	// -m shows each merge's changes too. A hit the owner has looked at and judged safe is listed in reviewedSecrets.
-	check('no secret-shaped value in any commit', secretValues(git('log', '--all', '-m', '-p', '--no-color', '-U0', '--pretty=format:@@%h').stdout)
+	check('no secret-shaped value in any commit', secretValues(git('log', ...REFS, '-m', '-p', '--no-color', '-U0', '--pretty=format:@@%h').stdout)
 		.filter((v) => !reviewed.some((r) => r.test(v.file))).map((v) => `${v.kind} in ${v.file} (${v.commit}); if you checked it and it is safe, list the file in reviewedSecrets`));
 	// A never-listed file that sits in the folder unignored is one `git add -A` away from a commit.
 	check('every never-list path in the folder is ignored', loose.filter((p) => never.some((r) => r.test(p))).map((p) => `${p}: run the kit install again, which adds the never list to the exclude block`));
 	check('every file in track is tracked', cfg.track.length ? [
 		...cfg.track.filter((g, i) => !inTree.some((p) => track[i].test(p))).map((g) => `${g} matches no tracked file`),
-		...ignored.filter((p) => track.some((r) => r.test(p))).map((p) => `${p}: wanted (in track) but ignored; add it with git add -f`),
+		// A file named outright in track (not a folder or a pattern) that git ignores is a wanted file left out. Files
+		// ignored inside a tracked folder (build output, a .env) are meant to stay out.
+		...cfg.track.filter((g) => !/[*?]/.test(g) && !g.endsWith('/') && !inTree.includes(prefix + g) && git('check-ignore', '-q', '--', g).status === 0)
+			.map((g) => `${g}: wanted (in track) but ignored; if it is meant to be in the repo, add it with git add -f`),
 	] : ['track is empty: list every file or folder you want in the repo in .kit/tracking.json']);
 	const exclude = path.join(common, 'info', 'exclude');
 	const hasBlock = existsSync(exclude) && /^# kit:begin/m.test(readFileSync(exclude, 'utf8'));
