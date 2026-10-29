@@ -1,0 +1,14 @@
+{
+  "lines": [
+    {
+      "before": "Never raise a limit to make a run pass. Keep a margin larger than CI's build-to-build drift. Why: a budget that bends on request is not a budget. <!-- PROJECT ADAPTER A12 -->",
+      "after": "Never raise a limit to make a run pass. Why: a budget that bends on request is not a budget, and an ask the rule did not mean teaches people to wave asks through. <!-- PROJECT ADAPTER A12 -->",
+      "why": "drift margins are retired where measuring builds are identical; the ask rules now say what counts as over"
+    },
+    {
+      "before": "| A12 | **Size budgets** (opt-in, chosen at kit setup): each budget + check commands + CI drift margin, or `none` | Size Budgets | `<fill in>` |",
+      "after": "| A12 | **Size budgets** (opt-in, chosen at kit setup): each budget + check commands, the measure command, where the limits live, how measuring builds stay identical (else a measured drift margin), or `none` | Size Budgets | `<fill in>` |",
+      "why": "A12 names the measure command, where limits live and how builds stay identical"
+    }
+  ]
+}

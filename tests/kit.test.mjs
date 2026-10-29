@@ -1851,3 +1851,43 @@ test('the canary skips a hook note after the hand-back', () => {
   assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'm1', agent_transcript_path: f }).status, 0);
   assert.equal(canaryLog(dir).pop().result, 'hit');
 });
+
+// The size band (rule:size-budgets): one size request per plan, applied by script. A long real run showed asks the
+// rule never meant: a margin demanded as if it were size, a margin demanded on lines the plan did not grow, and a
+// file count that no band could raise. The script refuses only on a measured size past what is allowed.
+const BAND = path.resolve('project/.claude/size-band.mjs');
+function bandRun(mode, { band, measured, limits }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'band-'));
+  const files = { band, measured, limits };
+  for (const [k, v] of Object.entries(files)) fs.writeFileSync(path.join(dir, `${k}.json`), JSON.stringify(v));
+  const r = spawnSync('node', [BAND, mode, '--band', path.join(dir, 'band.json'), '--measured', path.join(dir, 'measured.json'), '--limits', path.join(dir, 'limits.json')], { encoding: 'utf8' });
+  let out = null;
+  try { out = JSON.parse(r.stdout.slice(r.stdout.indexOf('{'))); } catch { /* printed text only */ }
+  return { ...r, out };
+}
+const band = { base: { page: 100000, lazy: 16000, files: 80 }, limit: { page: 100050, lazy: 16040, files: 80 }, raise: { page: 6000, files: 2 }, counts: ['files'] };
+test('the size band refuses only a measured size past what is allowed, never a margin', () => {
+  // Page grew 5,800 B: under the 106,050 allowed, though size + 10% of the growth would be over. Applied, with what
+  // margin fits; on-demand grew inside its own limit and is left alone; the file count rose by 1 and is raised exactly.
+  const r = bandRun('apply', { band, measured: { page: 105800, lazy: 16030, files: 81 }, limits: band.limit });
+  assert.equal(r.status, 0, r.stdout);
+  assert.deepEqual(r.out.limits, { page: 106050, lazy: 16040, files: 81 });
+  // Past the band by measurement: a refusal with the number to re-request.
+  const over = bandRun('apply', { band, measured: { page: 106051, lazy: 16030, files: 80 }, limits: band.limit });
+  assert.equal(over.status, 1);
+  assert.match(over.stdout, /page: measured 106,051 B, allowed 106,050 B/);
+  assert.match(over.stdout, /re-request/i);
+  // A line the plan did not list may not grow past its own limit.
+  const lazy = bandRun('apply', { band, measured: { page: 100000, lazy: 16041, files: 80 }, limits: band.limit });
+  assert.equal(lazy.status, 1);
+  assert.match(lazy.stdout, /lazy/);
+  const count = bandRun('apply', { band, measured: { page: 100000, lazy: 16000, files: 83 }, limits: band.limit });
+  assert.equal(count.status, 1, 'a count past its raise');
+});
+test('the size band end check lowers padding and fails a line over its limit', () => {
+  const limits = { page: 106050, lazy: 16040, files: 82 };
+  const r = bandRun('final', { band, measured: { page: 103000, lazy: 16000, files: 81 }, limits });
+  assert.equal(r.status, 0, r.stdout);
+  assert.deepEqual(r.out.limits, { page: 103300, lazy: 16040, files: 81 }, 'lowered to size + margin; the unlisted line kept');
+  assert.equal(bandRun('final', { band, measured: { page: 106100, lazy: 16000, files: 81 }, limits }).status, 1);
+});
