@@ -146,3 +146,7 @@ names it. 15. Tools change -> adapters name their docs, re-checked each release.
   corpus and the served documents are unchanged"); make those phrase lists adapter values (A16) - next kit
   release that touches the PR body audits.
 - Format skills for other tools (.agents/skills) - with the other-tool outputs above.
+- From the main project's closeout (2026-10-29), portable, to fold back with the owner: (1) the 9-in-10 measure
+  counts every stop as matched or changed - scoreboard field "stops: N, matched: M, changed: (what)"; (2) before
+  each focus build, merge good outside PRs first (rebase on main, green CI, one at a time). The size band script
+  and its standing allowance stay project-only (a kit opt-in module at most).
