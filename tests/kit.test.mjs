@@ -1333,7 +1333,7 @@ test('the PR body and release audits fail when the phrase appears', () => {
   assert.match(rel.stdout, /confirmation phrase/);
 });
 test('the git pre-push hook is executable, in the kit and where install writes it', () => {
-  assert.match(spawnSync('git', ['ls-files', '-s', 'project/.githooks/pre-push'], { encoding: 'utf8' }).stdout, /^100755 /);
+  for (const h of ['pre-push', 'pre-commit']) assert.match(spawnSync('git', ['ls-files', '-s', `project/.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
   if (process.platform !== 'win32') {
     const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'hookmode-'));
     install({ kit: path.resolve('.'), target: 'project', projectDir: proj, home: fs.mkdtempSync(path.join(os.tmpdir(), 'home-')) });
@@ -1353,7 +1353,8 @@ test('the checker clean-tree stop sees a change in another worktree of the same 
 // The kit stays local (rule:kit-stays-local): the install keeps every kit path out of git in the folder's own
 // exclude file, so the kit is there to use but never committed unless the owner tracks a file on purpose.
 const g = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
-const commitAll = (dir, msg) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', msg); };
+// noVerify stands for a tool that skips the git hooks, so a slip still reaches history and the first push check must find it.
+const commitAll = (dir, msg, noVerify) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', msg, ...(noVerify ? ['--no-verify'] : [])); };
 function localProject() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-'));
   g(dir, 'init', '-q');
@@ -1406,7 +1407,7 @@ test('the first push check passes a clean history and records the commit it chec
 test('the first push check fails on a kit file anywhere in history, even after it was deleted', () => {
   const dir = readyProject();
   g(dir, 'add', '-f', 'AGENTS.md');
-  commitAll(dir, 'oops');
+  commitAll(dir, 'oops', true);
   g(dir, 'rm', '-q', '--cached', 'AGENTS.md');
   commitAll(dir, 'remove it');
   const r = firstPush(dir);
@@ -1421,7 +1422,7 @@ test('the first push check fails on a never path, a missing tracked file, a secr
   const secret = 'sk-ant-' + 'a1B2'.repeat(8);
   fs.writeFileSync(path.join(dir, 'config.py'), `KEY = "${secret}"\n`);
   fs.writeFileSync(path.join(dir, '.env'), 'X=1\n');
-  commitAll(dir, 'more');
+  commitAll(dir, 'more', true);
   fs.writeFileSync(excludeFile(dir), '');
   const r = firstPush(dir);
   assert.equal(r.status, 1);
@@ -1454,4 +1455,45 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
   const after = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
     input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${sha}\n`, env: { PATH: process.env.PATH } });
   assert.equal(after.status, 0, 'once the remote has a branch, the gate is done');
+});
+// Found while planning for other AI tools: a slip must be stopped where it happens, not only at the first push.
+test('the install turns on the kit git hooks, and leaves another hook manager alone', () => {
+  const dir = localProject();
+  kitInstall(dir);
+  assert.equal(g(dir, 'config', 'core.hooksPath').stdout.trim(), '.githooks');
+  const husky = localProject();
+  g(husky, 'config', 'core.hooksPath', '.husky');
+  kitInstall(husky);
+  assert.equal(g(husky, 'config', 'core.hooksPath').stdout.trim(), '.husky', 'the owner\'s hook manager stays; setup says to add the checks there');
+});
+test('the pre-commit hook blocks staging a kit file, a never path or a secret file, and allows tracked choices', () => {
+  const dir = readyProject({ track: ['main.py', '_Session Log.md'], never: ['school/**'] });
+  const commit = () => spawnSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x'], { encoding: 'utf8', env: { ...process.env } });
+  g(dir, 'add', '-f', 'AGENTS.md');
+  let r = commit();
+  assert.notEqual(r.status, 0, 'a kit file');
+  assert.match(r.stdout + r.stderr, /AGENTS\.md/);
+  g(dir, 'reset', '-q');
+  fs.mkdirSync(path.join(dir, 'school'));
+  fs.writeFileSync(path.join(dir, 'school', 'quiz.txt'), 'q\n');
+  g(dir, 'add', 'school/quiz.txt');
+  assert.notEqual(commit().status, 0, 'a never path');
+  g(dir, 'reset', '-q');
+  fs.writeFileSync(path.join(dir, '.env'), 'X=1\n');
+  g(dir, 'add', '.env');
+  assert.notEqual(commit().status, 0, 'a secret file');
+  g(dir, 'reset', '-q');
+  g(dir, 'add', '-f', '_Session Log.md');
+  assert.equal(commit().status, 0, 'a kit file the owner chose to track');
+});
+test('the first push check fails on a never path that is in the folder but not ignored', () => {
+  const dir = readyProject({ never: ['school/**'] });
+  fs.mkdirSync(path.join(dir, 'school'));
+  fs.writeFileSync(path.join(dir, 'school', 'rubric.txt'), 'graded\n');
+  const r = firstPush(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /FAIL.*ignored[\s\S]*school\/rubric\.txt/);
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'school/\n');
+  commitAll(dir, 'ignore school');
+  assert.equal(firstPush(dir).status, 0, firstPush(dir).stdout);
 });

@@ -223,6 +223,9 @@ function keepKitLocal(projectDir, keys) {
     ...[...keys, '.kit/', '.claude/worktrees/'].sort().map(line), '# kit:end'].join('\n') + '\n';
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, (own.trimEnd() ? own.trimEnd() + '\n' : '') + block);
+  // The kit's git hooks hold the line for any tool (the commit check, the push guard, the first push gate). Another
+  // hook manager already set stays; the setup says to add the kit's checks to it.
+  if (!git('config', 'core.hooksPath').stdout.trim()) git('config', 'core.hooksPath', `${prefix}.githooks`);
 }
 
 function diffText(a, b) {

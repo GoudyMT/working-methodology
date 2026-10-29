@@ -1,0 +1,7 @@
+#!/bin/sh
+# Every commit, from any tool (rule:kit-stays-local): staging a kit file the owner did not choose to track, a
+# never-listed path or a secret-shaped file or value is blocked here, where the slip happens. The first push check
+# (rule:first-push-gate) still reads the whole history, for a commit made with the hooks skipped.
+check="$(dirname "$0")/../.claude/first-push-check.mjs"
+[ -f "$check" ] || exit 0
+exec node "$check" --staged
