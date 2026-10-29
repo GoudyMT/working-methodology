@@ -1262,6 +1262,19 @@ test('the canary accepts the phrase under markdown, but not glued to other lette
   assert.equal(stop('m3', `# ${FAKE_PHRASE}\ndone`), 0);
   assert.equal(stop('m4', `${FAKE_PHRASE}XYZ done`), 2);
 });
+test('the canary compares phrases in any script, not only ASCII', () => {
+  const dir = canaryRepo('Ουδέν άνευ αρίστου');
+  const stop = (id, msg) => canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, last_assistant_message: msg }).status;
+  assert.equal(stop('g1', 'Ουδέν άνευ αρίστου\ndone'), 0);
+  assert.equal(stop('g2', 'done'), 2);
+  const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: '' } });
+  assert.equal(r.stdout, '', 'an empty brief is never a leak');
+});
+test('without an agent id, one role\'s block never lets another role through unchecked', () => {
+  const dir = canaryRepo();
+  assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', session_id: 's1', last_assistant_message: 'done' }).status, 2);
+  assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'checker', session_id: 's1', last_assistant_message: 'VERDICT: PASS' }).status, 2);
+});
 test('the canary lets a stop through when the message field is missing, and logs it unchecked', () => {
   const dir = canaryRepo();
   assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'x' }).status, 0);

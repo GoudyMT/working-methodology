@@ -15,10 +15,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
-// One spelling for comparing: lower case letters and digits, every run of anything else as one space. Markdown
+// One spelling for comparing: lower case letters and digits in any script, every run of anything else as one space. Markdown
 // around the phrase (bold, a quote, a heading) and hyphens inside it then compare the same; the space padding
 // keeps a word boundary on both sides.
-const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
 
 // The phrase lives in the file the agent is sent to: the one the rule index names for rule:agent-team-adapter
 // (a project may fill its adapter in its own module), else the kit's agent-teams module. It is read from the main
@@ -37,7 +37,7 @@ function findPhrase(cwd) {
 	const p = path.join(root, file);
 	if (!fs.existsSync(p)) return null;
 	const m = fs.readFileSync(p, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
-	return m ? { phrase: m[1], commonDir } : null;
+	return m && words(m[1]).trim() ? { phrase: m[1], commonDir } : null;
 }
 
 function log(commonDir, entry) {
@@ -72,7 +72,7 @@ function main() {
 	const who = { role: input.agent_type || 'unknown', agent: input.agent_id || '', session: input.session_id || '' };
 	// The canary's own block leaves a mark, so the stop after it is told apart from a stop another hook (the
 	// checker's clean-tree stop) blocked; stop_hook_active alone cannot tell them apart.
-	const mark = path.join(found.commonDir, 'kit-canary-blocked', (who.agent || who.session || 'unknown').replace(/[^\w.-]/g, '_'));
+	const mark = path.join(found.commonDir, 'kit-canary-blocked', (who.agent || `${who.session}-${who.role}`).replace(/[^\w.-]/g, '_'));
 	if (fs.existsSync(mark)) {
 		fs.rmSync(mark, { force: true });
 		// The agent was told to close out, so it may end; any other report after a miss is void all the same.

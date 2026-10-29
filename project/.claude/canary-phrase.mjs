@@ -6,8 +6,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-// Letters and digits only, space-padded: markdown or hyphens inside the phrase still match, a longer word does not.
-const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+// Letters and digits only (any script), space-padded: markdown or hyphens inside the phrase still match, a longer word does not.
+const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
 
 export function canaryPhrase(cwd = process.cwd()) {
 	const common = spawnSync('git', ['-C', cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
@@ -19,7 +19,7 @@ export function canaryPhrase(cwd = process.cwd()) {
 	if (row) file = row[1];
 	const p = path.join(root, file);
 	const m = existsSync(p) && readFileSync(p, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
-	return m ? m[1] : null;
+	return m && words(m[1]).trim() ? m[1] : null;
 }
 
 /** True when the text carries the phrase, in any case, spacing or markdown. */

@@ -33,12 +33,12 @@ each(/\b\d[\d,]* (?:tests?|mutants?|findings?)\b|\b(?:fixed|closed|resolved) \d[
 const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
 if (common.status === 0) {
   const root = path.dirname(common.stdout.trim());
-  const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
   const index = path.join(root, 'standards', 'INDEX.md');
   const row = fs.existsSync(index) && fs.readFileSync(index, 'utf8').match(/^\|\s*agent-team-adapter\s*\|[^|\n]*\|\s*`([^`]+)`/m);
   const p = path.join(root, row ? row[1] : 'standards/agent-teams.md');
   const m = fs.existsSync(p) && fs.readFileSync(p, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
-  if (m && words(text).includes(words(m[1]))) faults.push('the agents\' confirmation phrase appears; it never goes in public text');
+  if (m && words(m[1]).trim() && words(text).includes(words(m[1]))) faults.push('the agents\' confirmation phrase appears; it never goes in public text');
 }
 
 const pkg = path.join(process.cwd(), 'package.json');
