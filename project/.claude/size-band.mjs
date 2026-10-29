@@ -38,18 +38,34 @@ function main() {
 	const limits = load('--limits');
 	const counts = new Set(band.counts || []);
 	const raise = band.raise || {};
+	// Every number the arithmetic reads must be a whole, non-negative number, or a limit could be written from a
+	// string or a missing value. A band read wrong would let a limit rise past what was approved.
+	const whole = (n) => Number.isInteger(n) && n >= 0;
+	const wrong = [];
+	for (const line of Object.keys(limits)) {
+		if (!whole(limits[line])) wrong.push(`limits.${line}`);
+		if (!whole(band.base?.[line])) wrong.push(`base.${line}`);
+		if (!whole(band.limit?.[line])) wrong.push(`limit.${line}`);
+	}
+	for (const [line, n] of Object.entries(raise)) if (!whole(n) || !(line in limits)) wrong.push(`raise.${line}`);
+	if (wrong.length) {
+		console.log(`SIZE BAND: the band or the limits cannot be read as whole numbers: ${wrong.join(', ')}. Nothing written.`);
+		return 2;
+	}
 	const next = { ...limits };
 	const refusals = [];
+	for (const line of Object.keys(measured)) if (!(line in limits)) refusals.push(`${line}: no limit for this line - add it to the limits (a new budget is the owner's call)`);
 	for (const line of Object.keys(limits)) {
 		const size = measured[line];
 		if (!Number.isInteger(size) || size < 0) { refusals.push(`${line}: no measured size`); continue; }
-		const listed = Number(raise[line]) > 0;
-		const margin = counts.has(line) ? 0 : Math.ceil(Math.max(0, size - (band.base?.[line] ?? size)) * MARGIN);
+		const listed = (raise[line] ?? 0) > 0;
+		const margin = counts.has(line) ? 0 : Math.ceil(Math.max(0, size - band.base[line]) * MARGIN);
 		if (mode === 'apply') {
 			const allowed = listed ? band.limit[line] + raise[line] : limits[line];
 			if (size > allowed) {
+				// The whole raise to re-request over the limit at approval, margin included, rounded up to 10 B.
 				const ask = counts.has(line) ? size - band.limit[line] : Math.ceil((size + margin - band.limit[line]) / 10) * 10;
-				refusals.push(`${line}: measured ${bytes(size)}, allowed ${bytes(allowed)} - trim first (steps 1-2), then re-request +${ask} over the approved limit`);
+				refusals.push(`${line}: measured ${bytes(size)}, allowed ${bytes(allowed)} - trim first (steps 1-2), then re-request a raise of ${ask} over the limit at approval (approved: ${raise[line] ?? 0})`);
 				continue;
 			}
 			if (listed) next[line] = Math.max(limits[line], Math.min(size + margin, allowed));

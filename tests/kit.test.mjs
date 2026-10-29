@@ -1891,3 +1891,14 @@ test('the size band end check lowers padding and fails a line over its limit', (
   assert.deepEqual(r.out.limits, { page: 103300, lazy: 16040, files: 81 }, 'lowered to size + margin; the unlisted line kept');
   assert.equal(bandRun('final', { band, measured: { page: 106100, lazy: 16000, files: 81 }, limits }).status, 1);
 });
+test('the size band rejects a band it cannot read as whole numbers, and a line with no limit', () => {
+  const bad = (b) => bandRun('apply', { band: { ...band, ...b }, measured: { page: 101000, lazy: 16000, files: 80 }, limits: band.limit });
+  for (const b of [{ limit: { lazy: 16040, files: 80 } }, { raise: { page: '6000' } }, { raise: { page: 10.5 } }, { base: { page: -1, lazy: 16000, files: 80 } }]) {
+    const r = bad(b);
+    assert.equal(r.status, 2, JSON.stringify(b) + r.stdout);
+    assert.match(r.stdout, /band/i);
+  }
+  const extra = bandRun('apply', { band, measured: { page: 100000, lazy: 16000, files: 80, fonts: 9000 }, limits: band.limit });
+  assert.equal(extra.status, 1);
+  assert.match(extra.stdout, /fonts: no limit/);
+});

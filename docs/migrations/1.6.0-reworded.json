@@ -9,6 +9,11 @@
       "before": "| A12 | **Size budgets** (opt-in, chosen at kit setup): each budget + check commands + CI drift margin, or `none` | Size Budgets | `<fill in>` |",
       "after": "| A12 | **Size budgets** (opt-in, chosen at kit setup): each budget + check commands, the measure command, where the limits live, how measuring builds stay identical (else a measured drift margin), or `none` | Size Budgets | `<fill in>` |",
       "why": "A12 names the measure command, where limits live and how builds stay identical"
+    },
+    {
+      "before": "**One request, two checks (planned work).** A plan that grows a budget asks once, at approval: per line, the estimate + max(10%, the drift floor), landed in one commit. One final check at the PR's last gate, after review fixes: over -> steps 1-3; more room than the margin -> lower to measured + margin. A measurement above the estimate before the raise lands re-sends the request. Why: size stays a decision without a stop per commit, and padding never accumulates.",
+      "after": "- **One request per plan, from a measurement.** Build a first version, measure, then ask once per line at plan approval: the measured growth plus a margin of 10% of it. Never ask from an estimate; a count line (files, not bytes) is asked exactly.",
+      "why": "the ask is made from a measurement, not an estimate, and the drift floor is retired where measuring builds are identical; the end check is its own bullet"
     }
   ]
 }
