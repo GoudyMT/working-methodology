@@ -45,4 +45,4 @@ agent picks up. The owner's design, 2026-10-29; decisions below are the owner's 
 - [x] Live test in a scratch project: hit; miss with close-out and a fresh agent picking up; leak refused
       (docs/evals/results/live-checks-1.3.0.md; run 2 changed the close-out).
 - [x] Recall (8/10, level with 1.2.0), independent review and one short re-check; bump to 1.3.0.
-- [ ] Push and install on the owner's go.
+- [x] Pushed with tag v1.3.0 and installed in ~/.claude on the owner's go (2026-10-29).
