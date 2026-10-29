@@ -43,5 +43,4 @@ commit. The owner's design, 2026-10-29.
       after install, the check (pass + each fail), the hook (first push blocked/allowed, later push unchecked).
 - [x] Install block, check script, hook, rules, setup docs; plus a pre-commit check, hooks on at install, review fixes.
 - [x] Live runs (docs/evals/results/live-checks-1.4.0.md); review and re-check, both fixed; recall 8/10; bump to 1.4.0.
-- [ ] Push and install on
-      the owner's go.
+- [x] Pushed with tag v1.4.0 and installed in ~/.claude on the owner's go (2026-10-29).
