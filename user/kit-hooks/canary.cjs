@@ -52,6 +52,27 @@ const CLOSE_OUT = [
 	'3. Then stop. The one who started you saves the hand-off and starts a fresh agent from your note.',
 ].join('\n');
 
+// The agent's final report. A text reply arrives as last_assistant_message. Where the agent hands its report back
+// through a tool call instead (the desktop app's hand-back tool, or SendMessage), the stop event carries no text, so
+// the report is read from the last assistant entry of the agent's own transcript: its text, else the `message` of
+// its last tool call. Null when there is no report to read.
+function finalReport(input) {
+	if (typeof input.last_assistant_message === 'string' && input.last_assistant_message.trim()) return input.last_assistant_message;
+	try {
+		const lines = fs.readFileSync(input.agent_transcript_path, 'utf8').trim().split('\n');
+		for (let i = lines.length - 1; i >= 0; i--) {
+			const entry = JSON.parse(lines[i]);
+			const content = entry.type === 'assistant' && entry.message && entry.message.content;
+			if (!Array.isArray(content)) continue;
+			const text = content.filter((b) => b.type === 'text' && b.text.trim()).map((b) => b.text).join('\n');
+			if (text) return text;
+			const call = content.filter((b) => b.type === 'tool_use' && b.input && typeof b.input.message === 'string').pop();
+			if (call) return call.input.message;
+		}
+	} catch { /* no readable transcript */ }
+	return null;
+}
+
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
 	const cwd = input.cwd || process.cwd();
@@ -76,11 +97,12 @@ function main() {
 	if (fs.existsSync(mark)) {
 		fs.rmSync(mark, { force: true });
 		// The agent was told to close out, so it may end; any other report after a miss is void all the same.
-		log(found.commonDir, { ...who, result: /^\W*closed out\b/i.test(String(input.last_assistant_message || '')) ? 'closed-out' : 'void-after-miss' });
+		log(found.commonDir, { ...who, result: /^\W*closed out\b/i.test(finalReport(input) || '') ? 'closed-out' : 'void-after-miss' });
 		return 0;
 	}
-	if (typeof input.last_assistant_message !== 'string') { log(found.commonDir, { ...who, result: 'unchecked' }); return 0; }
-	const opens = words(input.last_assistant_message).startsWith(phrase);
+	const report = finalReport(input);
+	if (report === null) { log(found.commonDir, { ...who, result: 'unchecked' }); return 0; }
+	const opens = words(report).startsWith(phrase);
 	log(found.commonDir, { ...who, result: opens ? 'hit' : 'miss' });
 	if (opens) return 0;
 	fs.mkdirSync(path.dirname(mark), { recursive: true });

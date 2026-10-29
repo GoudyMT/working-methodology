@@ -1641,3 +1641,24 @@ test('a stash is never pushed, so the first push check leaves it out', () => {
   g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'stash', 'push', '-q', '-u');
   assert.equal(firstPush(dir).status, 0, firstPush(dir).stdout);
 });
+// Found in a long real run: in the desktop app an agent hands its report back through a tool call, so the stop
+// event carries no text message. The canary reads the report from the agent's own transcript instead.
+test('the canary reads a report handed back through a tool, from the agent transcript', () => {
+  const dir = canaryRepo();
+  const transcript = (msg) => {
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tr-')), 'agent.jsonl');
+    const lines = [
+      { type: 'user', message: { role: 'user', content: 'brief' } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'thinking', thinking: '' }] } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'SubagentHandback', input: { message: msg } }] } },
+      { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } },
+    ];
+    fs.writeFileSync(f, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    return f;
+  };
+  const stop = (id, f) => canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'reviewer', agent_id: id, agent_transcript_path: f }).status;
+  assert.equal(stop('h1', transcript(`${FAKE_PHRASE}\nFindings: none`)), 0);
+  assert.equal(stop('h2', transcript('Findings: none')), 2);
+  assert.equal(stop('h3', path.join(os.tmpdir(), 'no-such-transcript.jsonl')), 0, 'no readable report stays unchecked');
+  assert.deepEqual(canaryLog(dir).map((e) => e.result), ['hit', 'miss', 'unchecked']);
+});
