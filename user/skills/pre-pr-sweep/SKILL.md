@@ -21,8 +21,9 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    legal text, data the user keeps); each adds its role.
 2. **Feature and launch gate:** emit the Swarm Contract table (rule:swarm-contract) and stop for the owner's
    approval. **Fix and triage:** the roles the tier names, plus any modifier's, stated in the plan.
-3. **Run the agents this session** against the branch HEAD, read-only, each with its role's context and a
-   finding cap. Findings go through rule:finding-pipeline.
+3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
+   and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
+   (rule:agent-canary). Findings go through rule:finding-pipeline.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
    gates), with `- **Tier:** <tier>` on its first lines, in the shape of the example for its tier. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.

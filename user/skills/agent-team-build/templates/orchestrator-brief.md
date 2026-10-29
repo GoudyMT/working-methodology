@@ -1,6 +1,7 @@
 # Orchestrator brief - <prong id>: <title>
 
-Read the common brief (`templates/common-brief.md` in the skill) and the project brief first. This brief adds only
+Read the common brief (`templates/common-brief.md` in the skill) and the project brief first, then the "Rules every brief
+carries" block of rule:agent-team-adapter to its last line, with the Read tool (rule:agent-canary). This brief adds only
 what is true of this prong.
 
 - **Project brief:** <its absolute path, from the adapter's field 11>

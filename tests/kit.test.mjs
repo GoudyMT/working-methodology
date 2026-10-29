@@ -654,7 +654,9 @@ const plainLine = (l) => l.replace(/^(#{1,4} .*?) \{#[^}]+\}$/, '$1');
 test('the format skills keep every 1.1.0 rule line exactly once', () => {
   const names = spawnSync('git', ['ls-tree', '--name-only', 'v1.1.0', 'rules/'], { encoding: 'utf8' });
   assert.equal(names.status, 0, 'the v1.1.0 tag must exist locally');
-  const reworded = JSON.parse(read(path.resolve('docs/migrations/1.2.0-reworded.json'))).lines;
+  // Every release since 1.1.0 records its reworded lines in its own file.
+  const reworded = fs.readdirSync(path.resolve('docs/migrations')).filter((n) => /^1\.(?:[2-9]|\d\d)\.\d+-reworded\.json$/.test(n))
+    .flatMap((n) => JSON.parse(read(path.resolve('docs/migrations', n))).lines);
   const swap = new Map(reworded.map((r) => [r.before, r.after]));
   const count = (ls) => ls.filter((l) => /[A-Za-z0-9]/.test(l)).reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
   const want = count(names.stdout.split('\n').filter((n) => n.endsWith('.md')).flatMap((n) =>
@@ -992,13 +994,13 @@ test('no rule pointer in the kit names a heading by its words', () => {
 const roleTable = () => {
   const text = read(path.resolve('rules/agent-teams.md'));
   const sec = text.slice(text.indexOf('{#agent-role-table}'));
-  return [...sec.matchAll(/^\| (builder|checker|scanner|orchestrator) \| [^|]+ \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
+  return [...sec.matchAll(/^\| (builder|checker|scanner|orchestrator|reviewer) \| [^|]+ \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
     .map(([, role, tools, denied, rules]) => ({ role, tools: tools.trim(), denied: denied.trim(), rules: rules.trim() }));
 };
 const front = (f) => Object.fromEntries([...read(f).match(/^---\n([\s\S]*?)\n---/)[1].matchAll(/^(\w+):\s*(.*)$/gm)].map(([, k, v]) => [k, v.trim()]));
 test('each agent role file matches the role table: tools, denied tools and rules at start', () => {
   const rows = roleTable();
-  assert.deepEqual(rows.map((r) => r.role).sort(), ['builder', 'checker', 'orchestrator', 'scanner']);
+  assert.deepEqual(rows.map((r) => r.role).sort(), ['builder', 'checker', 'orchestrator', 'reviewer', 'scanner']);
   for (const r of rows) {
     const fm = front(path.resolve('user/agents', `${r.role}.md`));
     assert.equal(fm.tools, r.tools, `${r.role} tools`);
@@ -1152,6 +1154,97 @@ test('the builder edit fence reads hand-written unit list spellings', () => {
   if (process.platform === 'win32') {
     assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'SRC', 'B.js') } }).status, 0, 'Windows paths ignore case');
   }
+});
+
+// Plan agent-canary: each kit agent opens every message to its tasker with a phrase it can only learn by reading
+// the project's rules block itself. The fixtures use a made-up phrase; the real one has a single home in the kit.
+const FAKE_PHRASE = 'Tango Lima Seven Delta';
+const phraseLine = (p) => `Confirmation phrase: open your first message to whoever started you, and every message after it, with: ${p}\n`;
+function canaryRepo(phrase = FAKE_PHRASE) {
+  const dir = gitTree();
+  fs.mkdirSync(path.join(dir, 'standards'));
+  if (phrase) fs.writeFileSync(path.join(dir, 'standards', 'agent-teams.md'), `# Rules\n\n\`\`\`\nRULES EVERY AGENT FOLLOWS\n${phraseLine(phrase)}\`\`\`\n`);
+  return dir;
+}
+const canary = (input) => runHook('user/kit-hooks/canary.cjs', input);
+const canaryLog = (dir) => {
+  const f = path.join(spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).stdout.trim(), 'kit-canary.log');
+  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
+};
+test('the canary passes a message that opens with the phrase and logs a hit', () => {
+  const dir = canaryRepo();
+  const out = canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'a1', last_assistant_message: `${FAKE_PHRASE}\n\nUNIT: u1 DONE` });
+  assert.equal(out.status, 0, out.stderr);
+  assert.deepEqual(canaryLog(dir).map((e) => [e.role, e.result]), [['builder', 'hit']]);
+});
+test('the canary stops a message without the phrase once, says close out, and never names the phrase', () => {
+  const dir = canaryRepo();
+  const base = { cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'checker', agent_id: 'a2', last_assistant_message: 'VERDICT: PASS' };
+  const out = canary(base);
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /close out/i);
+  assert.match(out.stderr, /rule:agent-canary/);
+  assert.ok(!out.stderr.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'the hook must not leak the phrase');
+  // The stop after the close-out goes through, so the agent can end.
+  assert.equal(canary({ ...base, stop_hook_active: true, last_assistant_message: 'Closed out: note at x' }).status, 0);
+  assert.deepEqual(canaryLog(dir).map((e) => e.result), ['miss', 'closed-out']);
+  // A phrase buried later in the message is not an opening.
+  assert.equal(canary({ ...base, agent_id: 'a3', last_assistant_message: `VERDICT: PASS\n${FAKE_PHRASE}` }).status, 2);
+});
+test('the canary reads the phrase from the main checkout when the agent works in a worktree', () => {
+  const dir = canaryRepo();
+  const wt = path.join(dir, '.claude', 'worktrees', 'unit-9');
+  spawnSync('git', ['-C', dir, 'worktree', 'add', '-q', wt], { encoding: 'utf8' });
+  assert.equal(canary({ cwd: wt, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'w', last_assistant_message: `${FAKE_PHRASE} - done` }).status, 0);
+  assert.equal(canary({ cwd: wt, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'w2', last_assistant_message: 'done' }).status, 2);
+});
+test('the canary is off in a project with no phrase line', () => {
+  const dir = canaryRepo(null);
+  assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'n', last_assistant_message: 'done' }).status, 0);
+});
+test('the leak guard refuses a brief or message that carries the phrase, in any spelling', () => {
+  const dir = canaryRepo();
+  const ask = (tool, field, text) => {
+    const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { [field]: text } });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+  };
+  assert.equal(ask('Agent', 'prompt', 'Build unit u1. Read the rules block first.'), 'allow');
+  assert.equal(ask('Agent', 'prompt', `Start your report with ${FAKE_PHRASE}.`), 'deny');
+  assert.equal(ask('Task', 'prompt', `start with tango  lima\nseven delta`), 'deny');
+  assert.equal(ask('SendMessage', 'message', `Remember: ${FAKE_PHRASE.toUpperCase()}`), 'deny');
+  const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: FAKE_PHRASE } });
+  assert.ok(!r.stdout.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'the refusal must not repeat the phrase');
+});
+test('every kit role runs the canary at its stop, and the project settings run the leak guard', () => {
+  for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
+    assert.match(read(path.resolve('user/agents', `${role}.md`)), /Stop:\n {4}- hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, `${role} wires the canary`);
+  }
+  const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
+  const guard = settings.hooks.PreToolUse.find((h) => h.matcher === 'Agent|Task|SendMessage');
+  assert.ok(guard && guard.hooks[0].args.join(' ').includes('kit-hooks/canary.cjs'), 'the leak guard is wired');
+});
+test('the real phrase has one home in the kit: the last line of the rules every brief carries', () => {
+  const block = read(path.resolve('rules/agent-teams.md')).split('**Rules every brief carries**')[1].split('```')[1];
+  const last = block.trim().split('\n').pop().trim();
+  const m = last.match(/^Confirmation phrase: .* with: (.+)$/);
+  assert.ok(m, 'the block ends with the phrase line');
+  const phrase = m[1].trim().toLowerCase();
+  const homes = KIT_TEXT_FILES().filter((f) => read(f).toLowerCase().includes(phrase)).map((f) => path.relative('.', f).split(path.sep).join('/'));
+  // The built copy of the module is the same block written out by kit.mjs build.
+  assert.deepEqual(homes.sort(), ['project/standards/agent-teams.md', 'rules/agent-teams.md']);
+});
+test('the PR body and release audits fail when the phrase appears', () => {
+  const dir = canaryRepo();
+  const f = path.join(dir, 'b.md');
+  fs.writeFileSync(f, `## Math: subtract\n\nFraming. ${FAKE_PHRASE}.\n\n### Summary\n\nx\n`);
+  const pr = spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, 'Math: subtract'], { encoding: 'utf8', cwd: dir });
+  assert.match(pr.stdout, /FAIL\s+no confirmation phrase/);
+  const lean = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, 'feat: subtract'], { encoding: 'utf8', cwd: dir });
+  assert.match(lean.stdout, /FAIL\s+no confirmation phrase/);
+  fs.writeFileSync(f, `- Plans sync now. ${FAKE_PHRASE}\n`);
+  const rel = spawnSync('node', [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.0.0'], { encoding: 'utf8', cwd: dir });
+  assert.equal(rel.status, 1);
+  assert.match(rel.stdout, /confirmation phrase/);
 });
 test('the git pre-push hook is executable, in the kit and where install writes it', () => {
   assert.match(spawnSync('git', ['ls-files', '-s', 'project/.githooks/pre-push'], { encoding: 'utf8' }).stdout, /^100755 /);

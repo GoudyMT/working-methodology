@@ -5,6 +5,11 @@ model: claude-opus-5-5
 effort: high
 omitClaudeMd: true
 tools: Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
 color: orange
 experimental:
   cacheTtl: 1h
@@ -116,6 +121,8 @@ of yours that broke a rule above: stop it first), or when a choice belongs to th
 numbers.
 
 ## Reports (your final message each time, in plain words)
+
+Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then:
 
 Phase 1:
 

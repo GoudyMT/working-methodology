@@ -4,9 +4,10 @@ You are building ONE unit. Everything you need is below; you have no other conte
 
 ## Project rules (one source - read it, never a pasted copy)
 
-Before anything else, read the "Rules every brief carries" item of rule:agent-team-adapter in full, with the
-Read tool: `<project folder>/standards/INDEX.md` names its file. A project still on one standards file keeps
-it in `<project folder>/_Working Standards.md`. Those rules bind you. If you cannot read it, stop and report that.
+Before anything else, read the "Rules every brief carries" item of rule:agent-team-adapter in full, to its last
+line, with the Read tool: `<project folder>/standards/INDEX.md` names its file. A project still on one standards file keeps
+it in `<project folder>/_Working Standards.md`. Those rules bind you, and their last line
+says how every message you send opens (rule:agent-canary). If you cannot read it, stop and report that.
 
 ## Setup
 

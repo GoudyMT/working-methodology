@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { carriesPhrase } from './canary-phrase.mjs';
 
 // The large-PR body audit: a feature or large PR body that is detailed but not a text wall. The
 // changes read as a before / after table; decisions and the review stay on screen; the gate figures, the file
@@ -119,6 +120,9 @@ const total = wordCount(body);
 const visible = wordCount(visibleText(body));
 row(`size: at most ${TOTAL_MAX} words in all`, total <= TOTAL_MAX, `${total} words`);
 row(`size: at most ${VISIBLE_MAX} words on screen`, visible <= VISIBLE_MAX, `${visible} words`);
+
+// The agents' confirmation phrase never goes out (rule:agent-canary).
+row('no confirmation phrase', !carriesPhrase(body), 'rule:agent-canary');
 
 for (const r of rows) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name.padEnd(46)} ${r.detail}`);
 const passed = rows.every((r) => r.ok);

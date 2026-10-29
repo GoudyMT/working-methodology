@@ -49,9 +49,22 @@ Each agent role gets only the tools its job needs and starts with the rules that
 | builder | Builds one unit test-first in its own worktree | Read, Edit, Write, Grep, Glob, Bash, PowerShell | WebFetch, WebSearch, Agent | edit-discipline, test-integrity, test-value |
 | checker | Checks one finished unit; never edits | Read, Grep, Glob, Bash, PowerShell | Edit, Write, WebFetch, WebSearch, Agent | test-integrity, test-value, anti-hallucination, enumerate-before-you-count |
 | scanner | Lists, counts and checks across files | Read, Grep, Glob | none | none |
+| reviewer | Reviews one sweep role or dimension; never edits | Read, Grep, Glob, Bash, PowerShell, WebFetch, WebSearch | Edit, Write, Agent | anti-hallucination, enumerate-before-you-count |
 | orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |
 
 The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook (once `core.hooksPath` points at `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips the hooks of a project-level agent file until that folder is trusted, and never runs them in a `-p` session, so a copy in a project silently drops its guards.
+
+### Agent Canary {#agent-canary}
+
+Every kit-role agent opens each message to whoever started it with the phrase on the last line of field 8's block, which it finds only by opening that block with Read (role files and preloaded rules are injected, so never there). Why: an agent that skipped or lost its rules does not know it drifted.
+
+- **The tasker never asks for, writes or quotes the phrase** (briefs, messages, replies, PR bodies, releases, commits). A guard refuses a brief or message carrying it; the PR body and release audits fail on it.
+- **The check is a hook:** `canary.cjs`, the Stop hook in every role file. A message that does not open with the phrase voids the run, and the hook sends the close-out steps, never the phrase.
+- **Close-out:** stop editing; commit nothing half-done; save unfinished work as `work.patch` and write `note.md` (done, half-done, next step, files touched, last test run) in `<git common dir>/kit-handoff/<unit id>/`; reply "Closed out: <folder>".
+- **Pick-up:** the lead stops the agent and starts a fresh one of the same role with the same brief plus: resume from the hand-off at <folder>, apply `work.patch`, check the worktree against `note.md`, then continue. A voided report is never used; the fresh agent redoes or re-checks that work.
+- **Two strikes:** after the second failed cycle on the same unit, the run stops and the owner is told.
+- **Log:** each check is a line in `<git common dir>/kit-canary.log`; the lead copies the counts to the scoreboard. False alarms (the checker shows the agent did read) above 1 in 10: fix the wording first.
+- **Not checked:** built-in agent types, which never read the rule files; sweeps use the reviewer role.
 
 ### Agent-Team Build: Project Adapter (TEMPLATE) {#agent-team-adapter}
 
@@ -65,7 +78,7 @@ The portable playbook is user level: the `agent-team-build` skill (both modes) a
 5. **Extra hard stops:** Tier 0 (`<A2>`); visual / copy changes without a locked wireframe or copy line (Visual Checkpoint after <= 3 visual units); any budget raise; spec / ADR changes; the Pre-PR Deep Sweep under a Swarm Contract before any PR.
 6. **Records:** the plan's `## Progress`, ticked with evidence (the plan file is the progress record); `Decided alone` in every rundown; tracking files at session end; lessons and the scoreboard line in `_Loop Learnings.md`.
 7. **Conventions:** branch first; commit format; Test Integrity; comment philosophy; graduated lessons. Inside a batch the lead and builders run the test runner and local git; builders share a commit lock; Edit Discipline's steps live in the batch plan and builder reports.
-8. **Rules every brief carries** (one home: every builder and checker brief tells the agent to read this block here, never a pasted copy):
+8. **Rules every brief carries** (one home: every kit-role brief tells the agent to read this block here, to its last line, never a pasted copy):
    ```
    <PROJECT NAME> - RULES EVERY AGENT FOLLOWS
    Privacy + security: <data boundary>; <baseline>; no secrets in client code or commits; never print
@@ -88,6 +101,9 @@ The portable playbook is user level: the `agent-team-build` skill (both modes) a
      attribution; never --no-verify.
    Budgets: never raise a limit; report an overage with the measured shortfall.
    Visuals + copy: change only what the plan specifies from a locked wireframe or copy line.
+   Confirmation (rule:agent-canary): a message to whoever started you that does not open with the line
+     below is void; if you see you left it out, close out as that rule says.
+   Confirmation phrase: open your first message to whoever started you, and every message after it, with: Nil Satis Nisi Optimum
    ```
 9. **Local guards:** worktrees start from the current branch, not `main` (builders still report their base commit); permission rules + a pre-tool guard asking before any push or forge write in any spelling, proved by `<check command>`; a brief that adds a new command form for a guarded tool adds it to the check as a must-ask case first.
 10. **Version + setup check:** `<minimum tool version>`. Before the first unit, check each role: model read from the run record (not the agent's claim), tool list (no outward tools), no CLAUDE.md in context, worktree base on a feature branch, a token baseline for a one-line task.

@@ -16,6 +16,8 @@ hooks:
   Stop:
     - hooks:
         - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
+        - type: command
           command: node "{{CLAUDE_HOME}}/kit-hooks/clean-tree.cjs"
 color: purple
 ---
@@ -72,6 +74,8 @@ and switched off its hooks. These steps make that impossible:
 fix commits, and for each fix confirm it answers its finding and keeps what the brief says it must preserve.
 
 ## Verdict (your final message)
+
+Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then:
 
 ```
 VERDICT:    PASS | FIX | ESCALATE

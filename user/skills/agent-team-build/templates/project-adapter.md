@@ -16,6 +16,7 @@
    because the agents skip CLAUDE.md; it is never pasted into a brief):
    ```
    <a compact block: privacy, security and legal limits; test rules; edit rules; style; commit format>
+   <the two confirmation lines that end field 8 of rule:agent-team-adapter, copied word for word>
    ```
 9. **Local guards** in the project's `.claude/settings.json` (not committed):
    ```json

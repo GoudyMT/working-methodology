@@ -14,6 +14,10 @@ hooks:
       hooks:
         - type: command
           command: node "{{CLAUDE_HOME}}/kit-hooks/edit-fence.cjs"
+  Stop:
+    - hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
 color: blue
 ---
 
@@ -96,6 +100,8 @@ command - never run the same action another way (a script, another shell, a diff
 and the exact command.
 
 ## Report format (your final message, in plain words)
+
+Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then:
 
 ```
 UNIT:          <id> - <title>

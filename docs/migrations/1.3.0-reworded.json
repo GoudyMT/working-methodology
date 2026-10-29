@@ -1,0 +1,9 @@
+{
+  "lines": [
+    {
+      "before": "8. **Rules every brief carries** (one home: every builder and checker brief tells the agent to read this block here, never a pasted copy):",
+      "after": "8. **Rules every brief carries** (one home: every kit-role brief tells the agent to read this block here, to its last line, never a pasted copy):",
+      "why": "every kit role, not only builders and checkers, reads the block to its last line for the agent canary"
+    }
+  ]
+}

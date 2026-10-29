@@ -22,6 +22,19 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task|SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
+            ],
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionStart": [

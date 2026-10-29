@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { carriesPhrase } from './canary-phrase.mjs';
 
 const [file, title] = process.argv.slice(2);
 const body = readFileSync(file, 'utf8');
@@ -56,6 +57,9 @@ row(
 	words <= 180 && nonEmpty <= 18 && changes <= 3 && gates.length <= 3,
 	`${words} words, ${nonEmpty} non-empty lines, ${changes} changes, ${gates.length} gates`
 );
+
+// The agents' confirmation phrase never goes out (rule:agent-canary).
+row('no confirmation phrase', !carriesPhrase(body), 'rule:agent-canary');
 
 for (const r of rows) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name.padEnd(38)} ${r.detail}`);
 console.log(rows.every((r) => r.ok) ? 'AUDIT PASSED' : 'AUDIT FAILED');

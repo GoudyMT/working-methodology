@@ -5,6 +5,11 @@ model: claude-haiku-5-5
 effort: medium
 omitClaudeMd: true
 tools: Read, Grep, Glob
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
 color: green
 ---
 
@@ -23,6 +28,8 @@ being complete and exact, not in being short.
 5. You cannot write, run commands or browse. If the brief asks for something your tools cannot do, say so.
 
 ## Report (your final message)
+
+Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then:
 
 ```
 SCAN:         <id from the brief>
