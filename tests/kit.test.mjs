@@ -1271,9 +1271,11 @@ test('the canary accepts the phrase under markdown, but not glued to other lette
   assert.equal(stop('m4', `${FAKE_PHRASE}XYZ done`), 2);
 });
 test('the canary compares phrases in any script, not only ASCII', () => {
-  const dir = canaryRepo('Ουδέν άνευ αρίστου');
+  // A Greek phrase, written as character codes so the source stays ASCII.
+  const greek = String.fromCodePoint(0x39f, 0x3c5, 0x3b4, 0x3ad, 0x3bd, 0x20, 0x3ac, 0x3bd, 0x3b5, 0x3c5, 0x20, 0x3b1, 0x3c1, 0x3af, 0x3c3, 0x3c4, 0x3bf, 0x3c5);
+  const dir = canaryRepo(greek);
   const stop = (id, msg) => canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, last_assistant_message: msg }).status;
-  assert.equal(stop('g1', 'Ουδέν άνευ αρίστου\ndone'), 0);
+  assert.equal(stop('g1', `${greek}\ndone`), 0);
   assert.equal(stop('g2', 'done'), 2);
   const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: '' } });
   assert.equal(r.stdout, '', 'an empty brief is never a leak');
