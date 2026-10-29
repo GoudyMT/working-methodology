@@ -1184,6 +1184,11 @@ test('the canary stops a message without the phrase once, says close out, and ne
   assert.equal(out.status, 2);
   assert.match(out.stderr, /close out/i);
   assert.match(out.stderr, /rule:agent-canary/);
+  // Found live: an isolated agent cannot write outside its worktree by any tool, so it only stops, leaves its
+  // changes in place and replies with its note; the lead saves the hand-off.
+  assert.match(out.stderr, /leave your changes/i);
+  assert.match(out.stderr, /Closed out/);
+  assert.doesNotMatch(out.stderr, /work\.patch|kit-handoff/, 'the agent is never sent to write outside its worktree');
   assert.ok(!out.stderr.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'the hook must not leak the phrase');
   // The stop after the close-out goes through, so the agent can end.
   assert.equal(canary({ ...base, stop_hook_active: true, last_assistant_message: 'Closed out: note at x' }).status, 0);

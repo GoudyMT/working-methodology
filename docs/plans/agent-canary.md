@@ -28,9 +28,10 @@ agent picks up. The owner's design, 2026-10-29; decisions below are the owner's 
   line has the check off.
 - **The leak guard:** the same script as a PreToolUse hook on Agent, Task and SendMessage in the project settings
   (it fires inside subagents too, so it covers orchestrators). A brief or message containing the phrase is denied.
-- **Close-out:** fixed steps in rule:agent-canary. The note and a patch of the unfinished work go to
-  `<git common dir>/kit-handoff/<unit>/`, shared by every worktree and never committed; the fresh agent applies the
-  patch and checks the worktree against the note before it works.
+- **Close-out:** fixed steps in rule:agent-canary. The agent stops editing and replies with its close-out note (an
+  isolated agent cannot write outside its worktree, found in live run 2). The lead saves the note and a patch of
+  the unfinished work to `<git common dir>/kit-handoff/<unit>/`, shared by every worktree and never committed; the
+  fresh agent reads the note, applies the patch and checks the worktree against the note before it works.
 - **The log:** `<git common dir>/kit-canary.log`, one JSON line per check (time, role, agent, result). The lead
   copies the counts to the scoreboard.
 - **Outward text:** the PR body and release audits fail when the phrase appears.

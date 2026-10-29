@@ -39,11 +39,10 @@ function log(commonDir, entry) {
 
 const CLOSE_OUT = [
 	'Your message did not open the way your rules require, so this run is void (rule:agent-canary). Close out now:',
-	'1. Stop editing. Commit nothing half-done.',
-	'2. Save unfinished work: `git add -A -N` then `git diff HEAD --binary` into work.patch in the hand-off folder.',
-	'3. Write note.md there: what is done, what is half-done, the next step, the files touched, the last test run.',
-	'   The hand-off folder is <git common dir>/kit-handoff/<unit id>/ (`git rev-parse --git-common-dir`).',
-	'4. Reply with one line: "Closed out: <hand-off folder>". Then stop; a fresh agent picks up from your note.',
+	'1. Stop editing. Commit nothing half-done, and leave your changes where they are.',
+	'2. Reply with your close-out note. First line: "Closed out: <unit id>". Then: what is done, what is half-done,',
+	'   the next step, the files touched (from `git status`), and the last test run and its result.',
+	'3. Then stop. The one who started you saves the hand-off and starts a fresh agent from your note.',
 ].join('\n');
 
 function main() {
