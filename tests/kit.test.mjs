@@ -2287,3 +2287,43 @@ test('the handoff audit prints the full text to send, and only for a clean hando
   assert.equal(bad.status, 1);
   assert.doesNotMatch(bad.stdout, /Send the text/);
 });
+
+// From a project's gap report (2026-10-30): a version-only package.json change was read as a new dependency, a
+// pause stayed silent after the session that tripped it, and an owner-decided sweep could not log its outcome.
+test('a version-only package.json change is not a new dependency; a dependency change still is', () => {
+  const pkg = (v, deps = '{}') => `{\n  "name": "app",\n  "version": "${v}",\n  "dependencies": ${deps}\n}\n`;
+  const repo = (head) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+    g(dir, 'init', '-q', '-b', 'main');
+    fs.writeFileSync(path.join(dir, 'package.json'), pkg('1.0.0'));
+    commitAll(dir, 'base', true);
+    g(dir, 'checkout', '-q', '-b', 'feat/x');
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.writeFileSync(path.join(dir, 'src', 'sync.ts'), 'x\n');
+    fs.writeFileSync(path.join(dir, 'package.json'), head);
+    commitAll(dir, 'feature', true);
+    fs.mkdirSync(path.join(dir, 'sweeps'));
+    return dir;
+  };
+  assert.equal(approveRun(featureContract(), repo(pkg('1.1.0'))).status, 0, 'a version bump alone');
+  assert.match(approveRun(featureContract(), repo(pkg('1.1.0', '{ "left-pad": "1" }'))).stdout, /supply-chain/i, 'a new dependency');
+  assert.match(approveRun(featureContract(), repo('{ not json')).stdout, /supply-chain/i, 'an unreadable package file counts as a change');
+});
+test('while paused, every ask says how the owner resumes and what to review first', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(5 * 60000 * 1.3));
+  const ask = approveIn(r.dir, [r.f]);
+  assert.match(ask.stdout, /paused since \d{4}-\d{2}-\d{2}/);
+  assert.match(ask.stdout, /KIT_OWNER_RESUME/);
+  assert.match(ask.stdout, /--summary/);
+  assert.match(approveIn(r.dir, ['--summary']).stdout, /resume: .*KIT_OWNER_RESUME/);
+});
+test('an owner-decided sweep can log its outcome, so the trial sees every sweep', () => {
+  const c = featureContract();
+  c.roles.pop();
+  const r = approveRun(c);
+  assert.equal(r.status, 1);
+  const o = approveIn(r.dir, [r.f, '--outcome', '--tokens', '288000', '--findings', '4', '--real', '3', '--duplicates', '0']);
+  assert.equal(o.status, 0, o.stdout);
+  assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'outcome').length, 1);
+});

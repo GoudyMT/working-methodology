@@ -28,6 +28,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const SELF = fileURLToPath(import.meta.url);
+const toPosix = (p) => p.split(path.sep).join('/');
 
 // Starting caps, to be set from the trial log once real sweeps are measured. A project may only LOWER them, in
 // .kit/sweep-approval.json ({ "caps": { "<tier>": { ... } } }); raising a cap is a kit change, the owner's call.
@@ -87,11 +91,12 @@ function state() {
 	let broken = -1;
 	log.forEach((e, i) => { if (e.prev !== (i ? sha(lines[i - 1]) : '')) broken = i; });
 	const lastResume = log.map((e, i) => (e.kind === 'resume' && i > broken ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-	if (broken >= 0 && lastResume < 0) return { log, paused: `the log was changed by hand at line ${broken + 1}` };
+	if (broken >= 0 && lastResume < 0) return { log, paused: `the log was changed by hand at line ${broken + 1}`, pausedAt: log[broken].time };
 	const lastPause = log.map((e, i) => (e.kind === 'pause' ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
 	const paused = lastPause > lastResume ? log[lastPause].reason : null;
+	const pausedAt = paused ? log[lastPause].time : null;
 	const since = log.slice(lastResume + 1);
-	return { log, paused, approvedSinceReview: since.filter((e) => e.kind === 'decision' && e.decision === 'approved').length };
+	return { log, paused, pausedAt, approvedSinceReview: since.filter((e) => e.kind === 'decision' && e.decision === 'approved').length };
 }
 
 function caps(tier) {
@@ -102,6 +107,18 @@ function caps(tier) {
 	const out = { ...CAPS[tier] };
 	for (const k of Object.keys(out)) if (Number.isFinite(own[k]) && own[k] > 0) out[k] = Math.min(out[k], own[k]);
 	return out;
+}
+
+// A package.json change counts as a dependency change only when a dependency field changed: a version bump is not a
+// new dependency. Lockfiles and other package files count on any change; an unreadable file counts as a change.
+const DEP_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'bundledDependencies', 'overrides', 'resolutions', 'pnpm'];
+function depsChanged(base, file) {
+	if (!/(^|\/)package\.json$/.test(file)) return true;
+	const at = (ref) => { const r = git('show', `${ref}:${file}`); return r.status === 0 ? r.stdout : null; };
+	try {
+		const [a, b] = [at(base), at('HEAD')].map((t) => (t === null ? {} : JSON.parse(t)));
+		return DEP_FIELDS.some((k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null));
+	} catch { return true; }
 }
 
 // What the branch's diff against its base says, or null when it cannot be read.
@@ -121,7 +138,7 @@ function diffFacts() {
 		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
 		dirty,
 		changed: all.length,
-		deps: all.some((f) => DEP_FILE.test(f)),
+		deps: all.filter((f) => DEP_FILE.test(f)).some((f) => depsChanged(base, f)),
 		tests: all.some((f) => TEST_FILE.test(f)),
 		addedSource: added.filter((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f)),
 		added,
@@ -202,6 +219,8 @@ function decide() {
 	if (why.length) {
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
 		for (const w of why) console.log(`    ${w}`);
+		const now = state();
+		if (now.paused) for (const l of resumeHelp(now)) console.log(l);
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} sweep, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
@@ -240,6 +259,17 @@ function ownerYes() {
 	return 0;
 }
 
+// A pause is the owner's to clear, so every ask while paused says how, and what to review first.
+function resumeHelp(s) {
+	return [
+		`Auto-approval is paused since ${String(s.pausedAt || '').slice(0, 10) || 'an unknown date'}: ${s.paused}.`,
+		`    The owner reviews the log first (node ${toPosix(SELF)} --summary), then resumes from their own terminal:`,
+		`    resume: PowerShell  $env:KIT_OWNER_RESUME='1'; node ${toPosix(SELF)} --resume`,
+		`    resume: bash        KIT_OWNER_RESUME=1 node ${toPosix(SELF)} --resume`,
+		'    Until then every sweep goes to the owner. Carry this into the closeout handoff.',
+	];
+}
+
 function outcome() {
 	const nums = {};
 	for (const k of ['tokens', 'findings', 'real', 'duplicates']) {
@@ -248,8 +278,9 @@ function outcome() {
 		nums[k] = v;
 	}
 	// The decision is found by the contract's path, so an edit after approval still finds it.
-	const decision = state().log.filter((e) => e.kind === 'decision' && e.decision === 'approved' && e.contract === contractFile).pop();
-	if (!decision) { console.log(`No approved decision for ${contractFile}; nothing logged.`); return 1; }
+	// An owner-decided sweep logs its outcome too, so the trial review sees every sweep.
+	const decision = state().log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
+	if (!decision) { console.log(`No decision for ${contractFile}; run approve.mjs on it first. Nothing logged.`); return 1; }
 	// Real findings from roles on the mid model, for the reviewer model trial; optional.
 	if (opt('--real-mid') !== undefined) {
 		const v = Number(opt('--real-mid'));
@@ -273,6 +304,7 @@ function summary() {
 	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}`);
 	console.log(`outcomes: ${o.length}; tokens / budget: ${sum('budget') ? (sum('tokens') / sum('budget')).toFixed(2) : 'n/a'}; real findings: ${sum('real')} of ${sum('findings')} (from mid-model roles: ${sum('realMid')}); repeated: ${sum('duplicates')}`);
 	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${TRIAL_EVERY} since the last review`}`);
+	if (s.paused) console.log(resumeHelp(s)[2].trim());
 	return 0;
 }
 
