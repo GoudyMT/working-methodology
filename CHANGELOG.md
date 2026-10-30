@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.1 - 2026-10-30
+- Troubleshooting starts with the kit status check: when a kit hook, skill, role or rule misbehaves, run /methodology-kit status first, update if it is not current, start a fresh session, then retry (rule:failure-response step 0)
+
 ## 1.7.0 - 2026-10-30
 - Add /methodology-kit status: a read-only check of the kit folder, ~/.claude and a project against the latest kit, file by file
 
