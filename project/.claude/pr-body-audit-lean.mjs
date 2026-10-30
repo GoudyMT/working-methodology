@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { carriesPhrase } from './canary-phrase.mjs';
+import { versionBumpCheck } from './version-bump-check.mjs';
 
 const [file, title] = process.argv.slice(2);
 const body = readFileSync(file, 'utf8');
@@ -60,6 +61,10 @@ row(
 
 // The agents' confirmation phrase never goes out (rule:agent-canary).
 row('no confirmation phrase', !carriesPhrase(body), 'rule:agent-canary');
+
+// Shipped code needs a version bump, or the body says none is due (rule:release-notes).
+const bump = versionBumpCheck(body);
+row('version bumped, or no user-facing change', bump.ok, bump.detail);
 
 for (const r of rows) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name.padEnd(38)} ${r.detail}`);
 console.log(rows.every((r) => r.ok) ? 'AUDIT PASSED' : 'AUDIT FAILED');

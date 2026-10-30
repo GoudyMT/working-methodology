@@ -1,0 +1,14 @@
+{
+  "lines": [
+    {
+      "before": "- **The work PR carries the version bump** - never a bump-only PR; with several PRs the last to merge carries it; held while the merge date is unknown. The shown version comes from the package file; the audit checks tag == package version.",
+      "after": "- **The work PR carries the version bump** - never a bump-only PR; with several PRs the last to merge carries it; held while the merge date is unknown. The shown version comes from the package file; the audit checks tag == package version. Both PR-body audits fail shipped code with no bump unless the body says \"No user-facing change\" (`version-bump-check.mjs`; shipped paths in `.kit/version-bump.json`).",
+      "why": "from a project closeout (2026-10-30): the PR-body audits check the version bump, so a release can follow the merge"
+    },
+    {
+      "before": "- **Everything handed over is a claim:** run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told (\"landed\").",
+      "after": "- **Everything handed over is a claim:** run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told (\"landed\"); attach a library or uploaded file by the exact path its upload reported, never a guessed name.",
+      "why": "from a project closeout (2026-10-30): a stale file was attached by a guessed name; attach by the path the upload reported"
+    }
+  ]
+}

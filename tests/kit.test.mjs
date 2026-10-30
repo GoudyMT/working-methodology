@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
 function makeKit() {
@@ -2198,4 +2199,42 @@ test('a security or novel-lens role on a cheaper model goes to the owner; other 
   assert.equal(approvalLog(ok.dir).pop().realMid, 2);
   assert.match(approveIn(ok.dir, ['--summary']).stdout, /from mid-model roles: 2/);
   assert.notEqual(approveIn(ok.dir, [ok.f, '--outcome', '--tokens', '1', '--findings', '1', '--real', '1', '--duplicates', '0', '--real-mid', 'x']).status, 0);
+});
+
+// From a project closeout (2026-10-30): a PR that changes shipped code without a version bump leaves the release after it
+// nothing to cut, so the PR-body audits fail it unless the body says "No user-facing change".
+const BUMP = path.resolve('project/.claude/version-bump-check.mjs');
+function bumpRepo(change) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bump-'));
+  g(dir, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{\n  "name": "app",\n  "version": "1.0.0"\n}\n');
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'export const a = 1;\n');
+  commitAll(dir, 'base', true);
+  g(dir, 'checkout', '-q', '-b', 'feat/x');
+  change(dir);
+  commitAll(dir, 'change', true);
+  return dir;
+}
+test('the version bump check fails shipped code with no bump, unless the body says no user-facing change', async () => {
+  const { versionBumpCheck } = await import(pathToFileURL(BUMP).href);
+  const shipped = bumpRepo((d) => fs.writeFileSync(path.join(d, 'src', 'a.js'), 'export const a = 2;\n'));
+  assert.equal(versionBumpCheck('Fixes a.', shipped).ok, false);
+  assert.match(versionBumpCheck('Fixes a.', shipped).detail, /No user-facing change/);
+  assert.equal(versionBumpCheck('No user-facing change: a refactor.', shipped).ok, true);
+  const bumped = bumpRepo((d) => {
+    fs.writeFileSync(path.join(d, 'src', 'a.js'), 'export const a = 2;\n');
+    fs.writeFileSync(path.join(d, 'package.json'), '{\n  "name": "app",\n  "version": "1.1.0"\n}\n');
+  });
+  assert.equal(versionBumpCheck('Fixes a.', bumped).ok, true);
+  const testsOnly = bumpRepo((d) => fs.writeFileSync(path.join(d, 'src', 'a.test.js'), 'test\n'));
+  assert.equal(versionBumpCheck('Adds a test.', testsOnly).ok, true);
+  assert.equal(versionBumpCheck('x', fs.mkdtempSync(path.join(os.tmpdir(), 'nogit-'))).ok, true, 'outside git there is nothing to check');
+  // Both PR-body audits carry the row.
+  const f = path.join(shipped, 'body.md');
+  fs.writeFileSync(f, 'Fixes a.\n');
+  for (const audit of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs']) {
+    const out = spawnSync('node', [path.resolve('project/.claude', audit), f, 'feat: a'], { encoding: 'utf8', cwd: shipped }).stdout;
+    assert.match(out, /FAIL\s+version bumped, or no user-facing change/, audit);
+  }
 });

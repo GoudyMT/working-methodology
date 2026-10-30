@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { carriesPhrase } from './canary-phrase.mjs';
+import { versionBumpCheck } from './version-bump-check.mjs';
 
 // The large-PR body audit: a feature or large PR body that is detailed but not a text wall. The
 // changes read as a before / after table; decisions and the review stay on screen; the gate figures, the file
@@ -123,6 +124,10 @@ row(`size: at most ${VISIBLE_MAX} words on screen`, visible <= VISIBLE_MAX, `${v
 
 // The agents' confirmation phrase never goes out (rule:agent-canary).
 row('no confirmation phrase', !carriesPhrase(body), 'rule:agent-canary');
+
+// Shipped code needs a version bump, or the body says none is due (rule:release-notes).
+const bump = versionBumpCheck(body);
+row('version bumped, or no user-facing change', bump.ok, bump.detail);
 
 for (const r of rows) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name.padEnd(46)} ${r.detail}`);
 const passed = rows.every((r) => r.ok);
