@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.0 - 2026-10-30
+- Add /methodology-kit status: a read-only check of the kit folder, ~/.claude and a project against the latest kit, file by file
+
 ## 1.6.1 - 2026-10-30
 - Agent canary in the Claude desktop app: the report is now checked when the agent calls the hand-back tool, because a live capture showed the stop event fires before the hand-back reaches the agent's transcript (so 1.5.0's stop-time read logged every agent 'unchecked'). A miss refuses the hand-back with the close-out steps; the close-out hand-back goes through. Every role file runs the check on its hand-back call.
 
