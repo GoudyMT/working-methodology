@@ -3,7 +3,9 @@
 // actions name the orientation protocol; the Git line and the Next Step are filled in; ASCII only. It cannot
 // check that the state is true.
 //
-// Usage: node audit.mjs <handoff.md>
+// Usage: node audit.mjs <handoff.md> [--send]
+// --send: on a clean audit, print the exact text to send to the coordinating session - the handoff itself, never a
+// path to it, since the next session may not be able to read the path.
 // Exit 0 = clean; 1 = faults, one per line.
 import fs from 'node:fs';
 
@@ -43,3 +45,11 @@ if (faults.length) {
 	process.exit(1);
 }
 console.log('Handoff audit: clean');
+if (process.argv.includes('--send')) {
+	const rule = '-'.repeat(60);
+	console.log('Send the text between the lines as ONE message (in a Claude project thread: send_message to @parent),');
+	console.log('never a file path. The closeout ends when the coordinator confirms it received this text.');
+	console.log(rule);
+	console.log(text.trimEnd());
+	console.log(rule);
+}

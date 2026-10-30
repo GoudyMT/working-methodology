@@ -16,8 +16,11 @@ next session starts from what this writes down, so every line must be true when 
 3. **Batch the tracking files** at the session end (rule:tracking-file-batching).
 4. **Verify git:** branch, HEAD, clean, ahead or behind, local and remote branches, finished agent worktrees
    removed (rule:compact-ritual, part 4).
-5. **Write the handoff** in the shape below, run `node <this skill's folder>/audit.mjs <handoff.md>`, and fix
-   every fault. In a project with several sessions, send it to the coordinating session, then close the thread.
+5. **Write the handoff** in the shape below, run `node <this skill's folder>/audit.mjs <handoff.md> --send`, and fix
+   every fault. In a project with several sessions, send the full text it prints as ONE message to the coordinating
+   session, never a file path (the next session may not be able to read it). The channel by host: in a Claude
+   project thread, `send_message` to `@parent`; elsewhere, the one the project names. The closeout is done only
+   when the coordinator confirms it received the text; then close the thread.
 
 ## The scan
 
@@ -32,7 +35,7 @@ must run first in its own code block, then one copyable text block with its fixe
 
 `audit.mjs` checks the handoff: every section of the rule's shape, in order; the first-actions section names the
 orientation protocol; the Git line and the Next Step are filled in; ASCII only. It cannot check that the state
-is true; the scan and the git verify do.
+is true; the scan and the git verify do. With `--send`, a clean audit also prints the exact text to send to the coordinating session.
 
 ## Examples
 

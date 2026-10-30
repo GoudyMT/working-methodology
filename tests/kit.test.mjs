@@ -2274,3 +2274,16 @@ test('a project\'s .kit/pr-body.json sets its own gates, audit line and verified
   const full = stdAudit(dir, read(path.resolve('user/skills/pr-body/examples/standard.md')));
   assert.equal(full.status, 0, full.stdout);
 });
+
+// Found in a course project closeout (2026-10-30): the lead sent the coordinator a file path instead of the handoff,
+// and a new session may not read that path. The audit can print the exact text to send, so the step is checkable.
+test('the handoff audit prints the full text to send, and only for a clean handoff', () => {
+  const good = '# Notes - Continuation Handoff\n\n## REQUIRED FIRST ACTIONS\nRun the Post-Compact Orientation Protocol.\n\n## Working Mode: Plan\n\n## State Snapshot\n- Git: main at a1b2c3d, pushed\n\n## Newly-Established Working Standards\nnone\n\n## Critical In-Flight Context\n- none\n\n## Reading Order\n1. _Start Here.md\n\n## Next Step\n- What: the next PR\n\n## Anti-Hallucination Discipline\n- verified\n';
+  const ok = runAudit('closeout', good, ['--send']);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout, /Send the text between the lines as ONE message/);
+  assert.ok(ok.stdout.includes(good.trimEnd()), 'the whole handoff, not a path');
+  const bad = runAudit('closeout', good.replace('- Git: main at a1b2c3d, pushed', '- Git:'), ['--send']);
+  assert.equal(bad.status, 1);
+  assert.doesNotMatch(bad.stdout, /Send the text/);
+});

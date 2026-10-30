@@ -14,7 +14,7 @@ These are the kit's general rules for the reviewer role. The project's own fille
 ## Anti-Hallucination Discipline (Standing) {#anti-hallucination}
 
 - **Verify load-bearing facts before locking; label guess vs proven** (proven = a quoted source, a run, a checked config; forecasts labelled). Check cheap facts first; docs describing an intended end state are not the current state.
-- **Everything handed over is a claim:** run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told ("landed").
+- **Everything handed over is a claim:** run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told ("landed"); attach a library or uploaded file by the exact path its upload reported, never a guessed name.
 - **Compute or quote** every number or rule in a brief, decision or spec (run it, or cite file:line), else mark it UNVERIFIED; safety-critical constants (crisis numbers, official links) come from the official source.
 - **No rate or "more often" without the measurement.** One direction observed is not the rule - test the other before an outward change rests on it.
 - **Read the docblock, not just the body** - from its top; grep "Do NOT" / "measured" / "ruled out" before changing code; read a number's label before quoting it.

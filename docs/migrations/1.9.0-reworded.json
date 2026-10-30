@@ -14,6 +14,11 @@
       "before": "| A16 | PR body ceilings + audit commands | PR Body Standard | `<fill in>` |",
       "after": "| A16 | PR body ceilings + audit commands; the audit's gates, dependency-audit line and verified-clean lines (`.kit/pr-body.json`) | PR Body Standard | `<fill in>` |",
       "why": "improvement report IR-2026-10-30-pr-body-audit-holds-checks-from-another-project: the audit's project facts move to a project setting"
+    },
+    {
+      "before": "**Keyword `begin pre-compact`** (standing) runs the Closeout: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, sent to the coordinating session, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.",
+      "after": "**Keyword `begin pre-compact`** (standing) runs the Closeout: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.",
+      "why": "from a project closeout (2026-10-30): the lead sent a file path instead of the handoff; the full text goes as one message and the coordinator confirms"
     }
   ]
 }
