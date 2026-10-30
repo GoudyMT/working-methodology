@@ -70,7 +70,7 @@ The project's own filled "Rules every brief carries" block (rule:agent-team-adap
 Every kit-role agent opens each message to whoever started it with the phrase on the last line of field 8's block, which it finds only by opening that block with Read (role files and preloaded rules are injected, so never there). Why: an agent that skipped or lost its rules does not know it drifted.
 
 - **The tasker never asks for, writes or quotes the phrase**, anywhere. A guard refuses a brief or message carrying it; the PR body and release audits fail on it.
-- **The check is a hook:** `canary.cjs`, the Stop hook in every role file; it reads a tool hand-back from the agent transcript. A miss voids the run; the hook sends the close-out steps, never the phrase.
+- **The check is a hook:** `canary.cjs`, the Stop hook in every role file; a tool hand-back is checked at its call. A miss voids the run; the hook sends the close-out steps, never the phrase.
 - **Close-out (the agent):** stop editing; commit nothing half-done; leave the changes in place; reply "Closed out: <unit id>" with a note (done, half-done, next step, files touched, last test run). (An isolated agent cannot write elsewhere.)
 - **Pick-up (the lead):** save the note and the old worktree's unfinished work (`git -C <worktree> add -A -N`, then `diff HEAD --binary`) as `note.md` and `work.patch` in `<git common dir>/kit-handoff/<unit id>/`; start a fresh agent (same role and brief) plus: read `note.md`, `git apply` `work.patch`, check `git status` against the note, then continue. Nothing from a voided report is used unchecked.
 - **Two strikes:** after the second failed cycle on the same unit, the run stops and the owner is told.

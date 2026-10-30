@@ -97,7 +97,8 @@ function main() {
 	// The canary's own block leaves a mark, so the report after it is told apart from a first report (and a stop that
 	// another hook, like the checker's clean-tree stop, blocked; stop_hook_active alone cannot tell them apart).
 	const mark = path.join(found.commonDir, 'kit-canary-blocked', key);
-	// A hand-back already checked at its call leaves a seen mark, so the stop after it adds nothing to the log.
+	// A hand-back already checked at its call leaves a seen mark, so the stops after it (one more if another hook,
+	// like the checker's clean-tree stop, blocks the first) add nothing to the log. The next hand-back is checked anew.
 	const seen = path.join(found.commonDir, 'kit-canary-seen', key);
 	const touch = (f) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, ''); };
 
@@ -131,7 +132,7 @@ function main() {
 		return 0;
 	}
 
-	if (fs.existsSync(seen)) { fs.rmSync(seen, { force: true }); return 0; }
+	if (fs.existsSync(seen)) return 0;
 	if (fs.existsSync(mark)) {
 		fs.rmSync(mark, { force: true });
 		// The agent was told to close out, so it may end; any other report after a miss is void all the same.

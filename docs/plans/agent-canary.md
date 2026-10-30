@@ -28,6 +28,9 @@ agent picks up. The owner's design, 2026-10-29; decisions below are the owner's 
   line has the check off.
 - **The leak guard:** the same script as a PreToolUse hook on Agent, Task and SendMessage in the project settings
   (it fires inside subagents too, so it covers orchestrators). A brief or message containing the phrase is denied.
+- **Desktop hand-back (1.6.1):** in the desktop app an agent reports by calling a hand-back tool, and the stop
+  event fires before that call reaches the transcript (captured live). The role files run the canary as a PreToolUse
+  hook on the hand-back tool and check its message at the call; a miss refuses the call with the close-out steps.
 - **Close-out:** fixed steps in rule:agent-canary. The agent stops editing and replies with its close-out note (an
   isolated agent cannot write outside its worktree, found in live run 2). The lead saves the note and a patch of
   the unfinished work to `<git common dir>/kit-handoff/<unit>/`, shared by every worktree and never committed; the
