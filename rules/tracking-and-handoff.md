@@ -89,7 +89,7 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 2. Audit the Roadmap, dashboard, Active Plan and current log entry against caps and template.
 3. **Size-cap table** `| item | words | cap | status |` - the four whole-file rows + every capped line touched - counted, never estimated; OVER rows fixed; done only when the all-`ok` table is shown.
 4. **Loop-learnings check** - lessons captured; the handoff names open lessons + any regression.
-5. **Temp files** (screenshots, scratch scripts, logs, backups, drafts) that have served are deleted.
+5. **Temp files** this session made (PR bodies, release drafts, screenshots, scratch scripts, logs, backups, drafts) that have served are deleted wherever they sit: the scratch folder, untracked files in the repo, and any shared or uploaded copy (a project library, an attachment folder). Emit the list deleted, or "none". Why: a served draft left in a shared place gets attached again as if current.
 5b. **Rule sort for the kit (standing):** each rule, standard or workflow change this session (skills, agent roles, working-style memory too), tagged `project-only` or `portable`; portable ones go to `/methodology-kit fold-back` with the owner, around the compact. Emit the list, or "no rule changes". Why: without this step an improvement stays in one project.
 6. Generate the handoff.
 

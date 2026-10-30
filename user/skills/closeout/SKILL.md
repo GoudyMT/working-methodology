@@ -11,7 +11,8 @@ next session starts from what this writes down, so every line must be true when 
 ## Steps
 
 1. **Capture** every style, format or workflow correction from this session where it lasts (rule:compact-ritual).
-2. **Run the scan** below, step by step, each shown pass or fail.
+2. **Run the scan** below, step by step, each shown pass or fail. Its temp-file step covers shared and uploaded
+   copies too (a project library, an attachment folder), not only the scratch folder.
 3. **Batch the tracking files** at the session end (rule:tracking-file-batching).
 4. **Verify git:** branch, HEAD, clean, ahead or behind, local and remote branches, finished agent worktrees
    removed (rule:compact-ritual, part 4).

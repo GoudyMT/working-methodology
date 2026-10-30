@@ -74,6 +74,11 @@
       "before": "- **Reviewers:** a feature PR keeps the Pre-PR Deep Sweep floor; sizing to stakes applies above that floor and to other PRs. Each is held to its step limit; over is a contract miss. Keep the top model as reviewer until the scoreboard shows a cheaper one holds.",
       "after": "- **Reviewers:** a feature PR keeps the Pre-PR Deep Sweep floor; sizing to stakes applies above that floor and to other PRs. Each is held to its step limit; over is a contract miss. Keep the top model as reviewer until the scoreboard shows a cheaper one holds. **Trial (the owner, 2026-10-30):** a role other than security and the novel lens may run on the mid model (the contract's `model`, passed to its Agent call; `approve.mjs` refuses it on those two); every high finding is re-checked on the top model, and the outcome logs the real findings from mid-model roles (`--real-mid`). It ends when the scoreboard shows the mid model meets the bar, or on a miss.",
       "why": "the owner opened the reviewer model trial (2026-10-30): mid model for roles other than security and the novel lens"
+    },
+    {
+      "before": "5. **Temp files** (screenshots, scratch scripts, logs, backups, drafts) that have served are deleted.",
+      "after": "5. **Temp files** this session made (PR bodies, release drafts, screenshots, scratch scripts, logs, backups, drafts) that have served are deleted wherever they sit: the scratch folder, untracked files in the repo, and any shared or uploaded copy (a project library, an attachment folder). Emit the list deleted, or \"none\". Why: a served draft left in a shared place gets attached again as if current.",
+      "why": "the owner asked (2026-10-30) that the closeout also removes served temp files from shared places, after a stale PR body was attached again"
     }
   ]
 }
