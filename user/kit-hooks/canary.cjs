@@ -47,7 +47,7 @@ function log(commonDir, entry) {
 const CLOSE_OUT = [
 	'Your message did not open the way your rules require, so this run is void (rule:agent-canary). Close out now:',
 	'1. Stop editing. Commit nothing half-done, and leave your changes where they are.',
-	'2. Reply with your close-out note. First line: "Closed out: <unit id>". Then: what is done, what is half-done,',
+	'2. Send your close-out note as your report (your reply, or your hand-back). First line: "Closed out: <unit id>". Then: what is done, what is half-done,',
 	'   the next step, the files touched (from `git status`), and the last test run and its result.',
 	'3. Then stop. The one who started you saves the hand-off and starts a fresh agent from your note.',
 ].join('\n');
@@ -92,6 +92,33 @@ function main() {
 	if (!found) return 0;
 	const phrase = words(found.phrase);
 
+	const who = { role: input.agent_type || 'unknown', agent: input.agent_id || '', session: input.session_id || '' };
+	const key = (who.agent || `${who.session}-${who.role}`).replace(/[^\w.-]/g, '_');
+	// The canary's own block leaves a mark, so the report after it is told apart from a first report (and a stop that
+	// another hook, like the checker's clean-tree stop, blocked; stop_hook_active alone cannot tell them apart).
+	const mark = path.join(found.commonDir, 'kit-canary-blocked', key);
+	// A hand-back already checked at its call leaves a seen mark, so the stop after it adds nothing to the log.
+	const seen = path.join(found.commonDir, 'kit-canary-seen', key);
+	const touch = (f) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, ''); };
+
+	// The desktop app's hand-back: the report is the call's own message. Checked here, at the call, because the stop
+	// event fires before the hand-back reaches the agent's transcript (captured live).
+	if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') {
+		const report = String((input.tool_input || {}).message || '');
+		if (fs.existsSync(mark)) {
+			fs.rmSync(mark, { force: true });
+			touch(seen);
+			log(found.commonDir, { ...who, result: /^\W*closed out\b/i.test(report) ? 'closed-out' : 'void-after-miss' });
+			return 0;
+		}
+		const opens = words(report).startsWith(phrase);
+		log(found.commonDir, { ...who, result: opens ? 'hit' : 'miss' });
+		if (opens) { touch(seen); return 0; }
+		touch(mark);
+		process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: CLOSE_OUT } }));
+		return 0;
+	}
+
 	if (input.hook_event_name === 'PreToolUse') {
 		const t = input.tool_input || {};
 		// An agent's own message to its tasker opens with the phrase, as its rules say: that is the check, not a leak.
@@ -104,10 +131,7 @@ function main() {
 		return 0;
 	}
 
-	const who = { role: input.agent_type || 'unknown', agent: input.agent_id || '', session: input.session_id || '' };
-	// The canary's own block leaves a mark, so the stop after it is told apart from a stop another hook (the
-	// checker's clean-tree stop) blocked; stop_hook_active alone cannot tell them apart.
-	const mark = path.join(found.commonDir, 'kit-canary-blocked', (who.agent || `${who.session}-${who.role}`).replace(/[^\w.-]/g, '_'));
+	if (fs.existsSync(seen)) { fs.rmSync(seen, { force: true }); return 0; }
 	if (fs.existsSync(mark)) {
 		fs.rmSync(mark, { force: true });
 		// The agent was told to close out, so it may end; any other report after a miss is void all the same.

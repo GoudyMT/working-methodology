@@ -10,6 +10,10 @@ disallowedTools: WebFetch, WebSearch, Agent
 skills: builder-rules
 hooks:
   PreToolUse:
+    - matcher: "SubagentHandback"
+      hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
     - matcher: "Edit|Write|NotebookEdit"
       hooks:
         - type: command

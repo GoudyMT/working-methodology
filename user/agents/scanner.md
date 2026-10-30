@@ -6,6 +6,11 @@ effort: medium
 omitClaudeMd: true
 tools: Read, Grep, Glob
 hooks:
+  PreToolUse:
+    - matcher: "SubagentHandback"
+      hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
   Stop:
     - hooks:
         - type: command

@@ -9,6 +9,10 @@ disallowedTools: Edit, Write, WebFetch, WebSearch, Agent
 skills: checker-rules
 hooks:
   PreToolUse:
+    - matcher: "SubagentHandback"
+      hooks:
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
     - matcher: "Bash|PowerShell"
       hooks:
         - type: command

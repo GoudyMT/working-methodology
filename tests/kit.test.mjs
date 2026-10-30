@@ -1902,3 +1902,29 @@ test('the size band rejects a band it cannot read as whole numbers, and a line w
   assert.equal(extra.status, 1);
   assert.match(extra.stdout, /fonts: no limit/);
 });
+
+// Captured live in the desktop app: the stop event fires before the agent's hand-back reaches its transcript, so a
+// stop-time read finds no report. The report is checked when the agent calls the hand-back tool, where its text is
+// the call's own input; a miss refuses the call with the close-out steps.
+test('the canary checks a hand-back at the call, refuses a miss once, and lets the close-out through', () => {
+  const dir = canaryRepo();
+  const handback = (id, message) => {
+    const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_type: 'builder', agent_id: id, tool_input: { message } });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+  };
+  assert.equal(handback('p1', `${FAKE_PHRASE}\nUNIT u1 DONE`).permissionDecision, 'allow');
+  const miss = handback('p2', 'UNIT u1 DONE');
+  assert.equal(miss.permissionDecision, 'deny');
+  assert.match(miss.permissionDecisionReason, /Closed out/);
+  assert.ok(!miss.permissionDecisionReason.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'never names the phrase');
+  assert.equal(handback('p2', 'Closed out: u1\nnote').permissionDecision, 'allow');
+  // The stop that follows a checked hand-back adds nothing to the log.
+  canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'p1' });
+  canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'p2' });
+  assert.deepEqual(canaryLog(dir).map((e) => [e.agent, e.result]), [['p1', 'hit'], ['p2', 'miss'], ['p2', 'closed-out']]);
+});
+test('every kit role checks its hand-back call', () => {
+  for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
+    assert.match(read(path.resolve('user/agents', `${role}.md`)), /matcher: "SubagentHandback"\n {6}hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, role);
+  }
+});
