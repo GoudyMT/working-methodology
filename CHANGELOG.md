@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.8.0 - 2026-10-30
+- Sweeps run the approval script before any ask: it prints the owner's start notice from checked data, logs the owner's yes after an ASK (--owner-yes), and a hook holds reviewer agents to the cleared team at the contract's HEAD (closes IR-2026-10-30-sweep-approval-miss). A kit-owned improvement report format: template, 'new', an audit that refuses unproven causes and any fix that lowers a standard, open reports in /methodology-kit status. [trial] Mid-model reviewers for roles other than security and the novel lens, logged with --real-mid. The closeout deletes served temp files from shared and uploaded places too.
+
 ## 1.7.1 - 2026-10-30
 - Troubleshooting starts with the kit status check: when a kit hook, skill, role or rule misbehaves, run /methodology-kit status first, update if it is not current, start a fresh session, then retry (rule:failure-response step 0)
 
