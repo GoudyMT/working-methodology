@@ -2120,3 +2120,61 @@ test('status lists the improvement reports still open in a project', () => {
   assert.match(r.text, /1 improvement report\(s\) open: IR-2026-10-30-a\.md/);
   assert.equal(r.current, true, 'an open report is work for the kit, not a stale install');
 });
+
+// Found in review of the sweep guard (2026-10-30).
+test('the sweep guard holds reviewers to the cleared team size', () => {
+  const dir = sweepRepo({ 'README.md': 'y\n' });
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?', { budget: 20000 })] };
+  assert.equal(approveRun(one, dir).status, 0);
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the one cleared reviewer');
+  const second = sweepGuard(dir);
+  assert.equal(second.permissionDecision, 'deny', 'a second reviewer on a one-role contract');
+  assert.match(second.permissionDecisionReason, /1 reviewer/);
+});
+test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sweep runs', () => {
+  const dir = sweepRepo();
+  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'wt');
+  g(dir, 'worktree', 'add', '-q', '-b', 'feat/other', wt, 'main');
+  fs.writeFileSync(path.join(wt, 'src.ts'), 'x\n');
+  commitAll(wt, 'other work', true);
+  fs.mkdirSync(path.join(wt, 'sweeps'));
+  const r = approveRun(featureContract(), wt);
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
+});
+test('the owner\'s yes can be logged when the script could not read the base', () => {
+  const dir = sweepRepo();
+  g(dir, 'branch', '-m', 'main', 'develop');
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /--base/);
+  assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes go ahead']).status, 0);
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow');
+});
+test('the sweep guard gates the reviewer type in any spelling', () => {
+  const dir = sweepRepo();
+  for (const t of ['Reviewer', 'kit:reviewer']) assert.equal(sweepGuard(dir, { tool_input: { subagent_type: t } }).permissionDecision, 'deny', t);
+});
+test('a report title with $ signs is written as typed', () => {
+  const dir = reportRepo();
+  assert.equal(reportRun(dir, ['new', "Cost $' and $& here"]).status, 0);
+  const f = fs.readdirSync(path.join(dir, '.kit', 'reports'))[0];
+  const text = read(path.join(dir, '.kit', 'reports', f));
+  assert.match(text, /^# Improvement report: Cost \$' and \$& here$/m);
+  assert.equal(text.match(/^## Summary$/gm).length, 1);
+});
+test('the report audit reads pipes in code spans, allows angle brackets in prose, and catches a backticked placeholder', () => {
+  const check = (text) => {
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ir-')), 'r.md');
+    fs.writeFileSync(f, text);
+    return reportRun(path.dirname(f), ['audit', f]);
+  };
+  const piped = EXAMPLE().replace(/^(\| 1 \| .*? \| )(.*?)( \| proven \|)$/m, '$1`a | b` in `x.md:3`$3');
+  assert.notEqual(piped, EXAMPLE());
+  assert.equal(check(piped).status, 0, check(piped).stdout);
+  const prose = EXAMPLE().replace('## Summary\n\n', '## Summary\n\nA `Map<string>` type and a <br> tag appear in prose.\n');
+  assert.equal(check(prose).status, 0, check(prose).stdout);
+  const ticked = EXAMPLE().replace(/^(\| 1 \| .*? \| ).*?( \| proven \|)$/m, '$1`<file:line, a short quote, a command output or a log line>`$2');
+  assert.equal(check(ticked).status, 1);
+  assert.match(check(ticked).stdout, /placeholder/);
+});

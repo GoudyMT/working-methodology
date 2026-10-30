@@ -36,13 +36,13 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this
 - **Model tiers:** top for high-stakes reasoning, design, security, checking; mid for coding and analysis; small for narrow high-volume scans, re-checked by the requester (moving a lead's own reading to them cost more, measured). Pin exact versions in role files; a change is the owner's call.
 - **Constraints:** agents inherit permissions (a research brief names the web tools allowed; a shared browser pane is not one); they see no chat history (self-contained briefs); their claims are direct-read verified before any lock; findings come back in the final message, not files. **Own the role:** re-weigh each find with fuller context (a real miss, or an artifact of narrow scope?), never relay it as praise. Decisions, locking and design stay with the owner in the main conversation.
 
-**Dispatch - default is direct execution:** the main session builds small and medium features; agents are for genuinely parallel or wide work, or an independent review (delegation costs more total compute). Record tokens, time and real catches; recalibrate after 3-5 dispatches.
+**Dispatch - default is direct execution:** the main session builds small and medium features; agents are for genuinely parallel or wide work, or an independent review (delegation costs more total compute). Record tokens, time and real catches; recalibrate every 3-5 dispatches.
 
-**One session per prong:** each parallel prong runs in its own session, reporting completion to the main session. **Every plan has an "Execution approach" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down; agents earn their keep only on proportional value.
+**One session per prong:** each parallel prong runs in its own session, reporting to the main session. **Every plan has an "Execution approach" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down; agents earn their keep only on proportional value.
 
 ### Agent Role Table {#agent-role-table}
 
-Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in the kit's `user/agents/` must match it (a test checks), and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.
+Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in `user/agents/` must match it (a test checks), and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.
 
 | Role | Job | Tools | Denied tools | Rules at start |
 |---|---|---|---|---|
@@ -64,7 +64,7 @@ Every kit-role agent opens each message to whoever started it with the phrase on
 - **Pick-up (the lead):** save the note and the old worktree's unfinished work (`git -C <worktree> add -A -N`, then `diff HEAD --binary`) as `note.md` and `work.patch` in `<git common dir>/kit-handoff/<unit id>/`; start a fresh agent (same role and brief) plus: read `note.md`, `git apply` `work.patch`, check `git status` against the note, then continue. Nothing from a voided report is used unchecked.
 - **Two strikes:** a second failed cycle on one unit stops the run; the owner is told.
 - **Log:** each check is a line in `<git common dir>/kit-canary.log`; the lead copies the counts to the scoreboard; `unchecked` = the check did not run; find out why. False alarms (the checker shows the agent did read) above 1 in 10: fix the wording first.
-- **Not checked:** built-in agent types, which never read the rule files; sweeps use the reviewer role.
+- **Not checked:** built-in agent types (they never read the rule files); sweeps use the reviewer role.
 
 ### Agent-Team Build: Project Adapter (TEMPLATE) {#agent-team-adapter}
 
@@ -107,6 +107,6 @@ The portable playbook is user level: the `agent-team-build` skill (both modes) a
    ```
 9. **Local guards:** worktrees start from the current branch, not `main` (builders still report their base commit); permission rules + a pre-tool guard asking before any push or forge write in any spelling, proved by `<check command>`; a brief that adds a new command form for a guarded tool adds it to the check as a must-ask case first.
 10. **Version + setup check:** `<minimum tool version>`. Before the first unit, check each role: model read from the run record (not the agent's claim), tool list (no outward tools), no CLAUDE.md in context, worktree base on a feature branch, a token baseline for a one-line task.
-11. **Orchestrated mode:** overseer ports / lock file / worktree paths / one branch per prong; run records `<path>`; project brief `<path>`; readiness of the last prong. The orchestrator's Swarm Contract goes to the overseer, who checks it and takes it to the owner.
+11. **Orchestrated mode:** overseer ports / lock file / worktree paths / one branch per prong; run records `<path>`; project brief `<path>`; readiness of the last prong. The orchestrator runs `approve.mjs` on its Swarm Contract and sends both to the overseer; an ASK goes to the owner.
 
 **Team mechanics:** briefs carry a searched collision list and the base commit and forbid remote acts; a resumed agent keeps its old role text (new rules go in the message); a worktree does not isolate git config or refs - a writing probe runs in a scratch clone, strict shell mode, top-level path proved first; integrate by cherry-pick with a blob check per file, then remove the worktree and branch and say so; after two FIX rounds the lead finishes the unit. Durable tools live in a gitignored tools folder.

@@ -3,32 +3,72 @@
     {
       "before": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this table and STOP for the owner (or rule:sweep-auto-approval clears it). Why: a swarm without distinct questions buys clones at full price.",
       "after": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract and run `approve.mjs` FIRST (rule:sweep-auto-approval; orchestrated: field 11): APPROVED -> post its notice and go; ASK -> show the table and reasons, STOP for the owner. Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.",
-      "why": "the script runs before any ask, so the owner hears only what the script cannot clear (a course project asked first and approved a team below the floor)"
+      "why": "the approval script runs before any ask; the owner hears only what it cannot clear (improvement report IR-2026-10-30-sweep-approval-miss)"
     },
     {
       "before": "**Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL. **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role. Sweeps and re-sweeps: the owner approves, or rule:sweep-auto-approval (orchestrated: field 11).",
       "after": "**Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL. **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role.",
-      "why": "the re-sweep approval moved into the swarm-contract line"
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "**Dispatch - default is direct execution:** the main session builds small and medium features; agents are for genuinely parallel or wide work, or an independent review (delegation costs more total compute). Record tokens, time and real catches; recalibrate after 3-5 dispatches.",
+      "after": "**Dispatch - default is direct execution:** the main session builds small and medium features; agents are for genuinely parallel or wide work, or an independent review (delegation costs more total compute). Record tokens, time and real catches; recalibrate every 3-5 dispatches.",
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "**One session per prong:** each parallel prong runs in its own session, reporting completion to the main session. **Every plan has an \"Execution approach\" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down; agents earn their keep only on proportional value.",
+      "after": "**One session per prong:** each parallel prong runs in its own session, reporting to the main session. **Every plan has an \"Execution approach\" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down; agents earn their keep only on proportional value.",
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in the kit's `user/agents/` must match it (a test checks), and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.",
+      "after": "Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in `user/agents/` must match it (a test checks), and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.",
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
     },
     {
       "before": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook (once `core.hooksPath` points at `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards.",
       "after": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop are role-file hooks; the push guard is also a git pre-push hook (`core.hooksPath` = `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards.",
-      "why": "trimmed for the size cap; same guards"
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "- **Two strikes:** after the second failed cycle on the same unit, the run stops and the owner is told.",
+      "after": "- **Two strikes:** a second failed cycle on one unit stops the run; the owner is told.",
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "- **Not checked:** built-in agent types, which never read the rule files; sweeps use the reviewer role.",
+      "after": "- **Not checked:** built-in agent types (they never read the rule files); sweeps use the reviewer role.",
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "11. **Orchestrated mode:** overseer ports / lock file / worktree paths / one branch per prong; run records `<path>`; project brief `<path>`; readiness of the last prong. The orchestrator's Swarm Contract goes to the overseer, who checks it and takes it to the owner.",
+      "after": "11. **Orchestrated mode:** overseer ports / lock file / worktree paths / one branch per prong; run records `<path>`; project brief `<path>`; readiness of the last prong. The orchestrator runs `approve.mjs` on its Swarm Contract and sends both to the overseer; an ASK goes to the owner.",
+      "why": "the approval script runs before any ask; the owner hears only what it cannot clear (improvement report IR-2026-10-30-sweep-approval-miss)"
     },
     {
       "before": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (the feature and launch-gate tiers; a fix or triage sweep re-checks as rule:sweep-tiers says) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.",
       "after": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.",
-      "why": "the re-sweep tiers live in rule:sweep-tiers; this points there"
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
     },
     {
       "before": "A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract (as is the red-team). Why: a sweep without a clear trigger never happens.",
       "after": "A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract. Why: a sweep without a clear trigger never happens.",
-      "why": "trimmed for the size cap; the red-team runs under a contract per rule:swarm-contract"
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "| **Fix** | a fix or a change to existing behaviour in a known area; a targeted object (one component, one flow) | 2-3: one on the fix (its root, and whether it holds), one on its blast radius (callers, the code it was modelled on), plus Test Value when tests change | each dimension PASS, its findings, or \"not touched\" and why; the alignment verdict | a short report |",
+      "after": "| **Fix** | a fix or change to existing behaviour in a known area (one component, one flow) | 2-3: one on the fix (its root, and whether it holds), one on its blast radius (callers, the code it was modelled on), plus Test Value when tests change | each dimension PASS, its findings, or \"not touched\" and why; the alignment verdict | a short report |",
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "A feature, fix or triage sweep's Swarm Contract (also written as data) is approved by the pre-pr-sweep skill's `approve.mjs`, never an agent: same contract, same answer, no tokens. It approves only when the tier's and modifiers' roles are there, each role has its own question (no near-copies), context, finding shape and budget, and count and budgets fit the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome (tokens, findings, real, repeated) is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.",
+      "after": "A feature, fix or triage sweep's Swarm Contract (also written as data) is approved by `approve.mjs` (pre-pr-sweep skill), never an agent: same contract, same answer, no tokens. It runs first: an approval prints the owner's notice; only an ASK goes to the owner, whose yes is logged (`--owner-yes`); a hook holds reviewer agents until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.",
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
     },
     {
       "before": "- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in their own scratch folders, read-only on the repo, each finding with a reproducing script.",
       "after": "- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in scratch folders, read-only on the repo, each finding with its reproducing script.",
-      "why": "trimmed for the size cap; same scripts"
+      "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
     }
   ]
 }

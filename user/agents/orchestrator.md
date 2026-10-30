@@ -56,7 +56,8 @@ the brief names, and whenever you stop.
 
 ## Phase 3 - the review (when the brief gives you this phase)
 
-No sweep or re-sweep starts without the user's approval: write its Swarm Contract, send it to the overseer and STOP
+No sweep or re-sweep starts until its Swarm Contract is cleared: write it, run `approve.mjs` on it, send both to the
+overseer and STOP
 (`orchestrated.md`, "Sweeps go through the overseer"). Then run `SKILL.md` "The flow" step 6 as written.
 
 ## Your phase ends; the next lead starts fresh

@@ -59,8 +59,11 @@ rule inside a phase: on the measured runs a mid-phase replacement would have sav
 
 ## Sweeps go through the overseer
 
-No sweep or re-sweep starts without the user's approval. The orchestrator writes its Swarm Contract (what it holds:
-`SKILL.md` "The flow", step 6), sends it to the overseer and stops. The overseer checks it for legitimacy and gaps and takes it to the user. The
+No sweep or re-sweep starts until its Swarm Contract is cleared (rule:sweep-auto-approval). The orchestrator writes it
+(what it holds: `SKILL.md` "The flow", step 6), runs `approve.mjs` on it, sends the contract and the script's output
+to the overseer and stops. The overseer checks both for legitimacy and gaps: APPROVED and sound, it posts the start
+notice and the orchestrator goes on; ASK, it takes the table and the script's reasons to the user, and logs their
+yes with `--owner-yes`. The guard on reviewer agents holds the order. The
 report comes back the same way: the overseer checks it, then delivers it. Two sets of eyes on every sweep.
 
 ## The kill-switch

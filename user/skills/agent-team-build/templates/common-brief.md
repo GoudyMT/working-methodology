@@ -37,11 +37,11 @@ commands are in the project brief.
    the re-run break check; the size checks during integration).
 2. The full gate green on the branch head.
 3. Before the review: the ONE review wave you propose as a Swarm Contract (what it holds: `SKILL.md` "The flow",
-   step 6), sent to the overseer, who checks it and takes it to the user (`orchestrated.md`, "Sweeps go through the
-   overseer").
+   step 6), run through `approve.mjs` and sent with its output to the overseer, who checks it and takes an ASK to the
+   user (`orchestrated.md`, "Sweeps go through the overseer").
 4. The review's report to the overseer (who checks it and delivers it); the findings through the project's finding
    pipeline; the fixes; the fix check and the re-sweep as `SKILL.md` "The flow" step 6 says (the re-sweep's contract
-   approved the same way); the gate green again.
+   cleared the same way); the gate green again.
 5. User-facing work: the project's pre-push use-and-attack test, where the project has one.
 6. Ready to push: the facts the pull request body needs (the overseer writes the body with the user).
 

@@ -38,7 +38,10 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    gates), with `- **Tier:** <tier>` on its first lines, in the shape of the example for its tier. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.
 5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
-   check for a fix, none for triage unless it found something. Update the report. Summarize the result in the PR
+   check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
+   re-sweep: the script clears no new contract until it is in. The re-sweep is a new contract on the new HEAD, run
+   through `approve.mjs` like the first; scoped to the fixes, it may fall below the tier's floor, and then the
+   script asks and the owner decides. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --tokens <used> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>`. A bug later found in code the

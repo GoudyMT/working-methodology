@@ -27,7 +27,20 @@ const EFFECTS = ['same', 'higher'];
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
 const today = () => new Date().toISOString().slice(0, 10);
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+// A table row's cells; a pipe inside a code span is part of the cell, not a column break.
+function cells(line) {
+	const out = [''];
+	let code = false;
+	for (const ch of line.trim().replace(/^\||\|$/g, '')) {
+		if (ch === '`') code = !code;
+		if (ch === '|' && !code) out.push('');
+		else out[out.length - 1] += ch;
+	}
+	return out.map((c) => c.trim());
+}
+// The template's own placeholders: a report that still holds one, even in backticks, is not filled in. Other angle
+// brackets (a type like Map<string>, an HTML tag in prose) are content.
+const PLACEHOLDERS = () => [...new Set(fs.readFileSync(TEMPLATE, 'utf8').replace(/<!--[\s\S]*?-->/g, '').match(/<[A-Za-z][^<>\n]*>/g) || [])];
 
 // The rows of the first table under a heading (header and divider left out).
 function tableUnder(body) {
@@ -47,10 +60,9 @@ function sections(text) {
 
 export function audit(text) {
 	const faults = [];
-	// Comments and code spans may hold angle brackets on purpose; the placeholder check reads the rest.
-	const plain = text.replace(/<!--[\s\S]*?-->/g, '').replace(/`[^`\n]*`/g, '');
-	const holes = plain.match(/<[A-Za-z][^<>\n]*>/g);
-	if (holes) faults.push(`unfilled placeholder(s): ${[...new Set(holes)].slice(0, 3).join(', ')}`);
+	const plain = text.replace(/<!--[\s\S]*?-->/g, '');
+	const holes = PLACEHOLDERS().filter((p) => plain.includes(p));
+	if (holes.length) faults.push(`unfilled placeholder(s): ${holes.slice(0, 3).join(', ')}`);
 	if (!/^# Improvement report: \S/m.test(text)) faults.push('the title line "# Improvement report: <title>" is missing');
 	const head = {};
 	for (const l of text.split(/^## /m)[0].split('\n').filter((x) => /^\|/.test(x))) {
@@ -102,13 +114,13 @@ function create(title) {
 	const commit = git(root, 'rev-parse', '--short', 'HEAD').stdout.trim() || '<short commit>';
 	const id = `IR-${today()}-${slug(title)}`;
 	const text = fs.readFileSync(TEMPLATE, 'utf8')
-		.replace('<one-line title>', title.trim())
-		.replace('<IR-YYYY-MM-DD-slug>', id)
+		.replace('<one-line title>', () => title.trim())
+		.replace('<IR-YYYY-MM-DD-slug>', () => id)
 		.replace('| <YYYY-MM-DD> |', `| ${today()} |`)
-		.replace('<project folder name>', path.basename(root))
-		.replace('<branch> @ <short commit>', `${branch} @ ${commit}`)
-		.replace('| <x.y.z> |', `| ${version} |`)
-		.replace('<the kit version that closes it; leave "-" while open>', '-');
+		.replace('<project folder name>', () => path.basename(root))
+		.replace('<branch> @ <short commit>', () => `${branch} @ ${commit}`)
+		.replace('| <x.y.z> |', () => `| ${version} |`)
+		.replace('<the kit version that closes it; leave "-" while open>', () => '-');
 	const dir = path.join(root, '.kit', 'reports');
 	const file = path.join(dir, `${id}.md`);
 	if (fs.existsSync(file)) { console.log(`${file} already exists; pick another title.`); return 1; }
@@ -119,7 +131,8 @@ function create(title) {
 }
 
 function list() {
-	const dir = path.join(process.cwd(), '.kit', 'reports');
+	const top = git(process.cwd(), 'rev-parse', '--show-toplevel');
+	const dir = path.join(top.status === 0 ? top.stdout.trim() : process.cwd(), '.kit', 'reports');
 	const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^IR-.*\.md$/.test(f)).sort() : [];
 	for (const f of files) {
 		const s = (fs.readFileSync(path.join(dir, f), 'utf8').match(/^\| Status \| (\S+) \|/m) || [])[1] || '?';

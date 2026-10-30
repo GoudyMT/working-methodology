@@ -11,7 +11,8 @@
 //
 // What the contract says about itself is not taken on trust where the branch can show it: the diff against the base
 // sets the tier's floor, adds the dependency modifier and marks changed tests. The log lives in the repo's git folder
-// (never pushed, one per repo), each line chained to the one before, so a line added by hand shows. The script
+// (never pushed, one per repo), each line chained to the one before, so a careless hand edit shows (a careful one does not; the owner reads the log at
+// each trial review). The script
 // pauses itself, and only the owner resumes it from a terminal no AI tool runs in, after: tokens a quarter or more
 // over budget, a third or more of the findings repeated between roles, a bug that escaped a sweep it passed, or
 // every 10 auto-approvals (the trial review). The next approval waits for the last sweep's outcome.
@@ -192,7 +193,7 @@ function decide() {
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
 	} else if (open && !reported) why.unshift(`log the outcome of the last approved sweep first (${open.contract})`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: facts && facts.base, head: facts && facts.head };
+	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: facts && facts.base, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null };
 	write(entry);
 	if (why.length) {
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
@@ -230,7 +231,7 @@ function ownerYes() {
 	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
 	if (!last || last.decision !== 'owner') { console.log('The script did not send this contract to the owner, so there is no ask to answer. Run approve.mjs on it first.'); return 1; }
 	if (last.hash !== sha(raw) || last.head !== head) { console.log('The contract or HEAD changed since the script asked. Run approve.mjs again, then ask the owner.'); return 1; }
-	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, words: said });
+	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, words: said });
 	console.log("The owner's yes is logged; the reviewers may start.");
 	return 0;
 }
