@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.1 - 2026-10-30
+- Sweep auto-approval: a version-only package.json change is no longer read as a new dependency (only dependency fields count); while paused, every ask prints the pause date, reason and the owner's resume command, and the closeout carries it into each handoff; an owner-decided sweep can log its outcome.
+
 ## 1.9.0 - 2026-10-30
 - PR-body audits read a project's own gates, audit line and verified-clean lines from .kit/pr-body.json, keeping the secrets line for all (closes IR-2026-10-30-pr-body-audit-holds-checks-from-another-project), and fail shipped code with no version bump unless the body says 'No user-facing change'. The closeout sends the full handoff text to the coordinator as one message, never a path, and ends on its confirmation (audit.mjs --send prints the text). Uploads are attached by the path the upload reported.
 
