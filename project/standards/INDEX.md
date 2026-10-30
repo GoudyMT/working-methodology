@@ -37,7 +37,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
 | visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
 | design-for-human-error | Design for Human Error | `.claude/rules/design-and-ux.md` | mistakes, typo, mistype, forgiving, recover |
-| failure-response | Failure Response Discipline (Triage Before Fixing) | `standards/evidence-and-failures.md` | failure, error, broken, triage, debug |
+| failure-response | Failure Response Discipline (Triage Before Fixing) | `standards/evidence-and-failures.md` | failure, error, broken, triage, debug, kit status, stale kit, troubleshooting |
 | enumerate-before-you-count | Enumerate Before You Count | `standards/evidence-and-failures.md` | numbers, counts, metrics, surprising results |
 | instruments-and-evals | Instruments and Evals | `standards/evidence-and-failures.md` | eval, benchmark, measurement, harness, results |
 | probe-scope | Probe Scope | `standards/evidence-and-failures.md` | probe, experiment, investigation scope |

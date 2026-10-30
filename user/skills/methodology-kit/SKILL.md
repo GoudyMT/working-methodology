@@ -26,7 +26,8 @@ Arguments: $ARGUMENTS
   only on the owner's go.
 - **`status`** - the version check, read-only: `node <kitDir>/scripts/kit.mjs status .` It compares the kit
   folder with GitHub, and ~/.claude and this project with the kit, file by file. Show its lines as they are;
-  "Current:" is the all-clear, "Not current:" names what to run.
+  "Current:" is the all-clear, "Not current:" names what to run. It is the first troubleshooting step whenever
+  anything in the kit misbehaves (rule:failure-response, step 0).
 - **`fold-back`** (default when the owner says the standards changed) - the update pipeline below.
 
 ## The update pipeline (fold-back)

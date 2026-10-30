@@ -6,6 +6,7 @@
 
 Run BEFORE touching code when a test fails, a build breaks, or behaviour surprises. Why: guessing at a mis-triaged failure burns hours and adds worse problems.
 
+0. **Rule out a stale kit first:** when a kit hook, skill, agent role or rule misbehaves, run `/methodology-kit status` before any diagnosis. "Not current" -> run what it names (`/methodology-kit update` for the project, `kit.mjs install user` for ~/.claude), start a fresh session (role files and hooks load at start), and retry; diagnose only if the fault is still there on a current kit.
 1. **Triage:** production bug or test-environment artifact? In scope now or deferred? -> fix / defer / document as residual.
 2. **Diagnose with data:** the FIRST action dumps real state (computed values, requests, served bytes, env), not a fix; after 2 failed attempts stop guessing and dump; an unobservable bug is instrumented (an on-screen readout, a log; stripped after) before any fix. A step failing in one second is a script error until its log says otherwise; a CLI's empty error has its cause in its log file; search the roadmap and parking lot for the symptom first.
 3. **Verify before push:** run affected suites locally before committing (E2E is often outside the hook); CI / config changes land in the SAME commit as what needs them.
