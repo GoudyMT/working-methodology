@@ -91,6 +91,10 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
 - rule:project-adapter (`standards/project-adapter.md`): the stack, the full gate command (what CI runs), size budgets
   (ask the owner whether this project wants them at all; `none` turns rule:size-budgets off),
   test devices, the deploy model, the branch and release conventions.
+- The PR-body audit's project facts (A16), in `.kit/pr-body.json`: the gates the project runs (each a row in the
+  Standard body's gate table), the wording its dependency-audit row must keep, if any, and any line "Verified
+  clean" must name beyond the secrets line. Without the file, the audit asks only for the dependency audit, lint and
+  type check, and unit tests. Shipped folders for the version-bump check go in `.kit/version-bump.json`.
 - `AGENTS.md`: the same hard rules for other AI tools.
 
 ## 5. Define the project before building

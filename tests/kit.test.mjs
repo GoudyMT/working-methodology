@@ -2238,3 +2238,39 @@ test('the version bump check fails shipped code with no bump, unless the body sa
     assert.match(out, /FAIL\s+version bumped, or no user-facing change/, audit);
   }
 });
+
+// Improvement report IR-2026-10-30-pr-body-audit-holds-checks-from-another-project: the Standard audit held one
+// project's facts (its dependency-audit wording, a corpus line, web gates), so an honest body elsewhere could only
+// fail or lie. Those checks now come from the project's .kit/pr-body.json; the secrets line stays fixed for all.
+const STD_TITLE = 'Live check: an automatic alarm for online search, a data date on About, and cooking class links';
+const stdAudit = (dir, text) => {
+  const f = path.join(dir, 'body.md');
+  fs.writeFileSync(f, text);
+  return spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, STD_TITLE], { encoding: 'utf8', cwd: dir });
+};
+const honestBody = () => read(path.resolve('user/skills/pr-body/examples/standard.md'))
+  .replace('| Dependency audit | 0 high (2 documented scoped ignores) |', '| Dependency audit | 0 high |')
+  .replace(/^\| (Static scan|E2E|Build; bundle|Chunks|Lighthouse) \|.*\n/gm, '')
+  .replace('- No new package; the corpus and the served documents are unchanged (the recipe index included).\n', '- No new package.\n');
+test('the Standard PR audit passes an honest body for a project with no corpus, no scoped ignores and no web gates', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const ok = stdAudit(dir, honestBody());
+  assert.equal(ok.status, 0, ok.stdout);
+  const noSecrets = stdAudit(dir, honestBody().replace('- No secrets or account information in the diff.\n', ''));
+  assert.equal(noSecrets.status, 1, 'the secrets line is required in every project');
+  assert.match(noSecrets.stdout, /FAIL.*secrets/);
+});
+test('a project\'s .kit/pr-body.json sets its own gates, audit line and verified-clean lines', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  fs.mkdirSync(path.join(dir, '.kit'));
+  fs.writeFileSync(path.join(dir, '.kit', 'pr-body.json'), JSON.stringify({
+    gates: ['Dependency audit', 'Lint; type check', 'Static scan', 'Unit', 'E2E', 'Build; bundle', 'Chunks', 'Lighthouse'],
+    auditLine: '0 high (2 documented scoped ignores)',
+    verifiedClean: ['the corpus and the served documents are unchanged'],
+  }));
+  const strict = stdAudit(dir, honestBody());
+  assert.equal(strict.status, 1);
+  for (const why of [/missing Static scan/, /keeps its ignores/, /corpus/]) assert.match(strict.stdout, why);
+  const full = stdAudit(dir, read(path.resolve('user/skills/pr-body/examples/standard.md')));
+  assert.equal(full.status, 0, full.stdout);
+});

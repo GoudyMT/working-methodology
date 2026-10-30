@@ -9,6 +9,11 @@
       "before": "- **Everything handed over is a claim:** run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told (\"landed\").",
       "after": "- **Everything handed over is a claim:** run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told (\"landed\"); attach a library or uploaded file by the exact path its upload reported, never a guessed name.",
       "why": "from a project closeout (2026-10-30): a stale file was attached by a guessed name; attach by the path the upload reported"
+    },
+    {
+      "before": "| A16 | PR body ceilings + audit commands | PR Body Standard | `<fill in>` |",
+      "after": "| A16 | PR body ceilings + audit commands; the audit's gates, dependency-audit line and verified-clean lines (`.kit/pr-body.json`) | PR Body Standard | `<fill in>` |",
+      "why": "improvement report IR-2026-10-30-pr-body-audit-holds-checks-from-another-project: the audit's project facts move to a project setting"
     }
   ]
 }

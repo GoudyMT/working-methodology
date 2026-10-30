@@ -29,7 +29,7 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | A13 | Safe logger + error-code lint rules | Code Standards | `<fill in>` |
 | A14 | Git split + push guard + its check | Edit Discipline | `<fill in>` |
 | A15 | Commit hook + commit-message check | Commit format | `<fill in>` |
-| A16 | PR body ceilings + audit commands | PR Body Standard | `<fill in>` |
+| A16 | PR body ceilings + audit commands; the audit's gates, dependency-audit line and verified-clean lines (`.kit/pr-body.json`) | PR Body Standard | `<fill in>` |
 | A17 | Release format + release audit | Release Notes | `<fill in>` |
 | A18 | **Deploy model** (on merge vs by hand; where secrets live) + post-merge checks + runbook | Post-Merge Check | `<fill in>` |
 | A19 | Preview builds (how reached / switched on, who does what) | Preview Test | `<fill in>` |

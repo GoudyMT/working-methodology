@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { carriesPhrase } from './canary-phrase.mjs';
 import { versionBumpCheck } from './version-bump-check.mjs';
 
@@ -9,6 +11,18 @@ import { versionBumpCheck } from './version-bump-check.mjs';
 // // Usage: node .claude/pr-body-audit.mjs <body.md> "<title>"
 
 const [file, title] = process.argv.slice(2);
+
+// The checks that are project facts - which gates the project runs, the wording its dependency audit must keep, the
+// extra lines "Verified clean" must name - come from .kit/pr-body.json (rule:pr-body; adapter A16):
+//   { "gates": ["Dependency audit", ...], "auditLine": "0 high", "verifiedClean": ["..."] }
+// Without it, the gates every project runs are required and nothing else; the secrets line is required always.
+const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+const root = top.status === 0 ? top.stdout.trim() : process.cwd();
+let project = {};
+try { project = JSON.parse(readFileSync(path.join(root, '.kit', 'pr-body.json'), 'utf8')); } catch { /* the defaults */ }
+const GATES = Array.isArray(project.gates) && project.gates.length ? project.gates : ['Dependency audit', 'Lint; type check', 'Unit'];
+const AUDIT_LINE = typeof project.auditLine === 'string' && project.auditLine ? project.auditLine : null;
+const CLEAN = ['secrets or account information in the diff', ...(Array.isArray(project.verifiedClean) ? project.verifiedClean : [])];
 const body = readFileSync(file, 'utf8');
 const lines = body.split(/\r?\n/);
 const rows = [];
@@ -68,11 +82,11 @@ row('Included sits in a fold', section('Included').includes('<details>'), sectio
 const verification = section('Verification');
 const verificationBullets = visibleText(verification).split('\n').filter((l) => l.startsWith('- ')).length;
 row('Verification: at most 4 bullets on screen', verificationBullets > 0 && verificationBullets <= 4, `${verificationBullets} bullets`);
-const gateLabels = ['Dependency audit', 'Lint; type check', 'Static scan', 'Unit', 'E2E', 'Build; bundle', 'Chunks', 'Lighthouse'];
+const gateLabels = GATES;
 const folded = verification.slice(verification.indexOf('<details>'));
 const missingGates = gateLabels.filter((g) => !folded.includes(`| ${g} |`));
 row('Verification: every gate in a folded table', verification.includes('<details>') && missingGates.length === 0, missingGates.length ? `missing ${missingGates.join(', ')}` : `${gateLabels.length} gate rows`);
-row('Verification: the audit line keeps its ignores', folded.includes('0 high (2 documented scoped ignores)'), 'Dependency audit row');
+if (AUDIT_LINE) row('Verification: the audit line keeps its ignores', folded.includes(AUDIT_LINE), `Dependency audit row: ${AUDIT_LINE}`);
 
 const review = section('Review');
 const order = ['Reviewed across', 'Result:', '| Pass |', 'Verified clean and enumerated rather than asserted', 'Scaling:', 'Version alignment: YES.'];
@@ -81,9 +95,9 @@ row('Review parts in order', at.every((n, i) => n > 0 && (i === 0 || n > at[i - 
 const dims = ['privacy and the PII boundary', 'supply chain and bundle', 'legal content and licensing', 'code security', 'scaling', 'version alignment'];
 const missingDims = dims.filter((d) => !norm(review).toLowerCase().includes(d.toLowerCase()));
 row('Review names every standard dimension', missingDims.length === 0, missingDims.length ? `missing ${missingDims}` : 'all six');
-const clean = ['secrets or account information in the diff', 'the corpus and the served documents are unchanged'];
+const clean = CLEAN;
 const missingClean = clean.filter((p) => !norm(review).toLowerCase().includes(p.toLowerCase()));
-row('Verified clean names secrets and the corpus', missingClean.length === 0, missingClean.length ? `missing: ${missingClean.join(' | ')}` : 'both');
+row('Verified clean names secrets and the project lines', missingClean.length === 0, missingClean.length ? `missing: ${missingClean.join(' | ')}` : `all ${clean.length}`);
 
 const opens = (body.match(/<details>/g) ?? []).length;
 const closes = (body.match(/<\/details>/g) ?? []).length;
