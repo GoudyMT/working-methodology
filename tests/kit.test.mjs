@@ -2045,3 +2045,78 @@ test('every kit role checks its hand-back call', () => {
     assert.match(read(path.resolve('user/agents', `${role}.md`)), /matcher: "SubagentHandback"\n {6}hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, role);
   }
 });
+
+// Improvement reports (rule:kit-standards item 12): one format the kit owns for every process or method gap found
+// while using it, filled in the session the gap shows up, handed to the kit as one file. The audit holds the bar:
+// evidence on every cause, and no fix that lowers a standard.
+const REPORT = path.resolve('project/.claude/improvement-report.mjs');
+const reportRun = (dir, args) => spawnSync('node', [REPORT, ...args], { encoding: 'utf8', cwd: dir });
+function reportRepo() {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ir-')), 'course-project');
+  fs.mkdirSync(path.join(dir, '.kit'), { recursive: true });
+  g(dir, 'init', '-q', '-b', 'feat/generator');
+  fs.writeFileSync(path.join(dir, 'README.md'), 'x\n');
+  commitAll(dir, 'base', true);
+  fs.writeFileSync(path.join(dir, '.kit', 'kit-version.json'), JSON.stringify({ version: '1.7.1', files: {} }));
+  return dir;
+}
+const EXAMPLE = () => read(path.resolve('project/.claude/kit/improvement-report-example.md'));
+test('a new improvement report starts from the kit template with its facts filled in', () => {
+  const dir = reportRepo();
+  const r = reportRun(dir, ['new', 'Sweep approval asked before the script']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const files = fs.readdirSync(path.join(dir, '.kit', 'reports'));
+  assert.equal(files.length, 1);
+  assert.match(files[0], /^IR-\d{4}-\d{2}-\d{2}-sweep-approval-asked-before-the-script\.md$/);
+  const text = read(path.join(dir, '.kit', 'reports', files[0]));
+  assert.match(text, /^# Improvement report: Sweep approval asked before the script$/m);
+  assert.match(text, /\| Project \| course-project \|/);
+  assert.match(text, /\| Branch and commit \| feat\/generator @ [0-9a-f]{7,} \|/);
+  assert.match(text, /\| Kit version \| 1\.7\.1 \|/);
+  assert.match(text, /\| Status \| open \|/);
+  // An unfilled report does not pass.
+  const a = reportRun(dir, ['audit', path.join(dir, '.kit', 'reports', files[0])]);
+  assert.equal(a.status, 1);
+  assert.match(a.stdout, /placeholder/i);
+});
+test('the kit\'s example report (the first real one, re-filed) passes the audit', () => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ir-')), 'IR-2026-10-30-sweep-approval-miss.md');
+  fs.writeFileSync(f, EXAMPLE());
+  const a = reportRun(path.dirname(f), ['audit', f]);
+  assert.equal(a.status, 0, a.stdout);
+  assert.match(a.stdout, /PASS/);
+});
+test('the report audit fails a missing field, an unproven cause, a lowered standard and an unclosed close', () => {
+  const cases = [
+    [(t) => t.replace(/^\| Severity \|.*\n/m, ''), /Severity/],
+    [(t) => t.replace('| Severity | high |', '| Severity | urgent |'), /Severity/],
+    [(t) => t.replace('| Type | both |', '| Type | vibes |'), /Type/],
+    [(t) => t.replace(/^\| 1 \| (.*?) \| .*? \| proven \|$/m, '| 1 | $1 |  | proven |'), /evidence/i],
+    [(t) => t.replace(/^(\| 2 \| .*?) \| proven \|$/m, '$1 | maybe |'), /proven or guess/i],
+    [(t) => t.replace(/\| same \|$/m, '| lower |'), /owner/i],
+    [(t) => t.replace(/\*\*Key cause:\*\* #\d/, '**Key cause:** #9'), /Key cause/],
+    [(t) => t.replace(/^## What stays the same\n[\s\S]*?(?=^## )/m, ''), /What stays the same/],
+    [(t) => t.replace('| Status | open |', '| Status | closed |'), /Closed by/],
+    [(t) => t.replace(/^\| ID \|.*$/m, '| ID | report-1 |'), /ID/],
+  ];
+  for (const [change, why] of cases) {
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ir-')), 'r.md');
+    const text = change(EXAMPLE());
+    assert.notEqual(text, EXAMPLE(), `the case for ${why} changed nothing`);
+    fs.writeFileSync(f, text);
+    const a = reportRun(path.dirname(f), ['audit', f]);
+    assert.equal(a.status, 1, `${why}: ${a.stdout}`);
+    assert.match(a.stdout, why);
+  }
+});
+test('status lists the improvement reports still open in a project', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  fs.mkdirSync(path.join(proj, '.kit', 'reports'), { recursive: true });
+  fs.writeFileSync(path.join(proj, '.kit', 'reports', 'IR-2026-10-30-a.md'), '| Status | open |\n');
+  fs.writeFileSync(path.join(proj, '.kit', 'reports', 'IR-2026-10-29-b.md'), '| Status | closed |\n| Closed by | 1.8.0 |\n');
+  const r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.match(r.text, /1 improvement report\(s\) open: IR-2026-10-30-a\.md/);
+  assert.equal(r.current, true, 'an open report is work for the kit, not a stale install');
+});

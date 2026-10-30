@@ -50,7 +50,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | post-merge-check | Post-Merge Check | `.claude/rules/git-and-release.md` | after merge, deploy check, live |
 | kit-stays-local | Kit Stays Local | `.claude/rules/git-and-release.md` | kit not committed, exclude, track growth, never list, private |
 | first-push-gate | First Push Gate | `.claude/rules/git-and-release.md` | first push, new remote, initial push, tracked files check, history |
-| kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` | kit, methodology, change a rule, briefs, one home |
+| kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` | kit, methodology, change a rule, briefs, one home, improvement report, process gap, kit gap |
 | loop-workflow-mode | Loop Workflow Mode (Keyword-Gated TDD Loop) | `standards/loop-mode.md` | loop, autonomous, keyword |
 | graduated-loop-lessons | Graduated loop lessons | `standards/loop-mode.md` | lessons, learned, regression |
 | project-adapter | Project Adapter (FILL-IN TEMPLATE) | `standards/project-adapter.md` | project values, stack, adapter, fill in |

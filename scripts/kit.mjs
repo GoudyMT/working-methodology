@@ -632,6 +632,11 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead }) {
     if (held.length) lines.push(`    ${held.length} file(s) changed here, so update skips them: ${held.join(', ')}. Merge the kit's changes by hand.`);
     if (!ok) gaps.push(`${w.name} differs from the kit`);
   }
+  // Improvement reports still open here are work for the kit, not a stale install, so they do not change the verdict.
+  const reportDir = path.join(projectDir, '.kit', 'reports');
+  const open = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((f) => /^IR-.*\.md$/.test(f)).sort()
+    .filter((f) => !/^\| Status \| (closed|declined) \|/m.test(fs.readFileSync(path.join(reportDir, f), 'utf8'))) : [];
+  if (open.length) lines.push(`${open.length} improvement report(s) open: ${open.join(', ')}. Hand filed ones to the kit.`);
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
   return { current, text: lines.join('\n') };
