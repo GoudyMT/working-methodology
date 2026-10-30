@@ -704,9 +704,11 @@ test('the format skills keep every 1.1.0 rule line exactly once', () => {
   const reworded = fs.readdirSync(path.resolve('docs/migrations')).filter((n) => /^1\.(?:[2-9]|\d\d)\.\d+-reworded\.json$/.test(n))
     .flatMap((n) => JSON.parse(read(path.resolve('docs/migrations', n))).lines);
   const swap = new Map(reworded.map((r) => [r.before, r.after]));
+  // A line reworded in more than one release follows its records to the latest wording.
+  const latest = (l) => { for (let i = 0; swap.has(l) && i < 50; i++) l = swap.get(l); return l; };
   const count = (ls) => ls.filter((l) => /[A-Za-z0-9]/.test(l)).reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
   const want = count(names.stdout.split('\n').filter((n) => n.endsWith('.md')).flatMap((n) =>
-    noFront(spawnSync('git', ['show', `v1.1.0:${n}`], { encoding: 'utf8' }).stdout).split('\n').map((l) => plainLine(swap.get(l) ?? l))));
+    noFront(spawnSync('git', ['show', `v1.1.0:${n}`], { encoding: 'utf8' }).stdout).split('\n').map((l) => plainLine(latest(l)))));
   const now = [...ruleFiles(), ...FORMAT_SKILLS.map((s) => path.resolve('user/skills', s, 'SKILL.md')).filter((f) => fs.existsSync(f))];
   const got = count(now.flatMap((f) => noFront(read(f)).split('\n').map(plainLine)));
   const lost = [...want].filter(([l, n]) => (got.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
@@ -1354,6 +1356,7 @@ test('every kit role runs the canary at its stop, and the project settings run t
   const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
   const guard = settings.hooks.PreToolUse.find((h) => h.matcher === 'Agent|Task|SendMessage');
   assert.ok(guard && guard.hooks[0].args.join(' ').includes('kit-hooks/canary.cjs'), 'the leak guard is wired');
+  assert.ok(guard.hooks.some((h) => h.args.join(' ').includes('kit-hooks/sweep-guard.cjs')), 'the sweep guard is wired');
 });
 test('the real phrase has one home in the kit: the last line of the rules every brief carries', () => {
   const block = read(path.resolve('rules/agent-teams.md')).split('**Rules every brief carries**')[1].split('```')[1];
@@ -1827,6 +1830,74 @@ test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, 
   const e = approveRun(featureContract());
   approveIn(e.dir, [e.f, '--escape', 'a sync bug shipped in code this sweep passed']);
   assert.match(approveIn(e.dir, [e.f]).stdout, /paused/i);
+});
+// Found in a course project (2026-10-30): the lead asked the owner to approve a sweep team before running the
+// script, and the owner approved a team that broke the security floor. The script now runs first and writes the
+// owner's notice from checked data, and a guard refuses a reviewer agent until the log clears this HEAD.
+const sweepGuard = (dir, extra = {}) => {
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review' }, ...extra });
+  return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+};
+test('an approval prints the owner\'s start notice from checked data, not a hand count', () => {
+  const c = featureContract();
+  c.roles[0].model = 'sonnet';
+  const r = approveRun(c);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /Start notice/);
+  assert.match(r.stdout, /security x3/);
+  assert.match(r.stdout, /security reviewer \(security, sonnet\)/);
+  assert.match(r.stdout, /test-value reviewer \(test-value, the reviewer default\)/);
+  assert.match(r.stdout, /300,000 of the 1,000,000 cap/);
+  assert.match(r.stdout, /security 3 of 3 needed/);
+  assert.match(r.stdout, /Findings come when the sweep finishes/);
+});
+test('the owner\'s yes is logged only after the script asked, for this contract and HEAD', () => {
+  const c = featureContract();
+  c.roles.pop();
+  const r = approveRun(c);
+  assert.equal(r.status, 1);
+  assert.notEqual(approveIn(r.dir, [r.f, '--owner-yes', '']).status, 0, 'the owner\'s words are required');
+  const yes = approveIn(r.dir, [r.f, '--owner-yes', 'Yes run those 5']);
+  assert.equal(yes.status, 0, yes.stdout);
+  assert.equal(approvalLog(r.dir).pop().kind, 'owner-yes');
+  // An approved contract has nothing for the owner to clear.
+  const a = approveRun(featureContract());
+  assert.notEqual(approveIn(a.dir, [a.f, '--owner-yes', 'yes']).status, 0);
+  // An ask for an older version of the contract does not cover an edited one.
+  const e = approveRun(c);
+  fs.writeFileSync(e.f, JSON.stringify({ ...c, roles: c.roles.slice(0, 2) }));
+  assert.notEqual(approveIn(e.dir, [e.f, '--owner-yes', 'yes']).status, 0);
+});
+test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
+  const dir = sweepRepo();
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');
+  assert.match(sweepGuard(dir).permissionDecisionReason, /approve\.mjs/);
+  assert.equal(sweepGuard(dir, { tool_input: { subagent_type: 'builder', prompt: 'build' } }).permissionDecision, 'allow', 'only reviewers are gated');
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0);
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'approved for this HEAD');
+  // The contract changed after approval.
+  fs.writeFileSync(r.f, JSON.stringify({ ...featureContract(), tier: 'fix' }));
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny');
+  fs.writeFileSync(r.f, JSON.stringify(featureContract()));
+  // New commits: the approval was for the old HEAD.
+  fs.writeFileSync(path.join(dir, 'src', 'more.ts'), 'x\n');
+  commitAll(dir, 'more', true);
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'HEAD moved');
+  // A line written by hand does not clear it.
+  const head = g(dir, 'rev-parse', '--short', 'HEAD').stdout.trim();
+  const logFile = path.join(dir, '.git', 'kit-sweep-approvals.jsonl');
+  fs.appendFileSync(logFile, JSON.stringify({ kind: 'decision', decision: 'approved', contract: r.f, hash: 'x', head, prev: 'forged' }) + '\n');
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a hand-written line');
+});
+test('the sweep guard lets reviewers start after the script asked and the owner said yes', () => {
+  const c = featureContract();
+  c.roles.pop();
+  const r = approveRun(c);
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'deny');
+  assert.match(sweepGuard(r.dir).permissionDecisionReason, /--owner-yes/);
+  approveIn(r.dir, [r.f, '--owner-yes', 'Yes run those 5']);
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
 });
 // Found in review of the hand-back fix: the report is the latest turn's hand-back, never an earlier turn, a message
 // to another agent, or narration before a thinking-only entry.

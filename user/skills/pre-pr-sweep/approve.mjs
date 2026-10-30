@@ -19,6 +19,7 @@
 // Usage (from inside the repo):
 //   node approve.mjs <contract.json> [--base <ref>]                     decide (exit 0 approved, 1 ask the owner)
 //   node approve.mjs <contract.json> --outcome --tokens N --findings N --real N --duplicates N
+//   node approve.mjs <contract.json> --owner-yes "<the owner's words>"  after an ASK, once the owner says yes
 //   node approve.mjs <contract.json> --escape "<what slipped through>"
 //   node approve.mjs --summary
 //   KIT_OWNER_RESUME=1 node approve.mjs --resume                        the owner, in their own terminal
@@ -129,11 +130,11 @@ const words = (s) => new Set(String(s || '').toLowerCase().match(/[a-z0-9]+/g) |
 const overlap = (a, b) => { const x = words(a), y = words(b); const both = [...x].filter((w) => y.has(w)).length; return both / (new Set([...x, ...y]).size || 1); };
 const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '').length >= min;
 
-// Every reason this contract needs the owner; none means it is inside the rules.
+// Every reason this contract needs the owner (none means it is inside the rules), and the role kinds it needed.
 function check(c, facts) {
 	const tier = String(c.tier || '').toLowerCase();
-	if (OWNER_TIERS.includes(tier)) return [`the ${tier} tier is always the owner's call`];
-	if (!CAPS[tier]) return [`unknown tier "${c.tier}"`];
+	if (OWNER_TIERS.includes(tier)) return { why: [`the ${tier} tier is always the owner's call`], need: {} };
+	if (!CAPS[tier]) return { why: [`unknown tier "${c.tier}"`], need: {} };
 	const why = [];
 	if (!facts) why.push('cannot read the branch diff against its base (pass --base <ref>)');
 	else if (facts.dirty.length) why.push(`work not committed (${facts.dirty[0].slice(3)}): commit it, so the diff shows the whole change`);
@@ -172,7 +173,7 @@ function check(c, facts) {
 	for (let i = 0; i < roles.length; i++) for (let j = i + 1; j < roles.length; j++) {
 		if (overlap(roles[i].question, roles[j].question) >= CLONE) why.push(`roles ${i + 1} and ${j + 1} ask the same question (a clone)`);
 	}
-	return why;
+	return { why, need };
 }
 
 const budgetOf = (c) => (c.roles || []).reduce((t, r) => t + (typeof r.budget === 'number' && r.budget > 0 ? r.budget : 0), 0);
@@ -182,7 +183,7 @@ function decide() {
 	const c = JSON.parse(raw);
 	const s = state();
 	const facts = diffFacts();
-	const why = check(c, facts);
+	const { why, need } = check(c, facts);
 	const open = s.log.filter((e) => e.kind === 'decision' && e.decision === 'approved').pop();
 	const reported = open && s.log.some((e) => e.kind === 'outcome' && e.decisionAt === open.time);
 	if (s.paused) why.unshift(`auto-approval is paused: ${s.paused}`);
@@ -199,6 +200,38 @@ function decide() {
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} sweep, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
+	console.log(notice(c, need));
+	return 0;
+}
+
+// The owner's start notice, written from the checked contract so it carries no hand count. Post it as is.
+function notice(c, need) {
+	const roles = c.roles || [];
+	const n = (x) => x.toLocaleString('en-US');
+	const kinds = {};
+	for (const r of roles) kinds[r.kind] = (kinds[r.kind] || 0) + 1;
+	return [
+		'Start notice for the owner (checked by approve.mjs; post it as is):',
+		`    ${c.tier} sweep, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
+		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), budget ${n(r.budget)}`),
+		`    Budget: ${n(budgetOf(c))} of the ${n(caps(String(c.tier).toLowerCase()).maxTotalBudget)} cap`,
+		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
+		'    Findings come when the sweep finishes.',
+	].join('\n');
+}
+
+// The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
+// about, so the reviewers' guard (sweep-guard) sees the owner's call and the order: script first, then the owner.
+function ownerYes() {
+	const said = opt('--owner-yes');
+	if (!filled(said, 2)) { console.log("--owner-yes needs the owner's own words, quoted; nothing logged."); return 1; }
+	const raw = fs.readFileSync(contractFile, 'utf8');
+	const last = state().log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
+	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
+	if (!last || last.decision !== 'owner') { console.log('The script did not send this contract to the owner, so there is no ask to answer. Run approve.mjs on it first.'); return 1; }
+	if (last.hash !== sha(raw) || last.head !== head) { console.log('The contract or HEAD changed since the script asked. Run approve.mjs again, then ask the owner.'); return 1; }
+	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, words: said });
+	console.log("The owner's yes is logged; the reviewers may start.");
 	return 0;
 }
 
@@ -252,6 +285,7 @@ function main() {
 		console.log('Escape logged; auto-approval paused for the owner.');
 		return 0;
 	}
+	if (has('--owner-yes')) return ownerYes();
 	if (has('--outcome')) return outcome();
 	return decide();
 }

@@ -1,0 +1,34 @@
+{
+  "lines": [
+    {
+      "before": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) emit this table and STOP for the owner (or rule:sweep-auto-approval clears it). Why: a swarm without distinct questions buys clones at full price.",
+      "after": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract and run `approve.mjs` FIRST (rule:sweep-auto-approval; orchestrated: field 11): APPROVED -> post its notice and go; ASK -> show the table and reasons, STOP for the owner. Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.",
+      "why": "the script runs before any ask, so the owner hears only what the script cannot clear (a course project asked first and approved a team below the floor)"
+    },
+    {
+      "before": "**Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL. **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role. Sweeps and re-sweeps: the owner approves, or rule:sweep-auto-approval (orchestrated: field 11).",
+      "after": "**Rigor = distinct questions, not agent count** (measured: ~130 refuters added nothing; one critic found the three biggest misses). **A refute panel informs; a reader adjudicates** - panels score wording, not truth; a finding a panel refuted but the code confirms is REAL. **Yield check:** findings recorded per role; a role silent across two sweeps is cut; a gap the critic keeps finding becomes a role.",
+      "why": "the re-sweep approval moved into the swarm-contract line"
+    },
+    {
+      "before": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop run as hooks in the role files, and the push guard also runs as a git pre-push hook (once `core.hooksPath` points at `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards.",
+      "after": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop are role-file hooks; the push guard is also a git pre-push hook (`core.hooksPath` = `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards.",
+      "why": "trimmed for the size cap; same guards"
+    },
+    {
+      "before": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (the feature and launch-gate tiers; a fix or triage sweep re-checks as rule:sweep-tiers says) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.",
+      "after": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.",
+      "why": "the re-sweep tiers live in rule:sweep-tiers; this points there"
+    },
+    {
+      "before": "A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract (as is the red-team). Why: a sweep without a clear trigger never happens.",
+      "after": "A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract. Why: a sweep without a clear trigger never happens.",
+      "why": "trimmed for the size cap; the red-team runs under a contract per rule:swarm-contract"
+    },
+    {
+      "before": "- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in their own scratch folders, read-only on the repo, each finding with a reproducing script.",
+      "after": "- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in scratch folders, read-only on the repo, each finding with its reproducing script.",
+      "why": "trimmed for the size cap; same scripts"
+    }
+  ]
+}

@@ -33,6 +33,14 @@
               "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
             ],
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{CLAUDE_HOME}}/kit-hooks/sweep-guard.cjs"
+            ],
+            "timeout": 10
           }
         ]
       }

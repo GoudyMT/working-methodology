@@ -29,7 +29,7 @@ tags:
 - **G5 Blast radius** (-> the owner's go): files, shipped vs new, public interfaces, other callers, the revert story; a shipped-code fix in a feature branch is scope creep until the owner says otherwise.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (the feature and launch-gate tiers; a fix or triage sweep re-checks as rule:sweep-tiers says) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
@@ -42,7 +42,7 @@ tags:
 
 ## Milestone Project Sweep (Periodic Multi-Agent Audit) {#milestone-sweep}
 
-A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract (as is the red-team). Why: a sweep without a clear trigger never happens.
+A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract. Why: a sweep without a clear trigger never happens.
 
 **Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.
 
@@ -57,7 +57,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 | Tier | When | Agents | Must cover | Report |
 |---|---|---|---|---|
 | **Feature** | a new feature, an expansion, a sub-project, a new surface or behaviour | a Swarm Contract (rule:swarm-contract): the Pre-PR Deep Sweep's roles below, more by risk region | all six dimensions; every high / critical re-checked; the alignment verdict | the full report |
-| **Fix** | a fix or a change to existing behaviour in a known area; a targeted object (one component, one flow) | 2-3: one on the fix (its root, and whether it holds), one on its blast radius (callers, the code it was modelled on), plus Test Value when tests change | each dimension PASS, its findings, or "not touched" and why; the alignment verdict | a short report |
+| **Fix** | a fix or change to existing behaviour in a known area (one component, one flow) | 2-3: one on the fix (its root, and whether it holds), one on its blast radius (callers, the code it was modelled on), plus Test Value when tests change | each dimension PASS, its findings, or "not touched" and why; the alignment verdict | a short report |
 | **Triage** | a chore, docs, config, a bump with no new package, a one-line change, a batch of small recorded fixes | 1, fast and read-only, with a call cap in its brief | the diff's secrets and personal-data check; each dimension "not touched" or its finding | a few lines, in the sweep folder or the PR body's gates |
 | **First push** | the first push to a new remote, once | the deep sweep's roles plus a history role: every commit, not just the diff | all six dimensions; rule:first-push-gate passes; the owner reviews what is tracked | the full report |
 | **Launch gate** | before any public major version (trigger 3) | per surface, under a Swarm Contract | every surface, all six dimensions, the alignment verdict | the full report |
@@ -68,7 +68,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 
-A feature, fix or triage sweep's Swarm Contract (also written as data) is approved by the pre-pr-sweep skill's `approve.mjs`, never an agent: same contract, same answer, no tokens. It approves only when the tier's and modifiers' roles are there, each role has its own question (no near-copies), context, finding shape and budget, and count and budgets fit the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome (tokens, findings, real, repeated) is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.
+A feature, fix or triage sweep's Swarm Contract (also written as data) is approved by `approve.mjs` (pre-pr-sweep skill), never an agent: same contract, same answer, no tokens. It runs first: an approval prints the owner's notice; only an ASK goes to the owner, whose yes is logged (`--owner-yes`); a hook holds reviewer agents until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.
 
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 
@@ -84,7 +84,7 @@ The roles below are the feature and launch-gate tiers' floor; a fix or triage sw
 
 Before a major or user-facing PR is pushed, USE the product on the production build at the PR head, served locally:
 - **The lead's walkthrough:** every spec flow at desktop and narrowest width, every theme and engine, console watched, screenshots to the owner (scripted where the pane cannot load it).
-- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in their own scratch folders, read-only on the repo, each finding with a reproducing script.
+- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in scratch folders, read-only on the repo, each finding with its reproducing script.
 - **A live checklist** the owner watches: ticked as items pass, notes from both sides, overall status; the last run archived before reseeding; a closing debrief; the owner may hand the rest of a walk to the lead.
 - **Findings go through the Finding Pipeline before the push** ("push now, fix later" is the owner's call). Docs / chore / test-only / one-line PRs exempt (stated); small PRs may run the walkthrough only, on the owner's call.
 

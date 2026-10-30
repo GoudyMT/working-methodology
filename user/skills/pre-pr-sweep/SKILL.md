@@ -19,14 +19,18 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 1. **Set the tier at plan approval:** feature, fix, triage, launch gate or first push, from rule:sweep-tiers; when unsure, the
    higher one. List the modifiers the change hits (security-sensitive, a new dependency or data flow, public or
    legal text, data the user keeps); each adds its role.
-2. **The Swarm Contract** (rule:swarm-contract): emit its table for the owner to read, and write the same roles as
-   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header). Commit the work first, then,
-   from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
-   (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). APPROVED: go on.
-   ASK THE OWNER: stop and show the owner the reasons it printed. First push and launch gate always stop for the
-   owner. **Limits:** it stops slips, not a determined workaround: deleting or rewriting the log, a false `--base`,
-   clearing the AI-shell marker, or invented outcome numbers would get past it, and each is a stop-and-tell-the-owner
-   event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
+2. **The Swarm Contract, script first** (rule:swarm-contract). Do not ask the owner anything yet; the script decides
+   whether there is anything to ask. In order: (a) commit the work; (b) write the roles as
+   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`);
+   (c) from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
+   (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). (d) APPROVED: post
+   the start notice it printed, as is, and go on; never restate counts by hand. ASK THE OWNER: show the table and
+   the reasons it printed, and stop; on the owner's yes, log it with `approve.mjs <contract.json> --owner-yes
+   "<their words>"`, then go on. First push and launch gate always ask. A hook (`sweep-guard.cjs`) refuses any
+   `reviewer` agent until the log clears this HEAD and this contract, so a new commit or an edited contract means
+   running the script again. **Limits:** it stops slips, not a determined workaround: deleting or rewriting the log,
+   a false `--base`, clearing the AI-shell marker, invented outcome numbers, or an `--owner-yes` the owner never gave
+   would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
    and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline.
