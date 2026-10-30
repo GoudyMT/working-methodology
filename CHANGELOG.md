@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.0 - 2026-10-30
+- PR-body audits read a project's own gates, audit line and verified-clean lines from .kit/pr-body.json, keeping the secrets line for all (closes IR-2026-10-30-pr-body-audit-holds-checks-from-another-project), and fail shipped code with no version bump unless the body says 'No user-facing change'. The closeout sends the full handoff text to the coordinator as one message, never a path, and ends on its confirmation (audit.mjs --send prints the text). Uploads are attached by the path the upload reported.
+
 ## 1.8.0 - 2026-10-30
 - Sweeps run the approval script before any ask: it prints the owner's start notice from checked data, logs the owner's yes after an ASK (--owner-yes), and a hook holds reviewer agents to the cleared team at the contract's HEAD (closes IR-2026-10-30-sweep-approval-miss). A kit-owned improvement report format: template, 'new', an audit that refuses unproven causes and any fix that lowers a standard, open reports in /methodology-kit status. [trial] Mid-model reviewers for roles other than security and the novel lens, logged with --real-mid. The closeout deletes served temp files from shared and uploaded places too.
 
