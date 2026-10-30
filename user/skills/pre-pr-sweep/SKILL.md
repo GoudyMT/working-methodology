@@ -44,7 +44,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    script asks and the owner decides. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --tokens <used> --findings <n>
-   --real <n after triage> --duplicates <n repeated between roles>`. A bug later found in code the
+   --real <n after triage> --duplicates <n repeated between roles>` (add `--real-mid <n>`: real findings from roles on
+   the mid model, for the reviewer model trial). A bug later found in code the
    sweep passed: `--escape "<what>"`. `--summary` prints the trial so far; put its line in the rundown.
 
 ## The audit

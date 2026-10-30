@@ -69,6 +69,11 @@
       "before": "- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in their own scratch folders, read-only on the repo, each finding with a reproducing script.",
       "after": "- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in scratch folders, read-only on the repo, each finding with its reproducing script.",
       "why": "trimmed or repointed to fit the module size cap after the script-first change; same rule"
+    },
+    {
+      "before": "- **Reviewers:** a feature PR keeps the Pre-PR Deep Sweep floor; sizing to stakes applies above that floor and to other PRs. Each is held to its step limit; over is a contract miss. Keep the top model as reviewer until the scoreboard shows a cheaper one holds.",
+      "after": "- **Reviewers:** a feature PR keeps the Pre-PR Deep Sweep floor; sizing to stakes applies above that floor and to other PRs. Each is held to its step limit; over is a contract miss. Keep the top model as reviewer until the scoreboard shows a cheaper one holds. **Trial (the owner, 2026-10-30):** a role other than security and the novel lens may run on the mid model (the contract's `model`, passed to its Agent call; `approve.mjs` refuses it on those two); every high finding is re-checked on the top model, and the outcome logs the real findings from mid-model roles (`--real-mid`). It ends when the scoreboard shows the mid model meets the bar, or on a miss.",
+      "why": "the owner opened the reviewer model trial (2026-10-30): mid model for roles other than security and the novel lens"
     }
   ]
 }

@@ -1840,13 +1840,13 @@ const sweepGuard = (dir, extra = {}) => {
 };
 test('an approval prints the owner\'s start notice from checked data, not a hand count', () => {
   const c = featureContract();
-  c.roles[0].model = 'sonnet';
+  c.roles[3].model = 'sonnet';
   const r = approveRun(c);
   assert.equal(r.status, 0, r.stdout);
   assert.match(r.stdout, /Start notice/);
   assert.match(r.stdout, /security x3/);
-  assert.match(r.stdout, /security reviewer \(security, sonnet\)/);
-  assert.match(r.stdout, /test-value reviewer \(test-value, the reviewer default\)/);
+  assert.match(r.stdout, /test-value reviewer \(test-value, sonnet\)/);
+  assert.match(r.stdout, /security reviewer \(security, the reviewer default\)/);
   assert.match(r.stdout, /300,000 of the 1,000,000 cap/);
   assert.match(r.stdout, /security 3 of 3 needed/);
   assert.match(r.stdout, /Findings come when the sweep finishes/);
@@ -2177,4 +2177,25 @@ test('the report audit reads pipes in code spans, allows angle brackets in prose
   const ticked = EXAMPLE().replace(/^(\| 1 \| .*? \| ).*?( \| proven \|)$/m, '$1`<file:line, a short quote, a command output or a log line>`$2');
   assert.equal(check(ticked).status, 1);
   assert.match(check(ticked).stdout, /placeholder/);
+});
+
+// The reviewer model trial (the owner, 2026-10-30): any role but security and the novel lens may run on the mid
+// model; those two stay on the top model, and the outcome log counts the real findings the mid-model roles found.
+test('a security or novel-lens role on a cheaper model goes to the owner; other roles may trial it', () => {
+  for (const i of [0, 4]) {
+    const c = featureContract();
+    c.roles[i].model = 'sonnet';
+    const r = approveRun(c);
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stdout, /top model/);
+  }
+  const c = featureContract();
+  c.roles[0].model = 'claude-opus-5-5';
+  c.roles[3].model = 'claude-sonnet-5-5';
+  const ok = approveRun(c);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.equal(approveIn(ok.dir, [ok.f, '--outcome', '--tokens', '200000', '--findings', '6', '--real', '5', '--duplicates', '0', '--real-mid', '2']).status, 0);
+  assert.equal(approvalLog(ok.dir).pop().realMid, 2);
+  assert.match(approveIn(ok.dir, ['--summary']).stdout, /from mid-model roles: 2/);
+  assert.notEqual(approveIn(ok.dir, [ok.f, '--outcome', '--tokens', '1', '--findings', '1', '--real', '1', '--duplicates', '0', '--real-mid', 'x']).status, 0);
 });

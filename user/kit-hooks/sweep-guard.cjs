@@ -7,7 +7,7 @@
 // (<git common dir>/kit-sweep-approvals.jsonl), each line chained to the one before; a line that breaks the chain
 // clears nothing. HEAD is read from the contract's own folder, so a sweep run from a worktree is judged by that
 // worktree. A cleared contract lets in at most as many reviewers as it has roles (counted in
-// kit-sweep-starts.json next to the log). Outside a git repository there is no log, so the call goes through.
+// kit-sweep-starts/ next to the log). Outside a git repository there is no log, so the call goes through.
 // It stops slips, not a determined workaround: a carefully forged log line passes it.
 const fs = require('fs');
 const path = require('path');
@@ -40,15 +40,15 @@ function main() {
 		if (e.kind === 'decision' && e.decision !== 'approved') {
 			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; on their yes, log it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes "<their words>"`, then start the reviewers.');
 		}
-		const startsFile = path.join(dir, 'kit-sweep-starts.json');
-		let starts = {};
-		try { starts = JSON.parse(fs.readFileSync(startsFile, 'utf8')); } catch { /* none yet */ }
-		const key = sha(lines[i]);
+		// Each start claims one numbered slot file; creating it fails if it exists, so reviewers started at the same
+		// moment cannot share a slot.
+		const slots = path.join(dir, 'kit-sweep-starts', sha(lines[i]));
 		const team = Number(e.agents) || 0;
-		if ((starts[key] || 0) >= team) return deny(`The cleared contract has ${team} reviewer role(s), and ${starts[key] || 0} have started. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
-		starts[key] = (starts[key] || 0) + 1;
-		fs.writeFileSync(startsFile, JSON.stringify(starts));
-		return;
+		fs.mkdirSync(slots, { recursive: true });
+		for (let n = 0; n < team; n++) {
+			try { fs.closeSync(fs.openSync(path.join(slots, String(n)), 'wx')); return; } catch { /* taken */ }
+		}
+		return deny(`The cleared contract has ${team} reviewer role(s), and all have started. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
 	}
 	return deny(`No cleared Swarm Contract at its checkout's current HEAD. ${RUN_FIRST}`);
 }

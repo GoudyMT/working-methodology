@@ -6,7 +6,7 @@ is reworked or retired at the next kit release.
 
 | Rule | Kit version | First project | Second project | Status |
 |---|---|---|---|---|
-| - | - | - | - | No open trials. |
+| Mid-model reviewers for roles other than security and the novel lens (rule:test-and-review-cadence) | 1.8.0 | course project | - | Open: counting real findings per model in the sweep log |
 
 ## Promoted directly by the owner
 

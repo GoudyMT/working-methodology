@@ -19,7 +19,7 @@
 //
 // Usage (from inside the repo):
 //   node approve.mjs <contract.json> [--base <ref>]                     decide (exit 0 approved, 1 ask the owner)
-//   node approve.mjs <contract.json> --outcome --tokens N --findings N --real N --duplicates N
+//   node approve.mjs <contract.json> --outcome --tokens N --findings N --real N --duplicates N [--real-mid N]
 //   node approve.mjs <contract.json> --owner-yes "<the owner's words>"  after an ASK, once the owner says yes
 //   node approve.mjs <contract.json> --escape "<what slipped through>"
 //   node approve.mjs --summary
@@ -50,6 +50,8 @@ const MODIFIER_NEEDS = {
 	'user-data': { 'data-loss': 1 },
 };
 const MAX_CONTEXT = 30;
+const TOP_ONLY = ['security', 'novel-lens'];
+const TOP_MODEL = /opus/i;
 const OVERRUN = 1.25;
 const TRIAL_EVERY = 10;
 // Two questions sharing this much of their words are one question asked twice. Rewording beats a word count, so the
@@ -166,6 +168,8 @@ function check(c, facts) {
 		if (!Array.isArray(r.context) || !r.context.length || !r.context.every((x) => filled(x, 2))) why.push(`${name}: no context (the files, rule and spec its lens needs)`);
 		else if (r.context.length > MAX_CONTEXT) why.push(`${name}: ${r.context.length} context entries, over ${MAX_CONTEXT}: a role's context is what its lens needs`);
 		if (!filled(r.finding, 8)) why.push(`${name}: no finding shape`);
+		// The reviewer model trial (rule:test-and-review-cadence): security and the novel lens stay on the top model.
+		if (TOP_ONLY.includes(r.kind) && r.model !== undefined && !TOP_MODEL.test(String(r.model))) why.push(`${name}: a ${r.kind} role stays on the top model, not "${r.model}"`);
 		if (typeof r.budget !== 'number' || !Number.isFinite(r.budget) || r.budget <= 0) why.push(`${name}: no token budget`);
 		else if (r.budget > cap.maxRoleBudget) why.push(`${name}: budget ${r.budget} over the per-role cap of ${cap.maxRoleBudget}`);
 		else total += r.budget;
@@ -246,6 +250,12 @@ function outcome() {
 	// The decision is found by the contract's path, so an edit after approval still finds it.
 	const decision = state().log.filter((e) => e.kind === 'decision' && e.decision === 'approved' && e.contract === contractFile).pop();
 	if (!decision) { console.log(`No approved decision for ${contractFile}; nothing logged.`); return 1; }
+	// Real findings from roles on the mid model, for the reviewer model trial; optional.
+	if (opt('--real-mid') !== undefined) {
+		const v = Number(opt('--real-mid'));
+		if (!Number.isFinite(v) || v < 0 || v > nums.real) { console.log('--real-mid needs a number from 0 to --real; nothing logged.'); return 1; }
+		nums.realMid = v;
+	}
 	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums });
 	const trips = [];
 	if (decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
@@ -261,7 +271,7 @@ function summary() {
 	const o = s.log.filter((e) => e.kind === 'outcome');
 	const sum = (k) => o.reduce((t, e) => t + (Number(e[k]) || 0), 0);
 	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}`);
-	console.log(`outcomes: ${o.length}; tokens / budget: ${sum('budget') ? (sum('tokens') / sum('budget')).toFixed(2) : 'n/a'}; real findings: ${sum('real')} of ${sum('findings')}; repeated: ${sum('duplicates')}`);
+	console.log(`outcomes: ${o.length}; tokens / budget: ${sum('budget') ? (sum('tokens') / sum('budget')).toFixed(2) : 'n/a'}; real findings: ${sum('real')} of ${sum('findings')} (from mid-model roles: ${sum('realMid')}); repeated: ${sum('duplicates')}`);
 	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${TRIAL_EVERY} since the last review`}`);
 	return 0;
 }
