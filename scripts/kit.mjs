@@ -591,6 +591,52 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
   return lines.join('\n');
 }
 
+/**
+ * The on-demand version check: the kit folder against GitHub, and ~/.claude and the project against the
+ * kit folder, file by file. A matching version number is not enough - a file the owner changed, or one
+ * the kit changed since the install, also counts. It only reads.
+ *
+ * Args:
+ *     ctx: { kit, home, projectDir, ahead } - ahead(kit) counts GitHub commits past the kit folder
+ *
+ * Returns:
+ *     { current, text } - current is true only when every line matches
+ */
+export function status({ kit, home, projectDir, ahead = remoteKitAhead }) {
+  const { version, commit } = loadKit(kit);
+  const lines = [`Kit folder: ${version}${commit ? ` (${commit})` : ''}.`];
+  const gaps = [];
+  const n = ahead(kit);
+  if (n > 0) {
+    lines.push(`    GitHub has ${n} newer kit commit(s): run git pull in ${toPosix(kit)}, then update both below.`);
+    gaps.push('the kit folder is behind GitHub');
+  }
+  const where = [
+    { name: '~/.claude', target: 'user', stampPath: path.join(home, STAMP_USER), fix: `node ${toPosix(kit)}/scripts/kit.mjs install user` },
+    { name: 'This project', target: 'project', stampPath: path.join(projectDir, STAMP_PROJECT), fix: '/methodology-kit update' },
+  ];
+  for (const w of where) {
+    const stamp = readStamp(w.stampPath);
+    if (!stamp.version) {
+      lines.push(`${w.name}: no kit install record.`);
+      gaps.push(`${w.name} has no install`);
+      continue;
+    }
+    const r = foldBack({ kit, home, target: w.target, projectDir });
+    const held = [...r.foldBack, ...r.conflict].filter((k) => !k.startsWith('memory/'));
+    const waiting = r.update.length + r.missing.length;
+    const parts = [semverAbove(version, stamp.version) ? `behind kit ${version}` : 'current'];
+    if (waiting) parts.push(`${waiting} file(s) waiting`);
+    const ok = parts[0] === 'current' && !waiting && !held.length;
+    lines.push(`${w.name}: ${stamp.version}, ${parts.join('; ')}.${ok ? '' : ` Run ${w.fix}.`}`);
+    if (held.length) lines.push(`    ${held.length} file(s) changed here, so update skips them: ${held.join(', ')}. Merge the kit's changes by hand.`);
+    if (!ok) gaps.push(`${w.name} differs from the kit`);
+  }
+  const current = gaps.length === 0;
+  lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
+  return { current, text: lines.join('\n') };
+}
+
 /** Installed plugins whose version differs from the backup copy in vendor/. */
 export function vendorDrift({ kit, home }) {
   const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
@@ -988,6 +1034,10 @@ function main(argv) {
       fs.writeFileSync(path.join(kit, rel), text);
     }
     console.log(`build: wrote ${out.size} file(s) from rules/`);
+  } else if (cmd === 'status') {
+    const r = status({ kit, home, projectDir: target || process.cwd() });
+    console.log(r.text);
+    process.exitCode = r.current ? 0 : 1;
   } else if (cmd === 'scrub') {
     const hits = scrub({ kit });
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.kind}`);
@@ -999,6 +1049,7 @@ function main(argv) {
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');
     console.log('       node scripts/kit.mjs build | measure [project folder] | find <words or rule ID>');
+    console.log('       node scripts/kit.mjs status [project folder]');
     console.log('       node scripts/kit.mjs scrub');
     process.exitCode = cmd ? 1 : 0;
   }

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { install, foldBack, bump, scrub, snapshot, restore, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -282,6 +282,52 @@ test('session start says when the kit has newer rules, and how many', () => {
   bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
   bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update\./);
+});
+
+test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  let r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true);
+  assert.match(r.text, /Kit folder: 1\.0\.0/);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, current/);
+  assert.match(r.text, /This project: 1\.0\.0, current/);
+  assert.match(r.text, /^Current: /m);
+
+  // A newer kit release: both installs are behind, and each says what to run.
+  bump({ kit, level: 'patch', note: 'one', date: '2026-02-01' });
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newer\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, behind kit 1\.0\.1/);
+  assert.match(r.text, /This project: 1\.0\.0, behind kit 1\.0\.1; 1 file\(s\) waiting/);
+  assert.match(r.text, /Run \/methodology-kit update\./);
+  assert.match(r.text, /kit\.mjs install user\./);
+  assert.match(r.text, /^Not current: /m);
+
+  // Same version, but a file the owner changed here: update will leave it alone, so status names it.
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, edited here\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /changed here, so update skips them: _Working Standards\.md/);
+
+  // GitHub ahead of the kit folder.
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 2 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /GitHub has 2 newer kit commit\(s\)/);
+});
+
+test('status reports a project or ~/.claude with no install record, and writes nothing', () => {
+  const { kit, home, proj } = makeKit();
+  const r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /~\/\.claude: no kit install record/);
+  assert.match(r.text, /This project: no kit install record/);
+  assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
 test('session start lists the skills for the cases this project turned on', () => {

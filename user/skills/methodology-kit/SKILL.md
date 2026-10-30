@@ -24,6 +24,9 @@ Arguments: $ARGUMENTS
 - **`update`** - pull the latest kit into this project: `node <kitDir>/scripts/kit.mjs install project .`
   Report what was created, updated and skipped; for each skipped file, show the kit's change and merge by hand
   only on the owner's go.
+- **`status`** - the version check, read-only: `node <kitDir>/scripts/kit.mjs status .` It compares the kit
+  folder with GitHub, and ~/.claude and this project with the kit, file by file. Show its lines as they are;
+  "Current:" is the all-clear, "Not current:" names what to run.
 - **`fold-back`** (default when the owner says the standards changed) - the update pipeline below.
 
 ## The update pipeline (fold-back)
