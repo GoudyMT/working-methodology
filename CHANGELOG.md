@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.1 - 2026-10-30
+- Agent canary in the Claude desktop app: the report is now checked when the agent calls the hand-back tool, because a live capture showed the stop event fires before the hand-back reaches the agent's transcript (so 1.5.0's stop-time read logged every agent 'unchecked'). A miss refuses the hand-back with the close-out steps; the close-out hand-back goes through. Every role file runs the check on its hand-back call.
+
 ## 1.6.0 - 2026-10-29
 - Size asks: a portable size-band script applies a plan's approved size raise from measured sizes and asks only when a measured size passes what is allowed. The margin is headroom, never a reason to ask; a line the plan did not raise is left alone while under its limit; a file count is raised exactly; a band that cannot be read as whole numbers is refused. The size rule now says to ask once from a measurement (never an estimate) and drops the drift floor where measuring builds are identical. Found from false one-byte asks in a real run.
 
