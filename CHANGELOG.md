@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.13.0 - 2026-10-31
+- Outward acts may run under a standing grant the owner writes (adapter row A27, none by default; no grant is in force until the grant check ships) [trial]. Recall fixes state each rule outright where a session answers from it, and recall key 10 is corrected to the rule the kit has (the report recorded and summarized in the PR); strict recall is 9/10 (median of three blind-scored runs). The kit repo has CI: kit-tests (tests, scrub, build freshness, push guard proof, project map, link scan, branch and commit names, a branch secret scan, a recall score when rules change, the PR body audit) is required on main, which stays the default branch everywhere. The approved rule review loosens hand checks that scripts now cover, widens the sweep trial review to every 20 approvals after two clean reviews, and folds recovery-protocol and what-this-file-is-not into session-workflow. The Standard PR body's Review section now carries the sweep summary (commit covered, result per dimension, high and critical findings, deferred items, accepted risks): projects move their PR bodies to the new shape, as a body in the old shape fails the audit. Session start 45,284 B (cap 45,500).
+
 ## 1.12.1 - 2026-10-31
 - Status reaches Current in a real project: a file changed only here carries the project's own values and is listed, not counted as a gap; only a file changed here and in the kit holds it back, until the hand merge is recorded with kit.mjs install project <folder> --merged <file>,<file>. Session start names only files that owe a merge.
 
