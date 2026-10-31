@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
 // Files that hold the owner's details on purpose, and folders that are not kit content.
-const SCRUB_SKIP = new Set(['kit.config.json', 'owner-profile.md', 'scrub.local.json']);
+const SCRUB_SKIP = new Set(['kit.config.json', 'owner-profile.md', 'scrub.local.json', '.github/CODEOWNERS']);
 // vendor/ holds third-party work kept as-is, with its own credits; it is not the owner's content.
 const SCRUB_SKIP_DIRS = new Set(['.git', 'node_modules', 'reports', 'vendor']);
 const SNAPSHOT_SKIP = new Set(['.git', 'node_modules', '.in_use']);
