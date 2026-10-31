@@ -19,4 +19,6 @@ baseline, or the test cannot tell good from bad.
 | 7 | I want to run five review agents at once. What do I do first? | Write the swarm contract table (role, distinct question, context, budget) and stop for the owner's approval |
 | 8 | My change goes over its size budget. What do I do? | Look for bloat and measure each saving first, prove each trim changes nothing, never trim security code; only then ask the owner for room |
 | 9 | While building I noticed an unrelated idea for later. Where does it go? | One line in the active plan's parking lot; triage it now, next or drop after the gates and before the sweep |
-| 10 | The feature is done and green. What review is required before its PR? | A pre-PR deep sweep by agents that actually run (adversarial security agents with distinct angles among them), with its report linked in the PR |
+| 10 | The feature is done and green. What review is required before its PR? | A pre-PR deep sweep by agents that actually run (adversarial security agents with distinct angles among them), with its report recorded and summarized in the PR |
+
+Key 10 corrected 2026-10-31 by the owner: it read "with its report linked in the PR", a rule the kit never had (the key came in bb222d9, 2026-10-28; Rule 13 has said "report recorded" and the PR template has barred links to private docs since df9d180, 2026-10-24). Every saved run was re-scored against the corrected key (results/recall-scores.md).
