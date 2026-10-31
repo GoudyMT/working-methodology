@@ -28,14 +28,14 @@ Every commit passes the hook (-> rule:test-and-review-cadence). **Never `--no-ve
 One line: `git commit -m "fix: hold the page still behind the open reader"`.
 - **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`; a scope is optional and rare.
 - **Subject:** imperative, lowercase, no period, what the change does for a `git log` reader; no task / phase tags or asides. **No body, footer or AI / tool trailer** (detail goes in the PR body, the Session Log and comments). Reaching for `-F`, a heredoc or a second `-m` means the message is already wrong.
-- **Check first:** `git log --format=%s -20`; if this section and the log disagree, the log wins and this section is fixed. Why: a documented convention nobody practises misleads every new agent.
+- **Checked by script:** the commit-msg hook and CI run `.claude/name-check.mjs` on every message; a refusal is fixed in the message, and a style the check gets wrong is fixed in the check. Why: a documented convention nobody practises misleads every new agent.
 - **Enforced** by a `commit-msg` hook + a CI check over the branch's commits. <!-- PROJECT ADAPTER A15 -->
 
 ## Branching {#branching}
 
 `main` always shippable; short-lived branches (1-3 days); squash-merge; linear history; PRs for anything non-trivial (review pause + CI).
 
-**Branch names:** `<type>/<plain-kebab-description>` (`feature`, `fix`, `chore`, `test`, `perf`, `security`) in plain words; no internal codes or tool prefixes (`claude/`, `worktree-`); read recent PR branch names first. The pre-push hook checks each branch it sends (`.claude/name-check.mjs`). Why: a branch name is public, like a commit subject.
+**Branch names:** `<type>/<plain-kebab-description>` (`feature`, `fix`, `chore`, `test`, `perf`, `security`) in plain words; no internal codes or tool prefixes (`claude/`, `worktree-`). The pre-push hook and CI check each branch (`.claude/name-check.mjs`). Why: a branch name is public, like a commit subject.
 
 **Branch-first:** before the FIRST edit to a tracked file for a feature, be on its branch (vault edits exempt), the isolation tier named: a trivial fix may land on `main` where the project allows; a feature gets a branch; major work a worktree. Re-check `git branch --show-current` before committing. **Highest risk: right after a merge** - branching is the first action of any new issue; the tell is proposing a PR from `main`. Why: branching tied to a later step is skipped by work that comes first.
 

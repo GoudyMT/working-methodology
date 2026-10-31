@@ -39,6 +39,51 @@
       "before": "13. **Pre-PR Deep Sweep before any substantive PR.** No feature / sub-project PR opens or merges to `main` without a deep multi-agent sweep - an adversarial vulnerability swarm + the 6 Milestone-Sweep dimensions (incl. version-goal alignment) - under an approved Swarm Contract, with its report recorded. Scale to stakes by tier (rule:sweep-tiers): a feature gets the deep sweep, a fix the fix tier, a chore / docs / one-line PR the triage tier. Satisfied ONLY by the agents actually running this session + the report existing - NEVER by a self-review, a recalled prior sweep, or \"it looks fine\".",
       "after": "13. **Pre-PR Deep Sweep before any substantive PR.** No feature / sub-project PR opens or merges to `main` without a deep multi-agent sweep - an adversarial vulnerability swarm + the 6 Milestone-Sweep dimensions (incl. version-goal alignment) - under an approved Swarm Contract, with its report recorded and summarized in the PR. Scale to stakes by tier (rule:sweep-tiers): a feature gets the deep sweep, a fix the fix tier, a chore / docs / one-line PR the triage tier. Satisfied ONLY by the agents actually running this session + the report existing - NEVER by a self-review, a recalled prior sweep, or \"it looks fine\".",
       "why": "the owner, 2026-10-31: recall fixes for the strict 1-or-0 scorer (Rule 11: the first action; Rule 12: leave the test; Rule 13: the report summarized in the PR)"
+    },
+    {
+      "before": "- Outside an approved loop / batch Claude hands over exact commands (runs read-only git and recovery when asked); inside one it runs local git, showing one sample commit message first.",
+      "after": "- Outside an approved loop / batch Claude hands over exact commands (runs read-only git and recovery when asked); inside one it runs local git; the commit-msg hook checks each message.",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
+    },
+    {
+      "before": "## Recovery Protocol {#recovery-protocol}",
+      "after": "### Recovery Protocol {#recovery-protocol}",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
+    },
+    {
+      "before": "Read the Session Workflow start files in order; resume from the first OPEN issue. Re-read Collaborative Design Locks; never reconstruct decisions from memory; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.",
+      "after": "Lost context mid-session: the Start reads above, then the first OPEN issue; re-read Collaborative Design Locks; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
+    },
+    {
+      "before": "## What This File Is Not {#what-this-file-is-not}",
+      "after": "### What This File Is Not {#what-this-file-is-not}",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
+    },
+    {
+      "before": "Not the design spec (A22), not the roadmap (`_Master Roadmap.md`), not the history (`_Session Log.md`). It is HOW we work. When in doubt about which file to read: AGENTS.md first, then the module its Rule Modules table names.",
+      "after": "Not the design spec (A22), the roadmap or the history: it is HOW we work, and the module its Rule Modules table names holds the depth.",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
+    },
+    {
+      "before": "- **Check first:** `git log --format=%s -20`; if this section and the log disagree, the log wins and this section is fixed. Why: a documented convention nobody practises misleads every new agent.",
+      "after": "- **Checked by script:** the commit-msg hook and CI run `.claude/name-check.mjs` on every message; a refusal is fixed in the message, and a style the check gets wrong is fixed in the check. Why: a documented convention nobody practises misleads every new agent.",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
+    },
+    {
+      "before": "**Branch names:** `<type>/<plain-kebab-description>` (`feature`, `fix`, `chore`, `test`, `perf`, `security`) in plain words; no internal codes or tool prefixes (`claude/`, `worktree-`); read recent PR branch names first. The pre-push hook checks each branch it sends (`.claude/name-check.mjs`). Why: a branch name is public, like a commit subject.",
+      "after": "**Branch names:** `<type>/<plain-kebab-description>` (`feature`, `fix`, `chore`, `test`, `perf`, `security`) in plain words; no internal codes or tool prefixes (`claude/`, `worktree-`). The pre-push hook and CI check each branch (`.claude/name-check.mjs`). Why: a branch name is public, like a commit subject.",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
+    },
+    {
+      "before": "3. **Size-cap table** `| item | words | cap | status |` - the four whole-file rows + every capped line touched - counted, never estimated; OVER rows fixed; done only when the all-`ok` table is shown.",
+      "after": "3. **Size-cap table** `| item | words | cap | status |` - the four whole-file rows from `node .claude/tracking-check.mjs caps` + every capped line touched, counted by hand - never estimated; OVER rows fixed; done only when the all-`ok` table is shown.",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
+    },
+    {
+      "before": "A feature, fix or triage sweep's Swarm Contract (also written as data) is approved by `approve.mjs` (pre-pr-sweep skill), never an agent: same contract, same answer, no tokens. It runs first: an approval prints the owner's notice; only an ASK goes to the owner, whose yes is logged (`--owner-yes`); a hook holds reviewer agents until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.",
+      "after": "A feature, fix or triage sweep's Swarm Contract is approved by `approve.mjs`, never an agent: same contract, same answer. It runs first: an approval prints the owner's notice; only an ASK goes to the owner (yes logged, `--owner-yes`); a hook holds reviewers until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row, 10 again after any other pause), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.",
+      "why": "the owner, 2026-10-31: rule review - loosen where a script already checks (commit and branch names, the caps table, the sweep trial review) and fold recovery-protocol and what-this-file-is-not into session-workflow"
     }
   ]
 }
