@@ -61,9 +61,10 @@ Order is chosen so each phase is safe on its own: nothing can act outward until 
 
 ### Phase 0: Prerequisites
 - [x] the owner approved Rule 14 wording with the two additions (2026-10-31)
-- [ ] Attach the kit repo to this project
-- [ ] Confirm the sender-ID field in Claude Code (exists for `claude -p` and Remote Control, not settable by sender); pick fallback if not
-- [ ] Turn on branch protection / CODEOWNERS for protected paths on the kit repo
+- [x] Attach the kit repo to this project - the owner chose to run the kit work on the PC, in the kit folder (2026-10-31)
+- [x] Confirm the sender-ID field in Claude Code - not an identity: per code.claude.com/docs/en/cross-session-messaging a cross-session message carries the sender's self-chosen session name (`--name` or `/rename`), and no per-project identity is documented. Fallback chosen: a per-project secret written at install time outside the repo, an HMAC on every report, and the registry keyed on project folder plus git remote
+- [x] Turn on branch protection for the kit repo - kit-tests is required on main (2026-10-31)
+- [ ] CODEOWNERS for the protected paths (`.github/CODEOWNERS`, the same paths the grant check protects); it binds once the owner turns on "Require review from Code Owners" for main
 
 ### Phase 1: Rule text and grant format (no automation yet)
 - [ ] Rule 14 in CLAUDE.md, non-negotiable 6 in AGENTS.md, `rule:outward-acts` standing-grants section
