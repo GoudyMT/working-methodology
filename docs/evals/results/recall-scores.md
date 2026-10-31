@@ -172,3 +172,22 @@ and summarized in the PR), three fresh installs, each scored strictly by its own
 - Question 10: runs 1 and 3 ended at "PR body to the owner" without saying the summary goes in it.
 - Borderline (scorers): Q3 "before any edit" and "in the handoff's reading order" are shown, not said, in runs 1
   and 3 (strict could flip to 0); Q4 and Q7 wording near the key in some runs; Q10 "adversarial" not said outright.
+
+## Rule review gate (2026-10-31)
+
+The owner-approved rule review (four checks loosened to their scripts, recovery-protocol and what-this-file-is-not
+folded into session-workflow) on three fresh installs, each scored strictly by its own new blind scorer.
+
+| Q | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 1, 2, 4, 5, 8, 9 | 1 | 1 | 1 |
+| 3 | 1 | 1 | 1 |
+| 6 | 1 | 0 | 1 |
+| 7 | 0 | 1 | 1 |
+| 10 | 0 | 1 | 0 |
+| Total | 8 | 9 | 9 |
+
+- **Gate met: median 9.** Question 3 passed in all three runs for the first time.
+- Q7 run 1: the answer let approve.mjs approve and never named the owner's stop (the rule's design since 1.5.0).
+- Q10 runs 1 and 3: the PR step stops at "the PR body goes to the owner", without the sweep summary in it.
+- The run 1 scorer looked at the git log, which its brief barred; its one disputed call (Q7) went against the branch.
