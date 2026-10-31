@@ -2494,3 +2494,25 @@ test('the commit check runs in an agent worktree and reads that worktree\'s stag
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(ok.stdout + ok.stderr, /Commit check: PASS/, 'a run is visible');
 });
+
+// IR-2026-10-31-pr-body-audit-fails-on-the-required-attribution-header: a project thread's host requires a two-line
+// attribution block at the top of every PR body; the audits read past it, and nowhere else.
+const ATTRIBUTION = '<!-- claude-projects-attribution: {"github_login":"someone"} -->\n_Requested by **Pat**_\n\n';
+test('the PR-body audits read past a leading host attribution block, and only a leading one', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const withBlock = stdAudit(dir, ATTRIBUTION + honestBody());
+  assert.equal(withBlock.status, 0, withBlock.stdout);
+  assert.match(withBlock.stdout, /attribution block: present/);
+  const lines = honestBody().split('\n');
+  const midway = [...lines.slice(0, 4), ATTRIBUTION.trimEnd(), ...lines.slice(4)].join('\n');
+  assert.equal(stdAudit(dir, midway).status, 1, 'a block anywhere else still fails');
+  const lean = read(path.resolve('user/skills/pr-body/examples/lean.md'));
+  const f = path.join(dir, 'lean.md');
+  fs.writeFileSync(f, ATTRIBUTION + lean);
+  const title = lean.split('\n')[0].replace(/^## /, '').replace(/^[A-Za-z ]+: /, 'feat: ');
+  const out = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
+  fs.writeFileSync(f, lean);
+  const plain = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
+  assert.equal(out.status, plain.status, out.stdout);
+  assert.match(out.stdout, /attribution block: present/);
+});
