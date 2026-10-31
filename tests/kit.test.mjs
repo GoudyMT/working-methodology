@@ -2939,3 +2939,110 @@ test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing gran
   assert.ok(ids.has('standing-grants'), 'rule:standing-grants has its one home');
   assert.match(read(path.resolve('rules/project-adapter.md')), /^\| A27 \| .*standing grant/im);
 });
+
+// Plan kit-autopilot, Phase 2: the standing-grant check. Every condition is checked by the script itself, from main
+// on the remote, and anything missing, odd or unproven means ask the owner. An act runs on its own only after 10
+// straight owner-confirmed hits; one miss sends it back to verify.
+const AUTONOMY = path.resolve('project/.claude/autonomy.mjs');
+const GRANT = {
+  version: 1,
+  acts: { release: { conditions: ['clean-tree', 'tests', 'new-test-fails-at-base', 'release-cap'], releaseCapPerDay: 3 } },
+  commands: { tests: ['node', '--test'], testFile: ['node', '--test'] },
+  testPattern: '\\.test\\.mjs$',
+};
+const HARD_RULES = '3. **Privacy and security ABOVE all else.**\n4. **Domain hard boundaries:** none\n7. **TDD discipline.**\n14. **Outward acts are the owner\'s unless granted.**\n';
+// main on a bare remote holds the grant, the check and a passing test; the branch fixes lib.js and adds a test that
+// fails on main and passes here.
+function autonomyRepo({ grant = GRANT, mainFiles = {}, branchFiles = {} } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-'));
+  const bare = path.join(root, 'origin.git');
+  const dir = path.join(root, 'work');
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  g(root, 'init', '-q', '--bare', '-b', 'main', bare);
+  g(root, 'init', '-q', '-b', 'main', dir);
+  const write = (files) => { for (const [f, text] of Object.entries(files)) { if (text === null) { fs.rmSync(path.join(dir, f), { force: true }); continue; } fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); } };
+  write({
+    'CLAUDE.md': HARD_RULES,
+    '.claude/autonomy.mjs': read(AUTONOMY),
+    'lib.mjs': 'export const f = () => 1;\n',
+    'tests/lib.test.mjs': "import { test } from 'node:test';\nimport assert from 'node:assert';\nimport { f } from '../lib.mjs';\ntest('f', () => assert.ok(f() >= 1));\n",
+    ...(grant === null ? {} : { '.kit/autonomy.json': typeof grant === 'string' ? grant : JSON.stringify(grant) }),
+    ...mainFiles,
+  });
+  commitAll(dir, 'base', true);
+  g(dir, 'remote', 'add', 'origin', bare);
+  g(dir, 'push', '-q', '--no-verify', 'origin', 'main');
+  g(dir, 'fetch', '-q', 'origin');
+  g(dir, 'checkout', '-q', '-b', 'fix/two');
+  write({
+    'lib.mjs': 'export const f = () => 2;\n',
+    'tests/two.test.mjs': "import { test } from 'node:test';\nimport assert from 'node:assert';\nimport { f } from '../lib.mjs';\ntest('two', () => assert.equal(f(), 2));\n",
+    ...branchFiles,
+  });
+  commitAll(dir, 'fix', true);
+  return { dir, home, bare };
+}
+const autonomy = (r, args, env = {}) => spawnSync('node', ['.claude/autonomy.mjs', ...args], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, KIT_CLAUDE_HOME: r.home, ...env } });
+const askOn = (r, why) => { const out = autonomy(r, ['check', 'release']); assert.equal(out.status, 1, out.stdout + out.stderr); assert.match(out.stdout, /^ASK/m); assert.match(out.stdout, why); return out; };
+
+test('the grant check asks when the grant on main is missing, unreadable or not valid', () => {
+  askOn(autonomyRepo({ grant: null }), /no grant on origin\/main/);
+  askOn(autonomyRepo({ grant: '{ not json' }), /grant on origin\/main is not valid/);
+  askOn(autonomyRepo({ grant: { ...GRANT, acts: { release: { conditions: ['vibes'] } } } }), /grant on origin\/main is not valid/);
+  askOn(autonomyRepo({ grant: { ...GRANT, acts: {} } }), /no act "release" in the grant/);
+});
+test('the grant check reads the grant from main, never the branch, and refuses a changed copy of itself', () => {
+  askOn(autonomyRepo({ grant: null, branchFiles: { '.kit/autonomy.json': JSON.stringify(GRANT) } }), /no grant on origin\/main/);
+  askOn(autonomyRepo({ branchFiles: { '.claude/autonomy.mjs': read(AUTONOMY) + '\n// widened\n' } }), /differs from origin\/main/);
+});
+test('the grant check asks while the kill switch outside the repo exists', () => {
+  const r = autonomyRepo();
+  fs.writeFileSync(path.join(r.home, 'autonomy-off'), '');
+  askOn(r, /kill switch/);
+});
+test('the grant check asks when the branch touches a protected path or Tier 0 rule text', () => {
+  askOn(autonomyRepo({ branchFiles: { '.kit/project-map.json': '{}\n' } }), /protected path: \.kit\/project-map\.json/);
+  askOn(autonomyRepo({ branchFiles: { '.github/workflows/ci.yml': 'on: push\n' } }), /protected path: \.github\/workflows\/ci\.yml/);
+  askOn(autonomyRepo({ branchFiles: { 'CLAUDE.md': HARD_RULES.replace('ABOVE all else', 'when convenient') } }), /Tier 0 text changed in CLAUDE\.md/);
+  const ok = autonomy(autonomyRepo({ branchFiles: { 'CLAUDE.md': HARD_RULES.replace('TDD discipline', 'Test-first discipline') } }), ['check', 'release']);
+  assert.doesNotMatch(ok.stdout, /Tier 0/, 'a rule outside Tier 0 may change');
+});
+test('the grant check runs the evidence itself: the new test must fail on main and pass here', () => {
+  askOn(autonomyRepo({ branchFiles: { 'tests/two.test.mjs': "import { test } from 'node:test';\ntest('always', () => {});\n" } }), /does not fail on main: tests\/two\.test\.mjs/);
+  askOn(autonomyRepo({ branchFiles: { 'tests/two.test.mjs': null } }), /no new or changed test/);
+  askOn(autonomyRepo({ branchFiles: { 'lib.mjs': 'export const f = () => 3;\n' } }), /tests fail/);
+  const dirty = autonomyRepo();
+  fs.writeFileSync(path.join(dirty.dir, 'lib.mjs'), 'export const f = () => 9;\n');
+  askOn(dirty, /uncommitted changes/);
+});
+test('the grant check counts today\'s release tags on the remote against the cap', () => {
+  const r = autonomyRepo();
+  for (const t of ['v1.0.1', 'v1.0.2', 'v1.0.3']) { g(r.dir, 'tag', t, 'main'); g(r.dir, 'push', '-q', '--no-verify', 'origin', t); }
+  askOn(r, /release cap: 3 of 3 releases today/);
+});
+test('an act stays in verify until 10 straight owner-confirmed hits, and one miss sends it back', () => {
+  const r = autonomyRepo();
+  const first = askOn(r, /verify mode: 0 of 10 straight hits/);
+  assert.match(first.stdout, /script says GO/);
+  const owner = (v) => autonomy(r, ['verdict', 'release', v], { KIT_OWNER_VERDICT: '1' });
+  for (const agent of [{ CLAUDECODE: '1' }, { AI_AGENT: 'x' }, {}]) assert.notEqual(autonomy(r, ['verdict', 'release', 'hit'], agent).status, 0, JSON.stringify(agent));
+  assert.equal(owner('hit').status, 0);
+  for (let i = 1; i < 10; i++) { askOn(r, new RegExp(`verify mode: ${i} of 10 straight hits`)); assert.equal(owner('hit').status, 0); }
+  const go = autonomy(r, ['check', 'release']);
+  assert.equal(go.status, 0, go.stdout);
+  assert.match(go.stdout, /^GO release/m);
+  assert.equal(owner('miss').status, 0);
+  askOn(r, /verify mode: 0 of 10 straight hits/);
+  assert.equal(owner('hit').status, 0);
+  assert.notEqual(owner('hit').status, 0, 'a verdict needs a check of its own');
+  fs.appendFileSync(path.join(r.dir, '.git', 'kit-autonomy-ledger.jsonl'), JSON.stringify({ kind: 'verdict', act: 'release', verdict: 'hit' }) + '\n');
+  askOn(r, /ledger was changed by hand/);
+});
+test('a fresh project install ships no grant, so every act asks', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nogrant-'));
+  g(dir, 'init', '-q', '-b', 'main');
+  install({ kit: path.resolve('.'), home: fs.mkdtempSync(path.join(os.tmpdir(), 'nogrant-home-')), target: 'project', projectDir: dir });
+  assert.ok(fs.existsSync(path.join(dir, '.claude', 'autonomy.mjs')));
+  assert.ok(!fs.existsSync(path.join(dir, '.kit', 'autonomy.json')));
+});
