@@ -8,6 +8,7 @@ tags:
   instruments-and-evals: eval, benchmark, measurement, harness, results
   probe-scope: probe, experiment, investigation scope
   snag-response: stuck, blocker, workaround, snag
+  fact-check: fact check, verify a document, claims, report, explainer, diagram accuracy
 ---
 
 # Evidence and Failures
@@ -43,3 +44,7 @@ Run BEFORE touching code when a test fails, a build breaks, or behaviour surpris
 ## Snag Response: Least-Invasive Path, No Padding {#snag-response}
 
 After triage and diagnosis: (1) recommend the LEAST-INVASIVE path (no change -> local or config change -> the owner's global environment, last resort, explicit OK); (2) recommend, don't lock - one good option is presented as one; (3) verify the path before asserting it; (4) document snag + fix where it belongs (Session Log, plan notes, `_Loop Learnings.md`, ADR). Why: padding buries the recommendation, and an undocumented snag recurs.
+
+## Fact-Check Before Handing Over {#fact-check}
+
+Before a report, guide, explainer, diagram or summary goes to the owner or anyone else: list every claim a reader could check (a path, a name, a number, a behaviour, a command, a date, a git fact), check each against the code, a command or `git show`, and mark it **verified**, **corrected**, **unsupported** (removed or reworded) or **unverifiable** (labelled so in the text). A wrong label, arrow or number in a figure is a wrong claim. Put the counts at the top as one line, with the corrected ones listed. Release notes and PR bodies have their own audits; this covers the rest. Why: a confident document carries every error in it to each reader.

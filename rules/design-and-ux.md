@@ -7,6 +7,7 @@ when: Before any visual or UX decision, and when a UI file is opened.
 tags:
   visual-design-collaboration: visual, layout, wireframe, mockup, screen, color, contrast
   design-for-human-error: mistakes, typo, mistype, forgiving, recover
+  diagrams: diagram, figure, architecture picture, flow chart, system map, visual explainer
 ---
 
 # Design and UX
@@ -28,3 +29,15 @@ tags:
 
 - **Exact-entry fields** (passphrase, code, key) let the person SEE what they entered and find the wrong part: name the error's position; offer a reveal, weighed beside the security cost, with leak guards (masked to keyboards and spell check, copy refused, cleared on hide or lock); ruling it out records why and the human-error cost, for the owner. Why: people who fail blind give up and never return.
 - **The human factor:** an option list for a hurdle (lock, code, confirm, required step) answers first: (1) what it protects and its value to a stranger, now and with planned features; (2) the realistic threat, not the worst; (3) what a real person can remember and repeat daily; (4) how someone who forgets recovers. Pick the lightest hurdle covering the realistic threat; the copy says what it does not cover. Why: a hurdle people cannot live with is bypassed or abandoned.
+
+## Diagrams That Explain {#diagrams}
+
+For any diagram or figure that explains a system, a plan or a result:
+
+- **One claim per figure,** stated in its caption as one sentence.
+- **Draw the mechanism, not the name:** a request's path through the cache, not a box labelled "cache". **Every arrow gets a verb** ("writes", "polls every 30 s").
+- **Never color alone:** a state also shows in shape, position, pattern or a label, so it reads in forced colors and to a color-blind reader.
+- **The first screen is the answer:** the main idea as a picture and one sentence; detail follows.
+- Every label, arrow and number passes rule:fact-check before the figure is handed over.
+
+Why: a figure that names parts without showing how they connect looks like understanding and explains nothing.

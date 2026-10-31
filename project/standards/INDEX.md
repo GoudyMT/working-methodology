@@ -37,11 +37,13 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
 | visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
 | design-for-human-error | Design for Human Error | `.claude/rules/design-and-ux.md` | mistakes, typo, mistype, forgiving, recover |
+| diagrams | Diagrams That Explain | `.claude/rules/design-and-ux.md` | diagram, figure, architecture picture, flow chart, system map, visual explainer |
 | failure-response | Failure Response Discipline (Triage Before Fixing) | `standards/evidence-and-failures.md` | failure, error, broken, triage, debug, kit status, stale kit, troubleshooting |
 | enumerate-before-you-count | Enumerate Before You Count | `standards/evidence-and-failures.md` | numbers, counts, metrics, surprising results |
 | instruments-and-evals | Instruments and Evals | `standards/evidence-and-failures.md` | eval, benchmark, measurement, harness, results |
 | probe-scope | Probe Scope | `standards/evidence-and-failures.md` | probe, experiment, investigation scope |
 | snag-response | Snag Response: Least-Invasive Path, No Padding | `standards/evidence-and-failures.md` | stuck, blocker, workaround, snag |
+| fact-check | Fact-Check Before Handing Over | `standards/evidence-and-failures.md` | fact check, verify a document, claims, report, explainer, diagram accuracy |
 | pre-commit | Pre-Commit Discipline | `.claude/rules/git-and-release.md` | before commit, commit checks, staged |
 | commit-message-format | Commit Message Format | `.claude/rules/git-and-release.md` | commit message, subject line, type |
 | branching | Branching | `.claude/rules/git-and-release.md` | branch name, naming, git branch |
