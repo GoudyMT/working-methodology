@@ -19,6 +19,18 @@ paths:
 - **Contrast is an a11y primitive,** not a vote: gate the pair the browser renders (text on the composited background at real size), not a token on the bare surface; fix a shared token once. **No repeated boilerplate in user copy** - a sentence already elsewhere dilutes a new one.
 - **Visual code takes Path 1** (explicit approval); Path 2 covers tokens, visual-behaviour tests, non-visual config, appearance-preserving refactors.
 
+## Craft Floor {#craft-floor}
+
+For any screen, page or board, whatever the visual style:
+
+- **Name the surface's job first:** *operate* (an app screen, dashboard, tracking board, settings: wins on clarity, consistency and familiar patterns), *read* (docs, guides, help: wins on structure), *persuade* (a landing page: one bold idea). Ambition follows the job, not the product. Why: a dashboard dressed as a landing page is slower to use.
+- **Floor check on the built screen, in one batched pass:** every state exists (hover, disabled, loading, error, empty, real content, visible keyboard focus); body text 65-75 characters wide; more space above a heading than below it; secondary text on a colored surface takes that hue's tint, never gray; icons are drawn icons in one stroke weight, never emoji or Unicode glyphs; numbers that line up use tabular figures.
+- **Refuse by default** (the owner's lock can overrule): cards inside cards; the big-number-small-label "hero metric" layout; a small label above every heading; gradient text; decorative blur or glass; a colored stripe thicker than 1px on one side of a card; progress rings, sparklines or blank rounded boxes standing in for real content - a board shows the real items and their evidence; military or other loaded emblems as decoration (seals and insignia are also protected marks).
+- **Scored review** for a screen review: Nielsen's 10 heuristics scored 0-4 (n/a where one does not apply); each problem ranked P0 (blocks the task), P1 (fix before release; a user would ask for help), P2 (annoying, has a workaround), P3 (polish); 2-3 people walk it - a first-timer, someone who relies on accessibility, a distracted phone user - each naming the element that failed. Keep the score so the next review shows the trend.
+- **Judgment before the tools:** write the design opinion first, then run the automated checks (contrast, the a11y scan), then merge the two; a tool hit the opinion missed is a finding, an opinion the tool contradicts is checked.
+
+Why: "looks fine" is not a bar; a named floor, a refusal list and a scored review make a screen's quality checkable and comparable over time.
+
 ## Design for Human Error {#design-for-human-error}
 
 - **Exact-entry fields** (passphrase, code, key) let the person SEE what they entered and find the wrong part: name the error's position; offer a reveal, weighed beside the security cost, with leak guards (masked to keyboards and spell check, copy refused, cleared on hide or lock); ruling it out records why and the human-error cost, for the owner. Why: people who fail blind give up and never return.

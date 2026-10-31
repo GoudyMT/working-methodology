@@ -661,6 +661,11 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
         lines.push('Skills by case for this project - load at most two per unit of work, keep design-time, motion and review-time sets apart, and read a community skill before its first use:');
         for (const c of active) lines.push(`- ${c.name} (${c.when}): ${c.skills.join(', ')}`);
       }
+      // A rarely used plugin stays off globally (its skill list costs context in every session) and is
+      // switched on only in the projects whose cases need it.
+      for (const c of active.filter((x) => x.plugin && !pluginEnabled(projectDir, home, x.plugin))) {
+        lines.push(`Standby plugin ${c.plugin} (${c.name}) is off here. To switch it on for this project only, add "enabledPlugins": { "${c.plugin}": true } to .claude/settings.local.json, then start a fresh session.`);
+      }
     }
   }
   return lines.join('\n');
@@ -726,6 +731,13 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     .filter((f) => !/^\| Status \| (closed|declined) \|/m.test(fs.readFileSync(path.join(reportDir, f), 'utf8'))) : [];
   if (protection(projectDir) === 'unprotected') lines.push('main is not protected on GitHub: run the "Protect main" step of rule:first-push-gate (an outward act; the owner says go).');
   if (open.length) lines.push(`${open.length} improvement report(s) open: ${open.join(', ')}. Hand filed ones to the kit.`);
+  // The real load is a budget, not an install fault, so it does not change the verdict.
+  const cap = (loadKit(kit).config.caps || {}).realLoad;
+  if (cap) {
+    const { parts, total } = measureReal({ projectDir, home });
+    const n = (x) => x.toLocaleString('en-US');
+    lines.push(`Real start load: ${n(total)} B of ${n(cap)} (project ${n(parts.project)}, memory index ${n(parts.memoryIndex)}, global CLAUDE.md ${n(parts.globalClaude)}, skill listings ${n(parts.userSkills + parts.plugins)}).${total > cap ? ' Over its cap: trim per rule:kit-standards item 14.' : ''}`);
+  }
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
   return { current, text: lines.join('\n') };
@@ -1080,6 +1092,65 @@ export function measure({ projectDir }) {
   return { files, total: files.reduce((s, f) => s + f.bytes, 0), unresolved };
 }
 
+/** Whether a plugin is on for a project: the nearest settings file that names it wins, as in Claude Code. */
+function pluginEnabled(projectDir, home, plugin) {
+  for (const f of [path.join(projectDir, '.claude', 'settings.local.json'), path.join(projectDir, '.claude', 'settings.json'), path.join(home, 'settings.json')]) {
+    try { const v = (JSON.parse(fs.readFileSync(f, 'utf8')).enabledPlugins || {})[plugin]; if (typeof v === 'boolean') return v; } catch { /* no file */ }
+  }
+  return false;
+}
+
+/** A skill's listing line as Claude Code shows it: "name: description" (a folded or literal description joined by spaces). */
+function skillListing(file, prefix) {
+  const front = (fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---/) || [])[1] || '';
+  const name = ((front.match(/^name:\s*(.+)$/m) || [])[1] || path.basename(path.dirname(file))).trim().replace(/^["']|["']$/g, '');
+  const m = front.match(/^description:[ \t]*(.*)$/m);
+  let desc = m ? m[1].trim() : '';
+  if (/^[>|][-+]?$/.test(desc)) {
+    const after = front.slice(front.indexOf(m[0]) + m[0].length).split('\n').slice(1);
+    const body = [];
+    for (const line of after) { if (/^\s+\S/.test(line)) body.push(line.trim()); else if (line.trim()) break; }
+    desc = body.join(' ');
+  }
+  desc = desc.replace(/^["']|["']$/g, '');
+  return Buffer.byteLength(`${prefix}${name}: ${desc}`);
+}
+
+/**
+ * Measure what really loads before a session's first message (rule:kit-standards item 14): the project's own
+ * start load (measure), the memory index, the global CLAUDE.md and its imports, and the listing line of every
+ * user skill and every skill of a plugin enabled for this project. Plugins the desktop app delivers from an
+ * organization's catalog are not on disk here and are not counted.
+ *
+ * Args:
+ *     ctx: { projectDir, home }
+ *
+ * Returns:
+ *     { parts: { project, memoryIndex, globalClaude, userSkills, plugins }, total }
+ */
+export function measureReal({ projectDir, home }) {
+  const size = (p) => (fs.existsSync(p) ? fs.statSync(p).size : 0);
+  const skillFiles = (root) => walk(root).filter((f) => path.basename(f) === 'SKILL.md');
+  const homeLoad = fs.existsSync(path.join(home, 'CLAUDE.md')) ? measure({ projectDir: home }).files.filter((f) => !f.file.startsWith('.claude/')) : [];
+  const parts = {
+    project: measure({ projectDir }).total,
+    memoryIndex: size(path.join(home, 'projects', projectSlug(projectDir), 'memory', 'MEMORY.md')),
+    globalClaude: homeLoad.reduce((s, f) => s + f.bytes, 0),
+    userSkills: skillFiles(path.join(home, 'skills')).reduce((s, f) => s + skillListing(f, ''), 0),
+    plugins: 0,
+  };
+  let installed = {};
+  try { installed = JSON.parse(fs.readFileSync(path.join(home, 'plugins', 'installed_plugins.json'), 'utf8')).plugins || {}; } catch { /* none */ }
+  for (const [key, entries] of Object.entries(installed)) {
+    if (!pluginEnabled(projectDir, home, key)) continue;
+    const entry = [...entries].sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)))[0];
+    if (!entry || !fs.existsSync(entry.installPath)) continue;
+    const prefix = key.split('@')[0] + ':';
+    parts.plugins += skillFiles(path.join(entry.installPath, 'skills')).reduce((s, f) => s + skillListing(f, prefix), 0);
+  }
+  return { parts, total: Object.values(parts).reduce((a, b) => a + b, 0) };
+}
+
 function main(argv) {
   const kit = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   // The Claude config folder: CLAUDE_CONFIG_DIR when a second one is in use, else ~/.claude.
@@ -1115,6 +1186,11 @@ function main(argv) {
   } else if (cmd === 'restore') {
     const r = restore({ kit, home, name: target });
     console.log(`restored: ${r.restored.join(', ') || 'none'}; kept (already there): ${r.kept.join(', ') || 'none'}`);
+  } else if (cmd === 'measure' && argv.includes('--real')) {
+    const dir = argv.slice(1).find((a) => a !== '--real') || process.cwd();
+    const r = measureReal({ projectDir: dir, home });
+    for (const [k, v] of Object.entries(r.parts)) console.log(`${String(v).padStart(8)}  ${k}`);
+    console.log(`${String(r.total).padStart(8)}  loaded before the first message (cap ${(loadKit(kit).config.caps || {}).realLoad || 'none'}); desktop-app catalog plugins not counted`);
   } else if (cmd === 'measure') {
     const r = measure({ projectDir: target || path.join(kit, 'project') });
     for (const f of r.files) console.log(`${String(f.bytes).padStart(8)}  ${f.file}`);
@@ -1145,7 +1221,7 @@ function main(argv) {
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');
-    console.log('       node scripts/kit.mjs build | measure [project folder] | find <words or rule ID>');
+    console.log('       node scripts/kit.mjs build | measure [project folder] [--real] | find <words or rule ID>');
     console.log('       node scripts/kit.mjs status [project folder]');
     console.log('       node scripts/kit.mjs scrub');
     process.exitCode = cmd ? 1 : 0;

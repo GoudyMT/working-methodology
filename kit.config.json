@@ -2,7 +2,7 @@
   "ownerName": "Max",
   "ownerProfileFile": "owner-profile.md",
   "retired": { "project": { "_Working Standards.md": "AGENTS.md" } },
-  "caps": { "module": 14000, "agentsMd": 28000, "sessionStart": 45000 },
+  "caps": { "module": 14000, "agentsMd": 28000, "sessionStart": 45000, "realLoad": 80000 },
   "vendor": {
     "plugins": [
       "superpowers",

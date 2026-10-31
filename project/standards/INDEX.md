@@ -36,6 +36,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | recovery-protocol | Recovery Protocol | `AGENTS.md` | lost context, new chat, recover |
 | what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
 | visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
+| craft-floor | Craft Floor | `.claude/rules/design-and-ux.md` | states, empty state, heuristics, design review score, dashboard, board, anti-patterns, slop |
 | design-for-human-error | Design for Human Error | `.claude/rules/design-and-ux.md` | mistakes, typo, mistype, forgiving, recover |
 | diagrams | Diagrams That Explain | `.claude/rules/design-and-ux.md` | diagram, figure, architecture picture, flow chart, system map, visual explainer |
 | failure-response | Failure Response Discipline (Triage Before Fixing) | `standards/evidence-and-failures.md` | failure, error, broken, triage, debug, kit status, stale kit, troubleshooting |

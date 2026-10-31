@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -331,6 +331,18 @@ test('status reports a project or ~/.claude with no install record, and writes n
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
+test('status shows the real start load against its cap, and says when it is over', () => {
+  const { kit, home, proj } = makeKit();
+  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), 'x'.repeat(300));
+  const cfg = path.join(kit, 'kit.config.json');
+  fs.writeFileSync(cfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfg, 'utf8')), caps: { realLoad: 1000 } }));
+  assert.match(status({ kit, home, projectDir: proj, ahead: () => 0, protection: () => null }).text,
+    /Real start load: 300 B of 1,000 \(project 300, memory index 0, global CLAUDE\.md 0, skill listings 0\)\./);
+  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), 'x'.repeat(1200));
+  assert.match(status({ kit, home, projectDir: proj, ahead: () => 0, protection: () => null }).text,
+    /Real start load: 1,200 B of 1,000 .*\. Over its cap: trim per rule:kit-standards item 14\./);
+});
+
 test('session start lists the skills for the cases this project turned on', () => {
   const { kit, home, proj } = caseKit();
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /No skill cases chosen yet/);
@@ -338,6 +350,18 @@ test('session start lists the skills for the cases this project turned on', () =
   const msg = sessionStartReport({ kit, home, projectDir: proj });
   assert.match(msg, /UI\/UX design or review \(a screen, flow or copy changes\): design:design-critique, human-factor/);
   assert.doesNotMatch(msg, /systematic-debugging/);
+});
+
+test('session start names a standby plugin a turned-on case needs, and how to switch it on here', () => {
+  const { kit, home, proj } = caseKit();
+  const catalog = { cases: [{ id: 'ml', name: 'ML work', when: 'models or datasets', skills: [], plugin: 'huggingface-skills@claude-plugins-official' }] };
+  fs.writeFileSync(path.join(proj, '.claude/kit/skill-cases.json'), JSON.stringify(catalog));
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ enabledPlugins: { 'huggingface-skills@claude-plugins-official': false } }));
+  fs.writeFileSync(path.join(proj, '.claude/skill-cases.local.json'), JSON.stringify({ on: ['ml'] }));
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }),
+    /Standby plugin huggingface-skills@claude-plugins-official \(ML work\) is off here\. To switch it on for this project only, add "enabledPlugins": \{ "huggingface-skills@claude-plugins-official": true \} to \.claude\/settings\.local\.json, then start a fresh session\./);
+  fs.writeFileSync(path.join(proj, '.claude/settings.local.json'), JSON.stringify({ enabledPlugins: { 'huggingface-skills@claude-plugins-official': true } }));
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /Standby plugin/);
 });
 
 test('pre-compact counts what is waiting for the kit', () => {
@@ -626,6 +650,30 @@ test('measure counts what a session loads at start, the way Claude Code reads im
   assert.equal(r.total, r.files.reduce((s, f) => s + f.bytes, 0));
   // An unescaped space cuts the path, so this import finds no file: the start file never loads.
   assert.deepEqual(r.unresolved, [{ from: 'CLAUDE.md', import: '_Start' }]);
+});
+
+// rule:kit-standards item 14: the cap must guard what really loads - not only CLAUDE.md, but the memory index,
+// the global CLAUDE.md and the name + description of every skill an enabled plugin or the user folder lists.
+test('measureReal counts the memory index, global CLAUDE.md and the skill listings of enabled plugins only', () => {
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'real-proj-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'real-home-'));
+  const w = (root, rel, body) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), body); };
+  w(proj, 'CLAUDE.md', 'p'.repeat(100));
+  w(home, 'CLAUDE.md', 'g'.repeat(50));
+  w(home, `projects/${projectSlug(proj)}/memory/MEMORY.md`, 'm'.repeat(30));
+  w(home, 'skills/mine/SKILL.md', '---\nname: mine\ndescription: abc\n---\nbody not loaded\n');
+  const plug = (name) => { const dir = path.join(home, 'plugins/cache', name); w(dir, 'skills/s/SKILL.md', `---\nname: s\ndescription: >\n  one\n  two\n---\nbody\n`); return dir; };
+  w(home, 'plugins/installed_plugins.json', JSON.stringify({ plugins: {
+    'on@m': [{ installPath: plug('on') }], 'off@m': [{ installPath: plug('off') }] } }));
+  w(home, 'settings.json', JSON.stringify({ enabledPlugins: { 'on@m': true, 'off@m': false } }));
+  const listing = (name, desc) => Buffer.byteLength(`${name}: ${desc}`);
+  let r = measureReal({ projectDir: proj, home });
+  assert.deepEqual(r.parts, { project: 100, memoryIndex: 30, globalClaude: 50, userSkills: listing('mine', 'abc'), plugins: listing('on:s', 'one two') });
+  assert.equal(r.total, 100 + 30 + 50 + listing('mine', 'abc') + listing('on:s', 'one two'));
+  // A project turning a standby plugin on counts it there.
+  w(proj, '.claude/settings.local.json', JSON.stringify({ enabledPlugins: { 'off@m': true } }));
+  r = measureReal({ projectDir: proj, home });
+  assert.equal(r.parts.plugins, listing('on:s', 'one two') + listing('off:s', 'one two'));
 });
 
 // Plan rule-modules, Phase 1: every rule heading carries a fixed ID, so pointers survive renames and moves.

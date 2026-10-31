@@ -14,6 +14,11 @@
       "before": "- **Everything handed over is a claim:** run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told (\"landed\"); attach a library or uploaded file by the exact path its upload reported, never a guessed name.",
       "after": "- **Everything handed over is a claim** (rule:fact-check): run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told (\"landed\"); attach a library or uploaded file by the exact path its upload reported, never a guessed name.",
       "why": "points to the new fact-check rule for documents handed over"
+    },
+    {
+      "before": "8. **Skills by case.** The kit's `.claude/kit/skill-cases.json` maps each kind of task to the skills it loads. Each project turns its cases on in `.claude/skill-cases.local.json`; the session-start hook lists those skills. At most two skills per unit of work; design-time, motion and review-time sets stay apart. Why: the right skill unused is no skill, and too many dilute each other. *Check: tests confirm every named skill exists.*",
+      "after": "8. **Skills by case.** The kit's `.claude/kit/skill-cases.json` maps each kind of task to the skills it loads. Each project turns its cases on in `.claude/skill-cases.local.json`; the session-start hook lists those skills. At most two skills per unit of work; design-time, motion and review-time sets stay apart. A rarely used plugin is a **standby plugin**: off in the Claude config folder's settings, named on its case (`plugin`), and switched on per project in `.claude/settings.local.json`; session start says how when a turned-on case needs one that is off. Why: the right skill unused is no skill, and too many dilute each other. *Check: tests confirm every named skill exists.*",
+      "why": "the owner, 2026-10-31: rarely used plugins stay off globally and switch on per project as standby plugins"
     }
   ]
 }

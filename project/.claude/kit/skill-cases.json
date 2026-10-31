@@ -1,5 +1,5 @@
 {
-  "about": "Skills by case. Each project turns cases on in .claude/skill-cases.local.json ({\"on\": [\"ui-design\", ...]}); the session-start hook lists the skills for the cases that are on. Load at most two skills per unit of work; design-time, motion and review-time sets stay apart. Community skills are read before first use. The kit owns this file; projects do not edit it.",
+  "about": "Skills by case. Each project turns cases on in .claude/skill-cases.local.json ({\"on\": [\"ui-design\", ...]}); the session-start hook lists the skills for the cases that are on. Load at most two skills per unit of work; design-time, motion and review-time sets stay apart. Community skills are read before first use. The kit owns this file; projects do not edit it. A case with a \"plugin\" names a standby plugin: off globally, so its skill list costs nothing elsewhere; session start says how to switch it on in a project that turned the case on.",
   "cases": [
     {
       "id": "ui-design",
@@ -85,13 +85,31 @@
     },
     {
       "id": "ml-data",
-      "name": "ML and data work",
-      "when": "models, datasets, training, evals or data pipelines",
+      "name": "ML models and datasets",
+      "when": "models, datasets, training or evals",
+      "plugin": "huggingface-skills@claude-plugins-official",
       "skills": [
         "huggingface-skills:hf-cli",
-        "huggingface-skills:huggingface-best",
-        "data-engineering:analyzing-data"
+        "huggingface-skills:huggingface-best"
       ]
+    },
+    {
+      "id": "data-pipelines",
+      "name": "Data pipelines",
+      "when": "Airflow, dbt or data lineage work",
+      "plugin": "data-engineering@claude-plugins-official",
+      "skills": [
+        "data-engineering:analyzing-data",
+        "data-engineering:authoring-dags"
+      ]
+    },
+    {
+      "id": "api",
+      "name": "API design and testing",
+      "when": "an HTTP API is designed, mocked, tested or monitored with Postman",
+      "plugin": "postman@claude-plugins-official",
+      "skills": [],
+      "notes": "The plugin brings its own entry skill, postman:api-engineer; it is not kept in vendor/, so it is named here, not listed."
     },
     {
       "id": "cloudflare",
