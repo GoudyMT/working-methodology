@@ -299,7 +299,10 @@ function keepKitLocal(projectDir, keys, hostOwned = []) {
   fs.writeFileSync(file, (own.trimEnd() ? own.trimEnd() + '\n' : '') + block);
   // The kit's git hooks hold the line for any tool (the commit check, the push guard, the first push gate). Another
   // hook manager already set stays; the setup says to add the kit's checks to it.
-  if (!git('config', 'core.hooksPath').stdout.trim()) git('config', 'core.hooksPath', `${prefix}.githooks`);
+  // Absolute, so an agent worktree (which has no .githooks of its own: kit files stay untracked) runs the main
+  // checkout's hooks too. The relative value earlier installs set is upgraded.
+  const hooksNow = git('config', 'core.hooksPath').stdout.trim();
+  if (!hooksNow || hooksNow === `${prefix}.githooks`) git('config', 'core.hooksPath', toPosix(path.join(path.resolve(projectDir), '.githooks')));
   // A project whose own first commits are already on a remote had its first push before the kit came: the gate is
   // done. Sharing history is not enough: a host-made README pulled in shares history while nothing of ours is out.
   const hasRemote = git('for-each-ref', '--count=1', 'refs/remotes/').stdout.trim();

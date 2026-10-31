@@ -1512,7 +1512,12 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
 test('the install turns on the kit git hooks, and leaves another hook manager alone', () => {
   const dir = localProject();
   kitInstall(dir);
-  assert.equal(g(dir, 'config', 'core.hooksPath').stdout.trim(), '.githooks');
+  // Absolute, so an agent worktree runs the same hooks; a relative value from an earlier install is upgraded.
+  const abs = path.join(dir, '.githooks').split(path.sep).join('/');
+  assert.equal(g(dir, 'config', 'core.hooksPath').stdout.trim(), abs);
+  g(dir, 'config', 'core.hooksPath', '.githooks');
+  kitInstall(dir);
+  assert.equal(g(dir, 'config', 'core.hooksPath').stdout.trim(), abs);
   const husky = localProject();
   g(husky, 'config', 'core.hooksPath', '.husky');
   kitInstall(husky);
@@ -2469,4 +2474,23 @@ test('the user install wires the gate into the Claude config folder settings onc
   assert.ok(s.hooks.Stop);
   const gates = s.hooks.UserPromptSubmit.flatMap((h) => h.hooks).filter((h) => (h.args || []).join(' ').includes('kit-gate.cjs'));
   assert.equal(gates.length, 1);
+});
+
+// IR-2026-10-31-commit-check-cannot-see-a-worktree-s-staged-files: builders commit in their own worktrees, and the
+// commit check read the main checkout's index (or, with a relative hooks path, never ran there at all).
+test('the commit check runs in an agent worktree and reads that worktree\'s staged files', () => {
+  const dir = readyProject();
+  const wt = path.join(dir, '.claude', 'worktrees', 'unit-1');
+  assert.equal(g(dir, 'worktree', 'add', '-q', '-b', 'unit-1', wt).status, 0);
+  fs.writeFileSync(path.join(wt, '.env'), 'X=1\n');
+  g(wt, 'add', '-f', '.env');
+  const blocked = g(wt, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'slip');
+  assert.notEqual(blocked.status, 0, 'the worktree commit is checked');
+  assert.match(blocked.stderr, /\.env: a secret-shaped file/);
+  g(wt, 'rm', '-q', '--cached', '.env');
+  fs.writeFileSync(path.join(wt, 'ok.py'), 'print(2)\n');
+  g(wt, 'add', 'ok.py');
+  const ok = g(wt, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'fine');
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.match(ok.stdout + ok.stderr, /Commit check: PASS/, 'a run is visible');
 });

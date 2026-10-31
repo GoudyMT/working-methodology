@@ -14,6 +14,9 @@ import { fileURLToPath } from 'node:url';
 
 const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...a) => spawnSync('git', ['-C', PROJECT, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+// The commit being checked may be in an agent worktree: git runs the hook at that worktree's top, so its index is
+// read there. The settings (.kit/) stay in the main checkout, where this script lives.
+const gitHere = (...a) => spawnSync('git', ['-C', process.cwd(), '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 // Secret-shaped file names and values. A value is never printed: only its kind, file and commit.
 const SECRET_FILE = /(^|\/)(\.env(\.(?!example$|sample$|template$)[^/]+)?|\.dev\.vars|id_rsa|id_ed25519|credentials\.json)$|\.(pem|key|p12|pfx)$|(^|\/)secrets\//i;
 const SECRET_VALUE = [
@@ -69,15 +72,15 @@ function main(staged) {
 	// The kit's files, plus its own folders the stamp does not list (the stamp itself names the owner's paths).
 	const kitOnly = (p) => (kitFiles.has(p) || p.startsWith(`${prefix}.kit/`) || p.startsWith(`${prefix}.claude/worktrees/`)) && !track.some((r) => r.test(p));
 	if (staged) {
-		const added = git('diff', '--cached', '--no-renames', '--name-only', '--diff-filter=A').stdout.split('\n').filter(Boolean);
+		const added = gitHere('diff', '--cached', '--no-renames', '--name-only', '--diff-filter=A').stdout.split('\n').filter(Boolean);
 		const bad = [
 			...added.filter(isPrivate).map((p) => `${p}: the kit's CLAUDE.md never goes public, even listed in track`),
 			...added.filter((p) => kitOnly(p) && !isPrivate(p)).map((p) => `${p}: a kit file; to show it, list it in track in .kit/tracking.json first`),
 			...added.filter((p) => never.some((r) => r.test(p))).map((p) => `${p}: on the never list`),
 			...added.filter((p) => SECRET_FILE.test(p)).map((p) => `${p}: a secret-shaped file`),
-			...secretValues(git('diff', '--cached', '--no-color', '-U0').stdout).map((v) => `${v.kind} in ${v.file}`),
+			...secretValues(gitHere('diff', '--cached', '--no-color', '-U0').stdout).map((v) => `${v.kind} in ${v.file}`),
 		];
-		if (!bad.length) return 0;
+		if (!bad.length) { console.log('Commit check: PASS (kit files, never list, secrets)'); return 0; }
 		console.error('Commit blocked (rule:kit-stays-local). Unstage each with git rm --cached -q <path> (the file stays on disk):');
 		for (const b of bad) console.error(`    ${b}`);
 		return 1;
