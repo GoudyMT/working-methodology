@@ -38,7 +38,7 @@ Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-
 
 ## 3. Keep the kit local; decide what git tracks (rule:kit-stays-local)
 
-The kit lives in this folder, ready to use, and never in the repo by default. Run `git init` before the install
+The kit lives in this folder, ready to use, and never in the repo by default. Run `git init -b main` before the install
 (or run the install again after it). The install lists every kit path in a marked block of `.git/info/exclude`
 (local, never pushed) and turns on the kit's git hooks; `git status` then shows only the project.
 

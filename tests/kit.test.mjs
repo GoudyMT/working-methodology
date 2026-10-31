@@ -493,7 +493,7 @@ test('brief templates point to the one rules block and never carry a pasted copy
 function gitProject() {
   const ctx = caseKit();
   const git = (...a) => spawnSync('git', ['-C', ctx.proj, ...a], { encoding: 'utf8' });
-  git('init', '-q');
+  git('init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(ctx.proj, '.gitignore'), '*.md\n.env\n.dev.vars\nnotes/\n');
   fs.writeFileSync(path.join(ctx.proj, 'notes.md'), 'my notes\n');
   fs.mkdirSync(path.join(ctx.proj, 'notes'));
@@ -1155,7 +1155,7 @@ const runHook = (script, input, env = {}) => spawnSync('node', [path.resolve(scr
 function gitTree() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fence-'));
   const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
-  g('init', '-q'); fs.writeFileSync(path.join(dir, 'a.js'), 'a\n'); g('add', '-A'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+  g('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(dir, 'a.js'), 'a\n'); g('add', '-A'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
   return dir;
 }
 test('the builder edit fence allows edits in its worktree and blocks edits outside it', () => {
@@ -1192,6 +1192,24 @@ test('the checker clean-tree stop passes an untouched tree and catches a changed
   const out = runHook('user/kit-hooks/clean-tree.cjs', { ...s2, hook_event_name: 'Stop' });
   assert.equal(out.status, 2);
   assert.match(out.stderr, /a\.js/);
+});
+// The owner, 2026-10-31: the main branch is main everywhere. A repo made without a branch name takes the machine's
+// default (master on CI runners), so every git init in the kit's code, tests and instructions names its branch.
+test('every git init in the kit names its branch, so main never depends on the machine', () => {
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
+  const files = ['scripts', 'project', 'user', 'tests'].flatMap((d) => walk(path.resolve(d)))
+    .concat(fs.readdirSync('.').filter((f) => f.endsWith('.md')).map((f) => path.resolve(f)));
+  const unnamed = [];
+  for (const f of files) {
+    const lines = read(f).split('\n');
+    lines.forEach((l, i) => {
+      const call = /(['"])init\1\s*,([^)\]]*)/.exec(l);
+      if (call && !/['"](-b|--initial-branch)/.test(call[2])) unnamed.push(`${path.relative('.', f)}:${i + 1}`);
+      for (const m of l.matchAll(new RegExp('`git ' + 'init([^`]*)`', 'g'))) if (!/(-b|--initial-branch=)\s?main/.test(m[1])) unnamed.push(`${path.relative('.', f)}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(unnamed, []);
 });
 test('the git pre-push hook stops an AI agent without approval and lets the owner push', () => {
   const hook = path.resolve('project/.githooks/pre-push');
@@ -1478,7 +1496,7 @@ const g = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' 
 const commitAll = (dir, msg, noVerify) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', /^[a-z]+: /.test(msg) ? msg : `chore: ${msg}`, ...(noVerify ? ['--no-verify'] : [])); };
 function localProject() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-'));
-  g(dir, 'init', '-q');
+  g(dir, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'main.py'), 'print(1)\n');
   return dir;
 }
@@ -1559,7 +1577,7 @@ test('the first push check fails on a never path, a missing tracked file, a secr
 test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
-  g(bare, 'init', '-q', '--bare');
+  g(bare, 'init', '-q', '--bare', '-b', 'main');
   g(dir, 'remote', 'add', 'origin', bare);
   const sha = g(dir, 'rev-parse', 'HEAD').stdout.trim();
   const hook = () => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
@@ -1678,7 +1696,7 @@ test('the first push check finds the kit\'s own folder in history and lets revie
 test('the first push gate stays on when the new remote already has a README, and lets a tag of the cleared commit go', () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
-  g(bare, 'init', '-q', '--bare');
+  g(bare, 'init', '-q', '--bare', '-b', 'main');
   const seed = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-'));
   g(seed, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(seed, 'README.md'), '# made on the host\n');
@@ -1710,7 +1728,8 @@ test('the install keeps the never list private in the exclude block', () => {
 test('a project already pushed before the kit came is not held by the first push gate', () => {
   const origin = readyProject({ track: ['main.py'] });
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
-  g(bare, 'init', '-q', '--bare');
+  // Named, so the clone checks out main whatever the machine's default branch is (CI's is master).
+  g(bare, 'init', '-q', '--bare', '-b', 'main');
   g(origin, 'push', '-q', '--no-verify', bare, 'HEAD:refs/heads/main');
   const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'clone-'));
   g(clone, 'clone', '-q', bare, '.');
@@ -1725,7 +1744,7 @@ test('a project already pushed before the kit came is not held by the first push
 test('a new project that pulled the host README before the install is still held by the gate', () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
-  g(bare, 'init', '-q', '--bare');
+  g(bare, 'init', '-q', '--bare', '-b', 'main');
   const seed = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-'));
   g(seed, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(seed, 'README.md'), '# made on the host\n');
@@ -1742,7 +1761,7 @@ test('a new project that pulled the host README before the install is still held
 test('a project pushed by URL before the kit is let through once a fetch shows its history on the remote', () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
-  g(bare, 'init', '-q', '--bare');
+  g(bare, 'init', '-q', '--bare', '-b', 'main');
   g(dir, 'push', '-q', '--no-verify', bare, 'HEAD:refs/heads/main');
   g(dir, 'remote', 'add', 'origin', bare);
   g(dir, 'fetch', '-q', 'origin');
@@ -2721,7 +2740,7 @@ test('the commit-msg hook runs the message check, and the pre-push hook refuses 
   fs.mkdirSync(path.join(dir, '.claude'));
   fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks/pre-push'));
   fs.copyFileSync(NAMES, path.join(dir, '.claude/name-check.mjs'));
-  g(dir, 'init', '-q');
+  g(dir, 'init', '-q', '-b', 'main');
   const env = { ...process.env, AI_AGENT: '', CLAUDECODE: '' };
   const push = (ref) => spawnSync('sh', [path.join(dir, '.githooks/pre-push'), 'origin', 'x'],
     { cwd: dir, env, encoding: 'utf8', input: `${ref} ${'1'.repeat(40)} ${ref} ${'0'.repeat(40)}\n` });
