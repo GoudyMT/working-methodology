@@ -41,7 +41,7 @@ worktree or the main checkout.
 A probe once lost its scratch repo to a path mix-up, kept running in the main checkout, and moved its branches
 and switched off its hooks. These steps make that impossible:
 
-1. Make a new folder under your scratchpad and `git clone` the builder's worktree into it (or `git init` it).
+1. Make a new folder under your scratchpad and `git clone` the builder's worktree into it (or `git init -b main` it).
    A clone has its own config and branches. Never `git worktree add`: a worktree shares both with the main
    checkout.
 2. Stop on the first error: start a bash script with `set -euo pipefail` and enter with `cd "<dir>" || exit 1`.
