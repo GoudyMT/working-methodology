@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.11.0 - 2026-10-31
+- The commit check runs in agent worktrees on their own staged files and prints a pass line; the hooks path is absolute (closes IR-2026-10-31-commit-check-cannot-see-a-worktree-s-staged-files). PR-body audits read past a leading host attribution block (closes IR-2026-10-31-pr-body-audit-fails-on-the-required-attribution-header). The first push gate gains 'Protect main': a settings file, one gh command with a read-back, adapter row A26, and an unprotected main flagged in status (closes IR-2026-10-31-no-branch-rule-on-main-after-a-new-repo-goes-public). Both full-stop messages name the kit folder and the exact install steps.
+
 ## 1.10.0 - 2026-10-31
 - A missing kit is a full stop: install user wires a gate that refuses every prompt in a folder with no kit (opt out with .kit/no-kit), and a project refuses every prompt when the active Claude config folder has no kit. The kit honors CLAUDE_CONFIG_DIR and names the folder it read. A repo that owns its CLAUDE.md gets the kit as an overlay in CLAUDE.local.md, recorded as host-owned and never flagged (closes IR-2026-10-31-overlay-on-team-repo). The kit's own CLAUDE.md and CLAUDE.local.md never go public, even when the kit is tracked.
 
