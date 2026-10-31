@@ -146,7 +146,7 @@ export function install(ctx) {
   const { entries, stampPath } = plan(ctx);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
-  const created = [], updated = [], replaced = [], skipped = [];
+  const created = [], updated = [], replaced = [], skipped = [], merged = [];
   const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
   for (const entry of entries) {
@@ -176,6 +176,9 @@ export function install(ctx) {
         fs.copyFileSync(entry.dest, keep);
       }
       write(); replaced.push(entry.key); files[entry.key] = wantHash;
+    } else if ((ctx.merged || []).includes(entry.key)) {
+      // The owner merged the kit's changes into this file by hand: its text now stands on the current kit copy.
+      merged.push(entry.key); files[entry.key] = wantHash;
     } else {
       const reason = !base ? 'already exists and differs from the kit'
         : wantHash === base ? 'changed here - run fold-back'
@@ -259,7 +262,7 @@ export function install(ctx) {
     }
     if (ctx.target === 'project') keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned]);
   }
-  return { created, updated, replaced, retired, skipped, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, merged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
 }
 
 /**
@@ -650,8 +653,9 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
   }
   if (stamp.version) {
     const r = foldBack({ kit, home, target: 'project', projectDir });
-    const held = [...r.foldBack, ...r.conflict].filter((k) => !k.startsWith('memory/'));
-    if (held.length) lines.push(`${held.length} kit file(s) changed in this project, so update leaves them alone: ${held.join(', ')}. Merge kit changes into them by hand.`);
+    // Only a file changed here and in the kit owes work; one changed only here holds the project's own values.
+    const held = r.conflict.filter((k) => !k.startsWith('memory/'));
+    if (held.length) lines.push(`${held.length} kit file(s) changed here and in the kit: ${held.join(', ')}. Merge the kit's changes by hand, then record it with kit.mjs install project <folder> --merged <file>,<file>.`);
   }
   const catalogPath = path.join(projectDir, '.claude', 'kit', 'skill-cases.json');
   const localPath = path.join(projectDir, '.claude', 'skill-cases.local.json');
@@ -723,13 +727,17 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
       continue;
     }
     const r = foldBack({ kit, home, target: w.target, projectDir });
-    const held = [...r.foldBack, ...r.conflict].filter((k) => !k.startsWith('memory/'));
+    // A file changed only here carries the project's own values on the current kit copy (normal use); a file changed
+    // here and in the kit owes a hand merge.
+    const own = r.foldBack.filter((k) => !k.startsWith('memory/'));
+    const held = r.conflict.filter((k) => !k.startsWith('memory/'));
     const waiting = r.update.length + r.missing.length;
     const parts = [semverAbove(version, stamp.version) ? `behind kit ${version}` : 'current'];
     if (waiting) parts.push(`${waiting} file(s) waiting`);
     const ok = parts[0] === 'current' && !waiting && !held.length;
     lines.push(`${w.name}: ${stamp.version}, ${parts.join('; ')}.${ok ? '' : ` Run ${w.fix}.`}`);
-    if (held.length) lines.push(`    ${held.length} file(s) changed here, so update skips them: ${held.join(', ')}. Merge the kit's changes by hand.`);
+    if (held.length) lines.push(`    ${held.length} file(s) changed here and in the kit: ${held.join(', ')}. Merge the kit's changes by hand, then record it with kit.mjs install ${w.target === 'user' ? 'user' : 'project <folder>'} --merged <file>,<file>.`);
+    if (own.length) lines.push(`    ${own.length} file(s) carry this project's own values on the current kit copy: ${own.join(', ')}. Not a gap; fold-back offers any that are portable.`);
     if (!ok) gaps.push(`${w.name} differs from the kit`);
   }
   // Improvement reports still open here are work for the kit, not a stale install, so they do not change the verdict.
@@ -1186,12 +1194,15 @@ function main(argv) {
   const dryRun = argv.includes('--dry-run');
   const force = argv.includes('--force');
   const overlay = argv.includes('--overlay');
+  const mergedAt = argv.indexOf('--merged');
+  const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
-    const r = install({ kit, home, target, projectDir, dryRun, force, overlay });
+    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
     console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
+    for (const f of r.merged) console.log(`    recorded as merged by hand: ${f}`);
     for (const f of r.replaced) console.log(`    replaced ${f}`);
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
@@ -1244,7 +1255,7 @@ function main(argv) {
     console.log(hits.length ? `${hits.length} hit(s)` : 'Scrub clean');
     process.exitCode = hits.length ? 1 : 0;
   } else {
-    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay]');
+    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay] [--merged <file>,<file>]');
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');

@@ -307,13 +307,30 @@ test('status says current only when the kit folder, ~/.claude and the project al
   assert.match(r.text, /kit\.mjs install user\./);
   assert.match(r.text, /^Not current: /m);
 
-  // Same version, but a file the owner changed here: update will leave it alone, so status names it.
+  // Same version, a file carrying this project's own values on top of the current kit copy (a filled adapter row, a
+  // tracking file): that is normal use, not a stale install, so status stays current and names it (the owner,
+  // 2026-10-31: "current" must be reachable without wiping a project's records).
   install({ kit, home, target: 'user' });
   install({ kit, home, target: 'project', projectDir: proj });
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, edited here\n');
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true, r.text);
+  assert.match(r.text, /1 file\(s\) carry this project's own values on the current kit copy: _Working Standards\.md/);
+
+  // Changed here AND in the kit: a hand merge is owed, so status is not current until the merge is recorded.
+  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newest\n');
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, false);
-  assert.match(r.text, /changed here, so update skips them: _Working Standards\.md/);
+  assert.match(r.text, /1 file\(s\) changed here and in the kit: _Working Standards\.md\. Merge the kit's changes by hand, then record it/);
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
+  const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
+  assert.deepEqual(m.merged, ['_Working Standards.md']);
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true, r.text);
+  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, newest, edited here\n');
 
   // GitHub ahead of the kit folder.
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
@@ -439,10 +456,15 @@ test('every skill the case map names exists in the kit, its backups or Claude Co
   }
 });
 
-test('session start names the kit files this project changed, which update leaves alone', () => {
+test('session start names only the kit files that owe a hand merge, not a project\'s own values', () => {
   const { kit, home, proj } = caseKit();
+  // Changed only here: the project's own values on the current kit copy, normal use, so session start stays quiet.
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /1 kit file\(s\) changed in this project, so update leaves them alone: _Working Standards\.md\./);
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /_Working Standards\.md/);
+  // Changed here and in the kit: a merge is owed, and session start says so.
+  bump({ kit, level: 'patch', note: 'x', date: '2026-02-01' });
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'kit rules, newer\n');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /1 kit file\(s\) changed here and in the kit: _Working Standards\.md\. Merge the kit's changes by hand, then record it with kit\.mjs install project <folder> --merged <file>,<file>\./);
 });
 
 test('pre-compact says when an installed third-party plugin moved past its backup', () => {

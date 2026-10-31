@@ -23,7 +23,9 @@ Arguments: $ARGUMENTS
   snapshot`, then review the diff in `vendor/` (read any new community skill) before the kit commit.
 - **`update`** - pull the latest kit into this project: `node <kitDir>/scripts/kit.mjs install project .`
   Report what was created, updated and skipped; for each skipped file, show the kit's change and merge by hand
-  only on the owner's go.
+  only on the owner's go. Once a file carries the kit's changes, record it: `node <kitDir>/scripts/kit.mjs install
+  project . --merged <file>,<file>`. A file that differs only by this project's own values (adapter rows, tracking
+  files) is normal and does not block "Current".
 - **`status`** - the version check, read-only: `node <kitDir>/scripts/kit.mjs status .` It compares the kit
   folder with GitHub, and ~/.claude and this project with the kit, file by file. Show its lines as they are;
   "Current:" is the all-clear, "Not current:" names what to run. It is the first troubleshooting step whenever
