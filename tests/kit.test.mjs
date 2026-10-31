@@ -2730,3 +2730,15 @@ test('every kit skill names itself, keeps a short description, and every link it
     }
   }
 });
+
+// A standby skill (the owner, 2026-10-31): moved out of the Claude config folder to save context, it lives on only in
+// vendor/, so a later snapshot must keep that copy, not wipe it.
+test('snapshot keeps the vendor copy of a skill that is on standby (not on this machine)', () => {
+  const ctx = makeKit();
+  addThirdParty(ctx);
+  snapshot({ kit: ctx.kit, home: ctx.home });
+  fs.rmSync(path.join(ctx.home, 'skills/vendor-skill'), { recursive: true });
+  const r = snapshot({ kit: ctx.kit, home: ctx.home });
+  assert.equal(read(path.join(ctx.kit, 'vendor/skills/vendor-pack/vendor-skill/SKILL.md')), 'vendor\n');
+  assert.ok(r.missing.includes('vendor-skill'));
+});

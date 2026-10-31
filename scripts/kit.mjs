@@ -541,11 +541,16 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
   }
   for (const group of want.skillGroups || []) {
     const dest = path.join(vendor, 'skills', group.name);
-    fs.rmSync(dest, { recursive: true, force: true });
     const copied = [];
     for (const skill of group.skills) {
       const from = path.join(home, 'skills', skill);
-      if (!fs.existsSync(from)) { out.missing.push(skill); continue; }
+      // A skill on standby is not on this machine; its vendor copy is the only one left, so it stays.
+      if (!fs.existsSync(from)) {
+        out.missing.push(skill);
+        if (fs.existsSync(path.join(dest, skill))) copied.push(skill);
+        continue;
+      }
+      fs.rmSync(path.join(dest, skill), { recursive: true, force: true });
       copyTree(from, path.join(dest, skill));
       copied.push(skill);
     }
