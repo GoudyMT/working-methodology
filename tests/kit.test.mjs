@@ -1452,7 +1452,8 @@ test('the checker clean-tree stop sees a change in another worktree of the same 
 // exclude file, so the kit is there to use but never committed unless the owner tracks a file on purpose.
 const g = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
 // noVerify stands for a tool that skips the git hooks, so a slip still reaches history and the first push check must find it.
-const commitAll = (dir, msg, noVerify) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', msg, ...(noVerify ? ['--no-verify'] : [])); };
+// Test commits use the house style, so the kit's commit-msg hook (rule:commit-message-format) lets them through.
+const commitAll = (dir, msg, noVerify) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', /^[a-z]+: /.test(msg) ? msg : `chore: ${msg}`, ...(noVerify ? ['--no-verify'] : [])); };
 function localProject() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-'));
   g(dir, 'init', '-q');
@@ -1573,7 +1574,7 @@ test('the install turns on the kit git hooks, and leaves another hook manager al
 });
 test('the pre-commit hook blocks staging a kit file, a never path or a secret file, and allows tracked choices', () => {
   const dir = readyProject({ track: ['main.py', '_Session Log.md'], never: ['school/**'] });
-  const commit = () => spawnSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x'], { encoding: 'utf8', env: { ...process.env } });
+  const commit = () => spawnSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'chore: x'], { encoding: 'utf8', env: { ...process.env } });
   g(dir, 'add', '-f', 'AGENTS.md');
   let r = commit();
   assert.notEqual(r.status, 0, 'a kit file');
@@ -2532,13 +2533,13 @@ test('the commit check runs in an agent worktree and reads that worktree\'s stag
   assert.equal(g(dir, 'worktree', 'add', '-q', '-b', 'unit-1', wt).status, 0);
   fs.writeFileSync(path.join(wt, '.env'), 'X=1\n');
   g(wt, 'add', '-f', '.env');
-  const blocked = g(wt, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'slip');
+  const blocked = g(wt, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'chore: slip');
   assert.notEqual(blocked.status, 0, 'the worktree commit is checked');
   assert.match(blocked.stderr, /\.env: a secret-shaped file/);
   g(wt, 'rm', '-q', '--cached', '.env');
   fs.writeFileSync(path.join(wt, 'ok.py'), 'print(2)\n');
   g(wt, 'add', 'ok.py');
-  const ok = g(wt, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'fine');
+  const ok = g(wt, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'chore: fine');
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(ok.stdout + ok.stderr, /Commit check: PASS/, 'a run is visible');
 });
@@ -2658,4 +2659,51 @@ test('the project map can be checked from a draft file outside the project, with
   const r = mapRun(dir, ['check', '--map', draft]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /part ask: src\/nope does not exist/);
+});
+
+// rule:commit-message-format and rule:branching as scripts: one line, a known type, no AI or tool trailer; a branch is
+// <type>/<plain-kebab> with no tool prefix or internal code.
+const NAMES = path.resolve('project/.claude/name-check.mjs');
+const nameRun = (args) => spawnSync('node', [NAMES, ...args], { encoding: 'utf8' });
+const msgFile = (text) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'msg-')), 'MSG'); fs.writeFileSync(f, text); return f; };
+test('the commit message check passes the house style and names each fault', () => {
+  for (const ok of ['fix: hold the page still behind the open reader\n', 'chore(deps-dev): bump vite\n', 'Merge branch main into feature/x\n',
+    'fixup! fix: hold the page\n', 'feat: add the map\n# a comment git strips\n']) assert.equal(nameRun(['message', msgFile(ok)]).status, 0, ok);
+  const cases = [
+    ['Fix: Hold the page.\n', /type: subject/],
+    ['update stuff\n', /type: subject/],
+    ['feat: add the map\n\nlonger body\n', /one line/],
+    ['feat: add the map\n\nCo-Authored-By: Someone <x@y.z>\n', /AI or tool trailer/],
+    ['feat: add the map\nGenerated with a tool\n', /one line/],
+  ];
+  for (const [text, fault] of cases) {
+    const r = nameRun(['message', msgFile(text)]);
+    assert.equal(r.status, 1, text);
+    assert.match(r.stderr, fault, text);
+  }
+});
+test('the branch name check passes plain type-prefixed names and refuses tool prefixes and internal codes', () => {
+  for (const ok of ['main', 'feature/branch-blind-timeline', 'fix/hold-the-reader', 'chore/bump-vite', 'feat/project-map', 'dependabot/npm_and_yarn/vite-7.1.0'])
+    assert.equal(nameRun(['branch', ok]).status, 0, ok);
+  for (const bad of ['claude/project-thread-fkkmfn', 'worktree-agent-a1', 'feature/b2-calendar', 'feature/F9_Timeline', 'my-branch', 'feature/'])
+    assert.equal(nameRun(['branch', bad]).status, 1, bad);
+});
+test('the commit-msg hook runs the message check, and the pre-push hook refuses a badly named branch', () => {
+  // The commit-msg hook, run as git runs it, refuses a message out of the house style.
+  const msgHook = spawnSync('sh', [path.resolve('project/.githooks/commit-msg'), msgFile('update stuff\n')], { encoding: 'utf8' });
+  assert.equal(msgHook.status, 1);
+  assert.match(msgHook.stderr, /type: subject/);
+  // The pre-push hook, run as git runs it: a push that sends a tool-prefixed branch stops at the name check.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'names-'));
+  fs.mkdirSync(path.join(dir, '.githooks'));
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks/pre-push'));
+  fs.copyFileSync(NAMES, path.join(dir, '.claude/name-check.mjs'));
+  g(dir, 'init', '-q');
+  const env = { ...process.env, AI_AGENT: '', CLAUDECODE: '' };
+  const push = (ref) => spawnSync('sh', [path.join(dir, '.githooks/pre-push'), 'origin', 'x'],
+    { cwd: dir, env, encoding: 'utf8', input: `${ref} ${'1'.repeat(40)} ${ref} ${'0'.repeat(40)}\n` });
+  const bad = push('refs/heads/claude/project-thread-x');
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /name-check: "claude\/project-thread-x"/);
 });

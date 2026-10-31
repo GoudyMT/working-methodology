@@ -19,6 +19,11 @@
       "before": "8. **Skills by case.** The kit's `.claude/kit/skill-cases.json` maps each kind of task to the skills it loads. Each project turns its cases on in `.claude/skill-cases.local.json`; the session-start hook lists those skills. At most two skills per unit of work; design-time, motion and review-time sets stay apart. Why: the right skill unused is no skill, and too many dilute each other. *Check: tests confirm every named skill exists.*",
       "after": "8. **Skills by case.** The kit's `.claude/kit/skill-cases.json` maps each kind of task to the skills it loads. Each project turns its cases on in `.claude/skill-cases.local.json`; the session-start hook lists those skills. At most two skills per unit of work; design-time, motion and review-time sets stay apart. A rarely used plugin is a **standby plugin**: off in the Claude config folder's settings, named on its case (`plugin`), and switched on per project in `.claude/settings.local.json`; session start says how when a turned-on case needs one that is off. Why: the right skill unused is no skill, and too many dilute each other. *Check: tests confirm every named skill exists.*",
       "why": "the owner, 2026-10-31: rarely used plugins stay off globally and switch on per project as standby plugins"
+    },
+    {
+      "before": "**Branch names:** `<type>/<plain-kebab-description>` (`feature`, `fix`, `chore`, `test`, `perf`, `security`) in plain words; no internal codes or tool prefixes (`claude/`, `worktree-`); read recent PR branch names first. Why: a branch name is public, like a commit subject.",
+      "after": "**Branch names:** `<type>/<plain-kebab-description>` (`feature`, `fix`, `chore`, `test`, `perf`, `security`) in plain words; no internal codes or tool prefixes (`claude/`, `worktree-`); read recent PR branch names first. The pre-push hook checks each branch it sends (`.claude/name-check.mjs`). Why: a branch name is public, like a commit subject.",
+      "why": "the owner, 2026-10-31: checks that can be scripts become scripts"
     }
   ]
 }

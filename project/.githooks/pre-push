@@ -6,6 +6,16 @@ if [ -n "$AI_AGENT$CLAUDECODE" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
   echo "Push blocked: an AI agent is pushing without the owner's go. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
   exit 1
 fi
+# Git gives the refs being pushed on stdin once; keep them for both checks below.
+refs=$(cat)
+# Branch names in the house style (rule:branching): every branch this push sends.
+names="$(dirname "$0")/../.claude/name-check.mjs"
+if [ -f "$names" ]; then
+  for rref in $(printf "%s
+" "$refs" | awk '{print $3}'); do
+    case "$rref" in refs/heads/*) node "$names" branch "${rref#refs/heads/}" || exit 1 ;; esac
+  done
+fi
 # The first push gate (rule:first-push-gate), for any pusher whose git runs this hook: until the project's first push
 # has landed, only the commit .claude/first-push-check.mjs cleared (or one of its ancestors, or a tag of it) may go
 # out. The gate is done once that commit is on a remote branch, or once every first (root) commit being pushed is
@@ -28,7 +38,9 @@ if [ ! -f "$common/kit-first-push-done" ]; then
         echo "First push blocked (rule:first-push-gate): run node .claude/first-push-check.mjs, fix what it finds, then push the commit it cleared." >&2
         exit 1
       fi
-    done
+    done <<EOF
+$refs
+EOF
   fi
 fi
 exit 0

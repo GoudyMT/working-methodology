@@ -1,0 +1,5 @@
+#!/bin/sh
+# One line, "type: subject", no AI or tool trailer (rule:commit-message-format), from any tool.
+check="$(dirname "$0")/../.claude/name-check.mjs"
+[ -f "$check" ] || exit 0
+exec node "$check" message "$1"
