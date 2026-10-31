@@ -14,7 +14,8 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 
 const MODE = process.argv[2];
-const HOME = process.env.KIT_CLAUDE_HOME || path.join(os.homedir(), '.claude');
+// The Claude config folder: CLAUDE_CONFIG_DIR when a second one is in use, else ~/.claude.
+const HOME = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const PROJECT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
 function emit(text) {
@@ -29,7 +30,7 @@ async function main() {
 	const kit = fs.existsSync(stampPath) ? JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir : null;
 	if (!kit || !fs.existsSync(path.join(kit, 'scripts', 'kit.mjs'))) {
 		if (MODE === 'prompt') return;
-		emit('Methodology kit not found (no kitDir in ~/.claude/kit-install.json). Run "node <kit>/scripts/kit.mjs install user".');
+		emit(`Methodology kit not found in the Claude config folder ${HOME.split(path.sep).join('/')} (no kitDir in its kit-install.json). Run "node <kit>/scripts/kit.mjs install user" with CLAUDE_CONFIG_DIR set to that folder.`);
 		return;
 	}
 	const lib = await import(pathToFileURL(path.join(kit, 'scripts', 'kit.mjs')).href);

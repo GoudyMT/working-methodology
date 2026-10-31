@@ -10,6 +10,13 @@ git -C <kit folder> pull
 node <kit folder>/scripts/kit.mjs install user
 ```
 
+A Claude setup with its own config folder (`CLAUDE_CONFIG_DIR`, for example a second account) needs its own user
+install: run the same command with `CLAUDE_CONFIG_DIR` set to that folder. The session-start check names the folder
+it read.
+
+A team repo with its own `CLAUDE.md` keeps it: the project install writes a personal `CLAUDE.local.md` that loads
+the kit's `AGENTS.md`, and keeps it out of git.
+
 ## 2. Orient (read-only)
 
 Read, with real tool calls, not from memory:

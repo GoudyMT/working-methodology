@@ -158,6 +158,30 @@ export function install(ctx) {
       skipped.push({ file: entry.key, reason });
     }
   }
+  // A repo with its own CLAUDE.md (a team repo) keeps it; the kit's rules then reach Claude through a personal
+  // CLAUDE.local.md, which Claude Code loads by itself and keepKitLocal keeps out of git.
+  const teamClaude = ctx.target === 'project' && skipped.some((s) => s.file === 'CLAUDE.md' && !stamp.files['CLAUDE.md']);
+  const local = ctx.target === 'project' ? path.join(ctx.projectDir, 'CLAUDE.local.md') : null;
+  if (teamClaude && !fs.existsSync(local)) {
+    if (skipped.some((s) => s.file === 'AGENTS.md')) {
+      skipped.push({ file: 'CLAUDE.local.md', reason: "not written: this repo's AGENTS.md is its own too, so the kit's core rules have no home here - merge them by hand" });
+    } else {
+      const text = [
+        '# Kit pointer (personal, kept out of git)',
+        '',
+        "This repo has its own CLAUDE.md, so the methodology kit's rules load from here.",
+        '',
+        '@AGENTS.md',
+        '',
+        'Then read the rule module the moment needs (the Rule Modules table at the end of AGENTS.md); standards/INDEX.md',
+        'finds a rule by its ID.',
+        '',
+      ].join('\n');
+      if (!ctx.dryRun) fs.writeFileSync(local, text);
+      created.push('CLAUDE.local.md');
+      files['CLAUDE.local.md'] = sha(text);
+    }
+  }
   // Retired files: only ones this kit installed (they are in the stamp) and the owner left as installed are
   // removed, after a backup. A changed copy holds the owner's work, so it stays and is reported.
   const retired = [];
@@ -993,7 +1017,8 @@ export function measure({ projectDir }) {
 
 function main(argv) {
   const kit = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const home = process.env.KIT_CLAUDE_HOME || path.join(os.homedir(), '.claude');
+  // The Claude config folder: CLAUDE_CONFIG_DIR when a second one is in use, else ~/.claude.
+  const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
   const [cmd, target, arg] = argv;
   const dryRun = argv.includes('--dry-run');
   const force = argv.includes('--force');

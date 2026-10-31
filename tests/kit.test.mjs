@@ -2327,3 +2327,34 @@ test('an owner-decided sweep can log its outcome, so the trial sees every sweep'
   assert.equal(o.status, 0, o.stdout);
   assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'outcome').length, 1);
 });
+
+// From a project's kit-gap log (2026-10-31): a second Claude config folder (CLAUDE_CONFIG_DIR) ran without the kit,
+// and a repo with its own CLAUDE.md got no pointer to the kit's rules.
+test('the installer and the session hook honor CLAUDE_CONFIG_DIR, and the hook names the folder it checked', () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg };
+  delete env.KIT_CLAUDE_HOME;
+  const hook = spawnSync('node', [path.resolve('project/.claude/kit-hook.cjs'), 'session-start'], { input: '{}', encoding: 'utf8', env: { ...env, CLAUDE_PROJECT_DIR: cfg } });
+  assert.ok(hook.stdout.includes(cfg.split(path.sep).join('/')) || hook.stdout.includes(JSON.stringify(cfg).slice(1, -1)), hook.stdout);
+  const r = spawnSync('node', [path.resolve('scripts/kit.mjs'), 'install', 'user'], { encoding: 'utf8', env });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(fs.existsSync(path.join(cfg, 'kit-install.json')), 'installed into the config folder');
+});
+test('a repo with its own CLAUDE.md gets a personal CLAUDE.local.md pointing at the kit rules, kept out of git', () => {
+  const { kit, home, proj } = makeKit();
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n');
+  fs.writeFileSync(path.join(kit, 'project/AGENTS.md'), '# Kit AGENTS\n');
+  g(proj, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), '# The team\'s own rules\n');
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(path.join(proj, 'CLAUDE.md')), '# The team\'s own rules\n', 'the team file is untouched');
+  assert.ok(r.created.includes('CLAUDE.local.md'));
+  assert.match(read(path.join(proj, 'CLAUDE.local.md')), /^@AGENTS\.md$/m);
+  assert.equal(g(proj, 'check-ignore', 'CLAUDE.local.md').status, 0, 'git keeps it out');
+  // A second install leaves it as it is; a repo whose CLAUDE.md is the kit's gets no pointer.
+  assert.ok(!install({ kit, home, target: 'project', projectDir: proj }).created.includes('CLAUDE.local.md'));
+  const plain = makeKit();
+  fs.writeFileSync(path.join(plain.kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n');
+  install({ kit: plain.kit, home: plain.home, target: 'project', projectDir: plain.proj });
+  assert.equal(fs.existsSync(path.join(plain.proj, 'CLAUDE.local.md')), false);
+});
