@@ -14,6 +14,16 @@
       "before": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts. Nothing reaches the remote, merges or ships without the owner's knowledge, ever** - for Claude and every agent it dispatches. Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.",
       "after": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.",
       "why": "the owner, 2026-10-31: outward acts are the owner's unless a standing grant covers them (Hard Rule 14 reworded, Tier 0, approved by the owner)"
+    },
+    {
+      "before": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract and run `approve.mjs` FIRST (rule:sweep-auto-approval; orchestrated: field 11): APPROVED -> post its notice and go; ASK -> show the table and reasons, STOP for the owner. Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.",
+      "after": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs`, run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.",
+      "why": "the owner, 2026-10-31: recall fixes for the strict 1-or-0 scorer (question 7: the swarm contract stops until approved; the role list moves to its one home, rule:agent-role-table, to keep the module under its cap)"
+    },
+    {
+      "before": "The portable playbook is user level: the `agent-team-build` skill (both modes) and role files (`builder` - mid tier, own worktree, cannot start agents; `checker` - top tier, read-only; `orchestrator`, `scanner`). Role files skip CLAUDE.md, so field 8 rides in every brief. **The owner's approval of a batch plan starts the build.**",
+      "after": "The portable playbook is user level: the `agent-team-build` skill (both modes) and role files (rule:agent-role-table). Role files skip CLAUDE.md, so field 8 rides in every brief. **The owner's approval of a batch plan starts the build.**",
+      "why": "the owner, 2026-10-31: recall fixes for the strict 1-or-0 scorer (question 7: the swarm contract stops until approved; the role list moves to its one home, rule:agent-role-table, to keep the module under its cap)"
     }
   ]
 }

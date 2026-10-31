@@ -19,7 +19,7 @@ tags:
 
 ### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
-Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract and run `approve.mjs` FIRST (rule:sweep-auto-approval; orchestrated: field 11): APPROVED -> post its notice and go; ASK -> show the table and reasons, STOP for the owner. Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.
+Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs`, run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.
 
 | # | Role | The distinct question ONLY this role asks | Context injected | What a finding looks like | Token budget |
 |---|---|---|---|---|---|
@@ -79,7 +79,7 @@ Every kit-role agent opens each message to whoever started it with the phrase on
 
 ### Agent-Team Build: Project Adapter (TEMPLATE) {#agent-team-adapter}
 
-The portable playbook is user level: the `agent-team-build` skill (both modes) and role files (`builder` - mid tier, own worktree, cannot start agents; `checker` - top tier, read-only; `orchestrator`, `scanner`). Role files skip CLAUDE.md, so field 8 rides in every brief. **The owner's approval of a batch plan starts the build.**
+The portable playbook is user level: the `agent-team-build` skill (both modes) and role files (rule:agent-role-table). Role files skip CLAUDE.md, so field 8 rides in every brief. **The owner's approval of a batch plan starts the build.**
 
 <!-- PROJECT ADAPTER: fill every field before the first batch. -->
 1. **Adopted:** <date>. **Scoreboard:** `_Loop Learnings.md` "Agent-team scoreboard".
