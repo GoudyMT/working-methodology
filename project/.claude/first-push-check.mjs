@@ -17,17 +17,9 @@ const git = (...a) => spawnSync('git', ['-C', PROJECT, '-c', 'core.quotePath=fal
 // The commit being checked may be in an agent worktree: git runs the hook at that worktree's top, so its index is
 // read there. The settings (.kit/) stay in the main checkout, where this script lives.
 const gitHere = (...a) => spawnSync('git', ['-C', process.cwd(), '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-// Secret-shaped file names and values. A value is never printed: only its kind, file and commit.
-const SECRET_FILE = /(^|\/)(\.env(\.(?!example$|sample$|template$)[^/]+)?|\.dev\.vars|id_rsa|id_ed25519|credentials\.json)$|\.(pem|key|p12|pfx)$|(^|\/)secrets\//i;
-const SECRET_VALUE = [
-	['anthropic key', /sk-ant-[A-Za-z0-9_-]{20,}/],
-	['openai-style key', /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}/],
-	['stripe-style key', /\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}/],
-	['github token', /\bgh[pousr]_[A-Za-z0-9]{30,}/],
-	['aws access key', /\bAKIA[0-9A-Z]{16}\b/],
-	['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
-	['assigned secret', /(api[_-]?key|secret|token|password|bearer)["']?\s*[:=]\s*["'][^"'\s]{16,}["']/i],
-];
+// Secret-shaped file names and values (one home, shared with the branch scan). A value is never printed: only its
+// kind, file and commit.
+import { SECRET_FILE, SECRET_VALUE } from './secret-patterns.mjs';
 
 // A glob from tracking.json, relative to the project folder: ** crosses folders, * and ? stay inside one. Like a
 // .gitignore line, a name also covers everything under it, so "school", "school/" and "school/**" agree.

@@ -15,7 +15,8 @@
 // each trial review). The script
 // pauses itself, and only the owner resumes it from a terminal no AI tool runs in, after: tokens a quarter or more
 // over budget, a third or more of the findings repeated between roles, a bug that escaped a sweep it passed, or
-// every 10 auto-approvals (the trial review). The next approval waits for the last sweep's outcome.
+// every 10 auto-approvals (the trial review; every 20 after two clean ones in a row). The next approval waits for the
+// last sweep's outcome.
 //
 // Usage (from inside the repo):
 //   node approve.mjs <contract.json> [--base <ref>]                     decide (exit 0 approved, 1 ask the owner)
@@ -58,6 +59,7 @@ const TOP_ONLY = ['security', 'novel-lens'];
 const TOP_MODEL = /opus/i;
 const OVERRUN = 1.25;
 const TRIAL_EVERY = 10;
+const TRIAL_EVERY_EARNED = 20;
 // Two questions sharing this much of their words are one question asked twice. Rewording beats a word count, so the
 // outcome's repeated-findings trip is the real backstop for clones.
 const CLONE = 0.5;
@@ -96,7 +98,17 @@ function state() {
 	const paused = lastPause > lastResume ? log[lastPause].reason : null;
 	const pausedAt = paused ? log[lastPause].time : null;
 	const since = log.slice(lastResume + 1);
-	return { log, paused, pausedAt, approvedSinceReview: since.filter((e) => e.kind === 'decision' && e.decision === 'approved').length };
+	// Trust earned widens the review: after two trial reviews in a row the owner resumed with no other pause between,
+	// the next comes after TRIAL_EVERY_EARNED approvals. Any other pause (a drift trip, a hand-written line) resets it.
+	let clean = 0;
+	let pendingTrial = false;
+	log.forEach((e, i) => {
+		if (i <= broken) clean = 0;
+		else if (e.kind === 'pause') { if (String(e.reason).startsWith('trial review due')) pendingTrial = true; else { clean = 0; pendingTrial = false; } }
+		else if (e.kind === 'resume' && pendingTrial) { clean++; pendingTrial = false; }
+	});
+	const reviewEvery = clean >= 2 ? TRIAL_EVERY_EARNED : TRIAL_EVERY;
+	return { log, paused, pausedAt, reviewEvery, approvedSinceReview: since.filter((e) => e.kind === 'decision' && e.decision === 'approved').length };
 }
 
 function caps(tier) {
@@ -209,8 +221,8 @@ function decide() {
 	const open = s.log.filter((e) => e.kind === 'decision' && e.decision === 'approved').pop();
 	const reported = open && s.log.some((e) => e.kind === 'outcome' && e.decisionAt === open.time);
 	if (s.paused) why.unshift(`auto-approval is paused: ${s.paused}`);
-	else if (s.approvedSinceReview >= TRIAL_EVERY) {
-		const reason = `trial review due: ${TRIAL_EVERY} auto-approvals since the last review`;
+	else if (s.approvedSinceReview >= s.reviewEvery) {
+		const reason = `trial review due: ${s.reviewEvery} auto-approvals since the last review`;
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
 	} else if (open && !reported) why.unshift(`log the outcome of the last approved sweep first (${open.contract})`);
@@ -303,7 +315,7 @@ function summary() {
 	const sum = (k) => o.reduce((t, e) => t + (Number(e[k]) || 0), 0);
 	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}`);
 	console.log(`outcomes: ${o.length}; tokens / budget: ${sum('budget') ? (sum('tokens') / sum('budget')).toFixed(2) : 'n/a'}; real findings: ${sum('real')} of ${sum('findings')} (from mid-model roles: ${sum('realMid')}); repeated: ${sum('duplicates')}`);
-	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${TRIAL_EVERY} since the last review`}`);
+	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${s.reviewEvery} since the last review`}`);
 	if (s.paused) console.log(resumeHelp(s)[2].trim());
 	return 0;
 }
@@ -318,7 +330,7 @@ function main() {
 			return 1;
 		}
 		write({ kind: 'resume' });
-		console.log(`Auto-approval resumed; the next review comes after ${TRIAL_EVERY} more.`);
+		console.log(`Auto-approval resumed; the next review comes after ${state().reviewEvery} more.`);
 		return 0;
 	}
 	if (!contractFile) { console.log('Usage: node approve.mjs <contract.json> [--outcome ... | --escape "<note>"] [--base <ref>]'); return 2; }
