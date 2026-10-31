@@ -29,7 +29,16 @@ async function main() {
 	const stampPath = path.join(HOME, 'kit-install.json');
 	const kit = fs.existsSync(stampPath) ? JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir : null;
 	if (!kit || !fs.existsSync(path.join(kit, 'scripts', 'kit.mjs'))) {
-		if (MODE === 'prompt') return;
+		// A missing kit is a full stop (the owner, 2026-10-31): every prompt is refused with the fix, except a prompt
+		// that installs it.
+		if (MODE === 'prompt') {
+			let prompt = '';
+			try { prompt = String(JSON.parse(fs.readFileSync(0, 'utf8') || '{}').prompt || ''); } catch { /* none */ }
+			if (/methodology-kit|kit\.mjs/i.test(prompt)) return;
+			const where = HOME.split(path.sep).join('/');
+			process.stdout.write(JSON.stringify({ decision: 'block', reason: `Full stop: the methodology kit is not installed in the Claude config folder ${where}. Install the latest kit first (git pull in the kit folder, then node <kit folder>/scripts/kit.mjs install user with CLAUDE_CONFIG_DIR set to ${where}), then start a fresh session.` }));
+			return;
+		}
 		emit(`Methodology kit not found in the Claude config folder ${HOME.split(path.sep).join('/')} (no kitDir in its kit-install.json). Run "node <kit>/scripts/kit.mjs install user" with CLAUDE_CONFIG_DIR set to that folder.`);
 		return;
 	}

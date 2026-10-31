@@ -1431,7 +1431,9 @@ test('the owner can choose to track the kit, and a folder without git is left al
   kitInstall(dir);
   fs.writeFileSync(path.join(dir, '.kit', 'tracking.json'), '{ "kit": "tracked" }\n');
   kitInstall(dir);
-  assert.doesNotMatch(read(excludeFile(dir)), /kit:begin/);
+  // Tracked: every kit file may go in the repo except the private ones (the owner, 2026-10-31).
+  assert.notEqual(g(dir, 'check-ignore', '-q', 'AGENTS.md').status, 0, 'a kit file can be tracked');
+  assert.equal(g(dir, 'check-ignore', '-q', 'CLAUDE.md').status, 0, "the kit's CLAUDE.md stays private");
   const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'nogit-'));
   kitInstall(plain);
   assert.ok(!fs.existsSync(path.join(plain, '.git')), 'the install never makes a repo');
@@ -2394,4 +2396,77 @@ test('an overlay on a repo that also owns its AGENTS.md says the kit core needs 
   commitAll(proj, 'team', true);
   const r = install({ kit, home, target: 'project', projectDir: proj });
   assert.match(r.skipped.find((s) => s.file === 'AGENTS.md').reason, /CLAUDE\.local\.md imports it/);
+});
+
+// The owner, 2026-10-31: the kit's own CLAUDE.md never goes public, whatever tracking.json says, and it works beside
+// a host's CLAUDE.md through the overlay.
+test("the kit's CLAUDE.md and CLAUDE.local.md stay out of git even when the kit is tracked or they are listed in track", () => {
+  const dir = localProject();
+  kitInstall(dir);
+  fs.writeFileSync(path.join(dir, '.kit', 'tracking.json'), JSON.stringify({ kit: 'tracked', track: ['CLAUDE.md', 'CLAUDE.local.md', 'main.py'] }));
+  kitInstall(dir);
+  assert.equal(g(dir, 'check-ignore', '-q', 'CLAUDE.md').status, 0, 'still excluded in tracked mode');
+  assert.equal(g(dir, 'check-ignore', '-q', 'CLAUDE.local.md').status, 0);
+  g(dir, 'add', 'main.py');
+  g(dir, 'add', '-f', 'CLAUDE.md');
+  const staged = spawnSync('node', [path.join(dir, '.claude', 'first-push-check.mjs'), '--staged'], { encoding: 'utf8', cwd: dir });
+  assert.equal(staged.status, 1, staged.stderr);
+  assert.match(staged.stderr, /CLAUDE\.md: the kit's CLAUDE\.md never goes public/);
+  commitAll(dir, 'slip', true);
+  const r = firstPush(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /CLAUDE\.md/);
+});
+test("a host-owned CLAUDE.md is the host's to track", () => {
+  const { kit, home, proj } = overlayKit();
+  commitAll(proj, 'team', true);
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.notEqual(g(proj, 'check-ignore', '-q', 'CLAUDE.md').status, 0, "the host's file is not hidden");
+  assert.equal(g(proj, 'check-ignore', '-q', 'CLAUDE.local.md').status, 0);
+});
+
+// The owner, 2026-10-31: a missing kit is a full stop. Each prompt in a folder without the kit, or in a session whose
+// Claude config folder has no kit, is refused with the fix, until the latest kit is installed.
+const promptGate = (script, input, env) => {
+  const r = spawnSync('node', [script], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', ...input }), encoding: 'utf8', env: { ...process.env, ...env } });
+  return r.stdout ? JSON.parse(r.stdout) : {};
+};
+test('the project hook stops every prompt when the Claude config folder has no kit, and lets the install through', () => {
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-'));
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+  const env = { KIT_CLAUDE_HOME: empty, CLAUDE_PROJECT_DIR: proj };
+  const hook = path.resolve('project/.claude/kit-hook.cjs');
+  const stop = spawnSync('node', [hook, 'prompt'], { input: JSON.stringify({ prompt: 'build the feature' }), encoding: 'utf8', env: { ...process.env, ...env } });
+  const out = JSON.parse(stop.stdout);
+  assert.equal(out.decision, 'block');
+  assert.ok(out.reason.includes(empty.split(path.sep).join('/')), out.reason);
+  assert.match(out.reason, /install user/);
+  const fix = spawnSync('node', [hook, 'prompt'], { input: JSON.stringify({ prompt: 'run node kit.mjs install user' }), encoding: 'utf8', env: { ...process.env, ...env } });
+  assert.notEqual((fix.stdout ? JSON.parse(fix.stdout) : {}).decision, 'block');
+});
+test('the user-level gate stops a prompt in a folder without the kit, until it is installed or the folder opts out', () => {
+  const gate = path.resolve('user/kit-hooks/kit-gate.cjs');
+  const dir = localProject();
+  const stopped = promptGate(gate, { cwd: dir, prompt: 'fix the bug' });
+  assert.equal(stopped.decision, 'block');
+  assert.match(stopped.reason, /methodology-kit/);
+  assert.notEqual(promptGate(gate, { cwd: dir, prompt: '/methodology-kit existing' }).decision, 'block', 'the fix itself runs');
+  kitInstall(dir);
+  assert.notEqual(promptGate(gate, { cwd: path.join(dir), prompt: 'fix the bug' }).decision, 'block', 'installed');
+  const other = localProject();
+  fs.mkdirSync(path.join(other, '.kit'));
+  fs.writeFileSync(path.join(other, '.kit', 'no-kit'), '');
+  assert.notEqual(promptGate(gate, { cwd: other, prompt: 'hi' }).decision, 'block', 'opted out');
+});
+test('the user install wires the gate into the Claude config folder settings once, keeping what is there', () => {
+  const { kit, home } = makeKit();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ model: 'x', hooks: { Stop: [{ hooks: [] }] } }));
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'user' });
+  const s = JSON.parse(read(path.join(home, 'settings.json')));
+  assert.equal(s.model, 'x');
+  assert.ok(s.hooks.Stop);
+  const gates = s.hooks.UserPromptSubmit.flatMap((h) => h.hooks).filter((h) => (h.args || []).join(' ').includes('kit-gate.cjs'));
+  assert.equal(gates.length, 1);
 });

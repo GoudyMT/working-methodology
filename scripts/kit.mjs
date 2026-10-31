@@ -105,6 +105,30 @@ function renderEntry(kitInfo, entry, projectDir, home) {
 const readStamp = (p) => ({ files: {}, ...(fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {}) });
 
 /**
+ * Wire the kit gate into the Claude config folder's own settings.json, once, keeping everything else in it. The
+ * gate must run in every folder, including one with no kit files to carry a hook (the owner, 2026-10-31).
+ *
+ * Returns:
+ *     'added', 'present', or a reason it was left alone
+ */
+function wireGate(home, dryRun) {
+  const file = path.join(home, 'settings.json');
+  let settings = {};
+  if (fs.existsSync(file)) {
+    try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return 'settings.json is not valid JSON, so the gate was not added: fix it and install again'; }
+  }
+  const list = ((settings.hooks ||= {}).UserPromptSubmit ||= []);
+  const named = (h) => [h.command, ...(h.args || [])].join(' ').includes('kit-gate.cjs');
+  if (list.some((entry) => (entry.hooks || []).some(named))) return 'present';
+  list.push({ hooks: [{ type: 'command', command: 'node', args: [toPosix(path.join(home, 'kit-hooks', 'kit-gate.cjs'))], timeout: 10 }] });
+  if (!dryRun) {
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+  }
+  return 'added';
+}
+
+/**
  * Copy the kit into ~/.claude (target 'user') or a project (target 'project').
  *
  * A file that is missing is created. A file the owner left as the last install wrote it is
@@ -229,7 +253,11 @@ export function install(ctx) {
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
     fs.writeFileSync(stampPath, JSON.stringify(out, null, 2) + '\n');
-    if (ctx.target === 'project') keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')));
+    if (ctx.target === 'user') {
+      const gate = wireGate(ctx.home, ctx.dryRun);
+      if (gate !== 'added' && gate !== 'present') skipped.push({ file: 'settings.json', reason: gate });
+    }
+    if (ctx.target === 'project') keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned]);
   }
   return { created, updated, replaced, retired, skipped, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
 }
@@ -243,7 +271,7 @@ export function install(ctx) {
  *     projectDir: the project folder
  *     keys: the installed kit paths, relative to the project folder
  */
-function keepKitLocal(projectDir, keys) {
+function keepKitLocal(projectDir, keys, hostOwned = []) {
   const git = (...a) => spawnSync('git', ['-C', projectDir, ...a], { encoding: 'utf8' });
   const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
   if (common.status !== 0) return;
@@ -259,7 +287,12 @@ function keepKitLocal(projectDir, keys) {
   // Only the folder prefix is escaped; git drops trailing spaces from a pattern, so they are trimmed to match.
   const neverLines = (cfg.never || []).map((p) => line('') + p.trim().replace(/^\/+/, ''));
   // The local files the kit tells the owner to create (CLAUDE.local.md, .claude/*.local.json) are kept out too.
-  const kitLines = cfg.kit === 'tracked' ? [] : [...[...keys, '.kit/', '.claude/worktrees/', 'CLAUDE.local.md'].sort().map(line), line('') + '.claude/*.local.json'];
+  // The kit's own CLAUDE.md and the personal local files never go public, even when the owner tracks the kit (the
+  // owner, 2026-10-31); a host-owned CLAUDE.md is the host's to track.
+  const privateKeys = ['CLAUDE.local.md', ...(keys.includes('CLAUDE.md') && !hostOwned.includes('CLAUDE.md') ? ['CLAUDE.md'] : [])];
+  const privateLines = [...privateKeys.map(line), line('') + '.claude/*.local.json'];
+  const kitLines = cfg.kit === 'tracked' ? privateLines
+    : [...new Set([...keys, '.kit/', '.claude/worktrees/', ...privateKeys])].sort().map(line).concat(line('') + '.claude/*.local.json');
   const block = kitLines.length + neverLines.length ? ['# kit:begin - kept local by the methodology kit (rule:kit-stays-local); install rewrites this block',
     ...kitLines, ...neverLines, '# kit:end'].join('\n') + '\n' : '';
   fs.mkdirSync(path.dirname(file), { recursive: true });

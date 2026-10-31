@@ -60,14 +60,19 @@ function main(staged) {
 	const track = cfg.track.map((g) => globRe(g, prefix));
 	const never = cfg.never.map((g) => globRe(g, prefix));
 	const stamp = path.join(PROJECT, '.kit', 'kit-version.json');
-	const kitFiles = new Set(existsSync(stamp) ? Object.keys(JSON.parse(readFileSync(stamp, 'utf8')).files || {}).filter((k) => !k.startsWith('memory/')).map((k) => prefix + k) : []);
+	const stampData = existsSync(stamp) ? JSON.parse(readFileSync(stamp, 'utf8')) : {};
+	const kitFiles = new Set(Object.keys(stampData.files || {}).filter((k) => !k.startsWith('memory/')).map((k) => prefix + k));
+	// The kit's own CLAUDE.md and CLAUDE.local.md never go public, whatever track says (the owner, 2026-10-31).
+	const hostOwned = stampData.hostOwned || [];
+	const isPrivate = (p) => p === `${prefix}CLAUDE.local.md` || (p === `${prefix}CLAUDE.md` && kitFiles.has(p) && !hostOwned.includes('CLAUDE.md'));
 
 	// The kit's files, plus its own folders the stamp does not list (the stamp itself names the owner's paths).
 	const kitOnly = (p) => (kitFiles.has(p) || p.startsWith(`${prefix}.kit/`) || p.startsWith(`${prefix}.claude/worktrees/`)) && !track.some((r) => r.test(p));
 	if (staged) {
 		const added = git('diff', '--cached', '--no-renames', '--name-only', '--diff-filter=A').stdout.split('\n').filter(Boolean);
 		const bad = [
-			...added.filter(kitOnly).map((p) => `${p}: a kit file; to show it, list it in track in .kit/tracking.json first`),
+			...added.filter(isPrivate).map((p) => `${p}: the kit's CLAUDE.md never goes public, even listed in track`),
+			...added.filter((p) => kitOnly(p) && !isPrivate(p)).map((p) => `${p}: a kit file; to show it, list it in track in .kit/tracking.json first`),
 			...added.filter((p) => never.some((r) => r.test(p))).map((p) => `${p}: on the never list`),
 			...added.filter((p) => SECRET_FILE.test(p)).map((p) => `${p}: a secret-shaped file`),
 			...secretValues(git('diff', '--cached', '--no-color', '-U0').stdout).map((v) => `${v.kind} in ${v.file}`),
@@ -97,6 +102,7 @@ function main(staged) {
 	const checks = [];
 	const check = (name, bad) => checks.push({ name, bad });
 	check('no kit file in any commit (unless listed in track)', [...seen].filter(([p]) => kitOnly(p)).map(([p, c]) => `${p} (in ${c})`));
+	check("the kit's CLAUDE.md in no commit, ever", [...seen].filter(([p]) => isPrivate(p)).map(([p, c]) => `${p} (in ${c})`));
 	check('no never-list path in any commit', [...seen].filter(([p]) => never.some((r) => r.test(p))).map(([p, c]) => `${p} (in ${c})`));
 	check('no secret-shaped file in any commit', [...seen].filter(([p]) => SECRET_FILE.test(p)).map(([p, c]) => `${p} (in ${c})`));
 	// -m shows each merge's changes too. A hit the owner has looked at and judged safe is listed in reviewedSecrets.
