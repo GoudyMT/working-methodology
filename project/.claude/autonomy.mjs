@@ -21,23 +21,15 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const SELF = fileURLToPath(import.meta.url);
-const MAIN = 'origin/main';
 const GRANT_FILE = '.kit/autonomy.json';
 const STREAK = 10;
 const CONDITIONS = ['clean-tree', 'tests', 'scrub', 'new-test-fails-at-base', 'release-cap'];
-// The grant, this check, the other gates and the CI that runs them: a change to any of them is never granted.
-const PROTECTED = [/^\.kit\//, /(^|\/)autonomy\.mjs$/, /(^|\/)approve\.mjs$/, /^\.github\/workflows\//, /(^|\/)scripts\/kit\.mjs$/,
-	/(^|\/)kit\.config\.json$/, /(^|\/)scrub\.local\.json$/, /(^|\/)package\.json$/, /(^|\/)(vitest|jest|playwright)\.config\./,
-	/(^|\/)secret-(patterns|shapes)\.mjs$/, /(^|\/)name-check\.mjs$/, /(^|\/)pr-body-audit(-lean)?\.mjs$/];
-// Tier 0 text, by file: the Hard Rules on privacy, domain boundaries, sourcing, the security baseline and outward
-// acts, and the Tier 0 block of the priority index.
-const TIER0 = {
-	'CLAUDE.md': (t) => t.split('\n').filter((l) => /^(3|4|5|6|14)\. /.test(l)),
-	'project/CLAUDE.md': (t) => t.split('\n').filter((l) => /^(3|4|5|6|14)\. /.test(l)),
-	'rules/core.md': (t) => [t.slice(t.indexOf('**Tier 0'), t.indexOf('**Tier 1'))],
-	'AGENTS.md': (t) => [t.slice(t.indexOf('**Tier 0'), t.indexOf('**Tier 1'))],
-	'project/AGENTS.md': (t) => [t.slice(t.indexOf('**Tier 0'), t.indexOf('**Tier 1'))],
-};
+// The grant, this check, the other gates, the hooks and settings that guard an act, the CI that runs them, and the
+// rule files that hold Tier 0: a change to any of them is never granted. Whole folders and whole rule files, since a
+// list of single files or chosen lines misses a new hook or a renumbered rule.
+const PROTECTED = [/^\.kit\//, /(^|\/)\.claude\//, /(^|\/)\.githooks\//, /^\.github\//, /^user\/(kit-hooks|agents)\//,
+	/(^|\/)approve\.mjs$/, /(^|\/)scripts\/kit\.mjs$/, /(^|\/)kit\.config\.json$/, /(^|\/)scrub\.local\.json$/, /(^|\/)package\.json$/,
+	/(^|\/)(vitest|jest|playwright)\.config\./, /(^|\/)(CLAUDE|AGENTS)\.md$/, /^rules\/(core\.md|_parts\/)/];
 
 const run = (cmd, args, cwd) => spawnSync(cmd, args, { encoding: 'utf8', cwd, maxBuffer: 256 * 1024 * 1024 });
 const git = (...a) => run('git', ['-c', 'core.quotePath=false', ...a]);
@@ -46,7 +38,12 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const lf = (s) => s.replace(/\r\n/g, '\n');
 const top = path.resolve(out(git('rev-parse', '--show-toplevel')) || process.cwd());
 const LEDGER = path.join(out(git('rev-parse', '--path-format=absolute', '--git-common-dir')) || path.join(top, '.git'), 'kit-autonomy-ledger.jsonl');
-const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+// The kill switch is always looked for in the default Claude folder; a config folder set by env adds a place, never
+// replaces it.
+const SWITCHES = [...new Set([path.join(os.homedir(), '.claude'), process.env.KIT_CLAUDE_HOME, process.env.CLAUDE_CONFIG_DIR]
+	.filter(Boolean).map((d) => path.join(d, 'autonomy-off')))];
+// main is fetched into a ref only this check writes, right before it is read.
+const MAIN_REF = 'refs/kit/main';
 
 // The ledger: one JSON line per check and per owner verdict, each chained to the line before, so a line written by
 // hand shows (a careful forger is not stopped; the owner reads the ledger when giving verdicts).
@@ -104,25 +101,22 @@ function newTestEvidence(grant, base) {
 	return reasons;
 }
 
-// Releases today, counted from the remote's tags (the commit each tag names, dated in UTC).
+// Releases today, counted from the remote's tags in UTC: an annotated tag by when it was made, a plain tag by its
+// commit's date. A plain tag on a backdated commit escapes the count (a known limit: annotated release tags close it).
 function releasesToday() {
 	const today = new Date().toISOString().slice(0, 10);
-	git('fetch', '-q', 'origin', '--tags');
-	const refs = (out(git('ls-remote', '--tags', 'origin')) || '').split('\n').filter((l) => l && !l.endsWith('^{}'));
-	let n = 0;
-	for (const l of refs) {
-		const date = out(git('log', '-1', '--format=%cI', l.split('\t')[0]));
-		if (date && new Date(date).toISOString().slice(0, 10) === today) n++;
-	}
-	return n;
+	git('fetch', '-q', '--prune', 'origin', '+refs/tags/*:refs/kit/tags/*');
+	const dates = (out(git('for-each-ref', '--format=%(creatordate:iso-strict)', 'refs/kit/tags/')) || '').split('\n').filter(Boolean);
+	return dates.filter((d) => new Date(d).toISOString().slice(0, 10) === today).length;
 }
 
 function check(act) {
 	const ask = (reasons) => { for (const r of reasons) console.log(`ASK the owner - ${r}`); return 1; };
-	if (fs.existsSync(path.join(home, 'autonomy-off'))) return ask([`the kill switch is on (${path.join(home, 'autonomy-off')})`]);
-	if (git('remote', 'get-url', 'origin').status === 0 && git('fetch', '-q', 'origin', 'main').status !== 0) return ask(['could not fetch origin/main']);
-	if (!out(git('rev-parse', '--verify', '-q', `${MAIN}^{commit}`))) return ask(['no origin/main to read the grant from']);
-	const raw = git('show', `${MAIN}:${GRANT_FILE}`);
+	const on = SWITCHES.find((f) => fs.existsSync(f));
+	if (on) return ask([`the kill switch is on (${on})`]);
+	if (git('remote', 'get-url', 'origin').status !== 0) return ask(['no origin remote to read main from']);
+	if (git('fetch', '-q', 'origin', `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
+	const raw = git('show', `${MAIN_REF}:${GRANT_FILE}`);
 	if (raw.status !== 0) return ask([`no grant on origin/main (${GRANT_FILE}): every act asks`]);
 	let grant;
 	try { grant = JSON.parse(raw.stdout); } catch { return ask(['the grant on origin/main is not valid: it is not JSON']); }
@@ -133,17 +127,13 @@ function check(act) {
 
 	const reasons = [];
 	const rel = path.relative(top, SELF).split(path.sep).join('/');
-	const mine = git('show', `${MAIN}:${rel}`);
+	const mine = git('show', `${MAIN_REF}:${rel}`);
 	if (mine.status !== 0 || lf(mine.stdout) !== lf(fs.readFileSync(SELF, 'utf8'))) reasons.push(`this check (${rel}) differs from origin/main`);
 	const head = out(git('rev-parse', 'HEAD'));
-	const base = out(git('merge-base', MAIN, 'HEAD'));
+	const base = out(git('merge-base', MAIN_REF, 'HEAD'));
 	if (!head || !base) return ask(['could not find the branch and its base on main']);
 	const changed = (out(git('diff', '--name-only', '--no-renames', `${base}...HEAD`)) || '').split('\n').filter(Boolean);
 	for (const f of changed) if (PROTECTED.some((re) => re.test(f))) reasons.push(`protected path: ${f}`);
-	for (const [f, pick] of Object.entries(TIER0)) {
-		const at = (ref) => { const r = git('show', `${ref}:${f}`); return r.status === 0 ? sha(pick(lf(r.stdout)).join('\n')) : null; };
-		if (at(base) !== at(head)) reasons.push(`Tier 0 text changed in ${f}`);
-	}
 	if (ledger().broken) reasons.push('the ledger was changed by hand: the owner reviews it before any act');
 	const c = spec.conditions;
 	if (c.includes('clean-tree') && out(git('status', '--porcelain'))) reasons.push('uncommitted changes in the working tree');
@@ -162,17 +152,31 @@ function check(act) {
 	return 0;
 }
 
+// One line typed at the terminal, read without a prompt library.
+function typed() {
+	const buf = Buffer.alloc(1);
+	let s = '';
+	while (fs.readSync(0, buf, 0, 1) === 1 && buf[0] !== 10) s += String.fromCharCode(buf[0]);
+	return s.trim();
+}
+
 function verdict(act, v) {
-	// An AI tool's shell carries one of these; the owner's own terminal does not (the push guard's same line).
-	if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_VERDICT !== '1') {
-		console.log('Only the owner gives a verdict, from their own terminal: KIT_OWNER_VERDICT=1 node .claude/autonomy.mjs verdict <act> hit|miss');
+	// The owner's own terminal: an AI tool's shell is marked and has no keyboard, so an env flag is not enough; the
+	// owner also types the short SHA of the check they judged. This stops a tool by accident or by habit, not a
+	// determined one on the owner's machine: a deny rule for this command in the tool's settings closes that.
+	const usage = 'Only the owner gives a verdict, from their own terminal: KIT_OWNER_VERDICT=1 node .claude/autonomy.mjs verdict <act> hit|miss';
+	if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_VERDICT !== '1' || !process.stdin.isTTY) {
+		console.log(usage);
 		return 1;
 	}
 	if (!['hit', 'miss'].includes(v)) { console.log('verdict is hit (the script was right) or miss'); return 2; }
 	const { log } = ledger();
 	const last = log.map((e, i) => (e.kind === 'check' && e.act === act ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
 	if (last < 0 || log.slice(last + 1).some((e) => e.kind === 'verdict' && e.act === act)) { console.log(`no check of "${act}" is waiting for a verdict`); return 1; }
-	append({ kind: 'verdict', act, verdict: v, check: log[last].time });
+	const check = log[last];
+	process.stdout.write(`${act} at ${check.head.slice(0, 7)}: the script said ${check.script.toUpperCase()}${check.reasons.length ? ` (${check.reasons.join('; ')})` : ''}.\nType ${check.head.slice(0, 7)} to log "${v}": `);
+	if (typed() !== check.head.slice(0, 7)) { console.log('Not logged.'); return 1; }
+	append({ kind: 'verdict', act, verdict: v, check: check.time });
 	console.log(`${act}: ${v} logged; ${streak(act)} of ${STREAK} straight hits`);
 	return 0;
 }

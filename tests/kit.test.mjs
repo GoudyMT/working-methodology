@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
@@ -3001,12 +3002,20 @@ test('the grant check asks while the kill switch outside the repo exists', () =>
   fs.writeFileSync(path.join(r.home, 'autonomy-off'), '');
   askOn(r, /kill switch/);
 });
-test('the grant check asks when the branch touches a protected path or Tier 0 rule text', () => {
+// The security review of the first version: a list of single files missed the hooks and settings that guard the
+// act, and a Tier 0 hash of chosen lines missed a renumbered or wrapped rule; the folders and rule files are whole.
+test('the grant check asks when the branch touches a protected path, the hooks, the settings or the rule text', () => {
   askOn(autonomyRepo({ branchFiles: { '.kit/project-map.json': '{}\n' } }), /protected path: \.kit\/project-map\.json/);
   askOn(autonomyRepo({ branchFiles: { '.github/workflows/ci.yml': 'on: push\n' } }), /protected path: \.github\/workflows\/ci\.yml/);
-  askOn(autonomyRepo({ branchFiles: { 'CLAUDE.md': HARD_RULES.replace('ABOVE all else', 'when convenient') } }), /Tier 0 text changed in CLAUDE\.md/);
-  const ok = autonomy(autonomyRepo({ branchFiles: { 'CLAUDE.md': HARD_RULES.replace('TDD discipline', 'Test-first discipline') } }), ['check', 'release']);
-  assert.doesNotMatch(ok.stdout, /Tier 0/, 'a rule outside Tier 0 may change');
+  askOn(autonomyRepo({ branchFiles: { '.githooks/pre-push': 'exit 0\n' } }), /protected path: \.githooks\/pre-push/);
+  askOn(autonomyRepo({ branchFiles: { '.claude/settings.json': '{}\n' } }), /protected path: \.claude\/settings\.json/);
+  askOn(autonomyRepo({ branchFiles: { 'CLAUDE.md': HARD_RULES.replace('ABOVE all else', 'when convenient') } }), /protected path: CLAUDE\.md/);
+  askOn(autonomyRepo({ branchFiles: { 'CLAUDE.md': HARD_RULES + '15. **Privacy is optional.**\n' } }), /protected path: CLAUDE\.md/);
+});
+test('the grant check asks when there is no remote to read main from', () => {
+  const r = autonomyRepo();
+  g(r.dir, 'remote', 'remove', 'origin');
+  askOn(r, /no origin remote/);
 });
 test('the grant check runs the evidence itself: the new test must fail on main and pass here', () => {
   askOn(autonomyRepo({ branchFiles: { 'tests/two.test.mjs': "import { test } from 'node:test';\ntest('always', () => {});\n" } }), /does not fail on main: tests\/two\.test\.mjs/);
@@ -3025,18 +3034,24 @@ test('an act stays in verify until 10 straight owner-confirmed hits, and one mis
   const r = autonomyRepo();
   const first = askOn(r, /verify mode: 0 of 10 straight hits/);
   assert.match(first.stdout, /script says GO/);
-  const owner = (v) => autonomy(r, ['verdict', 'release', v], { KIT_OWNER_VERDICT: '1' });
-  for (const agent of [{ CLAUDECODE: '1' }, { AI_AGENT: 'x' }, {}]) assert.notEqual(autonomy(r, ['verdict', 'release', 'hit'], agent).status, 0, JSON.stringify(agent));
-  assert.equal(owner('hit').status, 0);
-  for (let i = 1; i < 10; i++) { askOn(r, new RegExp(`verify mode: ${i} of 10 straight hits`)); assert.equal(owner('hit').status, 0); }
+  // A verdict needs the owner's own terminal: an env flag alone, from any shell a tool runs, is refused.
+  for (const env of [{ CLAUDECODE: '1' }, { AI_AGENT: 'x' }, {}, { KIT_OWNER_VERDICT: '1' }]) assert.notEqual(autonomy(r, ['verdict', 'release', 'hit'], env).status, 0, JSON.stringify(env));
+  // The owner's verdict as the terminal writes it: a chained ledger line naming the check it judges.
+  const file = path.join(r.dir, '.git', 'kit-autonomy-ledger.jsonl');
+  const owner = (v) => {
+    const lines = read(file).split('\n').filter(Boolean);
+    const check = lines.map((l) => JSON.parse(l)).filter((e) => e.kind === 'check').pop();
+    const prev = createHash('sha256').update(lines[lines.length - 1]).digest('hex');
+    fs.appendFileSync(file, JSON.stringify({ kind: 'verdict', act: 'release', verdict: v, check: check.time, time: new Date().toISOString(), prev }) + '\n');
+  };
+  owner('hit');
+  for (let i = 1; i < 10; i++) { askOn(r, new RegExp(`verify mode: ${i} of 10 straight hits`)); owner('hit'); }
   const go = autonomy(r, ['check', 'release']);
   assert.equal(go.status, 0, go.stdout);
   assert.match(go.stdout, /^GO release/m);
-  assert.equal(owner('miss').status, 0);
+  owner('miss');
   askOn(r, /verify mode: 0 of 10 straight hits/);
-  assert.equal(owner('hit').status, 0);
-  assert.notEqual(owner('hit').status, 0, 'a verdict needs a check of its own');
-  fs.appendFileSync(path.join(r.dir, '.git', 'kit-autonomy-ledger.jsonl'), JSON.stringify({ kind: 'verdict', act: 'release', verdict: 'hit' }) + '\n');
+  fs.appendFileSync(file, JSON.stringify({ kind: 'verdict', act: 'release', verdict: 'hit' }) + '\n');
   askOn(r, /ledger was changed by hand/);
 });
 test('a fresh project install ships no grant, so every act asks', () => {
