@@ -57,16 +57,19 @@ Three changes that keep the app honest with no one running it. Releases as v2.4.
 
 ### Review
 
-Reviewed across privacy and the PII boundary; code security, including the new workflow; supply chain and
-bundle; legal content and licensing, with every new claim checked; test value; scaling; and version alignment.
+Feature review of `9a1d6e20`.
 
-Result: no critical or high finding; the one limit is named above.
-
-| Pass | Outcome |
+| Dimension | Result |
 |---|---|
-| Deep review | fixed here |
-| Short re-check of the fixes | one low, fixed here |
-| Hands-on check | no defects |
+| Privacy and the PII boundary | clean |
+| Code security, including the new workflow | findings fixed here; the re-check found one low, fixed here |
+| Supply chain and bundle | clean; no new package |
+| Legal content and licensing, with every new claim checked | clean |
+| Test value | clean |
+
+- **High and critical findings:** none.
+- **Deferred:** none.
+- **Accepted risks:** the one limit named above.
 
 <details>
 <summary>Verified clean and enumerated rather than asserted</summary>
