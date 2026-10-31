@@ -1710,7 +1710,8 @@ test('the install keeps the never list private in the exclude block', () => {
 test('a project already pushed before the kit came is not held by the first push gate', () => {
   const origin = readyProject({ track: ['main.py'] });
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
-  g(bare, 'init', '-q', '--bare');
+  // Named, so the clone checks out main whatever the machine's default branch is (CI's is master).
+  g(bare, 'init', '-q', '--bare', '-b', 'main');
   g(origin, 'push', '-q', '--no-verify', bare, 'HEAD:refs/heads/main');
   const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'clone-'));
   g(clone, 'clone', '-q', bare, '.');
