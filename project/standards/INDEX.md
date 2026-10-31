@@ -24,6 +24,8 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | edit-discipline | Edit Discipline | `AGENTS.md` | edit, write code, change files, approval before writing |
 | outward-acts | Git: Local Work vs Outward Acts | `AGENTS.md` | push, pull request, merge, release, tag, publish, remote |
 | session-workflow | Session Workflow | `AGENTS.md` | session, start, end, workflow |
+| recovery-protocol | Recovery Protocol | `AGENTS.md` | lost context, new chat, recover |
+| what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
 | context-engineering | Context Engineering Discipline | `AGENTS.md` | context window, tokens, load, size |
 | anti-hallucination | Anti-Hallucination Discipline (Standing) | `AGENTS.md` | guess, verify, invented, made up, re-read claims |
 | correction-loop | Correction & Learning Loop | `AGENTS.md` | corrections, feedback, mistakes, learn |
@@ -33,8 +35,6 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | simplicity-lens | Simplicity Lens | `AGENTS.md` | simple, simpler, over-engineering |
 | dual-horizon | Dual-Horizon Recommendations | `AGENTS.md` | short term, long term, rework cost |
 | success-charter | Success Charter (Define Success Before Building) | `AGENTS.md` | success criteria, define done, measurable |
-| recovery-protocol | Recovery Protocol | `AGENTS.md` | lost context, new chat, recover |
-| what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
 | visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
 | craft-floor | Craft Floor | `.claude/rules/design-and-ux.md` | states, empty state, heuristics, design review score, dashboard, board, anti-patterns, slop |
 | design-for-human-error | Design for Human Error | `.claude/rules/design-and-ux.md` | mistakes, typo, mistype, forgiving, recover |

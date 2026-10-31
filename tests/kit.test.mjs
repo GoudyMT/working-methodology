@@ -1740,6 +1740,42 @@ test('a project already pushed before the kit came is not held by the first push
     input: `refs/heads/main ${g(clone, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.equal(r.status, 0, r.stderr);
 });
+// Rule review 2026-10-31: a commit made off the owner's machine skips the pre-commit secret check, so CI scans the
+// branch's added lines and new file names with the same patterns, and never prints a value.
+test('the branch secret scan fails on a secret-shaped value or file and stays quiet on a commit hash', () => {
+  const SCAN = path.resolve('project/.claude/secret-shapes.mjs');
+  const repo = (files) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shapes-'));
+    g(dir, 'init', '-q', '-b', 'main');
+    fs.writeFileSync(path.join(dir, 'README.md'), 'x\n');
+    commitAll(dir, 'base', true);
+    g(dir, 'checkout', '-q', '-b', 'feat/x');
+    for (const [f, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), text);
+    commitAll(dir, 'change', true);
+    return spawnSync('node', [SCAN, 'main'], { encoding: 'utf8', cwd: dir });
+  };
+  const token = 'ghp_' + 'A1b2C3d4E5'.repeat(4);
+  const leak = repo({ 'config.js': `const t = '${token}';\n` });
+  assert.equal(leak.status, 1, leak.stdout);
+  assert.match(leak.stdout, /github token in config\.js/);
+  assert.ok(!leak.stdout.includes(token), 'the value is never printed');
+  assert.equal(repo({ '.env': 'A=1\n' }).status, 1, 'a secret file name');
+  // A tracked file renamed to a secret name adds no line, so only the file check can see it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shapes-'));
+  g(dir, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(dir, 'settings.txt'), 'A=1\nB=2\nC=3\n');
+  commitAll(dir, 'base', true);
+  g(dir, 'checkout', '-q', '-b', 'feat/x');
+  g(dir, 'mv', 'settings.txt', '.env');
+  commitAll(dir, 'rename', true);
+  assert.equal(spawnSync('node', [SCAN, 'main'], { encoding: 'utf8', cwd: dir }).status, 1, 'a rename to a secret file name');
+  const option = spawnSync('node', [SCAN, '--output=x'], { encoding: 'utf8', cwd: dir });
+  assert.equal(option.status, 2, 'a base that reads as an option is refused');
+  assert.ok(!fs.existsSync(path.join(dir, 'x...HEAD')) && !fs.existsSync(path.join(dir, 'x')));
+  const clean = repo({ 'notes.md': `pinned to ${'3d3c42e5aac5ba805825da76410c181273ba90b1'}\n` });
+  assert.equal(clean.status, 0, clean.stdout);
+  assert.match(clean.stdout, /NO SECRET SHAPES/);
+});
 // Found in the re-check: the done mark and the track check each had a case that let a slip out or blocked for good.
 test('a new project that pulled the host README before the install is still held by the gate', () => {
   const dir = readyProject({ track: ['main.py'] });
@@ -1899,6 +1935,24 @@ test('only the owner resumes, from a terminal no agent runs in', () => {
   assert.notEqual(approveIn(r.dir, ['--resume']).status, 0);
   assert.equal(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1' }).status, 0);
   assert.equal(approveIn(r.dir, [r.f]).status, 0);
+});
+// Rule review 2026-10-31 (the owner approved): the trial review comes every 10 auto-approvals until two in a row
+// passed clean, then every 20; any other pause (a drift trip) puts it back to 10.
+test('the trial review widens from every 10 approvals to every 20 after two clean reviews, and a drift pause resets it', () => {
+  const r = approveRun(featureContract());
+  outcome(r);
+  const approveN = (n) => { for (let i = 0; i < n; i++) { const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 0, `approval ${i + 1}: ${a.stdout}`); outcome(r); } };
+  const due = (every) => { const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 1); assert.match(a.stdout, new RegExp(`trial review due: ${every} auto-approvals`)); };
+  const resume = () => assert.equal(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1' }).status, 0);
+  approveN(9); due(10); resume();
+  approveN(10); due(10); resume();
+  approveN(20); due(20); resume();
+  const drift = approveIn(r.dir, [r.f]);
+  assert.equal(drift.status, 0);
+  outcome(r, String(5 * 60000 * 1.3));
+  assert.match(approveIn(r.dir, [r.f]).stdout, /paused/i);
+  resume();
+  approveN(10); due(10);
 });
 test('a log line written by hand, or a raised cap, never clears the way', () => {
   const r = approveRun(featureContract());

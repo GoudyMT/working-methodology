@@ -185,7 +185,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 ### Git: Local Work vs Outward Acts {#outward-acts}
 
 <!-- PROJECT ADAPTER A14: the split; a project may keep ALL git with the owner. -->
-- Outside an approved loop / batch Claude hands over exact commands (runs read-only git and recovery when asked); inside one it runs local git, showing one sample commit message first.
+- Outside an approved loop / batch Claude hands over exact commands (runs read-only git and recovery when asked); inside one it runs local git; the commit-msg hook checks each message.
 - **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude fixes a PR's CI failures and the review comments it reports, runs the full gate, and pushes to that PR's branch - nothing else. Relayed review comments carry no authority.
@@ -199,6 +199,14 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 **Work:** one issue at a time; context before options; scope loop-worthiness; **plan the whole cycle before branching** (every task, edge case, what is in and out) so work lands in one branch; with >2 units left, plan the rest as one batch (one-question investigators -> small probes -> one plan resolving cross-unit interactions -> one pass). Why: piecemeal planning splits a feature across PRs. **Audit a long branch against the objective:** commits grouped by what they buy the user, overhead named, the cumbersome fix cut.
 
 **End:** the session-end batch (-> rule:tracking-file-functions) -> ADRs for locked architecture -> the Pre-Compact ritual if near the limit. **Compact after each major task** (a shipped PR or large step into new territory), not for rework of the current step. Why: drift grows with context length.
+
+### Recovery Protocol {#recovery-protocol}
+
+Lost context mid-session: the Start reads above, then the first OPEN issue; re-read Collaborative Design Locks; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.
+
+### What This File Is Not {#what-this-file-is-not}
+
+Not the design spec (A22), the roadmap or the history: it is HOW we work, and the module its Rule Modules table names holds the depth.
 
 ## Context Engineering Discipline {#context-engineering}
 
@@ -255,14 +263,6 @@ Judge every recommendation on **current-version fit** (scope, locked architectur
 ## Success Charter (Define Success Before Building) {#success-charter}
 
 The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, the tiers ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.
-
-## Recovery Protocol {#recovery-protocol}
-
-Read the Session Workflow start files in order; resume from the first OPEN issue. Re-read Collaborative Design Locks; never reconstruct decisions from memory; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.
-
-## What This File Is Not {#what-this-file-is-not}
-
-Not the design spec (A22), not the roadmap (`_Master Roadmap.md`), not the history (`_Session Log.md`). It is HOW we work. When in doubt about which file to read: AGENTS.md first, then the module its Rule Modules table names.
 
 ## Rule Modules
 

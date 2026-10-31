@@ -93,6 +93,15 @@ jobs:
             node project/.claude/name-check.mjs message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
           done
 
+      # The pre-commit secret check runs only on the owner's machine; this scans every line and file the PR adds with
+      # the same patterns, and never prints a value.
+      - name: Secret scan
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE: origin/${{ github.base_ref }}
+        run: node project/.claude/secret-shapes.mjs "$PR_BASE"
+
       # Rule text is graded by the recall test, which needs a signed-in session and is run by hand; a PR that
       # changes the rules must carry its recorded score.
       - name: Rule changes carry a recall score
