@@ -5,11 +5,19 @@ import { SECRET_FILE, SECRET_VALUE } from './secret-patterns.mjs';
 // check uses. The pre-commit hook stops a slip on the owner's machine; a commit made anywhere else (the web, a cloud
 // session) skips it, so CI runs this on each PR. A value is never printed: only its kind and file.
 // Usage: node .claude/secret-shapes.mjs [<base>]   (base: the argument, else PR_BASE, else origin/main); exit 1 on a hit.
-const base = process.argv[2] || process.env.PR_BASE || 'origin/main';
 const git = (...a) => execFileSync('git', ['-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+// The base reaches git only as a commit it resolved, so a value that reads as an option can never act as one.
+const given = process.argv[2] || process.env.PR_BASE || 'origin/main';
+let base = '';
+try { base = given.startsWith('-') ? '' : git('rev-parse', '--verify', '--end-of-options', `${given}^{commit}`).trim(); } catch { /* refused below */ }
+if (!/^[0-9a-f]{40,64}$/.test(base)) {
+	console.log(`secret scan: base "${given}" is not a commit`);
+	process.exit(2);
+}
 const diff = git('diff', `${base}...HEAD`, '-U0', '--no-color');
 const hits = [];
-for (const f of git('diff', '--name-only', '--diff-filter=A', `${base}...HEAD`).split('\n').filter(Boolean)) {
+// Added, copied and renamed: a file renamed to a secret name adds no line, so only this check sees it.
+for (const f of git('diff', '--name-only', '--diff-filter=ACR', `${base}...HEAD`).split('\n').filter(Boolean)) {
 	if (SECRET_FILE.test(f)) hits.push(`secret file name: ${f}`);
 }
 let file = '';

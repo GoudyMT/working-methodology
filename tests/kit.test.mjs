@@ -1760,6 +1760,18 @@ test('the branch secret scan fails on a secret-shaped value or file and stays qu
   assert.match(leak.stdout, /github token in config\.js/);
   assert.ok(!leak.stdout.includes(token), 'the value is never printed');
   assert.equal(repo({ '.env': 'A=1\n' }).status, 1, 'a secret file name');
+  // A tracked file renamed to a secret name adds no line, so only the file check can see it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shapes-'));
+  g(dir, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(dir, 'settings.txt'), 'A=1\nB=2\nC=3\n');
+  commitAll(dir, 'base', true);
+  g(dir, 'checkout', '-q', '-b', 'feat/x');
+  g(dir, 'mv', 'settings.txt', '.env');
+  commitAll(dir, 'rename', true);
+  assert.equal(spawnSync('node', [SCAN, 'main'], { encoding: 'utf8', cwd: dir }).status, 1, 'a rename to a secret file name');
+  const option = spawnSync('node', [SCAN, '--output=x'], { encoding: 'utf8', cwd: dir });
+  assert.equal(option.status, 2, 'a base that reads as an option is refused');
+  assert.ok(!fs.existsSync(path.join(dir, 'x...HEAD')) && !fs.existsSync(path.join(dir, 'x')));
   const clean = repo({ 'notes.md': `pinned to ${'3d3c42e5aac5ba805825da76410c181273ba90b1'}\n` });
   assert.equal(clean.status, 0, clean.stdout);
   assert.match(clean.stdout, /NO SECRET SHAPES/);
