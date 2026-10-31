@@ -1,0 +1,46 @@
+{
+  "project": "<Project name>",
+  "goal": "<One sentence: what the project does for whom.>",
+  "successBar": [
+    "<A checkable bar, from the spec or Success Charter>"
+  ],
+  "updated": "<YYYY-MM-DD>",
+  "parts": [
+    {
+      "id": "app",
+      "name": "App",
+      "does": "<what it does, a few words>",
+      "files": [
+        "src"
+      ]
+    },
+    {
+      "id": "data",
+      "name": "Data",
+      "does": "<what it holds>",
+      "files": []
+    }
+  ],
+  "links": [
+    {
+      "from": "app",
+      "to": "data",
+      "verb": "<reads / writes / polls every 30 s>"
+    }
+  ],
+  "progress": [
+    {
+      "item": "<A shipped piece>",
+      "state": "done",
+      "evidence": "<PR number, test, or commit>"
+    },
+    {
+      "item": "<Work under way>",
+      "state": "doing"
+    },
+    {
+      "item": "<Next piece>",
+      "state": "next"
+    }
+  ]
+}

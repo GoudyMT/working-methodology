@@ -27,6 +27,7 @@ For any screen, page or board, whatever the visual style:
 - **Floor check on the built screen, in one batched pass:** every state exists (hover, disabled, loading, error, empty, real content, visible keyboard focus); body text 65-75 characters wide; more space above a heading than below it; secondary text on a colored surface takes that hue's tint, never gray; icons are drawn icons in one stroke weight, never emoji or Unicode glyphs; numbers that line up use tabular figures.
 - **Refuse by default** (the owner's lock can overrule): cards inside cards; the big-number-small-label "hero metric" layout; a small label above every heading; gradient text; decorative blur or glass; a colored stripe thicker than 1px on one side of a card; progress rings, sparklines or blank rounded boxes standing in for real content - a board shows the real items and their evidence; military or other loaded emblems as decoration (seals and insignia are also protected marks).
 - **Scored review** for a screen review: Nielsen's 10 heuristics scored 0-4 (n/a where one does not apply); each problem ranked P0 (blocks the task), P1 (fix before release; a user would ask for help), P2 (annoying, has a workaround), P3 (polish); 2-3 people walk it - a first-timer, someone who relies on accessibility, a distracted phone user - each naming the element that failed. Keep the score so the next review shows the trend.
+- **Audit before editing:** list what is wrong first and propose a direction; a screen that is already good gets small refinements, never a redesign; color is kept to one or two moments, not spread everywhere.
 - **Judgment before the tools:** write the design opinion first, then run the automated checks (contrast, the a11y scan), then merge the two; a tool hit the opinion missed is a finding, an opinion the tool contradicts is checked.
 
 Why: "looks fine" is not a bar; a named floor, a refusal list and a scored review make a screen's quality checkable and comparable over time.
@@ -45,5 +46,6 @@ For any diagram or figure that explains a system, a plan or a result:
 - **Never color alone:** a state also shows in shape, position, pattern or a label, so it reads in forced colors and to a color-blind reader.
 - **The first screen is the answer:** the main idea as a picture and one sentence; detail follows.
 - Every label, arrow and number passes rule:fact-check before the figure is handed over.
+- **The project map:** a project's goal, progress and parts live in `.kit/project-map.json` (start from `.claude/kit/project-map-example.json`); `node .claude/project-map.mjs check` holds it to the repo (paths exist, links have verbs, "done" has evidence) and `render` draws one plain page, refreshed at each closeout. Simple and trackable beats rich: no rings, no hero numbers.
 
 Why: a figure that names parts without showing how they connect looks like understanding and explains nothing.

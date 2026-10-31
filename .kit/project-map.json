@@ -1,0 +1,39 @@
+{
+  "project": "Methodology kit",
+  "goal": "One set of working rules, scripts and skills that every project installs, so each session follows the same proven method and improvements flow back.",
+  "successBar": [
+    "A fresh session in any kit project answers 9 of 10 rule questions right (the recall test)",
+    "Every check that can be a script is a script or hook, not text",
+    "What loads before the first message stays under its cap (kit.mjs measure --real)"
+  ],
+  "updated": "2026-10-31",
+  "parts": [
+    { "id": "rules", "name": "Rules", "does": "one source for every rule", "files": ["rules"] },
+    { "id": "build", "name": "Build", "does": "writes each tool's files", "files": ["scripts/kit.mjs"] },
+    { "id": "project", "name": "Project files", "does": "AGENTS.md, modules, scripts", "files": ["project/AGENTS.md", "project/standards", "project/.claude"] },
+    { "id": "user", "name": "User files", "does": "skills, hooks, agent roles", "files": ["user/skills", "user/kit-hooks"] },
+    { "id": "hooks", "name": "Hooks", "does": "kit check, gate, sweep guard", "files": ["project/.claude/kit-hook.cjs", "user/kit-hooks/kit-gate.cjs", "user/kit-hooks/sweep-guard.cjs"] },
+    { "id": "audits", "name": "Audits", "does": "PR body, report, push checks", "files": ["project/.claude/pr-body-audit.mjs", "project/.claude/improvement-report.mjs", "project/.claude/first-push-check.mjs"] },
+    { "id": "vendor", "name": "Vendor backups", "does": "credited third-party skills", "files": ["vendor/CREDITS.md"] },
+    { "id": "tests", "name": "Tests", "does": "prove every guard and format", "files": ["tests/kit.test.mjs"] },
+    { "id": "evals", "name": "Recall test", "does": "do sessions follow the rules", "files": ["scripts/recall.mjs", "docs/evals/recall-questions.md"] }
+  ],
+  "links": [
+    { "from": "build", "to": "rules", "verb": "reads" },
+    { "from": "build", "to": "project", "verb": "writes" },
+    { "from": "build", "to": "user", "verb": "writes format skills" },
+    { "from": "hooks", "to": "project", "verb": "check install of" },
+    { "from": "audits", "to": "project", "verb": "ship inside" },
+    { "from": "user", "to": "vendor", "verb": "restore from" },
+    { "from": "tests", "to": "build", "verb": "prove" },
+    { "from": "evals", "to": "project", "verb": "question a fresh install of" }
+  ],
+  "progress": [
+    { "item": "Rule modules with fixed IDs, built per tool", "state": "done", "evidence": "1.0.0; build-freshness test" },
+    { "item": "Sweep auto-approval with a reviewer guard", "state": "done", "evidence": "1.8.0-1.9.1" },
+    { "item": "Missing kit is a full stop", "state": "done", "evidence": "1.10.0-1.11.0" },
+    { "item": "Standby plugins, real start load, craft floor", "state": "doing", "evidence": "commit 1a02304, unreleased" },
+    { "item": "Recall test at 1.12.0", "state": "doing" },
+    { "item": "Consolidation: one detailed home per task", "state": "next" }
+  ]
+}

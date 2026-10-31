@@ -2603,3 +2603,51 @@ test('both stop messages name the kit folder and the exact steps to install it',
   assert.ok(reason.includes(`git -C "${kitDir}" pull`), reason);
   assert.ok(reason.includes(`node "${kitDir}/scripts/kit.mjs" install user`), reason);
 });
+
+// The project map (owner, 2026-10-31: option A, kept simple and trackable): one data file per project, checked
+// against the repo, drawn as one plain page - the goal, progress with evidence, and how the parts connect.
+const MAP = path.resolve('project/.claude/project-map.mjs');
+const mapRun = (dir, args) => spawnSync('node', [MAP, ...args], { encoding: 'utf8', cwd: dir });
+function mapRepo(map) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'map-'));
+  fs.mkdirSync(path.join(dir, 'src', 'ask'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src', 'ask', 'index.ts'), 'x\n');
+  fs.mkdirSync(path.join(dir, '.kit'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify(map));
+  return dir;
+}
+const GOOD_MAP = {
+  project: 'Demo', goal: 'Answer a service member\'s question offline.', successBar: ['Answers cite a public source'],
+  parts: [{ id: 'ask', name: 'Ask', does: 'answers questions on the device', files: ['src/ask'] },
+    { id: 'corpus', name: 'Corpus', does: 'public US-gov text', files: [] }],
+  links: [{ from: 'ask', to: 'corpus', verb: 'searches' }],
+  progress: [{ item: 'Offline answers', state: 'done', evidence: 'PR #12' }, { item: 'Citations', state: 'doing' }, { item: 'Voice', state: 'next' }],
+};
+test('the project map check passes a sound map and names every fault in a bad one', () => {
+  assert.equal(mapRun(mapRepo(GOOD_MAP), ['check']).status, 0);
+  const bad = { ...GOOD_MAP, goal: '',
+    parts: [{ ...GOOD_MAP.parts[0], files: ['src/ask', 'src/gone.ts'] }, GOOD_MAP.parts[1]],
+    links: [{ from: 'ask', to: 'nowhere', verb: 'calls' }, { from: 'ask', to: 'corpus', verb: '' }],
+    progress: [{ item: 'Offline answers', state: 'done' }, { item: 'Citations', state: 'blocked-ish' }] };
+  const r = mapRun(mapRepo(bad), ['check']);
+  assert.equal(r.status, 1);
+  for (const fault of [/goal is empty/, /part ask: src\/gone\.ts does not exist/, /link ask -> nowhere: unknown part nowhere/,
+    /link ask -> corpus: no verb/, /progress "Offline answers": done needs evidence/, /progress "Citations": state must be done, doing, next or blocked/]) {
+    assert.match(r.stdout, fault);
+  }
+});
+test('the project map renders one self-contained page with states as words, and refuses a map that fails its check', () => {
+  const dir = mapRepo(GOOD_MAP);
+  const out = path.join(dir, 'map.html');
+  const r = mapRun(dir, ['render', out]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const html = read(out);
+  assert.match(html, /<title>Demo map<\/title>/);
+  assert.match(html, /Answer a service member&#39;s question offline\./);
+  assert.match(html, /Offline answers[\s\S]*?Done[\s\S]*?PR #12/);
+  assert.match(html, /Ask[\s\S]*?searches[\s\S]*?Corpus/);
+  assert.match(html, /1 of 3 done/);
+  assert.doesNotMatch(html, /<script|https?:\/\//);
+  fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify({ ...GOOD_MAP, goal: '' }));
+  assert.equal(mapRun(dir, ['render', out]).status, 1);
+});
