@@ -214,6 +214,14 @@ waiting) / **What's next** (options, cost, a recommendation) / **Decided alone**
 impact-test answers, and why). When waiting, say on what. A debrief or a comparison of runs reports quality first,
 then the process, then cost ([templates/debrief.md](templates/debrief.md)).
 
+## Detail on demand
+
+Open one only when a step needs it: [references/worktrees.md](references/worktrees.md) (set up, check or remove a
+worktree by hand), [references/finishing-a-branch.md](references/finishing-a-branch.md) (hand the integrated branch
+to the owner), [references/parallel-dispatch.md](references/parallel-dispatch.md) (agents or direct work; waiting),
+[references/lead-ledger-and-recovery.md](references/lead-ledger-and-recovery.md) (a long batch, a compaction risk, a
+builder status other than done). This skill wins where they differ; a kit rule wins over both.
+
 ## Porting to a new project
 
 1. Copy [templates/project-adapter.md](templates/project-adapter.md) into the project's standards and fill

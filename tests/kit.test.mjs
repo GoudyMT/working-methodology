@@ -2707,3 +2707,26 @@ test('the commit-msg hook runs the message check, and the pre-push hook refuses 
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /name-check: "claude\/project-thread-x"/);
 });
+
+// One home per job (the owner, 2026-10-31): the kit's skills load their detail from references/ on demand, so a
+// broken link is a step that silently loads nothing.
+test('every kit skill names itself, keeps a short description, and every link it carries resolves', () => {
+  const root = path.resolve('user/skills');
+  for (const name of fs.readdirSync(root)) {
+    const dir = path.join(root, name);
+    const skill = path.join(dir, 'SKILL.md');
+    if (!fs.existsSync(skill)) continue;
+    const front = read(skill).match(/^---\r?\n([\s\S]*?)\r?\n---/)[1];
+    assert.equal(front.match(/^name: (.*)$/m)[1].trim(), name, `${name}: name matches its folder`);
+    const desc = (front.match(/^description: (.*)$/m) || [])[1] || '';
+    assert.ok(desc.length > 0 && desc.length <= 1024, `${name}: description 1-1,024 characters`);
+    const mds = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? mds(path.join(d, e.name)) : e.name.endsWith(".md") ? [path.join(d, e.name)] : []);
+    // Examples and templates are sample pieces whose links point into other repos; the skill and its references must resolve.
+    for (const f of [skill, ...(fs.existsSync(path.join(dir, "references")) ? mds(path.join(dir, "references")) : [])]) {
+      for (const m of read(f).matchAll(/\]\(([^)#\s]+\.md)(#[^)]*)?\)/g)) {
+        if (/^[a-z]+:/i.test(m[1])) continue;
+        assert.ok(fs.existsSync(path.resolve(path.dirname(f), m[1])), `${path.relative(root, f)}: link ${m[1]} resolves`);
+      }
+    }
+  }
+});

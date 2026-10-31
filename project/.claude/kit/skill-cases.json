@@ -1,45 +1,31 @@
 {
-  "about": "Skills by case. Each project turns cases on in .claude/skill-cases.local.json ({\"on\": [\"ui-design\", ...]}); the session-start hook lists the skills for the cases that are on. Load at most two skills per unit of work; design-time, motion and review-time sets stay apart. Community skills are read before first use. The kit owns this file; projects do not edit it. A case with a \"plugin\" names a standby plugin: off globally, so its skill list costs nothing elsewhere; session start says how to switch it on in a project that turned the case on.",
+  "about": "Skills by case. Each project turns cases on in .claude/skill-cases.local.json ({\"on\": [\"ui-design\", ...]}); the session-start hook lists the skills for the cases that are on. One home per job: each case names the kit skill that owns it, which loads its own references on demand. Load at most two skills per unit of work. Community skills are read before first use. The kit owns this file; projects do not edit it. A case with a \"plugin\" names a standby plugin: off globally, so its skill list costs nothing elsewhere; session start says how to switch it on in a project that turned the case on.",
   "cases": [
     {
       "id": "ui-design",
       "name": "UI/UX design",
       "when": "a screen, flow, component, form, error message or UI copy is being designed or built",
       "skills": [
-        "human-factor",
-        "frontend-design:frontend-design",
-        "design:ux-copy",
-        "design:design-system",
-        "vectorlab-ux-skills:spacing",
-        "vectorlab-ux-skills:typography",
-        "vectorlab-ux-skills:forms",
-        "vectorlab-ux-skills:errors",
-        "vectorlab-ux-skills:empty-states"
+        "ui-craft",
+        "human-factor"
       ],
-      "notes": "Pick the one or two that fit the unit. A project's own visual style lives in that project's standards."
+      "notes": "ui-craft holds the steps and loads one reference per topic; a project's own visual style lives in its standards."
     },
     {
       "id": "ui-motion",
       "name": "Motion",
       "when": "a transition or animation is added or changed",
       "skills": [
-        "vectorlab-ux-skills:motion",
-        "vectorlab-ux-skills:reduced-motion",
-        "audit-suite:web-animation-design"
+        "ui-craft"
       ],
-      "notes": "Each project sets its own motion limits; a restrained style is project-only."
+      "notes": "ui-craft's motion reference; each project sets its own motion limits."
     },
     {
       "id": "ui-review",
       "name": "UI/UX review",
       "when": "a built screen or flow is reviewed before a PR",
       "skills": [
-        "design:design-critique",
-        "design:accessibility-review",
-        "ux-ui-audit:ux-ui-audit",
-        "vectorlab-ux-skills:ux-audit",
-        "audit-suite:audit-as-ux-eng",
-        "audit-suite:audit-as-a11y-eng",
+        "ui-review",
         "human-factor"
       ]
     },
@@ -48,11 +34,9 @@
       "name": "Building a feature",
       "when": "new behaviour is planned and built",
       "skills": [
-        "superpowers:brainstorming",
-        "superpowers:writing-plans",
-        "superpowers:test-driven-development",
-        "agent-team-build",
-        "superpowers:verification-before-completion"
+        "plan-feature",
+        "tdd",
+        "agent-team-build"
       ]
     },
     {
@@ -60,7 +44,7 @@
       "name": "Debugging",
       "when": "a bug, a failing test or unexpected behaviour",
       "skills": [
-        "superpowers:systematic-debugging"
+        "debugging"
       ]
     },
     {
@@ -68,9 +52,7 @@
       "name": "Review before a PR",
       "when": "a branch is ready for its Pre-PR Deep Sweep",
       "skills": [
-        "superpowers:requesting-code-review",
-        "superpowers:receiving-code-review",
-        "audit-suite:full-audit",
+        "pre-pr-sweep",
         "security-review"
       ]
     },
@@ -80,7 +62,7 @@
       "when": "auth, crypto, secrets, input handling or anything that sends data off the device",
       "skills": [
         "security-review",
-        "audit-suite:audit-as-prod-readiness"
+        "pre-pr-sweep"
       ]
     },
     {

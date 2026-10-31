@@ -20,7 +20,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    higher one. List the modifiers the change hits (security-sensitive, a new dependency or data flow, public or
    legal text, data the user keeps); each adds its role.
 2. **The Swarm Contract, script first** (rule:swarm-contract). Do not ask the owner anything yet; the script decides
-   whether there is anything to ask. In order: (a) commit the work; (b) write the roles as
+   whether there is anything to ask. In order: (a) commit the work; (b) draw the roles from
+   [references/angles.md](references/angles.md) by the change's risk regions, and write them as
    `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`);
    (c) from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
    (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). (d) APPROVED: post
@@ -33,7 +34,9 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
    and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
-   (rule:agent-canary). Findings go through rule:finding-pipeline.
+   (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
+   [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
+   ui-review skill's scored review as one role.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
    gates), with `- **Tier:** <tier>` on its first lines, in the shape of the example for its tier. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.
