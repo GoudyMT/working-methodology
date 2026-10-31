@@ -39,13 +39,14 @@ jobs:
           package-manager-cache: false
 
       # The hook tests run `sh`; Git for Windows ships it in its bin folder. The temp repos the tests make need a
-      # commit identity.
+      # commit identity, and main as the default branch, as on the owner's machine (the runner's is master).
       - name: Prepare the shell and git identity
         shell: pwsh
         run: |
           "C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
           git config --global user.name "kit-ci"
           git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
 
       - name: Unit tests
         run: node --test tests/kit.test.mjs
