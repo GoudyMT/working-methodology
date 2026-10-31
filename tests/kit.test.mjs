@@ -2997,6 +2997,16 @@ test('the grant check reads the grant from main, never the branch, and refuses a
   askOn(autonomyRepo({ grant: null, branchFiles: { '.kit/autonomy.json': JSON.stringify(GRANT) } }), /no grant on origin\/main/);
   askOn(autonomyRepo({ branchFiles: { '.claude/autonomy.mjs': read(AUTONOMY) + '\n// widened\n' } }), /differs from origin\/main/);
 });
+// Found on the CI runner: its temp folder came through as a Windows 8.3 short path while git gave the long one,
+// so the check could not find itself on main and asked every time.
+test('the grant check finds itself on main when the repo path comes as a Windows short name', { skip: process.platform !== 'win32' }, () => {
+  const r = autonomyRepo();
+  const short = spawnSync('cmd', ['/d', '/s', '/c', `"for %I in ("${r.dir}") do @echo %~sI"`], { encoding: 'utf8', windowsVerbatimArguments: true }).stdout.trim();
+  assert.notEqual(short.toLowerCase(), r.dir.toLowerCase(), 'the fixture path has a short name to test with');
+  const out = spawnSync('node', ['.claude/autonomy.mjs', 'check', 'release'], { encoding: 'utf8', cwd: short, env: { PATH: process.env.PATH, KIT_CLAUDE_HOME: r.home } });
+  assert.doesNotMatch(out.stdout, /differs from origin\/main/, `run from ${short}`);
+  assert.match(out.stdout, /verify mode: 0 of 10 straight hits/);
+});
 test('the grant check asks while the kill switch outside the repo exists', () => {
   const r = autonomyRepo();
   fs.writeFileSync(path.join(r.home, 'autonomy-off'), '');

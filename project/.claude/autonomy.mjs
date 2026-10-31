@@ -20,7 +20,9 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const SELF = fileURLToPath(import.meta.url);
+// Real paths: Windows can hand the same folder over as a short 8.3 name (CI runners do), and git gives the long one.
+const real = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+const SELF = real(fileURLToPath(import.meta.url));
 const GRANT_FILE = '.kit/autonomy.json';
 const STREAK = 10;
 const CONDITIONS = ['clean-tree', 'tests', 'scrub', 'new-test-fails-at-base', 'release-cap'];
@@ -36,7 +38,7 @@ const git = (...a) => run('git', ['-c', 'core.quotePath=false', ...a]);
 const out = (r) => (r.status === 0 ? r.stdout.trim() : null);
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const lf = (s) => s.replace(/\r\n/g, '\n');
-const top = path.resolve(out(git('rev-parse', '--show-toplevel')) || process.cwd());
+const top = real(out(git('rev-parse', '--show-toplevel')) || process.cwd());
 const LEDGER = path.join(out(git('rev-parse', '--path-format=absolute', '--git-common-dir')) || path.join(top, '.git'), 'kit-autonomy-ledger.jsonl');
 // The kill switch is always looked for in the default Claude folder; a config folder set by env adds a place, never
 // replaces it.
