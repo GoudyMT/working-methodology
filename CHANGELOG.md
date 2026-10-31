@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.0 - 2026-10-31
+- A missing kit is a full stop: install user wires a gate that refuses every prompt in a folder with no kit (opt out with .kit/no-kit), and a project refuses every prompt when the active Claude config folder has no kit. The kit honors CLAUDE_CONFIG_DIR and names the folder it read. A repo that owns its CLAUDE.md gets the kit as an overlay in CLAUDE.local.md, recorded as host-owned and never flagged (closes IR-2026-10-31-overlay-on-team-repo). The kit's own CLAUDE.md and CLAUDE.local.md never go public, even when the kit is tracked.
+
 ## 1.9.1 - 2026-10-30
 - Sweep auto-approval: a version-only package.json change is no longer read as a new dependency (only dependency fields count); while paused, every ask prints the pause date, reason and the owner's resume command, and the closeout carries it into each handoff; an owner-decided sweep can log its outcome.
 
