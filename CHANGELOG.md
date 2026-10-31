@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.12.1 - 2026-10-31
+- Status reaches Current in a real project: a file changed only here carries the project's own values and is listed, not counted as a gap; only a file changed here and in the kit holds it back, until the hand merge is recorded with kit.mjs install project <folder> --merged <file>,<file>. Session start names only files that owe a merge.
+
 ## 1.12.0 - 2026-10-31
 - One kit skill per job: ui-craft, ui-review, debugging, plan-feature and tdd, condensed from 64 overlapping third-party skills (each with a SOURCES file of what was kept and dropped), plus review angles for pre-pr-sweep and on-demand references for agent-team-build. Checks that were counted by hand are scripts: commit messages and branch names (commit-msg and pre-push hooks), tracking caps, an empty parking lot before a sweep, evidence on each done plan line, skill cases suggested from the repo. Rarely used plugins stay on standby and switch on per project; kit.mjs measure --real counts what really loads, with a cap in status and a flag on a large memory index. New rules: the craft floor (screen job, floor check, refuse list, scored review, audit before editing), the context budget, team questions, the project map (a checked data file drawn as a plain page, refreshed at closeout), fact-check before handing over, diagrams that explain, outside repos read but never installed, auto-fix by default and auto-merge on the owner's yes. A snapshot keeps the backup of a standby skill. Recall 9/10, level with 1.5.0.
 
