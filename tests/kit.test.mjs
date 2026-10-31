@@ -2742,3 +2742,71 @@ test('snapshot keeps the vendor copy of a skill that is on standby (not on this 
   assert.equal(read(path.join(ctx.kit, 'vendor/skills/vendor-pack/vendor-skill/SKILL.md')), 'vendor\n');
   assert.ok(r.missing.includes('vendor-skill'));
 });
+
+// Tracking checks as a script (the owner, 2026-10-31): the whole-file caps, an empty parking lot before a sweep, and
+// evidence on every done line of a plan's Progress block.
+const TRACK = path.resolve('project/.claude/tracking-check.mjs');
+const trackRun = (dir, args) => spawnSync('node', [TRACK, ...args], { encoding: 'utf8', cwd: dir });
+test('the tracking check measures the whole-file caps and names each file over its cap', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'track-'));
+  const lines = (n) => Array.from({ length: n }, (_, i) => `line ${i}`).join('\n') + '\n';
+  fs.writeFileSync(path.join(dir, '_Working Memory.md'), lines(60));
+  fs.writeFileSync(path.join(dir, '_Active Plan.md'), lines(70));
+  fs.writeFileSync(path.join(dir, '_Session Log.md'), Array.from({ length: 10 }, (_, i) => `## Session ${i}\nx\n`).join(''));
+  const ok = trackRun(dir, ['caps']);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout, /\| _Working Memory\.md \| 60 lines \| 60 \| ok \|/);
+  fs.writeFileSync(path.join(dir, '_Active Plan.md'), lines(71));
+  fs.appendFileSync(path.join(dir, '_Session Log.md'), '## Session 11\nx\n');
+  const over = trackRun(dir, ['caps']);
+  assert.equal(over.status, 1);
+  assert.match(over.stdout, /\| _Active Plan\.md \| 71 lines \| 70 \| OVER \|/);
+  assert.match(over.stdout, /\| _Session Log\.md \| 11 sessions \| 10 \| OVER \|/);
+});
+test('the tracking check refuses a non-empty parking lot and a done line with no evidence', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'track-'));
+  const plan = path.join(dir, 'plan.md');
+  fs.writeFileSync(plan, '# Plan\n\n## Parking Lot\n\n## Progress\n\n- DONE: gate green on `ddca2b86`, 21/21\n- [x] sweep report linked (#181)\n\n## Tasks\n');
+  assert.equal(trackRun(dir, ['parking', plan]).status, 0);
+  assert.equal(trackRun(dir, ['progress', plan]).status, 0);
+  fs.writeFileSync(plan, '# Plan\n\n## Parking Lot\n\n- dark map tiles - home - hunch: next\n\n## Progress\n\n- [x] it works now\n- DONE: looks fine\n');
+  const p = trackRun(dir, ['parking', plan]);
+  assert.equal(p.status, 1);
+  assert.match(p.stdout, /1 idea\(s\) in the Parking Lot: triage each now, next or drop before the sweep/);
+  const g = trackRun(dir, ['progress', plan]);
+  assert.equal(g.status, 1);
+  assert.match(g.stdout, /no evidence: "- \[x\] it works now"/);
+  assert.match(g.stdout, /no evidence: "- DONE: looks fine"/);
+});
+
+// Skill cases suggested from the repo (the owner, 2026-10-31): the session-start question names the cases the repo's
+// own files point to, so the owner confirms a list instead of building one.
+test('session start suggests skill cases from the repo when none are chosen', () => {
+  const { kit, home, proj } = caseKit();
+  const catalog = { cases: ['ui-design', 'ui-review', 'feature-build', 'debugging', 'review', 'security', 'cloudflare', 'ml-data', 'data-pipelines', 'api', 'teaching']
+    .map((id) => ({ id, name: id, when: 'x', skills: [] })) };
+  fs.writeFileSync(path.join(proj, '.claude/kit/skill-cases.json'), JSON.stringify(catalog));
+  fs.writeFileSync(path.join(proj, 'package.json'), JSON.stringify({ devDependencies: { '@sveltejs/kit': '3.0.0' } }));
+  fs.writeFileSync(path.join(proj, 'wrangler.toml'), 'name = "x"\n');
+  let msg = sessionStartReport({ kit, home, projectDir: proj });
+  assert.match(msg, /Suggested from this repo: ui-design, ui-review, feature-build, debugging, review, security, cloudflare\./);
+  assert.match(msg, /\{"on":\["ui-design","ui-review","feature-build","debugging","review","security","cloudflare"\]\}/);
+  fs.rmSync(path.join(proj, 'package.json'));
+  fs.rmSync(path.join(proj, 'wrangler.toml'));
+  fs.writeFileSync(path.join(proj, 'requirements.txt'), 'torch==2.5\ntransformers>=4\napache-airflow\n');
+  msg = sessionStartReport({ kit, home, projectDir: proj });
+  assert.match(msg, /Suggested from this repo: feature-build, debugging, review, ml-data, data-pipelines\./);
+});
+
+test('status names a memory index past 6,000 B, which loads in every session', () => {
+  const { kit, home, proj } = makeKit();
+  const cfg = path.join(kit, 'kit.config.json');
+  fs.writeFileSync(cfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfg, 'utf8')), caps: { realLoad: 100000 } }));
+  const idx = path.join(home, 'projects', projectSlug(proj), 'memory', 'MEMORY.md');
+  fs.mkdirSync(path.dirname(idx), { recursive: true });
+  fs.writeFileSync(idx, 'm'.repeat(6000));
+  const s = () => status({ kit, home, projectDir: proj, ahead: () => 0, protection: () => null }).text;
+  assert.doesNotMatch(s(), /Memory index is/);
+  fs.writeFileSync(idx, 'm'.repeat(6001));
+  assert.match(s(), /Memory index is 6,001 B \(over 6,000\): turn copied rules into one-line pointers \(rule:kit-standards items 3 and 14\)\./);
+});

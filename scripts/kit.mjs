@@ -660,6 +660,8 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
     const on = fs.existsSync(localPath) ? JSON.parse(fs.readFileSync(localPath, 'utf8')).on || [] : null;
     if (!on) {
       lines.push(`No skill cases chosen yet for this project. Ask the owner which apply (${cases.map((c) => c.id).join(', ')}) and record them in .claude/skill-cases.local.json.`);
+      const hint = suggestCases(projectDir).filter((id) => cases.some((c) => c.id === id));
+      if (hint.length) lines.push(`Suggested from this repo: ${hint.join(', ')}. On the owner's yes, write ${JSON.stringify({ on: hint })} to .claude/skill-cases.local.json.`);
     } else {
       const active = cases.filter((c) => on.includes(c.id));
       if (active.length) {
@@ -742,6 +744,7 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     const { parts, total } = measureReal({ projectDir, home });
     const n = (x) => x.toLocaleString('en-US');
     lines.push(`Real start load: ${n(total)} B of ${n(cap)} (project ${n(parts.project)}, memory index ${n(parts.memoryIndex)}, global CLAUDE.md ${n(parts.globalClaude)}, skill listings ${n(parts.userSkills + parts.plugins)}).${total > cap ? ' Over its cap: trim per rule:kit-standards item 14.' : ''}`);
+    if (parts.memoryIndex > 6000) lines.push(`Memory index is ${n(parts.memoryIndex)} B (over 6,000): turn copied rules into one-line pointers (rule:kit-standards items 3 and 14).`);
   }
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
@@ -1095,6 +1098,25 @@ export function measure({ projectDir }) {
     if (!(front && /^paths:/m.test(front[1]))) load(p, 0);
   }
   return { files, total: files.reduce((s, f) => s + f.bytes, 0), unresolved };
+}
+
+/**
+ * The skill cases a repo's own files point to (rule:kit-standards item 8), so the session-start question offers a
+ * list to confirm. Signals are files at the repo root only: cheap, and never a guess from reading code.
+ */
+function suggestCases(projectDir) {
+  const read = (f) => { try { return fs.readFileSync(path.join(projectDir, f), 'utf8'); } catch { return ''; } };
+  const pkg = read('package.json');
+  const py = ['requirements.txt', 'pyproject.toml', 'environment.yml', 'setup.cfg'].map(read).join('\n');
+  const out = [];
+  if (/"(svelte|@sveltejs\/kit|react|react-dom|vue|next|astro|solid-js)"/.test(pkg)) out.push('ui-design', 'ui-review');
+  if (pkg || py) out.push('feature-build', 'debugging', 'review');
+  if (pkg) out.push('security');
+  if (['wrangler.toml', 'wrangler.json', 'wrangler.jsonc'].some((f) => fs.existsSync(path.join(projectDir, f)))) out.push('cloudflare');
+  if (/\b(torch|transformers|datasets|tensorflow|scikit-learn|sklearn|huggingface)/i.test(py)) out.push('ml-data');
+  if (/\b(apache-airflow|airflow|dbt-core|dbt)\b/i.test(py)) out.push('data-pipelines');
+  if (fs.existsSync(projectDir) && fs.readdirSync(projectDir).some((f) => f.endsWith('.postman_collection.json'))) out.push('api');
+  return out;
 }
 
 /** Whether a plugin is on for a project: the nearest settings file that names it wins, as in Claude Code. */

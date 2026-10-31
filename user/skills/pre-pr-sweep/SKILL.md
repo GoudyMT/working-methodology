@@ -19,6 +19,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 1. **Set the tier at plan approval:** feature, fix, triage, launch gate or first push, from rule:sweep-tiers; when unsure, the
    higher one. List the modifiers the change hits (security-sensitive, a new dependency or data flow, public or
    legal text, data the user keeps); each adds its role.
+   Before the contract, `node .claude/tracking-check.mjs parking <plan>` passes (rule:parking-lot).
 2. **The Swarm Contract, script first** (rule:swarm-contract). Do not ask the owner anything yet; the script decides
    whether there is anything to ask. In order: (a) commit the work; (b) draw the roles from
    [references/angles.md](references/angles.md) by the change's risk regions, and write them as
