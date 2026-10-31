@@ -14,8 +14,11 @@ A Claude setup with its own config folder (`CLAUDE_CONFIG_DIR`, for example a se
 install: run the same command with `CLAUDE_CONFIG_DIR` set to that folder. The session-start check names the folder
 it read.
 
-A team repo with its own `CLAUDE.md` keeps it: the project install writes a personal `CLAUDE.local.md` that loads
-the kit's `AGENTS.md`, and keeps it out of git.
+**Is this repo shared?** A team, client or open-source repo owns its `CLAUDE.md`. Never hand-merge the kit into the
+host's files. A tracked `CLAUDE.md` is taken as the host's: the install writes the kit's `CLAUDE.md` as a personal
+`CLAUDE.local.md` (the host's file wins any conflict), records the host file as host-owned so no check flags it, and
+keeps the kit's local files out of git. For an untracked one, run the install with `--overlay`. Point the kit's
+rules at the host's rules instead of restating them.
 
 ## 2. Orient (read-only)
 
@@ -56,7 +59,7 @@ inferred.
 Present the plan as A/B/C choices and stop. On the owner's go:
 
 1. Run the install for real. New files land; existing ones stay.
-2. Merge each listed file by hand: keep the project's specifics, add the kit's rules, and fill the adapters
+2. Merge each listed file by hand (never a host-owned file in a shared repo; see step 1): keep the project's specifics, add the kit's rules, and fill the adapters
    (see NEW-PROJECT.md step 4). The pre-compact closeout must carry the rule sort for the kit
    (rule:pre-compact-scan, step 5b), even when the project keeps its own standards.
 3. Seed the tracking files from the state map. Set up the vault backup and the skill cases (NEW-PROJECT.md steps

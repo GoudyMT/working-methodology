@@ -2340,21 +2340,58 @@ test('the installer and the session hook honor CLAUDE_CONFIG_DIR, and the hook n
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(fs.existsSync(path.join(cfg, 'kit-install.json')), 'installed into the config folder');
 });
-test('a repo with its own CLAUDE.md gets a personal CLAUDE.local.md pointing at the kit rules, kept out of git', () => {
-  const { kit, home, proj } = makeKit();
-  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n');
-  fs.writeFileSync(path.join(kit, 'project/AGENTS.md'), '# Kit AGENTS\n');
-  g(proj, 'init', '-q', '-b', 'main');
-  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), '# The team\'s own rules\n');
+// IR-2026-10-31-overlay-on-team-repo: a team repo keeps its tracked CLAUDE.md; the kit's own CLAUDE.md goes to a
+// personal CLAUDE.local.md with a header saying the host file wins, the host file is recorded as host-owned so no
+// check flags it, and the kit's local files stay out of git.
+function overlayKit() {
+  const ctx = makeKit();
+  fs.writeFileSync(path.join(ctx.kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\n@AGENTS.md\n');
+  fs.writeFileSync(path.join(ctx.kit, 'project/AGENTS.md'), '# Kit AGENTS\n');
+  g(ctx.proj, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(ctx.proj, 'CLAUDE.md'), "# The team's own rules\n");
+  return ctx;
+}
+test('a team repo with a tracked CLAUDE.md gets the kit as an overlay: CLAUDE.local.md, host-owned, nothing flagged or untracked', () => {
+  const { kit, home, proj } = overlayKit();
+  commitAll(proj, 'team', true);
   const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.equal(read(path.join(proj, 'CLAUDE.md')), '# The team\'s own rules\n', 'the team file is untouched');
+  assert.equal(read(path.join(proj, 'CLAUDE.md')), "# The team's own rules\n", 'the team file is untouched');
   assert.ok(r.created.includes('CLAUDE.local.md'));
-  assert.match(read(path.join(proj, 'CLAUDE.local.md')), /^@AGENTS\.md$/m);
-  assert.equal(g(proj, 'check-ignore', 'CLAUDE.local.md').status, 0, 'git keeps it out');
-  // A second install leaves it as it is; a repo whose CLAUDE.md is the kit's gets no pointer.
-  assert.ok(!install({ kit, home, target: 'project', projectDir: proj }).created.includes('CLAUDE.local.md'));
+  assert.deepEqual(r.hostOwned, ['CLAUDE.md']);
+  assert.ok(!r.skipped.some((s) => s.file === 'CLAUDE.md'), 'host-owned, not skipped');
+  const local = read(path.join(proj, 'CLAUDE.local.md'));
+  assert.match(local, /CLAUDE\.md here is owned by the host repo, and it wins/);
+  assert.match(local, /^@AGENTS\.md$/m);
+  assert.match(local, /sweep tier/);
+  assert.deepEqual(JSON.parse(read(path.join(proj, '.kit', 'kit-version.json'))).hostOwned, ['CLAUDE.md']);
+  fs.writeFileSync(path.join(proj, '.claude', 'skill-cases.local.json'), '{"on":[]}');
+  assert.equal(g(proj, 'status', '--porcelain').stdout.trim(), '', 'git status stays clean');
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /CLAUDE\.md/);
+  assert.ok(!foldBack({ kit, home, target: 'project', projectDir: proj }).conflict.includes('CLAUDE.md'));
+  // A second install keeps the overlay as it is.
+  const again = install({ kit, home, target: 'project', projectDir: proj });
+  assert.ok(!again.created.includes('CLAUDE.local.md') && !again.skipped.some((s) => s.file === 'CLAUDE.md'));
+});
+test("an untracked CLAUDE.md of the owner's own is skipped with a pointer to --overlay, and --overlay applies it", () => {
+  const { kit, home, proj } = overlayKit();
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.match(r.skipped.find((s) => s.file === 'CLAUDE.md').reason, /--overlay/);
+  assert.equal(fs.existsSync(path.join(proj, 'CLAUDE.local.md')), false);
+  const o = install({ kit, home, target: 'project', projectDir: proj, overlay: true });
+  assert.ok(o.created.includes('CLAUDE.local.md'));
   const plain = makeKit();
   fs.writeFileSync(path.join(plain.kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n');
   install({ kit: plain.kit, home: plain.home, target: 'project', projectDir: plain.proj });
-  assert.equal(fs.existsSync(path.join(plain.proj, 'CLAUDE.local.md')), false);
+  assert.equal(fs.existsSync(path.join(plain.proj, 'CLAUDE.local.md')), false, "no overlay where CLAUDE.md is the kit's");
+});
+test('status names the Claude config folder it read', () => {
+  const { kit, home, proj } = makeKit();
+  assert.ok(status({ kit, home, projectDir: proj, ahead: () => 0 }).text.includes(`Claude config folder: ${home.split(path.sep).join('/')}`));
+});
+test('an overlay on a repo that also owns its AGENTS.md says the kit core needs a home', () => {
+  const { kit, home, proj } = overlayKit();
+  fs.writeFileSync(path.join(proj, 'AGENTS.md'), "# The team's agents file\n");
+  commitAll(proj, 'team', true);
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.match(r.skipped.find((s) => s.file === 'AGENTS.md').reason, /CLAUDE\.local\.md imports it/);
 });

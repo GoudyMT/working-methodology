@@ -123,6 +123,7 @@ export function install(ctx) {
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
   const created = [], updated = [], replaced = [], skipped = [];
+  const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
   for (const entry of entries) {
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home);
@@ -158,29 +159,39 @@ export function install(ctx) {
       skipped.push({ file: entry.key, reason });
     }
   }
-  // A repo with its own CLAUDE.md (a team repo) keeps it; the kit's rules then reach Claude through a personal
-  // CLAUDE.local.md, which Claude Code loads by itself and keepKitLocal keeps out of git.
-  const teamClaude = ctx.target === 'project' && skipped.some((s) => s.file === 'CLAUDE.md' && !stamp.files['CLAUDE.md']);
-  const local = ctx.target === 'project' ? path.join(ctx.projectDir, 'CLAUDE.local.md') : null;
-  if (teamClaude && !fs.existsSync(local)) {
-    if (skipped.some((s) => s.file === 'AGENTS.md')) {
-      skipped.push({ file: 'CLAUDE.local.md', reason: "not written: this repo's AGENTS.md is its own too, so the kit's core rules have no home here - merge them by hand" });
-    } else {
-      const text = [
-        '# Kit pointer (personal, kept out of git)',
-        '',
-        "This repo has its own CLAUDE.md, so the methodology kit's rules load from here.",
-        '',
-        '@AGENTS.md',
-        '',
-        'Then read the rule module the moment needs (the Rule Modules table at the end of AGENTS.md); standards/INDEX.md',
-        'finds a rule by its ID.',
-        '',
-      ].join('\n');
+  // A team, client or open-source repo owns its CLAUDE.md. The kit then sits on top as an overlay: its CLAUDE.md goes
+  // to a personal CLAUDE.local.md (Claude Code loads it by itself; keepKitLocal keeps it out of git), and the host
+  // file is recorded as host-owned so no later check flags it. A tracked CLAUDE.md is taken as host-owned; an
+  // untracked one of the owner's own is skipped unless install runs with --overlay.
+  const claudeEntry = ctx.target === 'project' && skipped.find((s) => s.file === 'CLAUDE.md' && !stamp.files['CLAUDE.md']);
+  const tracked = (f) => spawnSync('git', ['-C', ctx.projectDir, 'ls-files', '--error-unmatch', f], { encoding: 'utf8' }).status === 0;
+  if (claudeEntry && (hostOwned.has('CLAUDE.md') || ctx.overlay || tracked('CLAUDE.md'))) {
+    skipped.splice(skipped.indexOf(claudeEntry), 1);
+    hostOwned.add('CLAUDE.md');
+    // The overlay imports AGENTS.md; a host-owned one would load the host's text in place of the kit's core rules.
+    const agents = skipped.find((s) => s.file === 'AGENTS.md' && !stamp.files['AGENTS.md']);
+    if (agents) agents.reason += "; CLAUDE.local.md imports it, so the kit's core rules are not loaded here - give them a home by hand";
+    const local = path.join(ctx.projectDir, 'CLAUDE.local.md');
+    const kitClaude = renderEntry(kitInfo, entries.find((e) => e.key === 'CLAUDE.md'), ctx.projectDir, ctx.home);
+    const text = [
+      '<!-- The methodology kit\'s overlay (install --overlay); kept out of git. -->',
+      '> **Kit overlay.** The CLAUDE.md here is owned by the host repo, and it wins any conflict with the kit rules',
+      '> below. These rules load only on this machine: never copy them into the host\'s files. Name each sweep tier at',
+      '> plan approval with the host project\'s budget in view (rule:sweep-tiers); a lighter tier than the rule gives is',
+      '> the owner\'s call.',
+      '',
+      kitClaude,
+    ].join('\n');
+    const had = fs.existsSync(local) ? sha(fs.readFileSync(local, 'utf8')) : null;
+    if (!had || (had === stamp.files['CLAUDE.local.md'] && had !== sha(text))) {
       if (!ctx.dryRun) fs.writeFileSync(local, text);
-      created.push('CLAUDE.local.md');
+      (had ? updated : created).push('CLAUDE.local.md');
       files['CLAUDE.local.md'] = sha(text);
+    } else if (had !== sha(text) && had !== stamp.files['CLAUDE.local.md']) {
+      skipped.push({ file: 'CLAUDE.local.md', reason: 'changed here - merge the kit\'s CLAUDE.md into it by hand' });
     }
+  } else if (claudeEntry) {
+    claudeEntry.reason += '; if another repo or team owns this file, run install with --overlay';
   }
   // Retired files: only ones this kit installed (they are in the stamp) and the owner left as installed are
   // removed, after a backup. A changed copy holds the owner's work, so it stays and is reported.
@@ -216,10 +227,11 @@ export function install(ctx) {
   if (!ctx.dryRun) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), installedAt: new Date().toISOString(), files };
+    if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
     fs.writeFileSync(stampPath, JSON.stringify(out, null, 2) + '\n');
     if (ctx.target === 'project') keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')));
   }
-  return { created, updated, replaced, retired, skipped, backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
 }
 
 /**
@@ -246,7 +258,8 @@ function keepKitLocal(projectDir, keys) {
   // The never list is the owner's own globs, kept here too so it stays private (a .gitignore is pushed).
   // Only the folder prefix is escaped; git drops trailing spaces from a pattern, so they are trimmed to match.
   const neverLines = (cfg.never || []).map((p) => line('') + p.trim().replace(/^\/+/, ''));
-  const kitLines = cfg.kit === 'tracked' ? [] : [...keys, '.kit/', '.claude/worktrees/'].sort().map(line);
+  // The local files the kit tells the owner to create (CLAUDE.local.md, .claude/*.local.json) are kept out too.
+  const kitLines = cfg.kit === 'tracked' ? [] : [...[...keys, '.kit/', '.claude/worktrees/', 'CLAUDE.local.md'].sort().map(line), line('') + '.claude/*.local.json'];
   const block = kitLines.length + neverLines.length ? ['# kit:begin - kept local by the methodology kit (rule:kit-stays-local); install rewrites this block',
     ...kitLines, ...neverLines, '# kit:end'].join('\n') + '\n' : '';
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -319,6 +332,8 @@ export function foldBack(ctx) {
   const out = { foldBack: [], update: [], conflict: [], added: [], missing: [] };
   const diffs = [];
   for (const entry of entries) {
+    // A host-owned file (rule:kit-stays-local, overlay) is the host repo's, never a kit file to fold back.
+    if ((stamp.hostOwned || []).includes(entry.key)) continue;
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home);
     const base = stamp.files[entry.key];
     if (!fs.existsSync(entry.dest)) { if (base) out.missing.push(entry.key); continue; }
@@ -628,7 +643,7 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
  */
 export function status({ kit, home, projectDir, ahead = remoteKitAhead }) {
   const { version, commit } = loadKit(kit);
-  const lines = [`Kit folder: ${version}${commit ? ` (${commit})` : ''}.`];
+  const lines = [`Kit folder: ${version}${commit ? ` (${commit})` : ''}.`, `Claude config folder: ${toPosix(home)}.`];
   const gaps = [];
   const n = ahead(kit);
   if (n > 0) {
@@ -1022,10 +1037,12 @@ function main(argv) {
   const [cmd, target, arg] = argv;
   const dryRun = argv.includes('--dry-run');
   const force = argv.includes('--force');
+  const overlay = argv.includes('--overlay');
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
-    const r = install({ kit, home, target, projectDir, dryRun, force });
-    console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ''}`);
+    const r = install({ kit, home, target, projectDir, dryRun, force, overlay });
+    console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
+    for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
     console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
     for (const f of r.replaced) console.log(`    replaced ${f}`);
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
@@ -1074,7 +1091,7 @@ function main(argv) {
     console.log(hits.length ? `${hits.length} hit(s)` : 'Scrub clean');
     process.exitCode = hits.length ? 1 : 0;
   } else {
-    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force]');
+    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay]');
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');
