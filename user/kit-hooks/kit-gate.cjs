@@ -19,9 +19,14 @@ function main() {
 	const has = (f) => fs.existsSync(path.join(root, f));
 	if (has('.kit/kit-version.json') || has('.kit/no-kit') || (has('scripts/kit.mjs') && has('rules'))) return;
 	const where = root.split(path.sep).join('/');
+	// The kit folder, from this config folder's install record (this file sits in <config folder>/kit-hooks/).
+	const home = process.env.KIT_CLAUDE_HOME || path.dirname(__dirname);
+	let kitDir = null;
+	try { kitDir = JSON.parse(fs.readFileSync(path.join(home, 'kit-install.json'), 'utf8')).kitDir || null; } catch { /* none */ }
+	const pull = kitDir ? `git -C "${kitDir}" pull` : 'git pull in your kit folder';
 	process.stdout.write(JSON.stringify({
 		decision: 'block',
-		reason: `Full stop: this folder (${where}) has no methodology kit. Install the latest first: git pull in the kit folder, then /methodology-kit existing (or /methodology-kit new for a fresh project). To work here without the kit, create .kit/no-kit in this folder.`,
+		reason: `Full stop: this folder (${where}) has no methodology kit. To install the latest: (1) in a terminal, ${pull}; (2) send /methodology-kit existing here (or /methodology-kit new for a fresh project), and Claude installs it. To work here without the kit, create .kit/no-kit in this folder.`,
 	}));
 }
 

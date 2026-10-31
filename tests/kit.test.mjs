@@ -2535,3 +2535,23 @@ test('the kit ships the main branch rule as settings, and status flags an unprot
   assert.doesNotMatch(say('protected'), /not protected/);
   assert.doesNotMatch(say(null), /not protected/, 'no remote, no gh, or no access: nothing to say');
 });
+
+// The owner, 2026-10-31: a full stop names the kit folder and the exact install steps, read from the install records.
+test('both stop messages name the kit folder and the exact steps to install it', () => {
+  const kitDir = path.resolve('.').split(path.sep).join('/');
+  // The folder gate reads the kit folder from the config folder's install record.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ version: '1.0.0', kitDir, files: {} }));
+  const dir = localProject();
+  const stop = promptGate(path.resolve('user/kit-hooks/kit-gate.cjs'), { cwd: dir, prompt: 'hi' }, { KIT_CLAUDE_HOME: home });
+  assert.ok(stop.reason.includes(`git -C "${kitDir}" pull`), stop.reason);
+  assert.match(stop.reason, /\/methodology-kit existing/);
+  // The project hook reads it from the project's install record when the config folder has none.
+  const proj = localProject();
+  kitInstall(proj);
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+  const r = spawnSync('node', [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { input: JSON.stringify({ prompt: 'go' }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: empty, CLAUDE_PROJECT_DIR: proj } });
+  const reason = JSON.parse(r.stdout).reason;
+  assert.ok(reason.includes(`git -C "${kitDir}" pull`), reason);
+  assert.ok(reason.includes(`node "${kitDir}/scripts/kit.mjs" install user`), reason);
+});
