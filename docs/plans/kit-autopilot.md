@@ -70,6 +70,8 @@ Order is chosen so each phase is safe on its own: nothing can act outward until 
 - [ ] `.kit/autonomy.json` schema: acts, conditions per act, protected paths; projects ship with an empty grant
 - [ ] Recall test run on the rule text change (it's rule text)
 
+Changelog note for the 1.13.0 bump (draft): The Standard PR body's Review section now carries the sweep summary: the commit the sweep covered, a result per dimension, each high or critical finding and how it was handled, deferred items with where they are tracked, and accepted risks; it never links the private report. The PR-body audit checks the new parts in order, so a body in the old Review shape (Reviewed across / Result / Pass table) now fails it: projects move to the new shape on update.
+
 ### Phase 2: `autonomy.mjs check <act>` (fail-closed gate)
 - [ ] Tests first: missing grant, unreadable grant, kill switch present, protected path touched, Tier 0 hash changed, 4th release today, new test not failing at base, each returns "ask"
 - [ ] Reads grant and itself from `origin/main`, never the worktree

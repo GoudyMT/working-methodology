@@ -2353,6 +2353,22 @@ test('a project\'s .kit/pr-body.json sets its own gates, audit line and verified
   assert.equal(full.status, 0, full.stdout);
 });
 
+// The Review section carries the sweep summary a reviewer needs (the commit covered, a result per dimension, high and
+// critical findings, deferred items, accepted risks), and never a link to the private report.
+test('the Standard PR audit holds the Review section to the sweep summary and refuses a private report link', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const ok = stdAudit(dir, honestBody());
+  assert.match(ok.stdout, /PASS\s+Review parts in order/);
+  const noTable = stdAudit(dir, honestBody().replace(/\| Dimension \| Result \|\n\|---\|---\|\n(\|.*\n)+/, ''));
+  assert.equal(noTable.status, 1);
+  assert.match(noTable.stdout, /FAIL\s+Review parts in order/);
+  const noCommit = stdAudit(dir, honestBody().replace('Feature review of `9a1d6e20`.', 'Feature review.'));
+  assert.match(noCommit.stdout, /FAIL\s+Review parts in order/);
+  const linked = stdAudit(dir, honestBody().replace('- **Deferred:** none.', '- **Deferred:** see [the report](docs/sweeps/2026-05-14-pin.md).'));
+  assert.equal(linked.status, 1);
+  assert.match(linked.stdout, /FAIL\s+no vault paths/);
+});
+
 // Found in a course project closeout (2026-10-30): the lead sent the coordinator a file path instead of the handoff,
 // and a new session may not read that path. The audit can print the exact text to send, so the step is checkable.
 test('the handoff audit prints the full text to send, and only for a clean handoff', () => {
