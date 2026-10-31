@@ -154,3 +154,21 @@ blind scorer. Gate set by the owner: a median of 9.
   state the fresh reads as the first action.
 - Borderline (scorer): Q3 "in the handoff's reading order" is never said outright (strict: run 1 to 0); Q6 run 3
   reachability (lenient: 1); Q7 all runs describe approve.mjs auto-approval (strict could flip all to 0).
+
+## 1.13.0 gate, rerun (2026-10-31)
+
+After two more fixes in always-loaded text (Rule 11 opens with "First action:"; Rule 13 asks for the report recorded
+and summarized in the PR), three fresh installs, each scored strictly by its own new blind scorer.
+
+| Q | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 1, 2, 4, 5, 6, 7, 8, 9 | 1 | 1 | 1 |
+| 3 | 1 | 0 | 1 |
+| 10 | 0 | 1 | 0 |
+| Total | 9 | 9 | 9 |
+
+- **Gate met: median 9** (9, 9, 9). Session start 45,420 B against the 45,500 B cap.
+- Question 3: run 2 named reminders and memory as not counted but not the compaction summary.
+- Question 10: runs 1 and 3 ended at "PR body to the owner" without saying the summary goes in it.
+- Borderline (scorers): Q3 "before any edit" and "in the handoff's reading order" are shown, not said, in runs 1
+  and 3 (strict could flip to 0); Q4 and Q7 wording near the key in some runs; Q10 "adversarial" not said outright.
