@@ -21,3 +21,8 @@ is reworked or retired at the next kit release.
   by default, the owner's device for the cases a hand must judge).
 - 1.0.0: rule modules - the core and modules, rule IDs, find and tags, the build, safe retire, old-layout fold-back
   (plan rule-modules, approved by the owner).
+- 1.12.0: auto-fix by default and auto-merge on the owner's yes; outside repos read, never installed; fact-check
+  and diagrams; the craft floor; standby plugins; the real start load and its cap; the context budget; team
+  questions; the project map; one kit skill per job (ui-craft, ui-review, debugging, plan-feature, tdd) and the
+  checks as scripts (names, tracking caps, parking lot, plan evidence, suggested cases). The owner approved each
+  on 2026-10-31; the first real use of each new skill is its proof.
