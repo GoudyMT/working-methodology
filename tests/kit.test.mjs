@@ -2832,3 +2832,21 @@ test('status names a memory index past 6,000 B, which loads in every session', (
   fs.writeFileSync(idx, 'm'.repeat(6001));
   assert.match(s(), /Memory index is 6,001 B \(over 6,000\): turn copied rules into one-line pointers \(rule:kit-standards items 3 and 14\)\./);
 });
+
+// Plan kit-autopilot, Phase 1: outward acts are the owner's unless a standing grant covers them. The rule lives in
+// three always-read places (CLAUDE.md Hard Rule 14, AGENTS.md non-negotiable 6, rule:outward-acts) and one home for
+// its detail (rule:standing-grants); a copy that drops the exception, or a Rule 14 that drifts from the owner's
+// approved words (Tier 0), is the failure this guards.
+test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing grant, and Rule 14 is the owner\'s text', () => {
+  const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s knowledge and go, except under a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
+  assert.ok(read(path.resolve('project/CLAUDE.md')).split('\n').includes(rule14), 'CLAUDE.md Hard Rule 14 is the approved text');
+  const six = read(path.resolve('rules/_parts/agents-head.md')).split('\n').find((l) => l.startsWith('6. '));
+  assert.match(six, /standing grant/i);
+  assert.match(six, /rule:outward-acts/);
+  const core = read(path.resolve('rules/core.md'));
+  const outward = core.slice(core.indexOf('{#outward-acts}'), core.indexOf('{#session-workflow}'));
+  assert.match(outward, /rule:standing-grants/);
+  const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
+  assert.ok(ids.has('standing-grants'), 'rule:standing-grants has its one home');
+  assert.match(read(path.resolve('rules/project-adapter.md')), /^\| A27 \| .*standing grant/im);
+});

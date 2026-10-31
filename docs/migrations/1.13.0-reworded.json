@@ -1,0 +1,19 @@
+{
+  "lines": [
+    {
+      "before": "> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A26) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.",
+      "after": "> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A27) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.",
+      "why": "the owner, 2026-10-31: outward acts are the owner's unless a standing grant covers them (Hard Rule 14 reworded, Tier 0, approved by the owner)"
+    },
+    {
+      "before": "**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data); split evidence with no standard to break the tie.",
+      "after": "**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data) that no standing grant covers; split evidence with no standard to break the tie.",
+      "why": "the owner, 2026-10-31: outward acts are the owner's unless a standing grant covers them (Hard Rule 14 reworded, Tier 0, approved by the owner)"
+    },
+    {
+      "before": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts. Nothing reaches the remote, merges or ships without the owner's knowledge, ever** - for Claude and every agent it dispatches. Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.",
+      "after": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.",
+      "why": "the owner, 2026-10-31: outward acts are the owner's unless a standing grant covers them (Hard Rule 14 reworded, Tier 0, approved by the owner)"
+    }
+  ]
+}

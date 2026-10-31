@@ -18,7 +18,7 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 5. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST; never weaken, relax or skip a test to make it pass. See rule:test-integrity.
 
-6. **Outward acts are the owner's.** Push, PR, merge, release and public posts happen only on the owner's go (rule:outward-acts).
+6. **Outward acts are the owner's unless granted.** Push, PR, merge, release and public posts happen only on the owner's go or under a standing grant (rule:outward-acts).
 
 ---
 
