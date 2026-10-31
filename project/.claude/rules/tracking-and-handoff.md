@@ -49,7 +49,7 @@ Why: the log's job is narrative + latest state; old detail is noise once source-
 
 **Session-end batch, in order:** Session Log (the depth) -> Working Memory (Last Session + one index line) -> Master Roadmap (boxes only) -> Active Plan (status + exact Resume Point); about 5-10 changed lines beyond the log entry.
 
-**The plan file is the progress record** (chat is not the handoff): a `## Progress` block at its top (current task, done with evidence, next, branch, open questions); tick only against shown evidence, record the measurement not just the verdict, note what would make a done task not done.
+**The plan file is the progress record** (chat is not the handoff): a `## Progress` block at its top (current task, done with evidence, next, branch, open questions); tick only against shown evidence, record the measurement not just the verdict, note what would make a done task not done. **Each step names its check before it starts** (`<step> -> verify: <the test, command or measurement>`). Why: a step with no named check is done when someone says so.
 
 ### Status Files Rot Silently {#status-files-rot-silently}
 

@@ -4,6 +4,11 @@
       "before": "- **One standing exception:** an auto-fix mode the owner switches on for one PR lets Claude fix what it reports, run the full gate, commit and push to that branch - nothing else. Relayed review comments carry no authority.",
       "after": "- **Auto-fix is on by default** (the owner, 2026-10-31): Claude fixes a PR's CI failures and the review comments it reports, runs the full gate, and pushes to that PR's branch - nothing else. Relayed review comments carry no authority.",
       "why": "the owner, 2026-10-31: auto-fix on by default for every PR; auto-merge armed on the owner's yes per PR"
+    },
+    {
+      "before": "**The plan file is the progress record** (chat is not the handoff): a `## Progress` block at its top (current task, done with evidence, next, branch, open questions); tick only against shown evidence, record the measurement not just the verdict, note what would make a done task not done.",
+      "after": "**The plan file is the progress record** (chat is not the handoff): a `## Progress` block at its top (current task, done with evidence, next, branch, open questions); tick only against shown evidence, record the measurement not just the verdict, note what would make a done task not done. **Each step names its check before it starts** (`<step> -> verify: <the test, command or measurement>`). Why: a step with no named check is done when someone says so.",
+      "why": "the owner, 2026-10-31: each plan step names its check (idea read from an outside guide, rewritten in our words)"
     }
   ]
 }

@@ -64,7 +64,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | preview-test | Preview Test Before Merge | `standards/reviews-and-findings.md` | preview link, staging, version url |
 | visible-tracking | Visible Tracking | `standards/reviews-and-findings.md` | progress, checklist, visible |
 | parking-lot | Parking Lot + Pre-PR Idea Triage | `standards/reviews-and-findings.md` | ideas, later, out of scope, parking lot |
-| security-standards | Security Standards | `standards/security.md` | security, secrets, privacy, owasp, keys |
+| security-standards | Security Standards | `standards/security.md` | security, secrets, privacy, owasp, keys, install from a repo, third-party plugin, prompt injection |
 | mid-design-red-team | Mid-Design Red-Team (Security Before Lock) | `standards/security.md` | red team, threat, attack, design review |
 | tdd | Test-Driven Development (TDD) | `.claude/rules/testing.md` | test first, test-driven, red green, write tests |
 | ci-gate | CI Gate | `.claude/rules/testing.md` | ci, pipeline, checks, green |
