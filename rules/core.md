@@ -27,7 +27,7 @@ tags:
 
 # Working Standards - <PROJECT NAME>
 
-> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A25) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.
+> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A26) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.
 
 **Last Updated:** <YYYY-MM-DD> (<what changed>)
 

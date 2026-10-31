@@ -56,6 +56,7 @@ The kit lives in this folder, ready to use, and never in the repo by default. Ru
 4. Before the first push: the first push gate (rule:first-push-gate). Make the remote **private** first; run the
    deep sweep at the first-push tier and `node .claude/first-push-check.mjs`; push; check what landed on the
    host; only then make it public. The pre-push hook holds the first push until the check clears the commit.
+   Once it is public and CI has a gate check, protect main (rule:first-push-gate, "Protect main").
 5. Committing the whole kit (`"kit": "tracked"`, then install again) is the owner's explicit choice, for a
    private repo only.
 6. On another computer, a fresh clone has no kit: run the install there, which writes the block and the hooks

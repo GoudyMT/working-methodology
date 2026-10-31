@@ -1,0 +1,9 @@
+{
+  "lines": [
+    {
+      "before": "> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A25) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.",
+      "after": "> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A26) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.",
+      "why": "adapter row A26 (the branch rule on main) added from improvement report IR-2026-10-31-no-branch-rule-on-main-after-a-new-repo-goes-public"
+    }
+  ]
+}

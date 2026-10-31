@@ -2516,3 +2516,22 @@ test('the PR-body audits read past a leading host attribution block, and only a 
   assert.equal(out.status, plain.status, out.stdout);
   assert.match(out.stdout, /attribution block: present/);
 });
+
+// IR-2026-10-31-no-branch-rule-on-main-after-a-new-repo-goes-public: the first push gate made a repo public and
+// stopped one step short of protecting main.
+test('the kit ships the main branch rule as settings, and status flags an unprotected main', () => {
+  const rule = JSON.parse(read(path.resolve('project/.claude/kit/branch-protection.json')));
+  assert.deepEqual(Object.keys(rule).sort(), ['allow_deletions', 'allow_force_pushes', 'enforce_admins', 'required_pull_request_reviews', 'required_status_checks', 'restrictions']);
+  assert.equal(rule.allow_force_pushes, false);
+  assert.equal(rule.allow_deletions, false);
+  assert.equal(rule.enforce_admins, false, 'admins may bypass');
+  assert.equal(rule.required_pull_request_reviews, null, 'no review for a solo owner');
+  assert.equal(rule.required_status_checks.contexts.length, 1, 'one gate check');
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  const say = (state) => status({ kit, home, projectDir: proj, ahead: () => 0, protection: () => state }).text;
+  assert.match(say('unprotected'), /main is not protected on GitHub/);
+  assert.doesNotMatch(say('protected'), /not protected/);
+  assert.doesNotMatch(say(null), /not protected/, 'no remote, no gh, or no access: nothing to say');
+});

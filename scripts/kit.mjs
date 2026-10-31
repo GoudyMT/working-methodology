@@ -667,6 +667,19 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
 }
 
 /**
+ * Whether main has a branch rule on GitHub, read with gh (rule:first-push-gate, "Protect main").
+ *
+ * Returns:
+ *     'protected', 'unprotected', or null when it cannot tell (no GitHub remote, no gh, no access)
+ */
+function mainProtection(projectDir) {
+  const r = spawnSync('gh', ['api', 'repos/{owner}/{repo}/branches/main/protection'], { cwd: projectDir, encoding: 'utf8', timeout: 8000 });
+  if (r.error) return null;
+  if (r.status === 0) return 'protected';
+  return /Branch not protected/i.test(`${r.stdout}${r.stderr}`) ? 'unprotected' : null;
+}
+
+/**
  * The on-demand version check: the kit folder against GitHub, and ~/.claude and the project against the
  * kit folder, file by file. A matching version number is not enough - a file the owner changed, or one
  * the kit changed since the install, also counts. It only reads.
@@ -677,7 +690,7 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
  * Returns:
  *     { current, text } - current is true only when every line matches
  */
-export function status({ kit, home, projectDir, ahead = remoteKitAhead }) {
+export function status({ kit, home, projectDir, ahead = remoteKitAhead, protection = mainProtection }) {
   const { version, commit } = loadKit(kit);
   const lines = [`Kit folder: ${version}${commit ? ` (${commit})` : ''}.`, `Claude config folder: ${toPosix(home)}.`];
   const gaps = [];
@@ -711,6 +724,7 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead }) {
   const reportDir = path.join(projectDir, '.kit', 'reports');
   const open = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((f) => /^IR-.*\.md$/.test(f)).sort()
     .filter((f) => !/^\| Status \| (closed|declined) \|/m.test(fs.readFileSync(path.join(reportDir, f), 'utf8'))) : [];
+  if (protection(projectDir) === 'unprotected') lines.push('main is not protected on GitHub: run the "Protect main" step of rule:first-push-gate (an outward act; the owner says go).');
   if (open.length) lines.push(`${open.length} improvement report(s) open: ${open.join(', ')}. Hand filed ones to the kit.`);
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
