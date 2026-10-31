@@ -34,3 +34,4 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | A24 | Delivery contexts (optional; each feature declares its target context at design lock and is built to that context only) | design locks | `<fill in or n/a>` |
 | A25 | Live services a dev server can reach (block in scripted walks) | Security, Op-Test | `<fill in>` |
 | A26 | Branch rule on main: the CI gate check's name; solo (no review) or team (reviews required) | First Push Gate | `<fill in>` |
+| A27 | Standing grant (`.kit/autonomy.json`): the outward acts that run without a yes per act, and the conditions each must pass; none by default | Standing Grants | `none` |

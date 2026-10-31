@@ -91,7 +91,7 @@ row('Verification: every gate in a folded table', verification.includes('<detail
 if (AUDIT_LINE) row('Verification: the audit line keeps its ignores', folded.includes(AUDIT_LINE), `Dependency audit row: ${AUDIT_LINE}`);
 
 const review = section('Review');
-const order = ['Reviewed across', 'Result:', '| Pass |', 'Verified clean and enumerated rather than asserted', 'Scaling:', 'Version alignment: YES.'];
+const order = ['review of `', '| Dimension | Result |', '**High and critical findings:**', '**Deferred:**', '**Accepted risks:**', 'Verified clean and enumerated rather than asserted', 'Scaling:', 'Version alignment: YES.'];
 const at = order.map((s) => review.indexOf(s));
 row('Review parts in order', at.every((n, i) => n > 0 && (i === 0 || n > at[i - 1])), JSON.stringify(at));
 const dims = ['privacy and the PII boundary', 'supply chain and bundle', 'legal content and licensing', 'code security', 'scaling', 'version alignment'];

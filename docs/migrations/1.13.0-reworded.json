@@ -1,0 +1,44 @@
+{
+  "lines": [
+    {
+      "before": "> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A26) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.",
+      "after": "> How we work. Read this FIRST every session. Every rule here is project-independent; per-project values live in the **Project Adapter** module (rule:project-adapter, A1-A27) or a marked `<!-- PROJECT ADAPTER: ... -->` slot, filled when the kit is installed.",
+      "why": "the owner, 2026-10-31: outward acts are the owner's unless a standing grant covers them (Hard Rule 14 reworded, Tier 0, approved by the owner)"
+    },
+    {
+      "before": "**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data); split evidence with no standard to break the tie.",
+      "after": "**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data) that no standing grant covers; split evidence with no standard to break the tie.",
+      "why": "the owner, 2026-10-31: outward acts are the owner's unless a standing grant covers them (Hard Rule 14 reworded, Tier 0, approved by the owner)"
+    },
+    {
+      "before": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts. Nothing reaches the remote, merges or ships without the owner's knowledge, ever** - for Claude and every agent it dispatches. Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.",
+      "after": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.",
+      "why": "the owner, 2026-10-31: outward acts are the owner's unless a standing grant covers them (Hard Rule 14 reworded, Tier 0, approved by the owner)"
+    },
+    {
+      "before": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract and run `approve.mjs` FIRST (rule:sweep-auto-approval; orchestrated: field 11): APPROVED -> post its notice and go; ASK -> show the table and reasons, STOP for the owner. Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.",
+      "after": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs`, run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.",
+      "why": "the owner, 2026-10-31: recall fixes for the strict 1-or-0 scorer (question 7: the swarm contract stops until approved; the role list moves to its one home, rule:agent-role-table, to keep the module under its cap)"
+    },
+    {
+      "before": "The portable playbook is user level: the `agent-team-build` skill (both modes) and role files (`builder` - mid tier, own worktree, cannot start agents; `checker` - top tier, read-only; `orchestrator`, `scanner`). Role files skip CLAUDE.md, so field 8 rides in every brief. **The owner's approval of a batch plan starts the build.**",
+      "after": "The portable playbook is user level: the `agent-team-build` skill (both modes) and role files (rule:agent-role-table). Role files skip CLAUDE.md, so field 8 rides in every brief. **The owner's approval of a batch plan starts the build.**",
+      "why": "the owner, 2026-10-31: recall fixes for the strict 1-or-0 scorer (question 7: the swarm contract stops until approved; the role list moves to its one home, rule:agent-role-table, to keep the module under its cap)"
+    },
+    {
+      "before": "11. **Post-compact / new session = Post-Compact Orientation Protocol first.** Fresh `Read` calls on every file in the handoff's Reading Order BEFORE any source-of-truth edits or agent dispatch. Visible `[x]` checklist with a one-line confirmation per file. System reminders, compaction summaries and memory are NOT substitutes. \"I just re-read\" is forbidden unless the Read tool was actually called this session.",
+      "after": "11. **Post-compact / new session = Post-Compact Orientation Protocol first.** First action: fresh `Read` calls on every file in the handoff's Reading Order BEFORE any source-of-truth edits or agent dispatch. Visible `[x]` checklist with a one-line confirmation per file. System reminders, compaction summaries and memory are NOT substitutes. \"I just re-read\" is forbidden unless the Read tool was actually called this session.",
+      "why": "the owner, 2026-10-31: recall fixes for the strict 1-or-0 scorer (Rule 11: the first action; Rule 12: leave the test; Rule 13: the report summarized in the PR)"
+    },
+    {
+      "before": "12. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST - dump what the code actually produces, compare to spec, then decide. NEVER weaken an assertion, relax a regex, accept \"close enough\", catch exceptions silently, or `.skip()` a test to make it pass. Moving a test's LOOKUP location is allowed only after verifying the implementation's output at the new location. **Test value:** every test guards a real use or a real failure, the way a person, caller or agent uses the code - no fluff to raise counts.",
+      "after": "12. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST and leave the test as is - dump what the code actually produces, compare to spec, then decide. NEVER weaken an assertion, relax a regex, accept \"close enough\", catch exceptions silently, or `.skip()` a test to make it pass. Moving a test's LOOKUP location is allowed only after verifying the implementation's output at the new location. **Test value:** every test guards a real use or a real failure, the way a person, caller or agent uses the code - no fluff to raise counts.",
+      "why": "the owner, 2026-10-31: recall fixes for the strict 1-or-0 scorer (Rule 11: the first action; Rule 12: leave the test; Rule 13: the report summarized in the PR)"
+    },
+    {
+      "before": "13. **Pre-PR Deep Sweep before any substantive PR.** No feature / sub-project PR opens or merges to `main` without a deep multi-agent sweep - an adversarial vulnerability swarm + the 6 Milestone-Sweep dimensions (incl. version-goal alignment) - under an approved Swarm Contract, with its report recorded. Scale to stakes by tier (rule:sweep-tiers): a feature gets the deep sweep, a fix the fix tier, a chore / docs / one-line PR the triage tier. Satisfied ONLY by the agents actually running this session + the report existing - NEVER by a self-review, a recalled prior sweep, or \"it looks fine\".",
+      "after": "13. **Pre-PR Deep Sweep before any substantive PR.** No feature / sub-project PR opens or merges to `main` without a deep multi-agent sweep - an adversarial vulnerability swarm + the 6 Milestone-Sweep dimensions (incl. version-goal alignment) - under an approved Swarm Contract, with its report recorded and summarized in the PR. Scale to stakes by tier (rule:sweep-tiers): a feature gets the deep sweep, a fix the fix tier, a chore / docs / one-line PR the triage tier. Satisfied ONLY by the agents actually running this session + the report existing - NEVER by a self-review, a recalled prior sweep, or \"it looks fine\".",
+      "why": "the owner, 2026-10-31: recall fixes for the strict 1-or-0 scorer (Rule 11: the first action; Rule 12: leave the test; Rule 13: the report summarized in the PR)"
+    }
+  ]
+}

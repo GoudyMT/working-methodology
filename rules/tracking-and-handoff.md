@@ -110,6 +110,7 @@ Why: the recurring drift is treating reminders and the summary as a re-read, the
    [x] _Active Plan.md - Resume Point = Y (matches handoff)
    [x] _Session Log.md latest entry - last session was Z (matches handoff)
    [x] <plan / spec / ADR named by the Resume Point>
+   [x] Not counted as reads: compaction summary, system reminders, memory
    ```
    Each line confirms a match or flags a discrepancy.
 3. Anti-duplication spot-check (2-3 items). 4. ASCII scan. 5. Size-cap table. 6. Log compression check. 7. **Sweep check:** a sub-project COMPLETE without its sweep box, or a branch near a PR without a current report -> sweep first. 8. **Branch check:** work on `main` -> branch first. 9. **Confirm working mode + first action** with the owner before anything beyond Read.

@@ -61,15 +61,21 @@
 
 ### Review
 
-Reviewed across privacy and the data boundary; supply chain and bundle; legal content and licensing; code
-security; <other dimensions>; scaling; and version alignment.
+<Tier> review of `<commit the sweep covered>`.
 
-Result: <no critical and no high findings ...>.
+| Dimension | Result |
+|---|---|
+| Privacy and the data boundary | <clean, or what was found and how it was handled> |
+| Supply chain and bundle | ... |
+| Legal content and licensing | ... |
+| Code security | ... |
+| <other dimensions> | ... |
 
-| Pass | Found | Fixed here | Recorded as follow-ups |
-|---|---|---|---|
-| 1, the build | ... | ... | ... |
-| 2, the re-check | ... | ... | ... |
+- **High and critical findings:** <none, or one line each: what, and how it was handled - fixed here, deferred
+  or accepted>. An unfixed security finding gets its severity and where it is tracked, never its detail.
+- **Deferred:** <none, or each item and where it is tracked: a public issue, or "tracked privately" - never a
+  link to a private file>.
+- **Accepted risks:** <none, or each risk and why it is accepted>.
 
 <details>
 <summary>Verified clean and enumerated rather than asserted</summary>

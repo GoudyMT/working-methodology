@@ -2372,6 +2372,22 @@ test('a project\'s .kit/pr-body.json sets its own gates, audit line and verified
   assert.equal(full.status, 0, full.stdout);
 });
 
+// The Review section carries the sweep summary a reviewer needs (the commit covered, a result per dimension, high and
+// critical findings, deferred items, accepted risks), and never a link to the private report.
+test('the Standard PR audit holds the Review section to the sweep summary and refuses a private report link', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const ok = stdAudit(dir, honestBody());
+  assert.match(ok.stdout, /PASS\s+Review parts in order/);
+  const noTable = stdAudit(dir, honestBody().replace(/\| Dimension \| Result \|\n\|---\|---\|\n(\|.*\n)+/, ''));
+  assert.equal(noTable.status, 1);
+  assert.match(noTable.stdout, /FAIL\s+Review parts in order/);
+  const noCommit = stdAudit(dir, honestBody().replace('Feature review of `9a1d6e20`.', 'Feature review.'));
+  assert.match(noCommit.stdout, /FAIL\s+Review parts in order/);
+  const linked = stdAudit(dir, honestBody().replace('- **Deferred:** none.', '- **Deferred:** see [the report](docs/sweeps/2026-05-14-pin.md).'));
+  assert.equal(linked.status, 1);
+  assert.match(linked.stdout, /FAIL\s+no vault paths/);
+});
+
 // Found in a course project closeout (2026-10-30): the lead sent the coordinator a file path instead of the handoff,
 // and a new session may not read that path. The audit can print the exact text to send, so the step is checkable.
 test('the handoff audit prints the full text to send, and only for a clean handoff', () => {
@@ -2850,4 +2866,22 @@ test('status names a memory index past 6,000 B, which loads in every session', (
   assert.doesNotMatch(s(), /Memory index is/);
   fs.writeFileSync(idx, 'm'.repeat(6001));
   assert.match(s(), /Memory index is 6,001 B \(over 6,000\): turn copied rules into one-line pointers \(rule:kit-standards items 3 and 14\)\./);
+});
+
+// Plan kit-autopilot, Phase 1: outward acts are the owner's unless a standing grant covers them. The rule lives in
+// three always-read places (CLAUDE.md Hard Rule 14, AGENTS.md non-negotiable 6, rule:outward-acts) and one home for
+// its detail (rule:standing-grants); a copy that drops the exception, or a Rule 14 that drifts from the owner's
+// approved words (Tier 0), is the failure this guards.
+test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing grant, and Rule 14 is the owner\'s text', () => {
+  const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s knowledge and go, except under a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
+  assert.ok(read(path.resolve('project/CLAUDE.md')).split('\n').includes(rule14), 'CLAUDE.md Hard Rule 14 is the approved text');
+  const six = read(path.resolve('rules/_parts/agents-head.md')).split('\n').find((l) => l.startsWith('6. '));
+  assert.match(six, /standing grant/i);
+  assert.match(six, /rule:outward-acts/);
+  const core = read(path.resolve('rules/core.md'));
+  const outward = core.slice(core.indexOf('{#outward-acts}'), core.indexOf('{#session-workflow}'));
+  assert.match(outward, /rule:standing-grants/);
+  const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
+  assert.ok(ids.has('standing-grants'), 'rule:standing-grants has its one home');
+  assert.match(read(path.resolve('rules/project-adapter.md')), /^\| A27 \| .*standing grant/im);
 });

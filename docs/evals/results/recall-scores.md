@@ -114,3 +114,61 @@ A fresh install of the 1.11.0 source plus the 1.12.0 commits (standby plugins, r
 - Gate met: level with 1.5.0.
 - Half points: question 4 (offers to hand over the push commands but never names push and PR as the owner's acts); question 7 (the contract goes through approve.mjs, but "stop before the agents run" is only implied).
 - Question 10's "linked in the PR" is still only implied, as at 1.5.0.
+
+## Q10 key corrected; every run re-scored (2026-10-31)
+
+The owner corrected key 10 from "with its report linked in the PR" to "with its report recorded and summarized in the
+PR". The old key tested a rule the kit never had: it came in with the recall test (bb222d9, 2026-10-28), while Rule
+13 has said "report recorded" and the PR template has barred links to private docs since the first version (df9d180,
+2026-10-24). All saved runs were re-scored by one fresh blind scorer, strict 1-or-0 (no half points, nothing implied).
+
+| Run | Strict score |
+|---|---|
+| Kit 1.5.0 | 7 / 10 |
+| Kit 1.12.0 pre-release | 7 / 10 |
+| Kit 1.13.0 pre, run a | 7 / 10 |
+| Kit 1.13.0 pre, run b | 7 / 10 |
+
+- The earlier 9 / 10 figures were lenient (half points or credit for implied items); on the strict scale the kit
+  has been level at 7 since 1.5.0.
+- Every run misses question 3 (the summary is not a re-read) and question 10 (the report summarized in the PR).
+
+## 1.13.0 gate (2026-10-31)
+
+Three fresh installs of the branch with the recall fixes (orientation checklist line, push / PR as the owner's act,
+leave the test, the swarm contract STOP, the Review section carrying the sweep summary), scored strictly by a new
+blind scorer. Gate set by the owner: a median of 9.
+
+| Q | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 1, 2, 4, 5, 7, 8, 9 | 1 | 1 | 1 |
+| 3 | 1 | 0 | 0 |
+| 6 | 1 | 1 | 0 |
+| 10 | 0 | 0 | 0 |
+| Total | 9 | 8 | 7 |
+
+- **Gate not met: median 8.** Question 4 now passes in all three runs (it passed in 1 of 4 before).
+- Question 10 fails in all three: the always-loaded Rule 13 still says only "report recorded"; the summary in the PR
+  lives in the PR template and skill, which a session answering this question does not open.
+- Question 3: run 1 passes; runs 2 and 3 print the checklist with the new "not counted as reads" line but do not
+  state the fresh reads as the first action.
+- Borderline (scorer): Q3 "in the handoff's reading order" is never said outright (strict: run 1 to 0); Q6 run 3
+  reachability (lenient: 1); Q7 all runs describe approve.mjs auto-approval (strict could flip all to 0).
+
+## 1.13.0 gate, rerun (2026-10-31)
+
+After two more fixes in always-loaded text (Rule 11 opens with "First action:"; Rule 13 asks for the report recorded
+and summarized in the PR), three fresh installs, each scored strictly by its own new blind scorer.
+
+| Q | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 1, 2, 4, 5, 6, 7, 8, 9 | 1 | 1 | 1 |
+| 3 | 1 | 0 | 1 |
+| 10 | 0 | 1 | 0 |
+| Total | 9 | 9 | 9 |
+
+- **Gate met: median 9** (9, 9, 9). Session start 45,420 B against the 45,500 B cap.
+- Question 3: run 2 named reminders and memory as not counted but not the compaction summary.
+- Question 10: runs 1 and 3 ended at "PR body to the owner" without saying the summary goes in it.
+- Borderline (scorers): Q3 "before any edit" and "in the handoff's reading order" are shown, not said, in runs 1
+  and 3 (strict could flip to 0); Q4 and Q7 wording near the key in some runs; Q10 "adversarial" not said outright.

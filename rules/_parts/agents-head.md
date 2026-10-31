@@ -12,13 +12,13 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 2. **Code writes gated by Edit Discipline** (rule:edit-discipline). Do not create or "complete" source files from inference alone.
 
-3. **New chat / context limit:** read `_Start Here.md`, this file, `_Loop Learnings.md`, `_Working Memory.md`, `_Active Plan.md`, the last `_Session Log.md` entry. Resume at the **first open issue**. Do not regenerate prior decisions from memory.
+3. **New chat / context limit:** read the Read Order below. Resume at the **first open issue**. Do not regenerate prior decisions from memory.
 
 4. **Privacy and security ABOVE all else.** Every decision is evaluated against the project's data boundary and security baseline. See rule:security-standards and its Project Adapter.
 
 5. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST; never weaken, relax or skip a test to make it pass. See rule:test-integrity.
 
-6. **Outward acts are the owner's.** Push, PR, merge, release and public posts happen only on the owner's go (rule:outward-acts).
+6. **Outward acts are the owner's unless granted.** Push, PR, merge, release and public posts happen only on the owner's go or under a standing grant (rule:outward-acts). Asked to push or open a PR: say it is the owner's act and wait for an explicit yes, even when something else blocks it first.
 
 ---
 
