@@ -2651,3 +2651,11 @@ test('the project map renders one self-contained page with states as words, and 
   fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify({ ...GOOD_MAP, goal: '' }));
   assert.equal(mapRun(dir, ['render', out]).status, 1);
 });
+test('the project map can be checked from a draft file outside the project, with paths still held to the project', () => {
+  const dir = mapRepo(GOOD_MAP);
+  const draft = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'draft-')), 'map.json');
+  fs.writeFileSync(draft, JSON.stringify({ ...GOOD_MAP, parts: [{ ...GOOD_MAP.parts[0], files: ['src/ask', 'src/nope'] }, GOOD_MAP.parts[1]] }));
+  const r = mapRun(dir, ['check', '--map', draft]);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /part ask: src\/nope does not exist/);
+});

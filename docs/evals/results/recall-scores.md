@@ -102,3 +102,15 @@ A fresh install of the 1.5.0 source, scored blind against the revised 1.2.0 answ
 | Kit 1.2.0, revised, rescored | 8 / 10 |
 
 - Gate met: no lower than 1.2.0 under the same scorer. Question 10 (the report linked in the PR) is still missed.
+
+## 1.12.0 pre-release (2026-10-31)
+
+A fresh install of the 1.11.0 source plus the 1.12.0 commits (standby plugins, real start load, craft floor), scored blind by a new scorer.
+
+| Run | Score |
+|---|---|
+| Kit 1.12.0 pre-release | 9 / 10 |
+
+- Gate met: level with 1.5.0.
+- Half points: question 4 (offers to hand over the push commands but never names push and PR as the owner's acts); question 7 (the contract goes through approve.mjs, but "stop before the agents run" is only implied).
+- Question 10's "linked in the PR" is still only implied, as at 1.5.0.

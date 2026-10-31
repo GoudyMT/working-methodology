@@ -7,6 +7,7 @@
 // Usage (from the project folder):
 //   node .claude/project-map.mjs check                 PASS, or every fault (exit 1)
 //   node .claude/project-map.mjs render <out.html>     check, then write one self-contained page
+//   add --map <file> to either to use a draft kept outside the project
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -84,9 +85,12 @@ ${diagram(map)}
 `;
 }
 
-function main([cmd, out]) {
+function main(argv) {
+	// --map <file> checks a draft kept outside the project; its paths are still held to the project folder.
+	const at = argv.indexOf('--map');
+	const [cmd, out] = argv.filter((a, i) => at < 0 || (i !== at && i !== at + 1));
 	const root = process.cwd();
-	const file = path.join(root, MAP);
+	const file = at >= 0 ? path.resolve(argv[at + 1]) : path.join(root, MAP);
 	if (!fs.existsSync(file)) {
 		console.log(`No ${MAP.split(path.sep).join('/')} here. Start one from .claude/kit/project-map-example.json.`);
 		process.exitCode = 1;
