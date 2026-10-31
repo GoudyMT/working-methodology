@@ -1,0 +1,109 @@
+# The kit's merge gate: the unit tests, the scrub, a fresh build and (on a PR) the PR-body audit.
+# Windows, to match the owner's machine: the tests build Windows paths, and a Linux run fails one of them.
+# Actions are pinned to full commit SHAs, so a moved tag cannot change what runs here.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    # "edited" re-runs the PR-body audit when only the body changes.
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kit-tests:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # Vendor paths are long; without this a deep checkout can pass the 260-character Windows limit.
+      - run: git config --global core.longpaths true
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The tests read the v1.1.0 tag, and the version check diffs against main.
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # The hook tests run `sh`; Git for Windows ships it in its bin folder. The temp repos the tests make need a
+      # commit identity.
+      - name: Prepare the shell and git identity
+        shell: pwsh
+        run: |
+          "C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+
+      - name: Unit tests
+        run: node --test tests/kit.test.mjs
+
+      - name: Scrub
+        run: node scripts/kit.mjs scrub
+
+      # The built copies (AGENTS.md, the project rule files) must match their sources.
+      - name: Build is fresh
+        shell: bash
+        run: |
+          node scripts/kit.mjs build
+          git diff --exit-code
+
+      # The local hooks check names at commit and push; a commit made elsewhere (the web, a cloud session) skips
+      # them, so the PR's branch and every commit on it are checked here too.
+      - name: Branch and commit names
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          PR_BASE: origin/${{ github.base_ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node project/.claude/name-check.mjs branch "$HEAD_REF"
+          for c in $(git rev-list --no-merges "$PR_BASE..$PR_HEAD"); do
+            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg.txt"
+            node project/.claude/name-check.mjs message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
+          done
+
+      # Rule text is graded by the recall test, which needs a signed-in session and is run by hand; a PR that
+      # changes the rules must carry its recorded score.
+      - name: Rule changes carry a recall score
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE: origin/${{ github.base_ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed="$(git diff --name-only "$PR_BASE...$PR_HEAD")"
+          if echo "$changed" | grep -qE '^(rules/|project/CLAUDE\.md$)'; then
+            echo "$changed" | grep -qx 'docs/evals/results/recall-scores.md' \
+              || { echo "Rule text changed: record a recall run in docs/evals/results/recall-scores.md"; exit 1; }
+          fi
+
+      # The body and title come in through env, never into the script text, so a PR cannot inject commands.
+      - name: PR body audit
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BASE: origin/${{ github.base_ref }}
+        run: |
+          node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/pr-body.md', process.env.PR_BODY || '')"
+          # A conventional title (feat: ..., chore: ...) is a Lean body; an <Area>: title is a Standard one.
+          if node -e "process.exit(/^[a-z]+(\([^)]*\))?!?: /.test(process.env.PR_TITLE) ? 0 : 1)"; then
+            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
+          else
+            node project/.claude/pr-body-audit.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
+          fi
