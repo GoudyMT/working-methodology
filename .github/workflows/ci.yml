@@ -53,6 +53,22 @@ jobs:
       - name: Scrub
         run: node scripts/kit.mjs scrub
 
+      # The push guard's own proof: every command that must ask asks, every safe one passes.
+      - name: Push guard proof
+        run: node project/.claude/guard-outward-check.cjs
+
+      # Every part the map names exists, every link joins known parts, every "done" has evidence.
+      - name: Project map
+        run: node project/.claude/project-map.mjs check
+
+      # No symlink or junction in the repo points outside it. The scan only reports, so the count decides here.
+      - name: Link scan
+        shell: bash
+        run: |
+          out="$(node project/.claude/link-scan.cjs .)"
+          echo "$out"
+          echo "$out" | grep -q 'links OUTSIDE: 0$'
+
       # The built copies (AGENTS.md, the project rule files) must match their sources.
       - name: Build is fresh
         shell: bash
