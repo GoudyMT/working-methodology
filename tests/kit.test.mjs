@@ -148,6 +148,8 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   fs.writeFileSync(path.join(kit, 'project/leak.md'), 'Ask Pat at pat@example.com in C:\\' + 'Users\\pat - ok \u2192 x\n');
   fs.mkdirSync(path.join(kit, '.github'), { recursive: true });
   fs.writeFileSync(path.join(kit, '.github/CODEOWNERS'), '/rules/core.md @Pat\n');
+  // A worktree's .git is a file naming the main repo's folder: git's own pointer, not the kit's text.
+  fs.writeFileSync(path.join(kit, '.git'), 'gitdir: C:\\' + 'Users\\pat\\kit\\.git\\worktrees\\x\n');
   const hits = scrub({ kit });
   const kinds = hits.filter((h) => h.file === 'project/leak.md').map((h) => h.kind).sort();
   assert.deepEqual(kinds, ['non-ascii', 'path', 'word:Pat', 'word:pat@example.com']);
