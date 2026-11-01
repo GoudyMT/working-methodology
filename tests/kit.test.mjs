@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, measureReal, headings, ledger, build, parseModule, findRules, mainProtection } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -2697,6 +2697,33 @@ test('the kit ships the main branch rule as settings, and status flags an unprot
   assert.match(say('unprotected'), /main is not protected on GitHub/);
   assert.doesNotMatch(say('protected'), /not protected/);
   assert.doesNotMatch(say(null), /not protected/, 'no remote, no gh, or no access: nothing to say');
+});
+
+// The owner, 2026-11-01: main was protected by a ruleset (PR, kit-tests, no force push or deletion) with classic
+// protection removed on purpose, and status still said main is not protected.
+test('a ruleset that gates main counts as protection, not only classic branch protection', () => {
+  const notClassic = { status: 1, stdout: '{"message":"Branch not protected"}', stderr: 'gh: Branch not protected (HTTP 404)' };
+  const gh = (rules) => (args) => {
+    if (args[1] === 'repos/{owner}/{repo}/branches/main/protection') return notClassic;
+    assert.deepEqual(args, ['api', 'repos/{owner}/{repo}/rules/branches/main?per_page=100']);
+    return rules === null ? { status: 1, stdout: '', stderr: 'HTTP 403' } : rules instanceof Error ? { error: rules }
+      : { status: 0, stdout: typeof rules === 'string' ? rules : JSON.stringify(rules), stderr: '' };
+  };
+  const rule = (type) => ({ type, ruleset_id: 1 });
+  assert.equal(mainProtection('.', gh([rule('pull_request'), rule('non_fast_forward')])), 'protected', 'a PR rule');
+  assert.equal(mainProtection('.', gh([rule('required_status_checks')])), 'protected', 'a required check, as the kit rule has');
+  assert.equal(mainProtection('.', gh([rule('update')])), 'protected', 'only bypass actors may update main');
+  // GitHub documents these as merge gates, not as a block on a direct push, so alone they do not count.
+  for (const type of ['workflows', 'merge_queue', 'required_deployments', 'code_scanning']) {
+    assert.equal(mainProtection('.', gh([rule(type)])), 'unprotected', type);
+  }
+  assert.equal(mainProtection('.', gh([rule('deletion'), rule('non_fast_forward')])), 'unprotected', 'no gate on what lands');
+  assert.equal(mainProtection('.', gh([])), 'unprotected');
+  assert.equal(mainProtection('.', gh(null)), null, 'rules unreadable: cannot tell');
+  assert.equal(mainProtection('.', gh(new Error('ETIMEDOUT'))), null, 'rules call timed out: cannot tell');
+  assert.equal(mainProtection('.', gh('<html>')), null, 'rules body not JSON: cannot tell');
+  assert.equal(mainProtection('.', (args) => ({ status: args[1] === 'repos/{owner}/{repo}/branches/main/protection' ? 0 : 1, stdout: '{}', stderr: '' })), 'protected', 'classic protection');
+  assert.equal(mainProtection('.', () => ({ error: new Error('ENOENT') })), null, 'no gh');
 });
 
 // The owner, 2026-10-31: a full stop names the kit folder and the exact install steps, read from the install records.
