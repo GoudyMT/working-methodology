@@ -2325,6 +2325,16 @@ test('after an amend under the first sweep, the re-sweep still lists every file 
 });
 const words12 = ['amber basil cedar', 'delta ember fable', 'garnet hollow iris', 'jasper kettle lumen', 'maple nectar onyx', 'pepper quartz raven', 'saffron timber umber', 'velvet willow xenon', 'yarrow zephyr acorn', 'bramble cobalt dune', 'fennel glacier heron', 'indigo juniper kelp', 'lagoon mosaic nimbus'];
 const ask = (kind, i) => role(kind, `Which ${words12[i]} path does the fix ${i} reach?`, { context: ['src/sync.ts'], budget: 60000 });
+test('a re-sweep\'s copied modifiers do not lift its role cap', () => {
+  const r = sweptAndFixed();
+  const c = resweepContract([ask('security', 0), ask('security', 1), ask('security', 2), ask('content', 3), ask('data-loss', 4),
+    ...[5, 6, 7, 8, 9, 10, 11, 12].map((i) => ask('dimension', i))]);
+  c.modifiers = ['security-sensitive', 'public-text', 'user-data'];
+  assert.equal(c.roles.length, 15);
+  const out = resweep(r, c);
+  assert.equal(out.status, 1, out.stdout);
+  assert.match(out.stdout, /over the feature cap of 10/);
+});
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');
