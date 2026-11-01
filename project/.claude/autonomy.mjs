@@ -147,6 +147,8 @@ function check(act) {
 	// A token kept in a URL is never printed.
 	const shown = (u) => u.replace(/\/\/[^/@]*@/, '//***@');
 	if (!pushUrls.length || pushUrls.some((u) => u !== url)) return ask([`origin reads main from ${shown(url)} but pushes to ${pushUrls.map(shown).join(', ') || 'nowhere'}`]);
+	// The fetch below passes the rewritten URL, and git rewrites it again: it must be one no second rule matches.
+	if (out(git('ls-remote', '--get-url', url)) !== url) return ask([`origin's url ${shown(url)} is rewritten again by a second url rule, so fetch and push could part`]);
 	if (fetch(url, `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
 	const raw = git('show', `${MAIN_REF}:${GRANT_FILE}`);
 	if (raw.status !== 0) return ask([`no grant on origin/main (${GRANT_FILE}): every act asks`]);

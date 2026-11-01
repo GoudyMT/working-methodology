@@ -3195,6 +3195,13 @@ test('the grant check reads main from where origin pushes, and asks when fetch a
   g(both.dir, 'remote', 'set-url', 'origin', 'https://example.invalid/repo.git');
   g(both.dir, 'config', `url.${both.bare}.insteadOf`, 'https://example.invalid/repo.git');
   askOn(both, /auto-eligible \(advisory\): 0\/10/);
+  // The commit review of the rewrite change: get-url rewrites once, and a fetch by that URL rewrites again, so a
+  // second rule matching the rewritten URL sends the fetch elsewhere while the push goes to the first.
+  const twice = autonomyRepo();
+  g(twice.dir, 'remote', 'set-url', 'origin', 'https://example.invalid/repo.git');
+  g(twice.dir, 'config', `url.${twice.bare}.insteadOf`, 'https://example.invalid/repo.git');
+  g(twice.dir, 'config', `url.${fakeOf(twice)}.insteadOf`, twice.bare);
+  askOn(twice, /rewritten again/);
   const mirror = autonomyRepo();
   g(mirror.dir, 'remote', 'set-url', '--push', 'origin', mirror.bare);
   g(mirror.dir, 'remote', 'set-url', '--add', '--push', 'origin', fakeOf(mirror));
