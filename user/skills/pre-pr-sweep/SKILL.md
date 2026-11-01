@@ -36,7 +36,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
    and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
-   (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
+   (rule:agent-canary) and names the contract's full path, as the start notice prints it: the guard decides by it.
+   Findings go through rule:finding-pipeline; receive them per
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's

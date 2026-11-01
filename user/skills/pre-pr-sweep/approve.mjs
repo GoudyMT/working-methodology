@@ -382,6 +382,7 @@ function notice(c, need, since) {
 		`    Budget: ${n(budgetOf(c))} of the ${n(caps(String(c.tier).toLowerCase()).maxTotalBudget)} cap`,
 		`    Modifiers claimed: ${(Array.isArray(c.modifiers) && c.modifiers.length ? c.modifiers : ['none']).join(', ')}`,
 		`    Floor met: ${[...Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`), ...(since ? [`every file changed since the ${since} named by a role`] : [])].join(', ') || 'none for this tier'}`,
+		`    Each reviewer brief names its contract: ${contractFile}`,
 		'    Findings come when the sweep finishes.',
 	].join('\n');
 }
@@ -397,7 +398,7 @@ function ownerYes() {
 	if (!last || last.decision !== 'owner') { console.log('The script did not send this contract to the owner, so there is no ask to answer. Run approve.mjs on it first.'); return 1; }
 	if (last.hash !== sha(raw) || last.head !== head) { console.log('The contract or HEAD changed since the script asked. Run approve.mjs again, then ask the owner.'); return 1; }
 	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, words: said });
-	console.log("The owner's yes is logged; the reviewers may start.");
+	console.log(`The owner's yes is logged; the reviewers may start, each brief naming its contract: ${contractFile}`);
 	return 0;
 }
 

@@ -5,10 +5,10 @@
 //
 // PreToolUse on Agent and Task; only the reviewer type is gated. The log is approve.mjs's own
 // (<git common dir>/kit-sweep-approvals.jsonl), each line chained to the one before; a line that breaks the chain
-// clears nothing. HEAD is read from the contract's own folder, so a sweep run from a worktree is judged by that
-// worktree, and a checkout with sweeps of its own is judged by its own lines only. A cleared contract lets in at
-// most as many reviewers as it has roles (counted in kit-sweep-starts/ next to the log). Outside a git repository
-// there is no log, so the call goes through.
+// clears nothing. The reviewer's brief names its contract's path, and only that contract's lines decide; HEAD is read
+// from the contract's own folder, so a sweep run from a worktree is judged by that worktree, from any checkout. A
+// cleared contract lets in at most as many reviewers as it has roles (counted in kit-sweep-starts/ next to the log).
+// Outside a git repository there is no log, so the call goes through.
 // It stops slips, not a determined workaround: a carefully forged log line passes it.
 const fs = require('fs');
 const path = require('path');
@@ -28,19 +28,21 @@ function main() {
 	const dir = common.stdout.trim();
 	const file = path.join(dir, 'kit-sweep-approvals.jsonl');
 	const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
-	// The log is shared by every worktree of the repo. A checkout with sweeps of its own is judged by its own lines only:
-	// taking the newest line from any worktree once let a worktree whose contract was refused start reviewers on
-	// another's approval. A checkout with none (the lead's session in the main checkout) still reads them all.
-	const top = (cwd) => git(cwd, 'rev-parse', '--show-toplevel').stdout.trim().toLowerCase();
-	const here = top(input.cwd || process.cwd());
-	const tops = lines.map((l) => { try { const e = JSON.parse(l); return typeof e.contract === 'string' ? top(path.dirname(e.contract)) : null; } catch { return null; } });
-	const own = tops.includes(here);
-	// The latest decision or owner's yes whose contract's checkout is still at the HEAD it was cleared for decides.
+	// The log is shared by every worktree of the repo, so the checkout a reviewer starts from says nothing about which
+	// sweep it serves: judged by the caller's checkout, a worktree that never ran the script started reviewers on
+	// another's approval, and a lead in the main checkout was refused a worktree's approved team. The brief names its
+	// contract (any case, either slash), and only that contract's lines decide.
+	const spell = (p) => String(p).replace(/\\/g, '/').toLowerCase();
+	const brief = spell((input.tool_input || {}).prompt || '');
+	const named = (e) => typeof e.contract === 'string' && brief.includes(spell(e.contract));
+	// The latest decision or owner's yes for the named contract, with its checkout still at the HEAD it was cleared
+	// for, decides.
+	let any = false;
 	for (let i = lines.length - 1; i >= 0; i--) {
 		let e;
 		try { e = JSON.parse(lines[i]); } catch { continue; }
-		if ((e.kind !== 'decision' && e.kind !== 'owner-yes') || typeof e.contract !== 'string') continue;
-		if (own && tops[i] !== here) continue;
+		if ((e.kind !== 'decision' && e.kind !== 'owner-yes') || !named(e)) continue;
+		any = true;
 		if (e.prev !== (i ? sha(lines[i - 1]) : '')) continue;
 		if (!e.head || git(path.dirname(e.contract), 'rev-parse', '--short', 'HEAD').stdout.trim() !== e.head) continue;
 		let raw = null;
@@ -59,6 +61,7 @@ function main() {
 		}
 		return deny(`The cleared contract has ${team} reviewer role(s), and all have started. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
 	}
+	if (!any) return deny(`The brief names no Swarm Contract approve.mjs has seen: name the Swarm Contract's path in the reviewer brief, as the start notice prints it. ${RUN_FIRST}`);
 	return deny(`No cleared Swarm Contract at its checkout's current HEAD. ${RUN_FIRST}`);
 }
 

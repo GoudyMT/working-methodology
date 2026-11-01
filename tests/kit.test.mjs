@@ -2005,8 +2005,9 @@ test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, 
 // Found in a course project (2026-10-30): the lead asked the owner to approve a sweep team before running the
 // script, and the owner approved a team that broke the security floor. The script now runs first and writes the
 // owner's notice from checked data, and a guard refuses a reviewer agent until the log clears this HEAD.
-const sweepGuard = (dir, extra = {}) => {
-  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review' }, ...extra });
+// A reviewer start whose brief names its contract, by default the one approveRun writes in dir.
+const sweepGuard = (dir, extra = {}, contract = path.join(dir, 'docs', 'sweeps', 'contract.json')) => {
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: `Review under the Swarm Contract ${contract}.` }, ...extra });
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
 test('an approval prints the owner\'s start notice from checked data, not a hand count', () => {
@@ -2099,7 +2100,7 @@ test('a re-sweep that names every file the fixes changed is approved without the
   const line = approvalLog(r.dir).pop();
   assert.equal(line.decision, 'approved');
   assert.equal(line.resweepOf, approvalLog(r.dir).find((e) => e.kind === 'decision' && e.contract === r.f).time);
-  assert.equal(sweepGuard(r.dir).permissionDecision, 'allow', 'the guard lets its reviewers start');
+  assert.equal(sweepGuard(r.dir, {}, ok.f).permissionDecision, 'allow', 'the guard lets its reviewers start');
   // The control: drop the role that names the test file, and the script asks, naming the file.
   const r2 = sweptAndFixed();
   const short = resweepContract();
@@ -2762,7 +2763,7 @@ test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sw
   fs.mkdirSync(path.join(wt, 'docs', 'sweeps'), { recursive: true });
   const r = approveRun(featureContract(), wt);
   assert.equal(r.status, 0, r.stdout);
-  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
+  assert.equal(sweepGuard(dir, {}, r.f).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
 });
 // Found in the review of the re-sweep (2026-11-01, reproduced first): the guard took the newest cleared line from any
 // worktree, so a worktree whose own contract was refused started reviewers on another worktree's approval, and used
@@ -2779,6 +2780,30 @@ test('the sweep guard judges a worktree by its own sweeps, never another worktre
   assert.equal(approveRun(featureContract(), x).status, 0);
   assert.equal(sweepGuard(y).permissionDecision, 'deny', 'the refused worktree starts no reviewer');
   for (let i = 0; i < 5; i++) assert.equal(sweepGuard(x).permissionDecision, 'allow', `the approved worktree's reviewer ${i + 1}`);
+});
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): judging a reviewer start by the checkout
+// it was made from failed both ways. A worktree that never ran approve.mjs started reviewers on another checkout's
+// approval and used up its slots, and a lead in the main checkout that had once logged a sweep of its own was refused
+// a worktree's approved team. The brief names its contract, and only that contract's lines decide.
+test('the sweep guard judges a reviewer start by the contract its brief names, from any checkout', () => {
+  const x = sweepRepo();
+  const r = approveRun(featureContract(), x);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(sweepGuard(x, {}, 'none named').permissionDecisionReason, /name the Swarm Contract's path in the reviewer brief/, 'a brief naming no contract');
+  const w = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'wt');
+  g(x, 'worktree', 'add', '-q', '-b', 'feat/w', w, 'main');
+  fs.writeFileSync(path.join(w, 'w.ts'), 'w\n');
+  commitAll(w, 'feat: w', true);
+  assert.equal(sweepGuard(w).permissionDecision, 'deny', 'a worktree that never ran the script');
+  for (let i = 0; i < 5; i++) assert.equal(sweepGuard(x).permissionDecision, 'allow', `the approved team keeps its slot ${i + 1}`);
+  // The lead's main checkout has a sweep of its own; the worktree's approved team still starts from it, the path
+  // written either way.
+  assert.equal(outcome(r).status, 0);
+  fs.mkdirSync(path.join(w, 'docs', 'sweeps'), { recursive: true });
+  const wr = approveRun(featureContract(), w);
+  assert.equal(wr.status, 0, wr.stdout);
+  assert.equal(sweepGuard(x, {}, wr.f).permissionDecision, 'allow', 'from the main checkout');
+  assert.equal(sweepGuard(x, {}, wr.f.split(path.sep).join('/').toUpperCase()).permissionDecision, 'allow', 'forward slashes, other case');
 });
 // Found in the sweep of the re-sweep (2026-11-01; old code): a worktree removed before its sweep's outcome was logged
 // wedged every other worktree, because --outcome looked for the log from the removed folder.
