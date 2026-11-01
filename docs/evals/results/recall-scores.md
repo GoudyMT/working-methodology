@@ -215,3 +215,23 @@ git-and-release) on three fresh installs from `ed7d1e2`, each scored strictly by
 - Borderline (scorers): a lenient reading passes Q3 and Q10 in every run that missed them; Q4 says "your yes", not
   "explicit yes", in all three.
 - Follow-up: the always-loaded wording behind Q3, Q7 and Q10 goes to its own change, with its own recall run.
+
+## Sweep loop gate (2026-11-01)
+
+The sweep loop rule (one sweep, one short re-sweep of what the fixes touched, no third; `approve.mjs --resweep`) on
+three fresh installs, each scored strictly by its own new blind scorer.
+
+| Q | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 1, 2, 4, 5, 6, 8, 9 | 1 | 1 | 1 |
+| 3 | 1 | 0 | 1 |
+| 7 | 1 | 0 | 1 |
+| 10 | 0 | 0 | 0 |
+| Total | 9 | 7 | 9 |
+
+- **Gate met: median 9.**
+- Q10, all three runs: the sweep report is recorded, but none says the PR summarizes it (the same gap as the last
+  two reviews; the rule text this change touched does not carry it).
+- Q7 run 2: the answer let an APPROVED contract start the agents without the owner's yes (the rule's design since
+  1.5.0); its scorer marked the owner's stop missing. Q3 run 2: the read-before-edit rule was acted out, not stated.
+- Borderline (scorers): Q3 "before any edit" only implied in runs 1 and 3; Q7 wording near the key in runs 1 and 3.
