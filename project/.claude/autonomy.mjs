@@ -43,11 +43,13 @@ const fetch = (url, refspec, ...opts) => git('-c', 'protocol.ext.allow=never', '
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const lf = (s) => s.replace(/\r\n/g, '\n');
 // Every value printed to the owner's terminal comes from the ledger, the act name or git, and any of them can carry
-// bytes the terminal acts on (ESC moves the cursor and can write the clipboard). Control characters (C0, DEL, C1) and
-// the invisible and direction-changing marks print as "?".
-const clean = (s) => [...String(s ?? '')].map((ch) => {
+// bytes the terminal acts on (ESC moves the cursor and can write the clipboard). Control characters (C0, DEL, C1),
+// the direction marks, the line and paragraph separators and the invisible marks print as "?"; the zero-width joiner
+// and non-joiner stay, since emoji, Persian and Hindi text need them. A value that is not text prints as "?".
+const MARKS = [[0xad, 0xad], [0x61c, 0x61c], [0x180e, 0x180e], [0x200b, 0x200b], [0x200e, 0x200f], [0x2028, 0x202e], [0x2060, 0x2064], [0x2066, 0x2069], [0xfeff, 0xfeff]];
+const clean = (s) => (typeof s === 'string' || typeof s === 'number' || s == null ? [...String(s ?? '')] : ['?']).map((ch) => {
 	const c = ch.codePointAt(0);
-	return c < 0x20 || (c >= 0x7f && c < 0xa0) || (c >= 0x200b && c <= 0x200f) || (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069) ? '?' : ch;
+	return c < 0x20 || (c >= 0x7f && c < 0xa0) || MARKS.some(([a, b]) => c >= a && c <= b) ? '?' : ch;
 }).join('');
 const top = real(out(git('rev-parse', '--show-toplevel')) || process.cwd());
 const LEDGER = path.join(out(git('rev-parse', '--path-format=absolute', '--git-common-dir')) || path.join(top, '.git'), 'kit-autonomy-ledger.jsonl');

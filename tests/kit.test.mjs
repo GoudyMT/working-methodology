@@ -3095,14 +3095,16 @@ test('the owner\'s verdict prompt shows only a check line it verified, and refus
   const good = ownerVerdict(r, 'hit', lastCheck(r).head.slice(0, 7));
   assert.equal(good.status, 0, good.stdout + good.stderr);
   assert.match(good.stdout, /hit logged; auto-eligible \(advisory\): 1\/10/);
-  for (const head of ['', 'f'.repeat(40)]) {
+  const ESC = String.fromCharCode(27);
+  for (const [head, script] of [['', 'go'], ['f'.repeat(40), 'go'], ['HEAD', 'go'], [null, `ask${ESC}[2K\rGO`]]) {
     const forged = autonomyRepo();
     askOn(forged, /0\/10/);
-    appendChained(forged, { kind: 'check', act: 'release', base: lastCheck(forged).base, head, script: 'go', reasons: [] });
-    const out = ownerVerdict(forged, 'hit', head.slice(0, 7));
+    appendChained(forged, { kind: 'check', act: 'release', base: lastCheck(forged).base, head: head ?? lastCheck(forged).head, script, reasons: [] });
+    const out = ownerVerdict(forged, 'hit', lastCheck(forged).head.slice(0, 7));
     assert.notEqual(out.status, 0, `head "${head}"`);
     assert.match(out.stdout, /cannot be verified/);
     assert.doesNotMatch(out.stdout, /logged|script said/);
+    assert.deepEqual(controls(out.stdout), []);
   }
   askOn(r, /1\/10/);
   fs.appendFileSync(ledgerFile(r), JSON.stringify({ kind: 'check', act: 'release', head: lastCheck(r).head, script: 'go', reasons: [], prev: 'x' }) + '\n');
@@ -3129,6 +3131,23 @@ test('every ledger field is cleaned before it is printed, and a line that is not
   assert.match(status.stdout, /changed by hand/);
   assert.doesNotMatch(status.stdout, /check failed/);
   askOn(r, /changed by hand/);
+});
+// The fix check: the cleaning missed C1 and DEL in its tests, let some direction and invisible marks through, hid the
+// joiners real text needs (emoji, Persian, Hindi), and a non-text act in a ledger line crashed status.
+test('the cleaning covers every control, direction and invisible mark, keeps joiners, and a non-text act does not crash status', () => {
+  const marks = [0x9b, 0x7f, 0x202e, 0x200b, 0x2066, 0x61c, 0x2028, 0x2029, 0x2060, 0xfeff, 0xad];
+  const joiner = 'dev' + String.fromCodePoint(0x1f469, 0x200d, 0x1f4bb);
+  const r = autonomyRepo();
+  askOn(r, /0\/10/);
+  appendChained(r, { kind: 'check', act: 'release', base: lastCheck(r).base, head: lastCheck(r).head, script: 'ask', reasons: [`x${String.fromCodePoint(...marks)}y`, joiner] });
+  const prompt = ownerVerdict(r, 'hit', 'nope').stdout;
+  assert.match(prompt, /script said ASK/);
+  for (const m of marks) assert.ok(!prompt.includes(String.fromCodePoint(m)), `U+${m.toString(16)} printed`);
+  assert.ok(prompt.includes(joiner), 'a joined emoji prints as written');
+  appendChained(r, { kind: 'verdict', act: { toString: 1 }, verdict: 'hit', check: 'x' });
+  const status = autonomy(r, ['status']);
+  assert.equal(status.status, 0, status.stdout);
+  assert.doesNotMatch(status.stdout, /check failed/);
 });
 // The fix check: one damaged line (an editor's line endings, a crash mid-write) locked the owner out of verdicts for
 // good, blamed a hand edit, and never said where the ledger is.
