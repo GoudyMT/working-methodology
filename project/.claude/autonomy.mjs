@@ -5,14 +5,14 @@
 // The grant and this script are read from main on the remote; the evidence (tests, scrub, the new test failing on main
 // and passing here, today's releases) is run or counted here, never read from a claim; the kill switch sits outside
 // every repo, in the Claude config folder. A branch that touches the grant, the gates or Tier 0 rule text always asks.
-// Trust is earned per act: each check is logged with the script's verdict, the owner logs theirs from their own
-// terminal, and only after 10 straight hits (the owner agreed with the script) does an act run without the owner;
-// one miss puts it back to verify.
+// Each check is logged with the script's verdict and the owner logs theirs; 10 straight hits (the owner agreed with
+// the script) make an act auto-eligible, one miss resets it. The streak is advisory: verdicts are not yet signed, so
+// every act still asks (rule:standing-grants).
 //
 // Usage (from inside the repo):
-//   node .claude/autonomy.mjs check <act>                        GO (exit 0) or ASK (exit 1), logged
+//   node .claude/autonomy.mjs check <act>                        ASK (exit 1) with the script's verdict, logged
 //   KIT_OWNER_VERDICT=1 node .claude/autonomy.mjs verdict <act> hit|miss   the owner, in their own terminal
-//   node .claude/autonomy.mjs status                             each act's streak
+//   node .claude/autonomy.mjs status                             each act's advisory streak
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,7 +48,7 @@ const SWITCHES = [...new Set([path.join(os.homedir(), '.claude'), process.env.KI
 const MAIN_REF = 'refs/kit/main';
 
 // The ledger: one JSON line per check and per owner verdict, each chained to the line before, so a line written by
-// hand shows (a careful forger is not stopped; the owner reads the ledger when giving verdicts).
+// hand shows (a careful forger is not stopped, which is why the streak is advisory).
 function ledger() {
 	const lines = fs.existsSync(LEDGER) ? fs.readFileSync(LEDGER, 'utf8').split('\n').filter(Boolean) : [];
 	const log = lines.map((l) => { try { return JSON.parse(l); } catch { return { kind: 'broken' }; } });
@@ -149,9 +149,9 @@ function check(act) {
 	const s = streak(act);
 	append({ kind: 'check', act, base, head, script, reasons });
 	if (script === 'ask') return ask(reasons);
-	if (s < STREAK) return ask([`verify mode: ${s} of ${STREAK} straight hits; the script says GO for ${act} at ${head.slice(0, 7)}`]);
-	console.log(`GO ${act} at ${head.slice(0, 7)} (${s} straight owner-confirmed hits)`);
-	return 0;
+	// The streak is advisory: anyone who can write the git folder can write a well-chained verdict, so even 10 of 10
+	// asks. An act skips the prompt only once verdicts are signed with a touch-required key and streak() verifies them.
+	return ask([`auto-eligible (advisory): ${Math.min(s, STREAK)}/${STREAK}; the script says GO for ${act} at ${head.slice(0, 7)}`]);
 }
 
 // One line typed at the terminal, read without a prompt library.
@@ -163,10 +163,9 @@ function typed() {
 }
 
 function verdict(act, v) {
-	// The owner's own terminal: an AI tool's shell is marked and has no keyboard, so an env flag is not enough; the
-	// owner also types the short SHA of the check they judged. This stops a tool by accident or by habit, not a
-	// determined one on the owner's machine: a deny rule for this command in the tool's settings closes that.
-	const usage = 'Only the owner gives a verdict, from their own terminal: KIT_OWNER_VERDICT=1 node .claude/autonomy.mjs verdict <act> hit|miss';
+	// The env flags, the terminal check and the typed short SHA stop a tool by accident or by habit. They do not prove
+	// the owner typed the verdict: a tool can clear the flags and open a terminal of its own.
+	const usage = 'A verdict is the owner\'s, typed in their own terminal: KIT_OWNER_VERDICT=1 node .claude/autonomy.mjs verdict <act> hit|miss';
 	if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_VERDICT !== '1' || !process.stdin.isTTY) {
 		console.log(usage);
 		return 1;
@@ -179,14 +178,14 @@ function verdict(act, v) {
 	process.stdout.write(`${act} at ${check.head.slice(0, 7)}: the script said ${check.script.toUpperCase()}${check.reasons.length ? ` (${check.reasons.join('; ')})` : ''}.\nType ${check.head.slice(0, 7)} to log "${v}": `);
 	if (typed() !== check.head.slice(0, 7)) { console.log('Not logged.'); return 1; }
 	append({ kind: 'verdict', act, verdict: v, check: check.time });
-	console.log(`${act}: ${v} logged; ${streak(act)} of ${STREAK} straight hits`);
+	console.log(`${act}: ${v} logged; auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
 	return 0;
 }
 
 function status() {
 	const { log, broken } = ledger();
 	if (broken) console.log('the ledger was changed by hand');
-	for (const act of [...new Set(log.filter((e) => e.act).map((e) => e.act))]) console.log(`${act}: ${streak(act)} of ${STREAK} straight hits (${streak(act) >= STREAK ? 'auto' : 'verify'})`);
+	for (const act of [...new Set(log.filter((e) => e.act).map((e) => e.act))]) console.log(`${act}: auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
 	return 0;
 }
 

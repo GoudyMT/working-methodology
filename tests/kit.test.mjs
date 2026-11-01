@@ -2944,8 +2944,8 @@ test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing gran
 });
 
 // Plan kit-autopilot, Phase 2: the standing-grant check. Every condition is checked by the script itself, from main
-// on the remote, and anything missing, odd or unproven means ask the owner. An act runs on its own only after 10
-// straight owner-confirmed hits; one miss sends it back to verify.
+// on the remote, and anything missing, odd or unproven means ask the owner. The streak of owner verdicts is
+// advisory: no act runs on its own until verdicts are signed with a touch-required key.
 const AUTONOMY = path.resolve('project/.claude/autonomy.mjs');
 const GRANT = {
   version: 1,
@@ -3007,7 +3007,7 @@ test('the grant check finds itself on main when the repo path comes as a Windows
   assert.notEqual(short.toLowerCase(), r.dir.toLowerCase(), 'the fixture path has a short name to test with');
   const out = spawnSync('node', ['.claude/autonomy.mjs', 'check', 'release'], { encoding: 'utf8', cwd: short, env: { PATH: process.env.PATH, KIT_CLAUDE_HOME: r.home } });
   assert.doesNotMatch(out.stdout, /differs from origin\/main/, `run from ${short}`);
-  assert.match(out.stdout, /verify mode: 0 of 10 straight hits/);
+  assert.match(out.stdout, /auto-eligible \(advisory\): 0\/10/);
 });
 test('the grant check asks while the kill switch outside the repo exists', () => {
   const r = autonomyRepo();
@@ -3042,29 +3042,39 @@ test('the grant check counts today\'s release tags on the remote against the cap
   for (const t of ['v1.0.1', 'v1.0.2', 'v1.0.3']) { g(r.dir, 'tag', t, 'main'); g(r.dir, 'push', '-q', '--no-verify', 'origin', t); }
   askOn(r, /release cap: 3 of 3 releases today/);
 });
-test('an act stays in verify until 10 straight owner-confirmed hits, and one miss sends it back', () => {
+// A verdict line is as the terminal writes it: chained to the line before and naming the check it judges. Anyone who
+// can write the git folder can write one, so the streak it builds is advisory and never skips the owner's yes.
+const ledgerFile = (r) => path.join(r.dir, '.git', 'kit-autonomy-ledger.jsonl');
+const appendVerdict = (r, v) => {
+  const lines = read(ledgerFile(r)).split('\n').filter(Boolean);
+  const check = lines.map((l) => JSON.parse(l)).filter((e) => e.kind === 'check').pop();
+  const prev = createHash('sha256').update(lines[lines.length - 1]).digest('hex');
+  fs.appendFileSync(ledgerFile(r), JSON.stringify({ kind: 'verdict', act: 'release', verdict: v, check: check.time, time: new Date().toISOString(), prev }) + '\n');
+};
+test('the streak counts owner verdicts but is advisory: 10 of 10 still asks, and one miss resets it', () => {
   const r = autonomyRepo();
-  const first = askOn(r, /verify mode: 0 of 10 straight hits/);
+  const first = askOn(r, /auto-eligible \(advisory\): 0\/10/);
   assert.match(first.stdout, /script says GO/);
-  // A verdict needs the owner's own terminal: an env flag alone, from any shell a tool runs, is refused.
+  // The env and terminal checks stop a tool by accident or habit; they do not prove the owner typed the verdict.
   for (const env of [{ CLAUDECODE: '1' }, { AI_AGENT: 'x' }, {}, { KIT_OWNER_VERDICT: '1' }]) assert.notEqual(autonomy(r, ['verdict', 'release', 'hit'], env).status, 0, JSON.stringify(env));
-  // The owner's verdict as the terminal writes it: a chained ledger line naming the check it judges.
-  const file = path.join(r.dir, '.git', 'kit-autonomy-ledger.jsonl');
-  const owner = (v) => {
-    const lines = read(file).split('\n').filter(Boolean);
-    const check = lines.map((l) => JSON.parse(l)).filter((e) => e.kind === 'check').pop();
-    const prev = createHash('sha256').update(lines[lines.length - 1]).digest('hex');
-    fs.appendFileSync(file, JSON.stringify({ kind: 'verdict', act: 'release', verdict: v, check: check.time, time: new Date().toISOString(), prev }) + '\n');
-  };
-  owner('hit');
-  for (let i = 1; i < 10; i++) { askOn(r, new RegExp(`verify mode: ${i} of 10 straight hits`)); owner('hit'); }
-  const go = autonomy(r, ['check', 'release']);
-  assert.equal(go.status, 0, go.stdout);
-  assert.match(go.stdout, /^GO release/m);
-  owner('miss');
-  askOn(r, /verify mode: 0 of 10 straight hits/);
-  fs.appendFileSync(file, JSON.stringify({ kind: 'verdict', act: 'release', verdict: 'hit' }) + '\n');
+  appendVerdict(r, 'hit');
+  for (let i = 1; i < 10; i++) { askOn(r, new RegExp(`auto-eligible \\(advisory\\): ${i}/10`)); appendVerdict(r, 'hit'); }
+  const full = askOn(r, /auto-eligible \(advisory\): 10\/10/);
+  assert.doesNotMatch(full.stdout, /^GO/m);
+  appendVerdict(r, 'miss');
+  askOn(r, /auto-eligible \(advisory\): 0\/10/);
+  fs.appendFileSync(ledgerFile(r), JSON.stringify({ kind: 'verdict', act: 'release', verdict: 'hit' }) + '\n');
   askOn(r, /ledger was changed by hand/);
+});
+// The security review of the streak: the ledger lives in the git folder and its chain has no secret, so a session can
+// write ten well-chained hits without the owner. Until verdicts are signed with a touch-required key, that buys no GO.
+test('a forged ledger with 10 well-chained hits still asks', () => {
+  const r = autonomyRepo();
+  askOn(r, /auto-eligible \(advisory\): 0\/10/);
+  for (let i = 0; i < 10; i++) appendVerdict(r, 'hit');
+  const out = askOn(r, /auto-eligible \(advisory\): 10\/10/);
+  assert.doesNotMatch(out.stdout, /^GO/m);
+  assert.doesNotMatch(out.stdout, /ledger was changed by hand/, 'the forgery is well chained, so only the advisory streak stops it');
 });
 test('a fresh project install ships no grant, so every act asks', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nogrant-'));
