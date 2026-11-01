@@ -140,9 +140,12 @@ function depsChanged(base, file) {
 }
 
 // The project's sweep folder (adapter A22: the "Sweep reports" line of its CLAUDE.md), as a path from the repo's top
-// ending in /. Contracts live there and nowhere else, and it is the one folder the floor leaves out: a contract saved
-// in src/ once took src/ out of the floor with it. A project with no adapter line (the kit's own repo) names it as
-// "folder" in .kit/sweep-approval.json.
+// ending in /. Contracts live there and nowhere else. Only its sweep files - dated reports (YYYY-MM-DD-<name>.md, the
+// rule's report name) and contracts (JSON with a roles list) - are left out of the floor and of the uncommitted-work
+// check; anything else in it stays in: a contract saved in src/ once took src/ out of the floor, and a git-ignored
+// CLAUDE.local.md naming rules/ took the rules out with no trace in any diff. It is read from the working copy, since
+// the kit keeps CLAUDE.md out of git. A project with no adapter line (the kit's own repo) names it as "folder" in
+// .kit/sweep-approval.json.
 const SWEEP_LINE = /\*\*Sweep reports:\*\*\s*`<?([^`>]+)>?`/;
 const asFolder = (s) => s.trim().replace(/\\/g, '/').replace(/^\.?\/+/, '').replace(/\/*$/, '/');
 function sweepFolder() {
@@ -159,8 +162,15 @@ function sweepFolder() {
 	} catch { /* no project settings */ }
 	return 'docs/sweeps/';
 }
-// However it was named, a folder holding tracked code is never a sweep folder: it would leave that code out of the floor.
-const codeIn = (folder) => git('ls-files', '--full-name', '--', `:(top)${folder}`).stdout.split('\n').filter((f) => f && !/\.(md|json)$/i.test(f));
+// A sweep file, by its path from the top and its text (null when unreadable).
+const DATED_REPORT = /^\d{4}-\d{2}-\d{2}-[^/]+\.md$/i;
+const sweepFile = (folder, f, text) => {
+	if (!f.startsWith(folder) || f.slice(folder.length).includes('/')) return false;
+	if (DATED_REPORT.test(f.slice(folder.length))) return true;
+	try { return /\.json$/i.test(f) && Array.isArray(JSON.parse(text).roles); } catch { return false; }
+};
+// However it was named, a folder holding tracked code is never a sweep folder. A .gitkeep is not code.
+const codeIn = (folder) => git('ls-files', '--full-name', '--', `:(top)${folder}`).stdout.split('\n').filter((f) => f && !/\.(md|json)$/i.test(f) && path.posix.basename(f) !== '.gitkeep');
 const inSweepFolder = (file) => {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	const rel = toPosix(path.relative(top, file));
@@ -176,9 +186,12 @@ function diffFacts(want = opt('--base')) {
 	const all = names('ACDMRT');
 	const added = names('A');
 	const lines = git('diff', '--no-renames', '--no-relative', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
-	// Work not yet committed would not be in the diff the floor reads; only the sweep folder is left out.
+	// Work not yet committed would not be in the diff the floor reads; only the sweep folder's sweep files are left out.
 	const folder = sweepFolder();
-	const dirty = git('status', '--porcelain', '--', ':(top)', `:(top,exclude)${folder}`).stdout.split('\n').filter(Boolean);
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
+	const readNow = (f) => { try { return fs.readFileSync(path.join(top, f), 'utf8'); } catch { return null; } };
+	const dirty = git('-c', 'status.relativePaths=false', '-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all', '--', ':(top)')
+		.stdout.split('\n').filter((l) => l && !sweepFile(folder, l.slice(3), readNow(l.slice(3))));
 	return {
 		base,
 		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
@@ -321,7 +334,9 @@ function resweepOf(c, s, parentFile) {
 		anchor = fork.stdout.trim();
 	}
 	const facts = diffFacts(anchor);
-	const files = facts ? facts.files.filter((f) => !f.startsWith(facts.folder)) : [];
+	// Every file a fix changed but the sweep folder's sweep files, read as committed.
+	const atHead = (f) => { const r = git('show', `HEAD:${f}`); return r.status === 0 ? r.stdout : null; };
+	const files = facts ? facts.files.filter((f) => !sweepFile(facts.folder, f, atHead(f))) : [];
 	// A context entry names a file by its path (a trailing :line or note allowed) or, standing alone, a folder ending in
 	// /, which covers the files at most two levels below it: "src/" does not stand for a whole tree, and a note such as
 	// "src/ is out of scope" names nothing. Windows separators count.

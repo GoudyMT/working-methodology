@@ -2221,6 +2221,44 @@ test('a contract outside the sweep folder is refused, and only the sweep folder 
   assert.equal(approveIn(dir, [f]).status, 0);
   assert.match(approveRun(featureContract(), dir).stdout, /not in the sweep folder \(reviews\/, adapter A22\)/);
 });
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): a git-ignored CLAUDE.local.md naming
+// rules/ or .claude/ as the sweep folder took their tracked files out of the re-sweep's floor, with no trace in any
+// diff. Reading the folder from git instead broke every kit-local project, which keeps CLAUDE.md out of git (found
+// by the fix check). The folder is still read from the working copy; it only excuses uncommitted work, and no
+// tracked file a fix changed is ever left out of the floor.
+test('the sweep folder, named even in an ignored local file, leaves no tracked file out of the floor', () => {
+  const r = sweptAndFixed();
+  fs.mkdirSync(path.join(r.dir, 'rules'));
+  fs.writeFileSync(path.join(r.dir, 'rules', 'x.md'), 'rule\n');
+  fs.mkdirSync(path.join(r.dir, '.claude'));
+  fs.writeFileSync(path.join(r.dir, '.claude', 'settings.json'), '{"hooks":{}}\n');
+  commitAll(r.dir, 'docs: a rule and the settings', true);
+  fs.appendFileSync(path.join(r.dir, '.git', 'info', 'exclude'), 'CLAUDE.local.md\n');
+  for (const [folder, file] of [['rules/', 'rules/x.md'], ['.claude/', '.claude/settings.json']]) {
+    fs.writeFileSync(path.join(r.dir, 'CLAUDE.local.md'), `- **Sweep reports:** \`${folder}\`\n`);
+    const f = path.join(r.dir, folder, `resweep-${folder.replace(/\W/g, '')}.json`);
+    fs.writeFileSync(f, JSON.stringify(resweepContract()));
+    const out = approveIn(r.dir, [f, '--resweep', r.f]);
+    assert.match(out.stdout, new RegExp(`${file.replace(/\./g, '\\.')} changed since the first sweep and no role names it`), `${file} stays in the floor`);
+    fs.rmSync(f);
+  }
+  // A committed dated report and contract in the sweep folder are sweep files, left out as before.
+  fs.rmSync(path.join(r.dir, 'CLAUDE.local.md'));
+  fs.writeFileSync(path.join(r.dir, 'docs', 'sweeps', '2026-11-01-sync.md'), '# report\n');
+  fs.rmSync(path.join(r.dir, 'rules'), { recursive: true });
+  fs.rmSync(path.join(r.dir, '.claude'), { recursive: true });
+  commitAll(r.dir, 'docs: the report', true);
+  const kept = resweep(r, resweepContract());
+  assert.equal(kept.status, 0, kept.stdout);
+  // The kit's own layout: the adapter line in an ignored local file, reports git-ignored, a tracked .gitkeep.
+  const dir = sweepRepo({ 'src/sync.ts': 'x\n', 'reports/sweeps/.gitkeep': '' });
+  fs.writeFileSync(path.join(dir, 'CLAUDE.local.md'), '- **Sweep reports:** `reports/sweeps/`\n');
+  fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), 'CLAUDE.local.md\nreports/sweeps/*.json\n');
+  const c = path.join(dir, 'reports', 'sweeps', 'contract.json');
+  fs.writeFileSync(c, JSON.stringify(featureContract()));
+  const ok = approveIn(dir, [c]);
+  assert.equal(ok.status, 0, ok.stdout);
+});
 // Found in the feasibility run of the re-sweeps (2026-11-01): the kit repo keeps its sweeps in reports/sweeps/ and has
 // no adapter line, so every contract it wrote was refused. A project with no adapter line names its sweep folder in
 // .kit/sweep-approval.json; a folder that holds tracked code is never a sweep folder, however it was named.
