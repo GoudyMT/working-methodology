@@ -2436,6 +2436,21 @@ test('an owner\'s yes clears only the contract, version and HEAD it answered', (
   commitAll(r.dir, 'fix: x', true);
   assert.match(resweep(r, resweepContract()).stdout, /first sweep was not cleared/);
 });
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): the test above edits the contract, so it
+// held only the hash binding; dropping the HEAD binding stayed green. Same contract, new HEAD: the old yes clears nothing.
+test('an owner\'s yes does not clear the same contract run again at a new HEAD', () => {
+  const asked = featureContract();
+  asked.roles.pop();
+  const r = approveRun(asked);
+  assert.equal(r.status, 1);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes run it']).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  commitAll(r.dir, 'fix: x', true);
+  assert.equal(approveIn(r.dir, [r.f]).status, 1, 'asked again at the new HEAD');
+  assert.equal(outcome(r).status, 0);
+  const [first] = approvalLog(r.dir).filter((e) => e.kind === 'decision');
+  assert.equal(approvalLog(r.dir).pop().decisionAt, first.time, 'the outcome goes to the run the owner cleared');
+});
 test('a claimed new-dependency modifier the diff disproves is refused', () => {
   const dir = sweepRepo({ 'README.md': 'z\n' });
   const c = { tier: 'fix', modifiers: ['new-dependency'], roles: [
