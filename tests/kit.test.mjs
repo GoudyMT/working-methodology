@@ -3220,6 +3220,18 @@ test('the grant check refuses an origin url that git would read as an option', (
   askOn(r, /starts with "-"/);
   assert.ok(!fs.existsSync(path.join(r.dir, 'pwned')));
 });
+// The fix check: the ext transport runs a command; the refusal had no test, and GIT_ALLOW_PROTOCOL in the env of
+// whoever runs the check turned it back on.
+test('the grant check never lets the ext transport run, whatever the repo config or the env allow', () => {
+  for (const env of [{}, { GIT_ALLOW_PROTOCOL: 'ext' }]) {
+    const r = autonomyRepo();
+    g(r.dir, 'remote', 'set-url', 'origin', 'ext::touch pwned');
+    g(r.dir, 'config', 'protocol.ext.allow', 'always');
+    const out = autonomy(r, ['check', 'release'], env);
+    assert.equal(out.status, 1, out.stdout);
+    assert.ok(!fs.existsSync(path.join(r.dir, 'pwned')), `the ext command ran with ${JSON.stringify(env)}`);
+  }
+});
 test('a fresh project install ships no grant, so every act asks', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nogrant-'));
   g(dir, 'init', '-q', '-b', 'main');

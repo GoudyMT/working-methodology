@@ -34,12 +34,16 @@ const PROTECTED = [/^\.kit\//, /(^|\/)\.claude\//, /(^|\/)\.githooks\//, /^\.git
 	/(^|\/)approve\.mjs$/, /(^|\/)scripts\/kit\.mjs$/, /(^|\/)kit\.config\.json$/, /(^|\/)scrub\.local\.json$/, /(^|\/)package\.json$/,
 	/(^|\/)(vitest|jest|playwright)\.config\./, /(^|\/)(CLAUDE|AGENTS)\.md$/, /^rules\/(core\.md|_parts\/)/];
 
-const run = (cmd, args, cwd) => spawnSync(cmd, args, { encoding: 'utf8', cwd, maxBuffer: 256 * 1024 * 1024 });
+const run = (cmd, args, cwd, env) => spawnSync(cmd, args, { encoding: 'utf8', cwd, env, maxBuffer: 256 * 1024 * 1024 });
 const git = (...a) => run('git', ['-c', 'core.quotePath=false', ...a]);
 const out = (r) => (r.status === 0 ? r.stdout.trim() : null);
 // A fetch by URL: "--" keeps the URL from being read as an option, and the ext:: transport (which runs a command) stays
-// off whatever the repo's config says.
-const fetch = (url, refspec, ...opts) => git('-c', 'protocol.ext.allow=never', 'fetch', '-q', ...opts, '--', url, refspec);
+// off whatever the repo's config says; GIT_ALLOW_PROTOCOL would override that, so the fetch runs without it.
+const fetch = (url, refspec, ...opts) => {
+	const env = { ...process.env };
+	delete env.GIT_ALLOW_PROTOCOL;
+	return run('git', ['-c', 'core.quotePath=false', '-c', 'protocol.ext.allow=never', 'fetch', '-q', ...opts, '--', url, refspec], undefined, env);
+};
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const lf = (s) => s.replace(/\r\n/g, '\n');
 // Every value printed to the owner's terminal comes from the ledger, the act name or git, and any of them can carry
