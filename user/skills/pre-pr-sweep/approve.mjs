@@ -268,20 +268,28 @@ function resweepOf(c, s, parentFile) {
 	const tier = String(c.tier || '').toLowerCase();
 	if (tier !== String(parent.tier || '').toLowerCase()) why.push(`the re-sweep's tier "${c.tier}" is not its first sweep's "${parent.tier}"`);
 	else if (tier !== 'feature' && !OWNER_TIERS.includes(tier)) why.push(`a ${tier} sweep has no re-sweep: its fix check is a contract of its own`);
+	// Only this branch's own sweep anchors it. A sweep from another branch - merged into the base with a merge commit,
+	// or under a stacked branch - once anchored a whole new feature on two roles naming folders.
+	const now = diffFacts();
+	const branch = git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim();
+	if (!parent.branch || parent.branch !== branch) why.push(`the first sweep was swept on ${parent.branch || 'no recorded branch'}, not ${branch || 'a detached HEAD'}: another branch's sweep cannot anchor this one`);
+	if (now && parent.base && parent.base !== now.base) why.push(`the first sweep's base ${parent.base} is not this run's ${now.base}`);
+	if (now && parent.head && git('merge-base', '--is-ancestor', parent.head, now.base).status === 0) why.push(`the first sweep's HEAD ${parent.head} is already on ${now.base}: a merged sweep cannot anchor new work`);
 	if (!parent.head || git('merge-base', '--is-ancestor', parent.head, 'HEAD').status !== 0) {
 		why.push(`the first sweep's HEAD ${parent.head} is not an ancestor of this HEAD: the history under it changed`);
 		return { why, parent };
 	}
 	const facts = diffFacts(parent.head);
 	const files = facts ? facts.files.filter((f) => !f.startsWith(facts.folder)) : [];
-	// A context entry names a file by its path (a trailing :line or note allowed) or a folder ending in /.
+	// A context entry names a file by its path (a trailing :line or note allowed) or a folder ending in /, which covers
+	// the files at most two levels below it: "src/" alone does not stand for a whole tree.
 	const named = (f) => (c.roles || []).some((r) => (Array.isArray(r.context) ? r.context : []).some((x) => {
 		const p = String(x).trim().split(/\s/)[0].replace(/[:#].*$/, '').replace(/^\.\//, '');
-		return p === f || (p.endsWith('/') && f.startsWith(p));
+		return p === f || (p.endsWith('/') && p !== '/' && f.startsWith(p) && f.slice(p.length).split('/').length <= 2);
 	}));
 	for (const f of files) if (!named(f)) why.push(`${f} changed since the first sweep and no role names it in its context`);
 	const floor = (Array.isArray(first.modifiers) ? first.modifiers : []).includes('security-sensitive') ? { security: 1 } : {};
-	return { why, parent, facts, floor, files: files.length };
+	return { why, parent, facts, floor, files: files.length, base: now && now.base };
 }
 
 const budgetOf = (c) => (c.roles || []).reduce((t, r) => t + (typeof r.budget === 'number' && r.budget > 0 ? r.budget : 0), 0);
@@ -303,7 +311,7 @@ function decide() {
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
 	} else if (open && !reported) why.unshift(`log the outcome of the last approved sweep first (${open.contract})`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: facts && facts.base, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null, ...(rs && rs.parent ? { resweepOf: rs.parent.time, parent: parentFile } : {}) };
+	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: rs ? rs.base : facts && facts.base, branch: git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim() || null, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null, ...(rs && rs.parent ? { resweepOf: rs.parent.time, parent: parentFile } : {}) };
 	write(entry);
 	if (why.length) {
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');

@@ -2206,6 +2206,42 @@ test('a contract outside the sweep folder is refused, and only the sweep folder 
   assert.equal(approveIn(dir, [f]).status, 0);
   assert.match(approveRun(featureContract(), dir).stdout, /not in the sweep folder \(reviews\/, adapter A22\)/);
 });
+test('a re-sweep refuses a parent on the base or on another branch, and a folder names only files two levels below it', () => {
+  const merged = approveRun(featureContract());
+  assert.equal(outcome(merged).status, 0);
+  g(merged.dir, 'checkout', '-q', 'main');
+  g(merged.dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '--no-ff', '-q', '-m', 'merge feat/sync', 'feat/sync');
+  g(merged.dir, 'checkout', '-q', '-b', 'feat/b');
+  fs.mkdirSync(path.join(merged.dir, 'src', 'b'));
+  fs.writeFileSync(path.join(merged.dir, 'src/b/new.ts'), 'export const b = 1;\n');
+  commitAll(merged.dir, 'feat: a new feature', true);
+  const folders = resweepContract();
+  folders.roles[0].context = ['src/'];
+  folders.roles[1].context = ['src/b/'];
+  const onBase = resweep(merged, folders);
+  assert.equal(onBase.status, 1);
+  assert.match(onBase.stdout, /already on main/);
+  assert.match(onBase.stdout, /another branch/);
+  const stacked = approveRun(featureContract());
+  assert.equal(outcome(stacked).status, 0);
+  g(stacked.dir, 'checkout', '-q', '-b', 'feat/b');
+  fs.mkdirSync(path.join(stacked.dir, 'src', 'b'));
+  fs.writeFileSync(path.join(stacked.dir, 'src/b/new.ts'), 'export const b = 1;\n');
+  commitAll(stacked.dir, 'feat: a new feature', true);
+  assert.match(resweep(stacked, folders).stdout, /swept on feat\/sync, not feat\/b: another branch/);
+  // A folder entry covers a file at most two levels below it; deeper files need their own entry.
+  const deep = approveRun(featureContract());
+  assert.equal(outcome(deep).status, 0);
+  fs.mkdirSync(path.join(deep.dir, 'src', 'a', 'b', 'c'), { recursive: true });
+  fs.writeFileSync(path.join(deep.dir, 'src/a/b/c/deep.ts'), 'x\n');
+  commitAll(deep.dir, 'fix: deep', true);
+  const wide = resweepContract();
+  wide.roles[0].context = ['src/'];
+  wide.roles[1].context = ['src/'];
+  assert.match(resweep(deep, wide).stdout, /src\/a\/b\/c\/deep\.ts changed since the first sweep and no role names it/);
+  wide.roles[1].context = ['src/a/b/'];
+  assert.equal(resweep(deep, wide, deep.f, 'resweep2.json').status, 0);
+});
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');
