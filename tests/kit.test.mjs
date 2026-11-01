@@ -2310,6 +2310,19 @@ test('an outcome binds to the sweep that ran, not a refused re-run of its contra
   assert.doesNotMatch(out.stdout, /log the outcome of the last approved sweep first/);
   assert.equal(out.status, 0, out.stdout);
 });
+test('after an amend under the first sweep, the re-sweep still lists every file no role names', () => {
+  const r = approveRun(featureContract());
+  assert.equal(outcome(r).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  g(r.dir, 'add', '-A', 'src');
+  g(r.dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--amend', '--no-edit', '--no-verify');
+  const c = resweepContract();
+  c.roles[0].context = ['src/sync.test.ts'];
+  const out = resweep(r, c);
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /not an ancestor of this HEAD/);
+  assert.match(out.stdout, /src\/sync\.ts changed since the first sweep and no role names it/);
+});
 const words12 = ['amber basil cedar', 'delta ember fable', 'garnet hollow iris', 'jasper kettle lumen', 'maple nectar onyx', 'pepper quartz raven', 'saffron timber umber', 'velvet willow xenon', 'yarrow zephyr acorn', 'bramble cobalt dune', 'fennel glacier heron', 'indigo juniper kelp', 'lagoon mosaic nimbus'];
 const ask = (kind, i) => role(kind, `Which ${words12[i]} path does the fix ${i} reach?`, { context: ['src/sync.ts'], budget: 60000 });
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {

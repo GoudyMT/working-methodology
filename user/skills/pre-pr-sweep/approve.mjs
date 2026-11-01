@@ -288,11 +288,16 @@ function resweepOf(c, s, parentFile) {
 	if (!parent.branch || parent.branch !== branch) why.push(`the first sweep was swept on ${parent.branch || 'no recorded branch'}, not ${branch || 'a detached HEAD'}: another branch's sweep cannot anchor this one`);
 	if (now && parent.base && parent.base !== now.base) why.push(`the first sweep's base ${parent.base} is not this run's ${now.base}`);
 	if (now && parent.head && git('merge-base', '--is-ancestor', parent.head, now.base).status === 0) why.push(`the first sweep's HEAD ${parent.head} is already on ${now.base}: a merged sweep cannot anchor new work`);
+	// After a rebase or amend the files are still listed, from where the histories part, so an owner's yes to this ask
+	// is a yes to a list it can see: an early return here once let that yes clear a re-sweep that skipped files.
+	let anchor = parent.head;
 	if (!parent.head || git('merge-base', '--is-ancestor', parent.head, 'HEAD').status !== 0) {
 		why.push(`the first sweep's HEAD ${parent.head} is not an ancestor of this HEAD: the history under it changed`);
-		return { why, parent };
+		const fork = parent.head ? git('merge-base', parent.head, 'HEAD') : null;
+		if (!fork || fork.status !== 0) return { why, parent };
+		anchor = fork.stdout.trim();
 	}
-	const facts = diffFacts(parent.head);
+	const facts = diffFacts(anchor);
 	const files = facts ? facts.files.filter((f) => !f.startsWith(facts.folder)) : [];
 	// A context entry names a file by its path (a trailing :line or note allowed) or, standing alone, a folder ending in
 	// /, which covers the files at most two levels below it: "src/" does not stand for a whole tree, and a note such as
