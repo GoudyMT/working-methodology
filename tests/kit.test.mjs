@@ -146,11 +146,13 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   const { kit } = makeKit();
   fs.writeFileSync(path.join(kit, 'scrub.local.json'), JSON.stringify({ words: ['Pat', 'pat@example.com'] }));
   fs.writeFileSync(path.join(kit, 'project/leak.md'), 'Ask Pat at pat@example.com in C:\\' + 'Users\\pat - ok \u2192 x\n');
+  fs.mkdirSync(path.join(kit, '.github'), { recursive: true });
+  fs.writeFileSync(path.join(kit, '.github/CODEOWNERS'), '/rules/core.md @Pat\n');
   const hits = scrub({ kit });
   const kinds = hits.filter((h) => h.file === 'project/leak.md').map((h) => h.kind).sort();
   assert.deepEqual(kinds, ['non-ascii', 'path', 'word:Pat', 'word:pat@example.com']);
-  // kit.config.json and owner-profile.md hold the owner's details on purpose.
-  assert.equal(hits.filter((h) => h.file === 'kit.config.json' || h.file === 'owner-profile.md').length, 0);
+  // kit.config.json, owner-profile.md and CODEOWNERS hold the owner's details on purpose.
+  assert.equal(hits.filter((h) => ['kit.config.json', 'owner-profile.md', '.github/CODEOWNERS'].includes(h.file)).length, 0);
   fs.rmSync(path.join(kit, 'project/leak.md'));
   assert.deepEqual(scrub({ kit }), []);
 });
