@@ -2025,6 +2025,28 @@ test('the owner\'s yes is logged only after the script asked, for this contract 
   fs.writeFileSync(e.f, JSON.stringify({ ...c, roles: c.roles.slice(0, 2) }));
   assert.notEqual(approveIn(e.dir, [e.f, '--owner-yes', 'yes']).status, 0);
 });
+// Found on a gate fix (2026-11-01): a fix sweep is capped at 3 roles, but the security-sensitive modifier adds 3
+// security roles, so every fix to a gate went to the owner. Modifiers add roles at any tier (rule:sweep-tiers): their
+// roles count on top of the tier's role cap, and the budget caps still hold.
+test('a modifier\'s roles come on top of the tier\'s role cap, and the budget cap still holds', () => {
+  const sec = (q) => role('security', q, { budget: 40000 });
+  const fixSec = { tier: 'fix', modifiers: ['security-sensitive'], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 40000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 40000 }),
+    role('test-value', 'Does each changed test guard a real use?', { budget: 40000 }),
+    sec('Can the lock still be bypassed by restoring an old backup?'),
+    sec('Does any error path leak the key material into logs?'),
+    sec('Can a crafted settings file widen the permissions it grants?'),
+  ] };
+  const ok = approveRun(fixSec, sweepRepo({ 'README.md': 'z\n' }));
+  assert.equal(ok.status, 0, ok.stdout);
+  const four = { ...fixSec, roles: [...fixSec.roles, role('modelled-on', 'Was the bug inherited from the code this copied?', { budget: 40000 })] };
+  const ask = approveRun(four, sweepRepo({ 'README.md': 'z\n' }));
+  assert.equal(ask.status, 1);
+  assert.match(ask.stdout, /over the fix cap of 3/);
+  const rich = { ...fixSec, roles: fixSec.roles.map((r) => ({ ...r, budget: 60000 })) };
+  assert.match(approveRun(rich, sweepRepo({ 'README.md': 'z\n' })).stdout, /total budget 360000 over the fix cap of 300000/);
+});
 // Found in a project (2026-10-31): the owner's loop is one sweep, fixes, then ONE short re-sweep of what the fixes
 // touched, with no third. The script held each re-sweep to the full feature floor and sent it to the owner, who was
 // asked to approve a re-sweep that followed the rule exactly. A re-sweep names its first sweep; the script reads

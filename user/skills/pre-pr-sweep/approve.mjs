@@ -181,16 +181,20 @@ function check(c, facts, floor) {
 	const roles = Array.isArray(c.roles) ? c.roles : [];
 	const cap = caps(tier);
 	if (!roles.length) why.push('no roles');
-	if (roles.length > cap.maxAgents) why.push(`${roles.length} agents, over the ${tier} cap of ${cap.maxAgents}`);
-	const need = { ...(floor || NEEDS[tier]) };
+	const base = { ...(floor || NEEDS[tier]) };
+	if (tier === 'fix' && (c.testsChanged || (facts && facts.tests))) base['test-value'] = 1;
+	const need = { ...base };
 	const modifiers = new Set(Array.isArray(c.modifiers) ? c.modifiers : []);
 	if (facts && facts.deps) modifiers.add('new-dependency');
-	if (tier === 'fix' && (c.testsChanged || (facts && facts.tests))) need['test-value'] = 1;
 	for (const m of modifiers) {
 		if (!MODIFIER_NEEDS[m]) { why.push(`unknown modifier "${m}"`); continue; }
 		for (const [k, n] of Object.entries(MODIFIER_NEEDS[m])) need[k] = Math.max(need[k] || 0, n);
 	}
 	const count = (k) => roles.filter((r) => r.kind === k).length;
+	// Modifiers add roles at any tier (rule:sweep-tiers), so the roles a modifier requires beyond the tier's own floor
+	// come on top of the tier's role cap; the budget caps below still hold.
+	const added = Object.entries(need).reduce((t, [k, n]) => t + Math.max(0, Math.min(count(k), n) - (base[k] || 0)), 0);
+	if (roles.length - added > cap.maxAgents) why.push(`${roles.length - added} agents beyond the modifiers' roles, over the ${tier} cap of ${cap.maxAgents}`);
 	for (const [k, n] of Object.entries(need)) if (count(k) < n) why.push(`needs ${n} ${k} role(s), has ${count(k)}${facts && facts.deps && k === 'supply-chain' ? ' (the diff changes a package file)' : ''}`);
 	let total = 0;
 	roles.forEach((r, i) => {
