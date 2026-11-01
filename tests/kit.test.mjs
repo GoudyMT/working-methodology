@@ -2355,6 +2355,22 @@ test('an outcome binds to the sweep that ran, not a refused re-run of its contra
   assert.doesNotMatch(out.stdout, /log the outcome of the last approved sweep first/);
   assert.equal(out.status, 0, out.stdout);
 });
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): a re-run before the outcome went to the
+// owner, the owner's yes cleared it, and the outcome bound to that run while the wait looked at the first approval,
+// so every later sweep waited for an outcome that could never land. One outcome covers the contract's later runs.
+test('an outcome logged after the owner cleared a re-run of the contract ends the wait', () => {
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout);
+  const again = approveIn(r.dir, [r.f]);
+  assert.match(again.stdout, /log the outcome of the last approved sweep first/);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes run it again']).status, 0);
+  assert.equal(outcome(r).status, 0);
+  const next = path.join(r.dir, 'docs', 'sweeps', 'next.json');
+  fs.writeFileSync(next, JSON.stringify(featureContract()));
+  const out = approveIn(r.dir, [next]);
+  assert.doesNotMatch(out.stdout, /log the outcome of the last approved sweep first/);
+  assert.equal(out.status, 0, out.stdout);
+});
 test('after an amend under the first sweep, the re-sweep still lists every file no role names', () => {
   const r = approveRun(featureContract());
   assert.equal(outcome(r).status, 0);

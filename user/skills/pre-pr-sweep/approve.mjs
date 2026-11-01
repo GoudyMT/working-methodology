@@ -347,7 +347,9 @@ function decide() {
 	const { why, need } = check(c, facts, rs && rs.floor, rs && rs.fixCheck);
 	if (rs) why.push(...rs.why);
 	const open = s.log.filter((e) => e.kind === 'decision' && e.decision === 'approved').pop();
-	const reported = open && s.log.some((e) => e.kind === 'outcome' && e.decisionAt === open.time);
+	// An outcome for a later run of the same contract covers it: --outcome takes the newest cleared run, and an owner's
+	// yes on a re-run once left this wait looking for an outcome that could never land.
+	const reported = open && s.log.some((e) => e.kind === 'outcome' && (e.decisionAt === open.time || (e.contract === open.contract && e.decisionAt > open.time)));
 	if (s.paused) why.unshift(`auto-approval is paused: ${s.paused}`);
 	else if (s.approvedSinceReview >= s.reviewEvery) {
 		const reason = `trial review due: ${s.reviewEvery} auto-approvals since the last review`;
