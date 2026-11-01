@@ -44,8 +44,8 @@
 
 Every finding below was re-read in the code by the lead (G1). The owner approved every recommendation on 2026-05-14 21:05
 UTC ("go with your recommendation and continue"): all 11 roots fixed in this PR, C1 (a), G1 (a), the W2 wait id.
-**Final dispositions:** W1 FIXED `b2e81c07`, reopened by the re-sweep and FIXED `7c2a91e0`; W2 FIXED `5d93a1f6`; W3 FIXED `e07c4b19` (+ the fix check's test `9a1d6e20`);
-U1 FIXED `3f6a0b85`; N1 FIXED `c18e72d4`, reopened by the re-sweep and FIXED `e4b07d13`; F1 FIXED `6ab90e13`; A1 FIXED `d42f8c71`; Q1 FIXED `81e3b5a0` (no test: no seam
+**Final dispositions:** W1 FIXED `b2e81c07`; W2 FIXED `5d93a1f6`; W3 FIXED `e07c4b19` (+ the fix check's test `9a1d6e20`);
+U1 FIXED `3f6a0b85`; N1 FIXED `c18e72d4`; F1 FIXED `6ab90e13`; A1 FIXED `d42f8c71`; Q1 FIXED `81e3b5a0` (no test: no seam
 shows it, the fix check agreed); D1 FIXED `0c7d2e9`; T1 FIXED `fa31b6c`, `27e9d0a4`; X1 FIXED `e95b13c`; C1 ACCEPTED as a
 named residual `4d0a7e2` (docs "does not cover"); G1 ACCEPTED and documented `b81f3c6`. No high or critical finding
 stands (S8.1 was re-graded to medium by the refute re-check and is C1).
@@ -96,10 +96,8 @@ All three inside the 60-call ceiling. Findings (each re-read in the code by the 
 - Doubts recorded: a restore that lands during the derive relocks as hygiene (not caught by the watch; the load then fails
   closed).
 
-Per the cadence (two passes, no third sweep): R1.1 and R2.1 / R3.1 find W1 and N1 half done, so both FIXED items reopen as
-high, are fixed now (`7c2a91e0`, `e4b07d13`, each red first) and go to the one fix check: one role naming each file
-changed since `9a1d6e20`, PASS. R2.2 and R1.2 are new lows: a line each in the plan's parking lot, listed in the PR body
-for the owner.
+Per the cadence (two passes only), the re-sweep's findings go to the owner: fix in this PR (recommended: three small roots,
+then the gate; no third sweep) or carry to a follow-up.
 
 ## Post-run yield check
 

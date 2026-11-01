@@ -14,7 +14,7 @@
 - **G5 Blast radius** (-> the owner's go): files, shipped vs new, public interfaces, other callers, the revert story; a shipped-code fix in a feature branch is scope creep until the owner says otherwise.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; no third: high and above fixed now, then one 1-role fix check covers those fixes; a FIXED item it finds broken reopens as high; new mediums and lows go to the parking lot and the PR body.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
@@ -53,7 +53,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 
-A feature, fix or triage sweep's Swarm Contract is approved by `approve.mjs`, never an agent: same contract, same answer. It runs first: an approval prints the owner's notice; only an ASK goes to the owner (yes logged, `--owner-yes`); a hook holds reviewers until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. A re-sweep (`--resweep`) instead needs a role naming each file its fixes changed; its fix check, one role naming each file changed since. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row, 10 again after any other pause), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.
+A feature, fix or triage sweep's Swarm Contract is approved by `approve.mjs`, never an agent: same contract, same answer. It runs first: an approval prints the owner's notice; only an ASK goes to the owner (yes logged, `--owner-yes`); a hook holds reviewers until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row, 10 again after any other pause), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.
 
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 

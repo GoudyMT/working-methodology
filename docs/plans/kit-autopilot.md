@@ -61,10 +61,9 @@ Order is chosen so each phase is safe on its own: nothing can act outward until 
 
 ### Phase 0: Prerequisites
 - [x] the owner approved Rule 14 wording with the two additions (2026-10-31)
-- [x] Attach the kit repo to this project - the owner chose to run the kit work on the PC, in the kit folder (2026-10-31)
-- [x] Confirm the sender-ID field in Claude Code - not an identity: per code.claude.com/docs/en/cross-session-messaging a cross-session message carries the sender's self-chosen session name (`--name` or `/rename`), and no per-project identity is documented. Fallback chosen: a per-project secret written at install time outside the repo, an HMAC on every report, and the registry keyed on project folder plus git remote
-- [x] Turn on branch protection for the kit repo - kit-tests is required on main (2026-10-31)
-- [ ] CODEOWNERS for the protected paths (`.github/CODEOWNERS`, the same paths the grant check protects); it binds once the owner turns on "Require review from Code Owners" for main
+- [ ] Attach the kit repo to this project
+- [ ] Confirm the sender-ID field in Claude Code (exists for `claude -p` and Remote Control, not settable by sender); pick fallback if not
+- [ ] Turn on branch protection / CODEOWNERS for protected paths on the kit repo
 
 ### Phase 1: Rule text and grant format (no automation yet)
 - [ ] Rule 14 in CLAUDE.md, non-negotiable 6 in AGENTS.md, `rule:outward-acts` standing-grants section
@@ -74,13 +73,10 @@ Order is chosen so each phase is safe on its own: nothing can act outward until 
 Changelog note for the 1.13.0 bump (draft): The Standard PR body's Review section now carries the sweep summary: the commit the sweep covered, a result per dimension, each high or critical finding and how it was handled, deferred items with where they are tracked, and accepted risks; it never links the private report. The PR-body audit checks the new parts in order, so a body in the old Review shape (Reviewed across / Result / Pass table) now fails it: projects move to the new shape on update.
 
 ### Phase 2: `autonomy.mjs check <act>` (fail-closed gate)
-- [x] Tests first: missing grant, unreadable grant, kill switch present, protected path touched, Tier 0 hash changed, 4th release today, new test not failing at base, each returns "ask" - 8 tests in tests/kit.test.mjs, all red before `project/.claude/autonomy.mjs` existed
-- [x] Reads grant and itself from `origin/main`, never the worktree - a grant only on the branch, or a changed copy of the check, asks
-- [x] Runs the evidence itself (test at base and head, full tests, scrub, caps) - the new test runs in a worktree at main and here
-- [x] Kill switch outside git; checked before every act - `autonomy-off` in the Claude config folder, checked first
-- [x] Ledger of the script's verdict and the owner's per act (chained lines in the git folder); 10 straight hits make an act auto-eligible, one miss resets it. The streak is advisory: the ledger is forgeable, so `check` always asks
-- [ ] The ledger stays advisory: only the owner can change that, when an act first reaches 10 straight hits (rule:standing-grants). Phases 4-6 wait on that decision
-- Known limit for review: the release cap counts today's remote tags by their commit date, which a careful session could backdate
+- [ ] Tests first: missing grant, unreadable grant, kill switch present, protected path touched, Tier 0 hash changed, 4th release today, new test not failing at base, each returns "ask"
+- [ ] Reads grant and itself from `origin/main`, never the worktree
+- [ ] Runs the evidence itself (test at base and head, full tests, scrub, caps)
+- [ ] Kill switch outside git; checked before every act
 
 ### Phase 3: Intake and identity
 - [ ] Registry keyed on project folder + git remote; hook writes to `pending/`; owner confirms once
