@@ -3073,3 +3073,81 @@ test('a fresh project install ships no grant, so every act asks', () => {
   assert.ok(fs.existsSync(path.join(dir, '.claude', 'autonomy.mjs')));
   assert.ok(!fs.existsSync(path.join(dir, '.kit', 'autonomy.json')));
 });
+
+// Found in a project (2026-11-01, improvement report IR-2026-11-01-closeout-temp-delete): a closeout step deleted
+// "every temp folder but mine" - a listing of the shared Claude temp folder piped to a recursive delete - and wiped
+// other sessions' scratch folders, this kit's included. A delete by exclusion or of a shared parent is never safe:
+// the guard blocks any recursive or piped delete whose command names the temp area outside this session's own
+// folder, and the closeout deletes only the exact paths its manifest lists, inside its own scratch folder.
+const TEMP_GUARD = 'user/kit-hooks/temp-guard.cjs';
+const SID = '0f6c1a2e-1111-4222-8333-944455556666';
+function tempGuard(command, { sid = SID, tool = 'PowerShell' } = {}) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-'));
+  const cmd = command.replaceAll('<TMP>', tmp);
+  const r = runHook(TEMP_GUARD, { hook_event_name: 'PreToolUse', tool_name: tool, session_id: sid, tool_input: { command: cmd } }, { TEMP: tmp, TMP: tmp, TMPDIR: tmp });
+  return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+}
+const mine = `<TMP>\\claude\\C--Users-pat-app\\${SID}\\scratchpad`;
+test('the temp guard blocks the delete that wiped other sessions, and its variants in either shell', () => {
+  const blocked = [
+    ["Get-ChildItem $env:TEMP\\claude | ? Name -ne 'C--Users-pat-app' | Remove-Item -Recurse -Force", 'PowerShell'],
+    ["gci \"$env:TEMP\\claude\" | where { $_.Name -ne 'x' } | rm -r -fo", 'PowerShell'],
+    ['Get-ChildItem <TMP>\\claude | Remove-Item -Force', 'PowerShell'],
+    ['Get-ChildItem ([IO.Path]::GetTempPath()) | Remove-Item -Recurse -Confirm:$false', 'PowerShell'],
+    ["Remove-Item -Recurse -Force (Join-Path $env:TEMP 'recall-x')", 'PowerShell'],
+    ['cmd /c rd /s /q %TEMP%\\claude', 'PowerShell'],
+    ['del /s /q %TMP%\\claude\\*', 'PowerShell'],
+    ['ls -d /tmp/claude/* | grep -v mine | xargs rm -rf', 'Bash'],
+    ['rm -rf "$TMPDIR/claude"', 'Bash'],
+    ['find /tmp/claude -mindepth 1 -maxdepth 1 ! -name mine -exec rm -rf {} +', 'Bash'],
+    ['find "$TEMP/claude" -mindepth 1 -delete', 'Bash'],
+    [`Remove-Item -Recurse -Force "<TMP>\\claude\\C--Users-pat-app\\another-session-id\\scratchpad"`, 'PowerShell'],
+    [`Remove-Item -Recurse -Force "${mine}\\..\\..\\.."`, 'PowerShell'],
+  ];
+  for (const [command, tool] of blocked) {
+    const d = tempGuard(command, { tool });
+    assert.equal(d.permissionDecision, 'deny', `${tool}: ${command}`);
+    assert.match(d.permissionDecisionReason, /temp-clean\.mjs/);
+  }
+  // No session id to tell this session's folder from another's: nothing in the temp area may go.
+  assert.equal(tempGuard(`Remove-Item -Recurse "${mine}\\old"`, { sid: '' }).permissionDecision, 'deny');
+});
+test('the temp guard lets this session clear its own scratch folder, and leaves other deletes and listings alone', () => {
+  const allowed = [
+    [`Remove-Item -Recurse -Force "${mine}\\blind"`, 'PowerShell'],
+    [`rm -rf "${mine.replaceAll('\\', '/')}/drafts"`, 'Bash'],
+    ['rm -rf node_modules dist', 'Bash'],
+    ['Remove-Item -Recurse -Force .\\build', 'PowerShell'],
+    ['Get-ChildItem $env:TEMP\\claude | Select-Object Name', 'PowerShell'],
+    ['ls /tmp/claude', 'Bash'],
+  ];
+  for (const [command, tool] of allowed) assert.equal(tempGuard(command, { tool }).permissionDecision, 'allow', `${tool}: ${command}`);
+});
+test('the project settings run the temp guard before every shell command', () => {
+  const s = JSON.parse(read(path.resolve('project/.claude/settings.json')));
+  const shell = s.hooks.PreToolUse.find((e) => e.matcher.split('|').includes('Bash') && e.matcher.split('|').includes('PowerShell'));
+  assert.ok(shell.hooks.some((h) => (h.args || []).join(' ').endsWith('kit-hooks/temp-guard.cjs')));
+});
+const TEMP_CLEAN = path.resolve('user/skills/closeout/temp-clean.mjs');
+test('temp-clean deletes only the paths its manifest lists inside this session\'s scratch folder, and names the rest', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-'));
+  const scratch = path.join(tmp, 'claude', 'C--Users-pat-app', SID, 'scratchpad');
+  fs.mkdirSync(path.join(scratch, 'blind'), { recursive: true });
+  for (const f of ['pr-body.md', 'keep.md', 'blind/a.md']) fs.writeFileSync(path.join(scratch, f), 'x\n');
+  const outside = path.join(tmp, 'shared-copy.md');
+  fs.writeFileSync(outside, 'x\n');
+  const tc = (...a) => spawnSync('node', [TEMP_CLEAN, ...a], { encoding: 'utf8', env: { ...process.env, TEMP: tmp, TMP: tmp, TMPDIR: tmp } });
+  for (const p of [path.join(scratch, 'pr-body.md'), path.join(scratch, 'blind'), outside, path.join(scratch, '..', '..', 'other')]) tc('add', scratch, p);
+  const r = tc('clean', scratch);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(scratch, 'pr-body.md')) && !fs.existsSync(path.join(scratch, 'blind')));
+  assert.match(r.stdout, /deleted .*pr-body\.md/);
+  assert.match(r.stdout, /deleted .*blind/);
+  assert.ok(fs.existsSync(path.join(scratch, 'keep.md')), 'a file the manifest does not list stays');
+  assert.ok(fs.existsSync(outside), 'a path outside the scratch folder is never deleted');
+  assert.match(r.stdout, /for the owner.*shared-copy\.md/);
+  assert.match(r.stdout, /for the owner.*other/);
+  // Only a session's own scratch folder: never the shared parent.
+  assert.notEqual(tc('clean', path.join(tmp, 'claude')).status, 0);
+  assert.ok(fs.existsSync(path.join(tmp, 'claude', 'C--Users-pat-app')));
+});

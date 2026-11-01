@@ -20,6 +20,14 @@
               "{{PROJECT_DIR}}/.claude/guard-outward.cjs"
             ],
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{CLAUDE_HOME}}/kit-hooks/temp-guard.cjs"
+            ],
+            "timeout": 10
           }
         ]
       },
