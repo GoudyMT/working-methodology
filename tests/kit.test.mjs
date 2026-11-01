@@ -2242,6 +2242,14 @@ test('a re-sweep refuses a parent on the base or on another branch, and a folder
   wide.roles[1].context = ['src/a/b/'];
   assert.equal(resweep(deep, wide, deep.f, 'resweep2.json').status, 0);
 });
+test('a re-sweep context entry written with Windows separators names the file', () => {
+  const r = sweptAndFixed();
+  const win = resweepContract();
+  win.roles[0].context = ['src\\sync.ts'];
+  win.roles[1].context = ['.\\src\\sync.test.ts:3 the guard'];
+  const out = resweep(r, win);
+  assert.equal(out.status, 0, out.stdout);
+});
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');
