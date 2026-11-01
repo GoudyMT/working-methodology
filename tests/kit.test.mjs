@@ -2400,6 +2400,20 @@ test('a refused run of the first contract as its own parent does not turn the fi
   assert.match(onFirst.stdout, /already had its one re-sweep/);
   assert.equal(resweep(r, fixCheck(), second.f, 'check.json').status, 0, 'the real fix check still runs');
 });
+// Found in the fix check (2026-11-01): the cleared-only half of the fix above had no test. A refused run with its
+// arguments swapped (the first contract, naming the re-sweep as its parent) logs fixCheckOf on the first contract;
+// counted, it would lock the first sweep out as a parent for good.
+test('a refused run with its arguments swapped says nothing about what the first sweep is', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(outcome(second, '100000').status, 0);
+  assert.equal(approveIn(r.dir, [r.f, '--resweep', second.f]).status, 1, 'the swapped run is refused');
+  assert.ok(approvalLog(r.dir).pop().fixCheckOf, 'and logged as a fix check of the re-sweep');
+  const out = resweep(r, resweepContract(), r.f, 'again.json');
+  assert.doesNotMatch(out.stdout, /the parent is a fix check/);
+  assert.match(out.stdout, /already had its one re-sweep/);
+});
 // Found in the sweep of the re-sweep (2026-11-01, each reproduced first in a scratch repo with its own log).
 test('an outcome binds to the sweep that ran, not a refused re-run of its contract', () => {
   const r = approveRun(featureContract());
