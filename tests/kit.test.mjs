@@ -2168,6 +2168,26 @@ test('a first push or launch gate re-sweep still goes to the owner', () => {
 // contract again at the fix HEAD moved the re-sweep's anchor there, so the fixes dropped out of the floor and a second
 // re-sweep passed; a contract saved in src/ exempted src/; and a sweep from another branch (merged with a merge
 // commit, or a stacked branch) anchored a whole new feature on 2 roles naming folders.
+test('running the first contract again moves neither the re-sweep\'s anchor nor its one re-sweep', () => {
+  const r = sweptAndFixed();
+  assert.equal(approveIn(r.dir, [r.f]).status, 0, 'the first contract run again at the fix HEAD');
+  assert.equal(outcome(r).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.test.ts'), 'test 3\n');
+  commitAll(r.dir, 'fix: guard the test', true);
+  const onlyTest = resweepContract();
+  onlyTest.roles[0].context = ['src/sync.test.ts'];
+  const ask = resweep(r, onlyTest);
+  assert.equal(ask.status, 1);
+  assert.match(ask.stdout, /src\/sync\.ts changed since the first sweep/);
+  const ok = resweep(r, resweepContract(), r.f, 'resweep2.json');
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.equal(outcome(ok, '100000').status, 0);
+  assert.equal(approveIn(r.dir, [r.f]).status, 0);
+  assert.equal(outcome(r).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: again', true);
+  assert.match(resweep(r, resweepContract(), r.f, 'again.json').stdout, /no third/);
+});
 test('a contract outside the sweep folder is refused, and only the sweep folder is left out of the floor', () => {
   const r = sweptAndFixed();
   const inSrc = path.join(r.dir, 'src', 'resweep.json');

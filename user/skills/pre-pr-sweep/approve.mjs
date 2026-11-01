@@ -245,18 +245,26 @@ function check(c, facts, floor) {
 // unedited and behind this HEAD; each sweep gets one re-sweep and a re-sweep gets none (no third pass).
 const cleared = (s, d) => d.decision === 'approved' || s.log.some((e) => e.kind === 'owner-yes' && e.contract === d.contract && e.hash === d.hash && e.head === d.head);
 function resweepOf(c, s, parentFile) {
-	const parent = s.log.filter((e) => e.kind === 'decision' && e.contract === parentFile).pop();
-	if (!parent) return { why: [`no decision for the first sweep (${parentFile}): run approve.mjs on it first`] };
-	const why = [];
-	if (!cleared(s, parent)) why.push('the first sweep was not cleared: neither approved nor the owner\'s yes');
-	if (parent.resweepOf) why.push('the first contract is itself a re-sweep: no third pass');
-	else if (s.log.some((e) => e.kind === 'decision' && e.resweepOf === parent.time && cleared(s, e))) why.push('this sweep already had its one re-sweep: no third pass');
+	const decisions = s.log.filter((e) => e.kind === 'decision' && e.contract === parentFile);
+	if (!decisions.length) return { why: [`no decision for the first sweep (${parentFile}): run approve.mjs on it first`] };
 	let raw = null;
 	try { raw = fs.readFileSync(parentFile, 'utf8'); } catch { /* moved or deleted */ }
-	if (raw === null || sha(raw) !== parent.hash) why.push('the first contract changed or moved since it was cleared');
+	const hash = raw === null ? null : sha(raw);
+	const reported = (d) => s.log.some((e) => e.kind === 'outcome' && e.decisionAt === d.time);
+	// The anchor is the EARLIEST decision that cleared this contract as it is now and has its outcome. Running the first
+	// contract again at a fix HEAD once moved the anchor there: the fixes dropped out of the floor, and the new anchor
+	// had no re-sweep yet, so a second one passed.
+	const same = decisions.filter((d) => d.hash === hash);
+	const parent = same.find((d) => cleared(s, d) && reported(d)) || same.find((d) => cleared(s, d)) || same[0] || decisions[decisions.length - 1];
+	const why = [];
+	if (!same.length) why.push('the first contract changed or moved since it was cleared');
+	else if (!cleared(s, parent)) why.push('the first sweep was not cleared: neither approved nor the owner\'s yes');
+	else if (!reported(parent)) why.push(`log the first sweep's outcome first (${parentFile})`);
+	// One re-sweep per contract, counted over every decision for it, so a re-run cannot open a second.
+	if (decisions.some((d) => d.resweepOf)) why.push('the first contract is itself a re-sweep: no third pass');
+	else if (s.log.some((e) => e.kind === 'decision' && cleared(s, e) && (e.parent === parentFile || decisions.some((d) => d.time === e.resweepOf)))) why.push('this sweep already had its one re-sweep: no third pass');
 	let first = {};
 	try { first = JSON.parse(raw); } catch { /* reported above */ }
-	if (!s.log.some((e) => e.kind === 'outcome' && e.decisionAt === parent.time)) why.push(`log the first sweep's outcome first (${parentFile})`);
 	const tier = String(c.tier || '').toLowerCase();
 	if (tier !== String(parent.tier || '').toLowerCase()) why.push(`the re-sweep's tier "${c.tier}" is not its first sweep's "${parent.tier}"`);
 	else if (tier !== 'feature' && !OWNER_TIERS.includes(tier)) why.push(`a ${tier} sweep has no re-sweep: its fix check is a contract of its own`);
