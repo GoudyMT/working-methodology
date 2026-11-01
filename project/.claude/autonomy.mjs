@@ -118,9 +118,9 @@ function newTestEvidence(grant, base) {
 
 // Releases today, counted from the remote's tags in UTC: an annotated tag by when it was made, a plain tag by its
 // commit's date. A plain tag on a backdated commit escapes the count (a known limit: annotated release tags close it).
-function releasesToday() {
+function releasesToday(url) {
 	const today = new Date().toISOString().slice(0, 10);
-	git('fetch', '-q', '--prune', 'origin', '+refs/tags/*:refs/kit/tags/*');
+	git('fetch', '-q', '--prune', url, '+refs/tags/*:refs/kit/tags/*');
 	const dates = (out(git('for-each-ref', '--format=%(creatordate:iso-strict)', 'refs/kit/tags/')) || '').split('\n').filter(Boolean);
 	return dates.filter((d) => new Date(d).toISOString().slice(0, 10) === today).length;
 }
@@ -129,8 +129,14 @@ function check(act) {
 	const ask = (reasons) => { for (const r of reasons) console.log(`ASK the owner - ${clean(r)}`); return 1; };
 	const on = SWITCHES.find((f) => fs.existsSync(f));
 	if (on) return ask([`the kill switch is on (${on})`]);
-	if (git('remote', 'get-url', 'origin').status !== 0) return ask(['no origin remote to read main from']);
-	if (git('fetch', '-q', 'origin', `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
+	// main is read from the URL the act pushes to, never from the name "origin": a fetch URL of its own, or a url rewrite
+	// in git config, would let a session serve this check a main it wrote while the push still goes to GitHub.
+	const url = out(git('remote', 'get-url', 'origin'));
+	if (!url) return ask(['no origin remote to read main from']);
+	const pushUrls = (out(git('remote', 'get-url', '--push', '--all', 'origin')) || '').split('\n').filter(Boolean);
+	if (!pushUrls.length || pushUrls.some((u) => u !== url)) return ask([`origin reads main from ${url} but pushes to ${pushUrls.join(', ') || 'nowhere'}`]);
+	if (out(git('config', '--get-regexp', '^url\\..*\\.(push)?insteadof$'))) return ask(['a url rewrite (insteadOf) in git config could send the fetch somewhere else']);
+	if (git('fetch', '-q', url, `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
 	const raw = git('show', `${MAIN_REF}:${GRANT_FILE}`);
 	if (raw.status !== 0) return ask([`no grant on origin/main (${GRANT_FILE}): every act asks`]);
 	let grant;
@@ -156,7 +162,7 @@ function check(act) {
 	if (c.includes('tests') && run(grant.commands.tests[0], grant.commands.tests.slice(1), top).status !== 0) reasons.push('the tests fail');
 	if (c.includes('scrub') && run(grant.commands.scrub[0], grant.commands.scrub.slice(1), top).status !== 0) reasons.push('the scrub fails');
 	if (c.includes('new-test-fails-at-base')) reasons.push(...newTestEvidence(grant, base));
-	if (c.includes('release-cap')) { const n = releasesToday(); if (n >= spec.releaseCapPerDay) reasons.push(`release cap: ${n} of ${spec.releaseCapPerDay} releases today`); }
+	if (c.includes('release-cap')) { const n = releasesToday(url); if (n >= spec.releaseCapPerDay) reasons.push(`release cap: ${n} of ${spec.releaseCapPerDay} releases today`); }
 
 	const script = reasons.length ? 'ask' : 'go';
 	const s = streak(act);

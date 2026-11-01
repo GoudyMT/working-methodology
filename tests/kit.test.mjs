@@ -3137,6 +3137,19 @@ test('the act name is cleaned, so a newline in it cannot print a GO line', () =>
   assert.doesNotMatch(out.stdout, /^GO/m);
   assert.deepEqual(controls(out.stdout), []);
 });
+// The gate-restoring review: main was read from wherever the name "origin" fetched, while pushes could still go to
+// GitHub, so a session could serve the check a main of its own.
+test('the grant check reads main from where origin pushes, and asks when fetch and push differ or a url rewrite is set', () => {
+  const r = autonomyRepo();
+  const fake = path.join(path.dirname(r.dir), 'fake.git');
+  g(path.dirname(r.dir), 'clone', '-q', '--bare', r.bare, fake);
+  g(r.dir, 'remote', 'set-url', 'origin', fake);
+  g(r.dir, 'remote', 'set-url', '--push', 'origin', r.bare);
+  askOn(r, /origin reads main from .* but pushes to/);
+  const rw = autonomyRepo();
+  g(rw.dir, 'config', `url.${rw.bare}.insteadOf`, 'https://example.invalid/');
+  askOn(rw, /url rewrite/);
+});
 test('a fresh project install ships no grant, so every act asks', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nogrant-'));
   g(dir, 'init', '-q', '-b', 'main');
