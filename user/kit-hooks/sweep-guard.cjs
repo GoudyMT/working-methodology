@@ -6,7 +6,8 @@
 // PreToolUse on Agent and Task; only the reviewer type is gated. The log is approve.mjs's own
 // (<git common dir>/kit-sweep-approvals.jsonl), each line chained to the one before; a line that breaks the chain
 // clears nothing. HEAD is read from the contract's own folder, so a sweep run from a worktree is judged by that
-// worktree. A cleared contract lets in at most as many reviewers as it has roles (counted in
+// worktree, and a checkout with sweeps of its own is judged by its own lines only. A cleared contract lets in at
+// most as many reviewers as it has roles (counted in
 // kit-sweep-starts/ next to the log). Outside a git repository there is no log, so the call goes through.
 // It stops slips, not a determined workaround: a carefully forged log line passes it.
 const fs = require('fs');
@@ -27,11 +28,19 @@ function main() {
 	const dir = common.stdout.trim();
 	const file = path.join(dir, 'kit-sweep-approvals.jsonl');
 	const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
+	// The log is shared by every worktree of the repo. A checkout with sweeps of its own is judged by its own lines only:
+	// taking the newest line from any worktree once let a worktree whose contract was refused start reviewers on
+	// another's approval. A checkout with none (the lead's session in the main checkout) still reads them all.
+	const top = (cwd) => git(cwd, 'rev-parse', '--show-toplevel').stdout.trim().toLowerCase();
+	const here = top(input.cwd || process.cwd());
+	const tops = lines.map((l) => { try { const e = JSON.parse(l); return typeof e.contract === 'string' ? top(path.dirname(e.contract)) : null; } catch { return null; } });
+	const own = tops.includes(here);
 	// The latest decision or owner's yes whose contract's checkout is still at the HEAD it was cleared for decides.
 	for (let i = lines.length - 1; i >= 0; i--) {
 		let e;
 		try { e = JSON.parse(lines[i]); } catch { continue; }
 		if ((e.kind !== 'decision' && e.kind !== 'owner-yes') || typeof e.contract !== 'string') continue;
+		if (own && tops[i] !== here) continue;
 		if (e.prev !== (i ? sha(lines[i - 1]) : '')) continue;
 		if (!e.head || git(path.dirname(e.contract), 'rev-parse', '--short', 'HEAD').stdout.trim() !== e.head) continue;
 		let raw = null;

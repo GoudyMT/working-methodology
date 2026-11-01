@@ -2550,6 +2550,22 @@ test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sw
   assert.equal(r.status, 0, r.stdout);
   assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
 });
+// Found in the review of the re-sweep (2026-11-01, reproduced first): the guard took the newest cleared line from any
+// worktree, so a worktree whose own contract was refused started reviewers on another worktree's approval, and used
+// up that team's slots. A checkout with sweeps of its own is judged by its own lines only.
+test('the sweep guard judges a worktree by its own sweeps, never another worktree\'s approval', () => {
+  const x = sweepRepo();
+  const y = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'wt');
+  g(x, 'worktree', 'add', '-q', '-b', 'feat/y', y, 'main');
+  fs.writeFileSync(path.join(y, 'y.ts'), 'y\n');
+  commitAll(y, 'feat: y', true);
+  fs.mkdirSync(path.join(y, 'docs', 'sweeps'), { recursive: true });
+  const refused = { tier: 'feature', modifiers: [], roles: featureContract().roles.slice(0, 2) };
+  assert.equal(approveRun(refused, y).status, 1);
+  assert.equal(approveRun(featureContract(), x).status, 0);
+  assert.equal(sweepGuard(y).permissionDecision, 'deny', 'the refused worktree starts no reviewer');
+  for (let i = 0; i < 5; i++) assert.equal(sweepGuard(x).permissionDecision, 'allow', `the approved worktree's reviewer ${i + 1}`);
+});
 test('the owner\'s yes can be logged when the script could not read the base', () => {
   const dir = sweepRepo();
   g(dir, 'branch', '-m', 'main', 'develop');
