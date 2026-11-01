@@ -2945,7 +2945,7 @@ test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing gran
 
 // Plan kit-autopilot, Phase 2: the standing-grant check. Every condition is checked by the script itself, from main
 // on the remote, and anything missing, odd or unproven means ask the owner. The streak of owner verdicts is
-// advisory: no act runs on its own until verdicts are signed with a touch-required key.
+// advisory: no act runs on its own, and only the owner can change that.
 const AUTONOMY = path.resolve('project/.claude/autonomy.mjs');
 const GRANT = {
   version: 1,
@@ -3077,7 +3077,7 @@ test('the streak counts owner verdicts but is advisory: 10 of 10 still asks, and
   askOn(r, /ledger was changed by hand/);
 });
 // The security review of the streak: the ledger lives in the git folder and its chain has no secret, so a session can
-// write ten well-chained hits without the owner. Until verdicts are signed with a touch-required key, that buys no GO.
+// write ten well-chained hits without the owner. While the ledger is advisory, that buys no GO.
 test('a forged ledger flooded with well-chained hits still asks, and the streak shows at most 10/10', () => {
   const r = autonomyRepo();
   askOn(r, /auto-eligible \(advisory\): 0\/10/);

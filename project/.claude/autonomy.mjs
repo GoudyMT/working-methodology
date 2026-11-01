@@ -7,8 +7,8 @@
 // and passing here, today's releases) is run or counted here, never read from a claim; the kill switch sits outside
 // every repo, in the Claude config folder. A branch that touches the grant, the gates or Tier 0 rule text always asks.
 // Each check is logged with the script's verdict and the owner logs theirs; 10 straight hits (the owner agreed with
-// the script) make an act auto-eligible, one miss resets it. The streak is advisory: verdicts are not yet signed, so
-// every act still asks (rule:standing-grants).
+// the script) make an act auto-eligible, one miss resets it. The streak is advisory: every act still asks, and only the
+// owner can change that (rule:standing-grants).
 //
 // Usage (from inside the repo):
 //   node .claude/autonomy.mjs check <act>                        ASK (exit 1) with the script's verdict, logged
@@ -173,7 +173,7 @@ function check(act) {
 	append({ kind: 'check', act, base, head, script, reasons });
 	if (script === 'ask') return ask(reasons);
 	// The streak is advisory: anyone who can write the git folder can write a well-chained verdict, so even 10 of 10
-	// asks. An act skips the prompt only once verdicts are signed with a touch-required key and streak() verifies them.
+	// asks. Only the owner can change that (rule:standing-grants).
 	return ask([`auto-eligible (advisory): ${Math.min(s, STREAK)}/${STREAK}; the script says GO for ${act} at ${head.slice(0, 7)}`]);
 }
 

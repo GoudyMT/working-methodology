@@ -79,7 +79,7 @@ Changelog note for the 1.13.0 bump (draft): The Standard PR body's Review sectio
 - [x] Runs the evidence itself (test at base and head, full tests, scrub, caps) - the new test runs in a worktree at main and here
 - [x] Kill switch outside git; checked before every act - `autonomy-off` in the Claude config folder, checked first
 - [x] Ledger of the script's verdict and the owner's per act (chained lines in the git folder); 10 straight hits make an act auto-eligible, one miss resets it. The streak is advisory: the ledger is forgeable, so `check` always asks
-- [ ] Signed verdicts before any act skips a prompt: each verdict signed with a touch-required key (FIDO2 `ssh -sk` or a YubiKey), the signature covering the check line it judges, and `streak()` verifying them (rule:standing-grants). Phases 4-6 wait on this
+- [ ] The ledger stays advisory: only the owner can change that, when an act first reaches 10 straight hits (rule:standing-grants). Phases 4-6 wait on that decision
 - Known limit for review: the release cap counts today's remote tags by their commit date, which a careful session could backdate
 
 ### Phase 3: Intake and identity
