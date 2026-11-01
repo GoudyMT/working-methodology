@@ -2679,6 +2679,22 @@ test('the sweep guard judges a worktree by its own sweeps, never another worktre
   assert.equal(sweepGuard(y).permissionDecision, 'deny', 'the refused worktree starts no reviewer');
   for (let i = 0; i < 5; i++) assert.equal(sweepGuard(x).permissionDecision, 'allow', `the approved worktree's reviewer ${i + 1}`);
 });
+// Found in the sweep of the re-sweep (2026-11-01; old code): a worktree removed before its sweep's outcome was logged
+// wedged every other worktree, because --outcome looked for the log from the removed folder.
+test('a removed worktree\'s sweep can still log its outcome from the main checkout', () => {
+  const dir = sweepRepo();
+  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'wt');
+  g(dir, 'worktree', 'add', '-q', '-b', 'feat/gone', wt, 'main');
+  fs.writeFileSync(path.join(wt, 'gone.ts'), 'x\n');
+  commitAll(wt, 'feat: gone', true);
+  fs.mkdirSync(path.join(wt, 'docs', 'sweeps'), { recursive: true });
+  const r = approveRun(featureContract(), wt);
+  assert.equal(r.status, 0, r.stdout);
+  g(dir, 'worktree', 'remove', '--force', wt);
+  assert.equal(approveIn(dir, [r.f, '--outcome', '--tokens', '100000', '--findings', '1', '--real', '1', '--duplicates', '0']).status, 0);
+  const next = approveRun(featureContract(), dir);
+  assert.doesNotMatch(next.stdout, /log the outcome of the last approved sweep first/);
+});
 test('the owner\'s yes can be logged when the script could not read the base', () => {
   const dir = sweepRepo();
   g(dir, 'branch', '-m', 'main', 'develop');

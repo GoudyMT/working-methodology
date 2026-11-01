@@ -76,7 +76,8 @@ const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const has = (name) => args.includes(name);
 const contractFile = args[0] && !args[0].startsWith('--') ? path.resolve(args[0]) : null;
-const git = (...a) => spawnSync('git', ['-C', contractFile ? path.dirname(contractFile) : process.cwd(), ...a], { encoding: 'utf8' });
+// git runs in the contract's folder, or here when that folder is gone (a removed worktree's sweep logging its outcome).
+const git = (...a) => spawnSync('git', ['-C', contractFile && fs.existsSync(path.dirname(contractFile)) ? path.dirname(contractFile) : process.cwd(), ...a], { encoding: 'utf8' });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 
 // The log: one per repo, in its git folder.
