@@ -391,8 +391,12 @@ function outcome() {
 		nums[k] = v;
 	}
 	// The decision is found by the contract's path, so an edit after approval still finds it.
-	// An owner-decided sweep logs its outcome too, so the trial review sees every sweep.
-	const decision = state().log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
+	// An owner-decided sweep logs its outcome too, so the trial review sees every sweep. The newest CLEARED decision
+	// takes it: a refused re-run of the contract once took the outcome, and every later sweep waited for one that
+	// could never land.
+	const s = state();
+	const mine = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile);
+	const decision = mine.filter((e) => cleared(s, e)).pop() || mine.pop();
 	if (!decision) { console.log(`No decision for ${contractFile}; run approve.mjs on it first. Nothing logged.`); return 1; }
 	// Real findings from roles on the mid model, for the reviewer model trial; optional.
 	if (opt('--real-mid') !== undefined) {

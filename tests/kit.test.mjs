@@ -843,6 +843,8 @@ test('the sweep report audit passes a done report and names each missing part', 
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
 });
+// Found in the sweep of the re-sweep (2026-11-01): "high and above fixed now" was written but the audit took a
+// DEFERRED re-sweep high. A re-sweep's high is fixed in its PR and goes to the one fix check.
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
   const none = runAudit('pre-pr-sweep', base + '\nNo secrets or personal data in the diff.\n');
@@ -2294,6 +2296,22 @@ test('a re-sweep\'s high fixes get one one-role check of the files changed since
   assert.match(resweep(r, fixCheck(), second.f, 'check2.json').stdout, /already had its one fix check/);
   assert.match(resweep(r, fixCheck(), check.f, 'check3.json').stdout, /nothing comes after the fix check/);
 });
+// Found in the sweep of the re-sweep (2026-11-01, each reproduced first in a scratch repo with its own log).
+test('an outcome binds to the sweep that ran, not a refused re-run of its contract', () => {
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout);
+  fs.writeFileSync(path.join(r.dir, 'src/new.ts'), 'x\n');
+  assert.equal(approveIn(r.dir, [r.f]).status, 1, 'a re-run refused for uncommitted work');
+  fs.rmSync(path.join(r.dir, 'src/new.ts'));
+  assert.equal(outcome(r).status, 0);
+  const next = path.join(r.dir, 'docs', 'sweeps', 'next.json');
+  fs.writeFileSync(next, JSON.stringify(featureContract()));
+  const out = approveIn(r.dir, [next]);
+  assert.doesNotMatch(out.stdout, /log the outcome of the last approved sweep first/);
+  assert.equal(out.status, 0, out.stdout);
+});
+const words12 = ['amber basil cedar', 'delta ember fable', 'garnet hollow iris', 'jasper kettle lumen', 'maple nectar onyx', 'pepper quartz raven', 'saffron timber umber', 'velvet willow xenon', 'yarrow zephyr acorn', 'bramble cobalt dune', 'fennel glacier heron', 'indigo juniper kelp', 'lagoon mosaic nimbus'];
+const ask = (kind, i) => role(kind, `Which ${words12[i]} path does the fix ${i} reach?`, { context: ['src/sync.ts'], budget: 60000 });
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');
