@@ -78,7 +78,8 @@ Changelog note for the 1.13.0 bump (draft): The Standard PR body's Review sectio
 - [x] Reads grant and itself from `origin/main`, never the worktree - a grant only on the branch, or a changed copy of the check, asks
 - [x] Runs the evidence itself (test at base and head, full tests, scrub, caps) - the new test runs in a worktree at main and here
 - [x] Kill switch outside git; checked before every act - `autonomy-off` in the Claude config folder, checked first
-- [x] Ledger of the script's verdict and the owner's per act (chained lines in the git folder); 10 straight hits promote an act to auto, one miss sends it back to verify; only the owner's own terminal gives a verdict
+- [x] Ledger of the script's verdict and the owner's per act (chained lines in the git folder); 10 straight hits make an act auto-eligible, one miss resets it. The streak is advisory: the ledger is forgeable, so `check` always asks
+- [ ] The ledger stays advisory: only the owner can change that, when an act first reaches 10 straight hits (rule:standing-grants). Phases 4-6 wait on that decision
 - Known limit for review: the release cap counts today's remote tags by their commit date, which a careful session could backdate
 
 ### Phase 3: Intake and identity

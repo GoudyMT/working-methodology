@@ -2971,8 +2971,8 @@ test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing gran
 });
 
 // Plan kit-autopilot, Phase 2: the standing-grant check. Every condition is checked by the script itself, from main
-// on the remote, and anything missing, odd or unproven means ask the owner. An act runs on its own only after 10
-// straight owner-confirmed hits; one miss sends it back to verify.
+// on the remote, and anything missing, odd or unproven means ask the owner. The streak of owner verdicts is
+// advisory: no act runs on its own, and only the owner can change that.
 const AUTONOMY = path.resolve('project/.claude/autonomy.mjs');
 const GRANT = {
   version: 1,
@@ -3034,7 +3034,7 @@ test('the grant check finds itself on main when the repo path comes as a Windows
   assert.notEqual(short.toLowerCase(), r.dir.toLowerCase(), 'the fixture path has a short name to test with');
   const out = spawnSync('node', ['.claude/autonomy.mjs', 'check', 'release'], { encoding: 'utf8', cwd: short, env: { PATH: process.env.PATH, KIT_CLAUDE_HOME: r.home } });
   assert.doesNotMatch(out.stdout, /differs from origin\/main/, `run from ${short}`);
-  assert.match(out.stdout, /verify mode: 0 of 10 straight hits/);
+  assert.match(out.stdout, /auto-eligible \(advisory\): 0\/10/);
 });
 test('the grant check asks while the kill switch outside the repo exists', () => {
   const r = autonomyRepo();
@@ -3069,29 +3069,197 @@ test('the grant check counts today\'s release tags on the remote against the cap
   for (const t of ['v1.0.1', 'v1.0.2', 'v1.0.3']) { g(r.dir, 'tag', t, 'main'); g(r.dir, 'push', '-q', '--no-verify', 'origin', t); }
   askOn(r, /release cap: 3 of 3 releases today/);
 });
-test('an act stays in verify until 10 straight owner-confirmed hits, and one miss sends it back', () => {
+// A verdict line is as the terminal writes it: chained to the line before and naming the check it judges. Anyone who
+// can write the git folder can write one, so the streak it builds is advisory and never skips the owner's yes.
+const ledgerFile = (r) => path.join(r.dir, '.git', 'kit-autonomy-ledger.jsonl');
+const ledgerLines = (r) => read(ledgerFile(r)).split('\n').filter(Boolean);
+const appendChained = (r, entry) => {
+  const lines = ledgerLines(r);
+  const prev = createHash('sha256').update(lines[lines.length - 1]).digest('hex');
+  fs.appendFileSync(ledgerFile(r), JSON.stringify({ ...entry, time: new Date().toISOString(), prev }) + '\n');
+};
+const lastCheck = (r) => ledgerLines(r).map((l) => JSON.parse(l)).filter((e) => e.kind === 'check').pop();
+const appendVerdict = (r, v) => appendChained(r, { kind: 'verdict', act: 'release', verdict: v, check: lastCheck(r).time });
+// The owner's verdict as a terminal gives it: a preload makes stdin look like a terminal, and the typed SHA is the input.
+const ownerVerdict = (r, v, typed) => {
+  const tty = path.join(r.home, 'tty.mjs');
+  fs.writeFileSync(tty, "Object.defineProperty(process.stdin, 'isTTY', { value: true });\n");
+  return spawnSync('node', ['--import', pathToFileURL(tty).href, '.claude/autonomy.mjs', 'verdict', 'release', v], { encoding: 'utf8', cwd: r.dir, input: `${typed}\n`, env: { PATH: process.env.PATH, KIT_CLAUDE_HOME: r.home, KIT_OWNER_VERDICT: '1' } });
+};
+// Control characters the terminal acts on: C0 (ESC among them), DEL and C1. A printed newline is the only one allowed.
+const controls = (s) => [...s].filter((ch) => { const c = ch.charCodeAt(0); return (c < 32 && c !== 10) || (c >= 127 && c < 160); });
+test('the streak counts owner verdicts but is advisory: 10 of 10 still asks, and one miss resets it', () => {
   const r = autonomyRepo();
-  const first = askOn(r, /verify mode: 0 of 10 straight hits/);
+  const first = askOn(r, /auto-eligible \(advisory\): 0\/10/);
   assert.match(first.stdout, /script says GO/);
-  // A verdict needs the owner's own terminal: an env flag alone, from any shell a tool runs, is refused.
+  // The env and terminal checks stop a tool by accident or habit; they do not prove the owner typed the verdict.
   for (const env of [{ CLAUDECODE: '1' }, { AI_AGENT: 'x' }, {}, { KIT_OWNER_VERDICT: '1' }]) assert.notEqual(autonomy(r, ['verdict', 'release', 'hit'], env).status, 0, JSON.stringify(env));
-  // The owner's verdict as the terminal writes it: a chained ledger line naming the check it judges.
-  const file = path.join(r.dir, '.git', 'kit-autonomy-ledger.jsonl');
-  const owner = (v) => {
-    const lines = read(file).split('\n').filter(Boolean);
-    const check = lines.map((l) => JSON.parse(l)).filter((e) => e.kind === 'check').pop();
-    const prev = createHash('sha256').update(lines[lines.length - 1]).digest('hex');
-    fs.appendFileSync(file, JSON.stringify({ kind: 'verdict', act: 'release', verdict: v, check: check.time, time: new Date().toISOString(), prev }) + '\n');
-  };
-  owner('hit');
-  for (let i = 1; i < 10; i++) { askOn(r, new RegExp(`verify mode: ${i} of 10 straight hits`)); owner('hit'); }
-  const go = autonomy(r, ['check', 'release']);
-  assert.equal(go.status, 0, go.stdout);
-  assert.match(go.stdout, /^GO release/m);
-  owner('miss');
-  askOn(r, /verify mode: 0 of 10 straight hits/);
-  fs.appendFileSync(file, JSON.stringify({ kind: 'verdict', act: 'release', verdict: 'hit' }) + '\n');
+  appendVerdict(r, 'hit');
+  for (let i = 1; i < 10; i++) { askOn(r, new RegExp(`auto-eligible \\(advisory\\): ${i}/10`)); appendVerdict(r, 'hit'); }
+  const full = askOn(r, /auto-eligible \(advisory\): 10\/10/);
+  assert.doesNotMatch(full.stdout, /^GO/m);
+  appendVerdict(r, 'miss');
+  askOn(r, /auto-eligible \(advisory\): 0\/10/);
+  fs.appendFileSync(ledgerFile(r), JSON.stringify({ kind: 'verdict', act: 'release', verdict: 'hit' }) + '\n');
   askOn(r, /ledger was changed by hand/);
+});
+// The security review of the streak: the ledger lives in the git folder and its chain has no secret, so a session can
+// write ten well-chained hits without the owner. While the ledger is advisory, that buys no GO.
+test('a forged ledger flooded with well-chained hits still asks, and the streak shows at most 10/10', () => {
+  const r = autonomyRepo();
+  askOn(r, /auto-eligible \(advisory\): 0\/10/);
+  for (let i = 0; i < 12; i++) appendVerdict(r, 'hit');
+  const out = askOn(r, /auto-eligible \(advisory\): 10\/10/);
+  assert.doesNotMatch(out.stdout, /^GO/m);
+  const status = autonomy(r, ['status']);
+  assert.equal(status.stdout.trim(), 'release: auto-eligible (advisory): 10/10');
+});
+// The forgery review of the advisory change: the owner's verdict prompt is the one channel outside the session, and it
+// printed ledger lines as "what the script said" without checking them.
+test('the owner\'s verdict prompt shows only a check line it verified, and refuses a ledger changed by hand', () => {
+  const r = autonomyRepo();
+  askOn(r, /0\/10/);
+  const good = ownerVerdict(r, 'hit', lastCheck(r).head.slice(0, 7));
+  assert.equal(good.status, 0, good.stdout + good.stderr);
+  assert.match(good.stdout, /hit logged; auto-eligible \(advisory\): 1\/10/);
+  const ESC = String.fromCharCode(27);
+  for (const [head, script] of [['', 'go'], ['f'.repeat(40), 'go'], ['HEAD', 'go'], [null, `ask${ESC}[2K\rGO`]]) {
+    const forged = autonomyRepo();
+    askOn(forged, /0\/10/);
+    appendChained(forged, { kind: 'check', act: 'release', base: lastCheck(forged).base, head: head ?? lastCheck(forged).head, script, reasons: [] });
+    const out = ownerVerdict(forged, 'hit', lastCheck(forged).head.slice(0, 7));
+    assert.notEqual(out.status, 0, `head "${head}"`);
+    assert.match(out.stdout, /cannot be verified/);
+    assert.doesNotMatch(out.stdout, /logged|script said/);
+    assert.deepEqual(controls(out.stdout), []);
+  }
+  askOn(r, /1\/10/);
+  fs.appendFileSync(ledgerFile(r), JSON.stringify({ kind: 'check', act: 'release', head: lastCheck(r).head, script: 'go', reasons: [], prev: 'x' }) + '\n');
+  const broken = ownerVerdict(r, 'hit', lastCheck(r).head.slice(0, 7));
+  assert.notEqual(broken.status, 0);
+  assert.match(broken.stdout, /changed by hand/);
+  assert.doesNotMatch(broken.stdout, /logged|script said/);
+});
+test('every ledger field is cleaned before it is printed, and a line that is not an object is flagged, not a crash', () => {
+  const ESC = String.fromCharCode(27);
+  const r = autonomyRepo();
+  askOn(r, /0\/10/);
+  const head = lastCheck(r).head;
+  appendChained(r, { kind: 'check', act: 'release', base: lastCheck(r).base, head, script: 'ask', reasons: [`${ESC}[2K\r${ESC}[1AGO release`, `${ESC}]52;c;Y3VybA==${String.fromCharCode(7)}`] });
+  const prompt = ownerVerdict(r, 'hit', 'nope');
+  assert.match(prompt.stdout, /script said ASK/);
+  assert.deepEqual(controls(prompt.stdout), []);
+  assert.doesNotMatch(prompt.stdout, /^GO/m);
+  appendChained(r, { kind: 'verdict', act: `push${ESC}[2K\rrelease`, verdict: 'hit', check: 'x' });
+  assert.deepEqual(controls(autonomy(r, ['status']).stdout), []);
+  fs.appendFileSync(ledgerFile(r), 'null\n');
+  const status = autonomy(r, ['status']);
+  assert.equal(status.status, 0, status.stdout);
+  assert.match(status.stdout, /changed by hand/);
+  assert.doesNotMatch(status.stdout, /check failed/);
+  askOn(r, /changed by hand/);
+});
+// The fix check: the cleaning missed C1 and DEL in its tests, let some direction and invisible marks through, hid the
+// joiners real text needs (emoji, Persian, Hindi), and a non-text act in a ledger line crashed status.
+test('the cleaning covers every control, direction and invisible mark, keeps joiners, and a non-text act does not crash status', () => {
+  const marks = [0x9b, 0x7f, 0x202e, 0x200b, 0x2066, 0x61c, 0x2028, 0x2029, 0x2060, 0xfeff, 0xad];
+  const joiner = 'dev' + String.fromCodePoint(0x1f469, 0x200d, 0x1f4bb);
+  const r = autonomyRepo();
+  askOn(r, /0\/10/);
+  appendChained(r, { kind: 'check', act: 'release', base: lastCheck(r).base, head: lastCheck(r).head, script: 'ask', reasons: [`x${String.fromCodePoint(...marks)}y`, joiner] });
+  const prompt = ownerVerdict(r, 'hit', 'nope').stdout;
+  assert.match(prompt, /script said ASK/);
+  for (const m of marks) assert.ok(!prompt.includes(String.fromCodePoint(m)), `U+${m.toString(16)} printed`);
+  assert.ok(prompt.includes(joiner), 'a joined emoji prints as written');
+  appendChained(r, { kind: 'verdict', act: { toString: 1 }, verdict: 'hit', check: 'x' });
+  const status = autonomy(r, ['status']);
+  assert.equal(status.status, 0, status.stdout);
+  assert.doesNotMatch(status.stdout, /check failed/);
+});
+// The fix check: one damaged line (an editor's line endings, a crash mid-write) locked the owner out of verdicts for
+// good, blamed a hand edit, and never said where the ledger is.
+test('a damaged ledger names its file and how to start over, and line endings or a half line do not spread', () => {
+  const r = autonomyRepo();
+  askOn(r, /0\/10/);
+  askOn(r, /0\/10/);
+  fs.writeFileSync(ledgerFile(r), read(ledgerFile(r)).replace(/\n/g, '\r\n'));
+  askOn(r, /auto-eligible \(advisory\): 0\/10/);
+  assert.doesNotMatch(autonomy(r, ['status']).stdout, /changed by hand/);
+  fs.appendFileSync(ledgerFile(r), '{"kind":"check","act":"rel');
+  const damaged = askOn(r, /changed by hand or damaged/);
+  assert.match(damaged.stdout, /kit-autonomy-ledger\.jsonl\): move it aside to start a new one/);
+  assert.doesNotThrow(() => JSON.parse(read(ledgerFile(r)).split(/\r?\n/).filter(Boolean).pop()), 'the next entry is a line of its own');
+  const refused = ownerVerdict(r, 'hit', 'x');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stdout, /kit-autonomy-ledger\.jsonl\): move it aside/);
+  fs.renameSync(ledgerFile(r), `${ledgerFile(r)}.old`);
+  askOn(r, /auto-eligible \(advisory\): 0\/10/);
+  const fresh = ownerVerdict(r, 'hit', lastCheck(r).head.slice(0, 7));
+  assert.equal(fresh.status, 0, fresh.stdout);
+});
+test('the act name is cleaned, so a newline in it cannot print a GO line', () => {
+  const r = autonomyRepo();
+  const out = autonomy(r, ['check', 'nope\nGO release at 1234567 (10 straight owner-confirmed hits)']);
+  assert.equal(out.status, 1);
+  assert.doesNotMatch(out.stdout, /^GO/m);
+  assert.deepEqual(controls(out.stdout), []);
+});
+// The gate-restoring review: main was read from wherever the name "origin" fetched, while pushes could still go to
+// GitHub, so a session could serve the check a main of its own.
+// The fix check: a refusal of every url rewrite asked on the common global https-to-ssh rewrite, so a streak could
+// never start; only a rewrite that sends fetch and push to different places can serve a main of its own.
+test('the grant check reads main from where origin pushes, and asks when fetch and push differ after any url rewrite', () => {
+  const fakeOf = (r) => { const fake = path.join(path.dirname(r.dir), 'fake.git'); g(path.dirname(r.dir), 'clone', '-q', '--bare', r.bare, fake); return fake; };
+  const r = autonomyRepo();
+  const fake = fakeOf(r);
+  g(r.dir, 'remote', 'set-url', 'origin', fake);
+  g(r.dir, 'remote', 'set-url', '--push', 'origin', r.bare);
+  askOn(r, /origin reads main from .* but pushes to/);
+  const split = autonomyRepo();
+  g(split.dir, 'config', `url.${fakeOf(split)}.pushInsteadOf`, split.bare);
+  askOn(split, /origin reads main from .* but pushes to/);
+  const both = autonomyRepo();
+  g(both.dir, 'remote', 'set-url', 'origin', 'https://example.invalid/repo.git');
+  g(both.dir, 'config', `url.${both.bare}.insteadOf`, 'https://example.invalid/repo.git');
+  askOn(both, /auto-eligible \(advisory\): 0\/10/);
+  // The commit review of the rewrite change: get-url rewrites once, and a fetch by that URL rewrites again, so a
+  // second rule matching the rewritten URL sends the fetch elsewhere while the push goes to the first.
+  const twice = autonomyRepo();
+  g(twice.dir, 'remote', 'set-url', 'origin', 'https://example.invalid/repo.git');
+  g(twice.dir, 'config', `url.${twice.bare}.insteadOf`, 'https://example.invalid/repo.git');
+  g(twice.dir, 'config', `url.${fakeOf(twice)}.insteadOf`, twice.bare);
+  askOn(twice, /rewritten again/);
+  const mirror = autonomyRepo();
+  g(mirror.dir, 'remote', 'set-url', '--push', 'origin', mirror.bare);
+  g(mirror.dir, 'remote', 'set-url', '--add', '--push', 'origin', fakeOf(mirror));
+  askOn(mirror, /but pushes to .*, /);
+  const token = autonomyRepo();
+  g(token.dir, 'remote', 'set-url', 'origin', 'https://max:ghp_NOTREAL@example.invalid/repo.git');
+  g(token.dir, 'remote', 'set-url', '--push', 'origin', token.bare);
+  assert.doesNotMatch(askOn(token, /origin reads main from https:\/\/\*\*\*@example\.invalid/).stdout, /ghp_NOTREAL/);
+});
+// The commit security review of the fix above: the URL is now passed to git fetch as an argument, and one starting
+// with "-" would be read as an option (--upload-pack runs a command).
+test('the grant check refuses an origin url that git would read as an option', () => {
+  const r = autonomyRepo();
+  const config = path.join(r.dir, '.git', 'config');
+  fs.writeFileSync(config, read(config).replace(/url = .*/, 'url = --upload-pack=touch pwned'));
+  askOn(r, /starts with "-"/);
+  assert.ok(!fs.existsSync(path.join(r.dir, 'pwned')));
+});
+// The fix check: the ext transport runs a command; the refusal had no test, and GIT_ALLOW_PROTOCOL in the env of
+// whoever runs the check turned it back on.
+// The second fix check (2026-11-01): Windows reads env names in any case, so git_allow_protocol=ext still turned ext
+// back on while only the upper-case name was removed.
+test('the grant check never lets the ext transport run, whatever the repo config or the env allow', () => {
+  for (const env of [{}, { GIT_ALLOW_PROTOCOL: 'ext' }, { git_allow_protocol: 'ext' }, { Git_Allow_Protocol: 'ext' }]) {
+    const r = autonomyRepo();
+    g(r.dir, 'remote', 'set-url', 'origin', 'ext::touch pwned');
+    g(r.dir, 'config', 'protocol.ext.allow', 'always');
+    const out = autonomy(r, ['check', 'release'], env);
+    assert.equal(out.status, 1, out.stdout);
+    assert.ok(!fs.existsSync(path.join(r.dir, 'pwned')), `the ext command ran with ${JSON.stringify(env)}`);
+  }
 });
 test('a fresh project install ships no grant, so every act asks', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nogrant-'));

@@ -191,3 +191,27 @@ folded into session-workflow) on three fresh installs, each scored strictly by i
 - Q7 run 1: the answer let approve.mjs approve and never named the owner's stop (the rule's design since 1.5.0).
 - Q10 runs 1 and 3: the PR step stops at "the PR body goes to the owner", without the sweep summary in it.
 - The run 1 scorer looked at the git log, which its brief barred; its one disputed call (Q7) went against the branch.
+
+## Standing grants advisory change (2026-10-31)
+
+The rule:standing-grants rewording (the ledger is advisory, and only the owner can change that; on-demand module
+git-and-release) on three fresh installs from `ed7d1e2`, each scored strictly by its own new blind scorer.
+
+| Q | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 1, 2, 4, 5, 6, 8, 9 | 1 | 1 | 1 |
+| 3 | 0 | 1 | 0 |
+| 7 | 0 | 1 | 1 |
+| 10 | 1 | 0 | 0 |
+| Total | 8 | 9 | 8 |
+
+- **Gate not met: median 8 (8, 9, 8). Accepted by the owner** for this change: every miss is on always-loaded text
+  the change does not touch, and question 4 (push and PR are the owner's acts), the one the changed module serves,
+  passed in all three runs.
+- Q3 runs 1 and 3: fresh reads shown as a checklist, the rule itself (every file in the reading order, before any
+  edit) never stated.
+- Q7 run 1: the answer let approve.mjs approve and told the user not to approve by hand (as in the last gate).
+- Q10 runs 2 and 3: no line says the sweep is summarized in the PR (it failed in two of three at the last gate too).
+- Borderline (scorers): a lenient reading passes Q3 and Q10 in every run that missed them; Q4 says "your yes", not
+  "explicit yes", in all three.
+- Follow-up: the always-loaded wording behind Q3, Q7 and Q10 goes to its own change, with its own recall run.

@@ -1,18 +1,19 @@
 // The standing-grant check (rule:standing-grants; plan kit-autopilot, Phase 2). Before an outward act the owner granted
-// (a release, a push to main), this decides GO or ASK, and anything missing, odd or unproven is ASK.
+// (a release, a push to main), this works out whether the evidence says GO; anything missing, odd or unproven is ASK,
+// and for now every act asks the owner, since the streak below is advisory.
 //
 // Why each part is the way it is: a session could edit any file it can see, so nothing here trusts the working copy.
 // The grant and this script are read from main on the remote; the evidence (tests, scrub, the new test failing on main
 // and passing here, today's releases) is run or counted here, never read from a claim; the kill switch sits outside
 // every repo, in the Claude config folder. A branch that touches the grant, the gates or Tier 0 rule text always asks.
-// Trust is earned per act: each check is logged with the script's verdict, the owner logs theirs from their own
-// terminal, and only after 10 straight hits (the owner agreed with the script) does an act run without the owner;
-// one miss puts it back to verify.
+// Each check is logged with the script's verdict and the owner logs theirs; 10 straight hits (the owner agreed with
+// the script) make an act auto-eligible, one miss resets it. The streak is advisory: every act still asks, and only the
+// owner can change that (rule:standing-grants).
 //
 // Usage (from inside the repo):
-//   node .claude/autonomy.mjs check <act>                        GO (exit 0) or ASK (exit 1), logged
+//   node .claude/autonomy.mjs check <act>                        ASK (exit 1) with the script's verdict, logged
 //   KIT_OWNER_VERDICT=1 node .claude/autonomy.mjs verdict <act> hit|miss   the owner, in their own terminal
-//   node .claude/autonomy.mjs status                             each act's streak
+//   node .claude/autonomy.mjs status                             each act's advisory streak
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,11 +34,28 @@ const PROTECTED = [/^\.kit\//, /(^|\/)\.claude\//, /(^|\/)\.githooks\//, /^\.git
 	/(^|\/)approve\.mjs$/, /(^|\/)scripts\/kit\.mjs$/, /(^|\/)kit\.config\.json$/, /(^|\/)scrub\.local\.json$/, /(^|\/)package\.json$/,
 	/(^|\/)(vitest|jest|playwright)\.config\./, /(^|\/)(CLAUDE|AGENTS)\.md$/, /^rules\/(core\.md|_parts\/)/];
 
-const run = (cmd, args, cwd) => spawnSync(cmd, args, { encoding: 'utf8', cwd, maxBuffer: 256 * 1024 * 1024 });
+const run = (cmd, args, cwd, env) => spawnSync(cmd, args, { encoding: 'utf8', cwd, env, maxBuffer: 256 * 1024 * 1024 });
 const git = (...a) => run('git', ['-c', 'core.quotePath=false', ...a]);
 const out = (r) => (r.status === 0 ? r.stdout.trim() : null);
+// A fetch by URL: "--" keeps the URL from being read as an option, and the ext:: transport (which runs a command) stays
+// off whatever the repo's config says; GIT_ALLOW_PROTOCOL would override that, so the fetch runs without it, in any
+// spelling: Windows reads env names in any case, and git_allow_protocol once turned ext back on.
+const fetch = (url, refspec, ...opts) => {
+	const env = { ...process.env };
+	for (const k of Object.keys(env)) if (k.toUpperCase() === 'GIT_ALLOW_PROTOCOL') delete env[k];
+	return run('git', ['-c', 'core.quotePath=false', '-c', 'protocol.ext.allow=never', 'fetch', '-q', ...opts, '--', url, refspec], undefined, env);
+};
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const lf = (s) => s.replace(/\r\n/g, '\n');
+// Every value printed to the owner's terminal comes from the ledger, the act name or git, and any of them can carry
+// bytes the terminal acts on (ESC moves the cursor and can write the clipboard). Control characters (C0, DEL, C1),
+// the direction marks, the line and paragraph separators and the invisible marks print as "?"; the zero-width joiner
+// and non-joiner stay, since emoji, Persian and Hindi text need them. A value that is not text prints as "?".
+const MARKS = [[0xad, 0xad], [0x61c, 0x61c], [0x180e, 0x180e], [0x200b, 0x200b], [0x200e, 0x200f], [0x2028, 0x202e], [0x2060, 0x2064], [0x2066, 0x2069], [0xfeff, 0xfeff]];
+const clean = (s) => (typeof s === 'string' || typeof s === 'number' || s == null ? [...String(s ?? '')] : ['?']).map((ch) => {
+	const c = ch.codePointAt(0);
+	return c < 0x20 || (c >= 0x7f && c < 0xa0) || MARKS.some(([a, b]) => c >= a && c <= b) ? '?' : ch;
+}).join('');
 const top = real(out(git('rev-parse', '--show-toplevel')) || process.cwd());
 const LEDGER = path.join(out(git('rev-parse', '--path-format=absolute', '--git-common-dir')) || path.join(top, '.git'), 'kit-autonomy-ledger.jsonl');
 // The kill switch is always looked for in the default Claude folder; a config folder set by env adds a place, never
@@ -48,16 +66,24 @@ const SWITCHES = [...new Set([path.join(os.homedir(), '.claude'), process.env.KI
 const MAIN_REF = 'refs/kit/main';
 
 // The ledger: one JSON line per check and per owner verdict, each chained to the line before, so a line written by
-// hand shows (a careful forger is not stopped; the owner reads the ledger when giving verdicts).
+// hand shows (a careful forger is not stopped, which is why the streak is advisory). A line that is not a JSON object
+// is skipped and marks the ledger broken. When verdicts are signed, each signature must cover the check line it judges
+// (its hash, not just its time), and unsigned lines already here must not count: a signed yes to a forged check is no
+// proof. An editor's line endings do not break the chain, a new entry always starts its own line, and a damaged ledger
+// names its file and the way back: moving it aside starts a new one, and only the advisory streak is lost.
+const DAMAGED = `the ledger was changed by hand or damaged (${LEDGER}): move it aside to start a new one; the advisory streak restarts at 0`;
 function ledger() {
-	const lines = fs.existsSync(LEDGER) ? fs.readFileSync(LEDGER, 'utf8').split('\n').filter(Boolean) : [];
-	const log = lines.map((l) => { try { return JSON.parse(l); } catch { return { kind: 'broken' }; } });
-	const broken = log.some((e, i) => e.prev !== (i ? sha(lines[i - 1]) : ''));
+	const lines = fs.existsSync(LEDGER) ? fs.readFileSync(LEDGER, 'utf8').split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean) : [];
+	const log = lines.map((l) => {
+		try { const e = JSON.parse(l); return e && typeof e === 'object' && !Array.isArray(e) ? e : { kind: 'broken' }; } catch { return { kind: 'broken' }; }
+	});
+	const broken = log.some((e, i) => e.kind === 'broken' || e.prev !== (i ? sha(lines[i - 1]) : ''));
 	return { lines, log, broken };
 }
 function append(entry) {
 	const { lines } = ledger();
-	fs.appendFileSync(LEDGER, JSON.stringify({ ...entry, time: new Date().toISOString(), prev: lines.length ? sha(lines[lines.length - 1]) : '' }) + '\n');
+	const open = fs.existsSync(LEDGER) && !/\n$/.test(fs.readFileSync(LEDGER, 'utf8')) && lines.length;
+	fs.appendFileSync(LEDGER, (open ? '\n' : '') + JSON.stringify({ ...entry, time: new Date().toISOString(), prev: lines.length ? sha(lines[lines.length - 1]) : '' }) + '\n');
 }
 function streak(act) {
 	const { log, broken } = ledger();
@@ -105,19 +131,30 @@ function newTestEvidence(grant, base) {
 
 // Releases today, counted from the remote's tags in UTC: an annotated tag by when it was made, a plain tag by its
 // commit's date. A plain tag on a backdated commit escapes the count (a known limit: annotated release tags close it).
-function releasesToday() {
+function releasesToday(url) {
 	const today = new Date().toISOString().slice(0, 10);
-	git('fetch', '-q', '--prune', 'origin', '+refs/tags/*:refs/kit/tags/*');
+	fetch(url, '+refs/tags/*:refs/kit/tags/*', '--prune');
 	const dates = (out(git('for-each-ref', '--format=%(creatordate:iso-strict)', 'refs/kit/tags/')) || '').split('\n').filter(Boolean);
 	return dates.filter((d) => new Date(d).toISOString().slice(0, 10) === today).length;
 }
 
 function check(act) {
-	const ask = (reasons) => { for (const r of reasons) console.log(`ASK the owner - ${r}`); return 1; };
+	const ask = (reasons) => { for (const r of reasons) console.log(`ASK the owner - ${clean(r)}`); return 1; };
 	const on = SWITCHES.find((f) => fs.existsSync(f));
 	if (on) return ask([`the kill switch is on (${on})`]);
-	if (git('remote', 'get-url', 'origin').status !== 0) return ask(['no origin remote to read main from']);
-	if (git('fetch', '-q', 'origin', `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
+	// main is read from the URL the act pushes to, never from the name "origin": a fetch URL of its own would let a
+	// session serve this check a main it wrote while the push still goes to GitHub. get-url gives both URLs after git's
+	// url rewrites, so a rewrite that sends fetch and push to one place is fine, and one that splits them asks.
+	const url = out(git('remote', 'get-url', 'origin'));
+	if (!url) return ask(['no origin remote to read main from']);
+	if (url.startsWith('-')) return ask(['origin\'s url starts with "-", which git would read as an option']);
+	const pushUrls = (out(git('remote', 'get-url', '--push', '--all', 'origin')) || '').split('\n').filter(Boolean);
+	// A token kept in a URL is never printed.
+	const shown = (u) => u.replace(/\/\/[^/@]*@/, '//***@');
+	if (!pushUrls.length || pushUrls.some((u) => u !== url)) return ask([`origin reads main from ${shown(url)} but pushes to ${pushUrls.map(shown).join(', ') || 'nowhere'}`]);
+	// The fetch below passes the rewritten URL, and git rewrites it again: it must be one no second rule matches.
+	if (out(git('ls-remote', '--get-url', url)) !== url) return ask([`origin's url ${shown(url)} is rewritten again by a second url rule, so fetch and push could part`]);
+	if (fetch(url, `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
 	const raw = git('show', `${MAIN_REF}:${GRANT_FILE}`);
 	if (raw.status !== 0) return ask([`no grant on origin/main (${GRANT_FILE}): every act asks`]);
 	let grant;
@@ -136,22 +173,22 @@ function check(act) {
 	if (!head || !base) return ask(['could not find the branch and its base on main']);
 	const changed = (out(git('diff', '--name-only', '--no-renames', `${base}...HEAD`)) || '').split('\n').filter(Boolean);
 	for (const f of changed) if (PROTECTED.some((re) => re.test(f))) reasons.push(`protected path: ${f}`);
-	if (ledger().broken) reasons.push('the ledger was changed by hand: the owner reviews it before any act');
+	if (ledger().broken) reasons.push(DAMAGED);
 	const c = spec.conditions;
 	if (c.includes('clean-tree') && out(git('status', '--porcelain'))) reasons.push('uncommitted changes in the working tree');
 	// The evidence runs even after an earlier reason, so the ledger holds the whole verdict the owner compares.
 	if (c.includes('tests') && run(grant.commands.tests[0], grant.commands.tests.slice(1), top).status !== 0) reasons.push('the tests fail');
 	if (c.includes('scrub') && run(grant.commands.scrub[0], grant.commands.scrub.slice(1), top).status !== 0) reasons.push('the scrub fails');
 	if (c.includes('new-test-fails-at-base')) reasons.push(...newTestEvidence(grant, base));
-	if (c.includes('release-cap')) { const n = releasesToday(); if (n >= spec.releaseCapPerDay) reasons.push(`release cap: ${n} of ${spec.releaseCapPerDay} releases today`); }
+	if (c.includes('release-cap')) { const n = releasesToday(url); if (n >= spec.releaseCapPerDay) reasons.push(`release cap: ${n} of ${spec.releaseCapPerDay} releases today`); }
 
 	const script = reasons.length ? 'ask' : 'go';
 	const s = streak(act);
 	append({ kind: 'check', act, base, head, script, reasons });
 	if (script === 'ask') return ask(reasons);
-	if (s < STREAK) return ask([`verify mode: ${s} of ${STREAK} straight hits; the script says GO for ${act} at ${head.slice(0, 7)}`]);
-	console.log(`GO ${act} at ${head.slice(0, 7)} (${s} straight owner-confirmed hits)`);
-	return 0;
+	// The streak is advisory: anyone who can write the git folder can write a well-chained verdict, so even 10 of 10
+	// asks. Only the owner can change that (rule:standing-grants).
+	return ask([`auto-eligible (advisory): ${Math.min(s, STREAK)}/${STREAK}; the script says GO for ${act} at ${head.slice(0, 7)}`]);
 }
 
 // One line typed at the terminal, read without a prompt library.
@@ -163,30 +200,36 @@ function typed() {
 }
 
 function verdict(act, v) {
-	// The owner's own terminal: an AI tool's shell is marked and has no keyboard, so an env flag is not enough; the
-	// owner also types the short SHA of the check they judged. This stops a tool by accident or by habit, not a
-	// determined one on the owner's machine: a deny rule for this command in the tool's settings closes that.
-	const usage = 'Only the owner gives a verdict, from their own terminal: KIT_OWNER_VERDICT=1 node .claude/autonomy.mjs verdict <act> hit|miss';
+	// The env flags, the terminal check and the typed short SHA stop a tool by accident or by habit. They do not prove
+	// the owner typed the verdict: a tool can clear the flags and open a terminal of its own.
+	const usage = 'A verdict is the owner\'s, typed in their own terminal: KIT_OWNER_VERDICT=1 node .claude/autonomy.mjs verdict <act> hit|miss';
 	if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_VERDICT !== '1' || !process.stdin.isTTY) {
 		console.log(usage);
 		return 1;
 	}
 	if (!['hit', 'miss'].includes(v)) { console.log('verdict is hit (the script was right) or miss'); return 2; }
-	const { log } = ledger();
+	// This prompt is the one channel outside the session, and what it shows comes from the ledger: a broken ledger
+	// gives no verdict, and a check line is shown only once it is well formed and names a real commit.
+	const { log, broken } = ledger();
+	if (broken) { console.log(`no verdict: ${clean(DAMAGED)}`); return 1; }
 	const last = log.map((e, i) => (e.kind === 'check' && e.act === act ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-	if (last < 0 || log.slice(last + 1).some((e) => e.kind === 'verdict' && e.act === act)) { console.log(`no check of "${act}" is waiting for a verdict`); return 1; }
+	if (last < 0 || log.slice(last + 1).some((e) => e.kind === 'verdict' && e.act === act)) { console.log(`no check of "${clean(act)}" is waiting for a verdict`); return 1; }
 	const check = log[last];
-	process.stdout.write(`${act} at ${check.head.slice(0, 7)}: the script said ${check.script.toUpperCase()}${check.reasons.length ? ` (${check.reasons.join('; ')})` : ''}.\nType ${check.head.slice(0, 7)} to log "${v}": `);
-	if (typed() !== check.head.slice(0, 7)) { console.log('Not logged.'); return 1; }
+	const verified = typeof check.head === 'string' && /^[0-9a-f]{40}$/.test(check.head) && git('cat-file', '-e', `${check.head}^{commit}`).status === 0
+		&& ['ask', 'go'].includes(check.script) && Array.isArray(check.reasons) && check.reasons.every((r) => typeof r === 'string');
+	if (!verified) { console.log(`the last check of "${clean(act)}" cannot be verified (no real commit, or a malformed line): no verdict; run the check again`); return 1; }
+	const short = check.head.slice(0, 7);
+	process.stdout.write(`${clean(act)} at ${short}: the script said ${check.script.toUpperCase()}${check.reasons.length ? ` (${check.reasons.map(clean).join('; ')})` : ''}.\nType ${short} to log "${v}": `);
+	if (typed() !== short) { console.log('Not logged.'); return 1; }
 	append({ kind: 'verdict', act, verdict: v, check: check.time });
-	console.log(`${act}: ${v} logged; ${streak(act)} of ${STREAK} straight hits`);
+	console.log(`${clean(act)}: ${v} logged; auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
 	return 0;
 }
 
 function status() {
 	const { log, broken } = ledger();
-	if (broken) console.log('the ledger was changed by hand');
-	for (const act of [...new Set(log.filter((e) => e.act).map((e) => e.act))]) console.log(`${act}: ${streak(act)} of ${STREAK} straight hits (${streak(act) >= STREAK ? 'auto' : 'verify'})`);
+	if (broken) console.log(clean(DAMAGED));
+	for (const act of [...new Set(log.filter((e) => e.act).map((e) => e.act))]) console.log(`${clean(act)}: auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
 	return 0;
 }
 
@@ -199,7 +242,7 @@ function main([cmd, act, v]) {
 		return 2;
 	} catch (e) {
 		// Fail closed: an error is never a GO.
-		console.log(`ASK the owner - the check failed: ${e.message}`);
+		console.log(`ASK the owner - the check failed: ${clean(e.message)}`);
 		return 1;
 	}
 }
