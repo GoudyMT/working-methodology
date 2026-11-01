@@ -135,14 +135,16 @@ function check(act) {
 	const ask = (reasons) => { for (const r of reasons) console.log(`ASK the owner - ${clean(r)}`); return 1; };
 	const on = SWITCHES.find((f) => fs.existsSync(f));
 	if (on) return ask([`the kill switch is on (${on})`]);
-	// main is read from the URL the act pushes to, never from the name "origin": a fetch URL of its own, or a url rewrite
-	// in git config, would let a session serve this check a main it wrote while the push still goes to GitHub.
+	// main is read from the URL the act pushes to, never from the name "origin": a fetch URL of its own would let a
+	// session serve this check a main it wrote while the push still goes to GitHub. get-url gives both URLs after git's
+	// url rewrites, so a rewrite that sends fetch and push to one place is fine, and one that splits them asks.
 	const url = out(git('remote', 'get-url', 'origin'));
 	if (!url) return ask(['no origin remote to read main from']);
 	if (url.startsWith('-')) return ask(['origin\'s url starts with "-", which git would read as an option']);
 	const pushUrls = (out(git('remote', 'get-url', '--push', '--all', 'origin')) || '').split('\n').filter(Boolean);
-	if (!pushUrls.length || pushUrls.some((u) => u !== url)) return ask([`origin reads main from ${url} but pushes to ${pushUrls.join(', ') || 'nowhere'}`]);
-	if (out(git('config', '--get-regexp', '^url\\..*\\.(push)?insteadof$'))) return ask(['a url rewrite (insteadOf) in git config could send the fetch somewhere else']);
+	// A token kept in a URL is never printed.
+	const shown = (u) => u.replace(/\/\/[^/@]*@/, '//***@');
+	if (!pushUrls.length || pushUrls.some((u) => u !== url)) return ask([`origin reads main from ${shown(url)} but pushes to ${pushUrls.map(shown).join(', ') || 'nowhere'}`]);
 	if (fetch(url, `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
 	const raw = git('show', `${MAIN_REF}:${GRANT_FILE}`);
 	if (raw.status !== 0) return ask([`no grant on origin/main (${GRANT_FILE}): every act asks`]);

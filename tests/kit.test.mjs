@@ -3160,16 +3160,30 @@ test('the act name is cleaned, so a newline in it cannot print a GO line', () =>
 });
 // The gate-restoring review: main was read from wherever the name "origin" fetched, while pushes could still go to
 // GitHub, so a session could serve the check a main of its own.
-test('the grant check reads main from where origin pushes, and asks when fetch and push differ or a url rewrite is set', () => {
+// The fix check: a refusal of every url rewrite asked on the common global https-to-ssh rewrite, so a streak could
+// never start; only a rewrite that sends fetch and push to different places can serve a main of its own.
+test('the grant check reads main from where origin pushes, and asks when fetch and push differ after any url rewrite', () => {
+  const fakeOf = (r) => { const fake = path.join(path.dirname(r.dir), 'fake.git'); g(path.dirname(r.dir), 'clone', '-q', '--bare', r.bare, fake); return fake; };
   const r = autonomyRepo();
-  const fake = path.join(path.dirname(r.dir), 'fake.git');
-  g(path.dirname(r.dir), 'clone', '-q', '--bare', r.bare, fake);
+  const fake = fakeOf(r);
   g(r.dir, 'remote', 'set-url', 'origin', fake);
   g(r.dir, 'remote', 'set-url', '--push', 'origin', r.bare);
   askOn(r, /origin reads main from .* but pushes to/);
-  const rw = autonomyRepo();
-  g(rw.dir, 'config', `url.${rw.bare}.insteadOf`, 'https://example.invalid/');
-  askOn(rw, /url rewrite/);
+  const split = autonomyRepo();
+  g(split.dir, 'config', `url.${fakeOf(split)}.pushInsteadOf`, split.bare);
+  askOn(split, /origin reads main from .* but pushes to/);
+  const both = autonomyRepo();
+  g(both.dir, 'remote', 'set-url', 'origin', 'https://example.invalid/repo.git');
+  g(both.dir, 'config', `url.${both.bare}.insteadOf`, 'https://example.invalid/repo.git');
+  askOn(both, /auto-eligible \(advisory\): 0\/10/);
+  const mirror = autonomyRepo();
+  g(mirror.dir, 'remote', 'set-url', '--push', 'origin', mirror.bare);
+  g(mirror.dir, 'remote', 'set-url', '--add', '--push', 'origin', fakeOf(mirror));
+  askOn(mirror, /but pushes to .*, /);
+  const token = autonomyRepo();
+  g(token.dir, 'remote', 'set-url', 'origin', 'https://max:ghp_NOTREAL@example.invalid/repo.git');
+  g(token.dir, 'remote', 'set-url', '--push', 'origin', token.bare);
+  assert.doesNotMatch(askOn(token, /origin reads main from https:\/\/\*\*\*@example\.invalid/).stdout, /ghp_NOTREAL/);
 });
 // The commit security review of the fix above: the URL is now passed to git fetch as an argument, and one starting
 // with "-" would be read as an option (--upload-pack runs a command).
