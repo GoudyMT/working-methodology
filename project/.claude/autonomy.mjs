@@ -1,5 +1,6 @@
 // The standing-grant check (rule:standing-grants; plan kit-autopilot, Phase 2). Before an outward act the owner granted
-// (a release, a push to main), this decides GO or ASK, and anything missing, odd or unproven is ASK.
+// (a release, a push to main), this works out whether the evidence says GO; anything missing, odd or unproven is ASK,
+// and for now every act asks the owner, since the streak below is advisory.
 //
 // Why each part is the way it is: a session could edit any file it can see, so nothing here trusts the working copy.
 // The grant and this script are read from main on the remote; the evidence (tests, scrub, the new test failing on main
@@ -38,6 +39,13 @@ const git = (...a) => run('git', ['-c', 'core.quotePath=false', ...a]);
 const out = (r) => (r.status === 0 ? r.stdout.trim() : null);
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const lf = (s) => s.replace(/\r\n/g, '\n');
+// Every value printed to the owner's terminal comes from the ledger, the act name or git, and any of them can carry
+// bytes the terminal acts on (ESC moves the cursor and can write the clipboard). Control characters (C0, DEL, C1) and
+// the invisible and direction-changing marks print as "?".
+const clean = (s) => [...String(s ?? '')].map((ch) => {
+	const c = ch.codePointAt(0);
+	return c < 0x20 || (c >= 0x7f && c < 0xa0) || (c >= 0x200b && c <= 0x200f) || (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069) ? '?' : ch;
+}).join('');
 const top = real(out(git('rev-parse', '--show-toplevel')) || process.cwd());
 const LEDGER = path.join(out(git('rev-parse', '--path-format=absolute', '--git-common-dir')) || path.join(top, '.git'), 'kit-autonomy-ledger.jsonl');
 // The kill switch is always looked for in the default Claude folder; a config folder set by env adds a place, never
@@ -48,11 +56,16 @@ const SWITCHES = [...new Set([path.join(os.homedir(), '.claude'), process.env.KI
 const MAIN_REF = 'refs/kit/main';
 
 // The ledger: one JSON line per check and per owner verdict, each chained to the line before, so a line written by
-// hand shows (a careful forger is not stopped, which is why the streak is advisory).
+// hand shows (a careful forger is not stopped, which is why the streak is advisory). A line that is not a JSON object
+// is skipped and marks the ledger broken. When verdicts are signed, each signature must cover the check line it judges
+// (its hash, not just its time), and unsigned lines already here must not count: a signed yes to a forged check is no
+// proof.
 function ledger() {
 	const lines = fs.existsSync(LEDGER) ? fs.readFileSync(LEDGER, 'utf8').split('\n').filter(Boolean) : [];
-	const log = lines.map((l) => { try { return JSON.parse(l); } catch { return { kind: 'broken' }; } });
-	const broken = log.some((e, i) => e.prev !== (i ? sha(lines[i - 1]) : ''));
+	const log = lines.map((l) => {
+		try { const e = JSON.parse(l); return e && typeof e === 'object' && !Array.isArray(e) ? e : { kind: 'broken' }; } catch { return { kind: 'broken' }; }
+	});
+	const broken = log.some((e, i) => e.kind === 'broken' || e.prev !== (i ? sha(lines[i - 1]) : ''));
 	return { lines, log, broken };
 }
 function append(entry) {
@@ -113,7 +126,7 @@ function releasesToday() {
 }
 
 function check(act) {
-	const ask = (reasons) => { for (const r of reasons) console.log(`ASK the owner - ${r}`); return 1; };
+	const ask = (reasons) => { for (const r of reasons) console.log(`ASK the owner - ${clean(r)}`); return 1; };
 	const on = SWITCHES.find((f) => fs.existsSync(f));
 	if (on) return ask([`the kill switch is on (${on})`]);
 	if (git('remote', 'get-url', 'origin').status !== 0) return ask(['no origin remote to read main from']);
@@ -171,21 +184,28 @@ function verdict(act, v) {
 		return 1;
 	}
 	if (!['hit', 'miss'].includes(v)) { console.log('verdict is hit (the script was right) or miss'); return 2; }
-	const { log } = ledger();
+	// This prompt is the one channel outside the session, and what it shows comes from the ledger: a broken ledger
+	// gives no verdict, and a check line is shown only once it is well formed and names a real commit.
+	const { log, broken } = ledger();
+	if (broken) { console.log('the ledger was changed by hand: no verdict until the owner has reviewed it'); return 1; }
 	const last = log.map((e, i) => (e.kind === 'check' && e.act === act ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-	if (last < 0 || log.slice(last + 1).some((e) => e.kind === 'verdict' && e.act === act)) { console.log(`no check of "${act}" is waiting for a verdict`); return 1; }
+	if (last < 0 || log.slice(last + 1).some((e) => e.kind === 'verdict' && e.act === act)) { console.log(`no check of "${clean(act)}" is waiting for a verdict`); return 1; }
 	const check = log[last];
-	process.stdout.write(`${act} at ${check.head.slice(0, 7)}: the script said ${check.script.toUpperCase()}${check.reasons.length ? ` (${check.reasons.join('; ')})` : ''}.\nType ${check.head.slice(0, 7)} to log "${v}": `);
-	if (typed() !== check.head.slice(0, 7)) { console.log('Not logged.'); return 1; }
+	const verified = typeof check.head === 'string' && /^[0-9a-f]{40}$/.test(check.head) && git('cat-file', '-e', `${check.head}^{commit}`).status === 0
+		&& ['ask', 'go'].includes(check.script) && Array.isArray(check.reasons) && check.reasons.every((r) => typeof r === 'string');
+	if (!verified) { console.log(`the last check of "${clean(act)}" cannot be verified (no real commit, or a malformed line): no verdict`); return 1; }
+	const short = check.head.slice(0, 7);
+	process.stdout.write(`${clean(act)} at ${short}: the script said ${check.script.toUpperCase()}${check.reasons.length ? ` (${check.reasons.map(clean).join('; ')})` : ''}.\nType ${short} to log "${v}": `);
+	if (typed() !== short) { console.log('Not logged.'); return 1; }
 	append({ kind: 'verdict', act, verdict: v, check: check.time });
-	console.log(`${act}: ${v} logged; auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
+	console.log(`${clean(act)}: ${v} logged; auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
 	return 0;
 }
 
 function status() {
 	const { log, broken } = ledger();
 	if (broken) console.log('the ledger was changed by hand');
-	for (const act of [...new Set(log.filter((e) => e.act).map((e) => e.act))]) console.log(`${act}: auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
+	for (const act of [...new Set(log.filter((e) => e.act).map((e) => e.act))]) console.log(`${clean(act)}: auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
 	return 0;
 }
 
@@ -198,7 +218,7 @@ function main([cmd, act, v]) {
 		return 2;
 	} catch (e) {
 		// Fail closed: an error is never a GO.
-		console.log(`ASK the owner - the check failed: ${e.message}`);
+		console.log(`ASK the owner - the check failed: ${clean(e.message)}`);
 		return 1;
 	}
 }
