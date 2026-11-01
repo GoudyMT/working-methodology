@@ -270,6 +270,7 @@ function check(c, facts, floor, fixCheck) {
 // HEAD, once. It is not a third sweep: nothing comes after it.
 const cleared = (s, d) => d.decision === 'approved' || s.log.some((e) => e.kind === 'owner-yes' && e.contract === d.contract && e.hash === d.hash && e.head === d.head);
 function resweepOf(c, s, parentFile) {
+	if (parentFile === contractFile) return { why: ['this contract names itself as its first sweep: a re-sweep is a new contract, run with --resweep <first contract.json>'] };
 	const decisions = s.log.filter((e) => e.kind === 'decision' && e.contract === parentFile);
 	if (!decisions.length) return { why: [`no decision for the first sweep (${parentFile}): run approve.mjs on it first`] };
 	let raw = null;
@@ -286,10 +287,12 @@ function resweepOf(c, s, parentFile) {
 	else if (!cleared(s, parent)) why.push('the first sweep was not cleared: neither approved nor the owner\'s yes');
 	else if (!reported(parent)) why.push(`log the first sweep's outcome first (${parentFile})`);
 	// One re-sweep per contract and one fix check per re-sweep, each counted over every decision for its parent, so a
-	// re-run cannot open a second.
-	const fixCheck = decisions.some((d) => d.resweepOf);
+	// re-run cannot open a second. What the parent IS comes only from its cleared decisions: a refused run that named a
+	// parent once made a first sweep count as a re-sweep, and a one-role pass on it was approved as its fix check.
+	const clearedSame = same.filter((d) => cleared(s, d));
+	const fixCheck = clearedSame.some((d) => d.resweepOf);
 	const tier = String(c.tier || '').toLowerCase();
-	if (decisions.some((d) => d.fixCheckOf)) why.push('the parent is a fix check: nothing comes after the fix check');
+	if (clearedSame.some((d) => d.fixCheckOf)) why.push('the parent is a fix check: nothing comes after the fix check');
 	else if (fixCheck) {
 		if (tier !== 'triage') why.push('the parent is itself a re-sweep: no third pass; its high fixes get one fix check (tier triage, one role)');
 		if (s.log.some((e) => e.kind === 'decision' && e.fixCheckOf && e.parent === parentFile && cleared(s, e))) why.push('this re-sweep already had its one fix check: no third pass');

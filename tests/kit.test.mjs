@@ -2321,6 +2321,25 @@ test('a re-sweep\'s high fixes get one one-role check of the files changed since
   assert.match(resweep(r, fixCheck(), second.f, 'check2.json').stdout, /already had its one fix check/);
   assert.match(resweep(r, fixCheck(), check.f, 'check3.json').stdout, /nothing comes after the fix check/);
 });
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): any logged decision for the first
+// contract that carried resweepOf - even a refused run of it with itself as its parent - made the first sweep count as
+// a re-sweep, so a one-role triage pass anchored on it was approved as its "fix check", with no security floor and new
+// source on it. Only a cleared decision says what a sweep is, and no contract is its own parent.
+test('a refused run of the first contract as its own parent does not turn the first sweep into a re-sweep', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(outcome(second, '100000').status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: the re-sweep high', true);
+  const self = approveIn(r.dir, [r.f, '--resweep', r.f]);
+  assert.equal(self.status, 1);
+  assert.match(self.stdout, /names itself as its first sweep/);
+  const onFirst = resweep(r, fixCheck(), r.f, 'onfirst.json');
+  assert.equal(onFirst.status, 1, onFirst.stdout);
+  assert.match(onFirst.stdout, /already had its one re-sweep/);
+  assert.equal(resweep(r, fixCheck(), second.f, 'check.json').status, 0, 'the real fix check still runs');
+});
 // Found in the sweep of the re-sweep (2026-11-01, each reproduced first in a scratch repo with its own log).
 test('an outcome binds to the sweep that ran, not a refused re-run of its contract', () => {
   const r = approveRun(featureContract());
