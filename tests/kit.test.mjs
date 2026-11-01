@@ -2345,6 +2345,38 @@ test('a re-sweep\'s copied modifiers do not lift its role cap', () => {
   assert.equal(out.status, 1, out.stdout);
   assert.match(out.stdout, /over the feature cap of 10/);
 });
+// Found untested in the sweep of the re-sweep (2026-11-01); each is proved by a planted break turning it red.
+test('a fix sweep\'s test-value role is part of its floor, not a modifier\'s extra', () => {
+  const dir = sweepRepo({ 'README.md': 'z\n', 'tests/a.test.js': 't\n' });
+  const c = { tier: 'fix', modifiers: [], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 40000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 40000 }),
+    role('test-value', 'Does each changed test guard a real use?', { budget: 40000 }),
+    role('modelled-on', 'Was the bug inherited from the code this copied?', { budget: 40000 }),
+  ] };
+  assert.match(approveRun(c, dir).stdout, /4 agents beyond the modifiers' roles, over the fix cap of 3/);
+});
+test('a modifier lifts the cap only by the roles it requires, not by every role of its kind', () => {
+  const c = { tier: 'fix', modifiers: ['security-sensitive'], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 30000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 30000 }),
+    role('modelled-on', 'Was the bug inherited from the code this copied?', { budget: 30000 }),
+    ...[0, 1, 2, 3, 4].map((i) => role('security', `Can the ${words12[i]} gate be bypassed by the fix?`, { budget: 30000 })),
+  ] };
+  assert.match(approveRun(c, sweepRepo({ 'README.md': 'z\n' })).stdout, /5 agents beyond the modifiers' roles, over the fix cap of 3/);
+});
+test('an owner\'s yes clears only the contract, version and HEAD it answered', () => {
+  const asked = featureContract();
+  asked.roles.pop();
+  const r = approveRun(asked);
+  assert.equal(r.status, 1);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes run it']).status, 0);
+  fs.writeFileSync(r.f, JSON.stringify({ ...asked, roles: asked.roles.slice(0, 3) }));
+  assert.equal(approveIn(r.dir, [r.f]).status, 1, 'the edited contract is asked about again');
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  commitAll(r.dir, 'fix: x', true);
+  assert.match(resweep(r, resweepContract()).stdout, /first sweep was not cleared/);
+});
 test('a claimed new-dependency modifier the diff disproves is refused', () => {
   const dir = sweepRepo({ 'README.md': 'z\n' });
   const c = { tier: 'fix', modifiers: ['new-dependency'], roles: [
