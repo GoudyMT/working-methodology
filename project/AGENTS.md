@@ -165,7 +165,7 @@ Why: the named mechanism is often the nearest knob; widening to the goal finds t
 
 **When the records point to an answer - this file, a locked spec or plan, an in-repo precedent, a measurement - Claude decides, acts, and reports.** Why: asking what the records answer wastes the owner's time.
 
-**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data) that no standing grant covers; split evidence with no standard to break the tie.
+**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data or anything outside the repo and this session's scratch folder) that no standing grant covers; split evidence with no standard to break the tie.
 
 **The impact test, before every decision**, answered with EVIDENCE (type-check, tests, a probe, a quoted reader of the value): (1) Do we lose a function? (2) Does any code break? (3) Is any value lost - content, a user-facing behaviour, a guarantee a test or spec relies on? Any yes -> STOP (or find the all-no version); all no and something gained -> do it. Why: decisions rest on what the change actually touches.
 

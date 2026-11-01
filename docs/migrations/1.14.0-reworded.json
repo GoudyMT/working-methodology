@@ -1,0 +1,14 @@
+{
+  "lines": [
+    {
+      "before": "5. **Temp files** this session made (PR bodies, release drafts, screenshots, scratch scripts, logs, backups, drafts) that have served are deleted wherever they sit: the scratch folder, untracked files in the repo, and any shared or uploaded copy (a project library, an attachment folder). Emit the list deleted, or \"none\". Why: a served draft left in a shared place gets attached again as if current.",
+      "after": "5. **Temp files** this session made (PR bodies, release drafts, screenshots, scratch scripts, logs, backups, drafts) that have served: delete only the exact paths this session made, listed first - in the scratch folder through `temp-clean.mjs` (the closeout skill), untracked repo files by name; never by exclusion (\"all but mine\") and never a shared parent (the temp folder). A shared or uploaded copy the tools cannot delete (a project library, an attachment folder) goes in the handoff for the owner. Emit the list deleted, or \"none\". Why: a served draft left in a shared place gets attached again as if current, and a delete by exclusion wipes other sessions' work.",
+      "why": "temp files go by exact path through temp-clean.mjs, never by exclusion or a shared parent (IR-2026-11-01-closeout-temp-delete)"
+    },
+    {
+      "before": "**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data) that no standing grant covers; split evidence with no standard to break the tie.",
+      "after": "**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data or anything outside the repo and this session's scratch folder) that no standing grant covers; split evidence with no standard to break the tie.",
+      "why": "a delete outside the repo and the session scratch folder is an owner stop (IR-2026-11-01-closeout-temp-delete)"
+    }
+  ]
+}
