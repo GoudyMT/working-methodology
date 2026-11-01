@@ -845,6 +845,16 @@ test('the sweep report audit passes a done report and names each missing part', 
 });
 // Found in the sweep of the re-sweep (2026-11-01): "high and above fixed now" was written but the audit took a
 // DEFERRED re-sweep high. A re-sweep's high is fixed in its PR and goes to the one fix check.
+test('the sweep audit refuses a deferred high in the re-sweep, and still takes one in the first sweep', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const head = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | DEFERRED the owner's follow-up |\n`;
+  assert.equal(runAudit('pre-pr-sweep', head).status, 0, 'a first-sweep high may be deferred with the owner');
+  const re = (disp) => `${head}\n## Re-sweep (head b2c3d4e)\n\n- **R1.1 (high)** - the fix is half done. ${disp}\n`;
+  const out = runAudit('pre-pr-sweep', re('DEFERRED next session'));
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /finding R1\.1: a re-sweep's high is fixed now/);
+  assert.equal(runAudit('pre-pr-sweep', re('FIXED c3d4e5f, then the fix check')).status, 0);
+});
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
   const none = runAudit('pre-pr-sweep', base + '\nNo secrets or personal data in the diff.\n');
