@@ -7,6 +7,7 @@
 //   node .claude/improvement-report.mjs new "<one-line title>"   start a report from the kit template, facts filled in
 //   node .claude/improvement-report.mjs audit <report.md>        PASS, or every fault (exit 1)
 //   node .claude/improvement-report.mjs list                     the reports and their status
+//   node .claude/improvement-report.mjs file <report.md>         hand it to the kit inbox, signed (scripts/intake.mjs)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -23,6 +24,10 @@ const ONE_OF = {
 const SECTIONS = ['Summary', 'Timeline', 'Root causes', 'Impact', 'Fixes', 'What stays the same', 'Decisions for the owner', 'Proof'];
 const KINDS = ['rule text', 'skill step', 'script', 'hook', 'template', 'role file', 'other'];
 const EFFECTS = ['same', 'higher'];
+// Caps on every free-text part, so a report handed to the kit cannot carry a flood (plan kit-autopilot, Phase 3).
+const MAX_BYTES = 64000;
+const MAX_FIELD = 200;
+const MAX_SECTION = 12000;
 
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -69,7 +74,9 @@ export function audit(text) {
 		const [k, v] = cells(l);
 		if (k && k !== 'Field' && !/^-+$/.test(k)) head[k] = v;
 	}
+	if (Buffer.byteLength(text) > MAX_BYTES) faults.push(`the report is over ${MAX_BYTES.toLocaleString('en-US')} bytes`);
 	for (const f of FIELDS) if (!(f in head) || !head[f]) faults.push(`field "${f}" is missing or empty`);
+	for (const [f, v] of Object.entries(head)) if (v.length > MAX_FIELD) faults.push(`field "${f}" is over ${MAX_FIELD} characters`);
 	for (const [f, ok] of Object.entries(ONE_OF)) if (head[f] && !ok.includes(head[f])) faults.push(`field "${f}" is "${head[f]}", not one of: ${ok.join(', ')}`);
 	if (head.ID && !/^IR-\d{4}-\d{2}-\d{2}-[a-z0-9-]+$/.test(head.ID)) faults.push(`field "ID" must look like IR-YYYY-MM-DD-slug, not "${head.ID}"`);
 	if (head.Date && !/^\d{4}-\d{2}-\d{2}$/.test(head.Date)) faults.push('field "Date" must be YYYY-MM-DD');
@@ -78,6 +85,7 @@ export function audit(text) {
 
 	const sec = sections(text);
 	for (const s of SECTIONS) if (!sec[s] || !sec[s].replace(/<!--[\s\S]*?-->/g, '').trim()) faults.push(`section "## ${s}" is missing or empty`);
+	for (const [s, body] of Object.entries(sec)) if (body.length > MAX_SECTION) faults.push(`section "## ${s}" is over ${MAX_SECTION.toLocaleString('en-US')} characters`);
 
 	const causes = tableUnder(sec['Root causes'] || '');
 	if (!causes.length) faults.push('no root causes');
@@ -142,10 +150,30 @@ function list() {
 	return 0;
 }
 
+// Hand a report to the kit: the kit's intake script signs it with this project's key into the kit inbox and starts
+// the inbox run. Nothing else in the kit is written, and the local copy is marked filed.
+function fileReport(arg) {
+	const text = fs.readFileSync(arg, 'utf8');
+	const faults = audit(text);
+	if (faults.length) { console.log(`FAIL ${path.basename(arg)}: fix it before filing`); for (const f of faults) console.log(`    ${f}`); return 1; }
+	const top = git(process.cwd(), 'rev-parse', '--show-toplevel');
+	const root = top.status === 0 ? top.stdout.trim() : process.cwd();
+	let kitDir = null;
+	try { kitDir = JSON.parse(fs.readFileSync(path.join(root, '.kit', 'kit-version.json'), 'utf8')).kitDir; } catch { /* no stamp */ }
+	const intake = kitDir && path.join(kitDir, 'scripts', 'intake.mjs');
+	if (!intake || !fs.existsSync(intake)) { console.log('The kit folder this project was installed from is not found (.kit/kit-version.json kitDir); nothing filed.'); return 1; }
+	const r = spawnSync(process.execPath, [intake, 'file', path.resolve(arg)], { cwd: root, encoding: 'utf8' });
+	process.stdout.write(r.stdout || '');
+	if (r.status !== 0) return 1;
+	fs.writeFileSync(arg, text.replace(/^\| Status \| open \|$/m, '| Status | filed |'));
+	return 0;
+}
+
 function main(argv) {
 	const [cmd, arg] = argv;
 	if (cmd === 'new') return create(argv.slice(1).join(' '));
 	if (cmd === 'list') return list();
+	if (cmd === 'file' && arg) return fileReport(arg);
 	if (cmd === 'audit' && arg) {
 		const faults = audit(fs.readFileSync(arg, 'utf8'));
 		if (!faults.length) { console.log(`PASS ${path.basename(arg)}`); return 0; }
@@ -153,7 +181,7 @@ function main(argv) {
 		for (const f of faults) console.log(`    ${f}`);
 		return 1;
 	}
-	console.log('Usage: improvement-report.mjs new "<title>" | audit <report.md> | list');
+	console.log('Usage: improvement-report.mjs new "<title>" | audit <report.md> | list | file <report.md>');
 	return 2;
 }
 

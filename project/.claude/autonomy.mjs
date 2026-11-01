@@ -30,7 +30,7 @@ const CONDITIONS = ['clean-tree', 'tests', 'scrub', 'new-test-fails-at-base', 'r
 // rule files that hold Tier 0: a change to any of them is never granted. Whole folders and whole rule files, since a
 // list of single files or chosen lines misses a new hook or a renumbered rule.
 const PROTECTED = [/^\.kit\//, /(^|\/)\.claude\//, /(^|\/)\.githooks\//, /^\.github\//, /^user\/(kit-hooks|agents)\//,
-	/(^|\/)approve\.mjs$/, /(^|\/)scripts\/kit\.mjs$/, /(^|\/)kit\.config\.json$/, /(^|\/)scrub\.local\.json$/, /(^|\/)package\.json$/,
+	/(^|\/)approve\.mjs$/, /(^|\/)scripts\/(kit|intake)\.mjs$/, /(^|\/)kit\.config\.json$/, /(^|\/)scrub\.local\.json$/, /(^|\/)package\.json$/,
 	/(^|\/)(vitest|jest|playwright)\.config\./, /(^|\/)(CLAUDE|AGENTS)\.md$/, /^rules\/(core\.md|_parts\/)/];
 
 const run = (cmd, args, cwd) => spawnSync(cmd, args, { encoding: 'utf8', cwd, maxBuffer: 256 * 1024 * 1024 });

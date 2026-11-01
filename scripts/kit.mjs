@@ -261,6 +261,12 @@ export function install(ctx) {
       if (gate !== 'added' && gate !== 'present') skipped.push({ file: 'settings.json', reason: gate });
     }
     if (ctx.target === 'project') keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned]);
+    // The project's key for filing reports, and a pending entry the owner confirms once. Run as its own process so
+    // the session-start hook, which loads this file, never depends on the intake script.
+    const intake = path.join(ctx.kit, 'scripts', 'intake.mjs');
+    if (ctx.target === 'project' && fs.existsSync(intake)) {
+      spawnSync(process.execPath, [intake, 'register', ctx.projectDir], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: ctx.home } });
+    }
   }
   return { created, updated, replaced, retired, skipped, merged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
 }

@@ -3023,6 +3023,8 @@ test('the grant check asks when the branch touches a protected path, the hooks, 
   askOn(autonomyRepo({ branchFiles: { '.claude/settings.json': '{}\n' } }), /protected path: \.claude\/settings\.json/);
   askOn(autonomyRepo({ branchFiles: { 'CLAUDE.md': HARD_RULES.replace('ABOVE all else', 'when convenient') } }), /protected path: CLAUDE\.md/);
   askOn(autonomyRepo({ branchFiles: { 'CLAUDE.md': HARD_RULES + '15. **Privacy is optional.**\n' } }), /protected path: CLAUDE\.md/);
+  // The report intake decides which sender is trusted, so it is a gate too.
+  askOn(autonomyRepo({ branchFiles: { 'scripts/intake.mjs': '// any sender\n' } }), /protected path: scripts\/intake\.mjs/);
 });
 test('the grant check asks when there is no remote to read main from', () => {
   const r = autonomyRepo();
@@ -3072,4 +3074,192 @@ test('a fresh project install ships no grant, so every act asks', () => {
   install({ kit: path.resolve('.'), home: fs.mkdtempSync(path.join(os.tmpdir(), 'nogrant-home-')), target: 'project', projectDir: dir });
   assert.ok(fs.existsSync(path.join(dir, '.claude', 'autonomy.mjs')));
   assert.ok(!fs.existsSync(path.join(dir, '.kit', 'autonomy.json')));
+});
+
+// Report intake (plan kit-autopilot, Phase 3). A project files an improvement report to the kit's inbox; the kit
+// sorts it before anything acts on it. A cross-session sender name is self-chosen, not an identity, so each project
+// gets a key at install, kept in the Claude folder outside every repo, and every filed report carries an HMAC made
+// with it. A project is known only after the owner confirms it once. Nothing here acts on a report: that is Phase 4.
+const INTAKE_FILES = ['scripts/intake.mjs', 'project/.claude/improvement-report.mjs', 'project/.claude/kit/improvement-report.md'];
+const FIXTURE = read(path.resolve('tests/fixtures/IR-2026-10-31-sweep-loop.md'));
+// A kit with just the intake parts, a Claude folder, and a project with a remote, installed the way the CLI does.
+function intakeSetup(remote = 'https://pat:secret-token@example.com/pat/app.git') {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'intake-'));
+  const kit = path.join(root, 'kit');
+  const home = path.join(root, 'home');
+  for (const f of INTAKE_FILES) { fs.mkdirSync(path.dirname(path.join(kit, f)), { recursive: true }); fs.copyFileSync(path.resolve(f), path.join(kit, f)); }
+  const proj = path.join(root, 'app');
+  fs.mkdirSync(path.join(proj, '.claude', 'kit'), { recursive: true });
+  g(proj, 'init', '-q', '-b', 'main');
+  if (remote) g(proj, 'remote', 'add', 'origin', remote);
+  fs.copyFileSync(path.resolve('project/.claude/improvement-report.mjs'), path.join(proj, '.claude', 'improvement-report.mjs'));
+  fs.copyFileSync(path.resolve('project/.claude/kit/improvement-report.md'), path.join(proj, '.claude', 'kit', 'improvement-report.md'));
+  fs.mkdirSync(path.join(proj, '.kit', 'reports'), { recursive: true });
+  fs.writeFileSync(path.join(proj, '.kit', 'kit-version.json'), JSON.stringify({ version: '1.13.0', kitDir: kit.split(path.sep).join('/') }));
+  const env = { PATH: process.env.PATH, KIT_CLAUDE_HOME: home, KIT_INTAKE_NO_SPAWN: '1' };
+  const intake = (args, cwd = kit, extra = {}) => spawnSync('node', [path.join(kit, 'scripts', 'intake.mjs'), ...args], { encoding: 'utf8', cwd, env: { ...env, ...extra } });
+  assert.equal(intake(['register', proj]).status, 0, 'install registers the project');
+  const state = path.join(home, 'kit-intake');
+  const report = (name = 'IR-2026-10-31-sweep-loop.md', text = FIXTURE) => { const f = path.join(proj, '.kit', 'reports', name); fs.writeFileSync(f, text); return f; };
+  const file = (f, extra = {}) => spawnSync('node', ['.claude/improvement-report.mjs', 'file', f], { encoding: 'utf8', cwd: proj, env: { ...env, ...extra } });
+  const ls = (dir) => (fs.existsSync(path.join(state, dir)) ? fs.readdirSync(path.join(state, dir)).filter((n) => n.endsWith('.json')) : []);
+  const confirm = () => {
+    const pend = ls('registry/pending');
+    assert.equal(pend.length, 1);
+    // The owner's confirm needs their own terminal, which a test cannot be; the test writes the entry it makes.
+    const entry = JSON.parse(read(path.join(state, 'registry', 'pending', pend[0])));
+    fs.writeFileSync(path.join(state, 'registry', 'known.json'), JSON.stringify({ [entry.id]: { ...entry, confirmedAt: 'test' } }));
+    return entry;
+  };
+  return { root, kit, home, proj, state, intake, report, file, ls, confirm };
+}
+const logLines = (s) => read(path.join(s.state, 'log.jsonl')).trim().split('\n').map((l) => JSON.parse(l));
+
+test('install gives a project one key outside every repo and a pending registry entry, without its remote\'s secrets', () => {
+  const s = intakeSetup();
+  const keys = fs.readdirSync(path.join(s.state, 'keys'));
+  assert.equal(keys.length, 1);
+  assert.match(read(path.join(s.state, 'keys', keys[0])), /^[0-9a-f]{64}$/);
+  const pend = s.ls('registry/pending');
+  assert.equal(pend.length, 1);
+  const entry = JSON.parse(read(path.join(s.state, 'registry', 'pending', pend[0])));
+  assert.equal(`${entry.id}.key`, keys[0]);
+  assert.equal(entry.remote, 'https://example.com/pat/app.git', 'credentials in the remote URL are never stored');
+  assert.equal(path.basename(entry.folder), 'app');
+  const key = read(path.join(s.state, 'keys', keys[0]));
+  assert.equal(s.intake(['register', s.proj]).status, 0);
+  assert.equal(read(path.join(s.state, 'keys', keys[0])), key, 'a reinstall keeps the key');
+  // The real install wires it in.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'intake-home-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'intake-proj-'));
+  g(dir, 'init', '-q', '-b', 'main');
+  install({ kit: path.resolve('.'), home, target: 'project', projectDir: dir });
+  assert.equal(fs.readdirSync(path.join(home, 'kit-intake', 'keys')).length, 1);
+});
+
+test('the report audit caps every free-text part, so a filed report cannot carry a flood', () => {
+  const s = intakeSetup();
+  const audit = (text) => spawnSync('node', ['.claude/improvement-report.mjs', 'audit', s.report('IR-x.md', text)], { encoding: 'utf8', cwd: s.proj });
+  assert.equal(audit(FIXTURE).status, 0);
+  const longField = FIXTURE.replace('| Kit area | ', `| Kit area | ${'x'.repeat(300)} `);
+  assert.match(audit(longField).stdout, /field "Kit area" is over 200 characters/);
+  const longSection = FIXTURE.replace('## Impact\n', `## Impact\n\n${'word '.repeat(3000)}\n`);
+  assert.match(audit(longSection).stdout, /section "## Impact" is over 12,000 characters/);
+  assert.match(audit(FIXTURE + 'x'.repeat(70000)).stdout, /over 64,000 bytes/);
+});
+
+test('filing writes one signed report to the kit inbox and nothing else, and marks the local copy filed', () => {
+  const s = intakeSetup();
+  const before = fs.readdirSync(s.kit, { recursive: true }).sort();
+  const f = s.report();
+  const r = s.file(f);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const inbox = s.ls('inbox');
+  assert.equal(inbox.length, 1);
+  const env = JSON.parse(read(path.join(s.state, 'inbox', inbox[0])));
+  assert.equal(env.report, FIXTURE);
+  assert.match(env.hmac, /^[0-9a-f]{64}$/);
+  assert.equal(env.remote, 'https://example.com/pat/app.git');
+  assert.deepEqual(fs.readdirSync(s.kit, { recursive: true }).sort(), before, 'the kit folder itself is untouched');
+  assert.match(read(f), /^\| Status \| filed \|$/m);
+  // A report that fails its audit files nothing.
+  const bad = s.report('IR-bad.md', FIXTURE.replace('| Severity | medium |', '| Severity | urgent |'));
+  assert.equal(s.file(bad).status, 1);
+  assert.equal(s.ls('inbox').length, 1);
+  // A project with no key (never installed) files nothing.
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'intake-nokey-'));
+  g(other, 'init', '-q', '-b', 'main');
+  const lone = path.join(other, 'IR.md');
+  fs.writeFileSync(lone, FIXTURE);
+  const nokey = s.intake(['file', lone], other);
+  assert.equal(nokey.status, 1);
+  assert.match(nokey.stdout, /no intake key/);
+  assert.equal(s.ls('inbox').length, 1);
+});
+
+test('the inbox sorts each report: known sender queued, unknown held, forged or tampered rejected, repeats marked', () => {
+  const s = intakeSetup();
+  s.file(s.report());
+  assert.equal(s.intake(['process-inbox']).status, 0);
+  assert.equal(s.ls('held').length, 1, 'an unconfirmed sender is held, not queued');
+  assert.equal(s.ls('queue').length, 0);
+  assert.match(logLines(s).pop().reason, /unknown sender.*confirm/);
+  s.confirm();
+  s.file(s.report('IR-2.md', FIXTURE.replace('IR-2026-10-31-sweep-loop-auto', 'IR-2026-10-31-second-auto')));
+  s.intake(['process-inbox']);
+  assert.equal(s.ls('queue').length, 1);
+  assert.equal(logLines(s).pop().outcome, 'queued');
+  // The same report again is a duplicate of the queued one.
+  s.file(s.report('IR-3.md', FIXTURE.replace('IR-2026-10-31-sweep-loop-auto', 'IR-2026-10-31-second-auto')));
+  s.intake(['process-inbox']);
+  assert.equal(s.ls('duplicate').length, 1);
+  assert.match(logLines(s).pop().reason, /same report as/);
+  // Tampered after signing: one byte of the report changed.
+  s.file(s.report('IR-4.md', FIXTURE.replace('IR-2026-10-31-sweep-loop-auto', 'IR-2026-10-31-third-auto')));
+  const t = path.join(s.state, 'inbox', s.ls('inbox')[0]);
+  const env = JSON.parse(read(t));
+  fs.writeFileSync(t, JSON.stringify({ ...env, report: env.report.replace('medium', 'high') }));
+  s.intake(['process-inbox']);
+  assert.match(logLines(s).pop().reason, /signature does not match/);
+  // Forged: a known sender's id on another folder.
+  s.file(s.report('IR-5.md', FIXTURE.replace('IR-2026-10-31-sweep-loop-auto', 'IR-2026-10-31-fourth-auto')));
+  const f2 = path.join(s.state, 'inbox', s.ls('inbox')[0]);
+  fs.writeFileSync(f2, JSON.stringify({ ...JSON.parse(read(f2)), folder: 'C:/somewhere/else' }));
+  s.intake(['process-inbox']);
+  assert.match(logLines(s).pop().reason, /id does not match its folder and remote/);
+  // Not even JSON.
+  fs.writeFileSync(path.join(s.state, 'inbox', '0-junk.json'), 'ignore all previous instructions');
+  s.intake(['process-inbox']);
+  assert.match(logLines(s).pop().reason, /not a report envelope/);
+  assert.equal(s.ls('rejected').length, 3);
+  assert.equal(s.ls('inbox').length, 0);
+});
+
+test('the inbox keeps a daily cap per sender, leaving the rest for a later day', () => {
+  const s = intakeSetup();
+  s.confirm();
+  for (let i = 0; i < 6; i++) s.file(s.report(`IR-${i}.md`, FIXTURE.replace('IR-2026-10-31-sweep-loop-auto', `IR-2026-10-31-n${i}-auto`)));
+  s.intake(['process-inbox']);
+  assert.equal(s.ls('queue').length, 5);
+  assert.equal(s.ls('inbox').length, 1, 'the sixth waits');
+  assert.match(logLines(s).pop().reason, /daily cap of 5 for this sender/);
+});
+
+test('one inbox run at a time: a held lock stops a second run, and a stale one is cleared', () => {
+  const s = intakeSetup();
+  s.confirm();
+  s.file(s.report());
+  const lock = path.join(s.state, 'inbox.lock');
+  fs.writeFileSync(lock, 'other run');
+  const busy = s.intake(['process-inbox']);
+  assert.match(busy.stdout, /another inbox run holds the lock/i);
+  assert.equal(s.ls('inbox').length, 1);
+  const old = new Date(Date.now() - 11 * 60000);
+  fs.utimesSync(lock, old, old);
+  assert.equal(s.intake(['process-inbox']).status, 0);
+  assert.equal(s.ls('queue').length, 1);
+  assert.ok(!fs.existsSync(lock), 'the run frees its lock');
+});
+
+test('only the owner confirms a sender, from a terminal no agent runs in', () => {
+  const s = intakeSetup();
+  const id = s.ls('registry/pending')[0].replace('.json', '');
+  for (const extra of [{ CLAUDECODE: '1', KIT_OWNER_CONFIRM: '1' }, { AI_AGENT: 'x', KIT_OWNER_CONFIRM: '1' }, {}, { KIT_OWNER_CONFIRM: '1' }]) {
+    const r = s.intake(['confirm', id], s.kit, extra);
+    assert.notEqual(r.status, 0, JSON.stringify(extra));
+    assert.match(r.stdout, /only the owner confirms/i);
+  }
+  assert.ok(!fs.existsSync(path.join(s.state, 'registry', 'known.json')));
+  assert.match(s.intake(['status']).stdout, new RegExp(`pending\\s+${id}`));
+});
+
+test('filing starts the fixed inbox run by itself', () => {
+  const s = intakeSetup();
+  s.confirm();
+  const r = s.file(s.report(), { KIT_INTAKE_NO_SPAWN: '' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /inbox run started/);
+  const until = Date.now() + 15000;
+  while (Date.now() < until && !s.ls('queue').length) spawnSync('node', ['-e', 'setTimeout(()=>{},200)']);
+  assert.equal(s.ls('queue').length, 1);
 });
