@@ -143,15 +143,16 @@ function check(act) {
 	const on = SWITCHES.find((f) => fs.existsSync(f));
 	if (on) return ask([`the kill switch is on (${on})`]);
 	// main is read from the URL the act pushes to, never from the name "origin": a fetch URL of its own would let a
-	// session serve this check a main it wrote while the push still goes to GitHub. get-url gives both URLs after git's
-	// url rewrites, so a rewrite that sends fetch and push to one place is fine, and one that splits them asks.
-	const url = out(git('remote', 'get-url', 'origin'));
-	if (!url) return ask(['no origin remote to read main from']);
-	if (url.startsWith('-')) return ask(['origin\'s url starts with "-", which git would read as an option']);
+	// session serve this check a main it wrote while the push still goes to GitHub. get-url --push gives the push URLs
+	// after git's url rewrites (pushInsteadOf included), and the fetch below reads from that one place, so a push url or
+	// a pushInsteadOf naming the same repo in another spelling is fine; more than one push place asks.
 	const pushUrls = (out(git('remote', 'get-url', '--push', '--all', 'origin')) || '').split('\n').filter(Boolean);
+	if (!pushUrls.length) return ask(['no origin remote to read main from']);
 	// A token kept in a URL is never printed.
 	const shown = (u) => u.replace(/\/\/[^/@]*@/, '//***@');
-	if (!pushUrls.length || pushUrls.some((u) => u !== url)) return ask([`origin reads main from ${shown(url)} but pushes to ${pushUrls.map(shown).join(', ') || 'nowhere'}`]);
+	if (pushUrls.some((u) => u !== pushUrls[0])) return ask([`origin pushes to more than one place (${pushUrls.map(shown).join(', ')}), so main has no single home`]);
+	const url = pushUrls[0];
+	if (url.startsWith('-')) return ask(['origin\'s url starts with "-", which git would read as an option']);
 	// The fetch below passes the rewritten URL, and git rewrites it again: it must be one no second rule matches.
 	if (out(git('ls-remote', '--get-url', url)) !== url) return ask([`origin's url ${shown(url)} is rewritten again by a second url rule, so fetch and push could part`]);
 	if (fetch(url, `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
