@@ -141,18 +141,26 @@ function depsChanged(base, file) {
 
 // The project's sweep folder (adapter A22: the "Sweep reports" line of its CLAUDE.md), as a path from the repo's top
 // ending in /. Contracts live there and nowhere else, and it is the one folder the floor leaves out: a contract saved
-// in src/ once took src/ out of the floor with it.
+// in src/ once took src/ out of the floor with it. A project with no adapter line (the kit's own repo) names it as
+// "folder" in .kit/sweep-approval.json.
 const SWEEP_LINE = /\*\*Sweep reports:\*\*\s*`<?([^`>]+)>?`/;
+const asFolder = (s) => s.trim().replace(/\\/g, '/').replace(/^\.?\/+/, '').replace(/\/*$/, '/');
 function sweepFolder() {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	for (const name of ['CLAUDE.md', 'CLAUDE.local.md']) {
 		let text = '';
 		try { text = fs.readFileSync(path.join(top, name), 'utf8'); } catch { continue; }
 		const m = text.match(SWEEP_LINE);
-		if (m) return m[1].trim().replace(/\\/g, '/').replace(/^\.?\/+/, '').replace(/\/*$/, '/');
+		if (m) return asFolder(m[1]);
 	}
+	try {
+		const folder = JSON.parse(fs.readFileSync(path.join(top, '.kit', 'sweep-approval.json'), 'utf8')).folder;
+		if (typeof folder === 'string' && folder.trim()) return asFolder(folder);
+	} catch { /* no project settings */ }
 	return 'docs/sweeps/';
 }
+// However it was named, a folder holding tracked code is never a sweep folder: it would leave that code out of the floor.
+const codeIn = (folder) => git('ls-files', '--full-name', '--', `:(top)${folder}`).stdout.split('\n').filter((f) => f && !/\.(md|json)$/i.test(f));
 const inSweepFolder = (file) => {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	const rel = toPosix(path.relative(top, file));
@@ -199,6 +207,8 @@ function check(c, facts, floor, fixCheck) {
 	if (!CAPS[tier]) return { why: [`unknown tier "${c.tier}"`], need: {} };
 	const why = [];
 	if (!inSweepFolder(contractFile)) why.push(`the contract is not in the sweep folder (${sweepFolder()}, adapter A22): save it there`);
+	const code = codeIn(sweepFolder());
+	if (code.length) why.push(`the sweep folder ${sweepFolder()} holds tracked files that are not reports (${code[0]}): name a folder of its own`);
 	if (!facts) why.push('cannot read the branch diff against its base (pass --base <ref>)');
 	else if (facts.dirty.length) why.push(`work not committed (${facts.dirty[0].slice(3)}): commit it, so the diff shows the whole change`);
 	else if (!facts.changed) why.push(`no changes against ${facts.base}: run it from the branch's own checkout, or pass the right --base`);

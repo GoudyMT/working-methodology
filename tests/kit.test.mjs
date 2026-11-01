@@ -2220,6 +2220,21 @@ test('a contract outside the sweep folder is refused, and only the sweep folder 
   assert.equal(approveIn(dir, [f]).status, 0);
   assert.match(approveRun(featureContract(), dir).stdout, /not in the sweep folder \(reviews\/, adapter A22\)/);
 });
+// Found in the feasibility run of the re-sweeps (2026-11-01): the kit repo keeps its sweeps in reports/sweeps/ and has
+// no adapter line, so every contract it wrote was refused. A project with no adapter line names its sweep folder in
+// .kit/sweep-approval.json; a folder that holds tracked code is never a sweep folder, however it was named.
+test('a project with no adapter line names its sweep folder in .kit/sweep-approval.json, and code is never a sweep folder', () => {
+  const dir = sweepRepo({ 'src/sync.ts': 'x\n', '.kit/sweep-approval.json': '{ "folder": "reports/sweeps/" }\n' });
+  fs.mkdirSync(path.join(dir, 'reports', 'sweeps'), { recursive: true });
+  const f = path.join(dir, 'reports', 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const ok = approveIn(dir, [f]);
+  assert.equal(ok.status, 0, ok.stdout);
+  const src = sweepRepo({ 'src/sync.ts': 'x\n', '.kit/sweep-approval.json': '{ "folder": "src/" }\n' });
+  const inSrc = path.join(src, 'src', 'contract.json');
+  fs.writeFileSync(inSrc, JSON.stringify(featureContract()));
+  assert.match(approveIn(src, [inSrc]).stdout, /the sweep folder src\/ holds tracked files that are not reports \(src\/sync\.ts\)/);
+});
 test('a re-sweep refuses a parent on the base or on another branch, and a folder names only files two levels below it', () => {
   const merged = approveRun(featureContract());
   assert.equal(outcome(merged).status, 0);
