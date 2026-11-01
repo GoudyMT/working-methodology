@@ -82,10 +82,12 @@ Changelog note for the 1.13.0 bump (draft): The Standard PR body's Review sectio
 - Known limit for review: the release cap counts today's remote tags by their commit date, which a careful session could backdate
 
 ### Phase 3: Intake and identity
-- [ ] Registry keyed on project folder + git remote; hook writes to `pending/`; owner confirms once
-- [ ] `improvement-report.mjs file`: audit PASS, write to inbox only, spawn fixed `process-inbox` command under a lock
-- [ ] Report schema (0b) with the running log; size caps on every free-text field
-- [ ] Dedupe and per-sender and per-day caps
+- [x] Registry keyed on project folder + git remote (credentials stripped from the URL); install writes the key and `pending/`; the owner confirms once from their own terminal (`scripts/intake.mjs confirm`)
+- [x] `improvement-report.mjs file`: audit PASS, signed (HMAC with the project's key) into the inbox only, then the fixed `process-inbox` command under a lock
+- [x] Size caps on every free-text part (field 200 characters, section 12,000, report 64,000 bytes). Not added: the running log, since Phase 4 never runs a report's commands
+- [x] Dedupe of exact repeats (cross-project joins wait for Phase 4's reproduced failure); caps of 5 per sender and 20 in all per day
+- State lives in `<Claude folder>/kit-intake/` (keys, registry, inbox and the sorted folders), outside every repo, not the kit's `reports/inbox/`: no test or session writes into the kit's working tree, and it sits beside the keys and the kill switch
+- Known limit for review: a session running as the same user can read a project's key, so the key stops forged files, not a hostile local session; Phase 4's reproduction is the boundary
 
 ### Phase 4: Verify, build, review, release (kit repo only)
 - [ ] Verify session: no network, temp HOME, own reproduction, structured JSON verdict; injection fixtures in tests
