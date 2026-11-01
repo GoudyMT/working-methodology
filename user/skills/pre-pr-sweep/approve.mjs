@@ -211,6 +211,8 @@ function check(c, facts, floor, fixCheck) {
 	// A re-sweep's or fix check's floor comes from its first sweep, so modifiers copied into its contract add nothing:
 	// counted as added roles, they once let a one-file re-sweep through with 17 agents. Only what its diff shows counts.
 	const modifiers = new Set(floor ? [] : Array.isArray(c.modifiers) ? c.modifiers : []);
+	// The one claim the diff can disprove is not taken on trust: copied from a template, it lifted the cap.
+	if (facts && facts.changed && !facts.deps && modifiers.has('new-dependency')) why.push('the contract claims new-dependency, but the diff changes no package file');
 	if (facts && facts.deps) modifiers.add('new-dependency');
 	for (const m of modifiers) {
 		if (!MODIFIER_NEEDS[m]) { why.push(`unknown modifier "${m}"`); continue; }

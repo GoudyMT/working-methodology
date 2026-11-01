@@ -2335,6 +2335,18 @@ test('a re-sweep\'s copied modifiers do not lift its role cap', () => {
   assert.equal(out.status, 1, out.stdout);
   assert.match(out.stdout, /over the feature cap of 10/);
 });
+test('a claimed new-dependency modifier the diff disproves is refused', () => {
+  const dir = sweepRepo({ 'README.md': 'z\n' });
+  const c = { tier: 'fix', modifiers: ['new-dependency'], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 40000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 40000 }),
+    role('supply-chain', 'Is each new package pinned, licensed and maintained?', { budget: 40000 }),
+    role('privacy', 'Does any new package send data off the device?', { budget: 40000 }),
+  ] };
+  const out = approveRun(c, dir);
+  assert.equal(out.status, 1, out.stdout);
+  assert.match(out.stdout, /claims new-dependency, but the diff changes no package file/);
+});
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');
