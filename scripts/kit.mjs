@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
 // Files that hold the owner's details on purpose, and folders that are not kit content.
-const SCRUB_SKIP = new Set(['kit.config.json', 'owner-profile.md', 'scrub.local.json', '.github/CODEOWNERS']);
+const SCRUB_SKIP = new Set(['kit.config.json', 'owner-profile.md', 'scrub.local.json']);
 // vendor/ holds third-party work kept as-is, with its own credits; it is not the owner's content.
 const SCRUB_SKIP_DIRS = new Set(['.git', 'node_modules', 'reports', 'vendor']);
 const SNAPSHOT_SKIP = new Set(['.git', 'node_modules', '.in_use']);
@@ -448,8 +448,7 @@ export function scrub({ kit }) {
   const hits = [];
   for (const file of walk(kit, SCRUB_SKIP_DIRS)) {
     const rel = toPosix(path.relative(kit, file));
-    // A worktree's .git is a file holding git's pointer to the main repo, never kit text.
-    if (SCRUB_SKIP.has(rel) || rel === '.git') continue;
+    if (SCRUB_SKIP.has(rel)) continue;
     const lines = fs.readFileSync(file, 'utf8').split('\n');
     const seen = new Set();
     const hit = (kind, i) => { if (!seen.has(kind)) { seen.add(kind); hits.push({ file: rel, line: i + 1, kind }); } };
@@ -686,28 +685,14 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
 /**
  * Whether main has a branch rule on GitHub, read with gh (rule:first-push-gate, "Protect main").
  *
- * Args:
- *     projectDir: the folder gh reads the repo from
- *     gh: runs gh with these args, as spawnSync does (tests pass a fake)
- *
  * Returns:
  *     'protected', 'unprotected', or null when it cannot tell (no GitHub remote, no gh, no access)
  */
-export function mainProtection(projectDir, gh = (args) => spawnSync('gh', args, { cwd: projectDir, encoding: 'utf8', timeout: 8000 })) {
-  const r = gh(['api', 'repos/{owner}/{repo}/branches/main/protection']);
+function mainProtection(projectDir) {
+  const r = spawnSync('gh', ['api', 'repos/{owner}/{repo}/branches/main/protection'], { cwd: projectDir, encoding: 'utf8', timeout: 8000 });
   if (r.error) return null;
   if (r.status === 0) return 'protected';
-  if (!/Branch not protected/i.test(`${r.stdout}${r.stderr}`)) return null;
-  // A ruleset protects main too, and the classic endpoint does not see one. It counts when a rule GitHub documents as
-  // gating every update of main is there: a PR, a required check, or updates only by bypass actors. A page holds 100.
-  const rules = gh(['api', 'repos/{owner}/{repo}/rules/branches/main?per_page=100']);
-  if (rules.error || rules.status !== 0) return null;
-  const gates = ['pull_request', 'required_status_checks', 'update'];
-  try {
-    return JSON.parse(rules.stdout).some((x) => gates.includes(x.type)) ? 'protected' : 'unprotected';
-  } catch {
-    return null;
-  }
+  return /Branch not protected/i.test(`${r.stdout}${r.stderr}`) ? 'unprotected' : null;
 }
 
 /**
