@@ -3181,18 +3181,16 @@ test('the act name is cleaned, so a newline in it cannot print a GO line', () =>
 // GitHub, so a session could serve the check a main of its own.
 // The fix check: a refusal of every url rewrite asked on the common global https-to-ssh rewrite, so a streak could
 // never start; only a rewrite that sends fetch and push to different places can serve a main of its own.
-// The second fix check (2026-11-01): main is now read from the push url itself, so a fetch url of its own cannot
-// serve it; each case below shows where main was read from by making the other place unreadable.
-test('the grant check reads main from where origin pushes, and asks when it pushes to more than one place', () => {
+test('the grant check reads main from where origin pushes, and asks when fetch and push differ after any url rewrite', () => {
   const fakeOf = (r) => { const fake = path.join(path.dirname(r.dir), 'fake.git'); g(path.dirname(r.dir), 'clone', '-q', '--bare', r.bare, fake); return fake; };
-  const nowhere = (r) => path.join(path.dirname(r.dir), 'no-such-repo.git');
   const r = autonomyRepo();
-  g(r.dir, 'remote', 'set-url', 'origin', nowhere(r));
+  const fake = fakeOf(r);
+  g(r.dir, 'remote', 'set-url', 'origin', fake);
   g(r.dir, 'remote', 'set-url', '--push', 'origin', r.bare);
-  assert.doesNotMatch(askOn(r, /auto-eligible \(advisory\): 0\/10/).stdout, /could not fetch/, 'main came from the push url, not the fetch url');
+  askOn(r, /origin reads main from .* but pushes to/);
   const split = autonomyRepo();
-  g(split.dir, 'config', `url.${nowhere(split)}.pushInsteadOf`, split.bare);
-  askOn(split, /could not fetch origin\/main/);
+  g(split.dir, 'config', `url.${fakeOf(split)}.pushInsteadOf`, split.bare);
+  askOn(split, /origin reads main from .* but pushes to/);
   const both = autonomyRepo();
   g(both.dir, 'remote', 'set-url', 'origin', 'https://example.invalid/repo.git');
   g(both.dir, 'config', `url.${both.bare}.insteadOf`, 'https://example.invalid/repo.git');
@@ -3207,24 +3205,11 @@ test('the grant check reads main from where origin pushes, and asks when it push
   const mirror = autonomyRepo();
   g(mirror.dir, 'remote', 'set-url', '--push', 'origin', mirror.bare);
   g(mirror.dir, 'remote', 'set-url', '--add', '--push', 'origin', fakeOf(mirror));
-  askOn(mirror, /pushes to more than one place \(.*, .*\)/);
+  askOn(mirror, /but pushes to .*, /);
   const token = autonomyRepo();
-  g(token.dir, 'remote', 'set-url', '--push', 'origin', 'https://max:ghp_NOTREAL@example.invalid/repo.git');
-  g(token.dir, 'remote', 'set-url', '--add', '--push', 'origin', token.bare);
-  assert.doesNotMatch(askOn(token, /more than one place \(https:\/\/\*\*\*@example\.invalid/).stdout, /ghp_NOTREAL/);
-});
-// The second fix check (2026-11-01): fetch and push naming the same repo in two spellings (a push url, or the
-// pushInsteadOf git's own docs show for fetching over one transport and pushing over another) asked every time,
-// before the ledger line, so that setup's streak could never start. main is read from the one place origin pushes to.
-test('the grant check reads main from the push url, so a push url or pushInsteadOf to the same repo can start a streak', () => {
-  const fileUrl = (r) => `file:///${r.bare.replace(/\\/g, '/').replace(/^\//, '')}`;
-  const pushurl = autonomyRepo();
-  g(pushurl.dir, 'remote', 'set-url', '--push', 'origin', fileUrl(pushurl));
-  askOn(pushurl, /auto-eligible \(advisory\): 0\/10/);
-  const pushInsteadOf = autonomyRepo();
-  g(pushInsteadOf.dir, 'config', `url.${fileUrl(pushInsteadOf)}.pushInsteadOf`, pushInsteadOf.bare);
-  askOn(pushInsteadOf, /auto-eligible \(advisory\): 0\/10/);
-  assert.equal(lastCheck(pushInsteadOf).kind, 'check', 'the check is in the ledger for the owner\'s verdict');
+  g(token.dir, 'remote', 'set-url', 'origin', 'https://max:ghp_NOTREAL@example.invalid/repo.git');
+  g(token.dir, 'remote', 'set-url', '--push', 'origin', token.bare);
+  assert.doesNotMatch(askOn(token, /origin reads main from https:\/\/\*\*\*@example\.invalid/).stdout, /ghp_NOTREAL/);
 });
 // The commit security review of the fix above: the URL is now passed to git fetch as an argument, and one starting
 // with "-" would be read as an option (--upload-pack runs a command).
