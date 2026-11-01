@@ -206,6 +206,8 @@ repo and that folder is an owner stop) on three fresh installs, each scored stri
 | Total | 7 | 10 | 8 |
 
 - **Gate NOT met: median 8.** The misses are Q3, Q7 and Q10, the questions that vary in every review; this change's
-  text (pre-compact scan item 5, one stop in delegated decisions) is in none of their rules. The owner decides.
+  text (pre-compact scan item 5, one stop in delegated decisions) is in none of their rules.
+- **Accepted by the owner with this evidence** (decision card, 2026-11-01 03:58 UTC, passed on by the project
+  thread); no re-run.
 - Q3 runs 1 and 3: the reads were shown, not stated as the rule "before any edit". Q7 run 1: an APPROVED contract
   started the agents without the owner. Q10 runs 1 and 3: no summary of the sweep in the PR.
