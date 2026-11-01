@@ -448,7 +448,8 @@ export function scrub({ kit }) {
   const hits = [];
   for (const file of walk(kit, SCRUB_SKIP_DIRS)) {
     const rel = toPosix(path.relative(kit, file));
-    if (SCRUB_SKIP.has(rel)) continue;
+    // A worktree's .git is a file holding git's pointer to the main repo, never kit text.
+    if (SCRUB_SKIP.has(rel) || rel === '.git') continue;
     const lines = fs.readFileSync(file, 'utf8').split('\n');
     const seen = new Set();
     const hit = (kind, i) => { if (!seen.has(kind)) { seen.add(kind); hits.push({ file: rel, line: i + 1, kind }); } };

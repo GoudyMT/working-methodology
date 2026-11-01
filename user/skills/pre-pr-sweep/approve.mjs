@@ -3,7 +3,8 @@
 // its tier's rules, so a routine sweep need not wait for the owner, and hands back to the owner on anything else.
 // It is a script on purpose: the same contract always gets the same answer, at no token cost.
 //
-// The contract is a JSON file written next to the table the owner would have read:
+// The contract is a JSON file in the project's sweep folder (adapter A22), written next to the table the owner would
+// have read:
 //   { "tier": "feature" | "fix" | "triage" | "first push" | "launch gate",
 //     "modifiers": ["security-sensitive" | "new-dependency" | "public-text" | "user-data"],
 //     "testsChanged": true,
@@ -20,6 +21,8 @@
 //
 // Usage (from inside the repo):
 //   node approve.mjs <contract.json> [--base <ref>]                     decide (exit 0 approved, 1 ask the owner)
+//   node approve.mjs <contract.json> --resweep <first contract.json>  the one short re-sweep after the fixes
+//   node approve.mjs <check.json> --resweep <re-sweep contract.json>    the one fix check of a re-sweep's high fixes
 //   node approve.mjs <contract.json> --outcome --tokens N --findings N --real N --duplicates N [--real-mid N]
 //   node approve.mjs <contract.json> --owner-yes "<the owner's words>"  after an ASK, once the owner says yes
 //   node approve.mjs <contract.json> --escape "<what slipped through>"
@@ -73,7 +76,8 @@ const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const has = (name) => args.includes(name);
 const contractFile = args[0] && !args[0].startsWith('--') ? path.resolve(args[0]) : null;
-const git = (...a) => spawnSync('git', ['-C', contractFile ? path.dirname(contractFile) : process.cwd(), ...a], { encoding: 'utf8' });
+// git runs in the contract's folder, or here when that folder is gone (a removed worktree's sweep logging its outcome).
+const git = (...a) => spawnSync('git', ['-C', contractFile && fs.existsSync(path.dirname(contractFile)) ? path.dirname(contractFile) : process.cwd(), ...a], { encoding: 'utf8' });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 
 // The log: one per repo, in its git folder.
@@ -118,6 +122,8 @@ function caps(tier) {
 	try { own = (JSON.parse(fs.readFileSync(f, 'utf8')).caps || {})[tier] || {}; } catch { /* no project caps */ }
 	const out = { ...CAPS[tier] };
 	for (const k of Object.keys(out)) if (Number.isFinite(own[k]) && own[k] > 0) out[k] = Math.min(out[k], own[k]);
+	// A role cap the project lowered bounds every agent, modifier roles included.
+	if (out.maxAgents < CAPS[tier].maxAgents) out.projectAgents = out.maxAgents;
 	return out;
 }
 
@@ -133,22 +139,68 @@ function depsChanged(base, file) {
 	} catch { return true; }
 }
 
+// The project's sweep folder (adapter A22: the "Sweep reports" line of its CLAUDE.md), as a path from the repo's top
+// ending in /. Contracts live there and nowhere else. Only its sweep files - dated reports (YYYY-MM-DD-<name>.md, the
+// rule's report name) and contracts (JSON with a roles list) - are left out of the floor and of the uncommitted-work
+// check; anything else in it stays in: a contract saved in src/ once took src/ out of the floor, and a git-ignored
+// CLAUDE.local.md naming rules/ took the rules out with no trace in any diff. It is read from the working copy, since
+// the kit keeps CLAUDE.md out of git. A project with no adapter line (the kit's own repo) names it as "folder" in
+// .kit/sweep-approval.json.
+const SWEEP_LINE = /\*\*Sweep reports:\*\*\s*`<?([^`>]+)>?`/;
+const asFolder = (s) => s.trim().replace(/\\/g, '/').replace(/^\.?\/+/, '').replace(/\/*$/, '/');
+function sweepFolder() {
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
+	for (const name of ['CLAUDE.md', 'CLAUDE.local.md']) {
+		let text = '';
+		try { text = fs.readFileSync(path.join(top, name), 'utf8'); } catch { continue; }
+		const m = text.match(SWEEP_LINE);
+		if (m) return asFolder(m[1]);
+	}
+	try {
+		const folder = JSON.parse(fs.readFileSync(path.join(top, '.kit', 'sweep-approval.json'), 'utf8')).folder;
+		if (typeof folder === 'string' && folder.trim()) return asFolder(folder);
+	} catch { /* no project settings */ }
+	return 'docs/sweeps/';
+}
+// A sweep file, by its path from the top and its text (null when unreadable).
+const DATED_REPORT = /^\d{4}-\d{2}-\d{2}-[^/]+\.md$/i;
+const sweepFile = (folder, f, text) => {
+	if (!f.startsWith(folder) || f.slice(folder.length).includes('/')) return false;
+	if (DATED_REPORT.test(f.slice(folder.length))) return true;
+	try { return /\.json$/i.test(f) && Array.isArray(JSON.parse(text).roles); } catch { return false; }
+};
+// However it was named, a folder holding tracked code is never a sweep folder. A .gitkeep is not code.
+const codeIn = (folder) => git('ls-files', '--full-name', '--', `:(top)${folder}`).stdout.split('\n').filter((f) => f && !/\.(md|json)$/i.test(f) && path.posix.basename(f) !== '.gitkeep');
+// Both sides as real paths: git names the top by its long path, while a Windows short name (CI's RUNNER~1) or a
+// junction spells the same folder another way, and every contract once read as outside it.
+const real = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+const inSweepFolder = (file) => {
+	const top = real(git('rev-parse', '--show-toplevel').stdout.trim());
+	const rel = toPosix(path.relative(top, path.join(real(path.dirname(file)), path.basename(file))));
+	return !rel.startsWith('..') && rel.toLowerCase().startsWith(sweepFolder().toLowerCase());
+};
+
 // What the branch's diff against its base says, or null when it cannot be read.
-function diffFacts() {
-	const want = opt('--base');
+function diffFacts(want = opt('--base')) {
 	const base = (want ? [want] : ['origin/main', 'main', 'origin/master', 'master']).find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
 	if (!base) return null;
-	const names = (filter) => git('diff', '--name-only', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\n').filter(Boolean);
+	// No rename pairs (a move into the sweep folder hid the deleted file) and no diff.relative narrowing to this folder.
+	const names = (filter) => git('diff', '--no-renames', '--no-relative', '--name-only', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\n').filter(Boolean);
 	const all = names('ACDMRT');
 	const added = names('A');
-	const lines = git('diff', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
-	// Work not yet committed would not be in the diff the floor reads; the contract's own folder is left out.
-	const own = git('rev-parse', '--show-prefix').stdout.trim();
-	const dirty = git('status', '--porcelain', '--', ':(top)', `:(top,exclude)${own || '.kit-none'}`).stdout.split('\n').filter(Boolean);
+	const lines = git('diff', '--no-renames', '--no-relative', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
+	// Work not yet committed would not be in the diff the floor reads; only the sweep folder's sweep files are left out.
+	const folder = sweepFolder();
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
+	const readNow = (f) => { try { return fs.readFileSync(path.join(top, f), 'utf8'); } catch { return null; } };
+	const dirty = git('-c', 'status.relativePaths=false', '-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all', '--', ':(top)')
+		.stdout.split('\n').filter((l) => l && !sweepFile(folder, l.slice(3), readNow(l.slice(3))));
 	return {
 		base,
 		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
 		dirty,
+		folder,
+		files: all,
 		changed: all.length,
 		deps: all.filter((f) => DEP_FILE.test(f)).some((f) => depsChanged(base, f)),
 		tests: all.some((f) => TEST_FILE.test(f)),
@@ -162,32 +214,46 @@ const words = (s) => new Set(String(s || '').toLowerCase().match(/[a-z0-9]+/g) |
 const overlap = (a, b) => { const x = words(a), y = words(b); const both = [...x].filter((w) => y.has(w)).length; return both / (new Set([...x, ...y]).size || 1); };
 const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '').length >= min;
 
-// Every reason this contract needs the owner (none means it is inside the rules), and the role kinds it needed.
-function check(c, facts) {
+// Every reason this contract needs the owner (none means it is inside the rules), and the role kinds it needed. A
+// re-sweep or fix check brings its own floor in place of the tier's; a fix check is sized by its file list, not by
+// the triage diff limits.
+function check(c, facts, floor, fixCheck) {
 	const tier = String(c.tier || '').toLowerCase();
 	if (OWNER_TIERS.includes(tier)) return { why: [`the ${tier} tier is always the owner's call`], need: {} };
 	if (!CAPS[tier]) return { why: [`unknown tier "${c.tier}"`], need: {} };
 	const why = [];
+	if (!inSweepFolder(contractFile)) why.push(`the contract is not in the sweep folder (${sweepFolder()}, adapter A22): save it there`);
+	const code = codeIn(sweepFolder());
+	if (code.length) why.push(`the sweep folder ${sweepFolder()} holds tracked files that are not reports (${code[0]}): name a folder of its own`);
 	if (!facts) why.push('cannot read the branch diff against its base (pass --base <ref>)');
 	else if (facts.dirty.length) why.push(`work not committed (${facts.dirty[0].slice(3)}): commit it, so the diff shows the whole change`);
 	else if (!facts.changed) why.push(`no changes against ${facts.base}: run it from the branch's own checkout, or pass the right --base`);
-	else {
+	else if (!fixCheck) {
 		if (tier !== 'feature' && facts.addedSource.length) why.push(`an added source file (${facts.addedSource[0]}) is feature work, not ${tier}`);
 		if (tier === 'triage' && (facts.added.length || facts.lines > TRIAGE_MAX_LINES)) why.push(`${facts.lines} changed lines, ${facts.added.length} added files: more than a triage change`);
 	}
 	const roles = Array.isArray(c.roles) ? c.roles : [];
 	const cap = caps(tier);
 	if (!roles.length) why.push('no roles');
-	if (roles.length > cap.maxAgents) why.push(`${roles.length} agents, over the ${tier} cap of ${cap.maxAgents}`);
-	const need = { ...NEEDS[tier] };
-	const modifiers = new Set(Array.isArray(c.modifiers) ? c.modifiers : []);
+	const base = { ...(floor || NEEDS[tier]) };
+	if (tier === 'fix' && (c.testsChanged || (facts && facts.tests))) base['test-value'] = 1;
+	const need = { ...base };
+	// A re-sweep's or fix check's floor comes from its first sweep, so modifiers copied into its contract add nothing:
+	// counted as added roles, they once let a one-file re-sweep through with 17 agents. Only what its diff shows counts.
+	const modifiers = new Set(floor ? [] : Array.isArray(c.modifiers) ? c.modifiers : []);
+	// The one claim the diff can disprove is not taken on trust: copied from a template, it lifted the cap.
+	if (facts && facts.changed && !facts.deps && modifiers.has('new-dependency')) why.push('the contract claims new-dependency, but the diff changes no package file');
 	if (facts && facts.deps) modifiers.add('new-dependency');
-	if (tier === 'fix' && (c.testsChanged || (facts && facts.tests))) need['test-value'] = 1;
 	for (const m of modifiers) {
-		if (!MODIFIER_NEEDS[m]) { why.push(`unknown modifier "${m}"`); continue; }
+		if (!Object.hasOwn(MODIFIER_NEEDS, m)) { why.push(`unknown modifier "${m}"`); continue; }
 		for (const [k, n] of Object.entries(MODIFIER_NEEDS[m])) need[k] = Math.max(need[k] || 0, n);
 	}
 	const count = (k) => roles.filter((r) => r.kind === k).length;
+	// Modifiers add roles at any tier (rule:sweep-tiers), so the roles a modifier requires beyond the tier's own floor
+	// come on top of the tier's role cap; the budget caps below still hold.
+	const added = Object.entries(need).reduce((t, [k, n]) => t + Math.max(0, Math.min(count(k), n) - (base[k] || 0)), 0);
+	if (cap.projectAgents && roles.length > cap.projectAgents) why.push(`${roles.length} agents, over this project's own ${tier} cap of ${cap.projectAgents}`);
+	if (roles.length - added > cap.maxAgents) why.push(`${roles.length - added} agents beyond the modifiers' roles, over the ${tier} cap of ${cap.maxAgents}`);
 	for (const [k, n] of Object.entries(need)) if (count(k) < n) why.push(`needs ${n} ${k} role(s), has ${count(k)}${facts && facts.deps && k === 'supply-chain' ? ' (the diff changes a package file)' : ''}`);
 	let total = 0;
 	roles.forEach((r, i) => {
@@ -210,23 +276,105 @@ function check(c, facts) {
 	return { why, need };
 }
 
+// The one short re-sweep after a sweep's fixes (rule:sweep-tiers). Its floor is not the tier's: every file changed
+// since the first sweep's HEAD, read from git here and never from the contract, must be named in some role's
+// context, and a security-sensitive first sweep keeps one security role. The first sweep must be cleared, reported,
+// unedited and behind this HEAD; each sweep gets one re-sweep and a re-sweep gets none (no third pass).
+//
+// The fix check (the owner's call, 2026-11-01): the fixes for a re-sweep's high findings get ONE check of their own,
+// named with the re-sweep as its parent - one role at triage size, its floor every file changed since the re-sweep's
+// HEAD, once. It is not a third sweep: nothing comes after it.
+const cleared = (s, d) => d.decision === 'approved' || s.log.some((e) => e.kind === 'owner-yes' && e.contract === d.contract && e.hash === d.hash && e.head === d.head);
+function resweepOf(c, s, parentFile) {
+	if (parentFile === contractFile) return { why: ['this contract names itself as its first sweep: a re-sweep is a new contract, run with --resweep <first contract.json>'] };
+	const decisions = s.log.filter((e) => e.kind === 'decision' && e.contract === parentFile);
+	if (!decisions.length) return { why: [`no decision for the first sweep (${parentFile}): run approve.mjs on it first`] };
+	let raw = null;
+	try { raw = fs.readFileSync(parentFile, 'utf8'); } catch { /* moved or deleted */ }
+	const hash = raw === null ? null : sha(raw);
+	const reported = (d) => s.log.some((e) => e.kind === 'outcome' && e.decisionAt === d.time);
+	// The anchor is the EARLIEST decision that cleared this contract as it is now and has its outcome. Running the first
+	// contract again at a fix HEAD once moved the anchor there: the fixes dropped out of the floor, and the new anchor
+	// had no re-sweep yet, so a second one passed.
+	const same = decisions.filter((d) => d.hash === hash);
+	const parent = same.find((d) => cleared(s, d) && reported(d)) || same.find((d) => cleared(s, d)) || same[0] || decisions[decisions.length - 1];
+	const why = [];
+	if (!same.length) why.push('the first contract changed or moved since it was cleared');
+	else if (!cleared(s, parent)) why.push('the first sweep was not cleared: neither approved nor the owner\'s yes');
+	else if (!reported(parent)) why.push(`log the first sweep's outcome first (${parentFile})`);
+	// One re-sweep per contract and one fix check per re-sweep, each counted over every decision for its parent, so a
+	// re-run cannot open a second. What the parent IS comes only from its cleared decisions: a refused run that named a
+	// parent once made a first sweep count as a re-sweep, and a one-role pass on it was approved as its fix check.
+	const clearedSame = same.filter((d) => cleared(s, d));
+	const fixCheck = clearedSame.some((d) => d.resweepOf);
+	const tier = String(c.tier || '').toLowerCase();
+	if (clearedSame.some((d) => d.fixCheckOf)) why.push('the parent is a fix check: nothing comes after the fix check');
+	else if (fixCheck) {
+		if (tier !== 'triage') why.push('the parent is itself a re-sweep: no third pass; its high fixes get one fix check (tier triage, one role)');
+		if (s.log.some((e) => e.kind === 'decision' && e.fixCheckOf && e.parent === parentFile && cleared(s, e))) why.push('this re-sweep already had its one fix check: no third pass');
+	} else {
+		const had = s.log.find((e) => e.kind === 'decision' && cleared(s, e) && (e.parent === parentFile || decisions.some((d) => d.time === e.resweepOf)));
+		if (had) why.push(`this sweep already had its one re-sweep: no third pass: its high fixes go to the one fix check (--resweep ${had.contract}, tier triage, one role)`);
+		if (tier !== String(parent.tier || '').toLowerCase()) why.push(`the re-sweep's tier "${c.tier}" is not its first sweep's "${parent.tier}"`);
+		else if (tier !== 'feature' && !OWNER_TIERS.includes(tier)) why.push(`a ${tier} sweep has no re-sweep: its fix check is a contract of its own`);
+	}
+	let first = {};
+	try { first = JSON.parse(raw); } catch { /* reported above */ }
+	// Only this branch's own sweep anchors it. A sweep from another branch - merged into the base with a merge commit,
+	// or under a stacked branch - once anchored a whole new feature on two roles naming folders.
+	const now = diffFacts();
+	const branch = git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim();
+	if (!parent.branch || parent.branch !== branch) why.push(`the first sweep was swept on ${parent.branch || 'no recorded branch'}, not ${branch || 'a detached HEAD'}: another branch's sweep cannot anchor this one`);
+	if (now && parent.base && parent.base !== now.base) why.push(`the first sweep's base ${parent.base} is not this run's ${now.base}`);
+	if (now && parent.head && git('merge-base', '--is-ancestor', parent.head, now.base).status === 0) why.push(`the first sweep's HEAD ${parent.head} is already on ${now.base}: a merged sweep cannot anchor new work`);
+	// After a rebase or amend the files are still listed, from where the histories part, so an owner's yes to this ask
+	// is a yes to a list it can see: an early return here once let that yes clear a re-sweep that skipped files.
+	let anchor = parent.head;
+	if (!parent.head || git('merge-base', '--is-ancestor', parent.head, 'HEAD').status !== 0) {
+		why.push(`the first sweep's HEAD ${parent.head} is not an ancestor of this HEAD: the history under it changed`);
+		const fork = parent.head ? git('merge-base', parent.head, 'HEAD') : null;
+		if (!fork || fork.status !== 0) return { why, parent };
+		anchor = fork.stdout.trim();
+	}
+	const facts = diffFacts(anchor);
+	// Every file a fix changed but the sweep folder's sweep files, read as committed.
+	const atHead = (f) => { const r = git('show', `HEAD:${f}`); return r.status === 0 ? r.stdout : null; };
+	const files = facts ? facts.files.filter((f) => !sweepFile(facts.folder, f, atHead(f))) : [];
+	// A context entry names a file by its path (a trailing :line or note allowed) or, standing alone, a folder ending in
+	// /, which covers the files at most two levels below it: "src/" does not stand for a whole tree, and a note such as
+	// "src/ is out of scope" names nothing. Windows separators count.
+	const named = (f) => (c.roles || []).some((r) => (Array.isArray(r.context) ? r.context : []).some((x) => {
+		const words = String(x).trim().split(/\s+/);
+		const p = words[0].replace(/\\/g, '/').replace(/[:#].*$/, '').replace(/^\.\//, '');
+		return p === f || (words.length === 1 && p.endsWith('/') && p !== '/' && f.startsWith(p) && f.slice(p.length).split('/').length <= 2);
+	}));
+	for (const f of files) if (!named(f)) why.push(`${f} changed since the ${fixCheck ? 're-sweep' : 'first sweep'} and no role names it in its context`);
+	const floor = !fixCheck && (Array.isArray(first.modifiers) ? first.modifiers : []).includes('security-sensitive') ? { security: 1 } : {};
+	return { why, parent, facts, floor, fixCheck, files: files.length, base: now && now.base };
+}
+
 const budgetOf = (c) => (c.roles || []).reduce((t, r) => t + (typeof r.budget === 'number' && r.budget > 0 ? r.budget : 0), 0);
 
 function decide() {
 	const raw = fs.readFileSync(contractFile, 'utf8');
 	const c = JSON.parse(raw);
 	const s = state();
-	const facts = diffFacts();
-	const { why, need } = check(c, facts);
+	const parentFile = opt('--resweep') && path.resolve(opt('--resweep'));
+	const rs = parentFile ? resweepOf(c, s, parentFile) : null;
+	const facts = (rs && rs.facts) || diffFacts();
+	const { why, need } = check(c, facts, rs && rs.floor, rs && rs.fixCheck);
+	if (rs) why.push(...rs.why);
 	const open = s.log.filter((e) => e.kind === 'decision' && e.decision === 'approved').pop();
-	const reported = open && s.log.some((e) => e.kind === 'outcome' && e.decisionAt === open.time);
+	// An outcome for a later run of the same contract covers it: --outcome takes the newest cleared run, and an owner's
+	// yes on a re-run once left this wait looking for an outcome that could never land.
+	const reported = open && s.log.some((e) => e.kind === 'outcome' && (e.decisionAt === open.time || (e.contract === open.contract && e.decisionAt > open.time)));
 	if (s.paused) why.unshift(`auto-approval is paused: ${s.paused}`);
 	else if (s.approvedSinceReview >= s.reviewEvery) {
 		const reason = `trial review due: ${s.reviewEvery} auto-approvals since the last review`;
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
 	} else if (open && !reported) why.unshift(`log the outcome of the last approved sweep first (${open.contract})`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: facts && facts.base, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null };
+	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: rs ? rs.base : facts && facts.base, branch: git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim() || null, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null, ...(rs && rs.parent ? { [rs.fixCheck ? 'fixCheckOf' : 'resweepOf']: rs.parent.time, parent: parentFile } : {}) };
 	write(entry);
 	if (why.length) {
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
@@ -236,12 +384,13 @@ function decide() {
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} sweep, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
-	console.log(notice(c, need));
+	console.log(notice(c, need, rs && (rs.fixCheck ? 're-sweep' : 'first sweep')));
+	if (rs) console.log(`    ${rs.fixCheck ? 'Fix check' : 'Re-sweep'} of ${path.basename(parentFile)}: ${rs.files} changed file(s), each named by a role`);
 	return 0;
 }
 
 // The owner's start notice, written from the checked contract so it carries no hand count. Post it as is.
-function notice(c, need) {
+function notice(c, need, since) {
 	const roles = c.roles || [];
 	const n = (x) => x.toLocaleString('en-US');
 	const kinds = {};
@@ -251,7 +400,9 @@ function notice(c, need) {
 		`    ${c.tier} sweep, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
 		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), budget ${n(r.budget)}`),
 		`    Budget: ${n(budgetOf(c))} of the ${n(caps(String(c.tier).toLowerCase()).maxTotalBudget)} cap`,
-		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
+		`    Modifiers claimed: ${(Array.isArray(c.modifiers) && c.modifiers.length ? c.modifiers : ['none']).join(', ')}`,
+		`    Floor met: ${[...Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`), ...(since ? [`every file changed since the ${since} named by a role`] : [])].join(', ') || 'none for this tier'}`,
+		`    Each reviewer brief names its contract: ${contractFile}`,
 		'    Findings come when the sweep finishes.',
 	].join('\n');
 }
@@ -267,7 +418,7 @@ function ownerYes() {
 	if (!last || last.decision !== 'owner') { console.log('The script did not send this contract to the owner, so there is no ask to answer. Run approve.mjs on it first.'); return 1; }
 	if (last.hash !== sha(raw) || last.head !== head) { console.log('The contract or HEAD changed since the script asked. Run approve.mjs again, then ask the owner.'); return 1; }
 	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, words: said });
-	console.log("The owner's yes is logged; the reviewers may start.");
+	console.log(`The owner's yes is logged; the reviewers may start, each brief naming its contract: ${contractFile}`);
 	return 0;
 }
 
@@ -290,8 +441,12 @@ function outcome() {
 		nums[k] = v;
 	}
 	// The decision is found by the contract's path, so an edit after approval still finds it.
-	// An owner-decided sweep logs its outcome too, so the trial review sees every sweep.
-	const decision = state().log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
+	// An owner-decided sweep logs its outcome too, so the trial review sees every sweep. The newest CLEARED decision
+	// takes it: a refused re-run of the contract once took the outcome, and every later sweep waited for one that
+	// could never land.
+	const s = state();
+	const mine = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile);
+	const decision = mine.filter((e) => cleared(s, e)).pop() || mine.pop();
 	if (!decision) { console.log(`No decision for ${contractFile}; run approve.mjs on it first. Nothing logged.`); return 1; }
 	// Real findings from roles on the mid model, for the reviewer model trial; optional.
 	if (opt('--real-mid') !== undefined) {
@@ -299,7 +454,7 @@ function outcome() {
 		if (!Number.isFinite(v) || v < 0 || v > nums.real) { console.log('--real-mid needs a number from 0 to --real; nothing logged.'); return 1; }
 		nums.realMid = v;
 	}
-	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums });
+	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums, ...(decision.resweepOf ? { resweepOf: decision.resweepOf } : {}), ...(decision.fixCheckOf ? { fixCheckOf: decision.fixCheckOf } : {}) });
 	const trips = [];
 	if (decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
 	if (nums.findings > 0 && nums.duplicates * 3 >= nums.findings) trips.push(`${nums.duplicates} of ${nums.findings} findings repeated between roles`);
@@ -313,7 +468,7 @@ function summary() {
 	const d = s.log.filter((e) => e.kind === 'decision');
 	const o = s.log.filter((e) => e.kind === 'outcome');
 	const sum = (k) => o.reduce((t, e) => t + (Number(e[k]) || 0), 0);
-	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}`);
+	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}, re-sweeps: ${d.filter((e) => e.resweepOf && cleared(s, e)).length}, fix checks: ${d.filter((e) => e.fixCheckOf && cleared(s, e)).length}`);
 	console.log(`outcomes: ${o.length}; tokens / budget: ${sum('budget') ? (sum('tokens') / sum('budget')).toFixed(2) : 'n/a'}; real findings: ${sum('real')} of ${sum('findings')} (from mid-model roles: ${sum('realMid')}); repeated: ${sum('duplicates')}`);
 	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${s.reviewEvery} since the last review`}`);
 	if (s.paused) console.log(resumeHelp(s)[2].trim());

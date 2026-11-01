@@ -21,7 +21,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    legal text, data the user keeps); each adds its role.
    Before the contract, `node .claude/tracking-check.mjs parking <plan>` passes (rule:parking-lot).
 2. **The Swarm Contract, script first** (rule:swarm-contract). Do not ask the owner anything yet; the script decides
-   whether there is anything to ask. In order: (a) commit the work; (b) draw the roles from
+   whether there is anything to ask. In order: (a) rebase on the base and commit the work - rebase now, before the
+   first sweep, never between it and its re-sweep, which the script then refuses; (b) draw the roles from
    [references/angles.md](references/angles.md) by the change's risk regions, and write them as
    `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`);
    (c) from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
@@ -35,7 +36,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
    and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
-   (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
+   (rule:agent-canary) and names the contract's full path, as the start notice prints it: the guard decides by it.
+   Findings go through rule:finding-pipeline; receive them per
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
@@ -44,8 +46,13 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
    check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
    re-sweep: the script clears no new contract until it is in. The re-sweep is a new contract on the new HEAD, run
-   through `approve.mjs` like the first; scoped to the fixes, it may fall below the tier's floor, and then the
-   script asks and the owner decides. Update the report. Summarize the result in the PR
+   as `approve.mjs <re-sweep.json> --resweep <first contract.json>`: approved when every file changed since the
+   first sweep is named in a role's context (one security role after a security-sensitive sweep; a folder entry
+   covers two levels below it). Both contracts sit in the sweep folder, and the first sweep is this branch's own.
+   There is no third: a second re-sweep is refused. Its high and above are fixed now, and those fixes get ONE fix
+   check: a `"tier": "triage"` contract with one role naming every file changed since the re-sweep, run as
+   `approve.mjs <check.json> --resweep <re-sweep.json>`; nothing comes after it. Medium and below go in the report
+   as next-session clean-up items. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --tokens <used> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (add `--real-mid <n>`: real findings from roles on

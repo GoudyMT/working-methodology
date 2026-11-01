@@ -148,6 +148,8 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   fs.writeFileSync(path.join(kit, 'project/leak.md'), 'Ask Pat at pat@example.com in C:\\' + 'Users\\pat - ok \u2192 x\n');
   fs.mkdirSync(path.join(kit, '.github'), { recursive: true });
   fs.writeFileSync(path.join(kit, '.github/CODEOWNERS'), '/rules/core.md @Pat\n');
+  // A worktree's .git is a file naming the main repo's folder: git's own pointer, not the kit's text.
+  fs.writeFileSync(path.join(kit, '.git'), 'gitdir: C:\\' + 'Users\\pat\\kit\\.git\\worktrees\\x\n');
   const hits = scrub({ kit });
   const kinds = hits.filter((h) => h.file === 'project/leak.md').map((h) => h.kind).sort();
   assert.deepEqual(kinds, ['non-ascii', 'path', 'word:Pat', 'word:pat@example.com']);
@@ -571,7 +573,9 @@ test('the rules stay under their size caps and every start import resolves', () 
   const over = [];
   for (const n of fs.readdirSync(path.resolve('rules')).filter((x) => x.endsWith('.md') && x !== 'core.md')) {
     const b = Buffer.byteLength(read(path.resolve('rules', n)));
-    if (b > caps.module) over.push(`${n}: ${b} > ${caps.module}`);
+    // A module the owner gave more room (caps.moduleFor) is held to its own cap.
+    const cap = (caps.moduleFor || {})[n] || caps.module;
+    if (b > cap) over.push(`${n}: ${b} > ${cap}`);
   }
   const agents = Buffer.byteLength(read(path.resolve('project/AGENTS.md')));
   if (agents > caps.agentsMd) over.push(`AGENTS.md: ${agents} > ${caps.agentsMd}`);
@@ -838,6 +842,18 @@ test('the sweep report audit passes a done report and names each missing part', 
   const out = runAudit('pre-pr-sweep', bad);
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
+});
+// Found in the sweep of the re-sweep (2026-11-01): "high and above fixed now" was written but the audit took a
+// DEFERRED re-sweep high. A re-sweep's high is fixed in its PR and goes to the one fix check.
+test('the sweep audit refuses a deferred high in the re-sweep, and still takes one in the first sweep', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const head = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | DEFERRED the owner's follow-up |\n`;
+  assert.equal(runAudit('pre-pr-sweep', head).status, 0, 'a first-sweep high may be deferred with the owner');
+  const re = (disp) => `${head}\n## Re-sweep (head b2c3d4e)\n\n- **R1.1 (high)** - the fix is half done. ${disp}\n`;
+  const out = runAudit('pre-pr-sweep', re('DEFERRED next session'));
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /finding R1\.1: a re-sweep's high is fixed now/);
+  assert.equal(runAudit('pre-pr-sweep', re('FIXED c3d4e5f, then the fix check')).status, 0);
 });
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
@@ -1871,12 +1887,12 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
   g(dir, 'checkout', '-q', '-b', 'feat/sync');
   for (const [f, text] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); }
   commitAll(dir, 'feature', true);
-  fs.mkdirSync(path.join(dir, 'sweeps'));
+  fs.mkdirSync(path.join(dir, 'docs', 'sweeps'), { recursive: true });
   return dir;
 }
 const approveIn = (dir, args, env = {}) => spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env } });
 function approveRun(contract, dir = sweepRepo()) {
-  const f = path.join(dir, 'sweeps', 'contract.json');
+  const f = path.join(dir, 'docs', 'sweeps', 'contract.json');
   fs.writeFileSync(f, JSON.stringify(contract));
   return { ...approveIn(dir, [f]), dir, f };
 }
@@ -1989,8 +2005,9 @@ test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, 
 // Found in a course project (2026-10-30): the lead asked the owner to approve a sweep team before running the
 // script, and the owner approved a team that broke the security floor. The script now runs first and writes the
 // owner's notice from checked data, and a guard refuses a reviewer agent until the log clears this HEAD.
-const sweepGuard = (dir, extra = {}) => {
-  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review' }, ...extra });
+// A reviewer start whose brief names its contract, by default the one approveRun writes in dir.
+const sweepGuard = (dir, extra = {}, contract = path.join(dir, 'docs', 'sweeps', 'contract.json')) => {
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: `Review under the Swarm Contract ${contract}.` }, ...extra });
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
 test('an approval prints the owner\'s start notice from checked data, not a hand count', () => {
@@ -2022,6 +2039,553 @@ test('the owner\'s yes is logged only after the script asked, for this contract 
   const e = approveRun(c);
   fs.writeFileSync(e.f, JSON.stringify({ ...c, roles: c.roles.slice(0, 2) }));
   assert.notEqual(approveIn(e.dir, [e.f, '--owner-yes', 'yes']).status, 0);
+});
+// Found on a gate fix (2026-11-01): a fix sweep is capped at 3 roles, but the security-sensitive modifier adds 3
+// security roles, so every fix to a gate went to the owner. Modifiers add roles at any tier (rule:sweep-tiers): their
+// roles count on top of the tier's role cap, and the budget caps still hold.
+test('a modifier\'s roles come on top of the tier\'s role cap, and the budget cap still holds', () => {
+  const sec = (q) => role('security', q, { budget: 40000 });
+  const fixSec = { tier: 'fix', modifiers: ['security-sensitive'], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 40000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 40000 }),
+    role('test-value', 'Does each changed test guard a real use?', { budget: 40000 }),
+    sec('Can the lock still be bypassed by restoring an old backup?'),
+    sec('Does any error path leak the key material into logs?'),
+    sec('Can a crafted settings file widen the permissions it grants?'),
+  ] };
+  const ok = approveRun(fixSec, sweepRepo({ 'README.md': 'z\n' }));
+  assert.equal(ok.status, 0, ok.stdout);
+  const four = { ...fixSec, roles: [...fixSec.roles, role('modelled-on', 'Was the bug inherited from the code this copied?', { budget: 40000 })] };
+  const ask = approveRun(four, sweepRepo({ 'README.md': 'z\n' }));
+  assert.equal(ask.status, 1);
+  assert.match(ask.stdout, /over the fix cap of 3/);
+  const rich = { ...fixSec, roles: fixSec.roles.map((r) => ({ ...r, budget: 60000 })) };
+  assert.match(approveRun(rich, sweepRepo({ 'README.md': 'z\n' })).stdout, /total budget 360000 over the fix cap of 300000/);
+});
+// Found in a project (2026-10-31): the owner's loop is one sweep, fixes, then ONE short re-sweep of what the fixes
+// touched, with no third. The script held each re-sweep to the full feature floor and sent it to the owner, who was
+// asked to approve a re-sweep that followed the rule exactly. A re-sweep names its first sweep; the script reads
+// what changed since then from git itself and needs every changed file named in some role's context.
+const resweepContract = (extra = []) => ({ tier: 'feature', modifiers: [], roles: [
+  role('fix-root', 'Does the fix to the sync root remove it, and does it hold?', { context: ['src/sync.ts'] }),
+  role('blast-radius', 'Did the changed test start guarding the fixed path, or only pass?', { context: ['src/sync.test.ts'] }),
+  ...extra,
+] });
+// A cleared first sweep with its outcome logged, then one fix commit touching the source and its test.
+function sweptAndFixed(first = featureContract()) {
+  const r = approveRun(first);
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(outcome(r).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  fs.writeFileSync(path.join(r.dir, 'src/sync.test.ts'), 'test 2\n');
+  commitAll(r.dir, 'fix: hold the sync root', true);
+  return r;
+}
+const resweep = (r, contract, parent = r.f, name = 'resweep.json') => {
+  const f = path.join(r.dir, 'docs', 'sweeps', name);
+  fs.writeFileSync(f, JSON.stringify(contract));
+  return { ...approveIn(r.dir, [f, '--resweep', parent]), dir: r.dir, f };
+};
+test('a re-sweep that names every file the fixes changed is approved without the owner, and only as a re-sweep', () => {
+  const r = sweptAndFixed();
+  const plainFile = path.join(r.dir, 'docs', 'sweeps', 'plain.json');
+  fs.writeFileSync(plainFile, JSON.stringify(resweepContract()));
+  const plain = approveIn(r.dir, [plainFile]);
+  assert.equal(plain.status, 1, 'without --resweep the full floor applies');
+  assert.match(plain.stdout, /needs 3 security/);
+  const ok = resweep(r, resweepContract());
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout, /APPROVED/);
+  assert.match(ok.stdout, /Re-sweep of .*contract\.json: 2 changed file\(s\), each named by a role/);
+  const line = approvalLog(r.dir).pop();
+  assert.equal(line.decision, 'approved');
+  assert.equal(line.resweepOf, approvalLog(r.dir).find((e) => e.kind === 'decision' && e.contract === r.f).time);
+  assert.equal(sweepGuard(r.dir, {}, ok.f).permissionDecision, 'allow', 'the guard lets its reviewers start');
+  // The control: drop the role that names the test file, and the script asks, naming the file.
+  const r2 = sweptAndFixed();
+  const short = resweepContract();
+  short.roles.pop();
+  const ask = resweep(r2, short);
+  assert.equal(ask.status, 1);
+  assert.match(ask.stdout, /src\/sync\.test\.ts.*no role names it/);
+});
+test('a re-sweep after a security-sensitive sweep keeps a security role', () => {
+  const first = featureContract();
+  first.modifiers = ['security-sensitive'];
+  const r = sweptAndFixed(first);
+  assert.match(resweep(r, resweepContract()).stdout, /needs 1 security role/);
+  const withSec = resweepContract([role('security', 'Can the fixed sync path still be reached with an unchecked payload?', { context: ['src/sync.ts'] })]);
+  assert.equal(resweep(r, withSec, r.f, 'resweep2.json').status, 0);
+});
+test('a re-sweep is refused unless its first sweep was cleared, reported and is an ancestor of HEAD', () => {
+  // The first sweep was sent to the owner and never cleared.
+  const asked = featureContract();
+  asked.roles.pop();
+  const a = approveRun(asked);
+  assert.equal(a.status, 1);
+  fs.writeFileSync(path.join(a.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  commitAll(a.dir, 'fix: x', true);
+  assert.match(resweep(a, resweepContract([])).stdout, /first sweep was not cleared/);
+  // The owner's yes clears it; with its outcome logged the re-sweep goes through.
+  const b = approveRun(asked);
+  assert.equal(approveIn(b.dir, [b.f, '--owner-yes', 'yes run it']).status, 0);
+  assert.match(resweep(b, resweepContract()).stdout, /outcome/i, 'the first sweep\'s outcome comes first');
+  assert.equal(outcome(b).status, 0);
+  fs.writeFileSync(path.join(b.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  fs.writeFileSync(path.join(b.dir, 'src/sync.test.ts'), 'test 2\n');
+  commitAll(b.dir, 'fix: y', true);
+  assert.equal(resweep(b, resweepContract()).status, 0);
+  // History rewritten under the first sweep: its HEAD is no longer behind this one.
+  const c = sweptAndFixed();
+  const firstRaw = read(c.f);
+  g(c.dir, 'reset', '-q', '--hard', 'HEAD~2');
+  fs.mkdirSync(path.join(c.dir, 'docs', 'sweeps'), { recursive: true });
+  fs.writeFileSync(c.f, firstRaw);
+  fs.writeFileSync(path.join(c.dir, 'README.md'), 'other\n');
+  commitAll(c.dir, 'fix: rewritten', true);
+  assert.match(resweep(c, resweepContract()).stdout, /not an ancestor/);
+  // The first contract was edited after it was cleared.
+  const d = sweptAndFixed();
+  fs.writeFileSync(d.f, JSON.stringify({ ...featureContract(), modifiers: [] }, null, 2));
+  assert.match(resweep(d, resweepContract()).stdout, /first contract changed/);
+  // A re-sweep that claims another tier than its first sweep.
+  const e = sweptAndFixed();
+  assert.match(resweep(e, { ...resweepContract(), tier: 'fix' }).stdout, /tier/);
+});
+test('there is no third pass: one re-sweep per sweep, and never a re-sweep of a re-sweep', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(outcome(second, '100000').status, 0);
+  assert.equal(approvalLog(r.dir).pop().resweepOf, approvalLog(r.dir).find((e) => e.kind === 'decision' && e.contract === r.f).time, 'the outcome links its first sweep');
+  assert.match(approveIn(r.dir, ['--summary']).stdout, /re-sweeps: 1/);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: again', true);
+  const short = { ...resweepContract(), roles: resweepContract().roles.slice(0, 1) };
+  assert.match(resweep(r, short, second.f, 'third.json').stdout, /no third/);
+  assert.match(resweep(r, short, r.f, 'again.json').stdout, /no third/);
+});
+test('a first push or launch gate re-sweep still goes to the owner', () => {
+  for (const tier of ['first push', 'launch gate']) {
+    const first = { ...featureContract(), tier };
+    const r = approveRun(first);
+    assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes']).status, 0);
+    assert.equal(outcome(r).status, 0);
+    fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+    fs.writeFileSync(path.join(r.dir, 'src/sync.test.ts'), 'test 2\n');
+    commitAll(r.dir, 'fix: z', true);
+    const out = resweep(r, { ...resweepContract(), tier });
+    assert.equal(out.status, 1, tier);
+    assert.match(out.stdout, /always the owner's call/);
+  }
+});
+// Found in the review of the re-sweep (2026-11-01, each reproduced in a scratch repo first): running the first
+// contract again at the fix HEAD moved the re-sweep's anchor there, so the fixes dropped out of the floor and a second
+// re-sweep passed; a contract saved in src/ exempted src/; and a sweep from another branch (merged with a merge
+// commit, or a stacked branch) anchored a whole new feature on 2 roles naming folders.
+test('running the first contract again moves neither the re-sweep\'s anchor nor its one re-sweep', () => {
+  const r = sweptAndFixed();
+  assert.equal(approveIn(r.dir, [r.f]).status, 0, 'the first contract run again at the fix HEAD');
+  assert.equal(outcome(r).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.test.ts'), 'test 3\n');
+  commitAll(r.dir, 'fix: guard the test', true);
+  const onlyTest = resweepContract();
+  onlyTest.roles[0].context = ['src/sync.test.ts'];
+  const ask = resweep(r, onlyTest);
+  assert.equal(ask.status, 1);
+  assert.match(ask.stdout, /src\/sync\.ts changed since the first sweep/);
+  const ok = resweep(r, resweepContract(), r.f, 'resweep2.json');
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.equal(outcome(ok, '100000').status, 0);
+  assert.equal(approveIn(r.dir, [r.f]).status, 0);
+  assert.equal(outcome(r).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: again', true);
+  assert.match(resweep(r, resweepContract(), r.f, 'again.json').stdout, /no third/);
+});
+// Found in CI (2026-11-01): the runner's temp folder has a Windows short name (RUNNER~1) while git names the repo's
+// top by its long one, so every contract read as outside the sweep folder. A path spelled another way, through a
+// short name or a junction, is the same folder.
+test('a contract reached by another spelling of its path is still in the sweep folder', () => {
+  const dir = sweepRepo();
+  const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'alias-')), 'repo');
+  fs.symlinkSync(dir, link, 'junction');
+  const f = path.join(link, 'docs', 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const out = approveIn(link, [f]);
+  assert.doesNotMatch(out.stdout, /not in the sweep folder/);
+  assert.equal(out.status, 0, out.stdout);
+});
+test('a contract outside the sweep folder is refused, and only the sweep folder is left out of the floor', () => {
+  const r = sweptAndFixed();
+  const inSrc = path.join(r.dir, 'src', 'resweep.json');
+  fs.writeFileSync(inSrc, JSON.stringify(resweepContract()));
+  const out = approveIn(r.dir, [inSrc, '--resweep', r.f]);
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /not in the sweep folder \(docs\/sweeps\/, adapter A22\)/);
+  fs.rmSync(inSrc);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 99;\n');
+  assert.match(resweep(r, resweepContract()).stdout, /work not committed \(src\/sync\.ts\)/);
+  // A project's own sweep folder, named on its adapter line, is the one left out.
+  const dir = sweepRepo({ 'src/sync.ts': 'x\n', 'CLAUDE.md': '- **Sweep reports:** `reviews/`\n' });
+  fs.mkdirSync(path.join(dir, 'reviews'));
+  const f = path.join(dir, 'reviews', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  assert.equal(approveIn(dir, [f]).status, 0);
+  assert.match(approveRun(featureContract(), dir).stdout, /not in the sweep folder \(reviews\/, adapter A22\)/);
+});
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): a git-ignored CLAUDE.local.md naming
+// rules/ or .claude/ as the sweep folder took their tracked files out of the re-sweep's floor, with no trace in any
+// diff. Reading the folder from git instead broke every kit-local project, which keeps CLAUDE.md out of git (found
+// by the fix check). The folder is still read from the working copy; it only excuses uncommitted work, and no
+// tracked file a fix changed is ever left out of the floor.
+test('the sweep folder, named even in an ignored local file, leaves no tracked file out of the floor', () => {
+  const r = sweptAndFixed();
+  fs.mkdirSync(path.join(r.dir, 'rules'));
+  fs.writeFileSync(path.join(r.dir, 'rules', 'x.md'), 'rule\n');
+  fs.mkdirSync(path.join(r.dir, '.claude'));
+  fs.writeFileSync(path.join(r.dir, '.claude', 'settings.json'), '{"hooks":{}}\n');
+  commitAll(r.dir, 'docs: a rule and the settings', true);
+  fs.appendFileSync(path.join(r.dir, '.git', 'info', 'exclude'), 'CLAUDE.local.md\n');
+  for (const [folder, file] of [['rules/', 'rules/x.md'], ['.claude/', '.claude/settings.json']]) {
+    fs.writeFileSync(path.join(r.dir, 'CLAUDE.local.md'), `- **Sweep reports:** \`${folder}\`\n`);
+    const f = path.join(r.dir, folder, `resweep-${folder.replace(/\W/g, '')}.json`);
+    fs.writeFileSync(f, JSON.stringify(resweepContract()));
+    const out = approveIn(r.dir, [f, '--resweep', r.f]);
+    assert.match(out.stdout, new RegExp(`${file.replace(/\./g, '\\.')} changed since the first sweep and no role names it`), `${file} stays in the floor`);
+    fs.rmSync(f);
+  }
+  // A committed dated report and contract in the sweep folder are sweep files, left out as before.
+  fs.rmSync(path.join(r.dir, 'CLAUDE.local.md'));
+  fs.writeFileSync(path.join(r.dir, 'docs', 'sweeps', '2026-11-01-sync.md'), '# report\n');
+  fs.rmSync(path.join(r.dir, 'rules'), { recursive: true });
+  fs.rmSync(path.join(r.dir, '.claude'), { recursive: true });
+  commitAll(r.dir, 'docs: the report', true);
+  const kept = resweep(r, resweepContract());
+  assert.equal(kept.status, 0, kept.stdout);
+  // The kit's own layout: the adapter line in an ignored local file, reports git-ignored, a tracked .gitkeep.
+  const dir = sweepRepo({ 'src/sync.ts': 'x\n', 'reports/sweeps/.gitkeep': '' });
+  fs.writeFileSync(path.join(dir, 'CLAUDE.local.md'), '- **Sweep reports:** `reports/sweeps/`\n');
+  fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), 'CLAUDE.local.md\nreports/sweeps/*.json\n');
+  const c = path.join(dir, 'reports', 'sweeps', 'contract.json');
+  fs.writeFileSync(c, JSON.stringify(featureContract()));
+  const ok = approveIn(dir, [c]);
+  assert.equal(ok.status, 0, ok.stdout);
+});
+// Found in the feasibility run of the re-sweeps (2026-11-01): the kit repo keeps its sweeps in reports/sweeps/ and has
+// no adapter line, so every contract it wrote was refused. A project with no adapter line names its sweep folder in
+// .kit/sweep-approval.json; a folder that holds tracked code is never a sweep folder, however it was named.
+test('a project with no adapter line names its sweep folder in .kit/sweep-approval.json, and code is never a sweep folder', () => {
+  const dir = sweepRepo({ 'src/sync.ts': 'x\n', '.kit/sweep-approval.json': '{ "folder": "reports/sweeps/" }\n' });
+  fs.mkdirSync(path.join(dir, 'reports', 'sweeps'), { recursive: true });
+  const f = path.join(dir, 'reports', 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const ok = approveIn(dir, [f]);
+  assert.equal(ok.status, 0, ok.stdout);
+  const src = sweepRepo({ 'src/sync.ts': 'x\n', '.kit/sweep-approval.json': '{ "folder": "src/" }\n' });
+  const inSrc = path.join(src, 'src', 'contract.json');
+  fs.writeFileSync(inSrc, JSON.stringify(featureContract()));
+  assert.match(approveIn(src, [inSrc]).stdout, /the sweep folder src\/ holds tracked files that are not reports \(src\/sync\.ts\)/);
+});
+test('a re-sweep refuses a parent on the base or on another branch, and a folder names only files two levels below it', () => {
+  const merged = approveRun(featureContract());
+  assert.equal(outcome(merged).status, 0);
+  g(merged.dir, 'checkout', '-q', 'main');
+  g(merged.dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '--no-ff', '-q', '-m', 'merge feat/sync', 'feat/sync');
+  g(merged.dir, 'checkout', '-q', '-b', 'feat/b');
+  fs.mkdirSync(path.join(merged.dir, 'src', 'b'));
+  fs.writeFileSync(path.join(merged.dir, 'src/b/new.ts'), 'export const b = 1;\n');
+  commitAll(merged.dir, 'feat: a new feature', true);
+  const folders = resweepContract();
+  folders.roles[0].context = ['src/'];
+  folders.roles[1].context = ['src/b/'];
+  const onBase = resweep(merged, folders);
+  assert.equal(onBase.status, 1);
+  assert.match(onBase.stdout, /already on main/);
+  assert.match(onBase.stdout, /another branch/);
+  const stacked = approveRun(featureContract());
+  assert.equal(outcome(stacked).status, 0);
+  g(stacked.dir, 'checkout', '-q', '-b', 'feat/b');
+  fs.mkdirSync(path.join(stacked.dir, 'src', 'b'));
+  fs.writeFileSync(path.join(stacked.dir, 'src/b/new.ts'), 'export const b = 1;\n');
+  commitAll(stacked.dir, 'feat: a new feature', true);
+  assert.match(resweep(stacked, folders).stdout, /swept on feat\/sync, not feat\/b: another branch/);
+  // A folder entry covers a file at most two levels below it; deeper files need their own entry.
+  const deep = approveRun(featureContract());
+  assert.equal(outcome(deep).status, 0);
+  fs.mkdirSync(path.join(deep.dir, 'src', 'a', 'b', 'c'), { recursive: true });
+  fs.writeFileSync(path.join(deep.dir, 'src/a/b/c/deep.ts'), 'x\n');
+  commitAll(deep.dir, 'fix: deep', true);
+  const wide = resweepContract();
+  wide.roles[0].context = ['src/'];
+  wide.roles[1].context = ['src/'];
+  assert.match(resweep(deep, wide).stdout, /src\/a\/b\/c\/deep\.ts changed since the first sweep and no role names it/);
+  wide.roles[1].context = ['src/a/b/'];
+  assert.equal(resweep(deep, wide, deep.f, 'resweep2.json').status, 0);
+});
+test('a re-sweep context entry written with Windows separators names the file', () => {
+  const r = sweptAndFixed();
+  const win = resweepContract();
+  win.roles[0].context = ['src\\sync.ts'];
+  win.roles[1].context = ['.\\src\\sync.test.ts:3 the guard'];
+  const out = resweep(r, win);
+  assert.equal(out.status, 0, out.stdout);
+});
+// Found in the sweep of the re-sweep (2026-11-01): how a context entry names a file had no test, so loosening it to
+// any prefix (src, or s, naming every file) or dropping the :line, ./ or first-word handling stayed green, and a note
+// such as "src/ is out of scope" named a whole folder.
+test('a re-sweep context entry names a file only by its path, its own folder, or a path with a note', () => {
+  const withEntry = (entry) => { const c = resweepContract(); c.roles[0].context = [entry]; return c; };
+  const r = sweptAndFixed();
+  for (const entry of ['src', 's', 'src/sy', 'sync.ts', 'src/ is out of scope', 'see src/sync.ts', 'rule:pre-pr-deep-sweep']) {
+    const out = resweep(r, withEntry(entry), r.f, 'no.json');
+    assert.equal(out.status, 1, `"${entry}" must not name src/sync.ts`);
+    assert.match(out.stdout, /src\/sync\.ts changed since the first sweep and no role names it/, entry);
+  }
+  for (const entry of ['src/sync.ts:12', './src/sync.ts', 'src/sync.ts the root it fixed', 'src/', 'src/sync.ts#L4']) {
+    const out = resweep(sweptAndFixed(), withEntry(entry));
+    assert.equal(out.status, 0, `"${entry}" names src/sync.ts: ${out.stdout}`);
+  }
+});
+// The owner's decision (2026-11-01): fixes for a re-sweep's high findings get one check of their own - one role,
+// triage size, scoped to the files changed since the re-sweep's HEAD, allowed once. It is not a third sweep.
+const fixCheck = (context = ['src/sync.ts'], extra = {}) => ({ tier: 'triage', modifiers: [], roles: [
+  role('fix-root', 'Does the fix for the re-sweep\'s high finding hold, and break nothing near it?', { context, budget: 30000, ...extra }),
+] });
+test('a re-sweep\'s high fixes get one one-role check of the files changed since, and only once', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(outcome(second, '100000').status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: the re-sweep high', true);
+  assert.match(resweep(r, fixCheck(['src/sync.test.ts']), second.f, 'wrong.json').stdout, /src\/sync\.ts changed since the re-sweep and no role names it/);
+  const two = fixCheck();
+  two.roles.push(role('blast-radius', 'Which callers of the sync root does this fix reach?', { context: ['src/sync.ts'], budget: 30000 }));
+  assert.match(resweep(r, two, second.f, 'two.json').stdout, /over the triage cap of 1/);
+  assert.match(resweep(r, fixCheck(['src/sync.ts'], { budget: 60000 }), second.f, 'rich.json').stdout, /per-role cap of 40000/);
+  const check = resweep(r, fixCheck(), second.f, 'check.json');
+  assert.equal(check.status, 0, check.stdout);
+  assert.match(check.stdout, /Fix check of resweep\.json: 1 changed file\(s\), each named by a role/);
+  assert.equal(outcome(check, '20000').status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 4;\n');
+  commitAll(r.dir, 'fix: again', true);
+  assert.match(resweep(r, fixCheck(), second.f, 'check2.json').stdout, /already had its one fix check/);
+  assert.match(resweep(r, fixCheck(), check.f, 'check3.json').stdout, /nothing comes after the fix check/);
+});
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): any logged decision for the first
+// contract that carried resweepOf - even a refused run of it with itself as its parent - made the first sweep count as
+// a re-sweep, so a one-role triage pass anchored on it was approved as its "fix check", with no security floor and new
+// source on it. Only a cleared decision says what a sweep is, and no contract is its own parent.
+test('a refused run of the first contract as its own parent does not turn the first sweep into a re-sweep', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(outcome(second, '100000').status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: the re-sweep high', true);
+  const self = approveIn(r.dir, [r.f, '--resweep', r.f]);
+  assert.equal(self.status, 1);
+  assert.match(self.stdout, /names itself as its first sweep/);
+  const onFirst = resweep(r, fixCheck(), r.f, 'onfirst.json');
+  assert.equal(onFirst.status, 1, onFirst.stdout);
+  assert.match(onFirst.stdout, /already had its one re-sweep/);
+  assert.equal(resweep(r, fixCheck(), second.f, 'check.json').status, 0, 'the real fix check still runs');
+});
+// Found in the fix check (2026-11-01): the cleared-only half of the fix above had no test. A refused run with its
+// arguments swapped (the first contract, naming the re-sweep as its parent) logs fixCheckOf on the first contract;
+// counted, it would lock the first sweep out as a parent for good.
+test('a refused run with its arguments swapped says nothing about what the first sweep is', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(outcome(second, '100000').status, 0);
+  assert.equal(approveIn(r.dir, [r.f, '--resweep', second.f]).status, 1, 'the swapped run is refused');
+  assert.ok(approvalLog(r.dir).pop().fixCheckOf, 'and logged as a fix check of the re-sweep');
+  const out = resweep(r, resweepContract(), r.f, 'again.json');
+  assert.doesNotMatch(out.stdout, /the parent is a fix check/);
+  assert.match(out.stdout, /already had its one re-sweep/);
+});
+// Found in the sweep of the re-sweep (2026-11-01, each reproduced first in a scratch repo with its own log).
+test('an outcome binds to the sweep that ran, not a refused re-run of its contract', () => {
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout);
+  fs.writeFileSync(path.join(r.dir, 'src/new.ts'), 'x\n');
+  assert.equal(approveIn(r.dir, [r.f]).status, 1, 'a re-run refused for uncommitted work');
+  fs.rmSync(path.join(r.dir, 'src/new.ts'));
+  assert.equal(outcome(r).status, 0);
+  const next = path.join(r.dir, 'docs', 'sweeps', 'next.json');
+  fs.writeFileSync(next, JSON.stringify(featureContract()));
+  const out = approveIn(r.dir, [next]);
+  assert.doesNotMatch(out.stdout, /log the outcome of the last approved sweep first/);
+  assert.equal(out.status, 0, out.stdout);
+});
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): a re-run before the outcome went to the
+// owner, the owner's yes cleared it, and the outcome bound to that run while the wait looked at the first approval,
+// so every later sweep waited for an outcome that could never land. One outcome covers the contract's later runs.
+test('an outcome logged after the owner cleared a re-run of the contract ends the wait', () => {
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout);
+  const again = approveIn(r.dir, [r.f]);
+  assert.match(again.stdout, /log the outcome of the last approved sweep first/);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes run it again']).status, 0);
+  assert.equal(outcome(r).status, 0);
+  const next = path.join(r.dir, 'docs', 'sweeps', 'next.json');
+  fs.writeFileSync(next, JSON.stringify(featureContract()));
+  const out = approveIn(r.dir, [next]);
+  assert.doesNotMatch(out.stdout, /log the outcome of the last approved sweep first/);
+  assert.equal(out.status, 0, out.stdout);
+});
+test('after an amend under the first sweep, the re-sweep still lists every file no role names', () => {
+  const r = approveRun(featureContract());
+  assert.equal(outcome(r).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  g(r.dir, 'add', '-A', 'src');
+  g(r.dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--amend', '--no-edit', '--no-verify');
+  const c = resweepContract();
+  c.roles[0].context = ['src/sync.test.ts'];
+  const out = resweep(r, c);
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /not an ancestor of this HEAD/);
+  assert.match(out.stdout, /src\/sync\.ts changed since the first sweep and no role names it/);
+});
+const words12 = ['amber basil cedar', 'delta ember fable', 'garnet hollow iris', 'jasper kettle lumen', 'maple nectar onyx', 'pepper quartz raven', 'saffron timber umber', 'velvet willow xenon', 'yarrow zephyr acorn', 'bramble cobalt dune', 'fennel glacier heron', 'indigo juniper kelp', 'lagoon mosaic nimbus'];
+const ask = (kind, i) => role(kind, `Which ${words12[i]} path does the fix ${i} reach?`, { context: ['src/sync.ts'], budget: 60000 });
+test('a re-sweep\'s copied modifiers do not lift its role cap', () => {
+  const r = sweptAndFixed();
+  const c = resweepContract([ask('security', 0), ask('security', 1), ask('security', 2), ask('content', 3), ask('data-loss', 4),
+    ...[5, 6, 7, 8, 9, 10, 11, 12].map((i) => ask('dimension', i))]);
+  c.modifiers = ['security-sensitive', 'public-text', 'user-data'];
+  assert.equal(c.roles.length, 15);
+  const out = resweep(r, c);
+  assert.equal(out.status, 1, out.stdout);
+  assert.match(out.stdout, /over the feature cap of 10/);
+});
+// Found untested in the sweep of the re-sweep (2026-11-01); each is proved by a planted break turning it red.
+test('a fix sweep\'s test-value role is part of its floor, not a modifier\'s extra', () => {
+  const dir = sweepRepo({ 'README.md': 'z\n', 'tests/a.test.js': 't\n' });
+  const c = { tier: 'fix', modifiers: [], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 40000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 40000 }),
+    role('test-value', 'Does each changed test guard a real use?', { budget: 40000 }),
+    role('modelled-on', 'Was the bug inherited from the code this copied?', { budget: 40000 }),
+  ] };
+  assert.match(approveRun(c, dir).stdout, /4 agents beyond the modifiers' roles, over the fix cap of 3/);
+});
+test('a modifier lifts the cap only by the roles it requires, not by every role of its kind', () => {
+  const c = { tier: 'fix', modifiers: ['security-sensitive'], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 30000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 30000 }),
+    role('modelled-on', 'Was the bug inherited from the code this copied?', { budget: 30000 }),
+    ...[0, 1, 2, 3, 4].map((i) => role('security', `Can the ${words12[i]} gate be bypassed by the fix?`, { budget: 30000 })),
+  ] };
+  assert.match(approveRun(c, sweepRepo({ 'README.md': 'z\n' })).stdout, /5 agents beyond the modifiers' roles, over the fix cap of 3/);
+});
+test('an owner\'s yes clears only the contract, version and HEAD it answered', () => {
+  const asked = featureContract();
+  asked.roles.pop();
+  const r = approveRun(asked);
+  assert.equal(r.status, 1);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes run it']).status, 0);
+  fs.writeFileSync(r.f, JSON.stringify({ ...asked, roles: asked.roles.slice(0, 3) }));
+  assert.equal(approveIn(r.dir, [r.f]).status, 1, 'the edited contract is asked about again');
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  commitAll(r.dir, 'fix: x', true);
+  assert.match(resweep(r, resweepContract()).stdout, /first sweep was not cleared/);
+});
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): the test above edits the contract, so it
+// held only the hash binding; dropping the HEAD binding stayed green. Same contract, new HEAD: the old yes clears nothing.
+test('an owner\'s yes does not clear the same contract run again at a new HEAD', () => {
+  const asked = featureContract();
+  asked.roles.pop();
+  const r = approveRun(asked);
+  assert.equal(r.status, 1);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes run it']).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 2;\n');
+  commitAll(r.dir, 'fix: x', true);
+  assert.equal(approveIn(r.dir, [r.f]).status, 1, 'asked again at the new HEAD');
+  assert.equal(outcome(r).status, 0);
+  const [first] = approvalLog(r.dir).filter((e) => e.kind === 'decision');
+  assert.equal(approvalLog(r.dir).pop().decisionAt, first.time, 'the outcome goes to the run the owner cleared');
+});
+test('a claimed new-dependency modifier the diff disproves is refused', () => {
+  const dir = sweepRepo({ 'README.md': 'z\n' });
+  const c = { tier: 'fix', modifiers: ['new-dependency'], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 40000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 40000 }),
+    role('supply-chain', 'Is each new package pinned, licensed and maintained?', { budget: 40000 }),
+    role('privacy', 'Does any new package send data off the device?', { budget: 40000 }),
+  ] };
+  const out = approveRun(c, dir);
+  assert.equal(out.status, 1, out.stdout);
+  assert.match(out.stdout, /claims new-dependency, but the diff changes no package file/);
+});
+// Lows from the sweep of the re-sweep (2026-11-01), each cheap to close.
+test('the floor\'s diff ignores rename detection and a diff.relative setting', () => {
+  const r = approveRun(featureContract());
+  assert.equal(outcome(r).status, 0);
+  g(r.dir, 'mv', 'src/sync.ts', 'docs/sweeps/sync.ts');
+  commitAll(r.dir, 'fix: move', true);
+  const c = resweepContract();
+  c.roles[0].context = ['src/sync.test.ts'];
+  assert.match(resweep(r, c).stdout, /src\/sync\.ts changed since the first sweep and no role names it/, 'a rename into the sweep folder still shows the deleted file');
+  const rel = sweepRepo();
+  g(rel, 'config', 'diff.relative', 'true');
+  assert.equal(approveRun(featureContract(), rel).status, 0, 'diff.relative does not narrow the floor to the contract\'s folder');
+});
+test('modifier names are checked as names, and the notice and the log carry the claimed modifiers', () => {
+  const c = featureContract();
+  c.modifiers = ['constructor'];
+  assert.match(approveRun(c).stdout, /unknown modifier "constructor"/);
+  const ok = featureContract();
+  ok.modifiers = ['security-sensitive'];
+  const r = approveRun(ok);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /Modifiers claimed: security-sensitive/);
+  assert.deepEqual(approvalLog(r.dir).pop().modifiers, ['security-sensitive']);
+});
+test('a cap the project lowers bounds every agent, modifier roles included', () => {
+  const dir = sweepRepo({ 'README.md': 'z\n' });
+  fs.mkdirSync(path.join(dir, '.kit'));
+  fs.writeFileSync(path.join(dir, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { fix: { maxAgents: 2 } } }));
+  const c = { tier: 'fix', modifiers: ['security-sensitive'], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 30000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 30000 }),
+    ...[0, 1, 2].map((i) => role('security', `Can the ${words12[i]} gate be bypassed by the fix?`, { budget: 30000 })),
+  ] };
+  assert.match(approveRun(c, dir).stdout, /5 agents, over this project's own fix cap of 2/);
+});
+test('a refused third pass names the fix check, and a re-sweep\'s notice names its floor', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.match(second.stdout, /Floor met: every file changed since the first sweep named by a role/);
+  assert.equal(outcome(second, '100000').status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: again', true);
+  assert.match(resweep(r, resweepContract(), r.f, 'again.json').stdout, /no third pass: its high fixes go to the one fix check \(--resweep .*resweep\.json, tier triage, one role\)/);
+});
+test('a fix or triage sweep has no re-sweep, a missing parent is named, and the summary counts only cleared re-sweeps', () => {
+  for (const tier of ['fix', 'triage']) {
+    const dir = sweepRepo({ 'README.md': 'z\n' });
+    const first = { tier, modifiers: [], roles: tier === 'fix'
+      ? [role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 40000 }), role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 40000 })]
+      : [role('triage', 'Any secret or personal data in the diff?', { budget: 20000 })] };
+    const r = approveRun(first, dir);
+    assert.equal(r.status, 0, `${tier}: ${r.stdout}`);
+    assert.equal(outcome(r, '30000').status, 0);
+    fs.writeFileSync(path.join(dir, 'README.md'), 'zz\n');
+    commitAll(dir, 'fix: z', true);
+    const again = { ...first, roles: first.roles.map((x) => ({ ...x, context: ['README.md'] })) };
+    assert.match(resweep(r, again).stdout, new RegExp(`a ${tier} sweep has no re-sweep`), tier);
+  }
+  const r = sweptAndFixed();
+  assert.match(resweep(r, resweepContract(), path.join(r.dir, 'docs', 'sweeps', 'never.json')).stdout, /no decision for the first sweep/);
+  const short = resweepContract();
+  short.roles.pop();
+  assert.equal(resweep(r, short, r.f, 'short.json').status, 1, 'a refused re-sweep');
+  assert.match(approveIn(r.dir, ['--summary']).stdout, /re-sweeps: 0/);
+  assert.equal(resweep(r, resweepContract(), r.f, 'full.json').status, 0);
+  assert.match(approveIn(r.dir, ['--summary']).stdout, /re-sweeps: 1, fix checks: 0/);
 });
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
@@ -2101,8 +2665,8 @@ test('the approval script asks the owner when the work is not committed or the d
   g(empty, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(empty, 'README.md'), 'x\n');
   commitAll(empty, 'base', true);
-  fs.mkdirSync(path.join(empty, 'sweeps'));
-  fs.writeFileSync(path.join(empty, '.gitignore'), 'sweeps/\n');
+  fs.mkdirSync(path.join(empty, 'docs', 'sweeps'), { recursive: true });
+  fs.writeFileSync(path.join(empty, '.gitignore'), 'docs/sweeps/\n');
   commitAll(empty, 'ignore', true);
   g(empty, 'checkout', '-q', '-b', 'side');
   g(empty, 'branch', '-f', 'main', 'HEAD');
@@ -2292,10 +2856,66 @@ test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sw
   g(dir, 'worktree', 'add', '-q', '-b', 'feat/other', wt, 'main');
   fs.writeFileSync(path.join(wt, 'src.ts'), 'x\n');
   commitAll(wt, 'other work', true);
-  fs.mkdirSync(path.join(wt, 'sweeps'));
+  fs.mkdirSync(path.join(wt, 'docs', 'sweeps'), { recursive: true });
   const r = approveRun(featureContract(), wt);
   assert.equal(r.status, 0, r.stdout);
-  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
+  assert.equal(sweepGuard(dir, {}, r.f).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
+});
+// Found in the review of the re-sweep (2026-11-01, reproduced first): the guard took the newest cleared line from any
+// worktree, so a worktree whose own contract was refused started reviewers on another worktree's approval, and used
+// up that team's slots. A checkout with sweeps of its own is judged by its own lines only.
+test('the sweep guard judges a worktree by its own sweeps, never another worktree\'s approval', () => {
+  const x = sweepRepo();
+  const y = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'wt');
+  g(x, 'worktree', 'add', '-q', '-b', 'feat/y', y, 'main');
+  fs.writeFileSync(path.join(y, 'y.ts'), 'y\n');
+  commitAll(y, 'feat: y', true);
+  fs.mkdirSync(path.join(y, 'docs', 'sweeps'), { recursive: true });
+  const refused = { tier: 'feature', modifiers: [], roles: featureContract().roles.slice(0, 2) };
+  assert.equal(approveRun(refused, y).status, 1);
+  assert.equal(approveRun(featureContract(), x).status, 0);
+  assert.equal(sweepGuard(y).permissionDecision, 'deny', 'the refused worktree starts no reviewer');
+  for (let i = 0; i < 5; i++) assert.equal(sweepGuard(x).permissionDecision, 'allow', `the approved worktree's reviewer ${i + 1}`);
+});
+// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): judging a reviewer start by the checkout
+// it was made from failed both ways. A worktree that never ran approve.mjs started reviewers on another checkout's
+// approval and used up its slots, and a lead in the main checkout that had once logged a sweep of its own was refused
+// a worktree's approved team. The brief names its contract, and only that contract's lines decide.
+test('the sweep guard judges a reviewer start by the contract its brief names, from any checkout', () => {
+  const x = sweepRepo();
+  const r = approveRun(featureContract(), x);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(sweepGuard(x, {}, 'none named').permissionDecisionReason, /name the Swarm Contract's path in the reviewer brief/, 'a brief naming no contract');
+  const w = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'wt');
+  g(x, 'worktree', 'add', '-q', '-b', 'feat/w', w, 'main');
+  fs.writeFileSync(path.join(w, 'w.ts'), 'w\n');
+  commitAll(w, 'feat: w', true);
+  assert.equal(sweepGuard(w).permissionDecision, 'deny', 'a worktree that never ran the script');
+  for (let i = 0; i < 5; i++) assert.equal(sweepGuard(x).permissionDecision, 'allow', `the approved team keeps its slot ${i + 1}`);
+  // The lead's main checkout has a sweep of its own; the worktree's approved team still starts from it, the path
+  // written either way.
+  assert.equal(outcome(r).status, 0);
+  fs.mkdirSync(path.join(w, 'docs', 'sweeps'), { recursive: true });
+  const wr = approveRun(featureContract(), w);
+  assert.equal(wr.status, 0, wr.stdout);
+  assert.equal(sweepGuard(x, {}, wr.f).permissionDecision, 'allow', 'from the main checkout');
+  assert.equal(sweepGuard(x, {}, wr.f.split(path.sep).join('/').toUpperCase()).permissionDecision, 'allow', 'forward slashes, other case');
+});
+// Found in the sweep of the re-sweep (2026-11-01; old code): a worktree removed before its sweep's outcome was logged
+// wedged every other worktree, because --outcome looked for the log from the removed folder.
+test('a removed worktree\'s sweep can still log its outcome from the main checkout', () => {
+  const dir = sweepRepo();
+  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'wt');
+  g(dir, 'worktree', 'add', '-q', '-b', 'feat/gone', wt, 'main');
+  fs.writeFileSync(path.join(wt, 'gone.ts'), 'x\n');
+  commitAll(wt, 'feat: gone', true);
+  fs.mkdirSync(path.join(wt, 'docs', 'sweeps'), { recursive: true });
+  const r = approveRun(featureContract(), wt);
+  assert.equal(r.status, 0, r.stdout);
+  g(dir, 'worktree', 'remove', '--force', wt);
+  assert.equal(approveIn(dir, [r.f, '--outcome', '--tokens', '100000', '--findings', '1', '--real', '1', '--duplicates', '0']).status, 0);
+  const next = approveRun(featureContract(), dir);
+  assert.doesNotMatch(next.stdout, /log the outcome of the last approved sweep first/);
 });
 test('the owner\'s yes can be logged when the script could not read the base', () => {
   const dir = sweepRepo();
@@ -2472,7 +3092,7 @@ test('a version-only package.json change is not a new dependency; a dependency c
     fs.writeFileSync(path.join(dir, 'src', 'sync.ts'), 'x\n');
     fs.writeFileSync(path.join(dir, 'package.json'), head);
     commitAll(dir, 'feature', true);
-    fs.mkdirSync(path.join(dir, 'sweeps'));
+    fs.mkdirSync(path.join(dir, 'docs', 'sweeps'), { recursive: true });
     return dir;
   };
   assert.equal(approveRun(featureContract(), repo(pkg('1.1.0'))).status, 0, 'a version bump alone');
