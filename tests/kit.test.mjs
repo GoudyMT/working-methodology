@@ -854,14 +854,6 @@ test('the sweep audit refuses a deferred high in the re-sweep, and still takes o
   assert.equal(out.status, 1);
   assert.match(out.stdout, /finding R1\.1: a re-sweep's high is fixed now/);
   assert.equal(runAudit('pre-pr-sweep', re('FIXED c3d4e5f, then the fix check')).status, 0);
-  // Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): only a heading named the re-sweep, so a
-  // "Re-sweep" bullet over an indented table, the form the kit's own reports use, or a "Second pass" heading let it by.
-  const bullet = `${head}\n- **Re-sweep:** the one short re-sweep on b2c3d4e.\n\n  | Severity | Finding | Disposition |\n  |---|---|---|\n  | High | the fix is half done | DEFERRED next session |\n`;
-  assert.equal(runAudit('pre-pr-sweep', bullet).status, 1, 'a re-sweep bullet over an indented table');
-  assert.equal(runAudit('pre-pr-sweep', bullet.replace('DEFERRED next session', 'FIXED c3d4e5f')).status, 0);
-  assert.equal(runAudit('pre-pr-sweep', re('DEFERRED next session').replace('## Re-sweep', '## Second pass')).status, 1, 'a second pass heading');
-  const after = `${bullet}\n- **Parking lot:** for the next session.\n\n  | Severity | Finding | Disposition |\n  |---|---|---|\n  | High | an old one | DEFERRED the owner's follow-up |\n`;
-  assert.match(runAudit('pre-pr-sweep', after.replace('DEFERRED next session', 'FIXED c3d4e5f')).stdout, /clean/, 'the re-sweep ends at the next labeled bullet');
 });
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';

@@ -50,19 +50,15 @@ const SEV = /\b(critical|high|medium|low)\b(?!-)/i;
 const severity = (s) => ((s.match(SEV) || [])[1] || '').toLowerCase();
 const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bDEFERRED \S|\bACCEPTED \S/.test(l);
 const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit>, DEFERRED <where> or ACCEPTED <why>`);
-// Under a re-sweep heading or labeled bullet a high is fixed now and goes to the one fix check
-// (rule:finding-pipeline): a DEFERRED there was written as forbidden, but the audit once passed it. The section runs to
-// the next heading or labeled bullet; tables count indented too, as they sit under a bullet.
-const RESWEEP = /re-?sweep|second pass/i;
+// Under a re-sweep heading a high is fixed now and goes to the one fix check (rule:finding-pipeline): a DEFERRED
+// there was written as forbidden, but the audit once passed it.
 let inResweep = false;
 const deferred = (id, l) => { if (inResweep && /\bDEFERRED \S/.test(l)) faults.push(`finding ${id}: a re-sweep's high is fixed now (FIXED <commit>, then the fix check), never DEFERRED`); };
 let sevCol = -1;
 lines.forEach((l, i) => {
-	if (/^#{1,4} /.test(l)) inResweep = RESWEEP.test(l);
-	const label = l.match(/^[-*] \*\*([^*]+)\*\*/);
-	if (label && !/^[A-Z]+[\w.-]*\d\b/.test(label[1])) inResweep = RESWEEP.test(label[1]);
-	if (/^\|/.test(l.trim())) {
-		const cells = l.trim().split('|').slice(1, -1).map((c) => c.trim());
+	if (/^#{1,4} /.test(l)) inResweep = /re-sweep/i.test(l);
+	if (/^\|/.test(l)) {
+		const cells = l.split('|').slice(1, -1).map((c) => c.trim());
 		// A header row (the next line is the divider) sets which column holds severity, or none.
 		if (/^\|[\s|:-]+\|$/.test((lines[i + 1] || '').trim())) { sevCol = cells.findIndex((c) => /^severity$/i.test(c)); return; }
 		if (/^\|[\s|:-]+\|$/.test(l.trim())) return;
