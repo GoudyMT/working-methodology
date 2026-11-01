@@ -573,7 +573,9 @@ test('the rules stay under their size caps and every start import resolves', () 
   const over = [];
   for (const n of fs.readdirSync(path.resolve('rules')).filter((x) => x.endsWith('.md') && x !== 'core.md')) {
     const b = Buffer.byteLength(read(path.resolve('rules', n)));
-    if (b > caps.module) over.push(`${n}: ${b} > ${caps.module}`);
+    // A module the owner gave more room (caps.moduleFor) is held to its own cap.
+    const cap = (caps.moduleFor || {})[n] || caps.module;
+    if (b > cap) over.push(`${n}: ${b} > ${cap}`);
   }
   const agents = Buffer.byteLength(read(path.resolve('project/AGENTS.md')));
   if (agents > caps.agentsMd) over.push(`AGENTS.md: ${agents} > ${caps.agentsMd}`);

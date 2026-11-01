@@ -25,5 +25,13 @@
       "after": "**Who tests the preview, by stakes.** Every user-facing PR: the lead checks the deployed preview in phone and desktop emulation (headers, security policy, workers, layout), shown as shots. The owner's real device only for: a new or often-used surface; touch, keyboard or installed-app behaviour; device-only paths (downloads, file imports, sharing); screen-reader checks. Why: emulation cannot prove a device's fonts, system UI, keyboard or storage.",
       "why": "trimmed to fit the module cap for the sweep-loop rule; the preview rule keeps its why"
     }
+  ],
+  "caps": [
+    {
+      "module": "rules/reviews-and-findings.md",
+      "before": 14000,
+      "after": 14300,
+      "why": "the owner's call (2026-11-01): room for the fix-check wording and the two why clauses the sweep-loop rule had trimmed"
+    }
   ]
 }
