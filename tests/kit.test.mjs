@@ -2389,6 +2389,73 @@ test('a claimed new-dependency modifier the diff disproves is refused', () => {
   assert.equal(out.status, 1, out.stdout);
   assert.match(out.stdout, /claims new-dependency, but the diff changes no package file/);
 });
+// Lows from the sweep of the re-sweep (2026-11-01), each cheap to close.
+test('the floor\'s diff ignores rename detection and a diff.relative setting', () => {
+  const r = approveRun(featureContract());
+  assert.equal(outcome(r).status, 0);
+  g(r.dir, 'mv', 'src/sync.ts', 'docs/sweeps/sync.ts');
+  commitAll(r.dir, 'fix: move', true);
+  const c = resweepContract();
+  c.roles[0].context = ['src/sync.test.ts'];
+  assert.match(resweep(r, c).stdout, /src\/sync\.ts changed since the first sweep and no role names it/, 'a rename into the sweep folder still shows the deleted file');
+  const rel = sweepRepo();
+  g(rel, 'config', 'diff.relative', 'true');
+  assert.equal(approveRun(featureContract(), rel).status, 0, 'diff.relative does not narrow the floor to the contract\'s folder');
+});
+test('modifier names are checked as names, and the notice and the log carry the claimed modifiers', () => {
+  const c = featureContract();
+  c.modifiers = ['constructor'];
+  assert.match(approveRun(c).stdout, /unknown modifier "constructor"/);
+  const ok = featureContract();
+  ok.modifiers = ['security-sensitive'];
+  const r = approveRun(ok);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /Modifiers claimed: security-sensitive/);
+  assert.deepEqual(approvalLog(r.dir).pop().modifiers, ['security-sensitive']);
+});
+test('a cap the project lowers bounds every agent, modifier roles included', () => {
+  const dir = sweepRepo({ 'README.md': 'z\n' });
+  fs.mkdirSync(path.join(dir, '.kit'));
+  fs.writeFileSync(path.join(dir, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { fix: { maxAgents: 2 } } }));
+  const c = { tier: 'fix', modifiers: ['security-sensitive'], roles: [
+    role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 30000 }),
+    role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 30000 }),
+    ...[0, 1, 2].map((i) => role('security', `Can the ${words12[i]} gate be bypassed by the fix?`, { budget: 30000 })),
+  ] };
+  assert.match(approveRun(c, dir).stdout, /5 agents, over this project's own fix cap of 2/);
+});
+test('a refused third pass names the fix check, and a re-sweep\'s notice names its floor', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.match(second.stdout, /Floor met: every file changed since the first sweep named by a role/);
+  assert.equal(outcome(second, '100000').status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: again', true);
+  assert.match(resweep(r, resweepContract(), r.f, 'again.json').stdout, /no third pass: its high fixes go to the one fix check \(--resweep .*resweep\.json, tier triage, one role\)/);
+});
+test('a fix or triage sweep has no re-sweep, a missing parent is named, and the summary counts only cleared re-sweeps', () => {
+  for (const tier of ['fix', 'triage']) {
+    const dir = sweepRepo({ 'README.md': 'z\n' });
+    const first = { tier, modifiers: [], roles: tier === 'fix'
+      ? [role('fix-root', 'Does the fix remove the root, and does it hold?', { budget: 40000 }), role('blast-radius', 'Which callers and copies of this code does the change reach?', { budget: 40000 })]
+      : [role('triage', 'Any secret or personal data in the diff?', { budget: 20000 })] };
+    const r = approveRun(first, dir);
+    assert.equal(r.status, 0, `${tier}: ${r.stdout}`);
+    assert.equal(outcome(r, '30000').status, 0);
+    fs.writeFileSync(path.join(dir, 'README.md'), 'zz\n');
+    commitAll(dir, 'fix: z', true);
+    const again = { ...first, roles: first.roles.map((x) => ({ ...x, context: ['README.md'] })) };
+    assert.match(resweep(r, again).stdout, new RegExp(`a ${tier} sweep has no re-sweep`), tier);
+  }
+  const r = sweptAndFixed();
+  assert.match(resweep(r, resweepContract(), path.join(r.dir, 'docs', 'sweeps', 'never.json')).stdout, /no decision for the first sweep/);
+  const short = resweepContract();
+  short.roles.pop();
+  assert.equal(resweep(r, short, r.f, 'short.json').status, 1, 'a refused re-sweep');
+  assert.match(approveIn(r.dir, ['--summary']).stdout, /re-sweeps: 0/);
+  assert.equal(resweep(r, resweepContract(), r.f, 'full.json').status, 0);
+  assert.match(approveIn(r.dir, ['--summary']).stdout, /re-sweeps: 1, fix checks: 0/);
+});
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');

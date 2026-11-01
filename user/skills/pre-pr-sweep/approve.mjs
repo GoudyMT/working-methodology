@@ -122,6 +122,8 @@ function caps(tier) {
 	try { own = (JSON.parse(fs.readFileSync(f, 'utf8')).caps || {})[tier] || {}; } catch { /* no project caps */ }
 	const out = { ...CAPS[tier] };
 	for (const k of Object.keys(out)) if (Number.isFinite(own[k]) && own[k] > 0) out[k] = Math.min(out[k], own[k]);
+	// A role cap the project lowered bounds every agent, modifier roles included.
+	if (out.maxAgents < CAPS[tier].maxAgents) out.projectAgents = out.maxAgents;
 	return out;
 }
 
@@ -161,10 +163,11 @@ const inSweepFolder = (file) => {
 function diffFacts(want = opt('--base')) {
 	const base = (want ? [want] : ['origin/main', 'main', 'origin/master', 'master']).find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
 	if (!base) return null;
-	const names = (filter) => git('diff', '--name-only', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\n').filter(Boolean);
+	// No rename pairs (a move into the sweep folder hid the deleted file) and no diff.relative narrowing to this folder.
+	const names = (filter) => git('diff', '--no-renames', '--no-relative', '--name-only', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\n').filter(Boolean);
 	const all = names('ACDMRT');
 	const added = names('A');
-	const lines = git('diff', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
+	const lines = git('diff', '--no-renames', '--no-relative', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
 	// Work not yet committed would not be in the diff the floor reads; only the sweep folder is left out.
 	const folder = sweepFolder();
 	const dirty = git('status', '--porcelain', '--', ':(top)', `:(top,exclude)${folder}`).stdout.split('\n').filter(Boolean);
@@ -216,13 +219,14 @@ function check(c, facts, floor, fixCheck) {
 	if (facts && facts.changed && !facts.deps && modifiers.has('new-dependency')) why.push('the contract claims new-dependency, but the diff changes no package file');
 	if (facts && facts.deps) modifiers.add('new-dependency');
 	for (const m of modifiers) {
-		if (!MODIFIER_NEEDS[m]) { why.push(`unknown modifier "${m}"`); continue; }
+		if (!Object.hasOwn(MODIFIER_NEEDS, m)) { why.push(`unknown modifier "${m}"`); continue; }
 		for (const [k, n] of Object.entries(MODIFIER_NEEDS[m])) need[k] = Math.max(need[k] || 0, n);
 	}
 	const count = (k) => roles.filter((r) => r.kind === k).length;
 	// Modifiers add roles at any tier (rule:sweep-tiers), so the roles a modifier requires beyond the tier's own floor
 	// come on top of the tier's role cap; the budget caps below still hold.
 	const added = Object.entries(need).reduce((t, [k, n]) => t + Math.max(0, Math.min(count(k), n) - (base[k] || 0)), 0);
+	if (cap.projectAgents && roles.length > cap.projectAgents) why.push(`${roles.length} agents, over this project's own ${tier} cap of ${cap.projectAgents}`);
 	if (roles.length - added > cap.maxAgents) why.push(`${roles.length - added} agents beyond the modifiers' roles, over the ${tier} cap of ${cap.maxAgents}`);
 	for (const [k, n] of Object.entries(need)) if (count(k) < n) why.push(`needs ${n} ${k} role(s), has ${count(k)}${facts && facts.deps && k === 'supply-chain' ? ' (the diff changes a package file)' : ''}`);
 	let total = 0;
@@ -280,7 +284,8 @@ function resweepOf(c, s, parentFile) {
 		if (tier !== 'triage') why.push('the parent is itself a re-sweep: no third pass; its high fixes get one fix check (tier triage, one role)');
 		if (s.log.some((e) => e.kind === 'decision' && e.fixCheckOf && e.parent === parentFile && cleared(s, e))) why.push('this re-sweep already had its one fix check: no third pass');
 	} else {
-		if (s.log.some((e) => e.kind === 'decision' && cleared(s, e) && (e.parent === parentFile || decisions.some((d) => d.time === e.resweepOf)))) why.push('this sweep already had its one re-sweep: no third pass');
+		const had = s.log.find((e) => e.kind === 'decision' && cleared(s, e) && (e.parent === parentFile || decisions.some((d) => d.time === e.resweepOf)));
+		if (had) why.push(`this sweep already had its one re-sweep: no third pass: its high fixes go to the one fix check (--resweep ${had.contract}, tier triage, one role)`);
 		if (tier !== String(parent.tier || '').toLowerCase()) why.push(`the re-sweep's tier "${c.tier}" is not its first sweep's "${parent.tier}"`);
 		else if (tier !== 'feature' && !OWNER_TIERS.includes(tier)) why.push(`a ${tier} sweep has no re-sweep: its fix check is a contract of its own`);
 	}
@@ -336,7 +341,7 @@ function decide() {
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
 	} else if (open && !reported) why.unshift(`log the outcome of the last approved sweep first (${open.contract})`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: rs ? rs.base : facts && facts.base, branch: git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim() || null, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null, ...(rs && rs.parent ? { [rs.fixCheck ? 'fixCheckOf' : 'resweepOf']: rs.parent.time, parent: parentFile } : {}) };
+	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: rs ? rs.base : facts && facts.base, branch: git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim() || null, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null, ...(rs && rs.parent ? { [rs.fixCheck ? 'fixCheckOf' : 'resweepOf']: rs.parent.time, parent: parentFile } : {}) };
 	write(entry);
 	if (why.length) {
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
@@ -346,13 +351,13 @@ function decide() {
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} sweep, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
-	console.log(notice(c, need));
+	console.log(notice(c, need, rs && (rs.fixCheck ? 're-sweep' : 'first sweep')));
 	if (rs) console.log(`    ${rs.fixCheck ? 'Fix check' : 'Re-sweep'} of ${path.basename(parentFile)}: ${rs.files} changed file(s), each named by a role`);
 	return 0;
 }
 
 // The owner's start notice, written from the checked contract so it carries no hand count. Post it as is.
-function notice(c, need) {
+function notice(c, need, since) {
 	const roles = c.roles || [];
 	const n = (x) => x.toLocaleString('en-US');
 	const kinds = {};
@@ -362,7 +367,8 @@ function notice(c, need) {
 		`    ${c.tier} sweep, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
 		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), budget ${n(r.budget)}`),
 		`    Budget: ${n(budgetOf(c))} of the ${n(caps(String(c.tier).toLowerCase()).maxTotalBudget)} cap`,
-		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
+		`    Modifiers claimed: ${(Array.isArray(c.modifiers) && c.modifiers.length ? c.modifiers : ['none']).join(', ')}`,
+		`    Floor met: ${[...Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`), ...(since ? [`every file changed since the ${since} named by a role`] : [])].join(', ') || 'none for this tier'}`,
 		'    Findings come when the sweep finishes.',
 	].join('\n');
 }
