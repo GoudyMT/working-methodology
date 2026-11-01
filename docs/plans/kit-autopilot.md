@@ -73,10 +73,12 @@ Order is chosen so each phase is safe on its own: nothing can act outward until 
 Changelog note for the 1.13.0 bump (draft): The Standard PR body's Review section now carries the sweep summary: the commit the sweep covered, a result per dimension, each high or critical finding and how it was handled, deferred items with where they are tracked, and accepted risks; it never links the private report. The PR-body audit checks the new parts in order, so a body in the old Review shape (Reviewed across / Result / Pass table) now fails it: projects move to the new shape on update.
 
 ### Phase 2: `autonomy.mjs check <act>` (fail-closed gate)
-- [ ] Tests first: missing grant, unreadable grant, kill switch present, protected path touched, Tier 0 hash changed, 4th release today, new test not failing at base, each returns "ask"
-- [ ] Reads grant and itself from `origin/main`, never the worktree
-- [ ] Runs the evidence itself (test at base and head, full tests, scrub, caps)
-- [ ] Kill switch outside git; checked before every act
+- [x] Tests first: missing grant, unreadable grant, kill switch present, protected path touched, Tier 0 hash changed, 4th release today, new test not failing at base, each returns "ask" - 8 tests in tests/kit.test.mjs, all red before `project/.claude/autonomy.mjs` existed
+- [x] Reads grant and itself from `origin/main`, never the worktree - a grant only on the branch, or a changed copy of the check, asks
+- [x] Runs the evidence itself (test at base and head, full tests, scrub, caps) - the new test runs in a worktree at main and here
+- [x] Kill switch outside git; checked before every act - `autonomy-off` in the Claude config folder, checked first
+- [x] Ledger of the script's verdict and the owner's per act (chained lines in the git folder); 10 straight hits promote an act to auto, one miss sends it back to verify; only the owner's own terminal gives a verdict
+- Known limit for review: the release cap counts today's remote tags by their commit date, which a careful session could backdate
 
 ### Phase 3: Intake and identity
 - [ ] Registry keyed on project folder + git remote; hook writes to `pending/`; owner confirms once
