@@ -2250,6 +2250,32 @@ test('a re-sweep context entry written with Windows separators names the file', 
   const out = resweep(r, win);
   assert.equal(out.status, 0, out.stdout);
 });
+// The owner's decision (2026-11-01): fixes for a re-sweep's high findings get one check of their own - one role,
+// triage size, scoped to the files changed since the re-sweep's HEAD, allowed once. It is not a third sweep.
+const fixCheck = (context = ['src/sync.ts'], extra = {}) => ({ tier: 'triage', modifiers: [], roles: [
+  role('fix-root', 'Does the fix for the re-sweep\'s high finding hold, and break nothing near it?', { context, budget: 30000, ...extra }),
+] });
+test('a re-sweep\'s high fixes get one one-role check of the files changed since, and only once', () => {
+  const r = sweptAndFixed();
+  const second = resweep(r, resweepContract());
+  assert.equal(second.status, 0, second.stdout);
+  assert.equal(outcome(second, '100000').status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 3;\n');
+  commitAll(r.dir, 'fix: the re-sweep high', true);
+  assert.match(resweep(r, fixCheck(['src/sync.test.ts']), second.f, 'wrong.json').stdout, /src\/sync\.ts changed since the re-sweep and no role names it/);
+  const two = fixCheck();
+  two.roles.push(role('blast-radius', 'Which callers of the sync root does this fix reach?', { context: ['src/sync.ts'], budget: 30000 }));
+  assert.match(resweep(r, two, second.f, 'two.json').stdout, /over the triage cap of 1/);
+  assert.match(resweep(r, fixCheck(['src/sync.ts'], { budget: 60000 }), second.f, 'rich.json').stdout, /per-role cap of 40000/);
+  const check = resweep(r, fixCheck(), second.f, 'check.json');
+  assert.equal(check.status, 0, check.stdout);
+  assert.match(check.stdout, /Fix check of resweep\.json: 1 changed file\(s\), each named by a role/);
+  assert.equal(outcome(check, '20000').status, 0);
+  fs.writeFileSync(path.join(r.dir, 'src/sync.ts'), 'export const sync = 4;\n');
+  commitAll(r.dir, 'fix: again', true);
+  assert.match(resweep(r, fixCheck(), second.f, 'check2.json').stdout, /already had its one fix check/);
+  assert.match(resweep(r, fixCheck(), check.f, 'check3.json').stdout, /nothing comes after the fix check/);
+});
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');
