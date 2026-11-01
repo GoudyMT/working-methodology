@@ -235,3 +235,22 @@ three fresh installs, each scored strictly by its own new blind scorer.
 - Q7 run 2: the answer let an APPROVED contract start the agents without the owner's yes (the rule's design since
   1.5.0); its scorer marked the owner's stop missing. Q3 run 2: the read-before-edit rule was acted out, not stated.
 - Borderline (scorers): Q3 "before any edit" only implied in runs 1 and 3; Q7 wording near the key in runs 1 and 3.
+
+## Sweep loop gate, after the review fixes (2026-11-01)
+
+The same rule after the sweep's fixes (the fix check, the parking lot for a re-sweep's mediums and lows, the two
+restored why clauses), on three fresh installs, each scored strictly by its own new blind scorer that saw only its
+own run, relabeled, with project names and times hidden.
+
+| Q | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| 1, 2, 4, 5, 6, 7, 8, 9 | 1 | 1 | 1 |
+| 3 | 0 | 1 | 0 |
+| 10 | 1 | 0 | 0 |
+| Total | 9 | 9 | 8 |
+
+- **Gate met: median 9.**
+- Q3 runs 1 and 3: the fresh reads were done and shown, but "before any edit" was not stated as the rule.
+- Q10 runs 2 and 3: the sweep report is recorded, but neither answer says the PR summarizes it (the gap of the last
+  three reviews; this change's text does not carry it).
+- Borderline (scorers): Q3 in all three; Q7 run 3, where approve.mjs approves and the owner is asked only on an ASK.
