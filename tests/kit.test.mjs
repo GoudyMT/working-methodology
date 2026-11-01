@@ -3150,6 +3150,15 @@ test('the grant check reads main from where origin pushes, and asks when fetch a
   g(rw.dir, 'config', `url.${rw.bare}.insteadOf`, 'https://example.invalid/');
   askOn(rw, /url rewrite/);
 });
+// The commit security review of the fix above: the URL is now passed to git fetch as an argument, and one starting
+// with "-" would be read as an option (--upload-pack runs a command).
+test('the grant check refuses an origin url that git would read as an option', () => {
+  const r = autonomyRepo();
+  const config = path.join(r.dir, '.git', 'config');
+  fs.writeFileSync(config, read(config).replace(/url = .*/, 'url = --upload-pack=touch pwned'));
+  askOn(r, /starts with "-"/);
+  assert.ok(!fs.existsSync(path.join(r.dir, 'pwned')));
+});
 test('a fresh project install ships no grant, so every act asks', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nogrant-'));
   g(dir, 'init', '-q', '-b', 'main');

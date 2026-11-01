@@ -37,6 +37,9 @@ const PROTECTED = [/^\.kit\//, /(^|\/)\.claude\//, /(^|\/)\.githooks\//, /^\.git
 const run = (cmd, args, cwd) => spawnSync(cmd, args, { encoding: 'utf8', cwd, maxBuffer: 256 * 1024 * 1024 });
 const git = (...a) => run('git', ['-c', 'core.quotePath=false', ...a]);
 const out = (r) => (r.status === 0 ? r.stdout.trim() : null);
+// A fetch by URL: "--" keeps the URL from being read as an option, and the ext:: transport (which runs a command) stays
+// off whatever the repo's config says.
+const fetch = (url, refspec, ...opts) => git('-c', 'protocol.ext.allow=never', 'fetch', '-q', ...opts, '--', url, refspec);
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const lf = (s) => s.replace(/\r\n/g, '\n');
 // Every value printed to the owner's terminal comes from the ledger, the act name or git, and any of them can carry
@@ -120,7 +123,7 @@ function newTestEvidence(grant, base) {
 // commit's date. A plain tag on a backdated commit escapes the count (a known limit: annotated release tags close it).
 function releasesToday(url) {
 	const today = new Date().toISOString().slice(0, 10);
-	git('fetch', '-q', '--prune', url, '+refs/tags/*:refs/kit/tags/*');
+	fetch(url, '+refs/tags/*:refs/kit/tags/*', '--prune');
 	const dates = (out(git('for-each-ref', '--format=%(creatordate:iso-strict)', 'refs/kit/tags/')) || '').split('\n').filter(Boolean);
 	return dates.filter((d) => new Date(d).toISOString().slice(0, 10) === today).length;
 }
@@ -133,10 +136,11 @@ function check(act) {
 	// in git config, would let a session serve this check a main it wrote while the push still goes to GitHub.
 	const url = out(git('remote', 'get-url', 'origin'));
 	if (!url) return ask(['no origin remote to read main from']);
+	if (url.startsWith('-')) return ask(['origin\'s url starts with "-", which git would read as an option']);
 	const pushUrls = (out(git('remote', 'get-url', '--push', '--all', 'origin')) || '').split('\n').filter(Boolean);
 	if (!pushUrls.length || pushUrls.some((u) => u !== url)) return ask([`origin reads main from ${url} but pushes to ${pushUrls.join(', ') || 'nowhere'}`]);
 	if (out(git('config', '--get-regexp', '^url\\..*\\.(push)?insteadof$'))) return ask(['a url rewrite (insteadOf) in git config could send the fetch somewhere else']);
-	if (git('fetch', '-q', url, `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
+	if (fetch(url, `+refs/heads/main:${MAIN_REF}`).status !== 0) return ask(['could not fetch origin/main']);
 	const raw = git('show', `${MAIN_REF}:${GRANT_FILE}`);
 	if (raw.status !== 0) return ask([`no grant on origin/main (${GRANT_FILE}): every act asks`]);
 	let grant;
