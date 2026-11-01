@@ -855,6 +855,27 @@ test('the sweep audit refuses a deferred high in the re-sweep, and still takes o
   assert.match(out.stdout, /finding R1\.1: a re-sweep's high is fixed now/);
   assert.equal(runAudit('pre-pr-sweep', re('FIXED c3d4e5f, then the fix check')).status, 0);
 });
+// Found in the re-sweep of the re-sweep fixes and its fix check (2026-11-01, each reproduced first): only a heading
+// named the re-sweep, so the kit's own form (a "Re-sweep" bullet over an indented table) and a "Second pass" heading let
+// a deferred high by; the first fix made any labeled bullet end the section, so "## Re-sweep" then "- **Findings:**"
+// let one by again. A heading's section runs to the next heading of its level or higher; a bullet's is its indented
+// block; a fenced block is not read.
+test('the sweep audit finds a re-sweep by heading or by bullet, and a labeled bullet inside it does not end it', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const head = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const table = (disp, pad = '') => `${pad}| # | Severity | Finding | Disposition |\n${pad}|---|---|---|---|\n${pad}| R1 | high | the fix is half done | ${disp} |\n`;
+  const refused = (body, why) => { const out = runAudit('pre-pr-sweep', head + body); assert.equal(out.status, 1, why); assert.match(out.stdout, /finding R1: a re-sweep's high is fixed now/, why); };
+  const clean = (body, why) => assert.equal(runAudit('pre-pr-sweep', head + body).status, 0, why);
+  refused(`\n## Re-sweep (head b2c3d4e)\n\n- **Findings:** below\n\n${table('DEFERRED later')}`, 'a labeled bullet under the heading');
+  refused(`\n## Re-sweep (head b2c3d4e)\n\n### Findings\n\n${table('DEFERRED later')}`, 'a lower heading under it');
+  refused(`\n## Second pass (head b2c3d4e)\n\n${table('DEFERRED later')}`, 'a second pass heading');
+  refused(`\n- **Re-sweep:** the one short re-sweep on b2c3d4e.\n\n${table('DEFERRED later', '  ')}`, 'the bullet form');
+  clean(`\n- **Re-sweep:** the one short re-sweep on b2c3d4e.\n\n${table('FIXED c3d4e5f', '  ')}`, 'the bullet form, fixed');
+  clean(`\n## Re-sweep (head b2c3d4e)\n\n${table('FIXED c3d4e5f')}\n## Parking lot\n\n${table("DEFERRED the owner's follow-up")}`, 'a same-level heading ends it');
+  clean(`\n- **Re-sweep:** the one short re-sweep on b2c3d4e.\n\n${table('FIXED c3d4e5f', '  ')}\n- **Parking lot:** later.\n\n${table("DEFERRED the owner's follow-up", '  ')}`, 'the next bullet ends a bullet block');
+  clean(`\n- **Re-sweep:** scheduled after the fixes.\n\n${table("DEFERRED the owner's follow-up")}`, 'a first sweep naming its re-sweep to come');
+  clean(`\n## Re-sweep (head b2c3d4e)\n\n\`\`\`\n${table('DEFERRED later', '  ')}\`\`\`\n`, 'a fenced example');
+});
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
   const none = runAudit('pre-pr-sweep', base + '\nNo secrets or personal data in the diff.\n');

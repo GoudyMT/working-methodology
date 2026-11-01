@@ -50,15 +50,31 @@ const SEV = /\b(critical|high|medium|low)\b(?!-)/i;
 const severity = (s) => ((s.match(SEV) || [])[1] || '').toLowerCase();
 const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bDEFERRED \S|\bACCEPTED \S/.test(l);
 const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit>, DEFERRED <where> or ACCEPTED <why>`);
-// Under a re-sweep heading a high is fixed now and goes to the one fix check (rule:finding-pipeline): a DEFERRED
-// there was written as forbidden, but the audit once passed it.
-let inResweep = false;
-const deferred = (id, l) => { if (inResweep && /\bDEFERRED \S/.test(l)) faults.push(`finding ${id}: a re-sweep's high is fixed now (FIXED <commit>, then the fix check), never DEFERRED`); };
+// In a re-sweep a high is fixed now and goes to the one fix check (rule:finding-pipeline): a DEFERRED there was
+// written as forbidden, but the audit once passed it. A re-sweep (or second pass) heading's section runs to the next
+// heading of its level or higher, whatever bullets sit in it; a labeled "Re-sweep" bullet's section is its indented
+// block, as the kit's own reports write it. Tables count indented too; a fenced block is not read.
+const RESWEEP = /re-?sweep|second pass/i;
+let headLevel = 0;
+let inBullet = false;
+let fenced = false;
+const inResweep = () => headLevel > 0 || inBullet;
+const deferred = (id, l) => { if (inResweep() && /\bDEFERRED \S/.test(l)) faults.push(`finding ${id}: a re-sweep's high is fixed now (FIXED <commit>, then the fix check), never DEFERRED`); };
 let sevCol = -1;
 lines.forEach((l, i) => {
-	if (/^#{1,4} /.test(l)) inResweep = /re-sweep/i.test(l);
-	if (/^\|/.test(l)) {
-		const cells = l.split('|').slice(1, -1).map((c) => c.trim());
+	if (/^\s*(```|~~~)/.test(l)) { fenced = !fenced; return; }
+	if (fenced) return;
+	const h = l.match(/^(#{1,6}) /);
+	if (h) {
+		if (headLevel && h[1].length <= headLevel) headLevel = 0;
+		if (!headLevel && RESWEEP.test(l)) headLevel = h[1].length;
+	}
+	if (/^\S/.test(l)) {
+		const label = l.match(/^[-*] \*\*([^*]+)\*\*/);
+		inBullet = Boolean(label && !/^[A-Z]+[\w.-]*\d\b/.test(label[1]) && RESWEEP.test(label[1]));
+	}
+	if (/^\|/.test(l.trim())) {
+		const cells = l.trim().split('|').slice(1, -1).map((c) => c.trim());
 		// A header row (the next line is the divider) sets which column holds severity, or none.
 		if (/^\|[\s|:-]+\|$/.test((lines[i + 1] || '').trim())) { sevCol = cells.findIndex((c) => /^severity$/i.test(c)); return; }
 		if (/^\|[\s|:-]+\|$/.test(l.trim())) return;
