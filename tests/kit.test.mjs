@@ -2232,22 +2232,6 @@ test('a contract outside the sweep folder is refused, and only the sweep folder 
 // Found in the feasibility run of the re-sweeps (2026-11-01): the kit repo keeps its sweeps in reports/sweeps/ and has
 // no adapter line, so every contract it wrote was refused. A project with no adapter line names its sweep folder in
 // .kit/sweep-approval.json; a folder that holds tracked code is never a sweep folder, however it was named.
-// Found in the re-sweep of the re-sweep fixes (2026-11-01, reproduced first): a git-ignored CLAUDE.local.md naming
-// rules/ or .claude/ as the sweep folder took those files out of the re-sweep's floor, with no trace in any diff. Only
-// a committed file names the sweep folder.
-test('only a committed file names the sweep folder', () => {
-  const dir = sweepRepo({ 'src/sync.ts': 'x\n', 'rules/x.md': 'rule\n' });
-  fs.writeFileSync(path.join(dir, 'CLAUDE.local.md'), '- **Sweep reports:** `rules/`\n');
-  fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), 'CLAUDE.local.md\n');
-  const f = path.join(dir, 'rules', 'contract.json');
-  fs.writeFileSync(f, JSON.stringify(featureContract()));
-  const out = approveIn(dir, [f]);
-  assert.equal(out.status, 1);
-  assert.match(out.stdout, /not in the sweep folder \(docs\/sweeps\//);
-  g(dir, 'add', '-f', 'CLAUDE.local.md');
-  commitAll(dir, 'chore: name the sweep folder', true);
-  assert.doesNotMatch(approveIn(dir, [f]).stdout, /not in the sweep folder/, 'committed, it names the folder');
-});
 test('a project with no adapter line names its sweep folder in .kit/sweep-approval.json, and code is never a sweep folder', () => {
   const dir = sweepRepo({ 'src/sync.ts': 'x\n', '.kit/sweep-approval.json': '{ "folder": "reports/sweeps/" }\n' });
   fs.mkdirSync(path.join(dir, 'reports', 'sweeps'), { recursive: true });

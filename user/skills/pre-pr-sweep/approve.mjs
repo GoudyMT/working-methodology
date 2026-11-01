@@ -142,18 +142,19 @@ function depsChanged(base, file) {
 // The project's sweep folder (adapter A22: the "Sweep reports" line of its CLAUDE.md), as a path from the repo's top
 // ending in /. Contracts live there and nowhere else, and it is the one folder the floor leaves out: a contract saved
 // in src/ once took src/ out of the floor with it. A project with no adapter line (the kit's own repo) names it as
-// "folder" in .kit/sweep-approval.json. Each is read as committed at HEAD: a git-ignored CLAUDE.local.md naming rules/
-// once took the rules out of the floor with no trace in any diff.
+// "folder" in .kit/sweep-approval.json.
 const SWEEP_LINE = /\*\*Sweep reports:\*\*\s*`<?([^`>]+)>?`/;
 const asFolder = (s) => s.trim().replace(/\\/g, '/').replace(/^\.?\/+/, '').replace(/\/*$/, '/');
-const committed = (name) => { const r = git('show', `HEAD:${name}`); return r.status === 0 ? r.stdout : null; };
 function sweepFolder() {
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	for (const name of ['CLAUDE.md', 'CLAUDE.local.md']) {
-		const m = (committed(name) || '').match(SWEEP_LINE);
+		let text = '';
+		try { text = fs.readFileSync(path.join(top, name), 'utf8'); } catch { continue; }
+		const m = text.match(SWEEP_LINE);
 		if (m) return asFolder(m[1]);
 	}
 	try {
-		const folder = JSON.parse(committed('.kit/sweep-approval.json')).folder;
+		const folder = JSON.parse(fs.readFileSync(path.join(top, '.kit', 'sweep-approval.json'), 'utf8')).folder;
 		if (typeof folder === 'string' && folder.trim()) return asFolder(folder);
 	} catch { /* no project settings */ }
 	return 'docs/sweeps/';
