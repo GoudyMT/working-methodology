@@ -34,10 +34,11 @@ function main([cmd, scratchArg, target]) {
 		return 0;
 	}
 	const paths = fs.existsSync(list) ? [...new Set(fs.readFileSync(list, 'utf8').split('\n').filter(Boolean))] : [];
-	const owner = [];
-	for (const p of paths) {
-		if (!inside(p, scratch) || same(p, scratch)) { owner.push(p); continue; }
-		if (!fs.existsSync(p)) continue;
+	const owner = paths.filter((p) => !inside(p, scratch) || same(p, scratch));
+	const doomed = paths.filter((p) => !owner.includes(p) && fs.existsSync(p));
+	// The whole list first, then the deletes, so the run shows what it removes before it removes anything.
+	if (doomed.length) console.log(`will delete ${doomed.length} path(s):\n${doomed.map((p) => `    ${p}`).join('\n')}`);
+	for (const p of doomed) {
 		fs.rmSync(p, { recursive: true, force: true });
 		console.log(`deleted ${p}`);
 	}

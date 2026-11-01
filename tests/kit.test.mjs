@@ -3141,6 +3141,11 @@ test('temp-clean deletes only the paths its manifest lists inside this session\'
   const r = tc('clean', scratch);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(!fs.existsSync(path.join(scratch, 'pr-body.md')) && !fs.existsSync(path.join(scratch, 'blind')));
+  // The whole list and its count come first, before the first delete, so the run shows what it will remove.
+  const head = r.stdout.slice(0, r.stdout.indexOf('deleted '));
+  assert.match(head, /will delete 2 path\(s\):/);
+  assert.match(head, /pr-body\.md/);
+  assert.match(head, /blind/);
   assert.match(r.stdout, /deleted .*pr-body\.md/);
   assert.match(r.stdout, /deleted .*blind/);
   assert.ok(fs.existsSync(path.join(scratch, 'keep.md')), 'a file the manifest does not list stays');
