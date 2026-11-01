@@ -29,7 +29,7 @@ tags:
 - **G5 Blast radius** (-> the owner's go): files, shipped vs new, public interfaces, other callers, the revert story; a shipped-code fix in a feature branch is scope creep until the owner says otherwise.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; no third: high and above fixed now, the rest next-session clean-up.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
@@ -38,7 +38,7 @@ tags:
 3. **Then features;** roadmap fixes ride a feature PR that touches their code; folded-in findings go in the before / after table.
 4. **A run's order:** the owner picks the feature FIRST (even when a handoff lists fixes ahead); leftovers and recorded carry-overs are built on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
 
-**Value check:** tier remaining work by what a user would notice (high: someone hits it; medium: keyboard or screen-reader correctness; low: millisecond races, byte trims, test hygiene), say the tier at each checkpoint, and recommend stopping when reviews return ever smaller things, before the owner asks; the value lens ends the loop, not fatigue. Why: a sweep generates work faster than value.
+**Value check:** tier remaining work by what a user would notice (high: someone hits it; medium: keyboard or screen-reader correctness; low: millisecond races, byte trims, test hygiene), say the tier at each checkpoint, and recommend stopping when reviews return ever smaller things, before the owner asks. Why: a sweep generates work faster than value.
 
 ## Milestone Project Sweep (Periodic Multi-Agent Audit) {#milestone-sweep}
 
@@ -68,7 +68,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 
-A feature, fix or triage sweep's Swarm Contract is approved by `approve.mjs`, never an agent: same contract, same answer. It runs first: an approval prints the owner's notice; only an ASK goes to the owner (yes logged, `--owner-yes`); a hook holds reviewers until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row, 10 again after any other pause), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.
+A feature, fix or triage sweep's Swarm Contract is approved by `approve.mjs`, never an agent: same contract, same answer. It runs first: an approval prints the owner's notice; only an ASK goes to the owner (yes logged, `--owner-yes`); a hook holds reviewers until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. A re-sweep (`--resweep`) instead needs a role naming each file its fixes changed. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row, 10 again after any other pause), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.
 
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 
@@ -96,7 +96,7 @@ A user-facing PR is used on the host's own build of the branch before merge, on 
 
 **How: the preview-test skill** (steps, the record, two examples, the audit).
 
-**Who tests the preview, by stakes.** Every user-facing PR: the lead checks the deployed preview in phone and desktop emulation (headers, security policy, workers, layout), shown as shots. The owner's real device only for: a new or often-used surface; touch, keyboard or installed-app behaviour; device-only paths (downloads, file imports, sharing); screen-reader checks. Why: emulation cannot prove a device's fonts, system UI, keyboard or storage, so the owner's time goes where only a hand can tell.
+**Who tests the preview, by stakes.** Every user-facing PR: the lead checks the deployed preview in phone and desktop emulation (headers, security policy, workers, layout), shown as shots. The owner's real device only for: a new or often-used surface; touch, keyboard or installed-app behaviour; device-only paths (downloads, file imports, sharing); screen-reader checks. Why: emulation cannot prove a device's fonts, system UI, keyboard or storage.
 
 ### Visible Tracking {#visible-tracking}
 

@@ -44,8 +44,10 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
    check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
    re-sweep: the script clears no new contract until it is in. The re-sweep is a new contract on the new HEAD, run
-   through `approve.mjs` like the first; scoped to the fixes, it may fall below the tier's floor, and then the
-   script asks and the owner decides. Update the report. Summarize the result in the PR
+   as `approve.mjs <re-sweep.json> --resweep <first contract.json>`: approved when every file changed since the
+   first sweep is named in a role's context (one security role after a security-sensitive sweep). There is no third:
+   a second re-sweep is refused. Its high and above are fixed now; medium and below go in the report as next-session
+   clean-up items. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --tokens <used> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (add `--real-mid <n>`: real findings from roles on
