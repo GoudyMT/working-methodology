@@ -2252,6 +2252,22 @@ test('a re-sweep context entry written with Windows separators names the file', 
   const out = resweep(r, win);
   assert.equal(out.status, 0, out.stdout);
 });
+// Found in the sweep of the re-sweep (2026-11-01): how a context entry names a file had no test, so loosening it to
+// any prefix (src, or s, naming every file) or dropping the :line, ./ or first-word handling stayed green, and a note
+// such as "src/ is out of scope" named a whole folder.
+test('a re-sweep context entry names a file only by its path, its own folder, or a path with a note', () => {
+  const withEntry = (entry) => { const c = resweepContract(); c.roles[0].context = [entry]; return c; };
+  const r = sweptAndFixed();
+  for (const entry of ['src', 's', 'src/sy', 'sync.ts', 'src/ is out of scope', 'see src/sync.ts', 'rule:pre-pr-deep-sweep']) {
+    const out = resweep(r, withEntry(entry), r.f, 'no.json');
+    assert.equal(out.status, 1, `"${entry}" must not name src/sync.ts`);
+    assert.match(out.stdout, /src\/sync\.ts changed since the first sweep and no role names it/, entry);
+  }
+  for (const entry of ['src/sync.ts:12', './src/sync.ts', 'src/sync.ts the root it fixed', 'src/', 'src/sync.ts#L4']) {
+    const out = resweep(sweptAndFixed(), withEntry(entry));
+    assert.equal(out.status, 0, `"${entry}" names src/sync.ts: ${out.stdout}`);
+  }
+});
 // The owner's decision (2026-11-01): fixes for a re-sweep's high findings get one check of their own - one role,
 // triage size, scoped to the files changed since the re-sweep's HEAD, allowed once. It is not a third sweep.
 const fixCheck = (context = ['src/sync.ts'], extra = {}) => ({ tier: 'triage', modifiers: [], roles: [

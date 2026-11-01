@@ -294,11 +294,13 @@ function resweepOf(c, s, parentFile) {
 	}
 	const facts = diffFacts(parent.head);
 	const files = facts ? facts.files.filter((f) => !f.startsWith(facts.folder)) : [];
-	// A context entry names a file by its path (a trailing :line or note allowed) or a folder ending in /, which covers
-	// the files at most two levels below it: "src/" alone does not stand for a whole tree. Windows separators count.
+	// A context entry names a file by its path (a trailing :line or note allowed) or, standing alone, a folder ending in
+	// /, which covers the files at most two levels below it: "src/" does not stand for a whole tree, and a note such as
+	// "src/ is out of scope" names nothing. Windows separators count.
 	const named = (f) => (c.roles || []).some((r) => (Array.isArray(r.context) ? r.context : []).some((x) => {
-		const p = String(x).trim().split(/\s/)[0].replace(/\\/g, '/').replace(/[:#].*$/, '').replace(/^\.\//, '');
-		return p === f || (p.endsWith('/') && p !== '/' && f.startsWith(p) && f.slice(p.length).split('/').length <= 2);
+		const words = String(x).trim().split(/\s+/);
+		const p = words[0].replace(/\\/g, '/').replace(/[:#].*$/, '').replace(/^\.\//, '');
+		return p === f || (words.length === 1 && p.endsWith('/') && p !== '/' && f.startsWith(p) && f.slice(p.length).split('/').length <= 2);
 	}));
 	for (const f of files) if (!named(f)) why.push(`${f} changed since the ${fixCheck ? 're-sweep' : 'first sweep'} and no role names it in its context`);
 	const floor = !fixCheck && (Array.isArray(first.modifiers) ? first.modifiers : []).includes('security-sensitive') ? { security: 1 } : {};
