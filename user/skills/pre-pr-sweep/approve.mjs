@@ -3,7 +3,8 @@
 // its tier's rules, so a routine sweep need not wait for the owner, and hands back to the owner on anything else.
 // It is a script on purpose: the same contract always gets the same answer, at no token cost.
 //
-// The contract is a JSON file written next to the table the owner would have read:
+// The contract is a JSON file in the project's sweep folder (adapter A22), written next to the table the owner would
+// have read:
 //   { "tier": "feature" | "fix" | "triage" | "first push" | "launch gate",
 //     "modifiers": ["security-sensitive" | "new-dependency" | "public-text" | "user-data"],
 //     "testsChanged": true,
@@ -134,6 +135,26 @@ function depsChanged(base, file) {
 	} catch { return true; }
 }
 
+// The project's sweep folder (adapter A22: the "Sweep reports" line of its CLAUDE.md), as a path from the repo's top
+// ending in /. Contracts live there and nowhere else, and it is the one folder the floor leaves out: a contract saved
+// in src/ once took src/ out of the floor with it.
+const SWEEP_LINE = /\*\*Sweep reports:\*\*\s*`<?([^`>]+)>?`/;
+function sweepFolder() {
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
+	for (const name of ['CLAUDE.md', 'CLAUDE.local.md']) {
+		let text = '';
+		try { text = fs.readFileSync(path.join(top, name), 'utf8'); } catch { continue; }
+		const m = text.match(SWEEP_LINE);
+		if (m) return m[1].trim().replace(/\\/g, '/').replace(/^\.?\/+/, '').replace(/\/*$/, '/');
+	}
+	return 'docs/sweeps/';
+}
+const inSweepFolder = (file) => {
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
+	const rel = toPosix(path.relative(top, file));
+	return !rel.startsWith('..') && rel.toLowerCase().startsWith(sweepFolder().toLowerCase());
+};
+
 // What the branch's diff against its base says, or null when it cannot be read.
 function diffFacts(want = opt('--base')) {
 	const base = (want ? [want] : ['origin/main', 'main', 'origin/master', 'master']).find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
@@ -142,14 +163,14 @@ function diffFacts(want = opt('--base')) {
 	const all = names('ACDMRT');
 	const added = names('A');
 	const lines = git('diff', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
-	// Work not yet committed would not be in the diff the floor reads; the contract's own folder is left out.
-	const own = git('rev-parse', '--show-prefix').stdout.trim();
-	const dirty = git('status', '--porcelain', '--', ':(top)', `:(top,exclude)${own || '.kit-none'}`).stdout.split('\n').filter(Boolean);
+	// Work not yet committed would not be in the diff the floor reads; only the sweep folder is left out.
+	const folder = sweepFolder();
+	const dirty = git('status', '--porcelain', '--', ':(top)', `:(top,exclude)${folder}`).stdout.split('\n').filter(Boolean);
 	return {
 		base,
 		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
 		dirty,
-		own,
+		folder,
 		files: all,
 		changed: all.length,
 		deps: all.filter((f) => DEP_FILE.test(f)).some((f) => depsChanged(base, f)),
@@ -171,6 +192,7 @@ function check(c, facts, floor) {
 	if (OWNER_TIERS.includes(tier)) return { why: [`the ${tier} tier is always the owner's call`], need: {} };
 	if (!CAPS[tier]) return { why: [`unknown tier "${c.tier}"`], need: {} };
 	const why = [];
+	if (!inSweepFolder(contractFile)) why.push(`the contract is not in the sweep folder (${sweepFolder()}, adapter A22): save it there`);
 	if (!facts) why.push('cannot read the branch diff against its base (pass --base <ref>)');
 	else if (facts.dirty.length) why.push(`work not committed (${facts.dirty[0].slice(3)}): commit it, so the diff shows the whole change`);
 	else if (!facts.changed) why.push(`no changes against ${facts.base}: run it from the branch's own checkout, or pass the right --base`);
@@ -243,7 +265,7 @@ function resweepOf(c, s, parentFile) {
 		return { why, parent };
 	}
 	const facts = diffFacts(parent.head);
-	const files = facts ? facts.files.filter((f) => !(facts.own && f.startsWith(facts.own))) : [];
+	const files = facts ? facts.files.filter((f) => !f.startsWith(facts.folder)) : [];
 	// A context entry names a file by its path (a trailing :line or note allowed) or a folder ending in /.
 	const named = (f) => (c.roles || []).some((r) => (Array.isArray(r.context) ? r.context : []).some((x) => {
 		const p = String(x).trim().split(/\s/)[0].replace(/[:#].*$/, '').replace(/^\.\//, '');
