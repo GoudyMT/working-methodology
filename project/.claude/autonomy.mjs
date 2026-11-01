@@ -38,10 +38,11 @@ const run = (cmd, args, cwd, env) => spawnSync(cmd, args, { encoding: 'utf8', cw
 const git = (...a) => run('git', ['-c', 'core.quotePath=false', ...a]);
 const out = (r) => (r.status === 0 ? r.stdout.trim() : null);
 // A fetch by URL: "--" keeps the URL from being read as an option, and the ext:: transport (which runs a command) stays
-// off whatever the repo's config says; GIT_ALLOW_PROTOCOL would override that, so the fetch runs without it.
+// off whatever the repo's config says; GIT_ALLOW_PROTOCOL would override that, so the fetch runs without it, in any
+// spelling: Windows reads env names in any case, and git_allow_protocol once turned ext back on.
 const fetch = (url, refspec, ...opts) => {
 	const env = { ...process.env };
-	delete env.GIT_ALLOW_PROTOCOL;
+	for (const k of Object.keys(env)) if (k.toUpperCase() === 'GIT_ALLOW_PROTOCOL') delete env[k];
 	return run('git', ['-c', 'core.quotePath=false', '-c', 'protocol.ext.allow=never', 'fetch', '-q', ...opts, '--', url, refspec], undefined, env);
 };
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');

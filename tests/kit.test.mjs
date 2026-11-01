@@ -3222,8 +3222,10 @@ test('the grant check refuses an origin url that git would read as an option', (
 });
 // The fix check: the ext transport runs a command; the refusal had no test, and GIT_ALLOW_PROTOCOL in the env of
 // whoever runs the check turned it back on.
+// The second fix check (2026-11-01): Windows reads env names in any case, so git_allow_protocol=ext still turned ext
+// back on while only the upper-case name was removed.
 test('the grant check never lets the ext transport run, whatever the repo config or the env allow', () => {
-  for (const env of [{}, { GIT_ALLOW_PROTOCOL: 'ext' }]) {
+  for (const env of [{}, { GIT_ALLOW_PROTOCOL: 'ext' }, { git_allow_protocol: 'ext' }, { Git_Allow_Protocol: 'ext' }]) {
     const r = autonomyRepo();
     g(r.dir, 'remote', 'set-url', 'origin', 'ext::touch pwned');
     g(r.dir, 'config', 'protocol.ext.allow', 'always');
