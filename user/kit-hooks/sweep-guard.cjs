@@ -7,8 +7,8 @@
 // (<git common dir>/kit-sweep-approvals.jsonl), each line chained to the one before; a line that breaks the chain
 // clears nothing. HEAD is read from the contract's own folder, so a sweep run from a worktree is judged by that
 // worktree, and a checkout with sweeps of its own is judged by its own lines only. A cleared contract lets in at
-// most as many reviewers as it has roles (counted in
-// kit-sweep-starts/ next to the log). Outside a git repository there is no log, so the call goes through.
+// most as many reviewers as it has roles (counted in kit-sweep-starts/ next to the log). Outside a git repository
+// there is no log, so the call goes through.
 // It stops slips, not a determined workaround: a carefully forged log line passes it.
 const fs = require('fs');
 const path = require('path');
