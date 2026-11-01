@@ -20,6 +20,7 @@
 //
 // Usage (from inside the repo):
 //   node approve.mjs <contract.json> [--base <ref>]                     decide (exit 0 approved, 1 ask the owner)
+//   node approve.mjs <contract.json> --resweep <first contract.json>  the one short re-sweep after the fixes
 //   node approve.mjs <contract.json> --outcome --tokens N --findings N --real N --duplicates N [--real-mid N]
 //   node approve.mjs <contract.json> --owner-yes "<the owner's words>"  after an ASK, once the owner says yes
 //   node approve.mjs <contract.json> --escape "<what slipped through>"
@@ -134,8 +135,7 @@ function depsChanged(base, file) {
 }
 
 // What the branch's diff against its base says, or null when it cannot be read.
-function diffFacts() {
-	const want = opt('--base');
+function diffFacts(want = opt('--base')) {
 	const base = (want ? [want] : ['origin/main', 'main', 'origin/master', 'master']).find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
 	if (!base) return null;
 	const names = (filter) => git('diff', '--name-only', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\n').filter(Boolean);
@@ -149,6 +149,8 @@ function diffFacts() {
 		base,
 		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
 		dirty,
+		own,
+		files: all,
 		changed: all.length,
 		deps: all.filter((f) => DEP_FILE.test(f)).some((f) => depsChanged(base, f)),
 		tests: all.some((f) => TEST_FILE.test(f)),
@@ -162,8 +164,9 @@ const words = (s) => new Set(String(s || '').toLowerCase().match(/[a-z0-9]+/g) |
 const overlap = (a, b) => { const x = words(a), y = words(b); const both = [...x].filter((w) => y.has(w)).length; return both / (new Set([...x, ...y]).size || 1); };
 const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '').length >= min;
 
-// Every reason this contract needs the owner (none means it is inside the rules), and the role kinds it needed.
-function check(c, facts) {
+// Every reason this contract needs the owner (none means it is inside the rules), and the role kinds it needed. A
+// re-sweep brings its own floor in place of the tier's.
+function check(c, facts, floor) {
 	const tier = String(c.tier || '').toLowerCase();
 	if (OWNER_TIERS.includes(tier)) return { why: [`the ${tier} tier is always the owner's call`], need: {} };
 	if (!CAPS[tier]) return { why: [`unknown tier "${c.tier}"`], need: {} };
@@ -179,7 +182,7 @@ function check(c, facts) {
 	const cap = caps(tier);
 	if (!roles.length) why.push('no roles');
 	if (roles.length > cap.maxAgents) why.push(`${roles.length} agents, over the ${tier} cap of ${cap.maxAgents}`);
-	const need = { ...NEEDS[tier] };
+	const need = { ...(floor || NEEDS[tier]) };
 	const modifiers = new Set(Array.isArray(c.modifiers) ? c.modifiers : []);
 	if (facts && facts.deps) modifiers.add('new-dependency');
 	if (tier === 'fix' && (c.testsChanged || (facts && facts.tests))) need['test-value'] = 1;
@@ -210,14 +213,54 @@ function check(c, facts) {
 	return { why, need };
 }
 
+// The one short re-sweep after a sweep's fixes (rule:sweep-tiers). Its floor is not the tier's: every file changed
+// since the first sweep's HEAD, read from git here and never from the contract, must be named in some role's
+// context, and a security-sensitive first sweep keeps one security role. The first sweep must be cleared, reported,
+// unedited and behind this HEAD; each sweep gets one re-sweep and a re-sweep gets none (no third pass).
+const cleared = (s, d) => d.decision === 'approved' || s.log.some((e) => e.kind === 'owner-yes' && e.contract === d.contract && e.hash === d.hash && e.head === d.head);
+function resweepOf(c, s, parentFile) {
+	const parent = s.log.filter((e) => e.kind === 'decision' && e.contract === parentFile).pop();
+	if (!parent) return { why: [`no decision for the first sweep (${parentFile}): run approve.mjs on it first`] };
+	const why = [];
+	if (!cleared(s, parent)) why.push('the first sweep was not cleared: neither approved nor the owner\'s yes');
+	if (parent.resweepOf) why.push('the first contract is itself a re-sweep: no third pass');
+	else if (s.log.some((e) => e.kind === 'decision' && e.resweepOf === parent.time && cleared(s, e))) why.push('this sweep already had its one re-sweep: no third pass');
+	let raw = null;
+	try { raw = fs.readFileSync(parentFile, 'utf8'); } catch { /* moved or deleted */ }
+	if (raw === null || sha(raw) !== parent.hash) why.push('the first contract changed or moved since it was cleared');
+	let first = {};
+	try { first = JSON.parse(raw); } catch { /* reported above */ }
+	if (!s.log.some((e) => e.kind === 'outcome' && e.decisionAt === parent.time)) why.push(`log the first sweep's outcome first (${parentFile})`);
+	const tier = String(c.tier || '').toLowerCase();
+	if (tier !== String(parent.tier || '').toLowerCase()) why.push(`the re-sweep's tier "${c.tier}" is not its first sweep's "${parent.tier}"`);
+	else if (tier !== 'feature' && !OWNER_TIERS.includes(tier)) why.push(`a ${tier} sweep has no re-sweep: its fix check is a contract of its own`);
+	if (!parent.head || git('merge-base', '--is-ancestor', parent.head, 'HEAD').status !== 0) {
+		why.push(`the first sweep's HEAD ${parent.head} is not an ancestor of this HEAD: the history under it changed`);
+		return { why, parent };
+	}
+	const facts = diffFacts(parent.head);
+	const files = facts ? facts.files.filter((f) => !(facts.own && f.startsWith(facts.own))) : [];
+	// A context entry names a file by its path (a trailing :line or note allowed) or a folder ending in /.
+	const named = (f) => (c.roles || []).some((r) => (Array.isArray(r.context) ? r.context : []).some((x) => {
+		const p = String(x).trim().split(/\s/)[0].replace(/[:#].*$/, '').replace(/^\.\//, '');
+		return p === f || (p.endsWith('/') && f.startsWith(p));
+	}));
+	for (const f of files) if (!named(f)) why.push(`${f} changed since the first sweep and no role names it in its context`);
+	const floor = (Array.isArray(first.modifiers) ? first.modifiers : []).includes('security-sensitive') ? { security: 1 } : {};
+	return { why, parent, facts, floor, files: files.length };
+}
+
 const budgetOf = (c) => (c.roles || []).reduce((t, r) => t + (typeof r.budget === 'number' && r.budget > 0 ? r.budget : 0), 0);
 
 function decide() {
 	const raw = fs.readFileSync(contractFile, 'utf8');
 	const c = JSON.parse(raw);
 	const s = state();
-	const facts = diffFacts();
-	const { why, need } = check(c, facts);
+	const parentFile = opt('--resweep') && path.resolve(opt('--resweep'));
+	const rs = parentFile ? resweepOf(c, s, parentFile) : null;
+	const facts = (rs && rs.facts) || diffFacts();
+	const { why, need } = check(c, facts, rs && rs.floor);
+	if (rs) why.push(...rs.why);
 	const open = s.log.filter((e) => e.kind === 'decision' && e.decision === 'approved').pop();
 	const reported = open && s.log.some((e) => e.kind === 'outcome' && e.decisionAt === open.time);
 	if (s.paused) why.unshift(`auto-approval is paused: ${s.paused}`);
@@ -226,7 +269,7 @@ function decide() {
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
 	} else if (open && !reported) why.unshift(`log the outcome of the last approved sweep first (${open.contract})`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: facts && facts.base, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null };
+	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: budgetOf(c), decision: why.length ? 'owner' : 'approved', reasons: why, base: facts && facts.base, head: git('rev-parse', '--short', 'HEAD').stdout.trim() || null, ...(rs && rs.parent ? { resweepOf: rs.parent.time, parent: parentFile } : {}) };
 	write(entry);
 	if (why.length) {
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
@@ -237,6 +280,7 @@ function decide() {
 	}
 	console.log(`APPROVED - ${c.tier} sweep, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
 	console.log(notice(c, need));
+	if (rs) console.log(`    Re-sweep of ${path.basename(parentFile)}: ${rs.files} changed file(s), each named by a role`);
 	return 0;
 }
 
@@ -299,7 +343,7 @@ function outcome() {
 		if (!Number.isFinite(v) || v < 0 || v > nums.real) { console.log('--real-mid needs a number from 0 to --real; nothing logged.'); return 1; }
 		nums.realMid = v;
 	}
-	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums });
+	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums, ...(decision.resweepOf ? { resweepOf: decision.resweepOf } : {}) });
 	const trips = [];
 	if (decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
 	if (nums.findings > 0 && nums.duplicates * 3 >= nums.findings) trips.push(`${nums.duplicates} of ${nums.findings} findings repeated between roles`);
@@ -313,7 +357,7 @@ function summary() {
 	const d = s.log.filter((e) => e.kind === 'decision');
 	const o = s.log.filter((e) => e.kind === 'outcome');
 	const sum = (k) => o.reduce((t, e) => t + (Number(e[k]) || 0), 0);
-	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}`);
+	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}, re-sweeps: ${d.filter((e) => e.resweepOf && cleared(s, e)).length}`);
 	console.log(`outcomes: ${o.length}; tokens / budget: ${sum('budget') ? (sum('tokens') / sum('budget')).toFixed(2) : 'n/a'}; real findings: ${sum('real')} of ${sum('findings')} (from mid-model roles: ${sum('realMid')}); repeated: ${sum('duplicates')}`);
 	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${s.reviewEvery} since the last review`}`);
 	if (s.paused) console.log(resumeHelp(s)[2].trim());
