@@ -171,9 +171,12 @@ const sweepFile = (folder, f, text) => {
 };
 // However it was named, a folder holding tracked code is never a sweep folder. A .gitkeep is not code.
 const codeIn = (folder) => git('ls-files', '--full-name', '--', `:(top)${folder}`).stdout.split('\n').filter((f) => f && !/\.(md|json)$/i.test(f) && path.posix.basename(f) !== '.gitkeep');
+// Both sides as real paths: git names the top by its long path, while a Windows short name (CI's RUNNER~1) or a
+// junction spells the same folder another way, and every contract once read as outside it.
+const real = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
 const inSweepFolder = (file) => {
-	const top = git('rev-parse', '--show-toplevel').stdout.trim();
-	const rel = toPosix(path.relative(top, file));
+	const top = real(git('rev-parse', '--show-toplevel').stdout.trim());
+	const rel = toPosix(path.relative(top, path.join(real(path.dirname(file)), path.basename(file))));
 	return !rel.startsWith('..') && rel.toLowerCase().startsWith(sweepFolder().toLowerCase());
 };
 

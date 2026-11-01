@@ -2203,6 +2203,19 @@ test('running the first contract again moves neither the re-sweep\'s anchor nor 
   commitAll(r.dir, 'fix: again', true);
   assert.match(resweep(r, resweepContract(), r.f, 'again.json').stdout, /no third/);
 });
+// Found in CI (2026-11-01): the runner's temp folder has a Windows short name (RUNNER~1) while git names the repo's
+// top by its long one, so every contract read as outside the sweep folder. A path spelled another way, through a
+// short name or a junction, is the same folder.
+test('a contract reached by another spelling of its path is still in the sweep folder', () => {
+  const dir = sweepRepo();
+  const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'alias-')), 'repo');
+  fs.symlinkSync(dir, link, 'junction');
+  const f = path.join(link, 'docs', 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const out = approveIn(link, [f]);
+  assert.doesNotMatch(out.stdout, /not in the sweep folder/);
+  assert.equal(out.status, 0, out.stdout);
+});
 test('a contract outside the sweep folder is refused, and only the sweep folder is left out of the floor', () => {
   const r = sweptAndFixed();
   const inSrc = path.join(r.dir, 'src', 'resweep.json');
