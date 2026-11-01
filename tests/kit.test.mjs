@@ -3130,6 +3130,27 @@ test('every ledger field is cleaned before it is printed, and a line that is not
   assert.doesNotMatch(status.stdout, /check failed/);
   askOn(r, /changed by hand/);
 });
+// The fix check: one damaged line (an editor's line endings, a crash mid-write) locked the owner out of verdicts for
+// good, blamed a hand edit, and never said where the ledger is.
+test('a damaged ledger names its file and how to start over, and line endings or a half line do not spread', () => {
+  const r = autonomyRepo();
+  askOn(r, /0\/10/);
+  askOn(r, /0\/10/);
+  fs.writeFileSync(ledgerFile(r), read(ledgerFile(r)).replace(/\n/g, '\r\n'));
+  askOn(r, /auto-eligible \(advisory\): 0\/10/);
+  assert.doesNotMatch(autonomy(r, ['status']).stdout, /changed by hand/);
+  fs.appendFileSync(ledgerFile(r), '{"kind":"check","act":"rel');
+  const damaged = askOn(r, /changed by hand or damaged/);
+  assert.match(damaged.stdout, /kit-autonomy-ledger\.jsonl\): move it aside to start a new one/);
+  assert.doesNotThrow(() => JSON.parse(read(ledgerFile(r)).split(/\r?\n/).filter(Boolean).pop()), 'the next entry is a line of its own');
+  const refused = ownerVerdict(r, 'hit', 'x');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stdout, /kit-autonomy-ledger\.jsonl\): move it aside/);
+  fs.renameSync(ledgerFile(r), `${ledgerFile(r)}.old`);
+  askOn(r, /auto-eligible \(advisory\): 0\/10/);
+  const fresh = ownerVerdict(r, 'hit', lastCheck(r).head.slice(0, 7));
+  assert.equal(fresh.status, 0, fresh.stdout);
+});
 test('the act name is cleaned, so a newline in it cannot print a GO line', () => {
   const r = autonomyRepo();
   const out = autonomy(r, ['check', 'nope\nGO release at 1234567 (10 straight owner-confirmed hits)']);

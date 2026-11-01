@@ -62,9 +62,11 @@ const MAIN_REF = 'refs/kit/main';
 // hand shows (a careful forger is not stopped, which is why the streak is advisory). A line that is not a JSON object
 // is skipped and marks the ledger broken. When verdicts are signed, each signature must cover the check line it judges
 // (its hash, not just its time), and unsigned lines already here must not count: a signed yes to a forged check is no
-// proof.
+// proof. An editor's line endings do not break the chain, a new entry always starts its own line, and a damaged ledger
+// names its file and the way back: moving it aside starts a new one, and only the advisory streak is lost.
+const DAMAGED = `the ledger was changed by hand or damaged (${LEDGER}): move it aside to start a new one; the advisory streak restarts at 0`;
 function ledger() {
-	const lines = fs.existsSync(LEDGER) ? fs.readFileSync(LEDGER, 'utf8').split('\n').filter(Boolean) : [];
+	const lines = fs.existsSync(LEDGER) ? fs.readFileSync(LEDGER, 'utf8').split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean) : [];
 	const log = lines.map((l) => {
 		try { const e = JSON.parse(l); return e && typeof e === 'object' && !Array.isArray(e) ? e : { kind: 'broken' }; } catch { return { kind: 'broken' }; }
 	});
@@ -73,7 +75,8 @@ function ledger() {
 }
 function append(entry) {
 	const { lines } = ledger();
-	fs.appendFileSync(LEDGER, JSON.stringify({ ...entry, time: new Date().toISOString(), prev: lines.length ? sha(lines[lines.length - 1]) : '' }) + '\n');
+	const open = fs.existsSync(LEDGER) && !/\n$/.test(fs.readFileSync(LEDGER, 'utf8')) && lines.length;
+	fs.appendFileSync(LEDGER, (open ? '\n' : '') + JSON.stringify({ ...entry, time: new Date().toISOString(), prev: lines.length ? sha(lines[lines.length - 1]) : '' }) + '\n');
 }
 function streak(act) {
 	const { log, broken } = ledger();
@@ -159,7 +162,7 @@ function check(act) {
 	if (!head || !base) return ask(['could not find the branch and its base on main']);
 	const changed = (out(git('diff', '--name-only', '--no-renames', `${base}...HEAD`)) || '').split('\n').filter(Boolean);
 	for (const f of changed) if (PROTECTED.some((re) => re.test(f))) reasons.push(`protected path: ${f}`);
-	if (ledger().broken) reasons.push('the ledger was changed by hand: the owner reviews it before any act');
+	if (ledger().broken) reasons.push(DAMAGED);
 	const c = spec.conditions;
 	if (c.includes('clean-tree') && out(git('status', '--porcelain'))) reasons.push('uncommitted changes in the working tree');
 	// The evidence runs even after an earlier reason, so the ledger holds the whole verdict the owner compares.
@@ -197,13 +200,13 @@ function verdict(act, v) {
 	// This prompt is the one channel outside the session, and what it shows comes from the ledger: a broken ledger
 	// gives no verdict, and a check line is shown only once it is well formed and names a real commit.
 	const { log, broken } = ledger();
-	if (broken) { console.log('the ledger was changed by hand: no verdict until the owner has reviewed it'); return 1; }
+	if (broken) { console.log(`no verdict: ${clean(DAMAGED)}`); return 1; }
 	const last = log.map((e, i) => (e.kind === 'check' && e.act === act ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
 	if (last < 0 || log.slice(last + 1).some((e) => e.kind === 'verdict' && e.act === act)) { console.log(`no check of "${clean(act)}" is waiting for a verdict`); return 1; }
 	const check = log[last];
 	const verified = typeof check.head === 'string' && /^[0-9a-f]{40}$/.test(check.head) && git('cat-file', '-e', `${check.head}^{commit}`).status === 0
 		&& ['ask', 'go'].includes(check.script) && Array.isArray(check.reasons) && check.reasons.every((r) => typeof r === 'string');
-	if (!verified) { console.log(`the last check of "${clean(act)}" cannot be verified (no real commit, or a malformed line): no verdict`); return 1; }
+	if (!verified) { console.log(`the last check of "${clean(act)}" cannot be verified (no real commit, or a malformed line): no verdict; run the check again`); return 1; }
 	const short = check.head.slice(0, 7);
 	process.stdout.write(`${clean(act)} at ${short}: the script said ${check.script.toUpperCase()}${check.reasons.length ? ` (${check.reasons.map(clean).join('; ')})` : ''}.\nType ${short} to log "${v}": `);
 	if (typed() !== short) { console.log('Not logged.'); return 1; }
@@ -214,7 +217,7 @@ function verdict(act, v) {
 
 function status() {
 	const { log, broken } = ledger();
-	if (broken) console.log('the ledger was changed by hand');
+	if (broken) console.log(clean(DAMAGED));
 	for (const act of [...new Set(log.filter((e) => e.act).map((e) => e.act))]) console.log(`${clean(act)}: auto-eligible (advisory): ${Math.min(streak(act), STREAK)}/${STREAK}`);
 	return 0;
 }
