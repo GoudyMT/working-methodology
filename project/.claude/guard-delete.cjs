@@ -265,6 +265,8 @@ function listedTargets(segments, index) {
 		if (!['|', '{', '}'].includes(prev.end)) return null;
 		const words = prev.map((word) => word.value);
 		if (LISTERS.has(programName(words[0]))) {
+			// A listing fed by a pipeline of its own lists paths the guard cannot see.
+			if (i > 0 && segments[i - 1].end === '|') return null;
 			const starts = targetsOf('', words, 1);
 			return starts.length > 0 ? starts : ['.'];
 		}
@@ -280,8 +282,11 @@ function findDelete(text, ctx, state, depth) {
 		const first = programName(words[0]);
 		// A search's pattern is not a command; skipped only when nothing in it runs another program (rg --pre, a git
 		// option before the subcommand such as -c core.pager, an external diff or pager).
-		const runsOther = words.some((w) => /^(--pre|--ext-diff|--textconv|-O|--open-files-in-pager)/.test(w));
-		if (!runsOther && (SEARCHERS.has(first) || (first === 'git' && GIT_READS.has(words[1])))) continue;
+		// git takes any unambiguous prefix of a long option, and short options cluster (-nO).
+		const search = SEARCHERS.has(first) || (first === 'git' && words.slice(1).some((w) => GIT_READS.has(w)));
+		const runsOther = words.some((w) => /^(--pre|--(o|op|ope|open|open-[w-]*)(=|$)|--ext-[w-]*|--textc[w-]*|-[A-Za-z]*O)/.test(w));
+		if (search && runsOther) return 'a search option that runs another program';
+		if (search && (SEARCHERS.has(first) || GIT_READS.has(words[1]))) continue;
 		const skip = new Set();
 		for (let i = 0; i < words.length; i++) {
 			const lower = words[i].toLowerCase();

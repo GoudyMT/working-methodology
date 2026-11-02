@@ -92,6 +92,9 @@ const SWEEP_ASK = [
 	"git -c core.pager='rm -rf C:/elsewhere' log",
 	'rg --pre "rm -rf C:/elsewhere" x .',
 	'git -C C:/elsewhere rm -r build',
+	"git grep --open='rm -rf C:/elsewhere' x",
+	"git grep -nO'rm -rf C:/elsewhere' x",
+	"'C:\\elsewhere' | Get-ChildItem | Remove-Item -Recurse",
 ];
 
 // Found by the same sweep: ordinary commands that asked and should not.
