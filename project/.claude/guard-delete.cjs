@@ -191,6 +191,7 @@ function findDelete(text, ctx, state, depth) {
 			else if ((name === 'node' || name.startsWith('python')) && words.slice(p + 1).some((w) => INLINE_DELETE.test(w))) return 'inline ' + name + ' code that deletes';
 			else if (name === 'find' && words.slice(p + 1).some((w) => w.toLowerCase() === '-delete')) {
 				// find deletes what it finds below its start folders, so each is read like a folder ending in a wildcard.
+				if (BRACE_EXPANSION.test(text)) return 'a target with a brace expansion';
 				const starts = [];
 				for (let i = p + 1; i < words.length && !/^[-!]/.test(words[i]); i++) starts.push(words[i]);
 				for (const start of starts.length > 0 ? starts : ['.']) {

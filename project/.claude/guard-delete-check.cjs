@@ -40,6 +40,7 @@ const ASK = [
 	'ls | xargs rm -rf',
 	'find ' + TEMP.split('\\').join('/') + " -maxdepth 1 -name 'tg-*' -delete",
 	'cd C:/elsewhere && find . -delete',
+	'find build {C:/elsewhere,x} -delete',
 	'rm -rf ' + OWN + '\\..\\..\\x',
 	'Remove-Item -Recurse C:\\work\\proj*',
 	'Remove-Item -Recurse ' + OWN + '*',
