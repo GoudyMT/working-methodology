@@ -197,6 +197,9 @@ const RESWEEP_ASK = [
 	'Remove-Item ' + LSQ + 'C:\\elsewhere\\x' + RSQ,
 	'Remove-Item build <# C:\\elsewhere #>',
 	'Invoke-Expression "cd $x"; Remove-Item -Recurse build',
+	'cd C:\\elsewhere && (cd C:\\work\\proj_a.b) && rm -rf build',
+	'cmd /c "cd /d D:\\x & cd C:\\work\\proj_a.b && rd /s /q build"',
+	'cd C:\\elsewhere && rm -rf C:\\work\\proj_a.b\\x *>/dev/null',
 	// Members of the older lists that no case caught when planted breaks removed them.
 	'Get-ChildItem C:\\elsewhere | foreach Delete',
 	'find -D tree C:/elsewhere -delete',
@@ -234,6 +237,7 @@ const RESWEEP_PASS = [
 	'cd C:\\elsewhere && rm -rf C:\\work\\proj_a.b\\x 2>&1',
 	'echo x && Get-ChildItem dist | Remove-Item -Recurse',
 	"$env:PAGER = 'less'; Get-Content notes.txt",
+	'cmd /c "cd /d C:\\work\\proj_a.b && rd /s /q build"',
 	'git blame -L "/rm -rf C:/elsewhere/,+5" setup.sh',
 	'sls "Remove-Item C:\\elsewhere" *.ps1',
 	'findstr /s "rmdir /s C:\\elsewhere" *.cmd',
@@ -368,6 +372,14 @@ check('[cwd C:\\elsewhere] rm build/x', asSession('Bash', 'rm build/x', { cwd: '
 check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b && rm -rf dist', asSession('Bash', 'cd C:\\work\\proj_a.b && rm -rf dist', { cwd: 'C:\\elsewhere' }), false);
 check('[cwd C:\\elsewhere] echo cd C:\\work\\proj_a.b && rm -rf dist', asSession('Bash', 'echo cd C:\\work\\proj_a.b && rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
 check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b; rm -rf dist', asSession('Bash', 'cd C:\\work\\proj_a.b; rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
+// After ; or || the next command runs even when the cd before && failed.
+check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b && echo y; rm -rf dist', asSession('Bash', 'cd C:\\work\\proj_a.b && echo y; rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
+check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b && echo y || rm -rf dist', asSession('Bash', 'cd C:\\work\\proj_a.b && echo y || rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
+check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b && cd build && echo y; rm -rf x', asSession('Bash', 'cd C:\\work\\proj_a.b && cd build && echo y; rm -rf x', { cwd: 'C:\\elsewhere' }), true);
+check('[cwd C:\\elsewhere] (echo a; cd C:\\work\\proj_a.b && true) && rm -rf build', asSession('Bash', '(echo a; cd C:\\work\\proj_a.b && true) && rm -rf build', { cwd: 'C:\\elsewhere' }), true);
+check('[cwd C:\\elsewhere] false || cd C:\\work\\proj_a.b && rm -rf dist', asSession('Bash', 'false || cd C:\\work\\proj_a.b && rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
+check('[cwd C:\\elsewhere] echo x | cd C:\\work\\proj_a.b && rm -rf dist', asSession('Bash', 'echo x | cd C:\\work\\proj_a.b && rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
+check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b && rm -rf build && rm -rf dist', asSession('Bash', 'cd C:\\work\\proj_a.b && rm -rf build && rm -rf dist', { cwd: 'C:\\elsewhere' }), false);
 // Strings in arrays and nested objects are read; input deeper than the guard reads asks.
 check('[array field] rm -rf /tmp/x', asSession('Bash', '', { tool_input: { commands: ['rm -rf /tmp/x'] } }), true);
 check('[command plus args array] python -c rmtree', asSession('Bash', '', { tool_input: { command: 'python', args: ['-c', "import shutil; shutil.rmtree('C:/elsewhere')"] } }), true);
@@ -397,6 +409,8 @@ try {
 	check('[junction] Remove-Item -Recurse build\\* (a real folder in the same project)', { ...viaLink, tool_input: { command: 'Remove-Item -Recurse build\\*' } }, false, where);
 	check('[junction] cmd /c rmdir /s /q link (a recursive rmdir follows the link)', { ...viaLink, tool_input: { command: 'cmd /c rmdir /s /q link' } }, true, where);
 	check('[junction] rmdir -Recurse link (rmdir is Remove-Item in PowerShell)', { ...viaLink, tool_input: { command: 'rmdir -Recurse link' } }, true, where);
+	check('[junction] rmdir -Recurse:$true link', { ...viaLink, tool_input: { command: 'rmdir -Recurse:$true link' } }, true, where);
+	check('[junction] cmd /c rd/s/q link (a switch glued to rd)', { ...viaLink, tool_input: { command: 'cmd /c rd/s/q link' } }, true, where);
 	// A link to a folder deep inside the project: PowerShell reads ".." as written, so inner\..\..\x is outside.
 	fs.mkdirSync(path.join(real, 'proj', 'a', 'b'), { recursive: true });
 	fs.symlinkSync(path.join(real, 'proj', 'a', 'b'), path.join(real, 'proj', 'inner'), 'junction');

@@ -8,7 +8,7 @@
 // anywhere in a command, so a wrapper such as sudo -u x or timeout 5 cannot hide one), find -delete, git clean
 // (asks unless a dry run), git worktree remove, robocopy /MIR or /PURGE, rsync --delete, inline node, deno, bun,
 // python, py, perl, ruby or php code that deletes, .NET Delete calls (also ForEach-Object Delete), nested shells
-// (bash -c, powershell -Command), a cd to a written-out folder (trusted alone only before &&); an encoded
+// (bash -c, powershell -Command), a cd to a written-out folder (trusted alone only through an && chain); an encoded
 // PowerShell command asks. A target is placed after junctions and links are followed, each ".." read both through
 // the link before it (Git Bash) and as written (PowerShell), and must be inside either way.
 // Asks rather than reads: a target holding a variable, a splat, a brace expansion, a ~user form, a provider path
@@ -165,8 +165,9 @@ function tokenize(text) {
 		} else if (SEGMENT_BREAKS.has(ch)) {
 			endSegment(ch);
 		} else if (ch === '<' || ch === '>') {
-			// A stream number glued to the redirection (2>, PowerShell *>) is part of it, not a word.
-			if (inWord && !quoted && /^(\d+|\*)$/.test(current)) inWord = false;
+			// A stream number glued to the redirection (2>) is part of it, not a word. PowerShell's *> keeps its *, which
+			// bash reads as a wildcard target.
+			if (inWord && !quoted && /^\d+$/.test(current)) inWord = false;
 			endWord();
 			redirect = true;
 		} else if (ch.charCodeAt(0) <= 32 || ch === ',') {
@@ -307,11 +308,14 @@ function placeOf(target, ctx, state, keepLast = false) {
 	return '';
 }
 
-// A cd to a written-out folder moves where relative targets are placed. It is trusted only before &&; after any
-// other break it may have failed, so both the old and the new folder are kept. Any other change of folder (a
-// variable, cd -, popd, env -C, -WorkingDirectory) makes every later relative target ask.
-function changeFolder(words, p, ctx, state, end) {
-	const next = words[p + 1];
+// A cd to a written-out folder moves where relative targets are placed. It is trusted alone only when it starts its
+// command and runs for sure (first, or after ; & && or a line break), and only through the && chain after it: at the
+// first other break it may have failed, so the old folders come back. Otherwise both the old and the new folder are
+// kept. cmd's cd without /d stays on the current drive, so a cd to another drive is not trusted either. Any other
+// change of folder (a variable, cd -, popd, env -C, -WorkingDirectory) makes every later relative target ask.
+function changeFolder(words, p, ctx, state, after) {
+	const drive = /^\/d$/i.test(words[p + 1] ?? '');
+	const next = words[p + (drive ? 2 : 1)];
 	if (next === undefined || /[$%`~@]/.test(next) || next.startsWith('-')) {
 		state.moved = true;
 		return;
@@ -319,7 +323,15 @@ function changeFolder(words, p, ctx, state, end) {
 	let t = next;
 	if (ctx.windows) t = t.replace(/^\/tmp(\/|$)/, ctx.tmpdir + '/').replace(/^\/([A-Za-z])(\/|$)/, '$1:/');
 	const moved = state.cwds.map((cwd) => ctx.api.resolve(cwd, t));
-	state.cwds = p === 0 && end === '&&' ? moved : [...new Set([...state.cwds, ...moved])];
+	const letter = /^([A-Za-z]):/.exec(t);
+	const otherDrive = letter && !drive && state.cwds.some((cwd) => cwd[0].toLowerCase() !== letter[1].toLowerCase());
+	if (p === 0 && [undefined, ';', '&', '&&', LF].includes(after) && !otherDrive) {
+		// Trusted only up to the first break that is not &&: after ; or || the next command runs even if the cd failed.
+		state.pending = [...new Set([...(state.pending ?? []), ...state.cwds])];
+		state.cwds = moved;
+	} else {
+		state.cwds = [...new Set([...state.cwds, ...moved])];
+	}
 	state.seen = [...new Set([...state.seen, ...moved])];
 }
 
@@ -389,7 +401,7 @@ function findDelete(text, ctx, state, depth) {
 			const name = programName(words[p]);
 			const rest = words.slice(p + 1);
 			if ((name === 'powershell' || name === 'pwsh') && rest.some((w) => ENCODED.test(w))) return 'an encoded PowerShell command';
-			if (DIR_CHANGERS.has(name)) changeFolder(words, p, ctx, state, segment.end);
+			if (DIR_CHANGERS.has(name)) changeFolder(words, p, ctx, state, s > 0 ? segments[s - 1].end : undefined);
 			else if (DIR_RETURNS.has(name)) state.moved = true;
 			// env -C DIR, env -CDIR, sudo -D DIR, sudo --chdir=DIR, and short options clustered before them.
 			else if ((name === 'env' || name === 'sudo') && rest.some((w) => /^(-[A-Za-z]*[CD]|--chdir)/.test(w))) state.moved = true;
@@ -436,7 +448,9 @@ function findDelete(text, ctx, state, depth) {
 				if (targets.length === 0 && p === 0) targets = listedTargets(segments, s) ?? [];
 				if (targets.length === 0) return 'a delete whose targets come from elsewhere';
 				// Any switch with an r in it may be recursive (-r, -Recurse, /s), and a recursive one follows the link.
-				const keepLast = LINK_SAFE.has(name) && !rest.some((w) => /^(\/s|-[A-Za-z-]*r[A-Za-z-]*)$/i.test(w));
+				// -Recurse:$true binds a value, and cmd reads a switch glued to the builtin (rd/s/q).
+				const glued = words[p].toLowerCase().split('/').slice(1);
+				const keepLast = LINK_SAFE.has(name) && !glued.includes('s') && !rest.some((w) => /^(\/s|-[\w-]*r[\w-]*)(:|$)/i.test(w));
 				// Redirection files are placed too: if the guard misreads one, it can only add an ask. A stream number
 				// (2>&1) and the null sinks are not files.
 				const redirects = segment.filter((word) => word.redirect).map((word) => word.value).filter((v) => !/^(\/dev\/null|nul|\$null|\d+|-)$/i.test(v));
@@ -455,7 +469,7 @@ function findDelete(text, ctx, state, depth) {
 				// Each read starts from this command's folders; a folder change inside may or may not last
 				// (bash -c runs apart, Invoke-Expression does not), so its folders are added, never put in place.
 				for (const inner of [word.value, assigned].filter(Boolean)) {
-					const own = { moved: state.moved, cwds: [...state.cwds], seen: [...state.seen] };
+					const own = { moved: state.moved, cwds: [...state.cwds], seen: [...state.seen], pending: null };
 					const hit = findDelete(inner, ctx, own, depth + 1);
 					if (hit) return hit;
 					state.moved = state.moved || own.moved;
@@ -466,6 +480,10 @@ function findDelete(text, ctx, state, depth) {
 		}
 		// A ( ... ) group may run apart (bash), so after one the command may be in any folder it has been in.
 		if (segment.endsGroup) state.cwds = [...new Set([...state.cwds, ...state.seen])];
+		if (segment.end !== '&&' && state.pending) {
+			state.cwds = [...new Set([...state.cwds, ...state.pending])];
+			state.pending = null;
+		}
 	}
 	return '';
 }
