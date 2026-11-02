@@ -137,7 +137,7 @@ function tokenize(text) {
 		} else if (last) {
 			// && and || are kept as one break; a pipe followed by a line break still feeds the next line.
 			if ((end === '&' || end === '|') && last.end === end) last.end = end + end;
-			else if (!(last.end === '|' && end === LF)) last.end = end;
+			else if (!(['|', '||', '&&'].includes(last.end) && end === LF)) last.end = end;
 			if (end === '{') last.opens++;
 			if (end === '}') last.closes++;
 			if (end === ')') last.endsGroup = true;
@@ -369,6 +369,13 @@ function findDelete(text, ctx, state, depth) {
 	const segments = tokenize(joinContinuations(text));
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s];
+		// How the command before this one ended, applied here so no skipped command can miss it.
+		const before = segments[s - 1];
+		if (before?.endsGroup) state.cwds = [...new Set([...state.cwds, ...state.seen])];
+		if (before && before.end !== '&&' && state.pending) {
+			state.cwds = [...new Set([...state.cwds, ...state.pending])];
+			state.pending = null;
+		}
 		const words = segment.filter((word) => !word.redirect).map((word) => word.value);
 		const first = programName(words[0]);
 		// A search's pattern is not a command; skipped only when nothing in it runs another program (rg --pre, a git
@@ -401,7 +408,10 @@ function findDelete(text, ctx, state, depth) {
 			const name = programName(words[p]);
 			const rest = words.slice(p + 1);
 			if ((name === 'powershell' || name === 'pwsh') && rest.some((w) => ENCODED.test(w))) return 'an encoded PowerShell command';
-			if (DIR_CHANGERS.has(name)) changeFolder(words, p, ctx, state, s > 0 ? segments[s - 1].end : undefined);
+			// cmd also reads a cd with its folder glued on after any of its delimiters (cd.., cd/d x, cd\x, cd=x);
+			// it is not read for its folder.
+			if (/^(cd|chdir|pushd)[\\/.=+;,]/i.test(words[p])) state.moved = true;
+			else if (DIR_CHANGERS.has(name)) changeFolder(words, p, ctx, state, s > 0 ? segments[s - 1].end : undefined);
 			else if (DIR_RETURNS.has(name)) state.moved = true;
 			// env -C DIR, env -CDIR, sudo -D DIR, sudo --chdir=DIR, and short options clustered before them.
 			else if ((name === 'env' || name === 'sudo') && rest.some((w) => /^(-[A-Za-z]*[CD]|--chdir)/.test(w))) state.moved = true;
@@ -479,11 +489,6 @@ function findDelete(text, ctx, state, depth) {
 			}
 		}
 		// A ( ... ) group may run apart (bash), so after one the command may be in any folder it has been in.
-		if (segment.endsGroup) state.cwds = [...new Set([...state.cwds, ...state.seen])];
-		if (segment.end !== '&&' && state.pending) {
-			state.cwds = [...new Set([...state.cwds, ...state.pending])];
-			state.pending = null;
-		}
 	}
 	return '';
 }
