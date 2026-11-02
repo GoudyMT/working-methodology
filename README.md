@@ -115,6 +115,7 @@ remembering (rule:kit-standards):
   repository (a local commit; the push waits for the owner), and flags third-party plugins that moved past their
   backup.
 - **Before any push:** the push guard asks the owner first.
+- **Before any delete outside the session's own folder and the project:** the delete guard asks the owner first.
 
 The kit's tests also hold the kit itself to its rules: every backup credited, every skill in the case map real,
 briefs pointing to one rules block, memory pointing instead of repeating, a why in every rule section, every

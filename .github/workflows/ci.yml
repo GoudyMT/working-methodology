@@ -58,6 +58,10 @@ jobs:
       - name: Push guard proof
         run: node project/.claude/guard-outward-check.cjs
 
+      # The delete guard's own proof: every delete outside the session's folder and the project asks.
+      - name: Delete guard proof
+        run: node project/.claude/guard-delete-check.cjs
+
       # Every part the map names exists, every link joins known parts, every "done" has evidence.
       - name: Project map
         run: node project/.claude/project-map.mjs check
