@@ -44,8 +44,9 @@ const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-st
 const GIT_READS = new Set(['grep', 'log', 'show', 'diff', 'blame']);
 const LISTERS = new Set(['get-childitem', 'gci', 'get-item', 'gi']);
 // Variables that make git or rg run another program, and ones that move git's working tree.
-const RUNS_VIA_ENV = /\b(GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|GIT_CONFIG_\w*|RIPGREP_CONFIG_PATH)\s*=/i;
-const MOVES_GIT = /\b(GIT_WORK_TREE|GIT_DIR|GIT_COMMON_DIR)\s*=|core\.worktree=/i;
+// Named anywhere, not only as NAME=: PowerShell sets them through Env: paths and SetEnvironmentVariable too.
+const RUNS_VIA_ENV = /\b(GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|GIT_CONFIG_\w*|RIPGREP_CONFIG_PATH)\b/i;
+const MOVES_GIT = /\b(GIT_WORK_TREE|GIT_DIR|GIT_COMMON_DIR)\b|core\.worktree|include\.path|includeIf\./i;
 // -EncodedCommand and the short forms PowerShell accepts for it, with - or /.
 const ENCODED = /^[-/](e|ec|en\w*)$/i;
 // A .NET Delete on a type or a variable: [IO.Directory]::Delete, $d.Delete, (Get-Item x).Delete.
@@ -112,13 +113,24 @@ function tokenize(text) {
 		}
 		segment = [];
 	};
+	let comment = false;
 	for (const ch of text) {
+		// A # that starts a word comments out the rest of the line, in bash and PowerShell.
+		if (comment) {
+			if (ch === LF) {
+				comment = false;
+				endSegment(LF);
+			}
+			continue;
+		}
 		if (quote) {
 			if (ch === quote) quote = '';
 			else current += ch;
 			continue;
 		}
-		if (ch === "'" || ch === '"') {
+		if (ch === '#' && !inWord) {
+			comment = true;
+		} else if (ch === "'" || ch === '"') {
 			quote = ch;
 			quoted = true;
 			inWord = true;
@@ -288,7 +300,7 @@ function findDelete(text, ctx, state, depth) {
 		// option before the subcommand such as -c core.pager, an external diff or pager).
 		// git takes any unambiguous prefix of a long option, and short options cluster (-nO).
 		const search = SEARCHERS.has(first) || (first === 'git' && words.slice(1).some((w) => GIT_READS.has(w)));
-		const runsOther = words.some((w) => /^(--pre|--o(p(e(n(-[\w-]*)?)?)?)?(=|$)|--ext-|--textc|-[A-Za-z]*O)/.test(w));
+		const runsOther = words.some((w) => /^(--pre|--hostname-bin|--o(p(e(n(-[\w-]*)?)?)?)?(=|$)|--ext-|--textc|-[A-Za-z]*O)/.test(w));
 		if (search && runsOther) return 'a search option that runs another program';
 		if (search && (SEARCHERS.has(first) || GIT_READS.has(words[1]))) continue;
 		const skip = new Set();
