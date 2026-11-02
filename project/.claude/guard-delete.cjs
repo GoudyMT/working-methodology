@@ -25,7 +25,9 @@ const BACKSLASH = String.fromCharCode(92);
 const BACKTICK = String.fromCharCode(96);
 const LF = String.fromCharCode(10);
 const CR = String.fromCharCode(13);
-const SEGMENT_BREAKS = new Set([';', '|', '&', '(', ')', '{', '}', '<', '>', LF]);
+// < and > end a word, not a command: words after a redirection (rm a > log b) or a PowerShell block comment
+// (<# x #>) are still the command's own.
+const SEGMENT_BREAKS = new Set([';', '|', '&', '(', ')', '{', '}', LF]);
 const MAX_DEPTH = 3;
 const MAX_TEXT = 100000;
 
@@ -113,30 +115,19 @@ function tokenize(text) {
 		}
 		segment = [];
 	};
-	let comment = false;
 	for (const ch of text) {
-		// A # that starts a word comments out the rest of the line, in bash and PowerShell.
-		if (comment) {
-			if (ch === LF) {
-				comment = false;
-				endSegment(LF);
-			}
-			continue;
-		}
 		if (quote) {
 			if (ch === quote) quote = '';
 			else current += ch;
 			continue;
 		}
-		if (ch === '#' && !inWord) {
-			comment = true;
-		} else if (ch === "'" || ch === '"') {
+		if (ch === "'" || ch === '"') {
 			quote = ch;
 			quoted = true;
 			inWord = true;
 		} else if (SEGMENT_BREAKS.has(ch)) {
 			endSegment(ch);
-		} else if (ch.charCodeAt(0) <= 32 || ch === ',') {
+		} else if (ch.charCodeAt(0) <= 32 || ch === ',' || ch === '<' || ch === '>') {
 			endWord();
 		} else {
 			current += ch;
@@ -282,7 +273,8 @@ function listedTargets(segments, index) {
 		const words = prev.map((word) => word.value);
 		if (LISTERS.has(programName(words[0]))) {
 			// Only a listing that starts its command lists paths the guard can see; one fed by anything else does not.
-			if (i > 0 && ![';', '&', LF, ''].includes(segments[i - 1].end)) return null;
+			// Comments and line breaks make that hard to read, so only a listing after ; or & or at the very start counts.
+			if (i > 0 && ![';', '&'].includes(segments[i - 1].end)) return null;
 			const starts = targetsOf('', words, 1);
 			return starts.length > 0 ? starts : ['.'];
 		}
