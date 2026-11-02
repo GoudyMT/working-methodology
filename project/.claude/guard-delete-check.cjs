@@ -88,6 +88,10 @@ const SWEEP_ASK = [
 	'rm -rf .git',
 	'Remove-Item -Recurse -Force C:\\work\\proj_a.b\\.git',
 	'rm -rf //10.255.255.9/share/x ; rm -rf C:/elsewhere/x',
+	// Found by a security review of the sweep's fixes: a read-only command that runs another one.
+	"git -c core.pager='rm -rf C:/elsewhere' log",
+	'rg --pre "rm -rf C:/elsewhere" x .',
+	'git -C C:/elsewhere rm -r build',
 ];
 
 // Found by the same sweep: ordinary commands that asked and should not.

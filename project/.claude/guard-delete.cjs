@@ -278,7 +278,11 @@ function findDelete(text, ctx, state, depth) {
 		const segment = segments[s];
 		const words = segment.map((word) => word.value);
 		const first = programName(words[0]);
-		if (SEARCHERS.has(first) || (first === 'git' && GIT_READS.has(gitSub(words, 1).sub))) continue;
+		// A search's pattern is not a command; skipped only when nothing in it runs another program (rg --pre, a git
+		// option before the subcommand such as -c core.pager, an external diff or pager).
+		const runsOther = words.some((w) => /^(--pre|--ext-diff|--textconv|-O|--open-files-in-pager)/.test(w));
+		if (!runsOther && (SEARCHERS.has(first) || (first === 'git' && GIT_READS.has(words[1])))) continue;
+		const skip = new Set();
 		for (let i = 0; i < words.length; i++) {
 			const lower = words[i].toLowerCase();
 			if (DOTNET_DELETE.test(words[i])) return 'a .NET Delete call';
@@ -289,6 +293,7 @@ function findDelete(text, ctx, state, depth) {
 		// Start-Process) would otherwise hide the delete behind it. A delete named in plain text asks; that is the
 		// safe side.
 		for (let p = 0; p < words.length; p++) {
+			if (skip.has(p)) continue;
 			const name = programName(words[p]);
 			const rest = words.slice(p + 1);
 			if ((name === 'powershell' || name === 'pwsh') && rest.some((w) => ENCODED.test(w))) return 'an encoded PowerShell command';
@@ -297,9 +302,11 @@ function findDelete(text, ctx, state, depth) {
 			else if (name === 'robocopy' && rest.some((w) => /^\/(mir|purge)$/i.test(w))) return 'robocopy that removes files';
 			else if (name === 'rsync' && rest.some((w) => w.startsWith('--delete'))) return 'rsync --delete';
 			else if (name === 'git') {
-				// The rest of the command belongs to git.
 				const { sub, at } = gitSub(words, p + 1);
 				const own = words.slice(at);
+				// git's subcommand word (rm) is not the rm program; -C and the tree options move where paths are read.
+				skip.add(at - 1);
+				if (words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
 				if (sub === 'clean' && !own.some((w) => w === '-n' || w === '--dry-run' || /^-\w*n/.test(w))) return 'git clean';
 				if (sub === 'worktree' && own[0] === 'remove') {
 					for (const target of targetsOf('', own, 1)) {
@@ -313,7 +320,6 @@ function findDelete(text, ctx, state, depth) {
 						if (hit) return hit;
 					}
 				}
-				break;
 			}
 			// tokenize splits a word-start brace into its own command, hiding what follows it, so find with any
 			// brace asks: find with a brace is rare, and the safe side.
@@ -347,7 +353,10 @@ function findDelete(text, ctx, state, depth) {
 		// Quoted text may be a whole command handed to another shell: bash -c 'rm -rf /tmp/*'.
 		if (depth < MAX_DEPTH) {
 			for (const word of segment) {
-				const hit = word.quoted ? findDelete(word.value, ctx, state, depth + 1) : '';
+				if (!word.quoted) continue;
+				// A quoted name=value (git -c core.pager='...') may hold a command in its value.
+				const assigned = /^[\w.-]+=/.test(word.value) ? word.value.slice(word.value.indexOf('=') + 1) : '';
+				const hit = findDelete(word.value, ctx, state, depth + 1) || (assigned && findDelete(assigned, ctx, state, depth + 1));
 				if (hit) return hit;
 			}
 		}
