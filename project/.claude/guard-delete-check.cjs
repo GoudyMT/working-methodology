@@ -23,6 +23,10 @@ const LDQ = String.fromCharCode(0x201c);
 const RDQ = String.fromCharCode(0x201d);
 const ENDASH = String.fromCharCode(0x2013);
 const NBSP = String.fromCharCode(0xa0);
+const EMSP = String.fromCharCode(0x2003);
+const IDSP = String.fromCharCode(0x3000);
+const LSQ = String.fromCharCode(0x2018);
+const RSQ = String.fromCharCode(0x2019);
 const LF = String.fromCharCode(10);
 
 // Found by the pre-PR sweep (2026-11-02): forms that delete outside the roots and passed.
@@ -151,8 +155,95 @@ const SWEEP_PASS = [
 	'Remove-Item dist -Recurse *> $null',
 ];
 
+// Found by the short re-sweep (2026-11-02): forms that still passed, and gaps no case covered.
+const RESWEEP_ASK = [
+	".venv/Scripts/python -c \"import shutil; shutil.rmtree('C:/elsewhere')\"",
+	"\"C:/Program Files/nodejs/node.exe\" -e \"require('fs').rmSync('C:/elsewhere')\"",
+	'find C:/elsewhere \\( -name a -o -name b \\) -delete',
+	'New-Item -ItemType "Junction" -Path l -Target C:\\Users; Remove-Item -Recurse l\\someone',
+	'New-Item -Type Junction -Path l -Target C:\\Users; Remove-Item -Recurse l\\someone',
+	'ln --symbolic / l4; rm -rf l4/etc',
+	'ln -f -s / l4; rm -rf l4/etc',
+	'Get-ChildItem build | ForEach-Object { Join-Path $env:TEMP $_.Name } | Remove-Item -Recurse',
+	'Get-ChildItem build | Split-Path -Parent | Remove-Item -Recurse',
+	'Get-Item C:\\work\\proj_a.b | Remove-Item -Recurse',
+	'gi C:\\elsewhere | Remove-Item -Recurse',
+	'gci C:\\elsewhere | ri',
+	'cd C:\\elsewhere; cd C:\\work\\proj_a.b\\missing; rm -rf *',
+	'cd C:\\elsewhere && (cd C:\\work\\proj_a.b && echo x); rm -rf build',
+	'cd C:\\elsewhere || rm -rf build',
+	'Push-Location C:\\work\\proj_a.b\\build; Pop-Location; Remove-Item -Recurse x',
+	'pushd build && popd && rm -rf x',
+	'Invoke-Expression "cd C:\\elsewhere"; Remove-Item -Recurse build',
+	'cd ~; rm -rf build',
+	'cd -; rm -rf build',
+	'rsync -a --del C:/empty/ /tmp/',
+	'rsync -a --remove-source-files /tmp/x C:/work/proj_a.b/x',
+	'rm -rf D:x',
+	'Remove-Item -Recurse C:x',
+	'grep "$(rm -rf C:/elsewhere)" x',
+	"git -c alias.c='!rm -rf C:/elsewhere' c",
+	'git config alias.c "!rm -rf C:/elsewhere"',
+	'env -C/ rm -rf x',
+	'sudo -DC:/Users rm -rf someone',
+	'rm -rf build 2>&1 C:/elsewhere',
+	'rm -rf build &>log C:/elsewhere',
+	'Remove-Item build 2>&1 C:/elsewhere',
+	'rm -rf build >|log C:/elsewhere',
+	'git clean -fd node_modules',
+	'git --work-tree=C:/elsewhere rm -r build',
+	'git --git-dir=C:/elsewhere/.git rm -r build',
+	'Remove-Item -Recurse:$true C:\\elsewhere',
+	'Remove-Item ' + LSQ + 'C:\\elsewhere\\x' + RSQ,
+	'Remove-Item build <# C:\\elsewhere #>',
+	'Invoke-Expression "cd $x"; Remove-Item -Recurse build',
+	// Members of the older lists that no case caught when planted breaks removed them.
+	'Get-ChildItem C:\\elsewhere | foreach Delete',
+	'find -D tree C:/elsewhere -delete',
+	'find -H C:/elsewhere -delete',
+	'find -O3 C:/elsewhere -delete',
+	'sh`red -u /tmp/x',
+	"node -e \"require('fs').symlinkSync('C:/Users','l')\"; rm -rf l/someone",
+	"php -r \"unlink('C:/elsewhere/x');\"",
+	'perl -MFile::Path -e "remove_tree(q(/tmp/x))"',
+	"node -e \"require('fs').rm('C:/elsewhere', {recursive:true}, ()=>{})\"",
+	'RIPGREP_CONFIG_PATH=C:/x/rc rg x',
+	'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.external GIT_CONFIG_VALUE_0=x git diff',
+	"php -r \"@unlink('C:/elsewhere/x');\"",
+	'git diff --ext-diff',
+	'git log -p --textconv',
+	'Remove-Item' + EMSP + 'C:\\elsewhere\\x',
+	'Remove-Item' + IDSP + 'C:\\elsewhere\\x',
+	"Remove-Item build <# it's #> C:\\elsewhere",
+];
+
+const RESWEEP_PASS = [
+	'.venv/Scripts/python -m pytest',
+	"find . \\( -name '*.o' -o -name '*.tmp' \\) -delete",
+	'New-Item -ItemType Directory build; Remove-Item -Recurse build\\x',
+	'Get-Item build | Remove-Item -Recurse',
+	'gci build -File | ri',
+	'cd build && rm -rf out && cd .. && rm -rf dist',
+	'Set-Location C:\\work\\proj_a.b; Remove-Item -Recurse dist',
+	'rm -rf build 2>&1',
+	'rm -rf build &>/dev/null',
+	'git clean --dry-run -fd',
+	'git clean -fdn',
+	'Remove-Item -Recurse:$true build',
+	'grep -rn "rm -rf $(pwd)" user/skills',
+	'cd C:\\elsewhere && rm -rf C:\\work\\proj_a.b\\x 2>&1',
+	'echo x && Get-ChildItem dist | Remove-Item -Recurse',
+	"$env:PAGER = 'less'; Get-Content notes.txt",
+	'git blame -L "/rm -rf C:/elsewhere/,+5" setup.sh',
+	'sls "Remove-Item C:\\elsewhere" *.ps1',
+	'findstr /s "rmdir /s C:\\elsewhere" *.cmd',
+	// A command of only a redirection once crashed the guard, and a crash blocks the call.
+	'rm -rf build; > out.txt',
+];
+
 const ASK = [
 	...SWEEP_ASK,
+	...RESWEEP_ASK,
 	'Remove-Item -Recurse $env:TEMP\\tg-*',
 	'Remove-Item -Recurse ' + TEMP + '\\tg-*',
 	'rm -rf /tmp/*',
@@ -222,6 +313,7 @@ const ASK = [
 
 const PASS = [
 	...SWEEP_PASS,
+	...RESWEEP_PASS,
 	'Remove-Item ' + OWN + '\\scratchpad\\pr-body.md',
 	'Remove-Item -Recurse -Force ' + OWN + '\\scratchpad\\*',
 	'Remove-Item ' + OWN + '\\scratchpad\\a.md, ' + OWN + '\\scratchpad\\b.md',
@@ -272,6 +364,10 @@ check('[session_id "../.."] delete in the key folder', asSession('Bash', 'rm -rf
 check('[session_id "x/../.."] delete in another project key', asSession('Bash', 'rm -rf ' + TEMP + '\\claude\\other-proj\\x', { session_id: 'x/../..' }), true);
 // The tool's own folder places a relative target, not the project.
 check('[cwd C:\\elsewhere] rm build/x', asSession('Bash', 'rm build/x', { cwd: 'C:\\elsewhere' }), true);
+// A cd is trusted only when it leads its command and comes before &&.
+check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b && rm -rf dist', asSession('Bash', 'cd C:\\work\\proj_a.b && rm -rf dist', { cwd: 'C:\\elsewhere' }), false);
+check('[cwd C:\\elsewhere] echo cd C:\\work\\proj_a.b && rm -rf dist', asSession('Bash', 'echo cd C:\\work\\proj_a.b && rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
+check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b; rm -rf dist', asSession('Bash', 'cd C:\\work\\proj_a.b; rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
 // Strings in arrays and nested objects are read; input deeper than the guard reads asks.
 check('[array field] rm -rf /tmp/x', asSession('Bash', '', { tool_input: { commands: ['rm -rf /tmp/x'] } }), true);
 check('[command plus args array] python -c rmtree', asSession('Bash', '', { tool_input: { command: 'python', args: ['-c', "import shutil; shutil.rmtree('C:/elsewhere')"] } }), true);
@@ -299,6 +395,13 @@ try {
 	check('[junction] rm -rf link/../* (.. after the link, read through it by Git Bash)', { ...viaLink, tool_input: { command: 'rm -rf link/../*' } }, true, where);
 	check('[junction] cmd /c rmdir link (removes the link only)', { ...viaLink, tool_input: { command: 'cmd /c rmdir link' } }, false, where);
 	check('[junction] Remove-Item -Recurse build\\* (a real folder in the same project)', { ...viaLink, tool_input: { command: 'Remove-Item -Recurse build\\*' } }, false, where);
+	check('[junction] cmd /c rmdir /s /q link (a recursive rmdir follows the link)', { ...viaLink, tool_input: { command: 'cmd /c rmdir /s /q link' } }, true, where);
+	check('[junction] rmdir -Recurse link (rmdir is Remove-Item in PowerShell)', { ...viaLink, tool_input: { command: 'rmdir -Recurse link' } }, true, where);
+	// A link to a folder deep inside the project: PowerShell reads ".." as written, so inner\..\..\x is outside.
+	fs.mkdirSync(path.join(real, 'proj', 'a', 'b'), { recursive: true });
+	fs.symlinkSync(path.join(real, 'proj', 'a', 'b'), path.join(real, 'proj', 'inner'), 'junction');
+	check('[junction] Remove-Item inner\\..\\..\\x (outside as written, inside through the link)', { ...viaLink, tool_input: { command: 'Remove-Item inner\\..\\..\\x' } }, true, where);
+	check('[junction] Remove-Item inner\\..\\x (inside both ways)', { ...viaLink, tool_input: { command: 'Remove-Item inner\\..\\x' } }, false, where);
 } finally {
 	fs.rmSync(real, { recursive: true, force: true });
 }
