@@ -1447,6 +1447,15 @@ test('every kit role runs the canary at its stop, and the project settings run t
   assert.ok(guard && guard.hooks[0].args.join(' ').includes('kit-hooks/canary.cjs'), 'the leak guard is wired');
   assert.ok(guard.hooks.some((h) => h.args.join(' ').includes('kit-hooks/sweep-guard.cjs')), 'the sweep guard is wired');
 });
+test('the delete guard runs on every shell tool and blocks the call when it fails', () => {
+  const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
+  const shell = settings.hooks.PreToolUse.find((h) => h.matcher.split('|').includes('Bash'));
+  for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) assert.ok(shell.matcher.split('|').includes(tool), `${tool} is matched`);
+  const hook = shell.hooks.find((h) => h.args.join(' ').includes('.claude/guard-delete.cjs'));
+  assert.ok(hook, 'the delete guard is wired');
+  // A crash, a timeout or a missing node would otherwise let the delete run.
+  assert.equal(hook.onFailure, 'block');
+});
 test('the real phrase has one home in the kit: the last line of the rules every brief carries', () => {
   const block = read(path.resolve('rules/agent-teams.md')).split('**Rules every brief carries**')[1].split('```')[1];
   const last = block.trim().split('\n').pop().trim();
