@@ -11,8 +11,8 @@ next session starts from what this writes down, so every line must be true when 
 ## Steps
 
 1. **Capture** every style, format or workflow correction from this session where it lasts (rule:compact-ritual).
-2. **Run the scan** below, step by step, each shown pass or fail. Its temp-file step deletes only inside the
-   session's folder and lists shared or uploaded copies for the owner.
+2. **Run the scan** below, step by step, each shown pass or fail. Its temp-file step covers shared and uploaded
+   copies too (a project library, an attachment folder), not only the scratch folder.
 3. **Batch the tracking files** at the session end (rule:tracking-file-batching). `node .claude/tracking-check.mjs caps` prints the
    whole-file rows of the size-cap table; an OVER row is fixed before the handoff. The plan's Progress block passes
    `node .claude/tracking-check.mjs progress <plan>`. Where the project keeps

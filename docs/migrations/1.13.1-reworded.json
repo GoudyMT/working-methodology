@@ -1,9 +1,0 @@
-{
-  "lines": [
-    {
-      "before": "5. **Temp files** this session made (PR bodies, release drafts, screenshots, scratch scripts, logs, backups, drafts) that have served are deleted wherever they sit: the scratch folder, untracked files in the repo, and any shared or uploaded copy (a project library, an attachment folder). Emit the list deleted, or \"none\". Why: a served draft left in a shared place gets attached again as if current.",
-      "after": "5. **Temp files** this session made that have served are deleted only inside its session folder (`<temp>/claude/<project key>/<session id>/`), never by wildcard. Anything else it made (a shared or uploaded copy, a file in the system temp) is listed for the owner, not deleted. Emit both lists, or \"none\". Why: a served draft left in place gets reused; a shared folder holds look-alike files.",
-      "why": "O1 (IR-2026-11-01-closeout-temp-step-deleted-other-sessions-files): deletes only inside the session folder, the rest listed; guard-delete.cjs backs it"
-    }
-  ]
-}
