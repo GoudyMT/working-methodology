@@ -27,6 +27,8 @@ const DIR_CHANGERS = new Set(['cd', 'chdir', 'pushd', 'sl', 'set-location', 'pus
 // -EncodedCommand and the short forms PowerShell accepts for it.
 const ENCODED = /^-(e|ec|en\w*)$/i;
 const DOTNET_DELETE = /(\.|::)delete\w*$/i;
+// A brace expansion that starts a word ({a,b} or {a..c}); one inside a word is kept in the word by tokenize.
+const BRACE_EXPANSION = /\{[^{}\s]*(,|\.\.)[^{}\s]*\}/;
 const PATH_OPTIONS = new Set(['-path', '-literalpath', '-lp', '-pspath']);
 const VALUE_OPTIONS = new Set(['-erroraction', '-ea', '-include', '-exclude', '-filter', '-credential', '-stream', '-warningaction', '-wa', '-informationaction', '-infa', '-errorvariable', '-ev', '-outvariable', '-ov', '-pipelinevariable', '-pv', '-progressaction', '-proga']);
 const GIT_VALUE_OPTIONS = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env']);
@@ -201,6 +203,7 @@ function findDelete(text, ctx, state, depth) {
 					if (hit) return hit === start + '/*' ? start : hit;
 				}
 			} else if (DELETERS.has(name)) {
+				if (BRACE_EXPANSION.test(text)) return 'a target with a brace expansion';
 				const targets = targetsOf(name, words, p + 1);
 				if (targets.length === 0) return 'a delete whose targets come from elsewhere';
 				for (const target of targets) {

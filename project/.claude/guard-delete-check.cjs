@@ -66,6 +66,9 @@ const ASK = [
 	// Found by a security review of the first build: brace expansion, wrappers with values, .NET calls through a
 	// variable, tilde forms and encoded commands.
 	'rm -rf C:/work/proj_a.b/build/{x,../../../elsewhere}',
+	'rm -rf {C:/elsewhere,x}',
+	'rm -rf build {C:/elsewhere,x}',
+	'rm -rf build {C:/elsewhere/a..c}',
 	'sudo -u root rm -rf /var/x',
 	'nice -n 5 rm -rf /tmp/x',
 	'timeout 5 rm -rf /tmp/x',
