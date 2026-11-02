@@ -189,8 +189,9 @@ function findDelete(text, ctx, state, depth) {
 			if (DIR_CHANGERS.has(name)) state.moved = true;
 			else if (name === 'git' && gitCleans(words, p + 1)) return 'git clean';
 			else if ((name === 'node' || name.startsWith('python')) && words.slice(p + 1).some((w) => INLINE_DELETE.test(w))) return 'inline ' + name + ' code that deletes';
-			// tokenize splits a word-start brace into its own command, so the -delete after it is checked on the text.
-			else if (name === 'find' && BRACE_EXPANSION.test(text) && /\s-delete\b/i.test(text)) return 'a target with a brace expansion';
+			// tokenize splits a word-start brace into its own command, hiding what follows it, so find with any
+			// brace asks: find with a brace is rare, and the safe side.
+			else if (name === 'find' && BRACE_EXPANSION.test(text)) return 'a target with a brace expansion';
 			else if (name === 'find' && words.slice(p + 1).some((w) => w.toLowerCase() === '-delete')) {
 				// find deletes what it finds below its start folders, so each is read like a folder ending in a wildcard.
 				const starts = [];
