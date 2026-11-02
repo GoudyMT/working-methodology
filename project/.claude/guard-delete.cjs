@@ -50,8 +50,7 @@ function joinContinuations(text) {
 
 // Splits text into commands (at ; | & ( ) { } < > and newlines) and each command into words, keeping quoted
 // text in one word. Quote characters are dropped; a word that held quoted text is marked, so its content can be
-// read again as a nested command. A brace inside a word is a shell brace expansion (a/{b,../c}), kept in the word
-// so the target check sees it.
+// read again as a nested command.
 function tokenize(text) {
 	const segments = [];
 	let segment = [];
@@ -59,13 +58,11 @@ function tokenize(text) {
 	let inWord = false;
 	let quoted = false;
 	let quote = '';
-	let braces = 0;
 	const endWord = () => {
 		if (inWord) segment.push({ value: current, quoted });
 		current = '';
 		inWord = false;
 		quoted = false;
-		braces = 0;
 	};
 	const endSegment = () => {
 		endWord();
@@ -82,9 +79,6 @@ function tokenize(text) {
 			quote = ch;
 			quoted = true;
 			inWord = true;
-		} else if ((ch === '{' && inWord) || (ch === '}' && braces > 0) || (ch === ',' && braces > 0)) {
-			braces += ch === '{' ? 1 : ch === '}' ? -1 : 0;
-			current += ch;
 		} else if (SEGMENT_BREAKS.has(ch)) {
 			endSegment();
 		} else if (ch.charCodeAt(0) <= 32 || ch === ',') {
@@ -159,7 +153,6 @@ function placeOf(target, ctx, state) {
 	if (/[$%]/.test(target) || target.includes(BACKTICK)) return 'a target holding a variable';
 	// A PowerShell drive other than a disk (HKCU:, Env:, Function:) is not a file.
 	if (/^[A-Za-z][A-Za-z0-9]+:/.test(target)) return 'a target on a non-file drive';
-	if (/[{}]/.test(target)) return 'a target with a brace expansion';
 	let t = target;
 	if (t === '~' || t.startsWith('~/') || t.startsWith('~' + BACKSLASH)) t = ctx.home + t.slice(1);
 	// ~user, ~+ and ~- name other folders the guard does not look up.
