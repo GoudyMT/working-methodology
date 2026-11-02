@@ -69,6 +69,8 @@ const ASK = [
 	'rm -rf {C:/elsewhere,x}',
 	'rm -rf build {C:/elsewhere,x}',
 	'rm -rf build {C:/elsewhere/a..c}',
+	"rm -rf build {'C:/else where',x}",
+	'rm -rf build {C:/else\\ where,x}',
 	'sudo -u root rm -rf /var/x',
 	'nice -n 5 rm -rf /tmp/x',
 	'timeout 5 rm -rf /tmp/x',

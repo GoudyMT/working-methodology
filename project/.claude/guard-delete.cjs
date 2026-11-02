@@ -27,8 +27,10 @@ const DIR_CHANGERS = new Set(['cd', 'chdir', 'pushd', 'sl', 'set-location', 'pus
 // -EncodedCommand and the short forms PowerShell accepts for it.
 const ENCODED = /^-(e|ec|en\w*)$/i;
 const DOTNET_DELETE = /(\.|::)delete\w*$/i;
-// A brace expansion that starts a word ({a,b} or {a..c}); one inside a word is kept in the word by tokenize.
-const BRACE_EXPANSION = /\{[^{}\s]*(,|\.\.)[^{}\s]*\}/;
+// A brace that starts a word may be a shell brace expansion ({a,b}, {'a b',c}, {a..c}); quotes and escapes make
+// its exact extent hard to read, so any brace with no space after it, in a command that deletes, asks. A
+// PowerShell script block written "{ ... }" is unaffected; one written "{...}" asks, the safe side.
+const BRACE_EXPANSION = /\{\S/;
 const PATH_OPTIONS = new Set(['-path', '-literalpath', '-lp', '-pspath']);
 const VALUE_OPTIONS = new Set(['-erroraction', '-ea', '-include', '-exclude', '-filter', '-credential', '-stream', '-warningaction', '-wa', '-informationaction', '-infa', '-errorvariable', '-ev', '-outvariable', '-ov', '-pipelinevariable', '-pv', '-progressaction', '-proga']);
 const GIT_VALUE_OPTIONS = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env']);
