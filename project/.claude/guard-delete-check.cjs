@@ -104,6 +104,8 @@ const SWEEP_ASK = [
 	'rm -rf build,#x C:/elsewhere',
 	'rm -rf build <# x #> C:/elsewhere',
 	'rm -rf build > out.txt C:/elsewhere',
+	'Get-ChildItem C:/elsewhere | Remove-Item > out.txt',
+	"grep x # it's" + LF + 'rm -rf C:/elsewhere',
 	"[Environment]::SetEnvironmentVariable('GIT_WORK_TREE', 'C:\\elsewhere'); git rm -r build",
 	'rg --hostname-bin "rm -rf C:/elsewhere" x .',
 	"git grep --open-files-in-pager='rm -rf C:/elsewhere' x",

@@ -79,6 +79,12 @@ function normalize(text) {
 	return out;
 }
 
+// The text with PowerShell block comments (<# ... #>) and line comments (a # that starts a word, to the line's
+// end) cut out.
+function withoutComments(text) {
+	return text.replace(/<#[\s\S]*?(#>|$)/g, ' ').replace(/(^|[\s;|&(){}])#[^\n]*/g, '$1');
+}
+
 // Line continuations (PowerShell backtick, bash backslash) join one command across lines.
 function joinContinuations(text) {
 	let out = text;
@@ -98,14 +104,20 @@ function tokenize(text) {
 	let inWord = false;
 	let quoted = false;
 	let quote = '';
+	// The word after < or > is a redirection's file, not one of the command's own words.
+	let redirect = false;
 	const endWord = () => {
-		if (inWord) segment.push({ value: current, quoted });
+		if (inWord) {
+			segment.push({ value: current, quoted, redirect });
+			redirect = false;
+		}
 		current = '';
 		inWord = false;
 		quoted = false;
 	};
 	const endSegment = (end) => {
 		endWord();
+		redirect = false;
 		if (segment.length > 0) {
 			segment.end = end;
 			segments.push(segment);
@@ -127,7 +139,10 @@ function tokenize(text) {
 			inWord = true;
 		} else if (SEGMENT_BREAKS.has(ch)) {
 			endSegment(ch);
-		} else if (ch.charCodeAt(0) <= 32 || ch === ',' || ch === '<' || ch === '>') {
+		} else if (ch === '<' || ch === '>') {
+			endWord();
+			redirect = true;
+		} else if (ch.charCodeAt(0) <= 32 || ch === ',') {
 			endWord();
 		} else {
 			current += ch;
@@ -270,7 +285,7 @@ function listedTargets(segments, index) {
 	for (let i = index - 1; i >= 0; i--) {
 		const prev = segments[i];
 		if (!['|', '{', '}'].includes(prev.end)) return null;
-		const words = prev.map((word) => word.value);
+		const words = prev.filter((word) => !word.redirect).map((word) => word.value);
 		if (LISTERS.has(programName(words[0]))) {
 			// Only a listing that starts its command lists paths the guard can see; one fed by anything else does not.
 			// Comments and line breaks make that hard to read, so only a listing after ; or & or at the very start counts.
@@ -286,7 +301,7 @@ function findDelete(text, ctx, state, depth) {
 	const segments = tokenize(joinContinuations(text));
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s];
-		const words = segment.map((word) => word.value);
+		const words = segment.filter((word) => !word.redirect).map((word) => word.value);
 		const first = programName(words[0]);
 		// A search's pattern is not a command; skipped only when nothing in it runs another program (rg --pre, a git
 		// option before the subcommand such as -c core.pager, an external diff or pager).
@@ -427,7 +442,9 @@ function decide(input, where = {}) {
 		if (INTERPRETER.test(text) && INLINE_DELETE.test(text)) return 'inline code that deletes';
 		if (RUNS_VIA_ENV.test(text) && /(^|[^\w-])(git|rg)(\.exe)?(?![\w-])/i.test(text)) return 'a variable that makes git or rg run a program';
 		if (/\.ForEach\s*\(\s*['"]?Delete/i.test(text)) return 'a .NET Delete call';
-		const hit = findDelete(text, ctx, { moved: false, cwd: ctx.cwd }, 0);
+		// Comments are read both ways: as words, and cut out. A comment the guard misreads can then only add an ask
+		// (a quote inside a comment no longer swallows the next line; a # after a comma no longer hides a target).
+		const hit = findDelete(text, ctx, { moved: false, cwd: ctx.cwd }, 0) || findDelete(withoutComments(text), ctx, { moved: false, cwd: ctx.cwd }, 0);
 		if (hit) return hit;
 	}
 	return '';
