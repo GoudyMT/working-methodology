@@ -18,8 +18,114 @@ const KEY_DIR = TEMP + '\\claude\\C--work-proj-a-b';
 const OWN = KEY_DIR + '\\' + SESSION_ID;
 const OTHER = KEY_DIR + '\\99999999-8888-7777-6666-555555555555';
 const WHERE = { tmpdir: TEMP, projectDir: PROJECT };
+// Characters a shell reads like ASCII ones, built at run time so this file stays ASCII.
+const LDQ = String.fromCharCode(0x201c);
+const RDQ = String.fromCharCode(0x201d);
+const ENDASH = String.fromCharCode(0x2013);
+const NBSP = String.fromCharCode(0xa0);
+const LF = String.fromCharCode(10);
+
+// Found by the pre-PR sweep (2026-11-02): forms that delete outside the roots and passed.
+const SWEEP_ASK = [
+	'rm -rf C:/work/proj_a.b/b*/../../../elsewhere',
+	'rm -rf build/*/../../x',
+	'git -c core.x=y clean -fd',
+	'git --git-dir .git clean -fd',
+	'git --work-tree . clean -fd',
+	'pushd C:\\elsewhere; rm -rf build',
+	'chdir C:\\elsewhere; rm -rf build',
+	'sl C:\\elsewhere; rm -rf build',
+	'Push-Location C:\\elsewhere; rm -rf build',
+	'env -C / rm -rf x',
+	'env --chdir=/c/Users rm -rf someone',
+	'Start-Process cmd -ArgumentList "/c rd /s /q someone" -WorkingDirectory C:/Users',
+	'pwsh -ec UgBlAG0A',
+	'pwsh /ec UgBlAG0A',
+	"python -c \"import shutil; shutil.rmtree('C:/elsewhere')\"",
+	"python3 -c \"import os; os.remove('C:/elsewhere/x')\"",
+	"py -c \"import shutil; shutil.rmtree(r'C:\\elsewhere')\"",
+	'perl -e "unlink glob q(/tmp/*)"',
+	'ruby -rfileutils -e "FileUtils.rm_rf(q(/tmp/x))"',
+	"deno eval \"Deno.removeSync('C:/elsewhere')\"",
+	"bun -e \"require('fs').rmSync('C:/elsewhere')\"",
+	"node -e \"require('fs').rmdirSync('C:/elsewhere')\"",
+	'python - <<EOF' + LF + 'import shutil' + LF + "shutil.rmtree('C:/elsewhere')" + LF + 'EOF',
+	'cd C:/elsewhere; find -name x -delete',
+	'find build C:/elsewhere -delete',
+	'find -P C:/Users -delete',
+	'find -L /c/Users -delete',
+	'rm -rf build\\' + LF + 'C:/elsewhere',
+	'Remove-Item build,C:\\elsewhere',
+	'& "C:\\Program Files\\Git\\usr\\bin\\rm.exe" -rf C:\\elsewhere',
+	'Remove-Item C:\\work\\proj_a.b\\`.`.\\x',
+	'Remove-Item C:\\work\\proj_a.b\\x, C:\\elsewhere\\x',
+	"bash -c \"sh -c 'rm -rf /tmp/x'\"",
+	'Remove-Item ' + LDQ + 'C:\\elsewhere\\x' + RDQ,
+	'Remove-Item ' + ENDASH + 'LiteralPath:C:\\elsewhere\\x',
+	'Remove-Item' + NBSP + 'C:\\elsewhere\\x',
+	'echo `rm -rf C:/elsewhere/x`',
+	'r`m C:\\elsewhere\\x',
+	'Remove-I`tem C:\\elsewhere\\x',
+	'cmd /c rd/s/q C:\\elsewhere\\x',
+	'cmd /c d^el C:\\elsewhere\\x',
+	'Remove-Item Microsoft.PowerShell.Core\\FileSystem::C:\\elsewhere',
+	"$p = @{ LiteralPath = 'C:\\elsewhere\\x' }; Remove-Item @p -Recurse",
+	'Remove-Item -LiteralPath:C:\\elsewhere\\x,keep.txt',
+	'Remove-Item -Path build -LiteralPath:C:\\elsewhere\\x',
+	'Get-ChildItem C:\\elsewhere -Directory | ForEach-Object -MemberName Delete -ArgumentList $true',
+	'Get-ChildItem C:\\elsewhere | % Delete',
+	"(Get-ChildItem C:\\elsewhere\\tg-*).ForEach('Delete')",
+	'npx rimraf C:/elsewhere/tg-*',
+	'npx del-cli C:/elsewhere/x',
+	'robocopy C:\\empty C:\\elsewhere /MIR',
+	'robocopy C:\\empty C:\\elsewhere /PURGE',
+	'rsync -a --delete C:/empty/ /tmp/',
+	'shred -u /tmp/x',
+	'git worktree remove --force C:/elsewhere/wt',
+	'New-Item -ItemType Junction -Path C:\\work\\proj_a.b\\l2 -Target C:\\Users; Remove-Item -Recurse -Force C:\\work\\proj_a.b\\l2\\someone',
+	'cmd /c mklink /J l3 C:\\Users & rmdir /s /q l3\\someone',
+	'ln -s / l4; rm -rf l4/etc',
+	'rm -rf .git',
+	'Remove-Item -Recurse -Force C:\\work\\proj_a.b\\.git',
+	'rm -rf //10.255.255.9/share/x ; rm -rf C:/elsewhere/x',
+];
+
+// Found by the same sweep: ordinary commands that asked and should not.
+const SWEEP_PASS = [
+	'Remove-Item -Recurse ' + OWN + '\\*',
+	'rm *.o',
+	'rm -rf build*',
+	'cmd /c rd /s /q build',
+	'cmd /c rmdir /s build',
+	'erase /s C:\\work\\proj_a.b\\x',
+	'cd C:\\elsewhere; rm C:\\work\\proj_a.b\\x',
+	'rm -- -x',
+	'rm build/a; echo /etc',
+	"find . -name '*.o' -delete",
+	'cd C:/work/proj_a.b && rm -rf dist',
+	'cd "C:/work/proj_a.b" && rm -rf dist',
+	'Set-Location C:\\work\\proj_a.b; Remove-Item -Recurse dist',
+	'cd build && rm -rf out',
+	'git commit -m "docs: say cd to the root" && rm -f out.txt',
+	"find . -name '*.md' -exec grep -l guard {} +",
+	'find user -type f -exec wc -l {} ;',
+	'grep -rn "rm -rf" user/skills',
+	'git grep -n Remove-Item',
+	'git grep -n "map.delete"',
+	'rg -n "rmSync" .',
+	'Get-ChildItem dist | Remove-Item -Recurse',
+	'Get-ChildItem build | Where-Object { $_.Length -gt 0 } | Remove-Item',
+	'git clean -n',
+	'git clean -fdX -n',
+	'git rm -r --cached .',
+	"node -e \"const m=new Map(); m.delete('a')\"",
+	'python -c "xs=[1]; xs.remove(1)"',
+	'git worktree remove C:/work/proj_a.b/.claude/worktrees/agent-x',
+	'git worktree prune',
+];
 
 const ASK = [
+	...SWEEP_ASK,
 	'Remove-Item -Recurse $env:TEMP\\tg-*',
 	'Remove-Item -Recurse ' + TEMP + '\\tg-*',
 	'rm -rf /tmp/*',
@@ -88,6 +194,7 @@ const ASK = [
 ];
 
 const PASS = [
+	...SWEEP_PASS,
 	'Remove-Item ' + OWN + '\\scratchpad\\pr-body.md',
 	'Remove-Item -Recurse -Force ' + OWN + '\\scratchpad\\*',
 	'Remove-Item ' + OWN + '\\scratchpad\\a.md, ' + OWN + '\\scratchpad\\b.md',
@@ -102,16 +209,22 @@ const PASS = [
 	'rm -rf /tmp/claude/C--work-proj-a-b/' + SESSION_ID + '/scratchpad/x',
 	"bash -c 'rm -rf C:/work/proj_a.b/dist'",
 	'Remove-Item -Recurse C:\\work\\proj_a.b\\build\\*',
-	'git status',
 	'git rm --cached src/old.js',
 	'git commit -m "rm the old build step"',
-	'Get-ChildItem $env:TEMP',
 	'node .claude/guard-delete-check.cjs',
 ];
 
 let wrong = 0;
-const check = (label, input, wantAsk) => {
-	const reason = decide(input, WHERE);
+let cases = 0;
+// One counted result, right or wrong, printed either way.
+const result = (ok, wantAsk, label) => {
+	cases++;
+	if (!ok) wrong++;
+	console.log((ok ? (wantAsk ? 'ask  ' : 'pass ') : wantAsk ? 'MISSED     ' : 'FALSE ASK  ') + label);
+};
+const check = (label, input, wantAsk, where = WHERE) => {
+	cases++;
+	const reason = decide(input, where);
 	if (Boolean(reason) !== wantAsk) {
 		wrong++;
 		console.log((wantAsk ? 'MISSED     ' : 'FALSE ASK  ') + label);
@@ -129,6 +242,22 @@ check('[description only] rm -rf /tmp/x', asSession('Bash', 'git status', { tool
 // Without a usable session id there is no session folder, so a delete in the temp asks.
 check('[no session_id] delete in the session folder', asSession('Bash', 'rm -rf ' + OWN + '\\x', { session_id: undefined }), true);
 check('[session_id "../.."] delete in the key folder', asSession('Bash', 'rm -rf ' + KEY_DIR + '\\x', { session_id: '../..' }), true);
+check('[session_id "x/../.."] delete in another project key', asSession('Bash', 'rm -rf ' + TEMP + '\\claude\\other-proj\\x', { session_id: 'x/../..' }), true);
+// The tool's own folder places a relative target, not the project.
+check('[cwd C:\\elsewhere] rm build/x', asSession('Bash', 'rm build/x', { cwd: 'C:\\elsewhere' }), true);
+// Strings in arrays and nested objects are read; input deeper than the guard reads asks.
+check('[array field] rm -rf /tmp/x', asSession('Bash', '', { tool_input: { commands: ['rm -rf /tmp/x'] } }), true);
+check('[command plus args array] python -c rmtree', asSession('Bash', '', { tool_input: { command: 'python', args: ['-c', "import shutil; shutil.rmtree('C:/elsewhere')"] } }), true);
+check('[nested 6 deep] rm -rf /tmp/x', asSession('Bash', '', { tool_input: { a: { b: { c: { d: { e: { f: 'rm -rf /tmp/x' } } } } } } }), true);
+check('[no tool_input] nothing the guard can read', { tool_name: 'Bash', session_id: SESSION_ID, cwd: PROJECT }, true);
+// A command too long to read in time asks.
+check('[300 KB command] ends in a delete', asSession('Bash', 'echo x '.repeat(50000) + '; rm -rf build'), true);
+// A UNC target asks at once: following links on an unreachable host takes longer than the hook's timeout.
+const uncStart = Date.now();
+// A fresh address each run: Windows caches a failed host, which would hide a stall.
+const uncHost = '10.255.' + Math.floor(Math.random() * 250) + '.' + Math.floor(Math.random() * 250);
+const uncAsks = Boolean(decide(asSession('Bash', 'rm -rf //' + uncHost + '/share/x'), WHERE));
+result(uncAsks && Date.now() - uncStart < 2000, true, '[UNC] asks in under 2 s (' + (Date.now() - uncStart) + ' ms)');
 
 // A junction inside the project that points outside it: a delete through it reaches the outside folder.
 const real = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-delete-check-'));
@@ -138,13 +267,11 @@ try {
 	fs.symlinkSync(path.join(real, 'outside'), path.join(real, 'proj', 'link'), 'junction');
 	const where = { tmpdir: os.tmpdir(), projectDir: path.join(real, 'proj') };
 	const viaLink = { tool_name: 'PowerShell', session_id: SESSION_ID, cwd: where.projectDir, tool_input: { command: 'Remove-Item -Recurse link\\*' } };
-	const linkAsks = Boolean(decide(viaLink, where));
-	console.log((linkAsks ? 'ask  ' : 'MISSED     ') + '[junction] Remove-Item -Recurse link\\* (link -> outside the project)');
-	if (!linkAsks) wrong++;
-	const plain = { ...viaLink, tool_input: { command: 'Remove-Item -Recurse build\\*' } };
-	const plainQuiet = !decide(plain, where);
-	console.log((plainQuiet ? 'pass ' : 'FALSE ASK  ') + '[junction] Remove-Item -Recurse build\\* (a real folder in the same project)');
-	if (!plainQuiet) wrong++;
+	check('[junction] Remove-Item -Recurse link\\* (link -> outside the project)', viaLink, true, where);
+	check('[junction] Remove-Item -Recurse link\\newdir\\x (a path below the link that does not exist yet)', { ...viaLink, tool_input: { command: 'Remove-Item -Recurse link\\newdir\\x' } }, true, where);
+	check('[junction] rm -rf link/../* (.. after the link, read through it by Git Bash)', { ...viaLink, tool_input: { command: 'rm -rf link/../*' } }, true, where);
+	check('[junction] cmd /c rmdir link (removes the link only)', { ...viaLink, tool_input: { command: 'cmd /c rmdir link' } }, false, where);
+	check('[junction] Remove-Item -Recurse build\\* (a real folder in the same project)', { ...viaLink, tool_input: { command: 'Remove-Item -Recurse build\\*' } }, false, where);
 } finally {
 	fs.rmSync(real, { recursive: true, force: true });
 }
@@ -154,18 +281,12 @@ const env = { ...process.env, TEMP, TMP: TEMP, CLAUDE_PROJECT_DIR: PROJECT };
 const runHook = (stdin) => spawnSync(process.execPath, [GUARD], { input: stdin, encoding: 'utf8', env });
 const outRun = runHook(JSON.stringify(asSession('PowerShell', 'Remove-Item C:\\elsewhere\\x')));
 const outJson = outRun.stdout ? JSON.parse(outRun.stdout) : {};
-const outAsks = outRun.status === 0 && outJson.hookSpecificOutput?.permissionDecision === 'ask';
-console.log((outAsks ? 'ask  ' : 'MISSED     ') + '[child process] Remove-Item C:\\elsewhere\\x -> ' + outRun.stdout);
-if (!outAsks) wrong++;
+const outAsks = outRun.status === 0 && outJson.hookSpecificOutput?.hookEventName === 'PreToolUse' && outJson.hookSpecificOutput?.permissionDecision === 'ask';
+result(outAsks, true, '[child process] Remove-Item C:\\elsewhere\\x -> ' + outRun.stdout);
 const ownRun = runHook(JSON.stringify(asSession('Bash', 'rm -rf ' + OWN + '\\scratchpad\\x')));
-const ownQuiet = ownRun.status === 0 && ownRun.stdout === '';
-console.log((ownQuiet ? 'pass ' : 'FALSE ASK  ') + '[child process] own session folder -> (' + ownRun.stdout.length + ' bytes)');
-if (!ownQuiet) wrong++;
+result(ownRun.status === 0 && ownRun.stdout === '', false, '[child process] own session folder -> (' + ownRun.stdout.length + ' bytes)');
 const brokenRun = runHook('not json');
-const brokenAsks = brokenRun.stdout.includes('"ask"');
-console.log((brokenAsks ? 'ask  ' : 'MISSED     ') + '[child process] stdin not JSON -> asks');
-if (!brokenAsks) wrong++;
+result(brokenRun.stdout.includes('"ask"'), true, '[child process] stdin not JSON -> asks');
 
-const total = ASK.length + PASS.length + 9;
-console.log(wrong === 0 ? 'ALL ' + total + ' CASES RIGHT' : 'Expected all ' + total + ' right: ' + wrong + ' WRONG');
+console.log(wrong === 0 ? 'ALL ' + cases + ' CASES RIGHT' : 'Expected all ' + cases + ' right: ' + wrong + ' WRONG');
 process.exit(wrong === 0 ? 0 : 1);
