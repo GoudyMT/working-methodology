@@ -105,6 +105,8 @@ const SWEEP_ASK = [
 	'rm -rf build <# x #> C:/elsewhere',
 	'rm -rf build > out.txt C:/elsewhere',
 	'Get-ChildItem C:/elsewhere | Remove-Item > out.txt',
+	'rm -rf \\> C:/elsewhere',
+	'rm -rf build >,C:/elsewhere',
 	"grep x # it's" + LF + 'rm -rf C:/elsewhere',
 	"[Environment]::SetEnvironmentVariable('GIT_WORK_TREE', 'C:\\elsewhere'); git rm -r build",
 	'rg --hostname-bin "rm -rf C:/elsewhere" x .',
@@ -145,6 +147,8 @@ const SWEEP_PASS = [
 	'python -c "xs=[1]; xs.remove(1)"',
 	'git worktree remove C:/work/proj_a.b/.claude/worktrees/agent-x',
 	'git worktree prune',
+	'rm -rf dist 2>/dev/null',
+	'Remove-Item dist -Recurse *> $null',
 ];
 
 const ASK = [

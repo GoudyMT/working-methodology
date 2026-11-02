@@ -373,7 +373,9 @@ function findDelete(text, ctx, state, depth) {
 				}
 				if (targets.length === 0) return 'a delete whose targets come from elsewhere';
 				const keepLast = LINK_SAFE.has(name) && !rest.some((w) => /^(\/s|-\w*r)$/i.test(w));
-				for (const target of targets) {
+				// Redirection files are placed too: if the guard misreads one, it can only add an ask.
+				const redirects = segment.filter((word) => word.redirect).map((word) => word.value).filter((v) => !/^(\/dev\/null|nul|\$null)$/i.test(v));
+				for (const target of [...targets, ...redirects]) {
 					const hit = placeOf(target, ctx, state, keepLast);
 					if (hit) return listed ? hit.slice(0, -2) : hit;
 				}
