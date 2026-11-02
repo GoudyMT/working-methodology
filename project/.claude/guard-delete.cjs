@@ -43,6 +43,9 @@ const MAKES_LINK = /\bmklink\b|\bln\s+-\w*s|\bsymlinkSync\b|-ItemType\s+(Junctio
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls']);
 const GIT_READS = new Set(['grep', 'log', 'show', 'diff', 'blame']);
 const LISTERS = new Set(['get-childitem', 'gci', 'get-item', 'gi']);
+// Variables that make git or rg run another program, and ones that move git's working tree.
+const RUNS_VIA_ENV = /\b(GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|GIT_CONFIG_\w*|RIPGREP_CONFIG_PATH)\s*=/i;
+const MOVES_GIT = /\b(GIT_WORK_TREE|GIT_DIR|GIT_COMMON_DIR)\s*=|core\.worktree=/i;
 // -EncodedCommand and the short forms PowerShell accepts for it, with - or /.
 const ENCODED = /^[-/](e|ec|en\w*)$/i;
 // A .NET Delete on a type or a variable: [IO.Directory]::Delete, $d.Delete, (Get-Item x).Delete.
@@ -103,7 +106,8 @@ function tokenize(text) {
 		if (segment.length > 0) {
 			segment.end = end;
 			segments.push(segment);
-		} else if (segments.length > 0) {
+		} else if (segments.length > 0 && !(segments[segments.length - 1].end === '|' && end === LF)) {
+			// A pipe followed by a line break still feeds the next line.
 			segments[segments.length - 1].end = end;
 		}
 		segment = [];
@@ -265,8 +269,8 @@ function listedTargets(segments, index) {
 		if (!['|', '{', '}'].includes(prev.end)) return null;
 		const words = prev.map((word) => word.value);
 		if (LISTERS.has(programName(words[0]))) {
-			// A listing fed by a pipeline of its own lists paths the guard cannot see.
-			if (i > 0 && segments[i - 1].end === '|') return null;
+			// Only a listing that starts its command lists paths the guard can see; one fed by anything else does not.
+			if (i > 0 && ![';', '&', LF, ''].includes(segments[i - 1].end)) return null;
 			const starts = targetsOf('', words, 1);
 			return starts.length > 0 ? starts : ['.'];
 		}
@@ -284,7 +288,7 @@ function findDelete(text, ctx, state, depth) {
 		// option before the subcommand such as -c core.pager, an external diff or pager).
 		// git takes any unambiguous prefix of a long option, and short options cluster (-nO).
 		const search = SEARCHERS.has(first) || (first === 'git' && words.slice(1).some((w) => GIT_READS.has(w)));
-		const runsOther = words.some((w) => /^(--pre|--(o|op|ope|open|open-[w-]*)(=|$)|--ext-[w-]*|--textc[w-]*|-[A-Za-z]*O)/.test(w));
+		const runsOther = words.some((w) => /^(--pre|--o(p(e(n(-[\w-]*)?)?)?)?(=|$)|--ext-|--textc|-[A-Za-z]*O)/.test(w));
 		if (search && runsOther) return 'a search option that runs another program';
 		if (search && (SEARCHERS.has(first) || GIT_READS.has(words[1]))) continue;
 		const skip = new Set();
@@ -310,8 +314,9 @@ function findDelete(text, ctx, state, depth) {
 				const { sub, at } = gitSub(words, p + 1);
 				const own = words.slice(at);
 				// git's subcommand word (rm) is not the rm program; -C and the tree options move where paths are read.
-				skip.add(at - 1);
-				if (words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
+				if (p === 0) skip.add(at - 1);
+				if (MOVES_GIT.test(text) || words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
+				const cached = own.slice(0, own.includes('--') ? own.indexOf('--') : own.length).includes('--cached');
 				if (sub === 'clean' && !own.some((w) => w === '-n' || w === '--dry-run' || /^-\w*n/.test(w))) return 'git clean';
 				if (sub === 'worktree' && own[0] === 'remove') {
 					for (const target of targetsOf('', own, 1)) {
@@ -319,7 +324,7 @@ function findDelete(text, ctx, state, depth) {
 						if (hit) return hit;
 					}
 				}
-				if (sub === 'rm' && !own.includes('--cached')) {
+				if (sub === 'rm' && !cached) {
 					for (const target of targetsOf('', own, 0)) {
 						const hit = placeOf(target, ctx, state);
 						if (hit) return hit;
@@ -416,6 +421,7 @@ function decide(input, where = {}) {
 		if (deletes && (text.includes(BACKTICK) || text.includes('^'))) return 'a delete next to a backtick or caret';
 		if (deletes && MAKES_LINK.test(text)) return 'a command that makes a link and deletes';
 		if (INTERPRETER.test(text) && INLINE_DELETE.test(text)) return 'inline code that deletes';
+		if (RUNS_VIA_ENV.test(text) && /(^|[^\w-])(git|rg)(\.exe)?(?![\w-])/i.test(text)) return 'a variable that makes git or rg run a program';
 		if (/\.ForEach\s*\(\s*['"]?Delete/i.test(text)) return 'a .NET Delete call';
 		const hit = findDelete(text, ctx, { moved: false, cwd: ctx.cwd }, 0);
 		if (hit) return hit;

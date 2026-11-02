@@ -95,6 +95,14 @@ const SWEEP_ASK = [
 	"git grep --open='rm -rf C:/elsewhere' x",
 	"git grep -nO'rm -rf C:/elsewhere' x",
 	"'C:\\elsewhere' | Get-ChildItem | Remove-Item -Recurse",
+	"$env:GIT_PAGER='rm -rf C:/elsewhere'; git log",
+	'GIT_EXTERNAL_DIFF=x git diff',
+	'GIT_WORK_TREE=C:/elsewhere git rm -r build',
+	"git -c core.worktree=C:/elsewhere rm -r build",
+	'git rm -- --cached C:/elsewhere',
+	"git grep --open-files-in-pager='rm -rf C:/elsewhere' x",
+	"git grep --open-files-in-pager 'rm -rf C:/elsewhere' x",
+	"'C:\\elsewhere' |" + LF + 'Get-ChildItem | Remove-Item -Recurse',
 ];
 
 // Found by the same sweep: ordinary commands that asked and should not.
