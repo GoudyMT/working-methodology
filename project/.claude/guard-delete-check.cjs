@@ -384,6 +384,11 @@ check('[cwd C:\\elsewhere] cd C:\\work\\proj_a.b &&<LF>rm -rf dist', asSession('
 check('cmd /c "cd/d C:\\elsewhere && rd /s /q build"', asSession('Bash', 'cmd /c "cd/d C:\\elsewhere && rd /s /q build"'), true);
 check('cmd /c "cd.. && rd /s /q build"', asSession('Bash', 'cmd /c "cd.. && rd /s /q build"'), true);
 check('cmd /c "cd=C:\\elsewhere && rd /s /q build"', asSession('Bash', 'cmd /c "cd=C:\\elsewhere && rd /s /q build"'), true);
+check('[cwd C:\\elsewhere] grep "$(cd C:\\work\\proj_a.b && echo)" x && rm -rf dist', asSession('Bash', 'grep "$(cd C:\\work\\proj_a.b && echo)" x && rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
+check('[cwd C:\\elsewhere] bash -c "cd C:\\work\\proj_a.b && echo" && rm -rf dist', asSession('Bash', 'bash -c "cd C:\\work\\proj_a.b && echo" && rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
+check('Invoke-Expression "cd C:\\elsewhere; cd C:\\work\\proj_a.b\\missing && echo"; Remove-Item -Recurse build', asSession('PowerShell', 'Invoke-Expression "cd C:\\elsewhere; cd C:\\work\\proj_a.b\\missing && echo"; Remove-Item -Recurse build'), true);
+check('cmd /c cd"C:\\elsewhere" & rd /s /q build', asSession('Bash', 'cmd /c cd"C:\\elsewhere" & rd /s /q build'), true);
+check('cmd /c cd@C:\\elsewhere & rd /s /q build', asSession('Bash', 'cmd /c cd@C:\\elsewhere & rd /s /q build'), true);
 check('cmd /c "chdir+C:\\elsewhere && rd /s /q build"', asSession('Bash', 'cmd /c "chdir+C:\\elsewhere && rd /s /q build"'), true);
 check('[cwd C:\\elsewhere] false || cd C:\\work\\proj_a.b && rm -rf dist', asSession('Bash', 'false || cd C:\\work\\proj_a.b && rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
 check('[cwd C:\\elsewhere] echo x | cd C:\\work\\proj_a.b && rm -rf dist', asSession('Bash', 'echo x | cd C:\\work\\proj_a.b && rm -rf dist', { cwd: 'C:\\elsewhere' }), true);
