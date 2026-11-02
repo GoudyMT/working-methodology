@@ -2,6 +2,8 @@
 // child process (the way Claude Code runs it) must print the ask decision for a delete outside the session's own
 // places and nothing for one inside them. Usage: node .claude/guard-delete-check.cjs [guard file]; exit 1 on any
 // wrong answer.
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -61,6 +63,20 @@ const ASK = [
 	'x=1 rm -rf /tmp/x',
 	'\\\\server\\share\\x | Remove-Item',
 	'Remove-Item \\\\server\\share\\x',
+	// Found by a security review of the first build: brace expansion, wrappers with values, .NET calls through a
+	// variable, tilde forms and encoded commands.
+	'rm -rf C:/work/proj_a.b/build/{x,../../../elsewhere}',
+	'sudo -u root rm -rf /var/x',
+	'nice -n 5 rm -rf /tmp/x',
+	'timeout 5 rm -rf /tmp/x',
+	"Start-Process rm -ArgumentList '-rf', 'C:/elsewhere'",
+	'echo rm -rf C:/elsewhere',
+	'$d = Get-Item C:\\elsewhere; $d.Delete()',
+	"[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('C:\\elsewhere', 'DeleteAllContents')",
+	'rm -rf ~other/x',
+	'rm -rf ~+/x',
+	'powershell -EncodedCommand UgBlAG0AbwB2AGUA',
+	'pwsh -enc UgBlAG0AbwB2AGUA',
 ];
 
 const PASS = [
@@ -82,7 +98,6 @@ const PASS = [
 	'git rm --cached src/old.js',
 	'git commit -m "rm the old build step"',
 	'Get-ChildItem $env:TEMP',
-	'echo rm -rf C:/elsewhere',
 	'node .claude/guard-delete-check.cjs',
 ];
 
@@ -107,6 +122,25 @@ check('[description only] rm -rf /tmp/x', asSession('Bash', 'git status', { tool
 check('[no session_id] delete in the session folder', asSession('Bash', 'rm -rf ' + OWN + '\\x', { session_id: undefined }), true);
 check('[session_id "../.."] delete in the key folder', asSession('Bash', 'rm -rf ' + KEY_DIR + '\\x', { session_id: '../..' }), true);
 
+// A junction inside the project that points outside it: a delete through it reaches the outside folder.
+const real = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-delete-check-'));
+try {
+	fs.mkdirSync(path.join(real, 'proj'));
+	fs.mkdirSync(path.join(real, 'outside'));
+	fs.symlinkSync(path.join(real, 'outside'), path.join(real, 'proj', 'link'), 'junction');
+	const where = { tmpdir: os.tmpdir(), projectDir: path.join(real, 'proj') };
+	const viaLink = { tool_name: 'PowerShell', session_id: SESSION_ID, cwd: where.projectDir, tool_input: { command: 'Remove-Item -Recurse link\\*' } };
+	const linkAsks = Boolean(decide(viaLink, where));
+	console.log((linkAsks ? 'ask  ' : 'MISSED     ') + '[junction] Remove-Item -Recurse link\\* (link -> outside the project)');
+	if (!linkAsks) wrong++;
+	const plain = { ...viaLink, tool_input: { command: 'Remove-Item -Recurse build\\*' } };
+	const plainQuiet = !decide(plain, where);
+	console.log((plainQuiet ? 'pass ' : 'FALSE ASK  ') + '[junction] Remove-Item -Recurse build\\* (a real folder in the same project)');
+	if (!plainQuiet) wrong++;
+} finally {
+	fs.rmSync(real, { recursive: true, force: true });
+}
+
 // End to end: the hook as a child process, fed JSON on stdin, finding the temp and project from its environment.
 const env = { ...process.env, TEMP, TMP: TEMP, CLAUDE_PROJECT_DIR: PROJECT };
 const runHook = (stdin) => spawnSync(process.execPath, [GUARD], { input: stdin, encoding: 'utf8', env });
@@ -124,6 +158,6 @@ const brokenAsks = brokenRun.stdout.includes('"ask"');
 console.log((brokenAsks ? 'ask  ' : 'MISSED     ') + '[child process] stdin not JSON -> asks');
 if (!brokenAsks) wrong++;
 
-const total = ASK.length + PASS.length + 7;
+const total = ASK.length + PASS.length + 9;
 console.log(wrong === 0 ? 'ALL ' + total + ' CASES RIGHT' : 'Expected all ' + total + ' right: ' + wrong + ' WRONG');
 process.exit(wrong === 0 ? 0 : 1);

@@ -3,11 +3,14 @@
 // closeout once deleted other sessions' files from a shared temp folder by wildcard; this reads each delete's
 // targets the way a shell does, and anything it cannot place inside those two asks.
 // Usage (settings.json): command "node", args [<this file>].
-// Reads: rm, rmdir, unlink, del, erase, rd, ri, Remove-Item (any folder, .exe or not), git clean (always asks),
-// inline node or python code that deletes, .NET Delete calls, nested shells (bash -c, powershell -Command).
+// Reads: rm, rmdir, unlink, del, erase, rd, ri, Remove-Item (any folder, .exe or not, anywhere in a command, so a
+// wrapper such as sudo -u x or timeout 5 cannot hide one), find -delete, git clean (always asks), inline node or
+// python code that deletes, .NET Delete calls, nested shells (bash -c, powershell -Command); an encoded
+// PowerShell command asks. A target is placed after junctions and links are followed.
 // Limits: it is no match for a path built at run time (a variable, Invoke-Expression on joined strings); a target
-// holding a variable asks instead. Like guard-outward.cjs it is self-contained, so a missing sibling never
-// turns the guard off.
+// holding a variable, a brace expansion or a ~user form asks instead. Like guard-outward.cjs it is
+// self-contained, so a missing sibling never turns the guard off.
+const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -21,8 +24,9 @@ const MAX_DEPTH = 3;
 const DELETERS = new Set(['rm', 'rmdir', 'unlink', 'del', 'erase', 'rd', 'ri', 'remove-item']);
 const CMD_DELETERS = new Set(['del', 'erase', 'rd', 'rmdir']);
 const DIR_CHANGERS = new Set(['cd', 'chdir', 'pushd', 'sl', 'set-location', 'push-location']);
-// Words that run the next word as a program: sudo rm, xargs rm, find -exec rm, cmd /c del.
-const PREFIXES = new Set(['sudo', 'command', 'builtin', 'exec', 'env', 'time', 'nohup', 'xargs', 'cmd', '-exec', '-execdir', '-ok']);
+// -EncodedCommand and the short forms PowerShell accepts for it.
+const ENCODED = /^-(e|ec|en\w*)$/i;
+const DOTNET_DELETE = /(\.|::)delete\w*$/i;
 const PATH_OPTIONS = new Set(['-path', '-literalpath', '-lp', '-pspath']);
 const VALUE_OPTIONS = new Set(['-erroraction', '-ea', '-include', '-exclude', '-filter', '-credential', '-stream', '-warningaction', '-wa', '-informationaction', '-infa', '-errorvariable', '-ev', '-outvariable', '-ov', '-pipelinevariable', '-pv', '-progressaction', '-proga']);
 const GIT_VALUE_OPTIONS = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env']);
@@ -42,7 +46,8 @@ function joinContinuations(text) {
 
 // Splits text into commands (at ; | & ( ) { } < > and newlines) and each command into words, keeping quoted
 // text in one word. Quote characters are dropped; a word that held quoted text is marked, so its content can be
-// read again as a nested command.
+// read again as a nested command. A brace inside a word is a shell brace expansion (a/{b,../c}), kept in the word
+// so the target check sees it.
 function tokenize(text) {
 	const segments = [];
 	let segment = [];
@@ -50,11 +55,13 @@ function tokenize(text) {
 	let inWord = false;
 	let quoted = false;
 	let quote = '';
+	let braces = 0;
 	const endWord = () => {
 		if (inWord) segment.push({ value: current, quoted });
 		current = '';
 		inWord = false;
 		quoted = false;
+		braces = 0;
 	};
 	const endSegment = () => {
 		endWord();
@@ -71,6 +78,9 @@ function tokenize(text) {
 			quote = ch;
 			quoted = true;
 			inWord = true;
+		} else if ((ch === '{' && inWord) || (ch === '}' && braces > 0) || (ch === ',' && braces > 0)) {
+			braces += ch === '{' ? 1 : ch === '}' ? -1 : 0;
+			current += ch;
 		} else if (SEGMENT_BREAKS.has(ch)) {
 			endSegment();
 		} else if (ch.charCodeAt(0) <= 32 || ch === ',') {
@@ -90,30 +100,21 @@ function programName(word) {
 	return parts[parts.length - 1].toLowerCase().replace(/\.exe$/, '');
 }
 
-// The positions in a command that run a program: the first word past prefixes, assignments and their flags,
-// and the word after each prefix anywhere (find ... -exec rm).
-function programPositions(words) {
-	const positions = [];
-	const skipFrom = (start) => {
-		let i = start;
-		while (i < words.length) {
-			const word = words[i];
-			const name = programName(word);
-			if (PREFIXES.has(name) || /^[A-Za-z_]\w*=/.test(word)) i++;
-			else if (i > start && (word.startsWith('-') || /^\/[a-z]$/i.test(word))) i++;
-			else break;
-		}
-		return i;
-	};
-	const first = skipFrom(0);
-	if (first < words.length) positions.push(first);
-	for (let i = first + 1; i < words.length; i++) {
-		if (PREFIXES.has(programName(words[i]))) {
-			const next = skipFrom(i);
-			if (next < words.length && !positions.includes(next)) positions.push(next);
+// The path with every junction and link in its existing part followed, so a link inside the project that points
+// outside it is placed where it points. A path that does not exist yet keeps its missing tail as written.
+function realOf(p, api) {
+	const tail = [];
+	let head = p;
+	for (;;) {
+		try {
+			return api.join(fs.realpathSync.native(head), ...tail.reverse());
+		} catch {
+			const up = api.dirname(head);
+			if (up === head) return p;
+			tail.push(api.basename(head));
+			head = up;
 		}
 	}
-	return positions;
 }
 
 function targetsOf(name, words, start) {
@@ -154,8 +155,11 @@ function placeOf(target, ctx, state) {
 	if (/[$%]/.test(target) || target.includes(BACKTICK)) return 'a target holding a variable';
 	// A PowerShell drive other than a disk (HKCU:, Env:, Function:) is not a file.
 	if (/^[A-Za-z][A-Za-z0-9]+:/.test(target)) return 'a target on a non-file drive';
+	if (/[{}]/.test(target)) return 'a target with a brace expansion';
 	let t = target;
 	if (t === '~' || t.startsWith('~/') || t.startsWith('~' + BACKSLASH)) t = ctx.home + t.slice(1);
+	// ~user, ~+ and ~- name other folders the guard does not look up.
+	else if (t.startsWith('~')) return 'a target with a ~ form';
 	// Git Bash spells C:/x as /c/x, and the system temp as /tmp.
 	if (ctx.windows) t = t.replace(/^\/tmp(\/|$)/, ctx.tmpdir + '/').replace(/^\/([A-Za-z])(\/|$)/, '$1:/');
 	if (!api.isAbsolute(t) && state.moved) return 'a relative target after a change of folder';
@@ -166,7 +170,7 @@ function placeOf(target, ctx, state) {
 		const cut = Math.max(head.lastIndexOf('/'), head.lastIndexOf(BACKSLASH));
 		fixed = cut >= 0 ? head.slice(0, cut + 1) : '.';
 	}
-	const resolved = api.resolve(ctx.cwd, fixed);
+	const resolved = realOf(api.resolve(ctx.cwd, fixed), api);
 	for (const root of ctx.roots) {
 		const rel = api.relative(root, resolved);
 		const inside = rel !== '' && !rel.startsWith('..') && !api.isAbsolute(rel);
@@ -178,12 +182,13 @@ function placeOf(target, ctx, state) {
 function findDelete(text, ctx, state, depth) {
 	for (const segment of tokenize(joinContinuations(text))) {
 		const words = segment.map((word) => word.value);
-		for (const word of words) {
-			const lower = word.toLowerCase();
-			if (lower.endsWith(']::delete') || lower === '.delete') return 'a .NET Delete call';
-		}
-		for (const p of programPositions(words)) {
+		if (words.some((word) => DOTNET_DELETE.test(word))) return 'a .NET Delete call';
+		// Every word is read as a possible program: a wrapper with its own values (sudo -u x, timeout 5,
+		// Start-Process) would otherwise hide the delete behind it. A delete named in plain text asks; that is the
+		// safe side.
+		for (let p = 0; p < words.length; p++) {
 			const name = programName(words[p]);
+			if ((name === 'powershell' || name === 'pwsh') && words.slice(p + 1).some((w) => ENCODED.test(w))) return 'an encoded PowerShell command';
 			if (DIR_CHANGERS.has(name)) state.moved = true;
 			else if (name === 'git' && gitCleans(words, p + 1)) return 'git clean';
 			else if ((name === 'node' || name.startsWith('python')) && words.slice(p + 1).some((w) => INLINE_DELETE.test(w))) return 'inline ' + name + ' code that deletes';
@@ -234,11 +239,11 @@ function decide(input, where = {}) {
 	const windows = /^[A-Za-z]:/.test(projectDir) || process.platform === 'win32';
 	const api = windows ? path.win32 : path.posix;
 	const tmpdir = where.tmpdir ?? os.tmpdir();
-	const roots = [api.resolve(projectDir)];
+	const roots = [realOf(api.resolve(projectDir), api)];
 	const id = String(input.session_id ?? '');
 	if (SESSION_ID.test(id)) {
 		// Claude Code names the project's folder by its path with every other character turned into a dash.
-		roots.push(api.join(tmpdir, 'claude', projectDir.replace(/[^A-Za-z0-9]/g, '-'), id));
+		roots.push(realOf(api.join(tmpdir, 'claude', projectDir.replace(/[^A-Za-z0-9]/g, '-'), id), api));
 	}
 	const ctx = { api, windows, roots, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
 	return findDelete(strings.join(LF), ctx, { moved: false }, 0);
