@@ -784,6 +784,47 @@ test('a release install over an unreleased one removes the files only that build
   assert.equal(clean.files['agents/branch-only.md'], undefined);
 });
 
+test('the branch-only clean-up runs only over an unreleased install, never removes the overlay, and a dry run removes nothing', () => {
+  // A release or pre-check install over which the kit stopped shipping a file (not retired): the file stays.
+  for (const before of [{ release: true, describe: 'v1.0.0' }, undefined]) {
+    const { kit, home } = makeKit();
+    fs.writeFileSync(path.join(kit, 'user/agents/dropped.md'), 'shipped once\n');
+    install({ kit, home, target: 'user', release: before });
+    fs.rmSync(path.join(kit, 'user/agents/dropped.md'));
+    const r = install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.1' } });
+    assert.deepEqual(r.retired, [], JSON.stringify(before));
+    assert.ok(fs.existsSync(path.join(home, 'agents/dropped.md')));
+  }
+  // The overlay CLAUDE.local.md is written by install itself, not from a kit path, so it is never branch-only.
+  const { kit, home, proj } = overlayKit();
+  install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const back = install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: true, describe: 'v1.0.0' } });
+  assert.ok(!back.retired.includes('CLAUDE.local.md'));
+  assert.ok(fs.existsSync(path.join(proj, 'CLAUDE.local.md')));
+  // A dry run previews the clean-up: the file and the record stay as they are.
+  const d = makeKit();
+  fs.writeFileSync(path.join(d.kit, 'user/agents/branch-only.md'), 'branch build\n');
+  install({ kit: d.kit, home: d.home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  fs.rmSync(path.join(d.kit, 'user/agents/branch-only.md'));
+  const stampBefore = read(path.join(d.home, 'kit-install.json'));
+  const dry = install({ kit: d.kit, home: d.home, target: 'user', dryRun: true, release: { release: true, describe: 'v1.0.0' } });
+  assert.deepEqual(dry.retired, ['agents/branch-only.md'], 'the preview names it');
+  assert.ok(fs.existsSync(path.join(d.home, 'agents/branch-only.md')));
+  assert.equal(read(path.join(d.home, 'kit-install.json')), stampBefore);
+});
+
+test('install refuses when git cannot say what changed, rather than calling the folder clean', () => {
+  const { kit, proj, cli } = releaseKit();
+  // A profile path outside the repo makes git status fail; that must not read as "nothing changed".
+  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, ownerProfileFile: '../outside.md' }));
+  fs.appendFileSync(path.join(kit, 'user/CLAUDE.md'), 'INJECTED\n');
+  const r = cli('install', 'user');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /git status failed in the kit folder, so what changed is unknown: .*outside/);
+  assert.equal(fs.existsSync(path.join(path.dirname(kit), 'home', 'kit-install.json')), false);
+});
+
 test('the hook script speaks at a message only when there is news', async () => {
   const { kit, home, proj } = caseKit();
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));

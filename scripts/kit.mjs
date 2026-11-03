@@ -88,7 +88,10 @@ export function releaseState(kit) {
   const problems = [];
   if (!git('tag', '--points-at', 'HEAD').stdout.split(/\r?\n/).includes(tag)) problems.push(`Not on release tag ${tag}: HEAD is at ${describe}.`);
   // -z keeps names with spaces whole; a rename entry carries its old name as a second field, skipped here.
-  const fields = git('status', '--porcelain', '-z', '--ignored', '--untracked-files=all', '--', ...paths).stdout.split('\0');
+  const st = git('status', '--porcelain', '-z', '--ignored', '--untracked-files=all', '--', ...paths);
+  // A failed status prints nothing, which must not read as a clean folder.
+  if (st.status !== 0) problems.push(`git status failed in the kit folder, so what changed is unknown: ${(st.stderr || '').trim().split(/\r?\n/)[0] || `exit ${st.status}`}.`);
+  const fields = st.status === 0 ? st.stdout.split('\0') : [];
   const dirty = [];
   for (let i = 0; i < fields.length; i++) {
     if (!fields[i]) continue;
