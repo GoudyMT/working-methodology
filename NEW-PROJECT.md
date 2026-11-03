@@ -6,9 +6,14 @@ the owner locks each choice. Nothing here pushes or publishes.
 ## 1. Get the latest kit
 
 ```bash
-git -C <kit folder> pull
+git -C <kit folder> fetch --tags
+git -C <kit folder> checkout <newest v tag>
 node <kit folder>/scripts/kit.mjs install user
 ```
+
+`git -C <kit folder> tag --sort=-v:refname` lists the newest tag first. Install runs only from a release: a kit
+folder off its tag, or with changed files under `user/`, `project/`, `memory/` or `VERSION`, is refused (a pull
+would move it onto main, off every tag).
 
 The second command refreshes `~/.claude` (global rules, agent roles, skills). It never overwrites a file you
 changed there; it lists it instead. If it lists one, run `fold-back user` (see the README) before you go on.

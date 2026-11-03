@@ -334,9 +334,10 @@ test('status says current only when the kit folder, ~/.claude and the project al
 
   // GitHub ahead of the kit folder.
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
-  r = status({ kit, home, projectDir: proj, ahead: () => 2 });
+  r = status({ kit, home, projectDir: proj, ahead: () => 2, newest: () => 'v1.0.3' });
   assert.equal(r.current, false);
-  assert.match(r.text, /GitHub has 2 newer kit commit\(s\)/);
+  assert.match(r.text, /GitHub has 2 newer kit commit\(s\): check out its newest release tag: git -C ".*" fetch --tags, then git -C ".*" checkout v1\.0\.3; then update both below\./);
+  assert.doesNotMatch(r.text, /git pull/);
 });
 
 test('status reports a project or ~/.claude with no install record, and writes nothing', () => {
@@ -605,8 +606,117 @@ test('session start says when the kit on GitHub is ahead of the kit folder', () 
   const other = path.join(path.dirname(kit), 'other');
   spawnSync('git', ['clone', '-q', remote, other]);
   fs.writeFileSync(path.join(other, 'VERSION'), '1.2.0\n');
-  git(other, 'commit', '-q', '-am', 'release'); git(other, 'push', '-q');
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /The kit on GitHub is 1 commit\(s\) ahead of the kit folder\. Run git pull in .* then \/methodology-kit update\./);
+  git(other, 'commit', '-q', '-am', 'release'); git(other, 'tag', 'v1.2.0'); git(other, 'push', '-q', 'origin', 'main', 'v1.2.0');
+  // A pull would move the kit folder onto main, off every release tag, so the line names the newest tag instead.
+  const say = sessionStartReport({ kit, home, projectDir: proj });
+  assert.match(say, /The kit on GitHub is 1 commit\(s\) ahead of the kit folder\. Check out its newest release tag: git -C ".*" fetch --tags, then git -C ".*" checkout v1\.2\.0; then \/methodology-kit update\./);
+  assert.doesNotMatch(say, /git pull/);
+});
+
+// The owner, 2026-11-02 (M1, option B): installs run only from a clean release tag, or by name with --unreleased.
+// The check sits in the CLI, not in install(), so these tests drive the CLI copied into a tagged git fixture, the
+// way the release copy holds it.
+function releaseKit() {
+  const ctx = makeKit();
+  const { kit } = ctx;
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  // As in the kit itself: the owner's own config is local, never in a release.
+  fs.writeFileSync(path.join(kit, '.gitignore'), 'node_modules/\nkit.config.json\nowner-profile.md\n');
+  const git = (...a) => spawnSync('git', ['-C', kit, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' });
+  git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'kit'); git('tag', 'v1.0.0');
+  const cli = (...args) => spawnSync(process.execPath, [path.join(kit, 'scripts/kit.mjs'), ...args], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: ctx.home } });
+  return { ...ctx, git, cli };
+}
+
+test('install runs from a clean release tag and stamps it as a release', () => {
+  const { kit, home, proj, cli } = releaseKit();
+  const r = cli('install', 'project', proj);
+  assert.equal(r.status, 0, r.stderr);
+  const stamp = JSON.parse(read(path.join(proj, '.kit/kit-version.json')));
+  assert.equal(stamp.release, true);
+  assert.equal(stamp.describe, 'v1.0.0');
+  assert.equal(stamp.dirty, undefined);
+  // A file install does not copy, and the owner's own local config, do not block it.
+  fs.writeFileSync(path.join(kit, 'notes.md'), 'scratch\n');
+  fs.writeFileSync(path.join(kit, 'owner-profile.md'), '- Likes tests, changed\n');
+  const u = cli('install', 'user');
+  assert.equal(u.status, 0, u.stderr);
+  assert.equal(JSON.parse(read(path.join(home, 'kit-install.json'))).release, true);
+});
+
+test('install refuses a kit folder past its release tag, and names where it is and the two fixes', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, unreleased\n');
+  git('commit', '-q', '-am', 'branch work');
+  for (const args of [['install', 'project', proj], ['install', 'project', proj, '--dry-run'], ['install', 'user']]) {
+    const r = cli(...args);
+    assert.equal(r.status, 1, args.join(' '));
+    assert.match(r.stderr, /Install refused: this kit folder is not a release\./);
+    assert.match(r.stderr, /Not on release tag v1\.0\.0: HEAD is at v1\.0\.0-1-g[0-9a-f]+\./);
+    assert.match(r.stderr, /git -C ".*" checkout v1\.0\.0/);
+    assert.match(r.stderr, /--unreleased for a throwaway test install/);
+  }
+  assert.equal(fs.existsSync(path.join(proj, '_Working Standards.md')), false, 'nothing is installed');
+  assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
+});
+
+test('install refuses a kit folder with no git history', () => {
+  const { kit, proj, home } = makeKit();
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  const r = spawnSync(process.execPath, [path.join(kit, 'scripts/kit.mjs'), 'install', 'project', proj], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home } });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Not on release tag v1\.0\.0: this kit folder has no git history\./);
+  assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
+});
+
+test('install refuses changed, new and ignored files under the paths it copies, and names each one', () => {
+  const { kit, proj, cli } = releaseKit();
+  fs.appendFileSync(path.join(kit, 'project/_Working Standards.md'), 'uncommitted\n');
+  fs.writeFileSync(path.join(kit, 'memory/new.md'), 'untracked\n');
+  fs.mkdirSync(path.join(kit, 'user/node_modules'), { recursive: true });
+  fs.writeFileSync(path.join(kit, 'user/node_modules/x.js'), 'ignored, but install copies it\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n');
+  const r = cli('install', 'project', proj);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Changed or new files install would copy: /);
+  for (const f of ['project/_Working Standards.md', 'memory/new.md', 'user/node_modules/x.js', 'VERSION']) assert.ok(r.stderr.includes(f), f);
+  assert.match(r.stderr, /Not on release tag v1\.0\.1: HEAD is at v1\.0\.0\./);
+  assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
+});
+
+test('--unreleased installs a branch build on purpose and stamps it as not a release', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, branch\n');
+  git('commit', '-q', '-am', 'branch work');
+  fs.writeFileSync(path.join(kit, 'memory/new.md'), 'untracked\n');
+  const r = cli('install', 'project', proj, '--unreleased');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Unreleased build v1\.0\.0-1-g[0-9a-f]+ \(--unreleased\): for a throwaway test install only\./);
+  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, branch\n');
+  const stamp = JSON.parse(read(path.join(proj, '.kit/kit-version.json')));
+  assert.equal(stamp.release, false);
+  assert.match(stamp.describe, /^v1\.0\.0-1-g[0-9a-f]+$/);
+  assert.deepEqual(stamp.dirty, ['memory/new.md']);
+});
+
+test('status and session start show an unreleased install as a gap; an older stamp with no release field is not flagged', () => {
+  const { kit, home, proj } = makeKit();
+  // No release field: an install made before the check existed reads as unknown, not as unreleased.
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'v1.0.0-3-gabc1234', dirty: ['memory/new.md'] } });
+  let r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, current\./);
+  assert.match(r.text, /This project: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)\. Run \/methodology-kit update\./);
+  assert.match(r.text, /^Not current: This project is an unreleased build\.$/m);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /This project runs an unreleased kit build \(v1\.0\.0-3-gabc1234\)\. Reinstall it from a release: \/methodology-kit update\./);
+  // Reinstalled from the release: the gap closes.
+  install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true, r.text);
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /unreleased/);
 });
 
 test('the hook script speaks at a message only when there is news', async () => {
@@ -2512,7 +2622,8 @@ test('the installer and the session hook honor CLAUDE_CONFIG_DIR, and the hook n
   delete env.KIT_CLAUDE_HOME;
   const hook = spawnSync('node', [path.resolve('project/.claude/kit-hook.cjs'), 'session-start'], { input: '{}', encoding: 'utf8', env: { ...env, CLAUDE_PROJECT_DIR: cfg } });
   assert.ok(hook.stdout.includes(cfg.split(path.sep).join('/')) || hook.stdout.includes(JSON.stringify(cfg).slice(1, -1)), hook.stdout);
-  const r = spawnSync('node', [path.resolve('scripts/kit.mjs'), 'install', 'user'], { encoding: 'utf8', env });
+  // This checkout is a branch or a CI merge, not a release, so it installs by name into the throwaway config folder.
+  const r = spawnSync('node', [path.resolve('scripts/kit.mjs'), 'install', 'user', '--unreleased'], { encoding: 'utf8', env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(fs.existsSync(path.join(cfg, 'kit-install.json')), 'installed into the config folder');
 });
@@ -2713,7 +2824,9 @@ test('both stop messages name the kit folder and the exact steps to install it',
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ version: '1.0.0', kitDir, files: {} }));
   const dir = localProject();
   const stop = promptGate(path.resolve('user/kit-hooks/kit-gate.cjs'), { cwd: dir, prompt: 'hi' }, { KIT_CLAUDE_HOME: home });
-  assert.ok(stop.reason.includes(`git -C "${kitDir}" pull`), stop.reason);
+  assert.ok(stop.reason.includes(`git -C "${kitDir}" fetch --tags`), stop.reason);
+  assert.match(stop.reason, /check out the newest release tag/);
+  assert.doesNotMatch(stop.reason, /pull/);
   assert.match(stop.reason, /\/methodology-kit existing/);
   // The project hook reads it from the project's install record when the config folder has none.
   const proj = localProject();
@@ -2721,7 +2834,9 @@ test('both stop messages name the kit folder and the exact steps to install it',
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
   const r = spawnSync('node', [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { input: JSON.stringify({ prompt: 'go' }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: empty, CLAUDE_PROJECT_DIR: proj } });
   const reason = JSON.parse(r.stdout).reason;
-  assert.ok(reason.includes(`git -C "${kitDir}" pull`), reason);
+  assert.ok(reason.includes(`git -C "${kitDir}" fetch --tags`), reason);
+  assert.match(reason, /check out the newest release tag/);
+  assert.doesNotMatch(reason, /pull/);
   assert.ok(reason.includes(`node "${kitDir}/scripts/kit.mjs" install user`), reason);
 });
 

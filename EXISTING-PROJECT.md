@@ -6,9 +6,14 @@ pass is READ-ONLY. Nothing in the project changes until the owner has seen the s
 ## 1. Get the latest kit
 
 ```bash
-git -C <kit folder> pull
+git -C <kit folder> fetch --tags
+git -C <kit folder> checkout <newest v tag>
 node <kit folder>/scripts/kit.mjs install user
 ```
+
+`git -C <kit folder> tag --sort=-v:refname` lists the newest tag first. Install runs only from a release: a kit
+folder off its tag, or with changed files under `user/`, `project/`, `memory/` or `VERSION`, is refused (a pull
+would move it onto main, off every tag).
 
 A Claude setup with its own config folder (`CLAUDE_CONFIG_DIR`, for example a second account) needs its own user
 install: run the same command with `CLAUDE_CONFIG_DIR` set to that folder. The session-start check names the folder

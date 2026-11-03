@@ -81,6 +81,12 @@ node scripts/kit.mjs install user
 node scripts/kit.mjs install project "<project folder>"
 ```
 
+Install runs only from a release: the kit folder's HEAD must be exactly at tag `v<VERSION>`, with nothing
+changed or new under `user/`, `project/`, `memory/` or `VERSION`; otherwise it is refused and names why. Keep the
+kit folder on the newest release tag (`git checkout <tag>`, not `git pull`). Add `--unreleased` to install a
+branch build on purpose, into a throwaway folder only: its record says unreleased, and status and session start
+show it as a gap until it is reinstalled from a release.
+
 Add `--dry-run` to see what would change first. Add `--force` to replace files that differ from the kit; the
 old copies are kept in a dated `kit-backups` folder next to the install record. Use it once, when a machine or
 project adopts the kit for the first time, after reading the dry run.

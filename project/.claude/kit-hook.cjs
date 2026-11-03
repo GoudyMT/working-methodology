@@ -40,8 +40,8 @@ async function main() {
 			let kitDir = null;
 			try { kitDir = JSON.parse(fs.readFileSync(path.join(PROJECT, '.kit', 'kit-version.json'), 'utf8')).kitDir || null; } catch { /* none */ }
 			const steps = kitDir
-				? `(1) git -C "${kitDir}" pull; (2) in PowerShell: $env:CLAUDE_CONFIG_DIR='${where}'; node "${kitDir}/scripts/kit.mjs" install user`
-				: `(1) git pull in your kit folder; (2) with CLAUDE_CONFIG_DIR set to ${where}, run node <kit folder>/scripts/kit.mjs install user`;
+				? `(1) git -C "${kitDir}" fetch --tags, then check out the newest release tag (git -C "${kitDir}" tag --sort=-v:refname lists it first); (2) in PowerShell: $env:CLAUDE_CONFIG_DIR='${where}'; node "${kitDir}/scripts/kit.mjs" install user`
+				: `(1) in your kit folder, git fetch --tags, then check out the newest release tag; (2) with CLAUDE_CONFIG_DIR set to ${where}, run node <kit folder>/scripts/kit.mjs install user`;
 			process.stdout.write(JSON.stringify({ decision: 'block', reason: `Full stop: the methodology kit is not installed in the Claude config folder ${where}. Install the latest in a terminal: ${steps}. Then start a fresh session.` }));
 			return;
 		}

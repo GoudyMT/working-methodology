@@ -23,7 +23,9 @@ function main() {
 	const home = process.env.KIT_CLAUDE_HOME || path.dirname(__dirname);
 	let kitDir = null;
 	try { kitDir = JSON.parse(fs.readFileSync(path.join(home, 'kit-install.json'), 'utf8')).kitDir || null; } catch { /* none */ }
-	const pull = kitDir ? `git -C "${kitDir}" pull` : 'git pull in your kit folder';
+	// A pull moves the kit folder off its release tag, and install then refuses it, so the step names the tag.
+	const pull = kitDir ? `git -C "${kitDir}" fetch --tags, then check out the newest release tag (git -C "${kitDir}" tag --sort=-v:refname lists it first)`
+		: 'in your kit folder, git fetch --tags, then check out the newest release tag';
 	process.stdout.write(JSON.stringify({
 		decision: 'block',
 		reason: `Full stop: this folder (${where}) has no methodology kit. To install the latest: (1) in a terminal, ${pull}; (2) send /methodology-kit existing here (or /methodology-kit new for a fresh project), and Claude installs it. To work here without the kit, create .kit/no-kit in this folder.`,
