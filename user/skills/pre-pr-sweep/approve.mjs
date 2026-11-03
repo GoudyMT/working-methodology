@@ -196,7 +196,8 @@ function resweepCheck(c, tier, roles, log, facts, why) {
 	// One per first sweep, keyed by its contract, however often it is cleared again. Another contract cleared as its
 	// re-sweep counts; this one counts once its outcome is in (it has run), so deciding it again before that asks as
 	// any contract does.
-	const ran = (i) => log.some((e, j) => j > i && e.kind === 'outcome' && e.contract === log[i].contract);
+	// An approval closed with --none-ran ran no reviewer, so it neither spends the re-sweep nor gives one a base.
+	const ran = (i) => log.some((e, j) => j > i && e.kind === 'outcome' && !e.noneRan && e.contract === log[i].contract);
 	if (log.some((e, i) => e.kind === 'decision' && e.resweepOf === first && isCleared(log, i) && (e.contract !== contractFile || ran(i)))) return { first, refused: `${rel(first)} already had its re-sweep` };
 	if (at === undefined) { why.push(`the sweep it re-checks (${rel(first)}) was never cleared: run approve.mjs on it first`); return { first, need: {} }; }
 	const head = log[at];
@@ -269,6 +270,7 @@ function check(c, facts, log = []) {
 		if (r.refused) return { why: [], need: {}, refused: r.refused, first: r.first };
 		({ need, first } = r);
 	} else {
+		if (c.modifiers !== undefined && !(Array.isArray(c.modifiers) && c.modifiers.every((m) => typeof m === 'string'))) why.push('modifiers must be a list of names, like ["security-sensitive"]');
 		const modifiers = new Set(Array.isArray(c.modifiers) ? c.modifiers : []);
 		if (facts && facts.deps) modifiers.add('new-dependency');
 		if (tier === 'fix' && (c.testsChanged || (facts && facts.tests))) need['test-value'] = 1;
@@ -324,7 +326,7 @@ const FIXES = [
 	[/re-sweep|re-checks|fixed finding|descend/, 'Focus the re-sweep: one blast-radius role, one role per kind with a fixed finding, one dimension (alignment) role, on a HEAD that builds on the first sweep, after its outcome is logged.'],
 	[/question|context|finding shape|unknown|no roles|top model/, 'Fix the named role in the contract and run approve.mjs again.'],
 	[/log the outcome of the last approved sweep/, 'Log that sweep\'s outcome with --agents; if no reviewer started under it, close it with `--outcome --none-ran`.'],
-	[/over the budget|repeated between roles|escaped|ran on/, 'The owner reads the sweep\'s report and the per-role numbers above, decides whether the trip was a real failure, and resumes or adjusts.'],
+	[/over the budget|repeated between roles|escaped|ran on .*; the contract named/, 'The owner reads the sweep\'s report and the per-role numbers above, decides whether the trip was a real failure, and resumes or adjusts.'],
 ];
 function triage(title, reasons, numbers) {
 	const f = contractFile.replace(/\.json$/i, '') + '.triage.md';
@@ -467,7 +469,8 @@ function spend(ids, since) {
 		}
 		const u = (m, k) => Number(m.usage[k]) || 0;
 		const tokens = [...seen.values()].reduce((t, m) => t + u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens'), 0);
-		return { agent: id, model: [...seen.values()].map((m) => m.model).filter(Boolean).pop() || null, tokens };
+		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
+		return { agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens };
 	});
 	return bad.length ? { root, bad } : { root, roles };
 }
@@ -484,11 +487,14 @@ function outcome() {
 	// An approval no reviewer used (a new commit or an edited contract came first) is closed without a measure, but
 	// only while the sweep guard shows no reviewer started under it.
 	if (has('--none-ran')) {
+		// Every clearing of this round (an approval or the owner's yes since the contract's last outcome) has its own
+		// start slots in the guard's folder; any one taken means a reviewer ran.
+		const lastOut = s.log.map((e, i) => (e.kind === 'outcome' && e.contract === contractFile ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+		const clearings = s.log.map((e, i) => (i > lastOut && e.contract === contractFile && ((e.kind === 'decision' && e.decision === 'approved') || e.kind === 'owner-yes') ? i : -1)).filter((i) => i >= 0);
 		const at = s.log.map((e, i) => (e.kind === 'decision' && e.contract === contractFile && e.decision === 'approved' ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-		if (at < 0) { console.log('--none-ran closes an approved sweep; this contract has none. Nothing logged.'); return 1; }
-		let started = [];
-		try { started = fs.readdirSync(path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[at]))); } catch { /* none started */ }
-		if (started.length) { console.log(`${started.length} reviewer(s) started under this approval, so its spend is measured: log the outcome with --agents. Nothing logged.`); return 1; }
+		if (!clearings.length || at < 0) { console.log('--none-ran closes an approved sweep; this contract has none. Nothing logged.'); return 1; }
+		const started = clearings.reduce((t, i) => { try { return t + fs.readdirSync(path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]))).length; } catch { return t; } }, 0);
+		if (started) { console.log(`${started} reviewer(s) started under this round's clearances, so its spend is measured: log the outcome with --agents. Nothing logged.`); return 1; }
 		write({ kind: 'outcome', contract: contractFile, decisionAt: s.log[at].time, budget: s.log[at].budget, tokens: 0, findings: 0, real: 0, duplicates: 0, noneRan: true });
 		console.log('Outcome logged: no reviewer ran under this approval.');
 		return 0;
@@ -545,7 +551,7 @@ function outcome() {
 	// The budget standard and the top-model rule rest on the model a role names, so a reviewer on another one is the owner's.
 	per.forEach((x, i) => {
 		const named = roles[i] ? (roles[i].model ?? DEFAULT_MODEL) : null;
-		if (named && modelKey(named) !== modelKey(x.model)) trips.push(`${x.role} ran on ${x.model}; the contract named ${named}`);
+		if (named && (!x.model || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
 	console.log(trips.length ? `Outcome logged; auto-approval paused: ${trips.join('; ')}` : `Outcome logged: ${nums.tokens.toLocaleString('en-US')} processed tokens over ${per.length} role(s).`);
