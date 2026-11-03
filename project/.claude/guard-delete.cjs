@@ -113,16 +113,19 @@ function tokenize(text) {
 	let inWord = false;
 	let quoted = false;
 	let quote = '';
+	// How much of the word came before its first quote: cmd reads cd"C:\x" as cd C:\x.
+	let lead = -1;
 	// The word after < or > is a redirection's file, not one of the command's own words.
 	let redirect = false;
 	const endWord = () => {
 		if (inWord) {
-			segment.push({ value: current, quoted, redirect });
+			segment.push({ value: current, quoted, redirect, lead });
 			redirect = false;
 		}
 		current = '';
 		inWord = false;
 		quoted = false;
+		lead = -1;
 	};
 	const endSegment = (end) => {
 		endWord();
@@ -137,7 +140,7 @@ function tokenize(text) {
 		} else if (last) {
 			// && and || are kept as one break; a pipe followed by a line break still feeds the next line.
 			if ((end === '&' || end === '|') && last.end === end) last.end = end + end;
-			else if (!(last.end === '|' && end === LF)) last.end = end;
+			else if (!(['|', '||', '&&'].includes(last.end) && end === LF)) last.end = end;
 			if (end === '{') last.opens++;
 			if (end === '}') last.closes++;
 			if (end === ')') last.endsGroup = true;
@@ -154,6 +157,7 @@ function tokenize(text) {
 		}
 		if (ch === "'" || ch === '"') {
 			quote = ch;
+			if (!quoted) lead = current.length;
 			quoted = true;
 			inWord = true;
 		} else if ((ch === '&' || ch === '|') && redirect && !inWord && /[<>]/.test(chars[c - 1])) {
@@ -369,7 +373,16 @@ function findDelete(text, ctx, state, depth) {
 	const segments = tokenize(joinContinuations(text));
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s];
-		const words = segment.filter((word) => !word.redirect).map((word) => word.value);
+		// How the command before this one ended, applied here so no skipped command can miss it. A ( ... ) group may
+		// run apart (bash), so after one the command may be in any folder it has been in.
+		const before = segments[s - 1];
+		if (before?.endsGroup) state.cwds = [...new Set([...state.cwds, ...state.seen])];
+		if (before && before.end !== '&&' && state.pending) {
+			state.cwds = [...new Set([...state.cwds, ...state.pending])];
+			state.pending = null;
+		}
+		const plain = segment.filter((word) => !word.redirect);
+		const words = plain.map((word) => word.value);
 		const first = programName(words[0]);
 		// A search's pattern is not a command; skipped only when nothing in it runs another program (rg --pre, a git
 		// option before the subcommand such as -c core.pager, an external diff or pager).
@@ -381,7 +394,7 @@ function findDelete(text, ctx, state, depth) {
 			// A pattern is not run, but a $( ... ) inside a quoted one is: grep "$(rm -rf x)".
 			for (const word of segment) {
 				const at = word.quoted ? word.value.indexOf('$(') : -1;
-				const hit = at >= 0 && depth < MAX_DEPTH ? findDelete(word.value.slice(at + 2), ctx, state, depth + 1) : '';
+				const hit = at >= 0 && depth < MAX_DEPTH ? readNested(word.value.slice(at + 2), ctx, state, depth) : '';
 				if (hit) return hit;
 			}
 			continue;
@@ -401,7 +414,12 @@ function findDelete(text, ctx, state, depth) {
 			const name = programName(words[p]);
 			const rest = words.slice(p + 1);
 			if ((name === 'powershell' || name === 'pwsh') && rest.some((w) => ENCODED.test(w))) return 'an encoded PowerShell command';
-			if (DIR_CHANGERS.has(name)) changeFolder(words, p, ctx, state, s > 0 ? segments[s - 1].end : undefined);
+			// cmd also reads a cd with its folder glued on (cd.., cd/d x, cd\x, cd=x, cd"x"); it is not read for its
+			// folder, and anything but a letter, digit or space after cd counts as glued (a space is a quoted command,
+			// read again below).
+			const lead = plain[p].lead > 0 ? words[p].slice(0, plain[p].lead) : '';
+			if (/^(cd|chdir|pushd)[^A-Za-z0-9\s]/i.test(words[p]) || /^(cd|chdir|pushd)$/i.test(lead)) state.moved = true;
+			else if (DIR_CHANGERS.has(name)) changeFolder(words, p, ctx, state, s > 0 ? segments[s - 1].end : undefined);
 			else if (DIR_RETURNS.has(name)) state.moved = true;
 			// env -C DIR, env -CDIR, sudo -D DIR, sudo --chdir=DIR, and short options clustered before them.
 			else if ((name === 'env' || name === 'sudo') && rest.some((w) => /^(-[A-Za-z]*[CD]|--chdir)/.test(w))) state.moved = true;
@@ -466,26 +484,26 @@ function findDelete(text, ctx, state, depth) {
 				if (!word.quoted) continue;
 				// A quoted name=value (git -c core.pager='...') may hold a command in its value.
 				const assigned = /^[\w.-]+=/.test(word.value) ? word.value.slice(word.value.indexOf('=') + 1) : '';
-				// Each read starts from this command's folders; a folder change inside may or may not last
-				// (bash -c runs apart, Invoke-Expression does not), so its folders are added, never put in place.
 				for (const inner of [word.value, assigned].filter(Boolean)) {
-					const own = { moved: state.moved, cwds: [...state.cwds], seen: [...state.seen], pending: null };
-					const hit = findDelete(inner, ctx, own, depth + 1);
+					const hit = readNested(inner, ctx, state, depth);
 					if (hit) return hit;
-					state.moved = state.moved || own.moved;
-					state.cwds = [...new Set([...state.cwds, ...own.cwds])];
-					state.seen = [...new Set([...state.seen, ...own.seen])];
 				}
 			}
 		}
-		// A ( ... ) group may run apart (bash), so after one the command may be in any folder it has been in.
-		if (segment.endsGroup) state.cwds = [...new Set([...state.cwds, ...state.seen])];
-		if (segment.end !== '&&' && state.pending) {
-			state.cwds = [...new Set([...state.cwds, ...state.pending])];
-			state.pending = null;
-		}
 	}
 	return '';
+}
+
+// Reads text nested in a command (a quoted command, a $( ... )) from this command's folders. A folder change
+// inside may or may not last (bash -c and $( ) run apart, Invoke-Expression does not), so its folders, a trusted
+// cd's earlier ones included, are added to the outer command's, never put in place of them.
+function readNested(inner, ctx, state, depth) {
+	const own = { moved: state.moved, cwds: [...state.cwds], seen: [...state.seen], pending: null };
+	const hit = findDelete(inner, ctx, own, depth + 1);
+	state.moved = state.moved || own.moved;
+	state.cwds = [...new Set([...state.cwds, ...own.cwds, ...(own.pending ?? [])])];
+	state.seen = [...new Set([...state.seen, ...own.seen])];
+	return hit;
 }
 
 // Every string the tool will run, whatever the field is called; the description is only shown, never run. The
