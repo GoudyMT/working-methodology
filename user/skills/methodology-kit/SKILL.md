@@ -22,6 +22,8 @@ Arguments: $ARGUMENTS
 - **`snapshot`** - refresh the credited backups of third-party plugins and skills: `node <kitDir>/scripts/kit.mjs
   snapshot`, then review the diff in `vendor/` (read any new community skill) before the kit commit.
 - **`update`** - pull the latest kit into this project: `node <kitDir>/scripts/kit.mjs install project .`
+  It runs only when `<kitDir>` sits on its newest release tag. A refusal names why: show it to the owner and stop;
+  never add `--unreleased` to a real project (that flag is for throwaway test installs only).
   Report what was created, updated and skipped; for each skipped file, show the kit's change and merge by hand
   only on the owner's go. Once a file carries the kit's changes, record it: `node <kitDir>/scripts/kit.mjs install
   project . --merged <file>,<file>`. A file that differs only by this project's own values (adapter rows, tracking
@@ -56,8 +58,9 @@ Arguments: $ARGUMENTS
    changed rule or skill, major for a change in how the kit installs.
 6. Commit in the kit with a one-line `type: subject` message. Show the owner the commit and the push command;
    push only on the owner's explicit go.
-7. Re-run `install project` in the source project so its record matches the kit, and tell the owner that other
-   projects pick the change up with `update`.
+7. Once the change is merged and released (a tag), re-run `install project` in the source project from the
+   release, so its record matches the kit, and tell the owner that other projects pick the change up with
+   `update`. Before the tag, install refuses the kit folder; that is expected.
 
 ## Rules
 

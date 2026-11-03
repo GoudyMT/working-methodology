@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.15.0 - 2026-11-02
+- Install runs only from a release: the kit folder's HEAD must be exactly at tag v<VERSION>, with nothing changed, new or ignored in what install copies or reads (user/, project/, memory/, scripts/, VERSION, kit.config.json, the owner profile), or the install is refused (--dry-run too) and names why and the fix. --unreleased installs a branch build on purpose, for a throwaway test only; its record carries release: false, the git describe text and any uncommitted files, and status and session start show it (for a project or ~/.claude) as unreleased until it is reinstalled from a release, which removes the files only that build installed (a changed one is kept, named, and keeps the gap open). Install records gain release and describe (older records read as unknown, not unreleased). Status, session start and both full-stop messages now say to check out the newest release tag, not git pull, which moved a kit folder onto main and off every tag.
+
 ## 1.14.0 - 2026-11-01
 - A delete guard asks the owner before any shell delete that reaches outside this session's own temp folder (<temp>/claude/<project key>/<session id>/) and the project, so a closeout can no longer remove other sessions' files by wildcard. It reads deletes hidden in wrappers, nested shells, inline node or python, .NET calls, find, git clean, robocopy and rsync, follows junctions and links, and asks on any target it cannot place (a variable, a brace expansion, a UNC or drive-relative path, .git). A hook that crashes or times out blocks the call (needs Claude Code 2.1.295 or later). Projects with a customized settings.json add the guard-delete hook entry by hand. Its proof runs in CI.
 

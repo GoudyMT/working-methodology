@@ -73,6 +73,15 @@ Every rule says "the owner". The name lives only in `kit.config.json`.
 Needs Node 20 or later and git. From a Claude Code session, say "/methodology-kit new" or "/methodology-kit
 existing" (after the first `install user`), or follow the entry-point files by hand.
 
+Install runs only from a release: the kit folder's HEAD must be exactly at tag `v<VERSION>`, with nothing
+changed or new in what install copies or reads (`user/`, `project/`, `memory/`, `scripts/`, `VERSION`, the
+config and the owner profile); otherwise it is refused, `--dry-run` too, and names why. So check out the newest
+release tag first (`git tag --sort=-v:refname` lists it first), never `git pull`, which moves the folder onto main:
+
+```bash
+git fetch --tags; git checkout <newest v tag>
+```
+
 ```bash
 node scripts/kit.mjs install user
 ```
@@ -80,6 +89,10 @@ node scripts/kit.mjs install user
 ```bash
 node scripts/kit.mjs install project "<project folder>"
 ```
+
+Add `--unreleased` to install a branch build on purpose, into a throwaway folder only: its record says
+unreleased, and status and session start show it as a gap until it is reinstalled from a release, which also
+removes the files only that build had.
 
 Add `--dry-run` to see what would change first. Add `--force` to replace files that differ from the kit; the
 old copies are kept in a dated `kit-backups` folder next to the install record. Use it once, when a machine or

@@ -64,6 +64,63 @@ function loadKit(kit) {
   return { config, ownerProfile, version, commit };
 }
 
+// What install copies or reads: a change to any of these ships text no release holds (the owner, 2026-11-02). The
+// config and owner profile are rendered into the installed files, and the script decides what install does.
+const RELEASE_PATHS = ['user', 'project', 'memory', 'scripts', 'VERSION', 'kit.config.json'];
+
+/**
+ * Whether the kit folder is a release: HEAD exactly at tag v<VERSION>, and nothing changed, new or ignored under
+ * the paths install copies. Only the CLI asks; install() itself also runs on fixture folders with no git.
+ *
+ * Returns:
+ *     { describe, dirty: [files], problems: [lines] } - no problems means a release
+ */
+export function releaseState(kit) {
+  const tag = 'v' + fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
+  const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
+  const paths = [...RELEASE_PATHS, config.ownerProfileFile || 'owner-profile.md'];
+  const git = (...a) => spawnSync('git', ['-C', kit, '-c', 'core.quotepath=false', ...a], { encoding: 'utf8' });
+  // A kit folder copied inside another repo would read that repo's tags, so the kit folder must be the repo's top.
+  const prefix = git('rev-parse', '--show-prefix');
+  if (prefix.status !== 0) return { describe: null, dirty: [], problems: [`Not on release tag ${tag}: this kit folder has no git history.`] };
+  if (prefix.stdout.trim()) return { describe: null, dirty: [], problems: [`Not on release tag ${tag}: this kit folder sits inside another git repo, not its own.`] };
+  const describe = git('describe', '--tags', '--always').stdout.trim() || null;
+  const problems = [];
+  if (!git('tag', '--points-at', 'HEAD').stdout.split(/\r?\n/).includes(tag)) problems.push(`Not on release tag ${tag}: HEAD is at ${describe}.`);
+  // -z keeps names with spaces whole; a rename entry carries its old name as a second field, skipped here.
+  const st = git('status', '--porcelain', '-z', '--ignored', '--untracked-files=all', '--', ...paths);
+  // A failed status prints nothing, which must not read as a clean folder.
+  if (st.status !== 0) problems.push(`git status failed in the kit folder, so what changed is unknown: ${(st.stderr || '').trim().split(/\r?\n/)[0] || `exit ${st.status}`}.`);
+  const fields = st.status === 0 ? st.stdout.split('\0') : [];
+  const dirty = [];
+  for (let i = 0; i < fields.length; i++) {
+    if (!fields[i]) continue;
+    dirty.push(fields[i].slice(3));
+    if (/^[RC]/.test(fields[i])) i++;
+  }
+  if (dirty.length) problems.push(`Changed or new files install would copy: ${dirty.slice(0, 10).join(', ')}${dirty.length > 10 ? `, and ${dirty.length - 10} more` : ''}.`);
+  return { describe, dirty, problems };
+}
+
+/** The newest release tag the kit folder knows, or null. */
+function newestTag(kit) {
+  const r = spawnSync('git', ['-C', kit, 'tag', '--list', 'v*', '--sort=-v:refname'], { encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.split(/\r?\n/).find((t) => /^v\d+\.\d+\.\d+$/.test(t)) || null : null;
+}
+
+/** How status names an install stamped as not a release, or null for a release or a stamp from before the check. */
+function unreleasedText(stamp) {
+  if (stamp.release !== false) return null;
+  const dirty = (stamp.dirty || []).length;
+  const left = (stamp.leftover || []).length;
+  const extra = [dirty && `${dirty} uncommitted file(s)`, left && `${left} file(s) kept from an unreleased build`].filter(Boolean);
+  return `unreleased ${stamp.describe || 'build'}${extra.length ? ` with ${extra.join(' and ')}` : ''}`;
+}
+
+// A git pull moves the kit folder onto main, off every release tag, so every fix line names a tag instead: one line
+// that runs as typed in PowerShell and bash.
+const releaseCheckout = (kit, tag) => `git -C "${toPosix(kit)}" fetch --tags; git -C "${toPosix(kit)}" checkout ${tag || '<newest v tag>'}`;
+
 /**
  * List what the kit installs for one target.
  *
@@ -228,7 +285,13 @@ export function install(ctx) {
   // replacement is in place, or the project would lose the rules both hold.
   const retiredList = (kitInfo.config.retired || {})[ctx.target] || [];
   const replacedBy = Array.isArray(retiredList) ? {} : retiredList;
-  for (const key of Array.isArray(retiredList) ? retiredList : Object.keys(retiredList)) {
+  const retiredKeys = Array.isArray(retiredList) ? retiredList : Object.keys(retiredList);
+  // Files only an unreleased build installed go the same way, so a reinstall from a release leaves only the release.
+  const planned = new Set(entries.map((e) => e.key));
+  const branchOnly = stamp.release !== false ? [] : Object.keys(stamp.files)
+    .filter((k) => !planned.has(k) && !retiredKeys.includes(k) && k !== 'CLAUDE.local.md');
+  const leftover = [];
+  for (const key of [...retiredKeys, ...branchOnly]) {
     const base = stamp.files[key];
     const heir = replacedBy[key];
     const dest = key.startsWith('memory/') && memoryDir ? path.join(memoryDir, key.slice(7))
@@ -239,7 +302,10 @@ export function install(ctx) {
     }
     if (!base || !fs.existsSync(dest)) { if (!fs.existsSync(dest)) delete files[key]; continue; }
     if (sha(fs.readFileSync(dest, 'utf8')) !== base) {
-      skipped.push({ file: key, reason: 'retired by the kit, but changed here - run fold-back, then remove it by hand' });
+      if (branchOnly.includes(key)) {
+        skipped.push({ file: key, reason: 'only an unreleased build installed it, and it changed here - keep what you need, then remove it by hand' });
+        leftover.push(key);
+      } else skipped.push({ file: key, reason: 'retired by the kit, but changed here - run fold-back, then remove it by hand' });
       continue;
     }
     if (!ctx.dryRun) {
@@ -255,6 +321,14 @@ export function install(ctx) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
+    // Set by the CLI's release check; a stamp without it predates the check and reads as unknown, not unreleased.
+    if (ctx.release) {
+      // A kept branch-only file means the folder still holds more than the release.
+      out.release = ctx.release.release && !leftover.length;
+      out.describe = ctx.release.describe;
+      if ((ctx.release.dirty || []).length) out.dirty = ctx.release.dirty;
+      if (leftover.length) out.leftover = leftover;
+    }
     fs.writeFileSync(stampPath, JSON.stringify(out, null, 2) + '\n');
     if (ctx.target === 'user') {
       const gate = wireGate(ctx.home, ctx.dryRun);
@@ -639,7 +713,7 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - fresh reads of the Reading Order before any edit.');
   const ahead = remoteKitAhead(kit);
-  if (ahead > 0) lines.push(`The kit on GitHub is ${ahead} commit(s) ahead of the kit folder. Run git pull in ${toPosix(kit)}, then /methodology-kit update.`);
+  if (ahead > 0) lines.push(`The kit on GitHub is ${ahead} commit(s) ahead of the kit folder. Check out its newest release tag (${releaseCheckout(kit, newestTag(kit))}), then run /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.
@@ -651,6 +725,12 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
     const newer = [...log.matchAll(/^## (\d+\.\d+\.\d+)/gm)].filter((m) => semverAbove(m[1], stamp.version)).length;
     lines.push(`Kit ${kitVersion} has ${newer} newer change(s) than this project (${stamp.version}). Run /methodology-kit update.`);
   }
+  // Said every session, so an install made on purpose with --unreleased is never forgotten; ~/.claude carries the
+  // rules of every project, so it is named too.
+  const checkout = `Check out the kit's newest release tag (${releaseCheckout(kit, newestTag(kit))})`;
+  const userStamp = readStamp(path.join(home, STAMP_USER));
+  if (userStamp.release === false) lines.push(`~/.claude runs an unreleased kit build (${userStamp.describe || 'no git history'}). ${checkout}, then run node "${toPosix(kit)}/scripts/kit.mjs" install user.`);
+  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.`);
   if (stamp.version) {
     const r = foldBack({ kit, home, target: 'project', projectDir });
     // Only a file changed here and in the kit owes work; one changed only here holds the project's own values.
@@ -706,13 +786,13 @@ function mainProtection(projectDir) {
  * Returns:
  *     { current, text } - current is true only when every line matches
  */
-export function status({ kit, home, projectDir, ahead = remoteKitAhead, protection = mainProtection }) {
+export function status({ kit, home, projectDir, ahead = remoteKitAhead, protection = mainProtection, newest = newestTag }) {
   const { version, commit } = loadKit(kit);
   const lines = [`Kit folder: ${version}${commit ? ` (${commit})` : ''}.`, `Claude config folder: ${toPosix(home)}.`];
   const gaps = [];
   const n = ahead(kit);
   if (n > 0) {
-    lines.push(`    GitHub has ${n} newer kit commit(s): run git pull in ${toPosix(kit)}, then update both below.`);
+    lines.push(`    GitHub has ${n} newer kit commit(s): check out its newest release tag (${releaseCheckout(kit, newest(kit))}), then update both below.`);
     gaps.push('the kit folder is behind GitHub');
   }
   const where = [
@@ -732,13 +812,15 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     const own = r.foldBack.filter((k) => !k.startsWith('memory/'));
     const held = r.conflict.filter((k) => !k.startsWith('memory/'));
     const waiting = r.update.length + r.missing.length;
-    const parts = [semverAbove(version, stamp.version) ? `behind kit ${version}` : 'current'];
+    const unreleased = unreleasedText(stamp);
+    const parts = [unreleased || (semverAbove(version, stamp.version) ? `behind kit ${version}` : 'current')];
     if (waiting) parts.push(`${waiting} file(s) waiting`);
     const ok = parts[0] === 'current' && !waiting && !held.length;
-    lines.push(`${w.name}: ${stamp.version}, ${parts.join('; ')}.${ok ? '' : ` Run ${w.fix}.`}`);
+    const fix = unreleased ? ` Check out the kit's newest release tag (${releaseCheckout(kit, newest(kit))}), then run ${w.fix}.` : ` Run ${w.fix}.`;
+    lines.push(`${w.name}: ${stamp.version}, ${parts.join('; ')}.${ok ? '' : fix}`);
     if (held.length) lines.push(`    ${held.length} file(s) changed here and in the kit: ${held.join(', ')}. Merge the kit's changes by hand, then record it with kit.mjs install ${w.target === 'user' ? 'user' : 'project <folder>'} --merged <file>,<file>.`);
     if (own.length) lines.push(`    ${own.length} file(s) carry this project's own values on the current kit copy: ${own.join(', ')}. Not a gap; fold-back offers any that are portable.`);
-    if (!ok) gaps.push(`${w.name} differs from the kit`);
+    if (!ok) gaps.push(unreleased ? `${w.name} is an unreleased build` : `${w.name} differs from the kit`);
   }
   // Improvement reports still open here are work for the kit, not a stale install, so they do not change the verdict.
   const reportDir = path.join(projectDir, '.kit', 'reports');
@@ -1198,8 +1280,18 @@ function main(argv) {
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
-    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged });
+    // Installs run only from a release, or by name for a throwaway test (the owner, 2026-11-02).
+    const rel = releaseState(kit);
+    if (rel.problems.length && !argv.includes('--unreleased')) {
+      console.error(['Install refused: this kit folder is not a release.', ...rel.problems.map((p) => '    ' + p),
+        `    Fix: commit or drop any changes above, then check out the newest release tag (${releaseCheckout(kit, newestTag(kit))}), or add --unreleased for a throwaway test install.`].join('\n'));
+      process.exitCode = 1;
+      return;
+    }
+    const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty };
+    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
+    if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
     console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
     for (const f of r.merged) console.log(`    recorded as merged by hand: ${f}`);
@@ -1255,7 +1347,7 @@ function main(argv) {
     console.log(hits.length ? `${hits.length} hit(s)` : 'Scrub clean');
     process.exitCode = hits.length ? 1 : 0;
   } else {
-    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay] [--merged <file>,<file>]');
+    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay] [--merged <file>,<file>] [--unreleased]');
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');
