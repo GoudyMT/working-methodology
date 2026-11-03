@@ -12,10 +12,10 @@ node <kit folder>/scripts/kit.mjs install user
 ```
 
 `git -C <kit folder> tag --sort=-v:refname` lists the newest tag first. Install runs only from a release: a kit
-folder off its tag, or with changed files under `user/`, `project/`, `memory/` or `VERSION`, is refused (a pull
-would move it onto main, off every tag).
+folder off its tag, or with changed files in what install copies or reads, is refused (a pull would move it
+onto main, off every tag).
 
-The second command refreshes `~/.claude` (global rules, agent roles, skills). It never overwrites a file you
+The install command refreshes `~/.claude` (global rules, agent roles, skills). It never overwrites a file you
 changed there; it lists it instead. If it lists one, run `fold-back user` (see the README) before you go on.
 
 ## 2. Install the project layer
