@@ -201,6 +201,16 @@ function resweepCheck(c, tier, roles, log, facts, why) {
 		const r = git('merge-base', '--is-ancestor', head.head, 'HEAD');
 		if (r.status === 1) why.push(`HEAD does not descend from the HEAD the sweep it re-checks ran on (${head.head})`);
 		else if (r.status !== 0) why.push(`cannot tell whether HEAD descends from ${head.head}`);
+		else {
+			// The re-sweep's floor skips the diff-derived modifiers, so the fixes may not bring what would have set them.
+			// The sweep folder's own files (contracts, reports, triage) are left out.
+			const own = git('rev-parse', '--show-prefix').stdout.trim();
+			const since = (filter) => git('diff', '--name-only', `--diff-filter=${filter}`, `${head.head}..HEAD`).stdout.split('\n').filter((f) => f && !(own && f.startsWith(own)));
+			const dep = since('ACDMRT').find((f) => DEP_FILE.test(f) && depsChanged(head.head, f));
+			const added = since('A').find((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f));
+			if (dep) why.push(`the fixes change a package file (${dep}) since the sweep it re-checks: a new dependency needs the full floor, not a re-sweep`);
+			if (added) why.push(`the fixes add a source file (${added}) since the sweep it re-checks: new code needs the full floor, not a re-sweep`);
+		}
 	}
 	if (roles.length > (Number(head.agents) || 0)) why.push(`${roles.length} roles, more than the ${head.agents} of the sweep it re-checks: a re-sweep never grows`);
 	const fixed = Array.isArray(c.fixed) ? c.fixed : [];

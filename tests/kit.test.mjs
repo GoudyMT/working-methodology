@@ -2924,6 +2924,14 @@ test('a re-sweep that loses focus asks the owner', () => {
   fs.mkdirSync(path.join(moved.dir, 'sweeps'), { recursive: true });
   commitAll(moved.dir, 'other work', true);
   assert.match(resweep(moved).stdout, /ASK THE OWNER[\s\S]*does not descend/);
+  // Found by the commit security review: the re-sweep floor skips the diff's modifiers, so fixes that add a
+  // dependency or new source go to the owner.
+  for (const [file, text, why] of [['package.json', '{"dependencies":{"left-pad":"1"}}\n', /package file/], ['src/helper.ts', 'x\n', /add a source file/]]) {
+    const dep = firstSweep();
+    fs.writeFileSync(path.join(dep.dir, file), text);
+    commitAll(dep.dir, 'fix with more', true);
+    assert.match(resweep(dep).stdout, new RegExp(`ASK THE OWNER[\\s\\S]*${why.source}`));
+  }
 });
 test('what a re-sweep leaves is carried: logged, printed, shown at each sweep start until a later outcome closes it', () => {
   const first = firstSweep();
