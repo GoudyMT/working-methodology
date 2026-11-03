@@ -2106,26 +2106,33 @@ const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.js
 // A fake Claude config folder holding one reviewer transcript per agent id, where approve.mjs reads what each role
 // spent (M11: the meter is processed tokens from the role's own transcript). Each call is [input, cache read, cache
 // write, output]; a call given as { id, u } keeps its message id, so streaming's repeated lines can be written.
-function transcripts(spec) {
-  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
-  const dir = path.join(cfg, 'projects', 'C--repo', 'session-1', 'subagents');
+// Beside each transcript sits Claude Code's agent-<id>.meta.json (agent type, finished); `meta` overrides it per id,
+// and `cfg` adds to an existing folder.
+function transcripts(spec, meta = {}, cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-')), session = 'session-1') {
+  const dir = path.join(cfg, 'projects', 'C--repo', session, 'subagents');
   fs.mkdirSync(dir, { recursive: true });
+  const at = new Date().toISOString();
   for (const [id, calls] of Object.entries(spec)) {
+    let model = 'claude-opus-5-5';
     const lines = calls.map((c, i) => {
-      const { id: mid = `msg_${id}_${i}`, u = c, model = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
-      return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, message: { id: mid, role: 'assistant', model, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
+      const { id: mid = `msg_${id}_${i}`, u = c, model: m = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
+      model = m;
+      return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
     });
-    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
+    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
+    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
   }
   return cfg;
 }
 let agentSeq = 0;
 // Logs a sweep's outcome with one transcript per role, the given total split across them.
 function outcome(r, tokens = '200000', findings = '6', real = '5', dup = '0', extra = []) {
-  const n = (JSON.parse(read(r.f)).roles || []).length;
+  const roles = JSON.parse(read(r.f)).roles || [];
+  const n = roles.length;
   const ids = Array.from({ length: n }, () => `t${++agentSeq}`);
   const each = Math.floor(Number(tokens) / n);
-  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [[0, each + (i ? 0 : Number(tokens) - each * n), 0, 0]]])));
+  // Each transcript runs on the model its role names, as a real reviewer does.
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: /sonnet/.test(roles[i].model || '') ? 'claude-sonnet-5-5' : 'claude-opus-5-5', u: [0, each + (i ? 0 : Number(tokens) - each * n), 0, 0] }]])));
   return approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', findings, '--real', real, '--duplicates', dup, ...extra], { CLAUDE_CONFIG_DIR: cfg });
 }
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
@@ -2748,7 +2755,9 @@ test('an owner-decided sweep can log its outcome, so the trial sees every sweep'
 // M11 (the owner, 2026-11-03): the meter is processed tokens, read by the script from each reviewer's own transcript. A
 // hand-typed number was the Agent result's context size, so every budget tripped on the wrong meter.
 test('the outcome reads each role\'s spend from its own transcript, counting each streamed message once', () => {
-  const r = approveRun(featureContract());
+  const c = featureContract();
+  c.roles[3].model = 'sonnet';
+  const r = approveRun(c);
   assert.equal(r.status, 0, r.stdout);
   // a1's first message streamed as three lines with one message id (the last carries the final usage).
   const cfg = transcripts({
@@ -2776,7 +2785,10 @@ test('the outcome asks the owner when a transcript is missing, and refuses a han
   assert.match(missing.stdout, /ASK THE OWNER[\s\S]*nope/);
   const typed = approveIn(r.dir, [r.f, '--outcome', '--tokens', '75000', '--findings', '6', '--real', '5', '--duplicates', '0']);
   assert.equal(typed.status, 1);
-  assert.match(typed.stdout, /--agents/);
+  assert.match(typed.stdout, /--tokens is not taken[\s\S]*--agents/);
+  assert.match(run('a1,a1,a2,a3,a4').stdout, /each once/, 'one transcript cannot stand for two roles');
+  assert.match(run('A1,a1,a2,a3,a4').stdout, /each once/, 'Windows file names ignore case');
+  assert.match(approveIn(r.dir, [r.f, '--outcome', '--agents', 'a1,a2,a3,a4', '--findings', 'lots', '--real', '5', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg }).stdout, /whole number/);
   assert.equal(run('a1,a2,a3,a4').status, 1, 'one agent id per role');
   assert.equal(run('a1,a2,a3,a4,../a1').status, 1, 'an agent id is a name, not a path');
   assert.equal(approvalLog(r.dir).length, before, 'nothing logged');
@@ -2898,7 +2910,11 @@ test('a re-sweep that loses focus asks the owner', () => {
   const cases = [
     [{ roles: [...resweepRoles(), role('novel-lens', 'What did every other role structurally miss?')] }, /novel-lens/],
     [{ roles: resweepRoles().slice(0, 2) }, /dimension/],
-    [{ fixed: [] }, /fixed/],
+    [{ fixed: [] }, /no fixed findings listed/],
+    [{ fixed: [{ finding: '', kind: 'security' }] }, /no finding named/],
+    [{ tier: 'fix' }, /keeps its sweep's tier/],
+    [{ roles: [...resweepRoles(), role('blast-radius', 'Which configs load the patched module at start?', { model: 'claude-sonnet-5-5' })] }, /2 blast-radius roles/],
+    [{ modifiers: ['user-data'] }, /modifier "user-data"/],
     [{ fixed: [{ finding: 'S9: an invented finding', kind: 'privacy' }], roles: resweepRoles(['privacy']) }, /privacy/],
   ];
   for (const [extra, why] of cases) {
@@ -2984,6 +3000,135 @@ test('every ask and every pause writes a triage report beside the contract; an a
   fs.rmSync(triage(t.f), { force: true });
   assert.match(approveIn(t.dir, [t.f]).stdout, /trial review due[\s\S]*contract\.triage\.md/);
   assert.match(read(triage(t.f)), /trial review due/);
+  assert.match(read(triage(t.f)), /resumes from their own terminal/, 'the fix options are the report\'s point');
+  // A tier that always asks still gets real numbers, and no absolute path or owner's words leak into the report.
+  const fp = approveRun({ ...featureContract(), tier: 'first push' });
+  const fpText = read(triage(fp.f));
+  assert.doesNotMatch(fpText, /undefined/);
+  assert.doesNotMatch(fpText, /approve-[A-Za-z0-9]{6}/, 'no absolute path to the repo');
+});
+
+// Found by the 1.16.0 branch's own feature sweep (2026-11-03).
+test('a tier that is an object\'s built-in name is unknown, and asks', () => {
+  for (const tier of ['constructor', '__proto__', 'toString']) {
+    const r = approveRun({ ...featureContract(), tier });
+    assert.equal(r.status, 1, `${tier}: ${r.stdout}`);
+    assert.match(r.stdout, /unknown tier/);
+  }
+  assert.match(approveRun({ ...featureContract(), modifiers: ['constructor'] }).stdout, /unknown modifier "constructor"/);
+});
+test('the outcome reads only this sweep\'s finished reviewers, each once in the log', () => {
+  const r = approveRun({ tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] }, sweepRepo({ 'README.md': 'y\n' }));
+  assert.equal(r.status, 0, r.stdout);
+  const log = (id, cfg) => approveIn(r.dir, [r.f, '--outcome', '--agents', id, '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  const asks = (id, cfg, why) => { const o = log(id, cfg); assert.equal(o.status, 1, `${why}: ${o.stdout}`); assert.match(o.stdout, /ASK THE OWNER/); assert.match(o.stdout, why); };
+  asks('e1', transcripts({ e1: [[1, 1, 1, 1]] }, { e1: { agentType: 'Explore' } }), /not a reviewer/);
+  asks('u1', transcripts({ u1: [[1, 1, 1, 1]] }, { u1: { finished: false } }), /not finished/);
+  const old = transcripts({ o1: [[1, 1, 1, 1]] });
+  const of = path.join(old, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-o1.jsonl');
+  fs.writeFileSync(of, read(of).replace(/"timestamp":"[^"]+"/g, '"timestamp":"2026-10-27T00:00:00.000Z"'));
+  asks('o1', old, /before this sweep was cleared/);
+  const half = transcripts({ h1: [[1, 1, 1, 1]] });
+  fs.appendFileSync(path.join(half, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-h1.jsonl'), '{"type":"assist');
+  asks('h1', half, /not finished/);
+  const two = transcripts({ d1: [[1, 1, 1, 1]] });
+  transcripts({ d1: [[1, 1, 1, 1]] }, {}, two, 'session-2');
+  asks('d1', two, /2 transcripts/);
+  assert.equal(r.status, 0);
+  assert.equal(log('g1', transcripts({ g1: [[1, 1, 1, 1]] })).status, 0);
+  const again = approveIn(r.dir, [r.f]);
+  assert.equal(again.status, 0, again.stdout);
+  asks('g1', transcripts({ g1: [[1, 1, 1, 1]] }), /already logged/);
+});
+test('a reviewer that ran on another model than its role names pauses for the owner', () => {
+  const r = approveRun(featureContract());
+  const cfg = transcripts({ m1: [[1, 1, 1, 1]], m2: [[1, 1, 1, 1]], m3: [[1, 1, 1, 1]], m4: [{ model: 'claude-haiku-4-5', u: [1, 1, 1, 1] }], m5: [[1, 1, 1, 1]] });
+  const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'm1,m2,m3,m4,m5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  assert.match(o.stdout, /paused[\s\S]*ran on claude-haiku-4-5/);
+});
+test('an approved sweep that never started can be closed with --none-ran, and only then', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0);
+  fs.writeFileSync(path.join(dir, 'src', 'more.ts'), 'x\n');
+  commitAll(dir, 'more', true);
+  assert.match(approveIn(dir, [r.f]).stdout, /log the outcome of the last approved sweep first/);
+  const none = approveIn(dir, [r.f, '--outcome', '--none-ran']);
+  assert.equal(none.status, 0, none.stdout);
+  assert.equal(approveIn(dir, [r.f]).status, 0, 'the way is clear again');
+  // Once a reviewer has started under the clearance, the outcome must be measured.
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow');
+  const ran = approveIn(dir, [r.f, '--outcome', '--none-ran']);
+  assert.equal(ran.status, 1);
+  assert.match(ran.stdout, /started/);
+});
+test('a re-sweep is one per sweep however the first is re-run, and a re-run of the same re-sweep before it ran is fine', () => {
+  const first = firstSweep();
+  const re = resweep(first);
+  assert.equal(re.status, 0, re.stdout);
+  const rerun = approveIn(first.dir, [re.f]);
+  assert.match(rerun.stdout, /log the outcome of the last approved sweep first/, 're-deciding before its outcome asks, as any contract does');
+  assert.doesNotMatch(rerun.stdout, /REFUSED/, 'it is not a second re-sweep');
+  assert.equal(outcome(re, '200000', '1', '1', '0', ['--carried', '1']).status, 0);
+  assert.match(approveIn(first.dir, [re.f]).stdout, /REFUSED/, 'after its outcome it has run');
+  assert.equal(approveIn(first.dir, [first.f]).status, 0);
+  assert.equal(outcome(first).status, 0);
+  assert.match(resweep(first, {}, 'resweep2.json').stdout, /REFUSED[\s\S]*already had its re-sweep/, 'clearing the first sweep again does not buy a second');
+});
+test('a re-sweep reads the first sweep as it was cleared, carries leftovers from either pass, and keeps contracts and reports out of the new-source check', () => {
+  const first = firstSweep();
+  const edited = JSON.parse(read(first.f));
+  edited.roles.push(role('privacy', 'Which fields leave the device now?'));
+  fs.writeFileSync(first.f, JSON.stringify(edited));
+  assert.match(resweep(first).stdout, /ASK THE OWNER[\s\S]*changed since it was cleared/);
+  const f2 = firstSweep();
+  const re = resweep(f2);
+  assert.equal(re.status, 0, re.stdout);
+  assert.equal(outcome(re, '200000', '0', '0', '0', ['--carried', '2']).status, 0, 'first-sweep findings left unfixed carry too');
+  // Contracts committed in the sweep folder are not new source; a script there is.
+  const f3 = firstSweep();
+  fs.writeFileSync(path.join(f3.dir, 'sweeps', 'helper.json'), '{"x":1}\n');
+  commitAll(f3.dir, 'a data file in the sweep folder', true);
+  assert.match(resweep(f3).stdout, /add a source file \(sweeps\/helper\.json\)/);
+  const f4 = firstSweep();
+  fs.writeFileSync(path.join(f4.dir, 'src', 'sync.test.ts'), 'more test\n');
+  fs.writeFileSync(path.join(f4.dir, 'src', 'extra.test.ts'), 'new test\n');
+  commitAll(f4.dir, 'a test for the fix', true);
+  assert.equal(resweep(f4).status, 0, 'a new test file is not new source');
+});
+test('a budget over standard needs a real reason; project caps lower every limit', () => {
+  const pad = featureContract();
+  pad.roles[0].budget = 800000;
+  pad.roles[0].budgetReason = 'xxxxxxxxxxxxxxx';
+  assert.match(approveRun(pad).stdout, /budgetReason/);
+  const sonnet = featureContract();
+  sonnet.roles[3].model = 'sonnet';
+  sonnet.roles[3].budget = 600001;
+  assert.match(approveRun(sonnet).stdout, /600001 over the sonnet standard/);
+  const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
+  const plusOne = { ...featureContract(), roles: [...featureContract().roles, role('privacy', 'Which fields leave the device now?')] };
+  assert.equal(approveRun(plusOne).status, 0);
+  assert.match(approveRun(plusOne, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor, over its cap of 0/);
+  assert.match(approveRun(featureContract(), lowered({ maxRoleBudget: 50000 })).stdout, /per-role cap of 50000/);
+  assert.match(approveRun(featureContract(), lowered({ maxTotalBudget: 100000 })).stdout, /cap of 100000/);
+  assert.match(approveRun(featureContract(), lowered({ maxAgents: 4 })).stdout, /cap of 4/);
+  assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, role('security', 'Can a replayed token reach the import queue?')] }, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor/, 'a fourth security role is an extra');
+});
+test('the default reviewer model in approve.mjs is the reviewer role\'s own model', () => {
+  const m = read('user/agents/reviewer.md').match(/^model:\s*(\S+)/m)[1];
+  assert.match(read(APPROVE), new RegExp(`DEFAULT_MODEL = '${m}'`));
+});
+test('the sweep guard says a refused re-sweep has no owner override', () => {
+  const first = firstSweep();
+  const re = resweep(first);
+  outcome(re, '200000', '1', '1', '0', ['--carried', '0']);
+  const r2 = resweep(first, {}, 'resweep2.json');
+  assert.match(r2.stdout, /REFUSED/);
+  const g = sweepGuard(first.dir);
+  assert.equal(g.permissionDecision, 'deny');
+  assert.match(g.permissionDecisionReason, /refused/i);
+  assert.doesNotMatch(g.permissionDecisionReason, /--owner-yes/);
 });
 
 // From a project's kit-gap log (2026-10-31): a second Claude config folder (CLAUDE_CONFIG_DIR) ran without the kit,
