@@ -2103,7 +2103,38 @@ function approveRun(contract, dir = sweepRepo()) {
   return { ...approveIn(dir, [f]), dir, f };
 }
 const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.jsonl')).trim().split('\n').map((l) => JSON.parse(l));
-const outcome = (r, tokens = '200000', findings = '6', real = '5', dup = '0') => approveIn(r.dir, [r.f, '--outcome', '--tokens', tokens, '--findings', findings, '--real', real, '--duplicates', dup]);
+// A fake Claude config folder holding one reviewer transcript per agent id, where approve.mjs reads what each role
+// spent (M11: the meter is processed tokens from the role's own transcript). Each call is [input, cache read, cache
+// write, output]; a call given as { id, u } keeps its message id, so streaming's repeated lines can be written.
+// Beside each transcript sits Claude Code's agent-<id>.meta.json (agent type, finished); `meta` overrides it per id,
+// and `cfg` adds to an existing folder.
+function transcripts(spec, meta = {}, cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-')), session = 'session-1') {
+  const dir = path.join(cfg, 'projects', 'C--repo', session, 'subagents');
+  fs.mkdirSync(dir, { recursive: true });
+  const at = new Date().toISOString();
+  for (const [id, calls] of Object.entries(spec)) {
+    let model = 'claude-opus-5-5';
+    const lines = calls.map((c, i) => {
+      const { id: mid = `msg_${id}_${i}`, u = c, model: m = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
+      model = m;
+      return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
+    });
+    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
+    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
+  }
+  return cfg;
+}
+let agentSeq = 0;
+// Logs a sweep's outcome with one transcript per role, the given total split across them.
+function outcome(r, tokens = '200000', findings = '6', real = '5', dup = '0', extra = []) {
+  const roles = JSON.parse(read(r.f)).roles || [];
+  const n = roles.length;
+  const ids = Array.from({ length: n }, () => `t${++agentSeq}`);
+  const each = Math.floor(Number(tokens) / n);
+  // Each transcript runs on the model its role names, as a real reviewer does.
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: /sonnet/.test(roles[i].model || '') ? 'claude-sonnet-5-5' : 'claude-opus-5-5', u: [0, each + (i ? 0 : Number(tokens) - each * n), 0, 0] }]])));
+  return approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', findings, '--real', real, '--duplicates', dup, ...extra], { CLAUDE_CONFIG_DIR: cfg });
+}
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -2224,7 +2255,8 @@ test('an approval prints the owner\'s start notice from checked data, not a hand
   assert.match(r.stdout, /security x3/);
   assert.match(r.stdout, /test-value reviewer \(test-value, sonnet\)/);
   assert.match(r.stdout, /security reviewer \(security, the reviewer default\)/);
-  assert.match(r.stdout, /300,000 of the 1,000,000 cap/);
+  assert.match(r.stdout, /300,000 of the 4,400,000 ceiling/);
+  assert.match(r.stdout, /Extras: 0 of 5 allowed/);
   assert.match(r.stdout, /security 3 of 3 needed/);
   assert.match(r.stdout, /Findings come when the sweep finishes/);
 });
@@ -2571,10 +2603,10 @@ test('a security or novel-lens role on a cheaper model goes to the owner; other 
   c.roles[3].model = 'claude-sonnet-5-5';
   const ok = approveRun(c);
   assert.equal(ok.status, 0, ok.stdout);
-  assert.equal(approveIn(ok.dir, [ok.f, '--outcome', '--tokens', '200000', '--findings', '6', '--real', '5', '--duplicates', '0', '--real-mid', '2']).status, 0);
+  assert.equal(outcome(ok, '200000', '6', '5', '0', ['--real-mid', '2']).status, 0);
   assert.equal(approvalLog(ok.dir).pop().realMid, 2);
   assert.match(approveIn(ok.dir, ['--summary']).stdout, /from mid-model roles: 2/);
-  assert.notEqual(approveIn(ok.dir, [ok.f, '--outcome', '--tokens', '1', '--findings', '1', '--real', '1', '--duplicates', '0', '--real-mid', 'x']).status, 0);
+  assert.notEqual(outcome(ok, '1', '1', '1', '0', ['--real-mid', 'x']).status, 0);
 });
 
 // From a project closeout (2026-10-30): a PR that changes shipped code without a version bump leaves the release after it
@@ -2715,9 +2747,453 @@ test('an owner-decided sweep can log its outcome, so the trial sees every sweep'
   c.roles.pop();
   const r = approveRun(c);
   assert.equal(r.status, 1);
-  const o = approveIn(r.dir, [r.f, '--outcome', '--tokens', '288000', '--findings', '4', '--real', '3', '--duplicates', '0']);
+  const o = outcome(r, '288000', '4', '3', '0');
   assert.equal(o.status, 0, o.stdout);
   assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'outcome').length, 1);
+});
+
+// M11 (the owner, 2026-11-03): the meter is processed tokens, read by the script from each reviewer's own transcript. A
+// hand-typed number was the Agent result's context size, so every budget tripped on the wrong meter.
+test('the outcome reads each role\'s spend from its own transcript, counting each streamed message once', () => {
+  const c = featureContract();
+  c.roles[3].model = 'sonnet';
+  const r = approveRun(c);
+  assert.equal(r.status, 0, r.stdout);
+  // a1's first message streamed as three lines with one message id (the last carries the final usage).
+  const cfg = transcripts({
+    a1: [{ id: 'm1', u: [3, 100, 50, 10] }, { id: 'm1', u: [3, 100, 50, 20] }, { id: 'm1', u: [3, 100, 50, 30] }, [2, 200, 0, 5]],
+    a2: [[1, 1000, 100, 7]], a3: [[1, 1000, 100, 7]], a4: [{ id: 'x', model: 'claude-sonnet-5-5', u: [0, 500, 0, 0] }], a5: [[10, 10, 10, 10]],
+  });
+  const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'a1,a2,a3,a4,a5', '--findings', '6', '--real', '5', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  const line = approvalLog(r.dir).pop();
+  assert.equal(line.kind, 'outcome');
+  // a1: m1 once (3 + 100 + 50 + 30) plus the second call (2 + 200 + 0 + 5) = 390, as results/m11-meter/meter.mjs counts it.
+  assert.deepEqual(line.roles.map((x) => x.tokens), [390, 1108, 1108, 500, 40]);
+  assert.deepEqual(line.roles.map((x) => x.kind), ['security', 'security', 'security', 'test-value', 'novel-lens']);
+  assert.equal(line.roles[3].model, 'claude-sonnet-5-5');
+  assert.equal(line.tokens, 390 + 1108 + 1108 + 500 + 40);
+  assert.match(approveIn(r.dir, ['--summary']).stdout, /security x3: up to 1,108 of the 400,000 standard/);
+});
+test('the outcome asks the owner when a transcript is missing, and refuses a hand-typed token count', () => {
+  const r = approveRun(featureContract());
+  const before = approvalLog(r.dir).length;
+  const cfg = transcripts({ a1: [[1, 1, 1, 1]], a2: [[1, 1, 1, 1]], a3: [[1, 1, 1, 1]], a4: [[1, 1, 1, 1]] });
+  const run = (ids, more = []) => approveIn(r.dir, [r.f, '--outcome', '--agents', ids, '--findings', '6', '--real', '5', '--duplicates', '0', ...more], { CLAUDE_CONFIG_DIR: cfg });
+  const missing = run('a1,a2,a3,a4,nope');
+  assert.equal(missing.status, 1);
+  assert.match(missing.stdout, /ASK THE OWNER[\s\S]*nope/);
+  const typed = approveIn(r.dir, [r.f, '--outcome', '--tokens', '75000', '--findings', '6', '--real', '5', '--duplicates', '0']);
+  assert.equal(typed.status, 1);
+  assert.match(typed.stdout, /--tokens is not taken[\s\S]*--agents/);
+  assert.match(run('a1,a1,a2,a3,a4').stdout, /each once/, 'one transcript cannot stand for two roles');
+  assert.match(run('A1,a1,a2,a3,a4').stdout, /each once/, 'Windows file names ignore case');
+  assert.match(approveIn(r.dir, [r.f, '--outcome', '--agents', 'a1,a2,a3,a4', '--findings', 'lots', '--real', '5', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg }).stdout, /whole number/);
+  assert.equal(run('a1,a2,a3,a4').status, 1, 'one agent id per role');
+  assert.equal(run('a1,a2,a3,a4,../a1').status, 1, 'an agent id is a name, not a path');
+  assert.equal(approvalLog(r.dir).length, before, 'nothing logged');
+});
+
+// M11 budgets (locked): a standard per model, more only with a named reason, never over 2x.
+test('a role\'s budget is its model\'s standard, or up to 2x with a reason', () => {
+  const at = featureContract();
+  at.roles.forEach((x) => { x.budget = 400000; });
+  at.roles[3].model = 'claude-sonnet-5-5';
+  at.roles[3].budget = 600000;
+  assert.equal(approveRun(at).status, 0, approveRun(at).stdout);
+  const over = featureContract();
+  over.roles[0].budget = 400001;
+  assert.match(approveRun(over).stdout, /ASK THE OWNER[\s\S]*budgetReason/);
+  const reason = featureContract();
+  reason.roles[0].budget = 800000;
+  reason.roles[0].budgetReason = 'a 40-file diff across the import parser';
+  assert.equal(approveRun(reason).status, 0, approveRun(reason).stdout);
+  const twice = featureContract();
+  twice.roles[0].budget = 800001;
+  twice.roles[0].budgetReason = 'a 40-file diff across the import parser';
+  assert.match(approveRun(twice).stdout, /ASK THE OWNER[\s\S]*2x/);
+  const unknown = featureContract();
+  unknown.roles[3].model = 'claude-haiku-5-5';
+  assert.match(approveRun(unknown).stdout, /no standard budget/);
+});
+
+// M12 A (locked): a tier's cap counts only the roles beyond its floor, so no modifier mix can make the floor
+// unreachable, and a sweep still cannot buy more than its extras.
+function fixRepo(extra = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const put = (files) => { for (const [f, t] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), t); } };
+  g(dir, 'init', '-q', '-b', 'main');
+  put({ 'README.md': 'x\n', 'src/page.ts': 'export const page = 1;\n', 'src/page.test.ts': 'test 1\n' });
+  commitAll(dir, 'base', true);
+  g(dir, 'checkout', '-q', '-b', 'fix/page');
+  put({ 'src/page.ts': 'export const page = 2;\n', 'src/page.test.ts': 'test 2\n', ...extra });
+  commitAll(dir, 'fix', true);
+  fs.mkdirSync(path.join(dir, 'sweeps'));
+  return dir;
+}
+const fixFloor = () => [
+  role('fix-root', 'Does the fix remove the root cause, and does it hold?'),
+  role('blast-radius', 'Which callers and copies of this code does the change reach?', { model: 'claude-sonnet-5-5' }),
+  role('test-value', 'Does each changed test fail without the fix?', { model: 'claude-sonnet-5-5' }),
+];
+const threeSecurity = () => [
+  role('security', 'Can a crafted page number reach the query unchecked?'),
+  role('security', 'Does an error path leak the session token?'),
+  role('security', 'Can the clamp be bypassed by a negative offset?'),
+];
+test('a cap counts the roles beyond the floor: a security fix with tests approves, extras past the cap ask', () => {
+  const sec = { tier: 'fix', modifiers: ['security-sensitive'], roles: [...fixFloor(), ...threeSecurity()] };
+  assert.equal(approveRun(sec, fixRepo()).status, 0, approveRun(sec, fixRepo()).stdout);
+  const oneExtra = { ...sec, roles: [...sec.roles, role('modelled-on', 'Was the bug inherited from the code this copied?')] };
+  assert.equal(approveRun(oneExtra, fixRepo()).status, 0, 'the fix tier allows 1 extra');
+  const twoExtra = { ...sec, roles: [...oneExtra.roles, role('data-loss', 'Can the new clamp drop saved pages?', { model: 'claude-sonnet-5-5' })] };
+  assert.match(approveRun(twoExtra, fixRepo()).stdout, /ASK THE OWNER[\s\S]*2 roles beyond the fix floor, over its cap of 1/);
+  const nine = { tier: 'fix', modifiers: ['security-sensitive', 'new-dependency', 'user-data'], roles: [...fixFloor(), ...threeSecurity(),
+    role('supply-chain', 'Is the new package pinned, maintained and free of install scripts?'),
+    role('privacy', 'Does the package send any user data off the device?'),
+    role('data-loss', 'Can a saved page be lost on upgrade?', { model: 'claude-sonnet-5-5' })] };
+  const r9 = approveRun(nine, fixRepo());
+  assert.equal(r9.status, 0, r9.stdout);
+  assert.match(r9.stdout, /Extras: 0 of 1 allowed/);
+  const more = [
+    role('modelled-on', 'Was the sync loop copied from code that had this bug?'),
+    role('data-loss', 'Can an interrupted sync drop a saved record?'),
+    role('privacy', 'Which fields leave the device, and are they needed?'),
+    role('content', 'Is every new error message plain and accurate?'),
+    role('supply-chain', 'Is anything fetched at runtime from an unpinned source?'),
+    role('dimension', 'Do the docs and the changelog match the behaviour?'),
+  ];
+  const extras = (n) => more.slice(0, n);
+  assert.equal(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(5)] }).status, 0, 'the feature tier allows 5 extras');
+  assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(6)] }).stdout, /6 roles beyond the feature floor, over its cap of 5/);
+});
+
+// O2 A with R2 (the owner, 2026-11-03): one sweep, one focused re-sweep (blast radius, one role per fixed kind, alignment),
+// then what is left goes to the handoff. A second re-sweep is refused, not paused.
+const resweepRoles = (kinds = ['security']) => [
+  role('blast-radius', 'What else do the fixes reach, and did any of them break it?', { model: 'claude-sonnet-5-5' }),
+  ...kinds.map((k) => role(k, `Does the ${k} fix close the finding without opening another?`)),
+  role('dimension', 'Does the change still match its locks and the version goal?', { model: 'claude-sonnet-5-5' }),
+];
+// A first sweep approved and its outcome logged, then a fix committed on top.
+function firstSweep(contract = featureContract(), dir = sweepRepo()) {
+  const r = approveRun(contract, dir);
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(outcome(r).status, 0);
+  fs.writeFileSync(path.join(dir, 'README.md'), 'fixed\n');
+  commitAll(dir, 'fix the sweep findings', true);
+  return r;
+}
+function resweep(first, extra = {}, name = 'resweep.json') {
+  const f = path.join(first.dir, 'sweeps', name);
+  fs.writeFileSync(f, JSON.stringify({ tier: 'feature', modifiers: [], resweepOf: first.f, fixed: [{ finding: 'S2: the error path logs the token', kind: 'security' }], roles: resweepRoles(), ...extra }));
+  return { ...approveIn(first.dir, [f]), dir: first.dir, f };
+}
+test('one focused re-sweep approves; a second, or a re-sweep of it, is refused with the carry-over pointer and no pause', () => {
+  const first = firstSweep();
+  const re = resweep(first);
+  assert.equal(re.status, 0, re.stdout);
+  assert.match(re.stdout, /APPROVED[\s\S]*re-sweep/);
+  assert.notEqual(outcome(re).status, 0, 'a re-sweep outcome needs --carried');
+  assert.equal(outcome(re, '200000', '2', '2', '0', ['--carried', '0']).status, 0);
+  for (const extra of [{}, { resweepOf: re.f }]) {
+    const again = resweep(first, extra, 'resweep2.json');
+    assert.equal(again.status, 1, again.stdout);
+    assert.match(again.stdout, /REFUSED[\s\S]*one re-sweep[\s\S]*Carry-overs from the last PR/);
+    assert.doesNotMatch(again.stdout, /paused/i);
+    assert.ok(!fs.existsSync(again.f.replace(/\.json$/, '.triage.md')), 'a refusal is the rule working: no triage report');
+  }
+  assert.ok(!approvalLog(first.dir).some((e) => e.kind === 'pause'), 'no pause');
+  assert.equal(approveIn(first.dir, [first.f]).status, 0, 'the next first sweep still approves');
+});
+test('a re-sweep that loses focus asks the owner', () => {
+  const cases = [
+    [{ roles: [...resweepRoles(), role('novel-lens', 'What did every other role structurally miss?')] }, /novel-lens/],
+    [{ roles: resweepRoles().slice(0, 2) }, /dimension/],
+    [{ fixed: [] }, /no fixed findings listed/],
+    [{ fixed: [{ finding: '', kind: 'security' }] }, /no finding named/],
+    [{ tier: 'fix' }, /keeps its sweep's tier/],
+    [{ roles: [...resweepRoles(), role('blast-radius', 'Which configs load the patched module at start?', { model: 'claude-sonnet-5-5' })] }, /2 blast-radius roles/],
+    [{ modifiers: ['user-data'] }, /modifier "user-data"/],
+    [{ fixed: [{ finding: 'S9: an invented finding', kind: 'privacy' }], roles: resweepRoles(['privacy']) }, /privacy/],
+  ];
+  for (const [extra, why] of cases) {
+    const r = resweep(firstSweep(), extra);
+    assert.equal(r.status, 1, `${why}: ${r.stdout}`);
+    assert.match(r.stdout, /ASK THE OWNER/);
+    assert.match(r.stdout, why);
+  }
+  // Growth: never more roles than the first sweep had.
+  const small = { tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) };
+  const fr = firstSweep(small, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
+  const grow = resweep(fr, { tier: 'fix', fixed: [{ finding: 'F1: the clamp still lets 0 through', kind: 'fix-root' }], roles: resweepRoles(['fix-root']) });
+  assert.match(grow.stdout, /ASK THE OWNER[\s\S]*3 roles, more than the 2 of the sweep it re-checks/);
+  // The first sweep's outcome comes first.
+  const open = approveRun(featureContract());
+  fs.writeFileSync(path.join(open.dir, 'src', 'fixed.ts'), 'fixed\n');
+  commitAll(open.dir, 'fix', true);
+  assert.match(resweep(open).stdout, /ASK THE OWNER[\s\S]*outcome/);
+  // HEAD must descend from the first sweep's HEAD.
+  const moved = firstSweep();
+  g(moved.dir, 'checkout', '-q', '-b', 'other', 'main');
+  fs.writeFileSync(path.join(moved.dir, 'other.ts'), 'x\n');
+  fs.mkdirSync(path.join(moved.dir, 'sweeps'), { recursive: true });
+  commitAll(moved.dir, 'other work', true);
+  assert.match(resweep(moved).stdout, /ASK THE OWNER[\s\S]*does not descend/);
+  // Found by the commit security review: the re-sweep floor skips the diff's modifiers, so fixes that add a
+  // dependency or new source go to the owner.
+  for (const [file, text, why] of [['package.json', '{"dependencies":{"left-pad":"1"}}\n', /package file/], ['src/helper.ts', 'x\n', /add a source file/], ['sweeps/helper.mjs', 'x\n', /add a source file/]]) {
+    const dep = firstSweep();
+    fs.writeFileSync(path.join(dep.dir, file), text);
+    commitAll(dep.dir, 'fix with more', true);
+    assert.match(resweep(dep).stdout, new RegExp(`ASK THE OWNER[\\s\\S]*${why.source}`), file);
+  }
+  // A doc moved to a source path is new source, not a rename.
+  const moved2 = firstSweep();
+  fs.mkdirSync(path.join(moved2.dir, 'lib'));
+  g(moved2.dir, 'mv', 'README.md', 'lib/readme.mjs');
+  commitAll(moved2.dir, 'move', true);
+  assert.match(resweep(moved2).stdout, /ASK THE OWNER[\s\S]*add a source file \(lib\/readme\.mjs\)/);
+});
+test('what a re-sweep leaves is carried: logged, printed, shown at each sweep start until a later outcome closes it', () => {
+  const first = firstSweep();
+  const re = resweep(first);
+  assert.equal(re.status, 0, re.stdout);
+  assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
+  const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
+  assert.equal(o.status, 0, o.stdout);
+  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*Carry-overs from the last PR/);
+  assert.equal(approvalLog(first.dir).pop().carried, 2);
+  const next = approveIn(first.dir, [first.f]);
+  assert.equal(next.status, 0, next.stdout);
+  assert.match(next.stdout, /2 carried finding\(s\) open/);
+  assert.notEqual(outcome(first, '200000', '6', '5', '0', ['--closed-carries', '3']).status, 0, 'cannot close more than are open');
+  assert.equal(outcome(first, '200000', '6', '5', '0', ['--closed-carries', '2']).status, 0);
+  assert.doesNotMatch(approveIn(first.dir, [first.f]).stdout, /carried finding/);
+});
+
+// E11 applied to approve.mjs (the owner, 2026-11-03): every stop hands the owner a triage report, not just a line.
+test('every ask and every pause writes a triage report beside the contract; an approval writes none', () => {
+  const triage = (f) => f.replace(/\.json$/, '.triage.md');
+  const ok = approveRun(featureContract());
+  assert.ok(!fs.existsSync(triage(ok.f)), 'an approval writes none');
+  const c = featureContract();
+  c.roles.pop();
+  const ask = approveRun(c);
+  assert.match(ask.stdout, /contract\.triage\.md/);
+  const text = read(triage(ask.f));
+  assert.match(text, /needs 1 novel-lens/);
+  assert.match(text, /Fix options/);
+  assert.match(text, /"decision":"owner"/, 'the log line behind it');
+  const trip = approveRun(featureContract());
+  fs.rmSync(triage(trip.f), { force: true });
+  const o = outcome(trip, String(5 * 60000 * 1.3));
+  assert.match(o.stdout, /contract\.triage\.md/);
+  assert.match(read(triage(trip.f)), /30% over the budget of 300000/);
+  const esc = approveRun(featureContract());
+  const e = approveIn(esc.dir, [esc.f, '--escape', 'a sync bug shipped']);
+  assert.match(e.stdout, /contract\.triage\.md/);
+  assert.match(read(triage(esc.f)), /a sync bug shipped/);
+  const t = approveRun(featureContract());
+  for (let i = 1; i < 10; i++) { outcome(t); approveIn(t.dir, [t.f]); }
+  outcome(t);
+  fs.rmSync(triage(t.f), { force: true });
+  assert.match(approveIn(t.dir, [t.f]).stdout, /trial review due[\s\S]*contract\.triage\.md/);
+  assert.match(read(triage(t.f)), /trial review due/);
+  assert.match(read(triage(t.f)), /resumes from their own terminal/, 'the fix options are the report\'s point');
+  // A tier that always asks still gets real numbers, and no absolute path or owner's words leak into the report.
+  const fp = approveRun({ ...featureContract(), tier: 'first push' });
+  const fpText = read(triage(fp.f));
+  assert.doesNotMatch(fpText, /undefined/);
+  assert.doesNotMatch(fpText, /approve-[A-Za-z0-9]{6}/, 'no absolute path to the repo');
+});
+
+// Found by the 1.16.0 branch's own feature sweep (2026-11-03).
+test('a tier that is an object\'s built-in name is unknown, and asks', () => {
+  for (const tier of ['constructor', '__proto__', 'toString']) {
+    const r = approveRun({ ...featureContract(), tier });
+    assert.equal(r.status, 1, `${tier}: ${r.stdout}`);
+    assert.match(r.stdout, /unknown tier/);
+  }
+  assert.match(approveRun({ ...featureContract(), modifiers: ['constructor'] }).stdout, /unknown modifier "constructor"/);
+});
+test('the outcome reads only this sweep\'s finished reviewers, each once in the log', () => {
+  const r = approveRun({ tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] }, sweepRepo({ 'README.md': 'y\n' }));
+  assert.equal(r.status, 0, r.stdout);
+  const log = (id, cfg) => approveIn(r.dir, [r.f, '--outcome', '--agents', id, '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  const asks = (id, cfg, why) => { const o = log(id, cfg); assert.equal(o.status, 1, `${why}: ${o.stdout}`); assert.match(o.stdout, /ASK THE OWNER/); assert.match(o.stdout, why); };
+  asks('e1', transcripts({ e1: [[1, 1, 1, 1]] }, { e1: { agentType: 'Explore' } }), /not a reviewer/);
+  asks('u1', transcripts({ u1: [[1, 1, 1, 1]] }, { u1: { finished: false } }), /not finished/);
+  const old = transcripts({ o1: [[1, 1, 1, 1]] });
+  const of = path.join(old, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-o1.jsonl');
+  fs.writeFileSync(of, read(of).replace(/"timestamp":"[^"]+"/g, '"timestamp":"2026-10-27T00:00:00.000Z"'));
+  asks('o1', old, /before this sweep was cleared/);
+  const half = transcripts({ h1: [[1, 1, 1, 1]] });
+  fs.appendFileSync(path.join(half, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-h1.jsonl'), '{"type":"assist');
+  asks('h1', half, /not finished/);
+  const two = transcripts({ d1: [[1, 1, 1, 1]] });
+  transcripts({ d1: [[1, 1, 1, 1]] }, {}, two, 'session-2');
+  asks('d1', two, /2 transcripts/);
+  assert.equal(r.status, 0);
+  assert.equal(log('g1', transcripts({ g1: [[1, 1, 1, 1]] })).status, 0);
+  const again = approveIn(r.dir, [r.f]);
+  assert.equal(again.status, 0, again.stdout);
+  asks('g1', transcripts({ g1: [[1, 1, 1, 1]] }), /already logged/);
+});
+test('a reviewer that ran on another model than its role names pauses for the owner', () => {
+  const r = approveRun(featureContract());
+  const cfg = transcripts({ m1: [[1, 1, 1, 1]], m2: [[1, 1, 1, 1]], m3: [[1, 1, 1, 1]], m4: [{ model: 'claude-haiku-4-5', u: [1, 1, 1, 1] }], m5: [[1, 1, 1, 1]] });
+  const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'm1,m2,m3,m4,m5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  assert.match(o.stdout, /paused[\s\S]*ran on claude-haiku-4-5/);
+});
+test('an approved sweep that never started can be closed with --none-ran, and only then', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0);
+  fs.writeFileSync(path.join(dir, 'src', 'more.ts'), 'x\n');
+  commitAll(dir, 'more', true);
+  assert.match(approveIn(dir, [r.f]).stdout, /log the outcome of the last approved sweep first/);
+  const none = approveIn(dir, [r.f, '--outcome', '--none-ran']);
+  assert.equal(none.status, 0, none.stdout);
+  assert.equal(approveIn(dir, [r.f]).status, 0, 'the way is clear again');
+  // Once a reviewer has started under the clearance, the outcome must be measured.
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow');
+  const ran = approveIn(dir, [r.f, '--outcome', '--none-ran']);
+  assert.equal(ran.status, 1);
+  assert.match(ran.stdout, /started/);
+});
+test('a re-sweep is one per sweep however the first is re-run, and a re-run of the same re-sweep before it ran is fine', () => {
+  const first = firstSweep();
+  const re = resweep(first);
+  assert.equal(re.status, 0, re.stdout);
+  const rerun = approveIn(first.dir, [re.f]);
+  assert.match(rerun.stdout, /log the outcome of the last approved sweep first/, 're-deciding before its outcome asks, as any contract does');
+  assert.doesNotMatch(rerun.stdout, /REFUSED/, 'it is not a second re-sweep');
+  assert.equal(outcome(re, '200000', '1', '1', '0', ['--carried', '1']).status, 0);
+  assert.match(approveIn(first.dir, [re.f]).stdout, /REFUSED/, 'after its outcome it has run');
+  assert.equal(approveIn(first.dir, [first.f]).status, 0);
+  assert.equal(outcome(first).status, 0);
+  assert.match(resweep(first, {}, 'resweep2.json').stdout, /REFUSED[\s\S]*already had its re-sweep/, 'clearing the first sweep again does not buy a second');
+});
+test('a re-sweep reads the first sweep as it was cleared, carries leftovers from either pass, and keeps contracts and reports out of the new-source check', () => {
+  const first = firstSweep();
+  const edited = JSON.parse(read(first.f));
+  edited.roles.push(role('privacy', 'Which fields leave the device now?'));
+  fs.writeFileSync(first.f, JSON.stringify(edited));
+  assert.match(resweep(first).stdout, /ASK THE OWNER[\s\S]*changed since it was cleared/);
+  const f2 = firstSweep();
+  const re = resweep(f2);
+  assert.equal(re.status, 0, re.stdout);
+  assert.equal(outcome(re, '200000', '0', '0', '0', ['--carried', '2']).status, 0, 'first-sweep findings left unfixed carry too');
+  // Contracts committed in the sweep folder are not new source; a script there is.
+  const f3 = firstSweep();
+  fs.writeFileSync(path.join(f3.dir, 'sweeps', 'helper.json'), '{"x":1}\n');
+  commitAll(f3.dir, 'a data file in the sweep folder', true);
+  assert.match(resweep(f3).stdout, /add a source file \(sweeps\/helper\.json\)/);
+  const f4 = firstSweep();
+  fs.writeFileSync(path.join(f4.dir, 'src', 'sync.test.ts'), 'more test\n');
+  fs.writeFileSync(path.join(f4.dir, 'src', 'extra.test.ts'), 'new test\n');
+  commitAll(f4.dir, 'a test for the fix', true);
+  assert.equal(resweep(f4).status, 0, 'a new test file is not new source');
+});
+test('a budget over standard needs a real reason; project caps lower every limit', () => {
+  const pad = featureContract();
+  pad.roles[0].budget = 800000;
+  pad.roles[0].budgetReason = 'xxxxxxxxxxxxxxx';
+  assert.match(approveRun(pad).stdout, /budgetReason/);
+  const sonnet = featureContract();
+  sonnet.roles[3].model = 'sonnet';
+  sonnet.roles[3].budget = 600001;
+  assert.match(approveRun(sonnet).stdout, /600001 over the sonnet standard/);
+  const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
+  const plusOne = { ...featureContract(), roles: [...featureContract().roles, role('privacy', 'Which fields leave the device now?')] };
+  assert.equal(approveRun(plusOne).status, 0);
+  assert.match(approveRun(plusOne, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor, over its cap of 0/);
+  assert.match(approveRun(featureContract(), lowered({ maxRoleBudget: 50000 })).stdout, /per-role cap of 50000/);
+  assert.match(approveRun(featureContract(), lowered({ maxTotalBudget: 100000 })).stdout, /cap of 100000/);
+  assert.match(approveRun(featureContract(), lowered({ maxAgents: 4 })).stdout, /cap of 4/);
+  assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, role('security', 'Can a replayed token reach the import queue?')] }, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor/, 'a fourth security role is an extra');
+});
+test('the default reviewer model in approve.mjs is the reviewer role\'s own model', () => {
+  const m = read('user/agents/reviewer.md').match(/^model:\s*(\S+)/m)[1];
+  assert.match(read(APPROVE), new RegExp(`DEFAULT_MODEL = '${m}'`));
+});
+test('the sweep guard says a refused re-sweep has no owner override', () => {
+  const first = firstSweep();
+  const re = resweep(first);
+  outcome(re, '200000', '1', '1', '0', ['--carried', '0']);
+  const r2 = resweep(first, {}, 'resweep2.json');
+  assert.match(r2.stdout, /REFUSED/);
+  const g = sweepGuard(first.dir);
+  assert.equal(g.permissionDecision, 'deny');
+  assert.match(g.permissionDecisionReason, /refused/i);
+  assert.doesNotMatch(g.permissionDecisionReason, /--owner-yes/);
+});
+
+// Found by the 1.16.0 branch's re-sweep (2026-11-03): an approval closed with --none-ran is not a sweep that ran.
+test('a sweep closed with --none-ran is neither a base for a re-sweep nor a used re-sweep', () => {
+  const dir = sweepRepo();
+  const f = approveRun(featureContract(), dir);
+  assert.equal(approveIn(dir, [f.f, '--outcome', '--none-ran']).status, 0);
+  fs.writeFileSync(path.join(dir, 'README.md'), 'fixed\n');
+  commitAll(dir, 'fix', true);
+  assert.match(resweep(f).stdout, /ASK THE OWNER[\s\S]*outcome of the sweep it re-checks/, 'a first sweep nobody ran has nothing to re-check');
+  const first = firstSweep();
+  const re = resweep(first);
+  assert.equal(re.status, 0, re.stdout);
+  fs.writeFileSync(path.join(first.dir, 'src', 'sync.ts'), 'moved on\n');
+  commitAll(first.dir, 'another fix before the reviewers', true);
+  assert.equal(approveIn(first.dir, [re.f, '--outcome', '--none-ran']).status, 0);
+  const again = resweep(first);
+  assert.equal(again.status, 0, `the unused re-sweep is not spent: ${again.stdout}`);
+  // Two different re-sweep contracts cleared back to back: the second is refused before either runs.
+  const two = firstSweep();
+  assert.equal(resweep(two).status, 0);
+  assert.match(resweep(two, {}, 'resweep2.json').stdout, /REFUSED/);
+});
+test('--none-ran reads every clearing of this round, and only an approved contract has one', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  fs.writeFileSync(path.join(dir, 'src', 'more.ts'), 'x\n');
+  commitAll(dir, 'more', true);
+  assert.match(approveIn(dir, [r.f]).stdout, /ASK THE OWNER/);
+  assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes go']).status, 0);
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'a reviewer starts under the owner\'s yes');
+  const none = approveIn(dir, [r.f, '--outcome', '--none-ran']);
+  assert.equal(none.status, 1, none.stdout);
+  assert.match(none.stdout, /started/);
+  const c = featureContract();
+  c.roles.pop();
+  const asked = approveRun(c);
+  assert.match(approveIn(asked.dir, [asked.f, '--outcome', '--none-ran']).stdout, /has none/);
+});
+test('a modifiers value that is not a list asks; the triage fix options fit the reason', () => {
+  const r = approveRun({ tier: 'fix', modifiers: 'security-sensitive', roles: fixFloor() }, fixRepo());
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /modifiers must be a list/);
+  const moved = firstSweep();
+  g(moved.dir, 'checkout', '-q', '-b', 'other', 'main');
+  fs.writeFileSync(path.join(moved.dir, 'other.ts'), 'x\n');
+  fs.mkdirSync(path.join(moved.dir, 'sweeps'), { recursive: true });
+  commitAll(moved.dir, 'other work', true);
+  const ask = resweep(moved);
+  const text = read(ask.f.replace(/\.json$/, '.triage.md'));
+  assert.match(text, /Focus the re-sweep/);
+  assert.doesNotMatch(text, /decides whether the trip was a real failure/, 'a HEAD that does not descend is not a spend trip');
+  const budget = featureContract();
+  budget.roles[0].budget = 400001;
+  assert.match(read(approveRun(budget).f.replace(/\.json$/, '.triage.md')), /Set each role at its model's standard/);
+});
+test('a transcript whose last model is synthetic is read by its real model; one with no model pauses', () => {
+  const r = approveRun(featureContract());
+  const cfg = transcripts({ y1: [[1, 1, 1, 1], { model: '<synthetic>', u: [0, 0, 0, 0] }], y2: [[1, 1, 1, 1]], y3: [[1, 1, 1, 1]], y4: [[1, 1, 1, 1]], y5: [[1, 1, 1, 1]] });
+  const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'y1,y2,y3,y4,y5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  assert.doesNotMatch(o.stdout, /paused/);
+  const n = approveRun(featureContract());
+  const cfg2 = transcripts({ z1: [{ model: null, u: [1, 1, 1, 1] }], z2: [[1, 1, 1, 1]], z3: [[1, 1, 1, 1]], z4: [[1, 1, 1, 1]], z5: [[1, 1, 1, 1]] });
+  assert.match(approveIn(n.dir, [n.f, '--outcome', '--agents', 'z1,z2,z3,z4,z5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg2 }).stdout, /paused[\s\S]*ran on no recorded model/);
 });
 
 // From a project's kit-gap log (2026-10-31): a second Claude config folder (CLAUDE_CONFIG_DIR) ran without the kit,

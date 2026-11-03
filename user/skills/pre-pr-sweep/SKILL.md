@@ -44,11 +44,14 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
    check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
    re-sweep: the script clears no new contract until it is in. The re-sweep is a new contract on the new HEAD, run
-   through `approve.mjs` like the first; scoped to the fixes, it may fall below the tier's floor, and then the
-   script asks and the owner decides. Update the report. Summarize the result in the PR
+   through `approve.mjs` like the first, with `"resweepOf": "<first contract.json, relative to this contract>"` and `"fixed": [{ "finding",
+   "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). A second re-sweep
+   is refused: what is left is logged with `--carried <n>` and goes to the handoff. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
-6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --tokens <used> --findings <n>
-   --real <n after triage> --duplicates <n repeated between roles>` (add `--real-mid <n>`: real findings from roles on
+6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
+   --real <n after triage> --duplicates <n repeated between roles>` (`--agents`: each reviewer's agent id, one per
+   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a re-sweep adds
+   `--carried <n>`, a sweep that fixes carried findings `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
    the mid model, for the reviewer model trial). A bug later found in code the
    sweep passed: `--escape "<what>"`. `--summary` prints the trial so far; put its line in the rundown.
 
