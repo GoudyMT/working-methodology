@@ -37,6 +37,9 @@ function main() {
 		let raw = null;
 		try { raw = fs.readFileSync(e.contract, 'utf8'); } catch { /* moved or deleted */ }
 		if (raw === null || sha(raw) !== e.hash) return deny(`The Swarm Contract changed or moved after the script ran. ${RUN_FIRST}`);
+		if (e.kind === 'decision' && e.decision === 'refused') {
+			return deny('approve.mjs refused this contract: a sweep gets one re-sweep, and there is no owner override. What it left goes to the handoff\'s carry-overs for the next feature build; log the re-sweep\'s outcome with --carried <n>.');
+		}
 		if (e.kind === 'decision' && e.decision !== 'approved') {
 			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; on their yes, log it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes "<their words>"`, then start the reviewers.');
 		}
