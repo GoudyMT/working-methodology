@@ -203,9 +203,11 @@ function resweepCheck(c, tier, roles, log, facts, why) {
 		else if (r.status !== 0) why.push(`cannot tell whether HEAD descends from ${head.head}`);
 		else {
 			// The re-sweep's floor skips the diff-derived modifiers, so the fixes may not bring what would have set them.
-			// The sweep folder's own files (contracts, reports, triage) are left out.
+			// The sweep folder's own contracts and reports are left out, never a package file. Renames are read as an
+			// add and a delete, and names come raw (-z), so a moved or oddly named file is still seen.
 			const own = git('rev-parse', '--show-prefix').stdout.trim();
-			const since = (filter) => git('diff', '--name-only', `--diff-filter=${filter}`, `${head.head}..HEAD`).stdout.split('\n').filter((f) => f && !(own && f.startsWith(own)));
+			const sweepFile = (f) => own && f.startsWith(own) && !f.slice(own.length).includes('/') && /\.(json|md)$/i.test(f) && !DEP_FILE.test(f);
+			const since = (filter) => git('diff', '--name-only', '-z', '--no-renames', `--diff-filter=${filter}`, `${head.head}..HEAD`).stdout.split('\0').filter((f) => f && !sweepFile(f));
 			const dep = since('ACDMRT').find((f) => DEP_FILE.test(f) && depsChanged(head.head, f));
 			const added = since('A').find((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f));
 			if (dep) why.push(`the fixes change a package file (${dep}) since the sweep it re-checks: a new dependency needs the full floor, not a re-sweep`);

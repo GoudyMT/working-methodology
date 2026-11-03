@@ -2926,12 +2926,18 @@ test('a re-sweep that loses focus asks the owner', () => {
   assert.match(resweep(moved).stdout, /ASK THE OWNER[\s\S]*does not descend/);
   // Found by the commit security review: the re-sweep floor skips the diff's modifiers, so fixes that add a
   // dependency or new source go to the owner.
-  for (const [file, text, why] of [['package.json', '{"dependencies":{"left-pad":"1"}}\n', /package file/], ['src/helper.ts', 'x\n', /add a source file/]]) {
+  for (const [file, text, why] of [['package.json', '{"dependencies":{"left-pad":"1"}}\n', /package file/], ['src/helper.ts', 'x\n', /add a source file/], ['sweeps/helper.mjs', 'x\n', /add a source file/]]) {
     const dep = firstSweep();
     fs.writeFileSync(path.join(dep.dir, file), text);
     commitAll(dep.dir, 'fix with more', true);
-    assert.match(resweep(dep).stdout, new RegExp(`ASK THE OWNER[\\s\\S]*${why.source}`));
+    assert.match(resweep(dep).stdout, new RegExp(`ASK THE OWNER[\\s\\S]*${why.source}`), file);
   }
+  // A doc moved to a source path is new source, not a rename.
+  const moved2 = firstSweep();
+  fs.mkdirSync(path.join(moved2.dir, 'lib'));
+  g(moved2.dir, 'mv', 'README.md', 'lib/readme.mjs');
+  commitAll(moved2.dir, 'move', true);
+  assert.match(resweep(moved2).stdout, /ASK THE OWNER[\s\S]*add a source file \(lib\/readme\.mjs\)/);
 });
 test('what a re-sweep leaves is carried: logged, printed, shown at each sweep start until a later outcome closes it', () => {
   const first = firstSweep();
