@@ -3131,6 +3131,71 @@ test('the sweep guard says a refused re-sweep has no owner override', () => {
   assert.doesNotMatch(g.permissionDecisionReason, /--owner-yes/);
 });
 
+// Found by the 1.16.0 branch's re-sweep (2026-11-03): an approval closed with --none-ran is not a sweep that ran.
+test('a sweep closed with --none-ran is neither a base for a re-sweep nor a used re-sweep', () => {
+  const dir = sweepRepo();
+  const f = approveRun(featureContract(), dir);
+  assert.equal(approveIn(dir, [f.f, '--outcome', '--none-ran']).status, 0);
+  fs.writeFileSync(path.join(dir, 'README.md'), 'fixed\n');
+  commitAll(dir, 'fix', true);
+  assert.match(resweep(f).stdout, /ASK THE OWNER[\s\S]*outcome of the sweep it re-checks/, 'a first sweep nobody ran has nothing to re-check');
+  const first = firstSweep();
+  const re = resweep(first);
+  assert.equal(re.status, 0, re.stdout);
+  fs.writeFileSync(path.join(first.dir, 'src', 'sync.ts'), 'moved on\n');
+  commitAll(first.dir, 'another fix before the reviewers', true);
+  assert.equal(approveIn(first.dir, [re.f, '--outcome', '--none-ran']).status, 0);
+  const again = resweep(first);
+  assert.equal(again.status, 0, `the unused re-sweep is not spent: ${again.stdout}`);
+  // Two different re-sweep contracts cleared back to back: the second is refused before either runs.
+  const two = firstSweep();
+  assert.equal(resweep(two).status, 0);
+  assert.match(resweep(two, {}, 'resweep2.json').stdout, /REFUSED/);
+});
+test('--none-ran reads every clearing of this round, and only an approved contract has one', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  fs.writeFileSync(path.join(dir, 'src', 'more.ts'), 'x\n');
+  commitAll(dir, 'more', true);
+  assert.match(approveIn(dir, [r.f]).stdout, /ASK THE OWNER/);
+  assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes go']).status, 0);
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'a reviewer starts under the owner\'s yes');
+  const none = approveIn(dir, [r.f, '--outcome', '--none-ran']);
+  assert.equal(none.status, 1, none.stdout);
+  assert.match(none.stdout, /started/);
+  const c = featureContract();
+  c.roles.pop();
+  const asked = approveRun(c);
+  assert.match(approveIn(asked.dir, [asked.f, '--outcome', '--none-ran']).stdout, /has none/);
+});
+test('a modifiers value that is not a list asks; the triage fix options fit the reason', () => {
+  const r = approveRun({ tier: 'fix', modifiers: 'security-sensitive', roles: fixFloor() }, fixRepo());
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /modifiers must be a list/);
+  const moved = firstSweep();
+  g(moved.dir, 'checkout', '-q', '-b', 'other', 'main');
+  fs.writeFileSync(path.join(moved.dir, 'other.ts'), 'x\n');
+  fs.mkdirSync(path.join(moved.dir, 'sweeps'), { recursive: true });
+  commitAll(moved.dir, 'other work', true);
+  const ask = resweep(moved);
+  const text = read(ask.f.replace(/\.json$/, '.triage.md'));
+  assert.match(text, /Focus the re-sweep/);
+  assert.doesNotMatch(text, /decides whether the trip was a real failure/, 'a HEAD that does not descend is not a spend trip');
+  const budget = featureContract();
+  budget.roles[0].budget = 400001;
+  assert.match(read(approveRun(budget).f.replace(/\.json$/, '.triage.md')), /Set each role at its model's standard/);
+});
+test('a transcript whose last model is synthetic is read by its real model; one with no model pauses', () => {
+  const r = approveRun(featureContract());
+  const cfg = transcripts({ y1: [[1, 1, 1, 1], { model: '<synthetic>', u: [0, 0, 0, 0] }], y2: [[1, 1, 1, 1]], y3: [[1, 1, 1, 1]], y4: [[1, 1, 1, 1]], y5: [[1, 1, 1, 1]] });
+  const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'y1,y2,y3,y4,y5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  assert.doesNotMatch(o.stdout, /paused/);
+  const n = approveRun(featureContract());
+  const cfg2 = transcripts({ z1: [{ model: null, u: [1, 1, 1, 1] }], z2: [[1, 1, 1, 1]], z3: [[1, 1, 1, 1]], z4: [[1, 1, 1, 1]], z5: [[1, 1, 1, 1]] });
+  assert.match(approveIn(n.dir, [n.f, '--outcome', '--agents', 'z1,z2,z3,z4,z5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg2 }).stdout, /paused[\s\S]*ran on no recorded model/);
+});
+
 // From a project's kit-gap log (2026-10-31): a second Claude config folder (CLAUDE_CONFIG_DIR) ran without the kit,
 // and a repo with its own CLAUDE.md got no pointer to the kit's rules.
 test('the installer and the session hook honor CLAUDE_CONFIG_DIR, and the hook names the folder it checked', () => {
