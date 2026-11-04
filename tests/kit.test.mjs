@@ -3308,26 +3308,57 @@ test('the commit check runs in an agent worktree and reads that worktree\'s stag
   assert.match(ok.stdout + ok.stderr, /Commit check: PASS/, 'a run is visible');
 });
 
-// IR-2026-10-31-pr-body-audit-fails-on-the-required-attribution-header: a project thread's host requires a two-line
-// attribution block at the top of every PR body; the audits read past it, and nowhere else.
+// E19: the owner removed the PR attribution standard, so a host's two-line block fails every body audit, wherever it
+// sits. The corpus came from a separate writer who never saw the check; "unclear" cases fail closed.
 const ATTRIBUTION = '<!-- claude-projects-attribution: {"github_login":"someone"} -->\n_Requested by **Pat**_\n\n';
-test('the PR-body audits read past a leading host attribution block, and only a leading one', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
-  const withBlock = stdAudit(dir, ATTRIBUTION + honestBody());
-  assert.equal(withBlock.status, 0, withBlock.stdout);
-  assert.match(withBlock.stdout, /attribution block: present/);
-  const lines = honestBody().split('\n');
-  const midway = [...lines.slice(0, 4), ATTRIBUTION.trimEnd(), ...lines.slice(4)].join('\n');
-  assert.equal(stdAudit(dir, midway).status, 1, 'a block anywhere else still fails');
+const CORPUS = JSON.parse(read(path.resolve('tests/attribution-corpus.json')));
+const leanAudit = (dir, text) => {
   const lean = read(path.resolve('user/skills/pr-body/examples/lean.md'));
   const f = path.join(dir, 'lean.md');
-  fs.writeFileSync(f, ATTRIBUTION + lean);
+  fs.writeFileSync(f, text(lean));
   const title = lean.split('\n')[0].replace(/^## /, '').replace(/^[A-Za-z ]+: /, 'feat: ');
-  const out = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
-  fs.writeFileSync(f, lean);
-  const plain = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
-  assert.equal(out.status, plain.status, out.stdout);
-  assert.match(out.stdout, /attribution block: present/);
+  return spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
+};
+const notesAudit = (dir, text) => {
+  const f = path.join(dir, 'notes.md');
+  fs.writeFileSync(f, text);
+  return spawnSync('node', [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.0.0'], { encoding: 'utf8', cwd: dir });
+};
+
+test('the attribution check refuses every disguise in the corpus and passes prose about it', async () => {
+  const { attributionFaults } = await import('../project/.claude/no-attribution.mjs');
+  for (const body of [...CORPUS.mustFail, ...CORPUS.unclear.map((u) => u.s)]) assert.notDeepEqual(attributionFaults(body), [], JSON.stringify(body));
+  for (const body of CORPUS.mustPass) assert.deepEqual(attributionFaults(body), [], JSON.stringify(body));
+});
+
+test('both PR-body audits fail on the attribution block at the top, in the middle, or either half alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  assert.equal(stdAudit(dir, honestBody()).status, 0, 'a clean body still passes');
+  const lines = honestBody().split('\n');
+  const [comment, line] = ATTRIBUTION.trimEnd().split('\n');
+  for (const block of [ATTRIBUTION.trimEnd(), comment, line]) {
+    const top = stdAudit(dir, block + '\n\n' + honestBody());
+    assert.equal(top.status, 1, block);
+    assert.match(top.stdout, /no attribution block/);
+    assert.equal(stdAudit(dir, [...lines.slice(0, 4), block, ...lines.slice(4)].join('\n')).status, 1, block);
+  }
+  const plain = leanAudit(dir, (lean) => lean);
+  const blocked = leanAudit(dir, (lean) => ATTRIBUTION + lean);
+  assert.equal(blocked.status, 1, blocked.stdout);
+  assert.match(blocked.stdout, /no attribution block/);
+  assert.doesNotMatch(plain.stdout, /FAIL.*no attribution block/);
+  assert.equal(leanAudit(dir, (lean) => lean + '\n' + line + '\n').status, 1);
+});
+
+test('the release notes audit fails on the attribution block, on the same corpus', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rna-'));
+  for (const body of CORPUS.mustFail) assert.match(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
+  for (const body of CORPUS.mustPass) assert.doesNotMatch(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
+});
+
+test('the kit ships no way past the attribution check', () => {
+  assert.equal(fs.existsSync(path.resolve('project/.claude/attribution.mjs')), false);
+  for (const f of ['project/.claude/pr-body-audit.mjs', 'project/.claude/pr-body-audit-lean.mjs']) assert.doesNotMatch(read(path.resolve(f)), /stripAttribution|attribution\.mjs/);
 });
 
 // IR-2026-10-31-no-branch-rule-on-main-after-a-new-repo-goes-public: the first push gate made a repo public and
@@ -4377,8 +4408,8 @@ test('a recall run asks the current keys and its header names them', async () =>
 });
 
 test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {
-  const { kit, home, proj } = makeKit();
-  const run = () => spawnSync(process.execPath, [RECALL, proj, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, PATH: '' } });
+  const { kit, home } = makeKit();
+  const run = () => spawnSync(process.execPath, [RECALL, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, PATH: '' } });
   const noStamp = run();
   assert.equal(noStamp.status, 1);
   assert.match(noStamp.stderr, /not a released kit install/);
@@ -4388,9 +4419,14 @@ test('recall refuses to run unless the Claude folder is a released kit install, 
   assert.match(unreleased.stderr, /not a released kit install/);
   assert.equal(fs.existsSync(path.resolve('reports/evals/never-saved.md')), false);
   // The folder is found the way kit.mjs finds it.
-  const viaConfig = spawnSync(process.execPath, [RECALL, proj, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: '', CLAUDE_CONFIG_DIR: home, PATH: '' } });
+  const viaConfig = spawnSync(process.execPath, [RECALL, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: '', CLAUDE_CONFIG_DIR: home, PATH: '' } });
   assert.match(viaConfig.stderr, /is not a released kit install/);
   assert.ok(viaConfig.stderr.includes(home), viaConfig.stderr);
+});
+
+test('a recall label is one plain word, so dots and flags cannot pass as one', async () => {
+  const { parseRunArgs } = await recallTools();
+  for (const label of ['.', '..', '--no-kit', '-x']) assert.throws(() => parseRunArgs([label]), /usage/, label);
 });
 
 test('recall gate passes a median at or above the baseline', async () => {
@@ -4623,4 +4659,225 @@ test('the scorer brief is versioned and carries the two calls the proof found bo
   assert.match(brief, /^Current version: v1$/m);
   assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/);
   assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/);
+});
+// Recall probes: the runner makes its own throwaway folder, so no folder name or label can reach the result.
+// Assumes recallTools, RECALL, makeKit, read, spawnSync already exist in this file (they do in kit.test.mjs).
+const HEX6 = '[0-9a-f]{6}';
+const probeParts = (home, p) => path.relative(home, p).split(path.sep);
+const recorder = (statuses = []) => {
+  const calls = [];
+  const run = (cmd, args, opts) => {
+    calls.push({ cmd, args: [...args], opts: { ...opts }, dirExisted: opts && opts.cwd ? fs.existsSync(opts.cwd) : null });
+    const status = statuses.length ? statuses.shift() : 0;
+    return { status, stdout: '', stderr: status === 0 ? '' : 'boom' };
+  };
+  return { calls, run };
+};
+const scratch = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'probe-')), 'kit-probes', 'abc123', 'pdef456');
+
+test('probePath is random per call and always home/kit-probes/<6 hex>/p<6 hex>', async () => {
+  const { probePath } = await recallTools();
+  const home = path.join(os.tmpdir(), 'some home');
+  const seen = new Set();
+  for (let i = 0; i < 25; i++) {
+    const p = probePath(home);
+    assert.equal(typeof p, 'string');
+    const parts = probeParts(home, p);
+    assert.equal(parts.length, 3, p);
+    assert.equal(parts[0], 'kit-probes');
+    assert.match(parts[1], new RegExp(`^${HEX6}$`));
+    assert.match(parts[2], new RegExp(`^p${HEX6}$`));
+    assert.ok(p.startsWith(home + path.sep), p);
+    assert.equal(p, path.join(home, 'kit-probes', parts[1], parts[2]));
+    seen.add(p);
+  }
+  assert.equal(seen.size, 25, 'every call must give a new path');
+  assert.notEqual(probePath(home), probePath(home));
+});
+
+test('probePath cannot take a label, so no label can appear in the path', async () => {
+  const { probePath } = await recallTools();
+  assert.equal(probePath.length, 1);
+  const home = path.join(os.tmpdir(), 'h');
+  for (const label of ['kit-1.19.0', 'control', 'cand-zz', 'my_label', 'no-kit', 'recall.run-9', 'xyz']) {
+    // A second argument, if someone smuggles one in, must be ignored.
+    for (const p of [probePath(home), probePath(home, label)]) {
+      const rel = path.relative(home, p);
+      assert.ok(!rel.includes(label), `${label} found in ${rel}`);
+      assert.match(rel.split(path.sep).slice(1).join('/'), new RegExp(`^${HEX6}/p${HEX6}$`));
+    }
+  }
+});
+
+test('parseRunArgs accepts [label], [label, kitFolder] and [label, --no-kit] and returns exactly label, kitDir, noKit', async () => {
+  const { parseRunArgs } = await recallTools();
+  assert.deepEqual(parseRunArgs(['cand-1']), { label: 'cand-1', kitDir: null, noKit: false });
+  assert.deepEqual(parseRunArgs(['kit-1.19.0']), { label: 'kit-1.19.0', kitDir: null, noKit: false });
+  assert.deepEqual(parseRunArgs(['control_2', '--no-kit']), { label: 'control_2', kitDir: null, noKit: true });
+  const kit = path.resolve(os.tmpdir(), 'some kit');
+  const got = parseRunArgs(['cand-1', kit]);
+  assert.deepEqual(Object.keys(got).sort(), ['kitDir', 'label', 'noKit']);
+  assert.equal(got.label, 'cand-1');
+  assert.equal(got.noKit, false);
+  assert.equal(typeof got.kitDir, 'string');
+  assert.equal(path.resolve(got.kitDir), kit);
+});
+
+test('parseRunArgs refuses no label, a label that is a path, too many arguments, and --no-kit with a kit folder', async () => {
+  const { parseRunArgs } = await recallTools();
+  assert.throws(() => parseRunArgs([]));
+  assert.throws(() => parseRunArgs(['']));
+  for (const bad of ['C:\\x\\y', 'C:/x/y', './proj', '.\\proj', 'a/b', 'a\\b', '/abs', 'with space', 'semi;colon', 'C:']) {
+    assert.throws(() => parseRunArgs([bad]), undefined, `label ${bad} must be refused`);
+    assert.throws(() => parseRunArgs([bad, '--no-kit']), undefined, `label ${bad} with --no-kit must be refused`);
+  }
+  assert.throws(() => parseRunArgs(['a', 'b', 'c']));
+  assert.throws(() => parseRunArgs(['a', 'b', 'c', 'd']));
+  assert.throws(() => parseRunArgs(['a', '--no-kit', path.resolve('kit')]));
+  assert.throws(() => parseRunArgs(['a', path.resolve('kit'), '--no-kit']));
+  assert.throws(() => parseRunArgs(['a', '--no-kit', '--no-kit']));
+});
+
+test('parseRunArgs refuses the old "<folder> <label>" usage', async () => {
+  const { parseRunArgs } = await recallTools();
+  assert.throws(() => parseRunArgs(['C:/some/folder', 'kit-1.19.0']));
+  assert.throws(() => parseRunArgs(['C:\\some\\folder', 'kit-1.19.0']));
+  assert.throws(() => parseRunArgs(['./folder', 'x']));
+  assert.throws(() => parseRunArgs([path.resolve(os.tmpdir(), 'proj'), 'x']));
+});
+
+test('setupProbe makes the folder, runs git init in it, then installs the kit project layer with cwd at the kit', async () => {
+  const { setupProbe } = await recallTools();
+  const dir = scratch();
+  const kitDir = path.join(os.tmpdir(), 'a kit');
+  const { calls, run } = recorder();
+  setupProbe({ dir, kitDir, noKit: false, run, released: true });
+  assert.equal(fs.existsSync(dir), true, 'the probe folder must exist');
+  assert.equal(calls.length, 2);
+  const [git, inst] = calls;
+  assert.equal(git.cmd, 'git');
+  assert.ok(git.args.includes('init'));
+  assert.ok(git.opts.cwd === dir || git.args.includes(dir), 'git init must target the probe folder');
+  assert.equal(git.dirExisted !== false, true, 'the folder must exist before git init runs');
+  assert.match(path.basename(inst.cmd), /^node(\.exe)?$/);
+  const script = path.resolve(kitDir, 'scripts', 'kit.mjs');
+  assert.equal(path.resolve(inst.args[0]), script);
+  assert.deepEqual(inst.args.slice(1, 4), ['install', 'project', dir]);
+  assert.equal(path.resolve(inst.opts.cwd), path.resolve(kitDir));
+  assert.equal(inst.args.includes('--unreleased'), false, 'a released kit must not get --unreleased');
+});
+
+test('setupProbe adds --unreleased exactly when the kit is not a release', async () => {
+  const { setupProbe } = await recallTools();
+  const kitDir = path.join(os.tmpdir(), 'k');
+  const a = recorder();
+  setupProbe({ dir: scratch(), kitDir, noKit: false, run: a.run, released: false });
+  assert.equal(a.calls.length, 2);
+  assert.equal(a.calls[1].args.filter((x) => x === '--unreleased').length, 1);
+  assert.equal(a.calls[0].args.includes('--unreleased'), false, 'git init never gets the flag');
+  assert.deepEqual(a.calls[1].args.slice(1, 3), ['install', 'project']);
+  const b = recorder();
+  setupProbe({ dir: scratch(), kitDir, noKit: false, run: b.run, released: true });
+  assert.equal(b.calls[1].args.includes('--unreleased'), false);
+});
+
+test('setupProbe with noKit still makes the folder and git init but never calls the install', async () => {
+  const { setupProbe } = await recallTools();
+  for (const released of [true, false]) {
+    const dir = scratch();
+    const { calls, run } = recorder();
+    setupProbe({ dir, kitDir: path.join(os.tmpdir(), 'k'), noKit: true, run, released });
+    assert.equal(fs.existsSync(dir), true);
+    assert.equal(calls.length, 1, 'only git init may run');
+    assert.equal(calls[0].cmd, 'git');
+    assert.ok(calls.every((c) => !c.args.some((a) => /kit\.mjs$|^install$/.test(String(a)))));
+  }
+  // noKit with no kitDir at all must not touch kitDir.
+  const { calls, run } = recorder();
+  setupProbe({ dir: scratch(), kitDir: null, noKit: true, run, released: false });
+  assert.equal(calls.length, 1);
+});
+
+test('setupProbe throws when git init fails and runs nothing after it', async () => {
+  const { setupProbe } = await recallTools();
+  const { calls, run } = recorder([1]);
+  assert.throws(() => setupProbe({ dir: scratch(), kitDir: path.join(os.tmpdir(), 'k'), noKit: false, run, released: true }));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].cmd, 'git');
+  const again = recorder([128]);
+  assert.throws(() => setupProbe({ dir: scratch(), kitDir: null, noKit: true, run: again.run, released: false }));
+  assert.equal(again.calls.length, 1);
+});
+
+test('setupProbe throws when the kit install fails', async () => {
+  const { setupProbe } = await recallTools();
+  for (const released of [true, false]) {
+    const { calls, run } = recorder([0, 2]);
+    assert.throws(() => setupProbe({ dir: scratch(), kitDir: path.join(os.tmpdir(), 'k'), noKit: false, run, released }));
+    assert.equal(calls.length, 2);
+  }
+});
+
+test('checkUserLayer throws unless kit-install.json exists and says release is exactly true', async () => {
+  const { checkUserLayer } = await recallTools();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ul-'));
+  assert.throws(() => checkUserLayer(home), (e) => /is not a released kit install/.test(e.message) && e.message.includes(home));
+  const stamp = path.join(home, 'kit-install.json');
+  for (const body of [{ release: false }, { release: 'true' }, { release: 1 }, {}, { describe: 'v1.0.0' }]) {
+    fs.writeFileSync(stamp, JSON.stringify(body));
+    assert.throws(() => checkUserLayer(home), /is not a released kit install/, JSON.stringify(body));
+  }
+  fs.writeFileSync(stamp, '{ not json');
+  assert.throws(() => checkUserLayer(home));
+  fs.writeFileSync(stamp, JSON.stringify({ release: true, describe: 'v1.0.0' }));
+  assert.doesNotThrow(() => checkUserLayer(home));
+  // A folder with that name is not a stamp.
+  const odd = fs.mkdtempSync(path.join(os.tmpdir(), 'ul-'));
+  fs.mkdirSync(path.join(odd, 'kit-install.json'));
+  assert.throws(() => checkUserLayer(odd));
+});
+
+test('runHeader names the path shape and the CLI, and never the real folder name', async () => {
+  const { runHeader, probePath } = await recallTools();
+  const home = path.join(os.tmpdir(), 'hdr-home');
+  const projectDir = probePath(home);
+  const [, hex1, p2] = probeParts(home, projectDir);
+  const facts = { project: '1.0.0 (unreleased abc1234)', user: '1.0.0', userRelease: true, approve: true };
+  const lines = runHeader({ label: 'cand-1', projectDir, keys: 2, facts, when: '2026-11-04T00:00:00.000Z', cli: 'claude' });
+  assert.ok(Array.isArray(lines));
+  assert.ok(lines.includes('Path: kit-probes/<hex>/p<hex>'), lines.join('\n'));
+  assert.ok(lines.includes('CLI: claude'), lines.join('\n'));
+  const text = lines.join('\n');
+  for (const secret of [projectDir, hex1, p2, p2.slice(1), path.basename(projectDir), home]) {
+    assert.ok(!text.includes(secret), `header leaks ${secret}`);
+  }
+  // Existing lines survive.
+  assert.match(text, /^# Recall run: cand-1$/m);
+  assert.match(text, /^Keys: v2$/m);
+  assert.match(text, /^Project kit: 1\.0\.0 \(unreleased abc1234\)$/m);
+  assert.match(text, /^User kit: 1\.0\.0$/m);
+  assert.match(text, /^approve\.mjs at the user path: yes$/m);
+  // The CLI line follows the argument, it is not a constant.
+  const other = runHeader({ label: 'x', projectDir, keys: 2, facts, when: 'w', cli: 'other-cli' }).join('\n');
+  assert.match(other, /^CLI: other-cli$/m);
+  assert.doesNotMatch(other, /^CLI: claude$/m);
+  // The path line is the same for every probe, whatever its random name.
+  const again = runHeader({ label: 'x', projectDir: probePath(home), keys: 2, facts, when: 'w', cli: 'claude' });
+  assert.ok(again.includes('Path: kit-probes/<hex>/p<hex>'));
+});
+
+test('recall refuses the old usage and an unreleased user layer before it creates any folder', () => {
+  const { kit, home } = makeKit();
+  const fakeOs = fs.mkdtempSync(path.join(os.tmpdir(), 'fakeos-'));
+  const env = { ...process.env, KIT_CLAUDE_HOME: home, HOME: fakeOs, USERPROFILE: fakeOs, PATH: '' };
+  const go = (args) => spawnSync(process.execPath, [RECALL, ...args], { encoding: 'utf8', env });
+  const old = go(['C:/some/folder', 'kit-1.19.0']);
+  assert.equal(old.status, 1);
+  const oldDot = go(['./folder', 'x']);
+  assert.equal(oldDot.status, 1);
+  const unstamped = go(['never-saved']);
+  assert.equal(unstamped.status, 1);
+  assert.match(unstamped.stderr, /not a released kit install/);
+  assert.equal(fs.existsSync(path.join(fakeOs, 'kit-probes')), false, 'no probe folder before the layer check passes');
+  assert.equal(fs.existsSync(path.resolve('reports/evals/never-saved.md')), false);
 });

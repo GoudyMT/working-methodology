@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-// Runs the rule recall test (the current version in docs/evals/recall-questions.md) against one project folder.
+// Runs the rule recall test (the current version in docs/evals/recall-questions.md) in a folder it makes itself.
+//
+// Why its own folder: an answer moved with the test folder's name (M25: "recall" in the path made sessions open the
+// memory folder, and that lifted Q10). The path is random, so no caller and no label can choose it, and a baseline
+// is the same command with a clone at the old tag as the kit folder, so both sides get the same treatment.
 //
 // Why a fresh headless session per question: an answer must come only from what a new session loads and can
 // read, never from an earlier answer. Only project settings load (--setting-sources project), so the owner's
@@ -17,13 +21,16 @@
 // unmarked. The floor is the last baseline, not the last median: one question is noise, so an honest re-measure may land
 // a point under the last score.
 //
-// Usage: node scripts/recall.mjs <project folder> <label>
+// Usage: node scripts/recall.mjs <label> [kit folder]    (the kit folder defaults to this one)
+//        node scripts/recall.mjs <label> --no-kit        (the control: the same path, nothing installed)
 //        node scripts/recall.mjs gate <base> <head>
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { releaseState } from './kit.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const QUESTIONS = path.join(KIT, 'docs', 'evals', 'recall-questions.md');
@@ -81,8 +88,47 @@ export function installFacts({ projectDir, home }) {
   };
 }
 
-export function runHeader({ label, projectDir, keys, facts, when }) {
-  return [`# Recall run: ${label}`, '', `Project: ${path.basename(path.resolve(projectDir))}; ${when}`, `Keys: v${keys}`,
+/** The run's arguments, or a refusal. The old "<folder> <label>" call fails here: a label is one plain word. */
+export function parseRunArgs(argv) {
+  const usage = 'usage: node scripts/recall.mjs <label> [kit folder] | <label> --no-kit';
+  const [label, second] = argv;
+  if (argv.length < 1 || argv.length > 2 || !/^\w[\w.-]*$/.test(label)) throw new Error(usage);
+  const noKit = second === '--no-kit';
+  return { label, kitDir: second && !noKit ? second : null, noKit };
+}
+
+/** A fresh random folder. It takes no label, so a label can never reach the path a session sees. */
+export function probePath(osHome) {
+  const hex = () => crypto.randomBytes(3).toString('hex');
+  return path.join(osHome, 'kit-probes', hex(), `p${hex()}`);
+}
+
+/** Refuses a Claude folder that is not a released kit install, before any folder or session exists. */
+export function checkUserLayer(home) {
+  const user = readJson(path.join(home, 'kit-install.json'));
+  if (user?.release !== true) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
+}
+
+/**
+ * Make the run's folder: a git repo with the project layer from the kit folder, or nothing for the control.
+ *
+ * Args:
+ *     ctx: { dir, kitDir, noKit, released, run } - released says whether the kit folder is a release, and
+ *         run(cmd, args, opts) returns { status, stdout, stderr }
+ */
+export function setupProbe({ dir, kitDir, noKit, released, run }) {
+  const must = (cmd, args, opts) => {
+    const r = run(cmd, args, opts);
+    if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${(r.stderr || r.stdout || '').trim().slice(0, 200)}`);
+  };
+  fs.mkdirSync(dir, { recursive: true });
+  must('git', ['init', '-q'], { cwd: dir });
+  if (noKit) return;
+  must(process.execPath, [path.join(kitDir, 'scripts', 'kit.mjs'), 'install', 'project', dir, ...(released ? [] : ['--unreleased'])], { cwd: kitDir });
+}
+
+export function runHeader({ label, keys, facts, when, cli }) {
+  return [`# Recall run: ${label}`, '', `When: ${when}`, 'Path: kit-probes/<hex>/p<hex>', `CLI: ${cli}`, `Keys: v${keys}`,
     `Project kit: ${facts.project}`, `User kit: ${facts.user}`, `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
 }
 
@@ -152,20 +198,26 @@ function gate([base, head]) {
 }
 
 /** What a run asks and records, or a refusal: all of it before any session starts. */
-export function prepare({ projectDir, label, home, text, when }) {
+export function prepare({ projectDir, label, home, text, when, cli }) {
+  checkUserLayer(home);
   const facts = installFacts({ projectDir, home });
-  if (!facts.userRelease) throw new Error(`${home} is not a released kit install (kit: ${facts.user}): run install user from a release, then run this again`);
   const keys = currentVersion(text);
   const qs = questions(text, keys);
   if (qs.length !== 10) throw new Error(`expected 10 questions, found ${qs.length}`);
-  return { qs, lines: runHeader({ label, projectDir, keys, facts, when }) };
+  return { qs, lines: runHeader({ label, keys, facts, when, cli }) };
 }
 
-function main([projectDir, label]) {
-  if (!projectDir || !label) throw new Error('usage: node scripts/recall.mjs <project folder> <label>');
+function main(argv) {
+  const { label, kitDir, noKit } = parseRunArgs(argv);
   // The Claude config folder, found the way kit.mjs finds it.
   const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-  const { qs, lines } = prepare({ projectDir, label, home, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString() });
+  checkUserLayer(home);
+  const kit = path.resolve(kitDir || KIT);
+  const projectDir = probePath(os.homedir());
+  const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
+  setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !releaseState(kit).problems.length, run });
+  const cli = (spawnSync('claude', ['--version'], { encoding: 'utf8' }).stdout || 'unknown').trim();
+  const { qs, lines } = prepare({ projectDir, label, home, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), cli });
   for (const { n, q, key } of qs) {
     const r = spawnSync('claude', ['-p', '--setting-sources', 'project', '--allowedTools', 'Read,Grep,Glob',
       '--disallowedTools', 'Edit,Write,Bash,PowerShell,WebFetch,WebSearch,Agent', '--max-turns', MAX_TURNS,
