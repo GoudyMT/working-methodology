@@ -3972,12 +3972,13 @@ test('a sweep cut short has a way out: the next contract asks the owner, and the
   const r = approveRun(featureContract(), dir);
   const ids = cheapRoles(5);
   const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[0, 100, 0, 0]]])), { [ids[0]]: { finished: false } });
-  assert.match(logOutcome(r, ids, cfg).stdout, /ASK THE OWNER[\s\S]*not finished/);
+  assert.match(logOutcome(r, ids, cfg).stdout, /ASK THE OWNER[\s\S]*not finished[\s\S]*--cut-short/);
+  assert.equal(approveIn(dir, [r.f, '--outcome', '--cut-short']).status, 0);
   const next = path.join(dir, 'sweeps', 'next.json');
   fs.writeFileSync(next, JSON.stringify(featureContract()));
   const ask = approveIn(dir, [next]);
   assert.equal(ask.status, 1, ask.stdout);
-  assert.match(ask.stdout, /ASK THE OWNER[\s\S]*cannot be logged/);
+  assert.match(ask.stdout, /ASK THE OWNER[\s\S]*was cut short/);
   assert.equal(approveIn(dir, [next, '--owner-yes', 'yes close it']).status, 0);
   const closed = approvalLog(dir).find((e) => e.kind === 'outcome');
   assert.equal(closed.closedByOwner, true);
@@ -3986,7 +3987,7 @@ test('a sweep cut short has a way out: the next contract asks the owner, and the
   assert.notEqual(approveIn(short.dir, [short.f, '--outcome', '--agents', 'a1,a2', '--findings', '1', '--real', '1', '--duplicates', '0']).status, 0);
   const n2 = path.join(short.dir, 'sweeps', 'next.json');
   fs.writeFileSync(n2, JSON.stringify(featureContract()));
-  assert.match(approveIn(short.dir, [n2]).stdout, /ASK THE OWNER[\s\S]*cannot be logged/, 'fewer ids than roles is a sweep cut short');
+  assert.equal(approveIn(short.dir, [n2]).status, FIX_EXIT, 'a wrong id count alone marks nothing');
 });
 test('an outcome is measured against the clearing, whatever is decided after it', () => {
   const r = approveRun(featureContract());
@@ -4048,8 +4049,8 @@ test('a project whose settings lack the call-cap hook is sent back to wire it', 
   commitAll(dir, 'settings', true);
   const r = approveRun(featureContract(), dir);
   assert.equal(r.status, FIX_EXIT, r.stdout);
-  assert.match(r.stdout, /call-cap hook is not in/);
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"hooks":"kit-hooks/call-cap.cjs"}\n');
+  assert.match(r.stdout, /call-cap hook is not wired/);
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"hooks":{"PreToolUse":[{"args":["C:/home/kit-hooks/call-cap.cjs"]}]}}\n');
   commitAll(dir, 'wired', true);
   assert.equal(approveIn(dir, [r.f]).status, 0);
 });
@@ -4080,7 +4081,7 @@ test('a reviewer past its cap is named at the outcome, and the notice shows modi
   const ids = cheapRoles(5);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, Array.from({ length: i ? 1 : 7 }, () => [0, 10, 0, 0])])));
   const o = logOutcome(r, ids, cfg);
-  assert.match(o.stdout, /ran 7 calls against its cap of 5: the call-cap hook did not hold/);
+  assert.match(o.stdout, /ran 7 calls against its cap of 5: no call-cap hook held it/);
   assert.doesNotMatch(o.stdout, /paused/, 'the trip stays on the whole sweep');
   const k = featureContract();
   k.roles.push(role('astrology', 'What do the stars say about this diff?'));
@@ -4131,7 +4132,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
   fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{}\n');
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":"kit-hooks/call-cap.cjs"}\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":{"PreToolUse":[{"args":["C:/home/kit-hooks/call-cap.cjs"]}]}}\n');
   commitAll(dir, 'settings', true);
   const w = approveRun(featureContract(), dir);
   assert.equal(w.status, 0, w.stdout);
@@ -4185,4 +4186,118 @@ test('the notice prints the real modifiers, M14 leaves no other docs folder out,
   const dep = fixRepo({ 'pké/yarn.lock': 'x\n' });
   const r = approveRun({ tier: 'fix', modifiers: [], roles: fixFloor() }, dep);
   assert.match(r.stdout, /supply-chain/, 'a lockfile in a non-ASCII folder is still a package file');
+});
+
+// The 1.17.0 re-sweep's second half. Covered by tests; by the owner's rule there is no third pass.
+test('a stop at this HEAD binds whatever comes after it: an outcome, an ask, a typo fixed, another branch', () => {
+  const dir = fixRepo();
+  const a = approveRun({ tier: 'fix', modifiers: [], roles: fixFloor() }, dir);
+  assert.equal(a.status, 0, a.stdout);
+  const b = path.join(dir, 'sweeps', 'b.json');
+  const sec = { tier: 'fix', modifiers: ['security-sensitive'], roles: fixFloor() };
+  fs.writeFileSync(b, JSON.stringify(sec));
+  assert.equal(approveIn(dir, [b]).status, FIX_EXIT);
+  assert.equal(approveIn(dir, [a.f, '--outcome', '--none-ran']).status, 0);
+  fs.writeFileSync(b, JSON.stringify({ ...sec, modifiers: [] }));
+  assert.match(approveIn(dir, [b]).stdout, /ASK THE OWNER[\s\S]*went lighter/, 'the stop\'s own instruction does not clear it');
+  const big = featureContract();
+  big.roles[2].context = Array.from({ length: 31 }, (_, i) => `f${i}.ts`);
+  const ask = approveRun({ ...big, modifiers: ['security-sensitive'] }, fixRepo());
+  assert.equal(ask.status, 1, ask.stdout);
+  fs.writeFileSync(ask.f, JSON.stringify({ tier: 'fix', modifiers: [], roles: fixFloor() }));
+  assert.match(approveIn(ask.dir, [ask.f]).stdout, /went lighter/, 'an ask binds too');
+  const typo = approveRun({ tier: 'fix', modifiers: ['security-sensitiv'], roles: [...fixFloor(), ...threeSecurity()] }, fixRepo());
+  assert.equal(typo.status, FIX_EXIT);
+  fs.writeFileSync(typo.f, JSON.stringify({ tier: 'fix', modifiers: ['security-sensitive'], roles: [...fixFloor(), ...threeSecurity()] }));
+  assert.equal(approveIn(typo.dir, [typo.f]).status, 0, 'a typo fixed is not going lighter');
+  const moved = fixRepo();
+  const m = approveRun(sec, moved);
+  assert.equal(m.status, FIX_EXIT);
+  fs.writeFileSync(path.join(moved, 'src/page.ts'), 'export const page = 9;\n');
+  commitAll(moved, 'more', true);
+  fs.writeFileSync(m.f, JSON.stringify({ ...sec, modifiers: [] }));
+  assert.equal(approveIn(moved, [m.f]).status, 0, 'a new commit starts clean');
+});
+test('closing a sweep cut short says what started, and a sweep that ran is not logged as none ran', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  sweepGuard(dir);
+  sweepGuard(dir);
+  assert.equal(approveIn(dir, [r.f, '--outcome', '--cut-short']).status, 0);
+  const next = path.join(dir, 'sweeps', 'next.json');
+  fs.writeFileSync(next, JSON.stringify(featureContract()));
+  assert.match(approveIn(dir, [next]).stdout, /cut short[\s\S]*2 of 5 reviewers started/);
+  assert.equal(approveIn(dir, [next, '--owner-yes', 'yes close it']).status, 0);
+  const closed = approvalLog(dir).find((e) => e.kind === 'outcome');
+  assert.equal(closed.started, 2);
+  assert.equal(closed.noneRan, undefined);
+  assert.match(approveIn(dir, ['--summary']).stdout, /closed unmeasured by the owner: 1/);
+  const paused = approveRun(featureContract());
+  approveIn(paused.dir, [paused.f, '--outcome', '--cut-short']);
+  approveIn(paused.dir, [paused.f, '--escape', 'a bug slipped through']);
+  const n2 = path.join(paused.dir, 'sweeps', 'next.json');
+  fs.writeFileSync(n2, JSON.stringify(featureContract()));
+  assert.match(approveIn(paused.dir, [n2]).stdout, /cut short/, 'a pause does not hide it');
+  const other = approveRun(askContract());
+  assert.equal(approveIn(other.dir, [other.f, '--outcome', '--cut-short']).status, 1, 'only the open approved sweep can be marked');
+});
+test('a re-sweep after a first sweep cut short asks the owner, not a loop; an unused re-sweep leaves a new name free', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  sweepGuard(dir);
+  approveIn(dir, [r.f, '--outcome', '--cut-short']);
+  fs.writeFileSync(path.join(dir, 'README.md'), 'fixed\n');
+  commitAll(dir, 'fix', true);
+  const re = resweep({ dir, f: r.f });
+  assert.equal(re.status, 1, re.stdout);
+  assert.match(re.stdout, /ASK THE OWNER[\s\S]*cut short/);
+  assert.equal(approveIn(dir, [re.f, '--owner-yes', 'yes go']).status, 0);
+  const first = firstSweep();
+  const one = resweep(first);
+  assert.equal(one.status, 0, one.stdout);
+  assert.equal(approveIn(first.dir, [one.f, '--outcome', '--none-ran']).status, 0);
+  assert.equal(resweep(first, {}, 'second.json').status, 0, 'a re-sweep nobody ran spends nothing');
+});
+test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
+  const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
+  const wiredText = '{"hooks":{"PreToolUse":[{"args":["C:/home/kit-hooks/call-cap.cjs"]}]}}\n';
+  for (const bad of ['{"hooks":{"PreToolUse":[{"args":["{{CLAUDE_HOME}}/kit-hooks/call-cap.cjs"]}]}}\n', `{"disableAllHooks":true,${wiredText.slice(1)}`, '{"note":"call-cap.cjs removed on purpose"}\n']) {
+    const dir = sweepRepo();
+    put(dir, bad);
+    assert.equal(approveRun(featureContract(), dir).status, FIX_EXIT, bad);
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  g(dir, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(dir, 'README.md'), 'x\n');
+  put(dir, wiredText);
+  g(dir, 'checkout', '-q', '-b', 'feat/x');
+  fs.rmSync(path.join(dir, '.claude'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'x.ts'), 'x\n');
+  commitAll(dir, 'drop', true);
+  fs.mkdirSync(path.join(dir, 'sweeps'));
+  assert.equal(approveRun(featureContract(), dir).status, FIX_EXIT, 'the base has the hook');
+  const owner = sweepRepo();
+  put(owner, '{}\n');
+  assert.match(approveRun({ ...featureContract(), tier: 'first push' }, owner).stdout, /FIX THE CONTRACT[\s\S]*not wired/);
+  assert.match(approveRun(askContract()).stdout, /no call-cap hook/, 'an ask says it too');
+});
+test('with two clearings the outcome measures the one the reviewers ran under', () => {
+  const big = featureContract();
+  big.roles.forEach((x) => { x.calls = 15; });
+  const dir = sweepRepo();
+  const r = approveRun(big, dir);
+  assert.equal(r.status, 0, r.stdout);
+  approveIn(dir, [r.f, '--escape', 'a bug slipped through']);
+  approveIn(dir, [r.f]);
+  assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes go']).status, 0);
+  const small = featureContract();
+  fs.writeFileSync(r.f, JSON.stringify(small));
+  approveIn(dir, [r.f]);
+  assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes the smaller one']).status, 0);
+  outcome({ ...r, f: r.f }, '200000');
+  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().budget, 537500);
+});
+test('the reviewer role keeps clear of the prompt it cannot answer', () => {
+  assert.match(read(path.resolve('user/agents/reviewer.md')), /Never run a shell command naming `approve\.mjs` with `--owner-yes`/);
 });
