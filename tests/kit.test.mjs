@@ -2972,10 +2972,10 @@ test('every ask and every pause writes a triage report beside the contract; an a
 });
 
 // Found by the 1.16.0 branch's own feature sweep (2026-11-03).
-test('a tier that is an object\'s built-in name is unknown, and asks', () => {
+test('a tier that is an object\'s built-in name is unknown, and goes back to be fixed', () => {
   for (const tier of ['constructor', '__proto__', 'toString']) {
     const r = approveRun({ ...featureContract(), tier });
-    assert.equal(r.status, 1, `${tier}: ${r.stdout}`);
+    assert.equal(r.status, FIX_EXIT, `${tier}: ${r.stdout}`);
     assert.match(r.stdout, /unknown tier/);
   }
   assert.match(approveRun({ ...featureContract(), modifiers: ['constructor'] }).stdout, /unknown modifier "constructor"/);
