@@ -191,3 +191,24 @@ folded into session-workflow) on three fresh installs, each scored strictly by i
 - Q7 run 1: the answer let approve.mjs approve and never named the owner's stop (the rule's design since 1.5.0).
 - Q10 runs 1 and 3: the PR step stops at "the PR body goes to the owner", without the sweep summary in it.
 - The run 1 scorer looked at the git log, which its brief barred; its one disputed call (Q7) went against the branch.
+
+## 1.18.0 gate: the recall gate fix (2026-11-04)
+
+The first entry on the versioned ruler: brief v1, keys v2. The gate from here on is no lower than the released baseline on the same brief and keys, with the control clearly lower (the owner, 2026-11-04); median 9 is the target. Scores before this entry used no written brief and v1 keys, so they do not compare with it.
+
+Seven runs in throwaway installs, relabeled at random, scored by one fresh blind scorer: three on the final rule text (commit 7ce3f89), three on released 1.17.0, one control. The baseline and control ran once, in the first of four rounds; only the candidate was re-run as the rule text moved. Each run's header was removed and its folder name replaced for the scorer. The candidate stamps were set to read as a release, in those throwaway folders only, so no build notice reached the answers: their headers read 1.18.0, and this line is what ties them to the commit. All seven ran with the 1.17.0 user layer, `approve.mjs` at the user path.
+
+| Q | Candidate 1, 2, 3 | Baseline 1.17.0 1, 2, 3 | Control |
+|---|---|---|---|
+| 1, 2, 3, 4, 5, 6, 7, 8, 9 | 1 | 1 | 0 |
+| 10 | 1, 1, 1 | 0, 0, 0 | 0 |
+| Total | 10, 10, 10 | 9, 9, 9 | 0 |
+
+- **Gate met: median 10, baseline 9, control 0.** One question apart is within noise for a 10-question test. The whole margin is Q10, and the rule line behind it was reworded with the key in view: it shows sessions state the summary, not that they write it. Without Q10 the two are level.
+- Three earlier candidate builds, a few rule lines apart, scored the same under their own blind scorers, and an outside inspector re-scored Q3, Q7 and Q10 in the first of those rounds from the raw files and matched. It did not score the other seven questions, and it did not see these final candidate runs.
+- Q3 and Q7 now pass in every kit run: the third-person question gets the rule stated, and the key matches the rule. Both changed the ruler, so they lift the baseline too.
+- Borderline (scorer): 12 calls could flip to 0 in kit runs, mostly Q4; if all did, both medians would be 8, so the margin rests on those calls as well as on Q10.
+- Departures from the design: the 12 saved runs were not re-scored, because old Q3 answers answer another question and a fresh 1.17.0 baseline on v2 replaces them. The Q10 line reads "PR body (carrying the sweep summary)", since Lean bodies have no Review section. The path reads `~/.claude/...` with `$HOME` for PowerShell. The gate is a command in `recall.mjs`, and it does more than the design: a typed baseline may not fall under the last recorded, a moved or reworded ruler and a removed gate line need the marker, and the marker never passes an old ruler. CI cannot see the control.
+- The control is not a clean no-kit run: read tools are unscoped, and it found the owner's memory files. It scored 0, which any no-kit answer would, so it shows the test can tell kit from no kit and says nothing about this fix.
+
+gate: kit-1.18.0 median 10 baseline 9 brief v1 keys v2
