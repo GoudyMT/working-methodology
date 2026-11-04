@@ -22,7 +22,8 @@ next session starts from what this writes down, so every line must be true when 
    removed (rule:compact-ritual, part 4).
    Where the repo has a sweep approval log, run `approve.mjs --summary` (pre-pr-sweep skill): a paused state goes
    into the handoff's State Snapshot as "auto-approval: paused since <date>, <reason>; the owner resumes with
-   <command>", in every handoff until the owner resumes it.
+   <command>", in every handoff until the owner resumes it. A "carried open" above 0 means findings still sit in the
+   handoff's "Carry-overs from the last PR": list each there.
 5. **Write the handoff** in the shape below, run `node <this skill's folder>/audit.mjs <handoff.md> --send`, and fix
    every fault. In a project with several sessions, send the full text it prints as ONE message to the coordinating
    session, never a file path (the next session may not be able to read it). The channel by host: in a Claude

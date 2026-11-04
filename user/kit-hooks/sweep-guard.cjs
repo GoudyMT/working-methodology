@@ -17,7 +17,7 @@ const { spawnSync } = require('child_process');
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
-const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
+const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). FIX THE CONTRACT: fix it and run it again. APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
@@ -40,18 +40,26 @@ function main() {
 		if (e.kind === 'decision' && e.decision === 'refused') {
 			return deny('approve.mjs refused this contract: a sweep gets one re-sweep, and there is no owner override. What it left goes to the handoff\'s carry-overs for the next feature build; log the re-sweep\'s outcome with --carried <n>.');
 		}
+		if (e.kind === 'decision' && e.decision === 'fix') {
+			return deny(`approve.mjs answered FIX THE CONTRACT: fix what it named, then run it again. ${RUN_FIRST}`);
+		}
 		if (e.kind === 'decision' && e.decision !== 'approved') {
 			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; on their yes, log it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes "<their words>"`, then start the reviewers.');
 		}
+		// The budget rests on the call cap, so a brief must carry one the contract set; the call-cap hook reads it there.
+		const cap = String((input.tool_input || {}).prompt || '').match(/Call cap: (\d+)/);
+		if (Array.isArray(e.calls) && !(cap && e.calls.includes(Number(cap[1])))) return deny(`A reviewer's brief carries its role's call cap, as the line "Call cap: <n>", from the cleared contract (${[...new Set(e.calls)].join(', ')}): the sweep skill has the wording.`);
 		// Each start claims one numbered slot file; creating it fails if it exists, so reviewers started at the same
 		// moment cannot share a slot.
 		const slots = path.join(dir, 'kit-sweep-starts', sha(lines[i]));
 		const team = Number(e.agents) || 0;
 		fs.mkdirSync(slots, { recursive: true });
 		for (let n = 0; n < team; n++) {
+			// Each role's slot takes only its own cap, so one role cannot borrow another's.
+			if (Array.isArray(e.calls) && e.calls[n] !== Number(cap[1])) continue;
 			try { fs.closeSync(fs.openSync(path.join(slots, String(n)), 'wx')); return; } catch { /* taken */ }
 		}
-		return deny(`The cleared contract has ${team} reviewer role(s), and all have started. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
+		return deny(`The cleared contract has ${team} reviewer role(s), and all with this call cap have started. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
 	}
 	return deny(`No cleared Swarm Contract at its checkout's current HEAD. ${RUN_FIRST}`);
 }
