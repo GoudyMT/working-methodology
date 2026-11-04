@@ -4066,7 +4066,8 @@ test('the call-cap hook reads a real transcript: other lines, a half-written lin
   assert.equal(hook({ agent_type: 'kit:reviewer' }), 'deny', 'a plugin-named reviewer is held');
   assert.equal(hook({ agent_type: 'Reviewer' }), 'deny');
   assert.equal(hook({ agent_type: 'not-a-reviewer' }), 'allow');
-  assert.match(read(path.resolve('user/kit-hooks/call-cap.cjs')), /Only your hand-back still works/);
+  const said = runHook('user/kit-hooks/call-cap.cjs', { transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash' });
+  assert.match(JSON.parse(said.stdout).hookSpecificOutput.permissionDecisionReason, /Only your hand-back still works/);
 });
 test('the settings wire the hook at its installed path', () => {
   const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
@@ -4098,4 +4099,90 @@ test('a removed worktree is read from its nearest folder, and the shell\'s GIT_D
   assert.match(env.stdout, /ran in another repo/);
   place(cfg, ids[0], path.join(r.dir, 'gone'));
   assert.equal(logOutcome(r, ids, cfg).status, 0);
+});
+
+// The 1.17.0 re-sweep's fixes and test gaps.
+test('a lighter sweep stays the owner\'s across reruns, a second mistake and a new file name', () => {
+  const sec = { tier: 'fix', modifiers: ['security-sensitive'], roles: fixFloor() };
+  const a = approveRun(sec, fixRepo());
+  assert.equal(a.status, FIX_EXIT);
+  fs.writeFileSync(a.f, JSON.stringify({ ...sec, modifiers: [] }));
+  assert.equal(approveIn(a.dir, [a.f]).status, 1);
+  assert.equal(approveIn(a.dir, [a.f]).status, 1, 'the same contract gets the same answer');
+  const b = approveRun(sec, fixRepo());
+  const broken = { ...sec, modifiers: [], roles: [...fixFloor().slice(0, 2)] };
+  fs.writeFileSync(b.f, JSON.stringify(broken));
+  assert.equal(approveIn(b.dir, [b.f]).status, FIX_EXIT);
+  fs.writeFileSync(b.f, JSON.stringify({ ...sec, modifiers: [] }));
+  assert.match(approveIn(b.dir, [b.f]).stdout, /ASK THE OWNER[\s\S]*dropped security-sensitive/, 'a second mistake launders nothing');
+  const n = approveRun(sec, fixRepo());
+  const other = path.join(n.dir, 'sweeps', 'other.json');
+  fs.writeFileSync(other, JSON.stringify({ ...sec, modifiers: [] }));
+  assert.match(approveIn(n.dir, [other]).stdout, /ASK THE OWNER[\s\S]*went lighter/, 'a new name changes nothing');
+  const y = approveRun(sec, fixRepo());
+  fs.writeFileSync(y.f, JSON.stringify({ ...sec, modifiers: [] }));
+  approveIn(y.dir, [y.f]);
+  assert.equal(approveIn(y.dir, [y.f, '--owner-yes', 'yes lighter is right']).status, 0, 'the owner can agree');
+});
+test('with no project settings the notice says the cap has no hook; a hook in the local settings counts', () => {
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /no call-cap hook: each cap rests on the reviewer's own count/);
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{}\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":"kit-hooks/call-cap.cjs"}\n');
+  commitAll(dir, 'settings', true);
+  const w = approveRun(featureContract(), dir);
+  assert.equal(w.status, 0, w.stdout);
+  assert.doesNotMatch(w.stdout, /no call-cap hook/);
+});
+test('a rebased HEAD asks the owner', () => {
+  const first = firstSweep();
+  g(first.dir, 'reset', '-q', '--soft', 'HEAD~2');
+  commitAll(first.dir, 'rebased', true);
+  const r = resweep(first);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /ASK THE OWNER[\s\S]*does not descend/);
+});
+test('an out-of-trial model cleared by the owner still pauses at the outcome', () => {
+  const c = askContract();
+  c.roles[1].model = 'claude-haiku-5-5';
+  const r = approveRun(c);
+  assert.equal(r.status, 1, r.stdout);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes go']).status, 0);
+  const ids = cheapRoles(3);
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 1 ? 'claude-haiku-5-5' : 'claude-opus-5-5', u: [0, 100, 0, 0] }]])));
+  assert.match(logOutcome(r, ids, cfg).stdout, /paused[\s\S]*ran on claude-haiku-5-5/);
+});
+test('a branch cannot raise a cap it inherited, and the outcome holds to an owner\'s clearing', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const put = (f, t) => { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), t); };
+  g(dir, 'init', '-q', '-b', 'main');
+  put('src/page.ts', '1\n'); put('src/page.test.ts', '1\n'); put('.kit/sweep-approval.json', '{"caps":{"fix":{"maxExtras":0}}}\n');
+  commitAll(dir, 'base', true);
+  g(dir, 'checkout', '-q', '-b', 'fix/page');
+  put('src/page.ts', '2\n'); put('src/page.test.ts', '2\n'); put('.kit/sweep-approval.json', '{"caps":{"fix":{"maxExtras":5}}}\n');
+  commitAll(dir, 'fix', true);
+  fs.mkdirSync(path.join(dir, 'sweeps'));
+  assert.match(approveRun({ tier: 'fix', modifiers: [], roles: [...fixFloor(), role('modelled-on', 'Was the bug inherited from the code this copied?')] }, dir).stdout, /over its cap of 0/);
+  const a = approveRun(askContract());
+  approveIn(a.dir, [a.f, '--owner-yes', 'yes go']);
+  const budget = approvalLog(a.dir).filter((e) => e.kind === 'decision').pop().budget;
+  const edited = JSON.parse(read(a.f));
+  edited.roles.forEach((x) => { x.calls = 15; });
+  fs.writeFileSync(a.f, JSON.stringify(edited));
+  approveIn(a.dir, [a.f]);
+  outcome(a, '200000');
+  assert.equal(approvalLog(a.dir).filter((e) => e.kind === 'outcome').pop().budget, budget);
+});
+test('the notice prints the real modifiers, M14 leaves no other docs folder out, and a quoted path still counts', () => {
+  const sec = { ...featureContract(), modifiers: ['security-sensitive'] };
+  assert.match(approveRun(sec).stdout, /Modifiers: security-sensitive; diff against main/);
+  const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.json': '{}\n' })).stdout, /ASK THE OWNER/);
+  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/migrations/old/1.json': '{}\n' })).stdout, /ASK THE OWNER/);
+  const dep = fixRepo({ 'pké/yarn.lock': 'x\n' });
+  const r = approveRun({ tier: 'fix', modifiers: [], roles: fixFloor() }, dep);
+  assert.match(r.stdout, /supply-chain/, 'a lockfile in a non-ASCII folder is still a package file');
 });

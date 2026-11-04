@@ -292,9 +292,12 @@ function callBudgets(roles, cap, why, fix) {
 }
 
 // The cap's hook sits in the project's settings, and install skips a settings file the project changed.
-function hookMissing() {
+function hookState() {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
-	try { return !fs.readFileSync(path.join(top, '.claude', 'settings.json'), 'utf8').includes('call-cap.cjs'); } catch { return false; }
+	const read = (f) => { try { return fs.readFileSync(path.join(top, '.claude', f), 'utf8'); } catch { return null; } };
+	const files = [read('settings.json'), read('settings.local.json')];
+	if (files.some((t) => t && t.includes('call-cap.cjs'))) return 'wired';
+	return files[0] === null ? 'none' : 'missing';
 }
 
 // Every reason this contract is not cleared, and the role kinds it needed. `why` is out of bounds, the owner's call;
@@ -319,7 +322,7 @@ function check(c, facts, log = []) {
 	}
 	const roles = Array.isArray(c.roles) ? c.roles : [];
 	const cap = caps(tier, facts && facts.base);
-	if (hookMissing()) fix.push('the call-cap hook is not in .claude/settings.json: merge its PreToolUse entry from the kit\'s project/.claude/settings.json');
+	if (hookState() === 'missing') fix.push('the call-cap hook is not in .claude/settings.json: merge its PreToolUse entry from the kit\'s project/.claude/settings.json');
 	if (!roles.length) fix.push('no roles');
 	if (roles.length > cap.maxAgents) why.push(`${roles.length} agents, over the project's ${tier} cap of ${cap.maxAgents}`);
 	const resweep = c.resweepOf !== undefined;
@@ -407,13 +410,14 @@ function decide() {
 	const { why, fix, need, extras, cap, first, refused, budgets = [], total = 0 } = check(c, facts, s.log);
 	const head = git('rev-parse', '--short', 'HEAD').stdout.trim() || null;
 	// A stop is cured by adding what it named, not by asking for less: a lighter sweep after one is the owner's.
-	const before = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
-	if (before && before.decision === 'fix') {
-		const mods = Array.isArray(c.modifiers) ? c.modifiers : [];
-		const dropped = (Array.isArray(before.modifiers) ? before.modifiers : []).filter((m) => !mods.includes(m));
-		const lower = TIER_RANK[String(c.tier || '').toLowerCase()] < TIER_RANK[String(before.tier || '').toLowerCase()];
-		if (lower || dropped.length) why.push(`the contract went lighter after FIX THE CONTRACT (${lower ? `tier ${before.tier} to ${c.tier}` : `dropped ${dropped.join(', ')}`}): a lighter sweep is the owner's call`);
-	}
+	// It is read across the whole round, whatever the file is called and however often it is rerun.
+	const roundAt = s.log.map((e, i) => (e.kind === 'outcome' ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+	const stops = s.log.filter((e, i) => i > roundAt && e.kind === 'decision' && e.decision === 'fix');
+	const mods = Array.isArray(c.modifiers) ? c.modifiers : [];
+	const dropped = [...new Set(stops.flatMap((e) => (Array.isArray(e.modifiers) ? e.modifiers : [])))].filter((m) => !mods.includes(m));
+	const rank = (t) => TIER_RANK[String(t || '').toLowerCase()] ?? -1;
+	const heaviest = stops.reduce((t, e) => (rank(e.tier) > rank(t) ? e.tier : t), c.tier);
+	if (rank(heaviest) > rank(c.tier) || dropped.length) why.push(`the contract went lighter after FIX THE CONTRACT (${dropped.length ? `dropped ${dropped.join(', ')}` : `tier ${heaviest} to ${c.tier}`}): a lighter sweep is the owner's call`);
 	const carries = openCarries(s.log);
 	const carryLine = carries > 0 ? [`Open carry-overs: ${carries} carried finding(s) open from a re-sweep, in ${CARRY_HOME}; the outcome of the sweep that fixes them closes them with --closed-carries <n>.`] : [];
 	if (refused) {
@@ -469,6 +473,7 @@ function notice(c, need, extras, cap, first, budgets, total, facts) {
 		'Start notice for the owner (checked by approve.mjs; post it as is):',
 		`    ${c.tier} ${first ? 're-sweep' : 'sweep'}, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
 		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.base}`,
+		...(hookState() === 'none' ? ['    No project settings here, so no call-cap hook: each cap rests on the reviewer\'s own count, and only the top model held one in the probe.'] : []),
 		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}`),
 		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason)`,
 		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
