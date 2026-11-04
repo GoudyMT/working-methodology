@@ -120,6 +120,8 @@ tier (rule:sweep-tiers), the Review Focus list and an empty `## Parking Lot`.
 Run the five-point self-review, fix inline, then link the plan to the owner with the execution approach you
 recommend and why.
 
+Each goal names the record answer it comes from (the brainstorm skill's record), or is marked as the planner's idea.
+
 **Done when:** the self-review is clean and the owner has approved the plan.
 
 Why: the plan is the set of decisions a builder cannot make alone; written down, they survive a compact.

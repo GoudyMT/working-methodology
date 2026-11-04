@@ -10,8 +10,8 @@ const STYLED = new RegExp(`[_*>]\\s*${BY}`, 'i');
 // Disguises fall away first: entities, invisible characters, and odd spaces.
 const plain = (text) => text
 	.replace(/&(?:#(\d+)|#x([\da-f]+)|(nbsp|lt|gt|amp|quot));/gi, (_, dec, hex, name) => (name ? ENTITIES[name.toLowerCase()] : String.fromCodePoint(dec ? Number(dec) : parseInt(hex, 16))))
-	.replace(/[­​-‏⁠﻿]/g, '')
-	.replace(/[  -   　]/g, ' ');
+	.replace(/[\u00AD\u200B-\u200F\u2060\uFEFF]/g, '')
+	.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
 
 /**
  * What a body carries of the attribution block.
