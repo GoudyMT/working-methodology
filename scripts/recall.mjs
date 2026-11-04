@@ -13,7 +13,9 @@
 // CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
 // last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
 // the owner's marker. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
-// baseline may not fall under the last one recorded on the same ruler, and a PR may not move its own ruler, unmarked.
+// baseline may not fall under the last one recorded on the same ruler, and a PR may not move or reword its ruler,
+// unmarked. The floor is the last baseline, not the last median: one question is noise, so an honest re-measure may land
+// a point under the last score.
 //
 // Usage: node scripts/recall.mjs <project folder> <label>
 //        node scripts/recall.mjs gate <base> <head>
@@ -31,7 +33,8 @@ const MAX_TURNS = '8';
 const SCORES = 'docs/evals/results/recall-scores.md';
 const BRIEF = 'docs/evals/recall-scorer-brief.md';
 const QUESTIONS_REL = 'docs/evals/recall-questions.md';
-const RULE_TEXT = /^(rules\/|project\/CLAUDE\.md$)/;
+// What the gate guards: the rule text, and the keys and brief that grade it.
+const GRADED = /^(rules\/|project\/CLAUDE\.md$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
 const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)( owner-accepted)?$/;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
@@ -84,19 +87,20 @@ export function runHeader({ label, projectDir, keys, facts, when }) {
 }
 
 /**
- * Whether a PR's rule text may merge, from its recorded score.
+ * Whether a PR's rule text, ruler or gate line may merge, from its recorded score.
  *
  * Args:
  *     facts: { changed: file paths, added: lines the PR adds to the scores file, brief, keys: current versions,
- *         was: { brief, keys, baseline } on the base, each null when the base has none }
+ *         was: { brief, keys, baseline } on the base, each null when the base has none, and edited when a ruler
+ *         file differs from the base under the same version }
  *
  * Returns:
  *     { ok, detail }
  */
 export function checkGate({ changed, added, brief, keys, was = {} }) {
-  if (!changed.some((f) => RULE_TEXT.test(f))) return { ok: true, detail: 'no rule text changed' };
   const lines = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
-  if (!lines.length) return { ok: false, detail: `Rule text changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>"` };
+  if (!lines.length && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
+  if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>"` };
   const last = lines[lines.length - 1];
   const m = last.match(GATE_LINE);
   if (!m) return { ok: false, detail: `cannot read the gate line: ${last}` };
@@ -104,13 +108,14 @@ export function checkGate({ changed, added, brief, keys, was = {} }) {
   if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
     return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
   }
-  const moved = (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
-  if (moved && !accepted) return { ok: false, detail: `${label}: this PR changes the ruler it is graded on (brief v${was.brief} keys v${was.keys} to brief v${brief} keys v${keys}); that needs the owner-accepted marker` };
-  if (!moved && was.baseline != null && Number(baseline) < was.baseline && !accepted) return { ok: false, detail: `${label}: baseline ${baseline} is under the last recorded baseline ${was.baseline}` };
-  if (Number(median) >= Number(baseline) && !moved) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
-  if (moved) return { ok: true, detail: `${label}: the ruler moved; the owner accepted it` };
-  if (accepted) return { ok: true, detail: `${label}: median ${median} is under the baseline ${baseline}; the owner accepted it` };
-  return { ok: false, detail: `${label}: median ${median} is under the baseline ${baseline}` };
+  const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
+  const faults = [
+    moved && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
+    !moved && was.baseline != null && Number(baseline) < was.baseline && `baseline ${baseline} is under the last recorded baseline ${was.baseline}`,
+    Number(median) < Number(baseline) && `median ${median} is under the baseline ${baseline}`,
+  ].filter(Boolean);
+  if (!faults.length) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
+  return accepted ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}` };
 }
 
 function gate([base, head]) {
@@ -120,34 +125,40 @@ function gate([base, head]) {
     if (g.status !== 0) throw new Error(`git ${a.join(' ')}: ${g.stderr.trim()}`);
     return g.stdout.split('\n');
   };
-  const version = (rel) => currentVersion(fs.readFileSync(path.join(KIT, rel), 'utf8'));
+  const now = (rel) => fs.readFileSync(path.join(KIT, rel), 'utf8');
   const onBase = (rel) => { const g = spawnSync('git', ['show', `${base}:${rel}`], { encoding: 'utf8' }); return g.status === 0 ? g.stdout : ''; };
   const baseVersion = (rel) => { const m = onBase(rel).match(/^Current version: v(\d+)$/m); return m ? Number(m[1]) : null; };
-  const [brief, keys] = [version(BRIEF), version(QUESTIONS_REL)];
+  const [brief, keys] = [currentVersion(now(BRIEF)), currentVersion(now(QUESTIONS_REL))];
+  const edited = [[BRIEF, brief], [QUESTIONS_REL, keys]].some(([rel, v]) => baseVersion(rel) === v && onBase(rel) !== now(rel));
   // The last baseline recorded on this same ruler, if the base has one.
   const recorded = onBase(SCORES).split('\n').map((l) => l.trim().match(GATE_LINE)).filter((m) => m && Number(m[4]) === brief && Number(m[5]) === keys);
   const r = checkGate({
-    changed: git('diff', '--name-only', `${base}...${head}`),
+    // Each side of a rename counts, and a name stays plain: a rule file moved away is rule text changed.
+    changed: git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', `${base}...${head}`),
     added: git('diff', '-U0', `${base}...${head}`, '--', SCORES).filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)),
     brief,
     keys,
-    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null },
+    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null, edited },
   });
   console.log(r.detail);
   if (!r.ok) process.exitCode = 1;
+}
+
+/** What a run asks and records, or a refusal: all of it before any session starts. */
+export function prepare({ projectDir, label, home, text, when }) {
+  const facts = installFacts({ projectDir, home });
+  if (!facts.userRelease) throw new Error(`${home} is not a released kit install (kit: ${facts.user}): run install user from a release, then run this again`);
+  const keys = currentVersion(text);
+  const qs = questions(text, keys);
+  if (qs.length !== 10) throw new Error(`expected 10 questions, found ${qs.length}`);
+  return { qs, lines: runHeader({ label, projectDir, keys, facts, when }) };
 }
 
 function main([projectDir, label]) {
   if (!projectDir || !label) throw new Error('usage: node scripts/recall.mjs <project folder> <label>');
   // The Claude config folder, found the way kit.mjs finds it.
   const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-  const facts = installFacts({ projectDir, home });
-  if (!facts.userRelease) throw new Error(`${home} is not a released kit install (kit: ${facts.user}): run install user from a release, then run this again`);
-  const text = fs.readFileSync(QUESTIONS, 'utf8');
-  const keys = currentVersion(text);
-  const qs = questions(text, keys);
-  if (qs.length !== 10) throw new Error(`expected 10 questions, found ${qs.length}`);
-  const lines = runHeader({ label, projectDir, keys, facts, when: new Date().toISOString() });
+  const { qs, lines } = prepare({ projectDir, label, home, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString() });
   for (const { n, q, key } of qs) {
     const r = spawnSync('claude', ['-p', '--setting-sources', 'project', '--allowedTools', 'Read,Grep,Glob',
       '--disallowedTools', 'Edit,Write,Bash,PowerShell,WebFetch,WebSearch,Agent', '--max-turns', MAX_TURNS,
