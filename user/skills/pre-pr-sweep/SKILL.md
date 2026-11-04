@@ -26,7 +26,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`);
    (c) from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
    (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). (d) APPROVED: post
-   the start notice it printed, as is, and go on; never restate counts by hand. ASK THE OWNER: show the table and
+   the start notice it printed, as is, and go on; never restate counts by hand. FIX THE CONTRACT (exit 3): the mistake is
+   yours; fix what it named and run it again, the owner is not asked. ASK THE OWNER: show the table and
    the reasons it printed, and stop; on the owner's yes, log it with `approve.mjs <contract.json> --owner-yes
    "<their words>"`, then go on. First push and launch gate always ask. A hook (`sweep-guard.cjs`) refuses any
    `reviewer` agent until the log clears this HEAD and this contract, so a new commit or an edited contract means
