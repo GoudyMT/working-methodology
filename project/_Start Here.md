@@ -89,7 +89,6 @@ Tell the owner which mode you are in:
   _Session Log.md                 <- Chronological history
   _Archive/                       <- Moved-out history (never deleted)
   _Templates/                     <- Templates for sessions, ADRs, components, PR bodies
-  AGENTS.md                       <- Durable handoff for any AI tool
   CLAUDE.md                       <- Claude Code entry
   README.md                       <- Public-facing intro
   docs/
@@ -133,5 +132,3 @@ If unclear which issue is open: **one clarification question** to the owner befo
 - Not the design - read the spec.
 - Not the methodology - read `AGENTS.md` and the modules it lists.
 - Not the state - read `_Working Memory.md`.
-
-This file is the **entry point**. It tells you what to read next.

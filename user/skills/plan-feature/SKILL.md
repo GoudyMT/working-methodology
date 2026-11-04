@@ -1,6 +1,6 @@
 ---
 name: plan-feature
-description: Take an idea to an approved, executable plan and then build it. Read the records first, play back what was asked and found, ask only the one open point, explore the goal, offer 2-3 approaches with a recommendation, write a short design doc, then a step-by-step plan with a Progress block, then execute it. Use for a new feature, a behaviour change, or when the owner says plan, design, spec, brainstorm, "how should we build", or hands over an approved plan. Nothing is built before the design is approved.
+description: Take an idea to an approved, executable plan and then build it. Read the records first, play back what was asked and found, get the owner's intent in their own words, explore the goal, offer 2-3 approaches with a recommendation, write a short design doc, then a step-by-step plan with a Progress block, then execute it. Use for a new feature, a behaviour change, or when the owner says plan, design, spec, "how should we build", or hands over an approved plan. Nothing is built before the design is approved.
 ---
 
 # Plan a Feature
@@ -43,28 +43,26 @@ each is decided under rule:delegated-decisions, not asked.
 
 Why: a question the records already answer wastes the owner's time and shows you did not look.
 
-## Step 2 - Play back, then ask one open point
+## Step 2 - Play back, then hand the questions to the brainstorm skill
 
 One message, in this order:
 1. **What was asked**, in the owner's own words, one or two lines.
 2. **What I found**: the facts from Step 1 that shape the work, most important first; offer the rest.
-3. **The one open point** that matters most, as one plain question. Then say what each likely answer would
-   change ("If yes, it needs a new storage key and a migration; if no, it stays in memory").
+3. **What is still open**, sized: for small work and up, run the brainstorm skill. One or two questions go by
+   chat, three or more by its sheet, and it keeps the owner's answers word for word in a record.
 
-Each later message also ends with one question, no list of example answers under it. Prefer an open question
-about a real moment ("Walk me through the last time this bit you") over a menu; a guess the owner can correct
-often beats a question. Mark every guess as yours.
+A guess the owner can correct often beats a question. Mark every guess as yours.
 
-**Done when:** the owner has answered, or said the rest is yours to decide.
+**Done when:** the brainstorm skill's stop rule is met, or the owner said the rest is yours to decide.
 
-Why: one question with its stakes is answered fast and well; five at once get skimmed.
+Why: every unasked question becomes a guess made without the owner, and intent kept in their words survives a compact.
 
 ## Step 3 - Explore the goal
 
 Run rule:goal-before-mechanism: the goal in one line, the current state against it, every channel that could
 reach it, and the cheap deciding measurement first. Probe the assumptions the idea rests on and name the
 riskiest one plus the cheapest way to test it before anything is built. Detail, question craft and the
-idea-generating techniques: [references/explore-and-options.md](references/explore-and-options.md).
+idea-generating techniques: the brainstorm skill's `references/question-craft.md`.
 
 Play back as you go: once one part is understood (who it serves, how one piece behaves), describe it back in
 200-300 words, mark your guesses, and ask what is wrong or missing.
@@ -150,7 +148,7 @@ Why: an approved plan is approved scope, not a blank cheque; the gates are what 
 
 | Thought | Reality |
 |---|---|
-| "I'll ask a few questions to get going" | Read first. Ask only what the records cannot answer. |
+| "I'll ask a few questions to get going" | Read first. Ask only what the records cannot answer, through the brainstorm skill. |
 | "Options save them effort" | Options steer. Get the owner describing first; options come at Step 4. |
 | "I'll fill in sensible defaults" | Fine - say each one out loud. A default never heard cannot be rejected. |
 | "They liked the idea, so the design is approved" | Approval covers what they saw. Write it, then ask. |

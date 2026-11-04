@@ -1,7 +1,6 @@
-# Explore the Goal and Generate Options
+# Question Craft
 
-Loaded by Steps 2-4. The goal-first method itself is rule:goal-before-mechanism; this file is the craft that
-feeds it.
+Loaded while writing questions and while exploring options: what to cover, how to ask, and how to test what you heard.
 
 ## Ground to cover (territory, not a script)
 
@@ -24,9 +23,9 @@ Why: each item missed here becomes a guess later, made without the owner.
   which?", "What would make you wince if I got it wrong?"
 - A correctable guess ("I am guessing this is because X keeps failing on the phone?") often beats a question.
 - When the owner says "just guess" or "what do you think?", propose something concrete.
-- Match the owner's words; no process jargon (rule:owners-rules #8).
+- Match the owner's words; no process jargon.
 - Some questions cannot be answered by talking, only by data. When the talk circles, stop and name the
-  measurement or the read that would settle it (rule:goal-before-mechanism: the deciding measurement first).
+  measurement or the read that would settle it, and run the cheap deciding one first.
 
 ## Probe the problem before the solution
 
@@ -53,7 +52,7 @@ List every assumption the idea rests on, stated or not, then sort by category:
 
 For each: how confident, what evidence, what would disprove it. Name the **riskiest assumption** (wrong ->
 the idea dies) and the **cheapest test** that settles it before building (a probe, a read of the data, a
-wireframe the owner reacts to, a throwaway spike). A probe proves only what it ran (rule:probe-scope).
+wireframe the owner reacts to, a throwaway spike). A probe proves only what it ran.
 
 Then argue the strongest case against the idea, once, in plain words.
 
@@ -62,7 +61,7 @@ Then argue the strongest case against the idea, once, in plain words.
 Aim for 5-7 distinct ideas before judging any. Vary them along real axes:
 - **Scope:** a small tweak vs a larger bet.
 - **Kind:** a product change vs a content change vs a process or copy change.
-- **Time:** a quick win vs a durable build (rule:dual-horizon).
+- **Time:** a quick win vs a durable build.
 - **Always include** one option that removes something instead of adding, and one that does the opposite.
 
 Techniques, used only when stuck:
@@ -82,7 +81,7 @@ Techniques, used only when stuck:
   strength of its evidence.
 - Keep the 2-3 that survive; for each, name its biggest unknown and the cheapest way to settle it.
 - Drop any idea that fights what the owner said about why.
-- Present them in the A/B/C shape (rule:collaborative-design-locks), the rest of the space one line each.
+- Present them as worked options with pros and cons, the rest of the space one line each.
 - Be opinionated: "I recommend B because..." beats a neutral table.
 
 ## Traps to name out loud
@@ -96,7 +95,18 @@ Techniques, used only when stuck:
 | Endless exploring, no pick | "If you had to pick one now, which and why?" |
 | Talking where data is needed | Stop; name the read or measurement. |
 
+## Pre-mortem
+
+Before the questions go out, imagine it is six months later and this work failed, or shipped and the owner winced. Write
+the three likeliest reasons. Each one that no question touches becomes a question.
+
+## What did I not ask
+
+Read the ledger once more as the owner would. What would they be surprised to find decided without them? What did you
+assume because it is usual? What would a person who hates this idea ask? Each answer becomes a question or a marked
+guess. The closing box on every sheet asks the owner the same thing, because they will see what you cannot.
+
 ## Capture
 
 At the end, write down: the ideas kept and why, the assumptions to test, open questions, the next step, and
-what was set aside (as parking-lot lines, rule:parking-lot). A brainstorm with no record did not happen.
+what was set aside. A brainstorm with no record did not happen.

@@ -122,7 +122,7 @@ export function setupProbe({ dir, kitDir, noKit, released, run }) {
     if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${(r.stderr || r.stdout || '').trim().slice(0, 200)}`);
   };
   fs.mkdirSync(dir, { recursive: true });
-  must('git', ['init', '-q'], { cwd: dir });
+  must('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   if (noKit) return;
   must(process.execPath, [path.join(kitDir, 'scripts', 'kit.mjs'), 'install', 'project', dir, ...(released ? [] : ['--unreleased'])], { cwd: kitDir });
 }

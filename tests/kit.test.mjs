@@ -4882,3 +4882,226 @@ test('recall refuses the old usage and an unreleased user layer before it create
   assert.equal(fs.existsSync(path.join(fakeOs, 'kit-probes')), false, 'no probe folder before the layer check passes');
   assert.equal(fs.existsSync(path.resolve('reports/evals/never-saved.md')), false);
 });
+
+// E17: the brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.
+const sheetTools = () => import('../user/skills/brainstorm/sheet.mjs');
+const compileTools = () => import('../user/skills/brainstorm/compile-record.mjs');
+const SHEET = `# Sheet: Export button
+
+id: export-button
+asked by: Claude
+
+## Grounding
+
+We are planning the export button.
+
+It came up because exports fail on the phone.
+
+## Topic: Where it lives
+
+### Q1. Where should the button sit?
+
+Why it matters: it sets what people find first.
+
+Options:
+- [x] a: In the toolbar
+- [ ] b: In the menu
+
+Pick: a
+Why this pick: it is where people look.
+
+Your answer:
+
+What I thought:
+
+i wonder abuot tablets  \twith two spaces
+
+and a second paragraph
+
+### Q2. What should the file be called?
+
+Why it matters: people share it.
+
+Options:
+- [ ] a: The date
+- [ ] b: The title
+
+Pick: b
+Why this pick: titles read better.
+
+Your answer:
+
+Neither, use the projct name
+
+What I thought:
+
+## Topic: Limits
+
+### Q3. How big can an export get?
+
+Why it matters: it sets the memory budget.
+
+Your answer:
+
+What I thought:
+
+## Anything I did not ask?
+
+Nothing else at this time.
+`;
+
+test('a filled sheet parses into its grounding, topics, questions and answers', async () => {
+  const { parseSheet } = await sheetTools();
+  const s = parseSheet(SHEET);
+  assert.equal(s.title, 'Export button');
+  assert.equal(s.id, 'export-button');
+  assert.equal(s.askedBy, 'Claude');
+  assert.match(s.grounding, /^We are planning[\s\S]*on the phone\.$/);
+  assert.deepEqual(s.questions.map((q) => [q.n, q.topic]), [[1, 'Where it lives'], [2, 'Where it lives'], [3, 'Limits']]);
+  assert.equal(s.questions[0].choice, 'a');
+  assert.equal(s.questions[0].pick, 'a');
+  assert.equal(s.questions[0].pickWhy, 'it is where people look.');
+  assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\n\nand a second paragraph');
+  assert.equal(s.questions[1].answer, 'Neither, use the projct name');
+  assert.equal(s.missed, 'Nothing else at this time.');
+});
+
+test('a sheet is complete only when every question has a pick or the owner\'s own answer', async () => {
+  const { parseSheet, checkComplete } = await sheetTools();
+  assert.deepEqual(checkComplete(parseSheet(SHEET)), { ok: false, unanswered: [3] });
+  const done = SHEET.replace('Why it matters: it sets the memory budget.\n\nYour answer:\n', 'Why it matters: it sets the memory budget.\n\nYour answer:\n\nTen megabytes\n');
+  assert.deepEqual(checkComplete(parseSheet(done)), { ok: true, unanswered: [] }, 'own answer counts');
+  const thoughtOnly = SHEET.replace('Why it matters: it sets the memory budget.\n\nYour answer:\n\nWhat I thought:\n', 'Why it matters: it sets the memory budget.\n\nYour answer:\n\nWhat I thought:\n\nhmm\n');
+  assert.deepEqual(checkComplete(parseSheet(thoughtOnly)).unanswered, [3], 'a thought is not an answer');
+});
+
+test('the sheet parser refuses what it cannot read rather than lose the owner\'s words', async () => {
+  const { parseSheet } = await sheetTools();
+  const bad = {
+    'a heading inside an answer': SHEET.replace('Neither, use the projct name', 'Neither\n## My notes'),
+    'a topic with no questions': SHEET.replace('Neither, use the projct name', 'Neither\n\n## Topic: Sneaky'),
+    'a field twice': SHEET.replace('Neither, use the projct name', 'Neither\n\nWhat I thought:\n\nx'),
+    'questions out of order': SHEET.replace('### Q3.', '### Q5.'),
+    'two boxes ticked': SHEET.replace('- [ ] b: In the menu', '- [x] b: In the menu'),
+    'a pick that is not an option': SHEET.replace('Pick: a', 'Pick: z'),
+    'no grounding': SHEET.replace('## Grounding\n\nWe are planning the export button.\n\nIt came up because exports fail on the phone.\n\n', ''),
+    'no closing box': SHEET.replace('## Anything I did not ask?\n\nNothing else at this time.\n', ''),
+    'no id': SHEET.replace('id: export-button\n', ''),
+  };
+  for (const [name, text] of Object.entries(bad)) assert.throws(() => parseSheet(text), /sheet:/, name);
+});
+
+test('a sheet with Windows line ends reads the same, and the words stay whole', async () => {
+  const { parseSheet } = await sheetTools();
+  const s = parseSheet(SHEET.replace(/\n/g, '\r\n'));
+  assert.equal(s.questions[1].answer, 'Neither, use the projct name');
+  assert.equal(s.questions[0].choice, 'a');
+  assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\r\n\r\nand a second paragraph');
+});
+
+test('page rows export to a sheet file, and that file round-trips to the same text', async () => {
+  const { sheetFromRows, parseSheet, renderSheet } = await sheetTools();
+  const rows = {
+    sheet: { id: 's1', title: 'One', grounding: 'Line one.\n\nLine two.' },
+    questions: [
+      { id: 'q2', sheet: 's1', section: 1, order: 2, sectionTitle: 'A', text: 'Second?', why: 'w2', options: [{ key: 'a', label: 'Yes', detail: 'more' }, { key: 'b', label: 'No' }], rec: 'b', recWhy: 'because' },
+      { id: 'q1', sheet: 's1', section: 1, order: 1, sectionTitle: 'A', text: 'First?', options: [{ key: 'a', label: 'Up' }], rec: 'a' },
+      { id: 'q3', sheet: 's1', section: 2, order: 1, sectionTitle: 'B', text: 'Third?' },
+    ],
+    answers: { q1: { choice: 'a' }, q2: { own: 'my   own\nwords ', thought: 'odd spelng' }, s1__finish: { missed: 'tell me more', submitted: '2026-11-04T17:52:08.656Z' } },
+  };
+  const text = sheetFromRows(rows);
+  const s = parseSheet(text);
+  assert.deepEqual(s.questions.map((q) => q.text), ['First?', 'Second?', 'Third?']);
+  assert.equal(s.questions[0].choice, 'a');
+  assert.equal(s.questions[1].answer, 'my   own\nwords ');
+  assert.equal(s.questions[1].thought, 'odd spelng');
+  assert.equal(s.questions[1].options[0].label, 'Yes - more');
+  assert.equal(s.missed, 'tell me more');
+  assert.equal(s.sent, '2026-11-04T17:52:08.656Z');
+  assert.equal(renderSheet(s), text);
+  assert.equal(renderSheet(parseSheet(SHEET)).replace(/\n+/g, '\n'), SHEET.replace(/\n+/g, '\n'));
+});
+
+test('the record copies the owner\'s words byte for byte and keeps a confirmed pick apart from them', async () => {
+  const { parseSheet } = await sheetTools();
+  const { compileRecord } = await compileTools();
+  const r = compileRecord(parseSheet(SHEET));
+  assert.ok(r.includes('i wonder abuot tablets  \twith two spaces\n\nand a second paragraph'), 'odd spelling, spacing and paragraphs survive');
+  assert.ok(r.includes('Neither, use the projct name'));
+  assert.ok(r.includes('Nothing else at this time.'));
+  const q1 = r.slice(r.indexOf('### Q1'), r.indexOf('### Q2'));
+  assert.match(q1, /Picked: In the toolbar \(confirmed Claude's pick\)/);
+  assert.doesNotMatch(q1.split('Owner\'s thought')[0], /verbatim/, 'a confirmed pick is never labelled as the owner\'s words');
+  const q2 = r.slice(r.indexOf('### Q2'), r.indexOf('### Q3'));
+  assert.match(q2, /Owner's own answer \(verbatim\)/);
+  const q3 = r.slice(r.indexOf('### Q3'), r.indexOf('## Anything'));
+  assert.match(q3, /Unanswered: Claude's call/);
+  assert.match(r, /1 of 3 answers confirmed Claude's pick; 1 in the owner's own words; 1 unanswered \(Claude's call\)\./);
+  assert.match(r, /We are planning the export button\./, 'the grounding the owner saw is kept');
+});
+
+test('the record marks a pick the owner turned down, and a fence cannot be broken by the owner\'s text', async () => {
+  const { parseSheet } = await sheetTools();
+  const { compileRecord } = await compileTools();
+  const against = SHEET.replace('- [x] a: In the toolbar\n- [ ] b: In the menu', '- [ ] a: In the toolbar\n- [x] b: In the menu');
+  assert.match(compileRecord(parseSheet(against)), /Picked: In the menu \(chose against Claude's pick\)/);
+  const fence = SHEET.replace('Neither, use the projct name', 'Neither\n~~~\nstill mine');
+  const r = compileRecord(parseSheet(fence));
+  assert.ok(r.includes('~~~~\nNeither\n~~~\nstill mine\n~~~~'));
+});
+
+test('the record names whoever asked, so a sheet from another model reads true', async () => {
+  const { parseSheet } = await sheetTools();
+  const { compileRecord } = await compileTools();
+  const r = compileRecord(parseSheet(SHEET.replace('asked by: Claude', 'asked by: Gemini')));
+  assert.match(r, /confirmed Gemini's pick/);
+  assert.doesNotMatch(r, /Claude/);
+});
+
+test('the sheet and record commands work from the skill folder alone, and the core carries no kit links', () => {
+  const src = path.resolve('user/skills/brainstorm');
+  const lifted = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lift-')), 'brainstorm');
+  fs.cpSync(src, lifted, { recursive: true });
+  const f = path.join(lifted, '2026-11-04-export.sheet.md');
+  fs.writeFileSync(f, SHEET);
+  const check = spawnSync(process.execPath, [path.join(lifted, 'sheet.mjs'), 'check', f], { encoding: 'utf8', cwd: lifted });
+  assert.equal(check.status, 1, 'an unanswered question fails the check');
+  assert.match(check.stdout, /Q3/);
+  const made = spawnSync(process.execPath, [path.join(lifted, 'compile-record.mjs'), f], { encoding: 'utf8', cwd: lifted });
+  assert.equal(made.status, 0, made.stderr);
+  const out = path.join(lifted, '2026-11-04-export.brainstorm.md');
+  assert.ok(read(out).includes('Neither, use the projct name'));
+  const again = spawnSync(process.execPath, [path.join(lifted, 'compile-record.mjs'), f], { encoding: 'utf8', cwd: lifted });
+  assert.equal(again.status, 1, 'a record that may hold a summary is never overwritten');
+  fs.rmSync(f);
+  fs.rmSync(out);
+  const KIT_ONLY = /rule:[a-z]|\bA\d\d\b|\badapter\b|plan-feature|kit\.mjs|AGENTS\.md|\bE1[678]\b|_Active Plan|_Master Roadmap/;
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+  const files = walk(lifted).filter((p) => /\.(md|mjs|html)$/.test(p) && path.basename(p) !== 'SOURCES.md');
+  assert.ok(files.length >= 7, files.join());
+  for (const p of files) {
+    const text = path.basename(p) === 'SKILL.md' ? read(p).split('## In the methodology kit')[0] : read(p);
+    assert.doesNotMatch(text, KIT_ONLY, p);
+  }
+  assert.match(read(path.join(lifted, 'SKILL.md')), /## In the methodology kit/, 'the kit layer is one marked section');
+  assert.match(read(path.join(lifted, 'SOURCES.md')), /MIT[\s\S]*Apache-2\.0/, 'the notices travel with it');
+});
+
+test('plan-feature hands its questions to the brainstorm skill and no longer claims the word', () => {
+  const plan = read(path.resolve('user/skills/plan-feature/SKILL.md'));
+  assert.doesNotMatch(plan.split('---')[1], /brainstorm/i, 'the description leaves the word to the skill that does it');
+  assert.match(plan, /brainstorm skill/);
+  assert.match(plan, /names the record answer/);
+  assert.equal(fs.existsSync(path.resolve('user/skills/plan-feature/references/explore-and-options.md')), false);
+  assert.ok(fs.existsSync(path.resolve('user/skills/brainstorm/references/question-craft.md')));
+  const skill = read(path.resolve('user/skills/brainstorm/SKILL.md'));
+  assert.match(skill.split('---')[1], /^name: brainstorm$/m);
+});
+
+test('the sheet page ships without private data and shares the sheet\'s field names', () => {
+  const page = read(path.resolve('user/skills/brainstorm/assets/sheet-page.html'));
+  assert.doesNotMatch(page, /[^\x00-\x7F]/, 'ASCII like every kit file');
+  assert.doesNotMatch(page, /\bMax\b|goudy/);
+  for (const field of ['grounding', 'sectionTitle', 'recWhy', 'thought', 'missed', 'submitted']) assert.ok(page.includes(field), field);
+});
