@@ -41,6 +41,23 @@ if (common.status === 0) {
   if (m && words(m[1]).trim() && words(text).includes(words(m[1]))) faults.push('the agents\' confirmation phrase appears; it never goes in public text');
 }
 
+// No attribution block in public notes (rule:pr-body). This skill is user level, so it keeps its own copy of the
+// project's .claude/no-attribution.mjs check; a test holds both to one corpus.
+const ENTITIES = { nbsp: ' ', lt: '<', gt: '>', amp: '&', quot: '"' };
+const BY = 'requested[\\s-]*by\\b';
+const AT_START = new RegExp(`^(?:[\\s>#*_\`~|+\\-[\\]()]|\\d+[.)]\\s|<[^>\\n]*>)*${BY}`, 'im');
+const STYLED = new RegExp(`[_*>]\\s*${BY}`, 'i');
+
+// Disguises fall away first: entities, invisible characters, and odd spaces.
+const plain = (text) => text
+	.replace(/&(?:#(\d+)|#x([\da-f]+)|(nbsp|lt|gt|amp|quot));/gi, (_, dec, hex, name) => (name ? ENTITIES[name.toLowerCase()] : String.fromCodePoint(dec ? Number(dec) : parseInt(hex, 16))))
+	.replace(/[­​-‏⁠﻿]/g, '')
+	.replace(/[  -   　]/g, ' ');
+{
+  const body = plain(text);
+  if (/claude-projects-attribution/i.test(body) || AT_START.test(body) || STYLED.test(body.replace(/`[^`\n]*`/g, ''))) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
+}
+
 const pkg = path.join(process.cwd(), 'package.json');
 if (fs.existsSync(pkg)) {
   const want = JSON.parse(fs.readFileSync(pkg, 'utf8')).version;
