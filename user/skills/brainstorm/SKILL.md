@@ -42,6 +42,7 @@ marked as yours to decide, or named as one only data can settle. If the work gro
    [references/sheet-format.md](references/sheet-format.md). The default record folder is `docs/brainstorms/`. The file is
    the one truth; any person or model can fill it in. Seal it with `node <this skill's folder>/sheet.mjs seal <sheet>`: a
    hash of what you wrote, so a lost question or a note on your lines shows up later. A refusal means the layout is wrong.
+   A session that cannot run scripts says the sheet is unsealed; sealing is the asker's job, never the owner's.
    Then say where it is and stop.
 5. **Wait for the owner.** They say "sent", or the page notifies you. Do not poll.
 6. **Check and compile.** `node <this skill's folder>/sheet.mjs check <sheet>`, then

@@ -9,6 +9,7 @@ Never read these out as a list of questions. Cover them through the conversation
 - why now - what triggered it - and what success looks like to the owner;
 - who has the problem, how often, and what they do about it today;
 - goals, non-goals, and anti-goals (what would make it a failure even if it technically works);
+- what could go wrong: what would make the owner drop this, and what failed before;
 - prior art the owner has seen, liked or hated;
 - the current state: what exists, what was tried, what the code already uses;
 - how it gets made: which choices (platform, library, storage, layout) the owner wants to make, which are
