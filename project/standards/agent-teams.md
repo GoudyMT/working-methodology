@@ -4,11 +4,11 @@
 
 ## Multi-Agent Discipline {#multi-agent-discipline}
 
-**Scope before you fan out.** A mode signal ("begin loop workflow", "ultra", "token cost is not a constraint") authorizes the KIND of work, never its SIZE: state the count and what each layer buys, then stop for the owner's go. "Exhaustive" means coverage (angles, files, risk classes), not re-litigating one finding. A mis-shaped run is stopped, reshaped, resumed from cache where possible. Why: orchestration gets the same gate code gets.
+**Scope before you fan out.** A mode signal ("begin loop workflow", "ultra", "token cost is not a constraint") authorizes the KIND of work, never its SIZE: state the count and what each layer buys, then stop for the owner's go. "Exhaustive" means coverage (angles, files, risk classes), not re-litigating one finding. A mis-shaped run is stopped, reshaped, resumed from cache where possible.
 
 ### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
-Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs`, run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so, and the owner approves. Why: a swarm without distinct questions buys clones at full price.
+Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs`, run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so, and the owner approves. Why: a swarm without distinct questions buys clones at full price.
 
 | # | Role | The distinct question ONLY this role asks | Context injected | What a finding looks like | Token budget |
 |---|---|---|---|---|---|
@@ -42,7 +42,7 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this
 
 ### Agent Role Table {#agent-role-table}
 
-Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in `user/agents/` must match it, and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.
+Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in `user/agents/` must match it (a test checks), and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.
 
 | Role | Job | Tools | Denied tools | Rules at start |
 |---|---|---|---|---|

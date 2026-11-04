@@ -12,7 +12,8 @@
 //
 // CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
 // last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
-// the owner's marker.
+// the owner's marker. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
+// baseline may not fall under the last one recorded on the same ruler, and a PR may not move its own ruler, unmarked.
 //
 // Usage: node scripts/recall.mjs <project folder> <label>
 //        node scripts/recall.mjs gate <base> <head>
@@ -28,6 +29,8 @@ const QUESTIONS = path.join(KIT, 'docs', 'evals', 'recall-questions.md');
 const OUT_DIR = path.join(KIT, 'reports', 'evals');
 const MAX_TURNS = '8';
 const SCORES = 'docs/evals/results/recall-scores.md';
+const BRIEF = 'docs/evals/recall-scorer-brief.md';
+const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 const RULE_TEXT = /^(rules\/|project\/CLAUDE\.md$)/;
 const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)( owner-accepted)?$/;
 
@@ -84,12 +87,13 @@ export function runHeader({ label, projectDir, keys, facts, when }) {
  * Whether a PR's rule text may merge, from its recorded score.
  *
  * Args:
- *     facts: { changed: file paths, added: lines the PR adds to the scores file, brief, keys: current versions }
+ *     facts: { changed: file paths, added: lines the PR adds to the scores file, brief, keys: current versions,
+ *         was: { brief, keys, baseline } on the base, each null when the base has none }
  *
  * Returns:
  *     { ok, detail }
  */
-export function checkGate({ changed, added, brief, keys }) {
+export function checkGate({ changed, added, brief, keys, was = {} }) {
   if (!changed.some((f) => RULE_TEXT.test(f))) return { ok: true, detail: 'no rule text changed' };
   const lines = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   if (!lines.length) return { ok: false, detail: `Rule text changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>"` };
@@ -100,7 +104,11 @@ export function checkGate({ changed, added, brief, keys }) {
   if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
     return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
   }
-  if (Number(median) >= Number(baseline)) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
+  const moved = (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
+  if (moved && !accepted) return { ok: false, detail: `${label}: this PR changes the ruler it is graded on (brief v${was.brief} keys v${was.keys} to brief v${brief} keys v${keys}); that needs the owner-accepted marker` };
+  if (!moved && was.baseline != null && Number(baseline) < was.baseline && !accepted) return { ok: false, detail: `${label}: baseline ${baseline} is under the last recorded baseline ${was.baseline}` };
+  if (Number(median) >= Number(baseline) && !moved) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
+  if (moved) return { ok: true, detail: `${label}: the ruler moved; the owner accepted it` };
   if (accepted) return { ok: true, detail: `${label}: median ${median} is under the baseline ${baseline}; the owner accepted it` };
   return { ok: false, detail: `${label}: median ${median} is under the baseline ${baseline}` };
 }
@@ -112,12 +120,18 @@ function gate([base, head]) {
     if (g.status !== 0) throw new Error(`git ${a.join(' ')}: ${g.stderr.trim()}`);
     return g.stdout.split('\n');
   };
-  const version = (...rel) => currentVersion(fs.readFileSync(path.join(KIT, ...rel), 'utf8'));
+  const version = (rel) => currentVersion(fs.readFileSync(path.join(KIT, rel), 'utf8'));
+  const onBase = (rel) => { const g = spawnSync('git', ['show', `${base}:${rel}`], { encoding: 'utf8' }); return g.status === 0 ? g.stdout : ''; };
+  const baseVersion = (rel) => { const m = onBase(rel).match(/^Current version: v(\d+)$/m); return m ? Number(m[1]) : null; };
+  const [brief, keys] = [version(BRIEF), version(QUESTIONS_REL)];
+  // The last baseline recorded on this same ruler, if the base has one.
+  const recorded = onBase(SCORES).split('\n').map((l) => l.trim().match(GATE_LINE)).filter((m) => m && Number(m[4]) === brief && Number(m[5]) === keys);
   const r = checkGate({
     changed: git('diff', '--name-only', `${base}...${head}`),
     added: git('diff', '-U0', `${base}...${head}`, '--', SCORES).filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)),
-    brief: version('docs', 'evals', 'recall-scorer-brief.md'),
-    keys: version('docs', 'evals', 'recall-questions.md'),
+    brief,
+    keys,
+    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null },
   });
   console.log(r.detail);
   if (!r.ok) process.exitCode = 1;

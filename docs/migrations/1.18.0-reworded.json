@@ -2,17 +2,12 @@
   "lines": [
     {
       "before": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs`, run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). Why: a swarm without distinct questions buys clones at full price; a hand count of the floor errs.",
-      "after": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs`, run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so, and the owner approves. Why: a swarm without distinct questions buys clones at full price.",
+      "after": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs`, run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so, and the owner approves. Why: a swarm without distinct questions buys clones at full price.",
       "why": "names where approve.mjs lives and what its absence means: 7 of 12 recorded sessions concluded the script did not exist, and stopped for the owner"
     },
     {
       "before": "**One session per prong:** each parallel prong runs in its own session, reporting to the main session. **Every plan has an \"Execution approach\" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down; agents earn their keep only on proportional value.",
       "after": "**One session per prong:** each parallel prong runs in its own session, reporting to the main session. **Every plan has an \"Execution approach\" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down.",
-      "why": "trimmed to pay for the approve.mjs path and the sweep summary in the same module (session load and module cap)"
-    },
-    {
-      "before": "Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in `user/agents/` must match it (a test checks), and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.",
-      "after": "Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in `user/agents/` must match it, and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.",
       "why": "trimmed to pay for the approve.mjs path and the sweep summary in the same module (session load and module cap)"
     },
     {
@@ -39,6 +34,11 @@
       "before": "**How: the preview-test skill** (steps, the record, two examples, the audit).",
       "after": "**How: the preview-test skill.**",
       "why": "trimmed to pay for the approve.mjs path and the sweep summary in the same module (session load and module cap)"
+    },
+    {
+      "before": "**Scope before you fan out.** A mode signal (\"begin loop workflow\", \"ultra\", \"token cost is not a constraint\") authorizes the KIND of work, never its SIZE: state the count and what each layer buys, then stop for the owner's go. \"Exhaustive\" means coverage (angles, files, risk classes), not re-litigating one finding. A mis-shaped run is stopped, reshaped, resumed from cache where possible. Why: orchestration gets the same gate code gets.",
+      "after": "**Scope before you fan out.** A mode signal (\"begin loop workflow\", \"ultra\", \"token cost is not a constraint\") authorizes the KIND of work, never its SIZE: state the count and what each layer buys, then stop for the owner's go. \"Exhaustive\" means coverage (angles, files, risk classes), not re-litigating one finding. A mis-shaped run is stopped, reshaped, resumed from cache where possible.",
+      "why": "trimmed to pay for the approve.mjs path in the same module (module cap)"
     }
   ]
 }

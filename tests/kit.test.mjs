@@ -4414,6 +4414,27 @@ test('recall gate reads the last gate line added, so a failed run can be followe
   assert.equal(checkGate(gateFacts({ added: [...failedFirst].reverse() })).ok, false);
 });
 
+test('a typed baseline cannot fall under the last one recorded on the same ruler, unless the owner accepts it', async () => {
+  const { checkGate } = await recallTools();
+  const low = { added: ['gate: a median 0 baseline 0 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } };
+  const r = checkGate(gateFacts(low));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /baseline 0 is under the last recorded baseline 9/);
+  assert.equal(checkGate(gateFacts({ ...low, added: ['gate: a median 0 baseline 0 brief v1 keys v2 owner-accepted'] })).ok, true);
+  assert.equal(checkGate(gateFacts({ ...low, added: ['gate: a median 9 baseline 9 brief v1 keys v2'] })).ok, true);
+});
+
+test('a PR that moves the ruler it is graded on needs the owner\'s marker', async () => {
+  const { checkGate } = await recallTools();
+  const moved = { was: { brief: 1, keys: 1, baseline: 9 } };
+  const r = checkGate(gateFacts(moved));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /changes the ruler/);
+  assert.equal(checkGate(gateFacts({ ...moved, added: [GOOD_ENTRY + ' owner-accepted'] })).ok, true);
+  // The first ruler has no version to move from.
+  assert.equal(checkGate(gateFacts({ was: { brief: null, keys: null, baseline: null } })).ok, true);
+});
+
 test('recall gate leaves a PR that changes no rule text alone', async () => {
   const { checkGate } = await recallTools();
   assert.equal(checkGate(gateFacts({ changed: ['scripts/kit.mjs'], added: [] })).ok, true);
@@ -4441,6 +4462,13 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
   git('commit', '-qam', 'scores');
   const scored = gate();
   assert.equal(scored.status, 0, scored.stdout + scored.stderr);
+  git('tag', 'base2');
+  put('rules/core.md', 'c\n');
+  put('docs/evals/results/recall-scores.md', read(path.join(dir, 'docs/evals/results/recall-scores.md')) + `\ngate: low median 1 baseline 1 brief v${brief} keys v${keys}\n`);
+  git('commit', '-qam', 'typed down');
+  const typed = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  assert.equal(typed.status, 1, typed.stdout + typed.stderr);
+  assert.match(typed.stdout, /under the last recorded baseline 8/);
 });
 
 test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
