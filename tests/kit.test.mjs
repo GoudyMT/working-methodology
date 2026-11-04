@@ -4050,7 +4050,7 @@ test('a project whose settings lack the call-cap hook is sent back to wire it', 
   const r = approveRun(featureContract(), dir);
   assert.equal(r.status, FIX_EXIT, r.stdout);
   assert.match(r.stdout, /call-cap hook is not wired/);
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"hooks":{"PreToolUse":[{"args":["C:/home/kit-hooks/call-cap.cjs"]}]}}\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n');
   commitAll(dir, 'wired', true);
   assert.equal(approveIn(dir, [r.f]).status, 0);
 });
@@ -4132,7 +4132,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
   fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{}\n');
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":{"PreToolUse":[{"args":["C:/home/kit-hooks/call-cap.cjs"]}]}}\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n');
   commitAll(dir, 'settings', true);
   const w = approveRun(featureContract(), dir);
   assert.equal(w.status, 0, w.stdout);
@@ -4183,7 +4183,7 @@ test('the notice prints the real modifiers, M14 leaves no other docs folder out,
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
   assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.json': '{}\n' })).stdout, /ASK THE OWNER/);
   assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/migrations/old/1.json': '{}\n' })).stdout, /ASK THE OWNER/);
-  const dep = fixRepo({ 'pké/yarn.lock': 'x\n' });
+  const dep = fixRepo({ [`pk${String.fromCharCode(233)}/yarn.lock`]: 'x\n' });
   const r = approveRun({ tier: 'fix', modifiers: [], roles: fixFloor() }, dep);
   assert.match(r.stdout, /supply-chain/, 'a lockfile in a non-ASCII folder is still a package file');
 });
@@ -4260,7 +4260,7 @@ test('a re-sweep after a first sweep cut short asks the owner, not a loop; an un
 });
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
-  const wiredText = '{"hooks":{"PreToolUse":[{"args":["C:/home/kit-hooks/call-cap.cjs"]}]}}\n';
+  const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n';
   for (const bad of ['{"hooks":{"PreToolUse":[{"args":["{{CLAUDE_HOME}}/kit-hooks/call-cap.cjs"]}]}}\n', `{"disableAllHooks":true,${wiredText.slice(1)}`, '{"note":"call-cap.cjs removed on purpose"}\n']) {
     const dir = sweepRepo();
     put(dir, bad);
@@ -4300,4 +4300,16 @@ test('with two clearings the outcome measures the one the reviewers ran under', 
 });
 test('the reviewer role keeps clear of the prompt it cannot answer', () => {
   assert.match(read(path.resolve('user/agents/reviewer.md')), /Never run a shell command naming `approve\.mjs` with `--owner-yes`/);
+});
+test('install does not rewrite the hook check: an installed script reads an installed project as wired', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  install({ kit: path.resolve('.'), target: 'user', home });
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ args: [path.join(home, 'kit-hooks', 'call-cap.cjs').split(path.sep).join('/')] }] } }));
+  commitAll(dir, 'settings', true);
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const r = spawnSync('node', [path.join(home, 'skills', 'pre-pr-sweep', 'approve.mjs'), f], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH } });
+  assert.equal(r.status, 0, r.stdout);
 });

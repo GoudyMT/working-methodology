@@ -297,7 +297,7 @@ function callBudgets(roles, cap, why, fix) {
 function hookState(base) {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	const read = (f) => { try { return fs.readFileSync(path.join(top, '.claude', f), 'utf8'); } catch { return null; } };
-	const wired = (text) => { try { const j = JSON.parse(text); const h = JSON.stringify(j.hooks ?? ''); return !j.disableAllHooks && h.includes('kit-hooks/call-cap.cjs') && !h.includes('{{CLAUDE_HOME}}'); } catch { return false; } };
+	const wired = (text) => { try { const j = JSON.parse(text); const h = JSON.stringify(j.hooks ?? ''); return !j.disableAllHooks && h.includes('kit-hooks/call-cap.cjs') && !/{{[A-Z_]+}}/.test(h); } catch { return false; } };
 	const own = read('settings.json');
 	if (wired(own) || wired(read('settings.local.json'))) return 'wired';
 	// A branch that deletes the settings does not get out of the hook.
