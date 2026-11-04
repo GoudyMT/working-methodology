@@ -205,9 +205,9 @@ Seven runs in fresh throwaway installs, relabeled at random, scored by one fresh
 | Total | 10, 10, 10 | 9, 9, 9 | 0 |
 
 - **Gate met: median 10, baseline 9, control 0.** One question apart is within noise for a 10-question test. The whole margin is Q10, and the rule line behind it was reworded with the key in view: it shows sessions state the summary, not that they write it. Without Q10 the two are level.
-- An earlier candidate build, three rule lines apart, scored the same under a second blind scorer, and an outside inspector re-scored Q3, Q7 and Q10 in those seven runs from the raw files and matched. It did not score the other seven questions, and it did not see these final candidate runs.
+- Two earlier candidate builds, a few rule lines apart, scored the same under their own blind scorers, and an outside inspector re-scored Q3, Q7 and Q10 in the first of those rounds from the raw files and matched. It did not score the other seven questions, and it did not see these final candidate runs.
 - Q3 and Q7 now pass in every kit run: the third-person question gets the rule stated, and the key matches the rule. Both changed the ruler, so they lift the baseline too.
-- Borderline (scorer): 14 calls could flip to 0 in kit runs, mostly Q5 and Q7; if all did, the candidate median would be 9 and the baseline's 8. One control call could flip to 1.
+- Borderline (scorer): 12 calls could flip to 0 in kit runs, mostly Q5; if all did, both medians would be 8, so the margin rests on those calls as well as on Q10.
 - The control is not a clean no-kit run: read tools are unscoped, and it found the owner's memory files. It scored 0, which any no-kit answer would, so it shows the test can tell kit from no kit and says nothing about this fix.
 
 gate: kit-1.18.0 median 10 baseline 9 brief v1 keys v2
