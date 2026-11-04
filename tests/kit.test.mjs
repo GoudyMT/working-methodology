@@ -3358,7 +3358,8 @@ test('the release notes audit fails on the attribution block, on the same corpus
 
 test('the kit ships no way past the attribution check', () => {
   assert.equal(fs.existsSync(path.resolve('project/.claude/attribution.mjs')), false);
-  for (const f of ['project/.claude/pr-body-audit.mjs', 'project/.claude/pr-body-audit-lean.mjs']) assert.doesNotMatch(read(path.resolve(f)), /stripAttribution|attribution\.mjs/);
+  for (const f of ['project/.claude/pr-body-audit.mjs', 'project/.claude/pr-body-audit-lean.mjs']) assert.doesNotMatch(read(path.resolve(f)), /stripAttribution|\.\/attribution\.mjs/);
+  assert.equal(JSON.parse(read(path.resolve('kit.config.json'))).retired.project['.claude/attribution.mjs'], '.claude/no-attribution.mjs', 'an update removes the old file from installed projects');
 });
 
 // IR-2026-10-31-no-branch-rule-on-main-after-a-new-repo-goes-public: the first push gate made a repo public and
