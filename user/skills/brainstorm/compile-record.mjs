@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSheet, readSheet } from './sheet.mjs';
+import { parseSealed, readSheet } from './sheet.mjs';
 
 // A fence longer than any run of tildes in the text, so the owner's text cannot close it. Markdown lets a closing fence
 // sit up to three spaces in, so those count too.
@@ -53,8 +53,8 @@ function main([file, out]) {
   const target = out || file.replace(/\.sheet\.md$/, '') + '.brainstorm.md';
   if (fs.existsSync(target)) throw new Error(`${target} exists: a record may hold a summary, so it is never overwritten`);
   const text = readSheet(file);
-  const sheet = parseSheet(text);
-  fs.writeFileSync(target, compileRecord(sheet, crypto.createHash('sha256').update(text).digest('hex')));
+  const sheet = parseSealed(text);
+  fs.writeFileSync(target, compileRecord(sheet, crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')));
   console.log(`wrote ${target} (${sheet.questions.length} questions)`);
 }
 

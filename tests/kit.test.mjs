@@ -3348,6 +3348,13 @@ test('both PR-body audits fail on the attribution block at the top, in the middl
   assert.match(leanAudit(dir, (lean) => lean + '\n' + line + '\n').stdout, FAILED);
 });
 
+test('the attribution check stays fast on a line of tick boxes', async () => {
+  const { attributionFaults } = await import('../project/.claude/no-attribution.mjs');
+  const start = Date.now();
+  assert.deepEqual(attributionFaults('[ ] '.repeat(60)), []);
+  assert.ok(Date.now() - start < 1000);
+});
+
 test('the release notes audit fails on the attribution block, on the same corpus', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rna-'));
   for (const body of [...CORPUS.mustFail, ...CORPUS.unclear.map((u) => u.s)]) assert.match(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
@@ -5054,6 +5061,29 @@ test('the sheet parser refuses what it cannot read, and says why', async () => {
   for (const [name, text, why] of bad) assert.throws(() => parseSheet(text), why, name);
 });
 
+test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved question, and words filed as the closing box', async () => {
+  const { parseSheet, sealOf, renderSheet } = await sheetTools();
+  const base = parseSheet(SHEET);
+  const sealed = renderSheet({ ...base, sealed: sealOf(base) });
+  assert.equal(parseSheet(sealed).questions.length, 3);
+  assert.equal(parseSheet(sealed.replace('- [ ] b: The title', '- [x] b: The title')).questions[1].choice, 'b', 'a tick is the owner\'s');
+  assert.equal(parseSheet(sealed.replace('What I thought:\n\n## Topic: Limits', 'What I thought:\n\nmy thought\n\n## Topic: Limits')).questions[1].thought, 'my thought', 'a box is the owner\'s');
+  const broken = {
+    'a condition on a ticked option': sealed.replace('- [x] a: In the toolbar', '- [x] a: In the toolbar but only for now'),
+    'a note after the reason': sealed.replace('Why this pick: titles read better.', 'Why this pick: titles read better. I disagree'),
+    'a new option': sealed.replace('- [ ] b: The title', '- [ ] b: The title\n- [ ] c: A third way'),
+    'a note in the grounding': sealed.replace('## Topic: Where it lives', 'This framing is wrong.\n\n## Topic: Where it lives'),
+    'a note on the question': sealed.replace('### Q1. Where should the button sit?', '### Q1. Where should the button sit? is this needed'),
+    'a changed pick': sealed.replace('Asker\'s pick: b', 'Asker\'s pick: a'),
+    'a broken question heading': sealed.replace('### Q2. What', '### Q2 What'),
+    'the closing line in a thought': sealed.replace('and a second paragraph', 'and a second paragraph\n\n## Anything I did not ask?'),
+    'a deleted question': sealed.replace(/### Q3\.[^]*?(?=## Anything)/, ''),
+  };
+  for (const [name, text] of Object.entries(broken)) assert.throws(() => parseSheet(text), /sheet:/, name);
+  assert.throws(() => parseSheet(broken['a note after the reason']), /since this sheet was sealed \(sealed: 3 questions; this reads 3\)/);
+  assert.throws(() => parseSheet(broken['the closing line in a thought']), /this reads 1/);
+});
+
 test('a sheet with Windows line ends reads the same, and the words stay whole', async () => {
   const { parseSheet } = await sheetTools();
   const s = parseSheet(SHEET.replace(/\n/g, '\r\n'));
@@ -5167,12 +5197,22 @@ test('the sheet commands work from the skill folder alone, and the core carries 
   const cmd = (script, ...args) => spawnSync(process.execPath, [path.join(lifted, script), ...args], { encoding: 'utf8', cwd: lifted });
   const f = path.join(lifted, '2026-11-04-export.sheet.md');
   fs.writeFileSync(f, SHEET);
+  assert.match(cmd('sheet.mjs', 'check', f).stderr, /never sealed/);
+  assert.match(cmd('compile-record.mjs', f).stderr, /never sealed/);
+  assert.match(cmd('sheet.mjs', 'seal', f).stderr, /sealed blank/, 'a sheet with answers cannot be sealed');
+  const blank = SHEET.replace('- [x] a:', '- [ ] a:').replace(/What I thought:\n\ni wonder[^]*?\n\n### Q2/, 'What I thought:\n\n### Q2').replace(/Neither,[^]*?keep it short\n\n/, '').replace(/Nothing else[^]*$/, '');
+  fs.writeFileSync(f, blank);
+  assert.equal(cmd('sheet.mjs', 'seal', f).status, 0);
+  assert.match(read(f), /^sealed: 3 questions [0-9a-f]{16}$/m);
+  assert.match(cmd('sheet.mjs', 'seal', f).stderr, /already sealed/);
+  fs.writeFileSync(f, read(f).replace('- [ ] a: In the toolbar', '- [x] a: In the toolbar').replace('Your answer:\n\nWhat I thought:\n\n### Q2', 'Your answer:\n\nWhat I thought:\n\ni wonder\n\n### Q2').replace('titles read better.\n\nYour answer:\n', 'titles read better.\n\nYour answer:\n\nand keep it short\n'));
   const check = cmd('sheet.mjs', 'check', f);
   assert.equal(check.status, 1, 'an unanswered question fails the check');
   assert.match(check.stdout, /Q3/);
   assert.equal(cmd('compile-record.mjs', f).status, 0);
   const out = path.join(lifted, '2026-11-04-export.brainstorm.md');
   assert.ok(read(out).includes('and keep it short'));
+  assert.ok(read(out).includes(crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex')), 'the hash matches the file on disk');
   assert.equal(cmd('compile-record.mjs', f).status, 1, 'a record that may hold a summary is never overwritten');
   const rows = path.join(lifted, 'rows');
   const rowFiles = { 'sheets/s1.json': ROWS().sheet, 'answers/s1__finish.json': ROWS().answers.s1__finish, 'answers/q2.json': { ...ROWS().answers.q2, id: 'q1' } };
@@ -5181,8 +5221,16 @@ test('the sheet commands work from the skill folder alone, and the core carries 
   const exported = path.join(lifted, 'x.sheet.md');
   assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 0);
   assert.match(read(exported), /### Q2\. Second\?[\s\S]*my {3}own/, 'the file name is the row\'s id, not a field inside it');
-  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 1, 'a sheet is never overwritten');
+  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 1, 'a sheet with answers is never overwritten');
+  const blankOut = path.join(lifted, 'blank.sheet.md');
+  fs.writeFileSync(blankOut, blank);
+  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', blankOut).status, 0, 'the page route replaces its blank sheet');
+  fs.rmSync(blankOut);
   assert.match(cmd('sheet.mjs', 'export', rows, '../../x', path.join(lifted, 'y.md')).stderr, /a sheet id is/);
+  fs.writeFileSync(path.join(rows, 'answers', 'q9.json'), JSON.stringify({ sheet: 's1', own: 'lost words' }));
+  assert.match(cmd('sheet.mjs', 'export', rows, 's1', path.join(lifted, 'y.md')).stderr, /q9 has no question/);
+  fs.writeFileSync(path.join(rows, 'answers', 'q9.json'), Buffer.from('{"sheet":"s1","own":"caf\xE9"}', 'latin1'));
+  assert.match(cmd('sheet.mjs', 'export', rows, 's1', path.join(lifted, 'y.md')).stderr, /not saved as UTF-8/);
   for (const p of [f, out, exported]) fs.rmSync(p);
   fs.rmSync(rows, { recursive: true });
   const KIT_ONLY = /rule:[a-z]|\bA\d\d\b|\badapter\b|plan-feature|kit\.mjs|AGENTS\.md|\bE1[678]\b|_Active Plan|_Master Roadmap|_Working Memory|_Session Log|standards\//;
@@ -5240,5 +5288,5 @@ test('an update keeps the attribution script while an edited audit still needs i
   assert.deepEqual(install({ kit, home, target: 'user' }).retired, ['skills/human-factor/references/old.md']);
   const real = JSON.parse(read(path.resolve('kit.config.json'))).retired;
   assert.deepEqual(real.project['.claude/attribution.mjs'], ['.claude/pr-body-audit.mjs', '.claude/pr-body-audit-lean.mjs']);
-  assert.equal(real.user['skills/plan-feature/references/explore-and-options.md'], 'skills/brainstorm/references/question-craft.md');
+  assert.deepEqual(real.user['skills/plan-feature/references/explore-and-options.md'], ['skills/brainstorm/references/question-craft.md', 'skills/plan-feature/SKILL.md']);
 });

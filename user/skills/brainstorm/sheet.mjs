@@ -3,10 +3,14 @@
 // only another way to fill it in. Accuracy comes first. The asker's parts are one-line fields in a fixed order; once
 // "Your answer:" opens, every line is the owner's own text until "What I thought:", and after that until the next
 // question, topic or closing box. So a line that merely looks like a label or a heading stays the owner's words, and
-// what cannot be read is refused, never guessed at.
+// what cannot be read is refused, never guessed at. Before it goes out a sheet is sealed: a hash of everything the
+// asker wrote, so a note typed into an asker's line, a question lost or a heading broken stops the check instead of
+// quietly changing what the record says.
 //
-// Usage: node sheet.mjs check <sheet.md>                     exit 0 when every question is answered
+// Usage: node sheet.mjs seal <sheet.md>                      seal a finished sheet before it goes out
+//        node sheet.mjs check <sheet.md>                     exit 0 when every question is answered
 //        node sheet.mjs export <rows folder> <id> <sheet.md> page rows (sheets/, questions/, answers/) to a sheet file
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +62,12 @@ function parseQuestion(n, text, topic, body) {
   return q;
 }
 
+/** The hash of what the asker wrote: every part of a sheet but the owner's boxes and ticks. */
+export function sealOf(s) {
+  const asked = [s.title, s.id, s.askedBy, s.grounding, s.questions.map((q) => [q.n, q.text, q.topic, q.why, q.options.map((o) => [o.key, o.label]), q.pick, q.pickWhy])];
+  return `${s.questions.length} questions ${crypto.createHash('sha256').update(JSON.stringify(asked)).digest('hex').slice(0, 16)}`;
+}
+
 /**
  * Read a sheet file.
  *
@@ -65,7 +75,7 @@ function parseQuestion(n, text, topic, body) {
  *     text: the sheet as written
  *
  * Returns:
- *     { title, id, askedBy, sent, grounding, questions: [{ n, text, topic, why, options, choice, pick, pickWhy,
+ *     { title, id, askedBy, sealed, sent, grounding, questions: [{ n, text, topic, why, options, choice, pick, pickWhy,
  *     answer, thought }], missed }
  */
 export function parseSheet(text) {
@@ -78,12 +88,12 @@ export function parseSheet(text) {
   for (const raw of lines.slice(1, groundingAt)) {
     const line = clean(raw);
     if (!line) continue;
-    const m = line.match(/^(id|asked by|sent): (.+)$/);
+    const m = line.match(/^(id|asked by|sealed|sent): (.+)$/);
     if (!m) fail(`a line the sheet's top does not have, and it would be lost: ${line.slice(0, 60)}`);
     meta[m[1]] = m[2];
   }
   if (!meta.id) fail('no "id:" line');
-  const sheet = { title, id: meta.id, askedBy: meta['asked by'] || 'the asker', sent: meta.sent || '', grounding: '', questions: [], missed: null };
+  const sheet = { title, id: meta.id, askedBy: meta['asked by'] || 'the asker', sealed: meta.sealed || '', sent: meta.sent || '', grounding: '', questions: [], missed: null };
   const firstTopic = lines.findIndex((l, i) => i > groundingAt && clean(l).startsWith('## Topic: '));
   if (firstTopic < 0) fail('no questions');
   sheet.grounding = value(lines.slice(groundingAt + 1, firstTopic));
@@ -115,6 +125,9 @@ export function parseSheet(text) {
   if (!sheet.questions.length) fail('no questions');
   if (!sheet.questions.some((q) => q.topic === topic)) fail(`topic "${topic}" has no questions`);
   sheet.missed = value(lines.slice(i + 1));
+  if (sheet.sealed && sealOf(sheet) !== sheet.sealed) {
+    fail(`something the asker wrote changed, or a question moved or went missing, since this sheet was sealed (sealed: ${sheet.sealed.split(' ')[0]} questions; this reads ${sheet.questions.length}). The owner's words go only under "Your answer:", "What I thought:" and the closing box: undo the change, and move any note there`);
+  }
   return sheet;
 }
 
@@ -137,7 +150,7 @@ export function checkComplete(sheet) {
 
 /** A sheet as file text, in the one layout. */
 export function renderSheet(s) {
-  const out = [`# Sheet: ${s.title}`, '', `id: ${s.id}`, `asked by: ${s.askedBy}`, ...(s.sent ? [`sent: ${s.sent}`] : []), '', '## Grounding', '', s.grounding, ''];
+  const out = [`# Sheet: ${s.title}`, '', `id: ${s.id}`, `asked by: ${s.askedBy}`, ...(s.sealed ? [`sealed: ${s.sealed}`] : []), ...(s.sent ? [`sent: ${s.sent}`] : []), '', '## Grounding', '', s.grounding, ''];
   let topic = null;
   for (const q of s.questions) {
     if (q.topic !== topic) { topic = q.topic; out.push(`## Topic: ${topic}`, ''); }
@@ -183,6 +196,7 @@ export function sheetFromRows({ sheet, questions, answers }) {
       };
     }),
   };
+  parsed.sealed = sealOf(parsed);
   const text = renderSheet(parsed);
   // The file must say what the rows say: reading it back proves no owner text was taken for structure.
   let back;
@@ -196,23 +210,44 @@ export function sheetFromRows({ sheet, questions, answers }) {
   return text;
 }
 
+/** Read a sheet that went out: an unsealed one cannot show that its questions stayed as they were. */
+export function parseSealed(text) {
+  const sheet = parseSheet(text);
+  if (!sheet.sealed) fail('this sheet was never sealed: run "node sheet.mjs seal" on the blank sheet before it goes out');
+  return sheet;
+}
+
 function main([cmd, ...args]) {
-  if (cmd === 'check' && args.length === 1) {
-    const r = checkComplete(parseSheet(readSheet(args[0])));
+  if (cmd === 'seal' && args.length === 1) {
+    const text = readSheet(args[0]);
+    const sheet = parseSheet(text);
+    if (sheet.sealed) fail('this sheet is already sealed');
+    if (sheet.questions.some((q) => q.choice || q.answer || q.thought) || sheet.missed) fail('a sheet is sealed blank, before the owner answers');
+    fs.writeFileSync(args[0], text.replace(/^(asked by: .*?)(\r?\n)/m, (m, line, end) => `${line}${end}sealed: ${sealOf(sheet)}${end}`));
+    console.log(`sealed: ${sheet.questions.length} questions`);
+  } else if (cmd === 'check' && args.length === 1) {
+    const r = checkComplete(parseSealed(readSheet(args[0])));
     const thought = r.thoughtOnly.length ? ` (${r.thoughtOnly.map((n) => `Q${n}`).join(', ')}: a thought but no answer)` : '';
     console.log(r.ok ? 'Sheet complete: every question is answered' : `Not answered: ${r.unanswered.map((n) => `Q${n}`).join(', ')}${thought}`);
     process.exitCode = r.ok ? 0 : 1;
   } else if (cmd === 'export' && args.length === 3) {
     const [dir, id, out] = args;
     if (!/^[\w-]+$/.test(id)) fail(`a sheet id is letters, digits, _ and -: ${id}`);
-    if (fs.existsSync(out)) fail(`${out} exists: a sheet may hold answers, so it is never overwritten`);
-    const load = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
+    // The page route replaces the blank sheet it was written from; a sheet with answers is never overwritten.
+    if (fs.existsSync(out)) {
+      const was = parseSheet(readSheet(out));
+      if (was.missed || was.questions.some((q) => q.choice || q.answer || q.thought)) fail(`${out} holds answers, so it is never overwritten`);
+    }
+    const load = (f) => JSON.parse(readSheet(f));
     const rows = (name) => fs.readdirSync(path.join(dir, name)).filter((f) => f.endsWith('.json')).map((f) => ({ ...load(path.join(dir, name, f)), id: path.basename(f, '.json') }));
     const answers = Object.fromEntries(rows('answers').map((a) => [a.id, a]));
-    fs.writeFileSync(out, sheetFromRows({ sheet: { ...load(path.join(dir, 'sheets', `${id}.json`)), id }, questions: rows('questions').filter((q) => q.sheet === id), answers }));
+    const questions = rows('questions').filter((q) => q.sheet === id);
+    const orphan = Object.values(answers).find((a) => a.sheet === id && a.id !== `${id}__finish` && !questions.some((q) => q.id === a.id));
+    if (orphan) fail(`the answer ${orphan.id} has no question, so its words would be lost`);
+    fs.writeFileSync(out, sheetFromRows({ sheet: { ...load(path.join(dir, 'sheets', `${id}.json`)), id }, questions, answers }));
     console.log(`wrote ${out}`);
   } else {
-    console.log('Usage: node sheet.mjs check <sheet.md> | export <rows folder> <id> <sheet.md>');
+    console.log('Usage: node sheet.mjs seal <sheet.md> | check <sheet.md> | export <rows folder> <id> <sheet.md>');
     process.exitCode = 2;
   }
 }

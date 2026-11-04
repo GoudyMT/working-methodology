@@ -45,7 +45,7 @@ if (common.status === 0) {
 // project's .claude/no-attribution.mjs check; a test holds both to one corpus.
 const ENTITIES = { nbsp: ' ', lt: '<', gt: '>', amp: '&', quot: '"' };
 const BY = 'requested(?:[\\s*_~-]|<[^>\\n]*>)*by(?![a-z0-9])';
-const LEAD = '(?:[ \\t>#*_`~|+\\-[\\]()]|\\[[ xX]\\]|\\d+[.)]\\s|<[^>\\n]*>)*';
+const LEAD = '(?:[ \\t>#*_`~|+\\-[\\]()]|\\d+[.)]\\s|<[^>\\n]*>)*';
 const AT_START = new RegExp(`^(${LEAD})(${BY})`, 'gim');
 const STYLED = new RegExp(`(?:[_*~[(|]|(?<!-)>|=["'])\\s*${BY}|${BY}\\s*(?:\\*\\*|@|\\[)`, 'i');
 
@@ -61,7 +61,7 @@ const plain = (text) => text
 	.replace(/<!-{2,}|-{2,}>|^\[[^\]\n]*\]:\s*#\s*\(/gm, '\n');
 
 // A code span in a sentence is prose about the line; one alone on its line is the line.
-const noSpans = (body) => body.replace(/(?<!\\)`[^`\n]*(?<!\\)`(?=[^\n]*\w)/g, ' ');
+const noSpans = (body) => body.replace(/\[[xX]\]/g, ' ').replace(/(?<!\\)`[^`\n]*(?<!\\)`(?=[^\n]*\w)/g, ' ');
 
 // At the start of a line, unless a plain lowercase "requested by" only continues the sentence above it.
 function startsLine(body) {

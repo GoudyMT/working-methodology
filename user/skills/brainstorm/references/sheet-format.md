@@ -9,6 +9,7 @@ words, so keep this layout exactly. Save it as UTF-8.
 
 id: <short-id>
 asked by: <who wrote the questions, for example Claude>
+sealed: <written by the seal command>
 
 ## Grounding
 
@@ -41,13 +42,14 @@ What I thought:
 - `Why it matters:`, `Options:` and `Asker's pick:` may be left out of an open question. `Your answer:` and `What I thought:` never
   are. Leaving out the pick on a few questions gives answers no suggestion anchored.
 - To answer: tick one box with `[x]`, or write under `Your answer:`, or both. A thought alone is not an answer.
-- Everything above `Your answer:` is the asker's, one line per field. A note written there has nowhere to go, so it is
-  refused and the message says to move it.
+- Everything above `Your answer:`, and the grounding, is the asker's. `node sheet.mjs seal` hashes it on the blank sheet, so
+  a note written there, or a question lost or moved, is refused and the message says to move it. The check and the compile
+  refuse an unsealed sheet.
 - Under `Your answer:`, `What I thought:` and `Anything I did not ask?` the owner may write anything, in as many lines as
   they like, headings and labels included: they stay the owner's words. Only three lines end a box: `What I thought:`
   under an answer, and `### Q<next number>. `, `## Topic: ` or `## Anything I did not ask?` at the start of a line.
   A `## Topic: ` line typed in a thought starts a new topic, so keep that one out of an answer.
-- `sent:` is added under `asked by:` by the page export. A file sheet needs none.
+- `sent:` is added by the page export, which also seals. A file sheet needs none.
 
 ## Checking
 
