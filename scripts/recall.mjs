@@ -237,29 +237,45 @@ export function askAll({ qs, projectDir, run }) {
   return lines;
 }
 
+/**
+ * One run, start to finish: the checks, the folder, the questions, the saved answers, and the clean up.
+ *
+ * Args:
+ *     ctx: { label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools } - kitTools is kit.mjs's
+ *         { releaseState, projectSlug }, and run(cmd, args, opts) returns { status, stdout, stderr }
+ *
+ * Returns:
+ *     the path of the saved run
+ */
+export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools }) {
+  checkUserLayer(home);
+  checkHome(env);
+  const kit = path.resolve(kitDir || KIT);
+  const projectDir = probePath(osHome);
+  try {
+    setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !kitTools.releaseState(kit).problems.length, run });
+    const cli = (run('claude', ['--version'], {}).stdout || 'unknown').trim();
+    const { qs, lines } = prepare({ projectDir, label, home, text, when, cli });
+    lines.push(...askAll({ qs, projectDir, run }));
+    fs.mkdirSync(outDir, { recursive: true });
+    const out = path.join(outDir, `${label}.md`);
+    fs.writeFileSync(out, lines.join('\n'));
+    return out;
+  } finally {
+    removeProbe({ dir: projectDir, home, slug: kitTools.projectSlug(projectDir) });
+  }
+}
+
 async function main(argv) {
   const { label, kitDir, noKit } = parseRunArgs(argv);
   // The Claude config folder, found the way kit.mjs finds it.
   const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
   checkUserLayer(home);
-  checkHome(process.env);
   // Loaded here so the gate command runs only this file's code.
-  const { releaseState, projectSlug } = await import('./kit.mjs');
-  const kit = path.resolve(kitDir || KIT);
-  const projectDir = probePath(os.homedir());
+  const kitTools = await import('./kit.mjs');
   const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
-  try {
-    setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !releaseState(kit).problems.length, run });
-    const cli = (spawnSync('claude', ['--version'], { encoding: 'utf8' }).stdout || 'unknown').trim();
-    const { qs, lines } = prepare({ projectDir, label, home, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), cli });
-    lines.push(...askAll({ qs, projectDir, run }));
-    fs.mkdirSync(OUT_DIR, { recursive: true });
-    const out = path.join(OUT_DIR, `${label}.md`);
-    fs.writeFileSync(out, lines.join('\n'));
-    console.log(`saved ${out}`);
-  } finally {
-    removeProbe({ dir: projectDir, home, slug: projectSlug(projectDir) });
-  }
+  const out = recallRun({ label, kitDir, noKit, home, osHome: os.homedir(), env: process.env, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), outDir: OUT_DIR, run, kitTools });
+  console.log(`saved ${out}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
