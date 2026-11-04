@@ -191,3 +191,22 @@ folded into session-workflow) on three fresh installs, each scored strictly by i
 - Q7 run 1: the answer let approve.mjs approve and never named the owner's stop (the rule's design since 1.5.0).
 - Q10 runs 1 and 3: the PR step stops at "the PR body goes to the owner", without the sweep summary in it.
 - The run 1 scorer looked at the git log, which its brief barred; its one disputed call (Q7) went against the branch.
+
+## 1.18.0 gate: the recall gate fix (2026-11-04)
+
+The first entry on the versioned ruler: brief v1, keys v2. The gate from here on is no lower than the released baseline on the same brief and keys, with the control clearly lower (the owner, 2026-11-04); median 9 is the target. Scores before this entry used no written brief and v1 keys, so they do not compare with it.
+
+Seven runs in fresh throwaway installs, relabeled at random, scored by one fresh blind scorer. The candidate's install notice names its build, so those lines (11 per run, none in a key's reach) were cut from the copies the scorer read. All seven ran with the 1.17.0 user layer, `approve.mjs` at the user path.
+
+| Q | Candidate 1, 2, 3 | Baseline 1.17.0 1, 2, 3 | Control |
+|---|---|---|---|
+| 1, 2, 3, 4, 5, 6, 7, 8, 9 | 1 | 1 | 0 |
+| 10 | 1, 1, 1 | 0, 0, 0 | 0 |
+| Total | 10, 10, 10 | 9, 9, 9 | 0 |
+
+- **Gate met: median 10, baseline 9, control 0.** One question apart is within noise for a 10-question test; Q10 is the line the fix changed, and it moved in all three runs.
+- Q3 and Q7 now pass in every kit run: the third-person question gets the rule stated, and the key matches the rule. Both changed the ruler, so they lift the baseline too.
+- Borderline (scorer): 7 calls could flip to 0 in kit runs (Q5 in 4 runs, one each of Q1, Q3, Q6, Q7); the candidate medians would fall to 9 and the baseline to 8 if all flipped. Two control calls could flip to 1.
+- The control is not a clean no-kit run: read tools are unscoped, and it found the owner's memory files. It still scored 0.
+
+gate: kit-1.18.0 median 10 baseline 9 brief v1 keys v2

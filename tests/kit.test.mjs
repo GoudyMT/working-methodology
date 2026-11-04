@@ -4317,9 +4317,7 @@ test('install does not rewrite the hook check: an installed script reads an inst
 // The recall gate: one ruler every time (versioned keys and brief), a run that records what it read, and a CI check
 // that reads the recorded median instead of only seeing that the scores file changed.
 const recallTools = () => import('../scripts/recall.mjs');
-const gateTools = () => import('../scripts/recall-gate.mjs');
 const RECALL = path.resolve('scripts/recall.mjs');
-const RECALL_GATE = path.resolve('scripts/recall-gate.mjs');
 const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';
 const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
 
@@ -4374,20 +4372,20 @@ test('recall refuses to run unless the Claude folder is a released kit install, 
 });
 
 test('recall gate passes a median at or above the baseline', async () => {
-  const { checkGate } = await gateTools();
+  const { checkGate } = await recallTools();
   assert.equal(checkGate(gateFacts()).ok, true);
   assert.equal(checkGate(gateFacts({ added: ['gate: a median 9 baseline 8 brief v1 keys v2'] })).ok, true);
 });
 
 test('recall gate fails a median under the baseline', async () => {
-  const { checkGate } = await gateTools();
+  const { checkGate } = await recallTools();
   const r = checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v2'] }));
   assert.equal(r.ok, false);
   assert.match(r.detail, /median 7 is under the baseline 8/);
 });
 
 test('recall gate fails rule text with no gate line, or a line it cannot read', async () => {
-  const { checkGate } = await gateTools();
+  const { checkGate } = await recallTools();
   assert.match(checkGate(gateFacts({ added: ['- a note, no gate line'] })).detail, /gate: <label> median <n>/);
   assert.match(checkGate(gateFacts({ changed: ['project/CLAUDE.md'], added: [] })).detail, /gate: <label> median <n>/);
   const bad = checkGate(gateFacts({ added: ['gate: a median nine baseline 8 brief v1 keys v2'] }));
@@ -4396,7 +4394,7 @@ test('recall gate fails rule text with no gate line, or a line it cannot read', 
 });
 
 test('an owner-accepted marker passes a lower median and says so, but never an old ruler', async () => {
-  const { checkGate } = await gateTools();
+  const { checkGate } = await recallTools();
   const r = checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v2 owner-accepted'] }));
   assert.equal(r.ok, true);
   assert.match(r.detail, /owner accepted/);
@@ -4404,25 +4402,25 @@ test('an owner-accepted marker passes a lower median and says so, but never an o
 });
 
 test('recall gate refuses a score taken on an old brief or old keys', async () => {
-  const { checkGate } = await gateTools();
+  const { checkGate } = await recallTools();
   assert.match(checkGate(gateFacts({ added: ['gate: a median 9 baseline 8 brief v1 keys v1'] })).detail, /keys v2/);
   assert.match(checkGate(gateFacts({ brief: 2 })).detail, /brief v2/);
 });
 
 test('recall gate reads the last gate line added, so a failed run can be followed by a passing one', async () => {
-  const { checkGate } = await gateTools();
+  const { checkGate } = await recallTools();
   const failedFirst = ['gate: a median 7 baseline 8 brief v1 keys v2', GOOD_ENTRY];
   assert.equal(checkGate(gateFacts({ added: failedFirst })).ok, true);
   assert.equal(checkGate(gateFacts({ added: [...failedFirst].reverse() })).ok, false);
 });
 
 test('recall gate leaves a PR that changes no rule text alone', async () => {
-  const { checkGate } = await gateTools();
+  const { checkGate } = await recallTools();
   assert.equal(checkGate(gateFacts({ changed: ['scripts/kit.mjs'], added: [] })).ok, true);
 });
 
 test('CI runs the recall gate on the PR\'s real diff', () => {
-  assert.match(read(path.resolve('.github/workflows/ci.yml')), /node scripts\/recall-gate\.mjs "\$PR_BASE" "\$PR_HEAD"/);
+  assert.match(read(path.resolve('.github/workflows/ci.yml')), /node scripts\/recall\.mjs gate "\$PR_BASE" "\$PR_HEAD"/);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-'));
   const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
@@ -4434,7 +4432,7 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
   git('tag', 'base');
   put('rules/core.md', 'b\n');
   git('commit', '-qam', 'rule only');
-  const gate = () => spawnSync('node', [RECALL_GATE, 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  const gate = () => spawnSync('node', [RECALL, 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   const noScore = gate();
   assert.equal(noScore.status, 1, noScore.stdout + noScore.stderr);
   const keys = read(path.resolve('docs/evals/recall-questions.md')).match(/^Current version: v(\d+)$/m)[1];

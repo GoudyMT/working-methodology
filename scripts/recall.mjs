@@ -10,7 +10,12 @@
 // A session can still read the real Claude folder, and an answer moves with what it finds there (Q7 and approve.mjs),
 // so each run records what was installed, and a run on anything but a released user layer is refused.
 //
+// CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
+// last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
+// the owner's marker.
+//
 // Usage: node scripts/recall.mjs <project folder> <label>
+//        node scripts/recall.mjs gate <base> <head>
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,6 +27,9 @@ const QUESTIONS = path.join(KIT, 'docs', 'evals', 'recall-questions.md');
 // Raw answers quote local paths, so they stay in the gitignored reports folder; only scores are committed.
 const OUT_DIR = path.join(KIT, 'reports', 'evals');
 const MAX_TURNS = '8';
+const SCORES = 'docs/evals/results/recall-scores.md';
+const RULE_TEXT = /^(rules\/|project\/CLAUDE\.md$)/;
+const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)( owner-accepted)?$/;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
 export function currentVersion(text) {
@@ -72,6 +80,49 @@ export function runHeader({ label, projectDir, keys, facts, when }) {
     `Project kit: ${facts.project}`, `User kit: ${facts.user}`, `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
 }
 
+/**
+ * Whether a PR's rule text may merge, from its recorded score.
+ *
+ * Args:
+ *     facts: { changed: file paths, added: lines the PR adds to the scores file, brief, keys: current versions }
+ *
+ * Returns:
+ *     { ok, detail }
+ */
+export function checkGate({ changed, added, brief, keys }) {
+  if (!changed.some((f) => RULE_TEXT.test(f))) return { ok: true, detail: 'no rule text changed' };
+  const lines = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
+  if (!lines.length) return { ok: false, detail: `Rule text changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>"` };
+  const last = lines[lines.length - 1];
+  const m = last.match(GATE_LINE);
+  if (!m) return { ok: false, detail: `cannot read the gate line: ${last}` };
+  const [, label, median, baseline, usedBrief, usedKeys, accepted] = m;
+  if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
+    return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
+  }
+  if (Number(median) >= Number(baseline)) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
+  if (accepted) return { ok: true, detail: `${label}: median ${median} is under the baseline ${baseline}; the owner accepted it` };
+  return { ok: false, detail: `${label}: median ${median} is under the baseline ${baseline}` };
+}
+
+function gate([base, head]) {
+  if (!base || !head) throw new Error('usage: node scripts/recall.mjs gate <base> <head>');
+  const git = (...a) => {
+    const g = spawnSync('git', a, { encoding: 'utf8' });
+    if (g.status !== 0) throw new Error(`git ${a.join(' ')}: ${g.stderr.trim()}`);
+    return g.stdout.split('\n');
+  };
+  const version = (...rel) => currentVersion(fs.readFileSync(path.join(KIT, ...rel), 'utf8'));
+  const r = checkGate({
+    changed: git('diff', '--name-only', `${base}...${head}`),
+    added: git('diff', '-U0', `${base}...${head}`, '--', SCORES).filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)),
+    brief: version('docs', 'evals', 'recall-scorer-brief.md'),
+    keys: version('docs', 'evals', 'recall-questions.md'),
+  });
+  console.log(r.detail);
+  if (!r.ok) process.exitCode = 1;
+}
+
 function main([projectDir, label]) {
   if (!projectDir || !label) throw new Error('usage: node scripts/recall.mjs <project folder> <label>');
   // The Claude config folder, found the way kit.mjs finds it.
@@ -101,4 +152,7 @@ function main([projectDir, label]) {
   console.log(`saved ${out}`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2));
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
+  if (args[0] === 'gate') gate(args.slice(1)); else main(args);
+}

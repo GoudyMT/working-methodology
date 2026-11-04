@@ -16,7 +16,7 @@
     { "id": "audits", "name": "Audits", "does": "PR body, report, push checks", "files": ["project/.claude/pr-body-audit.mjs", "project/.claude/improvement-report.mjs", "project/.claude/first-push-check.mjs"] },
     { "id": "vendor", "name": "Vendor backups", "does": "credited third-party skills", "files": ["vendor/CREDITS.md"] },
     { "id": "tests", "name": "Tests", "does": "prove every guard and format", "files": ["tests/kit.test.mjs"] },
-    { "id": "evals", "name": "Recall test", "does": "do sessions follow the rules", "files": ["scripts/recall.mjs", "scripts/recall-gate.mjs", "docs/evals/recall-questions.md", "docs/evals/recall-scorer-brief.md"] }
+    { "id": "evals", "name": "Recall test", "does": "do sessions follow the rules", "files": ["scripts/recall.mjs", "docs/evals/recall-questions.md", "docs/evals/recall-scorer-brief.md"] }
   ],
   "links": [
     { "from": "build", "to": "rules", "verb": "reads" },

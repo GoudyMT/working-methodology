@@ -114,7 +114,7 @@ jobs:
         env:
           PR_BASE: origin/${{ github.base_ref }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: node scripts/recall-gate.mjs "$PR_BASE" "$PR_HEAD"
+        run: node scripts/recall.mjs gate "$PR_BASE" "$PR_HEAD"
 
       # The body and title come in through env, never into the script text, so a PR cannot inject commands.
       - name: PR body audit
