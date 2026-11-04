@@ -49,16 +49,16 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 **Modifiers add roles at any tier, and never lower one:** security-sensitive code (auth, locks, crypto, permissions, secrets, personal data) gets the security swarm of >= 3 distinct angles; a new dependency or external data flow gets a supply-chain role and a privacy role (trigger 2); public, legal or cited text gets a content role that checks each claim against its source and license; data the user keeps (storage formats, migrations, deletion) gets a role on data loss and the upgrade path from the last release.
 
-**Re-sweep by tier:** feature, first push and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill** (steps per tier, an example report per tier, the audit).
+**Re-sweep by tier:** feature, first push and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 
-A feature, fix or triage sweep's Swarm Contract is approved by `approve.mjs`, never an agent: same contract, same answer. It runs first: an approval prints the owner's notice; only an ASK goes to the owner (yes logged, `--owner-yes`); a hook holds reviewers until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row, 10 again after any other pause), and only the owner resumes it. Why: a routine sweep need not wait; the log shows when it drifts.
+A feature, fix or triage sweep's Swarm Contract is approved by `~/.claude/skills/pre-pr-sweep/approve.mjs`, never an agent: same contract, same answer. If it is not there, the kit's user layer is not installed: say so, and the owner approves. It runs first: an approval prints the owner's notice; only an ASK goes to the owner (yes logged, `--owner-yes`); a hook holds reviewers until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row, 10 again after any other pause), and only the owner resumes it. Why: a routine sweep need not wait.
 
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 
 Why: a solo builder reviewing their own diff sees what they meant, not what they wrote.
-**How: the pre-pr-sweep skill** (steps, example reports, the audit).
+**How: the pre-pr-sweep skill.**
 The roles below are the feature and launch-gate tiers' floor; a fix or triage sweep runs the roles rule:sweep-tiers gives it.
 - **Adversarial vulnerability swarm:** >= 3 top-tier security agents with DISTINCT angles.
 - **A Test Value agent** ruling keep / cut / repoint on every added or edited test (the use guarded, a break check where in doubt); retired when reviews stop finding fluff.
@@ -79,7 +79,7 @@ Satisfied ONLY by the walk and testers running this session with results in the 
 
 A user-facing PR is used on the host's own build of the branch before merge, on the device the stakes call for (below): open the link yourself first; made-up details only; nothing sent (previews may hold live secrets: -> Security "Secrets"). Why: the production platform and a real device are what local tests cannot imitate. <!-- PROJECT ADAPTER A19/A20 -->
 
-**How: the preview-test skill** (steps, the record, two examples, the audit).
+**How: the preview-test skill.**
 
 **Who tests the preview, by stakes.** Every user-facing PR: the lead checks the deployed preview in phone and desktop emulation (headers, security policy, workers, layout), shown as shots. The owner's real device only for: a new or often-used surface; touch, keyboard or installed-app behaviour; device-only paths (downloads, file imports, sharing); screen-reader checks. Why: emulation cannot prove a device's fonts, system UI, keyboard or storage, so the owner's time goes where only a hand can tell.
 
@@ -93,4 +93,4 @@ A user-facing PR is used on the host's own build of the branch before merge, on 
 - **Triage** after all gates pass, BEFORE the deep sweep: **Now** (small, in spirit, cuts churn; growing scope needs the owner's lock) -> built and swept in this PR; **Next** -> one line + pointer in the Roadmap; **Drop** -> deleted with a one-line why.
 - **Done** when the lot is **empty** before the sweep; non-empty = the gate was skipped.
 
-**Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> fixes + re-sweep -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a "now" idea is built and swept inside the same coherent PR; an IDEA is distinct from a FINDING (a defect).
+**Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> fixes + re-sweep -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body (its Review section carries the sweep summary) + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a "now" idea is built and swept inside the same coherent PR; an IDEA is distinct from a FINDING (a defect).

@@ -107,19 +107,14 @@ jobs:
         run: node project/.claude/secret-shapes.mjs "$PR_BASE"
 
       # Rule text is graded by the recall test, which needs a signed-in session and is run by hand; a PR that
-      # changes the rules must carry its recorded score.
-      - name: Rule changes carry a recall score
+      # changes the rules must record a median no lower than the released baseline, on the current brief and keys.
+      - name: Rule changes carry a passing recall score
         if: github.event_name == 'pull_request'
         shell: bash
         env:
           PR_BASE: origin/${{ github.base_ref }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          changed="$(git diff --name-only "$PR_BASE...$PR_HEAD")"
-          if echo "$changed" | grep -qE '^(rules/|project/CLAUDE\.md$)'; then
-            echo "$changed" | grep -qx 'docs/evals/results/recall-scores.md' \
-              || { echo "Rule text changed: record a recall run in docs/evals/results/recall-scores.md"; exit 1; }
-          fi
+        run: node scripts/recall-gate.mjs "$PR_BASE" "$PR_HEAD"
 
       # The body and title come in through env, never into the script text, so a PR cannot inject commands.
       - name: PR body audit

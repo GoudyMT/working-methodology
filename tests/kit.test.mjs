@@ -4313,3 +4313,150 @@ test('install does not rewrite the hook check: an installed script reads an inst
   const r = spawnSync('node', [path.join(home, 'skills', 'pre-pr-sweep', 'approve.mjs'), f], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH } });
   assert.equal(r.status, 0, r.stdout);
 });
+
+// The recall gate: one ruler every time (versioned keys and brief), a run that records what it read, and a CI check
+// that reads the recorded median instead of only seeing that the scores file changed.
+const recallTools = () => import('../scripts/recall.mjs');
+const gateTools = () => import('../scripts/recall-gate.mjs');
+const RECALL = path.resolve('scripts/recall.mjs');
+const RECALL_GATE = path.resolve('scripts/recall-gate.mjs');
+const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';
+const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
+
+test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s question and Q7\'s key', async () => {
+  const { versionText, currentVersion, questions } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const frozen = spawnSync('git', ['show', 'v1.17.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
+  assert.equal(frozen.status, 0, 'the v1.17.0 tag must exist locally');
+  assert.equal(versionText(text, 1), frozen.stdout);
+  assert.equal(currentVersion(text), 2);
+  const [v1, v2] = [questions(text, 1), questions(text, 2)];
+  assert.equal(v2.length, 10);
+  const changed = v2.flatMap((row, i) => ['q', 'key'].filter((f) => row[f] !== v1[i][f]).map((f) => `${row.n}.${f}`));
+  assert.deepEqual(changed, ['3.q', '7.key']);
+  assert.match(v2[6].key, /approve\.mjs/);
+  assert.match(v2[6].key, /ASK goes to the owner/);
+});
+
+test('recall run header says what the run read: keys, both kit versions, and whether approve.mjs is there', async () => {
+  const { installFacts, runHeader } = await recallTools();
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'abc1234' } });
+  let facts = installFacts({ projectDir: proj, home });
+  assert.deepEqual(facts, { project: '1.0.0 (unreleased abc1234)', user: '1.0.0', userRelease: true, approve: false });
+  fs.mkdirSync(path.join(home, 'skills/pre-pr-sweep'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'skills/pre-pr-sweep/approve.mjs'), '');
+  facts = installFacts({ projectDir: proj, home });
+  assert.equal(facts.approve, true);
+  const head = runHeader({ label: 'cand-1', projectDir: proj, keys: 2, facts, when: '2026-11-04T00:00:00.000Z' }).join('\n');
+  assert.match(head, /^# Recall run: cand-1$/m);
+  assert.match(head, /^Keys: v2$/m);
+  assert.match(head, /^Project kit: 1\.0\.0 \(unreleased abc1234\)$/m);
+  assert.match(head, /^User kit: 1\.0\.0$/m);
+  assert.match(head, /^approve\.mjs at the user path: yes$/m);
+  // A control has no kit in its project, and that is a fact to record, not a fault.
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'control-'));
+  assert.equal(installFacts({ projectDir: bare, home }).project, 'none');
+});
+
+test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {
+  const { kit, home, proj } = makeKit();
+  const run = () => spawnSync(process.execPath, [RECALL, proj, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, PATH: '' } });
+  const noStamp = run();
+  assert.equal(noStamp.status, 1);
+  assert.match(noStamp.stderr, /not a released kit install/);
+  install({ kit, home, target: 'user', release: { release: false, describe: 'abc1234' } });
+  const unreleased = run();
+  assert.equal(unreleased.status, 1);
+  assert.match(unreleased.stderr, /not a released kit install/);
+  assert.equal(fs.existsSync(path.resolve('reports/evals/never-saved.md')), false);
+});
+
+test('recall gate passes a median at or above the baseline', async () => {
+  const { checkGate } = await gateTools();
+  assert.equal(checkGate(gateFacts()).ok, true);
+  assert.equal(checkGate(gateFacts({ added: ['gate: a median 9 baseline 8 brief v1 keys v2'] })).ok, true);
+});
+
+test('recall gate fails a median under the baseline', async () => {
+  const { checkGate } = await gateTools();
+  const r = checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v2'] }));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /median 7 is under the baseline 8/);
+});
+
+test('recall gate fails rule text with no gate line, or a line it cannot read', async () => {
+  const { checkGate } = await gateTools();
+  assert.match(checkGate(gateFacts({ added: ['- a note, no gate line'] })).detail, /gate: <label> median <n>/);
+  assert.match(checkGate(gateFacts({ changed: ['project/CLAUDE.md'], added: [] })).detail, /gate: <label> median <n>/);
+  const bad = checkGate(gateFacts({ added: ['gate: a median nine baseline 8 brief v1 keys v2'] }));
+  assert.equal(bad.ok, false);
+  assert.match(bad.detail, /cannot read/);
+});
+
+test('an owner-accepted marker passes a lower median and says so, but never an old ruler', async () => {
+  const { checkGate } = await gateTools();
+  const r = checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v2 owner-accepted'] }));
+  assert.equal(r.ok, true);
+  assert.match(r.detail, /owner accepted/);
+  assert.equal(checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v1 owner-accepted'] })).ok, false);
+});
+
+test('recall gate refuses a score taken on an old brief or old keys', async () => {
+  const { checkGate } = await gateTools();
+  assert.match(checkGate(gateFacts({ added: ['gate: a median 9 baseline 8 brief v1 keys v1'] })).detail, /keys v2/);
+  assert.match(checkGate(gateFacts({ brief: 2 })).detail, /brief v2/);
+});
+
+test('recall gate reads the last gate line added, so a failed run can be followed by a passing one', async () => {
+  const { checkGate } = await gateTools();
+  const failedFirst = ['gate: a median 7 baseline 8 brief v1 keys v2', GOOD_ENTRY];
+  assert.equal(checkGate(gateFacts({ added: failedFirst })).ok, true);
+  assert.equal(checkGate(gateFacts({ added: [...failedFirst].reverse() })).ok, false);
+});
+
+test('recall gate leaves a PR that changes no rule text alone', async () => {
+  const { checkGate } = await gateTools();
+  assert.equal(checkGate(gateFacts({ changed: ['scripts/kit.mjs'], added: [] })).ok, true);
+});
+
+test('CI runs the recall gate on the PR\'s real diff', () => {
+  assert.match(read(path.resolve('.github/workflows/ci.yml')), /node scripts\/recall-gate\.mjs "\$PR_BASE" "\$PR_HEAD"/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-'));
+  const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
+  const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+  git('init', '-q', '-b', 'main');
+  put('rules/core.md', 'a\n');
+  put('docs/evals/results/recall-scores.md', '# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n');
+  git('add', '.');
+  git('commit', '-qm', 'base');
+  git('tag', 'base');
+  put('rules/core.md', 'b\n');
+  git('commit', '-qam', 'rule only');
+  const gate = () => spawnSync('node', [RECALL_GATE, 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  const noScore = gate();
+  assert.equal(noScore.status, 1, noScore.stdout + noScore.stderr);
+  const keys = read(path.resolve('docs/evals/recall-questions.md')).match(/^Current version: v(\d+)$/m)[1];
+  const brief = read(path.resolve('docs/evals/recall-scorer-brief.md')).match(/^Current version: v(\d+)$/m)[1];
+  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median 8 baseline 8 brief v${brief} keys v${keys}\n`);
+  git('commit', '-qam', 'scores');
+  const scored = gate();
+  assert.equal(scored.status, 0, scored.stdout + scored.stderr);
+});
+
+test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
+  for (const f of ['rules/agent-teams.md', 'rules/reviews-and-findings.md']) {
+    const text = read(path.resolve(f));
+    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`/, f);
+    assert.match(text, /not there, the kit's user layer is not installed: say so, and the owner approves/, f);
+  }
+  assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(its Review section carries the sweep summary\) \+ audit to the owner/);
+});
+
+test('the scorer brief is versioned and carries the two calls the proof found borderline', () => {
+  const brief = read(path.resolve('docs/evals/recall-scorer-brief.md'));
+  assert.match(brief, /^Current version: v1$/m);
+  assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/);
+  assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/);
+});
