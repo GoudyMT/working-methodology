@@ -46,6 +46,9 @@ function main() {
 		if (e.kind === 'decision' && e.decision !== 'approved') {
 			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; on their yes, log it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes "<their words>"`, then start the reviewers.');
 		}
+		// The budget rests on the call cap, so a brief must carry one the contract set; the call-cap hook reads it there.
+		const cap = String((input.tool_input || {}).prompt || '').match(/Call cap: (\d+)/);
+		if (Array.isArray(e.calls) && !(cap && e.calls.includes(Number(cap[1])))) return deny(`A reviewer's brief carries its role's call cap, as the line "Call cap: <n>", from the cleared contract (${[...new Set(e.calls)].join(', ')}): the sweep skill has the wording.`);
 		// Each start claims one numbered slot file; creating it fails if it exists, so reviewers started at the same
 		// moment cannot share a slot.
 		const slots = path.join(dir, 'kit-sweep-starts', sha(lines[i]));

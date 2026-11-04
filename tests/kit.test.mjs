@@ -2077,7 +2077,7 @@ test('the canary reads a report handed back through a tool, from the agent trans
 // log has a fixed home, the caps only go down, the diff sets the floor, and only the owner's own terminal resumes.
 const APPROVE = path.resolve('user/skills/pre-pr-sweep/approve.mjs');
 const FIX_EXIT = 3;
-const role = (kind, question, extra = {}) => ({ role: `${kind} reviewer`, kind, question, context: [`src/${kind}.ts`, 'rule:pre-pr-deep-sweep'], finding: 'file:line, the scenario, the proof', budget: 60000, ...extra });
+const role = (kind, question, extra = {}) => ({ role: `${kind} reviewer`, kind, question, context: [`src/${kind}.ts`, 'rule:pre-pr-deep-sweep'], finding: 'file:line, the scenario, the proof', calls: 3, ...extra });
 const featureContract = () => ({ tier: 'feature', modifiers: [], roles: [
   role('security', 'Can a crafted import file reach storage without validation?', { context: ['src/import.ts'] }),
   role('security', 'Does any new route leak personal data in logs or errors?', { context: ['src/routes.ts'] }),
@@ -2164,9 +2164,9 @@ test('the diff sets the floor: a lighter tier or a left-out modifier goes to the
   const dep = sweepRepo({ 'src/sync.ts': 'x\n', 'package.json': '{"dependencies":{"left-pad":"1"}}\n' });
   assert.match(approveRun(featureContract(), dep).stdout, /supply-chain/i, 'a changed package file needs the supply-chain role');
   const triage = sweepRepo({ 'README.md': 'y\n' });
-  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?', { budget: 20000 })] };
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
   assert.equal(approveRun(one, triage).status, 0, 'a one-line docs change is triage');
-  assert.equal(approveRun({ ...one, roles: [...one.roles, role('triage', 'Is any dimension touched by it?', { budget: 20000 })] }, sweepRepo({ 'README.md': 'y\n' })).status, 1, 'a triage sweep is one agent');
+  assert.equal(approveRun({ ...one, roles: [...one.roles, role('triage', 'Is any dimension touched by it?')] }, sweepRepo({ 'README.md': 'y\n' })).status, 1, 'a triage sweep is one agent');
   const fix4 = { tier: 'fix', modifiers: [], roles: [...asFix.roles, role('test-value', 'Does each changed test guard a real use?'), role('modelled-on', 'Was the bug inherited from the code this copied?')] };
   assert.equal(approveRun(fix4, sweepRepo({ 'README.md': 'z\n' })).status, 1, 'a fix sweep is 2-3 agents');
 });
@@ -2206,10 +2206,10 @@ test('a log line written by hand, or a raised cap, never clears the way', () => 
   assert.match(approveIn(r.dir, [r.f]).stdout, /changed by hand|paused/i);
   const big = sweepRepo();
   fs.mkdirSync(path.join(big, '.kit'));
-  fs.writeFileSync(path.join(big, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: { maxAgents: 'lots', maxRoleBudget: 1e12, maxTotalBudget: 1e13 } } }));
+  fs.writeFileSync(path.join(big, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: { maxExtras: 99, maxAgents: 'lots', maxRoleBudget: 1e12, maxTotalBudget: 1e13 } } }));
   const c = featureContract();
-  c.roles[0].budget = 10 ** 7;
-  assert.equal(approveRun(c, big).status, 1, 'caps only go down');
+  for (const q of ['Do stale caches keep serving removed rows forever?', 'Would renamed exports break plugin loaders downstream?', 'Can old backups restore deleted accounts silently?', 'Might retry loops double every queued payment?', 'Does daylight saving shift nightly scheduled jobs?', 'Are locked files blocking concurrent uploads anywhere?']) c.roles.push(role('modelled-on', q));
+  assert.match(approveRun(c, big).stdout, /ASK THE OWNER[\s\S]*6 roles beyond the feature floor, over its cap of 5/, 'caps only go down');
 });
 test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, an escape and every 10 approvals', () => {
   const r = approveRun(featureContract());
@@ -2232,7 +2232,7 @@ test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, 
 // script, and the owner approved a team that broke the security floor. The script now runs first and writes the
 // owner's notice from checked data, and a guard refuses a reviewer agent until the log clears this HEAD.
 const sweepGuard = (dir, extra = {}) => {
-  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review' }, ...extra });
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review. Call cap: 3.' }, ...extra });
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
 test('an approval prints the owner\'s start notice from checked data, not a hand count', () => {
@@ -2244,7 +2244,7 @@ test('an approval prints the owner\'s start notice from checked data, not a hand
   assert.match(r.stdout, /security x3/);
   assert.match(r.stdout, /test-value reviewer \(test-value, sonnet\)/);
   assert.match(r.stdout, /security reviewer \(security, the reviewer default\)/);
-  assert.match(r.stdout, /300,000 of the 4,400,000 ceiling/);
+  assert.match(r.stdout, /Budget: 277,500 processed tokens, computed from each role's call cap/);
   assert.match(r.stdout, /Extras: 0 of 5 allowed/);
   assert.match(r.stdout, /security 3 of 3 needed/);
   assert.match(r.stdout, /Findings come when the sweep finishes/);
@@ -2334,7 +2334,7 @@ test('the leak guard lets an agent open its own message to its tasker with the p
 // Found in the re-check: the floor read only committed work in the contract's own checkout.
 test('the approval script asks the owner when the work is not committed or the diff is empty', () => {
   const dir = sweepRepo({ 'README.md': 'w\n' });
-  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?', { budget: 20000 })] };
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
   fs.writeFileSync(path.join(dir, 'src.js'), 'new\n');
   assert.match(approveRun(one, dir).stdout, /not committed/i);
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
@@ -2519,7 +2519,7 @@ test('status lists the improvement reports still open in a project', () => {
 // Found in review of the sweep guard (2026-10-30).
 test('the sweep guard holds reviewers to the cleared team size', () => {
   const dir = sweepRepo({ 'README.md': 'y\n' });
-  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?', { budget: 20000 })] };
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
   assert.equal(approveRun(one, dir).status, 0);
   assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the one cleared reviewer');
   const second = sweepGuard(dir);
@@ -2757,7 +2757,7 @@ test('the outcome reads each role\'s spend from its own transcript, counting eac
   assert.deepEqual(line.roles.map((x) => x.kind), ['security', 'security', 'security', 'test-value', 'novel-lens']);
   assert.equal(line.roles[3].model, 'claude-sonnet-5-5');
   assert.equal(line.tokens, 390 + 1108 + 1108 + 500 + 40);
-  assert.match(approveIn(r.dir, ['--summary']).stdout, /security x3: up to 1,108 of the 400,000 standard/);
+  assert.match(approveIn(r.dir, ['--summary']).stdout, /security x3: up to 1,108 over 1 calls/);
 });
 test('the outcome asks the owner when a transcript is missing, and refuses a hand-typed token count', () => {
   const r = approveRun(featureContract());
@@ -2776,29 +2776,6 @@ test('the outcome asks the owner when a transcript is missing, and refuses a han
   assert.equal(run('a1,a2,a3,a4').status, 1, 'one agent id per role');
   assert.equal(run('a1,a2,a3,a4,../a1').status, 1, 'an agent id is a name, not a path');
   assert.equal(approvalLog(r.dir).length, before, 'nothing logged');
-});
-
-// M11 budgets (locked): a standard per model, more only with a named reason, never over 2x.
-test('a role\'s budget is its model\'s standard, or up to 2x with a reason', () => {
-  const at = featureContract();
-  at.roles.forEach((x) => { x.budget = 400000; });
-  at.roles[3].model = 'claude-sonnet-5-5';
-  at.roles[3].budget = 600000;
-  assert.equal(approveRun(at).status, 0, approveRun(at).stdout);
-  const over = featureContract();
-  over.roles[0].budget = 400001;
-  assert.match(approveRun(over).stdout, /FIX THE CONTRACT[\s\S]*budgetReason/);
-  const reason = featureContract();
-  reason.roles[0].budget = 800000;
-  reason.roles[0].budgetReason = 'a 40-file diff across the import parser';
-  assert.equal(approveRun(reason).status, 0, approveRun(reason).stdout);
-  const twice = featureContract();
-  twice.roles[0].budget = 800001;
-  twice.roles[0].budgetReason = 'a 40-file diff across the import parser';
-  assert.match(approveRun(twice).stdout, /FIX THE CONTRACT[\s\S]*2x/);
-  const unknown = featureContract();
-  unknown.roles[3].model = 'claude-haiku-5-5';
-  assert.match(approveRun(unknown).stdout, /no standard budget/);
 });
 
 // M12 A (locked): a tier's cap counts only the roles beyond its floor, so no modifier mix can make the floor
@@ -2972,7 +2949,7 @@ test('every ask and every pause writes a triage report beside the contract; an a
   fs.rmSync(triage(trip.f), { force: true });
   const o = outcome(trip, String(5 * 60000 * 1.3));
   assert.match(o.stdout, /contract\.triage\.md/);
-  assert.match(read(triage(trip.f)), /30% over the budget of 300000/);
+  assert.match(read(triage(trip.f)), /41% over the budget of 277500/);
   const esc = approveRun(featureContract());
   const e = approveIn(esc.dir, [esc.f, '--escape', 'a sync bug shipped']);
   assert.match(e.stdout, /contract\.triage\.md/);
@@ -3080,15 +3057,7 @@ test('a re-sweep reads the first sweep as it was cleared, carries leftovers from
   commitAll(f4.dir, 'a test for the fix', true);
   assert.equal(resweep(f4).status, 0, 'a new test file is not new source');
 });
-test('a budget over standard needs a real reason; project caps lower every limit', () => {
-  const pad = featureContract();
-  pad.roles[0].budget = 800000;
-  pad.roles[0].budgetReason = 'xxxxxxxxxxxxxxx';
-  assert.match(approveRun(pad).stdout, /budgetReason/);
-  const sonnet = featureContract();
-  sonnet.roles[3].model = 'sonnet';
-  sonnet.roles[3].budget = 600001;
-  assert.match(approveRun(sonnet).stdout, /600001 over the sonnet standard/);
+test('project caps lower every limit', () => {
   const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
   const plusOne = { ...featureContract(), roles: [...featureContract().roles, role('privacy', 'Which fields leave the device now?')] };
   assert.equal(approveRun(plusOne).status, 0);
@@ -3161,8 +3130,8 @@ test('a modifiers value that is not a list goes back to be fixed; the fix option
   assert.match(ask.stdout, /How: Focus the re-sweep/);
   assert.doesNotMatch(ask.stdout, /decides whether the trip was a real failure/, 'a HEAD that does not descend is not a spend trip');
   const budget = featureContract();
-  budget.roles[0].budget = 400001;
-  assert.match(approveRun(budget).stdout, /How: Set each role at its model's standard/);
+  budget.roles[0].calls = 31;
+  assert.match(approveRun(budget).stdout, /How: Set each role's "calls"/);
 });
 test('a transcript whose last model is synthetic is read by its real model; one with no model pauses', () => {
   const r = approveRun(featureContract());
@@ -3658,8 +3627,8 @@ test('a contract mistake answers FIX THE CONTRACT with its own exit code, and th
     [(c) => { c.roles.splice(0, 1); }, /security/i],
     [(c) => { c.roles[1].question = c.roles[0].question.replace('Can', 'Could'); }, /same question/i],
     [(c) => { c.roles.push(role('astrology', 'What do the stars say about this diff?')); }, /kind/i],
-    [(c) => { c.roles[0].budget = 10 ** 7; }, /budget/i],
-    [(c) => { c.roles[0].budget = true; }, /budget/i],
+    [(c) => { c.roles[0].calls = 10 ** 7; }, /calls/i],
+    [(c) => { c.roles[0].calls = true; }, /call cap/i],
     [(c) => { c.roles[2].context = []; }, /context/i],
     [(c) => { c.roles[2].context = ['']; }, /context/i],
     [(c) => { c.roles[2].context = Array.from({ length: 31 }, (_, i) => `f${i}.ts`); }, /context/i],
@@ -3721,4 +3690,102 @@ test('FIX THE CONTRACT clears nothing: the guard refuses a reviewer and there is
   assert.match(d.permissionDecisionReason, /fix the contract/i);
   assert.doesNotMatch(d.permissionDecisionReason, /--owner-yes/);
   assert.notEqual(approveIn(r.dir, [r.f, '--owner-yes', 'yes go']).status, 0, 'no ask, so no yes');
+});
+
+// M17 (the owner, 2026-11-03, option B; 2026-11-04, the hook): a role's spend is about 14k x calls + g x calls^2 / 2,
+// so its budget comes from a call cap the script computes from, never a typed number.
+test('a role\'s budget is computed from its call cap, and a typed budget changes nothing', () => {
+  const c = featureContract();
+  c.roles.forEach((x) => { x.calls = 12; x.budget = 1; });
+  const r = approveRun(c);
+  assert.equal(r.status, 0, r.stdout);
+  const line = approvalLog(r.dir).pop();
+  assert.equal(line.budget, 5 * (14000 * 12 + 3000 * 12 * 12 / 2));
+  assert.deepEqual(line.calls, [12, 12, 12, 12, 12]);
+  assert.match(r.stdout, /12 calls, budget 384,000/);
+});
+test('a role that must read a file over 40 KB gets the larger growth, read from the branch and not the contract', () => {
+  const dir = sweepRepo({ 'src/big.ts': 'x'.repeat(41 * 1024), 'src/small.ts': 'x\n', 'src/sync.test.ts': 'test\n' });
+  const c = featureContract();
+  c.roles.forEach((x) => { x.calls = 12; });
+  c.roles[0].context = ['src/big.ts:120', 'rule:pre-pr-deep-sweep'];
+  c.roles[1].context = ['src/small.ts'];
+  const r = approveRun(c, dir);
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(approvalLog(dir).pop().budget, (14000 * 12 + 6000 * 72) + 4 * (14000 * 12 + 3000 * 72));
+});
+test('a call cap is a whole number; over the standard needs a reason; never over 2x', () => {
+  for (const bad of [undefined, 0, 2, 1.5, '12', true]) {
+    const c = featureContract();
+    c.roles[0].calls = bad;
+    const r = approveRun(c);
+    assert.equal(r.status, FIX_EXIT, `${bad}: ${r.stdout}`);
+    assert.match(r.stdout, /no call cap/);
+  }
+  const over = featureContract();
+  over.roles[0].calls = 16;
+  assert.match(approveRun(over).stdout, /FIX THE CONTRACT[\s\S]*callsReason/);
+  over.roles[0].callsReason = 'xxxxxxxxxxxxxxx';
+  assert.match(approveRun(over).stdout, /callsReason/, 'a padded reason is no reason');
+  const reason = featureContract();
+  reason.roles[0].calls = 30;
+  reason.roles[0].callsReason = 'a 40-file diff across the import parser';
+  assert.equal(approveRun(reason).status, 0);
+  reason.roles[0].calls = 31;
+  assert.match(approveRun(reason).stdout, /FIX THE CONTRACT[\s\S]*over 2x the standard of 15/);
+});
+test('the 25% trip stays on the whole sweep: one role over its own budget does not pause', () => {
+  const r = approveRun(featureContract());
+  const budget = approvalLog(r.dir).pop().budget;
+  const roles = JSON.parse(read(r.f)).roles;
+  const ids = roles.map(() => `t${++agentSeq}`);
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [[0, i ? 1000 : Math.floor(budget * 0.9), 0, 0], [0, 1, 0, 0]]])));
+  const o = approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  assert.doesNotMatch(o.stdout, /paused/);
+  const line = approvalLog(r.dir).pop();
+  assert.equal(line.kind, 'outcome');
+  assert.deepEqual(line.roles.map((x) => x.calls), [2, 2, 2, 2, 2], 'each role\'s real calls are kept for the budgets to learn from');
+  assert.equal(line.roles[0].cap, 3);
+});
+const capHook = (dir, calls, cap, extra = {}) => {
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  const lines = [{ message: { role: 'user', content: cap === null ? 'a brief' : `a brief. Call cap: ${cap}. A call is one message.` } }];
+  for (let i = 0; i < calls; i++) for (const part of [0, 1]) lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 1 }, content: [{ type: 'text', text: String(part) }] } });
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash', tool_input: {}, ...extra });
+  return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+};
+test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
+  assert.equal(capHook(dir, 10, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
+  const stop = capHook(dir, 11, 12);
+  assert.equal(stop.permissionDecision, 'deny');
+  assert.match(stop.permissionDecisionReason, /hand in your report/);
+  assert.equal(capHook(dir, 11, 12, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow');
+  assert.equal(capHook(dir, 20, 12, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers are held');
+  assert.equal(capHook(dir, 20, null).permissionDecision, 'allow', 'no cap line: the sweep guard stops that at the start');
+  assert.equal(capHook(dir, 20, 12, { agent_id: undefined }).permissionDecision, 'allow', 'the lead is never held');
+  assert.equal(capHook(dir, 20, 12, { transcript_path: path.join(dir, 'nope.jsonl') }).permissionDecision, 'allow', 'no transcript: the sweep trip stands behind it');
+});
+test('the sweep guard starts a reviewer only with a brief that carries a call cap from the cleared contract', () => {
+  const r = approveRun(featureContract());
+  const run = (prompt) => sweepGuard(r.dir, { tool_input: { subagent_type: 'reviewer', prompt } });
+  const none = run('review this');
+  assert.equal(none.permissionDecision, 'deny');
+  assert.match(none.permissionDecisionReason, /Call cap: <n>/);
+  assert.equal(run('review this. Call cap: 40.').permissionDecision, 'deny', 'a cap the contract never set');
+  assert.equal(run('review this. Call cap: 3.').permissionDecision, 'allow');
+});
+test('the project settings wire the call-cap hook on every tool', () => {
+  const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
+  const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('kit-hooks/call-cap.cjs')));
+  assert.ok(entry, 'wired');
+  assert.equal(entry.matcher, '.*');
+});
+test('the sweep skill gives the lead the brief\'s call-cap wording', () => {
+  const skill = read(path.resolve('user/skills/pre-pr-sweep/SKILL.md'));
+  assert.match(skill, /Call cap: <n>\. A call is one message from you/);
+  assert.match(skill, /FIX THE CONTRACT/);
 });

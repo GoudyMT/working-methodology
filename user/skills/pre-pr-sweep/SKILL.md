@@ -23,7 +23,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 2. **The Swarm Contract, script first** (rule:swarm-contract). Do not ask the owner anything yet; the script decides
    whether there is anything to ask. In order: (a) commit the work; (b) draw the roles from
    [references/angles.md](references/angles.md) by the change's risk regions, and write them as
-   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`);
+   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`, and
+   sets `calls`, its call cap, 15 unless it names why it needs more: the script computes the budget from it);
    (c) from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
    (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). (d) APPROVED: post
    the start notice it printed, as is, and go on; never restate counts by hand. FIX THE CONTRACT (exit 3): the mistake is
@@ -35,7 +36,10 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    a false `--base`, clearing the AI-shell marker, invented outcome numbers, or an `--owner-yes` the owner never gave
    would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
-   and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
+   and a finding cap; each brief carries its role's `calls` from the contract in these words:
+   "Call cap: <n>. A call is one message from you, however many tools it runs, so run independent reads together in one message. A hook counts
+   your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did
+   not get to as 'not checked'." The sweep guard refuses a brief with no such line. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.

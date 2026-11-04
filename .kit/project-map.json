@@ -12,7 +12,7 @@
     { "id": "build", "name": "Build", "does": "writes each tool's files", "files": ["scripts/kit.mjs"] },
     { "id": "project", "name": "Project files", "does": "AGENTS.md, modules, scripts", "files": ["project/AGENTS.md", "project/standards", "project/.claude"] },
     { "id": "user", "name": "User files", "does": "skills, hooks, agent roles", "files": ["user/skills", "user/kit-hooks"] },
-    { "id": "hooks", "name": "Hooks", "does": "kit check, gate, sweep guard", "files": ["project/.claude/kit-hook.cjs", "user/kit-hooks/kit-gate.cjs", "user/kit-hooks/sweep-guard.cjs"] },
+    { "id": "hooks", "name": "Hooks", "does": "kit check, gate, sweep guard", "files": ["project/.claude/kit-hook.cjs", "user/kit-hooks/kit-gate.cjs", "user/kit-hooks/call-cap.cjs", "user/kit-hooks/sweep-guard.cjs"] },
     { "id": "audits", "name": "Audits", "does": "PR body, report, push checks", "files": ["project/.claude/pr-body-audit.mjs", "project/.claude/improvement-report.mjs", "project/.claude/first-push-check.mjs"] },
     { "id": "vendor", "name": "Vendor backups", "does": "credited third-party skills", "files": ["vendor/CREDITS.md"] },
     { "id": "tests", "name": "Tests", "does": "prove every guard and format", "files": ["tests/kit.test.mjs"] },
