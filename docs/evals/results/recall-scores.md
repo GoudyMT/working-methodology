@@ -204,9 +204,10 @@ Seven runs in fresh throwaway installs, relabeled at random, scored by one fresh
 | 10 | 1, 1, 1 | 0, 0, 0 | 0 |
 | Total | 10, 10, 10 | 9, 9, 9 | 0 |
 
-- **Gate met: median 10, baseline 9, control 0.** One question apart is within noise for a 10-question test; Q10 is the line the fix changed, and it moved in all three runs.
+- **Gate met: median 10, baseline 9, control 0.** One question apart is within noise for a 10-question test. The whole margin is Q10, and the rule line behind it was reworded with the key in view: it shows sessions state the summary, not that they write it. Without Q10 the two are level.
+- An outside inspector re-scored Q3, Q7 and Q10 in all seven runs from the raw files and matched; it did not score the other seven questions. It also found the redaction left a tell: candidate answers say "two setup items" and show one.
 - Q3 and Q7 now pass in every kit run: the third-person question gets the rule stated, and the key matches the rule. Both changed the ruler, so they lift the baseline too.
 - Borderline (scorer): 7 calls could flip to 0 in kit runs (Q5 in 4 runs, one each of Q1, Q3, Q6, Q7); the candidate medians would fall to 9 and the baseline to 8 if all flipped. Two control calls could flip to 1.
-- The control is not a clean no-kit run: read tools are unscoped, and it found the owner's memory files. It still scored 0.
+- The control is not a clean no-kit run: read tools are unscoped, and it found the owner's memory files. It scored 0, which any no-kit answer would, so it shows the test can tell kit from no kit and says nothing about this fix.
 
 gate: kit-1.18.0 median 10 baseline 9 brief v1 keys v2
