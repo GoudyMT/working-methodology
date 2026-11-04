@@ -7,7 +7,7 @@
 //   { "tier": "feature" | "fix" | "triage" | "first push" | "launch gate",
 //     "modifiers": ["security-sensitive" | "new-dependency" | "public-text" | "user-data"],
 //     "testsChanged": true,
-//     "roles": [{ "role", "kind", "question", "context": [...], "finding", "calls", "callsReason" }] }
+//     "roles": [{ "role", "kind" (KINDS below), "question", "context": [...], "finding", "calls", "callsReason" }] }
 // A re-sweep adds "resweepOf": "<the first sweep's contract.json>" and "fixed": [{ "finding", "kind" }] (the kind of
 // role that found each fixed finding). It gets one: a second re-sweep, or a re-sweep of one, is refused, and what
 // is left goes to the handoff's carry-overs.
@@ -62,7 +62,8 @@ const GROWTH = 3000;
 const GROWTH_LARGE = 6000;
 const LARGE_FILE = 40 * 1024;
 const STANDARD_CALLS = 15;
-const MIN_CALLS = 3;
+// The hook refuses tools from the cap's last two calls, so a smaller cap leaves a role no room to review.
+const MIN_CALLS = 5;
 const SPECIAL = 2;
 const budgetFor = (calls, growth) => PER_CALL * calls + growth * calls * calls / 2;
 // The reviewer role's own model (user/agents/reviewer.md), for a role that names none.
@@ -100,8 +101,9 @@ const DEP_FILE = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.
 const TEST_FILE = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$|_test\.[a-z]+$/;
 const DOC_FILE = /\.(md|txt|rst)$/i;
 // What a sweep or a release commits about itself is not source (M14): a committed contract, the project's caps file
-// and a data file under docs/ pushed a fix or triage sweep up a tier. Any other added .json still counts.
-const KIT_JSON = /^(docs\/.*\.json|\.kit\/sweep-approval\.json)$/i;
+// and a migration file pushed a fix or triage sweep up a tier. Any other added .json still counts.
+const KIT_JSON = /^(docs\/migrations\/[^/]+\.json|\.kit\/sweep-approval\.json)$/i;
+const TIER_RANK = { triage: 0, fix: 1, feature: 2, 'first push': 3, 'launch gate': 4 };
 const FIX_EXIT = 3;
 
 const args = process.argv.slice(2);
@@ -146,13 +148,18 @@ function state() {
 	return { log, paused, pausedAt, reviewEvery, approvedSinceReview: since.filter((e) => e.kind === 'decision' && e.decision === 'approved').length };
 }
 
-function caps(tier) {
+// The lower of the branch's caps and the base's, so a branch cannot drop a limit the project set.
+function caps(tier, base) {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	const f = top && path.join(top, '.kit', 'sweep-approval.json');
-	let own = {};
-	try { own = (JSON.parse(fs.readFileSync(f, 'utf8')).caps || {})[tier] || {}; } catch { /* no project caps */ }
 	const out = { maxAgents: Infinity, maxRoleBudget: Infinity, maxTotalBudget: Infinity, ...CAPS[tier] };
-	for (const k of Object.keys(out)) if (Number.isFinite(own[k]) && (own[k] > 0 || (k === 'maxExtras' && own[k] === 0))) out[k] = Math.min(out[k], own[k]);
+	const lower = (text) => {
+		let own = {};
+		try { own = (JSON.parse(text).caps || {})[tier] || {}; } catch { /* no project caps */ }
+		for (const k of Object.keys(out)) if (Number.isFinite(own[k]) && (own[k] > 0 || (k === 'maxExtras' && own[k] === 0))) out[k] = Math.min(out[k], own[k]);
+	};
+	try { lower(fs.readFileSync(f, 'utf8')); } catch { /* no project caps */ }
+	if (base) lower(git('show', `${base}:.kit/sweep-approval.json`).stdout);
 	return out;
 }
 
@@ -181,7 +188,7 @@ function diffFacts() {
 	const want = opt('--base');
 	const base = (want ? [want] : ['origin/main', 'main', 'origin/master', 'master']).find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
 	if (!base) return null;
-	const names = (filter) => git('diff', '--name-only', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\n').filter(Boolean);
+	const names = (filter) => git('diff', '--name-only', '-z', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\0').filter(Boolean);
 	const all = names('ACDMRT');
 	const added = names('A').filter((f) => !sweepOwned(f));
 	const lines = git('diff', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).filter((l) => !sweepOwned(l.split('\t')[2])).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
@@ -235,8 +242,8 @@ function resweepCheck(c, tier, roles, log, facts, why, fix) {
 	for (const m of Array.isArray(c.modifiers) ? c.modifiers : []) if (!firstMods.has(m)) why.push(`modifier "${m}" was not on the sweep it re-checks: a new risk needs the full floor, not a re-sweep`);
 	if (facts && head.head) {
 		const r = git('merge-base', '--is-ancestor', head.head, 'HEAD');
-		if (r.status === 1) fix.push(`HEAD does not descend from the HEAD the sweep it re-checks ran on (${head.head})`);
-		else if (r.status !== 0) fix.push(`cannot tell whether HEAD descends from ${head.head}`);
+		if (r.status === 1) why.push(`HEAD does not descend from the HEAD the sweep it re-checks ran on (${head.head})`);
+		else if (r.status !== 0) why.push(`cannot tell whether HEAD descends from ${head.head}`);
 		else {
 			// The re-sweep's floor skips the diff-derived modifiers, so the fixes may not bring what would have set them.
 			// Contracts in the sweep folder are left out (reports are docs already); any other file there counts. Renames
@@ -248,7 +255,7 @@ function resweepCheck(c, tier, roles, log, facts, why, fix) {
 			if (added) why.push(`the fixes add a source file (${added}) since the sweep it re-checks: new code needs the full floor, not a re-sweep`);
 		}
 	}
-	if (roles.length > (Number(head.agents) || 0)) fix.push(`${roles.length} roles, more than the ${head.agents} of the sweep it re-checks: a re-sweep never grows`);
+	if (roles.length > (Number(head.agents) || 0)) why.push(`${roles.length} roles, more than the ${head.agents} of the sweep it re-checks: a re-sweep never grows`);
 	const fixed = Array.isArray(c.fixed) ? c.fixed : [];
 	const firstKinds = new Set(((firstContract && firstContract.roles) || []).map((r) => r.kind));
 	if (!fixed.length) fix.push('no fixed findings listed ("fixed": [{ "finding", "kind" }]): a re-sweep checks the fixes');
@@ -267,11 +274,38 @@ function resweepCheck(c, tier, roles, log, facts, why, fix) {
 	return { first, need };
 }
 
+// Each role's budget from its call cap. Over the 2x bound is the owner's; a missing cap or reason is a mistake.
+function callBudgets(roles, cap, why, fix) {
+	const budgets = [];
+	let total = 0;
+	roles.forEach((r, i) => {
+		const name = `role ${i + 1} (${r.role || r.kind})`;
+		const n = r.calls;
+		if (!Number.isInteger(n) || n < MIN_CALLS) { fix.push(`${name}: no call cap ("calls": a whole number of ${MIN_CALLS} or more; its budget is computed from that)`); return; }
+		if (n > SPECIAL * STANDARD_CALLS) why.push(`${name}: ${n} calls, over ${SPECIAL}x the standard of ${STANDARD_CALLS}`);
+		else if (n > STANDARD_CALLS && !(filled(r.callsReason, 15) && words(r.callsReason).size >= 3)) fix.push(`${name}: ${n} calls, over the standard of ${STANDARD_CALLS}, needs a callsReason (why this role needs more)`);
+		budgets[i] = budgetFor(n, readsLarge(r) ? GROWTH_LARGE : GROWTH);
+		if (budgets[i] > cap.maxRoleBudget) why.push(`${name}: budget ${budgets[i]} over the project's per-role cap of ${cap.maxRoleBudget}`);
+		total += budgets[i];
+	});
+	return { budgets, total };
+}
+
+// The cap's hook sits in the project's settings, and install skips a settings file the project changed.
+function hookMissing() {
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
+	try { return !fs.readFileSync(path.join(top, '.claude', 'settings.json'), 'utf8').includes('call-cap.cjs'); } catch { return false; }
+}
+
 // Every reason this contract is not cleared, and the role kinds it needed. `why` is out of bounds, the owner's call;
 // `fix` is a mistake Claude corrects and reruns. A reason is the owner's unless it is written to `fix` here.
 function check(c, facts, log = []) {
 	const tier = String(c.tier || '').toLowerCase();
-	if (OWNER_TIERS.includes(tier)) return { why: [`the ${tier} tier is always the owner's call`], fix: [], need: {} };
+	if (OWNER_TIERS.includes(tier)) {
+		const why = [`the ${tier} tier is always the owner's call`];
+		const fix = [];
+		return { why, fix, need: {}, ...callBudgets(Array.isArray(c.roles) ? c.roles : [], { maxRoleBudget: Infinity }, why, fix) };
+	}
 	// Own keys only: "constructor" or "__proto__" would otherwise find an object's built-ins and pass with no floor.
 	if (!Object.hasOwn(CAPS, tier)) return { why: [], fix: [`unknown tier "${c.tier}"`], need: {} };
 	const why = [];
@@ -284,7 +318,8 @@ function check(c, facts, log = []) {
 		if (tier === 'triage' && (facts.added.length || facts.lines > TRIAGE_MAX_LINES)) why.push(`${facts.lines} changed lines, ${facts.added.length} added files: more than a triage change`);
 	}
 	const roles = Array.isArray(c.roles) ? c.roles : [];
-	const cap = caps(tier);
+	const cap = caps(tier, facts && facts.base);
+	if (hookMissing()) fix.push('the call-cap hook is not in .claude/settings.json: merge its PreToolUse entry from the kit\'s project/.claude/settings.json');
 	if (!roles.length) fix.push('no roles');
 	if (roles.length > cap.maxAgents) why.push(`${roles.length} agents, over the project's ${tier} cap of ${cap.maxAgents}`);
 	const resweep = c.resweepOf !== undefined;
@@ -309,27 +344,19 @@ function check(c, facts, log = []) {
 	// The floor's roles are always allowed; the cap limits what a sweep adds beyond them.
 	const extras = roles.length - Object.entries(need).reduce((t, [k, n]) => t + Math.min(count(k), n), 0);
 	if (!resweep && extras > cap.maxExtras) why.push(`${extras} roles beyond the ${tier} floor, over its cap of ${cap.maxExtras}`);
-	let total = 0;
-	const budgets = [];
 	roles.forEach((r, i) => {
 		const name = `role ${i + 1} (${r.role || r.kind})`;
-		if (!KINDS.includes(r.kind)) fix.push(`${name}: unknown kind "${r.kind}"`);
+		if (!KINDS.includes(r.kind)) fix.push(`${name}: unknown kind "${r.kind}" (one of: ${KINDS.join(', ')})`);
 		if (!filled(r.question, 15)) fix.push(`${name}: no real question`);
 		if (!Array.isArray(r.context) || !r.context.length || !r.context.every((x) => filled(x, 2))) fix.push(`${name}: no context (the files, rule and spec its lens needs)`);
-		else if (r.context.length > MAX_CONTEXT) fix.push(`${name}: ${r.context.length} context entries, over ${MAX_CONTEXT}: a role's context is what its lens needs`);
+		else if (r.context.length > MAX_CONTEXT) why.push(`${name}: ${r.context.length} context entries, over ${MAX_CONTEXT}: a role's context is what its lens needs`);
 		if (!filled(r.finding, 8)) fix.push(`${name}: no finding shape`);
 		// The reviewer model trial (rule:test-and-review-cadence): security and the novel lens stay on the top model.
 		if (TOP_ONLY.includes(r.kind) && r.model !== undefined && !TOP_MODEL.test(String(r.model))) fix.push(`${name}: a ${r.kind} role stays on the top model, not "${r.model}"`);
-		const n = r.calls;
-		if (!Number.isInteger(n) || n < MIN_CALLS) fix.push(`${name}: no call cap ("calls": a whole number of ${MIN_CALLS} or more; its budget is computed from that)`);
-		else if (n > SPECIAL * STANDARD_CALLS) fix.push(`${name}: ${n} calls, over ${SPECIAL}x the standard of ${STANDARD_CALLS}`);
-		else if (n > STANDARD_CALLS && !(filled(r.callsReason, 15) && words(r.callsReason).size >= 3)) fix.push(`${name}: ${n} calls, over the standard of ${STANDARD_CALLS}, needs a callsReason (why this role needs more)`);
-		else {
-			budgets[i] = budgetFor(n, readsLarge(r) ? GROWTH_LARGE : GROWTH);
-			if (budgets[i] > cap.maxRoleBudget) why.push(`${name}: budget ${budgets[i]} over the project's per-role cap of ${cap.maxRoleBudget}`);
-			total += budgets[i];
-		}
+		// The reviewer trial covers these two; the budget formula was fit on them.
+		if (r.model !== undefined && !modelKey(r.model)) why.push(`${name}: model "${r.model}" is outside the reviewer trial (opus, sonnet)`);
 	});
+	const { budgets, total } = callBudgets(roles, cap, why, fix);
 	if (total > cap.maxTotalBudget) why.push(`total budget ${total} over the project's ${tier} cap of ${cap.maxTotalBudget}`);
 	for (let i = 0; i < roles.length; i++) for (let j = i + 1; j < roles.length; j++) {
 		if (overlap(roles[i].question, roles[j].question) >= CLONE) fix.push(`roles ${i + 1} and ${j + 1} ask the same question (a clone)`);
@@ -346,7 +373,9 @@ const FIXES = [
 	[/not committed|no changes|cannot read the branch diff/, 'Commit the work and run approve.mjs from the branch\'s own checkout (pass `--base <ref>` if it cannot find the base).'],
 	[/needs \d+ \S+ role/, 'Add the missing floor role(s) and run approve.mjs again.'],
 	[/beyond the \S+ floor|agents, over/, 'Drop the extra roles, or split the change into smaller PRs.'],
-	[/call cap|calls|budget/, `Set each role's "calls" at ${STANDARD_CALLS} or under, or up to ${SPECIAL}x with a callsReason; the budget is computed from it.`],
+	[/call cap \(|\d calls, over/, `Set each role's "calls" at ${STANDARD_CALLS} or under, or up to ${SPECIAL}x with a callsReason; the budget is computed from it.`],
+	[/per-role cap|total budget/, 'Lower the roles\' "calls" until the computed budget fits the project\'s cap, or the owner decides.'],
+	[/call-cap hook/, 'Merge the PreToolUse entry for kit-hooks/call-cap.cjs into the project\'s .claude/settings.json.'],
 	[/re-sweep|re-checks|fixed finding|descend/, 'Focus the re-sweep: one blast-radius role, one role per kind with a fixed finding, one dimension (alignment) role, on a HEAD that builds on the first sweep, after its outcome is logged.'],
 	[/question|context|finding shape|unknown|no roles|top model/, 'Fix the named role in the contract and run approve.mjs again.'],
 	[/log the outcome of the last approved sweep/, 'Log that sweep\'s outcome with --agents; if no reviewer started under it, close it with `--outcome --none-ran`.'],
@@ -377,6 +406,14 @@ function decide() {
 	const facts = diffFacts();
 	const { why, fix, need, extras, cap, first, refused, budgets = [], total = 0 } = check(c, facts, s.log);
 	const head = git('rev-parse', '--short', 'HEAD').stdout.trim() || null;
+	// A stop is cured by adding what it named, not by asking for less: a lighter sweep after one is the owner's.
+	const before = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
+	if (before && before.decision === 'fix') {
+		const mods = Array.isArray(c.modifiers) ? c.modifiers : [];
+		const dropped = (Array.isArray(before.modifiers) ? before.modifiers : []).filter((m) => !mods.includes(m));
+		const lower = TIER_RANK[String(c.tier || '').toLowerCase()] < TIER_RANK[String(before.tier || '').toLowerCase()];
+		if (lower || dropped.length) why.push(`the contract went lighter after FIX THE CONTRACT (${lower ? `tier ${before.tier} to ${c.tier}` : `dropped ${dropped.join(', ')}`}): a lighter sweep is the owner's call`);
+	}
 	const carries = openCarries(s.log);
 	const carryLine = carries > 0 ? [`Open carry-overs: ${carries} carried finding(s) open from a re-sweep, in ${CARRY_HOME}; the outcome of the sweep that fixes them closes them with --closed-carries <n>.`] : [];
 	if (refused) {
@@ -385,18 +422,15 @@ function decide() {
 		console.log(`    What the re-sweep left goes to ${CARRY_HOME}. Log the re-sweep's outcome with --carried <n> if you have not.`);
 		return 1;
 	}
-	// The last approved sweep is reported once any outcome for its contract follows it, even one logged after a later
-	// ask on the same contract.
-	const openAt = s.log.map((e, i) => (e.kind === 'decision' && e.decision === 'approved' ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-	const open = openAt >= 0 ? s.log[openAt] : null;
-	const reported = open && s.log.some((e, i) => i > openAt && e.kind === 'outcome' && e.contract === open.contract);
+	const { open, reported, stuck } = openSweep(s.log);
 	if (s.paused) why.unshift(`auto-approval is paused: ${s.paused}`);
 	else if (s.approvedSinceReview >= s.reviewEvery) {
 		const reason = `trial review due: ${s.reviewEvery} auto-approvals since the last review`;
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
-	} else if (open && !reported) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, head, ...(first ? { resweepOf: first } : {}) };
+	} else if (stuck) why.unshift(`the last approved sweep's outcome cannot be logged (${rel(open.contract)}): the owner's yes here closes it unmeasured`);
+	else if (open && !reported) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
+	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, head, ...(first ? { resweepOf: first } : {}) };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -420,13 +454,13 @@ function decide() {
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} ${first ? `re-sweep of ${rel(first)}` : 'sweep'}, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
-	console.log(notice(c, need, extras, cap, first, budgets, total));
+	console.log(notice(c, need, extras, cap, first, budgets, total, facts));
 	for (const l of carryLine) console.log(l);
 	return 0;
 }
 
 // The owner's start notice, written from the checked contract so it carries no hand count. Post it as is.
-function notice(c, need, extras, cap, first, budgets, total) {
+function notice(c, need, extras, cap, first, budgets, total, facts) {
 	const roles = c.roles || [];
 	const n = (x) => x.toLocaleString('en-US');
 	const kinds = {};
@@ -434,6 +468,7 @@ function notice(c, need, extras, cap, first, budgets, total) {
 	return [
 		'Start notice for the owner (checked by approve.mjs; post it as is):',
 		`    ${c.tier} ${first ? 're-sweep' : 'sweep'}, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
+		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.base}`,
 		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}`),
 		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason)`,
 		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
@@ -442,16 +477,28 @@ function notice(c, need, extras, cap, first, budgets, total) {
 	].join('\n');
 }
 
+// The last approved sweep is reported once any outcome for its contract follows it, even one logged after a later
+// ask on the same contract. It is stuck when an --outcome for it could not be measured: only the owner gets past that.
+function openSweep(log) {
+	const openAt = log.map((e, i) => (e.kind === 'decision' && e.decision === 'approved' ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+	const open = openAt >= 0 ? log[openAt] : null;
+	const reported = open && log.some((e, i) => i > openAt && e.kind === 'outcome' && e.contract === open.contract);
+	return { open, reported, stuck: Boolean(open && !reported && log.some((e, i) => i > openAt && e.kind === 'unread' && e.contract === open.contract)) };
+}
+
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
 // about, so the reviewers' guard (sweep-guard) sees the owner's call and the order: script first, then the owner.
 function ownerYes() {
 	const said = opt('--owner-yes');
 	if (!filled(said, 2)) { console.log("--owner-yes needs the owner's own words, quoted; nothing logged."); return 1; }
 	const raw = fs.readFileSync(contractFile, 'utf8');
-	const last = state().log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
+	const s = state();
+	const last = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
 	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
 	if (!last || last.decision !== 'owner') { console.log('The script did not send this contract to the owner, so there is no ask to answer. Run approve.mjs on it first.'); return 1; }
 	if (last.hash !== sha(raw) || last.head !== head) { console.log('The contract or HEAD changed since the script asked. Run approve.mjs again, then ask the owner.'); return 1; }
+	const { open, stuck } = openSweep(s.log);
+	if (stuck) write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, noneRan: true, closedByOwner: true });
 	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, words: said });
 	console.log("The owner's yes is logged; the reviewers may start.");
 	return 0;
@@ -473,7 +520,8 @@ function resumeHelp(s) {
 // message id, so each id counts once, at its last line. The Agent result's own number is the final context size,
 // not the spend (results/m11-meter in the workbench), so it is never used. Only this sweep's own reviewers count:
 // Claude Code's meta file beside the transcript says a reviewer that finished, and its first line is no older than
-// the clearance. Anything else asks the owner, so a cheap or half-written transcript cannot stand in.
+// the clearance. Anything else asks the owner, so a slip cannot count the wrong one; a hand-written transcript still
+// passes, as a forged log line does.
 function spend(ids, since) {
 	const root = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
 	const found = new Map(ids.map((id) => [id, []]));
@@ -491,8 +539,11 @@ function spend(ids, since) {
 		const parsed = fs.readFileSync(files[0], 'utf8').split('\n').filter((l) => l.trim()).map((l) => { try { return JSON.parse(l); } catch { return null; } });
 		if (meta.finished !== true || !parsed.length || parsed[parsed.length - 1] === null) { bad.push(`${id} (not finished: log the outcome once every reviewer has handed back)`); return null; }
 		// The log is per repo and transcripts are per machine, so a reviewer of another repo must not count here.
-		const ran = (parsed.find((e) => e && e.cwd) || {}).cwd;
-		const at = ran && spawnSync('git', ['-C', ran, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
+		// A removed worktree is read from its nearest folder still there, and the shell's GIT_DIR must not answer for it.
+		let ran = (parsed.find((e) => e && e.cwd) || {}).cwd;
+		while (ran && !fs.existsSync(ran) && path.dirname(ran) !== ran) ran = path.dirname(ran);
+		const { GIT_DIR: _d, GIT_COMMON_DIR: _c, ...env } = process.env;
+		const at = ran && spawnSync('git', ['-C', ran, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', env });
 		if (at && at.status === 0 && path.resolve(at.stdout.trim()).toLowerCase() !== path.dirname(LOG).toLowerCase()) { bad.push(`${id} (ran in another repo)`); return null; }
 		const started = (parsed.find((e) => e && e.timestamp) || {}).timestamp;
 		if (!started || !(started >= since)) { bad.push(`${id} (started ${started || 'at no recorded time'}, before this sweep was cleared at ${since})`); return null; }
@@ -516,9 +567,9 @@ function outcome() {
 	// The decision is found by the contract's path, so an edit after approval still finds it.
 	// An owner-decided sweep logs its outcome too, so the trial review sees every sweep.
 	// A FIX THE CONTRACT line cleared nothing, so it never stands for the sweep that ran.
-	const decision = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile && e.decision !== 'fix').pop();
-	if (!decision) { console.log(`No decision for ${contractFile}; run approve.mjs on it first. Nothing logged.`); return 1; }
-	if (decision.decision === 'refused') { console.log('The script refused this contract, so no reviewer ran on it. Nothing logged.'); return 1; }
+	const last = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile && e.decision !== 'fix').pop();
+	if (!last) { console.log(`No decision for ${contractFile}; run approve.mjs on it first. Nothing logged.`); return 1; }
+	if (last.decision === 'refused') { console.log('The script refused this contract, so no reviewer ran on it. Nothing logged.'); return 1; }
 	// An approval no reviewer used (a new commit or an edited contract came first) is closed without a measure, but
 	// only while the sweep guard shows no reviewer started under it.
 	if (has('--none-ran')) {
@@ -534,6 +585,12 @@ function outcome() {
 		console.log('Outcome logged: no reviewer ran under this approval.');
 		return 0;
 	}
+	// This round began at its first clearing after the contract's last outcome: an approval or the owner's yes. What
+	// the reviewers ran under is what that clearing logged, so a later ask or edit changes nothing measured here.
+	const roundFrom = s.log.map((e, i) => (e.kind === 'outcome' && e.contract === contractFile ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+	const clearAt = s.log.findIndex((e, i) => i > roundFrom && e.contract === contractFile && ((e.kind === 'decision' && e.decision === 'approved') || e.kind === 'owner-yes'));
+	const clearing = clearAt >= 0 ? s.log[clearAt] : null;
+	const decision = (clearing && clearing.kind === 'owner-yes' ? s.log.slice(0, clearAt).filter((e) => e.kind === 'decision' && e.contract === contractFile && e.hash === clearing.hash).pop() : clearing) || last;
 	const nums = {};
 	const count = (k, max = Infinity) => { const v = Number(opt(`--${k}`)); return Number.isFinite(v) && v >= 0 && v <= max && Number.isInteger(v) ? v : null; };
 	for (const k of ['findings', 'real', 'duplicates']) {
@@ -561,14 +618,18 @@ function outcome() {
 	const ids = String(opt('--agents') || '').split(',').map((x) => x.trim()).filter(Boolean);
 	// Windows file names ignore case, so a1 and A1 are one transcript.
 	if (!ids.length || ids.some((id) => !AGENT_ID.test(id)) || new Set(ids.map((x) => x.toLowerCase())).size !== ids.length) { console.log('--agents needs the reviewers\' agent ids, comma-separated, each once (letters, digits, - and _). Nothing logged.'); return 1; }
-	if (ids.length !== Number(decision.agents)) { console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role, in its order. Nothing logged.`); return 1; }
-	// This round of the contract began at its first clearing after its last outcome: an approval or the owner's yes.
-	const lastOut = s.log.map((e, i) => (e.kind === 'outcome' && e.contract === contractFile ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-	const since = (s.log.find((e, i) => i > lastOut && e.contract === contractFile && ((e.kind === 'decision' && e.decision === 'approved') || e.kind === 'owner-yes')) || decision).time;
+	if (ids.length !== Number(decision.agents)) {
+		// Fewer ids than roles can be a sweep cut short: the next run goes to the owner rather than a dead end.
+		if (ids.length < Number(decision.agents)) write({ kind: 'unread', contract: contractFile });
+		console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role, in its order. Nothing logged. If reviewers never started or finished, run approve.mjs on the next contract: it asks the owner.`);
+		return 1;
+	}
+	const since = (clearing || decision).time;
 	const used = new Set(s.log.filter((e) => e.kind === 'outcome').flatMap((e) => (Array.isArray(e.roles) ? e.roles : []).map((r) => String(r.agent).toLowerCase())));
 	const reused = ids.filter((id) => used.has(id.toLowerCase()));
 	const read = reused.length ? { bad: reused.map((id) => `${id} (already logged for an earlier outcome)`) } : spend(ids, since);
 	if (read.bad) {
+		write({ kind: 'unread', contract: contractFile });
 		const why = [`the spend cannot be read, so it is not guessed: ${read.bad.join(', ')}`];
 		console.log('ASK THE OWNER - the spend cannot be read, so it is not guessed (rule:sweep-auto-approval):');
 		console.log(`    ${read.bad.join(', ')}${read.root ? ` under ${toPosix(read.root)}` : ''}. Check the agent ids, or set CLAUDE_CONFIG_DIR to the config folder the session ran in. Nothing logged.`);
@@ -583,13 +644,15 @@ function outcome() {
 	const trips = [];
 	if (decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
 	if (nums.findings > 0 && nums.duplicates * 3 >= nums.findings) trips.push(`${nums.duplicates} of ${nums.findings} findings repeated between roles`);
-	// The budget standard and the top-model rule rest on the model a role names, so a reviewer on another one is the owner's.
+	// The reviewer trial and the top-model rule rest on the model a role names, so a reviewer on another one is the owner's.
 	per.forEach((x, i) => {
 		// The model the decision cleared, so an edit to the contract after it hides nothing.
 		const named = (decision.models || [])[i] ?? (roles[i] ? (roles[i].model ?? DEFAULT_MODEL) : null);
-		if (named && (!x.model || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
+		if (named && (!x.model || !modelKey(x.model) || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
+	// The cap's own stop, so a run past it means the hook did not hold; the trip stays on the whole sweep.
+	for (const x of per) if (x.cap && x.calls > x.cap + 1) console.log(`    ${x.role} ran ${x.calls} calls against its cap of ${x.cap}: the call-cap hook did not hold.`);
 	console.log(trips.length ? `Outcome logged; auto-approval paused: ${trips.join('; ')}` : `Outcome logged: ${nums.tokens.toLocaleString('en-US')} processed tokens over ${per.length} role(s).`);
 	if (trips.length) {
 		const f = triage('auto-approval paused after a sweep\'s outcome', trips, [

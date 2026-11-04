@@ -25,7 +25,7 @@ function main() {
 		if (m.role === 'assistant' && m.usage && m.id) ids.add(m.id);
 	}
 	if (cap === null || ids.size < cap - 1) return;
-	process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Call cap reached (${ids.size} of ${cap}). No more tools: hand in your report now, with what you did not get to as "not checked".` } }));
+	process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Call cap reached (${ids.size} of ${cap}). Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".` } }));
 }
 
 try { main(); } catch { /* anything unexpected lets the call through */ }

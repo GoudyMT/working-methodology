@@ -17,7 +17,7 @@ const { spawnSync } = require('child_process');
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
-const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
+const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). FIX THE CONTRACT: fix it and run it again. APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
@@ -55,9 +55,11 @@ function main() {
 		const team = Number(e.agents) || 0;
 		fs.mkdirSync(slots, { recursive: true });
 		for (let n = 0; n < team; n++) {
+			// Each role's slot takes only its own cap, so one role cannot borrow another's.
+			if (Array.isArray(e.calls) && e.calls[n] !== Number(cap[1])) continue;
 			try { fs.closeSync(fs.openSync(path.join(slots, String(n)), 'wx')); return; } catch { /* taken */ }
 		}
-		return deny(`The cleared contract has ${team} reviewer role(s), and all have started. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
+		return deny(`The cleared contract has ${team} reviewer role(s), and all with this call cap have started. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
 	}
 	return deny(`No cleared Swarm Contract at its checkout's current HEAD. ${RUN_FIRST}`);
 }

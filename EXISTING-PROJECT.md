@@ -69,8 +69,8 @@ Present the plan as A/B/C choices and stop. On the owner's go:
    (rule:pre-compact-scan, step 5b), even when the project keeps its own standards.
 3. Seed the tracking files from the state map. Set up the vault backup and the skill cases (NEW-PROJECT.md steps
    3b and 3c). If the project keeps its own `.claude/settings.json`, add the kit hook's SessionStart, UserPromptSubmit and
-   PreCompact entries to it by hand (copy them from the kit's `project/.claude/settings.json`), so the kit check cannot be
-   missed. Turn on the git push guard (NEW-PROJECT.md step 2) and
+   PreCompact entries, and the PreToolUse entries for the sweep guard and the call cap, to it by hand (copy them from the
+   kit's `project/.claude/settings.json`), so the kit check cannot be missed and a sweep's call caps hold. Turn on the git push guard (NEW-PROJECT.md step 2) and
    keep the kit local (NEW-PROJECT.md step 3; a project already pushed runs the first push check once anyway, to
    find kit or private files already in its history).
 4. Run the gate again and show it green.
