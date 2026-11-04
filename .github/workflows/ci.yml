@@ -107,7 +107,7 @@ jobs:
         run: node project/.claude/secret-shapes.mjs "$PR_BASE"
 
       # Rule text is graded by the recall test, which needs a signed-in session and is run by hand; a PR that
-      # changes the rules must record a median no lower than the released baseline, on the current brief and keys.
+      # changes the rules, the keys, the brief or the harness must record a median no lower than the released baseline.
       - name: Rule changes carry a passing recall score
         if: github.event_name == 'pull_request'
         shell: bash

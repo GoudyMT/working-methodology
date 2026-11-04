@@ -33,8 +33,8 @@ const MAX_TURNS = '8';
 const SCORES = 'docs/evals/results/recall-scores.md';
 const BRIEF = 'docs/evals/recall-scorer-brief.md';
 const QUESTIONS_REL = 'docs/evals/recall-questions.md';
-// What the gate guards: the rule text, and the keys and brief that grade it.
-const GRADED = /^(rules\/|project\/CLAUDE\.md$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
+// What the gate guards: the rule text, and the keys, brief and harness that grade it.
+const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall\.mjs$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
 const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)( owner-accepted)?$/;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
@@ -90,16 +90,19 @@ export function runHeader({ label, projectDir, keys, facts, when }) {
  * Whether a PR's rule text, ruler or gate line may merge, from its recorded score.
  *
  * Args:
- *     facts: { changed: file paths, added: lines the PR adds to the scores file, brief, keys: current versions,
+ *     facts: { changed: file paths, added and removed: lines the PR adds to and takes from the scores file,
+ *         brief, keys: current versions,
  *         was: { brief, keys, baseline } on the base, each null when the base has none, and edited when a ruler
  *         file differs from the base under the same version }
  *
  * Returns:
  *     { ok, detail }
  */
-export function checkGate({ changed, added, brief, keys, was = {} }) {
+export function checkGate({ changed, added, removed = [], brief, keys, was = {} }) {
   const lines = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
-  if (!lines.length && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
+  const dropped = removed.some((l) => /^gate:/i.test(l.trim()));
+  if (!lines.length && !dropped && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
+  if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the floor rests on it. Only the owner may: add a current gate line ending in owner-accepted' };
   if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>"` };
   const last = lines[lines.length - 1];
   const m = last.match(GATE_LINE);
@@ -110,12 +113,13 @@ export function checkGate({ changed, added, brief, keys, was = {} }) {
   }
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
   const faults = [
+    dropped && 'this PR removes a recorded gate line',
     moved && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
     !moved && was.baseline != null && Number(baseline) < was.baseline && `baseline ${baseline} is under the last recorded baseline ${was.baseline}`,
     Number(median) < Number(baseline) && `median ${median} is under the baseline ${baseline}`,
   ].filter(Boolean);
   if (!faults.length) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
-  return accepted ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}` };
+  return accepted ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}. Only the owner may pass this: the gate line ends in owner-accepted` };
 }
 
 function gate([base, head]) {
@@ -132,10 +136,13 @@ function gate([base, head]) {
   const edited = [[BRIEF, brief], [QUESTIONS_REL, keys]].some(([rel, v]) => baseVersion(rel) === v && onBase(rel) !== now(rel));
   // The last baseline recorded on this same ruler, if the base has one.
   const recorded = onBase(SCORES).split('\n').map((l) => l.trim().match(GATE_LINE)).filter((m) => m && Number(m[4]) === brief && Number(m[5]) === keys);
+  // --text: an attribute or a NUL byte must not hide the record from the check.
+  const record = git('diff', '--text', '-U0', `${base}...${head}`, '--', SCORES);
   const r = checkGate({
     // Each side of a rename counts, and a name stays plain: a rule file moved away is rule text changed.
     changed: git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', `${base}...${head}`),
-    added: git('diff', '-U0', `${base}...${head}`, '--', SCORES).filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)),
+    added: record.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)),
+    removed: record.filter((l) => l.startsWith('-') && !l.startsWith('---')).map((l) => l.slice(1)),
     brief,
     keys,
     was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null, edited },

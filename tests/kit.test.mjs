@@ -4327,7 +4327,7 @@ test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s q
   const frozen = spawnSync('git', ['show', 'v1.17.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(frozen.status, 0, 'the v1.17.0 tag must exist locally');
   assert.equal(versionText(text, 1), frozen.stdout);
-  assert.ok(currentVersion(text) >= 2);
+  assert.equal(currentVersion(text), 2);
   const [v1, v2] = [questions(text, 1), questions(text, 2)];
   assert.equal(v2.length, 10);
   const changed = v2.flatMap((row, i) => ['q', 'key'].filter((f) => row[f] !== v1[i][f]).map((f) => `${row.n}.${f}`));
@@ -4372,6 +4372,8 @@ test('a recall run asks the current keys and its header names them', async () =>
   assert.equal(run.qs.length, 10);
   assert.ok(run.lines.includes(`Keys: v${keys}`));
   assert.ok(run.lines.includes('# Recall run: cand-1'));
+  const short = text.replace(/^\| 10 \|.*\n/gm, '');
+  assert.throws(() => prepare({ projectDir: proj, label: 'x', home, text: short, when: 'w' }), /expected 10 questions, found 9/);
 });
 
 test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {
@@ -4451,7 +4453,7 @@ test('a PR that moves the ruler it is graded on needs the owner\'s marker', asyn
   const moved = { was: { brief: 1, keys: 1, baseline: 9 } };
   const r = checkGate(gateFacts(moved));
   assert.equal(r.ok, false);
-  assert.match(r.detail, /changes the ruler/);
+  assert.match(r.detail, /changes the ruler.*owner-accepted/);
   const accepted = checkGate(gateFacts({ ...moved, added: [GOOD_ENTRY + ' owner-accepted'] }));
   assert.equal(accepted.ok, true);
   assert.match(accepted.detail, /owner accepted/);
@@ -4470,6 +4472,12 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   for (const ruler of ['docs/evals/recall-questions.md', 'docs/evals/recall-scorer-brief.md']) {
     assert.equal(checkGate(gateFacts({ changed: [ruler], added: [] })).ok, false, ruler);
   }
+  assert.equal(checkGate(gateFacts({ changed: ['scripts/recall.mjs'], added: [] })).ok, false);
+  const removed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [], removed: [GOOD_ENTRY] }));
+  assert.equal(removed.ok, false);
+  assert.match(removed.detail, /removes a recorded gate line.*owner-accepted/);
+  assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY + ' owner-accepted'], removed: [GOOD_ENTRY] })).ok, true);
+  assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], removed: [GOOD_ENTRY] })).ok, false);
   const typed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: ['gate: o median 1 baseline 1 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } }));
   assert.equal(typed.ok, false);
   assert.match(typed.detail, /under the last recorded baseline 9/);
@@ -4477,8 +4485,10 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
 
 test('CI runs the recall gate on the PR\'s real diff', () => {
   const step = read(path.resolve('.github/workflows/ci.yml')).split('- name: Rule changes carry a passing recall score')[1].split('- name:')[0];
-  assert.match(step, /node scripts\/recall\.mjs gate "\$PR_BASE" "\$PR_HEAD"/);
-  assert.match(step, /if: github\.event_name == 'pull_request'/);
+  assert.match(step, /^\s+run: node scripts\/recall\.mjs gate "\$PR_BASE" "\$PR_HEAD"$/m);
+  assert.match(step, /^\s+if: github\.event_name == 'pull_request'$/m);
+  assert.match(step, /^\s+PR_BASE: origin\/\$\{\{ github\.base_ref \}\}$/m);
+  assert.match(step, /^\s+PR_HEAD: \$\{\{ github\.event\.pull_request\.head\.sha \}\}$/m);
   assert.doesNotMatch(step, /continue-on-error/);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-'));
   const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
@@ -4524,9 +4534,9 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
   assert.equal(second.status, 1, second.stdout);
   assert.match(second.stdout, /last recorded baseline 9/);
   // The base's ruler reaches the check: an older version, then the same version with its text edited.
-  const onRuler = (name, body) => {
+  const onRuler = (name, body, rel = 'docs/evals/recall-questions.md') => {
     git('checkout', '-q', '-b', name, 'base2');
-    put('docs/evals/recall-questions.md', body);
+    put(rel, body);
     git('add', '.');
     git('commit', '-qm', 'ruler on the base of ' + name);
     git('tag', name + '-base');
@@ -4541,6 +4551,45 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
   const reworded = onRuler('reworded-ruler', `Current version: v${keys}\nsome other key\n`);
   assert.equal(reworded.status, 1, reworded.stdout);
   assert.match(reworded.stdout, /changes the ruler/);
+  const BRIEF_FILE = 'docs/evals/recall-scorer-brief.md';
+  const olderBrief = onRuler('older-brief', 'Current version: v0\n', BRIEF_FILE);
+  assert.equal(olderBrief.status, 1, olderBrief.stdout);
+  assert.match(olderBrief.stdout, /changes the ruler/);
+  const rewordedBrief = onRuler('reworded-brief', `Current version: v${brief}\nlenient\n`, BRIEF_FILE);
+  assert.equal(rewordedBrief.status, 1, rewordedBrief.stdout);
+  assert.match(rewordedBrief.stdout, /changes the ruler/);
+  const sameRuler = onRuler('same-ruler', read(path.resolve(BRIEF_FILE)), BRIEF_FILE);
+  assert.equal(sameRuler.status, 0, sameRuler.stdout + sameRuler.stderr);
+  // A removed gate line takes the floor away, and an attribute cannot hide the record.
+  git('checkout', '-q', '-b', 'removed-line', 'base2');
+  put(scores, '# Scores\n');
+  git('commit', '-qam', 'remove');
+  const gone = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  assert.equal(gone.status, 1, gone.stdout);
+  assert.match(gone.stdout, /removes a recorded gate line/);
+  git('checkout', '-q', '-b', 'hidden-line', 'base2');
+  put('.gitattributes', 'docs/evals/results/recall-scores.md -diff\n');
+  put(scores, read(path.join(dir, scores)) + `\ngate: low median 1 baseline 1 ${now}\n`);
+  git('add', '.');
+  git('commit', '-qm', 'hide');
+  const hidden = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  assert.equal(hidden.status, 1, hidden.stdout);
+  // A plain name reaches the check, and a line on main alone is not the PR's.
+  git('checkout', '-q', '-b', 'accented', 'base2');
+  put('rules/caf' + String.fromCharCode(233) + '.md', 'x\n');
+  git('add', '.');
+  git('commit', '-qm', 'new rule');
+  const accented = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  assert.equal(accented.status, 1, accented.stdout);
+  git('checkout', '-q', '-b', 'no-score', 'base2');
+  put('rules/core.md', 'no score\n');
+  git('commit', '-qam', 'rule, no score');
+  git('checkout', '-q', '-b', 'main-dropped', 'base2');
+  put(scores, '# Scores\n');
+  git('commit', '-qam', 'main dropped a line');
+  const borrowed = spawnSync('node', [RECALL, 'gate', 'main-dropped', 'no-score'], { encoding: 'utf8', cwd: dir });
+  assert.equal(borrowed.status, 1, borrowed.stdout);
+  assert.match(borrowed.stdout, /record a recall run/);
   // A rule change on main that the PR's branch has not picked up is not this PR's.
   git('checkout', '-q', '-b', 'behind', 'base2');
   put('notes.md', 'x\n');
@@ -4563,7 +4612,7 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
 test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
   for (const f of ['rules/agent-teams.md', 'rules/reviews-and-findings.md']) {
     const text = read(path.resolve(f));
-    assert.match(text, /`\$HOME\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs` \(or your Claude config folder\)/, f);
+    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs` \(`\$HOME` in PowerShell; or your Claude config folder\)/, f);
     assert.match(text, /not there, the kit's user layer is not installed: say so, and the owner approves/, f);
   }
   assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\) \+ audit to the owner/);
@@ -4571,7 +4620,7 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
 
 test('the scorer brief is versioned and carries the two calls the proof found borderline', () => {
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md'));
-  assert.match(brief, /^Current version: v\d+$/m);
+  assert.match(brief, /^Current version: v1$/m);
   assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/);
   assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/);
 });
