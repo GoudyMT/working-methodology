@@ -1,5 +1,9 @@
 # Pre-PR Deep Sweep - Journal lock with an optional PIN (2026-05-14)
 
+> Adapted from a report older than the current sweep. Read its shape, not its numbers: today each role sets a call cap
+> (15, up to 30 with a reason), the script computes the budget, spend comes from the reviewers transcripts at `--outcome`,
+> and the re-sweep is its own contract with `resweepOf`.
+
 - **Tier:** feature, with the security-sensitive modifier (a lock over personal data).
 - **Scope:** `feature/journal-lock-pin` at `4be71c09` (diff base `a03d5e12`, main merged; 118 files). The owner approved
   the Swarm Contract on 2026-05-14 18:10 UTC ("go ahead"): S1-S7 as drafted plus S8 (an attacker holding the phone; the

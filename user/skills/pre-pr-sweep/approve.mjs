@@ -490,6 +490,10 @@ function spend(ids, since) {
 		if (!/(^|:)reviewer$/i.test(String(meta.agentType || ''))) { bad.push(`${id} (not a reviewer: ${meta.agentType || 'no meta file'})`); return null; }
 		const parsed = fs.readFileSync(files[0], 'utf8').split('\n').filter((l) => l.trim()).map((l) => { try { return JSON.parse(l); } catch { return null; } });
 		if (meta.finished !== true || !parsed.length || parsed[parsed.length - 1] === null) { bad.push(`${id} (not finished: log the outcome once every reviewer has handed back)`); return null; }
+		// The log is per repo and transcripts are per machine, so a reviewer of another repo must not count here.
+		const ran = (parsed.find((e) => e && e.cwd) || {}).cwd;
+		const at = ran && spawnSync('git', ['-C', ran, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
+		if (at && at.status === 0 && path.resolve(at.stdout.trim()).toLowerCase() !== path.dirname(LOG).toLowerCase()) { bad.push(`${id} (ran in another repo)`); return null; }
 		const started = (parsed.find((e) => e && e.timestamp) || {}).timestamp;
 		if (!started || !(started >= since)) { bad.push(`${id} (started ${started || 'at no recorded time'}, before this sweep was cleared at ${since})`); return null; }
 		const seen = new Map();
@@ -558,9 +562,9 @@ function outcome() {
 	// Windows file names ignore case, so a1 and A1 are one transcript.
 	if (!ids.length || ids.some((id) => !AGENT_ID.test(id)) || new Set(ids.map((x) => x.toLowerCase())).size !== ids.length) { console.log('--agents needs the reviewers\' agent ids, comma-separated, each once (letters, digits, - and _). Nothing logged.'); return 1; }
 	if (ids.length !== Number(decision.agents)) { console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role, in its order. Nothing logged.`); return 1; }
-	// This round of the contract began at its first decision after its last outcome.
+	// This round of the contract began at its first clearing after its last outcome: an approval or the owner's yes.
 	const lastOut = s.log.map((e, i) => (e.kind === 'outcome' && e.contract === contractFile ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-	const since = (s.log.find((e, i) => i > lastOut && e.kind === 'decision' && e.contract === contractFile) || decision).time;
+	const since = (s.log.find((e, i) => i > lastOut && e.contract === contractFile && ((e.kind === 'decision' && e.decision === 'approved') || e.kind === 'owner-yes')) || decision).time;
 	const used = new Set(s.log.filter((e) => e.kind === 'outcome').flatMap((e) => (Array.isArray(e.roles) ? e.roles : []).map((r) => String(r.agent).toLowerCase())));
 	const reused = ids.filter((id) => used.has(id.toLowerCase()));
 	const read = reused.length ? { bad: reused.map((id) => `${id} (already logged for an earlier outcome)`) } : spend(ids, since);
@@ -603,9 +607,12 @@ function summary() {
 	const s = state();
 	const d = s.log.filter((e) => e.kind === 'decision');
 	const o = s.log.filter((e) => e.kind === 'outcome');
-	const sum = (k) => o.reduce((t, e) => t + (Number(e[k]) || 0), 0);
+	const sum = (k, list = o) => list.reduce((t, e) => t + (Number(e[k]) || 0), 0);
+	// Before the meter (M11) a lead typed the tokens, so those outcomes do not compare with the rest.
+	const metered = o.filter((e) => Array.isArray(e.roles));
+	const typed = o.filter((e) => !Array.isArray(e.roles) && !e.noneRan).length;
 	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}, sent back to fix: ${d.filter((e) => e.decision === 'fix').length}, refused: ${d.filter((e) => e.decision === 'refused').length}`);
-	console.log(`outcomes: ${o.length}; tokens / budget: ${sum('budget') ? (sum('tokens') / sum('budget')).toFixed(2) : 'n/a'}; real findings: ${sum('real')} of ${sum('findings')} (from mid-model roles: ${sum('realMid')}); repeated: ${sum('duplicates')}; carried open: ${openCarries(s.log)}`);
+	console.log(`outcomes: ${o.length}; tokens / budget: ${sum('budget', metered) ? (sum('tokens', metered) / sum('budget', metered)).toFixed(2) : 'n/a'}${typed ? ` (${typed} older hand-typed outcome${typed > 1 ? 's' : ''} left out)` : ''}; real findings: ${sum('real')} of ${sum('findings')} (from mid-model roles: ${sum('realMid')}); repeated: ${sum('duplicates')}; carried open: ${openCarries(s.log)}`);
 	// Per role kind, the most one role spent and the calls it took: the data the growth figures are adjusted from.
 	const kinds = {};
 	for (const r of o.flatMap((e) => (Array.isArray(e.roles) ? e.roles : []))) {

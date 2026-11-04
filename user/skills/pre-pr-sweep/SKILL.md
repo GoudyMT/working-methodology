@@ -24,7 +24,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    whether there is anything to ask. In order: (a) commit the work; (b) draw the roles from
    [references/angles.md](references/angles.md) by the change's risk regions, and write them as
    `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`, and
-   sets `calls`, its call cap, 15 unless it names why it needs more: the script computes the budget from it);
+   sets `calls`, its call cap, 15 unless it names why it needs more: the script computes the budget from it, and any
+   `maxRoleBudget` or `maxTotalBudget` in the project's `.kit/sweep-approval.json` still lowers it);
    (c) from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
    (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). (d) APPROVED: post
    the start notice it printed, as is, and go on; never restate counts by hand. FIX THE CONTRACT (exit 3): the mistake is
@@ -50,7 +51,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
    re-sweep: the script clears no new contract until it is in. The re-sweep is a new contract on the new HEAD, run
    through `approve.mjs` like the first, with `"resweepOf": "<first contract.json, relative to this contract>"` and `"fixed": [{ "finding",
-   "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). A second re-sweep
+   "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). The first contract
+   stays byte for byte as it was cleared, and a re-sweep declares only modifiers the first sweep had. A second re-sweep
    is refused: what is left is logged with `--carried <n>` and goes to the handoff. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
