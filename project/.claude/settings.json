@@ -33,6 +33,19 @@
         ]
       },
       {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{CLAUDE_HOME}}/kit-hooks/call-cap.cjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Agent|Task|SendMessage",
         "hooks": [
           {

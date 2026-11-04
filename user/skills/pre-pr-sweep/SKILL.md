@@ -23,10 +23,13 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 2. **The Swarm Contract, script first** (rule:swarm-contract). Do not ask the owner anything yet; the script decides
    whether there is anything to ask. In order: (a) commit the work; (b) draw the roles from
    [references/angles.md](references/angles.md) by the change's risk regions, and write them as
-   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`);
+   `<sweep folder>/<milestone>-contract.json` (the format is in `approve.mjs`'s header; a role may name its `model`, and
+   sets `calls`, its call cap, 15 unless it names why it needs more: the script computes the budget from it; a budget over a
+   `maxRoleBudget` or `maxTotalBudget` in the project's `.kit/sweep-approval.json` asks the owner);
    (c) from the branch's own checkout, run `node <this skill's folder>/approve.mjs <contract.json>`
    (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). (d) APPROVED: post
-   the start notice it printed, as is, and go on; never restate counts by hand. ASK THE OWNER: show the table and
+   the start notice it printed, as is, and go on; never restate counts by hand. FIX THE CONTRACT (exit 3): the mistake is
+   yours; add what it named and run it again, the owner is not asked (going lighter at that HEAD asks the owner). ASK THE OWNER: show the table and
    the reasons it printed, and stop; on the owner's yes, log it with `approve.mjs <contract.json> --owner-yes
    "<their words>"`, then go on. First push and launch gate always ask. A hook (`sweep-guard.cjs`) refuses any
    `reviewer` agent until the log clears this HEAD and this contract, so a new commit or an edited contract means
@@ -34,7 +37,11 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    a false `--base`, clearing the AI-shell marker, invented outcome numbers, or an `--owner-yes` the owner never gave
    would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
-   and a finding cap; each brief opens with the "Project rules" read instruction from the agent-team-build templates
+   and a finding cap; each brief carries its role's `calls` from the contract in these words:
+   "Call cap: <n>. A call is one message from you, however many tools it runs, so run independent reads together in one message. A hook counts
+   your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did
+   not get to as 'not checked'." In a project the start notice says has no hook, drop the hook sentence and have the reviewer count. The cap's last two calls are for the report. What a role did not check goes in the
+   report as not checked, never as a pass. The sweep guard refuses a brief with no such line. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
@@ -45,12 +52,13 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
    re-sweep: the script clears no new contract until it is in. The re-sweep is a new contract on the new HEAD, run
    through `approve.mjs` like the first, with `"resweepOf": "<first contract.json, relative to this contract>"` and `"fixed": [{ "finding",
-   "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). A second re-sweep
+   "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). The first contract
+   stays byte for byte as it was cleared, and a re-sweep declares only modifiers the first sweep had. A second re-sweep
    is refused: what is left is logged with `--carried <n>` and goes to the handoff. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents`: each reviewer's agent id, one per
-   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a re-sweep adds
+   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a sweep cut short, where neither works (a reviewer never finished, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds
    `--carried <n>`, a sweep that fixes carried findings `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
    the mid model, for the reviewer model trial). A bug later found in code the
    sweep passed: `--escape "<what>"`. `--summary` prints the trial so far; put its line in the rundown.
