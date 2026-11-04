@@ -212,3 +212,32 @@ Seven runs in throwaway installs, relabeled at random, scored by one fresh blind
 - The control is not a clean no-kit run: read tools are unscoped, and it found the owner's memory files. It scored 0, which any no-kit answer would, so it shows the test can tell kit from no kit and says nothing about this fix.
 
 gate: kit-1.18.0 median 10 baseline 9 brief v1 keys v2
+
+
+## 1.19.0 gate: brainstorm, overview rule, attribution removal, neutral folder (2026-11-04)
+
+The first entry from the neutral folder: recall.mjs now makes its own random folder, so neither side ran in a folder named for the test. Seven runs on commit d65aa3e in one sitting, in the order candidate, baseline, candidate, baseline, control, candidate, baseline, CLI 2.1.302, no failed sessions. The baseline is a clone at v1.18.0. Headers and version strings were removed and runs relabeled by script before one fresh blind scorer on brief v1, keys v2; the table and gate line below are written by script from the scorer's file. The installed trees differ only in the audits, the attribution files, skill-cases.json, settings paths, the install stamp, AGENTS.md and _Start Here.md.
+
+| Q | Candidate 1, 2, 3 | Baseline 1.18.0 1, 2, 3 | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 0 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 0, 0 | 0, 0, 0 | 0 |
+| Total | 10, 9, 8 | 9, 9, 9 | 0 |
+
+- **Gate met: median 9, baseline 9, control 0.** The floor of 9 holds. The old floor came from a folder that lifted Q10, so it is not a like-for-like number.
+- Q7 failed once in candidate runs and never in baseline runs: a finding even on a pass, read as noise from one run but not proved so.
+- Q10 is 1 of 3 against 0 of 3: within the 4 in 10 measured by M25, and no sign the change moved it.
+- With three runs a side, the test cannot see a one-point drop: at Q10's rate the same text lands a point apart about a quarter of the time.
+- The overview rule has no recall question, and recall reads the released user layer, so a pass says neither the rule nor the brainstorm skill works. The scenario eval covers those: brainstorm met its bars after one repair; the overview rule missed its bar, 0 of 4 against 0 of 4, on both wordings tried, and stays open.
+- ~/.claude/CLAUDE.md loads in every run as a parent folder's file, on both sides and in the control, so the control is not a clean no-rules run (the owner accepted this, 2026-11-04).
+- The lead wrote the rule text knowing the keys.
+
+gate: kit-1.19.0 median 9 baseline 9 brief v1 keys v2
