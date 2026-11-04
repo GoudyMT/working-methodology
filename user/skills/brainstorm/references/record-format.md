@@ -5,6 +5,7 @@ overwrites a record, because a record may hold a summary. To compile again, move
 
 ## What it holds
 
+- The sheet's sha256, so a reader can match the record to the file it came from.
 - The grounding the owner saw.
 - Per question: the pick the owner made and whether it confirmed or went against the asker's pick; the owner's own answer
   and thought, each in a `~~~` fence, byte for byte; and the asker's pick.
@@ -28,4 +29,4 @@ above it. A reader who wants the owner's intent reads the fences, not the summar
 Link the record. Each goal names the answer it comes from, such as `record Q3`. A goal with no answer behind it is the
 planner's idea, and is marked so.
 
-A small change has no sheet. Its record is an Intent block in the plan: the owner's words quoted, and each guess marked.
+A small change has no sheet. Its record is an Intent note next to where a record would go: the owner's words quoted, and each guess marked. The plan or the chat design links it.

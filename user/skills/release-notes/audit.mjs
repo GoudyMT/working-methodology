@@ -44,18 +44,38 @@ if (common.status === 0) {
 // No attribution block in public notes (rule:pr-body). This skill is user level, so it keeps its own copy of the
 // project's .claude/no-attribution.mjs check; a test holds both to one corpus.
 const ENTITIES = { nbsp: ' ', lt: '<', gt: '>', amp: '&', quot: '"' };
-const BY = 'requested[\\s-]*by\\b';
-const AT_START = new RegExp(`^(?:[\\s>#*_\`~|+\\-[\\]()]|\\d+[.)]\\s|<[^>\\n]*>)*${BY}`, 'im');
-const STYLED = new RegExp(`[_*>]\\s*${BY}`, 'i');
+const BY = 'requested(?:[\\s*_~-]|<[^>\\n]*>)*by(?![a-z0-9])';
+const LEAD = '(?:[ \\t>#*_`~|+\\-[\\]()]|\\[[ xX]\\]|\\d+[.)]\\s|<[^>\\n]*>)*';
+const AT_START = new RegExp(`^(${LEAD})(${BY})`, 'gim');
+const STYLED = new RegExp(`(?:[_*~[(|]|(?<!-)>|=["'])\\s*${BY}|${BY}\\s*(?:\\*\\*|@|\\[)`, 'i');
 
-// Disguises fall away first: entities, invisible characters, and odd spaces.
+// Disguises fall away first: entities, invisible characters, odd spaces, and the wrappers that hide a line from view.
 const plain = (text) => text
-	.replace(/&(?:#(\d+)|#x([\da-f]+)|(nbsp|lt|gt|amp|quot));/gi, (_, dec, hex, name) => (name ? ENTITIES[name.toLowerCase()] : String.fromCodePoint(dec ? Number(dec) : parseInt(hex, 16))))
-	.replace(/[\u00AD\u200B-\u200F\u2060\uFEFF]/g, '')
-	.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
+	.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (_, dec, hex, name) => {
+		if (name) return ENTITIES[name.toLowerCase()] ?? '';
+		const code = dec ? Number(dec) : parseInt(hex, 16);
+		return code > 0x10FFFF ? ' ' : String.fromCodePoint(code);
+	})
+	.replace(/[\p{Cf}\x00-\x08\x0B\x0E-\x1F]/gu, '')
+	.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+	.replace(/<!-{2,}|-{2,}>|^\[[^\]\n]*\]:\s*#\s*\(/gm, '\n');
+
+// A code span in a sentence is prose about the line; one alone on its line is the line.
+const noSpans = (body) => body.replace(/(?<!\\)`[^`\n]*(?<!\\)`(?=[^\n]*\w)/g, ' ');
+
+// At the start of a line, unless a plain lowercase "requested by" only continues the sentence above it.
+function startsLine(body) {
+	for (const m of body.matchAll(AT_START)) {
+		const before = body.slice(0, m.index).split(/\r?\n|\r/);
+		const above = before.length > 1 ? before[before.length - 2].trim() : '';
+		if (m[1] || !/^r/.test(m[2]) || !above || /^[#|>-]/.test(above)) return true;
+	}
+	return false;
+}
 {
   const body = plain(text);
-  if (/claude-projects-attribution/i.test(body) || AT_START.test(body) || STYLED.test(body.replace(/`[^`\n]*`/g, ''))) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
+  const prose = noSpans(body);
+  if (/claude-projects-attribution/i.test(body) || startsLine(prose) || STYLED.test(prose)) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
 }
 
 const pkg = path.join(process.cwd(), 'package.json');

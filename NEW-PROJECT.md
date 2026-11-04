@@ -105,7 +105,7 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
 
 ## 5. Define the project before building
 
-1. Write the master design spec (`docs/superpowers/specs/`), the first ADRs (`docs/decisions/`, from
+1. Run the brainstorm skill, then write the master design spec (`docs/superpowers/specs/`), the first ADRs (`docs/decisions/`, from
    `_Templates/_Decision Record Template.md`), and a Success Charter for the first version.
 2. Set up the gate first: tests, lint, type checks and CI, so "green" means something from day one. The commit
    hook and the full gate start with `node .claude/load-guard.cjs`, and the hook's related-tests selection is

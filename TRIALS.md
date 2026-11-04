@@ -8,6 +8,7 @@ is reworked or retired at the next kit release.
 |---|---|---|---|---|
 | Mid-model reviewers for roles other than security and the novel lens (rule:test-and-review-cadence) | 1.8.0 | course project | - | Open: counting real findings per model in the sweep log |
 | Standing grants: outward acts the owner names run without a yes per act, checked, logged and reported after (rule:standing-grants, A27) | 1.13.0 | the kit repo (autopilot trial) | - | Open: no grant in force until autonomy.mjs ships (plan kit-autopilot) |
+| Open decisions and build threads with a plain 60-second overview, item codes only after the plain name (rule:collaborative-design-locks, rule:session-workflow) | 1.19.0 | the kit repo | - | Open: the owner asked for it in every install |
 
 ## Promoted directly by the owner
 

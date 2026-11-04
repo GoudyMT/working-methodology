@@ -194,7 +194,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 
 ## Session Workflow {#session-workflow}
 
-**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory. Every build thread then opens with that overview. Why: the owner cannot pick from item codes without the context the session holds.
+**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
 
 **Work:** one issue at a time; context before options; scope loop-worthiness; **plan the whole cycle before branching** (every task, edge case, what is in and out) so work lands in one branch; with >2 units left, plan the rest as one batch (one-question investigators -> small probes -> one plan resolving cross-unit interactions -> one pass). Why: piecemeal planning splits a feature across PRs. **Audit a long branch against the objective:** commits grouped by what they buy the user, overhead named, the cumbersome fix cut.
 

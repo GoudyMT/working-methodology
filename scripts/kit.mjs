@@ -281,8 +281,8 @@ export function install(ctx) {
   // removed, after a backup. A changed copy holds the owner's work, so it stays and is reported.
   const retired = [];
   const { memoryDir } = plan(ctx);
-  // The config lists retired files, or maps each to the file that replaces it; a retired file waits until its
-  // replacement is in place, or the project would lose the rules both hold.
+  // The config lists retired files, or maps each to the file or files that replace or need it; a retired file waits
+  // until those are in place, or the project would lose the rules both hold.
   const retiredList = (kitInfo.config.retired || {})[ctx.target] || [];
   const replacedBy = Array.isArray(retiredList) ? {} : retiredList;
   const retiredKeys = Array.isArray(retiredList) ? retiredList : Object.keys(retiredList);
@@ -293,10 +293,10 @@ export function install(ctx) {
   const leftover = [];
   for (const key of [...retiredKeys, ...branchOnly]) {
     const base = stamp.files[key];
-    const heir = replacedBy[key];
+    const heir = [].concat(replacedBy[key] || []).find((h) => skipped.some((s) => s.file === h));
     const dest = key.startsWith('memory/') && memoryDir ? path.join(memoryDir, key.slice(7))
       : path.join(ctx.target === 'user' ? ctx.home : ctx.projectDir, key);
-    if (heir && skipped.some((s) => s.file === heir) && base && fs.existsSync(dest)) {
+    if (heir && base && fs.existsSync(dest)) {
       skipped.push({ file: key, reason: `retired by the kit, but kept while ${heir} is skipped: merge ${heir}, then remove this file by hand` });
       continue;
     }

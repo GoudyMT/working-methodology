@@ -97,7 +97,7 @@ Sections, the system-design checklist and the builder check:
 
 Before handing a project's doc over, run the builder check (a fresh read-only agent reads it cold and lists only
 the questions it would have to guess at). Sort its questions into answered-by-the-records, minor (settle and mark
-as your call) and the owner's (ask in one message, most important first).
+as your call) and the owner's (asked the brainstorm skill's way: one message for one or two, its sheet from three up).
 
 **The gate:** nothing is built until the owner approves the design - no product code, no scaffolding, no
 installs, no new project. Reading and probing are fine. A throwaway spike the owner said yes to may be built; it

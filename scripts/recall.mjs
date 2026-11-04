@@ -2,12 +2,13 @@
 // Runs the rule recall test (the current version in docs/evals/recall-questions.md) in a folder it makes itself.
 //
 // Why its own folder: an answer moved with the test folder's name (M25: "recall" in the path made sessions open the
-// memory folder, and that lifted Q10). The path is random, so no caller and no label can choose it, and a baseline
+// memory folder, and that lifted Q10). The path is random, so no argument and no label can choose it, and a baseline
 // is the same command with a clone at the old tag as the kit folder, so both sides get the same treatment.
 //
 // Why a fresh headless session per question: an answer must come only from what a new session loads and can
-// read, never from an earlier answer. Only project settings load (--setting-sources project), so the owner's
-// own ~/.claude rules do not leak into the score. Tools are read-only, the way a careful session would look
+// read, never from an earlier answer. Only project settings load (--setting-sources project), but the run's folder sits
+// under the home folder, so ~/.claude/CLAUDE.md still loads as a parent folder's file, as it does in the owner's real
+// projects: every side of a comparison gets it, and a control is not a clean no-rules run (the owner, 2026-11-04). Tools are read-only, the way a careful session would look
 // a rule up. Answers are saved word for word; scoring is done after, by a blind scorer, under
 // docs/evals/recall-scorer-brief.md.
 //
@@ -30,7 +31,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { releaseState } from './kit.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const QUESTIONS = path.join(KIT, 'docs', 'evals', 'recall-questions.md');
@@ -103,6 +103,11 @@ export function probePath(osHome) {
   return path.join(osHome, 'kit-probes', hex(), `p${hex()}`);
 }
 
+/** Refuses a kit variable a session would not follow: the layer checked must be the layer the sessions read. */
+export function checkHome(env) {
+  if (env.KIT_CLAUDE_HOME && env.KIT_CLAUDE_HOME !== env.CLAUDE_CONFIG_DIR) throw new Error('KIT_CLAUDE_HOME is set, but sessions read CLAUDE_CONFIG_DIR: set both to one folder, or neither');
+}
+
 /** Refuses a Claude folder that is not a released kit install, before any folder or session exists. */
 export function checkUserLayer(home) {
   const user = readJson(path.join(home, 'kit-install.json'));
@@ -125,6 +130,13 @@ export function setupProbe({ dir, kitDir, noKit, released, run }) {
   must('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   if (noKit) return;
   must(process.execPath, [path.join(kitDir, 'scripts', 'kit.mjs'), 'install', 'project', dir, ...(released ? [] : ['--unreleased'])], { cwd: kitDir });
+}
+
+/** What the run made: its folder and the memory install wrote for it. Nothing a later run can read is left behind. */
+export function removeProbe({ dir, home, slug }) {
+  if (!/kit-probes[\\/][0-9a-f]{6}[\\/]p[0-9a-f]{6}$/.test(dir)) throw new Error(`${dir} is not a probe folder`);
+  fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  fs.rmSync(path.join(home, 'projects', slug), { recursive: true, force: true });
 }
 
 export function runHeader({ label, keys, facts, when, cli }) {
@@ -207,19 +219,11 @@ export function prepare({ projectDir, label, home, text, when, cli }) {
   return { qs, lines: runHeader({ label, keys, facts, when, cli }) };
 }
 
-function main(argv) {
-  const { label, kitDir, noKit } = parseRunArgs(argv);
-  // The Claude config folder, found the way kit.mjs finds it.
-  const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-  checkUserLayer(home);
-  const kit = path.resolve(kitDir || KIT);
-  const projectDir = probePath(os.homedir());
-  const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
-  setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !releaseState(kit).problems.length, run });
-  const cli = (spawnSync('claude', ['--version'], { encoding: 'utf8' }).stdout || 'unknown').trim();
-  const { qs, lines } = prepare({ projectDir, label, home, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), cli });
+/** Ask each question in a fresh session in the probe folder, and return the answers as run-file lines. */
+export function askAll({ qs, projectDir, run }) {
+  const lines = [];
   for (const { n, q, key } of qs) {
-    const r = spawnSync('claude', ['-p', '--setting-sources', 'project', '--allowedTools', 'Read,Grep,Glob',
+    const r = run('claude', ['-p', '--setting-sources', 'project', '--allowedTools', 'Read,Grep,Glob',
       '--disallowedTools', 'Edit,Write,Bash,PowerShell,WebFetch,WebSearch,Agent', '--max-turns', MAX_TURNS,
       '--no-session-persistence'], { cwd: projectDir, input: q, encoding: 'utf8', timeout: 600000 });
     const answer = (r.stdout || '').trim();
@@ -230,13 +234,35 @@ function main(argv) {
     lines.push(`## ${n}. ${q}`, '', `Key: ${key}`, '', 'Answer:', '', answer.split('\n').map((l) => '> ' + l).join('\n'), '', 'Score: _', '');
     console.log(`[${n}/10] answered (${answer.length} chars)`);
   }
-  fs.mkdirSync(OUT_DIR, { recursive: true });
-  const out = path.join(OUT_DIR, `${label}.md`);
-  fs.writeFileSync(out, lines.join('\n'));
-  console.log(`saved ${out}`);
+  return lines;
+}
+
+async function main(argv) {
+  const { label, kitDir, noKit } = parseRunArgs(argv);
+  // The Claude config folder, found the way kit.mjs finds it.
+  const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  checkUserLayer(home);
+  checkHome(process.env);
+  // Loaded here so the gate command runs only this file's code.
+  const { releaseState, projectSlug } = await import('./kit.mjs');
+  const kit = path.resolve(kitDir || KIT);
+  const projectDir = probePath(os.homedir());
+  const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
+  try {
+    setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !releaseState(kit).problems.length, run });
+    const cli = (spawnSync('claude', ['--version'], { encoding: 'utf8' }).stdout || 'unknown').trim();
+    const { qs, lines } = prepare({ projectDir, label, home, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), cli });
+    lines.push(...askAll({ qs, projectDir, run }));
+    fs.mkdirSync(OUT_DIR, { recursive: true });
+    const out = path.join(OUT_DIR, `${label}.md`);
+    fs.writeFileSync(out, lines.join('\n'));
+    console.log(`saved ${out}`);
+  } finally {
+    removeProbe({ dir: projectDir, home, slug: projectSlug(projectDir) });
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args[0] === 'gate') gate(args.slice(1)); else main(args);
+  if (args[0] === 'gate') gate(args.slice(1)); else await main(args);
 }

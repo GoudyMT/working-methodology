@@ -21,8 +21,8 @@ Say the size in one plain line. The owner may override it.
 | Size | How questions go | The record |
 |---|---|---|
 | Quick (everything that matters is in the request) | No brainstorm | None |
-| Small (one or two open questions) | Chat or a decision card, never a sheet | A short Intent block in the plan, the owner's words quoted |
-| Major feature (three or more open questions) | One sheet, one topic | A compiled record |
+| Small (one or two open questions) | Chat or a decision card, never a sheet | An Intent note, `<record folder>/<date>-<topic>.intent.md`: the owner's words quoted, each guess marked |
+| Major feature, or any work with three or more open questions | One sheet, one topic | A compiled record |
 | New project | Sheets, up to three topics open at once | A compiled record per sheet |
 
 The stop rule is coverage, not a count. Keep a ledger of unknowns; the brainstorm ends when every unknown is answered,
@@ -40,12 +40,16 @@ marked as yours to decide, or named as one only data can settle. If the work gro
    check in the craft file.
 4. **Send it.** Write the sheet file: `<record folder>/<date>-<topic>.sheet.md`, in the layout of
    [references/sheet-format.md](references/sheet-format.md). The default record folder is `docs/brainstorms/`. The file is
-   the one truth; any person or model can fill it in. Then say where it is and stop.
+   the one truth; any person or model can fill it in. Run the check below once on the blank sheet: it lists every question
+   as not answered, and a refusal means the layout is wrong. Then say where it is and stop.
 5. **Wait for the owner.** They say "sent", or the page notifies you. Do not poll.
-6. **Check and compile.** `node sheet.mjs check <sheet>`, then `node compile-record.mjs <sheet>`. A script does the copying
-   so the owner's words are never retold. Format: [references/record-format.md](references/record-format.md).
-7. **Close the gaps.** A new unknown from the answers gets a follow-up sheet or a chat question. An unanswered question is
-   your call, marked as yours in everything built on it.
+6. **Check and compile.** `node <this skill's folder>/sheet.mjs check <sheet>`, then
+   `node <this skill's folder>/compile-record.mjs <sheet>`. A script does the copying so the owner's words are never retold.
+   Format: [references/record-format.md](references/record-format.md). On a refusal, show the owner the message and let them
+   change the line. Never touch anything under an answer label or tick a box yourself: that writes words they did not.
+7. **Close the gaps.** Send the unanswered list back to the owner once, naming any question with a thought but no answer.
+   What is still blank after that is your call, marked as yours in everything built on it. A new unknown from the answers
+   gets a follow-up sheet or a chat question.
 8. **Add a summary** under its own marked heading in the record, in your words, and say it is yours. Never edit what the
    script wrote.
 
@@ -54,7 +58,9 @@ marked as yours to decide, or named as one only data can settle. If the work gro
 Where the session can publish a page, `assets/sheet-page.html` shows a sheet with buttons and write-in boxes, which is
 easier on a phone. It is only a view. Its Send button stays off until every question is answered, and it notifies the
 watching session where that is possible; otherwise the owner says "sent". Before compiling, export its saved rows
-with `node sheet.mjs export <rows folder> <id> <sheet.md>`, so the file stays the one truth.
+with `node <this skill's folder>/sheet.mjs export <rows folder> <id> <sheet.md>`, so the file stays the one truth. Keep the
+page private to the owner: every sheet on it shares one database. The record holds raw thoughts, so ask the owner before
+committing a record to a repository others can read.
 
 ## Using the record
 
@@ -70,7 +76,7 @@ what was in front of them, so weigh it that way.
 | "I know what they mean" | Then it is a guess. Mark it, and ask if it matters. |
 | "I'll tidy their wording in the record" | The script copies it. Odd spelling stays. |
 | "They confirmed every pick, so we agree" | Say so in the record; it is weak evidence. Ask one question with no pick. |
-| "A sheet would be thorough" for a one-line change | Size first. A small change never opens a sheet. |
+| "A sheet would be thorough" for a one-line change | Size first. One or two questions never open a sheet. |
 
 ## In the methodology kit
 
@@ -81,4 +87,4 @@ This section is the kit's thin layer; the rest of this skill stands alone.
 - The record folder is the docs location in adapter row A22 when it names one, else `docs/brainstorms/`.
 - The grounding follows the plain overview in rule:collaborative-design-locks; questions to the owner follow
   rule:owners-rules #8; an open question only data can settle follows rule:goal-before-mechanism.
-- The record is the intent reference for later checks (E16) and for plan self-approval (E6).
+- The record is the intent reference for the outside plan inspector and for plan self-approval.
