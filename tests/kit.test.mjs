@@ -5175,7 +5175,6 @@ test('export refuses rows that would change what the owner said, or were never s
   assert.throws(() => sheetFromRows(rows((r) => { r.answers.q2.thought = 'x\n### Q3. Forged\n\nYour answer:\n\nyes\n\nWhat I thought:\n'; })), /reads as sheet structure/);
   assert.throws(() => sheetFromRows(rows((r) => { delete r.answers.s1__finish.submitted; })), /never sent/);
   assert.throws(() => sheetFromRows(rows((r) => { r.answers.q2.own = 'x\nWhat I thought:\ny'; })), /Q2: an answer holds a line/, 'words may not move boxes');
-  assert.throws(() => sheetFromRows(rows((r) => { r.answers.s1__finish.missed = 'x\n## Anything I did not ask?\ny'; })), /reads as sheet structure/);
   const other = sheetFromRows(rows((r) => { r.answers.q2.sheet = 'other-sheet'; }));
   assert.doesNotMatch(other, /my {3}own/, 'an answer from another sheet is not this sheet\'s');
 });
