@@ -73,7 +73,7 @@ const VALUE_OPTIONS = new Set(['-erroraction', '-ea', '-include', '-exclude', '-
 const GIT_VALUE_OPTIONS = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--attr-source', '--shallow-file']);
 // Text the tokenizer may split where a shell does not, so a word read from it proves nothing: a comma, a variable, a
 // backtick, a carriage return, an escaped space or quote, an empty word, a character it folds to ASCII.
-const UNCLEAR_TEXT = /[,`$\r\u0080-￿]|\\[\s"]|""|''/;
+const UNCLEAR_TEXT = /[,`$\r\u0080-\uffff]|\\[\s"]|""|''/;
 // What an alias may run that deletes, once its quoting is off.
 const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|worktree)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha/;
 const GIT_CLEAN_TEXT = /\bgit(\.exe)?\s[^;|&\n]*\bclean\b/i;
