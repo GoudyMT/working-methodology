@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs the rule recall test (the current version in docs/evals/recall-questions.md) in a folder it makes itself.
 //
-// Why its own folder: an answer moved with the test folder's name (M25: "recall" in the path made sessions open the
+// Why its own folder: an answer moved with the test folder's name ("recall" in the path made sessions open the
 // memory folder, and that lifted Q10). The path is random, so no argument and no label can choose it, and a baseline
 // is the same command with a clone at the old tag as the kit folder, so both sides get the same treatment.
 //

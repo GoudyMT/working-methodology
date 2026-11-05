@@ -245,9 +245,38 @@ const RESWEEP_PASS = [
 	'rm -rf build; > out.txt',
 ];
 
+// Found open on the released guard (2026-11-05): an -e that takes the next letters as its pattern, an alias defined
+// in the same command, and robocopy moves, which delete the source.
+const HOLES_ASK = [
+	'git clean -fdx -en',
+	'git clean -fden',
+	'git clean -fde n',
+	'git clean -e -n -fd',
+	'git clean -fd --exclude -n',
+	'git clean -fd --exclude=-n',
+	'git -c alias.zz="clean -fdx" zz',
+	"git -c alias.zz='reset --hard' zz",
+	'git -c alias.zz=clean zz -fdx',
+	'git -c alias.zz="rm -r" zz x',
+	'git config alias.zz "clean -fdx"',
+	'robocopy a b /MOV',
+	'robocopy a b /MOVE',
+	'robocopy C:\\work\\proj_a.b\\a C:\\work\\proj_a.b\\b /mov',
+];
+
+const HOLES_PASS = [
+	'git clean -nfd -e x',
+	'git clean -fd -e build -n',
+	'git clean -n -e x',
+	'git -c alias.st=status st',
+	'git -c alias.lg="log --oneline" lg',
+	'robocopy a b /E',
+];
+
 const ASK = [
 	...SWEEP_ASK,
 	...RESWEEP_ASK,
+	...HOLES_ASK,
 	'Remove-Item -Recurse $env:TEMP\\tg-*',
 	'Remove-Item -Recurse ' + TEMP + '\\tg-*',
 	'rm -rf /tmp/*',
@@ -318,6 +347,7 @@ const ASK = [
 const PASS = [
 	...SWEEP_PASS,
 	...RESWEEP_PASS,
+	...HOLES_PASS,
 	'Remove-Item ' + OWN + '\\scratchpad\\pr-body.md',
 	'Remove-Item -Recurse -Force ' + OWN + '\\scratchpad\\*',
 	'Remove-Item ' + OWN + '\\scratchpad\\a.md, ' + OWN + '\\scratchpad\\b.md',

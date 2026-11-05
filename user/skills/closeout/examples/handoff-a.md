@@ -9,7 +9,8 @@ Remove-Item -Recurse -Force C:\sw1, C:\sw2, C:\sw3, C:\sw4, C:\sw5; if ($?) { gi
 
 ## REQUIRED FIRST ACTIONS
 Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
-visible checklist, scans) and confirm mode + first action with the owner. This handoff is a CACHE.
+visible checklist, scans), then state mode + first action and start it (ask the owner only if this
+handoff and the work order name none). This handoff is a CACHE.
 
 ## Working Mode: Plan (default)
 

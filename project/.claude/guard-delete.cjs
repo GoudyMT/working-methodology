@@ -6,9 +6,10 @@
 // cannot start must not let the delete through).
 // Reads: rm, rmdir, unlink, del, erase, rd, ri, Remove-Item, rimraf, del-cli, shred (any folder, .exe or not,
 // anywhere in a command, so a wrapper such as sudo -u x or timeout 5 cannot hide one), find -delete, git clean
-// (asks unless a dry run), git worktree remove, robocopy /MIR or /PURGE, rsync --delete, inline node, deno, bun,
-// python, py, perl, ruby or php code that deletes, .NET Delete calls (also ForEach-Object Delete), nested shells
-// (bash -c, powershell -Command), a cd to a written-out folder (trusted alone only through an && chain); an encoded
+// (asks unless a dry run), a git alias set in the same command that cleans, removes or hard-resets, git worktree
+// remove, robocopy /MIR, /PURGE, /MOV or /MOVE, rsync --delete, inline node, deno, bun, python, py, perl, ruby or
+// php code that deletes, .NET Delete calls (also ForEach-Object Delete), nested shells (bash -c, powershell
+// -Command), a cd to a written-out folder (trusted alone only through an && chain); an encoded
 // PowerShell command asks. A target is placed after junctions and links are followed, each ".." read both through
 // the link before it (Git Bash) and as written (PowerShell), and must be inside either way.
 // Asks rather than reads: a target holding a variable, a splat, a brace expansion, a ~user form, a provider path
@@ -266,6 +267,39 @@ function gitSub(words, start) {
 	return { sub: words[i], at: i + 1 };
 }
 
+// git clean is a dry run only when -n or --dry-run is an option of its own. -e and --exclude take a pattern: the
+// rest of their letter group (-en is the pattern n) or, when nothing follows in the group, the next word.
+function cleanDryRun(own) {
+	for (let i = 0; i < own.length; i++) {
+		const w = own[i];
+		if (w === '--') return false;
+		if (w === '--dry-run') return true;
+		if (w === '--exclude') i++;
+		else if (/^-[A-Za-z]+$/.test(w)) {
+			for (let c = 1; c < w.length; c++) {
+				if (w[c] === 'e') {
+					if (c === w.length - 1) i++;
+					break;
+				}
+				if (w[c] === 'n') return true;
+			}
+		}
+	}
+	return false;
+}
+
+// An alias set in the same command (git -c alias.x=..., git config alias.x ...) hides its subcommand behind a name
+// the guard does not know, so one that runs clean, rm or reset --hard asks.
+function definesDeleteAlias(words) {
+	for (let i = 0; i < words.length; i++) {
+		const m = /^alias\.[^=\s]+(=([\s\S]*))?$/i.exec(words[i]);
+		if (!m) continue;
+		const value = m[1] !== undefined ? m[2] : words[i + 1] ?? '';
+		if (/(^|[\s!])(clean|rm)(\s|$)|(^|[\s!])reset\s([\s\S]*\s)?--hard(\s|$)/.test(value)) return true;
+	}
+	return false;
+}
+
 // Where a delete may run without asking: strictly inside the session folder or the project; for a wildcard, the
 // fixed folder before it may also be one of those roots itself.
 function placeOf(target, ctx, state, keepLast = false) {
@@ -423,7 +457,7 @@ function findDelete(text, ctx, state, depth) {
 			else if (DIR_RETURNS.has(name)) state.moved = true;
 			// env -C DIR, env -CDIR, sudo -D DIR, sudo --chdir=DIR, and short options clustered before them.
 			else if ((name === 'env' || name === 'sudo') && rest.some((w) => /^(-[A-Za-z]*[CD]|--chdir)/.test(w))) state.moved = true;
-			else if (name === 'robocopy' && rest.some((w) => /^\/(mir|purge)$/i.test(w))) return 'robocopy that removes files';
+			else if (name === 'robocopy' && rest.some((w) => /^\/(mir|purge|mov|move)$/i.test(w))) return 'robocopy that removes files';
 			else if (name === 'rsync' && rest.some((w) => /^--(del|delete[\w-]*|remove-source-files)(=|$)/.test(w))) return 'rsync that removes files';
 			else if (name === 'git') {
 				const { sub, at } = gitSub(words, p + 1);
@@ -432,7 +466,8 @@ function findDelete(text, ctx, state, depth) {
 				if (p === 0) skip.add(at - 1);
 				if (MOVES_GIT.test(text) || words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
 				const cached = own.slice(0, own.includes('--') ? own.indexOf('--') : own.length).includes('--cached');
-				if (sub === 'clean' && !own.some((w) => w === '-n' || w === '--dry-run' || /^-\w*n/.test(w))) return 'git clean';
+				if (sub === 'clean' && !cleanDryRun(own)) return 'git clean';
+				if (definesDeleteAlias(words.slice(p + 1))) return 'a git alias that deletes';
 				if (sub === 'worktree' && own[0] === 'remove') {
 					for (const target of targetsOf('', own, 1)) {
 						const hit = placeOf(target, ctx, state);

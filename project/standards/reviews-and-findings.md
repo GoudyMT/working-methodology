@@ -11,17 +11,17 @@
 - **G2 Diagnose:** the mechanism in one sentence; the violated invariant; `git blame` (ours, or shipped and exposed?). Output: **a named root + a search pattern.**
 - **G3 Cluster + search** (BARRIER): group by root; search the WHOLE codebase for each class, shipped code included; fix shared findings at the root (often one token or helper). **Roots get fixed, not findings.**
 - **G4 Method:** the CONFIRMED fix with precedent; what it does NOT fix; **which side-effects of the current code it MUST preserve** (watch "moved to a better seam, dropped a side effect"). A fix is new code, most of all when it changes shape: name the failure class it opens (sync -> async: stale writes, unhandled rejections; a lazy seam: not-ready windows, cached rejections) and mirror the codebase's invariant for that shape.
-- **G5 Blast radius** (-> the owner's go): files, shipped vs new, public interfaces, other callers, the revert story; a shipped-code fix in a feature branch is scope creep until the owner says otherwise.
+- **G5 Blast radius:** files, shipped vs new, public interfaces, other callers, the revert story, in the report; the owner's go only for shipped code outside the branch or a public interface.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers) (never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A high or critical re-sweep finding never carries to the next run: fixed before the PR, or the owner accepts it.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
 1. **A standalone fix PR only for harm:** data loss, a stuck user, a silent outage.
-2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the extremely minor (info, cosmetic, rare path, no harm), each recorded; leftovers go to the next focused PR touching that code or a fix sweep - the owner decides.
+2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the extremely minor (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings go to the handoff's carry-overs for the next focus build (a separate PR only for item 1's harm).
 3. **Then features;** roadmap fixes ride a feature PR that touches their code; folded-in findings go in the before / after table.
-4. **A run's order:** the owner picks the feature FIRST (even when a handoff lists fixes ahead); leftovers and recorded carry-overs are built on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
+4. **A run's order:** the feature comes FIRST (even when a handoff lists fixes ahead): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs are built on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
 
 **Value check:** tier remaining work by what a user would notice (high: someone hits it; medium: keyboard or screen-reader correctness; low: millisecond races, byte trims, test hygiene), say the tier at each checkpoint, and recommend stopping when reviews return ever smaller things, before the owner asks; the value lens ends the loop, not fatigue. Why: a sweep generates work faster than value.
 
@@ -31,13 +31,13 @@ A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm C
 
 **Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.
 
-**Done iff** a report exists at `<sweep folder>/YYYY-MM-DD-<milestone>.md` with date, milestone, branch / commit; each dimension PASS or with findings; every high / critical dispositioned (`FIXED <commit>` / `DEFERRED <where>` / `ACCEPTED <why>`); for the deep tier, "still aligned with the version goals? YES/NO + evidence". <!-- PROJECT ADAPTER A22 -->
+**Done iff** a report exists at `<sweep folder>/YYYY-MM-DD-<milestone>.md` with date, milestone, branch / commit; each dimension PASS or with findings; every high / critical `FIXED <commit>` or `ACCEPTED <why>`; for the deep tier, "still aligned with the version goals? YES/NO + evidence". <!-- PROJECT ADAPTER A22 -->
 
 **Six fixed dimensions:** (1) privacy / data boundary - runtime leaks, third-party calls; (2) supply chain + bundle - dependency risk, build scripts, budgets; (3) legal / content + licenses (A2), citation fidelity; (4) code security + pattern consistency; (5) gaps + scaling - untested paths, deferred-now-load-bearing items, scale assumptions, new-test value; (6) version goal alignment - scope creep, drift from locks, overbuilding (the verdict). Plus any milestone-specific one; read-only reviewers per dimension -> a report grouped by when to act.
 
 ### Sweep Tiers {#sweep-tiers}
 
-Every sweep has a tier, set at plan approval (the lead proposes, the owner may change it) and named on the report's first lines as `- **Tier:** <tier>`. When unsure, the higher tier. Why: one size of sweep is too heavy for a typo and too light for a new surface, and a tier named in the open is one the owner can correct.
+Every sweep has a tier, set at plan approval (the lead proposes, the owner may change it) and named on the report's first lines as `- **Tier:** <tier>`. When unsure, the higher tier. Why: one size is too heavy for a typo and too light for a new surface; a named tier is one the owner can correct.
 
 | Tier | When | Agents | Must cover | Report |
 |---|---|---|---|---|
@@ -69,8 +69,8 @@ The roles below are the feature and launch-gate tiers' floor; a fix or triage sw
 
 Before a major or user-facing PR is pushed, USE the product on the production build at the PR head, served locally:
 - **The lead's walkthrough:** every spec flow at desktop and narrowest width, every theme and engine, console watched, screenshots to the owner (scripted where the pane cannot load it).
-- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps / date edges; tabs / locks / reloads / offline; keyboard / screen reader / zoom / forced colors), throwaway scripts in scratch folders, read-only on the repo, each finding with its reproducing script.
-- **A live checklist** the owner watches: ticked as items pass, notes from both sides, overall status; the last run archived before reseeding; a closing debrief; the owner may hand the rest of a walk to the lead.
+- **Break-it testers** (mid tier, default three, one angle each - e.g. input order / rapid taps; tabs / reloads / offline; keyboard / screen reader / zoom), throwaway scripts in scratch folders, read-only on the repo, each finding with its reproducing script.
+- **A live checklist** the owner watches: ticked as items pass, notes from both sides, overall status; a closing debrief; the owner may hand the rest of a walk to the lead.
 - **Findings go through the Finding Pipeline before the push** ("push now, fix later" is the owner's call). Docs / chore / test-only / one-line PRs exempt (stated); small PRs may run the walkthrough only, on the owner's call.
 
 Satisfied ONLY by the walk and testers running this session with results in the sweep report. Why: a green gate and two sweeps still miss what a minute of real use finds.
@@ -85,7 +85,7 @@ A user-facing PR is used on the host's own build of the branch before merge, on 
 
 ### Visible Tracking {#visible-tracking}
 
-`_Master Roadmap.md` carries `- [ ] Milestone sweep recorded -> <report>` per sub-project; **no sub-project is COMPLETE until it is checked**; orientation step 7 checks both. Why: a gate nobody can see on the roadmap is a gate the next session skips.
+`_Master Roadmap.md` carries `- [ ] Milestone sweep recorded -> <report>` per sub-project; **no sub-project is COMPLETE until it is checked**; orientation step 7 checks both. Why: a gate nobody sees on the roadmap gets skipped.
 
 ## Parking Lot + Pre-PR Idea Triage {#parking-lot}
 

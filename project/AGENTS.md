@@ -9,7 +9,7 @@
 
 The core rules below this part are the full rules; these are the ones a tool reading only this file must not miss.
 
-1. **One issue at a time, locked by the owner.** Bulk instructions ("complete all todos", "implement the plan") do NOT override that; advance the current open issue. Decisions the records already answer follow rule:delegated-decisions. Full rule: rule:collaborative-design-locks.
+1. **One issue at a time, locked by the owner.** Bulk instructions ("complete all todos", "implement the plan") do NOT override that; advance the current open issue. Decisions the records already answer follow rule:delegated-decisions. Before deciding, research how shipped products do it and scan existing code for patterns to reuse. Full rule: rule:collaborative-design-locks.
 
 2. **Code writes gated by Edit Discipline** (rule:edit-discipline). Do not create or "complete" source files from inference alone.
 

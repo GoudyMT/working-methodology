@@ -66,8 +66,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 ## The audit
 
 `audit.mjs` holds the report to its tier: every report names its tier, a date, the branch and a commit, and
-dispositions every high or critical finding (`FIXED <commit>`, `DEFERRED <where>` or `ACCEPTED <why>`, in a
-findings table or a finding bullet), and names all six dimensions (a result, findings or "not touched").
+dispositions every high or critical finding (`FIXED <commit>` or `ACCEPTED <why>`, in a findings table or a
+finding bullet; `DEFERRED <where>` is for medium and below), and names all six dimensions (a result, findings or "not touched").
 Feature, fix and launch-gate reports also give the version-goal verdict, YES or NO; a triage report names its
 secrets and personal-data check. It cannot tell
 whether the agents really ran; only their output in this session proves that.

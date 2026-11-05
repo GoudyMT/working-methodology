@@ -614,7 +614,7 @@ test('session start says when the kit on GitHub is ahead of the kit folder', () 
   assert.doesNotMatch(say, /git pull/);
 });
 
-// The owner, 2026-11-02 (M1, option B): installs run only from a clean release tag, or by name with --unreleased.
+// The owner, 2026-11-02 (option B): installs run only from a clean release tag, or by name with --unreleased.
 // The check sits in the CLI, not in install(), so these tests drive the CLI copied into a tagged git fixture, the
 // way the release copy holds it.
 function releaseKit() {
@@ -1052,6 +1052,25 @@ test('the sweep report audit passes a done report and names each missing part', 
   const out = runAudit('pre-pr-sweep', bad);
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
+});
+// A high or critical is fixed before the PR or accepted by the owner, never carried to the next run
+// (rule:finding-pipeline).
+test('the sweep audit refuses a high or critical finding carried as DEFERRED', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const report = (rows) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n${rows}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  for (const sev of ['high', 'critical']) {
+    const out = runAudit('pre-pr-sweep', report(`| 1 | ${sev} | token in log | DEFERRED next build |`));
+    assert.equal(out.status, 1, sev + ' DEFERRED must fail');
+    assert.match(out.stdout, /finding 1/);
+    assert.match(out.stdout, /FIXED <commit> or ACCEPTED <why>/);
+    const bullet = runAudit('pre-pr-sweep', report('| 1 | low | slow list | DEFERRED roadmap |') + `\n- **S2 (${sev})** - token in log. DEFERRED next build\n`);
+    assert.equal(bullet.status, 1, sev + ' bullet DEFERRED must fail');
+    assert.match(bullet.stdout, /finding S2/);
+  }
+  for (const disposition of ['FIXED 9f8e7d6', 'ACCEPTED owner took the risk in the PR']) {
+    const out = runAudit('pre-pr-sweep', report(`| 1 | high | token in log | ${disposition} |\n| 2 | medium | slow list | DEFERRED next build |`));
+    assert.equal(out.status, 0, out.stdout);
+  }
 });
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
@@ -2112,7 +2131,7 @@ function approveRun(contract, dir = sweepRepo()) {
 }
 const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.jsonl')).trim().split('\n').map((l) => JSON.parse(l));
 // A fake Claude config folder holding one reviewer transcript per agent id, where approve.mjs reads what each role
-// spent (M11: the meter is processed tokens from the role's own transcript). Each call is [input, cache read, cache
+// spent (the meter is processed tokens from the role's own transcript). Each call is [input, cache read, cache
 // write, output]; a call given as { id, u } keeps its message id, so streaming's repeated lines can be written.
 // Beside each transcript sits Claude Code's agent-<id>.meta.json (agent type, finished); `meta` overrides it per id,
 // and `cfg` adds to an existing folder.
@@ -2739,7 +2758,7 @@ test('an owner-decided sweep can log its outcome, so the trial sees every sweep'
   assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'outcome').length, 1);
 });
 
-// M11 (the owner, 2026-11-03): the meter is processed tokens, read by the script from each reviewer's own transcript. A
+// The owner, 2026-11-03: the meter is processed tokens, read by the script from each reviewer's own transcript. A
 // hand-typed number was the Agent result's context size, so every budget tripped on the wrong meter.
 test('the outcome reads each role\'s spend from its own transcript, counting each streamed message once', () => {
   const c = featureContract();
@@ -2781,7 +2800,7 @@ test('the outcome asks the owner when a transcript is missing, and refuses a han
   assert.equal(approvalLog(r.dir).filter((e) => e.kind !== 'unread').length, before, 'nothing logged');
 });
 
-// M12 A (locked): a tier's cap counts only the roles beyond its floor, so no modifier mix can make the floor
+// Locked: a tier's cap counts only the roles beyond its floor, so no modifier mix can make the floor
 // unreachable, and a sweep still cannot buy more than its extras.
 function fixRepo(extra = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
@@ -2832,7 +2851,7 @@ test('a cap counts the roles beyond the floor: a security fix with tests approve
   assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(6)] }).stdout, /6 roles beyond the feature floor, over its cap of 5/);
 });
 
-// O2 A with R2 (the owner, 2026-11-03): one sweep, one focused re-sweep (blast radius, one role per fixed kind, alignment),
+// The owner, 2026-11-03: one sweep, one focused re-sweep (blast radius, one role per fixed kind, alignment),
 // then what is left goes to the handoff. A second re-sweep is refused, not paused.
 const resweepRoles = (kinds = ['security']) => [
   role('blast-radius', 'What else do the fixes reach, and did any of them break it?', { model: 'claude-sonnet-5-5' }),
@@ -2937,7 +2956,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.doesNotMatch(approveIn(first.dir, [first.f]).stdout, /carried finding/);
 });
 
-// E11 applied to approve.mjs (the owner, 2026-11-03): every stop hands the owner a triage report, not just a line.
+// The owner, 2026-11-03: every approve.mjs stop hands the owner a triage report, not just a line.
 test('every ask and every pause writes a triage report beside the contract; an approval writes none', () => {
   const triage = (f) => f.replace(/\.json$/, '.triage.md');
   const ok = approveRun(featureContract());
@@ -3308,7 +3327,7 @@ test('the commit check runs in an agent worktree and reads that worktree\'s stag
   assert.match(ok.stdout + ok.stderr, /Commit check: PASS/, 'a run is visible');
 });
 
-// E19: the owner removed the PR attribution standard, so a host's two-line block fails every body audit, wherever it
+// The owner removed the PR attribution standard, so a host's two-line block fails every body audit, wherever it
 // sits. The corpus came from a separate writer who never saw the check; "unclear" cases fail closed.
 const ATTRIBUTION = '<!-- claude-projects-attribution: {"github_login":"someone"} -->\n_Requested by **Pat**_\n\n';
 const CORPUS = JSON.parse(read(path.resolve('tests/attribution-corpus.json')));
@@ -3636,7 +3655,7 @@ test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing gran
   assert.match(read(path.resolve('rules/project-adapter.md')), /^\| A27 \| .*standing grant/im);
 });
 
-// M14: what the sweep itself commits is not source. The contract, the project's caps file and a file under docs/ used
+// What the sweep itself commits is not source. The contract, the project's caps file and a file under docs/ used
 // to count as added source, so a fix or triage sweep went to the owner the moment its contract was committed.
 const fixContract = () => ({ tier: 'fix', modifiers: [], roles: fixFloor() });
 test('a committed contract, the caps file and a docs json do not move a fix or triage sweep up a tier', () => {
@@ -3662,7 +3681,7 @@ test('any other added json is still source: a fix tier asks the owner', () => {
   assert.match(approveRun(fixContract(), other).stdout, /added source file \(sweeps\/data\.json\)/, 'beside the contract, only a contract is left out');
 });
 
-// M15: a mistake Claude can fix is not the owner's. Its own answer and exit code, no triage report, no owner yes.
+// A mistake Claude can fix is not the owner's. Its own answer and exit code, no triage report, no owner yes.
 test('a contract mistake answers FIX THE CONTRACT with its own exit code, and the owner is not asked', () => {
   const cases = [
     [(c) => { c.roles.pop(); }, /novel/i],
@@ -3732,7 +3751,7 @@ test('FIX THE CONTRACT clears nothing: the guard refuses a reviewer and there is
   assert.notEqual(approveIn(r.dir, [r.f, '--owner-yes', 'yes go']).status, 0, 'no ask, so no yes');
 });
 
-// M17 (the owner, 2026-11-03, option B; 2026-11-04, the hook): a role's spend is about 14k x calls + g x calls^2 / 2,
+// The owner, 2026-11-03 (option B) and 2026-11-04 (the hook): a role's spend is about 14k x calls + g x calls^2 / 2,
 // so its budget comes from a call cap the script computes from, never a typed number.
 test('a role\'s budget is computed from its call cap, and a typed budget changes nothing', () => {
   const c = featureContract();
@@ -4963,7 +4982,7 @@ test('a recall run removes what it made, and nothing else', async () => {
   assert.throws(() => removeProbe({ dir: other, home, slug: 'x' }), /not a probe folder/);
 });
 
-// E17: the brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.
+// The brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.
 const sheetTools = () => import('../user/skills/brainstorm/sheet.mjs');
 const compileTools = () => import('../user/skills/brainstorm/compile-record.mjs');
 const SHEET = `# Sheet: Export button
