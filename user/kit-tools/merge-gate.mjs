@@ -125,7 +125,7 @@ function sweepFaults({ cwd, config, branch, head, git, run }) {
 	if (!fs.existsSync(audit)) return [`no sweep audit at ${audit}: install the kit's user layer`];
 	const named = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => f.endsWith('.md')).map((f) => {
 		const text = fs.readFileSync(path.join(dir, f), 'utf8');
-		const onBranch = text.split('\n').some((l) => /\*\*Branch:\*\*/.test(l) && l.includes(branch));
+		const onBranch = text.split('\n').slice(0, 20).some((l) => l.includes(branch));
 		const covers = (text.match(/\*\*Covers:\*\*\s*`?([0-9a-f]{7,40})\b/) || [])[1];
 		return { f, onBranch, covers };
 	}).filter((r) => r.onBranch);

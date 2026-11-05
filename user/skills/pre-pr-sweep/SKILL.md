@@ -46,7 +46,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
-   gates), with `- **Tier:** <tier>` on its first lines, in the shape of the example for its tier. Run
+   gates), with `- **Tier:** <tier>` and `- **Covers:** <full sha of the commit the sweep read>` on its first lines (the merge gate reads it), in the shape of the example for its tier. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.
 5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
    check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
@@ -54,7 +54,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    through `approve.mjs` like the first, with `"resweepOf": "<first contract.json, relative to this contract>"` and `"fixed": [{ "finding",
    "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). The first contract
    stays byte for byte as it was cleared, and a re-sweep declares only modifiers the first sweep had. A second re-sweep
-   is refused: what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it. Update the report. Summarize the result in the PR
+   is refused: what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it. Update the report, its Covers line to the re-sweep's HEAD. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents`: each reviewer's agent id, one per

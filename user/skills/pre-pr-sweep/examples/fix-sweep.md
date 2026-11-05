@@ -1,6 +1,7 @@
 # Pre-PR Sweep (fix tier) - The download stall guards, #88 (2026-06-09)
 
 - **Tier:** fix (a change to how existing downloads end; no new surface).
+- **Covers:** 7c2e19b4a1d05f63e8b27c90d4f1a6e35b8c2d07 (the fix check's HEAD)
 - **Scope:** `fix/download-stall-guards` at `7c2e19b4` (8 commits): a download that goes silent gives up and lands on
   the app's existing failure path (map areas, a notebook export, the photo viewer, the saved check, page loads and
   other network-first files).

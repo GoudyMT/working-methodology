@@ -125,6 +125,14 @@ for (const [name, breakIt, want] of CASES) {
 	});
 }
 
+test('merge gate: a report may name the branch on its Scope line, as the fix example does', () => {
+	const s = setup();
+	fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.sha).replace('**Branch:**', '**Scope:**'));
+	assert.equal(check(s.opts).go, true);
+	fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/other', s.sha));
+	assert.ok(check(s.opts).faults.some((f) => /names the branch feat\/subtract/.test(f)));
+});
+
 test('merge gate: a ruleset alone counts as the required check', () => {
 	const s = setup();
 	s.state.protection = null;
