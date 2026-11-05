@@ -1373,4 +1373,6 @@ function main(argv) {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2));
+// Paths compared after links: run through a junction, the CLI must still run, not exit 0 having done nothing.
+const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.meta.url))) main(process.argv.slice(2));

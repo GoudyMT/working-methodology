@@ -7,7 +7,7 @@ Each version's questions and keys are frozen once the owner approves them. A cha
 <!-- recall v4 -->
 ## v4 (the owner's ruling, 2026-11-05: align key 3 with its rule)
 
-Run as v3 describes. One change: key 3 names what rule 11 names, reads before any source-of-truth edit or agent dispatch, where v3 said any edit, so a strict reading marked down answers that gave the rule's own words. The questions are v3's. Pass: median 12 of 13.
+Run as v3 describes. One change: key 3 names what rule 11 names, reads before any source-of-truth edit or agent dispatch, where v3 said any edit, so a strict reading marked down answers that gave the rule's own words. The questions are v3's. From v4 a gate line names the control's median (`... keys v4 control <n>`), and the control must sit under the baseline. Pass: median 12 of 13.
 
 | # | Question (asked as written) | Key: the answer must name |
 |---|---|---|

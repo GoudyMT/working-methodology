@@ -29,7 +29,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 // A change here is live the moment it merges, in this repo: workflows, the installed kit and its rules, the
 // project's grant and gate settings, git hooks, and the loaded rule files.
@@ -239,7 +239,9 @@ export function arm({ pr, cwd, config = configDir(), run = realRun, now = () => 
 	return { armed: true, faults: [], facts: res.facts };
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+// Paths compared after links, so the gate runs when called through a junction.
+const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.meta.url))) {
 	const [cmd, a, b] = process.argv.slice(2);
 	const cwd = process.cwd();
 	if (cmd === 'check' && a) {

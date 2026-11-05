@@ -4450,7 +4450,7 @@ test('recall v3 is v2 plus three questions, and v2 stays as it was released', as
   ]);
 });
 
-// Max's ruling (2026-11-05): key 3 says what rule 11 says, as a new keys version; v3 stays as released.
+// The owner's ruling (2026-11-05): key 3 says what rule 11 says, as a new keys version; v3 stays as released.
 test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was released', async () => {
   const { versionText, currentVersion, questions, questionCount, passBar } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
@@ -4614,7 +4614,7 @@ test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
   git('tag', 'base');
   put(KEYS, 'Current version: v4\n\n' + version(4, 9) + version(3, 5));
   const gate = (median) => {
-    put(SCORES, '# Scores\n\ngate: a median ' + median + ' baseline 1 brief v1 keys v4 owner-accepted\n');
+    put(SCORES, '# Scores\n\ngate: a median ' + median + ' baseline 1 brief v1 keys v4 control 0 owner-accepted\n');
     git('add', '.');
     git('commit', '-qm', 'median ' + median);
     return spawnSync('node', [path.join(dir, 'scripts/recall.mjs'), 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
@@ -4707,7 +4707,9 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   const keysText = read(path.resolve('docs/evals/recall-questions.md'));
   const bar = passBar(keysText, currentVersion(keysText));
   const step = read(path.resolve('.github/workflows/ci.yml')).split('- name: Rule changes carry a passing recall score')[1].split('- name:')[0];
-  assert.match(step, /^\s+run: node scripts\/recall\.mjs gate "\$PR_BASE" "\$PR_HEAD"$/m);
+  // The base branch's copy judges the PR (S18-3, R-S5).
+  assert.match(step, /^\s+git show "\$PR_BASE:scripts\/recall\.mjs" > scripts\/recall-gate-base\.mjs$/m);
+  assert.match(step, /^\s+node scripts\/recall-gate-base\.mjs gate "\$PR_BASE" "\$PR_HEAD"$/m);
   assert.match(step, /^\s+if: github\.event_name == 'pull_request'$/m);
   assert.match(step, /^\s+PR_BASE: origin\/\$\{\{ github\.base_ref \}\}$/m);
   assert.match(step, /^\s+PR_HEAD: \$\{\{ github\.event\.pull_request\.head\.sha \}\}$/m);
@@ -4717,6 +4719,8 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
   git('init', '-q', '-b', 'main');
   put('rules/core.md', 'a\n');
+  // The gate reads the ruler from the head commit, so the repo carries the kit's own.
+  for (const rel of ['docs/evals/recall-questions.md', 'docs/evals/recall-scorer-brief.md']) put(rel, read(path.resolve(rel)));
   put('docs/evals/results/recall-scores.md', '# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n');
   git('add', '.');
   git('commit', '-qm', 'base');
@@ -4728,20 +4732,20 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   assert.equal(noScore.status, 1, noScore.stdout + noScore.stderr);
   const keys = read(path.resolve('docs/evals/recall-questions.md')).match(/^Current version: v(\d+)$/m)[1];
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md')).match(/^Current version: v(\d+)$/m)[1];
-  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys}\n`);
+  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys} control 0\n`);
   git('commit', '-qam', 'scores');
   const scored = gate();
   assert.equal(scored.status, 0, scored.stdout + scored.stderr);
   git('tag', 'base2');
   put('rules/core.md', 'c\n');
-  put('docs/evals/results/recall-scores.md', read(path.join(dir, 'docs/evals/results/recall-scores.md')) + `\ngate: low median ${bar} baseline 1 brief v${brief} keys v${keys}\n`);
+  put('docs/evals/results/recall-scores.md', read(path.join(dir, 'docs/evals/results/recall-scores.md')) + `\ngate: low median ${bar} baseline 1 brief v${brief} keys v${keys} control 0\n`);
   git('commit', '-qam', 'typed down');
   const typed = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
   assert.equal(typed.status, 1, typed.stdout + typed.stderr);
   assert.match(typed.stdout, /under the last recorded baseline 8/);
   // The last baseline on the ruler counts, not the first.
   const scores = 'docs/evals/results/recall-scores.md';
-  const now = `brief v${brief} keys v${keys}`;
+  const now = `brief v${brief} keys v${keys} control 0`;
   const round = (name, base, entry) => {
     git('checkout', '-q', '-b', name, 'base2');
     put(scores, `# Scores\n\n${base}\n`);
@@ -4770,8 +4774,9 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
     git('checkout', '-q', '-b', name, 'base2');
     put(rel, body);
     git('add', '.');
-    git('commit', '-qm', 'ruler on the base of ' + name);
+    git('commit', '-qm', 'ruler on the base of ' + name, '--allow-empty');
     git('tag', name + '-base');
+    put(rel, read(path.resolve(rel)));
     put('rules/core.md', name + '\n');
     put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median ${bar} baseline 9 ${now}\n`);
     git('commit', '-qam', name);
@@ -5152,12 +5157,12 @@ test('a recall run removes what it made, and nothing else', async () => {
   const slug = path.join(home, 'projects', 'slug-1', 'memory');
   fs.mkdirSync(slug, { recursive: true });
   fs.mkdirSync(path.join(home, 'projects', 'slug-2'), { recursive: true });
-  removeProbe({ dir, home, slug: 'slug-1' });
+  removeProbe({ dir, home, slug: 'slug-1', osHome: root });
   assert.equal(fs.existsSync(path.dirname(dir)), false);
   assert.equal(fs.existsSync(path.join(home, 'projects', 'slug-1')), false);
   assert.ok(fs.existsSync(path.join(home, 'projects', 'slug-2')), 'another project\'s memory stays');
   assert.ok(fs.existsSync(other));
-  assert.throws(() => removeProbe({ dir: other, home, slug: 'x' }), /not a probe folder/);
+  assert.throws(() => removeProbe({ dir: other, home, slug: 'x', osHome: root }), /not a probe folder/);
 });
 
 // The brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.
@@ -5538,7 +5543,7 @@ test('an update keeps the attribution script while an edited audit still needs i
 test('build turns on the kit source commit-msg hook, which refuses a bad message, and leaves an owner hooks path alone', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'srchooks-'));
   const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
-  g('init', '-q'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
+  g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
   fs.mkdirSync(path.join(dir, '.githooks')); fs.mkdirSync(path.join(dir, 'project/.claude'), { recursive: true });
   fs.copyFileSync(path.resolve('.githooks/commit-msg'), path.join(dir, '.githooks/commit-msg'));
   fs.chmodSync(path.join(dir, '.githooks/commit-msg'), 0o755);
@@ -5566,4 +5571,122 @@ test('the sweep audit reads an indented findings table as it reads a flat one', 
     assert.match(out.stdout, /finding 1/);
     assert.equal(runAudit('pre-pr-sweep', report(rows(indent, 'FIXED 9f8e7d6'))).status, 0, JSON.stringify(indent) + ': a fixed high passes');
   }
+});
+
+// Carry-overs closed in 1.21.0 for the recall gate and runs (S18-2, S18-3, S18-5, S18-6, S18-7, B7, I20, I27).
+// A small repo with recall.mjs, a ruler and a scores file, gated base..HEAD as CI does.
+function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: median 9 of 13.\n\n', scores = '# Scores\n' } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate11-'));
+  const git = (...a) => { const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, a.join(' ') + r.stderr); return r.stdout; };
+  const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+  git('init', '-q', '-b', 'main');
+  put('scripts/recall.mjs', read(RECALL));
+  put('docs/evals/recall-scorer-brief.md', 'Current version: v1\n');
+  put('docs/evals/recall-questions.md', keys);
+  put('docs/evals/results/recall-scores.md', scores);
+  git('add', '.'); git('commit', '-qm', 'base'); git('tag', 'base');
+  const record = (line, extra = () => {}) => {
+    put('docs/evals/results/recall-scores.md', scores + '\n' + line + '\n');
+    put('rules/core.md', 'a rule ' + Math.random() + '\n');
+    extra(put);
+    git('add', '.'); git('commit', '-qm', 'record');
+  };
+  const gate = (script = path.join(dir, 'scripts/recall.mjs')) => spawnSync('node', [script, 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  return { dir, put, git, record, gate };
+}
+
+test('recall gate (B7): current keys with no Pass line cannot pass, since recall cannot run them', () => {
+  const r = gateRepo({ keys: 'Current version: v4\n\n<!-- recall v4 -->\nno pass line\n\n' });
+  r.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0');
+  const out = r.gate();
+  assert.equal(out.status, 1, out.stdout + out.stderr);
+  assert.match(out.stdout + out.stderr, /no "Pass: median <n> of <m>\." line/);
+});
+
+test('recall gate (S18-3): the ruler is read from the head commit, never the working tree', () => {
+  const r = gateRepo();
+  r.record('gate: a median 7 baseline 7 brief v1 keys v4 control 0');
+  // An uncommitted edit lowers the bar; the gate must still hold the head's bar of 9.
+  r.put('docs/evals/recall-questions.md', 'Current version: v4\n\n<!-- recall v4 -->\nPass: median 5 of 13.\n\n');
+  const out = r.gate();
+  assert.equal(out.status, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /pass bar of 9/);
+});
+
+test('recall gate (S18-5): a scores file over 1 MiB on the base still sets the floor', () => {
+  const big = '# Scores\n' + ('x'.repeat(100) + '\n').repeat(12000) + 'gate: old median 10 baseline 10 brief v1 keys v4\n';
+  const r = gateRepo({ scores: big });
+  r.record('gate: a median 10 baseline 9 brief v1 keys v4 control 0');
+  const out = r.gate();
+  assert.equal(out.status, 1, out.stdout + out.stderr);
+  assert.match(out.stdout, /under the last recorded baseline 10/);
+});
+
+test('recall gate and kit.mjs (S18-2): run through a junction or link, they still run and fail as they should', () => {
+  const r = gateRepo();
+  r.record('gate: a median 7 baseline 7 brief v1 keys v4 control 0');
+  const link = path.join(r.dir, 'linked');
+  fs.symlinkSync(path.join(r.dir, 'scripts'), link, 'junction');
+  const out = r.gate(path.join(link, 'recall.mjs'));
+  assert.equal(out.status, 1, 'through a link: ' + out.stdout + out.stderr);
+  const kitLink = fs.mkdtempSync(path.join(os.tmpdir(), 'kitlink-'));
+  fs.symlinkSync(path.resolve('scripts'), path.join(kitLink, 's'), 'junction');
+  const usage = spawnSync('node', [path.join(kitLink, 's', 'kit.mjs'), 'no-such-command'], { encoding: 'utf8' });
+  assert.notEqual(usage.stdout + usage.stderr, '', 'kit.mjs through a link prints, so it ran');
+});
+
+test('recall gate (S18-7): a gate line on keys v4 or later names its control, and the control is under the baseline', async () => {
+  const { checkGate } = await recallTools();
+  const v4 = (line) => checkGate({ changed: ['rules/core.md'], added: [line], brief: 1, keys: 4, bar: 9 });
+  assert.match(v4('gate: a median 10 baseline 9 brief v1 keys v4').detail, /names the control/);
+  assert.equal(v4('gate: a median 10 baseline 9 brief v1 keys v4 control 2').ok, true);
+  const high = v4('gate: a median 10 baseline 9 brief v1 keys v4 control 9');
+  assert.equal(high.ok, false);
+  assert.match(high.detail, /control 9 is not under the baseline 9/);
+  // Older keys never named it, so their lines read as before.
+  assert.equal(checkGate(gateFacts()).ok, true);
+});
+
+test('recall gate (S18-6): the owner may correct an old-ruler line in a PR that changes no rule text', async () => {
+  const { checkGate } = await recallTools();
+  const old = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v1 owner-accepted';
+  const fix = checkGate({ changed: ['docs/evals/results/recall-scores.md'], added: [old], removed: [old.replace('median 8', 'median 9')], brief: 1, keys: 2 });
+  assert.equal(fix.ok, true, fix.detail);
+  assert.match(fix.detail, /correction/);
+  // Unmarked, or beside a rule change, it still fails.
+  assert.equal(checkGate({ changed: ['docs/evals/results/recall-scores.md'], added: [old.replace(' owner-accepted', '')], brief: 1, keys: 2 }).ok, false);
+  assert.equal(checkGate({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [old], brief: 1, keys: 2 }).ok, false);
+});
+
+test('recall (I20): a released user layer edited by hand is not read as released', async () => {
+  const { checkUserLayer } = await recallTools();
+  const { kit, home } = makeKit();
+  fs.mkdirSync(home, { recursive: true });
+  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  checkUserLayer(home, os.tmpdir());
+  fs.appendFileSync(path.join(home, 'skills', 'human-factor', 'SKILL.md'), 'a hand edit\n');
+  assert.throws(() => checkUserLayer(home, os.tmpdir()), /changed by hand.*skills\/human-factor\/SKILL\.md/);
+});
+
+test('recall (I27): removeProbe deletes only a probe under this home\'s kit-probes, and only a plain memory slug', async () => {
+  const { removeProbe, probePath } = await recallTools();
+  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  const home = path.join(osHome, '.claude');
+  fs.mkdirSync(path.join(home, 'projects', 'keep'), { recursive: true });
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'elsewhere-'));
+  const outside = probePath(elsewhere);
+  fs.mkdirSync(outside, { recursive: true });
+  assert.throws(() => removeProbe({ dir: outside, home, slug: 'x', osHome }), /not a probe folder/);
+  assert.ok(fs.existsSync(outside), 'a probe-shaped folder under another home stays');
+  const dir = probePath(osHome);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const slug of ['..', '', 'a/b', 'a\\b', '.']) assert.throws(() => removeProbe({ dir, home, slug, osHome }), /memory slug/, JSON.stringify(slug));
+  assert.ok(fs.existsSync(home), 'the Claude folder stays');
+  // A probe path that leads elsewhere through a link is not a probe.
+  fs.mkdirSync(path.join(elsewhere, 'pbbbbbb'), { recursive: true });
+  fs.symlinkSync(elsewhere, path.join(osHome, 'kit-probes', 'aaaaaa'), 'junction');
+  assert.throws(() => removeProbe({ dir: path.join(osHome, 'kit-probes', 'aaaaaa', 'pbbbbbb'), home, slug: 'x', osHome }), /not a probe folder/);
+  removeProbe({ dir, home, slug: 'keep-not', osHome });
+  assert.equal(fs.existsSync(path.dirname(dir)), false);
+  assert.ok(fs.existsSync(path.join(home, 'projects', 'keep')));
 });
