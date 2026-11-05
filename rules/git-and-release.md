@@ -73,7 +73,7 @@ Why: a release is a public claim, drafted from format and code and published onl
 
 After every merge, before the release, verify the live system, each step shown: (1) **the deploy landed** - the live build identifier postdates the merge; (2) **the critical path answers** - one real request returns the expected status and version; (3) **a mismatch is an outage** - tell the owner at once, run the runbook. Retire it when CI does it. Why: hand-deployed parts drift from merge-deployed parts silently. <!-- PROJECT ADAPTER A18 -->
 
-Once it passes and any planned release is out, the closeout starts on its own (rule:compact-ritual).
+Once it passes, any planned release is out and the thread has no other work open, the closeout starts on its own (rule:compact-ritual).
 
 **Deploy config:** a hand-deployed part (a data index, a side service) needs its own upload and redeploy on each version change - write the runbook. A dashboard-only change to a config-file setting drifts back on the next deploy: durable changes go in the config file, secrets in the platform's secret store. Before a hand deploy, diff local config against committed, ids masked. Never roll back past a local-database schema raise (older code cannot open it); fix forward.
 

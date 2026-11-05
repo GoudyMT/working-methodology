@@ -50,7 +50,7 @@ const SEV = /\b(critical|high|medium|low)\b(?!-)/i;
 const severity = (s) => ((s.match(SEV) || [])[1] || '').toLowerCase();
 // A high or critical is never carried to the next run (rule:finding-pipeline): it is fixed before the PR, or the
 // owner accepts it. DEFERRED is for medium and below.
-const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bACCEPTED owner \S/.test(l);
+const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bACCEPTED owner [^\s|]/.test(l);
 const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit> or ACCEPTED owner <why>; DEFERRED is for medium and below`);
 let sevCol = -1;
 lines.forEach((l, i) => {

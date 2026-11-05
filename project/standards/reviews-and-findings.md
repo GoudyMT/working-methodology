@@ -14,12 +14,12 @@
 - **G5 Blast radius:** files, shipped vs new, public interfaces, other callers, the revert story, in the report; the owner's go only for shipped code outside the branch's scope or a public interface.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A re-sweep finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
 1. **A standalone fix PR only for harm:** data loss, a stuck user, a silent outage.
-2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the extremely minor (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings at medium or below go to the handoff's carry-overs for the next focus build (a separate PR only for item 1's harm).
+2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the extremely minor (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings go to the handoff's carry-overs for the next focus build (a separate PR only for item 1's harm).
 3. **Then features;** roadmap fixes ride a feature PR that touches their code; folded-in findings go in the before / after table.
 4. **A run's order:** the feature comes FIRST (even when a handoff lists fixes ahead): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs are built on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
 
@@ -42,7 +42,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 | Tier | When | Agents | Must cover | Report |
 |---|---|---|---|---|
 | **Feature** | a new feature, an expansion, a sub-project, a new surface or behaviour | a Swarm Contract (rule:swarm-contract): the Pre-PR Deep Sweep's roles below, more by risk region | all six dimensions; every high / critical re-checked; the alignment verdict | the full report |
-| **Fix** | a fix or change to existing behaviour in a known area | 2-3: one on the fix (its root, and whether it holds), one on its blast radius (callers, the code it was modelled on), plus Test Value when tests change | each dimension PASS, its findings, or "not touched" and why; the alignment verdict | a short report |
+| **Fix** | a fix or change to existing behaviour in a known area (one component, one flow) | 2-3: one on the fix (its root, and whether it holds), one on its blast radius (callers, the code it was modelled on), plus Test Value when tests change | each dimension PASS, its findings, or "not touched" and why; the alignment verdict | a short report |
 | **Triage** | a chore, docs, config, a bump with no new package, a one-line change, a batch of small recorded fixes | 1, fast and read-only, with a call cap in its brief | the diff's secrets and personal-data check; each dimension "not touched" or its finding | a few lines, in the sweep folder or the PR body's gates |
 | **First push** | the first push to a new remote, once | the deep sweep's roles plus a history role: every commit, not just the diff | all six dimensions; rule:first-push-gate passes; the owner reviews what is tracked | the full report |
 | **Launch gate** | before any public major version (trigger 3) | per surface, under a Swarm Contract | every surface, all six dimensions, the alignment verdict | the full report |

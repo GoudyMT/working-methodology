@@ -1057,26 +1057,35 @@ test('a first action still stops for a lock, an outward act or an open decision,
   const rule = (f) => read(path.resolve(f));
   assert.match(rule('rules/core.md'), /\*\*Still stop and ask:\*\*[^\n]*a plan lock or batch approval/);
   const tracking = rule('rules/tracking-and-handoff.md');
-  assert.match(tracking, /9\. \*\*State working mode \+ first action\.\*\*[^\n]*unless it hits a stop in rule:delegated-decisions or rests on a decision still open with the owner/);
+  assert.match(tracking, /9\. \*\*State working mode \+ first action\.\*\*[^\n]*a list the records show the owner confirmed; a relayed note only points to it[^\n]*What hits a stop in rule:delegated-decisions or waits on a decision still open with the owner is asked about; the rest starts\./);
   for (const f of ['rules/tracking-and-handoff.md', 'user/skills/closeout/examples/handoff-a.md', 'user/skills/closeout/examples/handoff-b.md']) {
-    assert.match(rule(f), /start it unless it hits a stop in rule:delegated-decisions; ask the owner only if this handoff and a confirmed work order name none\. This handoff is a CACHE\./, f);
+    assert.match(rule(f), /start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts\. Ask the owner only if this handoff and a confirmed work order name none\. This handoff is a CACHE\./, f);
   }
-  assert.match(tracking, /starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and no other work is open/);
-  assert.match(rule('rules/git-and-release.md'), /the closeout starts on its own \(rule:compact-ritual\)/);
-  assert.doesNotMatch(rule('project/CLAUDE.md'), /session end \(the owner declares\)/);
-  assert.doesNotMatch(rule('project/_Active Plan.md'), /the owner picks the feature FIRST/);
+  assert.match(tracking, /starts on its own once the thread's PR is merged, its Post-Merge Check is done, its release, if one is planned, is out, and this thread has no other work open/);
+  assert.match(rule('rules/git-and-release.md'), /the thread has no other work open, the closeout starts on its own \(rule:compact-ritual\)/);
+  for (const f of ['rules/tracking-and-handoff.md', 'project/CLAUDE.md']) assert.match(rule(f), /session end \(the owner declares it, or the closeout starts on its own: rule:compact-ritual\)/, f);
+  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST \(the confirmed work order's next, else the owner's pick\)/);
+  const closeout = rule('user/skills/closeout/SKILL.md');
+  assert.match(closeout, /when its PR is merged and any planned release is out/);
+  assert.match(closeout, /starts on its own only as rule:compact-ritual says/);
 });
 
 test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
   const rule = (f) => read(path.resolve(f));
   const findings = rule('rules/reviews-and-findings.md');
-  assert.match(findings, /A re-sweep finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it\./);
-  assert.match(findings, /post-PR findings at medium or below go to the handoff's carry-overs/);
+  assert.match(findings, /A finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it\./);
+  assert.match(findings, /Leftovers and post-PR findings go to the handoff's carry-overs/);
+  assert.match(findings, /in a known area \(one component, one flow\)/);
   assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
-  for (const f of ['user/kit-hooks/sweep-guard.cjs', 'user/skills/pre-pr-sweep/SKILL.md', 'user/skills/pre-pr-sweep/approve.mjs']) {
-    assert.match(rule(f), /a high or critical is fixed or the owner accepts it/, f);
-  }
-  assert.doesNotMatch(rule('project/_Templates/_PR Body Template.md'), /deferred\s+or accepted/);
+  // Comments off: what counts is the text the lead is shown.
+  const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
+  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left at medium or below goes to the handoff\\'s carry-overs for the next feature build, and a high or critical is fixed or the owner accepts it/);
+  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it/);
+  const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
+  assert.match(approve, /What the re-sweep left at medium or below goes to \$\{CARRY_HOME\}; a high or critical is fixed or the owner accepts it/);
+  assert.match(approve, /the findings left unfixed after it, from either pass, each medium or below/);
+  assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
+  assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
 });
 
 // A high or critical is fixed before the PR or accepted by the owner, never carried to the next run
@@ -1099,6 +1108,8 @@ test('the sweep audit refuses a high or critical finding carried as DEFERRED', (
   }
   const lead = runAudit('pre-pr-sweep', report('| 1 | high | token in log | ACCEPTED too costly to fix today, the lead decided |'));
   assert.equal(lead.status, 1, 'only the owner accepts a high');
+  const bare = runAudit('pre-pr-sweep', report('| 1 | high | token in log | ACCEPTED owner |'));
+  assert.equal(bare.status, 1, 'an acceptance gives its reason');
 });
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
@@ -2974,7 +2985,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
   const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*Carry-overs from the last PR/);
+  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*medium or below only[\s\S]*Carry-overs from the last PR/);
   assert.equal(approvalLog(first.dir).pop().carried, 2);
   const next = approveIn(first.dir, [first.f]);
   assert.equal(next.status, 0, next.stdout);

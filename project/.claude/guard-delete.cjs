@@ -74,7 +74,7 @@ const VALUE_OPTIONS = new Set(['-erroraction', '-ea', '-include', '-exclude', '-
 const GIT_VALUE_OPTIONS = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--attr-source', '--shallow-file']);
 // Text the tokenizer may split where a shell does not, so a word read from it proves nothing: a comma, a variable, a
 // backtick, a control character, an escaped space, quote or break, an empty word, a character it folds to ASCII.
-const UNCLEAR_TEXT = /[,`$\x00-\x08\x0b-\x1f\u0080-￿]|\\[\s";&|()<>]|""|''/;
+const UNCLEAR_TEXT = /[,`$\x00-\x08\x0b-\x1f\u0080-\uffff]|\\[\s";&|()<>]|""|''/;
 // A clean's own words: from the word to the next break a shell would obey, so what follows it cannot make it ask.
 const CLEAN_SPAN = /\bclean\b(?:\\.|[^;|&\n])*/g;
 // A comma or escape in git's own options makes the tokenizer lose the subcommand: git -c x.y=a,b clean.
