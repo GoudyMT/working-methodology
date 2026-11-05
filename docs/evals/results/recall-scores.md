@@ -271,6 +271,6 @@ The first entry on keys v3 (13 questions, pass bar median 12) and brief v2, and 
 - **Control.** The first control stopped at question 12 with "Reached max turns (8)", and the harness refused to save it. The score is from a rerun at the same limits (v3-control-b). The control also pulled the real status board into its first answer, so it was not a clean no-rules run; it scored 0 regardless.
 - **What sessions could see.** The global CLAUDE.md loads as a parent folder's file on every side. Three runs recognised a probe folder at Q4. All three candidates held the closeout at Q13 because the folder has no PR record, which is a fact of the test, not a contradiction of the rule. Three runs a side and one scorer per pass cannot see a one-point change.
 
-Owner-accepted by Max 2026-11-05 on the moved ruler; Q3 read as the blind scorers read it (the answers state the rule; the key is broader), key 3 and its rule to be aligned in the next build.
+Accepted by the owner 2026-11-05 on the moved ruler; Q3 read as the blind scorers read it (the answers state the rule; the key is broader), key 3 and its rule to be aligned in the next build.
 
 gate: kit-1.20.0 median 12 baseline 9 brief v2 keys v3 owner-accepted
