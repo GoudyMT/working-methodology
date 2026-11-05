@@ -4457,7 +4457,7 @@ test('recall run header says what the run read: keys, both kit versions, and whe
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
   install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'abc1234' } });
   let facts = installFacts({ projectDir: proj, home });
-  assert.deepEqual(facts, { project: '1.0.0 (unreleased abc1234)', user: '1.0.0', userRelease: true, approve: false });
+  assert.deepEqual(facts, { project: '1.0.0 (unreleased abc1234)', user: '1.0.0 (v1.0.0)', userRelease: true, approve: false });
   fs.mkdirSync(path.join(home, 'skills/pre-pr-sweep'), { recursive: true });
   fs.writeFileSync(path.join(home, 'skills/pre-pr-sweep/approve.mjs'), '');
   facts = installFacts({ projectDir: proj, home });
@@ -4466,11 +4466,13 @@ test('recall run header says what the run read: keys, both kit versions, and whe
   assert.match(head, /^# Recall run: cand-1$/m);
   assert.match(head, /^Keys: v2$/m);
   assert.match(head, /^Project kit: 1\.0\.0 \(unreleased abc1234\)$/m);
-  assert.match(head, /^User kit: 1\.0\.0$/m);
+  assert.match(head, /^User kit: 1\.0\.0 \(v1\.0\.0\)$/m);
   assert.match(head, /^approve\.mjs at the user path: yes$/m);
   assert.match(runHeader({ label: 'x', projectDir: proj, keys: 2, facts: { ...facts, approve: false }, when: 'w' }).join('\n'), /^approve\.mjs at the user path: no$/m);
   install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
   assert.equal(installFacts({ projectDir: proj, home }).project, '1.0.0');
+  install({ kit, home, target: 'user', release: { release: false, describe: 'abc1234' } });
+  assert.equal(installFacts({ projectDir: proj, home }).user, '1.0.0 (unreleased abc1234)');
   // A control has no kit in its project, and that is a fact to record, not a fault.
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'control-'));
   assert.equal(installFacts({ projectDir: bare, home }).project, 'none');
@@ -4495,6 +4497,27 @@ test('a recall run asks the current keys and its header names them', async () =>
   refused(text.replace(rows, '').replace('Pass: median 12 of 13.', 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
   refused(text.replace('| 13 | My PR', '| 12 | My PR'), /numbered 1 to 13/);
   refused(text.replace('Pass: median 12 of 13.', ''), /no "Pass: median <n> of <m>\." line/);
+});
+
+test('an unreleased user layer may run only from a throwaway folder under kit-probes', async () => {
+  const { checkUserLayer } = await recallTools();
+  const { kit } = makeKit();
+  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  const layer = (home, release) => { fs.mkdirSync(home, { recursive: true }); install({ kit, home, target: 'user', release }); return home; };
+  const unreleased = { release: false, describe: 'abc1234' };
+  const refused = (home) => assert.throws(() => checkUserLayer(home, osHome), /not a released kit install/, home);
+  checkUserLayer(layer(path.join(osHome, 'kit-probes', 'cfg-a'), unreleased), osHome);
+  checkUserLayer(layer(path.join(osHome, '.claude'), { release: true, describe: 'v1.0.0' }), osHome);
+  refused(layer(path.join(osHome, '.claude'), unreleased));
+  refused(layer(path.join(osHome, 'kit-probes'), unreleased));
+  refused(layer(path.join(osHome, 'kit-probes-x', 'cfg'), unreleased));
+  refused(path.join(osHome, 'kit-probes', 'empty'));
+  // A link inside kit-probes is read as where it leads.
+  const link = path.join(osHome, 'kit-probes', 'cfg-link');
+  fs.symlinkSync(path.join(osHome, '.claude'), link, 'junction');
+  refused(link);
+  // The default folder is held the same way when no home is passed.
+  assert.throws(() => checkUserLayer(layer(fs.mkdtempSync(path.join(os.tmpdir(), 'plain-')), unreleased)), /not a released kit install/);
 });
 
 test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {

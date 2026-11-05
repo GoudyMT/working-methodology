@@ -13,7 +13,8 @@
 // docs/evals/recall-scorer-brief.md.
 //
 // A session can still read the real Claude folder, and an answer moves with what it finds there (Q7 and approve.mjs),
-// so each run records what was installed, and a run on anything but a released user layer is refused.
+// so each run records what was installed, and a run on anything but a released user layer is refused, unless the
+// Claude folder is a throwaway under kit-probes: a build's new skills can then be measured without touching ~/.claude.
 //
 // CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
 // last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
@@ -98,7 +99,7 @@ export function installFacts({ projectDir, home }) {
   const user = readJson(path.join(home, 'kit-install.json'));
   return {
     project: !stamp ? 'none' : stamp.release === false ? `${stamp.version} (unreleased ${stamp.describe})` : stamp.version,
-    user: user ? user.version : 'none',
+    user: !user ? 'none' : user.release === false ? `${user.version} (unreleased ${user.describe})` : `${user.version} (${user.describe})`,
     userRelease: !!user && user.release === true,
     approve: fs.existsSync(path.join(home, 'skills', 'pre-pr-sweep', 'approve.mjs')),
   };
@@ -124,10 +125,17 @@ export function checkHome(env) {
   if (env.KIT_CLAUDE_HOME && env.KIT_CLAUDE_HOME !== env.CLAUDE_CONFIG_DIR) throw new Error('KIT_CLAUDE_HOME is set, but sessions read CLAUDE_CONFIG_DIR: set both to one folder, or neither');
 }
 
-/** Refuses a Claude folder that is not a released kit install, before any folder or session exists. */
-export function checkUserLayer(home) {
+/** Whether a Claude folder sits strictly inside kit-probes under the home folder, links followed. */
+function isThrowaway(home, osHome) {
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const inside = path.relative(real(path.join(osHome, 'kit-probes')), real(home));
+  return Boolean(inside) && !inside.startsWith('..') && !path.isAbsolute(inside);
+}
+
+/** Refuses a Claude folder that is not a released kit install or a throwaway one, before any folder or session exists. */
+export function checkUserLayer(home, osHome = os.homedir()) {
   const user = readJson(path.join(home, 'kit-install.json'));
-  if (user?.release !== true) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
+  if (user?.release !== true && !(user && isThrowaway(home, osHome))) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
 }
 
 /**
@@ -228,8 +236,8 @@ function gate([base, head]) {
 }
 
 /** What a run asks and records, or a refusal: all of it before any session starts. */
-export function prepare({ projectDir, label, home, text, when, cli }) {
-  checkUserLayer(home);
+export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
+  checkUserLayer(home, osHome);
   const facts = installFacts({ projectDir, home });
   const keys = currentVersion(text);
   const qs = questions(text, keys);
@@ -268,14 +276,14 @@ export function askAll({ qs, projectDir, run }) {
  *     the path of the saved run
  */
 export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools }) {
-  checkUserLayer(home);
+  checkUserLayer(home, osHome);
   checkHome(env);
   const kit = path.resolve(kitDir || KIT);
   const projectDir = probePath(osHome);
   try {
     setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !kitTools.releaseState(kit).problems.length, run });
     const cli = (run('claude', ['--version'], {}).stdout || 'unknown').trim();
-    const { qs, lines } = prepare({ projectDir, label, home, text, when, cli });
+    const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli });
     lines.push(...askAll({ qs, projectDir, run }));
     fs.mkdirSync(outDir, { recursive: true });
     const out = path.join(outDir, `${label}.md`);
