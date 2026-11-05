@@ -1,6 +1,6 @@
 ---
 name: closeout
-description: Run the pre-compact closeout - capture corrections, run the pre-compact scan, batch the tracking files, verify git, and write the continuation handoff. Use when the owner says "begin pre-compact", when its PR is merged and any planned release is out, before a compact or a session end, or when a handoff for the next session is needed. Serves rule:pre-compact-scan.
+description: Run the pre-compact closeout - capture corrections, run the pre-compact scan, batch the tracking files, verify git, and write the continuation handoff. Use when the owner says "begin pre-compact", when the compact ritual starts it on its own, before a compact or a session end, or when a handoff for the next session is needed. Serves rule:pre-compact-scan.
 ---
 
 # Closeout

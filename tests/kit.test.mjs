@@ -1061,20 +1061,22 @@ test('a first action still stops for a lock, an outward act or an open decision,
   for (const f of ['rules/tracking-and-handoff.md', 'user/skills/closeout/examples/handoff-a.md', 'user/skills/closeout/examples/handoff-b.md']) {
     assert.match(rule(f), /start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts\. Ask the owner only if this handoff and a confirmed work order name none\. This handoff is a CACHE\./, f);
   }
-  assert.match(tracking, /starts on its own once the thread's PR is merged, its Post-Merge Check is done, its release, if one is planned, is out, and this thread has no other work open/);
+  assert.match(tracking, /starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open/);
   assert.match(rule('rules/git-and-release.md'), /the thread has no other work open, the closeout starts on its own \(rule:compact-ritual\)/);
   for (const f of ['rules/tracking-and-handoff.md', 'project/CLAUDE.md']) assert.match(rule(f), /session end \(the owner declares it, or the closeout starts on its own: rule:compact-ritual\)/, f);
   assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST \(the confirmed work order's next, else the owner's pick\)/);
   const closeout = rule('user/skills/closeout/SKILL.md');
-  assert.match(closeout, /when its PR is merged and any planned release is out/);
+  // The trigger names the rule, not two of its four conditions (review D3, 1.21.0).
+  assert.match(closeout, /when the compact ritual starts it on its own/);
+  assert.doesNotMatch(closeout, /when its PR is merged and any planned release is out/);
   assert.match(closeout, /starts on its own only as rule:compact-ritual says/);
 });
 
 test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
   const rule = (f) => read(path.resolve(f));
   const findings = rule('rules/reviews-and-findings.md');
-  assert.match(findings, /A finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it\./);
-  assert.match(findings, /Leftovers and post-PR findings go to the handoff's carry-overs/);
+  assert.match(findings, /A finding carries to the next run only at medium or below: a high or critical is fixed before the PR \(found after it: on the open PR\), or the owner accepts it\./);
+  assert.match(findings, /Leftovers and post-PR findings at medium or below go to the handoff's carry-overs/);
   assert.match(findings, /in a known area \(one component, one flow\)/);
   assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
   // Comments off: what counts is the text the lead is shown.
@@ -1108,6 +1110,8 @@ test('the sweep audit refuses a high or critical finding carried as DEFERRED', (
   }
   const lead = runAudit('pre-pr-sweep', report('| 1 | high | token in log | ACCEPTED too costly to fix today, the lead decided |'));
   assert.equal(lead.status, 1, 'only the owner accepts a high');
+  // Review D4 (1.21.0): a one-word reason is no reason.
+  for (const why of ['.', 'x', 'took it']) assert.equal(runAudit('pre-pr-sweep', report(`| 1 | high | token in log | ACCEPTED owner ${why} |`)).status, 1, why);
   const bare = runAudit('pre-pr-sweep', report('| 1 | high | token in log | ACCEPTED owner |'));
   assert.equal(bare.status, 1, 'an acceptance gives its reason');
 });

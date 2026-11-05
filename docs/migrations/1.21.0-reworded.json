@@ -27,6 +27,18 @@
     {
       "before": "| A27 | Standing grant (`.kit/autonomy.json`): the outward acts that run without a yes per act, and the conditions each must pass; none by default | Standing Grants | `none` |",
       "after": "| A27 | Standing grant: merge through the merge gate, granted by one allow rule in the owner's own settings; none by default | Standing Grants | `none` |"
+    },
+    {
+      "before": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it.",
+      "after": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it."
+    },
+    {
+      "before": "2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the extremely minor (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings go to the handoff's carry-overs for the next focus build (a separate PR only for item 1's harm).",
+      "after": "2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the trivial (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings at medium or below go to the handoff's carry-overs for the next focus build."
+    },
+    {
+      "before": "**Keyword `begin pre-compact`** (standing) runs the Closeout; it also starts on its own once the thread's PR is merged, its Post-Merge Check is done, its release, if one is planned, is out, and this thread has no other work open: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.",
+      "after": "**Keyword `begin pre-compact`** (standing) runs the Closeout; it also starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true."
     }
   ]
 }
