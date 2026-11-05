@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
@@ -5515,4 +5515,25 @@ test('an update keeps the attribution script while an edited audit still needs i
   const real = JSON.parse(read(path.resolve('kit.config.json'))).retired;
   assert.deepEqual(real.project['.claude/attribution.mjs'], ['.claude/pr-body-audit.mjs', '.claude/pr-body-audit-lean.mjs']);
   assert.deepEqual(real.user['skills/plan-feature/references/explore-and-options.md'], ['skills/brainstorm/references/question-craft.md', 'skills/plan-feature/SKILL.md']);
+});
+
+// M21: the kit source installs no kit, so before 1.21.0 nothing checked its commit messages until CI did, and the fix
+// needed a history rewrite. Build turns its own hook on once per clone.
+test('build turns on the kit source commit-msg hook, which refuses a bad message, and leaves an owner hooks path alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'srchooks-'));
+  const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+  g('init', '-q'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
+  fs.mkdirSync(path.join(dir, '.githooks')); fs.mkdirSync(path.join(dir, 'project/.claude'), { recursive: true });
+  fs.copyFileSync(path.resolve('.githooks/commit-msg'), path.join(dir, '.githooks/commit-msg'));
+  fs.chmodSync(path.join(dir, '.githooks/commit-msg'), 0o755);
+  fs.copyFileSync(path.resolve('project/.claude/name-check.mjs'), path.join(dir, 'project/.claude/name-check.mjs'));
+  assert.equal(sourceHooks(dir), 'set');
+  assert.equal(sourceHooks(dir), 'present');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a');
+  g('add', 'a.txt');
+  assert.notEqual(g('commit', '-qm', 'Rules: a squash-style subject').status, 0, 'a bad subject is refused');
+  assert.equal(g('commit', '-qm', 'feat: a good subject').status, 0);
+  g('config', 'core.hooksPath', 'elsewhere');
+  assert.match(sourceHooks(dir), /left alone/);
+  assert.equal(g('config', 'core.hooksPath').stdout.trim(), 'elsewhere');
 });

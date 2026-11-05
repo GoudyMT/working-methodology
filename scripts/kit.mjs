@@ -1049,6 +1049,21 @@ export function parseModule(text) {
  * Returns:
  *     Map of kit-relative output path -> text
  */
+/**
+ * Turn on the kit source's own commit-message hook, once per clone: the kit source installs no kit, so nothing else
+ * checks its commit messages before CI does. A hooks path the owner set is left alone.
+ *
+ * Returns:
+ *     'set', 'present', or why it was left alone
+ */
+export function sourceHooks(kit) {
+  if (!fs.existsSync(path.join(kit, '.githooks', 'commit-msg'))) return 'no .githooks/commit-msg';
+  const now = spawnSync('git', ['-C', kit, 'config', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim();
+  if (now === '.githooks') return 'present';
+  if (now) return `core.hooksPath is ${now}: left alone`;
+  return spawnSync('git', ['-C', kit, 'config', 'core.hooksPath', '.githooks']).status === 0 ? 'set' : 'not a git repository';
+}
+
 export function build({ kit }) {
   const dir = path.join(kit, 'rules');
   const mods = fs.readdirSync(dir).filter((n) => n.endsWith('.md')).sort()
@@ -1336,7 +1351,7 @@ function main(argv) {
       fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
       fs.writeFileSync(path.join(kit, rel), text);
     }
-    console.log(`build: wrote ${out.size} file(s) from rules/`);
+    console.log(`build: wrote ${out.size} file(s) from rules/; commit-msg hook: ${sourceHooks(kit)}`);
   } else if (cmd === 'status') {
     const r = status({ kit, home, projectDir: target || process.cwd() });
     console.log(r.text);
