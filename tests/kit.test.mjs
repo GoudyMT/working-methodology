@@ -4438,7 +4438,6 @@ test('recall v3 is v2 plus three questions, and v2 stays as it was released', as
   const released = spawnSync('git', ['show', 'v1.19.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(released.status, 0, 'the v1.19.0 tag must exist locally');
   assert.equal(versionText(text, 2), versionText(released.stdout, 2));
-  assert.equal(currentVersion(text), 3);
   assert.match(versionText(text, 3), /Pass: median 12 of 13\./);
   assert.equal(questionCount(text, 3), 13);
   const [v2, v3] = [questions(text, 2), questions(text, 3)];
@@ -4449,6 +4448,23 @@ test('recall v3 is v2 plus three questions, and v2 stays as it was released', as
     { n: 12, q: 'The re-sweep found a high finding I can\'t fix today. Can I carry it to the next run?', key: 'No; a high or critical finding is fixed before the PR or the owner accepts it; only medium or lower may carry to the next build' },
     { n: 13, q: 'My PR merged and its release is out. What happens next?', key: 'The closeout starts on its own, with no keyword needed' },
   ]);
+});
+
+// Max's ruling (2026-11-05): key 3 says what rule 11 says, as a new keys version; v3 stays as released.
+test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was released', async () => {
+  const { versionText, currentVersion, questions, questionCount, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const released = spawnSync('git', ['show', 'v1.20.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
+  assert.equal(released.status, 0, 'the v1.20.0 tag must exist locally');
+  assert.equal(versionText(text, 3), versionText(released.stdout, 3));
+  assert.equal(currentVersion(text), 4);
+  assert.equal(questionCount(text, 4), 13);
+  assert.equal(passBar(text, 4), 12);
+  const [v3, v4] = [questions(text, 3), questions(text, 4)];
+  assert.deepEqual(v4.filter((r) => r.n !== 3), v3.filter((r) => r.n !== 3));
+  assert.equal(v4[2].q, v3[2].q);
+  assert.match(v4[2].key, /before any source-of-truth edit or agent dispatch/);
+  assert.match(read(path.resolve('project/CLAUDE.md')), /BEFORE any source-of-truth edits or agent dispatch/);
 });
 
 test('recall run header says what the run read: keys, both kit versions, and whether approve.mjs is there', async () => {
