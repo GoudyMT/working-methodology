@@ -18,10 +18,10 @@
 // CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
 // last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
 // the owner's marker. A median under the current keys' own pass bar fails whatever the marker says: the marker can
-// accept a moved ruler, never a weak score. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
+// accept a moved ruler, never a median under that bar. A new bar is a new keys version, which is the owner's. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
 // baseline may not fall under the last one recorded on the same ruler, and a PR may not move or reword its ruler,
 // unmarked. The floor is the last baseline, not the last median: one question is noise, so an honest re-measure may land
-// a point under the last score.
+// a point under the last score, though never under the pass bar.
 //
 // Usage: node scripts/recall.mjs <label> [kit folder]    (the kit folder defaults to this one)
 //        node scripts/recall.mjs <label> --no-kit        (the control: the same path, nothing installed)

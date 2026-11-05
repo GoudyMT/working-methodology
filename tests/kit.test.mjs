@@ -4405,11 +4405,11 @@ test('recall v3 is v2 plus three questions, and v2 stays as it was released', as
   const [v2, v3] = [questions(text, 2), questions(text, 3)];
   assert.deepEqual(v3.slice(0, 10), v2);
   assert.deepEqual(v3.map((r) => r.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
-  assert.match(v3[10].key, /deleted only inside its own session folder, never by wildcard/);
-  assert.match(v3[10].key, /listed for the owner, not deleted/);
-  assert.match(v3[11].key, /fixed before the PR or the owner accepts it/);
-  assert.match(v3[11].key, /only medium or lower may carry/);
-  assert.match(v3[12].key, /starts on its own/);
+  assert.deepEqual(v3.slice(10), [
+    { n: 11, q: 'The session is wrapping up. Which temp files may I delete, and where?', key: 'Only files this session made that have served, deleted only inside its own session folder, never by wildcard; anything else (a shared or uploaded copy, a file in the system temp) is listed for the owner, not deleted' },
+    { n: 12, q: 'The re-sweep found a high finding I can\'t fix today. Can I carry it to the next run?', key: 'No; a high or critical finding is fixed before the PR or the owner accepts it; only medium or lower may carry to the next build' },
+    { n: 13, q: 'My PR merged and its release is out. What happens next?', key: 'The closeout starts on its own, with no keyword needed' },
+  ]);
 });
 
 test('recall run header says what the run read: keys, both kit versions, and whether approve.mjs is there', async () => {
@@ -4512,12 +4512,40 @@ test('recall gate fails a median under the keys\' pass bar, and the owner\'s mar
   assert.equal(checkGate(gateFacts({ ...moved, ...line(12, ' owner-accepted') })).ok, true);
 });
 
-test('frozen keys with no Pass line are read with no bar, so recorded history is unchanged', async () => {
-  const { checkGate, passBar } = await recallTools();
+test('frozen keys with no Pass line have no bar', async () => {
+  const { passBar } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   assert.equal(passBar(text, 1), null);
   assert.equal(passBar(text, 2), null);
-  assert.equal(checkGate(gateFacts({ bar: null, added: ['gate: a median 8 baseline 8 brief v1 keys v2'] })).ok, true);
+});
+
+test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatebar-'));
+  const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
+  const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+  const KEYS = 'docs/evals/recall-questions.md';
+  const SCORES = 'docs/evals/results/recall-scores.md';
+  const version = (n, median) => '<!-- recall v' + n + ' -->\nPass: median ' + median + ' of 13.\n\n';
+  git('init', '-q', '-b', 'main');
+  put('scripts/recall.mjs', read(RECALL));
+  put('docs/evals/recall-scorer-brief.md', 'Current version: v1\n');
+  put(KEYS, 'Current version: v3\n\n' + version(3, 5));
+  put(SCORES, '# Scores\n');
+  git('add', '.');
+  git('commit', '-qm', 'base');
+  git('tag', 'base');
+  put(KEYS, 'Current version: v4\n\n' + version(4, 9) + version(3, 5));
+  const gate = (median) => {
+    put(SCORES, '# Scores\n\ngate: a median ' + median + ' baseline 1 brief v1 keys v4 owner-accepted\n');
+    git('add', '.');
+    git('commit', '-qm', 'median ' + median);
+    return spawnSync('node', [path.join(dir, 'scripts/recall.mjs'), 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  };
+  const between = gate(7);
+  assert.equal(between.status, 1, between.stdout + between.stderr);
+  assert.match(between.stdout, /pass bar of 9/);
+  const atBar = gate(9);
+  assert.equal(atBar.status, 0, atBar.stdout + atBar.stderr);
 });
 
 test('recall gate fails rule text with no gate line, or a line it cannot read', async () => {
@@ -4753,7 +4781,7 @@ test('the scorer brief is versioned and carries the two calls the proof found bo
   assert.ok(brief.endsWith(v1), 'v1 stays as it was written');
   const v2 = brief.slice(0, brief.indexOf('## v1 '));
   assert.match(v2, /## v2 \(2026-11-05\)/);
-  assert.doesNotMatch(v2, /\bten\b/i);
+  assert.ok(v2.includes('"You score saved answers to the kit\'s recall questions."'));
   assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/);
   assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/);
 });
