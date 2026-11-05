@@ -17,7 +17,8 @@
 //
 // CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
 // last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
-// the owner's marker. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
+// the owner's marker. A median under the current keys' own pass bar fails whatever the marker says: the marker can
+// accept a moved ruler, never a weak score. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
 // baseline may not fall under the last one recorded on the same ruler, and a PR may not move or reword its ruler,
 // unmarked. The floor is the last baseline, not the last median: one question is noise, so an honest re-measure may land
 // a point under the last score.
@@ -66,11 +67,19 @@ export function questions(text, version) {
     .map((m) => ({ n: Number(m[1]), q: m[2], key: m[3] }));
 }
 
+const passLine = (text, version) => versionText(text, version).match(/\bPass: median (\d+) of (\d+)\./);
+
 /** How many questions a version says it has, from its "Pass: median <n> of <m>." line, so a lost row is still caught. */
 export function questionCount(text, version) {
-  const m = versionText(text, version).match(/\bPass: median \d+ of (\d+)\./);
+  const m = passLine(text, version);
   if (!m) throw new Error(`recall v${version} has no "Pass: median <n> of <m>." line`);
-  return Number(m[1]);
+  return Number(m[2]);
+}
+
+/** The median a version must reach, or null for frozen keys that have no Pass line. */
+export function passBar(text, version) {
+  const m = passLine(text, version);
+  return m ? Number(m[1]) : null;
 }
 
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
@@ -156,14 +165,14 @@ export function runHeader({ label, keys, facts, when, cli }) {
  *
  * Args:
  *     facts: { changed: file paths, added and removed: lines the PR adds to and takes from the scores file,
- *         brief, keys: current versions,
+ *         brief, keys: current versions, bar: the current keys' pass bar, null when they have none,
  *         was: { brief, keys, baseline } on the base, each null when the base has none, and edited when a ruler
  *         file differs from the base under the same version }
  *
  * Returns:
  *     { ok, detail }
  */
-export function checkGate({ changed, added, removed = [], brief, keys, was = {} }) {
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {} }) {
   const lines = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   const dropped = removed.some((l) => /^gate:/i.test(l.trim()));
   if (!lines.length && !dropped && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
@@ -176,6 +185,7 @@ export function checkGate({ changed, added, removed = [], brief, keys, was = {} 
   if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
     return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
   }
+  if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
   const faults = [
     dropped && 'this PR removes a recorded gate line',
@@ -210,6 +220,7 @@ function gate([base, head]) {
     removed: record.filter((l) => l.startsWith('-') && !l.startsWith('---')).map((l) => l.slice(1)),
     brief,
     keys,
+    bar: passBar(now(QUESTIONS_REL), keys),
     was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null, edited },
   });
   console.log(r.detail);

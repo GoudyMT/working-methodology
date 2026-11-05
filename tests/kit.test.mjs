@@ -4494,6 +4494,32 @@ test('recall gate fails a median under the baseline', async () => {
   assert.match(r.detail, /median 7 is under the baseline 8/);
 });
 
+test('recall gate fails a median under the keys\' pass bar, and the owner\'s marker does not pass it', async () => {
+  const { checkGate, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  assert.equal(passBar(text, 3), 12);
+  const line = (median, tail = '') => ({ bar: 12, added: [`gate: a median ${median} baseline 6 brief v1 keys v2${tail}`] });
+  const weak = checkGate(gateFacts(line(11)));
+  assert.equal(weak.ok, false);
+  assert.match(weak.detail, /median 11 is under the pass bar of 12/);
+  assert.equal(checkGate(gateFacts(line(12))).ok, true);
+  const accepted = checkGate(gateFacts(line(11, ' owner-accepted')));
+  assert.equal(accepted.ok, false);
+  assert.match(accepted.detail, /pass bar of 12/);
+  // A moved ruler is the owner's to accept, but only a score at the bar can use that.
+  const moved = { was: { keys: 1 } };
+  assert.equal(checkGate(gateFacts({ ...moved, ...line(11, ' owner-accepted') })).ok, false);
+  assert.equal(checkGate(gateFacts({ ...moved, ...line(12, ' owner-accepted') })).ok, true);
+});
+
+test('frozen keys with no Pass line are read with no bar, so recorded history is unchanged', async () => {
+  const { checkGate, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  assert.equal(passBar(text, 1), null);
+  assert.equal(passBar(text, 2), null);
+  assert.equal(checkGate(gateFacts({ bar: null, added: ['gate: a median 8 baseline 8 brief v1 keys v2'] })).ok, true);
+});
+
 test('recall gate fails rule text with no gate line, or a line it cannot read', async () => {
   const { checkGate } = await recallTools();
   assert.match(checkGate(gateFacts({ added: ['- a note, no gate line'] })).detail, /gate: <label> median <n>/);
@@ -4570,7 +4596,10 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.match(typed.detail, /under the last recorded baseline 9/);
 });
 
-test('CI runs the recall gate on the PR\'s real diff', () => {
+test('CI runs the recall gate on the PR\'s real diff', async () => {
+  const { passBar, currentVersion } = await recallTools();
+  const keysText = read(path.resolve('docs/evals/recall-questions.md'));
+  const bar = passBar(keysText, currentVersion(keysText));
   const step = read(path.resolve('.github/workflows/ci.yml')).split('- name: Rule changes carry a passing recall score')[1].split('- name:')[0];
   assert.match(step, /^\s+run: node scripts\/recall\.mjs gate "\$PR_BASE" "\$PR_HEAD"$/m);
   assert.match(step, /^\s+if: github\.event_name == 'pull_request'$/m);
@@ -4593,13 +4622,13 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
   assert.equal(noScore.status, 1, noScore.stdout + noScore.stderr);
   const keys = read(path.resolve('docs/evals/recall-questions.md')).match(/^Current version: v(\d+)$/m)[1];
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md')).match(/^Current version: v(\d+)$/m)[1];
-  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median 8 baseline 8 brief v${brief} keys v${keys}\n`);
+  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys}\n`);
   git('commit', '-qam', 'scores');
   const scored = gate();
   assert.equal(scored.status, 0, scored.stdout + scored.stderr);
   git('tag', 'base2');
   put('rules/core.md', 'c\n');
-  put('docs/evals/results/recall-scores.md', read(path.join(dir, 'docs/evals/results/recall-scores.md')) + `\ngate: low median 1 baseline 1 brief v${brief} keys v${keys}\n`);
+  put('docs/evals/results/recall-scores.md', read(path.join(dir, 'docs/evals/results/recall-scores.md')) + `\ngate: low median ${bar} baseline 1 brief v${brief} keys v${keys}\n`);
   git('commit', '-qam', 'typed down');
   const typed = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
   assert.equal(typed.status, 1, typed.stdout + typed.stderr);
@@ -4617,9 +4646,19 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
     git('commit', '-qam', name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
-  const second = round('two-baselines', `gate: a median 9 baseline 8 ${now}\ngate: b median 9 baseline 9 ${now}`, `gate: c median 8 baseline 8 ${now}`);
+  const second = round('two-baselines', `gate: a median 9 baseline 8 ${now}\ngate: b median 9 baseline 9 ${now}`, `gate: c median ${bar} baseline 8 ${now}`);
   assert.equal(second.status, 1, second.stdout);
   assert.match(second.stdout, /last recorded baseline 9/);
+  // The real command reads the bar from the current keys; a median under it fails, marker or not.
+  const floor = `gate: a median ${bar} baseline 6 ${now}`;
+  const under = round('under-bar', floor, `gate: weak median ${bar - 1} baseline 6 ${now}`);
+  assert.equal(under.status, 1, under.stdout);
+  assert.match(under.stdout, /under the pass bar/);
+  const marked = round('under-bar-marked', floor, `gate: weak median ${bar - 1} baseline 6 ${now} owner-accepted`);
+  assert.equal(marked.status, 1, marked.stdout);
+  assert.match(marked.stdout, /under the pass bar/);
+  const atBar = round('at-bar', floor, `gate: fine median ${bar} baseline 6 ${now}`);
+  assert.equal(atBar.status, 0, atBar.stdout + atBar.stderr);
   // The base's ruler reaches the check: an older version, then the same version with its text edited.
   const onRuler = (name, body, rel = 'docs/evals/recall-questions.md') => {
     git('checkout', '-q', '-b', name, 'base2');
@@ -4628,7 +4667,7 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
     git('commit', '-qm', 'ruler on the base of ' + name);
     git('tag', name + '-base');
     put('rules/core.md', name + '\n');
-    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median 9 baseline 9 ${now}\n`);
+    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median ${bar} baseline 9 ${now}\n`);
     git('commit', '-qam', name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
@@ -4656,7 +4695,7 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
   assert.match(gone.stdout, /removes a recorded gate line/);
   git('checkout', '-q', '-b', 'hidden-line', 'base2');
   put('.gitattributes', 'docs/evals/results/recall-scores.md -diff\n');
-  put(scores, read(path.join(dir, scores)) + `\ngate: low median 1 baseline 1 ${now}\n`);
+  put(scores, read(path.join(dir, scores)) + `\ngate: low median ${bar} baseline 1 ${now}\n`);
   git('add', '.');
   git('commit', '-qm', 'hide');
   const hidden = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
