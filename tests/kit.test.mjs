@@ -5763,3 +5763,12 @@ test('recall-score blinds runs without a side marker and scores them into a gate
   fs.writeFileSync(path.join(dir, 'short.txt'), lines.slice(1).join('\n'));
   assert.throws(() => score(path.join(dir, 'short.txt'), path.join(out, 'sealed-map.json'), 'kit-x'), /expected \d+ scores/);
 });
+
+// 1.20.0 carry-overs N5 and B8: a closeout that started on its own still asks before a remote branch delete, and the
+// core rules send leftovers to the next build, not the roadmap.
+test('a self-started closeout asks before a remote delete, and leftovers carry to the next build', () => {
+  assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching, a remote delete on the owner's yes even in a closeout that started on its own/);
+  const core = read(path.resolve('rules/core.md'));
+  assert.match(core, /device-only or design items carry to the next build, all recorded/);
+  assert.doesNotMatch(core, /design items go to the roadmap/);
+});
