@@ -77,15 +77,23 @@ const GIT_VALUE_OPTIONS = new Set(['-c', '-C', '--git-dir', '--work-tree', '--na
 const UNCLEAR_TEXT = /[,`$\x00-\x08\x0b-\x1f\u0080-\uffff]|\\[\s";&|()<>]|""|''/;
 // A clean's own words: from the word to the next break a shell would obey, so what follows it cannot make it ask.
 const CLEAN_SPAN = /\bclean\b(?:\\.|[^;|&\n])*/g;
-// A comma or escape in git's own options makes the tokenizer lose the subcommand: git -c x.y=a,b clean.
-const LOST_CLEAN = /\bgit(\.exe)?\s+-[^;|&\n]*[,\\][^;|&\n]*\sclean\b/i;
+// A comma, escape, backtick or caret in git's own options makes the tokenizer lose the subcommand: git -c x.y=a,b clean.
+const LOST_CLEAN = /\bgit(\.exe)?\s+-[^;|&\n]*[,\\`^][^;|&\n]*\sclean\b/i;
 // What an alias may run that deletes, once its quoting is off.
 const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|rm\.exe|worktree)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha/;
 const GIT_CLEAN_TEXT = /\bgit(\.exe)?\s+clean(\s|$|`)/i;
 // robocopy takes / or - (Git Bash needs //), a word of its own or glued to the name; a job file can carry any of
 // these, so it asks unread. A path segment is not a switch.
-const ROBOCOPY_REMOVES = /(?:^|[\s(,=;[@]|robocopy(?:\.exe)?)(?:\/+|-)(?:mir|purge|mov|move|job)(?=$|[\s,);:\]])/i;
-// A single search or a commit message names robocopy without running it.
+const ROBOCOPY_REMOVES = /(?:^|[\s(,=;[@]|robocopy(?:\.exe)?)(?:\/+|-)(?:mir|purge|mov|move|job)(?![\w-])/i;
+// Programs that print their words rather than run them.
+const PRINTERS = new Set(['echo', 'printf', 'write-host', 'write-output']);
+// Programs that run the command after them.
+const WRAPPERS = new Set(['timeout', 'sudo', 'doas', 'env', 'nice', 'nohup', 'command', 'exec', 'time', 'xargs', 'start-process', 'saps', 'stdbuf', 'ionice', 'chrt', 'setsid', 'runas']);
+// Start-Process git with a ( ) or @( ) list: the list is split off where its words cannot be read, so it asks.
+const START_GIT_LIST = /\b(start-process|saps)\b[^;|&\n]*\bgit(\.exe)?\b[^;|&\n]*\(/i;
+// A single search or a commit message names robocopy without running it, unless something in it runs: $( ), a
+// backtick, <( ) or >( ).
+const RUNS_INSIDE = /\$\(|`|[<>]\(/;
 const ONLY_READS = /^\s*(rg|grep|egrep|fgrep|findstr|select-string|sls|git\s+(commit|log|grep|show|diff))\s[^;|&\n]*$/i;
 const FIND_OPTIONS = /^-(H|L|P|O\d*)$/;
 const WILDCARD = /[*?[]/;
@@ -319,7 +327,9 @@ function definesDeleteAlias(words) {
 		const m = /^alias\.[^=]+(=([\s\S]*))?$/i.exec(words[i]);
 		if (!m) continue;
 		const value = m[1] !== undefined ? m[2] : words[i + 1] ?? '';
-		if (value.includes('$') || DELETE_ALIAS.test(value.replace(/[\\`'"]/g, ''))) return true;
+		// A shell alias (!...) can run anything by any path (!/bin/rm, !sh -c, !xargs rm), so it asks.
+		const bare = value.replace(/[\\`'"]/g, '').trimStart();
+		if (value.includes('$') || bare.startsWith('!') || DELETE_ALIAS.test(bare)) return true;
 	}
 	return false;
 }
@@ -494,7 +504,9 @@ function findDelete(text, ctx, state, depth) {
 					}
 				}
 				const command = String(sub ?? '').replace(/[\\`^'"]/g, '');
-				if (depth === 0 && p === 0 && /\$|^@\w/.test(command)) return 'a git subcommand held in a variable';
+				// Where git runs as the program: first in a command, nested ones included, or behind a wrapper (timeout 5,
+				// sudo, env). Words in a message or an echo's text are not run.
+				if (/\$|^@/.test(command) && (p === 0 || WRAPPERS.has(first))) return 'a git subcommand held in a variable';
 				// git's subcommand word (rm) is not the rm program; -C and the tree options move where paths are read.
 				if (p === 0) skip.add(at - 1);
 				if (MOVES_GIT.test(text) || words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
@@ -552,7 +564,11 @@ function findDelete(text, ctx, state, depth) {
 				if (!word.quoted) continue;
 				// A quoted name=value (git -c core.pager='...') may hold a command in its value.
 				const assigned = /^[\w.-]+=/.test(word.value) ? word.value.slice(word.value.indexOf('=') + 1) : '';
-				for (const inner of [word.value, assigned].filter(Boolean)) {
+				// An echo prints its text, but the text may be piped to a shell or written to a script: only text not piped on, with
+				// no delete word and nothing that runs ($( ), a backtick) is skipped, so echo "git $VERSION" does not ask.
+				const printed = PRINTERS.has(first) && !String(segment.end ?? '').startsWith('|') && !DELETE_WORD.test(word.value) && !/\bclean\b|\$\(|`/.test(word.value);
+				const said = printed ? [] : [word.value, assigned];
+				for (const inner of said.filter(Boolean)) {
 					const hit = readNested(inner, ctx, state, depth);
 					if (hit) return hit;
 				}
@@ -614,15 +630,20 @@ function decide(input, where = {}) {
 		roots.push(realOf(api.join(tmpdir, 'claude', projectDir.replace(/[^A-Za-z0-9]/g, '-'), id), api));
 	}
 	const ctx = { api, windows, roots, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
-	for (const raw of strings) {
+	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
+	// join it with a space: each string is read both ways, and either reading may ask.
+	const both = strings.flatMap((s) => { const glued = s.replace(/\\\r?\n/g, ''); return glued === s ? [s] : [s, glued]; });
+	for (const raw of both) {
 		if (raw.length > MAX_TEXT) return 'a command too long to read';
 		const text = normalize(raw);
 		const flat = text.split(BACKTICK).join('').split('^').join('');
-		ctx.unclear = (raw.match(CLEAN_SPAN) ?? []).some((span) => UNCLEAR_TEXT.test(span));
+		// Read with quotes in and out: a quoted subcommand (git c"lea"n) is still clean to the shell.
+		ctx.unclear = [raw, raw.replace(/["']/g, '')].some((r) => (r.match(CLEAN_SPAN) ?? []).some((span) => UNCLEAR_TEXT.test(span)));
 		if (LOST_CLEAN.test(raw)) return 'git clean';
 		// Read in the whole text, quotes off: arrays, wrappers and strings hide the switch from a word-by-word read.
 		const bare = flat.replace(/["']/g, '');
-		if (/\brobocopy\b/i.test(bare) && ROBOCOPY_REMOVES.test(bare) && !ONLY_READS.test(flat)) return 'robocopy that removes files';
+		if (/\brobocopy\b/i.test(bare) && ROBOCOPY_REMOVES.test(bare) && !(ONLY_READS.test(flat) && !RUNS_INSIDE.test(text))) return 'robocopy that removes files';
+		if (START_GIT_LIST.test(flat)) return 'Start-Process git with a list the guard cannot read';
 		const deletes = DELETE_WORD.test(flat) || GIT_CLEAN_TEXT.test(flat);
 		if (deletes && (text.includes(BACKTICK) || text.includes('^'))) return 'a delete next to a backtick or caret';
 		if (deletes && MAKES_LINK.test(text)) return 'a command that makes a link and deletes';
