@@ -100,8 +100,8 @@ All three inside the 60-call ceiling. Findings (each re-read in the code by the 
 - Doubts recorded: a restore that lands during the derive relocks as hygiene (not caught by the watch; the load then fails
   closed).
 
-Per the cadence (two passes only), the re-sweep's findings go to the owner: fix in this PR (recommended: three small roots,
-then the gate; no third sweep) or carry to a follow-up.
+Per the cadence (two passes only), the re-sweep's findings are fixed in this PR (three small roots, then the gate; no third
+sweep); anything left at medium or below goes to the handoff's carry-overs.
 
 ## Post-run yield check
 

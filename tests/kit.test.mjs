@@ -1053,6 +1053,32 @@ test('the sweep report audit passes a done report and names each missing part', 
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
 });
+test('a first action still stops for a lock, an outward act or an open decision, and every copy says so', () => {
+  const rule = (f) => read(path.resolve(f));
+  assert.match(rule('rules/core.md'), /\*\*Still stop and ask:\*\*[^\n]*a plan lock or batch approval/);
+  const tracking = rule('rules/tracking-and-handoff.md');
+  assert.match(tracking, /9\. \*\*State working mode \+ first action\.\*\*[^\n]*unless it hits a stop in rule:delegated-decisions or rests on a decision still open with the owner/);
+  for (const f of ['rules/tracking-and-handoff.md', 'user/skills/closeout/examples/handoff-a.md', 'user/skills/closeout/examples/handoff-b.md']) {
+    assert.match(rule(f), /start it unless it hits a stop in rule:delegated-decisions; ask the owner only if this handoff and a confirmed work order name none\. This handoff is a CACHE\./, f);
+  }
+  assert.match(tracking, /starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and no other work is open/);
+  assert.match(rule('rules/git-and-release.md'), /the closeout starts on its own \(rule:compact-ritual\)/);
+  assert.doesNotMatch(rule('project/CLAUDE.md'), /session end \(the owner declares\)/);
+  assert.doesNotMatch(rule('project/_Active Plan.md'), /the owner picks the feature FIRST/);
+});
+
+test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
+  const rule = (f) => read(path.resolve(f));
+  const findings = rule('rules/reviews-and-findings.md');
+  assert.match(findings, /A re-sweep finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it\./);
+  assert.match(findings, /post-PR findings at medium or below go to the handoff's carry-overs/);
+  assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
+  for (const f of ['user/kit-hooks/sweep-guard.cjs', 'user/skills/pre-pr-sweep/SKILL.md', 'user/skills/pre-pr-sweep/approve.mjs']) {
+    assert.match(rule(f), /a high or critical is fixed or the owner accepts it/, f);
+  }
+  assert.doesNotMatch(rule('project/_Templates/_PR Body Template.md'), /deferred\s+or accepted/);
+});
+
 // A high or critical is fixed before the PR or accepted by the owner, never carried to the next run
 // (rule:finding-pipeline).
 test('the sweep audit refuses a high or critical finding carried as DEFERRED', () => {
@@ -1062,7 +1088,7 @@ test('the sweep audit refuses a high or critical finding carried as DEFERRED', (
     const out = runAudit('pre-pr-sweep', report(`| 1 | ${sev} | token in log | DEFERRED next build |`));
     assert.equal(out.status, 1, sev + ' DEFERRED must fail');
     assert.match(out.stdout, /finding 1/);
-    assert.match(out.stdout, /FIXED <commit> or ACCEPTED <why>/);
+    assert.match(out.stdout, /FIXED <commit> or ACCEPTED owner <why>/);
     const bullet = runAudit('pre-pr-sweep', report('| 1 | low | slow list | DEFERRED roadmap |') + `\n- **S2 (${sev})** - token in log. DEFERRED next build\n`);
     assert.equal(bullet.status, 1, sev + ' bullet DEFERRED must fail');
     assert.match(bullet.stdout, /finding S2/);
@@ -1071,6 +1097,8 @@ test('the sweep audit refuses a high or critical finding carried as DEFERRED', (
     const out = runAudit('pre-pr-sweep', report(`| 1 | high | token in log | ${disposition} |\n| 2 | medium | slow list | DEFERRED next build |`));
     assert.equal(out.status, 0, out.stdout);
   }
+  const lead = runAudit('pre-pr-sweep', report('| 1 | high | token in log | ACCEPTED too costly to fix today, the lead decided |'));
+  assert.equal(lead.status, 1, 'only the owner accepts a high');
 });
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';

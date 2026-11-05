@@ -14,7 +14,7 @@ tags:
   status-files-rot-silently: stale, out of date, status
   tracking-file-batching: when to update, batch updates, milestone
   decision-documents: decisions, public repo, engineering notes
-  compact-ritual: compact, compaction, closeout, end of session
+  compact-ritual: compact, compaction, closeout, end of session, pr merged, release out
   pre-compact-scan: before compact, scan, closeout checks
   post-compact-orientation: after compact, resume, re-read, orientation
   handoff-message-structure: handoff, continuation, summary, next session
@@ -80,7 +80,7 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 
 ## Pre-Compact and Post-Compact Hygiene Ritual {#compact-ritual}
 
-**Keyword `begin pre-compact`** (standing) runs the Closeout; it also starts on its own once the thread's PR is merged and its release, if one is planned, is out: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.
+**Keyword `begin pre-compact`** (standing) runs the Closeout; it also starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and no other work is open: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.
 
 ### Pre-Compact Scan {#pre-compact-scan}
 
@@ -89,7 +89,7 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 2. Audit the Roadmap, dashboard, Active Plan and current log entry against caps and template.
 3. **Size-cap table** `| item | words | cap | status |` - the four whole-file rows from `node .claude/tracking-check.mjs caps` + every capped line touched, counted by hand - never estimated; OVER rows fixed; done only when the all-`ok` table is shown.
 4. **Loop-learnings check** - lessons captured; the handoff names open lessons + any regression.
-5. **Temp files** this session made (PR bodies, release drafts, screenshots, scratch scripts, logs, drafts) that have served are deleted only inside its session folder (`<temp>/claude/<project key>/<session id>/`), never by wildcard. Anything else it made (a shared or uploaded copy, a file in the system temp) is listed for the owner, not deleted. Emit both lists, or "none". Why: a served draft left in place gets reused; a shared folder holds look-alike files.
+5. **Temp files** this session made (PR bodies, release drafts, screenshots, scratch scripts, logs, backups, drafts) that have served are deleted only inside its session folder (`<temp>/claude/<project key>/<session id>/`), never by wildcard. Anything else it made (a shared or uploaded copy, a file in the system temp) is listed for the owner, not deleted. Emit both lists, or "none". Why: a served draft left in place gets reused; a shared folder holds look-alike files.
 5b. **Rule sort for the kit (standing):** each rule, standard or workflow change this session (skills, agent roles, working-style memory too), tagged `project-only` or `portable`; portable ones go to `/methodology-kit fold-back` with the owner, around the compact. Emit the list, or "no rule changes". Why: without this step an improvement stays in one project.
 6. Generate the handoff.
 
@@ -113,7 +113,7 @@ Why: the recurring drift is treating reminders and the summary as a re-read, the
    [x] Not counted as reads: compaction summary, system reminders, memory
    ```
    Each line confirms a match or flags a discrepancy.
-3. Anti-duplication spot-check (2-3 items). 4. ASCII scan. 5. Size-cap table. 6. Log compression check. 7. **Sweep check:** a sub-project COMPLETE without its sweep box, or a branch near a PR without a current report -> sweep first. 8. **Branch check:** work on `main` -> branch first. 9. **State working mode + first action.** Start it when the handoff or a confirmed work order names it (rule:delegated-decisions); ask the owner only when neither does.
+3. Anti-duplication spot-check (2-3 items). 4. ASCII scan. 5. Size-cap table. 6. Log compression check. 7. **Sweep check:** a sub-project COMPLETE without its sweep box, or a branch near a PR without a current report -> sweep first. 8. **Branch check:** work on `main` -> branch first. 9. **State working mode + first action.** Start it when the handoff or a confirmed work order (the owner's own list) names it, unless it hits a stop in rule:delegated-decisions or rests on a decision still open with the owner; ask the owner only when neither names one.
 
 **Anti-hallucination clause:** "I just re-read", "state verified", "the standards confirmed" are FORBIDDEN unless the Read tool ran this session for each file named. No visible checklist = no orientation = no source-of-truth work.
 
@@ -126,8 +126,7 @@ One self-contained message: any command the owner must run first in its own code
 
 ## REQUIRED FIRST ACTIONS
 Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
-visible checklist, scans), then state mode + first action and start it (ask the owner only if this
-handoff and the work order name none). This handoff is a CACHE.
+visible checklist, scans), then state mode + first action and start it unless it hits a stop in rule:delegated-decisions; ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
 
 ## Working Mode: Plan (default)
 

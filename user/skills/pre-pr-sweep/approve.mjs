@@ -10,7 +10,7 @@
 //     "roles": [{ "role", "kind" (KINDS below), "question", "context": [...], "finding", "calls", "callsReason" }] }
 // A re-sweep adds "resweepOf": "<the first sweep's contract.json>" and "fixed": [{ "finding", "kind" }] (the kind of
 // role that found each fixed finding). It gets one: a second re-sweep, or a re-sweep of one, is refused, and what
-// is left goes to the handoff's carry-overs.
+// is left at medium or below goes to the handoff's carry-overs; a high or critical is fixed or the owner accepts it.
 //
 // Budgets are processed tokens (input + cache read + cache write + output), which the script reads itself from each
 // reviewer's own transcript at --outcome. A role sets its call cap; the script computes its budget from that. More
@@ -432,7 +432,7 @@ function decide() {
 	if (refused) {
 		write({ kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: 0, decision: 'refused', reasons: [refused], resweepOf: first, head });
 		console.log(`REFUSED - one re-sweep per sweep (rule:sweep-tiers): ${refused}. No reviewer runs on this contract.`);
-		console.log(`    What the re-sweep left goes to ${CARRY_HOME}. Log the re-sweep's outcome with --carried <n> if you have not.`);
+		console.log(`    What the re-sweep left at medium or below goes to ${CARRY_HOME}; a high or critical is fixed or the owner accepts it. Log the re-sweep's outcome with --carried <n> if you have not.`);
 		return 1;
 	}
 	const { open, reported, stuck } = openSweep(s.log);
@@ -637,7 +637,7 @@ function outcome() {
 	// A re-sweep is the last pass: what is left unfixed after it, from either pass, is counted, so nothing falls through.
 	if (decision.resweepOf) {
 		const v = count('carried');
-		if (v === null) { console.log('A re-sweep\'s outcome needs --carried <n>: the findings left unfixed after it, from either pass. Nothing logged.'); return 1; }
+		if (v === null) { console.log('A re-sweep\'s outcome needs --carried <n>: the findings left unfixed after it, from either pass, each medium or below. Nothing logged.'); return 1; }
 		nums.carried = v;
 	} else if (has('--carried')) { console.log('--carried is for a re-sweep\'s outcome; nothing logged.'); return 1; }
 	if (has('--closed-carries')) {

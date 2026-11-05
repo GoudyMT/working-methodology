@@ -54,7 +54,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    through `approve.mjs` like the first, with `"resweepOf": "<first contract.json, relative to this contract>"` and `"fixed": [{ "finding",
    "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). The first contract
    stays byte for byte as it was cleared, and a re-sweep declares only modifiers the first sweep had. A second re-sweep
-   is refused: what is left is logged with `--carried <n>` and goes to the handoff. Update the report. Summarize the result in the PR
+   is refused: what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it. Update the report. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents`: each reviewer's agent id, one per
@@ -66,7 +66,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 ## The audit
 
 `audit.mjs` holds the report to its tier: every report names its tier, a date, the branch and a commit, and
-dispositions every high or critical finding (`FIXED <commit>` or `ACCEPTED <why>`, in a findings table or a
+dispositions every high or critical finding (`FIXED <commit>` or `ACCEPTED owner <why>`, in a findings table or a
 finding bullet; `DEFERRED <where>` is for medium and below), and names all six dimensions (a result, findings or "not touched").
 Feature, fix and launch-gate reports also give the version-goal verdict, YES or NO; a triage report names its
 secrets and personal-data check. It cannot tell

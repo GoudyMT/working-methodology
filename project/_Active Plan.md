@@ -24,7 +24,7 @@
 
 ## Resume Point (Next Session Action)
 
-**Order of a run:** the owner picks the feature FIRST; leftovers and the last PR's carry-overs are built on its branch; ONE large Pre-PR sweep after both are integrated; one PR.
+**Order of a run:** the feature comes FIRST (the confirmed work order's next, else the owner's pick); leftovers and the last PR's carry-overs are built on its branch; ONE large Pre-PR sweep after both are integrated; one PR.
 
 **NEXT:** <(1) the exact next action - command or file; (2) what follows.>
 
