@@ -43,7 +43,7 @@ const SCORES = 'docs/evals/results/recall-scores.md';
 const BRIEF = 'docs/evals/recall-scorer-brief.md';
 const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 // What the gate guards: the rule text, and the keys, brief and harness that grade it.
-const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall\.mjs$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
+const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall(-score)?\.mjs$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
 // From keys v4 a line names the control's median too (S18-7), so CI can see the control sits clearly under the kit.
 const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)(?: control (\d+))?( owner-accepted)?$/;
 const CONTROL_FROM = 4;

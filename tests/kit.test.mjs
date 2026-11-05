@@ -5731,3 +5731,35 @@ test('recall (R2): a run on a throwaway layer records the real global layer it a
   const same = installFacts({ projectDir: proj, home: path.join(osHome, '.claude'), osHome });
   assert.equal(same.global, undefined);
 });
+
+// 1.20.0 carry-over B8: the blind and score tools live in the repo, take the question count from the current keys,
+// and print a gate line the gate can read, control included.
+test('recall-score blinds runs without a side marker and scores them into a gate line the gate reads', async () => {
+  const { blind, score, scrub } = await import('../scripts/recall-score.mjs');
+  const { checkGate } = await recallTools();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rscore-'));
+  const keysText = read(path.resolve('docs/evals/recall-questions.md'));
+  const n = (await recallTools()).questionCount(keysText, (await recallTools()).currentVersion(keysText));
+  const run = (name, extra) => {
+    const body = ['# Recall run: ' + name, 'User kit: 1.21.0 (unreleased abc1234)', '', ...Array.from({ length: n }, (_, i) => `## ${i + 1}. q\n\nKey: k\n\nAnswer:\n\n> answer ${extra} at kit-probes/abc123/pdef456\n\nScore: _\n`)].join('\n');
+    fs.writeFileSync(path.join(dir, name + '.md'), body);
+    return path.join(dir, name + '.md');
+  };
+  const runs = ['cand-1', 'cand-2', 'cand-3', 'base-1', 'base-2', 'base-3', 'control-1'].map((r) => run(r, 'v1.20.0 commit 8ef3733'));
+  const out = path.join(dir, 'blind');
+  const { map } = blind(out, runs, () => 0);
+  for (const f of fs.readdirSync(path.join(out, 'scorer'))) {
+    const text = read(path.join(out, 'scorer', f));
+    assert.doesNotMatch(text, /cand|base-|control|1\.2[01]\.0|8ef3733|kit-probes|unreleased/, f);
+  }
+  assert.equal(scrub('see 1a2b3c4 and the word deadbeef0 and 1234567'), 'see <commit> and the word <commit> and 1234567');
+  const totals = { 'cand-1': n, 'cand-2': n - 1, 'cand-3': n, 'base-1': n - 3, 'base-2': n - 2, 'base-3': n - 3, 'control-1': 0 };
+  const lines = Object.entries(map).flatMap(([id, r]) => Array.from({ length: n }, (_, i) => `${id} Q${i + 1}: ${i < totals[r] ? 1 : 0}`));
+  fs.writeFileSync(path.join(dir, 'scores.txt'), lines.join('\n'));
+  const r = score(path.join(dir, 'scores.txt'), path.join(out, 'sealed-map.json'), 'kit-x');
+  const keys = (await recallTools()).currentVersion(keysText);
+  assert.match(r.line, new RegExp(`^gate: kit-x median ${n} baseline ${n - 3} brief v\\d+ keys v${keys} control 0$`));
+  assert.equal(checkGate({ changed: ['rules/core.md'], added: [r.line], brief: Number(r.line.match(/brief v(\d+)/)[1]), keys, bar: n - 1 }).ok, true);
+  fs.writeFileSync(path.join(dir, 'short.txt'), lines.slice(1).join('\n'));
+  assert.throws(() => score(path.join(dir, 'short.txt'), path.join(out, 'sealed-map.json'), 'kit-x'), /expected \d+ scores/);
+});
