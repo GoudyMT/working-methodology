@@ -243,7 +243,7 @@ The first entry from the neutral folder: recall.mjs now makes its own random fol
 
 gate: kit-1.19.0 median 9 baseline 9 brief v1 keys v2
 
-## 1.20.0 draft: rule text run, keys v3 (2026-11-05)
+## 1.20.0 gate: rule text run, keys v3 (2026-11-05)
 
 The first entry on keys v3 (13 questions, pass bar median 12) and brief v2, and the first where each side reads its own user layer: the candidate and baseline each ran from a throwaway Claude folder, so the user layer no longer contradicted the keys. Candidate: this branch at 8ef3733, both layers unreleased 1.20.0. Baseline: a clean clone at v1.19.0, both layers released. Control: no kit in the project, the 1.19.0 layer in the Claude folder. Three runs a side and one control, the six kit runs side by side.
 
@@ -265,11 +265,12 @@ The first entry on keys v3 (13 questions, pass bar median 12) and brief v2, and 
 | Total | 12, 11, 12 | 8, 10, 9 | 0 |
 
 - **Scored: median 12, baseline 9, control 0. The bar is met with no margin, and only on one reading of Q3.** A separate evidence check failed Q3 in candidates 1 and 3: they limit the fresh reads to "before it edits any source-of-truth file" and "before any source-of-truth edits", where the key says "before any edit". That gives 11, 11, 11, a median of 11, under the bar. Both blind scorers passed them as the same item and did not mark it borderline. The answers match the kit's own rule 11; the key is broader than the rule and is frozen. The baseline's Q3 points stand on the checker's reading, each with a separate "before anything else" or "beyond reading", so its median stays 9.
-- The owner has not ruled on this reading, so the gate line below is a draft and is not recorded.
 - **Blinding: the first scoring is void.** The evidence check found a kit-version notice in every candidate run and no baseline run: the startup check fires on an unreleased build, and the answers repeat it. Those lines were removed whole, every removed line read by hand (one scored Q7 line was caught and put back), and a fresh scorer scored the corrected files without seeing the first pass. Its totals and its marks matched the first scorer's on all 91 answers. Rule content still differs between the sides, which no scrub can hide.
 - **Where the lead comes from.** On Q1-10 the sides tie at a median of 9: candidate 10, 8, 9 and baseline 8, 10, 9. The whole lead is Q11-13, where the baseline scores 0 by construction, because 1.19.0 lacks those rules. This shows the new rules are recalled, not that recall of the older rules improved. Q11 is less solid: candidate 1 failed it.
 - **Borderline calls, not reported as flips:** Q13's "starts on its own" against the key's "no keyword needed" (all three candidates; a stricter read costs each a point and gives a median of 11); Q12's "a high" with no "critical" (all three); candidate 3's Q12 option B "record it as a carry-over"; candidate 2's Q8 "ask for room" and Q4 "your explicit yes"; candidates 2 and 3 on Q5 and candidate 1 on Q11, each of which could flip up. A one-point move in either run at 12 takes the median to 11.
 - **Control.** The first control stopped at question 12 with "Reached max turns (8)", and the harness refused to save it. The score is from a rerun at the same limits (v3-control-b). The control also pulled the real status board into its first answer, so it was not a clean no-rules run; it scored 0 regardless.
 - **What sessions could see.** The global CLAUDE.md loads as a parent folder's file on every side. Three runs recognised a probe folder at Q4. All three candidates held the closeout at Q13 because the folder has no PR record, which is a fact of the test, not a contradiction of the rule. Three runs a side and one scorer per pass cannot see a one-point change.
 
-Draft gate line, not recorded, for the owner: `gate: kit-1.20.0 median 12 baseline 9 brief v2 keys v3 owner-accepted`
+Owner-accepted by Max 2026-11-05 on the moved ruler; Q3 read as the blind scorers read it (the answers state the rule; the key is broader), key 3 and its rule to be aligned in the next build.
+
+gate: kit-1.20.0 median 12 baseline 9 brief v2 keys v3 owner-accepted
