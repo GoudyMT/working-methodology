@@ -5537,3 +5537,17 @@ test('build turns on the kit source commit-msg hook, which refuses a bad message
   assert.match(sourceHooks(dir), /left alone/);
   assert.equal(g('config', 'core.hooksPath').stdout.trim(), 'elsewhere');
 });
+
+// I28 (1.20.0 step 6): the fix-tier example indents its findings table under a bullet, and the audit read only rows at
+// column 0, so a high marked DEFERRED there passed as clean.
+test('the sweep audit reads an indented findings table as it reads a flat one', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const report = (table) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n- Findings:\n${table}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const rows = (indent, disp) => [`| # | Severity | Finding | Disposition |`, `|---|---|---|---|`, `| 1 | high | token in log | ${disp} |`].map((l) => indent + l).join('\n');
+  for (const indent of ['', '  ', '    ', '\t']) {
+    const out = runAudit('pre-pr-sweep', report(rows(indent, 'DEFERRED next build')));
+    assert.equal(out.status, 1, JSON.stringify(indent) + ': a deferred high must fail');
+    assert.match(out.stdout, /finding 1/);
+    assert.equal(runAudit('pre-pr-sweep', report(rows(indent, 'FIXED 9f8e7d6'))).status, 0, JSON.stringify(indent) + ': a fixed high passes');
+  }
+});

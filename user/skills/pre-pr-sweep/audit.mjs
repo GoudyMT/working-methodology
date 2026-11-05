@@ -53,7 +53,9 @@ const severity = (s) => ((s.match(SEV) || [])[1] || '').toLowerCase();
 const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bACCEPTED owner [^\s|]/.test(l);
 const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit> or ACCEPTED owner <why>; DEFERRED is for medium and below`);
 let sevCol = -1;
-lines.forEach((l, i) => {
+// A table may sit indented under a bullet (the fix example's does), so rows are read with their indent dropped.
+lines.forEach((raw, i) => {
+	const l = raw.trimStart();
 	if (/^\|/.test(l)) {
 		const cells = l.split('|').slice(1, -1).map((c) => c.trim());
 		// A header row (the next line is the divider) sets which column holds severity, or none.
