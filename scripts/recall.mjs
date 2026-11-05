@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs the rule recall test (the current version in docs/evals/recall-questions.md) in a folder it makes itself.
 //
-// Why its own folder: an answer moved with the test folder's name (M25: "recall" in the path made sessions open the
+// Why its own folder: an answer moved with the test folder's name ("recall" in the path made sessions open the
 // memory folder, and that lifted Q10). The path is random, so no argument and no label can choose it, and a baseline
 // is the same command with a clone at the old tag as the kit folder, so both sides get the same treatment.
 //
@@ -13,14 +13,16 @@
 // docs/evals/recall-scorer-brief.md.
 //
 // A session can still read the real Claude folder, and an answer moves with what it finds there (Q7 and approve.mjs),
-// so each run records what was installed, and a run on anything but a released user layer is refused.
+// so each run records what was installed, and a run on anything but a released user layer is refused, unless the
+// Claude folder is a throwaway under kit-probes: a build's new skills can then be measured without touching ~/.claude.
 //
 // CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
 // last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
-// the owner's marker. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
+// the owner's marker. A median under the current keys' own pass bar fails whatever the marker says: the marker can
+// accept a moved ruler, never a median under that bar. A new bar is a new keys version, which is the owner's. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
 // baseline may not fall under the last one recorded on the same ruler, and a PR may not move or reword its ruler,
 // unmarked. The floor is the last baseline, not the last median: one question is noise, so an honest re-measure may land
-// a point under the last score.
+// a point under the last score, though never under the pass bar.
 //
 // Usage: node scripts/recall.mjs <label> [kit folder]    (the kit folder defaults to this one)
 //        node scripts/recall.mjs <label> --no-kit        (the control: the same path, nothing installed)
@@ -66,6 +68,21 @@ export function questions(text, version) {
     .map((m) => ({ n: Number(m[1]), q: m[2], key: m[3] }));
 }
 
+const passLine = (text, version) => versionText(text, version).match(/\bPass: median (\d+) of (\d+)\./);
+
+/** How many questions a version says it has, from its "Pass: median <n> of <m>." line, so a lost row is still caught. */
+export function questionCount(text, version) {
+  const m = passLine(text, version);
+  if (!m) throw new Error(`recall v${version} has no "Pass: median <n> of <m>." line`);
+  return Number(m[2]);
+}
+
+/** The median a version must reach, or null for frozen keys that have no Pass line. */
+export function passBar(text, version) {
+  const m = passLine(text, version);
+  return m ? Number(m[1]) : null;
+}
+
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
 
 /**
@@ -82,7 +99,7 @@ export function installFacts({ projectDir, home }) {
   const user = readJson(path.join(home, 'kit-install.json'));
   return {
     project: !stamp ? 'none' : stamp.release === false ? `${stamp.version} (unreleased ${stamp.describe})` : stamp.version,
-    user: user ? user.version : 'none',
+    user: !user ? 'none' : user.release === false ? `${user.version} (unreleased ${user.describe})` : `${user.version} (${user.describe})`,
     userRelease: !!user && user.release === true,
     approve: fs.existsSync(path.join(home, 'skills', 'pre-pr-sweep', 'approve.mjs')),
   };
@@ -108,10 +125,17 @@ export function checkHome(env) {
   if (env.KIT_CLAUDE_HOME && env.KIT_CLAUDE_HOME !== env.CLAUDE_CONFIG_DIR) throw new Error('KIT_CLAUDE_HOME is set, but sessions read CLAUDE_CONFIG_DIR: set both to one folder, or neither');
 }
 
-/** Refuses a Claude folder that is not a released kit install, before any folder or session exists. */
-export function checkUserLayer(home) {
+/** Whether a Claude folder sits strictly inside kit-probes under the home folder, links followed. */
+function isThrowaway(home, osHome) {
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const inside = path.relative(real(path.join(osHome, 'kit-probes')), real(home));
+  return Boolean(inside) && !inside.startsWith('..') && !path.isAbsolute(inside);
+}
+
+/** Refuses a Claude folder that is not a released kit install or a throwaway one, before any folder or session exists. */
+export function checkUserLayer(home, osHome = os.homedir()) {
   const user = readJson(path.join(home, 'kit-install.json'));
-  if (user?.release !== true) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
+  if (user?.release !== true && !(user && isThrowaway(home, osHome))) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
 }
 
 /**
@@ -149,14 +173,14 @@ export function runHeader({ label, keys, facts, when, cli }) {
  *
  * Args:
  *     facts: { changed: file paths, added and removed: lines the PR adds to and takes from the scores file,
- *         brief, keys: current versions,
+ *         brief, keys: current versions, bar: the current keys' pass bar, null when they have none,
  *         was: { brief, keys, baseline } on the base, each null when the base has none, and edited when a ruler
  *         file differs from the base under the same version }
  *
  * Returns:
  *     { ok, detail }
  */
-export function checkGate({ changed, added, removed = [], brief, keys, was = {} }) {
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {} }) {
   const lines = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   const dropped = removed.some((l) => /^gate:/i.test(l.trim()));
   if (!lines.length && !dropped && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
@@ -169,6 +193,7 @@ export function checkGate({ changed, added, removed = [], brief, keys, was = {} 
   if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
     return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
   }
+  if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
   const faults = [
     dropped && 'this PR removes a recorded gate line',
@@ -203,6 +228,7 @@ function gate([base, head]) {
     removed: record.filter((l) => l.startsWith('-') && !l.startsWith('---')).map((l) => l.slice(1)),
     brief,
     keys,
+    bar: passBar(now(QUESTIONS_REL), keys),
     was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null, edited },
   });
   console.log(r.detail);
@@ -210,12 +236,14 @@ function gate([base, head]) {
 }
 
 /** What a run asks and records, or a refusal: all of it before any session starts. */
-export function prepare({ projectDir, label, home, text, when, cli }) {
-  checkUserLayer(home);
+export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
+  checkUserLayer(home, osHome);
   const facts = installFacts({ projectDir, home });
   const keys = currentVersion(text);
   const qs = questions(text, keys);
-  if (qs.length !== 10) throw new Error(`expected 10 questions, found ${qs.length}`);
+  const count = questionCount(text, keys);
+  if (!qs.length || qs.length !== count) throw new Error(`expected ${count} questions, found ${qs.length}`);
+  if (qs.some((x, i) => x.n !== i + 1)) throw new Error(`the questions must be numbered 1 to ${count}`);
   return { qs, lines: runHeader({ label, keys, facts, when, cli }) };
 }
 
@@ -232,7 +260,7 @@ export function askAll({ qs, projectDir, run }) {
       throw new Error(`question ${n}: no answer (exit ${r.status}): ${(answer || r.stderr || '').trim().slice(0, 200)}`);
     }
     lines.push(`## ${n}. ${q}`, '', `Key: ${key}`, '', 'Answer:', '', answer.split('\n').map((l) => '> ' + l).join('\n'), '', 'Score: _', '');
-    console.log(`[${n}/10] answered (${answer.length} chars)`);
+    console.log(`[${n}/${qs.length}] answered (${answer.length} chars)`);
   }
   return lines;
 }
@@ -248,14 +276,14 @@ export function askAll({ qs, projectDir, run }) {
  *     the path of the saved run
  */
 export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools }) {
-  checkUserLayer(home);
+  checkUserLayer(home, osHome);
   checkHome(env);
   const kit = path.resolve(kitDir || KIT);
   const projectDir = probePath(osHome);
   try {
     setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !kitTools.releaseState(kit).problems.length, run });
     const cli = (run('claude', ['--version'], {}).stdout || 'unknown').trim();
-    const { qs, lines } = prepare({ projectDir, label, home, text, when, cli });
+    const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli });
     lines.push(...askAll({ qs, projectDir, run }));
     fs.mkdirSync(outDir, { recursive: true });
     const out = path.join(outDir, `${label}.md`);

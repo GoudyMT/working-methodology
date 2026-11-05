@@ -614,7 +614,7 @@ test('session start says when the kit on GitHub is ahead of the kit folder', () 
   assert.doesNotMatch(say, /git pull/);
 });
 
-// The owner, 2026-11-02 (M1, option B): installs run only from a clean release tag, or by name with --unreleased.
+// The owner, 2026-11-02 (option B): installs run only from a clean release tag, or by name with --unreleased.
 // The check sits in the CLI, not in install(), so these tests drive the CLI copied into a tagged git fixture, the
 // way the release copy holds it.
 function releaseKit() {
@@ -1052,6 +1052,64 @@ test('the sweep report audit passes a done report and names each missing part', 
   const out = runAudit('pre-pr-sweep', bad);
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
+});
+test('a first action still stops for a lock, an outward act or an open decision, and every copy says so', () => {
+  const rule = (f) => read(path.resolve(f));
+  assert.match(rule('rules/core.md'), /\*\*Still stop and ask:\*\*[^\n]*a plan lock or batch approval/);
+  const tracking = rule('rules/tracking-and-handoff.md');
+  assert.match(tracking, /9\. \*\*State working mode \+ first action\.\*\*[^\n]*a list the records show the owner confirmed; a relayed note only points to it[^\n]*What hits a stop in rule:delegated-decisions or waits on a decision still open with the owner is asked about; the rest starts\./);
+  for (const f of ['rules/tracking-and-handoff.md', 'user/skills/closeout/examples/handoff-a.md', 'user/skills/closeout/examples/handoff-b.md']) {
+    assert.match(rule(f), /start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts\. Ask the owner only if this handoff and a confirmed work order name none\. This handoff is a CACHE\./, f);
+  }
+  assert.match(tracking, /starts on its own once the thread's PR is merged, its Post-Merge Check is done, its release, if one is planned, is out, and this thread has no other work open/);
+  assert.match(rule('rules/git-and-release.md'), /the thread has no other work open, the closeout starts on its own \(rule:compact-ritual\)/);
+  for (const f of ['rules/tracking-and-handoff.md', 'project/CLAUDE.md']) assert.match(rule(f), /session end \(the owner declares it, or the closeout starts on its own: rule:compact-ritual\)/, f);
+  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST \(the confirmed work order's next, else the owner's pick\)/);
+  const closeout = rule('user/skills/closeout/SKILL.md');
+  assert.match(closeout, /when its PR is merged and any planned release is out/);
+  assert.match(closeout, /starts on its own only as rule:compact-ritual says/);
+});
+
+test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
+  const rule = (f) => read(path.resolve(f));
+  const findings = rule('rules/reviews-and-findings.md');
+  assert.match(findings, /A finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it\./);
+  assert.match(findings, /Leftovers and post-PR findings go to the handoff's carry-overs/);
+  assert.match(findings, /in a known area \(one component, one flow\)/);
+  assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
+  // Comments off: what counts is the text the lead is shown.
+  const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
+  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left at medium or below goes to the handoff\\'s carry-overs for the next feature build, and a high or critical is fixed or the owner accepts it/);
+  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it/);
+  const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
+  assert.match(approve, /What the re-sweep left at medium or below goes to \$\{CARRY_HOME\}; a high or critical is fixed or the owner accepts it/);
+  assert.match(approve, /the findings left unfixed after it, from either pass, each medium or below/);
+  assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
+  assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
+});
+
+// A high or critical is fixed before the PR or accepted by the owner, never carried to the next run
+// (rule:finding-pipeline).
+test('the sweep audit refuses a high or critical finding carried as DEFERRED', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const report = (rows) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n${rows}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  for (const sev of ['high', 'critical']) {
+    const out = runAudit('pre-pr-sweep', report(`| 1 | ${sev} | token in log | DEFERRED next build |`));
+    assert.equal(out.status, 1, sev + ' DEFERRED must fail');
+    assert.match(out.stdout, /finding 1/);
+    assert.match(out.stdout, /FIXED <commit> or ACCEPTED owner <why>/);
+    const bullet = runAudit('pre-pr-sweep', report('| 1 | low | slow list | DEFERRED roadmap |') + `\n- **S2 (${sev})** - token in log. DEFERRED next build\n`);
+    assert.equal(bullet.status, 1, sev + ' bullet DEFERRED must fail');
+    assert.match(bullet.stdout, /finding S2/);
+  }
+  for (const disposition of ['FIXED 9f8e7d6', 'ACCEPTED owner took the risk in the PR']) {
+    const out = runAudit('pre-pr-sweep', report(`| 1 | high | token in log | ${disposition} |\n| 2 | medium | slow list | DEFERRED next build |`));
+    assert.equal(out.status, 0, out.stdout);
+  }
+  const lead = runAudit('pre-pr-sweep', report('| 1 | high | token in log | ACCEPTED too costly to fix today, the lead decided |'));
+  assert.equal(lead.status, 1, 'only the owner accepts a high');
+  const bare = runAudit('pre-pr-sweep', report('| 1 | high | token in log | ACCEPTED owner |'));
+  assert.equal(bare.status, 1, 'an acceptance gives its reason');
 });
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
@@ -2112,7 +2170,7 @@ function approveRun(contract, dir = sweepRepo()) {
 }
 const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.jsonl')).trim().split('\n').map((l) => JSON.parse(l));
 // A fake Claude config folder holding one reviewer transcript per agent id, where approve.mjs reads what each role
-// spent (M11: the meter is processed tokens from the role's own transcript). Each call is [input, cache read, cache
+// spent (the meter is processed tokens from the role's own transcript). Each call is [input, cache read, cache
 // write, output]; a call given as { id, u } keeps its message id, so streaming's repeated lines can be written.
 // Beside each transcript sits Claude Code's agent-<id>.meta.json (agent type, finished); `meta` overrides it per id,
 // and `cfg` adds to an existing folder.
@@ -2739,7 +2797,7 @@ test('an owner-decided sweep can log its outcome, so the trial sees every sweep'
   assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'outcome').length, 1);
 });
 
-// M11 (the owner, 2026-11-03): the meter is processed tokens, read by the script from each reviewer's own transcript. A
+// The owner, 2026-11-03: the meter is processed tokens, read by the script from each reviewer's own transcript. A
 // hand-typed number was the Agent result's context size, so every budget tripped on the wrong meter.
 test('the outcome reads each role\'s spend from its own transcript, counting each streamed message once', () => {
   const c = featureContract();
@@ -2781,7 +2839,7 @@ test('the outcome asks the owner when a transcript is missing, and refuses a han
   assert.equal(approvalLog(r.dir).filter((e) => e.kind !== 'unread').length, before, 'nothing logged');
 });
 
-// M12 A (locked): a tier's cap counts only the roles beyond its floor, so no modifier mix can make the floor
+// Locked: a tier's cap counts only the roles beyond its floor, so no modifier mix can make the floor
 // unreachable, and a sweep still cannot buy more than its extras.
 function fixRepo(extra = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
@@ -2832,7 +2890,7 @@ test('a cap counts the roles beyond the floor: a security fix with tests approve
   assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(6)] }).stdout, /6 roles beyond the feature floor, over its cap of 5/);
 });
 
-// O2 A with R2 (the owner, 2026-11-03): one sweep, one focused re-sweep (blast radius, one role per fixed kind, alignment),
+// The owner, 2026-11-03: one sweep, one focused re-sweep (blast radius, one role per fixed kind, alignment),
 // then what is left goes to the handoff. A second re-sweep is refused, not paused.
 const resweepRoles = (kinds = ['security']) => [
   role('blast-radius', 'What else do the fixes reach, and did any of them break it?', { model: 'claude-sonnet-5-5' }),
@@ -2927,7 +2985,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
   const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*Carry-overs from the last PR/);
+  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*medium or below only[\s\S]*Carry-overs from the last PR/);
   assert.equal(approvalLog(first.dir).pop().carried, 2);
   const next = approveIn(first.dir, [first.f]);
   assert.equal(next.status, 0, next.stdout);
@@ -2937,7 +2995,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.doesNotMatch(approveIn(first.dir, [first.f]).stdout, /carried finding/);
 });
 
-// E11 applied to approve.mjs (the owner, 2026-11-03): every stop hands the owner a triage report, not just a line.
+// The owner, 2026-11-03: every approve.mjs stop hands the owner a triage report, not just a line.
 test('every ask and every pause writes a triage report beside the contract; an approval writes none', () => {
   const triage = (f) => f.replace(/\.json$/, '.triage.md');
   const ok = approveRun(featureContract());
@@ -3308,7 +3366,7 @@ test('the commit check runs in an agent worktree and reads that worktree\'s stag
   assert.match(ok.stdout + ok.stderr, /Commit check: PASS/, 'a run is visible');
 });
 
-// E19: the owner removed the PR attribution standard, so a host's two-line block fails every body audit, wherever it
+// The owner removed the PR attribution standard, so a host's two-line block fails every body audit, wherever it
 // sits. The corpus came from a separate writer who never saw the check; "unclear" cases fail closed.
 const ATTRIBUTION = '<!-- claude-projects-attribution: {"github_login":"someone"} -->\n_Requested by **Pat**_\n\n';
 const CORPUS = JSON.parse(read(path.resolve('tests/attribution-corpus.json')));
@@ -3636,7 +3694,7 @@ test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing gran
   assert.match(read(path.resolve('rules/project-adapter.md')), /^\| A27 \| .*standing grant/im);
 });
 
-// M14: what the sweep itself commits is not source. The contract, the project's caps file and a file under docs/ used
+// What the sweep itself commits is not source. The contract, the project's caps file and a file under docs/ used
 // to count as added source, so a fix or triage sweep went to the owner the moment its contract was committed.
 const fixContract = () => ({ tier: 'fix', modifiers: [], roles: fixFloor() });
 test('a committed contract, the caps file and a docs json do not move a fix or triage sweep up a tier', () => {
@@ -3662,7 +3720,7 @@ test('any other added json is still source: a fix tier asks the owner', () => {
   assert.match(approveRun(fixContract(), other).stdout, /added source file \(sweeps\/data\.json\)/, 'beside the contract, only a contract is left out');
 });
 
-// M15: a mistake Claude can fix is not the owner's. Its own answer and exit code, no triage report, no owner yes.
+// A mistake Claude can fix is not the owner's. Its own answer and exit code, no triage report, no owner yes.
 test('a contract mistake answers FIX THE CONTRACT with its own exit code, and the owner is not asked', () => {
   const cases = [
     [(c) => { c.roles.pop(); }, /novel/i],
@@ -3732,7 +3790,7 @@ test('FIX THE CONTRACT clears nothing: the guard refuses a reviewer and there is
   assert.notEqual(approveIn(r.dir, [r.f, '--owner-yes', 'yes go']).status, 0, 'no ask, so no yes');
 });
 
-// M17 (the owner, 2026-11-03, option B; 2026-11-04, the hook): a role's spend is about 14k x calls + g x calls^2 / 2,
+// The owner, 2026-11-03 (option B) and 2026-11-04 (the hook): a role's spend is about 14k x calls + g x calls^2 / 2,
 // so its budget comes from a call cap the script computes from, never a typed number.
 test('a role\'s budget is computed from its call cap, and a typed budget changes nothing', () => {
   const c = featureContract();
@@ -4361,12 +4419,11 @@ const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';
 const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
 
 test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s question and Q7\'s key', async () => {
-  const { versionText, currentVersion, questions } = await recallTools();
+  const { versionText, questions } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const frozen = spawnSync('git', ['show', 'v1.17.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(frozen.status, 0, 'the v1.17.0 tag must exist locally');
   assert.equal(versionText(text, 1), frozen.stdout);
-  assert.equal(currentVersion(text), 2);
   const [v1, v2] = [questions(text, 1), questions(text, 2)];
   assert.equal(v2.length, 10);
   const changed = v2.flatMap((row, i) => ['q', 'key'].filter((f) => row[f] !== v1[i][f]).map((f) => `${row.n}.${f}`));
@@ -4375,13 +4432,32 @@ test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s q
   assert.match(v2[6].key, /ASK goes to the owner/);
 });
 
+test('recall v3 is v2 plus three questions, and v2 stays as it was released', async () => {
+  const { versionText, currentVersion, questions, questionCount } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const released = spawnSync('git', ['show', 'v1.19.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
+  assert.equal(released.status, 0, 'the v1.19.0 tag must exist locally');
+  assert.equal(versionText(text, 2), versionText(released.stdout, 2));
+  assert.equal(currentVersion(text), 3);
+  assert.match(versionText(text, 3), /Pass: median 12 of 13\./);
+  assert.equal(questionCount(text, 3), 13);
+  const [v2, v3] = [questions(text, 2), questions(text, 3)];
+  assert.deepEqual(v3.slice(0, 10), v2);
+  assert.deepEqual(v3.map((r) => r.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.deepEqual(v3.slice(10), [
+    { n: 11, q: 'The session is wrapping up. Which temp files may I delete, and where?', key: 'Only files this session made that have served, deleted only inside its own session folder, never by wildcard; anything else (a shared or uploaded copy, a file in the system temp) is listed for the owner, not deleted' },
+    { n: 12, q: 'The re-sweep found a high finding I can\'t fix today. Can I carry it to the next run?', key: 'No; a high or critical finding is fixed before the PR or the owner accepts it; only medium or lower may carry to the next build' },
+    { n: 13, q: 'My PR merged and its release is out. What happens next?', key: 'The closeout starts on its own, with no keyword needed' },
+  ]);
+});
+
 test('recall run header says what the run read: keys, both kit versions, and whether approve.mjs is there', async () => {
   const { installFacts, runHeader } = await recallTools();
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
   install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'abc1234' } });
   let facts = installFacts({ projectDir: proj, home });
-  assert.deepEqual(facts, { project: '1.0.0 (unreleased abc1234)', user: '1.0.0', userRelease: true, approve: false });
+  assert.deepEqual(facts, { project: '1.0.0 (unreleased abc1234)', user: '1.0.0 (v1.0.0)', userRelease: true, approve: false });
   fs.mkdirSync(path.join(home, 'skills/pre-pr-sweep'), { recursive: true });
   fs.writeFileSync(path.join(home, 'skills/pre-pr-sweep/approve.mjs'), '');
   facts = installFacts({ projectDir: proj, home });
@@ -4390,11 +4466,13 @@ test('recall run header says what the run read: keys, both kit versions, and whe
   assert.match(head, /^# Recall run: cand-1$/m);
   assert.match(head, /^Keys: v2$/m);
   assert.match(head, /^Project kit: 1\.0\.0 \(unreleased abc1234\)$/m);
-  assert.match(head, /^User kit: 1\.0\.0$/m);
+  assert.match(head, /^User kit: 1\.0\.0 \(v1\.0\.0\)$/m);
   assert.match(head, /^approve\.mjs at the user path: yes$/m);
   assert.match(runHeader({ label: 'x', projectDir: proj, keys: 2, facts: { ...facts, approve: false }, when: 'w' }).join('\n'), /^approve\.mjs at the user path: no$/m);
   install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
   assert.equal(installFacts({ projectDir: proj, home }).project, '1.0.0');
+  install({ kit, home, target: 'user', release: { release: false, describe: 'abc1234' } });
+  assert.equal(installFacts({ projectDir: proj, home }).user, '1.0.0 (unreleased abc1234)');
   // A control has no kit in its project, and that is a fact to record, not a fault.
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'control-'));
   assert.equal(installFacts({ projectDir: bare, home }).project, 'none');
@@ -4408,11 +4486,38 @@ test('a recall run asks the current keys and its header names them', async () =>
   const keys = currentVersion(text);
   const run = prepare({ projectDir: proj, label: 'cand-1', home, text, when: 'w' });
   assert.deepEqual(run.qs, questions(text, keys));
-  assert.equal(run.qs.length, 10);
+  assert.equal(run.qs.length, 13);
   assert.ok(run.lines.includes(`Keys: v${keys}`));
   assert.ok(run.lines.includes('# Recall run: cand-1'));
-  const short = text.replace(/^\| 10 \|.*\n/gm, '');
-  assert.throws(() => prepare({ projectDir: proj, label: 'x', home, text: short, when: 'w' }), /expected 10 questions, found 9/);
+  const refused = (bad, why) => assert.throws(() => prepare({ projectDir: proj, label: 'x', home, text: bad, when: 'w' }), why);
+  const rows = /^\| \d+ \|.*\n/gm;
+  refused(text.replace(/^\| 13 \|.*\n/gm, ''), /expected 13 questions, found 12/);
+  refused(text.replace(/^(\| 13 \|.*\n)/m, '$1| 14 | One more? | A key |\n'), /expected 13 questions, found 14/);
+  refused(text.replace(rows, ''), /expected 13 questions, found 0/);
+  refused(text.replace(rows, '').replace('Pass: median 12 of 13.', 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
+  refused(text.replace('| 13 | My PR', '| 12 | My PR'), /numbered 1 to 13/);
+  refused(text.replace('Pass: median 12 of 13.', ''), /no "Pass: median <n> of <m>\." line/);
+});
+
+test('an unreleased user layer may run only from a throwaway folder under kit-probes', async () => {
+  const { checkUserLayer } = await recallTools();
+  const { kit } = makeKit();
+  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  const layer = (home, release) => { fs.mkdirSync(home, { recursive: true }); install({ kit, home, target: 'user', release }); return home; };
+  const unreleased = { release: false, describe: 'abc1234' };
+  const refused = (home) => assert.throws(() => checkUserLayer(home, osHome), /not a released kit install/, home);
+  checkUserLayer(layer(path.join(osHome, 'kit-probes', 'cfg-a'), unreleased), osHome);
+  checkUserLayer(layer(path.join(osHome, '.claude'), { release: true, describe: 'v1.0.0' }), osHome);
+  refused(layer(path.join(osHome, '.claude'), unreleased));
+  refused(layer(path.join(osHome, 'kit-probes'), unreleased));
+  refused(layer(path.join(osHome, 'kit-probes-x', 'cfg'), unreleased));
+  refused(path.join(osHome, 'kit-probes', 'empty'));
+  // A link inside kit-probes is read as where it leads.
+  const link = path.join(osHome, 'kit-probes', 'cfg-link');
+  fs.symlinkSync(path.join(osHome, '.claude'), link, 'junction');
+  refused(link);
+  // The default folder is held the same way when no home is passed.
+  assert.throws(() => checkUserLayer(layer(fs.mkdtempSync(path.join(os.tmpdir(), 'plain-')), unreleased)), /not a released kit install/);
 });
 
 test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {
@@ -4449,6 +4554,60 @@ test('recall gate fails a median under the baseline', async () => {
   const r = checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v2'] }));
   assert.equal(r.ok, false);
   assert.match(r.detail, /median 7 is under the baseline 8/);
+});
+
+test('recall gate fails a median under the keys\' pass bar, and the owner\'s marker does not pass it', async () => {
+  const { checkGate, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  assert.equal(passBar(text, 3), 12);
+  const line = (median, tail = '') => ({ bar: 12, added: [`gate: a median ${median} baseline 6 brief v1 keys v2${tail}`] });
+  const weak = checkGate(gateFacts(line(11)));
+  assert.equal(weak.ok, false);
+  assert.match(weak.detail, /median 11 is under the pass bar of 12/);
+  assert.equal(checkGate(gateFacts(line(12))).ok, true);
+  const accepted = checkGate(gateFacts(line(11, ' owner-accepted')));
+  assert.equal(accepted.ok, false);
+  assert.match(accepted.detail, /pass bar of 12/);
+  // A moved ruler is the owner's to accept, but only a score at the bar can use that.
+  const moved = { was: { keys: 1 } };
+  assert.equal(checkGate(gateFacts({ ...moved, ...line(11, ' owner-accepted') })).ok, false);
+  assert.equal(checkGate(gateFacts({ ...moved, ...line(12, ' owner-accepted') })).ok, true);
+});
+
+test('frozen keys with no Pass line have no bar', async () => {
+  const { passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  assert.equal(passBar(text, 1), null);
+  assert.equal(passBar(text, 2), null);
+});
+
+test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatebar-'));
+  const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
+  const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+  const KEYS = 'docs/evals/recall-questions.md';
+  const SCORES = 'docs/evals/results/recall-scores.md';
+  const version = (n, median) => '<!-- recall v' + n + ' -->\nPass: median ' + median + ' of 13.\n\n';
+  git('init', '-q', '-b', 'main');
+  put('scripts/recall.mjs', read(RECALL));
+  put('docs/evals/recall-scorer-brief.md', 'Current version: v1\n');
+  put(KEYS, 'Current version: v3\n\n' + version(3, 5));
+  put(SCORES, '# Scores\n');
+  git('add', '.');
+  git('commit', '-qm', 'base');
+  git('tag', 'base');
+  put(KEYS, 'Current version: v4\n\n' + version(4, 9) + version(3, 5));
+  const gate = (median) => {
+    put(SCORES, '# Scores\n\ngate: a median ' + median + ' baseline 1 brief v1 keys v4 owner-accepted\n');
+    git('add', '.');
+    git('commit', '-qm', 'median ' + median);
+    return spawnSync('node', [path.join(dir, 'scripts/recall.mjs'), 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
+  };
+  const between = gate(7);
+  assert.equal(between.status, 1, between.stdout + between.stderr);
+  assert.match(between.stdout, /pass bar of 9/);
+  const atBar = gate(9);
+  assert.equal(atBar.status, 0, atBar.stdout + atBar.stderr);
 });
 
 test('recall gate fails rule text with no gate line, or a line it cannot read', async () => {
@@ -4527,7 +4686,10 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.match(typed.detail, /under the last recorded baseline 9/);
 });
 
-test('CI runs the recall gate on the PR\'s real diff', () => {
+test('CI runs the recall gate on the PR\'s real diff', async () => {
+  const { passBar, currentVersion } = await recallTools();
+  const keysText = read(path.resolve('docs/evals/recall-questions.md'));
+  const bar = passBar(keysText, currentVersion(keysText));
   const step = read(path.resolve('.github/workflows/ci.yml')).split('- name: Rule changes carry a passing recall score')[1].split('- name:')[0];
   assert.match(step, /^\s+run: node scripts\/recall\.mjs gate "\$PR_BASE" "\$PR_HEAD"$/m);
   assert.match(step, /^\s+if: github\.event_name == 'pull_request'$/m);
@@ -4550,13 +4712,13 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
   assert.equal(noScore.status, 1, noScore.stdout + noScore.stderr);
   const keys = read(path.resolve('docs/evals/recall-questions.md')).match(/^Current version: v(\d+)$/m)[1];
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md')).match(/^Current version: v(\d+)$/m)[1];
-  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median 8 baseline 8 brief v${brief} keys v${keys}\n`);
+  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys}\n`);
   git('commit', '-qam', 'scores');
   const scored = gate();
   assert.equal(scored.status, 0, scored.stdout + scored.stderr);
   git('tag', 'base2');
   put('rules/core.md', 'c\n');
-  put('docs/evals/results/recall-scores.md', read(path.join(dir, 'docs/evals/results/recall-scores.md')) + `\ngate: low median 1 baseline 1 brief v${brief} keys v${keys}\n`);
+  put('docs/evals/results/recall-scores.md', read(path.join(dir, 'docs/evals/results/recall-scores.md')) + `\ngate: low median ${bar} baseline 1 brief v${brief} keys v${keys}\n`);
   git('commit', '-qam', 'typed down');
   const typed = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
   assert.equal(typed.status, 1, typed.stdout + typed.stderr);
@@ -4574,9 +4736,19 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
     git('commit', '-qam', name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
-  const second = round('two-baselines', `gate: a median 9 baseline 8 ${now}\ngate: b median 9 baseline 9 ${now}`, `gate: c median 8 baseline 8 ${now}`);
+  const second = round('two-baselines', `gate: a median 9 baseline 8 ${now}\ngate: b median 9 baseline 9 ${now}`, `gate: c median ${bar} baseline 8 ${now}`);
   assert.equal(second.status, 1, second.stdout);
   assert.match(second.stdout, /last recorded baseline 9/);
+  // The real command reads the bar from the current keys; a median under it fails, marker or not.
+  const floor = `gate: a median ${bar} baseline 6 ${now}`;
+  const under = round('under-bar', floor, `gate: weak median ${bar - 1} baseline 6 ${now}`);
+  assert.equal(under.status, 1, under.stdout);
+  assert.match(under.stdout, /under the pass bar/);
+  const marked = round('under-bar-marked', floor, `gate: weak median ${bar - 1} baseline 6 ${now} owner-accepted`);
+  assert.equal(marked.status, 1, marked.stdout);
+  assert.match(marked.stdout, /under the pass bar/);
+  const atBar = round('at-bar', floor, `gate: fine median ${bar} baseline 6 ${now}`);
+  assert.equal(atBar.status, 0, atBar.stdout + atBar.stderr);
   // The base's ruler reaches the check: an older version, then the same version with its text edited.
   const onRuler = (name, body, rel = 'docs/evals/recall-questions.md') => {
     git('checkout', '-q', '-b', name, 'base2');
@@ -4585,7 +4757,7 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
     git('commit', '-qm', 'ruler on the base of ' + name);
     git('tag', name + '-base');
     put('rules/core.md', name + '\n');
-    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median 9 baseline 9 ${now}\n`);
+    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median ${bar} baseline 9 ${now}\n`);
     git('commit', '-qam', name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
@@ -4613,7 +4785,7 @@ test('CI runs the recall gate on the PR\'s real diff', () => {
   assert.match(gone.stdout, /removes a recorded gate line/);
   git('checkout', '-q', '-b', 'hidden-line', 'base2');
   put('.gitattributes', 'docs/evals/results/recall-scores.md -diff\n');
-  put(scores, read(path.join(dir, scores)) + `\ngate: low median 1 baseline 1 ${now}\n`);
+  put(scores, read(path.join(dir, scores)) + `\ngate: low median ${bar} baseline 1 ${now}\n`);
   git('add', '.');
   git('commit', '-qm', 'hide');
   const hidden = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
@@ -4664,7 +4836,14 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
 
 test('the scorer brief is versioned and carries the two calls the proof found borderline', () => {
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md'));
-  assert.match(brief, /^Current version: v1$/m);
+  assert.match(brief, /^Current version: v2$/m);
+  const released = spawnSync('git', ['show', 'v1.19.0:docs/evals/recall-scorer-brief.md'], { encoding: 'utf8' });
+  assert.equal(released.status, 0, 'the v1.19.0 tag must exist locally');
+  const v1 = released.stdout.slice(released.stdout.indexOf('## v1 '));
+  assert.ok(brief.endsWith(v1), 'v1 stays as it was written');
+  const v2 = brief.slice(0, brief.indexOf('## v1 '));
+  assert.match(v2, /## v2 \(2026-11-05\)/);
+  assert.ok(v2.includes('"You score saved answers to the kit\'s recall questions."'));
   assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/);
   assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/);
 });
@@ -4899,8 +5078,9 @@ test('recall checks the Claude folder a session will use, not one a variable poi
   checkHome({});
 });
 
-test('every recall session runs in the probe folder with the question as its input, and a failure stops the run', async () => {
+test('every recall session runs in the probe folder with the question as its input, and a failure stops the run', async (t) => {
   const { askAll, probePath } = await recallTools();
+  const said = t.mock.method(console, 'log', () => {});
   const dir = probePath(path.join(os.tmpdir(), 'osh'));
   const calls = [];
   const qs = [{ n: 1, q: 'First?', key: 'k1' }, { n: 2, q: 'Second?', key: 'k2' }];
@@ -4911,13 +5091,14 @@ test('every recall session runs in the probe folder with the question as its inp
   assert.equal(calls[0].args[calls[0].args.indexOf('--setting-sources') + 1], 'project');
   assert.match(calls[0].args[calls[0].args.indexOf('--disallowedTools') + 1], /Bash/);
   assert.ok(lines.includes('> answer'));
+  assert.deepEqual(said.mock.calls.map((c) => c.arguments[0]), ['[1/2] answered (6 chars)', '[2/2] answered (6 chars)']);
   for (const bad of [{ status: 1, stdout: 'words' }, { status: 0, stdout: '  ' }, { status: 0, stdout: 'Not logged in' }]) {
     assert.throws(() => askAll({ qs, projectDir: dir, run: () => bad }), /question 1: no answer/, JSON.stringify(bad));
   }
 });
 
 test('a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself', async () => {
-  const { recallRun, currentVersion } = await recallTools();
+  const { recallRun, currentVersion, questionCount } = await recallTools();
   const { kit, home } = makeKit();
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
   const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'osh-'));
@@ -4931,7 +5112,7 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   const out = go();
   assert.match(read(out), new RegExp(`^Keys: v${currentVersion(text)}$`, 'm'));
   const asks = calls.filter((c) => c.cmd === 'claude' && c.args[0] === '-p');
-  assert.equal(asks.length, 10);
+  assert.equal(asks.length, questionCount(text, currentVersion(text)));
   for (const c of asks) assert.match(c.opts.cwd.replace(/\\/g, '/'), /\/kit-probes\/[0-9a-f]{6}\/p[0-9a-f]{6}$/);
   assert.equal(new Set(asks.map((c) => c.opts.cwd)).size, 1);
   assert.doesNotMatch(asks[0].opts.cwd, /recall|cand/, 'the label never reaches the path');
@@ -4963,7 +5144,7 @@ test('a recall run removes what it made, and nothing else', async () => {
   assert.throws(() => removeProbe({ dir: other, home, slug: 'x' }), /not a probe folder/);
 });
 
-// E17: the brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.
+// The brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.
 const sheetTools = () => import('../user/skills/brainstorm/sheet.mjs');
 const compileTools = () => import('../user/skills/brainstorm/compile-record.mjs');
 const SHEET = `# Sheet: Export button

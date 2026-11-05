@@ -59,7 +59,7 @@ At the project's narrowest width, one thumb, half attention.
 
 ## What the walks do not replace
 
-- The break-it testers of rule:pre-push-op-test (input order, rapid taps, date edges, offline, locks), which run
+- The break-it testers of rule:pre-push-op-test (input order, rapid taps, tabs, reloads, offline), which run
   on the production build before push.
 - A real device: emulation cannot prove a device's fonts, keyboard or screen reader. Where the stakes call for a
   device, rule:preview-test says who tests it.

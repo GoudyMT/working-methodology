@@ -83,7 +83,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | status-files-rot-silently | Status Files Rot Silently | `.claude/rules/tracking-and-handoff.md` | stale, out of date, status |
 | tracking-file-batching | Tracking-File Batching | `.claude/rules/tracking-and-handoff.md` | when to update, batch updates, milestone |
 | decision-documents | Engineering Decisions Documents (Optional, Public Repos) | `.claude/rules/tracking-and-handoff.md` | decisions, public repo, engineering notes |
-| compact-ritual | Pre-Compact and Post-Compact Hygiene Ritual | `.claude/rules/tracking-and-handoff.md` | compact, compaction, closeout, end of session |
+| compact-ritual | Pre-Compact and Post-Compact Hygiene Ritual | `.claude/rules/tracking-and-handoff.md` | compact, compaction, closeout, end of session, pr merged, release out |
 | pre-compact-scan | Pre-Compact Scan | `.claude/rules/tracking-and-handoff.md` | before compact, scan, closeout checks |
 | post-compact-orientation | Post-Compact Orientation Protocol (MANDATORY first action) | `.claude/rules/tracking-and-handoff.md` | after compact, resume, re-read, orientation |
 | handoff-message-structure | Handoff Message Structure | `.claude/rules/tracking-and-handoff.md` | handoff, continuation, summary, next session |

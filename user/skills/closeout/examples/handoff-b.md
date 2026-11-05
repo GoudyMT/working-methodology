@@ -3,7 +3,7 @@
 
 ## REQUIRED FIRST ACTIONS
 Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
-visible checklist, scans) and confirm mode + first action with the owner. This handoff is a CACHE.
+visible checklist, scans), then state mode + first action and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
 
 ## Working Mode: Plan (default)
 

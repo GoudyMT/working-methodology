@@ -54,16 +54,9 @@ Tell the owner which mode you are in:
 
 ---
 
-## How We Work (Summary - Full Detail in [`AGENTS.md`](AGENTS.md) and the rule modules it lists)
+## How We Work
 
-1. **One issue at a time.** A/B/C with pros / cons, validated against the spec and security standards, an honest recommendation; wait for the owner's lock.
-2. **Structured options, not inline prose.** The owner picks, we lock, we move on.
-3. **Research before deciding.** Study how shipped products do it; scan existing code for patterns to reuse.
-4. **Code only after the design is locked,** under the visible Edit Discipline.
-5. **Cross-examine everything** - overlaps, gaps, security, edge cases - before locking or merging.
-6. **Honest feedback always.** Never guess. Have reasons for everything.
-7. **Test-driven development.** Tests first, watched failing.
-8. **Privacy and security as architecture,** not afterthought.
+Full rules: [`AGENTS.md`](AGENTS.md). Tests come first, watched failing.
 
 ---
 

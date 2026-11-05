@@ -2,11 +2,11 @@
   "project": "Methodology kit",
   "goal": "One set of working rules, scripts and skills that every project installs, so each session follows the same proven method and improvements flow back.",
   "successBar": [
-    "A fresh session in any kit project answers 9 of 10 rule questions right (the recall test)",
+    "A fresh session in any kit project answers 12 of 13 rule questions right (the recall test)",
     "Every check that can be a script is a script or hook, not text",
     "What loads before the first message stays under its cap (kit.mjs measure --real)"
   ],
-  "updated": "2026-10-31",
+  "updated": "2026-11-05",
   "parts": [
     { "id": "rules", "name": "Rules", "does": "one source for every rule", "files": ["rules"] },
     { "id": "build", "name": "Build", "does": "writes each tool's files", "files": ["scripts/kit.mjs"] },

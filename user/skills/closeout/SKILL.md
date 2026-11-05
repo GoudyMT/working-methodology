@@ -1,6 +1,6 @@
 ---
 name: closeout
-description: Run the pre-compact closeout - capture corrections, run the pre-compact scan, batch the tracking files, verify git, and write the continuation handoff. Use when the owner says "begin pre-compact", before a compact or a session end, or when a handoff for the next session is needed. Serves rule:pre-compact-scan.
+description: Run the pre-compact closeout - capture corrections, run the pre-compact scan, batch the tracking files, verify git, and write the continuation handoff. Use when the owner says "begin pre-compact", when its PR is merged and any planned release is out, before a compact or a session end, or when a handoff for the next session is needed. Serves rule:pre-compact-scan.
 ---
 
 # Closeout
@@ -8,11 +8,13 @@ description: Run the pre-compact closeout - capture corrections, run the pre-com
 Serves rule:pre-compact-scan and the ritual in rule:compact-ritual, which lists the closeout's five parts. The
 next session starts from what this writes down, so every line must be true when it is written.
 
+It starts on its own only as rule:compact-ritual says.
+
 ## Steps
 
 1. **Capture** every style, format or workflow correction from this session where it lasts (rule:compact-ritual).
-2. **Run the scan** below, step by step, each shown pass or fail. Its temp-file step covers shared and uploaded
-   copies too (a project library, an attachment folder), not only the scratch folder.
+2. **Run the scan** below, step by step, each shown pass or fail. Its temp-file step deletes only inside the
+   session's folder and lists anything else it made for the owner.
 3. **Batch the tracking files** at the session end (rule:tracking-file-batching). `node .claude/tracking-check.mjs caps` prints the
    whole-file rows of the size-cap table; an OVER row is fixed before the handoff. The plan's Progress block passes
    `node .claude/tracking-check.mjs progress <plan>`. Where the project keeps

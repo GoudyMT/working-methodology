@@ -6,16 +6,19 @@
 // cannot start must not let the delete through).
 // Reads: rm, rmdir, unlink, del, erase, rd, ri, Remove-Item, rimraf, del-cli, shred (any folder, .exe or not,
 // anywhere in a command, so a wrapper such as sudo -u x or timeout 5 cannot hide one), find -delete, git clean
-// (asks unless a dry run), git worktree remove, robocopy /MIR or /PURGE, rsync --delete, inline node, deno, bun,
-// python, py, perl, ruby or php code that deletes, .NET Delete calls (also ForEach-Object Delete), nested shells
-// (bash -c, powershell -Command), a cd to a written-out folder (trusted alone only through an && chain); an encoded
+// (asks unless a dry run), a git alias set in the same command that cleans, removes or hard-resets, git worktree
+// remove, robocopy with a removing switch or a job file written out with /, // or -, rsync --delete, inline node, deno, bun, python, py, perl, ruby or
+// php code that deletes, .NET Delete calls (also ForEach-Object Delete), nested shells (bash -c, powershell
+// -Command), a cd to a written-out folder (trusted alone only through an && chain); an encoded
 // PowerShell command asks. A target is placed after junctions and links are followed, each ".." read both through
 // the link before it (Git Bash) and as written (PowerShell), and must be inside either way.
 // Asks rather than reads: a target holding a variable, a splat, a brace expansion, a ~user form, a provider path
 // (X::), a drive-relative path (D:x), a UNC path, a .git folder, a ".." after a wildcard; a command that makes a
 // link and deletes; a delete next to a backtick or a cmd caret; a command over 100,000 characters.
 // Limits: it is no match for a path built at run time (Invoke-Expression on joined strings, a script file it
-// cannot read); Remove-Item -Recurse may follow a junction found below the target, which is not looked for; the
+// cannot read), a switch joined at run time ('/MI'+'R'), a word hidden by a shell escape in a nested shell
+// (bash -c git\ clean), git run from inline code or xargs, or config that defines an alias by another route
+// (include.path, a rewritten config file, HOME); Remove-Item -Recurse may follow a junction found below the target, which is not looked for; the
 // session folder layout is proven on Windows only. Like guard-outward.cjs it is self-contained, so a missing
 // sibling never turns the guard off.
 const fs = require('node:fs');
@@ -68,7 +71,22 @@ const DOTNET_DELETE = /::delete\w*$|^(\$[\w:]+)?\.delete\w*$/i;
 const BRACE_EXPANSION = /\{(?!\})\S/;
 const PATH_OPTIONS = new Set(['-path', '-literalpath', '-lp', '-pspath']);
 const VALUE_OPTIONS = new Set(['-erroraction', '-ea', '-include', '-exclude', '-filter', '-credential', '-stream', '-warningaction', '-wa', '-informationaction', '-infa', '-errorvariable', '-ev', '-outvariable', '-ov', '-pipelinevariable', '-pv', '-progressaction', '-proga']);
-const GIT_VALUE_OPTIONS = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env']);
+const GIT_VALUE_OPTIONS = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--attr-source', '--shallow-file']);
+// Text the tokenizer may split where a shell does not, so a word read from it proves nothing: a comma, a variable, a
+// backtick, a control character, an escaped space, quote or break, an empty word, a character it folds to ASCII.
+const UNCLEAR_TEXT = /[,`$\x00-\x08\x0b-\x1f\u0080-\uffff]|\\[\s";&|()<>]|""|''/;
+// A clean's own words: from the word to the next break a shell would obey, so what follows it cannot make it ask.
+const CLEAN_SPAN = /\bclean\b(?:\\.|[^;|&\n])*/g;
+// A comma or escape in git's own options makes the tokenizer lose the subcommand: git -c x.y=a,b clean.
+const LOST_CLEAN = /\bgit(\.exe)?\s+-[^;|&\n]*[,\\][^;|&\n]*\sclean\b/i;
+// What an alias may run that deletes, once its quoting is off.
+const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|rm\.exe|worktree)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha/;
+const GIT_CLEAN_TEXT = /\bgit(\.exe)?\s+clean(\s|$|`)/i;
+// robocopy takes / or - (Git Bash needs //), a word of its own or glued to the name; a job file can carry any of
+// these, so it asks unread. A path segment is not a switch.
+const ROBOCOPY_REMOVES = /(?:^|[\s(,=;[@]|robocopy(?:\.exe)?)(?:\/+|-)(?:mir|purge|mov|move|job)(?=$|[\s,);:\]])/i;
+// A single search or a commit message names robocopy without running it.
+const ONLY_READS = /^\s*(rg|grep|egrep|fgrep|findstr|select-string|sls|git\s+(commit|log|grep|show|diff))\s[^;|&\n]*$/i;
 const FIND_OPTIONS = /^-(H|L|P|O\d*)$/;
 const WILDCARD = /[*?[]/;
 // A session id is a plain id; anything else ("../..") could point the session folder at a shared one.
@@ -266,6 +284,46 @@ function gitSub(words, start) {
 	return { sub: words[i], at: i + 1 };
 }
 
+// git clean is a dry run only when the last word that sets it says so: git reads options in order, so --no-dry-run
+// undoes -n. -e and --exclude take a pattern: the rest of their letter group (-en is the pattern n) or, when nothing
+// follows in the group, the next word. A long option it does not know may be an abbreviation that takes the next word.
+function cleanDryRun(own) {
+	let dry = false;
+	for (let i = 0; i < own.length; i++) {
+		const w = own[i];
+		if (w === '--' || w === '--end-of-options') break;
+		if (w === '--dry-run') dry = true;
+		else if (/^--no-d/.test(w)) dry = false;
+		else if (w === '--exclude') i++;
+		else if (w.startsWith('--')) {
+			if (!/^--(exclude=.*|force|quiet|interactive)$/.test(w)) return false;
+		} else if (/^-[A-Za-z]+$/.test(w)) {
+			for (let c = 1; c < w.length; c++) {
+				if (w[c] === 'e') {
+					if (c === w.length - 1) i++;
+					break;
+				}
+				if (w[c] === 'n') dry = true;
+			}
+		}
+	}
+	return dry;
+}
+
+// An alias set in the same command (git -c alias.x=..., git config alias.x ..., --config-env) hides its subcommand
+// behind a name the guard does not know, so one that runs clean, rm, worktree or reset --hard asks. git strips quotes
+// and backslashes from the value, so they come off first; a value held in a variable cannot be read, so it asks.
+function definesDeleteAlias(words) {
+	for (let i = 0; i < words.length; i++) {
+		if (/^--config-env=alias\./i.test(words[i]) || (words[i] === '--config-env' && /^alias\./i.test(words[i + 1] ?? ''))) return true;
+		const m = /^alias\.[^=]+(=([\s\S]*))?$/i.exec(words[i]);
+		if (!m) continue;
+		const value = m[1] !== undefined ? m[2] : words[i + 1] ?? '';
+		if (value.includes('$') || DELETE_ALIAS.test(value.replace(/[\\`'"]/g, ''))) return true;
+	}
+	return false;
+}
+
 // Where a delete may run without asking: strictly inside the session folder or the project; for a wildcard, the
 // fixed folder before it may also be one of those roots itself.
 function placeOf(target, ctx, state, keepLast = false) {
@@ -423,16 +481,26 @@ function findDelete(text, ctx, state, depth) {
 			else if (DIR_RETURNS.has(name)) state.moved = true;
 			// env -C DIR, env -CDIR, sudo -D DIR, sudo --chdir=DIR, and short options clustered before them.
 			else if ((name === 'env' || name === 'sudo') && rest.some((w) => /^(-[A-Za-z]*[CD]|--chdir)/.test(w))) state.moved = true;
-			else if (name === 'robocopy' && rest.some((w) => /^\/(mir|purge)$/i.test(w))) return 'robocopy that removes files';
 			else if (name === 'rsync' && rest.some((w) => /^--(del|delete[\w-]*|remove-source-files)(=|$)/.test(w))) return 'rsync that removes files';
 			else if (name === 'git') {
 				const { sub, at } = gitSub(words, p + 1);
 				const own = words.slice(at);
+				// Start-Process takes the command line as one string or a list, wherever its flags put it.
+				if (depth < MAX_DEPTH && words.some((w) => /^(start-process|saps)$/i.test(w))) {
+					const listed = words.includes('clean') ? [words.slice(words.indexOf('clean')).join(' ')] : [];
+					for (const packed of [...words.filter((w) => /\s/.test(w)), ...listed]) {
+						const hit = readNested('git ' + packed, ctx, state, depth);
+						if (hit) return hit;
+					}
+				}
+				const command = String(sub ?? '').replace(/[\\`^'"]/g, '');
+				if (depth === 0 && p === 0 && /\$|^@\w/.test(command)) return 'a git subcommand held in a variable';
 				// git's subcommand word (rm) is not the rm program; -C and the tree options move where paths are read.
 				if (p === 0) skip.add(at - 1);
 				if (MOVES_GIT.test(text) || words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
 				const cached = own.slice(0, own.includes('--') ? own.indexOf('--') : own.length).includes('--cached');
-				if (sub === 'clean' && !own.some((w) => w === '-n' || w === '--dry-run' || /^-\w*n/.test(w))) return 'git clean';
+				if (command === 'clean' && (ctx.unclear || !cleanDryRun(own))) return 'git clean';
+				if (definesDeleteAlias(words.slice(p + 1))) return 'a git alias that deletes';
 				if (sub === 'worktree' && own[0] === 'remove') {
 					for (const target of targetsOf('', own, 1)) {
 						const hit = placeOf(target, ctx, state);
@@ -549,7 +617,13 @@ function decide(input, where = {}) {
 	for (const raw of strings) {
 		if (raw.length > MAX_TEXT) return 'a command too long to read';
 		const text = normalize(raw);
-		const deletes = DELETE_WORD.test(text.split(BACKTICK).join('').split('^').join(''));
+		const flat = text.split(BACKTICK).join('').split('^').join('');
+		ctx.unclear = (raw.match(CLEAN_SPAN) ?? []).some((span) => UNCLEAR_TEXT.test(span));
+		if (LOST_CLEAN.test(raw)) return 'git clean';
+		// Read in the whole text, quotes off: arrays, wrappers and strings hide the switch from a word-by-word read.
+		const bare = flat.replace(/["']/g, '');
+		if (/\brobocopy\b/i.test(bare) && ROBOCOPY_REMOVES.test(bare) && !ONLY_READS.test(flat)) return 'robocopy that removes files';
+		const deletes = DELETE_WORD.test(flat) || GIT_CLEAN_TEXT.test(flat);
 		if (deletes && (text.includes(BACKTICK) || text.includes('^'))) return 'a delete next to a backtick or caret';
 		if (deletes && MAKES_LINK.test(text)) return 'a command that makes a link and deletes';
 		if (INTERPRETER.test(text) && INLINE_DELETE.test(text)) return 'inline code that deletes';

@@ -71,8 +71,8 @@
 | Code security | ... |
 | <other dimensions> | ... |
 
-- **High and critical findings:** <none, or one line each: what, and how it was handled - fixed here, deferred
-  or accepted>. An unfixed security finding gets its severity and where it is tracked, never its detail.
+- **High and critical findings:** <none, or one line each: what, and how it was handled - fixed here or
+  accepted by the owner>. An unfixed security finding gets its severity and where it is tracked, never its detail.
 - **Deferred:** <none, or each item and where it is tracked: a public issue, or "tracked privately" - never a
   link to a private file>.
 - **Accepted risks:** <none, or each risk and why it is accepted>.

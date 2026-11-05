@@ -10,7 +10,7 @@
 //     "roles": [{ "role", "kind" (KINDS below), "question", "context": [...], "finding", "calls", "callsReason" }] }
 // A re-sweep adds "resweepOf": "<the first sweep's contract.json>" and "fixed": [{ "finding", "kind" }] (the kind of
 // role that found each fixed finding). It gets one: a second re-sweep, or a re-sweep of one, is refused, and what
-// is left goes to the handoff's carry-overs.
+// is left at medium or below goes to the handoff's carry-overs; a high or critical is fixed or the owner accepts it.
 //
 // Budgets are processed tokens (input + cache read + cache write + output), which the script reads itself from each
 // reviewer's own transcript at --outcome. A role sets its call cap; the script computes its budget from that. More
@@ -47,12 +47,12 @@ import { fileURLToPath } from 'node:url';
 const SELF = fileURLToPath(import.meta.url);
 const toPosix = (p) => p.split(path.sep).join('/');
 
-// A tier's cap counts only the roles beyond its floor (M12, 2026-11-03): a cap below the floor made a
+// A tier's cap counts only the roles beyond its floor (2026-11-03): a cap below the floor made a
 // security-sensitive fix unapprovable. A project may only LOWER it, in .kit/sweep-approval.json
 // ({ "caps": { "<tier>": { "maxExtras", "maxAgents", "maxRoleBudget", "maxTotalBudget" } } }); raising a cap is a
 // kit change, the owner's call.
 const CAPS = { feature: { maxExtras: 5 }, fix: { maxExtras: 1 }, triage: { maxExtras: 0 } };
-// A role's budget (M17, locked 2026-11-03; supersedes M11's fixed standards): every call re-reads the context, so
+// A role's budget (locked 2026-11-03; it replaced the fixed standards): every call re-reads the context, so
 // spend is about PER_CALL x calls + growth x calls^2 / 2, back-tested at 0.91x to 0.97x on two real sweeps. Growth is
 // what each call adds; a role that must read a file over LARGE_FILE adds about twice as much (fit on one sweep: a
 // guess until a second large-file sweep confirms it). STANDARD_CALLS is what the capped re-sweep of 2026-11-03 asked
@@ -69,7 +69,7 @@ const budgetFor = (calls, growth) => PER_CALL * calls + growth * calls * calls /
 // The reviewer role's own model (user/agents/reviewer.md), for a role that names none.
 const DEFAULT_MODEL = 'claude-opus-5-5';
 const modelKey = (m) => { const s = String(m ?? DEFAULT_MODEL); return /opus/i.test(s) ? 'opus' : /sonnet/i.test(s) ? 'sonnet' : null; };
-// A re-sweep (O2, the owner 2026-11-03): one blast-radius role, one role per kind with a fixed finding, one alignment role.
+// A re-sweep (the owner, 2026-11-03): one blast-radius role, one role per kind with a fixed finding, one alignment role.
 const RESWEEP_NEEDS = { 'blast-radius': 1, dimension: 1 };
 const CARRY_HOME = 'the handoff\'s "Carry-overs from the last PR" (_Active Plan.md); the next feature build fixes them';
 const AGENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -100,7 +100,7 @@ const TRIAGE_MAX_LINES = 20;
 const DEP_FILE = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt|pyproject\.toml|poetry\.lock|Pipfile(\.lock)?|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(\.lock)?)$/;
 const TEST_FILE = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$|_test\.[a-z]+$/;
 const DOC_FILE = /\.(md|txt|rst)$/i;
-// What a sweep or a release commits about itself is not source (M14): a committed contract, the project's caps file
+// What a sweep or a release commits about itself is not source: a committed contract, the project's caps file
 // and a migration file pushed a fix or triage sweep up a tier. Any other added .json still counts.
 const KIT_JSON = /^(docs\/migrations\/[^/]+\.json|\.kit\/sweep-approval\.json)$/i;
 const TIER_RANK = { triage: 0, fix: 1, feature: 2, 'first push': 3, 'launch gate': 4 };
@@ -217,7 +217,7 @@ const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '
 const rel = (f) => toPosix(path.relative(process.cwd(), f) || f);
 const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) => j > i && y.kind === 'owner-yes' && y.contract === log[i].contract && y.hash === log[i].hash);
 
-// A re-sweep's own floor (O2 A, revision R2). Returns the kinds it needs, or `refused` when it is past its one pass:
+// A re-sweep's own floor. Returns the kinds it needs, or `refused` when it is past its one pass:
 // a refusal is the rule working, so it neither pauses nor writes a triage report.
 function resweepCheck(c, tier, roles, log, facts, why, fix) {
 	const first = path.resolve(path.dirname(contractFile), String(c.resweepOf || ''));
@@ -432,7 +432,7 @@ function decide() {
 	if (refused) {
 		write({ kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: 0, decision: 'refused', reasons: [refused], resweepOf: first, head });
 		console.log(`REFUSED - one re-sweep per sweep (rule:sweep-tiers): ${refused}. No reviewer runs on this contract.`);
-		console.log(`    What the re-sweep left goes to ${CARRY_HOME}. Log the re-sweep's outcome with --carried <n> if you have not.`);
+		console.log(`    What the re-sweep left at medium or below goes to ${CARRY_HOME}; a high or critical is fixed or the owner accepts it. Log the re-sweep's outcome with --carried <n> if you have not.`);
 		return 1;
 	}
 	const { open, reported, stuck } = openSweep(s.log);
@@ -637,7 +637,7 @@ function outcome() {
 	// A re-sweep is the last pass: what is left unfixed after it, from either pass, is counted, so nothing falls through.
 	if (decision.resweepOf) {
 		const v = count('carried');
-		if (v === null) { console.log('A re-sweep\'s outcome needs --carried <n>: the findings left unfixed after it, from either pass. Nothing logged.'); return 1; }
+		if (v === null) { console.log('A re-sweep\'s outcome needs --carried <n>: the findings left unfixed after it, from either pass, each medium or below. Nothing logged.'); return 1; }
 		nums.carried = v;
 	} else if (has('--carried')) { console.log('--carried is for a re-sweep\'s outcome; nothing logged.'); return 1; }
 	if (has('--closed-carries')) {
@@ -686,7 +686,7 @@ function outcome() {
 		]);
 		console.log(`    Triage report for the owner: ${f}`);
 	}
-	if (nums.carried > 0) console.log(`CARRY-OVER - ${nums.carried} finding(s) left unfixed after the re-sweep go to ${CARRY_HOME}. List each there; every sweep start shows them open until that sweep's outcome closes them with --closed-carries <n>.`);
+	if (nums.carried > 0) console.log(`CARRY-OVER - ${nums.carried} finding(s) left unfixed after the re-sweep (medium or below only; a high or critical is fixed or the owner accepts it) go to ${CARRY_HOME}. List each there; every sweep start shows them open until that sweep's outcome closes them with --closed-carries <n>.`);
 	return 0;
 }
 
@@ -695,7 +695,7 @@ function summary() {
 	const d = s.log.filter((e) => e.kind === 'decision');
 	const o = s.log.filter((e) => e.kind === 'outcome');
 	const sum = (k, list = o) => list.reduce((t, e) => t + (Number(e[k]) || 0), 0);
-	// Before the meter (M11) a lead typed the tokens, so those outcomes do not compare with the rest.
+	// Before the meter a lead typed the tokens, so those outcomes do not compare with the rest.
 	const metered = o.filter((e) => Array.isArray(e.roles));
 	const typed = o.filter((e) => !Array.isArray(e.roles) && !e.noneRan && !e.closedByOwner).length;
 	console.log(`approved: ${d.filter((e) => e.decision === 'approved').length}, sent to the owner: ${d.filter((e) => e.decision === 'owner').length}, sent back to fix: ${d.filter((e) => e.decision === 'fix').length}, refused: ${d.filter((e) => e.decision === 'refused').length}`);

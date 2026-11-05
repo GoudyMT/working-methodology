@@ -64,7 +64,7 @@ Formats in `_Templates/_PR Body Template.md`: **Standard** for features, design 
 - **Semver:** patch = fixes; minor = new user-facing features; major = breaking; state the reasoning against the version plan (roadmap labels are names, not tags); ask when a run's mix is unclear. One release may cover two same-day merges.
 - **Public prose:** plain words - what a user gets, honest limits beside the claims they limit; no tests, tooling, bumps, AI references or vault links (summary, not tallies); each claim audited to the file, test or measurement proving it (a "used to" claim names only states a person could reach; a third-party app claim needs a measurement per app).
 - **The owner publishes or approves each publish;** Claude drafts and publishes only on an explicit go. A post accompanies a feature release only, when the owner says so.
-- **The work PR carries the version bump** - never a bump-only PR; with several PRs the last to merge carries it; held while the merge date is unknown. The shown version comes from the package file; the audit checks tag == package version. Both PR-body audits fail shipped code with no bump unless the body says "No user-facing change" (`version-bump-check.mjs`; shipped paths in `.kit/version-bump.json`).
+- **The work PR carries the version bump** - never a bump-only PR; with several PRs the last to merge carries it; the bump is on the branch before the PR opens. The shown version comes from the package file; the audit checks tag == package version. Both PR-body audits fail shipped code with no bump unless the body says "No user-facing change" (`version-bump-check.mjs`; shipped paths in `.kit/version-bump.json`).
 - **Tag the full SHA CI tested,** never a branch or short SHA. List releases before creating (an existing tag: compare its body with the audited draft); after publishing, read the live body back and diff it.
 
 Why: a release is a public claim, drafted from format and code and published only by the owner.
@@ -72,6 +72,8 @@ Why: a release is a public claim, drafted from format and code and published onl
 ## Post-Merge Check {#post-merge-check}
 
 After every merge, before the release, verify the live system, each step shown: (1) **the deploy landed** - the live build identifier postdates the merge; (2) **the critical path answers** - one real request returns the expected status and version; (3) **a mismatch is an outage** - tell the owner at once, run the runbook. Retire it when CI does it. Why: hand-deployed parts drift from merge-deployed parts silently. <!-- PROJECT ADAPTER A18 -->
+
+Once it passes, any planned release is out and the thread has no other work open, the closeout starts on its own (rule:compact-ritual).
 
 **Deploy config:** a hand-deployed part (a data index, a side service) needs its own upload and redeploy on each version change - write the runbook. A dashboard-only change to a config-file setting drifts back on the next deploy: durable changes go in the config file, secrets in the platform's secret store. Before a hand deploy, diff local config against committed, ids masked. Never roll back past a local-database schema raise (older code cannot open it); fix forward.
 

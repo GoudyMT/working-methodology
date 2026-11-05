@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Sweep report audit (rule:milestone-sweep, "Done iff", held to the report's tier by rule:sweep-tiers): the tier, a
-// date, the branch and a commit, all six dimensions named, every high or critical finding dispositioned; feature, fix,
+// date, the branch and a commit, all six dimensions named, every high or critical finding fixed or accepted; feature, fix,
 // launch-gate and first-push reports also give the version-goal verdict (a first push also its check); a triage report names its secrets and
 // personal-data check. It cannot prove the agents ran.
 //
@@ -48,8 +48,10 @@ if (tier === 'triage') {
 // its first severity word, so "medium (the re-check; claimed high)" counts as medium. "Low-level" is not "low".
 const SEV = /\b(critical|high|medium|low)\b(?!-)/i;
 const severity = (s) => ((s.match(SEV) || [])[1] || '').toLowerCase();
-const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bDEFERRED \S|\bACCEPTED \S/.test(l);
-const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit>, DEFERRED <where> or ACCEPTED <why>`);
+// A high or critical is never carried to the next run (rule:finding-pipeline): it is fixed before the PR, or the
+// owner accepts it. DEFERRED is for medium and below.
+const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bACCEPTED owner [^\s|]/.test(l);
+const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit> or ACCEPTED owner <why>; DEFERRED is for medium and below`);
 let sevCol = -1;
 lines.forEach((l, i) => {
 	if (/^\|/.test(l)) {
