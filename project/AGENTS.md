@@ -150,7 +150,7 @@ Global wins over this file except a deliberate override named here (e.g. Edit Di
 3. **Code writes follow Edit Discipline;** default mode is Plan for design. New session or context loss -> the Recovery Protocol.
 4. **Paste-able handoff line:** `[Topic] Issue [N] only. Plan mode. No code writes. A/B/C then stop.`
 
-**The A/B/C shape:** context (problem, what is locked, what is at stake) -> options with pros / cons -> security / design impact -> honest recommendation -> stop. Cover the whole space, extensive and rule-bending options included, each labelled by effort (Small / Moderate / EXTENSIVE) and rules (OK / BENDS <the lock> / BREAKS Tier 0), with whether pros beat cons for extensive or bending ones; the impossible marked so, with proof; a rule-breaking option is for contrast, never recommended. Why: a partial list hides the option the owner would pick.
+**The A/B/C shape:** plain overview a reader takes in within 60 seconds (what this is, why it is in front of the owner now, and what measurement or finding raised it; item codes only after the plain name) -> context (problem, what is locked, what is at stake) -> options with pros / cons -> security / design impact -> honest recommendation -> stop. Cover the whole space, extensive and rule-bending options included, each labelled by effort (Small / Moderate / EXTENSIVE) and rules (OK / BENDS <the lock> / BREAKS Tier 0), with whether pros beat cons for extensive or bending ones; the impossible marked so, with proof; a rule-breaking option is for contrast, never recommended. Why: a partial list hides the option the owner would pick.
 
 ### Goal Before Mechanism {#goal-before-mechanism}
 
@@ -194,7 +194,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 
 ## Session Workflow {#session-workflow}
 
-**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory.
+**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
 
 **Work:** one issue at a time; context before options; scope loop-worthiness; **plan the whole cycle before branching** (every task, edge case, what is in and out) so work lands in one branch; with >2 units left, plan the rest as one batch (one-question investigators -> small probes -> one plan resolving cross-unit interactions -> one pass). Why: piecemeal planning splits a feature across PRs. **Audit a long branch against the objective:** commits grouped by what they buy the user, overhead named, the cumbersome fix cut.
 

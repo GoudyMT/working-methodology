@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { carriesPhrase } from './canary-phrase.mjs';
 import { versionBumpCheck } from './version-bump-check.mjs';
-import { stripAttribution } from './attribution.mjs';
+import { attributionFaults } from './no-attribution.mjs';
 
 // The large-PR body audit: a feature or large PR body that is detailed but not a text wall. The
 // changes read as a before / after table; decisions and the review stay on screen; the gate figures, the file
@@ -24,11 +24,12 @@ try { project = JSON.parse(readFileSync(path.join(root, '.kit', 'pr-body.json'),
 const GATES = Array.isArray(project.gates) && project.gates.length ? project.gates : ['Dependency audit', 'Lint; type check', 'Unit'];
 const AUDIT_LINE = typeof project.auditLine === 'string' && project.auditLine ? project.auditLine : null;
 const CLEAN = ['secrets or account information in the diff', ...(Array.isArray(project.verifiedClean) ? project.verifiedClean : [])];
-const { body, present: attributed } = stripAttribution(readFileSync(file, 'utf8'));
+const body = readFileSync(file, 'utf8');
 const lines = body.split(/\r?\n/);
 const rows = [];
 const row = (name, ok, detail) => rows.push({ name, ok, detail });
-if (attributed) row('attribution block: present', true, 'the two host lines at the top; checked from the line after them');
+const attribution = attributionFaults(body);
+row('no attribution block', attribution.length === 0, attribution.join(', ') || 'none');
 const norm = (s) => s.replace(/\s+/g, ' ');
 const isTable = (l) => l.startsWith('|');
 const isFoldTag = (l) => /^<\/?(details|summary)>/.test(l.trim());

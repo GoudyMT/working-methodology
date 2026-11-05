@@ -1,0 +1,221 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Brainstorm Sheet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one reading column, a planning worksheet; each question is a card with options, recommendation and two write-in boxes */
+:root{
+  --bg:#f6f7f4; --surface:#ffffff; --ink:#1d2421; --muted:#5d6862; --line:#d9ded9;
+  --accent:#2f6f5e; --accent-soft:#e3efe9; --rec:#8a5a12; --rec-soft:#f6ecd9; --ok:#2f6f5e;
+  --display:Georgia,serif; --body:system-ui,sans-serif; --mono:ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#131816; --surface:#1b211e; --ink:#e6ebe7; --muted:#9aa69f; --line:#2c3531;
+  --accent:#7cc4ad; --accent-soft:#1f3029; --rec:#e0b56a; --rec-soft:#2e2618; --ok:#7cc4ad; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#131816; --surface:#1b211e; --ink:#e6ebe7; --muted:#9aa69f; --line:#2c3531;
+  --accent:#7cc4ad; --accent-soft:#1f3029; --rec:#e0b56a; --rec-soft:#2e2618; --ok:#7cc4ad; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 var(--body)}
+.wrap{max-width:46rem;margin:0 auto;padding-block:24px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:20px}
+header{display:grid;gap:8px}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font:650 clamp(26px,5vw,34px)/1.15 var(--display);margin:0;text-wrap:balance}
+h2{font:600 20px/1.25 var(--display);margin:0;text-wrap:balance}
+select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);max-width:100%}
+.ground{background:var(--accent-soft);border-radius:10px;padding:14px 16px;display:grid;gap:6px}
+.ground p{margin:0}
+.ground .lbl{font:500 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+section.sec{display:grid;gap:14px}
+.sechead{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.count{font:400 13px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.q{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:12px;min-width:0}
+.q.done{border-color:color-mix(in srgb,var(--ok) 55%,var(--line))}
+.qtext{font-weight:600;font-size:17px;margin:0}
+.why{color:var(--muted);font-size:14px;margin:0}
+.opts{display:grid;gap:8px;border:0;margin:0;padding:0}
+.opt{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.opt:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.opt input{margin-top:4px;accent-color:var(--accent)}
+.opt .l{font-weight:600}
+.opt .d{color:var(--muted);font-size:14px}
+.badge{display:inline-block;font:500 11px/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--rec);background:var(--rec-soft);border-radius:4px;padding:3px 6px;margin-left:6px;vertical-align:2px}
+.recwhy{font-size:14px;color:var(--rec);margin:0}
+label.box{display:grid;gap:4px;font-size:14px;color:var(--muted)}
+textarea{font:15px/1.45 var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:60px;resize:vertical;width:100%;box-sizing:border-box}
+textarea:focus,select:focus,button:focus-visible,.opt:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.state{font:400 12px/1 var(--mono);color:var(--muted)}
+.state.saved{color:var(--ok)}
+.finish{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:12px}
+button{font:600 15px/1 var(--body);padding:12px 16px;border-radius:8px;border:0;background:var(--accent);color:var(--bg);cursor:pointer;justify-self:start}
+button[disabled]{opacity:.55;cursor:default}
+.empty{color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:18px}
+.empty code{font-family:var(--mono);font-size:13px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Brainstorm - your answers go straight to the thread</span>
+    <h1 id="title">Brainstorm Sheet</h1>
+    <select id="picker" aria-label="Choose a brainstorm" hidden></select>
+  </header>
+  <div id="main">
+    <div class="empty" id="loading">Loading the questions. Each brainstorm shows a short overview first, then questions grouped by topic. For every question you can pick an option, write your own answer, and note what you thought when you read it.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+const $ = (s, r=document) => r.querySelector(s);
+const main = $('#main'), picker = $('#picker'), titleEl = $('#title');
+let db = null, sheets = [], questions = [], answers = {}, current = null;
+const timers = {};
+
+function el(tag, attrs={}, ...kids){
+  const n = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)){
+    if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v;
+    else if (v !== false && v != null) n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids) if (k) n.append(k);
+  return n;
+}
+
+function showEmpty(msg){ main.replaceChildren(el('div',{class:'empty',text:msg})); }
+
+function render(){
+  if (!sheets.length){ showEmpty('No brainstorm is open yet. When a planning thread starts one, its questions appear here.'); picker.hidden = true; return; }
+  if (!current || !sheets.find(s => s.id === current)){
+    const open = sheets.filter(s => (s.status||'open') === 'open');
+    current = (open[0] || sheets[0]).id;
+  }
+  picker.hidden = sheets.length < 2;
+  picker.replaceChildren(...sheets.map(s => el('option',{value:s.id, selected: s.id===current}, document.createTextNode(s.title + ((s.status==='closed')?' (closed)':'')))));
+  const sheet = sheets.find(s => s.id === current);
+  titleEl.textContent = sheet.title;
+  const qs = questions.filter(q => q.sheet === current).sort((a,b) => (a.section||0)-(b.section||0) || (a.order||0)-(b.order||0));
+  const frag = document.createDocumentFragment();
+  if (sheet.grounding){
+    const g = el('div',{class:'ground'}, el('span',{class:'lbl',text:'Where we are'}));
+    String(sheet.grounding).split(/\n\n+/).forEach(p => g.append(el('p',{text:p})));
+    frag.append(g);
+  }
+  const secs = [...new Set(qs.map(q => q.section||0))];
+  for (const s of secs){
+    const list = qs.filter(q => (q.section||0) === s);
+    const name = list[0].sectionTitle || ('Part ' + s);
+    const answered = list.filter(q => isAnswered(q.id)).length;
+    const sec = el('section',{class:'sec'},
+      el('div',{class:'sechead'}, el('h2',{text:name}), el('span',{class:'count',text: answered + ' of ' + list.length + ' answered'})));
+    list.forEach(q => sec.append(card(q)));
+    frag.append(sec);
+  }
+  frag.append(finishBox(sheet, qs));
+  main.replaceChildren(frag);
+}
+
+function isAnswered(id){ const a = answers[id]; return !!(a && (a.choice || (a.own||'').trim())); }
+
+function card(q){
+  const a = answers[q.id] || {};
+  const box = el('article',{class:'q' + (isAnswered(q.id)?' done':''), id:'q-'+q.id});
+  box.append(el('p',{class:'qtext',text:q.text}));
+  if (q.why) box.append(el('p',{class:'why',text:'Why it matters: ' + q.why}));
+  const fs = el('fieldset',{class:'opts'}, el('legend',{class:'why',text:'Pick one, or write your own below'}));
+  (q.options||[]).forEach(o => {
+    const id = 'r-'+q.id+'-'+o.key;
+    const inp = el('input',{type:'radio',name:'c-'+q.id,id,value:o.key,checked:a.choice===o.key});
+    inp.addEventListener('change', () => save(q.id, {choice:o.key}, true));
+    const l = el('span',{class:'l'}, document.createTextNode(o.label));
+    if (o.key === q.rec) l.append(el('span',{class:'badge',text:'My pick'}));
+    fs.append(el('label',{class:'opt',for:id}, inp, el('span',{}, l, o.detail ? el('div',{class:'d',text:o.detail}) : null)));
+  });
+  box.append(fs);
+  if (q.recWhy) box.append(el('p',{class:'recwhy',text:'Why I pick it: ' + q.recWhy}));
+  box.append(area(q.id,'own','Your own answer (if none of these fit)', a.own));
+  box.append(area(q.id,'thought','What went through your mind reading this question', a.thought));
+  box.append(el('span',{class:'state',id:'s-'+q.id,text: a.at ? 'Saved' : ''}));
+  return box;
+}
+
+function area(qid, field, label, val){
+  const id = field+'-'+qid;
+  const t = el('textarea',{id, rows:'2'});
+  t.value = val || '';
+  t.addEventListener('input', () => { setState(qid,'Typing...'); clearTimeout(timers[id]); timers[id] = setTimeout(() => save(qid,{[field]:t.value}), 900); });
+  t.addEventListener('blur', () => { clearTimeout(timers[id]); if ((answers[qid]||{})[field] !== t.value) save(qid,{[field]:t.value}); });
+  return el('label',{class:'box',for:id}, document.createTextNode(label), t);
+}
+
+function setState(qid, txt, ok){ const s = $('#s-'+qid); if (s){ s.textContent = txt; s.className = 'state' + (ok?' saved':''); } }
+
+async function save(qid, patch){
+  if (!db){ setState(qid,'Not saved: sign in to claude.ai to answer'); return; }
+  const prev = answers[qid] || {};
+  const next = Object.assign({}, prev, patch, {sheet: current, at: new Date().toISOString()});
+  answers[qid] = next;
+  setState(qid,'Saving...');
+  try { await db.collection('answers').doc(qid).set(next); setState(qid,'Saved',true); }
+  catch(e){ setState(qid,'Not saved: ' + (e && e.code === 'permission_denied' ? 'this page is read-only for you' : 'try again in a moment')); }
+}
+
+function finishBox(sheet, qs){
+  const sid = current + '__finish';
+  const a = answers[sid] || {};
+  const box = el('div',{class:'finish'}, el('h2',{text:'Before you send it'}));
+  const t = el('textarea',{id:'missed-'+current, rows:'3'}); t.value = a.missed || '';
+  t.addEventListener('blur', () => saveFinish(sid,{missed:t.value}));
+  box.append(el('label',{class:'box',for:'missed-'+current}, document.createTextNode('Anything I did not ask that I should have?'), t));
+  const n = qs.filter(q => isAnswered(q.id)).length;
+  const all = n === qs.length && qs.length > 0;
+  const btn = el('button',{type:'button', disabled: !all}, document.createTextNode(a.submitted ? 'Send again' : 'Send answers to Claude'));
+  const st = el('span',{class:'state' + (a.submitted?' saved':''), text:
+    !all ? (n + ' of ' + qs.length + ' answered. Answer every question (pick one or write your own) to send.')
+    : a.submitted ? ('Sent ' + new Date(a.submitted).toLocaleString() + (a.pinged ? '. Claude was notified.' : '. Claude was not notified: say "sent" in the thread.'))
+    : 'All answered. Sending notifies Claude.'});
+  btn.addEventListener('click', async () => {
+    if (!all) return;
+    btn.disabled = true; st.textContent = 'Sending...';
+    const when = new Date().toISOString();
+    let pinged = false;
+    try {
+      const c = await window.claude.use('comments');
+      if (c && await c.canSendToClaude() === 'available'){
+        await c.sendToClaude({anchor: c.anchorFor(box), text: 'Brainstorm sheet sent: "' + sheet.title + '" (' + current + '), ' + n + ' of ' + qs.length + ' answered. Read the answers from the page database.'});
+        pinged = true;
+      }
+    } catch(e){ pinged = false; }
+    await saveFinish(sid,{missed:t.value, submitted:when, pinged});
+    render();
+  });
+  box.append(btn, st);
+  return box;
+}
+
+async function saveFinish(sid, patch){
+  if (!db) return;
+  const next = Object.assign({}, answers[sid]||{}, patch, {sheet: current});
+  answers[sid] = next;
+  try { await db.collection('answers').doc(sid).set(next); } catch(e){}
+}
+
+picker.addEventListener('change', () => { current = picker.value; render(); });
+
+(async () => {
+  const fail = setTimeout(() => showEmpty('The questions could not load. Open this page signed in to claude.ai, or reload it.'), 10000);
+  try { db = window.claude ? await window.claude.use('db') : null; } catch(e){ db = null; }
+  if (!db){ clearTimeout(fail); showEmpty('Sign in to claude.ai to see and answer this brainstorm.'); return; }
+  let got = 0; const ready = () => { if (++got >= 3){ clearTimeout(fail); } render(); };
+  let first = {s:true,q:true,a:true};
+  const onErr = () => { clearTimeout(fail); showEmpty('The questions could not load. Reload the page to try again.'); };
+  db.collection('sheets').onSnapshot(s => { sheets = s.docs.map(d => Object.assign({id:d.id}, d.data())).sort((a,b) => String(b.created||'').localeCompare(String(a.created||''))); if (first.s){first.s=false; ready();} else render(); }, onErr);
+  db.collection('questions').onSnapshot(s => { questions = s.docs.map(d => Object.assign({id:d.id}, d.data())); if (first.q){first.q=false; ready();} else render(); }, onErr);
+  db.collection('answers').onSnapshot(s => {
+    const typing = document.activeElement && document.activeElement.tagName === 'TEXTAREA';
+    const fresh = {}; s.docs.forEach(d => fresh[d.id] = d.data()); answers = Object.assign(fresh, typing ? {} : {});
+    if (first.a){ first.a=false; ready(); } else if (!typing) render();
+  }, onErr);
+})();
+})();
+</script>
+
+</body></html>

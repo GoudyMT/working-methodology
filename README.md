@@ -52,7 +52,7 @@ The full map, with the three places a rule can live and the skills by situation:
 |---|---|---|
 | `user/CLAUDE.md` | `~/.claude/CLAUDE.md` | Global rules for every project. `{{OWNER_NAME}}` and `{{OWNER_PROFILE}}` are filled at install. |
 | `user/agents/` | `~/.claude/agents/` | Agent roles: builder, checker, orchestrator, scanner. |
-| `user/skills/` | `~/.claude/skills/` | agent-team-build, teacher, teacher-sync, human-factor, methodology-kit; the format skills (pr-body, release-notes, closeout, preview-test, pre-pr-sweep, adr), each with its steps, examples and audit; and the builder and checker rules preloaded by their roles. |
+| `user/skills/` | `~/.claude/skills/` | agent-team-build, brainstorm, teacher, teacher-sync, human-factor, methodology-kit; the format skills (pr-body, release-notes, closeout, preview-test, pre-pr-sweep, adr), each with its steps, examples and audit; and the builder and checker rules preloaded by their roles. |
 | `rules/` | - | The rules themselves: a core and one module per kind of work, tool-neutral Markdown. The only place a rule is edited. |
 | `project/` | the project folder | `AGENTS.md`, `standards/` and `.claude/rules/` (written by `kit.mjs build` from `rules/`), `_Start Here.md`, `_Loop Learnings.md`, `CLAUDE.md`, the four tracking files, `_Templates/`, `.claude/` tools, hooks and settings, and the skills-by-case map (`.claude/kit/skill-cases.json`). |
 | `memory/` | `~/.claude/projects/<project>/memory/` | The owner's working style as subject files, with `MEMORY.md` as the index. |

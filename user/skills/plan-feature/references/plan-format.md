@@ -24,6 +24,7 @@ its own. Plan the whole cycle before branching (rule:session-workflow) so the wo
 - Open questions: <none | list>
 
 **Goal:** <one sentence: what it gives the user>
+**Record:** <the brainstorm record; each goal names the record answer it comes from, or is marked as the planner's idea>
 **Design:** <path to the approved design doc; the plan argues from it and executors read both>
 **Approach:** <2-3 sentences>
 **Stack:** <the key tools it uses>

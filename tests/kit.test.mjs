@@ -3308,26 +3308,65 @@ test('the commit check runs in an agent worktree and reads that worktree\'s stag
   assert.match(ok.stdout + ok.stderr, /Commit check: PASS/, 'a run is visible');
 });
 
-// IR-2026-10-31-pr-body-audit-fails-on-the-required-attribution-header: a project thread's host requires a two-line
-// attribution block at the top of every PR body; the audits read past it, and nowhere else.
+// E19: the owner removed the PR attribution standard, so a host's two-line block fails every body audit, wherever it
+// sits. The corpus came from a separate writer who never saw the check; "unclear" cases fail closed.
 const ATTRIBUTION = '<!-- claude-projects-attribution: {"github_login":"someone"} -->\n_Requested by **Pat**_\n\n';
-test('the PR-body audits read past a leading host attribution block, and only a leading one', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
-  const withBlock = stdAudit(dir, ATTRIBUTION + honestBody());
-  assert.equal(withBlock.status, 0, withBlock.stdout);
-  assert.match(withBlock.stdout, /attribution block: present/);
-  const lines = honestBody().split('\n');
-  const midway = [...lines.slice(0, 4), ATTRIBUTION.trimEnd(), ...lines.slice(4)].join('\n');
-  assert.equal(stdAudit(dir, midway).status, 1, 'a block anywhere else still fails');
+const CORPUS = JSON.parse(read(path.resolve('tests/attribution-corpus.json')));
+const leanAudit = (dir, text) => {
   const lean = read(path.resolve('user/skills/pr-body/examples/lean.md'));
   const f = path.join(dir, 'lean.md');
-  fs.writeFileSync(f, ATTRIBUTION + lean);
+  fs.writeFileSync(f, text(lean));
   const title = lean.split('\n')[0].replace(/^## /, '').replace(/^[A-Za-z ]+: /, 'feat: ');
-  const out = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
-  fs.writeFileSync(f, lean);
-  const plain = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
-  assert.equal(out.status, plain.status, out.stdout);
-  assert.match(out.stdout, /attribution block: present/);
+  return spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
+};
+const notesAudit = (dir, text) => {
+  const f = path.join(dir, 'notes.md');
+  fs.writeFileSync(f, text);
+  return spawnSync('node', [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.0.0'], { encoding: 'utf8', cwd: dir });
+};
+
+test('the attribution check refuses every disguise in the corpus and passes prose about it', async () => {
+  const { attributionFaults } = await import('../project/.claude/no-attribution.mjs');
+  for (const body of [...CORPUS.mustFail, ...CORPUS.unclear.map((u) => u.s)]) assert.notDeepEqual(attributionFaults(body), [], JSON.stringify(body));
+  for (const body of CORPUS.mustPass) assert.deepEqual(attributionFaults(body), [], JSON.stringify(body));
+});
+
+test('both PR-body audits fail on the attribution block at the top, in the middle, or either half alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const FAILED = /FAIL\s+no attribution block/;
+  const clean = stdAudit(dir, honestBody());
+  assert.equal(clean.status, 0, 'a clean body still passes');
+  assert.doesNotMatch(clean.stdout, FAILED);
+  const lines = honestBody().split('\n');
+  const [comment, line] = ATTRIBUTION.trimEnd().split('\n');
+  for (const block of [ATTRIBUTION.trimEnd(), comment, line]) {
+    assert.match(stdAudit(dir, block + '\n\n' + honestBody()).stdout, FAILED, block);
+    assert.match(stdAudit(dir, [...lines.slice(0, 4), block, ...lines.slice(4)].join('\n')).stdout, FAILED, block);
+  }
+  assert.doesNotMatch(leanAudit(dir, (lean) => lean).stdout, FAILED);
+  for (const body of [(lean) => ATTRIBUTION + lean, (lean) => lean + '\n' + line + '\n']) {
+    const audit = leanAudit(dir, body);
+    assert.match(audit.stdout, FAILED);
+    assert.equal(audit.status, 1, audit.stdout);
+  }
+});
+
+test('the attribution check stays fast on a line of tick boxes', async () => {
+  const { attributionFaults } = await import('../project/.claude/no-attribution.mjs');
+  const start = Date.now();
+  assert.deepEqual(attributionFaults('[ ] '.repeat(60)), []);
+  assert.ok(Date.now() - start < 1000);
+});
+
+test('the release notes audit fails on the attribution block, on the same corpus', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rna-'));
+  for (const body of [...CORPUS.mustFail, ...CORPUS.unclear.map((u) => u.s)]) assert.match(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
+  for (const body of CORPUS.mustPass) assert.doesNotMatch(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
+});
+
+test('the kit ships no way past the attribution check', () => {
+  assert.equal(fs.existsSync(path.resolve('project/.claude/attribution.mjs')), false);
+  for (const f of ['project/.claude/pr-body-audit.mjs', 'project/.claude/pr-body-audit-lean.mjs']) assert.doesNotMatch(read(path.resolve(f)), /stripAttribution|\.\/attribution\.mjs/);
 });
 
 // IR-2026-10-31-no-branch-rule-on-main-after-a-new-repo-goes-public: the first push gate made a repo public and
@@ -4377,8 +4416,8 @@ test('a recall run asks the current keys and its header names them', async () =>
 });
 
 test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {
-  const { kit, home, proj } = makeKit();
-  const run = () => spawnSync(process.execPath, [RECALL, proj, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, PATH: '' } });
+  const { kit, home } = makeKit();
+  const run = () => spawnSync(process.execPath, [RECALL, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, PATH: '' } });
   const noStamp = run();
   assert.equal(noStamp.status, 1);
   assert.match(noStamp.stderr, /not a released kit install/);
@@ -4388,9 +4427,14 @@ test('recall refuses to run unless the Claude folder is a released kit install, 
   assert.match(unreleased.stderr, /not a released kit install/);
   assert.equal(fs.existsSync(path.resolve('reports/evals/never-saved.md')), false);
   // The folder is found the way kit.mjs finds it.
-  const viaConfig = spawnSync(process.execPath, [RECALL, proj, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: '', CLAUDE_CONFIG_DIR: home, PATH: '' } });
+  const viaConfig = spawnSync(process.execPath, [RECALL, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: '', CLAUDE_CONFIG_DIR: home, PATH: '' } });
   assert.match(viaConfig.stderr, /is not a released kit install/);
   assert.ok(viaConfig.stderr.includes(home), viaConfig.stderr);
+});
+
+test('a recall label is one plain word, so dots and flags cannot pass as one', async () => {
+  const { parseRunArgs } = await recallTools();
+  for (const label of ['.', '..', '--no-kit', '-x']) assert.throws(() => parseRunArgs([label]), /usage/, label);
 });
 
 test('recall gate passes a median at or above the baseline', async () => {
@@ -4623,4 +4667,671 @@ test('the scorer brief is versioned and carries the two calls the proof found bo
   assert.match(brief, /^Current version: v1$/m);
   assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/);
   assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/);
+});
+// Recall probes: the runner makes its own throwaway folder, so no folder name or label can reach the result.
+const HEX6 = '[0-9a-f]{6}';
+const probeParts = (home, p) => path.relative(home, p).split(path.sep);
+const recorder = (statuses = []) => {
+  const calls = [];
+  const run = (cmd, args, opts) => {
+    calls.push({ cmd, args: [...args], opts: { ...opts }, dirExisted: opts && opts.cwd ? fs.existsSync(opts.cwd) : null });
+    const status = statuses.length ? statuses.shift() : 0;
+    return { status, stdout: '', stderr: status === 0 ? '' : 'boom' };
+  };
+  return { calls, run };
+};
+const scratch = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'probe-')), 'kit-probes', 'abc123', 'pdef456');
+
+test('probePath is random per call and always home/kit-probes/<6 hex>/p<6 hex>', async () => {
+  const { probePath } = await recallTools();
+  const home = path.join(os.tmpdir(), 'some home');
+  const seen = new Set();
+  for (let i = 0; i < 25; i++) {
+    const p = probePath(home);
+    assert.equal(typeof p, 'string');
+    const parts = probeParts(home, p);
+    assert.equal(parts.length, 3, p);
+    assert.equal(parts[0], 'kit-probes');
+    assert.match(parts[1], new RegExp(`^${HEX6}$`));
+    assert.match(parts[2], new RegExp(`^p${HEX6}$`));
+    assert.ok(p.startsWith(home + path.sep), p);
+    assert.equal(p, path.join(home, 'kit-probes', parts[1], parts[2]));
+    seen.add(p);
+  }
+  assert.equal(seen.size, 25, 'every call must give a new path');
+  assert.notEqual(probePath(home), probePath(home));
+});
+
+test('probePath cannot take a label, so no label can appear in the path', async () => {
+  const { probePath } = await recallTools();
+  assert.equal(probePath.length, 1);
+  const home = path.join(os.tmpdir(), 'h');
+  for (const label of ['kit-1.19.0', 'control', 'cand-zz', 'my_label', 'no-kit', 'recall.run-9', 'xyz']) {
+    // A second argument, if someone smuggles one in, must be ignored.
+    for (const p of [probePath(home), probePath(home, label)]) {
+      const rel = path.relative(home, p);
+      assert.ok(!rel.includes(label), `${label} found in ${rel}`);
+      assert.match(rel.split(path.sep).slice(1).join('/'), new RegExp(`^${HEX6}/p${HEX6}$`));
+    }
+  }
+});
+
+test('parseRunArgs accepts [label], [label, kitFolder] and [label, --no-kit] and returns exactly label, kitDir, noKit', async () => {
+  const { parseRunArgs } = await recallTools();
+  assert.deepEqual(parseRunArgs(['cand-1']), { label: 'cand-1', kitDir: null, noKit: false });
+  assert.deepEqual(parseRunArgs(['kit-1.19.0']), { label: 'kit-1.19.0', kitDir: null, noKit: false });
+  assert.deepEqual(parseRunArgs(['control_2', '--no-kit']), { label: 'control_2', kitDir: null, noKit: true });
+  const kit = path.resolve(os.tmpdir(), 'some kit');
+  const got = parseRunArgs(['cand-1', kit]);
+  assert.deepEqual(Object.keys(got).sort(), ['kitDir', 'label', 'noKit']);
+  assert.equal(got.label, 'cand-1');
+  assert.equal(got.noKit, false);
+  assert.equal(typeof got.kitDir, 'string');
+  assert.equal(path.resolve(got.kitDir), kit);
+});
+
+test('parseRunArgs refuses no label, a label that is a path, too many arguments, and --no-kit with a kit folder', async () => {
+  const { parseRunArgs } = await recallTools();
+  assert.throws(() => parseRunArgs([]));
+  assert.throws(() => parseRunArgs(['']));
+  for (const bad of ['C:\\x\\y', 'C:/x/y', './proj', '.\\proj', 'a/b', 'a\\b', '/abs', 'with space', 'semi;colon', 'C:']) {
+    assert.throws(() => parseRunArgs([bad]), undefined, `label ${bad} must be refused`);
+    assert.throws(() => parseRunArgs([bad, '--no-kit']), undefined, `label ${bad} with --no-kit must be refused`);
+  }
+  assert.throws(() => parseRunArgs(['a', 'b', 'c']));
+  assert.throws(() => parseRunArgs(['a', 'b', 'c', 'd']));
+  assert.throws(() => parseRunArgs(['a', '--no-kit', path.resolve('kit')]));
+  assert.throws(() => parseRunArgs(['a', path.resolve('kit'), '--no-kit']));
+  assert.throws(() => parseRunArgs(['a', '--no-kit', '--no-kit']));
+});
+
+test('parseRunArgs refuses the old "<folder> <label>" usage', async () => {
+  const { parseRunArgs } = await recallTools();
+  assert.throws(() => parseRunArgs(['C:/some/folder', 'kit-1.19.0']));
+  assert.throws(() => parseRunArgs(['C:\\some\\folder', 'kit-1.19.0']));
+  assert.throws(() => parseRunArgs(['./folder', 'x']));
+  assert.throws(() => parseRunArgs([path.resolve(os.tmpdir(), 'proj'), 'x']));
+});
+
+test('setupProbe makes the folder, runs git init in it, then installs the kit project layer with cwd at the kit', async () => {
+  const { setupProbe } = await recallTools();
+  const dir = scratch();
+  const kitDir = path.join(os.tmpdir(), 'a kit');
+  const { calls, run } = recorder();
+  setupProbe({ dir, kitDir, noKit: false, run, released: true });
+  assert.equal(fs.existsSync(dir), true, 'the probe folder must exist');
+  assert.equal(calls.length, 2);
+  const [git, inst] = calls;
+  assert.equal(git.cmd, 'git');
+  assert.ok(git.args.includes('init'));
+  assert.ok(git.opts.cwd === dir || git.args.includes(dir), 'git init must target the probe folder');
+  assert.equal(git.dirExisted !== false, true, 'the folder must exist before git init runs');
+  assert.match(path.basename(inst.cmd), /^node(\.exe)?$/);
+  const script = path.resolve(kitDir, 'scripts', 'kit.mjs');
+  assert.equal(path.resolve(inst.args[0]), script);
+  assert.deepEqual(inst.args.slice(1, 4), ['install', 'project', dir]);
+  assert.equal(path.resolve(inst.opts.cwd), path.resolve(kitDir));
+  assert.equal(inst.args.includes('--unreleased'), false, 'a released kit must not get --unreleased');
+});
+
+test('setupProbe adds --unreleased exactly when the kit is not a release', async () => {
+  const { setupProbe } = await recallTools();
+  const kitDir = path.join(os.tmpdir(), 'k');
+  const a = recorder();
+  setupProbe({ dir: scratch(), kitDir, noKit: false, run: a.run, released: false });
+  assert.equal(a.calls.length, 2);
+  assert.equal(a.calls[1].args.filter((x) => x === '--unreleased').length, 1);
+  assert.equal(a.calls[0].args.includes('--unreleased'), false, 'git init never gets the flag');
+  assert.deepEqual(a.calls[1].args.slice(1, 3), ['install', 'project']);
+  const b = recorder();
+  setupProbe({ dir: scratch(), kitDir, noKit: false, run: b.run, released: true });
+  assert.equal(b.calls[1].args.includes('--unreleased'), false);
+});
+
+test('setupProbe with noKit still makes the folder and git init but never calls the install', async () => {
+  const { setupProbe } = await recallTools();
+  for (const released of [true, false]) {
+    const dir = scratch();
+    const { calls, run } = recorder();
+    setupProbe({ dir, kitDir: path.join(os.tmpdir(), 'k'), noKit: true, run, released });
+    assert.equal(fs.existsSync(dir), true);
+    assert.equal(calls.length, 1, 'only git init may run');
+    assert.equal(calls[0].cmd, 'git');
+    assert.ok(calls.every((c) => !c.args.some((a) => /kit\.mjs$|^install$/.test(String(a)))));
+  }
+  // noKit with no kitDir at all must not touch kitDir.
+  const { calls, run } = recorder();
+  setupProbe({ dir: scratch(), kitDir: null, noKit: true, run, released: false });
+  assert.equal(calls.length, 1);
+});
+
+test('setupProbe throws when git init fails and runs nothing after it', async () => {
+  const { setupProbe } = await recallTools();
+  const { calls, run } = recorder([1]);
+  assert.throws(() => setupProbe({ dir: scratch(), kitDir: path.join(os.tmpdir(), 'k'), noKit: false, run, released: true }));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].cmd, 'git');
+  const again = recorder([128]);
+  assert.throws(() => setupProbe({ dir: scratch(), kitDir: null, noKit: true, run: again.run, released: false }));
+  assert.equal(again.calls.length, 1);
+});
+
+test('setupProbe throws when the kit install fails', async () => {
+  const { setupProbe } = await recallTools();
+  for (const released of [true, false]) {
+    const { calls, run } = recorder([0, 2]);
+    assert.throws(() => setupProbe({ dir: scratch(), kitDir: path.join(os.tmpdir(), 'k'), noKit: false, run, released }));
+    assert.equal(calls.length, 2);
+  }
+});
+
+test('checkUserLayer throws unless kit-install.json exists and says release is exactly true', async () => {
+  const { checkUserLayer } = await recallTools();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ul-'));
+  assert.throws(() => checkUserLayer(home), (e) => /is not a released kit install/.test(e.message) && e.message.includes(home));
+  const stamp = path.join(home, 'kit-install.json');
+  for (const body of [{ release: false }, { release: 'true' }, { release: 1 }, {}, { describe: 'v1.0.0' }]) {
+    fs.writeFileSync(stamp, JSON.stringify(body));
+    assert.throws(() => checkUserLayer(home), /is not a released kit install/, JSON.stringify(body));
+  }
+  fs.writeFileSync(stamp, '{ not json');
+  assert.throws(() => checkUserLayer(home));
+  fs.writeFileSync(stamp, JSON.stringify({ release: true, describe: 'v1.0.0' }));
+  assert.doesNotThrow(() => checkUserLayer(home));
+  // A folder with that name is not a stamp.
+  const odd = fs.mkdtempSync(path.join(os.tmpdir(), 'ul-'));
+  fs.mkdirSync(path.join(odd, 'kit-install.json'));
+  assert.throws(() => checkUserLayer(odd));
+});
+
+test('runHeader names the path shape and the CLI, and never the real folder name', async () => {
+  const { runHeader, probePath } = await recallTools();
+  const home = path.join(os.tmpdir(), 'hdr-home');
+  const projectDir = probePath(home);
+  const [, hex1, p2] = probeParts(home, projectDir);
+  const facts = { project: '1.0.0 (unreleased abc1234)', user: '1.0.0', userRelease: true, approve: true };
+  const lines = runHeader({ label: 'cand-1', projectDir, keys: 2, facts, when: '2026-11-04T00:00:00.000Z', cli: 'claude' });
+  assert.ok(Array.isArray(lines));
+  assert.ok(lines.includes('Path: kit-probes/<hex>/p<hex>'), lines.join('\n'));
+  assert.ok(lines.includes('CLI: claude'), lines.join('\n'));
+  const text = lines.join('\n');
+  for (const secret of [projectDir, hex1, p2, p2.slice(1), path.basename(projectDir), home]) {
+    assert.ok(!text.includes(secret), `header leaks ${secret}`);
+  }
+  // Existing lines survive.
+  assert.match(text, /^# Recall run: cand-1$/m);
+  assert.match(text, /^Keys: v2$/m);
+  assert.match(text, /^Project kit: 1\.0\.0 \(unreleased abc1234\)$/m);
+  assert.match(text, /^User kit: 1\.0\.0$/m);
+  assert.match(text, /^approve\.mjs at the user path: yes$/m);
+  // The CLI line follows the argument, it is not a constant.
+  const other = runHeader({ label: 'x', projectDir, keys: 2, facts, when: 'w', cli: 'other-cli' }).join('\n');
+  assert.match(other, /^CLI: other-cli$/m);
+  assert.doesNotMatch(other, /^CLI: claude$/m);
+  // The path line is the same for every probe, whatever its random name.
+  const again = runHeader({ label: 'x', projectDir: probePath(home), keys: 2, facts, when: 'w', cli: 'claude' });
+  assert.ok(again.includes('Path: kit-probes/<hex>/p<hex>'));
+});
+
+test('recall refuses the old usage and an unreleased user layer before it creates any folder', () => {
+  const { kit, home } = makeKit();
+  const fakeOs = fs.mkdtempSync(path.join(os.tmpdir(), 'fakeos-'));
+  const env = { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home, HOME: fakeOs, USERPROFILE: fakeOs, PATH: '' };
+  const go = (args) => spawnSync(process.execPath, [RECALL, ...args], { encoding: 'utf8', env });
+  const unstamped = go(['never-saved']);
+  assert.equal(unstamped.status, 1);
+  assert.match(unstamped.stderr, /not a released kit install/);
+  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  for (const args of [['C:/some/folder', 'kit-1.19.0'], ['./folder', 'x']]) {
+    const old = go(args);
+    assert.equal(old.status, 1);
+    assert.match(old.stderr, /usage/);
+  }
+  assert.equal(fs.existsSync(path.join(fakeOs, 'kit-probes')), false, 'no probe folder before the checks pass');
+  assert.equal(fs.existsSync(path.resolve('reports/evals/never-saved.md')), false);
+});
+
+test('recall checks the Claude folder a session will use, not one a variable points at', async () => {
+  const { checkHome } = await recallTools();
+  assert.throws(() => checkHome({ KIT_CLAUDE_HOME: 'C:/a' }), /KIT_CLAUDE_HOME/);
+  assert.throws(() => checkHome({ KIT_CLAUDE_HOME: 'C:/a', CLAUDE_CONFIG_DIR: 'C:/b' }), /KIT_CLAUDE_HOME/);
+  checkHome({ KIT_CLAUDE_HOME: 'C:/a', CLAUDE_CONFIG_DIR: 'C:/a' });
+  checkHome({});
+});
+
+test('every recall session runs in the probe folder with the question as its input, and a failure stops the run', async () => {
+  const { askAll, probePath } = await recallTools();
+  const dir = probePath(path.join(os.tmpdir(), 'osh'));
+  const calls = [];
+  const qs = [{ n: 1, q: 'First?', key: 'k1' }, { n: 2, q: 'Second?', key: 'k2' }];
+  const lines = askAll({ qs, projectDir: dir, run: (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0, stdout: 'answer\n' }; } });
+  assert.deepEqual(calls.map((c) => c.opts.cwd), [dir, dir]);
+  assert.match(calls[0].opts.cwd.replace(/\\/g, '/'), /kit-probes\/[0-9a-f]{6}\/p[0-9a-f]{6}$/);
+  assert.deepEqual(calls.map((c) => c.opts.input), ['First?', 'Second?']);
+  assert.equal(calls[0].args[calls[0].args.indexOf('--setting-sources') + 1], 'project');
+  assert.match(calls[0].args[calls[0].args.indexOf('--disallowedTools') + 1], /Bash/);
+  assert.ok(lines.includes('> answer'));
+  for (const bad of [{ status: 1, stdout: 'words' }, { status: 0, stdout: '  ' }, { status: 0, stdout: 'Not logged in' }]) {
+    assert.throws(() => askAll({ qs, projectDir: dir, run: () => bad }), /question 1: no answer/, JSON.stringify(bad));
+  }
+});
+
+test('a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself', async () => {
+  const { recallRun, currentVersion } = await recallTools();
+  const { kit, home } = makeKit();
+  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'osh-'));
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'out-'));
+  fs.mkdirSync(path.join(home, 'projects', 'other-project'), { recursive: true });
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const calls = [];
+  const kitTools = { releaseState: () => ({ problems: ['not a tag'] }), projectSlug: (d) => path.basename(d) };
+  const go = (over = {}) => recallRun({ label: 'recall-cand-9', kitDir: kit, noKit: false, home, osHome, env: {}, text, when: 'w', outDir, kitTools,
+    run: (cmd, args, opts) => { calls.push({ cmd, args, opts }); if (cmd === 'claude' && args[0] === '-p') fs.mkdirSync(path.join(home, 'projects', path.basename(opts.cwd)), { recursive: true }); return { status: 0, stdout: 'an answer' }; }, ...over });
+  const out = go();
+  assert.match(read(out), new RegExp(`^Keys: v${currentVersion(text)}$`, 'm'));
+  const asks = calls.filter((c) => c.cmd === 'claude' && c.args[0] === '-p');
+  assert.equal(asks.length, 10);
+  for (const c of asks) assert.match(c.opts.cwd.replace(/\\/g, '/'), /\/kit-probes\/[0-9a-f]{6}\/p[0-9a-f]{6}$/);
+  assert.equal(new Set(asks.map((c) => c.opts.cwd)).size, 1);
+  assert.doesNotMatch(asks[0].opts.cwd, /recall|cand/, 'the label never reaches the path');
+  assert.ok(calls.some((c) => c.args.includes('--unreleased') && c.args.includes(asks[0].opts.cwd)), 'the project layer goes into the run\'s folder');
+  assert.deepEqual(fs.readdirSync(path.join(osHome, 'kit-probes')), [], 'the folder is gone');
+  assert.ok(fs.existsSync(path.join(home, 'projects', 'other-project')));
+  assert.equal(fs.readdirSync(path.join(home, 'projects')).some((p) => /^p[0-9a-f]{6}$/.test(p)), false, 'its memory is gone');
+  assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' } }), /KIT_CLAUDE_HOME/);
+  assert.throws(() => go({ run: () => ({ status: 1, stderr: 'no' }) }), /no/);
+  assert.deepEqual(fs.readdirSync(path.join(osHome, 'kit-probes')), [], 'a failed run cleans up too');
+});
+
+test('a recall run removes what it made, and nothing else', async () => {
+  const { removeProbe, probePath } = await recallTools();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clean-'));
+  const home = path.join(root, '.claude');
+  const dir = probePath(root);
+  const other = path.join(root, 'kit-probes', 'keepme');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(other, { recursive: true });
+  const slug = path.join(home, 'projects', 'slug-1', 'memory');
+  fs.mkdirSync(slug, { recursive: true });
+  fs.mkdirSync(path.join(home, 'projects', 'slug-2'), { recursive: true });
+  removeProbe({ dir, home, slug: 'slug-1' });
+  assert.equal(fs.existsSync(path.dirname(dir)), false);
+  assert.equal(fs.existsSync(path.join(home, 'projects', 'slug-1')), false);
+  assert.ok(fs.existsSync(path.join(home, 'projects', 'slug-2')), 'another project\'s memory stays');
+  assert.ok(fs.existsSync(other));
+  assert.throws(() => removeProbe({ dir: other, home, slug: 'x' }), /not a probe folder/);
+});
+
+// E17: the brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.
+const sheetTools = () => import('../user/skills/brainstorm/sheet.mjs');
+const compileTools = () => import('../user/skills/brainstorm/compile-record.mjs');
+const SHEET = `# Sheet: Export button
+
+id: export-button
+asked by: Claude
+
+## Grounding
+
+We are  planning the export button.
+
+It came up because exports fail on the phone.\t
+
+## Topic: Where it lives
+
+### Q1. Where should the button sit?
+
+Why it matters: it sets what people find first.
+
+Options:
+- [x] a: In the toolbar
+- [ ] b: In the menu
+
+Asker's pick: a
+Why this pick: it is where people look.
+
+Your answer:
+
+What I thought:
+
+i wonder abuot tablets  \twith two spaces
+
+and a second paragraph
+
+### Q2. What should the file be called?
+
+Why it matters: people share it.
+
+Options:
+- [ ] a: The date
+- [ ] b: The title
+
+Asker's pick: b
+Why this pick: titles read better.
+
+Your answer:
+
+Neither,  use the projct name\t
+
+and keep it short
+
+What I thought:
+
+## Topic: Limits
+
+### Q3. How big can an export get?
+
+Why it matters: it sets the memory budget.
+
+Your answer:
+
+What I thought:
+
+## Anything I did not ask?
+
+Nothing else  at this time.
+
+Truly.
+`;
+const fences = (record) => [...record.matchAll(/^(~{3,})\n([\s\S]*?)\n\1$/gm)].map((m) => m[2]);
+const answerQ3 = (text) => SHEET.replace('it sets the memory budget.\n\nYour answer:\n', `it sets the memory budget.\n\nYour answer:\n\n${text}\n`);
+
+test('a filled sheet parses into its grounding, topics, questions and answers', async () => {
+  const { parseSheet } = await sheetTools();
+  const s = parseSheet(SHEET);
+  assert.equal(s.title, 'Export button');
+  assert.equal(s.id, 'export-button');
+  assert.equal(s.askedBy, 'Claude');
+  assert.match(s.grounding, /^We are {2}planning[\s\S]*on the phone\.\t$/);
+  assert.deepEqual(s.questions.map((q) => [q.n, q.topic]), [[1, 'Where it lives'], [2, 'Where it lives'], [3, 'Limits']]);
+  assert.equal(s.questions[0].choice, 'a');
+  assert.equal(s.questions[0].pick, 'a');
+  assert.equal(s.questions[0].pickWhy, 'it is where people look.');
+  assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\n\nand a second paragraph');
+  assert.equal(s.questions[1].answer, 'Neither,  use the projct name\t\n\nand keep it short');
+  assert.equal(s.missed, 'Nothing else  at this time.\n\nTruly.');
+});
+
+test('a sheet is complete only when every question has a pick or the owner\'s own answer', async () => {
+  const { parseSheet, checkComplete } = await sheetTools();
+  assert.deepEqual(checkComplete(parseSheet(SHEET)), { ok: false, unanswered: [3], thoughtOnly: [] });
+  assert.equal(checkComplete(parseSheet(answerQ3('Ten megabytes'))).ok, true, 'own answer counts');
+  assert.equal(checkComplete(parseSheet(answerQ3('   '))).ok, false, 'spaces are not an answer');
+  const thoughtOnly = SHEET.replace('it sets the memory budget.\n\nYour answer:\n\nWhat I thought:\n', 'it sets the memory budget.\n\nYour answer:\n\nWhat I thought:\n\nhmm\n');
+  assert.deepEqual(checkComplete(parseSheet(thoughtOnly)), { ok: false, unanswered: [3], thoughtOnly: [3] }, 'a thought is not an answer');
+});
+
+test('lines that look like labels or headings stay the owner\'s words, in the box they were typed in', async () => {
+  const { parseSheet } = await sheetTools();
+  const { compileRecord } = await compileTools();
+  const words = 'It has to be fast.\nWhy it matters: my customers are on slow phones.\nPick: b\n## My notes\n# install deps\n### Heading\n## Grounding\nOptions:\nWhy this pick: mine\nAnd they leave.';
+  const inAnswer = parseSheet(answerQ3(words));
+  assert.equal(inAnswer.questions[2].answer, words);
+  assert.equal(inAnswer.questions[2].why, 'it sets the memory budget.');
+  assert.ok(fences(compileRecord(inAnswer)).includes(words));
+  const inThought = parseSheet(SHEET.replace('it sets the memory budget.\n\nYour answer:\n\nWhat I thought:\n', `it sets the memory budget.\n\nYour answer:\n\nWhat I thought:\n\n${words}\n`));
+  assert.equal(inThought.questions[2].thought, words);
+  assert.match(inThought.grounding, /^We are/, 'a grounding heading in a thought replaces nothing');
+});
+
+test('the sheet parser refuses what it cannot read, and says why', async () => {
+  const { parseSheet } = await sheetTools();
+  const bad = [
+    ['a note in the top block', SHEET.replace('id: export-button\n', 'id: export-button\nNOTE: done on the train\n'), /top does not have/],
+    ['a note under an asker line', SHEET.replace('Why this pick: titles read better.\n', 'Why this pick: titles read better.\nyes but only for now\n'), /where nothing is kept/],
+    ['the asker\'s line twice', SHEET.replace('Why it matters: people share it.\n', 'Why it matters: people share it.\nWhy it matters: again\n'), /twice/],
+    ['two boxes ticked', SHEET.replace('- [ ] b: In the menu', '- [x] b: In the menu'), /two boxes ticked/],
+    ['a repeated option key', SHEET.replace('- [ ] b: In the menu', '- [ ] a: In the menu'), /option "a" appears twice/],
+    ['a pick that is not an option', SHEET.replace('Asker\'s pick: a', 'Asker\'s pick: z'), /is not an option/],
+    ['no answer label', SHEET.replace('Your answer:\n\nNeither', 'Neither'), /Q2 has no "Your answer:"/],
+    ['no thought label', SHEET.replace('and keep it short\n\nWhat I thought:\n', 'and keep it short\n'), /Q2 has no "What I thought:"/],
+    ['a question out of order', SHEET.replace('### Q1. Where', '### Q5. Where'), /expected Q1/],
+    ['a topic with no questions', SHEET.replace('## Topic: Limits\n\n', '## Topic: Empty\n\n## Topic: Limits\n\n'), /topic "Empty" has no questions/],
+    ['the last topic with no questions', SHEET.replace('## Anything I did not ask?', '## Topic: Empty\n\n## Anything I did not ask?'), /topic "Empty" has no questions/],
+    ['no grounding', SHEET.replace('## Grounding\n\nWe are  planning the export button.\n\nIt came up because exports fail on the phone.\t\n\n', ''), /no grounding/],
+    ['an empty grounding', SHEET.replace('We are  planning the export button.\n\nIt came up because exports fail on the phone.\t\n\n', ''), /no grounding/],
+    ['no closing box', SHEET.replace('## Anything I did not ask?\n\nNothing else  at this time.\n\nTruly.\n', ''), /no "## Anything I did not ask\?" box/],
+    ['no id', SHEET.replace('id: export-button\n', ''), /no "id:" line/],
+    ['no title', SHEET.replace('# Sheet: Export button', '# Export button'), /first line/],
+  ];
+  for (const [name, text, why] of bad) assert.throws(() => parseSheet(text), why, name);
+});
+
+test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved question, and words filed as the closing box', async () => {
+  const { parseSheet, sealOf, renderSheet } = await sheetTools();
+  const base = parseSheet(SHEET);
+  const sealed = renderSheet({ ...base, sealed: sealOf(base) });
+  assert.equal(parseSheet(sealed).questions.length, 3);
+  assert.equal(parseSheet(sealed.replace('- [ ] b: The title', '- [x] b: The title')).questions[1].choice, 'b', 'a tick is the owner\'s');
+  assert.equal(parseSheet(sealed.replace('What I thought:\n\n## Topic: Limits', 'What I thought:\n\nmy thought\n\n## Topic: Limits')).questions[1].thought, 'my thought', 'a box is the owner\'s');
+  const broken = {
+    'a condition on a ticked option': sealed.replace('- [x] a: In the toolbar', '- [x] a: In the toolbar but only for now'),
+    'a note after the reason': sealed.replace('Why this pick: titles read better.', 'Why this pick: titles read better. I disagree'),
+    'a new option': sealed.replace('- [ ] b: The title', '- [ ] b: The title\n- [ ] c: A third way'),
+    'a note in the grounding': sealed.replace('## Topic: Where it lives', 'This framing is wrong.\n\n## Topic: Where it lives'),
+    'a note on the question': sealed.replace('### Q1. Where should the button sit?', '### Q1. Where should the button sit? is this needed'),
+    'a changed pick': sealed.replace('Asker\'s pick: b', 'Asker\'s pick: a'),
+    'a broken question heading': sealed.replace('### Q2. What', '### Q2 What'),
+    'the closing line in a thought': sealed.replace('and a second paragraph', 'and a second paragraph\n\n## Anything I did not ask?'),
+    'a deleted question': sealed.replace(/### Q3\.[^]*?(?=## Anything)/, ''),
+  };
+  for (const [name, text] of Object.entries(broken)) assert.throws(() => parseSheet(text), /sheet:/, name);
+  assert.throws(() => parseSheet(broken['a note after the reason']), /since this sheet was sealed \(sealed: 3 questions; this reads 3\)/);
+  assert.throws(() => parseSheet(broken['the closing line in a thought']), /this reads 1/);
+});
+
+test('a sheet with Windows line ends reads the same, and the words stay whole', async () => {
+  const { parseSheet } = await sheetTools();
+  const s = parseSheet(SHEET.replace(/\n/g, '\r\n'));
+  assert.equal(s.questions[1].answer, 'Neither,  use the projct name\t\r\n\r\nand keep it short');
+  assert.equal(s.questions[0].choice, 'a');
+  assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\r\n\r\nand a second paragraph');
+});
+
+test('a sheet file saved in anything but UTF-8 is refused, and a UTF-8 mark is read past', async () => {
+  const { readSheet, parseSheet } = await sheetTools();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'enc-'));
+  const f = path.join(dir, 's.sheet.md');
+  fs.writeFileSync(f, Buffer.from('caf\xE9 sheet', 'latin1'));
+  assert.throws(() => readSheet(f), /not saved as UTF-8/);
+  fs.writeFileSync(f, Buffer.from('\uFEFFhi', 'utf16le'));
+  assert.throws(() => readSheet(f), /saved as UTF-16/);
+  fs.writeFileSync(f, Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from(SHEET)]));
+  assert.equal(parseSheet(readSheet(f)).id, 'export-button');
+});
+
+const ROWS = () => ({
+  sheet: { id: 's1', title: 'One', grounding: 'Line one.\n\nLine two.' },
+  questions: [
+    { id: 'q2', sheet: 's1', section: 1, order: 2, sectionTitle: 'A', text: 'Second?', why: 'w2', options: [{ key: 'a', label: 'Yes', detail: 'more' }, { key: 'b', label: 'No' }], rec: 'b', recWhy: 'because' },
+    { id: 'q1', sheet: 's1', section: 1, order: 1, sectionTitle: 'A', text: 'First?', options: [{ key: 'a', label: 'Up' }], rec: 'a' },
+    { id: 'q3', sheet: 's1', section: 2, order: 1, sectionTitle: 'B', text: 'Third?' },
+  ],
+  answers: { q1: { choice: 'a' }, q2: { own: 'my   own\nwords ', thought: 'odd spelng' }, s1__finish: { missed: 'tell me more', submitted: '2026-11-04T17:52:08.656Z' } },
+});
+
+test('page rows export to a sheet that says what the rows say', async () => {
+  const { sheetFromRows, parseSheet, renderSheet } = await sheetTools();
+  const text = sheetFromRows(ROWS());
+  const s = parseSheet(text);
+  assert.deepEqual(s.questions.map((q) => q.text), ['First?', 'Second?', 'Third?']);
+  assert.equal(s.questions[0].choice, 'a');
+  assert.equal(s.questions[1].answer, 'my   own\nwords ');
+  assert.equal(s.questions[1].thought, 'odd spelng');
+  assert.equal(s.questions[1].options[0].label, 'Yes - more');
+  assert.equal(s.questions[1].pick, 'b');
+  assert.equal(s.questions[1].pickWhy, 'because');
+  assert.equal(s.questions[1].why, 'w2');
+  assert.equal(s.missed, 'tell me more');
+  assert.equal(s.sent, '2026-11-04T17:52:08.656Z');
+  assert.equal(renderSheet(s), text);
+  assert.equal(renderSheet(parseSheet(SHEET)).replace(/\n+/g, '\n'), SHEET.replace(/\n+/g, '\n'));
+});
+
+test('export refuses rows that would change what the owner said, or were never sent', async () => {
+  const { sheetFromRows } = await sheetTools();
+  const rows = (change) => { const r = ROWS(); change(r); return r; };
+  assert.throws(() => sheetFromRows(rows((r) => { r.questions[0].options[1].label = 'No\n- [x] z: Forged'; })), /line break/);
+  assert.throws(() => sheetFromRows(rows((r) => { r.answers.q2.thought = 'x\n### Q3. Forged\n\nYour answer:\n\nyes\n\nWhat I thought:\n'; })), /reads as sheet structure/);
+  assert.throws(() => sheetFromRows(rows((r) => { delete r.answers.s1__finish.submitted; })), /never sent/);
+  assert.throws(() => sheetFromRows(rows((r) => { r.answers.q2.own = 'x\nWhat I thought:\ny'; })), /Q2: an answer holds a line/, 'words may not move boxes');
+  const other = sheetFromRows(rows((r) => { r.answers.q2.sheet = 'other-sheet'; }));
+  assert.doesNotMatch(other, /my {3}own/, 'an answer from another sheet is not this sheet\'s');
+});
+
+test('the record copies every box byte for byte and keeps a confirmed pick apart from the owner\'s words', async () => {
+  const { parseSheet } = await sheetTools();
+  const { compileRecord } = await compileTools();
+  const sheet = parseSheet(SHEET);
+  const r = compileRecord(sheet, 'abc');
+  assert.deepEqual(fences(r), [sheet.grounding, sheet.questions[0].thought, sheet.questions[1].answer, sheet.missed]);
+  assert.match(r, /sha256 abc/);
+  const q1 = r.slice(r.indexOf('### Q1'), r.indexOf('### Q2'));
+  assert.match(q1, /Picked: In the toolbar \(confirmed Claude's pick\)/);
+  assert.doesNotMatch(q1.split('Owner\'s thought')[0], /verbatim/, 'a confirmed pick is never labelled as the owner\'s words');
+  assert.match(q1, /^Claude's pick was: In the toolbar$/m);
+  const q2 = r.slice(r.indexOf('### Q2'), r.indexOf('### Q3'));
+  assert.match(q2, /Owner's own answer \(verbatim\)/);
+  assert.match(q2, /^Claude's pick was: The title$/m);
+  const q3 = r.slice(r.indexOf('### Q3'), r.indexOf('## Anything'));
+  assert.match(q3, /Unanswered: Claude's call/);
+  assert.match(r, /1 of 3 answers confirmed Claude's pick; 1 in the owner's own words; 1 unanswered \(Claude's call\)\. A confirmed pick is weaker evidence/);
+  for (const line of ['# Brainstorm record: Export button', '## Grounding shown to the owner', '## Where it lives', '## Limits', '### Q1. Where should the button sit?', '### Q3. How big can an export get?', "Owner's thought (verbatim):", '## Anything not asked (verbatim)']) assert.ok(r.split('\n').includes(line), line);
+  assert.match(q3, /any plan must mark it so/);
+  assert.match(compileRecord({ ...sheet, sent: 'the-time' }), /Sent the-time\./);
+});
+
+test('the record marks a pick the owner turned down and a tick with no pick offered', async () => {
+  const { parseSheet } = await sheetTools();
+  const { compileRecord } = await compileTools();
+  const against = SHEET.replace('- [x] a: In the toolbar\n- [ ] b: In the menu', '- [ ] a: In the toolbar\n- [x] b: In the menu');
+  assert.match(compileRecord(parseSheet(against)), /Picked: In the menu \(chose against Claude's pick\)/);
+  const noPick = SHEET.replace('Asker\'s pick: a\nWhy this pick: it is where people look.\n\n', '');
+  assert.match(compileRecord(parseSheet(noPick)), /Picked: In the toolbar \(no pick was offered\)/);
+});
+
+test('the owner\'s text cannot close its fence, even indented or long', async () => {
+  const { parseSheet } = await sheetTools();
+  const { compileRecord } = await compileTools();
+  for (const text of ['Neither\n~~~\nstill mine', 'Neither\n  ~~~\nstill mine', 'Neither\n   ~~~~~\nstill mine']) {
+    const r = compileRecord(parseSheet(SHEET.replace('Neither,  use the projct name\t\n\nand keep it short', text)));
+    assert.ok(fences(r).includes(text), text);
+    const open = r.split('\n').find((l, i, a) => a[i + 1] === 'Neither');
+    const inner = Math.max(...text.split('\n').map((l) => (l.trim().match(/^~+/) || [''])[0].length));
+    assert.ok(open.length > inner, text);
+  }
+});
+
+test('the record names whoever asked, so a sheet from another model reads true', async () => {
+  const { parseSheet } = await sheetTools();
+  const { compileRecord } = await compileTools();
+  const r = compileRecord(parseSheet(SHEET.replace('asked by: Claude', 'asked by: Gemini')));
+  assert.match(r, /confirmed Gemini's pick/);
+  assert.doesNotMatch(r, /Claude/);
+});
+
+test('the sheet commands work from the skill folder alone, and the core carries no kit links', () => {
+  const src = path.resolve('user/skills/brainstorm');
+  const lifted = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lift-')), 'brainstorm');
+  fs.cpSync(src, lifted, { recursive: true });
+  const cmd = (script, ...args) => spawnSync(process.execPath, [path.join(lifted, script), ...args], { encoding: 'utf8', cwd: lifted });
+  const f = path.join(lifted, '2026-11-04-export.sheet.md');
+  fs.writeFileSync(f, SHEET);
+  assert.match(cmd('sheet.mjs', 'check', f).stderr, /never sealed/);
+  assert.match(cmd('compile-record.mjs', f).stderr, /never sealed/);
+  assert.match(cmd('sheet.mjs', 'seal', f).stderr, /sealed blank/, 'a sheet with answers cannot be sealed');
+  const blank = SHEET.replace('- [x] a:', '- [ ] a:').replace(/What I thought:\n\ni wonder[^]*?\n\n### Q2/, 'What I thought:\n\n### Q2').replace(/Neither,[^]*?keep it short\n\n/, '').replace(/Nothing else[^]*$/, '');
+  fs.writeFileSync(f, blank);
+  assert.equal(cmd('sheet.mjs', 'seal', f).status, 0);
+  assert.match(read(f), /^sealed: 3 questions [0-9a-f]{16}$/m);
+  assert.match(cmd('sheet.mjs', 'seal', f).stderr, /already sealed/);
+  fs.writeFileSync(f, read(f).replace('- [ ] a: In the toolbar', '- [x] a: In the toolbar').replace('Your answer:\n\nWhat I thought:\n\n### Q2', 'Your answer:\n\nWhat I thought:\n\ni wonder\n\n### Q2').replace('titles read better.\n\nYour answer:\n', 'titles read better.\n\nYour answer:\n\nand keep it short\n'));
+  const check = cmd('sheet.mjs', 'check', f);
+  assert.equal(check.status, 1, 'an unanswered question fails the check');
+  assert.match(check.stdout, /Q3/);
+  assert.equal(cmd('compile-record.mjs', f).status, 0);
+  const out = path.join(lifted, '2026-11-04-export.brainstorm.md');
+  assert.ok(read(out).includes('and keep it short'));
+  assert.ok(read(out).includes(crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex')), 'the hash matches the file on disk');
+  assert.equal(cmd('compile-record.mjs', f).status, 1, 'a record that may hold a summary is never overwritten');
+  const rows = path.join(lifted, 'rows');
+  const rowFiles = { 'sheets/s1.json': ROWS().sheet, 'answers/s1__finish.json': ROWS().answers.s1__finish, 'answers/q2.json': { ...ROWS().answers.q2, id: 'q1' } };
+  for (const q of ROWS().questions) rowFiles[`questions/${q.id}.json`] = q;
+  rowFiles['questions/z9.json'] = { sheet: 'another', section: 1, order: 1, sectionTitle: 'Other', text: 'Not this sheet?' };
+  for (const [name, row] of Object.entries(rowFiles)) { fs.mkdirSync(path.dirname(path.join(rows, name)), { recursive: true }); fs.writeFileSync(path.join(rows, name), JSON.stringify(row)); }
+  const exported = path.join(lifted, 'x.sheet.md');
+  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 0);
+  assert.match(read(exported), /### Q2\. Second\?[\s\S]*my {3}own/, 'the file name is the row\'s id, not a field inside it');
+  assert.doesNotMatch(read(exported), /Not this sheet/, 'another sheet\'s questions stay out');
+  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 1, 'a sheet with answers is never overwritten');
+  const blankOut = path.join(lifted, 'blank.sheet.md');
+  fs.writeFileSync(blankOut, blank);
+  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', blankOut).status, 0, 'the page route replaces its blank sheet');
+  fs.rmSync(blankOut);
+  assert.match(cmd('sheet.mjs', 'export', rows, '../../x', path.join(lifted, 'y.md')).stderr, /a sheet id is/);
+  fs.writeFileSync(path.join(rows, 'answers', 'q9.json'), JSON.stringify({ sheet: 's1', own: 'lost words' }));
+  assert.match(cmd('sheet.mjs', 'export', rows, 's1', path.join(lifted, 'y.md')).stderr, /q9 has no question/);
+  fs.writeFileSync(path.join(rows, 'answers', 'q9.json'), Buffer.from('{"sheet":"s1","own":"caf\xE9"}', 'latin1'));
+  assert.match(cmd('sheet.mjs', 'export', rows, 's1', path.join(lifted, 'y.md')).stderr, /not saved as UTF-8/);
+  for (const p of [f, out, exported]) fs.rmSync(p);
+  fs.rmSync(rows, { recursive: true });
+  const KIT_ONLY = /rule:[a-z]|\bA\d\d\b|\badapter\b|plan-feature|kit\.mjs|AGENTS\.md|\bE1[678]\b|_Active Plan|_Master Roadmap|_Working Memory|_Session Log|standards\//;
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+  const files = walk(lifted).filter((p) => /\.(md|mjs|html)$/.test(p) && path.basename(p) !== 'SOURCES.md');
+  assert.ok(files.length >= 7, files.join());
+  for (const p of files) {
+    const text = path.basename(p) === 'SKILL.md' ? read(p).split('## In the methodology kit')[0] : read(p);
+    assert.doesNotMatch(text, KIT_ONLY, p);
+  }
+  assert.match(read(path.join(lifted, 'SKILL.md')), /## In the methodology kit/, 'the kit layer is one marked section');
+  assert.match(read(path.join(lifted, 'licenses', 'superpowers-MIT.txt')), /Permission is hereby granted/);
+  assert.match(read(path.join(lifted, 'licenses', 'Apache-2.0.txt')), /Apache License/);
+});
+
+test('plan-feature hands its questions to the brainstorm skill and no longer claims the word', () => {
+  const plan = read(path.resolve('user/skills/plan-feature/SKILL.md'));
+  assert.doesNotMatch(plan.split('---')[1], /brainstorm/i, 'the description leaves the word to the skill that does it');
+  assert.match(plan, /brainstorm skill/);
+  assert.match(plan, /names the record answer/);
+  assert.equal(fs.existsSync(path.resolve('user/skills/plan-feature/references/explore-and-options.md')), false);
+  assert.ok(fs.existsSync(path.resolve('user/skills/brainstorm/references/question-craft.md')));
+  const skill = read(path.resolve('user/skills/brainstorm/SKILL.md'));
+  assert.match(skill.split('---')[1], /^name: brainstorm$/m);
+  const cases = JSON.parse(read(path.resolve('project/.claude/kit/skill-cases.json')));
+  assert.ok(JSON.stringify(cases).includes('"brainstorm"'), 'session start can name it');
+});
+
+test('the sheet page ships no private data, calls no third party, and writes the fields the export reads', () => {
+  const page = read(path.resolve('user/skills/brainstorm/assets/sheet-page.html'));
+  assert.doesNotMatch(page, /[^\x00-\x7F]/, 'ASCII like every kit file');
+  assert.doesNotMatch(page, /\bMax\b|goudy|googleapis/);
+  const written = new Set([...page.matchAll(/area\(q(?:id)?\.id,'(\w+)'/g), ...page.matchAll(/save\(q\.id, \{(\w+):/g), ...page.matchAll(/saveFinish\(sid,\{(\w+):/g)].map((m) => m[1]));
+  for (const field of ['choice', 'own', 'thought', 'missed']) assert.ok(written.has(field), field);
+  assert.match(page, /saveFinish\(sid,\{missed:t\.value, submitted:when/, 'export refuses a sheet with no sent time');
+  assert.match(page, /const sid = current \+ '__finish'/);
+  assert.match(page, /collection\('answers'\)\.doc\(qid\)\.set/);
+  for (const field of ['grounding', 'sectionTitle', 'recWhy', 'submitted']) assert.ok(page.includes(field), field);
+});
+
+test('an update keeps the attribution script while an edited audit still needs it, and retires the moved reference', () => {
+  const { kit, home, proj } = makeKit();
+  const put = (f, text) => { fs.mkdirSync(path.dirname(path.join(kit, f)), { recursive: true }); fs.writeFileSync(path.join(kit, f), text); };
+  put('project/.claude/attribution.mjs', 'old\n');
+  put('project/.claude/pr-body-audit.mjs', 'one\n');
+  put('user/skills/human-factor/references/old.md', 'old\n');
+  install({ kit, home, target: 'project', projectDir: proj });
+  install({ kit, home, target: 'user' });
+  const config = path.join(kit, 'kit.config.json');
+  fs.writeFileSync(config, JSON.stringify({ ...JSON.parse(read(config)), retired: { project: { '.claude/attribution.mjs': ['.claude/no-such-heir.mjs', '.claude/pr-body-audit.mjs'] }, user: { 'skills/human-factor/references/old.md': 'skills/human-factor/SKILL.md' } } }));
+  fs.rmSync(path.join(kit, 'project/.claude/attribution.mjs'));
+  fs.rmSync(path.join(kit, 'user/skills/human-factor/references/old.md'));
+  put('project/.claude/pr-body-audit.mjs', 'two\n');
+  fs.appendFileSync(path.join(proj, '.claude/pr-body-audit.mjs'), 'edited here\n');
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.ok(fs.existsSync(path.join(proj, '.claude/attribution.mjs')), 'an edited audit still imports it');
+  assert.ok(r.skipped.some((s) => s.file === '.claude/attribution.mjs'));
+  assert.deepEqual(install({ kit, home, target: 'user' }).retired, ['skills/human-factor/references/old.md']);
+  const real = JSON.parse(read(path.resolve('kit.config.json'))).retired;
+  assert.deepEqual(real.project['.claude/attribution.mjs'], ['.claude/pr-body-audit.mjs', '.claude/pr-body-audit-lean.mjs']);
+  assert.deepEqual(real.user['skills/plan-feature/references/explore-and-options.md'], ['skills/brainstorm/references/question-craft.md', 'skills/plan-feature/SKILL.md']);
 });

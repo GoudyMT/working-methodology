@@ -1,14 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { carriesPhrase } from './canary-phrase.mjs';
 import { versionBumpCheck } from './version-bump-check.mjs';
-import { stripAttribution } from './attribution.mjs';
+import { attributionFaults } from './no-attribution.mjs';
 
 const [file, title] = process.argv.slice(2);
-const { body, present: attributed } = stripAttribution(readFileSync(file, 'utf8'));
+const body = readFileSync(file, 'utf8');
 const lines = body.split(/\r?\n/);
 const rows = [];
 const row = (name, ok, detail) => rows.push({ name, ok, detail });
-if (attributed) row('attribution block: present', true, 'the two host lines at the top; checked from the line after them');
+const attribution = attributionFaults(body);
+row('no attribution block', attribution.length === 0, attribution.join(', ') || 'none');
 
 const subject = title.replace(/^[a-z]+(\([a-z-]+\))?: /, '');
 row('title is type: subject (smaller PR)', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z-]+\))?: [a-z]/.test(title), title);
