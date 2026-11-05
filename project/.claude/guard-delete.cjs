@@ -16,9 +16,8 @@
 // (X::), a drive-relative path (D:x), a UNC path, a .git folder, a ".." after a wildcard; a command that makes a
 // link and deletes; a delete next to a backtick or a cmd caret; a command over 100,000 characters.
 // Limits: it is no match for a path built at run time (Invoke-Expression on joined strings, a script file it
-// cannot read), a switch joined at run time ('/MI'+'R'), a word hidden by a shell escape in a nested shell
-// (bash -c git\ clean), git run from inline code or xargs, or config that defines an alias by another route
-// (include.path, a rewritten config file, HOME); Remove-Item -Recurse may follow a junction found below the target, which is not looked for; the
+// cannot read), a switch joined at run time ('/MI'+'R'), or a config file rewritten to define an alias (an included
+// file, a renamed section or another HOME named in the command asks); Remove-Item -Recurse may follow a junction found below the target, which is not looked for; the
 // session folder layout is proven on Windows only. Like guard-outward.cjs it is self-contained, so a missing
 // sibling never turns the guard off.
 const fs = require('node:fs');
@@ -59,7 +58,13 @@ const ITEM_LISTERS = new Set(['get-item', 'gi']);
 const FILTERS = new Set(['where-object', 'where', '?']);
 // Variables that make git or rg run another program, and ones that move git's working tree.
 // Named anywhere, not only as NAME=: PowerShell sets them through Env: paths and SetEnvironmentVariable too.
-const RUNS_VIA_ENV = /\b(GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|GIT_CONFIG_\w*|RIPGREP_CONFIG_PATH)\b/i;
+// Not the --no-pager option, which turns a pager off.
+const RUNS_VIA_ENV = /(?<![\w-])(GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|GIT_CONFIG_\w*|RIPGREP_CONFIG_PATH)\b/i;
+// Routes that can redefine a git alias from outside the command: an included file, a renamed section, another home.
+const ALIAS_ROUTE = /include\.path|includeIf\.|--rename-section|(^|[\s;&|(])(HOME|XDG_CONFIG_HOME|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM)=/i;
+// xargs handing git its subcommand from input: no subcommand is written after git.
+const XARGS_GIT = /\bxargs\b[^;|&\n]*\bgit(\.exe)?(?![\w-])([^;|&\n]*)/i;
+const WRITTEN_SUB = /^(log|show|diff|status|add|commit|grep|blame|ls-files|rev-parse|cat-file|rm|clean|checkout|restore|mv|reset|worktree|stash)$/;
 const MOVES_GIT = /\b(GIT_WORK_TREE|GIT_DIR|GIT_COMMON_DIR)\b|core\.worktree|include\.path|includeIf\./i;
 // -EncodedCommand and the short forms PowerShell accepts for it, with - or /.
 const ENCODED = /^[-/](e|ec|en\w*)$/i;
@@ -644,6 +649,15 @@ function decide(input, where = {}) {
 		const bare = flat.replace(/["']/g, '');
 		if (/\brobocopy\b/i.test(bare) && ROBOCOPY_REMOVES.test(bare) && !(ONLY_READS.test(flat) && !RUNS_INSIDE.test(text))) return 'robocopy that removes files';
 		if (START_GIT_LIST.test(flat)) return 'Start-Process git with a list the guard cannot read';
+		const runsGit = /(^|[^\w-])git(\.exe)?(?![\w-])/i.test(flat);
+		if (runsGit && ALIAS_ROUTE.test(flat)) return 'a git alias defined from outside the command';
+		const xg = flat.match(XARGS_GIT);
+		if (xg && !xg[2].split(/\s+/).some((w) => WRITTEN_SUB.test(w))) return 'git given its subcommand by xargs';
+		if (INTERPRETER.test(text) && runsGit && /\bclean\b/.test(text)) return 'inline code that may run git clean';
+		// bash reads gi\t as git and r\m as rm, even inside a nested shell: a delete word an escape hides asks.
+		const unescaped = flat.replace(/\\(?=[A-Za-z0-9])/g, '');
+		const cleans = (s) => /(^|[^\w-])git(\.exe)?\s[^;|&\n]*\bclean\b/i.test(s);
+		if (unescaped !== flat && ((DELETE_WORD.test(unescaped) && !DELETE_WORD.test(flat)) || (cleans(unescaped) && !cleans(flat)))) return 'a delete word hidden by an escape';
 		const deletes = DELETE_WORD.test(flat) || GIT_CLEAN_TEXT.test(flat);
 		if (deletes && (text.includes(BACKTICK) || text.includes('^'))) return 'a delete next to a backtick or caret';
 		if (deletes && MAKES_LINK.test(text)) return 'a command that makes a link and deletes';

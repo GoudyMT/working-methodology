@@ -415,7 +415,26 @@ const REVIEW121_ASK = [
 	"printf \"rm -rf C:/elsewhere\" > a.sh",
 ];
 
+// 1.21.0: the guard carry-overs from 1.20.0 (escapes in a nested shell, alias routes, inline code and xargs; git $flags
+// log asks because $flags may hold a subcommand).
+const CARRY121_ASK = [
+	"bash -c \"gi\\t clean -fdx\"",
+	"bash -c 'r\\m -rf C:/elsewhere'",
+	"git config include.path C:/x/evil.cfg; git x",
+	"git -c include.path=C:/x/evil x",
+	"git config --rename-section alias foo; git x",
+	"HOME=C:/elsewhere git x",
+	"GIT_CONFIG_GLOBAL=C:/x/g git x",
+	"python -c \"import subprocess; subprocess.run(['git','clean','-fdx'])\"",
+	"echo clean | xargs git",
+	"echo clean | xargs git -C x",
+	"git $flags log",
+];
+
 const HOLES_PASS = [
+	"git --no-pager log",
+	"git --no-pager diff",
+	"git ls-files | xargs git add",
 	'git clean -nfd -e x',
 	'git clean -fd -e build -n',
 	'git clean -n -e x',
@@ -469,6 +488,7 @@ const ASK = [
 	...ALIAS_ASK,
 	...RESWEEP2_ASK,
 	...REVIEW121_ASK,
+	...CARRY121_ASK,
 	'Remove-Item -Recurse $env:TEMP\\tg-*',
 	'Remove-Item -Recurse ' + TEMP + '\\tg-*',
 	'rm -rf /tmp/*',
