@@ -1,10 +1,14 @@
 # Recall scorer brief
 
-Current version: v1
+Current version: v2
 
 The ruler for every recall score. Each scores entry names the version it used, and a change to this brief is a new version: a score moves with its scorer, so two scores compare only on the same brief and keys.
 
 The scorer is one fresh blind agent. It gets the run files relabeled R01, R02 and so on in a random order, with each run's header removed, and the keys of the version named in the entry. The map from labels to runs stays with the lead until scoring is done.
+
+## v2 (2026-11-05)
+
+As v1, for any number of questions: its first sentence reads "You score saved answers to the kit's recall questions." Nothing else changes.
 
 ## v1 (2026-11-04)
 

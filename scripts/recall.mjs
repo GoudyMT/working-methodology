@@ -66,6 +66,13 @@ export function questions(text, version) {
     .map((m) => ({ n: Number(m[1]), q: m[2], key: m[3] }));
 }
 
+/** How many questions a version says it has, from its "Pass: median <n> of <m>." line, so a lost row is still caught. */
+export function questionCount(text, version) {
+  const m = versionText(text, version).match(/\bPass: median \d+ of (\d+)\./);
+  if (!m) throw new Error(`recall v${version} has no "Pass: median <n> of <m>." line`);
+  return Number(m[1]);
+}
+
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
 
 /**
@@ -215,7 +222,9 @@ export function prepare({ projectDir, label, home, text, when, cli }) {
   const facts = installFacts({ projectDir, home });
   const keys = currentVersion(text);
   const qs = questions(text, keys);
-  if (qs.length !== 10) throw new Error(`expected 10 questions, found ${qs.length}`);
+  const count = questionCount(text, keys);
+  if (!qs.length || qs.length !== count) throw new Error(`expected ${count} questions, found ${qs.length}`);
+  if (qs.some((x, i) => x.n !== i + 1)) throw new Error(`the questions must be numbered 1 to ${count}`);
   return { qs, lines: runHeader({ label, keys, facts, when, cli }) };
 }
 
@@ -232,7 +241,7 @@ export function askAll({ qs, projectDir, run }) {
       throw new Error(`question ${n}: no answer (exit ${r.status}): ${(answer || r.stderr || '').trim().slice(0, 200)}`);
     }
     lines.push(`## ${n}. ${q}`, '', `Key: ${key}`, '', 'Answer:', '', answer.split('\n').map((l) => '> ' + l).join('\n'), '', 'Score: _', '');
-    console.log(`[${n}/10] answered (${answer.length} chars)`);
+    console.log(`[${n}/${qs.length}] answered (${answer.length} chars)`);
   }
   return lines;
 }

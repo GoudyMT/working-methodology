@@ -4380,18 +4380,36 @@ const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';
 const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
 
 test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s question and Q7\'s key', async () => {
-  const { versionText, currentVersion, questions } = await recallTools();
+  const { versionText, questions } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const frozen = spawnSync('git', ['show', 'v1.17.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(frozen.status, 0, 'the v1.17.0 tag must exist locally');
   assert.equal(versionText(text, 1), frozen.stdout);
-  assert.equal(currentVersion(text), 2);
   const [v1, v2] = [questions(text, 1), questions(text, 2)];
   assert.equal(v2.length, 10);
   const changed = v2.flatMap((row, i) => ['q', 'key'].filter((f) => row[f] !== v1[i][f]).map((f) => `${row.n}.${f}`));
   assert.deepEqual(changed, ['3.q', '7.key']);
   assert.match(v2[6].key, /approve\.mjs/);
   assert.match(v2[6].key, /ASK goes to the owner/);
+});
+
+test('recall v3 is v2 plus three questions, and v2 stays as it was released', async () => {
+  const { versionText, currentVersion, questions, questionCount } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const released = spawnSync('git', ['show', 'v1.19.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
+  assert.equal(released.status, 0, 'the v1.19.0 tag must exist locally');
+  assert.equal(versionText(text, 2), versionText(released.stdout, 2));
+  assert.equal(currentVersion(text), 3);
+  assert.match(versionText(text, 3), /Pass: median 12 of 13\./);
+  assert.equal(questionCount(text, 3), 13);
+  const [v2, v3] = [questions(text, 2), questions(text, 3)];
+  assert.deepEqual(v3.slice(0, 10), v2);
+  assert.deepEqual(v3.map((r) => r.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.match(v3[10].key, /deleted only inside its own session folder, never by wildcard/);
+  assert.match(v3[10].key, /listed for the owner, not deleted/);
+  assert.match(v3[11].key, /fixed before the PR or the owner accepts it/);
+  assert.match(v3[11].key, /only medium or lower may carry/);
+  assert.match(v3[12].key, /starts on its own/);
 });
 
 test('recall run header says what the run read: keys, both kit versions, and whether approve.mjs is there', async () => {
@@ -4427,11 +4445,17 @@ test('a recall run asks the current keys and its header names them', async () =>
   const keys = currentVersion(text);
   const run = prepare({ projectDir: proj, label: 'cand-1', home, text, when: 'w' });
   assert.deepEqual(run.qs, questions(text, keys));
-  assert.equal(run.qs.length, 10);
+  assert.equal(run.qs.length, 13);
   assert.ok(run.lines.includes(`Keys: v${keys}`));
   assert.ok(run.lines.includes('# Recall run: cand-1'));
-  const short = text.replace(/^\| 10 \|.*\n/gm, '');
-  assert.throws(() => prepare({ projectDir: proj, label: 'x', home, text: short, when: 'w' }), /expected 10 questions, found 9/);
+  const refused = (bad, why) => assert.throws(() => prepare({ projectDir: proj, label: 'x', home, text: bad, when: 'w' }), why);
+  const rows = /^\| \d+ \|.*\n/gm;
+  refused(text.replace(/^\| 13 \|.*\n/gm, ''), /expected 13 questions, found 12/);
+  refused(text.replace(/^(\| 13 \|.*\n)/m, '$1| 14 | One more? | A key |\n'), /expected 13 questions, found 14/);
+  refused(text.replace(rows, ''), /expected 13 questions, found 0/);
+  refused(text.replace(rows, '').replace('Pass: median 12 of 13.', 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
+  refused(text.replace('| 13 | My PR', '| 12 | My PR'), /numbered 1 to 13/);
+  refused(text.replace('Pass: median 12 of 13.', ''), /no "Pass: median <n> of <m>\." line/);
 });
 
 test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {
@@ -4683,7 +4707,14 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
 
 test('the scorer brief is versioned and carries the two calls the proof found borderline', () => {
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md'));
-  assert.match(brief, /^Current version: v1$/m);
+  assert.match(brief, /^Current version: v2$/m);
+  const released = spawnSync('git', ['show', 'v1.19.0:docs/evals/recall-scorer-brief.md'], { encoding: 'utf8' });
+  assert.equal(released.status, 0, 'the v1.19.0 tag must exist locally');
+  const v1 = released.stdout.slice(released.stdout.indexOf('## v1 '));
+  assert.ok(brief.endsWith(v1), 'v1 stays as it was written');
+  const v2 = brief.slice(0, brief.indexOf('## v1 '));
+  assert.match(v2, /## v2 \(2026-11-05\)/);
+  assert.doesNotMatch(v2, /\bten\b/i);
   assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/);
   assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/);
 });
@@ -4918,8 +4949,9 @@ test('recall checks the Claude folder a session will use, not one a variable poi
   checkHome({});
 });
 
-test('every recall session runs in the probe folder with the question as its input, and a failure stops the run', async () => {
+test('every recall session runs in the probe folder with the question as its input, and a failure stops the run', async (t) => {
   const { askAll, probePath } = await recallTools();
+  const said = t.mock.method(console, 'log', () => {});
   const dir = probePath(path.join(os.tmpdir(), 'osh'));
   const calls = [];
   const qs = [{ n: 1, q: 'First?', key: 'k1' }, { n: 2, q: 'Second?', key: 'k2' }];
@@ -4930,13 +4962,14 @@ test('every recall session runs in the probe folder with the question as its inp
   assert.equal(calls[0].args[calls[0].args.indexOf('--setting-sources') + 1], 'project');
   assert.match(calls[0].args[calls[0].args.indexOf('--disallowedTools') + 1], /Bash/);
   assert.ok(lines.includes('> answer'));
+  assert.deepEqual(said.mock.calls.map((c) => c.arguments[0]), ['[1/2] answered (6 chars)', '[2/2] answered (6 chars)']);
   for (const bad of [{ status: 1, stdout: 'words' }, { status: 0, stdout: '  ' }, { status: 0, stdout: 'Not logged in' }]) {
     assert.throws(() => askAll({ qs, projectDir: dir, run: () => bad }), /question 1: no answer/, JSON.stringify(bad));
   }
 });
 
 test('a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself', async () => {
-  const { recallRun, currentVersion } = await recallTools();
+  const { recallRun, currentVersion, questionCount } = await recallTools();
   const { kit, home } = makeKit();
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
   const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'osh-'));
@@ -4950,7 +4983,7 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   const out = go();
   assert.match(read(out), new RegExp(`^Keys: v${currentVersion(text)}$`, 'm'));
   const asks = calls.filter((c) => c.cmd === 'claude' && c.args[0] === '-p');
-  assert.equal(asks.length, 10);
+  assert.equal(asks.length, questionCount(text, currentVersion(text)));
   for (const c of asks) assert.match(c.opts.cwd.replace(/\\/g, '/'), /\/kit-probes\/[0-9a-f]{6}\/p[0-9a-f]{6}$/);
   assert.equal(new Set(asks.map((c) => c.opts.cwd)).size, 1);
   assert.doesNotMatch(asks[0].opts.cwd, /recall|cand/, 'the label never reaches the path');
