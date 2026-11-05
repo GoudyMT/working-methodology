@@ -2166,7 +2166,36 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
   fs.mkdirSync(path.join(dir, 'sweeps'));
   return dir;
 }
-const approveIn = (dir, args, env = {}) => spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env } });
+const approveIn = (dir, args, env = {}) => {
+  if (args.includes('--outcome') && env.CLAUDE_CONFIG_DIR) leadBriefs(dir, args, env.CLAUDE_CONFIG_DIR);
+  return spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env } });
+};
+// What a lead does: each reviewer's brief carries "Sweep: <hash> role <n>" for the contract cleared last, n in the
+// order --agents lists them. A brief that already names a sweep is left as the test wrote it.
+const sweepLog = (dir) => { try { return read(path.join(dir, '.git', 'kit-sweep-approvals.jsonl')).split('\n').filter(Boolean); } catch { return []; } };
+const lastClearing = (dir, contract) => {
+  const lines = sweepLog(dir).map((l) => [l, JSON.parse(l)]).filter(([, e]) => (e.kind === 'decision' || e.kind === 'owner-yes') && (!contract || path.resolve(e.contract) === path.resolve(contract)));
+  // For an outcome, the reviewers ran under the last clearing (an approval or the owner's yes), not a later ask.
+  return (contract && lines.filter(([, e]) => e.kind === 'owner-yes' || e.decision === 'approved').pop()) || lines.pop();
+};
+function setBrief(cfg, id, text) {
+  for (const p of fs.readdirSync(path.join(cfg, 'projects'))) for (const s of fs.readdirSync(path.join(cfg, 'projects', p))) {
+    const f = path.join(cfg, 'projects', p, s, 'subagents', `agent-${id}.jsonl`);
+    if (!fs.existsSync(f)) continue;
+    const lines = read(f).split('\n');
+    const first = JSON.parse(lines[0]);
+    if (!first.message || first.message.role !== 'user' || typeof first.message.content !== 'string' || first.message.content.includes('Sweep:')) continue;
+    first.message.content = text(first.message.content);
+    lines[0] = JSON.stringify(first);
+    fs.writeFileSync(f, lines.join('\n'));
+  }
+}
+function leadBriefs(dir, args, cfg) {
+  const at = lastClearing(dir, args[0]);
+  const ids = String(args[args.indexOf('--agents') + 1] || '').split(',');
+  if (!at || !args.includes('--agents') || !fs.existsSync(path.join(cfg, 'projects'))) return;
+  ids.forEach((id, i) => { if (/^[\w-]+$/.test(id)) setBrief(cfg, id, (b) => `${b} Sweep: ${at[1].hash} role ${i + 1}`); });
+}
 function approveRun(contract, dir = sweepRepo()) {
   const f = path.join(dir, 'sweeps', 'contract.json');
   fs.writeFileSync(f, JSON.stringify(contract));
@@ -2296,8 +2325,23 @@ test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, 
 // Found in a course project (2026-10-30): the lead asked the owner to approve a sweep team before running the
 // script, and the owner approved a team that broke the security floor. The script now runs first and writes the
 // owner's notice from checked data, and a guard refuses a reviewer agent until the log clears this HEAD.
+// The lead numbers each brief: the first role of the last clearing with this cap that has not started.
+function leadTag(dir, prompt) {
+  const at = lastClearing(dir);
+  const cap = prompt.match(/Call cap: (\d+)/);
+  if (!at || !cap) return '';
+  const [line, e] = at;
+  const slots = path.join(dir, '.git', 'kit-sweep-starts', crypto.createHash('sha256').update(line).digest('hex').slice(0, 16));
+  const team = Number(e.agents) || 0;
+  const fits = [...Array(team).keys()].filter((n) => !Array.isArray(e.calls) || e.calls[n] === Number(cap[1]));
+  const n = fits.find((k) => !fs.existsSync(path.join(slots, String(k)))) ?? fits[0] ?? 0;
+  return ` Sweep: ${e.hash} role ${n + 1}`;
+}
 const sweepGuard = (dir, extra = {}) => {
-  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review. Call cap: 5.' }, ...extra });
+  const input = { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review. Call cap: 5.' }, ...extra };
+  const p = input.tool_input && input.tool_input.prompt;
+  if (typeof p === 'string' && !p.includes('Sweep:')) input.tool_input = { ...input.tool_input, prompt: p + leadTag(dir, p) };
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', input);
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
 test('an approval prints the owner\'s start notice from checked data, not a hand count', () => {
@@ -2589,7 +2633,7 @@ test('the sweep guard holds reviewers to the cleared team size', () => {
   assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the one cleared reviewer');
   const second = sweepGuard(dir);
   assert.equal(second.permissionDecision, 'deny', 'a second reviewer on a one-role contract');
-  assert.match(second.permissionDecisionReason, /1 reviewer/);
+  assert.match(second.permissionDecisionReason, /Role 1 of the cleared contract has started already/);
 });
 test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sweep runs', () => {
   const dir = sweepRepo();
@@ -3120,7 +3164,8 @@ test('a re-sweep reads the first sweep as it was cleared, carries leftovers from
   fs.writeFileSync(path.join(f4.dir, 'src', 'sync.test.ts'), 'more test\n');
   fs.writeFileSync(path.join(f4.dir, 'src', 'extra.test.ts'), 'new test\n');
   commitAll(f4.dir, 'a test for the fix', true);
-  assert.equal(resweep(f4).status, 0, 'a new test file is not new source');
+  const withTests = resweep(f4, { roles: [...resweepRoles(), role('test-value', 'Does each new test fail without the fix?')] });
+  assert.equal(withTests.status, 0, `a new test file is not new source: ${withTests.stdout}`);
 });
 test('project caps lower every limit', () => {
   const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
@@ -5771,4 +5816,96 @@ test('a self-started closeout asks before a remote delete, and leftovers carry t
   const core = read(path.resolve('rules/core.md'));
   assert.match(core, /device-only or design items carry to the next build, all recorded/);
   assert.doesNotMatch(core, /design items go to the roadmap/);
+});
+// Sweep tooling carry-overs from 1.18.0 (C4, C9b, C9e, C9f, C10, C11), each checked real against the code first.
+test('C4/C9e: each brief names its sweep and role, so ids in any order count for the right role, and another sweep\'s reviewer does not', () => {
+  const c = featureContract();
+  c.roles[3].model = 'sonnet';
+  const r = approveRun(c);
+  assert.equal(r.status, 0, r.stdout);
+  const hash = approvalLog(r.dir).pop().hash;
+  assert.ok(r.stdout.includes(`Sweep: ${hash} role <n>`), 'the start notice gives the line');
+  const ids = cheapRoles(5);
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 3 ? 'claude-sonnet-5-5' : 'claude-opus-5-5', u: [0, 100, 0, 0] }]])));
+  ids.forEach((id, i) => setBrief(cfg, id, (b) => `${b} Sweep: ${hash} role ${i + 1}`));
+  const o = logOutcome(r, [ids[3], ids[1], ids[2], ids[0], ids[4]], cfg);
+  assert.equal(o.status, 0, o.stdout);
+  assert.doesNotMatch(o.stdout, /paused/, 'the sonnet reviewer is read as the sonnet role');
+  const line = approvalLog(r.dir).pop();
+  assert.deepEqual(line.roles.map((x) => x.kind), c.roles.map((x) => x.kind));
+  assert.equal(line.roles[3].agent, ids[3]);
+  const brief = (text) => { const b = approveRun(featureContract()); const ids2 = cheapRoles(5); const cfg2 = transcripts(Object.fromEntries(ids2.map((id) => [id, [[0, 100, 0, 0]]]))); const h = approvalLog(b.dir).pop().hash; ids2.forEach((id, i) => setBrief(cfg2, id, (x) => `${x} ${text(h, i)}`)); return logOutcome(b, ids2, cfg2).stdout; };
+  assert.match(brief((h, i) => `Sweep: ${'0'.repeat(16)} role ${i + 1}`), /ASK THE OWNER[\s\S]*brief is for another contract/);
+  assert.match(brief(() => 'Sweep: none'), /ASK THE OWNER[\s\S]*no "Sweep: <hash> role <n>" line/);
+  assert.match(brief((h) => `Sweep: ${h} role 1`), /ASK THE OWNER[\s\S]*role 1 is named by more than one brief/);
+  assert.match(brief((h, i) => `Sweep: ${h} role ${i + 2}`), /brief names role 6; the contract has 5/);
+});
+test('C4: the guard starts each role once, by the sweep and role its brief names', () => {
+  const c = featureContract();
+  c.roles.forEach((x, i) => { x.calls = [5, 5, 6, 7, 8][i]; });
+  const r = approveRun(c);
+  const hash = approvalLog(r.dir).pop().hash;
+  const start = (p) => sweepGuard(r.dir, { tool_input: { subagent_type: 'reviewer', prompt: `go. ${p}` } });
+  const none = start('Call cap: 5. Sweep: none');
+  assert.equal(none.permissionDecision, 'deny');
+  assert.ok(none.permissionDecisionReason.includes(`Sweep: ${hash} role <n>`), none.permissionDecisionReason);
+  assert.equal(start(`Call cap: 5. Sweep: ${'f'.repeat(16)} role 1`).permissionDecision, 'deny', 'another contract');
+  assert.match(start(`Call cap: 6. Sweep: ${hash} role 1`).permissionDecisionReason, /call cap of 5, not 6/);
+  assert.equal(start(`Call cap: 5. Sweep: ${hash} role 6`).permissionDecision, 'deny', 'no sixth role');
+  assert.equal(start(`Call cap: 5. Sweep: ${hash} role 2`).permissionDecision, 'allow');
+  assert.match(start(`Call cap: 5. Sweep: ${hash} role 2`).permissionDecisionReason, /Role 2 of the cleared contract has started already/);
+  assert.equal(start(`Call cap: 5. Sweep: ${hash} role 1`).permissionDecision, 'allow', 'role 1 keeps its own slot');
+});
+test('C9f: the guard reads each folder\'s HEAD once, however long the log', { skip: process.platform === 'win32' }, () => {
+  const dir = sweepRepo();
+  const shim = fs.mkdtempSync(path.join(os.tmpdir(), 'shim-'));
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const count = path.join(shim, 'count');
+  fs.writeFileSync(path.join(shim, 'git'), `#!/bin/sh\necho x >> "${count}"\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const lines = [];
+  const sha = (x) => crypto.createHash('sha256').update(x).digest('hex').slice(0, 16);
+  for (let i = 0; i < 200; i++) lines.push(JSON.stringify({ kind: 'decision', contract: path.join(dir, 'sweeps', 'old.json'), hash: 'x', head: '0000000', decision: 'approved', prev: i ? sha(lines[i - 1]) : '' }));
+  fs.writeFileSync(path.join(dir, '.git', 'kit-sweep-approvals.jsonl'), lines.join('\n') + '\n');
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'go. Call cap: 5.' } }, { PATH: `${shim}${path.delimiter}${process.env.PATH}` });
+  assert.match(r.stdout, /No cleared Swarm Contract/);
+  assert.ok(read(count).trim().split('\n').length <= 3, `${read(count).trim().split('\n').length} git calls`);
+});
+test('C9b: an owner-cleared sweep owes its outcome before the next, and --none-ran closes one no reviewer used', () => {
+  const a = approveRun(askContract());
+  assert.equal(a.status, 1, a.stdout);
+  assert.equal(approveIn(a.dir, [a.f, '--owner-yes', 'yes go']).status, 0);
+  const next = path.join(a.dir, 'sweeps', 'next.json');
+  fs.writeFileSync(next, JSON.stringify(featureContract()));
+  const b = approveIn(a.dir, [next]);
+  assert.equal(b.status, FIX_EXIT, b.stdout);
+  assert.match(b.stdout, /log the outcome of the last approved sweep first \(sweeps\/contract\.json\)/);
+  const n = approveIn(a.dir, [a.f, '--outcome', '--none-ran']);
+  assert.equal(n.status, 0, n.stdout);
+  assert.equal(approvalLog(a.dir).pop().budget, approvalLog(a.dir).filter((e) => e.kind === 'decision' && e.contract === a.f).pop().budget);
+  assert.equal(approveIn(a.dir, [next]).status, 0);
+});
+test('C10: one owner yes answers one ask, so a second cannot open a second team', () => {
+  const a = approveRun(askContract());
+  assert.equal(approveIn(a.dir, [a.f, '--owner-yes', 'yes']).status, 0);
+  const again = approveIn(a.dir, [a.f, '--owner-yes', 'yes again']);
+  assert.equal(again.status, 1);
+  assert.match(again.stdout, /already logged/);
+  assert.equal(approvalLog(a.dir).filter((e) => e.kind === 'owner-yes').length, 1);
+  for (let i = 0; i < 3; i++) assert.equal(sweepGuard(a.dir).permissionDecision, 'allow');
+  assert.equal(sweepGuard(a.dir).permissionDecision, 'deny');
+});
+test('C11: a re-sweep reviews the tests its fixes change', () => {
+  const fr = firstSweep({ tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) }, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
+  fs.writeFileSync(path.join(fr.dir, 'src', 'page.test.ts'), 'test 3\n');
+  commitAll(fr.dir, 'a test for the fix', true);
+  const fixed = [{ finding: 'B1: the caller in list.ts still passes 0', kind: 'blast-radius' }];
+  const br = role('blast-radius', 'What else do the fixes reach, and did any of them break it?');
+  const dim = role('dimension', 'Does the change still match its locks and the version goal?');
+  const tv = role('test-value', 'Does the changed test fail without the fix?');
+  const without = resweep(fr, { tier: 'fix', fixed, roles: [br, dim] });
+  assert.equal(without.status, FIX_EXIT, without.stdout);
+  assert.match(without.stdout, /needs 1 test-value/);
+  const withTv = resweep(fr, { tier: 'fix', fixed, roles: [br, dim, tv] });
+  assert.doesNotMatch(withTv.stdout, /a test-value role/);
+  assert.match(withTv.stdout, /ASK THE OWNER[\s\S]*3 roles, more than the 2/);
 });

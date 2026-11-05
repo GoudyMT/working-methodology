@@ -16,6 +16,9 @@ const { spawnSync } = require('child_process');
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+// HEAD per folder, read once per call: the log only grows, and its lines share a few folders.
+const heads = new Map();
+const headOf = (d) => { if (!heads.has(d)) heads.set(d, git(d, 'rev-parse', '--short', 'HEAD').stdout.trim()); return heads.get(d); };
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
 const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). FIX THE CONTRACT: fix it and run it again. APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
 
@@ -33,7 +36,7 @@ function main() {
 		try { e = JSON.parse(lines[i]); } catch { continue; }
 		if ((e.kind !== 'decision' && e.kind !== 'owner-yes') || typeof e.contract !== 'string') continue;
 		if (e.prev !== (i ? sha(lines[i - 1]) : '')) continue;
-		if (!e.head || git(path.dirname(e.contract), 'rev-parse', '--short', 'HEAD').stdout.trim() !== e.head) continue;
+		if (!e.head || headOf(path.dirname(e.contract)) !== e.head) continue;
 		let raw = null;
 		try { raw = fs.readFileSync(e.contract, 'utf8'); } catch { /* moved or deleted */ }
 		if (raw === null || sha(raw) !== e.hash) return deny(`The Swarm Contract changed or moved after the script ran. ${RUN_FIRST}`);
@@ -47,19 +50,21 @@ function main() {
 			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; on their yes, log it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes "<their words>"`, then start the reviewers.');
 		}
 		// The budget rests on the call cap, so a brief must carry one the contract set; the call-cap hook reads it there.
-		const cap = String((input.tool_input || {}).prompt || '').match(/Call cap: (\d+)/);
+		const prompt = String((input.tool_input || {}).prompt || '');
+		const cap = prompt.match(/Call cap: (\d+)/);
 		if (Array.isArray(e.calls) && !(cap && e.calls.includes(Number(cap[1])))) return deny(`A reviewer's brief carries its role's call cap, as the line "Call cap: <n>", from the cleared contract (${[...new Set(e.calls)].join(', ')}): the sweep skill has the wording.`);
-		// Each start claims one numbered slot file; creating it fails if it exists, so reviewers started at the same
-		// moment cannot share a slot.
-		const slots = path.join(dir, 'kit-sweep-starts', sha(lines[i]));
+		// The brief names this contract and its role, so its spend is read for the right role and contract.
 		const team = Number(e.agents) || 0;
+		const tag = prompt.match(/Sweep: ([0-9a-f]{16}) role (\d+)/);
+		const n = tag ? Number(tag[2]) - 1 : -1;
+		if (!tag || tag[1] !== e.hash || !(n >= 0 && n < team)) return deny(`A reviewer's brief names its sweep and role, as the line "Sweep: ${e.hash} role <n>" (n from 1 to ${team}, the role's place in the cleared contract): the sweep skill has the wording.`);
+		// Each role's slot takes only its own cap, so one role cannot borrow another's.
+		if (Array.isArray(e.calls) && e.calls[n] !== Number(cap[1])) return deny(`Role ${n + 1} of the cleared contract has a call cap of ${e.calls[n]}, not ${cap[1]}: the brief carries its own role's cap.`);
+		// Each start claims its role's slot file; creating it fails if it exists, so a role starts once.
+		const slots = path.join(dir, 'kit-sweep-starts', sha(lines[i]));
 		fs.mkdirSync(slots, { recursive: true });
-		for (let n = 0; n < team; n++) {
-			// Each role's slot takes only its own cap, so one role cannot borrow another's.
-			if (Array.isArray(e.calls) && e.calls[n] !== Number(cap[1])) continue;
-			try { fs.closeSync(fs.openSync(path.join(slots, String(n)), 'wx')); return; } catch { /* taken */ }
-		}
-		return deny(`The cleared contract has ${team} reviewer role(s), and all with this call cap have started. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
+		try { fs.closeSync(fs.openSync(path.join(slots, String(n)), 'wx')); return; } catch { /* taken */ }
+		return deny(`Role ${n + 1} of the cleared contract has started already. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
 	}
 	return deny(`No cleared Swarm Contract at its checkout's current HEAD. ${RUN_FIRST}`);
 }

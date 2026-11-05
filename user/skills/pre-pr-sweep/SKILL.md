@@ -41,7 +41,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    "Call cap: <n>. A call is one message from you, however many tools it runs, so run independent reads together in one message. A hook counts
    your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did
    not get to as 'not checked'." In a project the start notice says has no hook, drop the hook sentence and have the reviewer count. The cap's last two calls are for the report. What a role did not check goes in the
-   report as not checked, never as a pass. The sweep guard refuses a brief with no such line. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
+   report as not checked, never as a pass. Each brief also carries `Sweep: <hash> role <n>` from the start notice
+   (n is the role's place in the contract). The sweep guard refuses a brief without both lines. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
