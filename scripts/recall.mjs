@@ -96,10 +96,14 @@ const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8
  * Returns:
  *     { project, user, userRelease, approve }
  */
-export function installFacts({ projectDir, home }) {
+export function installFacts({ projectDir, home, osHome = os.homedir() }) {
   const stamp = readJson(path.join(projectDir, '.kit', 'kit-version.json'));
   const user = readJson(path.join(home, 'kit-install.json'));
+  // A throwaway run still loads ~/.claude/CLAUDE.md as a parent folder's file (R2): its version is recorded too.
+  const real = isThrowaway(home, osHome) ? readJson(path.join(osHome, '.claude', 'kit-install.json')) : undefined;
+  const global = real === undefined ? undefined : !real ? 'none' : `${real.version} (${real.describe})`;
   return {
+    ...(global === undefined ? {} : { global }),
     project: !stamp ? 'none' : stamp.release === false ? `${stamp.version} (unreleased ${stamp.describe})` : stamp.version,
     user: !user ? 'none' : user.release === false ? `${user.version} (unreleased ${user.describe})` : `${user.version} (${user.describe})`,
     userRelease: !!user && user.release === true,
@@ -130,6 +134,8 @@ export function checkHome(env) {
 /** Whether a Claude folder sits strictly inside kit-probes under the home folder, links followed. */
 function isThrowaway(home, osHome) {
   const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  // kit-probes itself a link (to the home folder, say) would make the real Claude folder a throwaway (R1).
+  try { if (fs.lstatSync(path.join(osHome, 'kit-probes')).isSymbolicLink()) return false; } catch { /* absent: nothing inside it either */ }
   const inside = path.relative(real(path.join(osHome, 'kit-probes')), real(home));
   return Boolean(inside) && !inside.startsWith('..') && !path.isAbsolute(inside);
 }
@@ -137,7 +143,9 @@ function isThrowaway(home, osHome) {
 /** Refuses a Claude folder that is not a released kit install or a throwaway one, before any folder or session exists. */
 export function checkUserLayer(home, osHome = os.homedir()) {
   const user = readJson(path.join(home, 'kit-install.json'));
-  if (user?.release !== true && !(user && isThrowaway(home, osHome))) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
+  // A throwaway still holds a real install: release false and a version (R3).
+  const unreleasedInstall = user?.release === false && typeof user?.version === 'string';
+  if (user?.release !== true && !(unreleasedInstall && isThrowaway(home, osHome))) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
   // release: true is a flag; a file edited after the install no longer reads as that release (I20).
   if (user?.release === true) {
     const edited = Object.entries(user.files || {}).filter(([key, hash]) => {
@@ -179,7 +187,7 @@ export function removeProbe({ dir, home, slug, osHome = os.homedir() }) {
 
 export function runHeader({ label, keys, facts, when, cli }) {
   return [`# Recall run: ${label}`, '', `When: ${when}`, 'Path: kit-probes/<hex>/p<hex>', `CLI: ${cli}`, `Keys: v${keys}`,
-    `Project kit: ${facts.project}`, `User kit: ${facts.user}`, `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
+    `Project kit: ${facts.project}`, `User kit: ${facts.user}`, ...(facts.global ? [`Global CLAUDE.md also loaded from ~/.claude: ${facts.global}`] : []), `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
 }
 
 /**
@@ -269,7 +277,7 @@ function gate([base, head]) {
 /** What a run asks and records, or a refusal: all of it before any session starts. */
 export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
   checkUserLayer(home, osHome);
-  const facts = installFacts({ projectDir, home });
+  const facts = installFacts({ projectDir, home, osHome });
   const keys = currentVersion(text);
   const qs = questions(text, keys);
   const count = questionCount(text, keys);

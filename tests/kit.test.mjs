@@ -5694,3 +5694,40 @@ test('recall (I27): removeProbe deletes only a probe under this home\'s kit-prob
   assert.equal(fs.existsSync(path.dirname(dir)), false);
   assert.ok(fs.existsSync(path.join(home, 'projects', 'keep')));
 });
+
+// Review R1 and R3 (1.21.0): a throwaway user layer is a real unreleased install under a kit-probes that is no link.
+test('recall (R1, R3): kit-probes may not be a link, and a throwaway layer must be a real unreleased install', async () => {
+  const { checkUserLayer } = await recallTools();
+  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  const real = path.join(osHome, '.claude');
+  fs.mkdirSync(real, { recursive: true });
+  fs.writeFileSync(path.join(real, 'kit-install.json'), JSON.stringify({ version: '1.0.0', release: false, describe: 'abc', files: {} }));
+  // kit-probes pointing at the home folder would make the real ~/.claude a "throwaway".
+  fs.symlinkSync(osHome, path.join(osHome, 'kit-probes'), 'junction');
+  assert.throws(() => checkUserLayer(path.join(osHome, 'kit-probes', '.claude'), osHome), /not a released kit install/);
+  fs.unlinkSync(path.join(osHome, 'kit-probes'));
+  for (const body of [{}, [], { version: '1.0.0' }, { release: false }]) {
+    const home = path.join(osHome, 'kit-probes', 'cfg-' + Math.random().toString(16).slice(2));
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify(body));
+    assert.throws(() => checkUserLayer(home, osHome), /not a released kit install/, JSON.stringify(body));
+  }
+});
+
+// Review R2 (1.21.0): a throwaway run still loads the real global CLAUDE.md as a parent folder's file, so its header
+// says which one.
+test('recall (R2): a run on a throwaway layer records the real global layer it also loads', async () => {
+  const { installFacts, runHeader } = await recallTools();
+  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  fs.mkdirSync(path.join(osHome, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(osHome, '.claude', 'kit-install.json'), JSON.stringify({ version: '1.20.0', release: true, describe: 'v1.20.0' }));
+  const home = path.join(osHome, 'kit-probes', 'cfg');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ version: '1.21.0', release: false, describe: 'abc1234' }));
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-'));
+  const facts = installFacts({ projectDir: proj, home, osHome });
+  assert.equal(facts.global, '1.20.0 (v1.20.0)');
+  assert.ok(runHeader({ label: 'x', keys: 4, facts, when: 'now', cli: 'c' }).includes('Global CLAUDE.md also loaded from ~/.claude: 1.20.0 (v1.20.0)'));
+  const same = installFacts({ projectDir: proj, home: path.join(osHome, '.claude'), osHome });
+  assert.equal(same.global, undefined);
+});
