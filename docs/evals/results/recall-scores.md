@@ -303,4 +303,6 @@ The first entry on keys v4, with brief v2 and the pass bar of 12. Candidate: thi
 - **Blinding:** 61 lines removed, all read by hand: kit version and skill-case notices. Four mention the sweep or approve.mjs in passing; none carries a key item. Candidates carry far more of them, since the version notice fires only on an unreleased build.
 - **What sessions could see.** The global CLAUDE.md loads as a parent folder's file on every side. Three runs a side and one scorer: the test cannot see a one-point move.
 
-gate: kit-1.21.0 median 13 baseline 12 brief v2 keys v4 control 0
+Accepted by the owner 2026-11-06 on the moved ruler, on the scorer's reading of Q13.
+
+gate: kit-1.21.0 median 13 baseline 12 brief v2 keys v4 control 0 owner-accepted
