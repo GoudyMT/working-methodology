@@ -27,6 +27,7 @@
 //   node merge-gate.mjs arm <pr>          check, then arm on GO
 //   node merge-gate.mjs check <pr>        the same checks, never arms
 //   node merge-gate.mjs disarm <pr>       turn auto-merge off on an armed PR
+//   node merge-gate.mjs autofix <pr>      clear and log one auto-fix push, disarming first
 //   node merge-gate.mjs live pr <n>       audit the live PR body
 //   node merge-gate.mjs live release <tag>  audit the live release body
 // Exit 0 = GO / clean; 1 = NO GO / faults; 2 = usage.
@@ -375,6 +376,27 @@ export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOStr
 	return { disarmed: true, faults: [] };
 }
 
+/**
+ * Clear one auto-fix push: the owner's grant keeps it inside bounds, so the kill switch stops it, an armed PR is
+ * disarmed first, and the push is logged. Run it before the push; only a clear goes on.
+ *
+ * Returns:
+ *     { cleared, faults }
+ */
+export function autofix({ pr, cwd, config = configDir(), run = realRun, now = () => new Date().toISOString() }) {
+	if (!/^\d+$/.test(String(pr))) return { cleared: false, faults: ['the PR is a number'] };
+	if (fs.existsSync(path.join(config, 'autonomy-off'))) return { cleared: false, faults: [`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`] };
+	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefOid,autoMergeRequest'], cwd));
+	if (!p || p.state !== 'OPEN' || p.isCrossRepository) return { cleared: false, faults: [`PR ${pr} is not an open PR from this repo`] };
+	if (p.autoMergeRequest) {
+		const d = disarm({ pr, cwd, run, now });
+		if (!d.disarmed) return { cleared: false, faults: d.faults };
+	}
+	const gitDir = path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--git-dir'], cwd).stdout.trim() || '.git');
+	fs.appendFileSync(path.join(gitDir, 'kit-merge-gate.log'), `${now()} AUTOFIX ${pr} ${p.headRefOid}\n`);
+	return { cleared: true, faults: [] };
+}
+
 // Paths compared after links, so the gate runs when called through a junction.
 const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.meta.url))) {
@@ -392,12 +414,16 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
 		const r = disarm({ pr: a, cwd });
 		console.log(r.disarmed ? `DISARMED: PR ${a} will not merge on its own` : r.faults.join('\n'));
 		process.exit(r.disarmed ? 0 : 1);
+	} else if (cmd === 'autofix' && a) {
+		const r = autofix({ pr: a, cwd });
+		console.log(r.cleared ? `CLEARED: auto-fix may push to PR ${a}; logged` : r.faults.join('\n'));
+		process.exit(r.cleared ? 0 : 1);
 	} else if (cmd === 'live' && a && b) {
 		const r = live({ kind: a, id: b, cwd });
 		console.log(r.ok ? `Live ${a} body: clean` : r.faults.join('\n'));
 		process.exit(r.ok ? 0 : 1);
 	} else {
-		console.log('Usage: node merge-gate.mjs arm <pr> | check <pr> | disarm <pr> | live pr <n> | live release <tag>');
+		console.log('Usage: node merge-gate.mjs arm <pr> | check <pr> | disarm <pr> | autofix <pr> | live pr <n> | live release <tag>');
 		process.exit(2);
 	}
 }

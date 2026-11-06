@@ -6406,3 +6406,27 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
   assert.throws(() => checkSessionHome(home, run('not json')), /cannot read/);
   assert.throws(() => checkSessionHome(home, () => ({ status: 1, stdout: '', stderr: 'nope' })), /cannot read/);
 });
+// N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
+test('the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'armed-'));
+  assert.equal(spawnSync('git', ['init', '-q', dir]).status, 0);
+  fs.mkdirSync(path.join(dir, '.githooks'));
+  fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+  fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
+  const head = 'a'.repeat(40);
+  const other = 'b'.repeat(40);
+  const log = path.join(dir, '.git', 'kit-merge-gate.log');
+  const push = (remote) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', 'x'], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/feat/x ${other} refs/heads/feat/x ${remote}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '1', AI_AGENT: '', CLAUDECODE: '' } });
+  assert.equal(push(head).status, 0, 'no log, no refusal');
+  fs.writeFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
+  const held = push(head);
+  assert.equal(held.status, 1, held.stderr);
+  assert.match(held.stderr, /disarm 7/);
+  assert.equal(push(other).status, 0, 'another head is not this armed one');
+  assert.equal(push('0'.repeat(40)).status, 0, 'a new branch has no armed head');
+  fs.appendFileSync(log, 't DISARMED 7\n');
+  assert.equal(push(head).status, 0, 'disarmed, it goes');
+  fs.appendFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
+  assert.equal(push(head).status, 1, 'armed again, it holds again');
+});

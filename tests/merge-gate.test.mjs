@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
-import { check, arm, disarm, live, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
+import { check, arm, disarm, autofix, live, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-tests-'));
@@ -83,8 +83,8 @@ function setup() {
 		state.calls.push(args.join(' '));
 		const ok = (o) => ({ status: 0, stdout: JSON.stringify(o), stderr: '' });
 		const no = { status: 1, stdout: '', stderr: 'HTTP 404' };
-		if (args[0] === 'pr' && args[1] === 'view') return args.includes('autoMergeRequest,state')
-			? ok({ state: 'OPEN', autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null }) : ok(state.pr);
+		if (args[0] === 'pr' && args[1] === 'view') return args.some((a) => a.includes('autoMergeRequest'))
+			? ok({ ...state.pr, state: 'OPEN', autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null }) : ok(state.pr);
 		if (args[0] === 'repo') return ok(state.repo);
 		if (args[0] === 'api' && args[1].endsWith('/required_status_checks')) return state.protection ? ok(state.protection) : no;
 		if (args[0] === 'api' && args[1].includes('/rules/branches/')) return ok(state.rules);
@@ -496,4 +496,28 @@ test('merge gate: the CLI exits 1 on NO GO and 2 on a bad call', () => {
 	assert.equal(cli('arm', 'x').status, 1);
 	assert.equal(cli('disarm', 'x').status, 1);
 	assert.equal(cli('nonsense').status, 2);
+});
+// N3: auto-fix's push stays a grant inside bounds. The kill switch stops it, an armed PR is disarmed first, and each is logged.
+test('merge gate: autofix logs the push it clears, and disarms an armed PR first', () => {
+	const s = setup();
+	assert.equal(arm(s.opts).armed, true);
+	const r = autofix(s.opts);
+	assert.equal(r.cleared, true, r.faults.join('\n'));
+	assert.ok(s.state.calls.includes('pr merge 7 --disable-auto'));
+	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
+	assert.match(log, /DISARMED 7\n.* AUTOFIX 7 [0-9a-f]{40}\n$/);
+});
+test('merge gate: autofix stops on the kill switch, on a PR that is not open, and on a disarm that does not take', () => {
+	const s = setup();
+	const logged = () => { try { return fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'); } catch { return ''; } };
+	fs.writeFileSync(path.join(s.config, 'autonomy-off'), '');
+	const off = autofix(s.opts);
+	assert.equal(off.cleared, false);
+	assert.match(off.faults[0], /kill switch/);
+	fs.rmSync(path.join(s.config, 'autonomy-off'));
+	arm(s.opts);
+	s.state.disarmHolds = false;
+	assert.equal(autofix(s.opts).cleared, false);
+	assert.doesNotMatch(logged(), /AUTOFIX/);
+	assert.equal(autofix({ ...s.opts, pr: 'x' }).cleared, false);
 });
