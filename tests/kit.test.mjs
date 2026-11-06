@@ -2974,7 +2974,10 @@ test('one focused re-sweep approves; a second, or a re-sweep of it, is refused w
     assert.ok(!fs.existsSync(again.f.replace(/\.json$/, '.triage.md')), 'a refusal is the rule working: no triage report');
   }
   assert.ok(!approvalLog(first.dir).some((e) => e.kind === 'pause'), 'no pause');
-  assert.equal(approveIn(first.dir, [first.f]).status, 0, 'the next first sweep still approves');
+  // C8: a plain contract after the sweep and its re-sweep is a third pass, the owner's.
+  const third = approveIn(first.dir, [first.f]);
+  assert.equal(third.status, 1, third.stdout);
+  assert.match(third.stdout, /ASK THE OWNER[\s\S]*a third pass on this branch is the owner's/);
 });
 test('a re-sweep that loses focus goes back to be fixed; a new risk asks the owner', () => {
   const cases = [
@@ -2994,11 +2997,11 @@ test('a re-sweep that loses focus goes back to be fixed; a new risk asks the own
     assert.match(r.stdout, owner ? /ASK THE OWNER/ : /FIX THE CONTRACT/);
     assert.match(r.stdout, why);
   }
-  // Growth: never more roles than the first sweep had.
+  // C6: the re-sweep's own floor is always allowed, even past the first sweep's role count.
   const small = { tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) };
   const fr = firstSweep(small, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
   const grow = resweep(fr, { tier: 'fix', fixed: [{ finding: 'F1: the clamp still lets 0 through', kind: 'fix-root' }], roles: resweepRoles(['fix-root']) });
-  assert.match(grow.stdout, /ASK THE OWNER[\s\S]*3 roles, more than the 2 of the sweep it re-checks/);
+  assert.match(grow.stdout, /APPROVED - fix re-sweep/);
   // The first sweep's outcome comes first.
   const open = approveRun(featureContract());
   fs.writeFileSync(path.join(open.dir, 'src', 'fixed.ts'), 'fixed\n');
@@ -3036,8 +3039,9 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*medium or below only[\s\S]*Carry-overs from the last PR/);
   assert.equal(approvalLog(first.dir).pop().carried, 2);
   const next = approveIn(first.dir, [first.f]);
-  assert.equal(next.status, 0, next.stdout);
+  assert.equal(next.status, 1, `a third pass on this branch asks the owner: ${next.stdout}`);
   assert.match(next.stdout, /2 carried finding\(s\) open/);
+  assert.equal(approveIn(first.dir, [first.f, '--owner-yes', 'yes, close the carries']).status, 0);
   assert.notEqual(outcome(first, '200000', '6', '5', '0', ['--closed-carries', '3']).status, 0, 'cannot close more than are open');
   assert.equal(outcome(first, '200000', '6', '5', '0', ['--closed-carries', '2']).status, 0);
   assert.doesNotMatch(approveIn(first.dir, [first.f]).stdout, /carried finding/);
@@ -3141,7 +3145,8 @@ test('a re-sweep is one per sweep however the first is re-run, and a re-run of t
   assert.doesNotMatch(rerun.stdout, /REFUSED/, 'it is not a second re-sweep');
   assert.equal(outcome(re, '200000', '1', '1', '0', ['--carried', '1']).status, 0);
   assert.match(approveIn(first.dir, [re.f]).stdout, /REFUSED/, 'after its outcome it has run');
-  assert.equal(approveIn(first.dir, [first.f]).status, 0);
+  assert.match(approveIn(first.dir, [first.f]).stdout, /a third pass on this branch is the owner's/);
+  assert.equal(approveIn(first.dir, [first.f, '--owner-yes', 'yes, a third pass']).status, 0);
   assert.equal(outcome(first).status, 0);
   assert.match(resweep(first, {}, 'resweep2.json').stdout, /REFUSED[\s\S]*already had its re-sweep/, 'clearing the first sweep again does not buy a second');
 });
@@ -4169,8 +4174,12 @@ test('a reviewer started before the owner\'s yes is not this round\'s, and a sec
 test('what the rules bound stays with the owner: a re-sweep that grows, a rebased HEAD, project caps, a big triage', () => {
   const small = { tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) };
   const fr = firstSweep(small, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
+  const big = fs.readFileSync(path.join(fr.dir, 'src', 'page.ts'), 'utf8') + Array.from({ length: 60 }, (_, i) => `export const x${i} = ${i};`).join('\n') + '\n';
+  fs.writeFileSync(path.join(fr.dir, 'src', 'page.ts'), big);
+  commitAll(fr.dir, 'a large fix', true);
   const grow = resweep(fr, { tier: 'fix', fixed: [{ finding: 'F1: the clamp still lets 0 through', kind: 'fix-root' }], roles: resweepRoles(['fix-root']) });
   assert.equal(grow.status, 1, grow.stdout);
+  assert.match(grow.stdout, /the fixes change 6\d lines since the sweep it re-checks, over max\(50, 25% of its \d+-line diff\)/);
   const c = featureContract();
   c.roles[2].context = Array.from({ length: 31 }, (_, i) => `f${i}.ts`);
   assert.equal(approveRun(c).status, 1, 'context over the limit');
@@ -5906,6 +5915,16 @@ test('C11: a re-sweep reviews the tests its fixes change', () => {
   assert.equal(without.status, FIX_EXIT, without.stdout);
   assert.match(without.stdout, /needs 1 test-value/);
   const withTv = resweep(fr, { tier: 'fix', fixed, roles: [br, dim, tv] });
-  assert.doesNotMatch(withTv.stdout, /a test-value role/);
-  assert.match(withTv.stdout, /ASK THE OWNER[\s\S]*3 roles, more than the 2/);
+  assert.equal(withTv.status, 0, withTv.stdout);
+});
+test('C9c: a --base off the default branch asks the owner', () => {
+  const dir = sweepRepo();
+  fs.writeFileSync(path.join(dir, 'src', 'more.ts'), 'export const more = 1;\n');
+  commitAll(dir, 'more', true);
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const off = approveIn(dir, [f, '--base', 'HEAD~1']);
+  assert.equal(off.status, 1, off.stdout);
+  assert.match(off.stdout, /--base HEAD~1 is not on main/);
+  assert.equal(approveIn(dir, [f, '--base', 'main']).status, 0);
 });

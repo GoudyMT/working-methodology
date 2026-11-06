@@ -105,6 +105,9 @@ const DOC_FILE = /\.(md|txt|rst)$/i;
 const KIT_JSON = /^(docs\/migrations\/[^/]+\.json|\.kit\/sweep-approval\.json)$/i;
 const TIER_RANK = { triage: 0, fix: 1, feature: 2, 'first push': 3, 'launch gate': 4 };
 const FIX_EXIT = 3;
+// A re-sweep whose fixes change more lines than this asks the owner: max(50, a quarter of the first sweep's diff).
+const RESWEEP_MIN_LINES = 50;
+const RESWEEP_SHARE = 0.25;
 // The line each reviewer's brief carries: the cleared contract's hash and the role's place in it (the sweep guard reads it).
 const SWEEP_TAG = /Sweep: ([0-9a-f]{16}) role (\d+)/;
 const sweepLine = (hash) => `Each brief carries "Sweep: ${hash} role <n>" (n is the role's place in the contract) and its role's "Call cap: <n>".`;
@@ -189,8 +192,13 @@ function sweepOwned(f) {
 // What the branch's diff against its base says, or null when it cannot be read.
 function diffFacts() {
 	const want = opt('--base');
-	const base = (want ? [want] : ['origin/main', 'main', 'origin/master', 'master']).find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
+	const known = (b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0;
+	const DEFAULTS = ['origin/main', 'main', 'origin/master', 'master'];
+	const base = (want ? [want] : DEFAULTS).find(known);
 	if (!base) return null;
+	// A base the lead names must sit on the default branch, or it could shrink the diff the tier is read from.
+	const home = want && DEFAULTS.find(known);
+	const offBase = home && git('merge-base', '--is-ancestor', base, home).status !== 0 ? home : null;
 	const names = (filter) => git('diff', '--name-only', '-z', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\0').filter(Boolean);
 	const all = names('ACDMRT');
 	const added = names('A').filter((f) => !sweepOwned(f));
@@ -200,6 +208,7 @@ function diffFacts() {
 	const dirty = git('status', '--porcelain', '--', ':(top)', `:(top,exclude)${own || '.kit-none'}`).stdout.split('\n').filter(Boolean);
 	return {
 		base,
+		offBase,
 		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
 		dirty,
 		changed: all.length,
@@ -219,6 +228,14 @@ const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '
 
 const rel = (f) => toPosix(path.relative(process.cwd(), f) || f);
 const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) => j > i && y.kind === 'owner-yes' && y.contract === log[i].contract && y.hash === log[i].hash);
+
+// A first sweep on this branch (its HEAD on the branch, not on the base) that already had its re-sweep, or null.
+function thirdPass(log, base) {
+	const on = new Map();
+	const onBranch = (h) => { if (!on.has(h)) on.set(h, git('merge-base', '--is-ancestor', h, 'HEAD').status === 0 && git('merge-base', '--is-ancestor', h, base).status !== 0); return on.get(h); };
+	const i = log.findIndex((e, k) => e.kind === 'decision' && !e.resweepOf && e.head && isCleared(log, k) && log.some((r, j) => j > k && r.kind === 'decision' && r.resweepOf === e.contract && isCleared(log, j)) && onBranch(e.head));
+	return i >= 0 ? log[i].contract : null;
+}
 
 // A re-sweep's own floor. Returns the kinds it needs, or `refused` when it is past its one pass:
 // a refusal is the rule working, so it neither pauses nor writes a triage report.
@@ -259,11 +276,15 @@ function resweepCheck(c, tier, roles, log, facts, why, fix) {
 			const added = since('A').find((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f));
 			// The fixes' own tests are reviewed as the first sweep's were (rule:sweep-tiers: Test Value when tests change).
 			testsChanged = since('ACDMRT').some((f) => TEST_FILE.test(f));
+			// What the fixes change, against the first sweep's diff: a large rewrite is new work, the owner's to see.
+			const own = git('rev-parse', '--show-prefix').stdout.trim();
+			const changed = git('diff', '--numstat', '--no-renames', `${head.head}..HEAD`).stdout.split('\n').filter(Boolean).filter((l) => { const f = l.split('\t')[2]; return !sweepOwned(f) && !(own && f.startsWith(own)); }).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
+			const bound = Math.max(RESWEEP_MIN_LINES, Math.floor((Number(head.lines) || 0) * RESWEEP_SHARE));
+			if (changed > bound) why.push(`the fixes change ${changed} lines since the sweep it re-checks, over max(${RESWEEP_MIN_LINES}, ${RESWEEP_SHARE * 100}% of its ${Number(head.lines) || 0}-line diff): a large rewrite needs the owner`);
 			if (dep) why.push(`the fixes change a package file (${dep}) since the sweep it re-checks: a new dependency needs the full floor, not a re-sweep`);
 			if (added) why.push(`the fixes add a source file (${added}) since the sweep it re-checks: new code needs the full floor, not a re-sweep`);
 		}
 	}
-	if (roles.length > (Number(head.agents) || 0)) why.push(`${roles.length} roles, more than the ${head.agents} of the sweep it re-checks: a re-sweep does not grow without the owner`);
 	const fixed = Array.isArray(c.fixed) ? c.fixed : [];
 	const firstKinds = new Set(((firstContract && firstContract.roles) || []).map((r) => r.kind));
 	if (!fixed.length) fix.push('no fixed findings listed ("fixed": [{ "finding", "kind" }]): a re-sweep checks the fixes');
@@ -273,6 +294,7 @@ function resweepCheck(c, tier, roles, log, facts, why, fix) {
 		if (!x || !firstKinds.has(x.kind)) fix.push(`fixed finding ${i + 1}: kind "${x && x.kind}" had no role in the sweep it re-checks`);
 		else need[x.kind] = 1;
 	});
+	// A re-sweep has only its floor's kinds, one each, so its floor is its size: always allowed, as a first sweep's is.
 	const kinds = new Set(roles.map((r) => r.kind));
 	for (const k of kinds) {
 		const n = roles.filter((r) => r.kind === k).length;
@@ -329,6 +351,7 @@ function check(c, facts, log = []) {
 	else if (facts.dirty.length) fix.push(`work not committed (${facts.dirty[0].slice(3)}): commit it, so the diff shows the whole change`);
 	else if (!facts.changed) fix.push(`no changes against ${facts.base}: run it from the branch's own checkout, or pass the right --base`);
 	else {
+		if (facts.offBase) why.push(`--base ${facts.base} is not on ${facts.offBase}: a base off the default branch can shrink the diff the tier is read from`);
 		if (tier !== 'feature' && facts.addedSource.length) why.push(`an added source file (${facts.addedSource[0]}) is feature work, not ${tier}`);
 		if (tier === 'triage' && (facts.added.length || facts.lines > TRIAGE_MAX_LINES)) why.push(`${facts.lines} changed lines, ${facts.added.length} added files: more than a triage change`);
 	}
@@ -345,6 +368,9 @@ function check(c, facts, log = []) {
 		if (r.refused) return { why: [], fix: [], need: {}, refused: r.refused, first: r.first };
 		({ need, first } = r);
 	} else {
+		// One sweep and one re-sweep per branch: a plain contract after both is a third pass, the owner's (rule:finding-pipeline).
+		const done = facts && thirdPass(log, facts.base);
+		if (done) why.push(`a third pass on this branch is the owner's (rule:finding-pipeline): ${rel(done)} already had its sweep and re-sweep`);
 		if (c.modifiers !== undefined && !(Array.isArray(c.modifiers) && c.modifiers.every((m) => typeof m === 'string'))) fix.push('modifiers must be a list of names, like ["security-sensitive"]');
 		const modifiers = new Set(Array.isArray(c.modifiers) ? c.modifiers : []);
 		if (facts && facts.deps) modifiers.add('new-dependency');
@@ -449,7 +475,7 @@ function decide() {
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
 	} else if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, head, ...(first ? { resweepOf: first } : {}) };
+	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
