@@ -74,6 +74,8 @@ const modelKey = (m) => { const s = String(m ?? DEFAULT_MODEL); return /opus/i.t
 const RESWEEP_NEEDS = { 'blast-radius': 1, dimension: 1 };
 const CARRY_HOME = 'the handoff\'s "Carry-overs from the last PR" (_Active Plan.md); the next feature build fixes them';
 const AGENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+// How long a transcript must stay unwritten before --retry reads it as a crash, not a reviewer still running.
+const CRASH_QUIET_MINUTES = 10;
 const OWNER_TIERS = ['first push', 'launch gate'];
 const KINDS = ['security', 'test-value', 'novel-lens', 'fix-root', 'blast-radius', 'modelled-on', 'supply-chain', 'privacy', 'content', 'data-loss', 'dimension', 'triage'];
 const NEEDS = {
@@ -627,7 +629,8 @@ function spend(ids, since, hash, team, crashed = new Set()) {
 		const u = (m, k) => Number(m.usage[k]) || 0;
 		const tokens = [...seen.values()].reduce((t, m) => t + u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens'), 0);
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
-		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, finished };
+		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
+		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp) };
 	});
 	// A crash and its retry name one role by design.
 	const own = roles.filter((x) => x && !crashed.has(x.agent));
@@ -642,6 +645,7 @@ const retriesSince = (log, contract, from) => log.filter((e, i) => i > from && e
 // A reviewer that crashed left its role with no report, and its slot is spent. The owner's decision 2 (1.21.0): one
 // more start for that role under the clearance the guard reads, on the crashed transcript's own evidence. Its spend
 // joins the role at --outcome. A second crash says the role itself is the trouble, so it is the owner's: --cut-short.
+// A reviewer still running has no `finished` either, so a crash is read only once its transcript has gone quiet.
 function retry() {
 	const s = state();
 	const { clearings } = starts(s.log, contractFile);
@@ -661,6 +665,8 @@ function retry() {
 	const [x] = read.roles;
 	if (x.finished) { console.log(`${id} finished, so its report stands and its role needs no retry. Nothing logged.`); return 1; }
 	if (x.index !== n) { console.log(`${id}'s brief names role ${x.index}, not role ${n}. Nothing logged.`); return 1; }
+	const quiet = (Date.now() - x.lastWrite) / 60000;
+	if (quiet < CRASH_QUIET_MINUTES) { console.log(`${id} last wrote ${Math.max(0, Math.floor(quiet))} minute(s) ago, so it may still be running. A crash is read only after ${CRASH_QUIET_MINUTES} quiet minutes: wait, then run --retry again. Nothing logged.`); return 1; }
 	write({ kind: 'retry', contract: contractFile, hash: clearing.hash, role: n, crashed: id, clearing: sha(rawLines()[at]) });
 	console.log(`Retry logged: role ${n} may start once more under this clearance, with the same brief. List the new reviewer's id in --agents; the spend of ${id} joins the role at the outcome.`);
 	return 0;
@@ -749,7 +755,7 @@ function outcome() {
 	}
 	let roles = [];
 	try { roles = JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []; } catch { /* labels only */ }
-	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, ...x }, i) => {
+	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, ...x }, i) => {
 		const c = read.roles.find((y) => isLost(y.agent) && y.index === index);
 		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null };
 	});

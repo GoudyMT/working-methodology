@@ -4141,17 +4141,31 @@ test('going lighter after FIX THE CONTRACT is the owner\'s; adding what it named
 });
 // A reviewer that crashes spends real tokens and leaves its role with no report (the owner's decision 2, 1.21.0): its
 // role gets one retry, the crash's spend stays on the role, and a second crash is the owner's through --cut-short.
+// A transcript's age is its last write, so a test sets both clocks: the entries' timestamps and the file's mtime.
+function ageTranscript(cfg, id, { stamps, file }) {
+  const ago = (min) => new Date(Date.now() - min * 60000);
+  const f = path.join(cfg, 'projects', 'C--repo', 'session-1', 'subagents', `agent-${id}.jsonl`);
+  if (stamps !== undefined) fs.writeFileSync(f, read(f).trim().split('\n').map((l) => JSON.stringify({ ...JSON.parse(l), timestamp: ago(stamps).toISOString() })).join('\n') + '\n');
+  if (file !== undefined) fs.utimesSync(f, ago(file), ago(file));
+}
 function crashedSweep() {
   const early = transcripts({ early: [[0, 100, 0, 0]] }, { early: { finished: false } });
   const dir = sweepRepo({ 'README.md': 'z\n' });
   const r = approveRun({ tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root cause, and does it hold?'), role('blast-radius', 'Which callers and copies of this code does the change reach?')] }, dir);
   assert.equal(r.status, 0, r.stdout);
   const { hash } = approvalLog(dir).pop();
+  // Cleared half an hour ago, so a crash can have gone quiet since and still have started after the clearance.
+  const logFile = path.join(dir, '.git', 'kit-sweep-approvals.jsonl');
+  const logged = read(logFile).trim().split('\n');
+  logged.push(JSON.stringify({ ...JSON.parse(logged.pop()), time: new Date(Date.now() - 30 * 60000).toISOString() }));
+  fs.writeFileSync(logFile, logged.join('\n') + '\n');
   const brief = (n, h = hash) => `review. Call cap: 5. Sweep: ${h} role ${n}`;
   const cfg = transcripts({ r1: [[0, 1000, 0, 0], [0, 1000, 0, 0], [0, 500, 0, 0], [0, 500, 0, 0]], r2: [[0, 500, 0, 0]] }, { r1: { finished: false } });
   setBrief(cfg, 'r1', () => brief(1));
   setBrief(cfg, 'r2', () => brief(2));
   setBrief(early, 'early', () => brief(1));
+  ageTranscript(cfg, 'r1', { stamps: 11, file: 11 });
+  ageTranscript(early, 'early', { stamps: 60, file: 60 });
   const start = (n) => sweepGuard(dir, { tool_input: { subagent_type: 'reviewer', prompt: brief(n) } }).permissionDecision;
   const retry = (n, id, env = cfg) => approveIn(dir, [r.f, '--retry', String(n), '--crashed', id], { CLAUDE_CONFIG_DIR: env });
   return { ...r, hash, brief, cfg, early, start, retry };
@@ -4189,6 +4203,28 @@ test('a crashed reviewer gets one more start for its role, and its spend stays o
   assert.equal(approveIn(s.dir, [s.f]).status, 0);
   assert.match(logOutcome(s, ['r1', 'r2x'], s.cfg).stdout, /r1 \(already logged/, 'the crashed id counts as used');
   assert.match(s.retry(1, 'r1').stdout, /r1 \(already logged/);
+});
+// A still-running reviewer has no `finished` either, so only a quiet transcript reads as a crash. Both clocks must be
+// old: the file's mtime and the last entry's timestamp, whichever is later.
+test('a reviewer that may still be running is refused a retry until its transcript has gone quiet', () => {
+  const s = crashedSweep();
+  const before = sweepLog(s.dir).length;
+  const refused = (clocks) => {
+    ageTranscript(s.cfg, 'r1', clocks);
+    const r = s.retry(1, 'r1');
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stdout, /r1 last wrote \d+ minute\(s\) ago, so it may still be running[\s\S]*10 quiet minutes[\s\S]*Nothing logged/);
+  };
+  refused({ stamps: 0, file: 0 });
+  refused({ stamps: 9, file: 9 });
+  refused({ stamps: 11, file: 0 });
+  refused({ stamps: 0, file: 11 });
+  assert.equal(sweepLog(s.dir).length, before, 'a refusal logs nothing');
+  ageTranscript(s.cfg, 'r1', { stamps: 11, file: 11 });
+  const ok = s.retry(1, 'r1');
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.equal(approvalLog(s.dir).pop().kind, 'retry');
+  assert.match(read(path.resolve('user/skills/pre-pr-sweep/approve.mjs')), /^const CRASH_QUIET_MINUTES = 10;$/m);
 });
 test('a second retry of a role is refused and goes to the owner through --cut-short', () => {
   const s = crashedSweep();
