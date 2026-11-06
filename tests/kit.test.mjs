@@ -4225,6 +4225,7 @@ test('a reviewer that may still be running is refused a retry until its transcri
   assert.equal(ok.status, 0, ok.stdout);
   assert.equal(approvalLog(s.dir).pop().kind, 'retry');
   assert.match(read(path.resolve('user/skills/pre-pr-sweep/approve.mjs')), /^const CRASH_QUIET_MINUTES = 10;$/m);
+  assert.match(read(path.resolve('user/skills/pre-pr-sweep/SKILL.md')), /its transcript quiet for 10 minutes\)[^\n]*A crash's tokens count against its role's budget;/);
 });
 test('a second retry of a role is refused and goes to the owner through --cut-short', () => {
   const s = crashedSweep();
