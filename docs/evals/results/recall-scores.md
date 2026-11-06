@@ -274,3 +274,33 @@ The first entry on keys v3 (13 questions, pass bar median 12) and brief v2, and 
 Accepted by the owner 2026-11-05 on the moved ruler; Q3 read as the blind scorers read it (the answers state the rule; the key is broader), key 3 and its rule to be aligned in the next build.
 
 gate: kit-1.20.0 median 12 baseline 9 brief v2 keys v3 owner-accepted
+
+## Recall v4 - 1.21.0 candidate against the 1.20.0 baseline (2026-11-06)
+
+The first entry on keys v4, with brief v2 and the pass bar of 12. Candidate: this branch at 2564e4e, both layers unreleased 1.21.0, from a throwaway Claude folder. Baseline: 1.20.0 re-measured on v4, installed from the release copy, from its own throwaway Claude folder. Control: no project kit, on the baseline's user layer. Seven runs of 13 questions, blinded by scripts/recall-score.mjs and scored by one fresh blind agent.
+
+| Q | Candidate 1, 2, 3 | Baseline 1.20.0 1, 2, 3 | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 0, 1 | 1, 1, 1 | 0 |
+| Total | 13, 12, 13 | 12, 12, 12 | 0 |
+
+- **Scored: median 13, baseline 12, control 0.** The median is above the bar, so the median of 5 is not owed.
+- **The one-point lead is noise, not a gain.** It sits on Q10 alone, and no rule line about the report changed between 1.20.0 and this branch. Q10 has moved like this before (4 in 10, M25).
+- **Q13 fails more in the candidate:** candidate 2 held the closeout because the folder has no PR record and did not say it starts on its own. The folder fact is the test's, as in the 1.20.0 entry.
+- **Borderline calls, not reported as flips:** no run on either side says "no keyword" in words, so five runs pass Q13 on "starts on its own"; a stricter read gives the candidate 12, 12, 12 and the baseline 11, 11, 11, so the median would sit on the bar and the median of 5 would be owed. Five runs pass Q12 without "critical". The scorer also marked one Q5, one Q1 and one Q7.
+- **Blinding:** 61 lines removed, all read by hand: kit version and skill-case notices. Four mention the sweep or approve.mjs in passing; none carries a key item. Candidates carry far more of them, since the version notice fires only on an unreleased build.
+- **What sessions could see.** The global CLAUDE.md loads as a parent folder's file on every side. Three runs a side and one scorer: the test cannot see a one-point move.
+
+gate: kit-1.21.0 median 13 baseline 12 brief v2 keys v4 control 0
