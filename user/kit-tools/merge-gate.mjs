@@ -39,8 +39,37 @@ export const AFTER_SWEEP = ['VERSION', 'CHANGELOG.md'];
 const CONVENTIONAL = /^[a-z]+(\([^)]*\))?!?: /;
 const SHA = /^[0-9a-f]{40}$/;
 
+// Programs Windows would start from the working folder, ahead of PATH, when a child calls them by bare name.
+const ROOT_TOOL = /^(git|gh|node)\.(exe|com|bat|cmd)$/i;
+
+/**
+ * Where a program lives on PATH, never in or under the repo: on Windows a bare name is looked up in the working
+ * folder first, so a branch could otherwise ship the gh or git that judges it.
+ *
+ * Args:
+ *     name: the program's name, no extension
+ *     cwd: the repo folder
+ *     env: the environment holding PATH
+ *
+ * Returns:
+ *     the full path, or null when PATH holds none outside the repo
+ */
+export function toolPath(name, cwd, env = process.env) {
+	const repo = path.resolve(cwd);
+	const names = process.platform === 'win32' ? [`${name}.exe`, `${name}.com`] : [name];
+	for (const dir of String(env.PATH ?? env.Path ?? '').split(path.delimiter)) {
+		if (!path.isAbsolute(dir)) continue;
+		const rel = path.relative(repo, dir);
+		if (!rel || (!rel.startsWith('..') && !path.isAbsolute(rel))) continue;
+		for (const n of names) if (fs.existsSync(path.join(dir, n))) return path.join(dir, n);
+	}
+	return null;
+}
+
 const realRun = (cmd, args, cwd) => {
-	const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', shell: false, windowsHide: true });
+	const exe = cmd === 'git' || cmd === 'gh' ? toolPath(cmd, cwd) : cmd;
+	if (!exe) return { status: 127, stdout: '', stderr: `${cmd} is not on PATH outside this repo` };
+	const r = spawnSync(exe, args, { cwd, encoding: 'utf8', shell: false, windowsHide: true });
 	return { status: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' };
 };
 
@@ -66,6 +95,10 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	const git = (...a) => run('git', a, cwd);
 	const gh = (...a) => run('gh', a, cwd);
 	if (!/^\d+$/.test(String(pr))) return { go: false, faults: ['the PR is a number'], facts };
+
+	// The audits below are children that call git by bare name from this folder, so nothing may run while one sits here.
+	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
+	if (planted.length) return { go: false, faults: [`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`], facts };
 
 	// 1. Kill switch.
 	if (fs.existsSync(path.join(config, 'autonomy-off'))) faults.push(`kill switch: ${path.join(config, 'autonomy-off')} exists; every merge asks the owner`);

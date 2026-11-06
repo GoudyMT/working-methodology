@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { check, arm, live, PROTECTED } from '../user/kit-tools/merge-gate.mjs';
+import { check, arm, live, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-tests-'));
@@ -204,4 +204,28 @@ test('live body audit (I21): a published release body is read back and audited',
 	const r = live({ kind: 'release', id: 'v1.2.0', cwd: s.work, config: s.config, run: s.run });
 	assert.equal(r.ok, false);
 	assert.ok(r.faults.some((f) => /AI or tool reference/.test(f)), r.faults.join('\n'));
+});
+
+// A bare program name on Windows is looked up in the working folder before PATH, so a branch could ship its own (G1).
+test('merge gate: git and gh are found on PATH, never in the repo folder', () => {
+	const s = setup();
+	const name = process.platform === 'win32' ? 'gh.exe' : 'gh';
+	const bin = path.join(s.root, 'bin');
+	fs.mkdirSync(bin);
+	fs.writeFileSync(path.join(bin, name), '');
+	fs.chmodSync(path.join(bin, name), 0o755);
+	fs.writeFileSync(path.join(s.work, name), '');
+	fs.chmodSync(path.join(s.work, name), 0o755);
+	assert.equal(toolPath('gh', s.work, { PATH: [s.work, '.', '', bin].join(path.delimiter) }), path.join(bin, name));
+	assert.equal(toolPath('gh', s.work, { PATH: [s.work, '.'].join(path.delimiter) }), null);
+});
+test('merge gate: a program named like git, gh or node at the repo root stops the gate before it runs anything there', () => {
+	for (const name of ['git.exe', 'GH.EXE', 'gh.cmd', 'git.com', 'node.exe', 'git.bat']) {
+		const s = setup();
+		fs.writeFileSync(path.join(s.work, name), '');
+		const r = check(s.opts);
+		assert.equal(r.go, false, name);
+		assert.match(r.faults.join('\n'), /a program named like a tool/, name);
+		assert.equal(s.state.calls.length, 0, `${name}: no gh call`);
+	}
 });
