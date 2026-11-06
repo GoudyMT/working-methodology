@@ -27,6 +27,10 @@ const ASK = [
 	'(git push)',
 	'cd x && git push',
 	'git send-pack origin',
+	// A logged owner yes, in spellings the settings' ask rule cannot match.
+	"node approve.mjs c.json --own'er'-yes \"go\"",
+	'node appr*.mjs c.json --owner-yes "go"',
+	'node appr*.mjs c.json --owner-yes=go',
 	'GIT PUSH',
 	'git status' + LF + 'git push',
 	'git -C x ' + BT + LF + '  push',

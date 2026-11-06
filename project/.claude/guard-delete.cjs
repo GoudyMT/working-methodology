@@ -371,9 +371,10 @@ function namesGit(part) {
 	try { return new RegExp(`^${glob}$`).test('.git'); } catch { return true; }
 }
 
-// Whether a folder holds a link: a wildcard stops the guard reading the path, and the shell then walks through it.
-function holdsLink(folder) {
-	try { return fs.readdirSync(folder, { withFileTypes: true }).some((e) => e.isSymbolicLink()); } catch { return false; }
+// Whether a folder holds a link within depth levels: a wildcard stops the guard reading the path, and the shell then
+// walks through it, as deep as the pattern goes.
+function holdsLink(folder, depth) {
+	try { return fs.readdirSync(folder, { withFileTypes: true }).some((e) => e.isSymbolicLink() || (depth > 1 && e.isDirectory() && holdsLink(path.join(folder, e.name), depth - 1))); } catch { return false; }
 }
 
 // Where a delete may run without asking: strictly inside the session folder or the project; for a wildcard, the
@@ -409,7 +410,7 @@ function placeOf(target, ctx, state, keepLast = false) {
 	// Every folder the command may be in, and ".." read both through links (Git Bash) and as written (PowerShell).
 	for (const cwd of state.cwds) {
 		const asWritten = api.resolve(cwd, fixed);
-		if (wild >= 0 && /[\\/]/.test(t.slice(wild)) && holdsLink(asWritten)) return target;
+		if (wild >= 0 && /[\\/]/.test(t.slice(wild)) && (t.slice(wild).includes('**') || holdsLink(asWritten, t.slice(wild).split(/[\\/]/).length - 1))) return target;
 		const places =[walk(fixed, { ...ctx, cwd }, keep), keep ? api.join(realOf(api.dirname(asWritten), api), api.basename(asWritten)) : realOf(asWritten, api)];
 		for (const resolved of places) {
 			const inRoot = ctx.roots.some((root) => {

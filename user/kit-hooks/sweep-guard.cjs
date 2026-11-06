@@ -87,7 +87,11 @@ function main() {
 		// The slot is for this role's review of this checkout: a brief carries its question, and runs where it was cleared.
 		const question = String((JSON.parse(raw).roles?.[n] || {}).question || '');
 		if (question && !prompt.includes(question)) return deny(`A reviewer's brief carries its role's question as the contract wrote it. Role ${n + 1}: "${question}"`);
-		if (headOf(input.cwd || process.cwd()) !== e.head) return deny(`This reviewer would start from a checkout that is not at the cleared HEAD ${e.head}: start it from the checkout the contract was cleared in.`);
+		// A lead in another checkout may run a worktree's sweep, so long as the brief sends the reviewer there.
+		if (headOf(input.cwd || process.cwd()) !== e.head) {
+			const root = git(path.dirname(e.contract), 'rev-parse', '--show-toplevel').stdout.trim();
+			if (!root || !prompt.split('\\').join('/').toLowerCase().includes(root.toLowerCase())) return deny(`This reviewer would start from a checkout that is not at the cleared HEAD ${e.head}: start it from ${root || 'the checkout the contract was cleared in'}, or name that folder in its brief.`);
+		}
 		// A closed round has no starts left: an outcome, a none-ran or a cut short ends its clearance.
 		if (closedAfter(lines, i, e.contract)) return deny(`This sweep's outcome is logged, so its clearance is closed. ${RUN_FIRST}`);
 		// Each start claims its role's slot file; creating it fails if it exists, so a role starts once.

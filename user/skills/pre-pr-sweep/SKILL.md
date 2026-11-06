@@ -36,7 +36,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    running the script again. **Limits:** it stops slips, not a determined workaround: deleting or rewriting the log,
    a false `--base`, clearing the AI-shell marker, invented outcome numbers, or an `--owner-yes` the owner never gave
    would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
-3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
+3. **Run the agents this session** as the `reviewer` role, against the branch HEAD (from another checkout, the brief names the cleared one), each with its role's context
    and a finding cap; each brief carries its role's `calls` from the contract in these words:
    "Call cap: <n>. A call is one message from you, however many tools it runs, so run independent reads together in one message. A hook counts
    your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did

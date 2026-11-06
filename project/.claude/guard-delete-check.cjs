@@ -811,6 +811,12 @@ try {
 	check('[junction] rmdir -Recurse link (rmdir is Remove-Item in PowerShell)', { ...viaLink, tool_input: { command: 'rmdir -Recurse link' } }, true, where);
 	check('[junction] rmdir -Recurse:$true link', { ...viaLink, tool_input: { command: 'rmdir -Recurse:$true link' } }, true, where);
 	check('[junction] cmd /c rd/s/q link (a switch glued to rd)', { ...viaLink, tool_input: { command: 'cmd /c rd/s/q link' } }, true, where);
+	// A link any level below a wildcard: the shell walks through it, so the scan goes as deep as the pattern does.
+	fs.mkdirSync(path.join(real, 'proj', 'deep', 'one'), { recursive: true });
+	fs.symlinkSync(path.join(real, 'outside'), path.join(real, 'proj', 'deep', 'one', 'hop'), 'junction');
+	check('[junction] rm -rf deep/*/*/x (a link two levels below the wildcard)', { ...viaLink, tool_input: { command: 'rm -rf deep/*/*/x' } }, true, where);
+	check('[junction] rm -rf deep/**/x (a pattern of any depth)', { ...viaLink, tool_input: { command: 'rm -rf deep/**/x' } }, true, where);
+	check('[junction] rm -rf deep/*/x (no link on the way of this pattern)', { ...viaLink, tool_input: { command: 'rm -rf deep/*/x' } }, false, where);
 	// A link to a folder deep inside the project: PowerShell reads ".." as written, so inner\..\..\x is outside.
 	fs.mkdirSync(path.join(real, 'proj', 'a', 'b'), { recursive: true });
 	fs.symlinkSync(path.join(real, 'proj', 'a', 'b'), path.join(real, 'proj', 'inner'), 'junction');

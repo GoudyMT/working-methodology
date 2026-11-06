@@ -2690,7 +2690,10 @@ test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sw
   fs.mkdirSync(path.join(wt, 'sweeps'));
   const r = approveRun(featureContract(), wt);
   assert.equal(r.status, 0, r.stdout);
-  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a brief that does not say where would read the wrong checkout');
+  const root = spawnSync('git', ['-C', wt, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim();
+  const brief = { tool_input: { subagent_type: 'reviewer', prompt: `review ${root.split('/').join(path.sep)}. Call cap: 5.` } };
+  assert.equal(sweepGuard(dir, brief).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
 });
 test('the owner\'s yes can be logged when the script could not read the base', () => {
   const dir = sweepRepo();
