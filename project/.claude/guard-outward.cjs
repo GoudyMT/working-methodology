@@ -129,10 +129,11 @@ function ghOutward(words, start) {
 }
 
 function findOutward(text, depth) {
+	// The owner's logged yes: the settings' ask rule reads the raw text, so any spelling with quotes, escapes or a
+	// wildcard program is read here, anywhere in the command. A text that only names the flag asks too: the safe side.
+	if (/--owner-yes/i.test(text.replace(/[\\`^'"]/g, ''))) return 'an owner yes for a sweep';
 	for (const segment of tokenize(joinContinuations(text))) {
 		const words = segment.map((word) => word.value.toLowerCase());
-		// The owner's logged yes: the settings' ask rule reads the raw text, so a quoted or wildcard spelling needs this.
-		if (words.some((word) => /^--owner-yes(=|$)/.test(word))) return 'an owner yes for a sweep';
 		for (let i = 0; i < segment.length; i++) {
 			const name = programName(segment[i].value);
 			let hit = '';

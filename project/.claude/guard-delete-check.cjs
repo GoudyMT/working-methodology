@@ -817,6 +817,7 @@ try {
 	check('[junction] rm -rf deep/*/*/x (a link two levels below the wildcard)', { ...viaLink, tool_input: { command: 'rm -rf deep/*/*/x' } }, true, where);
 	check('[junction] rm -rf deep/**/x (a pattern of any depth)', { ...viaLink, tool_input: { command: 'rm -rf deep/**/x' } }, true, where);
 	check('[junction] rm -rf deep/*/x (no link on the way of this pattern)', { ...viaLink, tool_input: { command: 'rm -rf deep/*/x' } }, false, where);
+	check('[junction] rm -rf link/../*/x (.. before a wildcard with parts after it reads two ways)', { ...viaLink, tool_input: { command: 'rm -rf link/../*/x' } }, true, where);
 	// A link to a folder deep inside the project: PowerShell reads ".." as written, so inner\..\..\x is outside.
 	fs.mkdirSync(path.join(real, 'proj', 'a', 'b'), { recursive: true });
 	fs.symlinkSync(path.join(real, 'proj', 'a', 'b'), path.join(real, 'proj', 'inner'), 'junction');

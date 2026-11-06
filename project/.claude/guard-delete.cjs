@@ -410,7 +410,7 @@ function placeOf(target, ctx, state, keepLast = false) {
 	// Every folder the command may be in, and ".." read both through links (Git Bash) and as written (PowerShell).
 	for (const cwd of state.cwds) {
 		const asWritten = api.resolve(cwd, fixed);
-		if (wild >= 0 && /[\\/]/.test(t.slice(wild)) && (t.slice(wild).includes('**') || holdsLink(asWritten, t.slice(wild).split(/[\\/]/).length - 1))) return target;
+		if (wild >= 0 && /[\\/]/.test(t.slice(wild)) && (t.slice(wild).includes('**') || fixed.split(/[\\/]/).includes('..') || holdsLink(asWritten, t.slice(wild).split(/[\\/]/).length - 1))) return target;
 		const places =[walk(fixed, { ...ctx, cwd }, keep), keep ? api.join(realOf(api.dirname(asWritten), api), api.basename(asWritten)) : realOf(asWritten, api)];
 		for (const resolved of places) {
 			const inRoot = ctx.roots.some((root) => {
