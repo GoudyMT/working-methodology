@@ -1058,6 +1058,16 @@ test('the sweep report audit passes a done report and names each missing part', 
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
 });
+// The owner's decision 6 (1.21.0): a handoff that led with fixes parked the next build behind them.
+test('a handoff\'s first action is the next build, and a fix goes first only when high or critical', () => {
+  const rule = (f) => read(path.resolve(f));
+  assert.match(rule('rules/tracking-and-handoff.md'), /9\. \*\*State working mode \+ first action\.\*\* The first action is always the next build \(the work order's next item, its carry-overs riding in it\); a fix goes first only when it is high or critical\. Start it when/);
+  for (const f of ['rules/tracking-and-handoff.md', 'user/skills/closeout/examples/handoff-a.md', 'user/skills/closeout/examples/handoff-b.md']) {
+    assert.match(rule(f), /state mode \+ first action \(always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical\) and start it;/, f);
+  }
+  // The start load has no room to give, so this text stays out of what every session loads.
+  for (const f of ['project/CLAUDE.md', 'project/AGENTS.md', 'project/_Start Here.md']) assert.doesNotMatch(rule(f), /always the next build/, f);
+});
 test('a first action still stops for a lock, an outward act or an open decision, and every copy says so', () => {
   const rule = (f) => read(path.resolve(f));
   assert.match(rule('rules/core.md'), /\*\*Still stop and ask:\*\*[^\n]*a plan lock or batch approval/);

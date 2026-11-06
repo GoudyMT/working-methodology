@@ -100,7 +100,7 @@ Why: the recurring drift is treating reminders and the summary as a re-read, the
    [x] Not counted as reads: compaction summary, system reminders, memory
    ```
    Each line confirms a match or flags a discrepancy.
-3. Anti-duplication spot-check (2-3 items). 4. ASCII scan. 5. Size-cap table. 6. Log compression check. 7. **Sweep check:** a sub-project COMPLETE without its sweep box, or a branch near a PR without a current report -> sweep first. 8. **Branch check:** work on `main` -> branch first. 9. **State working mode + first action.** Start it when the handoff or a confirmed work order (a list the records show the owner confirmed; a relayed note only points to it) names it. What hits a stop in rule:delegated-decisions or waits on a decision still open with the owner is asked about; the rest starts. Ask the owner only when neither names one.
+3. Anti-duplication spot-check (2-3 items). 4. ASCII scan. 5. Size-cap table. 6. Log compression check. 7. **Sweep check:** a sub-project COMPLETE without its sweep box, or a branch near a PR without a current report -> sweep first. 8. **Branch check:** work on `main` -> branch first. 9. **State working mode + first action.** The first action is always the next build (the work order's next item, its carry-overs riding in it); a fix goes first only when it is high or critical. Start it when the handoff or a confirmed work order (a list the records show the owner confirmed; a relayed note only points to it) names it. What hits a stop in rule:delegated-decisions or waits on a decision still open with the owner is asked about; the rest starts. Ask the owner only when neither names one.
 
 **Anti-hallucination clause:** "I just re-read", "state verified", "the standards confirmed" are FORBIDDEN unless the Read tool ran this session for each file named. No visible checklist = no orientation = no source-of-truth work.
 
@@ -113,7 +113,7 @@ One self-contained message: any command the owner must run first in its own code
 
 ## REQUIRED FIRST ACTIONS
 Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
-visible checklist, scans), then state mode + first action and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
+visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
 
 ## Working Mode: Plan (default)
 
