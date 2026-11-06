@@ -58,7 +58,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    is refused: what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it. Update the report, its Covers line to the re-sweep's HEAD. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
-   --real <n after triage> --duplicates <n repeated between roles>` (`--agents`: each reviewer's agent id, one per
+   --real <n after triage> --duplicates <n repeated between roles>` (`--agents auto` finds each reviewer from its brief's Sweep tag, so ids lost to a compaction do not end a sweep; or each reviewer's agent id, one per
    role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a reviewer that crashed (no report, not finished, its transcript quiet for 10 minutes): `node approve.mjs <contract.json> --retry <n> --crashed <id>` gives role n one more start with the same brief, and `--agents` names the retry. A crash's tokens count against its role's budget; a sweep cut short, where none of these works (a role's second crash, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds
    `--carried <n>`, a sweep that fixes carried findings `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
    the mid model, for the reviewer model trial). A bug later found in code the
