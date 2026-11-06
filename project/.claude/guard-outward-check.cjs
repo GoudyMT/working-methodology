@@ -35,6 +35,7 @@ const ASK = [
 	'node approve.mjs c.json --own' + BT + 'er-yes "go"',
 	'cmd /c node approve.mjs c.json --own^er-yes go',
 	'F=--owner-yes; node approve.mjs c.json $F go',
+	'node approve.mjs c.json --own' + BS + LF + 'er-yes go',
 	'GIT PUSH',
 	'git status' + LF + 'git push',
 	'git -C x ' + BT + LF + '  push',

@@ -3271,10 +3271,10 @@ test('a sweep closed with --none-ran is neither a base for a re-sweep nor a used
 test('--none-ran reads every clearing of this round, and only an approved contract has one', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'a reviewer starts under the approval');
   approveIn(dir, [r.f, '--escape', 'a bug slipped through']);
-  assert.match(approveIn(dir, [r.f]).stdout, /ASK THE OWNER/);
-  assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes go']).status, 0);
-  assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'a reviewer starts under the owner\'s yes');
+  assert.match(approveIn(dir, [r.f]).stdout, /log the outcome of the last approved sweep first/);
+  assert.notEqual(approveIn(dir, [r.f, '--owner-yes', 'yes go']).status, 0, 'nothing was asked, so no yes opens more slots');
   const none = approveIn(dir, [r.f, '--outcome', '--none-ran']);
   assert.equal(none.status, 1, none.stdout);
   assert.match(none.stdout, /started/);
@@ -4328,7 +4328,7 @@ test('an outcome is measured against the clearing, whatever is decided after it'
   const edited = JSON.parse(read(r.f));
   edited.roles.forEach((x) => { x.calls = 15; });
   fs.writeFileSync(r.f, JSON.stringify(edited));
-  assert.equal(approveIn(r.dir, [r.f]).status, 1);
+  assert.equal(approveIn(r.dir, [r.f]).status, FIX_EXIT);
   outcome(r, '200000');
   assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'outcome').pop().budget, 537500);
   const f = approveRun(featureContract());
@@ -4619,21 +4619,21 @@ test('the hook check reads real wiring, and a branch cannot delete its way out o
   assert.match(approveRun({ ...featureContract(), tier: 'first push' }, owner).stdout, /FIX THE CONTRACT[\s\S]*not wired/);
   assert.match(approveRun(askContract()).stdout, /no call-cap hook/, 'an ask says it too');
 });
-test('with two clearings the outcome measures the one the reviewers ran under', () => {
+test('a smaller contract tried while an outcome is owed opens no second clearing, and the outcome measures the first', () => {
   const big = featureContract();
   big.roles.forEach((x) => { x.calls = 15; });
   const dir = sweepRepo();
   const r = approveRun(big, dir);
   assert.equal(r.status, 0, r.stdout);
   approveIn(dir, [r.f, '--escape', 'a bug slipped through']);
-  approveIn(dir, [r.f]);
-  assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes go']).status, 0);
+  assert.equal(approveIn(dir, [r.f]).status, FIX_EXIT);
+  assert.notEqual(approveIn(dir, [r.f, '--owner-yes', 'yes go']).status, 0);
   const small = featureContract();
   fs.writeFileSync(r.f, JSON.stringify(small));
-  approveIn(dir, [r.f]);
-  assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes the smaller one']).status, 0);
+  assert.equal(approveIn(dir, [r.f]).status, FIX_EXIT);
+  assert.notEqual(approveIn(dir, [r.f, '--owner-yes', 'yes the smaller one']).status, 0);
   outcome({ ...r, f: r.f }, '200000');
-  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().budget, 537500);
+  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().budget, 2737500, 'the big contract is the only clearing');
 });
 test('the reviewer role keeps clear of the prompt it cannot answer', () => {
   assert.match(read(path.resolve('user/agents/reviewer.md')), /Never run a shell command naming `approve\.mjs` with `--owner-yes`/);
@@ -6412,7 +6412,7 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
 test('the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'armed-'));
-  assert.equal(spawnSync('git', ['init', '-q', dir]).status, 0);
+  assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.mkdirSync(path.join(dir, '.githooks'));
   fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
@@ -6435,7 +6435,7 @@ test('the pre-push hook refuses a push over an armed head until it is disarmed, 
 });
 test('the pre-push hook holds a head armed on two PRs until both are disarmed', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'armed-'));
-  assert.equal(spawnSync('git', ['init', '-q', dir]).status, 0);
+  assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
   const head = 'a'.repeat(40);
   const log = path.join(dir, '.git', 'kit-merge-gate.log');

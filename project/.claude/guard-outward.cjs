@@ -4,7 +4,8 @@
 // Usage (settings.json): command "node", args [<this file>]; an optional second arg is a log file that records
 // each decision (time, tool, ask/pass - never the command), used to prove the hook fires.
 // Limits: it reads ordinary spellings, nested shells (bash -c, powershell -Command) and inline aliases; it is no
-// match for a command built at run time (a variable holding "push", Invoke-Expression on joined strings).
+// match for a command built at run time (a variable holding "push" or part of --owner-yes, $'..' escapes,
+// Invoke-Expression on joined strings).
 const fs = require('node:fs');
 
 const BACKSLASH = String.fromCharCode(92);
@@ -131,7 +132,7 @@ function ghOutward(words, start) {
 function findOutward(text, depth) {
 	// The owner's logged yes: the settings' ask rule reads the raw text, so any spelling with quotes, escapes or a
 	// wildcard program is read here, anywhere in the command. A text that only names the flag asks too: the safe side.
-	if (/--owner-yes/i.test(text.replace(/[\\`^'"]/g, ''))) return 'an owner yes for a sweep';
+	if (/--owner-yes/i.test(text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, ''))) return 'an owner yes for a sweep';
 	for (const segment of tokenize(joinContinuations(text))) {
 		const words = segment.map((word) => word.value.toLowerCase());
 		for (let i = 0; i < segment.length; i++) {

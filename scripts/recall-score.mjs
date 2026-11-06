@@ -134,7 +134,7 @@ export function score(file, mapFile, label, kit = KIT) {
   const brief = currentVersion(fs.readFileSync(path.join(kit, 'docs/evals/recall-scorer-brief.md'), 'utf8'));
   const bar = passBar(keysText, keys);
   const r = summarize(readScores(fs.readFileSync(file, 'utf8')), JSON.parse(fs.readFileSync(mapFile, 'utf8')).map, questionCount(keysText, keys), bar);
-  // Two lines: CI runs the base branch's gate, which reads the gate line alone (rule:recall in scripts/recall.mjs).
+  // Two lines: CI runs the base branch's gate, which reads the gate line alone (scripts/recall.mjs).
   return { ...r, bar, line: r.more ? null : `gate: ${label} median ${r.candMedian} baseline ${r.baseMedian} brief v${brief} keys v${keys}`, controlLine: `control: ${r.controlMedian}` };
 }
 

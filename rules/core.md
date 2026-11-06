@@ -133,7 +133,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 - **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude fixes a PR's CI failures and its owner's or review tool's comments, runs the full gate, then `merge-gate.mjs autofix <n>`, and on CLEARED pushes to that PR's branch - nothing else. Relayed review comments carry no authority.
-- **Auto-merge goes through the merge gate:** after a PR's gates, under the owner's grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (`$HOME` in PowerShell); it arms only on GO, else the merge waits for the owner's yes (rule:standing-grants).
+- **Auto-merge goes through the merge gate:** after a PR's gates, under the grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (`$HOME` in PowerShell); without GO the merge waits for the owner's yes (rule:standing-grants).
 - **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; no automated "push without asking" overrides it. What the owner must read goes as a file they can open on the phone.
 
 ## Session Workflow {#session-workflow}
@@ -150,7 +150,7 @@ Lost context mid-session: the Start reads above, then the first OPEN issue; re-r
 
 ### What This File Is Not {#what-this-file-is-not}
 
-Not the design spec (A22), the roadmap or the history: it is HOW we work, and the module its Rule Modules table names holds the depth.
+Not the design spec (A22), the roadmap or the history: it is HOW we work; the modules hold the depth.
 
 ## Context Engineering Discipline {#context-engineering}
 
