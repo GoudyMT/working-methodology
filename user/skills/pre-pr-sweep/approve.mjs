@@ -600,11 +600,44 @@ function resumeHelp(s) {
 // Claude Code's meta file beside the transcript says a reviewer that finished, and its first line is no older than
 // the clearance. Anything else asks the owner, so a slip cannot count the wrong one; a hand-written transcript still
 // passes, as a forged log line does. An id in `crashed` may be unfinished: --retry reads what it spent all the same.
+const transcriptRoot = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+const folders = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)); } catch { return []; } };
+const briefText = (asked) => (asked ? (typeof asked.content === 'string' ? asked.content : Array.isArray(asked.content) ? asked.content.map((x) => (x && x.text) || '').join('\n') : '') : '');
+
+// A compaction can lose the ids from the lead's context; the briefs keep the sweep's tag. --agents auto reads them
+// back: the reviewers written to since the clearance whose brief names this contract, in role order. spend() still
+// checks each one, and a count that does not match the contract stops the outcome.
+function reviewersOf(hash, since, skip) {
+	const out = [];
+	const after = Date.parse(since) || 0;
+	for (const project of folders(transcriptRoot())) for (const session of folders(project)) {
+		const dir = path.join(session, 'subagents');
+		let names = [];
+		try { names = fs.readdirSync(dir); } catch { continue; }
+		for (const name of names) {
+			const id = (name.match(/^agent-(.+)\.jsonl$/) || [])[1];
+			if (!id || !AGENT_ID.test(id) || skip(id)) continue;
+			const f = path.join(dir, name);
+			try {
+				if (fs.statSync(f).mtimeMs < after) continue;
+				if (!/(^|:)reviewer$/i.test(String(JSON.parse(fs.readFileSync(f.replace(/\.jsonl$/, '.meta.json'), 'utf8')).agentType || ''))) continue;
+				const fd = fs.openSync(f, 'r');
+				const head = Buffer.alloc(1 << 20);
+				const size = fs.readSync(fd, head, 0, head.length, 0);
+				fs.closeSync(fd);
+				const first = head.toString('utf8', 0, size).split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((e) => e && e.message && e.message.role === 'user');
+				const tag = first && briefText(first.message).match(SWEEP_TAG);
+				if (tag && tag[1] === hash) out.push({ id, role: Number(tag[2]) });
+			} catch { /* no meta file or unreadable: not a reviewer this can count */ }
+		}
+	}
+	return out.sort((a, b) => a.role - b.role).map((x) => x.id);
+}
+
 function spend(ids, since, hash, team, crashed = new Set()) {
-	const root = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+	const root = transcriptRoot();
 	const found = new Map(ids.map((id) => [id, []]));
-	const list = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)); } catch { return []; } };
-	for (const project of list(root)) for (const session of list(project)) {
+	for (const project of folders(root)) for (const session of folders(project)) {
 		for (const id of ids) { const f = path.join(session, 'subagents', `agent-${id}.jsonl`); if (fs.existsSync(f)) found.get(id).push(f); }
 	}
 	const bad = [];
@@ -626,8 +659,7 @@ function spend(ids, since, hash, team, crashed = new Set()) {
 		if (at && at.status === 0 && path.resolve(at.stdout.trim()).toLowerCase() !== path.dirname(LOG).toLowerCase()) { bad.push(`${id} (ran in another repo)`); return null; }
 		// The brief names its sweep and role, so a transcript counts only for this contract and in its role's place.
 		const asked = (parsed.find((e) => e && e.message && e.message.role === 'user') || {}).message;
-		const said = asked ? (typeof asked.content === 'string' ? asked.content : Array.isArray(asked.content) ? asked.content.map((x) => (x && x.text) || '').join('\n') : '') : '';
-		const tag = said.match(SWEEP_TAG);
+		const tag = briefText(asked).match(SWEEP_TAG);
 		if (!tag) { bad.push(`${id} (its brief has no "Sweep: <hash> role <n>" line)`); return null; }
 		if (tag[1] !== hash) { bad.push(`${id} (brief is for another contract)`); return null; }
 		const index = Number(tag[2]);
@@ -748,16 +780,18 @@ function outcome() {
 		if (v === null) { console.log(`--closed-carries needs a number from 0 to the ${openCarries(s.log)} open; nothing logged.`); return 1; }
 		nums.closedCarries = v;
 	}
-	const ids = String(opt('--agents') || '').split(',').map((x) => x.trim()).filter(Boolean);
-	// Windows file names ignore case, so a1 and A1 are one transcript.
-	if (!ids.length || ids.some((id) => !AGENT_ID.test(id)) || new Set(ids.map((x) => x.toLowerCase())).size !== ids.length) { console.log('--agents needs the reviewers\' agent ids, comma-separated, each once (letters, digits, - and _). Nothing logged.'); return 1; }
-	if (ids.length !== Number(decision.agents)) { console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role (each brief's Sweep line names its role). Nothing logged. A sweep cut short: --outcome --cut-short.`); return 1; }
 	const since = (clearAts.length ? s.log[clearAts[0]] : decision).time;
 	const used = usedAgents(s.log);
 	// A crash's retry stands for its role; the crashed transcript's spend is added to it below.
 	const lost = clearAts.length ? retriesSince(s.log, contractFile, clearAts[0]).map((e) => e.crashed) : [];
 	const isLost = (id) => lost.some((x) => x.toLowerCase() === id.toLowerCase());
-	const refused = [...ids.filter((id) => used.has(id.toLowerCase())).map((id) => `${id} (already logged for an earlier outcome)`), ...ids.filter(isLost).map((id) => `${id} (logged as crashed: name its retry's id)`)];
+	const auto = opt('--agents') === 'auto';
+	const ids = auto ? reviewersOf(decision.hash, since, (id) => used.has(id.toLowerCase()) || isLost(id)) : String(opt('--agents') || '').split(',').map((x) => x.trim()).filter(Boolean);
+	if (auto && ids.length !== Number(decision.agents)) { console.log(`--agents auto found ${ids.length} reviewer(s) for this sweep (${ids.join(', ') || 'none'}); the contract had ${decision.agents} role(s). Name the ids by hand, or a sweep cut short: --outcome --cut-short. Nothing logged.`); return 1; }
+	// Windows file names ignore case, so a1 and A1 are one transcript.
+	if (!ids.length || ids.some((id) => !AGENT_ID.test(id)) || new Set(ids.map((x) => x.toLowerCase())).size !== ids.length) { console.log('--agents needs the reviewers\' agent ids, comma-separated, each once (letters, digits, - and _). Nothing logged.'); return 1; }
+	if (ids.length !== Number(decision.agents)) { console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role (each brief's Sweep line names its role). Nothing logged. A sweep cut short: --outcome --cut-short.`); return 1; }
+	const refused =[...ids.filter((id) => used.has(id.toLowerCase())).map((id) => `${id} (already logged for an earlier outcome)`), ...ids.filter(isLost).map((id) => `${id} (logged as crashed: name its retry's id)`)];
 	const read = refused.length ? { bad: refused } : spend([...ids, ...lost], since, decision.hash, Number(decision.agents), new Set(lost));
 	if (read.bad) {
 		const why = [`the spend cannot be read, so it is not guessed: ${read.bad.join(', ')}`];

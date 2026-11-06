@@ -132,6 +132,16 @@ export function checkHome(env) {
   if (env.KIT_CLAUDE_HOME && env.KIT_CLAUDE_HOME !== env.CLAUDE_CONFIG_DIR) throw new Error('KIT_CLAUDE_HOME is set, but sessions read CLAUDE_CONFIG_DIR: set both to one folder, or neither');
 }
 
+/** Refuses a run whose sessions would read another folder than the layer checked: the CLI itself says which it reads. */
+export function checkSessionHome(home, run) {
+  const r = run('claude', ['auth', 'status'], {});
+  let dir;
+  try { dir = JSON.parse(r.stdout).configDirectory; } catch { /* reported below */ }
+  if (r.status !== 0 || !dir) throw new Error(`cannot read the sessions' config folder from claude auth status: ${(r.stderr || r.stdout || '').trim().slice(0, 200)}`);
+  const real = (p) => { let x; try { x = fs.realpathSync(p); } catch { x = path.resolve(p); } return process.platform === 'win32' ? x.toLowerCase() : x; };
+  if (real(dir) !== real(home)) throw new Error(`sessions read ${dir}, but the layer checked is ${home}: set CLAUDE_CONFIG_DIR and KIT_CLAUDE_HOME to one folder`);
+}
+
 /** Whether a Claude folder sits strictly inside kit-probes under the home folder, links followed. */
 function isThrowaway(home, osHome) {
   const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -320,6 +330,7 @@ export function askAll({ qs, projectDir, run }) {
 export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools }) {
   checkUserLayer(home, osHome);
   checkHome(env);
+  checkSessionHome(home, run);
   const kit = path.resolve(kitDir || KIT);
   const projectDir = probePath(osHome);
   try {

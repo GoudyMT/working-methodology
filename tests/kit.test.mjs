@@ -1270,7 +1270,12 @@ test('build writes AGENTS.md, path rules, on-demand modules and the index from r
     assert.ok(out.has(where), `${m.id} -> ${where}`);
     assert.match(out.get('project/AGENTS.md'), new RegExp(`\| ${m.id} \|`), `AGENTS.md index lists ${m.id}`);
   }
-  for (const [rel, text] of out) assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
+  for (const [rel, text] of out) {
+    // The merge gate's audits are exact copies read from the user layer: their source is project/.claude, not rules/.
+    const audit = rel.match(/^user\/kit-tools\/audits\/(.+)$/);
+    if (audit) assert.equal(text, read(path.resolve('project/.claude', audit[1])), `${rel} is its source byte for byte`);
+    else assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
+  }
   // A path rule keeps Claude Code's paths field first, or it would load every session.
   assert.match(out.get('project/.claude/rules/testing.md'), /^---\npaths:\n  - "\*\*\/\*\.test\.\*"/);
   // Every rule ID is in the index exactly once.
@@ -5361,7 +5366,8 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   const calls = [];
   const kitTools = { releaseState: () => ({ problems: ['not a tag'] }), projectSlug: (d) => path.basename(d) };
   const go = (over = {}) => recallRun({ label: 'recall-cand-9', kitDir: kit, noKit: false, home, osHome, env: {}, text, when: 'w', outDir, kitTools,
-    run: (cmd, args, opts) => { calls.push({ cmd, args, opts }); if (cmd === 'claude' && args[0] === '-p') fs.mkdirSync(path.join(home, 'projects', path.basename(opts.cwd)), { recursive: true }); return { status: 0, stdout: 'an answer' }; }, ...over });
+    run: (cmd, args, opts) => { calls.push({ cmd, args, opts }); if (cmd === 'claude' && args[0] === 'auth') return { status: 0, stdout: JSON.stringify({ configDirectory: home }) }; if (cmd === 'claude' && args[0] === '-p') fs.mkdirSync(path.join(home, 'projects', path.basename(opts.cwd)), { recursive: true }); return { status: 0, stdout: 'an answer' }; }, ...over });
+  assert.throws(() => go({ run: () => ({ status: 0, stdout: JSON.stringify({ configDirectory: osHome }) }) }), /sessions read/);
   const out = go();
   assert.match(read(out), new RegExp(`^Keys: v${currentVersion(text)}$`, 'm'));
   const asks = calls.filter((c) => c.cmd === 'claude' && c.args[0] === '-p');
@@ -6346,4 +6352,57 @@ test('install user lands the merge gate and its audits at the paths the rules gi
   for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
     assert.equal(read(path.join(home, 'kit-tools', 'audits', f)), read(path.resolve('project/.claude', f)), f);
   }
+});
+// Carry 17: a compaction loses the ids in the lead's context; each brief's Sweep tag does not get lost.
+function autoSweep(extra = () => {}) {
+  const r = approveRun(featureContract());
+  const n = JSON.parse(read(r.f)).roles.length;
+  const hash = approvalLog(r.dir).pop().hash;
+  const ids = Array.from({ length: n }, (_, i) => `au${++agentSeq}x${i}`);
+  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[0, 1000, 0, 0]]])));
+  ids.forEach((id, i) => setBrief(cfg, id, (b) => `${b} Sweep: ${hash} role ${i + 1}`));
+  extra({ cfg, hash, ids });
+  const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'auto', '--findings', '6', '--real', '5', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  return { r, o, ids, n };
+}
+test('--agents auto finds this sweep\'s reviewers from their briefs, in role order, and leaves the rest out', () => {
+  const { r, o, ids, n } = autoSweep(({ cfg, hash }) => {
+    transcripts({ other: [[0, 999999, 0, 0]] }, {}, cfg);
+    setBrief(cfg, 'other', (b) => `${b} Sweep: ${'0'.repeat(16)} role 1`);
+    transcripts({ helper: [[0, 999999, 0, 0]] }, { helper: { agentType: 'general-purpose' } }, cfg);
+    setBrief(cfg, 'helper', (b) => `${b} Sweep: ${hash} role 1`);
+  });
+  assert.equal(o.status, 0, o.stdout + o.stderr);
+  const line = approvalLog(r.dir).pop();
+  assert.equal(line.kind, 'outcome');
+  assert.deepEqual(line.roles.map((x) => x.agent), ids);
+  assert.equal(line.tokens, n * 1000);
+});
+test('--agents auto logs nothing when the briefs do not add up to the contract\'s roles', () => {
+  const { r, o, ids } = autoSweep(({ cfg, ids: all }) => {
+    const f = path.join(cfg, 'projects', 'C--repo', 'session-1', 'subagents', `agent-${all[0]}.jsonl`);
+    fs.rmSync(f);
+  });
+  assert.equal(o.status, 1, o.stdout);
+  assert.match(o.stdout, new RegExp(`found ${ids.length - 1} reviewer`));
+  assert.match(o.stdout, /Nothing logged/);
+  assert.notEqual(approvalLog(r.dir).pop().kind, 'outcome');
+});
+test('--agents auto skips a transcript left over from before the clearance', () => {
+  const { o } = autoSweep(({ cfg, ids: all }) => {
+    const f = path.join(cfg, 'projects', 'C--repo', 'session-1', 'subagents', `agent-${all[0]}.jsonl`);
+    fs.utimesSync(f, new Date(0), new Date(0));
+  });
+  assert.equal(o.status, 1, o.stdout);
+  assert.match(o.stdout, /found \d+ reviewer/);
+});
+// Carry 25: a second config folder can point the sessions somewhere other than the layer the gate checked.
+test('recall refuses when the CLI\'s own config folder is not the layer it checked', async () => {
+  const { checkSessionHome } = await recallTools();
+  const run =(out) => () => ({ status: 0, stdout: out, stderr: '' });
+  const home = path.join(os.tmpdir(), 'layer-a');
+  assert.throws(() => checkSessionHome(home, run(JSON.stringify({ configDirectory: path.join(os.tmpdir(), 'layer-b') }))), /sessions read .*layer-b/);
+  assert.doesNotThrow(() => checkSessionHome(home, run(JSON.stringify({ configDirectory: home }))));
+  assert.throws(() => checkSessionHome(home, run('not json')), /cannot read/);
+  assert.throws(() => checkSessionHome(home, () => ({ status: 1, stdout: '', stderr: 'nope' })), /cannot read/);
 });
