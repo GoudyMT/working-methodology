@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { check, arm, live, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
+import crypto from 'node:crypto';
+import { check, arm, disarm, live, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-tests-'));
@@ -22,6 +23,19 @@ const sh = (cwd, ...a) => {
 const TITLE = 'feat: add a subtract function';
 const BODY = '## Math: add a subtract function\n\nThe math module can now subtract.\n\n**Changes**\n- New `sub(a, b)` export.\n\n**Gates**\n- [x] The test passes.\n- [x] Full local gate green.\n- [x] Sweep by dimension: privacy, supply chain, legal, code security; no secrets or account information.\n\n**Notes** - none.\n';
 const report = (branch, sha, extra = '') => `# Sweep: subtract\n\n- **Tier:** feature\n- **Date:** 2026-11-05\n- **Branch:** ${branch} at ${sha.slice(0, 7)}\n- **Covers:** ${sha}\n\n## Result\nPrivacy: clean. Supply chain: clean. Legal: clean. Security: clean. Gaps and scaling: clean.\nVersion goal alignment: YES\n${extra}`;
+
+// approve.mjs's log: each line chained to the one before, in the repo's git folder.
+const logSha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
+function appendLog(work, entry) {
+	const f = path.join(work, '.git', 'kit-sweep-approvals.jsonl');
+	const lines = fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean) : [];
+	fs.appendFileSync(f, JSON.stringify({ time: '2026-11-05T00:00:00.000Z', ...entry, prev: lines.length ? logSha(lines[lines.length - 1]) : '' }) + '\n');
+}
+function cleared(work, sha, decision = {}, outcome = {}) {
+	const contract = path.join(work, 'reports/sweeps/c.json');
+	appendLog(work, { kind: 'decision', contract, hash: 'c', tier: 'feature', agents: 1, decision: 'approved', head: sha.slice(0, 7), ...decision });
+	if (outcome) appendLog(work, { kind: 'outcome', contract, tokens: 10, ...outcome });
+}
 
 function setup() {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-gate-'));
@@ -44,6 +58,7 @@ function setup() {
 	const sha = sh(work, 'rev-parse', 'HEAD');
 	fs.mkdirSync(path.join(work, 'reports', 'sweeps'), { recursive: true });
 	fs.writeFileSync(path.join(work, 'reports', 'sweeps', 'sub.md'), report('feat/subtract', sha));
+	cleared(work, sha);
 	for (const s of ['pre-pr-sweep', 'release-notes']) {
 		fs.mkdirSync(path.join(config, 'skills', s), { recursive: true });
 		fs.copyFileSync(path.join(KIT, 'user/skills', s, 'audit.mjs'), path.join(config, 'skills', s, 'audit.mjs'));
@@ -55,6 +70,8 @@ function setup() {
 		rules: [],
 		release: { tagName: 'v1.2.0', body: 'Plans now sync between devices.\n' },
 		mergeStatus: 0,
+		armOnMerge: true,
+		disarmHolds: true,
 		armed: false,
 		calls: [],
 	};
@@ -71,18 +88,20 @@ function setup() {
 		if (args[0] === 'repo') return ok(state.repo);
 		if (args[0] === 'api' && args[1].endsWith('/required_status_checks')) return state.protection ? ok(state.protection) : no;
 		if (args[0] === 'api' && args[1].includes('/rules/branches/')) return ok(state.rules);
-		if (args[0] === 'pr' && args[1] === 'merge') { state.armed = state.mergeStatus === 0; return { status: state.mergeStatus, stdout: '', stderr: state.mergeStatus ? 'refused' : '' }; }
+		if (args[0] === 'pr' && args[1] === 'merge' && args.includes('--disable-auto')) { if (state.disarmHolds) state.armed = false; return { status: 0, stdout: '', stderr: '' }; }
+		if (args[0] === 'pr' && args[1] === 'merge') { state.armed = state.mergeStatus === 0 && state.armOnMerge; return { status: state.mergeStatus, stdout: '', stderr: state.mergeStatus ? 'refused' : '' }; }
 		if (args[0] === 'release') return ok(state.release);
 		return no;
 	};
 	return { root, work, config, state, run, sha, opts: { pr: 7, cwd: work, config, run } };
 }
 const merges = (s) => s.state.calls.filter((c) => c.startsWith('pr merge'));
-const commitOnBranch = (s, file, text) => {
+const commitOnBranch = (s, file, text, clear = true) => {
 	fs.mkdirSync(path.dirname(path.join(s.work, file)), { recursive: true });
 	fs.writeFileSync(path.join(s.work, file), text);
 	sh(s.work, 'add', '-A', '--', file); sh(s.work, 'commit', '-qm', `change ${file}`);
 	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	if (clear) cleared(s.work, s.state.pr.headRefOid);
 };
 
 test('merge gate: a PR that passes every check is armed, pinned to the checked head, read back and logged', () => {
@@ -309,4 +328,172 @@ test('merge gate: in the kit source a change to what the gate rests on is the ow
 	commitOnBranch(s, 'rules/core.md', 'y\n');
 	fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.state.pr.headRefOid));
 	assert.doesNotMatch(check(s.opts).faults.join('\n'), /gate or rule paths/, 'a project\'s own rules folder is not the kit\'s');
+});
+
+// What the approval log must show for a report to count (G4): the sweep was cleared at the commit it covers, and ran.
+const rewrite = (s, text) => fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), text);
+const freshLog = (s) => fs.rmSync(path.join(s.work, '.git', 'kit-sweep-approvals.jsonl'), { force: true });
+const NO_GO = [
+	['a report with no clearance in the log', (s) => freshLog(s), /never cleared/],
+	['a sweep cleared but never run', (s) => { freshLog(s); cleared(s.work, s.sha, {}, null); }, /no reviewer outcome/],
+	['a sweep closed as none ran', (s) => { freshLog(s); cleared(s.work, s.sha, {}, { noneRan: true }); }, /no reviewer outcome/],
+	['a sweep cut short', (s) => { freshLog(s); cleared(s.work, s.sha, {}, null); appendLog(s.work, { kind: 'unread', contract: path.join(s.work, 'reports/sweeps/c.json') }); }, /no reviewer outcome/],
+	['a log changed by hand', (s) => { const f = path.join(s.work, '.git', 'kit-sweep-approvals.jsonl'); fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('"tier":"feature"', '"tier":"triage"')); }, /changed by hand/],
+	['a report that names a lower tier than was cleared', (s) => rewrite(s, report('feat/subtract', s.sha).replace('**Tier:** feature', '**Tier:** triage')), /tier/],
+	['an owner acceptance typed in the report', (s) => rewrite(s, report('feat/subtract', s.sha, '\n- **S1 (high)** leak. ACCEPTED owner ships today anyway\n')), /the owner's/],
+	['a retyped Covers line on code no sweep cleared', (s) => { commitOnBranch(s, 'math.txt', 'add\nsub\nmore\n', false); rewrite(s, report('feat/subtract', s.state.pr.headRefOid)); }, /never cleared/],
+	['a report for a branch whose name holds this one', (s) => rewrite(s, report('feat/subtract-2', s.sha)), /no sweep report/],
+	['a clean file beside a report with an open high', (s) => {
+		rewrite(s, report('feat/subtract', s.sha, '\n| ID | Severity | Finding |\n|---|---|---|\n| S1 | high | leaks a token | OPEN |\n'));
+		fs.writeFileSync(path.join(s.work, 'reports/sweeps/a-clean.md'), report('feat/subtract', s.sha));
+	}, /fails its audit/],
+	['a failing check on the PR', (s) => { s.state.pr.statusCheckRollup = [{ name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE' }]; }, /failing: lint/],
+	['a failed status on the PR', (s) => { s.state.pr.statusCheckRollup = [{ context: 'ci/x', state: 'ERROR' }]; }, /failing: ci\/x/],
+	['a fetch that fails', (s) => sh(s.work, 'remote', 'set-url', 'origin', path.join(s.root, 'gone.git')), /could not fetch/],
+	['an untracked audit setting', (s) => { fs.mkdirSync(path.join(s.work, '.kit')); fs.writeFileSync(path.join(s.work, '.kit/version-bump.json'), '{"shipped":[]}\n'); }, /not on the base/],
+];
+for (const [name, breakIt, want] of NO_GO) {
+	test(`merge gate: ${name} is NO GO`, () => {
+		const s = setup();
+		breakIt(s);
+		const r = check(s.opts);
+		assert.equal(r.go, false, name);
+		assert.ok(r.faults.some((f) => want.test(f)), r.faults.join('\n'));
+	});
+}
+test('merge gate: an owner yes clears a sweep as an approval does, on the tier of the decision it answered', () => {
+	const s = setup();
+	freshLog(s);
+	const c = path.join(s.work, 'reports/sweeps/c.json');
+	appendLog(s.work, { kind: 'decision', contract: c, tier: 'feature', decision: 'owner', head: s.sha.slice(0, 7) });
+	appendLog(s.work, { kind: 'owner-yes', contract: c, head: s.sha.slice(0, 7) });
+	appendLog(s.work, { kind: 'outcome', contract: c, tokens: 10 });
+	const r = check(s.opts);
+	assert.equal(r.go, true, r.faults.join('\n'));
+});
+test('merge gate: a passing or pending check on the PR does not stop it', () => {
+	const s = setup();
+	s.state.pr.statusCheckRollup = [{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'b', status: 'IN_PROGRESS', conclusion: '' }, { name: 'c', status: 'COMPLETED', conclusion: 'SKIPPED' }, { context: 'd', state: 'SUCCESS' }];
+	assert.equal(check(s.opts).go, true);
+});
+test('merge gate: the sweep folder comes from the cleared contract, as adapter A22 sets it', () => {
+	const s = setup();
+	fs.mkdirSync(path.join(s.work, 'docs/sweeps'), { recursive: true });
+	fs.renameSync(path.join(s.work, 'reports/sweeps/sub.md'), path.join(s.work, 'docs/sweeps/sub.md'));
+	freshLog(s);
+	const contract = path.join(s.work, 'docs/sweeps/c.json');
+	cleared(s.work, s.sha, { contract }, { contract });
+	const r = check(s.opts);
+	assert.equal(r.go, true, r.faults.join('\n'));
+});
+test('merge gate: an audit setting kept out of git on purpose is the project\'s own', () => {
+	const s = setup();
+	fs.mkdirSync(path.join(s.work, '.kit'));
+	fs.writeFileSync(path.join(s.work, '.kit/version-bump.json'), '{"shipped":[]}\n');
+	fs.appendFileSync(path.join(s.work, '.git/info/exclude'), '.kit/\n');
+	const r = check(s.opts);
+	assert.equal(r.go, true, r.faults.join('\n'));
+});
+// A kit-local project keeps .claude/ out of git, so the audit comes from the installed user layer (G6).
+function baseWithoutAudits(s) {
+	sh(s.work, 'checkout', '-q', 'main');
+	sh(s.work, 'rm', '-rq', '.claude'); sh(s.work, 'commit', '-qm', 'kit stays local'); sh(s.work, 'push', '-q', 'origin', 'main');
+	sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	cleared(s.work, s.state.pr.headRefOid);
+	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
+}
+test('merge gate: with no audit on the base it reads the installed user layer, and never the project folder', () => {
+	const s = setup();
+	baseWithoutAudits(s);
+	fs.mkdirSync(path.join(s.work, '.claude'), { recursive: true });
+	fs.writeFileSync(path.join(s.work, '.claude/pr-body-audit-lean.mjs'), 'process.exit(0);\n');
+	fs.appendFileSync(path.join(s.work, '.git/info/exclude'), '.claude/\n');
+	assert.match(check(s.opts).faults.join('\n'), /no installed copy/);
+	const audits = path.join(s.config, 'kit-tools', 'audits');
+	fs.mkdirSync(audits, { recursive: true });
+	for (const f of fs.readdirSync(path.join(KIT, 'user/kit-tools/audits'))) fs.copyFileSync(path.join(KIT, 'user/kit-tools/audits', f), path.join(audits, f));
+	const r = check(s.opts);
+	assert.equal(r.go, true, r.faults.join('\n'));
+	s.state.pr.body = BODY.replace('- [x] The test', '- [ ] The test');
+	assert.match(check(s.opts).faults.join('\n'), /live PR body fails/, 'the installed audit really ran');
+	assert.equal(live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run }).ok, false);
+});
+test('merge gate: the audit is read from the kit\'s own layout on the base', () => {
+	const s = setup();
+	sh(s.work, 'checkout', '-q', 'main');
+	fs.mkdirSync(path.join(s.work, 'project'));
+	sh(s.work, 'mv', '.claude', 'project/.claude'); sh(s.work, 'commit', '-qm', 'kit layout'); sh(s.work, 'push', '-q', 'origin', 'main');
+	sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	cleared(s.work, s.state.pr.headRefOid);
+	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
+	s.state.pr.body = BODY.replace('- [x] The test', '- [ ] The test');
+	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit-lean/);
+});
+test('merge gate: a squash-style title is read by the full audit, not the lean one', () => {
+	const s = setup();
+	s.state.pr.title = 'Add a subtract function';
+	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit\.mjs/);
+});
+test('merge gate: the base is fetched, so a stricter audit landed on the remote is the one that judges', () => {
+	const s = setup();
+	const other = path.join(s.root, 'other');
+	sh(s.root, 'clone', '-q', path.join(s.root, 'origin.git'), other);
+	fs.writeFileSync(path.join(other, '.claude/pr-body-audit-lean.mjs'), 'console.log("FAIL stricter"); process.exit(1);\n');
+	sh(other, 'add', '-A'); sh(other, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'stricter'); sh(other, 'push', '-q', 'origin', 'main');
+	assert.match(check(s.opts).faults.join('\n'), /FAIL stricter/);
+});
+test('merge gate: a merge gh accepts but the PR does not show armed is not reported armed', () => {
+	const s = setup();
+	s.state.armOnMerge = false;
+	const r = arm(s.opts);
+	assert.equal(r.armed, false);
+	assert.match(r.faults[0], /not shown on the PR/);
+	assert.equal(fs.existsSync(path.join(s.work, '.git', 'kit-merge-gate.log')), false);
+});
+test('merge gate: the nearest report wins whatever its file name', () => {
+	const s = setup();
+	commitOnBranch(s, 'math.txt', 'add\nsub\nfixed\n');
+	fs.writeFileSync(path.join(s.work, 'reports/sweeps/zz-resweep.md'), report('feat/subtract', s.state.pr.headRefOid));
+	const r = check(s.opts);
+	assert.equal(r.go, true, r.faults.join('\n'));
+});
+test('merge gate: a Covers commit off the branch does not count, even with the same tree', () => {
+	const s = setup();
+	sh(s.work, 'checkout', '-q', '--detach', 'HEAD~1');
+	fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\n');
+	sh(s.work, 'commit', '-qam', 'same tree, off the branch');
+	const off = sh(s.work, 'rev-parse', 'HEAD');
+	sh(s.work, 'checkout', '-q', 'feat/subtract');
+	cleared(s.work, off);
+	rewrite(s, report('feat/subtract', off));
+	assert.match(check(s.opts).faults.join('\n'), /Covers commit at or before the head/);
+});
+// Disarming is the one way to stop an armed PR, so it needs no prompt and works with the kill switch down (N2).
+test('merge gate: disarm turns auto-merge off, reads it back and logs it, kill switch or not', () => {
+	const s = setup();
+	assert.equal(arm(s.opts).armed, true);
+	fs.writeFileSync(path.join(s.config, 'autonomy-off'), '');
+	const r = disarm(s.opts);
+	assert.equal(r.disarmed, true, r.faults.join('\n'));
+	assert.ok(s.state.calls.includes('pr merge 7 --disable-auto'));
+	assert.match(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'), /DISARMED 7/);
+});
+test('merge gate: a disarm that does not take is reported, not logged', () => {
+	const s = setup();
+	arm(s.opts);
+	s.state.disarmHolds = false;
+	const r = disarm(s.opts);
+	assert.equal(r.disarmed, false);
+	assert.match(r.faults[0], /still armed/);
+	assert.doesNotMatch(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'), /DISARMED/);
+	assert.equal(disarm({ ...s.opts, pr: 'x' }).disarmed, false);
+});
+test('merge gate: the CLI exits 1 on NO GO and 2 on a bad call', () => {
+	const cli = (...a) => spawnSync(process.execPath, [path.join(KIT, 'user/kit-tools/merge-gate.mjs'), ...a], { encoding: 'utf8' });
+	assert.equal(cli('check', 'x').status, 1);
+	assert.equal(cli('arm', 'x').status, 1);
+	assert.equal(cli('disarm', 'x').status, 1);
+	assert.equal(cli('nonsense').status, 2);
 });

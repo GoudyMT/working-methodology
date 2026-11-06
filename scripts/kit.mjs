@@ -1088,6 +1088,11 @@ export function build({ kit }) {
     out.set(`project/${where(m)}`, front + stamp(m.src) + '\n' + m.body);
   }
   const rows = mods.flatMap((m) => headings(m.body).map((h) => `| ${h.id} | ${h.title} | \`${where(m)}\` | ${(m.meta.tags[h.id] || []).join(', ')} |`));
+  // The merge gate needs the PR-body audits where no branch or session can edit them: a kit-local project keeps
+  // .claude/ out of git, so its base holds none. An exact copy, so the two cannot drift.
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
+    out.set(`user/kit-tools/audits/${f}`, fs.readFileSync(path.join(kit, 'project', '.claude', f), 'utf8'));
+  }
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
     'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
