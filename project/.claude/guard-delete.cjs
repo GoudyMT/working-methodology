@@ -171,6 +171,8 @@ function tokenize(text) {
 		} else if (last) {
 			// && and || are kept as one break; a pipe followed by a line break still feeds the next line.
 			if ((end === '&' || end === '|') && last.end === end) last.end = end + end;
+			// |& pipes both streams, so it stays a pipe.
+			else if (end === '&' && last.end === '|') last.end = '|&';
 			else if (!(['|', '||', '&&'].includes(last.end) && end === LF)) last.end = end;
 			if (end === '{') last.opens++;
 			if (end === '}') last.closes++;
@@ -579,9 +581,11 @@ function findDelete(text, ctx, state, depth) {
 				if (!word.quoted) continue;
 				// A quoted name=value (git -c core.pager='...') may hold a command in its value.
 				const assigned = /^[\w.-]+=/.test(word.value) ? word.value.slice(word.value.indexOf('=') + 1) : '';
-				// An echo prints its text, but the text may be piped to a shell or written to a script: only text not piped on, with
-				// no delete word and nothing that runs ($( ), a backtick) is skipped, so echo "git $VERSION" does not ask.
-				const printed = PRINTERS.has(first) && !String(segment.end ?? '').startsWith('|') && !DELETE_WORD.test(word.value) && !/\bclean\b|\$\(|`/.test(word.value);
+				// An echo prints its text, but the text may be run: piped on, written to a file, or inside $( ) or iex ( ). Only
+				// text that goes nowhere, with no delete word and nothing that runs ($( ), a backtick) is skipped, so
+				// echo "git $VERSION" does not ask.
+				const consumed = String(segment.end ?? '').startsWith('|') || segment.some((w) => w.redirect) || (s > 0 && segments[s - 1].end === '(');
+				const printed = PRINTERS.has(first) && !consumed && !DELETE_WORD.test(word.value) && !/\bclean\b|\$\(|`/.test(word.value);
 				const said = printed ? [] : [word.value, assigned];
 				for (const inner of said.filter(Boolean)) {
 					const hit = readNested(inner, ctx, state, depth);

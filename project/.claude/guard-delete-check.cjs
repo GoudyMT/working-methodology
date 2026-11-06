@@ -413,6 +413,14 @@ const REVIEW121_ASK = [
 	"git cl\\\nean -fdx",
 	"echo \"rm -rf C:/elsewhere\" | bash",
 	"printf \"rm -rf C:/elsewhere\" > a.sh",
+	// Printed text that is then run, with no delete word the printer skip could see (1.21.0 sweep, R1).
+	"$(echo \"find C:/elsewhere -delete\")",
+	"eval $(echo \"find C:/elsewhere -delete\")",
+	"sh -c \"$(echo 'find C:/elsewhere -delete')\"",
+	"echo \"find C:/elsewhere -delete\" |& sh",
+	"iex (echo '[IO.File]::Delete(\"C:\\elsewhere\\x\")')",
+	"$(printf 'git worktree remove --force C:/elsewhere/wt')",
+	"echo \"find C:/elsewhere -delete\" > a.sh",
 ];
 
 // 1.21.0: the guard carry-overs from 1.20.0 (escapes in a nested shell, alias routes, inline code and xargs; git $flags
