@@ -5871,6 +5871,7 @@ test('recall gate (S18-7): a gate line on keys v4 or later names its control, an
   const { checkGate } = await recallTools();
   const v4 = (line) => checkGate({ changed: ['rules/core.md'], added: [line], brief: 1, keys: 4, bar: 9 });
   assert.match(v4('gate: a median 10 baseline 9 brief v1 keys v4').detail, /names the control/);
+  assert.equal(v4('gate: a median 10 baseline 9 brief v1 keys v4 control 2').ok, true, 'a line recorded inline still reads');
   assert.equal(v4('gate: a median 10 baseline 9 brief v1 keys v4 control 2').ok, true);
   const high = v4('gate: a median 10 baseline 9 brief v1 keys v4 control 9');
   assert.equal(high.ok, false);
@@ -5986,8 +5987,9 @@ test('recall-score blinds runs without a side marker and scores them into a gate
   fs.writeFileSync(path.join(dir, 'scores.txt'), lines.join('\n'));
   const r = score(path.join(dir, 'scores.txt'), path.join(out, 'sealed-map.json'), 'kit-x');
   const keys = (await recallTools()).currentVersion(keysText);
-  assert.match(r.line, new RegExp(`^gate: kit-x median ${n} baseline ${n - 3} brief v\\d+ keys v${keys} control 0$`));
-  assert.equal(checkGate({ changed: ['rules/core.md'], added: [r.line], brief: Number(r.line.match(/brief v(\d+)/)[1]), keys, bar: n - 1 }).ok, true);
+  assert.match(r.line, new RegExp(`^gate: kit-x median ${n} baseline ${n - 3} brief v\\d+ keys v${keys}$`));
+  assert.equal(r.controlLine, 'control: 0');
+  assert.equal(checkGate({ changed: ['rules/core.md'], added: [r.controlLine, r.line], brief: Number(r.line.match(/brief v(\d+)/)[1]), keys, bar: n - 1 }).ok, true);
   fs.writeFileSync(path.join(dir, 'short.txt'), lines.slice(1).join('\n'));
   assert.throws(() => score(path.join(dir, 'short.txt'), path.join(out, 'sealed-map.json'), 'kit-x'), /expected \d+ scores/);
 });
@@ -6238,4 +6240,111 @@ test('L1: a crashed reviewer that wrote after its retry is named at the outcome'
   const done = logOutcome(s, ['r1b', 'r2'], s.cfg);
   assert.equal(done.status, 0, done.stdout);
   assert.match(done.stdout, /r1 wrote after its retry was logged: it was not dead/);
+});
+// The 1.21.0 sweep's D1: CI runs the base branch's gate, whose parser may not know a new field, so the control sits on
+// its own line. Main's parser reads the gate line as it always did; the head gate reads the two together.
+test('recall gate (D1): the control may sit on its own line beside the gate line', async () => {
+  const { checkGate } = await recallTools();
+  const v4 = (...added) => checkGate({ changed: ['rules/core.md'], added, brief: 1, keys: 4 });
+  const line = 'gate: a median 10 baseline 9 brief v1 keys v4';
+  assert.equal(v4('control: 0', line).ok, true);
+  assert.equal(v4(line, 'control: 0').ok, true);
+  assert.match(v4(line).detail, /control: <n>/);
+  assert.match(v4('control: 9', line).detail, /control 9 is not under the baseline 9/);
+  assert.equal(v4(`${line} control 0`).ok, true, 'a line already recorded inline still reads');
+});
+test('recall gate (D1): the recorded line is one main\'s parser reads, and score prints the pair', async () => {
+  const gateLine = read(path.resolve('docs/evals/results/recall-scores.md')).split('\n').filter((l) => l.startsWith('gate:')).pop();
+  assert.match(gateLine, /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)( owner-accepted)?$/);
+  assert.match(read(path.resolve('docs/evals/results/recall-scores.md')), /\ncontrol: 0\n/);
+  assert.match(read(path.resolve('scripts/recall.mjs')), /"gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it/);
+});
+test('recall gate (T3): an edit to the score tool needs a gate line, and a git failure stops the gate', async () => {
+  const { checkGate } = await recallTools();
+  assert.equal(checkGate({ changed: ['scripts/recall-score.mjs'], added: [], brief: 1, keys: 4 }).ok, false);
+  const r = spawnSync('node', [path.resolve('scripts/recall.mjs'), 'gate', 'no-such-ref', 'HEAD'], { encoding: 'utf8' });
+  assert.notEqual(r.status, 0);
+});
+test('recall layer (T3): a released layer with a file missing is refused, and its memory may differ', async () => {
+  const { checkUserLayer } = await recallTools();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'layer-'));
+  const hash = crypto.createHash('sha256').update('a\n').digest('hex');
+  fs.writeFileSync(path.join(home, 'a.md'), 'a\n');
+  const stamp = (files) => fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ version: '1.0.0', release: true, files }));
+  stamp({ 'a.md': hash, 'memory/x.md': 'not this' });
+  checkUserLayer(home, home);
+  stamp({ 'a.md': hash, 'b.md': hash });
+  assert.throws(() => checkUserLayer(home, home), /changed by hand or missing since install: b\.md/);
+});
+// T2: what the recall's blinding promises, each by a break a reviewer showed went unseen.
+test('recall-score (T2): a marker that survives the scrub stops the blinding', async () => {
+  const { blind } = await import('../scripts/recall-score.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blind-'));
+  const f = path.join(dir, 'cand-1.md');
+  fs.writeFileSync(f, '# Recall run\n\n## 1. q\n\nKey: the notice says go\n\nAnswer:\n\n> fine\n');
+  assert.throws(() => blind(path.join(dir, 'out'), [f]), /still names a side/);
+});
+test('recall-score (T2): a notice line goes and is logged, a Key line stays, and the order is shuffled', async () => {
+  const { blind, dropNotice } = await import('../scripts/recall-score.mjs');
+  const removed = [];
+  assert.equal(dropNotice('Key: a kit build\n> keep\n> the notice says x', removed), 'Key: a kit build\n> keep');
+  assert.deepEqual(removed, ['> the notice says x']);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blind-'));
+  const runs = ['cand-1', 'cand-2', 'base-1'].map((n) => {
+    const f = path.join(dir, `${n}.md`);
+    fs.writeFileSync(f, `# Recall run: ${n}\n\n## 1. q\n\nKey: k\n\nAnswer:\n\n> ${n === 'base-1' ? 'plain' : 'the startup notice says go'}\n`);
+    return f;
+  });
+  const out = path.join(dir, 'out');
+  let calls = 0;
+  const { map } = blind(out, runs, () => { calls++; return 0; });
+  assert.equal(calls, 2);
+  assert.notDeepEqual(Object.values(map), ['cand-1', 'cand-2', 'base-1'], 'the labels do not follow the input order');
+  const sealed = JSON.parse(read(path.join(out, 'sealed-map.json')));
+  assert.equal(sealed.hashes['cand-1.md'], crypto.createHash('sha256').update(read(runs[0])).digest('hex'));
+  assert.match(read(path.join(out, 'removed-lines.txt')), /cand-1: > the startup notice says go/);
+});
+test('recall-score (T2): the table keeps its columns and "worse" names only what the candidate lost', async () => {
+  const { summarize } = await import('../scripts/recall-score.mjs');
+  const map = { R01: 'cand-1', R02: 'base-1', R03: 'control-1' };
+  const r = summarize({ R01: { 1: 1, 2: 0 }, R02: { 1: 0, 2: 1 }, R03: { 1: 0, 2: 0 } }, map, 2);
+  assert.deepEqual(r.worse, [2]);
+  assert.ok(r.table.includes('| 1 | 1 | 0 | 0 |'), r.table.join('\n'));
+  assert.ok(r.table.includes('| 2 | 0 | 1 | 0 |'), r.table.join('\n'));
+});
+// T3: the retry rules with nothing that could fail.
+test('T3: a retry after a cut short is refused, and an owner yes prints the Sweep line', () => {
+  const s = crashedSweep();
+  assert.equal(approveIn(s.dir, [s.f, '--outcome', '--cut-short']).status, 0);
+  assert.match(s.retry(1, 'r1').stdout, /no cleared sweep is open/);
+  const a = approveRun(askContract());
+  assert.match(approveIn(a.dir, [a.f, '--owner-yes', 'yes go']).stdout, /Sweep: [0-9a-f]{16} role/);
+});
+test('T3: a brief held as a list of text parts still names its sweep', () => {
+  const s = crashedSweep();
+  const f = path.join(s.cfg, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-r1.jsonl');
+  const lines = read(f).split('\n');
+  const first = JSON.parse(lines[0]);
+  first.message.content = [{ type: 'text', text: first.message.content }];
+  lines[0] = JSON.stringify(first);
+  fs.writeFileSync(f, lines.join('\n'));
+  ageTranscript(s.cfg, 'r1', { stamps: 11, file: 11 });
+  const r = s.retry(1, 'r1');
+  assert.equal(r.status, 0, r.stdout);
+});
+// T4: the build command itself, not the helper it calls.
+test('T4: kit.mjs build turns on the kit source commit-msg hook', () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kit-clone-')), 'k');
+  assert.equal(spawnSync('git', ['clone', '-q', path.resolve('.'), dir], { encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync('git', ['-C', dir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim(), '');
+  assert.equal(spawnSync('node', ['scripts/kit.mjs', 'build'], { cwd: dir, encoding: 'utf8' }).status, 0);
+  assert.notEqual(spawnSync('git', ['-C', dir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim(), '');
+});
+test('install user lands the merge gate and its audits at the paths the rules give', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tools-home-'));
+  install({ kit: path.resolve('.'), home, target: 'user' });
+  assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'merge-gate.mjs')));
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
+    assert.equal(read(path.join(home, 'kit-tools', 'audits', f)), read(path.resolve('project/.claude', f)), f);
+  }
 });

@@ -134,7 +134,8 @@ export function score(file, mapFile, label, kit = KIT) {
   const brief = currentVersion(fs.readFileSync(path.join(kit, 'docs/evals/recall-scorer-brief.md'), 'utf8'));
   const bar = passBar(keysText, keys);
   const r = summarize(readScores(fs.readFileSync(file, 'utf8')), JSON.parse(fs.readFileSync(mapFile, 'utf8')).map, questionCount(keysText, keys), bar);
-  return { ...r, bar, line: r.more ? null : `gate: ${label} median ${r.candMedian} baseline ${r.baseMedian} brief v${brief} keys v${keys} control ${r.controlMedian}` };
+  // Two lines: CI runs the base branch's gate, which reads the gate line alone (rule:recall in scripts/recall.mjs).
+  return { ...r, bar, line: r.more ? null : `gate: ${label} median ${r.candMedian} baseline ${r.baseMedian} brief v${brief} keys v${keys}`, controlLine: `control: ${r.controlMedian}` };
 }
 
 const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -148,7 +149,7 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
     console.log(r.table.join('\n'));
     console.log(`\nCandidate median ${r.candMedian}, baseline median ${r.baseMedian}, control median ${r.controlMedian}.`);
     console.log(`Questions failing more in candidate runs than baseline runs: ${r.worse.join(', ') || 'none'}.`);
-    if (r.line) console.log(`\n${r.line}`);
+    if (r.line) console.log(`\n${r.controlLine}\n${r.line}`);
     else {
       console.log(`\nThe candidate's median of 3 is ${r.candMedian}, on the bar of ${r.bar}: no gate line yet. Run cand-4 and cand-5, blind all 5 together and score them; the median of 5 decides.`);
       process.exitCode = 1;

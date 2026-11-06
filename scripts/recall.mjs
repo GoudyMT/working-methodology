@@ -46,6 +46,7 @@ const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall(-score)?\.mjs$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
 // From keys v4 a line names the control's median too (S18-7), so CI can see the control sits clearly under the kit.
 const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)(?: control (\d+))?( owner-accepted)?$/;
+const CONTROL_LINE = /^control: (\d+)$/;
 const CONTROL_FROM = 4;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
@@ -207,11 +208,13 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   const dropped = removed.some((l) => /^gate:/i.test(l.trim()));
   if (!lines.length && !dropped && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
   if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the floor rests on it. Only the owner may: add a current gate line ending in owner-accepted' };
-  if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>"` };
+  if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it` };
   const last = lines[lines.length - 1];
   const m = last.match(GATE_LINE);
   if (!m) return { ok: false, detail: `cannot read the gate line: ${last}` };
-  const [, label, median, baseline, usedBrief, usedKeys, control, accepted] = m;
+  const [, label, median, baseline, usedBrief, usedKeys, inline, accepted] = m;
+  // CI runs the base branch's gate, which reads only the gate line, so the control sits on its own line.
+  const control = inline ?? added.map((l) => l.trim().match(CONTROL_LINE)).filter(Boolean).pop()?.[1];
   // Fixing a typed record on an older ruler is the owner's, in a PR that changes nothing the ruler grades (S18-6).
   if ((Number(usedBrief) !== brief || Number(usedKeys) !== keys) && accepted && !changed.some((f) => GRADED.test(f))) {
     return { ok: true, detail: `${label}: a correction to a line on brief v${usedBrief} keys v${usedKeys}; the owner accepted it` };
@@ -219,7 +222,7 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
     return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
   }
-  if (Number(usedKeys) >= CONTROL_FROM && control == null) return { ok: false, detail: `${label}: from keys v${CONTROL_FROM} a gate line names the control: "... keys v${usedKeys} control <n>"` };
+  if (Number(usedKeys) >= CONTROL_FROM && control == null) return { ok: false, detail: `${label}: from keys v${CONTROL_FROM} a gate line names the control, on its own line beside it: "control: <n>"` };
   if (control != null && Number(control) >= Number(baseline)) return { ok: false, detail: `${label}: control ${control} is not under the baseline ${baseline}, so the score does not show the rules` };
   if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);

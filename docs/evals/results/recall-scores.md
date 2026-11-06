@@ -305,4 +305,5 @@ The first entry on keys v4, with brief v2 and the pass bar of 12. Candidate: thi
 
 Accepted by the owner 2026-11-06 on the moved ruler, on the scorer's reading of Q13.
 
-gate: kit-1.21.0 median 13 baseline 12 brief v2 keys v4 control 0 owner-accepted
+control: 0
+gate: kit-1.21.0 median 13 baseline 12 brief v2 keys v4 owner-accepted
