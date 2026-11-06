@@ -36,7 +36,7 @@ tags:
 1. **A standalone fix PR only for harm:** data loss, a stuck user, a silent outage.
 2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the trivial (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings at medium or below go to the handoff's carry-overs for the next focus build.
 3. **Then features;** roadmap fixes ride a feature PR that touches their code; folded-in findings go in the before / after table.
-4. **A run's order:** the feature comes FIRST (even when a handoff lists fixes ahead): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs are built on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
+4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
 
 **Value check:** tier remaining work by what a user would notice (high: someone hits it; medium: keyboard or screen-reader correctness; low: millisecond races, byte trims, test hygiene), say the tier at each checkpoint, and recommend stopping when reviews return ever smaller things, before the owner asks; the value lens ends the loop, not fatigue. Why: a sweep generates work faster than value.
 

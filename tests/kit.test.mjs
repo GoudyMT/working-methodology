@@ -1065,6 +1065,12 @@ test('a handoff\'s first action is the next build, and a fix goes first only whe
   for (const f of ['rules/tracking-and-handoff.md', 'user/skills/closeout/examples/handoff-a.md', 'user/skills/closeout/examples/handoff-b.md']) {
     assert.match(rule(f), /state mode \+ first action \(always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical\) and start it;/, f);
   }
+  // A run's order says the same in the rule, its built copy and the plan template, so no file still puts a fix behind.
+  for (const f of ['rules/reviews-and-findings.md', 'project/standards/reviews-and-findings.md']) {
+    assert.match(rule(f), /the feature comes FIRST \(a fix first only when high or critical\): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch/, f);
+    assert.doesNotMatch(rule(f), /even when a handoff lists fixes ahead/, f);
+  }
+  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST \(the confirmed work order's next, else the owner's pick; a fix first only when high or critical\); leftovers and carry-overs ride on its branch/);
   // The start load has no room to give, so this text stays out of what every session loads.
   for (const f of ['project/CLAUDE.md', 'project/AGENTS.md', 'project/_Start Here.md']) assert.doesNotMatch(rule(f), /always the next build/, f);
 });

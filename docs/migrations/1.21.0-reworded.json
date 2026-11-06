@@ -59,6 +59,14 @@
     {
       "before": "visible checklist, scans), then state mode + first action and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.",
       "after": "visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE."
+    },
+    {
+      "before": "4. **A run's order:** the feature comes FIRST (even when a handoff lists fixes ahead): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs are built on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.",
+      "after": "4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first."
+    },
+    {
+      "before": "**Order of a run:** the feature comes FIRST (the confirmed work order's next, else the owner's pick); leftovers and the last PR's carry-overs are built on its branch; ONE large Pre-PR sweep after both are integrated; one PR.",
+      "after": "**Order of a run:** the feature comes FIRST (the confirmed work order's next, else the owner's pick; a fix first only when high or critical); leftovers and carry-overs ride on its branch; ONE large sweep after both; one PR."
     }
   ]
 }
