@@ -8,6 +8,11 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { check, arm, live, PROTECTED } from '../user/kit-tools/merge-gate.mjs';
 
+// Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-tests-'));
+process.env.TMPDIR = process.env.TEMP = process.env.TMP = tmpRoot;
+process.on('exit', () => { try { fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 3 }); } catch {} });
+
 const KIT = path.resolve('.');
 const sh = (cwd, ...a) => {
 	const r = spawnSync('git', a, { cwd, encoding: 'utf8' });

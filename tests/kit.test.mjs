@@ -10,6 +10,11 @@ import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
+// Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-tests-'));
+process.env.TMPDIR = process.env.TEMP = process.env.TMP = tmpRoot;
+process.on('exit', () => { try { fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 3 }); } catch {} });
+
 function makeKit() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
   const kit = path.join(root, 'kit');
