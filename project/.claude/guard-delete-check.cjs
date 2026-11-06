@@ -608,6 +608,47 @@ check('[description only] rm -rf /tmp/x', asSession('Bash', 'git status', { tool
 check('[no session_id] delete in the session folder', asSession('Bash', 'rm -rf ' + OWN + '\\x', { session_id: undefined }), true);
 check('[session_id "../.."] delete in the key folder', asSession('Bash', 'rm -rf ' + KEY_DIR + '\\x', { session_id: '../..' }), true);
 check('[session_id "x/../.."] delete in another project key', asSession('Bash', 'rm -rf ' + TEMP + '\\claude\\other-proj\\x', { session_id: 'x/../..' }), true);
+// A session's folder is found by its id alone, under any one key: Claude Code moved from the path slug to a hash.
+const CLAUDE_TMP = TEMP + '\\claude';
+const HEX = CLAUDE_TMP + '\\f76c0d1fad491d01';
+const HEX_OWN = HEX + '\\' + SESSION_ID;
+const OTHER_ID = '99999999-8888-7777-6666-555555555555';
+const del = (target, extra) => asSession('Bash', 'rm -rf ' + target, extra);
+check('[hex key] own session folder', del(HEX_OWN + '\\scratchpad\\x'), false);
+check('[hex key] own session folder, forward slashes', del(HEX_OWN.split('\\').join('/') + '/scratchpad/x'), false);
+check('[hex key] own session folder, /tmp spelling', del('/tmp/claude/f76c0d1fad491d01/' + SESSION_ID + '/scratchpad/x'), false);
+check('[hex key] own session folder, PowerShell', asSession('PowerShell', 'Remove-Item -Recurse ' + HEX_OWN + '\\scratchpad'), false);
+check('[hex key] wildcard in the own session folder', del(HEX_OWN + '\\*'), false);
+check('[slug key] own session folder still passes', del(OWN + '\\scratchpad\\x'), false);
+check('[hex key] another session', del(HEX + '\\' + OTHER_ID + '\\x'), true);
+check('[hex key] the key folder', del(HEX + '\\x'), true);
+check('[hex key] the session folder itself', del(HEX_OWN), true);
+check('[hex key] wildcard in the key folder', del(HEX + '\\*'), true);
+check('[layout] shallower: the id right under claude', del(CLAUDE_TMP + '\\' + SESSION_ID + '\\x'), true);
+check('[layout] deeper: two folders before the id', del(HEX + '\\sub\\' + SESSION_ID + '\\x'), true);
+check('[layout] deeper: the id under another session', del(HEX + '\\' + OTHER_ID + '\\' + SESSION_ID + '\\x'), true);
+check('[layout] a wildcard for the key', del(CLAUDE_TMP + '\\*\\' + SESSION_ID + '\\x'), true);
+check('[layout] the id under the temp, not temp/claude', del(TEMP + '\\f76c0d1fad491d01\\' + SESSION_ID + '\\x'), true);
+check('[layout] the id right under the temp, one level above claude', del(TEMP + '\\' + SESSION_ID + '\\x'), true);
+check('[layout] the id right under another drive', del('C:\\' + SESSION_ID + '\\x'), true);
+check('[layout] another folder named claude', del('C:\\other\\claude\\f76c0d1fad491d01\\' + SESSION_ID + '\\x'), true);
+check('[..] out of the own folder into another session', del(HEX_OWN + '\\..\\' + OTHER_ID + '\\x'), true);
+check('[..] out of the own folder into the key folder', del(HEX_OWN + '\\..\\x'), true);
+check('[..] out of claude and back to the temp', del(CLAUDE_TMP + '\\..\\f76c0d1fad491d01\\' + SESSION_ID + '\\x'), true);
+check('[id] a folder the id is a prefix of', del(HEX + '\\' + SESSION_ID + '0\\x'), true);
+check('[id] a folder the id is a suffix of', del(HEX + '\\0' + SESSION_ID + '\\x'), true);
+check('[id] a wildcard after the id, which matches longer names', del(HEX + '\\' + SESSION_ID + '*'), true);
+check('[id] a wildcard inside the id', del(HEX + '\\1111*\\x'), true);
+check('[id] a folder that is a prefix of the id', del(HEX + '\\' + SESSION_ID.slice(0, 8) + '\\x'), true);
+check('[id] a trailing dot, the same folder to Windows', del(HEX + '\\' + SESSION_ID + '.\\x'), true);
+const LETTER_ID = 'abcdef12-3456-7890-abcd-ef1234567890';
+check('[id] own id with letters', del(HEX + '\\' + LETTER_ID + '\\x', { session_id: LETTER_ID }), false);
+check('[id] own id in another case', del(HEX + '\\' + LETTER_ID.toUpperCase() + '\\x', { session_id: LETTER_ID }), true);
+check('[id] empty session id', del(HEX + '\\x', { session_id: '' }), true);
+check('[id] empty session id, doubled slash', del(HEX + '\\\\x', { session_id: '' }), true);
+check('[id] missing session id', del(HEX_OWN + '\\x', { session_id: undefined }), true);
+check('[id] a word for a session id matches no folder', del(HEX + '\\x\\y', { session_id: 'x' }), true);
+check('[id] a word for a session id, the old slug place', del(KEY_DIR + '\\x\\y', { session_id: 'x' }), true);
 // The tool's own folder places a relative target, not the project.
 check('[cwd C:\\elsewhere] rm build/x', asSession('Bash', 'rm build/x', { cwd: 'C:\\elsewhere' }), true);
 // A cd is trusted only when it leads its command and comes before &&.
@@ -671,6 +712,21 @@ try {
 	fs.symlinkSync(path.join(real, 'proj', 'a', 'b'), path.join(real, 'proj', 'inner'), 'junction');
 	check('[junction] Remove-Item inner\\..\\..\\x (outside as written, inside through the link)', { ...viaLink, tool_input: { command: 'Remove-Item inner\\..\\..\\x' } }, true, where);
 	check('[junction] Remove-Item inner\\..\\x (inside both ways)', { ...viaLink, tool_input: { command: 'Remove-Item inner\\..\\x' } }, false, where);
+	// Links on the way to a session folder: what counts is where the path lands, read after them.
+	const temp = path.join(real, 'temp');
+	const tempWhere = { tmpdir: temp, projectDir: path.join(real, 'proj') };
+	const own = path.join(temp, 'claude', 'f76c0d1fad491d01', SESSION_ID);
+	fs.mkdirSync(path.join(own, 'scratchpad'), { recursive: true });
+	fs.mkdirSync(path.join(real, 'outside', SESSION_ID), { recursive: true });
+	fs.symlinkSync(path.join(real, 'outside'), path.join(temp, 'claude', 'key-link'), 'junction');
+	fs.symlinkSync(path.join(real, 'outside'), path.join(own, 'out'), 'junction');
+	fs.mkdirSync(path.join(temp, 'claude', 'other-key'));
+	fs.symlinkSync(path.join(real, 'outside'), path.join(temp, 'claude', 'other-key', SESSION_ID), 'junction');
+	const inTemp = (target) => ({ tool_name: 'Bash', session_id: SESSION_ID, cwd: tempWhere.projectDir, tool_input: { command: 'rm -rf "' + target.split(path.sep).join('/') + '"' } });
+	check('[junction] the real own session folder', inTemp(path.join(own, 'scratchpad', 'x')), false, tempWhere);
+	check('[junction] the key is a link out of claude', inTemp(path.join(temp, 'claude', 'key-link', SESSION_ID, 'x')), true, tempWhere);
+	check('[junction] the id folder is a link out of claude', inTemp(path.join(temp, 'claude', 'other-key', SESSION_ID, 'x')), true, tempWhere);
+	check('[junction] a link inside the own folder', inTemp(path.join(own, 'out', 'x')), true, tempWhere);
 } finally {
 	fs.rmSync(real, { recursive: true, force: true });
 }
@@ -684,6 +740,8 @@ const outAsks = outRun.status === 0 && outJson.hookSpecificOutput?.hookEventName
 result(outAsks, true, '[child process] Remove-Item C:\\elsewhere\\x -> ' + outRun.stdout);
 const ownRun = runHook(JSON.stringify(asSession('Bash', 'rm -rf ' + OWN + '\\scratchpad\\x')));
 result(ownRun.status === 0 && ownRun.stdout === '', false, '[child process] own session folder -> (' + ownRun.stdout.length + ' bytes)');
+const hexRun = runHook(JSON.stringify(asSession('Bash', 'rm -rf ' + HEX_OWN + '\\scratchpad\\x')));
+result(hexRun.status === 0 && hexRun.stdout === '', false, '[child process] own session folder under a hex key -> (' + hexRun.stdout.length + ' bytes)');
 const brokenRun = runHook('not json');
 result(brokenRun.stdout.includes('"ask"'), true, '[child process] stdin not JSON -> asks');
 

@@ -102,8 +102,8 @@ const RUNS_INSIDE = /\$\(|`|[<>]\(/;
 const ONLY_READS = /^\s*(rg|grep|egrep|fgrep|findstr|select-string|sls|git\s+(commit|log|grep|show|diff))\s[^;|&\n]*$/i;
 const FIND_OPTIONS = /^-(H|L|P|O\d*)$/;
 const WILDCARD = /[*?[]/;
-// A session id is a plain id; anything else ("../..") could point the session folder at a shared one.
-const SESSION_ID = /^[A-Za-z0-9-]+$/;
+// A session id is a full UUID: it alone finds the session folder, so "../.." or a plain word could name a shared one.
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Characters a shell reads like ASCII ones: curly quotes, Unicode dashes and spaces.
 function normalize(text) {
@@ -339,8 +339,18 @@ function definesDeleteAlias(words) {
 	return false;
 }
 
+// The session folder is <temp>/claude/<one key>/<session id>. The key's form belongs to Claude Code (a path slug, then
+// a hash), so the id alone finds it: exactly one folder before the id, the id exact, read after links.
+function inOwnFolder(resolved, ctx, wild) {
+	if (!ctx.session) return false;
+	const rel = ctx.api.relative(ctx.session.claude, resolved);
+	if (rel.startsWith('..') || ctx.api.isAbsolute(rel)) return false;
+	const [, id, ...below] = rel.split(ctx.api.sep);
+	return id === ctx.session.id && (below.length > 0 || wild >= 0);
+}
+
 // Where a delete may run without asking: strictly inside the session folder or the project; for a wildcard, the
-// fixed folder before it may also be one of those roots itself.
+// fixed folder before it may also be the session folder or the project itself.
 function placeOf(target, ctx, state, keepLast = false) {
 	const api = ctx.api;
 	if (/[$%]/.test(target) || target.includes(BACKTICK)) return 'a target holding a variable';
@@ -379,7 +389,7 @@ function placeOf(target, ctx, state, keepLast = false) {
 				const inside = rel !== '' && !rel.startsWith('..') && !api.isAbsolute(rel);
 				return inside || (wild >= 0 && rel === '');
 			});
-			if (!inRoot) return target;
+			if (!inRoot && !inOwnFolder(resolved, ctx, wild)) return target;
 		}
 	}
 	return '';
@@ -630,11 +640,8 @@ function decide(input, where = {}) {
 	const tmpdir = where.tmpdir ?? os.tmpdir();
 	const roots = [realOf(api.resolve(projectDir), api)];
 	const id = String(input.session_id ?? '');
-	if (SESSION_ID.test(id)) {
-		// Claude Code names the project's folder by its path with every other character turned into a dash.
-		roots.push(realOf(api.join(tmpdir, 'claude', projectDir.replace(/[^A-Za-z0-9]/g, '-'), id), api));
-	}
-	const ctx = { api, windows, roots, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
+	const session = SESSION_ID.test(id) ? { id, claude: realOf(api.join(tmpdir, 'claude'), api) } : null;
+	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
 	const both = strings.flatMap((s) => { const glued = s.replace(/\\\r?\n/g, ''); return glued === s ? [s] : [s, glued]; });
