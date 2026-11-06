@@ -6080,19 +6080,18 @@ test('C4: the guard starts each role once, by the sweep and role its brief names
   assert.match(start(`Call cap: 5. Sweep: ${hash} role 2`).permissionDecisionReason, /Role 2 of the cleared contract has started already/);
   assert.equal(start(`Call cap: 5. Sweep: ${hash} role 1`).permissionDecision, 'allow', 'role 1 keeps its own slot');
 });
-test('C9f: the guard reads each folder\'s HEAD once, however long the log', { skip: process.platform === 'win32' }, () => {
+test('C9f: the guard reads each folder\'s HEAD once, however long the log', () => {
   const dir = sweepRepo();
-  const shim = fs.mkdtempSync(path.join(os.tmpdir(), 'shim-'));
-  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
-  const count = path.join(shim, 'count');
-  fs.writeFileSync(path.join(shim, 'git'), `#!/bin/sh\necho x >> "${count}"\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  // git's own trace counts its runs, on every system; a shim script would not run on Windows, the only CI system.
+  const count = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'trace-')), 'count');
   const lines = [];
   const sha = (x) => crypto.createHash('sha256').update(x).digest('hex').slice(0, 16);
   for (let i = 0; i < 200; i++) lines.push(JSON.stringify({ kind: 'decision', contract: path.join(dir, 'sweeps', 'old.json'), hash: 'x', head: '0000000', decision: 'approved', prev: i ? sha(lines[i - 1]) : '' }));
   fs.writeFileSync(path.join(dir, '.git', 'kit-sweep-approvals.jsonl'), lines.join('\n') + '\n');
-  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'go. Call cap: 5.' } }, { PATH: `${shim}${path.delimiter}${process.env.PATH}` });
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'go. Call cap: 5.' } }, { GIT_TRACE: count });
   assert.match(r.stdout, /No cleared Swarm Contract/);
-  assert.ok(read(count).trim().split('\n').length <= 3, `${read(count).trim().split('\n').length} git calls`);
+  const runs = read(count).split('\n').filter((l) => /trace: built-in: git /.test(l)).length;
+  assert.ok(runs >= 1 && runs <= 3, `${runs} git calls`);
 });
 test('C9b: an owner-cleared sweep owes its outcome before the next, and --none-ran closes one no reviewer used', () => {
   const a = approveRun(askContract());

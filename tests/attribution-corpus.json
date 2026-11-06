@@ -139,7 +139,10 @@
     "&#82equested by **Pat**",
     "Requested&nbspby **Pat**",
     "[//]: # \"Requested by Pat\"",
-    "[//]: # 'Requested by Pat'"
+    "[//]: # 'Requested by Pat'",
+    "- The job is done.\n  requested by the owner",
+    "Re~~quested~~ by **Pat**",
+    "&#x52<b></b>equested by **Pat**"
   ],
   "mustPass": [
     "The audit fails on a Requested by line, so remove it before pushing.",
