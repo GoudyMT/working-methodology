@@ -1526,6 +1526,18 @@ test('the builder and checker role files wire their guards to the installed hook
   assert.match(checker, /matcher: "Bash\|PowerShell"[\s\S]*clean-tree\.cjs[\s\S]*Stop:[\s\S]*clean-tree\.cjs/);
   assert.equal(render('node "{{CLAUDE_HOME}}/kit-hooks/x.cjs"', { claudeHome: 'D:/home-of-pat/.claude' }), 'node "D:/home-of-pat/.claude/kit-hooks/x.cjs"');
 });
+// A placeholder left in a role file's hook line points the hook at no script, and an agent would start unguarded.
+test('install user leaves no placeholder in any rendered agent role file', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agents-home-'));
+  install({ kit: path.resolve('.'), home, target: 'user' });
+  const agents = fs.readdirSync(path.join(home, 'agents')).filter((n) => n.endsWith('.md'));
+  assert.deepEqual(agents.sort(), fs.readdirSync(path.resolve('user/agents')).filter((n) => n.endsWith('.md')).sort());
+  for (const n of agents) {
+    const text = read(path.join(home, 'agents', n));
+    assert.doesNotMatch(text, /\{\{/, n);
+    assert.ok(text.includes(`node "${home.split(path.sep).join('/')}/kit-hooks/`), `${n}: its hooks name the installed scripts`);
+  }
+});
 test('the checker clean-tree stop also catches a second edit to a file that was already changed', () => {
   const dir = gitTree();
   fs.writeFileSync(path.join(dir, 'a.js'), 'changed by the builder, not committed\n');
