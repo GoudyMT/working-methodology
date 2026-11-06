@@ -229,3 +229,84 @@ test('merge gate: a program named like git, gh or node at the repo root stops th
 		assert.equal(s.state.calls.length, 0, `${name}: no gh call`);
 	}
 });
+
+// A hook on the branch would run inside the gate's own fetch, and could move the base the gate reads (G2).
+test('merge gate: no hook from the branch runs inside the gate', () => {
+	const s = setup();
+	const marker = path.join(s.root, 'hook-ran');
+	// It only leaves a mark: a hook that moves a ref fires itself again, without end.
+	const hook = `#!/bin/sh\necho ran > "${marker.split(path.sep).join('/')}"\n`;
+	fs.mkdirSync(path.join(s.work, '.githooks'), { recursive: true });
+	fs.writeFileSync(path.join(s.work, '.githooks', 'reference-transaction'), hook);
+	fs.chmodSync(path.join(s.work, '.githooks', 'reference-transaction'), 0o755);
+	sh(s.work, 'add', '-A', '--', '.githooks'); sh(s.work, 'commit', '-qm', 'hook');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	sh(s.work, 'config', 'core.hooksPath', '.githooks');
+	const base = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', 'rev-parse', 'origin/main'], { cwd: s.work, encoding: 'utf8' }).stdout.trim();
+	fs.rmSync(marker, { force: true });
+	const origin = path.join(s.root, 'origin.git');
+	const other = path.join(s.root, 'other');
+	spawnSync('git', ['-c', 'core.hooksPath=/dev/null', 'clone', '-q', origin, other], { encoding: 'utf8' });
+	spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'moved'], { cwd: other, encoding: 'utf8' });
+	spawnSync('git', ['push', '-q', 'origin', 'main'], { cwd: other, encoding: 'utf8' });
+	const moved = sh(other, 'rev-parse', 'HEAD');
+	const r = check(s.opts);
+	assert.equal(fs.existsSync(marker), false, 'the hook did not run');
+	assert.equal(spawnSync('git', ['-c', 'core.hooksPath=/dev/null', 'rev-parse', 'origin/main'], { cwd: s.work, encoding: 'utf8' }).stdout.trim(), moved);
+	assert.notEqual(moved, base);
+	assert.equal(r.go, false);
+	assert.match(r.faults.join('\n'), /\.githooks\/reference-transaction/);
+});
+
+// git prints a rename's new name only and quotes an unusual one, and Windows folds case, so a plain read misses all three (G3).
+const moveOnBranch = (s, from, to) => {
+	fs.mkdirSync(path.dirname(path.join(s.work, to)), { recursive: true });
+	sh(s.work, 'mv', from, to); sh(s.work, 'commit', '-qm', `move ${from}`);
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.state.pr.headRefOid));
+};
+test('merge gate: a protected path moved out, quoted by git or spelled in another case is still protected', () => {
+	const accent = String.fromCharCode(0xe9);
+	for (const file of [`.github/workflows/caf${accent}.yml`, `.claude/rules/${accent}.md`, '.GitHooks/post-checkout', '.GitHub/workflows/x.yml', '.CLAUDE/new.json', '.KIT/x.json']) {
+		const s = setup();
+		commitOnBranch(s, file, 'x\n');
+		fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.state.pr.headRefOid));
+		const r = check(s.opts);
+		assert.match(r.faults.join('\n'), /gate or rule paths/, file);
+	}
+	const s = setup();
+	sh(s.work, 'checkout', '-q', 'main');
+	fs.mkdirSync(path.join(s.work, '.githooks'));
+	fs.writeFileSync(path.join(s.work, '.githooks', 'pre-push'), 'x\n');
+	sh(s.work, 'add', '-A', '--', '.githooks'); sh(s.work, 'commit', '-qm', 'hook'); sh(s.work, 'push', '-q', 'origin', 'main');
+	sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+	moveOnBranch(s, '.githooks/pre-push', 'moved/pre-push');
+	const r = check(s.opts);
+	assert.match(r.faults.join('\n'), /gate or rule paths[^\n]*\.githooks\/pre-push/);
+});
+test('merge gate: a rename onto the release bump files after the sweep is not the release bump', () => {
+	const s = setup();
+	commitOnBranch(s, 'math2.txt', 'x\n');
+	fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.state.pr.headRefOid));
+	sh(s.work, 'mv', 'math2.txt', 'VERSION'); sh(s.work, 'commit', '-qm', 'bump');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	assert.match(check(s.opts).faults.join('\n'), /never reviewed: math2\.txt/);
+});
+// The kit's own source holds the gate, audits and guards under other paths, and installs them to every project (G5).
+test('merge gate: in the kit source a change to what the gate rests on is the owner\'s merge', () => {
+	for (const file of ['user/kit-tools/merge-gate.mjs', 'user/skills/pre-pr-sweep/audit.mjs', 'project/.claude/guard-outward.cjs', 'project/AGENTS.md', 'rules/core.md', 'scripts/kit.mjs', 'tests/kit.test.mjs', 'kit.config.json']) {
+		const s = setup();
+		sh(s.work, 'checkout', '-q', 'main');
+		fs.mkdirSync(path.join(s.work, 'user/kit-tools'), { recursive: true });
+		fs.writeFileSync(path.join(s.work, 'user/kit-tools/merge-gate.mjs'), 'x\n');
+		sh(s.work, 'add', '-A', '--', 'user'); sh(s.work, 'commit', '-qm', 'kit'); sh(s.work, 'push', '-q', 'origin', 'main');
+		sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+		commitOnBranch(s, file, 'y\n');
+		fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.state.pr.headRefOid));
+		assert.match(check(s.opts).faults.join('\n'), /gate or rule paths/, file);
+	}
+	const s = setup();
+	commitOnBranch(s, 'rules/core.md', 'y\n');
+	fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.state.pr.headRefOid));
+	assert.doesNotMatch(check(s.opts).faults.join('\n'), /gate or rule paths/, 'a project\'s own rules folder is not the kit\'s');
+});

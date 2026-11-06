@@ -33,7 +33,12 @@ import { fileURLToPath } from 'node:url';
 
 // A change here is live the moment it merges, in this repo: workflows, the installed kit and its rules, the
 // project's grant and gate settings, git hooks, and the loaded rule files.
-export const PROTECTED = [/^\.github\//, /^\.kit\//, /^\.githooks\//, /^\.claude\//, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i];
+// Case-blind: Windows folds case, so .GitHooks lands in the real folder.
+export const PROTECTED = [/^\.github\//i, /^\.kit\//i, /^\.githooks\//i, /^\.claude\//i, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i];
+// In the kit's own source the same things live here, and install carries them to every project: the owner's merge.
+export const KIT_SOURCE_PROTECTED = [/^user\//i, /^project\//i, /^rules\//i, /^scripts\//i, /^tests\//i, /^kit\.config\.json$/i];
+// git runs a repo's hooks on its own commands, and a branch can ship one under core.hooksPath.
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null'];
 // What may change after the swept commit: the release bump.
 export const AFTER_SWEEP = ['VERSION', 'CHANGELOG.md'];
 const CONVENTIONAL = /^[a-z]+(\([^)]*\))?!?: /;
@@ -92,7 +97,7 @@ const json = (r) => { try { return r.status === 0 ? JSON.parse(r.stdout) : null;
 export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	const faults = [];
 	const facts = {};
-	const git = (...a) => run('git', a, cwd);
+	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
 	const gh = (...a) => run('gh', a, cwd);
 	if (!/^\d+$/.test(String(pr))) return { go: false, faults: ['the PR is a number'], facts };
 
@@ -138,9 +143,14 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	let files = [];
 	if (mb.status !== 0) faults.push(`no merge base between ${baseRef} and the head`);
 	else {
-		files = git('diff', '--name-only', mb.stdout.trim(), p.headRefOid).stdout.split('\n').map((s) => s.trim()).filter(Boolean);
-		const hit = files.filter((f) => PROTECTED.some((re) => re.test(f)));
-		if (hit.length) faults.push(`the diff touches gate or rule paths the owner merges by hand: ${hit.join(', ')}`);
+		files = changedFiles(git, mb.stdout.trim(), p.headRefOid);
+		const kitSource = git('cat-file', '-e', `${baseRef}:user/kit-tools/merge-gate.mjs`).status === 0;
+		const guarded = kitSource ? [...PROTECTED, ...KIT_SOURCE_PROTECTED] : PROTECTED;
+		if (!files) faults.push(`git could not list what the PR changes against ${baseRef}`);
+		else {
+			const hit = files.filter((f) => guarded.some((re) => re.test(f)));
+			if (hit.length) faults.push(`the diff touches gate or rule paths the owner merges by hand: ${hit.join(', ')}`);
+		}
 	}
 
 	// 6. The sweep.
@@ -150,6 +160,12 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	faults.push(...bodyFaults({ cwd, body: p.body || '', title: p.title || '', baseRef, git, run }));
 
 	return { go: faults.length === 0, faults, facts };
+}
+
+// Every path a diff touches, renames as both ends and each name raw, or null when git cannot say.
+function changedFiles(git, from, to) {
+	const r = git('diff', '--name-only', '-z', '--no-renames', from, to);
+	return r.status === 0 ? r.stdout.split('\0').filter(Boolean) : null;
 }
 
 function sweepFaults({ cwd, config, branch, head, git, run }) {
@@ -174,8 +190,9 @@ function sweepFaults({ cwd, config, branch, head, git, run }) {
 	}
 	if (!best) return [`no sweep report for ${branch} names a Covers commit at or before the head (a line "**Covers:** <sha>")`];
 	const faults = [];
-	const after = git('diff', '--name-only', best.sha, head).stdout.split('\n').map((s) => s.trim()).filter(Boolean)
-		.filter((f) => !AFTER_SWEEP.includes(f));
+	const changed = changedFiles(git, best.sha, head);
+	if (!changed) faults.push('git could not list what changed after the sweep');
+	const after = (changed || []).filter((f) => !AFTER_SWEEP.includes(f));
 	if (after.length) faults.push(`changed after the sweep covered ${best.sha.slice(0, 12)} and never reviewed: ${after.join(', ')}`);
 	const a = run(process.execPath, [audit, path.join(dir, best.f)], cwd);
 	if (a.status !== 0) faults.push(`sweep report ${best.f} fails its audit: ${a.stdout.trim().split('\n').join('; ')}`);
@@ -217,7 +234,7 @@ function bodyFaults({ cwd, body, title, baseRef, git, run }) {
  *     { ok, faults }
  */
 export function live({ kind, id, cwd, config = configDir(), run = realRun }) {
-	const git = (...a) => run('git', a, cwd);
+	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
 	const gh = (...a) => run('gh', a, cwd);
 	if (kind === 'pr') {
 		const p = json(gh('pr', 'view', String(id), '--json', 'title,body,baseRefName'));
