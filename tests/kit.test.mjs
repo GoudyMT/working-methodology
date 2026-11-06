@@ -2370,10 +2370,18 @@ function leadTag(dir, prompt) {
   const n = fits.find((k) => !fs.existsSync(path.join(slots, String(k)))) ?? fits[0] ?? 0;
   return ` Sweep: ${e.hash} role ${n + 1}`;
 }
-const sweepGuard = (dir, extra = {}) => {
+// The lead also puts the role's own question in its brief; raw leaves a test's prompt as written.
+function leadQuestion(dir, prompt) {
+  const tag = prompt.match(/Sweep: [0-9a-f]{16} role (\d+)/);
+  const at = lastClearing(dir);
+  if (!tag || !at) return '';
+  try { return ` ${(JSON.parse(read(at[1].contract)).roles[Number(tag[1]) - 1] || {}).question || ''}`; } catch { return ''; }
+}
+const sweepGuard = (dir, { raw, ...extra } = {}) => {
   const input = { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review. Call cap: 5.' }, ...extra };
   const p = input.tool_input && input.tool_input.prompt;
   if (typeof p === 'string' && !p.includes('Sweep:')) input.tool_input = { ...input.tool_input, prompt: p + leadTag(dir, p) };
+  if (!raw && typeof input.tool_input?.prompt === 'string') input.tool_input.prompt += leadQuestion(dir, input.tool_input.prompt);
   const r = runHook('user/kit-hooks/sweep-guard.cjs', input);
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
@@ -6132,4 +6140,102 @@ test('C9c: a --base off the default branch asks the owner', () => {
   assert.equal(off.status, 1, off.stdout);
   assert.match(off.stdout, /--base HEAD~1 is not on main/);
   assert.equal(approveIn(dir, [f, '--base', 'main']).status, 0);
+});
+// The 1.21.0 sweep's sweep-control findings: each test is the sequence the reviewer ran.
+test('S1: a sweep closed as none ran opens no start after it', () => {
+  const r = approveRun(featureContract());
+  assert.equal(approveIn(r.dir, [r.f, '--outcome', '--none-ran']).status, 0);
+  const late = sweepGuard(r.dir);
+  assert.equal(late.permissionDecision, 'deny');
+  assert.match(late.permissionDecisionReason, /outcome is logged/);
+});
+test('S1: a cut short closes the clearance too, and the next clearing still opens', () => {
+  const r = approveRun(featureContract());
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
+  assert.equal(approveIn(r.dir, [r.f, '--outcome', '--cut-short']).status, 0);
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'deny');
+});
+test('S2: while paused the outcome owed still comes first, so a yes cannot open a second set of slots', () => {
+  const r = approveRun(featureContract());
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
+  approveIn(r.dir, [r.f, '--escape', 'a bug shipped']);
+  const again = approveIn(r.dir, [r.f]);
+  assert.equal(again.status, 3, again.stdout);
+  assert.match(again.stdout, /log the outcome of the last approved sweep first/);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes']).status, 1);
+});
+test('S3: a contract beside the work does not hide uncommitted work or the size of the fixes', () => {
+  const dir = sweepRepo();
+  const f = path.join(dir, 'src', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  fs.appendFileSync(path.join(dir, 'src', 'sync.ts'), 'export const more = 2;\n');
+  const r = approveIn(dir, [f]);
+  assert.equal(r.status, 3, r.stdout);
+  assert.match(r.stdout, /work not committed \(src\/sync\.ts\)/);
+});
+test('S3: a report or contract in the sweep folder is still left out of what counts as work', () => {
+  const r = approveRun(featureContract());
+  fs.writeFileSync(path.join(r.dir, 'sweeps', 'report.md'), 'a report\n');
+  assert.equal(approveIn(r.dir, [r.f, '--outcome', '--none-ran']).status, 0);
+  assert.equal(approveIn(r.dir, [r.f]).status, 0);
+});
+test('S4: a --base older than where the branch left main asks, as one off main does', () => {
+  const dir = sweepRepo();
+  g(dir, 'checkout', '-q', 'main');
+  fs.writeFileSync(path.join(dir, 'later.md'), 'x\n');
+  commitAll(dir, 'later on main', true);
+  const old = g(dir, 'rev-parse', 'HEAD~1').stdout.trim();
+  g(dir, 'checkout', '-q', 'feat/sync');
+  g(dir, 'merge', '-q', 'main', '-m', 'in');
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const r = approveIn(dir, [f, '--base', old]);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /older than where this branch left main/);
+  assert.equal(approveIn(dir, [f, '--base', 'main']).status, 0);
+});
+test('S4: with no main or master a named base is the owner\'s, not a skipped check', () => {
+  const dir = sweepRepo();
+  g(dir, 'branch', '-m', 'main', 'trunk');
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const r = approveIn(dir, [f, '--base', 'HEAD~1']);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /no default branch/);
+});
+test('S5: a start carries its role\'s question, from the checkout that was cleared', () => {
+  const r = approveRun(featureContract());
+  const { hash } = approvalLog(r.dir).pop();
+  const wrong = sweepGuard(r.dir, { raw: true, tool_input: { subagent_type: 'reviewer', prompt: `audit the billing service. Call cap: 5. Sweep: ${hash} role 1` } });
+  assert.equal(wrong.permissionDecision, 'deny');
+  assert.match(wrong.permissionDecisionReason, /its role's question/);
+  const side = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'side');
+  g(r.dir, 'worktree', 'add', '-q', '--detach', side, 'main');
+  const elsewhere = sweepGuard(r.dir, { cwd: side });
+  assert.equal(elsewhere.permissionDecision, 'deny');
+  assert.match(elsewhere.permissionDecisionReason, /checkout/);
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
+});
+test('S6: the shipped project settings make --owner-yes ask, so no session logs a yes unseen', () => {
+  const ask = JSON.parse(read(path.resolve('project/.claude/settings.json'))).permissions.ask;
+  for (const shell of ['Bash', 'PowerShell']) assert.ok(ask.includes(`${shell}(*approve.mjs*--owner-yes*)`), shell);
+});
+test('S7: a start that cannot be recorded is refused, not let through', () => {
+  const r = approveRun(featureContract());
+  fs.writeFileSync(path.join(r.dir, '.git', 'kit-sweep-starts'), '');
+  const start = sweepGuard(r.dir);
+  assert.equal(start.permissionDecision, 'deny');
+  assert.match(start.permissionDecisionReason, /could not record/);
+});
+test('L1: a crashed reviewer that wrote after its retry is named at the outcome', () => {
+  const s = crashedSweep();
+  assert.equal(s.start(1), 'allow');
+  assert.equal(s.start(2), 'allow');
+  assert.equal(s.retry(1, 'r1').status, 0);
+  assert.equal(s.start(1), 'allow');
+  ageTranscript(s.cfg, 'r1', { stamps: 11, file: 0 });
+  transcripts({ r1b: [[0, 100, 0, 0]] }, {}, s.cfg);
+  const done = logOutcome(s, ['r1b', 'r2'], s.cfg);
+  assert.equal(done.status, 0, done.stdout);
+  assert.match(done.stdout, /r1 wrote after its retry was logged: it was not dead/);
 });

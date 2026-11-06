@@ -23,6 +23,16 @@ const headOf = (d) => { if (!heads.has(d)) heads.set(d, git(d, 'rev-parse', '--s
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
 const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). FIX THE CONTRACT: fix it and run it again. APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
 
+// Whether a chained outcome or cut short for this contract came after this clearing.
+function closedAfter(lines, i, contract) {
+	for (let j = i + 1; j < lines.length; j++) {
+		let x;
+		try { x = JSON.parse(lines[j]); } catch { continue; }
+		if (x.prev === sha(lines[j - 1]) && x.contract === contract && (x.kind === 'outcome' || x.kind === 'unread')) return true;
+	}
+	return false;
+}
+
 // Whether approve.mjs logged a retry of this role under this clearing, still open: an outcome or a cut short closes it.
 function retryOpen(lines, i, contract, role) {
 	let open = false;
@@ -74,9 +84,15 @@ function main() {
 		if (!tag || tag[1] !== e.hash || !(n >= 0 && n < team)) return deny(`A reviewer's brief names its sweep and role, as the line "Sweep: ${e.hash} role <n>" (n from 1 to ${team}, the role's place in the cleared contract): the sweep skill has the wording.`);
 		// Each role's slot takes only its own cap, so one role cannot borrow another's.
 		if (Array.isArray(e.calls) && e.calls[n] !== Number(cap[1])) return deny(`Role ${n + 1} of the cleared contract has a call cap of ${e.calls[n]}, not ${cap[1]}: the brief carries its own role's cap.`);
+		// The slot is for this role's review of this checkout: a brief carries its question, and runs where it was cleared.
+		const question = String((JSON.parse(raw).roles?.[n] || {}).question || '');
+		if (question && !prompt.includes(question)) return deny(`A reviewer's brief carries its role's question as the contract wrote it. Role ${n + 1}: "${question}"`);
+		if (headOf(input.cwd || process.cwd()) !== e.head) return deny(`This reviewer would start from a checkout that is not at the cleared HEAD ${e.head}: start it from the checkout the contract was cleared in.`);
+		// A closed round has no starts left: an outcome, a none-ran or a cut short ends its clearance.
+		if (closedAfter(lines, i, e.contract)) return deny(`This sweep's outcome is logged, so its clearance is closed. ${RUN_FIRST}`);
 		// Each start claims its role's slot file; creating it fails if it exists, so a role starts once.
 		const slots = path.join(dir, 'kit-sweep-starts', sha(lines[i]));
-		fs.mkdirSync(slots, { recursive: true });
+		try { fs.mkdirSync(slots, { recursive: true }); } catch { return deny(`The guard could not record this start in ${slots}, so it cannot hold the role to one start. Fix that folder, then start again.`); }
 		try { fs.closeSync(fs.openSync(path.join(slots, String(n)), 'wx')); return; } catch { /* taken */ }
 		// A logged retry opens one more slot for its own role, claimed the same way.
 		if (retryOpen(lines, i, e.contract, n + 1)) {

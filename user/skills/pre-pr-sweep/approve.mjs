@@ -186,6 +186,12 @@ function depsChanged(base, file) {
 
 // A file beside the contract counts as the sweep's own only when it parses as a contract.
 const isContract = (f) => { try { const j = JSON.parse(git('show', `HEAD:${f}`).stdout); return typeof j.tier === 'string' && Array.isArray(j.roles); } catch { return false; } };
+// What a sweep itself writes beside its contract: reports and contracts, never the work under review.
+function sweepPaper(f) {
+	const own = git('rev-parse', '--show-prefix').stdout.trim();
+	return Boolean(own) && f.startsWith(own) && /\.(md|json)$/i.test(f);
+}
+
 function sweepOwned(f) {
 	if (DEP_FILE.test(f)) return false;
 	const own = git('rev-parse', '--show-prefix').stdout.trim();
@@ -202,16 +208,20 @@ function diffFacts() {
 	// A base the lead names must sit on the default branch, or it could shrink the diff the tier is read from.
 	const home = want && DEFAULTS.find(known);
 	const offBase = home && git('merge-base', '--is-ancestor', base, home).status !== 0 ? home : null;
+	// An older commit of the default branch is on it, yet hides what the branch took from it: its caps and its hooks.
+	const left = home ? git('merge-base', home, 'HEAD').stdout.trim() : '';
+	const staleBase = !offBase && left && git('merge-base', '--is-ancestor', left, base).status !== 0 ? home : null;
 	const names = (filter) => git('diff', '--name-only', '-z', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\0').filter(Boolean);
 	const all = names('ACDMRT');
 	const added = names('A').filter((f) => !sweepOwned(f));
 	const lines = git('diff', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).filter((l) => !sweepOwned(l.split('\t')[2])).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
-	// Work not yet committed would not be in the diff the floor reads; the contract's own folder is left out.
-	const own = git('rev-parse', '--show-prefix').stdout.trim();
-	const dirty = git('status', '--porcelain', '--', ':(top)', `:(top,exclude)${own || '.kit-none'}`).stdout.split('\n').filter(Boolean);
+	// Work not yet committed would not be in the diff the floor reads; the sweep's own files are left out.
+	const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ':(top)').stdout.split('\n').filter(Boolean).filter((l) => !sweepPaper(l.slice(3)));
 	return {
 		base,
 		offBase,
+		staleBase,
+		noHome: Boolean(want) && !home,
 		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
 		dirty,
 		changed: all.length,
@@ -280,8 +290,7 @@ function resweepCheck(c, tier, roles, log, facts, why, fix) {
 			// The fixes' own tests are reviewed as the first sweep's were (rule:sweep-tiers: Test Value when tests change).
 			testsChanged = since('ACDMRT').some((f) => TEST_FILE.test(f));
 			// What the fixes change, against the first sweep's diff: a large rewrite is new work, the owner's to see.
-			const own = git('rev-parse', '--show-prefix').stdout.trim();
-			const changed = git('diff', '--numstat', '--no-renames', `${head.head}..HEAD`).stdout.split('\n').filter(Boolean).filter((l) => { const f = l.split('\t')[2]; return !sweepOwned(f) && !(own && f.startsWith(own)); }).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
+			const changed = git('diff', '--numstat', '--no-renames', `${head.head}..HEAD`).stdout.split('\n').filter(Boolean).filter((l) => { const f = l.split('\t')[2]; return !sweepOwned(f) && !sweepPaper(f); }).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
 			const bound = Math.max(RESWEEP_MIN_LINES, Math.floor((Number(head.lines) || 0) * RESWEEP_SHARE));
 			if (changed > bound) why.push(`the fixes change ${changed} lines since the sweep it re-checks, over max(${RESWEEP_MIN_LINES}, ${RESWEEP_SHARE * 100}% of its ${Number(head.lines) || 0}-line diff): a large rewrite needs the owner`);
 			if (dep) why.push(`the fixes change a package file (${dep}) since the sweep it re-checks: a new dependency needs the full floor, not a re-sweep`);
@@ -355,6 +364,8 @@ function check(c, facts, log = []) {
 	else if (!facts.changed) fix.push(`no changes against ${facts.base}: run it from the branch's own checkout, or pass the right --base`);
 	else {
 		if (facts.offBase) why.push(`--base ${facts.base} is not on ${facts.offBase}: a base off the default branch can shrink the diff the tier is read from`);
+		if (facts.staleBase) why.push(`--base ${facts.base} is older than where this branch left ${facts.staleBase}: it hides the caps and hooks the branch took from there`);
+		if (facts.noHome) why.push(`--base ${facts.base} cannot be checked: this repo has no default branch the script knows (main or master)`);
 		if (tier !== 'feature' && facts.addedSource.length) why.push(`an added source file (${facts.addedSource[0]}) is feature work, not ${tier}`);
 		if (tier === 'triage' && (facts.added.length || facts.lines > TRIAGE_MAX_LINES)) why.push(`${facts.lines} changed lines, ${facts.added.length} added files: more than a triage change`);
 	}
@@ -477,7 +488,9 @@ function decide() {
 		const reason = `trial review due: ${s.reviewEvery} auto-approvals since the last review`;
 		write({ kind: 'pause', reason });
 		why.unshift(reason);
-	} else if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
+	}
+	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
+	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
 	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
 	write(entry);
 	if (fix.length) {
@@ -771,6 +784,11 @@ function outcome() {
 		if (named && (!x.model || !modelKey(x.model) || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
+	// Ten quiet minutes do not prove a crash: 16 of 303 reviewer transcripts paused that long and went on.
+	for (const e of clearAts.length ? retriesSince(s.log, contractFile, clearAts[0]) : []) {
+		const c = read.roles.find((y) => y.agent === e.crashed);
+		if (c && c.lastWrite > Date.parse(e.time)) console.log(`    ${e.crashed} wrote after its retry was logged: it was not dead, so its role had two reviewers. Its spend so far is counted.`);
+	}
 	// Past the cap's own stop: the hook is missing or did not hold. The trip stays on the whole sweep. A crash and its
 	// retry each had their own cap, so the check reads the retry alone.
 	for (const x of per) { const calls = x.calls - (x.crashedCalls || 0); if (x.cap && calls > x.cap + 1) console.log(`    ${x.role} ran ${calls} calls against its cap of ${x.cap}: no call-cap hook held it.`); }
