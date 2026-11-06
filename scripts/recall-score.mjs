@@ -7,11 +7,13 @@
 // Usage: node scripts/recall-score.mjs blind <out folder> <run.md> [<run.md> ...]
 //        node scripts/recall-score.mjs score <scorer output> <sealed-map.json> <label>
 // Runs are named cand-*, base-* and control-* by the lead; the scorer sees only R01, R02, ...
+// A candidate is 3 runs. A median of 3 exactly on the keys' bar holds the gate line: run cand-4 and cand-5, blind all 5
+// together and score them, and the median of 5 decides (the owner's decision 7, 1.21.0).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { currentVersion, questionCount } from './recall.mjs';
+import { currentVersion, passBar, questionCount } from './recall.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -79,16 +81,31 @@ export function readScores(text) {
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
+const RUNS = 3;
+const MORE_RUNS = 2;
+
+// One question is noise, so a median of 3 on the bar is too close to call. Runs added to a miss would be a second
+// chance at the bar, so 5 runs count only when the first 3, in run order, reached it.
+function candidate(totals, bar) {
+  if (bar === null) return { candMedian: median(totals) };
+  if (totals.length !== RUNS && totals.length !== RUNS + MORE_RUNS) throw new Error(`a candidate is ${RUNS} runs, or ${RUNS + MORE_RUNS} when the median of ${RUNS} lands on the bar; got ${totals.length}`);
+  const first = median(totals.slice(0, RUNS));
+  if (totals.length === RUNS) return { candMedian: first, ...(first === bar ? { more: MORE_RUNS } : {}) };
+  if (first < bar) throw new Error(`${RUNS + MORE_RUNS} runs count only when the first ${RUNS} runs reached the bar of ${bar}; their median is ${first}`);
+  return { candMedian: median(totals) };
+}
+
 /**
  * The table, the medians and the gate line from the scores and the sealed map.
  *
  * Args:
- *     scores: { R01: { 1: 0|1, ... } }; map: { R01: 'cand-1' }; count: questions per run
+ *     scores: { R01: { 1: 0|1, ... } }; map: { R01: 'cand-1' }; count: questions per run;
+ *     bar: the keys' pass bar, null for none
  *
  * Returns:
- *     { table, worse, candMedian, baseMedian, controlMedian }
+ *     { table, worse, candMedian, baseMedian, controlMedian }, and more: the runs still owed, when a median sits on the bar
  */
-export function summarize(scores, map, count) {
+export function summarize(scores, map, count, bar = null) {
   const arms = { cand: [], base: [], control: [] };
   for (const [id, run] of Object.entries(map)) {
     const arm = run.split('-')[0];
@@ -107,7 +124,7 @@ export function summarize(scores, map, count) {
     `| Total | ${arms.cand.map((r) => r.total).join(', ')} | ${arms.base.map((r) => r.total).join(', ')} | ${arms.control.map((r) => r.total).join(', ')} |`];
   // A question that fails in more candidate runs than baseline runs is a finding, even on a pass.
   const worse = qs.filter((q) => arms.cand.filter((r) => !r.s[q]).length > arms.base.filter((r) => !r.s[q]).length);
-  return { table, worse, candMedian: median(arms.cand.map((r) => r.total)), baseMedian: median(arms.base.map((r) => r.total)), controlMedian: median(arms.control.map((r) => r.total)) };
+  return { table, worse, ...candidate(arms.cand.map((r) => r.total), bar), baseMedian: median(arms.base.map((r) => r.total)), controlMedian: median(arms.control.map((r) => r.total)) };
 }
 
 export function score(file, mapFile, label, kit = KIT) {
@@ -115,8 +132,9 @@ export function score(file, mapFile, label, kit = KIT) {
   const keysText = fs.readFileSync(path.join(kit, 'docs/evals/recall-questions.md'), 'utf8');
   const keys = currentVersion(keysText);
   const brief = currentVersion(fs.readFileSync(path.join(kit, 'docs/evals/recall-scorer-brief.md'), 'utf8'));
-  const r = summarize(readScores(fs.readFileSync(file, 'utf8')), JSON.parse(fs.readFileSync(mapFile, 'utf8')).map, questionCount(keysText, keys));
-  return { ...r, line: `gate: ${label} median ${r.candMedian} baseline ${r.baseMedian} brief v${brief} keys v${keys} control ${r.controlMedian}` };
+  const bar = passBar(keysText, keys);
+  const r = summarize(readScores(fs.readFileSync(file, 'utf8')), JSON.parse(fs.readFileSync(mapFile, 'utf8')).map, questionCount(keysText, keys), bar);
+  return { ...r, bar, line: r.more ? null : `gate: ${label} median ${r.candMedian} baseline ${r.baseMedian} brief v${brief} keys v${keys} control ${r.controlMedian}` };
 }
 
 const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -130,7 +148,11 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
     console.log(r.table.join('\n'));
     console.log(`\nCandidate median ${r.candMedian}, baseline median ${r.baseMedian}, control median ${r.controlMedian}.`);
     console.log(`Questions failing more in candidate runs than baseline runs: ${r.worse.join(', ') || 'none'}.`);
-    console.log(`\n${r.line}`);
+    if (r.line) console.log(`\n${r.line}`);
+    else {
+      console.log(`\nThe candidate's median of 3 is ${r.candMedian}, on the bar of ${r.bar}: no gate line yet. Run cand-4 and cand-5, blind all 5 together and score them; the median of 5 decides.`);
+      process.exitCode = 1;
+    }
   } else {
     console.log('Usage: node scripts/recall-score.mjs blind <out> <run.md> ... | score <scorer output> <sealed-map.json> <label>');
     process.exit(2);

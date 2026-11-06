@@ -2,7 +2,7 @@
 
 Current version: v4
 
-Each version's questions and keys are frozen once the owner approves them. A change to either is a new version here, with the old one kept as written; a reworded question would make before and after incomparable. Every scores entry names the version it used, and `scripts/recall.mjs` asks the current one. Scoring follows `recall-scorer-brief.md`. The gate: a median no lower than the released baseline, on the same brief and keys, with the control clearly lower. The current version's Pass line is the bar, and CI fails a median under it, owner's marker or not; before v3 the target was median 9.
+Each version's questions and keys are frozen once the owner approves them. A change to either is a new version here, with the old one kept as written; a reworded question would make before and after incomparable. Every scores entry names the version it used, and `scripts/recall.mjs` asks the current one. Scoring follows `recall-scorer-brief.md`. The gate: a median no lower than the released baseline, on the same brief and keys, with the control clearly lower. The current version's Pass line is the bar, and CI fails a median under it, owner's marker or not. The candidate runs 3 times. A median of 3 exactly on the bar runs 2 more, and the median of those 5 decides; `scripts/recall-score.mjs` holds the gate line until then. Before v3 the target was median 9.
 
 <!-- recall v4 -->
 ## v4 (the owner's ruling, 2026-11-05: align key 3 with its rule)
