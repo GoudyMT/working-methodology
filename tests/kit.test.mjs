@@ -1085,7 +1085,7 @@ test('a first action still stops for a lock, an outward act or an open decision,
   assert.match(tracking, /starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open/);
   assert.match(rule('rules/git-and-release.md'), /the thread has no other work open, the closeout starts on its own \(rule:compact-ritual\)/);
   for (const f of ['rules/tracking-and-handoff.md', 'project/CLAUDE.md']) assert.match(rule(f), /session end \(the owner declares it, or the closeout starts on its own: rule:compact-ritual\)/, f);
-  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST \(the confirmed work order's next, else the owner's pick\)/);
+  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST \(the confirmed work order's next, else the owner's pick; a fix first only when high or critical\)/);
   const closeout = rule('user/skills/closeout/SKILL.md');
   // The trigger names the rule, not two of its four conditions (review D3, 1.21.0).
   assert.match(closeout, /when the compact ritual starts it on its own/);
