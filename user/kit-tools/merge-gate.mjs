@@ -331,6 +331,8 @@ export function live({ kind, id, cwd, config = configDir(), run = realRun }) {
 	return { ok: false, faults: ['live takes pr <n> or release <tag>'] };
 }
 
+// One log per repo, in the common git folder, where the pre-push hook reads it from any worktree.
+const gateLog = (cwd, run) => path.join(path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd).stdout.trim() || '.git'), 'kit-merge-gate.log');
 /**
  * Check, and on GO arm auto-merge pinned to the checked head, read it back and log it.
  *
@@ -354,7 +356,7 @@ export function arm({ pr, cwd, config = configDir(), run = realRun, now = () => 
 		fs.writeFileSync(triage, `# Merge gate: arming failed for PR ${pr} (${now()})\n\n- ${faults[0]}\n`);
 		return { armed: false, faults, facts: res.facts };
 	}
-	fs.appendFileSync(path.join(gitDir, 'kit-merge-gate.log'), `${now()} ARMED ${res.facts.url} ${res.facts.sha} required=${res.facts.required.join(',')}\n`);
+	fs.appendFileSync(gateLog(cwd, run), `${now()} ARMED ${res.facts.url} ${res.facts.sha} required=${res.facts.required.join(',')}\n`);
 	if (fs.existsSync(triage)) fs.rmSync(triage);
 	return { armed: true, faults: [], facts: res.facts };
 }
@@ -371,8 +373,7 @@ export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOStr
 	const m = run('gh', ['pr', 'merge', String(pr), '--disable-auto'], cwd);
 	const back = json(run('gh', ['pr', 'view', String(pr), '--json', 'autoMergeRequest,state'], cwd));
 	if (m.status !== 0 || !back || back.autoMergeRequest) return { disarmed: false, faults: [`PR ${pr} is still armed: ${(m.stderr || m.stdout).trim() || 'auto-merge still shows on the PR'}`] };
-	const gitDir = path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--git-dir'], cwd).stdout.trim() || '.git');
-	fs.appendFileSync(path.join(gitDir, 'kit-merge-gate.log'), `${now()} DISARMED ${pr}\n`);
+	fs.appendFileSync(gateLog(cwd, run), `${now()} DISARMED ${pr}\n`);
 	return { disarmed: true, faults: [] };
 }
 
@@ -392,8 +393,7 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 		const d = disarm({ pr, cwd, run, now });
 		if (!d.disarmed) return { cleared: false, faults: d.faults };
 	}
-	const gitDir = path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--git-dir'], cwd).stdout.trim() || '.git');
-	fs.appendFileSync(path.join(gitDir, 'kit-merge-gate.log'), `${now()} AUTOFIX ${pr} ${p.headRefOid}\n`);
+	fs.appendFileSync(gateLog(cwd, run), `${now()} AUTOFIX ${pr} ${p.headRefOid}\n`);
 	return { cleared: true, faults: [] };
 }
 

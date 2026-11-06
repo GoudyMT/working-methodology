@@ -6430,3 +6430,16 @@ test('the pre-push hook refuses a push over an armed head until it is disarmed, 
   fs.appendFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
   assert.equal(push(head).status, 1, 'armed again, it holds again');
 });
+test('the pre-push hook holds a head armed on two PRs until both are disarmed', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'armed-'));
+  assert.equal(spawnSync('git', ['init', '-q', dir]).status, 0);
+  fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
+  const head = 'a'.repeat(40);
+  const log = path.join(dir, '.git', 'kit-merge-gate.log');
+  const push = () => spawnSync('sh', [path.resolve('project/.githooks/pre-push'), 'origin', 'x'], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/feat/x ${'b'.repeat(40)} refs/heads/feat/x ${head}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '1', AI_AGENT: '', CLAUDECODE: '' } });
+  fs.writeFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\nt ARMED https://github.com/o/r/pull/8 ${head} required=ci\nt DISARMED 8\n`);
+  assert.equal(push().status, 1, 'PR 7 is still armed');
+  fs.appendFileSync(log, 't DISARMED 7\n');
+  assert.equal(push().status, 0);
+});

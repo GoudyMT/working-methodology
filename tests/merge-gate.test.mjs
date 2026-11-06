@@ -521,3 +521,12 @@ test('merge gate: autofix stops on the kill switch, on a PR that is not open, an
 	assert.doesNotMatch(logged(), /AUTOFIX/);
 	assert.equal(autofix({ ...s.opts, pr: 'x' }).cleared, false);
 });
+test('merge gate: a linked worktree logs where the pre-push hook reads, the common git folder', () => {
+	const s = setup();
+	const tree = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'linked');
+	assert.equal(spawnSync('git', ['-C', s.work, 'worktree', 'add', '-q', '--detach', tree], { encoding: 'utf8' }).status, 0);
+	assert.equal(disarm({ ...s.opts, cwd: tree }).disarmed, true);
+	assert.equal(autofix({ ...s.opts, cwd: tree }).cleared, true);
+	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
+	assert.match(log, /DISARMED 7\n.* AUTOFIX 7 /);
+});
