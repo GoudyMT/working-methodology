@@ -92,6 +92,8 @@ const GIT_CLEAN_TEXT = /\bgit(\.exe)?\s+clean(\s|$|`)/i;
 const ROBOCOPY_REMOVES = /(?:^|[\s(,=;[@]|robocopy(?:\.exe)?)(?:\/+|-)(?:mir|purge|mov|move|job)(?![\w-])/i;
 // Programs that print their words rather than run them.
 const PRINTERS = new Set(['echo', 'printf', 'write-host', 'write-output']);
+// What can take a printer's output and run it or keep it: a pipe, a redirect, a group, a backtick, or an eval.
+const FEEDS_ON = /[|<>(){}`]|\b(eval|iex|invoke-expression|source)\b/i;
 // Programs that run the command after them.
 const WRAPPERS = new Set(['timeout', 'sudo', 'doas', 'env', 'nice', 'nohup', 'command', 'exec', 'time', 'xargs', 'start-process', 'saps', 'stdbuf', 'ionice', 'chrt', 'setsid', 'runas']);
 // Start-Process git with a ( ) or @( ) list: the list is split off where its words cannot be read, so it asks.
@@ -581,11 +583,10 @@ function findDelete(text, ctx, state, depth) {
 				if (!word.quoted) continue;
 				// A quoted name=value (git -c core.pager='...') may hold a command in its value.
 				const assigned = /^[\w.-]+=/.test(word.value) ? word.value.slice(word.value.indexOf('=') + 1) : '';
-				// An echo prints its text, but the text may be run: piped on, written to a file, or inside $( ) or iex ( ). Only
-				// text that goes nowhere, with no delete word and nothing that runs ($( ), a backtick) is skipped, so
-				// echo "git $VERSION" does not ask.
-				const consumed = String(segment.end ?? '').startsWith('|') || segment.some((w) => w.redirect) || (s > 0 && segments[s - 1].end === '(');
-				const printed = PRINTERS.has(first) && !consumed && !DELETE_WORD.test(word.value) && !/\bclean\b|\$\(|`/.test(word.value);
+				// An echo prints its text, but the text may be run: piped on, written to a file, or inside $( ), a group or iex.
+				// Only a plain top-level command with nothing of the kind anywhere in it is skipped, so echo "git $VERSION"
+				// does not ask. Anything nested may be fed on by what holds it.
+				const printed = depth === 0 && PRINTERS.has(first) && !FEEDS_ON.test(text) && !DELETE_WORD.test(word.value) && !/\bclean\b/.test(word.value);
 				const said = printed ? [] : [word.value, assigned];
 				for (const inner of said.filter(Boolean)) {
 					const hit = readNested(inner, ctx, state, depth);

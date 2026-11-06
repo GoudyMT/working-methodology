@@ -421,6 +421,13 @@ const REVIEW121_ASK = [
 	"iex (echo '[IO.File]::Delete(\"C:\\elsewhere\\x\")')",
 	"$(printf 'git worktree remove --force C:/elsewhere/wt')",
 	"echo \"find C:/elsewhere -delete\" > a.sh",
+	// The automated review of that fix: a group or a second command around the printer still feeds it on.
+	"$(true; echo \"find C:/elsewhere -delete\")",
+	"(echo \"find C:/elsewhere -delete\") | sh",
+	"{ echo \"find C:/elsewhere -delete\"; } | sh",
+	"{ echo \"find C:/elsewhere -delete\"; } > a.sh",
+	"echo \"find C:/elsewhere -delete\" |&\nsh",
+	"sh -c 'echo \"find C:/elsewhere -delete\"' | sh",
 ];
 
 // 1.21.0: the guard carry-overs from 1.20.0 (escapes in a nested shell, alias routes, inline code and xargs; git $flags
