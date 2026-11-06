@@ -34,6 +34,7 @@
 //   node approve.mjs <contract.json> --outcome --agents <id,...> --findings N --real N --duplicates N [--real-mid N]
 //        [--carried N (a re-sweep: findings left unfixed)] [--closed-carries N (carried findings this sweep fixed)]
 //   node approve.mjs <contract.json> --owner-yes "<the owner's words>"  after an ASK, once the owner says yes
+//   node approve.mjs <contract.json> --retry <n> --crashed <id>         one more start for role n, whose reviewer crashed
 //   node approve.mjs <contract.json> --escape "<what slipped through>"
 //   node approve.mjs --summary
 //   KIT_OWNER_RESUME=1 node approve.mjs --resume                        the owner, in their own terminal
@@ -532,7 +533,7 @@ function starts(log, contract) {
 	const lines = rawLines();
 	const lastOut = log.map((e, i) => (e.kind === 'outcome' && e.contract === contract ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
 	const clearings = log.map((e, i) => (i > lastOut && e.contract === contract && ((e.kind === 'decision' && e.decision === 'approved') || e.kind === 'owner-yes') ? i : -1)).filter((i) => i >= 0);
-	return { clearings, started: clearings.reduce((t, i) => { try { return t + fs.readdirSync(path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]))).length; } catch { return t; } }, 0) };
+	return { clearings, started: clearings.reduce((t, i) => { try { return t + fs.readdirSync(path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]))).filter((f) => !f.endsWith('.retry')).length; } catch { return t; } }, 0) };
 }
 
 // An owner's yes clears a sweep as an approval does, so its outcome is owed too; it stands for the decision it answered.
@@ -583,8 +584,8 @@ function resumeHelp(s) {
 // not the spend (results/m11-meter in the workbench), so it is never used. Only this sweep's own reviewers count:
 // Claude Code's meta file beside the transcript says a reviewer that finished, and its first line is no older than
 // the clearance. Anything else asks the owner, so a slip cannot count the wrong one; a hand-written transcript still
-// passes, as a forged log line does.
-function spend(ids, since, hash, team) {
+// passes, as a forged log line does. An id in `crashed` may be unfinished: --retry reads what it spent all the same.
+function spend(ids, since, hash, team, crashed = new Set()) {
 	const root = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
 	const found = new Map(ids.map((id) => [id, []]));
 	const list = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)); } catch { return []; } };
@@ -599,7 +600,8 @@ function spend(ids, since, hash, team) {
 		try { meta = JSON.parse(fs.readFileSync(files[0].replace(/\.jsonl$/, '.meta.json'), 'utf8')); } catch { /* checked below */ }
 		if (!/(^|:)reviewer$/i.test(String(meta.agentType || ''))) { bad.push(`${id} (not a reviewer: ${meta.agentType || 'no meta file'})`); return null; }
 		const parsed = fs.readFileSync(files[0], 'utf8').split('\n').filter((l) => l.trim()).map((l) => { try { return JSON.parse(l); } catch { return null; } });
-		if (meta.finished !== true || !parsed.length || parsed[parsed.length - 1] === null) { bad.push(`${id} (not finished: log the outcome once every reviewer has handed back)`); return null; }
+		const finished = meta.finished === true && parsed.length > 0 && parsed[parsed.length - 1] !== null;
+		if (!finished && !crashed.has(id)) { bad.push(`${id} (not finished: log the outcome once every reviewer has handed back; one that crashed: --retry <n> --crashed <id>)`); return null; }
 		// The log is per repo and transcripts are per machine, so a reviewer of another repo must not count here.
 		// A removed worktree is read from its nearest folder still there, and the shell's GIT_DIR must not answer for it.
 		let ran = (parsed.find((e) => e && e.cwd) || {}).cwd;
@@ -625,10 +627,43 @@ function spend(ids, since, hash, team) {
 		const u = (m, k) => Number(m.usage[k]) || 0;
 		const tokens = [...seen.values()].reduce((t, m) => t + u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens'), 0);
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
-		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size };
+		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, finished };
 	});
-	if (!bad.length) for (const x of roles) if (roles.filter((y) => y.index === x.index).length > 1) bad.push(`${x.agent} (role ${x.index} is named by more than one brief)`);
-	return bad.length ? { root, bad } : { root, roles: roles.sort((a, b) => a.index - b.index).map(({ index: _i, ...x }) => x) };
+	// A crash and its retry name one role by design.
+	const own = roles.filter((x) => x && !crashed.has(x.agent));
+	if (!bad.length) for (const x of own) if (own.filter((y) => y.index === x.index).length > 1) bad.push(`${x.agent} (role ${x.index} is named by more than one brief)`);
+	return bad.length ? { root, bad } : { root, roles: roles.sort((a, b) => a.index - b.index) };
+}
+
+// Every id an outcome has counted, a crash's included, so none can stand for a later sweep.
+const usedAgents = (log) => new Set(log.filter((e) => e.kind === 'outcome').flatMap((e) => (Array.isArray(e.roles) ? e.roles : []).flatMap((r) => [r.agent, r.crashed])).filter(Boolean).map((x) => String(x).toLowerCase()));
+const retriesSince = (log, contract, from) => log.filter((e, i) => i > from && e.kind === 'retry' && e.contract === contract);
+
+// A reviewer that crashed left its role with no report, and its slot is spent. The owner's decision 2 (1.21.0): one
+// more start for that role under the clearance the guard reads, on the crashed transcript's own evidence. Its spend
+// joins the role at --outcome. A second crash says the role itself is the trouble, so it is the owner's: --cut-short.
+function retry() {
+	const s = state();
+	const { clearings } = starts(s.log, contractFile);
+	const at = clearings[clearings.length - 1];
+	if (at === undefined || s.log.some((e, i) => i > at && e.kind === 'unread' && e.contract === contractFile)) { console.log('--retry needs an open sweep: no cleared sweep is open for this contract. Nothing logged.'); return 1; }
+	const clearing = s.log[at];
+	const team = Number(clearing.agents) || 0;
+	const asked = String(opt('--retry'));
+	const n = /^\d+$/.test(asked) ? Number(asked) : 0;
+	if (!(n >= 1 && n <= team)) { console.log(`--retry needs a role from 1 to ${team}, its place in the contract. Nothing logged.`); return 1; }
+	const id = opt('--crashed');
+	if (!id || !AGENT_ID.test(id)) { console.log('--retry needs --crashed <id>, the crashed reviewer\'s agent id. Nothing logged.'); return 1; }
+	const before = retriesSince(s.log, contractFile, clearings[0]).find((e) => e.role === n);
+	if (before) { console.log(`Role ${n} already had its retry (${before.crashed} crashed): a further crash is the owner's. Mark it with --outcome --cut-short, and the next contract asks them. Nothing logged.`); return 1; }
+	const read = usedAgents(s.log).has(id.toLowerCase()) ? { bad: [`${id} (already logged for an earlier outcome)`] } : spend([id], clearing.time, clearing.hash, team, new Set([id]));
+	if (read.bad) { console.log(`--retry needs a crashed reviewer of this sweep: ${read.bad.join(', ')}. Nothing logged.`); return 1; }
+	const [x] = read.roles;
+	if (x.finished) { console.log(`${id} finished, so its report stands and its role needs no retry. Nothing logged.`); return 1; }
+	if (x.index !== n) { console.log(`${id}'s brief names role ${x.index}, not role ${n}. Nothing logged.`); return 1; }
+	write({ kind: 'retry', contract: contractFile, hash: clearing.hash, role: n, crashed: id, clearing: sha(rawLines()[at]) });
+	console.log(`Retry logged: role ${n} may start once more under this clearance, with the same brief. List the new reviewer's id in --agents; the spend of ${id} joins the role at the outcome.`);
+	return 0;
 }
 
 function outcome() {
@@ -699,9 +734,12 @@ function outcome() {
 	if (!ids.length || ids.some((id) => !AGENT_ID.test(id)) || new Set(ids.map((x) => x.toLowerCase())).size !== ids.length) { console.log('--agents needs the reviewers\' agent ids, comma-separated, each once (letters, digits, - and _). Nothing logged.'); return 1; }
 	if (ids.length !== Number(decision.agents)) { console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role (each brief's Sweep line names its role). Nothing logged. A sweep cut short: --outcome --cut-short.`); return 1; }
 	const since = (clearAts.length ? s.log[clearAts[0]] : decision).time;
-	const used = new Set(s.log.filter((e) => e.kind === 'outcome').flatMap((e) => (Array.isArray(e.roles) ? e.roles : []).map((r) => String(r.agent).toLowerCase())));
-	const reused = ids.filter((id) => used.has(id.toLowerCase()));
-	const read = reused.length ? { bad: reused.map((id) => `${id} (already logged for an earlier outcome)`) } : spend(ids, since, decision.hash, Number(decision.agents));
+	const used = usedAgents(s.log);
+	// A crash's retry stands for its role; the crashed transcript's spend is added to it below.
+	const lost = clearAts.length ? retriesSince(s.log, contractFile, clearAts[0]).map((e) => e.crashed) : [];
+	const isLost = (id) => lost.some((x) => x.toLowerCase() === id.toLowerCase());
+	const refused = [...ids.filter((id) => used.has(id.toLowerCase())).map((id) => `${id} (already logged for an earlier outcome)`), ...ids.filter(isLost).map((id) => `${id} (logged as crashed: name its retry's id)`)];
+	const read = refused.length ? { bad: refused } : spend([...ids, ...lost], since, decision.hash, Number(decision.agents), new Set(lost));
 	if (read.bad) {
 		const why = [`the spend cannot be read, so it is not guessed: ${read.bad.join(', ')}`];
 		console.log('ASK THE OWNER - the spend cannot be read, so it is not guessed (rule:sweep-auto-approval):');
@@ -711,7 +749,10 @@ function outcome() {
 	}
 	let roles = [];
 	try { roles = JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []; } catch { /* labels only */ }
-	const per = read.roles.map((x, i) => ({ ...x, role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null }));
+	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, ...x }, i) => {
+		const c = read.roles.find((y) => isLost(y.agent) && y.index === index);
+		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null };
+	});
 	nums.tokens = per.reduce((t, x) => t + x.tokens, 0);
 	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums, roles: per });
 	const trips = [];
@@ -724,8 +765,9 @@ function outcome() {
 		if (named && (!x.model || !modelKey(x.model) || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
-	// Past the cap's own stop: the hook is missing or did not hold. The trip stays on the whole sweep.
-	for (const x of per) if (x.cap && x.calls > x.cap + 1) console.log(`    ${x.role} ran ${x.calls} calls against its cap of ${x.cap}: no call-cap hook held it.`);
+	// Past the cap's own stop: the hook is missing or did not hold. The trip stays on the whole sweep. A crash and its
+	// retry each had their own cap, so the check reads the retry alone.
+	for (const x of per) { const calls = x.calls - (x.crashedCalls || 0); if (x.cap && calls > x.cap + 1) console.log(`    ${x.role} ran ${calls} calls against its cap of ${x.cap}: no call-cap hook held it.`); }
 	console.log(trips.length ? `Outcome logged; auto-approval paused: ${trips.join('; ')}` : `Outcome logged: ${nums.tokens.toLocaleString('en-US')} processed tokens over ${per.length} role(s).`);
 	if (trips.length) {
 		const f = triage('auto-approval paused after a sweep\'s outcome', trips, [
@@ -786,6 +828,7 @@ function main() {
 		return 0;
 	}
 	if (has('--owner-yes')) return ownerYes();
+	if (has('--retry')) return retry();
 	if (has('--outcome')) return outcome();
 	return decide();
 }

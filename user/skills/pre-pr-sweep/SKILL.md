@@ -59,7 +59,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents`: each reviewer's agent id, one per
-   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a sweep cut short, where neither works (a reviewer never finished, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds
+   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a reviewer that crashed (no report, not finished): `node approve.mjs <contract.json> --retry <n> --crashed <id>` gives role n one more start with the same brief, `--agents` names the retry, and the crash's spend joins the role; a sweep cut short, where none of these works (a role's second crash, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds
    `--carried <n>`, a sweep that fixes carried findings `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
    the mid model, for the reviewer model trial). A bug later found in code the
    sweep passed: `--escape "<what>"`. `--summary` prints the trial so far; put its line in the rundown.

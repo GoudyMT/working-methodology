@@ -4123,6 +4123,102 @@ test('going lighter after FIX THE CONTRACT is the owner\'s; adding what it named
   assert.equal(approveIn(d.dir, [d.f]).status, 0);
   assert.match(approveIn(d.dir, ['--summary']).stdout, /sent back to fix: 1/);
 });
+// A reviewer that crashes spends real tokens and leaves its role with no report (the owner's decision 2, 1.21.0): its
+// role gets one retry, the crash's spend stays on the role, and a second crash is the owner's through --cut-short.
+function crashedSweep() {
+  const early = transcripts({ early: [[0, 100, 0, 0]] }, { early: { finished: false } });
+  const dir = sweepRepo({ 'README.md': 'z\n' });
+  const r = approveRun({ tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root cause, and does it hold?'), role('blast-radius', 'Which callers and copies of this code does the change reach?')] }, dir);
+  assert.equal(r.status, 0, r.stdout);
+  const { hash } = approvalLog(dir).pop();
+  const brief = (n, h = hash) => `review. Call cap: 5. Sweep: ${h} role ${n}`;
+  const cfg = transcripts({ r1: [[0, 1000, 0, 0], [0, 1000, 0, 0], [0, 500, 0, 0], [0, 500, 0, 0]], r2: [[0, 500, 0, 0]] }, { r1: { finished: false } });
+  setBrief(cfg, 'r1', () => brief(1));
+  setBrief(cfg, 'r2', () => brief(2));
+  setBrief(early, 'early', () => brief(1));
+  const start = (n) => sweepGuard(dir, { tool_input: { subagent_type: 'reviewer', prompt: brief(n) } }).permissionDecision;
+  const retry = (n, id, env = cfg) => approveIn(dir, [r.f, '--retry', String(n), '--crashed', id], { CLAUDE_CONFIG_DIR: env });
+  return { ...r, hash, brief, cfg, early, start, retry };
+}
+test('a crashed reviewer gets one more start for its role, and its spend stays on that role', () => {
+  const s = crashedSweep();
+  assert.equal(s.start(1), 'allow');
+  assert.equal(s.start(2), 'allow');
+  assert.equal(s.start(1), 'deny', 'no second start before a retry is logged');
+  const ok = s.retry(1, 'r1');
+  assert.equal(ok.status, 0, ok.stdout);
+  const line = approvalLog(s.dir).pop();
+  assert.equal(line.kind, 'retry');
+  assert.equal(line.role, 1);
+  assert.equal(line.crashed, 'r1');
+  assert.equal(s.start(2), 'deny', 'the retry is for its own role');
+  assert.equal(s.start(1), 'allow');
+  assert.equal(s.start(1), 'deny', 'exactly one extra start');
+  const slots = fs.readdirSync(path.join(s.dir, '.git', 'kit-sweep-starts')).map((d) => fs.readdirSync(path.join(s.dir, '.git', 'kit-sweep-starts', d)));
+  assert.deepEqual(slots.flat().sort(), ['0', '0.retry', '1']);
+  transcripts({ r1b: [[0, 1000, 0, 0], [0, 1000, 0, 0], [0, 1000, 0, 0], [0, 1000, 0, 0]] }, {}, s.cfg);
+  const done = logOutcome(s, ['r1b', 'r2'], s.cfg);
+  assert.equal(done.status, 0, done.stdout);
+  assert.doesNotMatch(done.stdout, /no call-cap hook held it/, 'each start had its own cap');
+  const out = approvalLog(s.dir).pop();
+  assert.equal(out.kind, 'outcome');
+  assert.equal(out.tokens, 7500);
+  assert.equal(out.roles[0].agent, 'r1b');
+  assert.equal(out.roles[0].crashed, 'r1');
+  assert.equal(out.roles[0].tokens, 7000, 'the crash\'s tokens plus the retry\'s');
+  assert.equal(out.roles[0].calls, 8, 'the crash\'s calls plus the retry\'s');
+  assert.equal(out.roles[1].tokens, 500);
+  assert.equal(out.roles[1].crashed, undefined);
+  assert.equal(s.start(1), 'deny', 'a closed round has no retry left');
+  assert.equal(approveIn(s.dir, [s.f]).status, 0);
+  assert.match(logOutcome(s, ['r1', 'r2x'], s.cfg).stdout, /r1 \(already logged/, 'the crashed id counts as used');
+  assert.match(s.retry(1, 'r1').stdout, /r1 \(already logged/);
+});
+test('a second retry of a role is refused and goes to the owner through --cut-short', () => {
+  const s = crashedSweep();
+  transcripts({ r1b: [[0, 100, 0, 0]] }, { r1b: { finished: false } }, s.cfg);
+  setBrief(s.cfg, 'r1b', () => s.brief(1));
+  assert.equal(s.retry(1, 'r1').status, 0);
+  const before = sweepLog(s.dir).length;
+  for (const id of ['r1', 'r1b']) {
+    const again = s.retry(1, id);
+    assert.equal(again.status, 1, again.stdout);
+    assert.match(again.stdout, /already had its retry[\s\S]*--outcome --cut-short/);
+  }
+  assert.equal(sweepLog(s.dir).length, before, 'a refusal logs nothing');
+  assert.equal(approveIn(s.dir, [s.f, '--outcome', '--cut-short']).status, 0);
+});
+test('a retry needs a crashed reviewer of this sweep, in the role it names', () => {
+  const s = crashedSweep();
+  const refused = (r, re) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, re); };
+  const before = sweepLog(s.dir).length;
+  transcripts({ b1: [[0, 100, 0, 0]], b2: [[0, 100, 0, 0]], b3: [[0, 100, 0, 0]] }, { b1: { agentType: 'builder', finished: false }, b2: { finished: false }, b3: { finished: false } }, s.cfg);
+  setBrief(s.cfg, 'b1', () => s.brief(1));
+  setBrief(s.cfg, 'b3', () => s.brief(1, 'f'.repeat(16)));
+  refused(s.retry(1, 'nope'), /nope \(no transcript\)/);
+  refused(s.retry(1, 'b1'), /b1 \(not a reviewer: builder\)/);
+  refused(s.retry(1, 'b2'), /b2 \(its brief has no "Sweep: <hash> role <n>" line\)/);
+  refused(s.retry(1, 'b3'), /b3 \(brief is for another contract\)/);
+  refused(s.retry(2, 'r2'), /r2 finished/);
+  refused(s.retry(2, 'r1'), /r1's brief names role 1, not role 2/);
+  refused(s.retry(1, 'early', s.early), /early \(started .*before this sweep was cleared/);
+  for (const n of ['0', '3', 'x']) refused(s.retry(n, 'r1'), /--retry needs a role from 1 to 2/);
+  refused(approveIn(s.dir, [s.f, '--retry', '1'], { CLAUDE_CONFIG_DIR: s.cfg }), /--crashed/);
+  assert.equal(sweepLog(s.dir).length, before, 'a refusal logs nothing');
+});
+test('a retry needs an open sweep, and the crashed id cannot also stand as the role\'s report', () => {
+  const s = crashedSweep();
+  assert.equal(s.retry(1, 'r1').status, 0);
+  const metaFile = path.join(s.cfg, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-r1.meta.json');
+  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', finished: true }));
+  assert.match(logOutcome(s, ['r1', 'r2'], s.cfg).stdout, /r1 \(logged as crashed/);
+  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', finished: false }));
+  transcripts({ r1b: [[0, 100, 0, 0]] }, {}, s.cfg);
+  assert.equal(logOutcome(s, ['r1b', 'r2'], s.cfg).status, 0);
+  const late = s.retry(2, 'r2');
+  assert.equal(late.status, 1, late.stdout);
+  assert.match(late.stdout, /no cleared sweep is open/);
+});
 test('a sweep cut short has a way out: the next contract asks the owner, and the yes closes it unmeasured', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);

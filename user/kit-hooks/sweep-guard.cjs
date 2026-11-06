@@ -7,7 +7,8 @@
 // (<git common dir>/kit-sweep-approvals.jsonl), each line chained to the one before; a line that breaks the chain
 // clears nothing. HEAD is read from the contract's own folder, so a sweep run from a worktree is judged by that
 // worktree. A cleared contract lets in at most as many reviewers as it has roles (counted in
-// kit-sweep-starts/ next to the log). Outside a git repository there is no log, so the call goes through.
+// kit-sweep-starts/ next to the log), plus one more for a role whose crash approve.mjs logged as a retry. Outside a
+// git repository there is no log, so the call goes through.
 // It stops slips, not a determined workaround: a carefully forged log line passes it.
 const fs = require('fs');
 const path = require('path');
@@ -21,6 +22,19 @@ const heads = new Map();
 const headOf = (d) => { if (!heads.has(d)) heads.set(d, git(d, 'rev-parse', '--short', 'HEAD').stdout.trim()); return heads.get(d); };
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
 const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). FIX THE CONTRACT: fix it and run it again. APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
+
+// Whether approve.mjs logged a retry of this role under this clearing, still open: an outcome or a cut short closes it.
+function retryOpen(lines, i, contract, role) {
+	let open = false;
+	for (let j = i + 1; j < lines.length; j++) {
+		let x;
+		try { x = JSON.parse(lines[j]); } catch { continue; }
+		if (x.prev !== sha(lines[j - 1]) || x.contract !== contract) continue;
+		if (x.kind === 'outcome' || x.kind === 'unread') open = false;
+		else if (x.kind === 'retry' && x.role === role && x.clearing === sha(lines[i])) open = true;
+	}
+	return open;
+}
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
@@ -64,7 +78,12 @@ function main() {
 		const slots = path.join(dir, 'kit-sweep-starts', sha(lines[i]));
 		fs.mkdirSync(slots, { recursive: true });
 		try { fs.closeSync(fs.openSync(path.join(slots, String(n)), 'wx')); return; } catch { /* taken */ }
-		return deny(`Role ${n + 1} of the cleared contract has started already. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
+		// A logged retry opens one more slot for its own role, claimed the same way.
+		if (retryOpen(lines, i, e.contract, n + 1)) {
+			try { fs.closeSync(fs.openSync(path.join(slots, `${n}.retry`), 'wx')); return; } catch { /* taken */ }
+			return deny(`Role ${n + 1} has used its one retry. A further crash is the owner's: \`approve.mjs <contract.json> --outcome --cut-short\`, and the next contract asks them.`);
+		}
+		return deny(`Role ${n + 1} of the cleared contract has started already. If its reviewer crashed: \`approve.mjs <contract.json> --retry ${n + 1} --crashed <id>\`. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);
 	}
 	return deny(`No cleared Swarm Contract at its checkout's current HEAD. ${RUN_FIRST}`);
 }
