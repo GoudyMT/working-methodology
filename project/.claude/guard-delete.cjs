@@ -47,7 +47,7 @@ const INLINE_DELETE = /\b(rmSync|rmdirSync|unlinkSync|rmtree|rm_rf|rm_r|remove_t
 // A delete word anywhere in the text, to check text the tokenizer cannot split (backticks, carets).
 const DELETE_WORD = /(^|[^\w-])(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimraf|del-cli|shred)(\.exe)?(?![\w-])/i;
 // New-Item takes the type however it is spelled (-ItemType "Junction", -Type:Junction), and ln takes -s anywhere.
-const MAKES_LINK = /\bmklink\b|\bln(\.exe)?\s([^;|&\n]*\s)?(-[a-z]*s|--sy)|\bsymlinkSync\b|\b(new-item|ni)\b[\s\S]*\b(Junction|SymbolicLink)\b/i;
+const MAKES_LINK = /\bmklink\b|\bln(\.exe)?\s([^;|&\n]*\s)?(-[a-z]*s|--sy)|\bsymlink(Sync)?\b|\b(new-item|ni)\b[\s\S]*\b(Junction|SymbolicLink)\b|\b(new-item|ni)\b[\s\S]*\s-(i\w*|t\w*)[\s:]+["']?(j|sy)/i;
 // The read-only searchers: a delete word in their arguments is a pattern, not a command.
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls']);
 const GIT_READS = new Set(['grep', 'log', 'show', 'diff', 'blame']);
@@ -61,15 +61,21 @@ const FILTERS = new Set(['where-object', 'where', '?']);
 // Not the --no-pager option, which turns a pager off.
 const RUNS_VIA_ENV = /(?<![\w-])(GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|GIT_CONFIG_\w*|RIPGREP_CONFIG_PATH)\b/i;
 // Routes that can redefine a git alias from outside the command: an included file, a renamed section, another home.
-const ALIAS_ROUTE = /include\.path|includeIf\.|--rename-section|(^|[\s;&|(])(HOME|XDG_CONFIG_HOME|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM)=/i;
+const ALIAS_ROUTE = /include\.path|includeIf\.|--rename-section|(^|[\s;&|(:])(HOME|USERPROFILE|XDG_CONFIG_HOME|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM)\s*=/i;
+// A value with an escaped space in git's own -c: the tokenizer splits it, so what it runs cannot be read.
+const GIT_C_ESCAPED = /\bgit(\.exe)?\s+(-\S+\s+)*-c\s+\S*\\\s/i;
 // xargs handing git its subcommand from input: no subcommand is written after git.
 const XARGS_GIT = /\bxargs\b[^;|&\n]*\bgit(\.exe)?(?![\w-])([^;|&\n]*)/i;
+// xargs -I replaces any word it is told to, so the words written after git prove nothing.
+const XARGS_REPLACE = /\bxargs\b[^;|&\n]*\s(-I|--replace)[^;|&\n]*\bgit(\.exe)?(?![\w-])/i;
 const WRITTEN_SUB = /^(log|show|diff|status|add|commit|grep|blame|ls-files|rev-parse|cat-file|rm|clean|checkout|restore|mv|reset|worktree|stash)$/;
 const MOVES_GIT = /\b(GIT_WORK_TREE|GIT_DIR|GIT_COMMON_DIR)\b|core\.worktree|include\.path|includeIf\./i;
 // -EncodedCommand and the short forms PowerShell accepts for it, with - or /.
 const ENCODED = /^[-/](e|ec|en\w*)$/i;
 // A .NET Delete on a type or a variable: [IO.Directory]::Delete, $d.Delete, (Get-Item x).Delete.
-const DOTNET_DELETE = /::delete\w*$|^(\$[\w:]+)?\.delete\w*$/i;
+const DOTNET_DELETE = /::delete\w*$|^(\$[\w:]+|\[\d+\])?(\.\w+)*\.delete\w*$/i;
+// What may follow a variable that starts a command without it being run: an assignment or a comparison.
+const NOT_RUN_AFTER = /^([-+*/]?=|-(eq|ne|gt|lt|ge|le|like|match|in|is|contains|as)\b|in$)/i;
 // A brace that starts a word may be a shell brace expansion ({a,b}, {'a b',c}, {a..c}); quotes and escapes make
 // its exact extent hard to read, so any brace with no space after it, in a command that deletes, asks. find's own
 // {} is not one. A PowerShell script block written "{ ... }" is unaffected; one written "{...}" asks.
@@ -95,13 +101,13 @@ const PRINTERS = new Set(['echo', 'printf', 'write-host', 'write-output']);
 // What can take a printer's output and run it or keep it: a pipe, a redirect, a group, a backtick, or an eval.
 const FEEDS_ON = /[|<>(){}`]|\b(eval|iex|invoke-expression|source)\b/i;
 // Programs that run the command after them.
-const WRAPPERS = new Set(['timeout', 'sudo', 'doas', 'env', 'nice', 'nohup', 'command', 'exec', 'time', 'xargs', 'start-process', 'saps', 'stdbuf', 'ionice', 'chrt', 'setsid', 'runas']);
+const WRAPPERS = new Set(['timeout', 'sudo', 'doas', 'env', 'nice', 'nohup', 'command', 'exec', 'time', 'xargs', 'start-process', 'saps', 'stdbuf', 'ionice', 'chrt', 'setsid', 'runas', 'cmd', 'winpty']);
 // Start-Process git with a ( ) or @( ) list: the list is split off where its words cannot be read, so it asks.
 const START_GIT_LIST = /\b(start-process|saps)\b[^;|&\n]*\bgit(\.exe)?\b[^;|&\n]*\(/i;
 // A single search or a commit message names robocopy without running it, unless something in it runs: $( ), a
 // backtick, <( ) or >( ).
 const RUNS_INSIDE = /\$\(|`|[<>]\(/;
-const ONLY_READS = /^\s*(rg|grep|egrep|fgrep|findstr|select-string|sls|git\s+(commit|log|grep|show|diff))\s[^;|&\n]*$/i;
+const ONLY_READS = /^\s*(rg|grep|egrep|fgrep|findstr|select-string|sls|git\s+(commit|log|grep|show|diff))\s[^;|&()\n]*$/i;
 const FIND_OPTIONS = /^-(H|L|P|O\d*)$/;
 const WILDCARD = /[*?[]/;
 // A session id is a full UUID: it alone finds the session folder, so "../.." or a plain word could name a shared one.
@@ -226,10 +232,11 @@ function programName(raw) {
 	if (raw === undefined) return '';
 	// A git alias that starts with ! runs a shell command: '!rm -rf x'.
 	const word = raw.replace(/^!+/, '');
-	const glued = word.split('/')[0].toLowerCase();
-	if (word.includes('/') && CMD_DELETERS.has(glued)) return glued;
+	// cmd ends a builtin's name at a slash, a backslash or an equals sign: rd/s, rd\x, del=x.
+	const glued = word.split(/[/\\=]/)[0].toLowerCase();
+	if (glued !== word.toLowerCase() && CMD_DELETERS.has(glued)) return glued;
 	const parts = word.split('/').join(BACKSLASH).split(BACKSLASH);
-	return parts[parts.length - 1].toLowerCase().replace(/\.exe$/, '');
+	return parts[parts.length - 1].toLowerCase().replace(/\.(exe|cmd|bat)$/, '');
 }
 
 // The path with every junction and link in its existing part followed, so a link inside the project that points
@@ -353,6 +360,22 @@ function inOwnFolder(resolved, ctx, wild) {
 	return id === ctx.session.id && (below.length > 0 || wild >= 0);
 }
 
+// Whether one path part reaches a .git folder: the name itself, cmd's trailing dots and spaces, its 8.3 short name,
+// or a wildcard that matches it.
+function namesGit(part) {
+	const name = part.toLowerCase().replace(/[. ]+$/, '');
+	if (name === '.git' || /^git~\d+$/.test(name)) return true;
+	// A shell's * skips dot names, so only a pattern that starts with the dot can reach it.
+	if (!part.startsWith('.') || !WILDCARD.test(part)) return false;
+	const glob = part.toLowerCase().replace(/[.+^$()|{}]/g, (c) => BACKSLASH + c).replace(/\*/g, '.*').replace(/\?/g, '.');
+	try { return new RegExp(`^${glob}$`).test('.git'); } catch { return true; }
+}
+
+// Whether a folder holds a link: a wildcard stops the guard reading the path, and the shell then walks through it.
+function holdsLink(folder) {
+	try { return fs.readdirSync(folder, { withFileTypes: true }).some((e) => e.isSymbolicLink()); } catch { return false; }
+}
+
 // Where a delete may run without asking: strictly inside the session folder or the project; for a wildcard, the
 // fixed folder before it may also be the session folder or the project itself.
 function placeOf(target, ctx, state, keepLast = false) {
@@ -370,7 +393,7 @@ function placeOf(target, ctx, state, keepLast = false) {
 	if (/^[\\/]{2}/.test(t)) return target;
 	// Git Bash spells C:/x as /c/x, and the system temp as /tmp.
 	if (ctx.windows) t = t.replace(/^\/tmp(\/|$)/, ctx.tmpdir + '/').replace(/^\/([A-Za-z])(\/|$)/, '$1:/');
-	if (t.split(/[\\/]/).some((part) => part.toLowerCase() === '.git')) return 'a .git folder';
+	if (t.split(/[\\/]/).some(namesGit)) return 'a .git folder';
 	// D:x is relative to the current folder of drive D, which the guard does not know.
 	if (ctx.windows && /^[A-Za-z]:(?![\\/])/.test(t)) return 'a drive-relative target';
 	if (!api.isAbsolute(t) && state.moved) return 'a relative target after a change of folder';
@@ -386,7 +409,8 @@ function placeOf(target, ctx, state, keepLast = false) {
 	// Every folder the command may be in, and ".." read both through links (Git Bash) and as written (PowerShell).
 	for (const cwd of state.cwds) {
 		const asWritten = api.resolve(cwd, fixed);
-		const places = [walk(fixed, { ...ctx, cwd }, keep), keep ? api.join(realOf(api.dirname(asWritten), api), api.basename(asWritten)) : realOf(asWritten, api)];
+		if (wild >= 0 && /[\\/]/.test(t.slice(wild)) && holdsLink(asWritten)) return target;
+		const places =[walk(fixed, { ...ctx, cwd }, keep), keep ? api.join(realOf(api.dirname(asWritten), api), api.basename(asWritten)) : realOf(asWritten, api)];
 		for (const resolved of places) {
 			const inRoot = ctx.roots.some((root) => {
 				const rel = api.relative(root, resolved);
@@ -486,6 +510,12 @@ function findDelete(text, ctx, state, depth) {
 			}
 			continue;
 		}
+		// A program held in a variable cannot be read, in any quoting: $X -rf x, ${G} -rf x, $'rm' -rf x, & $x x.
+		const opener = words[0] ?? '';
+		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && words.length > 1 && !NOT_RUN_AFTER.test(words[1])) return 'a program held in a variable';
+		if (opener === '$' && words.length === 1 && segment.end === '{') return 'a program held in a variable';
+		// A shell expands a wildcard in a program's path: /usr/bin/r[m].
+		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1) return 'a program named by a wildcard';
 		const skip = new Set();
 		for (let i = 0; i < words.length; i++) {
 			const lower = words[i].toLowerCase();
@@ -525,7 +555,9 @@ function findDelete(text, ctx, state, depth) {
 				const command = String(sub ?? '').replace(/[\\`^'"]/g, '');
 				// Where git runs as the program: first in a command, nested ones included, or behind a wrapper (timeout 5,
 				// sudo, env). Words in a message or an echo's text are not run.
-				if (/\$|^@/.test(command) && (p === 0 || WRAPPERS.has(first))) return 'a git subcommand held in a variable';
+				if (/[$%]|^@/.test(command) && (p === 0 || WRAPPERS.has(first))) return 'a git subcommand held in a variable';
+				// A PowerShell ( ) list or expression after git is cut off by the tokenizer, so its subcommand is unread.
+				if (sub === undefined && segment.end === '(') return 'a git subcommand in parentheses';
 				// git's subcommand word (rm) is not the rm program; -C and the tree options move where paths are read.
 				if (p === 0) skip.add(at - 1);
 				if (MOVES_GIT.test(text) || words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
@@ -550,17 +582,26 @@ function findDelete(text, ctx, state, depth) {
 			else if (name === 'find' && BRACE_EXPANSION.test(text)) return 'a target with a brace expansion';
 			// -delete is looked for in the whole text: a \( ... \) group splits find's words across commands.
 			else if (name === 'find' && (rest.some((w) => w.toLowerCase() === '-delete') || /(^|[\s'"])-delete(?![\w-])/i.test(text))) {
+				// -L and -follow walk through links, so what it reaches cannot be placed.
+				if (rest.some((w) => w === '-L' || w === '-follow')) return 'find that follows links and deletes';
 				// find deletes what it finds below its start folders, so each is read like a folder ending in a wildcard.
 				let i = p + 1;
 				while (i < words.length && (FIND_OPTIONS.test(words[i]) || words[i] === '-D')) i += words[i] === '-D' ? 2 : 1;
 				const starts = [];
 				for (; i < words.length && !/^[-!\\(]/.test(words[i]); i++) starts.push(words[i]);
+				// With nothing to filter on it removes the start folder too, so that must be placed itself.
+				const everything = !/\s-(i?name|i?path|i?regex|type|newer|mtime|mmin|size|empty|not)\s/i.test(text);
 				for (const start of starts.length > 0 ? starts : ['.']) {
-					const hit = placeOf(start + '/*', ctx, state);
+					const hit = placeOf(everything ? start : start + '/*', ctx, state);
 					if (hit) return hit === start + '/*' ? start : hit;
 				}
+			} else if (/^(start-process|saps)$/.test(name) && (segment.end === '(' || rest.some((w) => /^@\w/.test(w)))) {
+				return 'Start-Process with a list the guard cannot read';
 			} else if (DELETERS.has(name)) {
 				if (BRACE_EXPANSION.test(text)) return 'a target with a brace expansion';
+				// xargs adds targets from its input, and a ( ) list holds more: the written ones are not all of them.
+				if (words.slice(0, p).some((w) => programName(w) === 'xargs')) return 'a delete given targets by xargs';
+				if (segment.end === '(') return 'a delete with targets in parentheses';
 				let targets = targetsOf(name, words, p + 1);
 				if (targets.length === 0 && p === 0) targets = listedTargets(segments, s) ?? [];
 				if (targets.length === 0) return 'a delete whose targets come from elsewhere';
@@ -665,11 +706,16 @@ function decide(input, where = {}) {
 		if (runsGit && ALIAS_ROUTE.test(flat)) return 'a git alias defined from outside the command';
 		const xg = flat.match(XARGS_GIT);
 		if (xg && !xg[2].split(/\s+/).some((w) => WRITTEN_SUB.test(w))) return 'git given its subcommand by xargs';
+		if (XARGS_REPLACE.test(flat)) return 'git given its subcommand by xargs';
 		if (INTERPRETER.test(text) && runsGit && /\bclean\b/.test(text)) return 'inline code that may run git clean';
 		// bash reads gi\t as git and r\m as rm, even inside a nested shell: a delete word an escape hides asks.
 		const unescaped = flat.replace(/\\(?=[A-Za-z0-9])/g, '');
 		const cleans = (s) => /(^|[^\w-])git(\.exe)?\s[^;|&\n]*\bclean\b/i.test(s);
 		if (unescaped !== flat && ((DELETE_WORD.test(unescaped) && !DELETE_WORD.test(flat)) || (cleans(unescaped) && !cleans(flat)))) return 'a delete word hidden by an escape';
+		// Word by word as well, so a harmless delete word elsewhere does not switch this off; a word may end on an escaped space.
+		const hidden = flat.split(/\s+/).filter((w) => w.includes(BACKSLASH) && !/^[A-Za-z]:|^\.{0,2}[\\/]/.test(w)).map((w) => w.split(BACKSLASH).join(''));
+		if (hidden.some((w) => /^(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimraf|shred|git)$/i.test(w))) return 'a delete word hidden by an escape';
+		if (GIT_C_ESCAPED.test(flat)) return 'a git setting the guard cannot read';
 		const deletes = DELETE_WORD.test(flat) || GIT_CLEAN_TEXT.test(flat);
 		if (deletes && (text.includes(BACKTICK) || text.includes('^'))) return 'a delete next to a backtick or caret';
 		if (deletes && MAKES_LINK.test(text)) return 'a command that makes a link and deletes';

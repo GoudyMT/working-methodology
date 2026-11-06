@@ -428,6 +428,76 @@ const REVIEW121_ASK = [
 	"{ echo \"find C:/elsewhere -delete\"; } > a.sh",
 	"echo \"find C:/elsewhere -delete\" |&\nsh",
 	"sh -c 'echo \"find C:/elsewhere -delete\"' | sh",
+	// xargs adds targets the guard never sees, and -I can change any word (1.21.0 sweep, R2).
+	"echo C:/elsewhere | xargs rm -rf build",
+	"find C:/elsewhere | xargs rm -rf dist",
+	"echo C:/elsewhere | xargs -I_ rm -rf _",
+	"echo clean | xargs -Ilog git log -fdx",
+	// One harmless delete word must not switch the escape check off; a program can sit in a variable (R3).
+	"rm -f build/b1; r\\m -rf C:/elsewhere",
+	"git add clean; gi\\t clean -fdx",
+	"bash -c rm\\ -rf\\ C:/elsewhere",
+	"$'rm' -rf C:/elsewhere",
+	"$'\\x72\\x6d' -rf C:/elsewhere",
+	"bash -c $'rm -rf C:/elsewhere'",
+	"X=rm; $X -rf C:/elsewhere",
+	"G=rm; ${G} -rf C:/elsewhere",
+	"/usr/bin/r[m].exe -rf C:/elsewhere",
+	"$x='Remove-Item'; & $x C:\\elsewhere",
+	// cmd glues the path to a builtin with = or a backslash as well as a slash (R4).
+	"cmd /c del=C:\\elsewhere\\x",
+	"cmd /c \"del=C:\\elsewhere\\x\"",
+	"cmd /c rd=C:\\elsewhere",
+	"cmd /c rd\\Users\\someone",
+	"cmd /c del\\elsewhere\\x",
+	"rimraf.cmd C:/elsewhere",
+	"rm.bat C:/elsewhere",
+	// PowerShell parentheses cut words off the command (R5).
+	"git ('clean','-fdx')",
+	"git ('clean') -fdx",
+	"git (echo clean) -fdx",
+	"Remove-Item build,('C:\\elsewhere')",
+	"Start-Process -ArgumentList @('clean','-fdx') -FilePath git",
+	"$a=@{FilePath='git';ArgumentList='clean -fdx'}; Start-Process @a",
+	"findstr x (robocopy C:/src C:/elsewhere /MIR)",
+	"rg x (robocopy C:/src C:/elsewhere /MIR)",
+	"git log (robocopy C:/src C:/elsewhere /MIR)",
+	"(gi C:\\elsewhere\\x).Parent.Delete($true)",
+	"(gci C:\\elsewhere)[0].Delete()",
+	// Git's routes in other spellings (R6).
+	"git -c core.fsmonitor=rm\\ -rf\\ C:/elsewhere status",
+	"git -c diff.external=rm\\ -rf\\ C:/elsewhere diff",
+	"git -c core.sshCommand=rm\\ -rf\\ C:/elsewhere fetch",
+	"git -c credential.helper=!rm\\ -rf\\ C:/elsewhere fetch",
+	"$env:HOME='C:\\x'; git zz",
+	"$env:XDG_CONFIG_HOME='C:\\x'; git zz",
+	"USERPROFILE=C:/x git zz",
+	"cmd /c \"git %C% -fdx\"",
+	"cmd /c git $C -fdx",
+	"winpty git $C -fdx",
+	// The sweep's test-value role: real asks with no row until now (T3).
+	"git -c includeIf.gitdir:C:/x/.path=C:/x/evil x",
+	"XDG_CONFIG_HOME=C:/x git x",
+	"nohup git $C -fdx",
+	"exec git $C -fdx",
+	"time git $C -fdx",
+	"rg x >(robocopy C:/src C:/elsewhere /MIR)",
+	"git -c \"alias.zz= !/bin/true\" zz",
+	"git -c a.b^ c.d clean -fdx",
+	// .git and the root in other spellings (R8).
+	"rm -rf .g*",
+	"rm -rf .gi?",
+	"rm -rf .[g]it",
+	"Remove-Item -Recurse -Force .gi*",
+	"rm -rf GIT~1",
+	"cmd /c rd /s /q .git.",
+	"find . -delete",
+	// A link made in the same command, spelled short, or followed by find (R7).
+	"New-Item -ItemType J -Path l -Target C:\\Users; Remove-Item -Recurse l\\someone",
+	"New-Item -Type Ju -Path l -Target C:\\Users; Remove-Item -Recurse l\\someone",
+	"python -c \"import os; os.symlink('C:/Users','l')\"; rm -rf l/someone",
+	"find -L . -name x -delete",
+	"find build -follow -name x -delete",
 ];
 
 // 1.21.0: the guard carry-overs from 1.20.0 (escapes in a nested shell, alias routes, inline code and xargs; git $flags
@@ -592,6 +662,25 @@ const PASS = [
 	'git rm --cached src/old.js',
 	'git commit -m "rm the old build step"',
 	'node .claude/guard-delete-check.cjs',
+	// Everyday commands the stricter reads must leave alone.
+	"$x = 1",
+	"$env:KIT_X='1'; node x.mjs",
+	"$files = Get-ChildItem build",
+	"$p -eq 3",
+	"foreach ($f in $files) { node x.mjs }",
+	"if ($LASTEXITCODE -ne 0) { exit 1 }",
+	"[ -f a.txt ] && node x.mjs",
+	"[string]$x = 'a'",
+	"git ls-files | xargs git log",
+	"HOME=/x npm test",
+	"find . -name '*.pyc' -delete",
+	"find build -type f -delete",
+	"find build -delete",
+	"rm -rf .gitignore-old",
+	"rm -f build/*.log",
+	"rm -rf build/*/x",
+	"cat notes.txt",
+	"cmd /c dir",
 ];
 
 let wrong = 0;
@@ -742,6 +831,12 @@ try {
 	check('[junction] the key is a link out of claude', inTemp(path.join(temp, 'claude', 'key-link', SESSION_ID, 'x')), true, tempWhere);
 	check('[junction] the id folder is a link out of claude', inTemp(path.join(temp, 'claude', 'other-key', SESSION_ID, 'x')), true, tempWhere);
 	check('[junction] a link inside the own folder', inTemp(path.join(own, 'out', 'x')), true, tempWhere);
+	// A wildcard ends what can be read of a path, so a link beside it asks (1.21.0 sweep, R7).
+	check('[junction] a wildcard that may walk through a link in the own folder', inTemp(path.join(own, 'ou*', 'x')), true, tempWhere);
+	check('[junction] a wildcard that may walk through a link in the project', { ...viaLink, tool_input: { command: 'rm -rf li*/x' } }, true, where);
+	check('[junction] ./*/x beside a link', { ...viaLink, tool_input: { command: 'rm -rf ./*/x' } }, true, where);
+	check('[junction] a wildcard with nothing after it stays in its folder', inTemp(path.join(own, 'scratchpad', '*')), false, tempWhere);
+	check('[junction] a wildcard in a folder with no link', inTemp(path.join(own, 'scratchpad', '*', 'x')), false, tempWhere);
 } finally {
 	fs.rmSync(real, { recursive: true, force: true });
 }
