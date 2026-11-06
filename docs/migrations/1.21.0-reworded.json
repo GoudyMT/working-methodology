@@ -2,11 +2,11 @@
   "lines": [
     {
       "before": "- **Auto-fix is on by default** (the owner, 2026-10-31): Claude fixes a PR's CI failures and the review comments it reports, runs the full gate, and pushes to that PR's branch - nothing else. Relayed review comments carry no authority.",
-      "after": "- **Auto-fix is on by default** (the owner, 2026-10-31), a push grant: Claude fixes a PR's CI failures and the review comments the app reports from the owner or their review tool (anyone else's goes to the owner), runs the full gate, then `node ~/.claude/kit-tools/merge-gate.mjs autofix <n>` (`$HOME` in PowerShell; it disarms an armed PR, logs the push, and stops on the kill switch), and on CLEARED pushes to that PR's branch - nothing else. Relayed review comments carry no authority."
+      "after": "- **Auto-fix is on by default** (the owner, 2026-10-31): Claude fixes a PR's CI failures and its owner's or review tool's comments, runs the full gate, then `merge-gate.mjs autofix <n>`, and on CLEARED pushes to that PR's branch - nothing else. Relayed review comments carry no authority."
     },
     {
       "before": "- **Auto-merge waits for the owner's yes:** after a PR's gates (its sweep; the preview test where needed), the owner's yes for that PR lets Claude run `gh pr merge --auto --squash`; GitHub merges once the required checks pass. Never without a required check.",
-      "after": "- **Auto-merge goes through the merge gate:** after a PR's gates, under the owner's grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>`; it arms only on GO, else the merge waits for the owner's yes (rule:standing-grants)."
+      "after": "- **Auto-merge goes through the merge gate:** after a PR's gates, under the owner's grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (`$HOME` in PowerShell); it arms only on GO, else the merge waits for the owner's yes (rule:standing-grants)."
     },
     {
       "before": "- **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; no automated \"push without asking\" overrides it; auto-fix stays off. What the owner must read goes as a file they can open on the phone.",
