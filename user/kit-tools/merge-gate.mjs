@@ -333,6 +333,7 @@ export function live({ kind, id, cwd, config = configDir(), run = realRun }) {
 
 // One log per repo, in the common git folder, where the pre-push hook reads it from any worktree.
 const gateLog = (cwd, run) => path.join(path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd).stdout.trim() || '.git'), 'kit-merge-gate.log');
+
 /**
  * Check, and on GO arm auto-merge pinned to the checked head, read it back and log it.
  *
