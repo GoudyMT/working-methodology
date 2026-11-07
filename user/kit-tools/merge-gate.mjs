@@ -7,6 +7,7 @@
 // Every check must pass, or nothing is armed:
 //   1. the kill switch `autonomy-off` is absent from the Claude config folder
 //   2. the PR is open, not a draft, and comes from a branch of this repo, and the working copy is at its head
+//      (a repo read that is not the PR's repo on the PR's host stops the run, and so does a base that is not GitHub's)
 //   3. the repo allows auto-merge and deletes a branch on merge (rule:first-push-gate)
 //   4. the base branch requires at least one status check, and no check on the PR is failing now
 //   5. the diff touches no gate, grant or loaded-rule path (PROTECTED, and the kit's own source paths in that repo)
@@ -44,8 +45,9 @@ import { fileURLToPath } from 'node:url';
 export const PROTECTED = [/^\.github\//i, /^\.kit\//i, /^\.githooks\//i, /^\.claude\//i, /^project\/\.claude\//i, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i];
 // In the kit's own source the same things live here, and install carries them to every project: the owner's merge.
 export const KIT_SOURCE_PROTECTED = [/^user\//i, /^project\//i, /^rules\//i, /^scripts\//i, /^tests\//i, /^kit\.config\.json$/i];
-// git runs a repo's hooks on its own commands, and a branch can ship one under core.hooksPath.
-const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null'];
+// git runs a repo's hooks on its own commands, and a branch can ship one under core.hooksPath. Replace refs and diff
+// settings live in the repo too, and each can change what a commit or a diff reads as.
+const NO_HOOKS = ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-c', 'diff.ignoreSubmodules=none', '-c', 'diff.relative=false'];
 // What may change after the swept commit: the release bump.
 export const AFTER_SWEEP = ['VERSION', 'CHANGELOG.md'];
 const CONVENTIONAL = /^[a-z]+(\([^)]*\))?!?: /;
@@ -89,6 +91,7 @@ const realRun = (cmd, args, cwd) => {
 
 export const configDir = (env = process.env) => env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 
+const REPO_NAME = /^[\w.-]+\/[\w.-]+$/;
 const json = (r) => { try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
 
 /**
@@ -134,15 +137,20 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	if (local !== p.headRefOid) faults.push(`the working copy is at ${local.slice(0, 12) || 'nothing'}, not the PR's head ${p.headRefOid.slice(0, 12)}: check out the branch and pull`);
 
 	// 3. Repo settings.
-	const repo = json(gh('repo', 'view', '--json', 'nameWithOwner,autoMergeAllowed,deleteBranchOnMerge'));
+	// `gh repo view` has no auto-merge field, so this reads the REST repo; {owner}/{repo} is gh's own placeholder for this repo.
+	const repo = json(gh('api', 'repos/{owner}/{repo}'));
 	if (!repo) return { go: false, faults: [...faults, 'gh could not read the repository'], facts };
-	if (!repo.autoMergeAllowed || !repo.deleteBranchOnMerge) {
-		faults.push(`${repo.nameWithOwner} must allow auto-merge and delete branches on merge (the owner runs: gh api -X PATCH repos/${repo.nameWithOwner} -F allow_auto_merge=true -F delete_branch_on_merge=true)`);
+	// `gh api` keeps to the default host while `gh pr view` follows the remote, so the read must prove it is this PR's repo.
+	if (!isPrRepo(repo, p.url)) return { go: false, faults: [...faults, `the repo read (${JSON.stringify(repo.html_url)}) is not the repo of PR ${pr} (${p.url}), so no setting of it counts`], facts };
+	// REST leaves both settings out for a login without push rights: that is not the same as off.
+	if (repo.allow_auto_merge == null || repo.delete_branch_on_merge == null) faults.push(`this login cannot read the merge settings of ${repo.full_name}: it needs push rights there`);
+	else if (repo.allow_auto_merge !== true || repo.delete_branch_on_merge !== true) {
+		faults.push(`${repo.full_name} must allow auto-merge and delete branches on merge (the owner runs: gh api -X PATCH repos/${repo.full_name} -F allow_auto_merge=true -F delete_branch_on_merge=true)`);
 	}
 
 	// 4. A required check on the base: branch protection or a ruleset.
-	const prot = json(gh('api', `repos/${repo.nameWithOwner}/branches/${encodeURIComponent(p.baseRefName)}/protection/required_status_checks`));
-	const rules = json(gh('api', `repos/${repo.nameWithOwner}/rules/branches/${encodeURIComponent(p.baseRefName)}`));
+	const prot = json(gh('api', `repos/${repo.full_name}/branches/${encodeURIComponent(p.baseRefName)}/protection/required_status_checks`));
+	const rules = json(gh('api', `repos/${repo.full_name}/rules/branches/${encodeURIComponent(p.baseRefName)}`));
 	const fromProt = prot ? [...(prot.contexts || []), ...(prot.checks || []).map((c) => c.context)] : [];
 	const fromRules = Array.isArray(rules) ? rules.filter((r) => r.type === 'required_status_checks')
 		.flatMap((r) => ((r.parameters || {}).required_status_checks || []).map((c) => c.context)) : [];
@@ -158,8 +166,9 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	if (running.length) faults.push(`checks are still running and none requires them: ${running.join(', ')}; wait, then run the gate again`);
 
 	// 5. The diff, from the merge base on the remote base branch.
-	if (git('fetch', '--quiet', 'origin', p.baseRefName).status !== 0) faults.push(`could not fetch ${p.baseRefName} from origin, so the base would be stale`);
-	const baseRef = `origin/${p.baseRefName}`;
+	const pinned = pinBase({ git, gh, repo: repo.full_name, base: p.baseRefName, cwd });
+	if (pinned.fault) return { go: false, faults: [...faults, pinned.fault], facts };
+	const baseRef = pinned.tip;
 	const mb = git('merge-base', baseRef, p.headRefOid);
 	let files = [];
 	if (mb.status !== 0) faults.push(`no merge base between ${baseRef} and the head`);
@@ -311,6 +320,28 @@ function settingFaults({ cwd, baseRef, git }) {
 	});
 }
 
+// `gh api` keeps to the default host while `gh pr view` follows the remote, so a repo read must prove it is the PR's.
+const isPrRepo = (repo, url) => String(url || '').toLowerCase().startsWith(`${String(repo.html_url || '').toLowerCase()}/pull/`) && REPO_NAME.test(String(repo.full_name || ''));
+
+/**
+ * Fetch a base branch and hold it to the tip GitHub reports, so what is judged is GitHub's base whatever the checkout's
+ * remotes, refs and grafts say. Later reads use the sha: a short name can resolve to a tag or branch made here.
+ *
+ * Returns:
+ *     { tip } or { fault }
+ */
+function pinBase({ git, gh, repo, base, cwd }) {
+	const grafts = path.resolve(cwd, git('rev-parse', '--git-path', 'info/grafts').stdout.trim() || '.git/info/grafts');
+	if (fs.existsSync(grafts)) return { fault: `${grafts} rewrites history for git, so no diff here can be trusted: remove it` };
+	const tracking = `refs/remotes/origin/${base}`;
+	if (git('fetch', '--quiet', 'origin', `+refs/heads/${base}:${tracking}`).status !== 0) return { fault: `could not fetch ${base} from origin, so the base would be stale` };
+	const tip = (json(gh('api', `repos/${repo}/branches/${encodeURIComponent(base)}`)) || {}).commit?.sha;
+	if (!tip) return { fault: `gh could not read the tip of ${base}, so nothing can be judged against it` };
+	const local = git('rev-parse', '--verify', '--quiet', tracking).stdout.trim();
+	if (tip !== local) return { fault: `origin/${base} is at ${local.slice(0, 12) || 'nothing'}, and GitHub's base is at ${tip.slice(0, 12)}: run the gate again in case it just moved, else check that origin is this repo` };
+	return { tip };
+}
+
 function bodyFaults({ cwd, config, body, title, baseRef, git, run }) {
 	const name = CONVENTIONAL.test(title) ? 'pr-body-audit-lean.mjs' : 'pr-body-audit.mjs';
 	const found = baseAudit(git, baseRef, name, config);
@@ -335,10 +366,13 @@ export function live({ kind, id, cwd, config = configDir(), run = realRun }) {
 	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
 	const gh = (...a) => run('gh', a, cwd);
 	if (kind === 'pr') {
-		const p = json(gh('pr', 'view', String(id), '--json', 'title,body,baseRefName'));
+		const p = json(gh('pr', 'view', String(id), '--json', 'title,body,baseRefName,url'));
 		if (!p) return { ok: false, faults: [`gh could not read PR ${id}`] };
-		git('fetch', '--quiet', 'origin', p.baseRefName);
-		const faults = bodyFaults({ cwd, config, body: p.body || '', title: p.title || '', baseRef: `origin/${p.baseRefName}`, git, run });
+		const repo = json(gh('api', 'repos/{owner}/{repo}'));
+		if (!repo || !isPrRepo(repo, p.url)) return { ok: false, faults: [`the repo read is not the repo of PR ${id} (${p.url})`] };
+		const pinned = pinBase({ git, gh, repo: repo.full_name, base: p.baseRefName, cwd });
+		if (pinned.fault) return { ok: false, faults: [pinned.fault] };
+		const faults = bodyFaults({ cwd, config, body: p.body || '', title: p.title || '', baseRef: pinned.tip, git, run });
 		return { ok: !faults.length, faults };
 	}
 	if (kind === 'release') {
