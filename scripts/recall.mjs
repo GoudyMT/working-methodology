@@ -43,8 +43,11 @@ const SCORES = 'docs/evals/results/recall-scores.md';
 const BRIEF = 'docs/evals/recall-scorer-brief.md';
 const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 // What the gate guards: the rule text, and the keys, brief and harness that grade it.
-const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall\.mjs$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
-const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)( owner-accepted)?$/;
+const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall(-score)?\.mjs$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
+// From keys v4 a line names the control's median too (S18-7), so CI can see the control sits clearly under the kit.
+const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)(?: control (\d+))?( owner-accepted)?$/;
+const CONTROL_LINE = /^control: (\d+)$/;
+const CONTROL_FROM = 4;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
 export function currentVersion(text) {
@@ -94,10 +97,14 @@ const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8
  * Returns:
  *     { project, user, userRelease, approve }
  */
-export function installFacts({ projectDir, home }) {
+export function installFacts({ projectDir, home, osHome = os.homedir() }) {
   const stamp = readJson(path.join(projectDir, '.kit', 'kit-version.json'));
   const user = readJson(path.join(home, 'kit-install.json'));
+  // A throwaway run still loads ~/.claude/CLAUDE.md as a parent folder's file (R2): its version is recorded too.
+  const real = isThrowaway(home, osHome) ? readJson(path.join(osHome, '.claude', 'kit-install.json')) : undefined;
+  const global = real === undefined ? undefined : !real ? 'none' : `${real.version} (${real.describe})`;
   return {
+    ...(global === undefined ? {} : { global }),
     project: !stamp ? 'none' : stamp.release === false ? `${stamp.version} (unreleased ${stamp.describe})` : stamp.version,
     user: !user ? 'none' : user.release === false ? `${user.version} (unreleased ${user.describe})` : `${user.version} (${user.describe})`,
     userRelease: !!user && user.release === true,
@@ -125,9 +132,21 @@ export function checkHome(env) {
   if (env.KIT_CLAUDE_HOME && env.KIT_CLAUDE_HOME !== env.CLAUDE_CONFIG_DIR) throw new Error('KIT_CLAUDE_HOME is set, but sessions read CLAUDE_CONFIG_DIR: set both to one folder, or neither');
 }
 
+/** Refuses a run whose sessions would read another folder than the layer checked: the CLI itself says which it reads. */
+export function checkSessionHome(home, run) {
+  const r = run('claude', ['auth', 'status'], {});
+  let dir;
+  try { dir = JSON.parse(r.stdout).configDirectory; } catch { /* reported below */ }
+  if (r.status !== 0 || !dir) throw new Error(`cannot read the sessions' config folder from claude auth status: ${(r.stderr || r.stdout || '').trim().slice(0, 200)}`);
+  const real = (p) => { let x; try { x = fs.realpathSync(p); } catch { x = path.resolve(p); } return process.platform === 'win32' ? x.toLowerCase() : x; };
+  if (real(dir) !== real(home)) throw new Error(`sessions read ${dir}, but the layer checked is ${home}: set CLAUDE_CONFIG_DIR and KIT_CLAUDE_HOME to one folder`);
+}
+
 /** Whether a Claude folder sits strictly inside kit-probes under the home folder, links followed. */
 function isThrowaway(home, osHome) {
   const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  // kit-probes itself a link (to the home folder, say) would make the real Claude folder a throwaway (R1).
+  try { if (fs.lstatSync(path.join(osHome, 'kit-probes')).isSymbolicLink()) return false; } catch { /* absent: nothing inside it either */ }
   const inside = path.relative(real(path.join(osHome, 'kit-probes')), real(home));
   return Boolean(inside) && !inside.startsWith('..') && !path.isAbsolute(inside);
 }
@@ -135,7 +154,17 @@ function isThrowaway(home, osHome) {
 /** Refuses a Claude folder that is not a released kit install or a throwaway one, before any folder or session exists. */
 export function checkUserLayer(home, osHome = os.homedir()) {
   const user = readJson(path.join(home, 'kit-install.json'));
-  if (user?.release !== true && !(user && isThrowaway(home, osHome))) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
+  // A throwaway still holds a real install: release false and a version (R3).
+  const unreleasedInstall = user?.release === false && typeof user?.version === 'string';
+  if (user?.release !== true && !(unreleasedInstall && isThrowaway(home, osHome))) throw new Error(`${home} is not a released kit install (kit: ${user?.version || 'none'}): run install user from a release, then run this again`);
+  // release: true is a flag; a file edited after the install no longer reads as that release (I20).
+  if (user?.release === true) {
+    const edited = Object.entries(user.files || {}).filter(([key, hash]) => {
+      if (key.startsWith('memory/')) return false;
+      try { return crypto.createHash('sha256').update(fs.readFileSync(path.join(home, key), 'utf8')).digest('hex') !== hash; } catch { return true; }
+    }).map(([key]) => key);
+    if (edited.length) throw new Error(`${home} is not a released kit install: changed by hand or missing since install: ${edited.join(', ')}`);
+  }
 }
 
 /**
@@ -157,15 +186,19 @@ export function setupProbe({ dir, kitDir, noKit, released, run }) {
 }
 
 /** What the run made: its folder and the memory install wrote for it. Nothing a later run can read is left behind. */
-export function removeProbe({ dir, home, slug }) {
-  if (!/kit-probes[\\/][0-9a-f]{6}[\\/]p[0-9a-f]{6}$/.test(dir)) throw new Error(`${dir} is not a probe folder`);
+export function removeProbe({ dir, home, slug, osHome = os.homedir() }) {
+  // The probe's shape, under this home's own kit-probes, links followed: a probe-shaped folder anywhere else stays.
+  const inside = path.relative(path.join(osHome, 'kit-probes'), path.resolve(dir));
+  if (!/kit-probes[\\/][0-9a-f]{6}[\\/]p[0-9a-f]{6}$/.test(dir) || !/^[0-9a-f]{6}[\\/]p[0-9a-f]{6}$/.test(inside) || !isThrowaway(dir, osHome)) throw new Error(`${dir} is not a probe folder`);
+  // One plain folder name: "..", "" or a path would reach the Claude folder itself.
+  if (!/^[\w.-]+$/.test(slug || '') || /^\.+$/.test(slug)) throw new Error(`${JSON.stringify(slug)} is not a memory slug`);
   fs.rmSync(path.dirname(dir), { recursive: true, force: true });
   fs.rmSync(path.join(home, 'projects', slug), { recursive: true, force: true });
 }
 
 export function runHeader({ label, keys, facts, when, cli }) {
   return [`# Recall run: ${label}`, '', `When: ${when}`, 'Path: kit-probes/<hex>/p<hex>', `CLI: ${cli}`, `Keys: v${keys}`,
-    `Project kit: ${facts.project}`, `User kit: ${facts.user}`, `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
+    `Project kit: ${facts.project}`, `User kit: ${facts.user}`, ...(facts.global ? [`Global CLAUDE.md also loaded from ~/.claude: ${facts.global}`] : []), `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
 }
 
 /**
@@ -185,14 +218,22 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   const dropped = removed.some((l) => /^gate:/i.test(l.trim()));
   if (!lines.length && !dropped && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
   if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the floor rests on it. Only the owner may: add a current gate line ending in owner-accepted' };
-  if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>"` };
+  if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it` };
   const last = lines[lines.length - 1];
   const m = last.match(GATE_LINE);
   if (!m) return { ok: false, detail: `cannot read the gate line: ${last}` };
-  const [, label, median, baseline, usedBrief, usedKeys, accepted] = m;
+  const [, label, median, baseline, usedBrief, usedKeys, inline, accepted] = m;
+  // CI runs the base branch's gate, which reads only the gate line, so the control sits on its own line.
+  const control = inline ?? added.map((l) => l.trim().match(CONTROL_LINE)).filter(Boolean).pop()?.[1];
+  // Fixing a typed record on an older ruler is the owner's, in a PR that changes nothing the ruler grades (S18-6).
+  if ((Number(usedBrief) !== brief || Number(usedKeys) !== keys) && accepted && !changed.some((f) => GRADED.test(f))) {
+    return { ok: true, detail: `${label}: a correction to a line on brief v${usedBrief} keys v${usedKeys}; the owner accepted it` };
+  }
   if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
     return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
   }
+  if (Number(usedKeys) >= CONTROL_FROM && control == null) return { ok: false, detail: `${label}: from keys v${CONTROL_FROM} a gate line names the control, on its own line beside it: "control: <n>"` };
+  if (control != null && Number(control) >= Number(baseline)) return { ok: false, detail: `${label}: control ${control} is not under the baseline ${baseline}, so the score does not show the rules` };
   if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
   const faults = [
@@ -207,13 +248,23 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
 
 function gate([base, head]) {
   if (!base || !head) throw new Error('usage: node scripts/recall.mjs gate <base> <head>');
+  // No output cap: a capped read fails, and a failed read of the base would drop the floor (S18-5).
+  const opts = { encoding: 'utf8', maxBuffer: 1 << 30 };
   const git = (...a) => {
-    const g = spawnSync('git', a, { encoding: 'utf8' });
-    if (g.status !== 0) throw new Error(`git ${a.join(' ')}: ${g.stderr.trim()}`);
+    const g = spawnSync('git', a, opts);
+    if (g.status !== 0) throw new Error(`git ${a.join(' ')}: ${(g.stderr || String(g.error)).trim()}`);
     return g.stdout.split('\n');
   };
-  const now = (rel) => fs.readFileSync(path.join(KIT, rel), 'utf8');
-  const onBase = (rel) => { const g = spawnSync('git', ['show', `${base}:${rel}`], { encoding: 'utf8' }); return g.status === 0 ? g.stdout : ''; };
+  // A file at a commit, or '' when that commit has none; any other failure stops the gate.
+  const at = (ref, rel) => {
+    const g = spawnSync('git', ['show', `${ref}:${rel}`], opts);
+    if (g.status === 0) return g.stdout;
+    if (g.error || !/does not exist|exists on disk, but not in|bad revision|invalid object name/i.test(g.stderr)) throw new Error(`git show ${ref}:${rel}: ${(g.stderr || String(g.error)).trim()}`);
+    return '';
+  };
+  // The ruler is the head commit's, never the working tree's (S18-3).
+  const now = (rel) => at(head, rel);
+  const onBase = (rel) => at(base, rel);
   const baseVersion = (rel) => { const m = onBase(rel).match(/^Current version: v(\d+)$/m); return m ? Number(m[1]) : null; };
   const [brief, keys] = [currentVersion(now(BRIEF)), currentVersion(now(QUESTIONS_REL))];
   const edited = [[BRIEF, brief], [QUESTIONS_REL, keys]].some(([rel, v]) => baseVersion(rel) === v && onBase(rel) !== now(rel));
@@ -228,7 +279,8 @@ function gate([base, head]) {
     removed: record.filter((l) => l.startsWith('-') && !l.startsWith('---')).map((l) => l.slice(1)),
     brief,
     keys,
-    bar: passBar(now(QUESTIONS_REL), keys),
+    // Keys recall cannot run (no Pass line) cannot grade a PR (B7).
+    bar: (() => { questionCount(now(QUESTIONS_REL), keys); return passBar(now(QUESTIONS_REL), keys); })(),
     was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null, edited },
   });
   console.log(r.detail);
@@ -238,7 +290,7 @@ function gate([base, head]) {
 /** What a run asks and records, or a refusal: all of it before any session starts. */
 export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
   checkUserLayer(home, osHome);
-  const facts = installFacts({ projectDir, home });
+  const facts = installFacts({ projectDir, home, osHome });
   const keys = currentVersion(text);
   const qs = questions(text, keys);
   const count = questionCount(text, keys);
@@ -278,6 +330,7 @@ export function askAll({ qs, projectDir, run }) {
 export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools }) {
   checkUserLayer(home, osHome);
   checkHome(env);
+  checkSessionHome(home, run);
   const kit = path.resolve(kitDir || KIT);
   const projectDir = probePath(osHome);
   try {
@@ -290,7 +343,7 @@ export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when,
     fs.writeFileSync(out, lines.join('\n'));
     return out;
   } finally {
-    removeProbe({ dir: projectDir, home, slug: kitTools.projectSlug(projectDir) });
+    removeProbe({ dir: projectDir, home, slug: kitTools.projectSlug(projectDir), osHome });
   }
 }
 
@@ -306,7 +359,9 @@ async function main(argv) {
   console.log(`saved ${out}`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Paths compared after links: run through a junction, the script must still run, not exit 0 having done nothing (S18-2).
+const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   if (args[0] === 'gate') gate(args.slice(1)); else await main(args);
 }

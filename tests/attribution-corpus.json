@@ -132,7 +132,17 @@
     "_Requested&ensp;by **Pat**_",
     "_Req&zwnj;uested by **Pat**_",
     "_Req&#x2061;uested by **Pat**_",
-    "Requ\bested by Pat"
+    "Requ\bested by Pat",
+    "Req<b></b>uested by **Pat**",
+    "Re**quested** by **Pat**",
+    "_Req<span>uested</span> by Pat_",
+    "&#82equested by **Pat**",
+    "Requested&nbspby **Pat**",
+    "[//]: # \"Requested by Pat\"",
+    "[//]: # 'Requested by Pat'",
+    "- The job is done.\n  requested by the owner",
+    "Re~~quested~~ by **Pat**",
+    "&#x52<b></b>equested by **Pat**"
   ],
   "mustPass": [
     "The audit fails on a Requested by line, so remove it before pushing.",
@@ -160,7 +170,9 @@
     "This change was\nrequested by the owner after the last review.",
     "A line such as\n`Requested by Pat` is banned from these bodies.",
     "The flag is on -> requested by users.",
-    "Numeric form &#1114112; is out of range."
+    "Numeric form &#1114112; is out of range.",
+    "- The cleanup that was\n  requested by the owner now runs at closeout.",
+    "1. The check the owner\n   requested by email now runs."
   ],
   "unclear": [
     {

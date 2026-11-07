@@ -13,10 +13,10 @@
     { "id": "project", "name": "Project files", "does": "AGENTS.md, modules, scripts", "files": ["project/AGENTS.md", "project/standards", "project/.claude"] },
     { "id": "user", "name": "User files", "does": "skills, hooks, agent roles", "files": ["user/skills", "user/kit-hooks"] },
     { "id": "hooks", "name": "Hooks", "does": "kit check, gate, sweep guard, call cap", "files": ["project/.claude/kit-hook.cjs", "user/kit-hooks/kit-gate.cjs", "user/kit-hooks/call-cap.cjs", "user/kit-hooks/sweep-guard.cjs"] },
-    { "id": "audits", "name": "Audits", "does": "PR body, report, push checks", "files": ["project/.claude/pr-body-audit.mjs", "project/.claude/improvement-report.mjs", "project/.claude/first-push-check.mjs"] },
+    { "id": "audits", "name": "Audits", "does": "PR body, report, push checks, merge gate", "files": ["project/.claude/pr-body-audit.mjs", "project/.claude/improvement-report.mjs", "project/.claude/first-push-check.mjs", "user/kit-tools/merge-gate.mjs"] },
     { "id": "vendor", "name": "Vendor backups", "does": "credited third-party skills", "files": ["vendor/CREDITS.md"] },
-    { "id": "tests", "name": "Tests", "does": "prove every guard and format", "files": ["tests/kit.test.mjs"] },
-    { "id": "evals", "name": "Recall test", "does": "do sessions follow the rules", "files": ["scripts/recall.mjs", "docs/evals/recall-questions.md", "docs/evals/recall-scorer-brief.md"] }
+    { "id": "tests", "name": "Tests", "does": "prove every guard and format", "files": ["tests/kit.test.mjs", "tests/merge-gate.test.mjs"] },
+    { "id": "evals", "name": "Recall test", "does": "do sessions follow the rules", "files": ["scripts/recall.mjs", "scripts/recall-score.mjs", "docs/evals/recall-questions.md", "docs/evals/recall-scorer-brief.md"] }
   ],
   "links": [
     { "from": "build", "to": "rules", "verb": "reads" },
@@ -32,8 +32,9 @@
     { "item": "Rule modules with fixed IDs, built per tool", "state": "done", "evidence": "1.0.0; build-freshness test" },
     { "item": "Sweep auto-approval with a reviewer guard", "state": "done", "evidence": "1.8.0-1.9.1" },
     { "item": "Missing kit is a full stop", "state": "done", "evidence": "1.10.0-1.11.0" },
-    { "item": "Standby plugins, real start load, craft floor", "state": "doing", "evidence": "commit 1a02304, unreleased" },
-    { "item": "Recall test at 1.12.0", "state": "doing" },
+    { "item": "Standby plugins, real start load, craft floor", "state": "done", "evidence": "1.12.0" },
+    { "item": "Recall gate in CI on one ruler, with a pass bar", "state": "done", "evidence": "1.18.0-1.20.0; recall-scores.md" },
+    { "item": "Merge gate: auto-merge only when fixed checks pass", "state": "doing", "evidence": "1.21.0 branch, tests/merge-gate.test.mjs" },
     { "item": "Consolidation: one detailed home per task", "state": "next" }
   ]
 }

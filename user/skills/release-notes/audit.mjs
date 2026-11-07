@@ -51,14 +51,17 @@ const STYLED = new RegExp(`(?:[_*~[(|]|(?<!-)>|=["'])\\s*${BY}|${BY}\\s*(?:\\*\\
 
 // Disguises fall away first: entities, invisible characters, odd spaces, and the wrappers that hide a line from view.
 const plain = (text) => text
-	.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (_, dec, hex, name) => {
-		if (name) return ENTITIES[name.toLowerCase()] ?? '';
+	// A browser reads a number, and the five names below, with no semicolon too (&#82equested).
+	.replace(/&(?:#(\d+);?|#x([\da-f]+);?|([a-z]+);|(nbsp|lt|gt|amp|quot))/gi, (_, dec, hex, name, bare) => {
+		if (name || bare) return ENTITIES[(name || bare).toLowerCase()] ?? '';
 		const code = dec ? Number(dec) : parseInt(hex, 16);
 		return code > 0x10FFFF ? ' ' : String.fromCodePoint(code);
 	})
 	.replace(/[\p{Cf}\x00-\x08\x0B\x0E-\x1F]/gu, '')
 	.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
-	.replace(/<!-{2,}|-{2,}>|^\[[^\]\n]*\]:\s*#\s*\(/gm, '\n');
+	.replace(/<!-{2,}|-{2,}>|^\[[^\]\n]*\]:\s*(?:#|<>)\s*[("']/gm, '\n');
+// Markup inside a word hides it from the reader of the source, not the page: Re**quested**, Req<b></b>uested.
+const unbroken = (text) => text.replace(/<[^>\n]*>/g, '').replace(/(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\w)|(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\s+by\b)/gi, '');
 
 // A code span in a sentence is prose about the line; one alone on its line is the line.
 const noSpans = (body) => body.replace(/\[[xX]\]/g, ' ').replace(/(?<!\\)`[^`\n]*(?<!\\)`(?=[^\n]*\w)/g, ' ');
@@ -68,14 +71,16 @@ function startsLine(body) {
 	for (const m of body.matchAll(AT_START)) {
 		const before = body.slice(0, m.index).split(/\r?\n|\r/);
 		const above = before.length > 1 ? before[before.length - 2].trim() : '';
-		if (m[1] || !/^r/.test(m[2]) || !above || /^[#|>-]/.test(above)) return true;
+		// A list item's wrapped text continues its sentence too ("- the cleanup that was" / "  requested by ...").
+		const listItem = /^([-*+]|\d+[.)])\s+\S/.test(above) && !/[.!?:]$/.test(above);
+		if (m[1].trim() || !/^r/.test(m[2]) || !above || /^[#|>]/.test(above) || (/^-/.test(above) && !listItem)) return true;
 	}
 	return false;
 }
 {
   const body = plain(text);
   const prose = noSpans(body);
-  if (/claude-projects-attribution/i.test(body) || startsLine(prose) || STYLED.test(prose)) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
+  if (/claude-projects-attribution/i.test(body) || [prose, unbroken(prose)].some((p) => startsLine(p) || STYLED.test(p))) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
 }
 
 const pkg = path.join(process.cwd(), 'package.json');

@@ -50,10 +50,13 @@ const SEV = /\b(critical|high|medium|low)\b(?!-)/i;
 const severity = (s) => ((s.match(SEV) || [])[1] || '').toLowerCase();
 // A high or critical is never carried to the next run (rule:finding-pipeline): it is fixed before the PR, or the
 // owner accepts it. DEFERRED is for medium and below.
-const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bACCEPTED owner [^\s|]/.test(l);
+// An acceptance gives its reason in at least three words; "ACCEPTED owner x" names no reason.
+const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bACCEPTED owner [^\s|]+(?: +[^\s|]+){2,}/.test(l);
 const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit> or ACCEPTED owner <why>; DEFERRED is for medium and below`);
 let sevCol = -1;
-lines.forEach((l, i) => {
+// A table may sit indented under a bullet (the fix example's does), so rows are read with their indent dropped.
+lines.forEach((raw, i) => {
+	const l = raw.trimStart();
 	if (/^\|/.test(l)) {
 		const cells = l.split('|').slice(1, -1).map((c) => c.trim());
 		// A header row (the next line is the divider) sets which column holds severity, or none.

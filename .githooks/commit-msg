@@ -1,0 +1,4 @@
+#!/bin/sh
+# The kit source installs no kit, so its own commits are checked here: one line, "type: subject", no AI or tool
+# trailer (rule:commit-message-format). CI checks the same on a PR; catching it at commit spares a history rewrite.
+exec node "$(dirname "$0")/../project/.claude/name-check.mjs" message "$1"

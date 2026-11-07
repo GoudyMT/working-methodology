@@ -116,7 +116,7 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
    runs. A red gate is a finding: diagnose with data, fix the root, one change per commit. Remove the finished
    worktrees.
 6. **Review (lead and user).** The project's pre-PR review runs as ONE review wave on the integrated branch,
-   scaled to stakes, under a Swarm Contract cleared by `approve.mjs` first (the user decides only on its ASK; FIX THE CONTRACT is the lead's to fix and rerun;
+   scaled to stakes, under a Swarm Contract cleared by `~/.claude/skills/pre-pr-sweep/approve.mjs` first (the user decides only on its ASK; FIX THE CONTRACT is the lead's to fix and rerun;
    rule:sweep-auto-approval). The contract names each role, the distinct question
    only it asks, its context and what a finding from it looks like, and gives each role a call cap (`calls`; the
    script computes its budget) and a stop rule: at most 8 findings, each under 80 words, and the first counter-example in each area,

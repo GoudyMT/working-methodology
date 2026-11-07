@@ -1049,6 +1049,21 @@ export function parseModule(text) {
  * Returns:
  *     Map of kit-relative output path -> text
  */
+/**
+ * Turn on the kit source's own commit-message hook, once per clone: the kit source installs no kit, so nothing else
+ * checks its commit messages before CI does. A hooks path the owner set is left alone.
+ *
+ * Returns:
+ *     'set', 'present', or why it was left alone
+ */
+export function sourceHooks(kit) {
+  if (!fs.existsSync(path.join(kit, '.githooks', 'commit-msg'))) return 'no .githooks/commit-msg';
+  const now = spawnSync('git', ['-C', kit, 'config', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim();
+  if (now === '.githooks') return 'present';
+  if (now) return `core.hooksPath is ${now}: left alone`;
+  return spawnSync('git', ['-C', kit, 'config', 'core.hooksPath', '.githooks']).status === 0 ? 'set' : 'not a git repository';
+}
+
 export function build({ kit }) {
   const dir = path.join(kit, 'rules');
   const mods = fs.readdirSync(dir).filter((n) => n.endsWith('.md')).sort()
@@ -1073,6 +1088,11 @@ export function build({ kit }) {
     out.set(`project/${where(m)}`, front + stamp(m.src) + '\n' + m.body);
   }
   const rows = mods.flatMap((m) => headings(m.body).map((h) => `| ${h.id} | ${h.title} | \`${where(m)}\` | ${(m.meta.tags[h.id] || []).join(', ')} |`));
+  // The merge gate needs the PR-body audits where no branch or session can edit them: a kit-local project keeps
+  // .claude/ out of git, so its base holds none. An exact copy, so the two cannot drift.
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
+    out.set(`user/kit-tools/audits/${f}`, fs.readFileSync(path.join(kit, 'project', '.claude', f), 'utf8'));
+  }
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
     'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
@@ -1336,7 +1356,7 @@ function main(argv) {
       fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
       fs.writeFileSync(path.join(kit, rel), text);
     }
-    console.log(`build: wrote ${out.size} file(s) from rules/`);
+    console.log(`build: wrote ${out.size} file(s) from rules/; commit-msg hook: ${sourceHooks(kit)}`);
   } else if (cmd === 'status') {
     const r = status({ kit, home, projectDir: target || process.cwd() });
     console.log(r.text);
@@ -1358,4 +1378,6 @@ function main(argv) {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2));
+// Paths compared after links: run through a junction, the CLI must still run, not exit 0 having done nothing.
+const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.meta.url))) main(process.argv.slice(2));

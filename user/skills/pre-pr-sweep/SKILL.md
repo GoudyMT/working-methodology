@@ -36,17 +36,18 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    running the script again. **Limits:** it stops slips, not a determined workaround: deleting or rewriting the log,
    a false `--base`, clearing the AI-shell marker, invented outcome numbers, or an `--owner-yes` the owner never gave
    would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
-3. **Run the agents this session** as the `reviewer` role, against the branch HEAD, each with its role's context
+3. **Run the agents this session** as the `reviewer` role, against the branch HEAD (from another checkout, the brief names the cleared one), each with its role's context
    and a finding cap; each brief carries its role's `calls` from the contract in these words:
    "Call cap: <n>. A call is one message from you, however many tools it runs, so run independent reads together in one message. A hook counts
    your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did
    not get to as 'not checked'." In a project the start notice says has no hook, drop the hook sentence and have the reviewer count. The cap's last two calls are for the report. What a role did not check goes in the
-   report as not checked, never as a pass. The sweep guard refuses a brief with no such line. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
+   report as not checked, never as a pass. Each brief also carries `Sweep: <hash> role <n>` from the start notice
+   (n is the role's place in the contract). The sweep guard refuses a brief without both lines. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
-   gates), with `- **Tier:** <tier>` on its first lines, in the shape of the example for its tier. Run
+   gates), with `- **Tier:** <tier>` and `- **Covers:** <full sha of the commit the sweep read>` on its first lines (the merge gate reads it), in the shape of the example for its tier. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.
 5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
    check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
@@ -54,11 +55,11 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    through `approve.mjs` like the first, with `"resweepOf": "<first contract.json, relative to this contract>"` and `"fixed": [{ "finding",
    "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). The first contract
    stays byte for byte as it was cleared, and a re-sweep declares only modifiers the first sweep had. A second re-sweep
-   is refused: what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it. Update the report. Summarize the result in the PR
+   is refused: what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it. Update the report, its Covers line to the re-sweep's HEAD. Summarize the result in the PR
    body by dimension and verdict, never by agent (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
-   --real <n after triage> --duplicates <n repeated between roles>` (`--agents`: each reviewer's agent id, one per
-   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a sweep cut short, where neither works (a reviewer never finished, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds
+   --real <n after triage> --duplicates <n repeated between roles>` (`--agents auto` finds each reviewer from its brief's Sweep tag, so ids lost to a compaction do not end a sweep; or each reviewer's agent id, one per
+   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a reviewer that crashed (no report, not finished, its transcript quiet for 10 minutes): `node approve.mjs <contract.json> --retry <n> --crashed <id>` gives role n one more start with the same brief, and `--agents` names the retry. A crash's tokens count against its role's budget; a sweep cut short, where none of these works (a role's second crash, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds
    `--carried <n>`, a sweep that fixes carried findings `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
    the mid model, for the reviewer model trial). A bug later found in code the
    sweep passed: `--escape "<what>"`. `--summary` prints the trial so far; put its line in the rundown.

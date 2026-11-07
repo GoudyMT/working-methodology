@@ -14,14 +14,14 @@
 - **G5 Blast radius:** files, shipped vs new, public interfaces, other callers, the revert story, in the report; the owner's go only for shipped code outside the branch's scope or a public interface.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR, or the owner accepts it.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
 1. **A standalone fix PR only for harm:** data loss, a stuck user, a silent outage.
-2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the extremely minor (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings go to the handoff's carry-overs for the next focus build (a separate PR only for item 1's harm).
+2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the trivial (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings at medium or below go to the handoff's carry-overs for the next focus build.
 3. **Then features;** roadmap fixes ride a feature PR that touches their code; folded-in findings go in the before / after table.
-4. **A run's order:** the feature comes FIRST (even when a handoff lists fixes ahead): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs are built on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
+4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
 
 **Value check:** tier remaining work by what a user would notice (high: someone hits it; medium: keyboard or screen-reader correctness; low: millisecond races, byte trims, test hygiene), say the tier at each checkpoint, and recommend stopping when reviews return ever smaller things, before the owner asks; the value lens ends the loop, not fatigue. Why: a sweep generates work faster than value.
 
@@ -53,7 +53,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 
-A feature, fix or triage sweep's Swarm Contract is approved by `~/.claude/skills/pre-pr-sweep/approve.mjs` (`$HOME` in PowerShell; or your Claude config folder), never an agent: same contract, same answer. If it is not there, the kit's user layer is not installed: say so, and the owner approves. It runs first: an approval prints the owner's notice; only an ASK goes to the owner (yes logged, `--owner-yes`); a hook holds reviewers until the log clears this HEAD and contract. It approves only when the tier's and modifiers' roles are there, each with its own question, context, finding shape and budget, within the tier's caps; else the owner decides, told why. First push and launch gate always go to the owner. Each decision and outcome is logged; it pauses after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row, 10 again after any other pause), and only the owner resumes it. Why: a routine sweep need not wait.
+A feature, fix or triage sweep's Swarm Contract is approved by `~/.claude/skills/pre-pr-sweep/approve.mjs` (`$HOME` in PowerShell; or your Claude config folder), never an agent: same contract, same answer. If not there, the kit's user layer is not installed: say so, and the owner approves. It runs first; only an ASK goes to the owner (yes logged, `--owner-yes`); hooks hold reviewers until the log clears HEAD and contract, then at their caps. It approves when the tier's and modifiers' roles are there, each with its own question, context, finding shape and call cap (its budget), within the tier's caps; else FIX THE CONTRACT (Claude's slip) or the owner decides, told why. First push and launch gate always ask. It logs decisions and outcomes, pausing after tokens 25% over budget, a third of findings repeated, a bug escaping a passed sweep, or every 10 approvals (the trial review; 20 after two clean in a row), and only the owner resumes it; a cap overrun is named at the outcome. Why: a routine sweep need not wait.
 
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 

@@ -1,3 +1,4 @@
 node_modules/
 reports/
 scrub.local.json
+scripts/recall-gate-base.mjs

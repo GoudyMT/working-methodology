@@ -5,7 +5,9 @@
   "permissions": {
     "ask": [
       "Bash(git push *)",
-      "PowerShell(git push *)"
+      "PowerShell(git push *)",
+      "Bash(*approve.mjs*--owner-yes*)",
+      "PowerShell(*approve.mjs*--owner-yes*)"
     ]
   },
   "hooks": {
