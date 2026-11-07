@@ -1,0 +1,20 @@
+#!/bin/sh
+# The kit source's push hold: the same armed-head stop the kit installs in every project (project/.githooks/pre-push),
+# so the merge gate can arm a PR here too. Pushes stay the owner's by the permission rules; this only stops a push
+# over a head still armed, since GitHub documents no head pin past a writer's push (rule:standing-grants).
+refs=$(cat)
+common=$(git rev-parse --git-common-dir)
+gatelog="$common/kit-merge-gate.log"
+if [ -f "$gatelog" ]; then
+  while read -r lref lsha rref rsha; do
+    case "$rsha" in *[!0]*) ;; *) continue ;; esac
+    pr=$(awk -v sha="$rsha" '$2=="ARMED" && $4==sha { n=$3; sub(/.*\//,"",n); armed[n]=1 } $2=="DISARMED" { delete armed[$3] } END { s=""; for (n in armed) { printf "%s%s", s, n; s=" " } }' "$gatelog")
+    if [ -n "$pr" ]; then
+      echo "Push blocked: PR $pr is armed at this head. Run node ~/.claude/kit-tools/merge-gate.mjs disarm $pr first, then the gate again after the push." >&2
+      exit 1
+    fi
+  done <<EOF
+$refs
+EOF
+fi
+exit 0

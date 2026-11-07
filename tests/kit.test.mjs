@@ -6524,11 +6524,12 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
   assert.throws(() => checkSessionHome(home, () => ({ status: 1, stdout: '', stderr: 'nope' })), /cannot read/);
 });
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
-test('the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher', () => {
+// The kit source holds its own pushes the same way (.githooks/pre-push), so the gate can arm a PR there too.
+for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, () => {
   const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.mkdirSync(path.join(dir, '.githooks'));
-  fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+  fs.copyFileSync(path.resolve(hook), path.join(dir, '.githooks', 'pre-push'));
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
   const head = 'a'.repeat(40);
   const other = 'b'.repeat(40);

@@ -16,8 +16,9 @@ const tmpRoot = kitTemp.sessionRoot();
 const { makeTemp } = kitTemp;
 
 const KIT = path.resolve('.');
+// The test's own git runs no hooks: the work repo's pre-push is the gate's hold, not a step of the test.
 const sh = (cwd, ...a) => {
-	const r = spawnSync('git', a, { cwd, encoding: 'utf8' });
+	const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', ...a], { cwd, encoding: 'utf8' });
 	if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
 	return r.stdout.trim();
 };
@@ -40,12 +41,18 @@ function cleared(work, sha, decision = {}, outcome = {}) {
 
 function setup() {
 	const root = makeTemp('merge-gate-');
-	const origin = path.join(root, 'origin.git');
+	// Named as GitHub names it, so the gate's check that origin is the PR's repo reads it as o/r.
+	const origin = path.join(root, 'github.com', 'o', 'r.git');
 	const work = path.join(root, 'work');
 	const config = path.join(root, 'config');
 	sh(root, 'init', '-q', '--bare', '-b', 'main', origin);
 	sh(root, 'clone', '-q', origin, work);
 	sh(work, 'config', 'user.name', 't'); sh(work, 'config', 'user.email', 't@t');
+	// The push hold the kit installs, outside the repo as install puts it.
+	const hooks = path.join(root, 'kit-hooks');
+	fs.mkdirSync(hooks);
+	fs.copyFileSync(path.join(KIT, 'project/.githooks/pre-push'), path.join(hooks, 'pre-push'));
+	sh(work, 'config', 'core.hooksPath', hooks);
 	sh(work, 'checkout', '-q', '-b', 'main');
 	fs.mkdirSync(path.join(work, '.claude'));
 	for (const f of fs.readdirSync(path.join(KIT, 'project/.claude'))) {
@@ -77,15 +84,16 @@ function setup() {
 		armed: false,
 		calls: [],
 	};
-	const run = (cmd, args, cwd) => {
+	const run = (cmd, args, cwd, env) => {
 		if (cmd !== 'gh') {
-			const r = spawnSync(cmd, args, { cwd, encoding: 'utf8' });
+			const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', env: env ? { ...process.env, ...env } : process.env });
 			return { status: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' };
 		}
 		state.calls.push(args.join(' '));
 		const ok = (o) => ({ status: 0, stdout: JSON.stringify(o), stderr: '' });
 		const no = { status: 1, stdout: '', stderr: 'HTTP 404' };
 		// Like the real gh, it answers only the fields asked for, so a field dropped from a list goes missing here too.
+		if (args[0] === 'pr' && args[1] === 'view' && state.readBackFails && args.includes('autoMergeRequest,state')) return no;
 		if (args[0] === 'pr' && args[1] === 'view') {
 			const full = { state: 'OPEN', ...state.pr, autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null };
 			return ok(Object.fromEntries(args[args.indexOf('--json') + 1].split(',').filter((k) => k in full).map((k) => [k, full[k]])));
@@ -206,7 +214,7 @@ const CASES = [
 	['a failed read of the base tip', (s) => { s.state.baseTip = ''; }, /could not read the tip/],
 	['an origin that is another repo', (s) => {
 		const other = path.join(s.root, 'other.git');
-		sh(s.root, 'clone', '-q', '--bare', path.join(s.root, 'origin.git'), other);
+		sh(s.root, 'clone', '-q', '--bare', path.join(s.root, 'github.com', 'o', 'r.git'), other);
 		sh(s.work, 'push', '-q', other, 'HEAD:main');
 		s.state.baseTip = sh(s.work, 'rev-parse', 'refs/remotes/origin/main');
 		sh(s.work, 'remote', 'set-url', 'origin', other);
@@ -236,6 +244,9 @@ const CASES = [
 	}, /gate or rule paths.*\.githooks/],
 	['an uncommitted change in the working copy', (s) => fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nlocal\n'), /uncommitted/],
 	['a clearing logged by a short hash', (s) => { freshLog(s); cleared(s.work, s.sha.slice(0, 7)); }, /never cleared/],
+	['no push hold', (s) => sh(s.work, 'config', '--unset', 'core.hooksPath'), /no push hold: core\.hooksPath is not set/],
+	['a pre-push hook that does not hold an armed head', (s) => fs.writeFileSync(path.join(s.root, 'kit-hooks', 'pre-push'), '#!/bin/sh\nexit 0\n'), /no push hold: .*pre-push does not stop/],
+	['a check name that would write its own triage lines', (s) => { s.state.pr.statusCheckRollup = [{ name: 'ci\n# GO: all clear', status: 'COMPLETED', conclusion: 'FAILURE' }]; }, /checks are failing: ci # GO: all clear/],
 	['a setting file excluded only in this clone', (s) => {
 		fs.mkdirSync(path.join(s.work, '.kit'), { recursive: true });
 		fs.writeFileSync(path.join(s.work, '.kit', 'pr-body.json'), '{"gates":[]}');
@@ -368,7 +379,7 @@ test('merge gate: no hook from the branch runs inside the gate', () => {
 	sh(s.work, 'config', 'core.hooksPath', '.githooks');
 	const base = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', 'rev-parse', 'origin/main'], { cwd: s.work, encoding: 'utf8' }).stdout.trim();
 	fs.rmSync(marker, { force: true });
-	const origin = path.join(s.root, 'origin.git');
+	const origin = path.join(s.root, 'github.com', 'o', 'r.git');
 	const other = path.join(s.root, 'other');
 	spawnSync('git', ['-c', 'core.hooksPath=/dev/null', 'clone', '-q', origin, other], { encoding: 'utf8' });
 	spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'moved'], { cwd: other, encoding: 'utf8' });
@@ -569,7 +580,7 @@ test('merge gate: a squash-style title is read by the full audit, not the lean o
 test('merge gate: the base is fetched, so a stricter audit landed on the remote is the one that judges', () => {
 	const s = setup();
 	const other = path.join(s.root, 'other');
-	sh(s.root, 'clone', '-q', path.join(s.root, 'origin.git'), other);
+	sh(s.root, 'clone', '-q', path.join(s.root, 'github.com', 'o', 'r.git'), other);
 	fs.writeFileSync(path.join(other, '.claude/pr-body-audit-lean.mjs'), 'console.log("FAIL stricter"); process.exit(1);\n');
 	sh(other, 'add', '-A'); sh(other, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'stricter'); sh(other, 'push', '-q', 'origin', 'main');
 	assert.match(check(s.opts).faults.join('\n'), /FAIL stricter/);
@@ -644,6 +655,49 @@ test('merge gate: autofix disarms an armed PR, pushes the branch and logs the co
 	assert.ok(s.state.calls.includes('pr merge 7 --disable-auto'));
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
 	assert.match(log, new RegExp(`DISARMED 7\\n.* AUTOFIX 7 ${fixed}\\n$`));
+});
+// 1.21.1 carry 2: gh may read the PR through another remote, while the push goes to origin.
+test('merge gate: autofix pushes only when origin is the PR\'s repo', () => {
+	const s = setup();
+	fixCommit(s);
+	const other = path.join(s.root, 'github.com', 'x', 'y.git');
+	sh(s.root, 'clone', '-q', '--bare', path.join(s.root, 'github.com', 'o', 'r.git'), other);
+	sh(s.work, 'remote', 'set-url', '--push', 'origin', other);
+	const before = originHead(s);
+	assert.match(autofix(s.opts).faults[0], /not the repo of PR 7/);
+	assert.equal(originHead(s), before, 'nothing went out');
+	assert.equal(sh(other, 'rev-parse', 'refs/heads/feat/subtract'), before, 'nor to the other repo');
+});
+// Handoff item 7: a merge call that went through and a read-back that did not must not read as nothing armed.
+test('merge gate: a merge that went through with no read-back is logged as armed and named as such', () => {
+	const s = setup();
+	s.state.readBackFails = true;
+	const r = arm(s.opts);
+	assert.equal(r.armed, false);
+	assert.match(r.faults[0], /may be armed: run merge-gate\.mjs disarm 7/);
+	assert.match(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'), new RegExp(`ARMED https://github.com/o/r/pull/7 ${s.sha} unread`));
+	assert.match(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate-triage.md'), 'utf8'), /arming unconfirmed/);
+});
+// Handoff item 12.
+test('merge gate: live stops on a program planted at the repo root, as check does', () => {
+	const s = setup();
+	fs.writeFileSync(path.join(s.work, 'git.exe'), '');
+	const r = live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run });
+	assert.equal(r.ok, false);
+	assert.match(r.faults.join('\n'), /named like a tool/);
+});
+// Handoff item 14 and 1.21.1 carry 10: the version check diffs against the pinned base, not a short name.
+test('merge gate: the PR-body audit runs with PR_BASE at the pinned base commit', () => {
+	const s = setup();
+	sh(s.work, 'checkout', '-q', 'main');
+	fs.writeFileSync(path.join(s.work, '.claude', 'pr-body-audit-lean.mjs'), "console.log('FAIL PR_BASE=' + process.env.PR_BASE); process.exit(1);\n");
+	sh(s.work, 'commit', '-qam', 'audit prints its base'); sh(s.work, 'push', '-q', 'origin', 'main');
+	const tip = sh(s.work, 'rev-parse', 'HEAD');
+	sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	cleared(s.work, s.state.pr.headRefOid);
+	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
+	assert.match(check(s.opts).faults.join('\n'), new RegExp(`PR_BASE=${tip}`));
 });
 test('merge gate: autofix runs no branch hook on its push', () => {
 	const s = setup();

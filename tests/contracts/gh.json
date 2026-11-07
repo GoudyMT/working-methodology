@@ -95,7 +95,7 @@
     "view",
     "24",
     "--json",
-    "state,isCrossRepository,headRefName,headRefOid,autoMergeRequest"
+    "state,isCrossRepository,headRefName,headRefOid,autoMergeRequest,url"
    ],
    "status": 0,
    "stderr": "",
@@ -104,7 +104,8 @@
     "headRefName": "fix/merge-gate-repo-read",
     "headRefOid": "ffdb5aa18c176634ecc159ec399817047fbf5946",
     "isCrossRepository": false,
-    "state": "MERGED"
+    "state": "MERGED",
+    "url": "https://github.com/o/r/pull/24"
    }
   },
   {

@@ -85,10 +85,10 @@ export function toolPath(name, cwd, env = process.env) {
 	return null;
 }
 
-const realRun = (cmd, args, cwd) => {
+const realRun = (cmd, args, cwd, env) => {
 	const exe = cmd === 'git' || cmd === 'gh' ? toolPath(cmd, cwd) : cmd;
 	if (!exe) return { status: 127, stdout: '', stderr: `${cmd} is not on PATH outside this repo` };
-	const r = spawnSync(exe, args, { cwd, encoding: 'utf8', shell: false, windowsHide: true });
+	const r = spawnSync(exe, args, { cwd, encoding: 'utf8', shell: false, windowsHide: true, env: env ? { ...process.env, ...env } : process.env });
 	return { status: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' };
 };
 
@@ -172,11 +172,13 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	const strict = (prot && prot.strict === true) || ruleSets.some((r) => (r.parameters || {}).strict_required_status_checks_policy === true);
 	if (required.length && !strict) faults.push(`${p.baseRefName} does not require a branch to be up to date before it merges, so a PR could merge onto a base its checks never ran on: the owner turns on "require branches to be up to date" for its required checks`);
 	// GitHub waits only for required checks, and merges at once past a failed optional one, so any failure stops it here.
-	const failed = (p.statusCheckRollup || []).filter((c) => BAD_CHECK.test(c.conclusion || c.state || '')).map((c) => c.name || c.context);
+	// A check's name is the workflow author's text: one line, no control characters, so it cannot write the triage.
+	const label = (c) => String(c.name || c.context || '').replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+	const failed = (p.statusCheckRollup || []).filter((c) => BAD_CHECK.test(c.conclusion || c.state || '')).map(label);
 	if (failed.length) faults.push(`checks are failing: ${failed.join(', ')}`);
 	// A required check holds the merge; a running optional one does not, and could fail after it lands.
 	const running = (p.statusCheckRollup || []).filter((c) => (c.status ? c.status !== 'COMPLETED' : /^(PENDING|EXPECTED)$/.test(c.state || '')))
-		.map((c) => c.name || c.context).filter((n) => !required.includes(n));
+		.filter((c) => !required.includes(c.name || c.context)).map(label);
 	if (running.length) faults.push(`checks are still running and none requires them: ${running.join(', ')}; wait, then run the gate again`);
 
 	// 5. The diff, from the merge base on the remote base branch.
@@ -197,6 +199,10 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 		}
 	}
 
+	// The hold: once armed, a push over the armed head must stop, and only the kit's pre-push hook does that.
+	const hold = holdFault(git, cwd);
+	if (hold) faults.push(hold);
+
 	// 6. The sweep.
 	faults.push(...sweepFaults({ cwd, config, branch: p.headRefName, head: p.headRefOid, git, run }));
 
@@ -205,6 +211,20 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	faults.push(...bodyFaults({ cwd, config, body: p.body || '', title: p.title || '', baseRef, git, run }));
 
 	return { go: faults.length === 0, faults, facts };
+}
+
+// The hooks folder this clone really uses (the gate's own runs override it on the command line, so that value is
+// skipped), and whether its pre-push holds an armed head. Another clone of the repo is out of its sight.
+function holdFault(git, cwd) {
+	const set = git('config', '--show-origin', '--get-all', 'core.hooksPath').stdout.split('\n').filter((l) => l.trim() && !l.startsWith('command line:'));
+	let value = set.length ? set[set.length - 1].split('\t').slice(1).join('\t').trim() : '';
+	if (!value) return 'no push hold: core.hooksPath is not set here, so a push over an armed head would go through (install the kit project layer)';
+	if (value === '~' || /^~[\\/]/.test(value)) value = path.join(os.homedir(), value.slice(1));
+	const dir = path.resolve(git('rev-parse', '--show-toplevel').stdout.trim() || cwd, value);
+	const hook = path.join(dir, 'pre-push');
+	let text = '';
+	try { text = fs.readFileSync(hook, 'utf8'); } catch { /* no hook: the fault below says so */ }
+	return text.includes('kit-merge-gate.log') ? '' : `no push hold: ${hook} does not stop a push over an armed head`;
 }
 
 // Every path a diff touches, renames as both ends and each name raw, or null when git cannot say.
@@ -380,7 +400,8 @@ function bodyFaults({ cwd, config, body, title, baseRef, git, run }) {
 	try {
 		const file = path.join(found.tmp, 'pr-body.md');
 		fs.writeFileSync(file, body);
-		const r = run(process.execPath, [found.script, file, title], cwd);
+		// The version check reads the diff against PR_BASE: the pinned commit, never a short name a clone can move.
+		const r = run(process.execPath, [found.script, file, title], cwd, { PR_BASE: baseRef });
 		return r.status === 0 ? [] : [`the live PR body fails ${name}: ${(r.stdout + r.stderr).trim().split('\n').filter((l) => /FAIL|fault|must|no /i.test(l)).slice(0, 8).join('; ') || 'see the audit'}`];
 	} finally {
 		kitTemp.removeTemp(found.tmp);
@@ -396,6 +417,9 @@ function bodyFaults({ cwd, config, body, title, baseRef, git, run }) {
 export function live({ kind, id, cwd, config = configDir(), run = realRun }) {
 	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
 	const gh = (...a) => run('gh', a, cwd);
+	// The audits run as children here too, so the same planted-tool stop as check().
+	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
+	if (planted.length) return { ok: false, faults: [`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`] };
 	if (kind === 'pr') {
 		const p = json(gh('pr', 'view', String(id), '--json', 'title,body,baseRefName,url'));
 		if (!p) return { ok: false, faults: [`gh could not read PR ${id}`] };
@@ -457,6 +481,14 @@ export function arm({ pr, cwd, config = configDir(), run = realRun, now = () => 
 	}
 	const m = run('gh', ['pr', 'merge', String(pr), '--auto', '--squash', '--match-head-commit', res.facts.sha], cwd);
 	const back = json(run('gh', ['pr', 'view', String(pr), '--json', 'autoMergeRequest,state'], cwd));
+	// The merge call went through but the read-back did not: the PR may be armed, so the log and the triage say so,
+	// and the push hold treats the head as armed until a disarm.
+	if (m.status === 0 && !back) {
+		fs.appendFileSync(gateLog(cwd, run), `${now()} ARMED ${res.facts.url} ${res.facts.sha} unread\n`);
+		const faults = [`gh pr merge went through but the PR could not be read back, so it may be armed: run merge-gate.mjs disarm ${pr} to be sure`];
+		fs.writeFileSync(triage, `# Merge gate: arming unconfirmed for PR ${pr} (${now()})\n\n- ${faults[0]}\n`);
+		return { armed: false, faults, facts: res.facts };
+	}
 	const armed = m.status === 0 && !!back && (back.state === 'MERGED' || !!back.autoMergeRequest);
 	if (!armed) {
 		const faults = [`gh pr merge did not arm: ${(m.stderr || m.stdout).trim() || 'auto-merge not shown on the PR'}`];
@@ -500,8 +532,13 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
 	if (planted.length) return no(`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`);
 	if (fs.existsSync(path.join(config, 'autonomy-off'))) return no(`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`);
-	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest'], cwd));
-	if (!p || p.state !== 'OPEN' || p.isCrossRepository) return no(`PR ${pr} is not an open PR from this repo`);
+	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest,url'], cwd));
+	if (!p || p.state !== 'OPEN' || p.isCrossRepository !== false) return no(`PR ${pr} is not an open PR from this repo`);
+	// gh reads the PR from whichever remote it picks; the push goes to origin, so origin must be the PR's repo.
+	const pushUrl = git('remote', 'get-url', '--push', 'origin').stdout.trim();
+	const want = String(p.url || '').toLowerCase().replace(/^https?:\/\//, '').replace(/\/pull\/\d+$/, '');
+	const have = pushUrl.replace(/\\/g, '/').toLowerCase().replace(/\.git\/?$/, '').replace(/^[a-z+]+:\/\/([^@/]+@)?/, '').replace(/^[^@/:]+@([^:/]+):/, '$1/');
+	if (!/^[^/]+\/[^/]+\/[^/]+$/.test(want) || !(have === want || have.endsWith('/' + want))) return no(`origin (${pushUrl || 'none'}) is not the repo of PR ${pr} (${p.url}): the push would go somewhere else`);
 	if (git('symbolic-ref', '--short', 'HEAD').stdout.trim() !== p.headRefName) return no(`the working copy is not on the PR's branch ${p.headRefName}`);
 	const local = git('rev-parse', 'HEAD').stdout.trim();
 	if (local === p.headRefOid) return no('nothing to push: the working copy is at the PR\'s head');
