@@ -464,7 +464,8 @@ function findDelete(text, ctx, state, depth) {
 			else if ((name === 'env' || name === 'sudo') && rest.some((w) => /^(-[A-Za-z]*[CD]|--chdir)/.test(w))) state.moved = true;
 			else if (name === 'rsync' && rest.some((w) => /^--(del|delete[\w-]*|remove-source-files)(=|$)/.test(w))) return 'rsync that removes files';
 			// tar --remove-files and zip -m delete what they pack: each packed path is placed like a delete target.
-			else if ((name === 'tar' && rest.includes('--remove-files')) || (name === 'zip' && rest.some((w) => /^-[A-Za-z]*m[A-Za-z]*$/.test(w)))) {
+			// tar takes a long option's unique prefix (--remove is enough); zip has --move, and a level digit in a cluster.
+		else if ((name === 'tar' && rest.some((w) => /^--rem(o(v(e(-(f(i(l(e(s)?)?)?)?)?)?)?)?)?$/.test(w))) || (name === 'zip' && rest.some((w) => /^-[A-Za-z0-9]*m[A-Za-z0-9]*$/.test(w) || /^--mo(v(e)?)?$/.test(w)))) {
 				for (const target of packedPaths(name, rest)) {
 					const hit = placeOf(target, ctx, state);
 					if (hit) return hit;

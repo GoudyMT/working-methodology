@@ -602,6 +602,11 @@ const CARRY122_ASK = [
 	'tar --remove-files --file=a.tar C:/other/x',
 	'zip -m a.zip C:/other/x',
 	'zip -rm a.zip C:/other/x',
+	// The 1.22.0 sweep: tar takes a long option's unique prefix, and zip has --move and digit levels in a cluster.
+	'tar --remove -cf a.tar C:/other/x',
+	'tar --remove-fi -cf a.tar C:/other/x',
+	'zip -9m a.zip C:/other/x',
+	'zip --move a.zip C:/other/x',
 	"pythonw -c \"import shutil; shutil.rmtree('C:/other')\"",
 	"pyw -c \"import shutil; shutil.rmtree('C:/other')\"",
 ];

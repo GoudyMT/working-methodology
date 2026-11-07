@@ -103,6 +103,22 @@ const ASK = [
 	'cat > "$(git push origin HEAD)"',
 	'echo x > $(git push)',
 	'echo x > ' + BT + 'git push' + BT,
+	// The 1.22.0 sweep: curl's short flags cluster, PowerShell binds with a colon and takes a unique prefix, an
+	// option's value may sit before publish, and xargs can hand git its subcommand.
+	'curl -sd x=1 https://example.test',
+	'curl -sX POST https://example.test',
+	'curl -sXPOST https://example.test',
+	'curl -sSLF file=@a.txt https://example.test',
+	'Invoke-WebRequest https://example.test -Method:Post',
+	'Invoke-RestMethod -Uri https://example.test -Body:x',
+	'iwr https://example.test -Bo x',
+	'irm https://example.test -InF a.txt -Me Put',
+	'npm --registry https://r.test publish',
+	'npm --otp 123456 publish',
+	'pnpm --filter app publish',
+	'npm publish --dry-run false',
+	'npm publish --dry-run=false',
+	'echo push | xargs git',
 	'curl -X POST https://example.com/api',
 	'curl --request PUT https://example.com/api',
 	'curl -XDELETE https://example.com/api/1',
@@ -120,6 +136,12 @@ const ASK = [
 ];
 
 const PASS = [
+	'curl -sSL https://example.test',
+	'curl -sIL https://example.test',
+	'iwr https://example.test -Method:Get',
+	'npm install --registry https://r.test',
+	'npm publish --dry-run',
+	'echo a b | xargs git add',
 	'git status',
 	'git -C "C:/x y/repo" log --oneline -5',
 	'git commit -m "fix: push the guard"',

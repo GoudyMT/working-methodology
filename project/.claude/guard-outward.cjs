@@ -65,10 +65,13 @@ function ghApiWrites(words, start) {
 }
 
 // npm publish, pnpm publish, yarn npm publish: a registry write among the first two subcommand words.
+// An option's value may sit before the subcommand (npm --otp 1 publish), so a write word anywhere counts; asking on a
+// package that happens to share the name is the safe side. --dry-run false is not a dry run.
 function registryWrite(words, start) {
 	const rest = words.slice(start);
-	if (rest.includes('--dry-run')) return '';
-	const hit = rest.filter((w) => !w.startsWith('-')).slice(0, 2).find((w) => REGISTRY_WRITES.has(w));
+	const dry = rest.some((w, i) => (w === '--dry-run' && !/^(false|0|no)$/.test(rest[i + 1] ?? '')) || /^--dry-run=(true|1|yes)$/.test(w));
+	if (dry) return '';
+	const hit = rest.find((w) => REGISTRY_WRITES.has(w));
 	return hit ? 'a package ' + hit : '';
 }
 
@@ -79,12 +82,19 @@ function httpWrite(name, words) {
 		const w = words[i];
 		const lower = w.toLowerCase();
 		let method = '';
-		if ((curl && w === '-X') || lower === '--request' || lower === '--method' || /^-me(t(h(o(d)?)?)?)?$/.test(lower)) method = words[i + 1] ?? '';
-		else if (curl && /^-X./.test(w)) method = w.slice(2);
+		// curl clusters short flags (-sX POST, -sd x): a cluster holding d, F or T sends a body, X names a method. A
+		// letter read from an attached value can only add an ask. PowerShell binds a value with a colon (-Method:Post)
+		// and takes a unique prefix of a parameter (-Bo, -InF).
+		const cluster = curl && /^-[A-Za-z0-9]+$/.test(w) ? w.slice(1) : '';
+		const ps = lower.match(/^-(me(?:t(?:h(?:o(?:d)?)?)?)?|bo(?:d(?:y)?)?|inf(?:i(?:l(?:e)?)?)?)(?::(.*))?$/);
+		if (cluster.includes('X')) method = cluster.slice(cluster.indexOf('X') + 1) || (words[i + 1] ?? '');
+		else if (cluster && /[dFT]/.test(cluster)) return 'an HTTP write';
+		else if (lower === '--request' || lower === '--method') method = words[i + 1] ?? '';
+		else if (ps && ps[1].startsWith('me')) method = ps[2] !== undefined ? ps[2] : (words[i + 1] ?? '');
+		else if (ps) return 'an HTTP write';
 		else if (/^--(request|method)=/.test(lower)) method = lower.slice(lower.indexOf('=') + 1);
 		else if (curl && (/^-[dFT]/.test(w) || /^--(data(-[\w-]+)?|form(-string)?|upload-file|json)(=|$)/.test(lower))) return 'an HTTP write';
 		else if (/^--(post|body)-(data|file)(=|$)/.test(lower)) return 'an HTTP write';
-		else if (/^-(body|infile)$/.test(lower)) return 'an HTTP write';
 		if (method && !/^(get|head)$/i.test(method)) return 'an HTTP write';
 	}
 	return '';
@@ -123,7 +133,11 @@ function findOutward(text, depth) {
 			const name = programName(segment[i].value);
 			let hit = '';
 			if (/^git-(push|send-pack)(\.exe)?$/.test(name) || (/^git-lfs(\.exe)?$/.test(name) && words[i + 1] === 'push')) hit = name;
-			else if (name === 'git' || name === 'git.exe') hit = gitOutward(words, i + 1);
+			else if (name === 'git' || name === 'git.exe') {
+				hit = gitOutward(words, i + 1);
+				// xargs hands git its subcommand from input, so a git with none after xargs could be a push.
+				if (!hit && words.slice(0, i).some((w) => programName(w) === 'xargs' || programName(w) === 'xargs.exe') && !words.slice(i + 1).some((w) => !w.startsWith('-'))) hit = 'git through xargs';
+			}
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
 			else if (PACKAGERS.has(name)) hit = registryWrite(words, i + 1);
 			else if (HTTP_CLIENTS.test(name)) hit = httpWrite(name, segment.slice(i + 1).map((word) => word.value));
