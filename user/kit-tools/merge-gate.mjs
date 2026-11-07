@@ -89,6 +89,7 @@ const realRun = (cmd, args, cwd) => {
 
 export const configDir = (env = process.env) => env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 
+const REPO_NAME = /^[\w.-]+\/[\w.-]+$/;
 const json = (r) => { try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
 
 /**
@@ -137,7 +138,12 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	// `gh repo view` has no auto-merge field, so this reads the REST repo; {owner}/{repo} is gh's own placeholder for this repo.
 	const repo = json(gh('api', 'repos/{owner}/{repo}'));
 	if (!repo) return { go: false, faults: [...faults, 'gh could not read the repository'], facts };
-	if (!repo.allow_auto_merge || !repo.delete_branch_on_merge) {
+	// `gh api` keeps to the default host while `gh pr view` follows the remote, so the read must prove it is this PR's repo.
+	const sameRepo = String(p.url || '').toLowerCase().startsWith(`${String(repo.html_url || '').toLowerCase()}/pull/`) && REPO_NAME.test(String(repo.full_name || ''));
+	if (!sameRepo) return { go: false, faults: [...faults, `the repo read (${JSON.stringify(repo.html_url)}) is not the repo of PR ${pr} (${p.url}), so no setting of it counts`], facts };
+	// REST leaves both settings out for a login without push rights: that is not the same as off.
+	if (repo.allow_auto_merge == null || repo.delete_branch_on_merge == null) faults.push(`this login cannot read the merge settings of ${repo.full_name}: it needs push rights there`);
+	else if (repo.allow_auto_merge !== true || repo.delete_branch_on_merge !== true) {
 		faults.push(`${repo.full_name} must allow auto-merge and delete branches on merge (the owner runs: gh api -X PATCH repos/${repo.full_name} -F allow_auto_merge=true -F delete_branch_on_merge=true)`);
 	}
 
@@ -161,6 +167,10 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	// 5. The diff, from the merge base on the remote base branch.
 	if (git('fetch', '--quiet', 'origin', p.baseRefName).status !== 0) faults.push(`could not fetch ${p.baseRefName} from origin, so the base would be stale`);
 	const baseRef = `origin/${p.baseRefName}`;
+	// A remote setting can leave origin on another repo or an old tip, so the base read here must be the one GitHub holds.
+	const tip = (json(gh('api', `repos/${repo.full_name}/branches/${encodeURIComponent(p.baseRefName)}`)) || {}).commit?.sha;
+	const localTip = git('rev-parse', '--verify', '--quiet', `refs/remotes/${baseRef}`).stdout.trim();
+	if (!tip || tip !== localTip) faults.push(`${baseRef} is at ${localTip.slice(0, 12) || 'nothing'}, and GitHub's base is at ${String(tip).slice(0, 12)}: check origin and its fetch setting, or the diff is judged on the wrong base`);
 	const mb = git('merge-base', baseRef, p.headRefOid);
 	let files = [];
 	if (mb.status !== 0) faults.push(`no merge base between ${baseRef} and the head`);

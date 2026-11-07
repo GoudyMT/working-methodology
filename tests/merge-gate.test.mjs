@@ -65,7 +65,8 @@ function setup() {
 	}
 	const state = {
 		pr: { number: 7, state: 'OPEN', isDraft: false, isCrossRepository: false, headRefName: 'feat/subtract', headRefOid: sha, baseRefName: 'main', title: TITLE, body: BODY, url: 'https://github.com/o/r/pull/7' },
-		repo: { full_name: 'o/r', allow_auto_merge: true, delete_branch_on_merge: true },
+		repo: { full_name: 'o/r', html_url: 'https://github.com/o/r', allow_auto_merge: true, delete_branch_on_merge: true },
+		baseTip: null,
 		protection: { contexts: ['kit-tests'], checks: [] },
 		rules: [],
 		release: { tagName: 'v1.2.0', body: 'Plans now sync between devices.\n' },
@@ -83,11 +84,18 @@ function setup() {
 		state.calls.push(args.join(' '));
 		const ok = (o) => ({ status: 0, stdout: JSON.stringify(o), stderr: '' });
 		const no = { status: 1, stdout: '', stderr: 'HTTP 404' };
-		if (args[0] === 'pr' && args[1] === 'view') return args.some((a) => a.includes('autoMergeRequest'))
-			? ok({ state: 'OPEN', ...state.pr, autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null }) : ok(state.pr);
-		if (args[0] === 'api' && args[1] === 'repos/{owner}/{repo}') return ok(state.repo);
-		if (args[0] === 'api' && args[1].endsWith('/required_status_checks')) return state.protection ? ok(state.protection) : no;
-		if (args[0] === 'api' && args[1].includes('/rules/branches/')) return ok(state.rules);
+		// Like the real gh, it answers only the fields asked for, so a field dropped from a list goes missing here too.
+		if (args[0] === 'pr' && args[1] === 'view') {
+			const full = { state: 'OPEN', ...state.pr, autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null };
+			return ok(Object.fromEntries(args[args.indexOf('--json') + 1].split(',').filter((k) => k in full).map((k) => [k, full[k]])));
+		}
+		if (args[0] === 'api' && args[1] === 'repos/{owner}/{repo}') return state.repo ? ok(state.repo) : no;
+		// The paths are matched whole, so a wrong name in them reads nothing, as on GitHub.
+		if (args[0] === 'api' && args[1] === 'repos/o/r/branches/main/protection/required_status_checks') return state.protection ? ok(state.protection) : no;
+		if (args[0] === 'api' && args[1] === 'repos/o/r/rules/branches/main') return ok(state.rules);
+		if (args[0] === 'api' && args[1] === 'repos/o/r/branches/main') {
+			return ok({ commit: { sha: state.baseTip ?? spawnSync('git', ['rev-parse', 'refs/remotes/origin/main'], { cwd, encoding: 'utf8' }).stdout.trim() } });
+		}
 		if (args[0] === 'pr' && args[1] === 'merge' && args.includes('--disable-auto')) { if (state.disarmHolds) state.armed = false; return { status: 0, stdout: '', stderr: '' }; }
 		if (args[0] === 'pr' && args[1] === 'merge') { state.armed = state.mergeStatus === 0 && state.armOnMerge; return { status: state.mergeStatus, stdout: '', stderr: state.mergeStatus ? 'refused' : '' }; }
 		if (args[0] === 'release') return ok(state.release);
@@ -126,6 +134,24 @@ const CASES = [
 	['a draft', (s) => { s.state.pr.isDraft = true; }, /draft/],
 	['a fork', (s) => { s.state.pr.isCrossRepository = true; }, /another repository/],
 	['a working copy off the head', (s) => { s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD~1'); }, /not the PR's head/],
+	['a failed repo read', (s) => { s.state.repo = null; }, /could not read the repository/],
+	['a repo read that lands on another repo', (s) => { s.state.repo.html_url = 'https://github.com/x/y'; }, /not the repo of PR 7/],
+	['a same-named repo on another host', (s) => { s.state.pr.url = 'https://ghe.example/o/r/pull/7'; }, /not the repo of PR 7/],
+	['a repo name that is not owner/name', (s) => { s.state.repo.full_name = 'o/r?x=1#'; }, /not the repo of PR 7/],
+	['settings this login cannot see', (s) => { delete s.state.repo.allow_auto_merge; delete s.state.repo.delete_branch_on_merge; }, /cannot read/],
+	['a setting that is not true', (s) => { s.state.repo.allow_auto_merge = 'false'; }, /allow auto-merge/],
+	['a base moved locally with no fetch refspec', (s) => {
+		s.state.baseTip = sh(s.work, 'rev-parse', 'refs/remotes/origin/main');
+		sh(s.work, 'config', '--unset-all', 'remote.origin.fetch');
+		sh(s.work, 'update-ref', 'refs/remotes/origin/main', s.sha);
+	}, /GitHub's base/],
+	['an origin that is another repo', (s) => {
+		const other = path.join(s.root, 'other.git');
+		sh(s.root, 'clone', '-q', '--bare', path.join(s.root, 'origin.git'), other);
+		sh(s.work, 'push', '-q', other, 'HEAD:main');
+		s.state.baseTip = sh(s.work, 'rev-parse', 'refs/remotes/origin/main');
+		sh(s.work, 'remote', 'set-url', 'origin', other);
+	}, /GitHub's base/],
 	['auto-merge not allowed', (s) => { s.state.repo.allow_auto_merge = false; }, /allow auto-merge/],
 	['no branch delete on merge', (s) => { s.state.repo.delete_branch_on_merge = false; }, /delete branches on merge/],
 	['no required check', (s) => { s.state.protection = null; }, /requires no status check/],
@@ -617,7 +643,7 @@ test('merge gate: a linked worktree logs where the pre-push hook reads, the comm
 test('merge gate: every --json field it asks for exists in the real gh', (t) => {
 	const source = fs.readFileSync(path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'utf8');
 	const asked = [...source.matchAll(/'(pr|repo|release)', 'view',[^\n]*?'--json', '([^']+)'/g)].map((m) => ({ cmd: m[1], fields: m[2].split(',') }));
-	assert.ok(asked.length >= 5, `the scan found only ${asked.length} calls`);
+	assert.equal(asked.length, source.match(/'--json'/g).length, 'a --json call sits outside the scan: keep each on one line, with its field list written in the call');
 	const found = spawnSync('gh', ['--version'], { encoding: 'utf8' });
 	if (found.status !== 0) {
 		assert.ok(!process.env.CI, 'CI must have gh for this test');
@@ -625,7 +651,7 @@ test('merge gate: every --json field it asks for exists in the real gh', (t) => 
 	}
 	for (const { cmd, fields } of asked) {
 		const r = spawnSync('gh', [cmd, 'view', '--json'], { encoding: 'utf8' });
-		const known = new Set(`${r.stdout}\n${r.stderr}`.split(/\r?\n/).map((l) => l.trim()));
+		const known = new Set(`${r.stdout}\n${r.stderr}`.split(/\r?\n/).map((l) => l.trim()).filter(Boolean));
 		assert.ok(known.size > 5, `gh ${cmd} view --json listed no fields`);
 		for (const f of fields) assert.ok(known.has(f), `gh ${cmd} view has no field ${f}`);
 	}
