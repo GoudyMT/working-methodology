@@ -2451,6 +2451,23 @@ test('an approval prints the owner\'s start notice from checked data, not a hand
   assert.match(r.stdout, /security 3 of 3 needed/);
   assert.match(r.stdout, /Findings come when the sweep finishes/);
 });
+// 1.21.0 handoff item 31: a log line that is valid JSON but no entry (null, a number, a list) turned the guard off
+// and crashed approve.mjs. It reads as a hand edit: the guard refuses and the script pauses.
+test('a log line that parses to no entry pauses the sweep tools, and the guard still refuses', () => {
+  for (const junk of ['null', '7', '[]']) {
+    const r = approveRun(featureContract());
+    assert.equal(r.status, 0, r.stdout);
+    const brief = 'review. Call cap: 5.' + leadTag(r.dir, 'Call cap: 5');
+    const tool_input = { subagent_type: 'reviewer', prompt: brief + leadQuestion(r.dir, brief) };
+    assert.equal(sweepGuard(r.dir, { raw: true, tool_input: { ...tool_input } }).permissionDecision, 'allow', `${junk}: cleared before`);
+    fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
+    fs.appendFileSync(path.join(r.dir, '.git', 'kit-sweep-approvals.jsonl'), `${junk}\n`);
+    assert.equal(sweepGuard(r.dir, { raw: true, tool_input }).permissionDecision, 'deny', `${junk}: the guard refuses`);
+    const again = approveIn(r.dir, [r.f]);
+    assert.doesNotMatch(again.stderr, /TypeError/, `${junk}: approve.mjs reads it`);
+    assert.match(again.stdout, /changed by hand/, `${junk}: the script pauses`);
+  }
+});
 test('the owner\'s yes is logged only after the script asked, for this contract and HEAD', () => {
   const r = approveRun(askContract());
   assert.equal(r.status, 1);

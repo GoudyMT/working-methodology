@@ -135,7 +135,8 @@ function write(entry) {
 // distrusted until the owner resumes.
 function state() {
 	const lines = rawLines();
-	const log = lines.map((l) => { try { return JSON.parse(l); } catch { return { kind: 'broken' }; } });
+	// Valid JSON that is no object (null, a number, a list) is a hand edit, as a broken line is.
+	const log = lines.map((l) => { try { const v = JSON.parse(l); return v && typeof v === 'object' && !Array.isArray(v) ? v : { kind: 'broken' }; } catch { return { kind: 'broken' }; } });
 	let broken = -1;
 	log.forEach((e, i) => { if (e.prev !== (i ? sha(lines[i - 1]) : '')) broken = i; });
 	const lastResume = log.map((e, i) => (e.kind === 'resume' && i > broken ? i : -1)).reduce((a, b) => Math.max(a, b), -1);

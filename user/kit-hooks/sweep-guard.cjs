@@ -16,6 +16,8 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
+// A log line as an entry: valid JSON that is no object (null, a number, a list) is a hand edit, as a broken line is.
+const entry = (line) => { const v = JSON.parse(line); if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('not an entry'); return v; };
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
 // HEAD per folder, read once per call: the log only grows, and its lines share a few folders.
 const heads = new Map();
@@ -27,7 +29,7 @@ const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer sta
 function closedAfter(lines, i, contract) {
 	for (let j = i + 1; j < lines.length; j++) {
 		let x;
-		try { x = JSON.parse(lines[j]); } catch { continue; }
+		try { x = entry(lines[j]); } catch { continue; }
 		if (x.prev === sha(lines[j - 1]) && x.contract === contract && (x.kind === 'outcome' || x.kind === 'unread')) return true;
 	}
 	return false;
@@ -38,7 +40,7 @@ function retryOpen(lines, i, contract, role) {
 	let open = false;
 	for (let j = i + 1; j < lines.length; j++) {
 		let x;
-		try { x = JSON.parse(lines[j]); } catch { continue; }
+		try { x = entry(lines[j]); } catch { continue; }
 		if (x.prev !== sha(lines[j - 1]) || x.contract !== contract) continue;
 		if (x.kind === 'outcome' || x.kind === 'unread') open = false;
 		else if (x.kind === 'retry' && x.role === role && x.clearing === sha(lines[i])) open = true;
@@ -61,13 +63,19 @@ function main() {
 	// The latest decision or owner's yes whose contract's checkout is still at the HEAD it was cleared for decides.
 	for (let i = lines.length - 1; i >= 0; i--) {
 		let e;
-		try { e = JSON.parse(lines[i]); } catch { continue; }
+		try { e = entry(lines[i]); } catch { continue; }
 		if ((e.kind !== 'decision' && e.kind !== 'owner-yes') || typeof e.contract !== 'string') continue;
 		if (e.prev !== (i ? sha(lines[i - 1]) : '')) continue;
 		if (!e.head || headOf(path.dirname(e.contract)) !== e.head) continue;
 		let raw = null;
 		try { raw = fs.readFileSync(e.contract, 'utf8'); } catch { /* moved or deleted */ }
 		if (raw === null || sha(raw) !== e.hash) return deny(`The Swarm Contract changed or moved after the script ran. ${RUN_FIRST}`);
+		// A line after the clearing that breaks the chain is a hand edit, and approve.mjs pauses on it: so does the guard.
+		for (let j = i + 1; j < lines.length; j++) {
+			let x = null;
+			try { x = entry(lines[j]); } catch { /* a hand edit */ }
+			if (!x || x.prev !== sha(lines[j - 1])) return deny(`The approval log was changed by hand at line ${j + 1}, after this clearing. The owner resumes the sweep tools (approve.mjs --resume), then ${RUN_FIRST}`);
+		}
 		if (e.kind === 'decision' && e.decision === 'refused') {
 			return deny('approve.mjs refused this contract: a sweep gets one re-sweep, and a further pass is the owner\'s (a plain contract on this branch asks them). What it left at medium or below goes to the handoff\'s carry-overs for the next feature build, and a high or critical is fixed or the owner accepts it; log the re-sweep\'s outcome with --carried <n>.');
 		}
