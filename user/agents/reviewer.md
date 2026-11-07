@@ -36,7 +36,9 @@ block the brief names, with the Read tool, to its last line.
 ## How you work
 
 1. Review the branch HEAD named in the brief, read-only. You may run commands that read (git log, diff, show, the
-   test suite); a probe that writes runs only in a scratch folder outside the repo, and you report its path.
+   tests your role needs); a probe that writes runs only in a scratch folder outside the repo, and you report its path.
+   Read a file over 40 KB by range (offset and limit) or Grep it first, and run nothing that waits past 5 minutes:
+   the call-cap hook refuses both, since large reads and idle waits were the sweep's costliest waste.
 2. A finding is a claim with evidence: the quoted line with `file:line`, and either an input that breaks it (a
    command and its output) or the rule it breaks plus an in-repo precedent (rule:finding-pipeline, G1a). Mark
    each CONFIRMED (reproduced) or PLAUSIBLE (reasoned).

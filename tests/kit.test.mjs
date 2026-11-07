@@ -4204,6 +4204,35 @@ const capHook = (dir, calls, cap, extra = {}) => {
   const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash', tool_input: {}, ...extra });
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
+// Token audit #7 and #8 (workbench results/token-audit, W5 and W6): results over 40 KB were 57% of reviewer tool
+// bytes, re-read from cache on every later call; and 50 times a reviewer sat over 5 minutes and rewrote its whole
+// cache. A reviewer reads a large file by range, and runs nothing that waits past 5 minutes.
+test('a reviewer reads a file over 40 KB by range, and runs nothing in the background or past 5 minutes', () => {
+  const dir = makeTemp('cap-');
+  const big = path.join(dir, 'big.txt');
+  fs.writeFileSync(big, 'x'.repeat(41 * 1024));
+  const small = path.join(dir, 'small.txt');
+  fs.writeFileSync(small, 'x'.repeat(39 * 1024));
+  const read = (input, extra = {}) => capHook(dir, 1, 12, { tool_name: 'Read', tool_input: input, ...extra });
+  const whole = read({ file_path: big });
+  assert.equal(whole.permissionDecision, 'deny');
+  assert.match(whole.permissionDecisionReason, /offset and limit|Grep/);
+  assert.equal(read({ file_path: big, offset: 100, limit: 200 }).permissionDecision, 'allow', 'a range of it');
+  assert.equal(read({ file_path: big, limit: 200 }).permissionDecision, 'allow');
+  assert.equal(read({ file_path: small }).permissionDecision, 'allow', 'a file under 40 KB, whole');
+  assert.equal(read({ file_path: path.join(dir, 'missing.txt') }).permissionDecision, 'allow', 'Read says it is missing');
+  assert.equal(read({ file_path: big }, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers');
+  for (const tool of ['Bash', 'PowerShell']) {
+    const run = (input) => capHook(dir, 1, 12, { tool_name: tool, tool_input: { command: 'npm test', ...input } });
+    assert.equal(run({ run_in_background: true }).permissionDecision, 'deny', `${tool} in the background`);
+    const long = run({ timeout: 600000 });
+    assert.equal(long.permissionDecision, 'deny', `${tool} past 5 minutes`);
+    assert.match(long.permissionDecisionReason, /5 minutes/);
+    assert.equal(run({ timeout: 300000 }).permissionDecision, 'allow', `${tool} at 5 minutes`);
+    assert.equal(run({}).permissionDecision, 'allow', `${tool} with the default timeout`);
+  }
+  assert.equal(capHook(dir, 1, 12, { tool_name: 'Monitor', tool_input: { command: 'tail -f x' } }).permissionDecision, 'deny', 'a monitor waits');
+});
 test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
   const dir = makeTemp('cap-');
   assert.equal(capHook(dir, 10, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
