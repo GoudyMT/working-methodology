@@ -12,7 +12,6 @@ const BACKSLASH = String.fromCharCode(92);
 const BACKTICK = String.fromCharCode(96);
 const LF = String.fromCharCode(10);
 const CR = String.fromCharCode(13);
-const SEGMENT_BREAKS = new Set([';', '|', '&', '(', ')', '{', '}', '<', '>', LF]);
 const MAX_DEPTH = 3;
 
 const GIT_VALUE_OPTIONS = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--attr-source', '--shallow-file']);
@@ -23,88 +22,7 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-// reading:start - the same in guard-delete.cjs and guard-outward.cjs; a test holds them equal.
-// Characters a shell reads like ASCII ones: curly quotes, Unicode dashes and spaces.
-function normalize(text) {
-	let out = '';
-	for (const ch of text) {
-		const c = ch.codePointAt(0);
-		if (c >= 0x2018 && c <= 0x201b) out += "'";
-		else if (c >= 0x201c && c <= 0x201e) out += '"';
-		else if (c >= 0x2013 && c <= 0x2015) out += '-';
-		else if (c === 0xa0 || c === 0x85 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff) out += ' ';
-		else out += ch;
-	}
-	return out;
-}
-
-// A command the way its shell will read it: escapes, carets, empty expansions and braces gone. Each guard reads this
-// beside the text as written, so one rule covers every spelling these make. Values built at run time stay unread.
-function plainText(text, tool) {
-	let s = normalize(text).replace(/[\\`^]\r?\n/g, '');
-	s = s.replace(/`(?=\S)/g, '');
-	if (!/powershell/i.test(String(tool))) s = s.split(/(\s+)/).map((w) => (/^["']?[A-Za-z]:\\/.test(w) ? w : w.replace(/\\(?!\\)/g, ''))).join('');
-	if (/\bcmd\b/i.test(s)) s = s.replace(/\^(?=[\w.-])/g, '');
-	s = s.replace(/\$\(\s*\)|\$\{\s*\}|\$""|\$''/g, '').replace(/\$(?=['"])/g, '').replace(/(?<=\S)(?:''|"")(?=\S)/g, '');
-	if (/powershell/i.test(String(tool))) return s;
-	const brace = /(?<![$\w])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s{}'"]*)/;
-	for (let i = 0; i < 4 && brace.test(s); i++) s = s.replace(brace, (m, a, b, c) => b.split(',').map((x) => a + x + c).join(' '));
-	return s;
-}
-// reading:end
-
-// Line continuations (PowerShell backtick, bash backslash) join one command across lines.
-function joinContinuations(text) {
-	let out = text;
-	for (const mark of [BACKTICK, BACKSLASH]) {
-		out = out.split(mark + CR + LF).join(' ').split(mark + LF).join(' ');
-	}
-	return out;
-}
-
-// Splits text into commands (at ; | & ( ) { } < > and newlines) and each command into words, keeping quoted
-// text in one word. Quote characters are dropped; a word that held quoted text is marked, so its content can be
-// read again as a nested command.
-function tokenize(text) {
-	const segments = [];
-	let segment = [];
-	let current = '';
-	let inWord = false;
-	let quoted = false;
-	let quote = '';
-	const endWord = () => {
-		if (inWord) segment.push({ value: current, quoted });
-		current = '';
-		inWord = false;
-		quoted = false;
-	};
-	const endSegment = () => {
-		endWord();
-		if (segment.length > 0) segments.push(segment);
-		segment = [];
-	};
-	for (const ch of text) {
-		if (quote) {
-			if (ch === quote) quote = '';
-			else current += ch;
-			continue;
-		}
-		if (ch === "'" || ch === '"') {
-			quote = ch;
-			quoted = true;
-			inWord = true;
-		} else if (SEGMENT_BREAKS.has(ch)) {
-			endSegment();
-		} else if (ch.charCodeAt(0) <= 32 || ch === ',') {
-			endWord();
-		} else {
-			current += ch;
-			inWord = true;
-		}
-	}
-	endSegment();
-	return segments;
-}
+const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
 
 // The program a word names, whatever folder it sits in: "C:/Program Files/Git/cmd/git.exe" -> "git.exe".
 function programName(word) {
@@ -164,7 +82,8 @@ function findOutward(text, depth) {
 	// wildcard program is read here, anywhere in the command. A text that only names the flag asks too: the safe side.
 	if (/--owner-yes/i.test(text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, ''))) return 'an owner yes for a sweep';
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
-	for (const segment of tokenize(joinContinuations(text))) {
+	for (const all of tokenize(joinContinuations(text))) {
+		const segment = all.filter((word) => !word.redirect);
 		const words = segment.map((word) => word.value.toLowerCase());
 		for (let i = 0; i < segment.length; i++) {
 			const name = programName(segment[i].value);

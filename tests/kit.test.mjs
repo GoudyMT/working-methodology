@@ -6558,10 +6558,19 @@ test('the pre-push hook holds a head armed on two PRs until both are disarmed', 
   fs.appendFileSync(log, 't DISARMED 7\n');
   assert.equal(push().status, 0);
 });
-test('both guards read a command through the same plain reading', () => {
-  const block = (f) => { const s = read(path.resolve('project/.claude', f)); return s.slice(s.indexOf('// reading:start'), s.indexOf('// reading:end')); };
-  assert.ok(block('guard-delete.cjs').includes('function plainText'));
-  assert.equal(block('guard-outward.cjs'), block('guard-delete.cjs'));
+// M27: one reading of a command for both guards, so a spelling fixed for one is fixed for both.
+test('both guards read a command through the one reading module, and keep no reading of their own', async () => {
+  const { createRequire } = await import('node:module');
+  const require2 = createRequire(import.meta.url);
+  for (const f of ['guard-delete.cjs', 'guard-outward.cjs']) {
+    const s = read(path.resolve('project/.claude', f));
+    assert.match(s, /require\('\.\/guard-read\.cjs'\)/, `${f} loads the shared reading`);
+    assert.doesNotMatch(s, /function (normalize|plainText|tokenize|joinContinuations)\b/, `${f} keeps no reading of its own`);
+  }
+  const read2 = require2(path.resolve('project/.claude/guard-read.cjs'));
+  const words = (t) => read2.tokenize(t).map((seg) => seg.filter((w) => !w.redirect).map((w) => w.value));
+  assert.deepEqual(words('git push 2>&1 > log; echo "a b" c'), [['git', 'push'], ['echo', 'a b', 'c']]);
+  assert.equal(read2.plainText(`git${String.fromCharCode(0x2003)}pu\\sh`, 'Bash'), 'git push');
 });
 test('a brief that names a sweep runs as a reviewer, whatever type it asks for', () => {
   const dir = sweepRepo();
