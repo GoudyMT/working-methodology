@@ -17,7 +17,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
-const { inodeUse, sweepStale, makeTemp, removeTemp } = kitTemp;
+const { inodeUse, sweepStale, sessionRoot, makeTemp, removeTemp } = kitTemp;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TRACE = path.join(HERE, '..', 'tests', 'map-trace.cjs');
 const MAP_FILE = path.join('tests', '.map.json');
@@ -161,7 +161,8 @@ function runOne(args, env) {
 		child.stderr.on('data', (d) => { out += d; });
 		const pass = (sig) => () => child.kill(sig);
 		const sigs = ['SIGINT', 'SIGTERM', 'SIGHUP'].map((s) => [s, pass(s)]);
-		for (const [s, h] of sigs) process.on(s, h);
+		// Ahead of the run root's own handler, which exits: the tests hear the signal first and remove their roots.
+		for (const [s, h] of sigs) process.prependListener(s, h);
 		child.on('close', (code, sig) => {
 			for (const [s, h] of sigs) process.off(s, h);
 			const num = (k) => Number((new RegExp(`^# ${k} (\\d+)`, 'm').exec(out) || [])[1] || 0);
@@ -188,8 +189,9 @@ export async function main(argv) {
 			return 2;
 		}
 	}
-	sweepStale(tmp);
-	const before = new Set(fs.readdirSync(tmp));
+	// Every test process's temp folder lands in this run's own root, so another program's temp files cannot count
+	// as growth, and a run killed outright is swept by the next one.
+	const runRoot = sessionRoot();
 	const testsDir = fs.existsSync(path.join(root, 'tests')) ? path.join(root, 'tests') : path.join(HERE, '..', 'tests');
 	const files = o.files.length ? o.files : fs.readdirSync(testsDir).filter((f) => f.endsWith('.test.mjs')).map((f) => path.join(testsDir, f));
 	const harnessed = files.filter((f) => fs.readFileSync(f, 'utf8').includes('harness.mjs'));
@@ -236,13 +238,13 @@ export async function main(argv) {
 		return results.some((r) => r.status !== 0) ? 1 : 0;
 	})().finally(() => removeTemp(work));
 
-	sweepStale(tmp);
-	const added = fs.readdirSync(tmp).filter((n) => !before.has(n));
+	sweepStale(runRoot);
+	const added = fs.readdirSync(runRoot);
 	if (added.length) {
-		process.stderr.write(`test-run: temp growth: ${added.length} in ${tmp}:\n${added.map((n) => `  ${n}`).join('\n')}\n`);
+		process.stderr.write(`test-run: temp growth: ${added.length} in ${runRoot}:\n${added.map((n) => `  ${n}`).join('\n')}\n`);
 		return status || 1;
 	}
-	process.stdout.write(`test-run: temp growth: 0 in ${tmp}\n`);
+	process.stdout.write(`test-run: temp growth: 0 in ${runRoot}\n`);
 	return status;
 }
 

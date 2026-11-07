@@ -129,7 +129,7 @@ test('a run refuses to start on a disk above 80% inodes used, and makes no root'
 function runner(files) {
 	const dir = base();
 	const paths = Object.entries(files).map(([name, body]) => { const f = path.join(makeTemp('suite-'), name); fs.writeFileSync(f, body); return f; });
-	const r = spawnSync(process.execPath, [RUNNER, ...paths], { encoding: 'utf8', env: { ...process.env, TMPDIR: dir, TEMP: dir, TMP: dir } });
+	const r = spawnSync(process.execPath, [RUNNER, ...paths], { encoding: 'utf8', env: { ...process.env, TMPDIR: dir, TEMP: dir, TMP: dir, KIT_REAL_TMP: dir } });
 	return { ...r, dir };
 }
 const helperUrl = JSON.stringify(pathToFileURL(HELPER).href);
@@ -153,6 +153,13 @@ test('the runner clears the root of a test file that was killed, so a killed run
 	assert.notEqual(r.status, 0, 'the killed file still fails the run');
 	assert.match(r.stdout, /temp growth: 0/);
 	assert.deepEqual(fs.readdirSync(r.dir), []);
+});
+
+test('another program\'s file in the system temp folder during a run is not counted as growth', () => {
+	const r = runner({ 'other.test.mjs': `${head} test('other', () => { fs.writeFileSync(path.join(process.env.KIT_REAL_TMP, 'someone-else.tmp'), ''); });` });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /temp growth: 0/);
+	assert.ok(fs.existsSync(path.join(r.dir, 'someone-else.tmp')));
 });
 
 test('the runner refuses to start when the temp disk is above 80% inodes used', () => {
