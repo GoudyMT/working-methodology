@@ -337,5 +337,7 @@ Keys v4, brief v2, pass bar 12. Candidate: this branch at c2a74b3, the project l
 - **Borderline calls, not reported as flips:** Q13 for three runs ("starts on its own", no "no keyword" in words), and Q10 and Q5 once each.
 - **Blinding:** the kit version notices removed, each logged in the run's removed-lines file and read by hand.
 
+Accepted by the owner 2026-11-07 ("Lets go with your recommendation and we will monitor it"): the baseline drop is Q11 on both sides, sessions applying the temp-file rule instead of stating it; Q11's key goes to the 1.23.0 list for review.
+
 control: 0
-gate: kit-1.22.0 median 12 baseline 11 brief v2 keys v4
+gate: kit-1.22.0 median 12 baseline 11 brief v2 keys v4 owner-accepted
