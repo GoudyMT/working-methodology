@@ -586,7 +586,40 @@ const HOLES_PASS = [
 	'git clean -n --quiet',
 ];
 
+// 1.22.0, handoff items 22-25: each read by the rule it belongs to (a dot glob, an option that moves the folder,
+// a tool that removes what it packs, an interpreter's other names), not one spelling at a time.
+const CARRY122_ASK = [
+	'rm -rf .[!.]*',
+	'rm -rf .[^.]*',
+	'pnpm --dir C:/other exec rm -rf x',
+	'pnpm -C C:/other exec rm -rf x',
+	'npm --prefix C:/other exec -- rimraf x',
+	'yarn --cwd C:/other exec rm -rf x',
+	'wsl --cd /mnt/c/other rm -rf x',
+	'cmd /c start /d C:\\other cmd /c rd /s /q x',
+	'tar --remove-files -cf a.tar C:/other/x',
+	'tar -c --remove-files -f a.tar C:/other/x',
+	'tar --remove-files --file=a.tar C:/other/x',
+	'zip -m a.zip C:/other/x',
+	'zip -rm a.zip C:/other/x',
+	"pythonw -c \"import shutil; shutil.rmtree('C:/other')\"",
+	"pyw -c \"import shutil; shutil.rmtree('C:/other')\"",
+];
+// PowerShell's -Force reaches hidden names, .git among them, where bash's * does not.
+const CARRY122_PS_ASK = ['Remove-Item -Recurse -Force *', 'Remove-Item -Recurse -Force .*', 'rm -r -fo *', 'Remove-Item -Force -Recurse *git'];
+const CARRY122_PASS = [
+	'tar -cf a.tar build',
+	'tar --remove-files -cf a.tar build/x',
+	'zip -r a.zip build',
+	'zip -m a.zip build/x',
+	'pnpm --dir build test',
+	'Remove-Item -Recurse build\\*',
+	'Remove-Item -Recurse -Force build\\*',
+	'Remove-Item -Recurse *',
+];
+
 const ASK = [
+	...CARRY122_ASK,
 	...SWEEP_ASK,
 	...RESWEEP_ASK,
 	...HOLES_ASK,
@@ -739,6 +772,9 @@ const asSession = (tool, command, extra) => ({ tool_name: tool, session_id: SESS
 
 for (const command of ASK) check(command, asSession('Bash', command), true);
 for (const command of PASS) check(command, asSession('PowerShell', command), false);
+for (const command of CARRY122_PS_ASK) check('[PowerShell] ' + command, asSession('PowerShell', command), true);
+for (const command of CARRY122_PASS) check(command, asSession('PowerShell', command), false);
+check('[Bash] rm -rf * (bash * skips dot names)', asSession('Bash', 'rm -rf *'), false);
 // Other field names are read; the description is only shown, never run.
 check('[field "script"] rm -rf /tmp/x', { tool_name: 'Monitor', session_id: SESSION_ID, cwd: PROJECT, tool_input: { script: 'rm -rf /tmp/x' } }, true);
 check('[description only] rm -rf /tmp/x', asSession('Bash', 'git status', { tool_input: { command: 'git status', description: 'rm -rf /tmp/x' } }), false);

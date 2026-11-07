@@ -41,7 +41,12 @@ const DIR_CHANGERS = new Set(['cd', 'chdir', 'pushd', 'sl', 'set-location', 'pus
 // They go back to a folder the guard does not track.
 const DIR_RETURNS = new Set(['popd', 'pop-location']);
 // Named alone or by a path (.venv/Scripts/python, "C:/Program Files/nodejs/node.exe").
-const INTERPRETER = /(^|[\s;|&('"\\/])(node|deno|bun|python[\d.]*|py|perl|ruby|php)(\.exe)?(['"\s]|$)/i;
+// pythonw and pyw are the windowless Pythons.
+const INTERPRETER = /(^|[\s;|&('"\\/])(node|deno|bun|python[\d.]*w?|pyw?|perl|ruby|php)(\.exe)?(['"\s]|$)/i;
+// An option that runs the rest of the command in another folder: --dir, --cwd, --prefix, wsl --cd, -WorkingDirectory.
+const FOLDER_OPTION = /^-{1,2}(dir|cd|cwd|prefix|chdir|working-?dir(ectory)?|workingdirectory|wd)(=.*)?$/i;
+// Package tools and builders whose -C names the folder they run in.
+const C_MOVES = new Set(['npm', 'pnpm', 'yarn', 'bun', 'make', 'ninja']);
 const INLINE_DELETE = /\b(rmSync|rmdirSync|unlinkSync|rmtree|rm_rf|rm_r|remove_tree|removeSync|removedirs)\s*\(|\b(fs|fsp|promises|fse|os|shutil|FileUtils|Deno|File)\s*\.\s*(rm|rmdir|unlink|remove|delete)\w*\s*\(|\)\s*\.\s*(rm|rmdir|unlink|rmSync|rmdirSync|unlinkSync)\s*\(|\bunlink\b/;
 // A delete word anywhere in the text, to check text the tokenizer cannot split (backticks, carets).
 const DELETE_WORD = /(^|[^\w-])(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimraf|del-cli|shred)(\.exe)?(?![\w-])/i;
@@ -250,13 +255,30 @@ function inOwnFolder(resolved, ctx, wild) {
 
 // Whether one path part reaches a .git folder: the name itself, cmd's trailing dots and spaces, its 8.3 short name,
 // or a wildcard that matches it.
-function namesGit(part) {
+function namesGit(part, hidden = false) {
 	const name = part.toLowerCase().replace(/[. ]+$/, '');
 	if (name === '.git' || /^git~\d+$/.test(name)) return true;
-	// A shell's * skips dot names, so only a pattern that starts with the dot can reach it.
-	if (!part.startsWith('.') || !WILDCARD.test(part)) return false;
-	const glob = part.toLowerCase().replace(/[.+^$()|{}]/g, (c) => BACKSLASH + c).replace(/\*/g, '.*').replace(/\?/g, '.');
+	// A shell's * skips dot names, so only a pattern that starts with the dot can reach it; PowerShell's -Force
+	// reaches hidden names whatever the pattern starts with.
+	if ((!hidden && !part.startsWith('.')) || !WILDCARD.test(part)) return false;
+	// [!x] is the shell's "not x", [^x] in a regex.
+	const glob = part.toLowerCase().replace(/\[!/g, '[^').replace(/[.+$()|{}]|(?<!\[)\^/g, (c) => BACKSLASH + c).replace(/\*/g, '.*').replace(/\?/g, '.');
 	try { return new RegExp(`^${glob}$`).test('.git'); } catch { return true; }
+}
+
+// The paths tar --remove-files or zip -m packs, and so deletes: every word that is not an option, less the archive
+// (tar's -f value, or zip's first word).
+function packedPaths(name, rest) {
+	const out = [];
+	let archive = name === 'zip';
+	for (let i = 0; i < rest.length; i++) {
+		const w = rest[i];
+		if (name === 'tar' && (w === '-f' || w === '--file' || /^-[A-Za-z]*f$/.test(w))) { i++; continue; }
+		if (w.startsWith('-')) continue;
+		if (archive) { archive = false; continue; }
+		out.push(w);
+	}
+	return out;
 }
 
 // Whether a folder holds a link within depth levels: a wildcard stops the guard reading the path, and the shell then
@@ -282,7 +304,7 @@ function placeOf(target, ctx, state, keepLast = false) {
 	if (/^[\\/]{2}/.test(t)) return target;
 	// Git Bash spells C:/x as /c/x, and the system temp as /tmp.
 	if (ctx.windows) t = t.replace(/^\/tmp(\/|$)/, ctx.tmpdir + '/').replace(/^\/([A-Za-z])(\/|$)/, '$1:/');
-	if (t.split(/[\\/]/).some(namesGit)) return 'a .git folder';
+	if (t.split(/[\\/]/).some((part) => namesGit(part))) return 'a .git folder';
 	// D:x is relative to the current folder of drive D, which the guard does not know.
 	if (ctx.windows && /^[A-Za-z]:(?![\\/])/.test(t)) return 'a drive-relative target';
 	if (!api.isAbsolute(t) && state.moved) return 'a relative target after a change of folder';
@@ -295,9 +317,12 @@ function placeOf(target, ctx, state, keepLast = false) {
 		fixed = cut >= 0 ? head.slice(0, cut + 1) : '.';
 	}
 	const keep = keepLast && wild < 0;
+	// The name pattern right under the fixed folder: with -Force it reaches a hidden .git there.
+	const firstWild = wild >= 0 ? t.slice(t.slice(0, wild).search(/[^\\/]*$/)).split(/[\\/]/)[0] : '';
 	// Every folder the command may be in, and ".." read both through links (Git Bash) and as written (PowerShell).
 	for (const cwd of state.cwds) {
 		const asWritten = api.resolve(cwd, fixed);
+		if (ctx.hidden && firstWild && namesGit(firstWild, true) && (ctx.roots.some((root) => api.relative(root, asWritten) === '') || fs.existsSync(api.join(asWritten, '.git')))) return 'a wildcard with -Force that reaches .git';
 		if (wild >= 0 && /[\\/]/.test(t.slice(wild)) && (t.slice(wild).includes('**') || fixed.split(/[\\/]/).includes('..') || holdsLink(asWritten, t.slice(wild).split(/[\\/]/).length - 1))) return target;
 		const places =[walk(fixed, { ...ctx, cwd }, keep), keep ? api.join(realOf(api.dirname(asWritten), api), api.basename(asWritten)) : realOf(asWritten, api)];
 		for (const resolved of places) {
@@ -416,7 +441,10 @@ function findDelete(text, ctx, state, depth) {
 			if (DOTNET_DELETE.test(words[i])) return 'a .NET Delete call';
 			if (['%', 'foreach', 'foreach-object'].includes(lower) && words.slice(i + 1).some((w) => /^delete\w*$/i.test(w))) return 'a .NET Delete call';
 		}
-		if (words.some((w) => ['-workingdirectory', '-wd'].includes(w.toLowerCase()))) state.moved = true;
+		if (words.some((w) => FOLDER_OPTION.test(w))) state.moved = true;
+		if (words.some((w, i) => w === '-C' && C_MOVES.has(programName(words[i - 1] ?? '')))) state.moved = true;
+		// cmd's start /d runs its command in the folder it names.
+		if (words.some((w, i) => /^start$/i.test(w) && words.slice(i + 1).some((x) => /^\/d/i.test(x)))) state.moved = true;
 		// Every word is read as a possible program: a wrapper with its own values (sudo -u x, timeout 5,
 		// Start-Process) would otherwise hide the delete behind it. A delete named in plain text asks; that is the
 		// safe side.
@@ -435,6 +463,13 @@ function findDelete(text, ctx, state, depth) {
 			// env -C DIR, env -CDIR, sudo -D DIR, sudo --chdir=DIR, and short options clustered before them.
 			else if ((name === 'env' || name === 'sudo') && rest.some((w) => /^(-[A-Za-z]*[CD]|--chdir)/.test(w))) state.moved = true;
 			else if (name === 'rsync' && rest.some((w) => /^--(del|delete[\w-]*|remove-source-files)(=|$)/.test(w))) return 'rsync that removes files';
+			// tar --remove-files and zip -m delete what they pack: each packed path is placed like a delete target.
+			else if ((name === 'tar' && rest.includes('--remove-files')) || (name === 'zip' && rest.some((w) => /^-[A-Za-z]*m[A-Za-z]*$/.test(w)))) {
+				for (const target of packedPaths(name, rest)) {
+					const hit = placeOf(target, ctx, state);
+					if (hit) return hit;
+				}
+			}
 			else if (name === 'git') {
 				const { sub, at } = gitSub(words, p + 1);
 				const own = words.slice(at);
@@ -485,6 +520,13 @@ function findDelete(text, ctx, state, depth) {
 				for (; i < words.length && !/^[-!\\(]/.test(words[i]); i++) starts.push(words[i]);
 				// With nothing to filter on it removes the start folder too, so that must be placed itself.
 				const everything = !/\s-(i?name|i?path|i?regex|type|newer|mtime|mmin|size|empty|not)\s/i.test(text);
+				// find walks into dot folders as a shell's * does not: with no name or path filter, a start folder that holds
+				// .git loses its history (find . -type f -delete).
+				if (!/\s-(i?name|i?path|i?wholename|i?regex)\s/i.test(text)) {
+					for (const start of starts.length > 0 ? starts : ['.']) {
+						if (state.cwds.some((cwd) => fs.existsSync(ctx.api.join(ctx.api.resolve(cwd, start), '.git')))) return 'find that deletes through a .git folder';
+					}
+				}
 				for (const start of starts.length > 0 ? starts : ['.']) {
 					const hit = placeOf(everything ? start : start + '/*', ctx, state);
 					if (hit) return hit === start + '/*' ? start : hit;
@@ -507,9 +549,15 @@ function findDelete(text, ctx, state, depth) {
 				// Redirection files are placed too: if the guard misreads one, it can only add an ask. A stream number
 				// (2>&1) and the null sinks are not files.
 				const redirects = segment.filter((word) => word.redirect).map((word) => word.value).filter((v) => !/^(\/dev\/null|nul|\$null|\d+|-)$/i.test(v));
-				for (const target of [...targets, ...redirects]) {
-					const hit = placeOf(target, ctx, state, keepLast);
-					if (hit) return hit;
+				// PowerShell takes any unambiguous start of -Force (-fo, -for, -forc).
+				ctx.hidden = rest.some((w) => /^-fo(r(ce?)?)?(:\$true)?$/i.test(w));
+				try {
+					for (const target of [...targets, ...redirects]) {
+						const hit = placeOf(target, ctx, state, keepLast);
+						if (hit) return hit;
+					}
+				} finally {
+					ctx.hidden = false;
 				}
 			}
 		}

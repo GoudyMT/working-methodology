@@ -6558,6 +6558,17 @@ test('the pre-push hook holds a head armed on two PRs until both are disarmed', 
   fs.appendFileSync(log, 't DISARMED 7\n');
   assert.equal(push().status, 0);
 });
+// Handoff item 23: find walks into .git where a shell's * does not, so only a name or path filter keeps it out.
+test('find with only broad filters asks where its start folder holds .git; a name filter, or a folder without .git, passes', async () => {
+  const { createRequire } = await import('node:module');
+  const guard = createRequire(import.meta.url)(path.resolve('project/.claude/guard-delete.cjs'));
+  const dir = gitTree();
+  fs.mkdirSync(path.join(dir, 'build'));
+  const asks = (command) => Boolean(guard.decide({ tool_name: 'Bash', session_id: '11111111-2222-3333-4444-555555555555', cwd: dir, tool_input: { command } }, { tmpdir: os.tmpdir(), projectDir: dir }));
+  for (const command of ['find . -type f -delete', 'find . -mtime +7 -delete', `find ${dir.split(path.sep).join('/')} -size +1M -delete`, 'find -type f -delete']) assert.equal(asks(command), true, command);
+  for (const command of ["find . -name '*.pyc' -delete", "find . -path './build/*' -delete", 'find build -type f -delete']) assert.equal(asks(command), false, command);
+});
+
 // M27: one reading of a command for both guards, so a spelling fixed for one is fixed for both.
 test('both guards read a command through the one reading module, and keep no reading of their own', async () => {
   const { createRequire } = await import('node:module');
