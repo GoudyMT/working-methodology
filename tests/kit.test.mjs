@@ -3617,6 +3617,20 @@ test('the attribution check refuses every disguise in the corpus and passes pros
   for (const body of CORPUS.mustPass) assert.deepEqual(attributionFaults(body), [], JSON.stringify(body));
 });
 
+// Handoff item 10: judged against a base, the phrase comes from the base, so a branch cannot change it.
+test('the PR-body canary reads the phrase from PR_BASE when one is set, and from disk when not', async () => {
+  const { carriesPhrase } = await import('../project/.claude/canary-phrase.mjs');
+  const dir = canaryRepo('Tango Lima Seven Delta');
+  const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+  g('add', '-A'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'phrase');
+  const base = g('rev-parse', 'HEAD').stdout.trim();
+  fs.writeFileSync(path.join(dir, 'standards', 'agent-teams.md'), `# Rules\n\n\`\`\`\nRULES EVERY AGENT FOLLOWS\n${phraseLine('Echo Golf Nine Kilo')}\`\`\`\n`);
+  const body = 'Done. Tango Lima Seven Delta.';
+  assert.equal(carriesPhrase(body, dir, base), true, 'the base phrase is still caught');
+  assert.equal(carriesPhrase(body, dir, ''), false, 'with no base, the edited file on disk is read');
+  assert.equal(carriesPhrase('Echo Golf Nine Kilo', dir, ''), true);
+});
+
 // Handoff item 15, for the Standard audit: a banned word or a dash spelled as an entity is the word on the page.
 test('the Standard PR-body audit reads an entity as the character the page shows', () => {
   const dir = makeTemp('prb-');
