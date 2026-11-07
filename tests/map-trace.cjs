@@ -34,4 +34,25 @@ for (const n of ['readdirSync', 'readdir', 'cpSync', 'cp']) wrap(fs, n, true);
 wrap(fs.promises, 'readFile');
 wrap(fs.promises, 'readdir', true);
 wrap(fs.promises, 'cp', true);
+
+// A child process is part of the test that starts it: a script it runs counts as read (a shell hook too), and a
+// child given an env of its own still gets the map's variables, so its coverage and reads land with the test.
+const cp = require('child_process');
+const MAP_VARS = ['KIT_MAP_DIR', 'KIT_MAP_TEST', 'NODE_V8_COVERAGE', 'NODE_OPTIONS'];
+const isFile = (p) => { try { return typeof p === 'string' && fs.statSync(p).isFile(); } catch { return false; } };
+function child(name) {
+	const orig = cp[name];
+	cp[name] = function (cmd, args, options, ...rest) {
+		if (!Array.isArray(args)) { rest.unshift(options); options = args; args = []; }
+		if (process.env.KIT_MAP_TEST) {
+			for (const a of [cmd, ...args]) if (isFile(a)) note(a, false);
+			if (options && typeof options === 'object' && options.env) {
+				const add = Object.fromEntries(MAP_VARS.filter((k) => process.env[k] !== undefined && options.env[k] === undefined).map((k) => [k, process.env[k]]));
+				options = { ...options, env: { ...options.env, ...add } };
+			}
+		}
+		return orig.call(this, cmd, args, options, ...rest);
+	};
+}
+for (const n of ['spawn', 'spawnSync', 'execFile', 'execFileSync']) child(n);
 syncBuiltinESMExports();

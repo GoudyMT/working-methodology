@@ -75,6 +75,7 @@ function fixtureRepo() {
 			"test('g', () => { mark('g'); if (g() !== 2) throw new Error('g'); });",
 			"test('child', () => { mark('child'); spawnSync(process.execPath, ['src/b.cjs']); });",
 			"test('reads', () => { mark('reads'); fs.readFileSync('notes.md', 'utf8'); });",
+			"test('own env', () => { mark('own env'); spawnSync(process.execPath, ['src/b.cjs'], { env: { PATH: process.env.PATH } }); });",
 			'',
 		].join('\n'),
 	};
@@ -98,6 +99,8 @@ test('the coverage map records the lines each test runs, in its own process and 
 	assert.ok(t('g').lines['src/a.mjs'].includes(5));
 	assert.ok(t('child').lines['src/b.cjs'].includes(1), 'a child process is mapped to the test that started it');
 	assert.ok(t('reads').reads.includes('notes.md'));
+	assert.ok(t('own env').lines['src/b.cjs'].includes(1), 'a child given its own env is still mapped');
+	assert.ok(t('own env').reads.includes('src/b.cjs'), 'and the script it runs counts as read');
 	assert.ok(!t('f').reads.includes('notes.md'));
 });
 
@@ -114,11 +117,11 @@ test('a changed run picks only the tests that reach the changed lines or files, 
 	};
 	const sub = (rel, from, to) => { const p = path.join(repo, rel); fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace(from, to)); };
 	assert.deepEqual(changed(() => sub('src/a.mjs', 'return 2;', 'return 1 + 1;')), ['g']);
-	assert.deepEqual(changed(() => sub('src/b.cjs', "'b'", "'bb'")), ['child']);
+	assert.deepEqual(changed(() => sub('src/b.cjs', "'b'", "'bb'")), ['child', 'own env']);
 	assert.deepEqual(changed(() => sub('notes.md', '# Notes', '# Notes, changed')), ['reads']);
 	assert.deepEqual(changed(() => sub('tests/x.test.mjs', "mark('f');", "mark('f'); void 0;")), ['f']);
 	assert.deepEqual(changed(() => fs.appendFileSync(file, "test('h', () => { mark('h'); });\n")), ['h']);
-	assert.deepEqual(changed(() => sub('tests/x.test.mjs', "import fs from 'node:fs';", "import fs from 'node:fs'; // shared")), ['child', 'f', 'g', 'reads'], 'a change outside any test runs the whole file');
+	assert.deepEqual(changed(() => sub('tests/x.test.mjs', "import fs from 'node:fs';", "import fs from 'node:fs'; // shared")), ['child', 'f', 'g', 'own env', 'reads'], 'a change outside any test runs the whole file');
 	assert.deepEqual(changed(() => {}), [], 'nothing changed, nothing runs');
 });
 
@@ -127,12 +130,12 @@ test('a changed run with no map, or a map from a commit not in history, runs eve
 	let r = run(repo, ['--changed', file]);
 	assert.equal(r.status, 0, r.stdout + r.stderr);
 	assert.match(r.stdout, /no coverage map.*running every test/);
-	assert.equal(ran(log).length, 4);
+	assert.equal(ran(log).length, 5);
 	fs.writeFileSync(path.join(repo, 'tests', '.map.json'), JSON.stringify({ sha: '0'.repeat(40), tests: {} }));
 	fs.rmSync(log);
 	r = run(repo, ['--changed', file]);
 	assert.match(r.stdout, /map's commit .* is not in this repo.*running every test/);
-	assert.equal(ran(log).length, 4);
+	assert.equal(ran(log).length, 5);
 });
 
 test('a map is made only from a clean tree, so its line numbers match its commit', () => {
