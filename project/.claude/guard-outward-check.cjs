@@ -97,6 +97,12 @@ const ASK = [
 	'npm unpublish x@1.0.0',
 	'npm dist-tag add x@1.0.0 latest',
 	'git send-email --to a@b.c 0001.patch',
+	// The 1.22.0 sweep (R1): a command handed to a shell through a redirect is still run.
+	'bash <<< "git push origin HEAD"',
+	"sh <<< 'gh pr merge 5 --squash'",
+	'cat > "$(git push origin HEAD)"',
+	'echo x > $(git push)',
+	'echo x > ' + BT + 'git push' + BT,
 	'curl -X POST https://example.com/api',
 	'curl --request PUT https://example.com/api',
 	'curl -XDELETE https://example.com/api/1',

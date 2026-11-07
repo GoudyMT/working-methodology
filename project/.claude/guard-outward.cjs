@@ -114,6 +114,8 @@ function findOutward(text, depth) {
 	// wildcard program is read here, anywhere in the command. A text that only names the flag asks too: the safe side.
 	if (/--owner-yes/i.test(text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, ''))) return 'an owner yes for a sweep';
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
+	// A backtick span is a command bash runs first, wherever it sits; the tokenizer splits it into words.
+	if (depth < MAX_DEPTH) for (const m of text.matchAll(/`([^`]+)`/g)) { const hit = findOutward(m[1], depth + 1); if (hit) return hit; }
 	for (const all of tokenize(joinContinuations(text))) {
 		const segment = all.filter((word) => !word.redirect);
 		const words = segment.map((word) => word.value.toLowerCase());
@@ -127,10 +129,13 @@ function findOutward(text, depth) {
 			else if (HTTP_CLIENTS.test(name)) hit = httpWrite(name, segment.slice(i + 1).map((word) => word.value));
 			if (hit) return hit;
 		}
-		// Quoted text may be a whole command handed to another shell: bash -c 'git push'.
+		// Quoted text may be a whole command handed to another shell: bash -c 'git push'. A redirect target is read too,
+		// as the delete guard reads it: a here-string feeds a shell (bash <<< "git push"), and $( ) or backticks in a
+		// target run before the redirect does (the 1.22.0 sweep).
 		if (depth < MAX_DEPTH) {
-			for (const word of segment) {
-				const hit = word.quoted ? findOutward(word.value, depth + 1) : '';
+			for (const word of all) {
+				const run = word.quoted || (word.redirect && /\$\(|`/.test(word.value));
+				const hit = run ? findOutward(word.value.replace(/^`|`$/g, ''), depth + 1) : '';
 				if (hit) return hit;
 			}
 		}
