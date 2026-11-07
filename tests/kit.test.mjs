@@ -6484,6 +6484,18 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
   const elsewhere = sweepGuard(r.dir, { cwd: side });
   assert.equal(elsewhere.permissionDecision, 'deny');
   assert.match(elsewhere.permissionDecisionReason, /checkout/);
+  // 1.21.0 handoff item 30: the cleared folder is named whole, not as the start of another folder's name.
+  const root = r.dir.split(path.sep).join('/');
+  const named = (where) => sweepGuard(r.dir, { cwd: side, tool_input: { subagent_type: 'reviewer', prompt: `review. Work in ${where}\nCall cap: 5.` } }).permissionDecision;
+  assert.equal(named(`${root}-old`), 'deny', 'another folder whose name starts the same');
+  assert.equal(named(`${root}2/src`), 'deny');
+  assert.equal(named(`${root}/src`), 'allow', 'a folder inside the cleared checkout');
+  fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
+  assert.equal(named(`"${root}"`), 'allow', 'the folder itself, quoted');
+  fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
+  assert.equal(named(`${root}.`), 'allow', 'the folder at the end of a sentence');
+  assert.equal(named(`${root}.bak`), 'deny', 'a folder named with a dot after it');
+  fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
   assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
 });
 test('S6: the shipped project settings make --owner-yes ask, so no session logs a yes unseen', () => {

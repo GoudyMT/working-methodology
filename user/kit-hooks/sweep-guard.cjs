@@ -107,7 +107,9 @@ function main() {
 		// A lead in another checkout may run a worktree's sweep, so long as the brief sends the reviewer there.
 		if (headOf(input.cwd || process.cwd()) !== e.head) {
 			const root = git(path.dirname(e.contract), 'rev-parse', '--show-toplevel').stdout.trim();
-			if (!root || !prompt.split('\\').join('/').toLowerCase().includes(root.toLowerCase())) return deny(`This reviewer would start from a checkout that is not at the cleared HEAD ${e.head}: start it from ${root || 'the checkout the contract was cleared in'}, or name that folder in its brief.`);
+			// Named whole: the folder or a path inside it, never the start of another folder's name (repo-old, repo2).
+			const named = (text) => { const t = text.split('\\').join('/').toLowerCase(); const r = root.toLowerCase(); for (let k = t.indexOf(r); k >= 0; k = t.indexOf(r, k + 1)) { const next = t.slice(k + r.length, k + r.length + 2); if (!/^[\w-]/.test(next) && !/^\.[\w.-]/.test(next)) return true; } return false; };
+			if (!root || !named(prompt)) return deny(`This reviewer would start from a checkout that is not at the cleared HEAD ${e.head}: start it from ${root || 'the checkout the contract was cleared in'}, or name that folder in its brief.`);
 		}
 		// A closed round has no starts left: an outcome, a none-ran or a cut short ends its clearance.
 		if (closedAfter(lines, i, e.contract)) return deny(`This sweep's outcome is logged, so its clearance is closed. ${RUN_FIRST}`);
