@@ -9,8 +9,10 @@
 //     "testsChanged": true,
 //     "roles": [{ "role", "kind" (KINDS below), "question", "context": [...], "finding", "calls", "callsReason" }] }
 // A re-sweep adds "resweepOf": "<the first sweep's contract.json>" and "fixed": [{ "finding", "kind" }] (the kind of
-// role that found each fixed finding). It gets one: a second re-sweep, or a re-sweep of one, is refused, and what
-// is left at medium or below goes to the handoff's carry-overs; a high or critical is fixed or the owner accepts it.
+// role that found each fixed finding). Under the one-sweep loop (the owner, 2026-11-07) any pass after a sweep that
+// ran on the branch asks the owner, a re-sweep included; on their yes it gets one: a second re-sweep, or a re-sweep
+// of one, is refused, and what is left at medium or below goes to the handoff's carry-overs; a high or critical is
+// fixed or the owner accepts it.
 //
 // Budgets are processed tokens (input + cache read + cache write + output), which the script reads itself from each
 // reviewer's own transcript at --outcome. A role sets its call cap; the script computes its budget from that. More

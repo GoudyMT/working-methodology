@@ -8,6 +8,7 @@ tags:
   instruments-and-evals: eval, benchmark, measurement, harness, results
   probe-scope: probe, experiment, investigation scope
   snag-response: stuck, blocker, workaround, snag
+  blocked-prompts: permission prompt, permission block, waiting on a prompt, owner command, hung
   fact-check: fact check, verify a document, claims, report, explainer, diagram accuracy
 ---
 
@@ -44,6 +45,14 @@ Run BEFORE touching code when a test fails, a build breaks, or behaviour surpris
 ## Snag Response: Least-Invasive Path, No Padding {#snag-response}
 
 After triage and diagnosis: (1) recommend the LEAST-INVASIVE path (no change -> local or config change -> the owner's global environment, last resort, explicit OK); (2) recommend, don't lock - one good option is presented as one; (3) verify the path before asserting it; (4) document snag + fix where it belongs (Session Log, plan notes, `_Loop Learnings.md`, ADR). Why: padding buries the recommendation, and an undocumented snag recurs.
+
+## Blocked on a Prompt or a Permission {#blocked-prompts}
+
+- **Never hand the owner a command an agent may run;** run it. On a permission block, ask in the thread for one typed sentence: a card tap does not clear the permission system, typed words do.
+- **Never point the owner at a prompt you cannot see.** Before saying a prompt waits, read the agent's transcript and the live processes.
+- **Read the full tool output before saying what it will ask.** A prediction from part of it is a guess.
+
+Why: each was a real stall (1.21.0): the owner waited on a step an agent could run, or on a prompt that was not there.
 
 ## Fact-Check Before Handing Over {#fact-check}
 

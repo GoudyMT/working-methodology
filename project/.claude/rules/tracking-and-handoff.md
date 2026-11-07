@@ -78,6 +78,7 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 4. **Loop-learnings check** - lessons captured; the handoff names open lessons + any regression.
 5. **Temp files** this session made (PR bodies, release drafts, screenshots, scratch scripts, logs, backups, drafts) that have served are deleted only inside its session folder (`<temp>/claude/<project key>/<session id>/`), never by wildcard. Anything else it made (a shared or uploaded copy, a file in the system temp) is listed for the owner, not deleted. Emit both lists, or "none". Why: a served draft left in place gets reused; a shared folder holds look-alike files.
 5b. **Rule sort for the kit (standing):** each rule, standard or workflow change this session (skills, agent roles, working-style memory too), tagged `project-only` or `portable`; portable ones go to `/methodology-kit fold-back` with the owner, around the compact. Emit the list, or "no rule changes". Why: without this step an improvement stays in one project.
+5c. **Self-audit count (E26, the owner, 2026-11-07):** a closeout that ends a feature-focus build counts it since the last self-audit (the first baseline: 1.20.0). At the 10th, the handoff's first action is the self-audit: re-run the token audit's method in a throwaway copy and compare each baseline row; times, tokens and accuracy hold or improve, and a row that got worse is a fix item in the next build. Why: costs creep one build at a time.
 6. Generate the handoff.
 
 **How: the closeout skill** (steps, two example handoffs, the handoff audit).

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // The merge gate (rule:standing-grants; workbench M18, E12 option B). Arms GitHub auto-merge on one PR only when
 // fixed checks pass, so a green PR merges itself and anything else stops with a triage report. It lives in the Claude
-// config folder, outside every repo, so no branch can edit the gate that judges it. The owner's grant is one allow
-// rule in their own settings for exactly this script; without it every merge still asks.
+// config folder, outside every repo, so no branch can edit the gate that judges it. The owner's grant is allow
+// rules in their own settings for this script's arm, disarm and autofix; without them each still asks.
 //
 // Every check must pass, or nothing is armed:
 //   1. the kill switch `autonomy-off` is absent from the Claude config folder

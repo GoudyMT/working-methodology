@@ -1,0 +1,36 @@
+{
+  "lines": [
+    {
+      "before": "The methodology kit is the baseline every project starts from. These rules keep it current, small and enforced. Each is checked by a machine where one can check it; the check is named.",
+      "after": "The methodology kit is the baseline every project starts from. These rules keep it current, small and enforced. Each is checked by a machine where one can check it; the check is named. Text the owner wrote or approved word for word (Hard Rule 14 among it) stays word for word, and a test pins it; only the owner edits it."
+    },
+    {
+      "before": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it.",
+      "after": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **One sweep:** one large sweep per branch; every fix ships with a test that fails before it, guard and permission fixes too; CI runs the full suite and auto-fix handles red. A second pass is the owner's call; escapes are measured next build. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it."
+    },
+    {
+      "before": "4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.",
+      "after": "4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, CI, one PR. The Resume Point names the feature pick first."
+    },
+    {
+      "before": "**Done iff** a report exists at `<sweep folder>/YYYY-MM-DD-<milestone>.md` with date, milestone, branch / commit; each dimension PASS or with findings; every high / critical `FIXED <commit>` or `ACCEPTED owner <why>`; for the deep tier, \"still aligned with the version goals? YES/NO + evidence\". <!-- PROJECT ADAPTER A22 -->",
+      "after": "**Done iff** a report exists at `<sweep folder>/YYYY-MM-DD-<milestone>.md` with date, milestone, branch / commit; each dimension PASS or with findings; every high / critical `FIXED <commit>` or `ACCEPTED owner <why>` (the owner then merges); for the deep tier, \"still aligned with the version goals? YES/NO + evidence\". <!-- PROJECT ADAPTER A22 -->"
+    },
+    {
+      "before": "**Re-sweep by tier:** feature, first push and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**",
+      "after": "**After the sweep:** each fix carries its failing-first test and CI runs the full suite (rule:finding-pipeline); a fix tier keeps its fix check. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**"
+    },
+    {
+      "before": "**Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> fixes + re-sweep -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body (carrying the sweep summary) + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a \"now\" idea is built and swept inside the same PR.",
+      "after": "**Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> test-first fixes -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body (carrying the sweep summary) + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a \"now\" idea is built and swept inside the same PR."
+    },
+    {
+      "before": "- **Team mode:** batch (the main session leads) under about 5 units, orchestrated above. **One review lead** runs the whole tail (sweep, fixes, fix check, re-sweep, op-test, design calls) with one stop.",
+      "after": "- **Team mode:** batch (the main session leads) under about 5 units, orchestrated above. **One review lead** runs the whole tail (sweep, fixes, fix check, op-test, design calls) with one stop."
+    },
+    {
+      "before": "- **Fix sets:** one checker may do the fix check and the re-sweep together only when the fixes cover at most 2 roots, none above low; otherwise run both. Why: the separate re-sweep catches half-done fixes.",
+      "after": "- **Fix sets:** the fix check confirms each fix's test fails on the code before it. Why: with no re-sweep, the failing-first test is what catches a half-done fix."
+    }
+  ]
+}
