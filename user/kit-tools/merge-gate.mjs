@@ -199,6 +199,11 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 		}
 	}
 
+	// The grant is the owner's allow rule, and it reaches every repo; the project names its own consent in adapter row
+	// A27, read from the base so a branch cannot grant itself.
+	const grant = grantFault(git, baseRef);
+	if (grant) faults.push(grant);
+
 	// The hold: once armed, a push over the armed head must stop, and only the kit's pre-push hook does that.
 	const hold = holdFault(git, cwd);
 	if (hold) faults.push(hold);
@@ -211,6 +216,16 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	faults.push(...bodyFaults({ cwd, config, body: p.body || '', title: p.title || '', baseRef, git, run }));
 
 	return { go: faults.length === 0, faults, facts };
+}
+
+// Adapter row A27 on the base must name the merge gate; the kit's default is none.
+function grantFault(git, baseRef) {
+	if (!baseRef) return '';
+	const r = git('show', `${baseRef}:standards/project-adapter.md`);
+	if (r.status !== 0) return `the base has no standards/project-adapter.md, so this project names no standing grant (row A27): this merge is the owner's`;
+	const row = r.stdout.split('\n').find((l) => /^\|\s*A27\s*\|/.test(l));
+	const value = row ? row.split('|').slice(1, -1).pop().trim().replace(/`/g, '') : '';
+	return /\bmerge\b/i.test(value) && !/^none\b/i.test(value) ? '' : `adapter row A27 on the base grants no merge (${value || 'no row'}): this merge is the owner's`;
 }
 
 // The hooks folder this clone really uses (the gate's own runs override it on the command line, so that value is
