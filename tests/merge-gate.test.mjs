@@ -68,7 +68,7 @@ function setup() {
 		pr: { number: 7, state: 'OPEN', isDraft: false, isCrossRepository: false, headRefName: 'feat/subtract', headRefOid: sha, baseRefName: 'main', title: TITLE, body: BODY, url: 'https://github.com/o/r/pull/7' },
 		repo: { full_name: 'o/r', html_url: 'https://github.com/o/r', allow_auto_merge: true, delete_branch_on_merge: true },
 		baseTip: null,
-		protection: { contexts: ['kit-tests'], checks: [] },
+		protection: { contexts: ['kit-tests'], checks: [], strict: true },
 		rules: [],
 		release: { tagName: 'v1.2.0', body: 'Plans now sync between devices.\n' },
 		mergeStatus: 0,
@@ -221,6 +221,25 @@ const CASES = [
 	['code changed after the sweep', (s) => commitOnBranch(s, 'math.txt', 'add\nsub\nmul\n'), /never reviewed: math\.txt/],
 	['a sweep report that fails its audit', (s) => fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.sha, '\n| ID | Severity | Finding |\n|---|---|---|\n| S1 | high | leaks a token | DEFERRED |\n')), /fails its audit/],
 	['a body that fails its audit', (s) => { s.state.pr.body = BODY.replace('- [x] The test', '- [ ] The test'); }, /live PR body fails/],
+	// 1.22.0: the 1.21.0 and 1.21.1 carry-overs, each a way the gate could arm what it should not.
+	['a read that leaves out the draft field', (s) => { delete s.state.pr.isDraft; }, /draft/],
+	['a read that leaves out the fork field', (s) => { delete s.state.pr.isCrossRepository; }, /another repository/],
+	['a check whose result went stale', (s) => { s.state.pr.statusCheckRollup = [{ name: 'kit-tests', status: 'COMPLETED', conclusion: 'STALE' }]; }, /checks are failing: kit-tests/],
+	['a required-check answer of the wrong shape', (s) => { s.state.protection = { contexts: 'kit-tests', checks: null }; }, /could not read the required checks/],
+	['a base that does not need the branch up to date', (s) => { s.state.protection.strict = false; }, /up to date/],
+	['a link named like a gate folder', (s) => {
+		const blob = sh(s.work, 'hash-object', '-w', 'math.txt');
+		sh(s.work, 'update-index', '--add', '--cacheinfo', `120000,${blob},.githooks`);
+		sh(s.work, 'commit', '-qm', 'link');
+		s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+		cleared(s.work, s.state.pr.headRefOid);
+	}, /gate or rule paths.*\.githooks/],
+	['an uncommitted change in the working copy', (s) => fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nlocal\n'), /uncommitted/],
+	['a setting file excluded only in this clone', (s) => {
+		fs.mkdirSync(path.join(s.work, '.kit'), { recursive: true });
+		fs.writeFileSync(path.join(s.work, '.kit', 'pr-body.json'), '{"gates":[]}');
+		fs.appendFileSync(path.join(s.work, '.git', 'info', 'exclude'), '.kit/\n');
+	}, /pr-body\.json.*this clone/],
 ];
 for (const [name, breakIt, want] of CASES) {
 	test(`merge gate: ${name} is NO GO, with a triage report, and nothing is armed`, () => {
@@ -245,7 +264,7 @@ test('merge gate: a report may name the branch on its Scope line, as the fix exa
 test('merge gate: a ruleset alone counts as the required check', () => {
 	const s = setup();
 	s.state.protection = null;
-	s.state.rules = [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'kit-tests' }] } }];
+	s.state.rules = [{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'kit-tests' }] } }];
 	assert.equal(check(s.opts).go, true);
 });
 
@@ -471,11 +490,23 @@ test('merge gate: the sweep folder comes from the cleared contract, as adapter A
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));
 });
-test('merge gate: an audit setting kept out of git on purpose is the project\'s own', () => {
+// 1.21.1 carry 1: kept out of git by this clone's own exclude file, a setting is anyone's to write; by the base's
+// .gitignore it is the project's. (Install excludes .kit/ in info/exclude, so a project that wants its own audit
+// settings tracks them, or lists them in .gitignore.)
+test('merge gate: an audit setting ignored by the base\'s .gitignore is the project\'s own; by this clone\'s exclude it is not', () => {
 	const s = setup();
 	fs.mkdirSync(path.join(s.work, '.kit'));
 	fs.writeFileSync(path.join(s.work, '.kit/version-bump.json'), '{"shipped":[]}\n');
 	fs.appendFileSync(path.join(s.work, '.git/info/exclude'), '.kit/\n');
+	assert.match(check(s.opts).faults.join('\n'), /version-bump\.json is kept out of git only in this clone/);
+	fs.writeFileSync(path.join(s.work, '.git/info/exclude'), '');
+	sh(s.work, 'checkout', '-q', 'main');
+	fs.writeFileSync(path.join(s.work, '.gitignore'), '.kit/\n');
+	sh(s.work, 'add', '.gitignore'); sh(s.work, 'commit', '-qm', 'ignore .kit'); sh(s.work, 'push', '-q', 'origin', 'main');
+	sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	cleared(s.work, s.state.pr.headRefOid);
+	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));
 });

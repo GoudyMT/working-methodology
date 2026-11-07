@@ -43,7 +43,8 @@ import kitTemp from './kit-temp.cjs';
 // A change here is live the moment it merges, in this repo: workflows, the installed kit and its rules, the
 // project's grant and gate settings, git hooks, and the loaded rule files.
 // Case-blind: Windows folds case, so .GitHooks lands in the real folder.
-export const PROTECTED = [/^\.github\//i, /^\.kit\//i, /^\.githooks\//i, /^\.claude\//i, /^project\/\.claude\//i, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i];
+// The folder's own name counts too: a link named .githooks lands git's hooks somewhere else.
+export const PROTECTED = [/^\.github(\/|$)/i, /^\.kit(\/|$)/i, /^\.githooks(\/|$)/i, /^\.claude(\/|$)/i, /^project\/\.claude(\/|$)/i, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i];
 // In the kit's own source the same things live here, and install carries them to every project: the owner's merge.
 export const KIT_SOURCE_PROTECTED = [/^user\//i, /^project\//i, /^rules\//i, /^scripts\//i, /^tests\//i, /^kit\.config\.json$/i];
 // git runs a repo's hooks on its own commands, and a branch can ship one under core.hooksPath. Replace refs and diff
@@ -53,7 +54,8 @@ const NO_HOOKS = ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-c'
 export const AFTER_SWEEP = ['VERSION', 'CHANGELOG.md'];
 const CONVENTIONAL = /^[a-z]+(\([^)]*\))?!?: /;
 const SHA = /^[0-9a-f]{40}$/;
-const BAD_CHECK = /^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE)$/;
+// STALE: GitHub marks a result it no longer counts; it is not a pass.
+const BAD_CHECK = /^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE|STALE)$/;
 const HOLD_LABEL = /^(do[- ]not[- ]merge|hold|wip)$/i;
 
 // Programs Windows would start from the working folder, ahead of PATH, when a child calls them by bare name.
@@ -126,8 +128,9 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	if (!p) return { go: false, faults: [...faults, `gh could not read PR ${pr}`], facts };
 	Object.assign(facts, { url: p.url, sha: p.headRefOid, base: p.baseRefName, head: p.headRefName });
 	if (p.state !== 'OPEN') faults.push(`PR ${pr} is ${p.state}, not open`);
-	if (p.isDraft) faults.push(`PR ${pr} is a draft`);
-	if (p.isCrossRepository) faults.push(`PR ${pr} comes from another repository`);
+	// A field the read left out is not a no: only a plain false passes.
+	if (p.isDraft !== false) faults.push(`PR ${pr} is a draft, or the read did not say`);
+	if (p.isCrossRepository !== false) faults.push(`PR ${pr} comes from another repository, or the read did not say`);
 	// A stop the owner set on GitHub is theirs: the gate must not undo it.
 	if (p.reviewDecision === 'CHANGES_REQUESTED') faults.push(`a review on PR ${pr} asks for changes`);
 	const held = (p.labels || []).map((l) => l.name).filter((n) => HOLD_LABEL.test(n || ''));
@@ -136,6 +139,9 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	if (!SHA.test(p.headRefOid || '')) return { go: false, faults: [...faults, 'the PR has no head commit'], facts };
 	const local = git('rev-parse', 'HEAD').stdout.trim();
 	if (local !== p.headRefOid) faults.push(`the working copy is at ${local.slice(0, 12) || 'nothing'}, not the PR's head ${p.headRefOid.slice(0, 12)}: check out the branch and pull`);
+	// The audits read the working copy: an edit not in the head would be judged in its place.
+	const dirty = git('status', '--porcelain', '--untracked-files=no');
+	if (dirty.status !== 0 || dirty.stdout.trim()) faults.push(`the working copy has uncommitted changes the audits would read: ${dirty.stdout.trim().split('\n').map((l) => l.slice(3)).join(', ') || 'git status failed'}`);
 
 	// 3. Repo settings.
 	// `gh repo view` has no auto-merge field, so this reads the REST repo; {owner}/{repo} is gh's own placeholder for this repo.
@@ -152,12 +158,19 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	// 4. A required check on the base: branch protection or a ruleset.
 	const prot = json(gh('api', `repos/${repo.full_name}/branches/${encodeURIComponent(p.baseRefName)}/protection/required_status_checks`));
 	const rules = json(gh('api', `repos/${repo.full_name}/rules/branches/${encodeURIComponent(p.baseRefName)}`));
-	const fromProt = prot ? [...(prot.contexts || []), ...(prot.checks || []).map((c) => c.context)] : [];
-	const fromRules = Array.isArray(rules) ? rules.filter((r) => r.type === 'required_status_checks')
-		.flatMap((r) => ((r.parameters || {}).required_status_checks || []).map((c) => c.context)) : [];
-	const required = [...new Set([...fromProt, ...fromRules].filter(Boolean))];
+	// Each answer is held to its shape: a string where a list belongs would read as one check per letter.
+	const list = (v) => v == null || Array.isArray(v);
+	const ruleSets = Array.isArray(rules) ? rules.filter((r) => r && r.type === 'required_status_checks') : [];
+	const shaped = (!prot || (list(prot.contexts) && list(prot.checks))) && ruleSets.every((r) => list((r.parameters || {}).required_status_checks));
+	if (!shaped) return { go: false, faults: [...faults, `gh could not read the required checks of ${p.baseRefName}: the answer is not the shape GitHub gives`], facts };
+	const fromProt = prot ? [...(prot.contexts || []), ...(prot.checks || []).map((c) => c && c.context)] : [];
+	const fromRules = ruleSets.flatMap((r) => ((r.parameters || {}).required_status_checks || []).map((c) => c && c.context));
+	const required = [...new Set([...fromProt, ...fromRules].filter((c) => typeof c === 'string' && c))];
 	facts.required = required;
 	if (!required.length) faults.push(`${p.baseRefName} requires no status check, so auto-merge would merge at once: protect it first (rule:first-push-gate)`);
+	// Unless the base needs the branch up to date, a PR checked against an old base merges onto a new one untested.
+	const strict = (prot && prot.strict === true) || ruleSets.some((r) => (r.parameters || {}).strict_required_status_checks_policy === true);
+	if (required.length && !strict) faults.push(`${p.baseRefName} does not require a branch to be up to date before it merges, so a PR could merge onto a base its checks never ran on: the owner turns on "require branches to be up to date" for its required checks`);
 	// GitHub waits only for required checks, and merges at once past a failed optional one, so any failure stops it here.
 	const failed = (p.statusCheckRollup || []).filter((c) => BAD_CHECK.test(c.conclusion || c.state || '')).map((c) => c.name || c.context);
 	if (failed.length) faults.push(`checks are failing: ${failed.join(', ')}`);
@@ -329,7 +342,11 @@ function settingFaults({ cwd, baseRef, git }) {
 		if (!fs.existsSync(disk)) return [];
 		const base = git('show', `${baseRef}:${f}`);
 		if (base.status === 0) return base.stdout.replace(/\r\n/g, '\n') === fs.readFileSync(disk, 'utf8').replace(/\r\n/g, '\n') ? [] : [`${f} differs from ${baseRef}: the audit would read a setting not on the base`];
-		return git('check-ignore', '-q', f).status === 0 ? [] : [`${f} is not on the base: the audit would read a setting not on the base`];
+		// Ignored by a rule the base holds (.gitignore) is the project's choice; by this clone's own exclude file it is
+		// a session's, and any session can write it.
+		const why = git('check-ignore', '-v', f);
+		if (why.status !== 0) return [`${f} is not on the base: the audit would read a setting not on the base`];
+		return /(^|[\\/])info[\\/]exclude:/i.test(why.stdout) ? [`${f} is kept out of git only in this clone (info/exclude): the audit would read a setting the base does not hold`] : [];
 	});
 }
 
