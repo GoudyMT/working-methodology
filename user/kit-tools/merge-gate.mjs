@@ -31,6 +31,7 @@
 //   node merge-gate.mjs autofix <pr>      make one auto-fix push and log it, disarming first
 //   node merge-gate.mjs live pr <n>       audit the live PR body
 //   node merge-gate.mjs live release <tag>  audit the live release body
+//   node merge-gate.mjs status            the kill switch, and each PR still armed in this repo's log
 // Exit 0 = GO / clean; 1 = NO GO / faults; 2 = usage.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -477,6 +478,25 @@ function stoppedOutside(cwd, run, pr) {
 	return armed;
 }
 
+/**
+ * What the gate holds now, for a session or the owner to read at any time (handoff item 16): whether the kill switch
+ * is set, and each PR armed in this repo's log with no disarm after it.
+ *
+ * Returns:
+ *     { killSwitch, armed: [{ pr, url, sha, unread }] }
+ */
+export function status({ cwd, config = configDir(), run = realRun }) {
+	const armed = new Map();
+	let text = '';
+	try { text = fs.readFileSync(gateLog(cwd, run), 'utf8'); } catch { /* no log: nothing was ever armed here */ }
+	for (const line of text.split('\n')) {
+		const [, kind, what, sha, rest] = line.split(' ');
+		if (kind === 'ARMED') armed.set(String(what).split('/').pop(), { pr: String(what).split('/').pop(), url: what, sha, unread: rest === 'unread' });
+		if (kind === 'DISARMED') armed.delete(what);
+	}
+	return { killSwitch: fs.existsSync(path.join(config, 'autonomy-off')), armed: [...armed.values()] };
+}
+
 const gateLog = (cwd, run) => path.join(path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd).stdout.trim() || '.git'), 'kit-merge-gate.log');
 
 /**
@@ -590,12 +610,17 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
 		const r = autofix({ pr: a, cwd });
 		console.log(r.pushed ? `PUSHED: ${r.sha} to PR ${a}; logged. Run the gate again to arm it.` : r.faults.join('\n'));
 		process.exit(r.pushed ? 0 : 1);
+	} else if (cmd === 'status') {
+		const r = status({ cwd });
+		console.log(`Kill switch: ${r.killSwitch ? 'SET, every merge asks the owner' : 'off'}`);
+		console.log(r.armed.length ? r.armed.map((x) => `ARMED: PR ${x.pr} at ${x.sha}${x.unread ? ' (not read back: may be armed)' : ''}`).join('\n') : 'Armed: none in this repo\'s log');
+		process.exit(0);
 	} else if (cmd === 'live' && a && b) {
 		const r = live({ kind: a, id: b, cwd });
 		console.log(r.ok ? `Live ${a} body: clean` : r.faults.join('\n'));
 		process.exit(r.ok ? 0 : 1);
 	} else {
-		console.log('Usage: node merge-gate.mjs arm <pr> | check <pr> | disarm <pr> | autofix <pr> | live pr <n> | live release <tag>');
+		console.log('Usage: node merge-gate.mjs arm <pr> | check <pr> | disarm <pr> | autofix <pr> | status | live pr <n> | live release <tag>');
 		process.exit(2);
 	}
 }

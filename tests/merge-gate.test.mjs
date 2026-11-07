@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { check, arm, disarm, autofix, live, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
+import { check, arm, disarm, autofix, live, status, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -678,6 +678,23 @@ test('merge gate: autofix disarms an armed PR, pushes the branch and logs the co
 	assert.ok(s.state.calls.includes('pr merge 7 --disable-auto'));
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
 	assert.match(log, new RegExp(`DISARMED 7\\n.* AUTOFIX 7 ${fixed}\\n$`));
+});
+// Handoff item 16: a session can read at any time whether the kill switch is set and what is still armed.
+test('merge gate: status reads the kill switch and each PR still armed, an unread arming included', () => {
+	const s = setup();
+	assert.deepEqual(status(s.opts), { killSwitch: false, armed: [] });
+	assert.equal(arm(s.opts).armed, true);
+	fs.writeFileSync(path.join(s.config, 'autonomy-off'), '');
+	fs.appendFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), `t ARMED https://github.com/o/r/pull/8 ${'c'.repeat(40)} unread\n`);
+	const r = status(s.opts);
+	assert.equal(r.killSwitch, true);
+	assert.deepEqual(r.armed.map((x) => [x.pr, x.unread]), [['7', false], ['8', true]]);
+	assert.equal(disarm(s.opts).disarmed, true);
+	assert.deepEqual(status(s.opts).armed.map((x) => x.pr), ['8']);
+	const cli = spawnSync(process.execPath, [path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'status'], { cwd: s.work, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: s.config } });
+	assert.match(cli.stdout, /Kill switch: SET/);
+	assert.match(cli.stdout, /ARMED: PR 8 .*may be armed/);
+	assert.doesNotMatch(cli.stdout, /PR 7/);
 });
 // 1.21.1 carry 8: a base named with a slash, and a PR address in another case, still pass.
 test('merge gate: a base with a slash in its name and a PR address in mixed case arm as any other', () => {
