@@ -643,13 +643,36 @@ function reviewersOf(hash, since, skip) {
 	return out.sort((a, b) => a.role - b.role).map((x) => x.id);
 }
 
-function spend(ids, since, hash, team, crashed = new Set()) {
+// The tool id of each start the guard let in, per role (1-based), across a round's clearings: the first start and a
+// retry's. Claude Code writes the same id into the reviewer's meta file.
+function startIds(clearings) {
+	const lines = rawLines();
+	const ids = new Map();
+	for (const i of clearings) {
+		const dir = path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]));
+		let names = [];
+		try { names = fs.readdirSync(dir); } catch { continue; }
+		for (const name of names) {
+			const m = name.match(/^(\d+)(\.retry)?$/);
+			let id = '';
+			try { id = fs.readFileSync(path.join(dir, name), 'utf8').trim(); } catch { /* unreadable: no start */ }
+			if (!m || !id) continue;
+			const role = Number(m[1]) + 1;
+			if (!ids.has(role)) ids.set(role, new Set());
+			ids.get(role).add(id);
+		}
+	}
+	return ids;
+}
+
+function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) {
 	const root = transcriptRoot();
 	const found = new Map(ids.map((id) => [id, []]));
 	for (const project of folders(root)) for (const session of folders(project)) {
 		for (const id of ids) { const f = path.join(session, 'subagents', `agent-${id}.jsonl`); if (fs.existsSync(f)) found.get(id).push(f); }
 	}
 	const bad = [];
+	const toolIds = new Map();
 	const roles = ids.map((id) => {
 		const files = found.get(id);
 		if (files.length !== 1) { bad.push(`${id} (${files.length ? `${files.length} transcripts` : 'no transcript'})`); return null; }
@@ -684,11 +707,15 @@ function spend(ids, since, hash, team, crashed = new Set()) {
 		const tokens = [...seen.values()].reduce((t, m) => t + u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens'), 0);
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
 		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
+		toolIds.set(id, String(meta.toolUseId || ''));
 		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp) };
 	});
 	// A crash and its retry name one role by design.
 	const own = roles.filter((x) => x && !crashed.has(x.agent));
 	if (!bad.length) for (const x of own) if (own.filter((y) => y.index === x.index).length > 1) bad.push(`${x.agent} (role ${x.index} is named by more than one brief)`);
+	// A brief anyone can copy; the start is the guard's. Only the transcript of a start it recorded for its role counts.
+	// A sweep the owner decided outside the script had no clearing, so the guard started nothing to match.
+	if (!bad.length && guardStarts) for (const x of roles) if (!(guardStarts.get(x.index) || new Set()).has(toolIds.get(x.agent))) bad.push(`${x.agent} (not the reviewer the guard started for role ${x.index})`);
 	return bad.length ? { root, bad } : { root, roles: roles.sort((a, b) => a.index - b.index) };
 }
 
@@ -714,7 +741,7 @@ function retry() {
 	if (!id || !AGENT_ID.test(id)) { console.log('--retry needs --crashed <id>, the crashed reviewer\'s agent id. Nothing logged.'); return 1; }
 	const before = retriesSince(s.log, contractFile, clearings[0]).find((e) => e.role === n);
 	if (before) { console.log(`Role ${n} already had its retry (${before.crashed} crashed): a further crash is the owner's. Mark it with --outcome --cut-short, and the next contract asks them. Nothing logged.`); return 1; }
-	const read = usedAgents(s.log).has(id.toLowerCase()) ? { bad: [`${id} (already logged for an earlier outcome)`] } : spend([id], clearing.time, clearing.hash, team, new Set([id]));
+	const read = usedAgents(s.log).has(id.toLowerCase()) ? { bad: [`${id} (already logged for an earlier outcome)`] } : spend([id], clearing.time, clearing.hash, team, new Set([id]), startIds(clearings));
 	if (read.bad) { console.log(`--retry needs a crashed reviewer of this sweep: ${read.bad.join(', ')}. Nothing logged.`); return 1; }
 	const [x] = read.roles;
 	if (x.finished) { console.log(`${id} finished, so its report stands and its role needs no retry. Nothing logged.`); return 1; }
@@ -805,7 +832,7 @@ function outcome() {
 	if (!ids.length || ids.some((id) => !AGENT_ID.test(id)) || new Set(ids.map((x) => x.toLowerCase())).size !== ids.length) { console.log('--agents needs the reviewers\' agent ids, comma-separated, each once (letters, digits, - and _). Nothing logged.'); return 1; }
 	if (ids.length !== Number(decision.agents)) { console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role (each brief's Sweep line names its role). Nothing logged. A sweep cut short: --outcome --cut-short.`); return 1; }
 	const refused =[...ids.filter((id) => used.has(id.toLowerCase())).map((id) => `${id} (already logged for an earlier outcome)`), ...ids.filter(isLost).map((id) => `${id} (logged as crashed: name its retry's id)`)];
-	const read = refused.length ? { bad: refused } : spend([...ids, ...lost], since, decision.hash, Number(decision.agents), new Set(lost));
+	const read = refused.length ? { bad: refused } : spend([...ids, ...lost], since, decision.hash, Number(decision.agents), new Set(lost), clearAts.length ? startIds(clearAts) : null);
 	if (read.bad) {
 		const why = [`the spend cannot be read, so it is not guessed: ${read.bad.join(', ')}`];
 		console.log('ASK THE OWNER - the spend cannot be read, so it is not guessed (rule:sweep-auto-approval):');

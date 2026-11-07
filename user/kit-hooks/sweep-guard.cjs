@@ -114,10 +114,13 @@ function main() {
 		// Each start claims its role's slot file; creating it fails if it exists, so a role starts once.
 		const slots = path.join(dir, 'kit-sweep-starts', sha(lines[i]));
 		try { fs.mkdirSync(slots, { recursive: true }); } catch { return deny(`The guard could not record this start in ${slots}, so it cannot hold the role to one start. Fix that folder, then start again.`); }
-		try { fs.closeSync(fs.openSync(path.join(slots, String(n)), 'wx')); return; } catch { /* taken */ }
+		// The slot holds the start's tool id, which Claude Code writes into the reviewer's meta file: the outcome counts
+		// that reviewer only, so a decoy with the same brief cannot stand in.
+		const claim = (name) => { const fd = fs.openSync(path.join(slots, name), 'wx'); try { fs.writeSync(fd, String(input.tool_use_id || '')); } finally { fs.closeSync(fd); } };
+		try { claim(String(n)); return; } catch { /* taken */ }
 		// A logged retry opens one more slot for its own role, claimed the same way.
 		if (retryOpen(lines, i, e.contract, n + 1)) {
-			try { fs.closeSync(fs.openSync(path.join(slots, `${n}.retry`), 'wx')); return; } catch { /* taken */ }
+			try { claim(`${n}.retry`); return; } catch { /* taken */ }
 			return deny(`Role ${n + 1} has used its one retry. A further crash is the owner's: \`approve.mjs <contract.json> --outcome --cut-short\`, and the next contract asks them.`);
 		}
 		return deny(`Role ${n + 1} of the cleared contract has started already. If its reviewer crashed: \`approve.mjs <contract.json> --retry ${n + 1} --crashed <id>\`. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);

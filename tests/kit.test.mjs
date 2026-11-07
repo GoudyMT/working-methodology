@@ -2253,6 +2253,9 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
 }
 const approveIn = (dir, args, env = {}) => {
   if (args.includes('--outcome') && env.CLAUDE_CONFIG_DIR) leadBriefs(dir, args, env.CLAUDE_CONFIG_DIR);
+  // A crashed reviewer was started by the guard too.
+  const crashed = args.includes('--retry') && args[args.indexOf('--crashed') + 1];
+  if (crashed && env.CLAUDE_CONFIG_DIR) startedByBrief(dir, env.CLAUDE_CONFIG_DIR, crashed);
   return spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env } });
 };
 // What a lead does: each reviewer's brief carries "Sweep: <hash> role <n>" for the contract cleared last, n in the
@@ -2280,6 +2283,37 @@ function leadBriefs(dir, args, cfg) {
   const ids = String(args[args.indexOf('--agents') + 1] || '').split(',');
   if (!at || !args.includes('--agents') || !fs.existsSync(path.join(cfg, 'projects'))) return;
   ids.forEach((id, i) => { if (/^[\w-]+$/.test(id)) setBrief(cfg, id, (b) => `${b} Sweep: ${at[1].hash} role ${i + 1}`); });
+  // --agents auto: the lead started every reviewer whose brief it wrote.
+  const all = ids[0] === 'auto' ? fs.readdirSync(path.join(cfg, 'projects')).flatMap((p) => fs.readdirSync(path.join(cfg, 'projects', p)).flatMap((s) => { try { return fs.readdirSync(path.join(cfg, 'projects', p, s, 'subagents')); } catch { return []; } })).map((n) => (n.match(/^agent-(.+)\.jsonl$/) || [])[1]).filter(Boolean) : ids;
+  for (const id of all) startedByBrief(dir, cfg, id);
+}
+// The guard started a reviewer under the clearing and role its brief names.
+function startedByBrief(dir, cfg, id) {
+  let f = /^[\w-]+$/.test(id) && fs.existsSync(path.join(cfg, 'projects')) && transcriptOf(cfg, id);
+  // The guard starts only the reviewer type; another type with a sweep's brief is refused.
+  try { if (f && !/reviewer$/i.test(JSON.parse(read(f.replace(/\.jsonl$/, '.meta.json'))).agentType)) f = null; } catch { f = null; }
+  const content = f && JSON.parse(read(f).split('\n')[0]).message?.content;
+  const tag = f && (Array.isArray(content) ? content.map((x) => (x && x.text) || '').join('\n') : String(content || '')).match(/Sweep: ([0-9a-f]{16}) role (\d+)/);
+  const clearing = tag && sweepLog(dir).filter((l) => { const e = JSON.parse(l); return e.hash === tag[1] && (e.kind === 'owner-yes' || e.decision === 'approved'); }).pop();
+  if (clearing) guardStart(dir, clearing, Number(tag[2]), id);
+}
+const transcriptOf = (cfg, id) => {
+  for (const p of fs.readdirSync(path.join(cfg, 'projects'))) for (const s of fs.readdirSync(path.join(cfg, 'projects', p))) {
+    const f = path.join(cfg, 'projects', p, s, 'subagents', `agent-${id}.jsonl`);
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+};
+// What the guard does at each start: the role's slot under the clearing records the start's tool id, which Claude
+// Code also writes into the reviewer's meta file (toolu_lead_<id> in these transcripts). Tests try several reviewers
+// for one role in turn, so a start this helper wrote gives way to the next; one the real guard wrote stays. A
+// reviewer other than the crashed one, after a logged retry for its role, takes the retry slot.
+function guardStart(dir, clearingLine, role, id) {
+  const slots = path.join(dir, '.git', 'kit-sweep-starts', crypto.createHash('sha256').update(clearingLine).digest('hex').slice(0, 16));
+  fs.mkdirSync(slots, { recursive: true });
+  const retried = sweepLog(dir).some((l) => { const e = JSON.parse(l); return e.kind === 'retry' && e.role === role && e.crashed !== id; });
+  const f = path.join(slots, retried ? `${role - 1}.retry` : String(role - 1));
+  if (!fs.existsSync(f) || !read(f) || read(f).startsWith('toolu_lead_')) fs.writeFileSync(f, `toolu_lead_${id}`);
 }
 function approveRun(contract, dir = sweepRepo()) {
   const f = path.join(dir, 'sweeps', 'contract.json');
@@ -2304,7 +2338,7 @@ function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session
       return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
     });
     fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
-    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
+    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', toolUseId: `toolu_lead_${id}`, model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
   }
   return cfg;
 }
@@ -4458,9 +4492,9 @@ test('a retry needs an open sweep, and the crashed id cannot also stand as the r
   const s = crashedSweep();
   assert.equal(s.retry(1, 'r1').status, 0);
   const metaFile = path.join(s.cfg, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-r1.meta.json');
-  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', finished: true }));
+  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', toolUseId: 'toolu_lead_r1', finished: true }));
   assert.match(logOutcome(s, ['r1', 'r2'], s.cfg).stdout, /r1 \(logged as crashed/);
-  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', finished: false }));
+  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', toolUseId: 'toolu_lead_r1', finished: false }));
   transcripts({ r1b: [[0, 100, 0, 0]] }, {}, s.cfg);
   assert.equal(logOutcome(s, ['r1b', 'r2'], s.cfg).status, 0);
   const late = s.retry(2, 'r2');
@@ -4763,6 +4797,26 @@ test('a re-sweep after a first sweep cut short asks the owner, not a loop; an un
   assert.equal(resweep(first, {}, 'second.json').status, 0, 'a re-sweep nobody ran spends nothing');
 });
 // 1.21.0 handoff item 28: the sweep guard must be wired beside the call cap, and no settings layer may turn hooks off.
+// 1.21.0 handoff item 29: an outcome named any reviewer transcript whose brief carried the tag, so a cheap decoy
+// could stand in for the reviewer the guard started. The guard writes the start's tool id into the role's slot, and
+// the outcome counts only the transcript Claude Code wrote for that start.
+test('an outcome counts only the reviewer the guard started for each role, not a decoy with the same tag', () => {
+  const r = approveRun(featureContract());
+  const at = lastClearing(r.dir);
+  const slots = path.join(r.dir, '.git', 'kit-sweep-starts', crypto.createHash('sha256').update(at[0]).digest('hex').slice(0, 16));
+  const brief = 'review. Call cap: 5.' + leadTag(r.dir, 'Call cap: 5');
+  const started = sweepGuard(r.dir, { raw: true, tool_use_id: 'toolu_real1', tool_input: { subagent_type: 'reviewer', prompt: brief + leadQuestion(r.dir, brief) } });
+  assert.equal(started.permissionDecision, 'allow');
+  assert.equal(read(path.join(slots, '0')), 'toolu_real1', 'the guard records which start took the slot');
+  const ids = ['real1', 'b2', 'b3', 'b4', 'b5'];
+  const cfg = transcripts(Object.fromEntries([...ids, 'decoy'].map((id) => [id, [[0, 1000, 0, 0]]])), { real1: { toolUseId: 'toolu_real1' } });
+  const run = (names) => approveIn(r.dir, [r.f, '--outcome', '--agents', names.join(','), '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  setBrief(cfg, 'decoy', (b) => `${b} Sweep: ${at[1].hash} role 1`);
+  const bad = run(['decoy', ...ids.slice(1)]);
+  assert.equal(bad.status, 1, bad.stdout);
+  assert.match(bad.stdout, /decoy \(not the reviewer the guard started for role 1\)/);
+  assert.equal(run(ids).status, 0, 'the started reviewer counts');
+});
 test('the sweep guard refuses a reviewer brief under another agent type, and a reviewer started outside git', () => {
   const dir = makeTemp('guard-');
   const r = approveRun(featureContract());
