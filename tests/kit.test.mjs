@@ -1687,9 +1687,21 @@ test('the canary reads the phrase from the main checkout when the agent works in
   assert.equal(canary({ cwd: wt, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'w', last_assistant_message: `${FAKE_PHRASE} - done` }).status, 0);
   assert.equal(canary({ cwd: wt, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'w2', last_assistant_message: 'done' }).status, 2);
 });
+// The canary lets any error through with exit 0, so "off" is shown against the same input in a project that has
+// the phrase line: there it blocks, here it lets the stop and the brief through and logs nothing.
 test('the canary is off in a project with no phrase line', () => {
-  const dir = canaryRepo(null);
-  assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'n', last_assistant_message: 'done' }).status, 0);
+  const stop = { hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'n', last_assistant_message: 'done' };
+  const brief = { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: `Start your report with ${FAKE_PHRASE}.` } };
+  const on = canaryRepo();
+  assert.equal(canary({ ...stop, cwd: on }).status, 2, 'with the phrase line, the same stop is blocked');
+  assert.match(canary({ ...brief, cwd: on }).stdout, /"permissionDecision":\s*"deny"/, 'and the same brief is denied');
+  const off = canaryRepo(null);
+  for (const input of [stop, brief]) {
+    const r = canary({ ...input, cwd: off });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout + r.stderr, '', `${input.hook_event_name} goes through with no decision`);
+  }
+  assert.deepEqual(canaryLog(off), []);
 });
 test('the leak guard refuses a brief or message that carries the phrase, in any spelling', () => {
   const dir = canaryRepo();
