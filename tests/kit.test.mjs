@@ -16,6 +16,14 @@ import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStart
 const tmpRoot = kitTemp.sessionRoot();
 const { makeTemp } = kitTemp;
 
+// A kit folder's CLI is scripts/kit.mjs with the temp helper it imports, as in every real kit folder.
+function copyKitCli(kit) {
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(kit, 'project/.claude'), { recursive: true });
+  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  fs.copyFileSync(path.resolve('project/.claude/kit-temp.cjs'), path.join(kit, 'project/.claude/kit-temp.cjs'));
+}
+
 function makeKit() {
   const root = makeTemp('kit-');
   const kit = path.join(root, 'kit');
@@ -416,7 +424,7 @@ test('the hook script prints a user message and context for Claude, and never fa
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
   // The hook loads the kit's own tool from the kit folder, as it does on a real machine.
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  copyKitCli(kit);
   const hook = path.resolve('project/.claude/kit-hook.cjs');
   const run = (mode, env) => spawnSync(process.execPath, [hook, mode], { cwd: proj, input: '{}', encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj, ...env } });
   const start = run('session-start');
@@ -639,7 +647,7 @@ function releaseKit() {
   const ctx = makeKit();
   const { kit } = ctx;
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  copyKitCli(kit);
   fs.writeFileSync(path.join(kit, '.gitignore'), 'node_modules/\n');
   const git = (...a) => spawnSync('git', ['-C', kit, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' });
   git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'kit'); git('tag', 'v1.0.0');
@@ -697,7 +705,7 @@ test('install refuses a kit folder past its release tag, and names where it is a
 test('install refuses a kit folder with no git history, or one inside another repo', () => {
   const { kit, proj, home } = makeKit();
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  copyKitCli(kit);
   const run = () => spawnSync(process.execPath, [path.join(kit, 'scripts/kit.mjs'), 'install', 'project', proj], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home } });
   let r = run();
   assert.equal(r.status, 1);
@@ -848,7 +856,7 @@ test('the hook script speaks at a message only when there is news', async () => 
   const { kit, home, proj } = caseKit();
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  copyKitCli(kit);
   const run = () => spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: '{}', encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
   const quiet = run();
   assert.equal(quiet.status, 0);
@@ -1284,8 +1292,9 @@ test('build writes AGENTS.md, path rules, on-demand modules and the index from r
     assert.match(out.get('project/AGENTS.md'), new RegExp(`\| ${m.id} \|`), `AGENTS.md index lists ${m.id}`);
   }
   for (const [rel, text] of out) {
-    // The merge gate's audits are exact copies read from the user layer: their source is project/.claude, not rules/.
-    const audit = rel.match(/^user\/kit-tools\/audits\/(.+)$/);
+    // The merge gate's audits and temp helper are exact copies read from the user layer: their source is
+    // project/.claude, not rules/.
+    const audit = rel.match(/^user\/kit-tools\/(?:audits\/)?(.+\.(?:mjs|cjs))$/);
     if (audit) assert.equal(text, read(path.resolve('project/.claude', audit[1])), `${rel} is its source byte for byte`);
     else assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
   }
@@ -3493,6 +3502,65 @@ const leanAudit = (dir, text) => {
   const title = lean.split('\n')[0].replace(/^## /, '').replace(/^[A-Za-z ]+: /, 'feat: ');
   return spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
 };
+// M28: CI runs this audit on every PR, and it caught 1 of 13 logic breaks. Each case is a slip a writer really makes,
+// and must fail exactly its own row: a row that stops failing, or starts failing a good body, shows here.
+test('the lean PR-body audit fails each real slip on its own row, and only that row, at each limit', () => {
+  const dir = makeTemp('lean-');
+  const lean = read(path.resolve('user/skills/pr-body/examples/lean.md'));
+  const title = lean.split('\n')[0].replace(/^## [A-Za-z ]+: /, 'feat: ');
+  const fails = (body, t = title) => {
+    const f = path.join(dir, 'body.md');
+    fs.writeFileSync(f, body);
+    const r = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, t], { encoding: 'utf8', cwd: dir });
+    const out = r.stdout.split('\n').filter((l) => /^(PASS|FAIL) {2}/.test(l));
+    assert.deepEqual(out.map((l) => ROWS.find((n) => l.slice(6).startsWith(n))), ROWS, 'every row is reported, in order');
+    const rows = out.filter((l) => l.startsWith('FAIL')).map((l) => ROWS.find((n) => l.slice(6).startsWith(n)));
+    assert.equal(r.status, rows.length ? 1 : 0, r.stdout);
+    return rows;
+  };
+  const ROWS = ['no attribution block', 'title is type: subject (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
+    'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
+    'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'no spaced dashes in prose',
+    'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
+  const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
+  const NOTES = '**Notes** - Tooling only; the app does not change.';
+  const words = lean.split(/\s+/).filter(Boolean).length;
+  const lines = lean.split('\n').filter((l) => l.trim()).length;
+  const cases = [
+    ['the example', lean, title, []],
+    ['an attribution line', `${lean}\n_Requested by **Pat**_\n`, title, ['no attribution block']],
+    ['a type outside the list', lean, title.replace('feat:', 'feature:'), ['title is type: subject (smaller PR)']],
+    ['a scoped type', lean, title.replace('feat:', 'feat(hooks):'), []],
+    ['a type prefix in the H1', sub('## Commit hook:', '## feat:'), title, ['H1 is <Area>: <line>, no type prefix']],
+    ['an H1 that drops the title subject', lean, title.replace(' on commit', ''), ['H1 line carries the title subject']],
+    ['a line of 110', sub(NOTES, `**Notes** - ${'x'.repeat(98)}`), title, []],
+    ['a line of 111', sub(NOTES, `**Notes** - ${'x'.repeat(99)}`), title, ['every line <= 110']],
+    ['an em dash', sub('Tooling only;', 'Tooling only—'), title, ['0 non-ASCII characters']],
+    ['a tab', sub('Tooling only;', 'Tooling\tonly;'), title, ['0 non-ASCII characters']],
+    ['a vault path', sub('the app does not change.', 'see docs/sweeps/x.md.'), title, ['no vault paths']],
+    ['a .claude path (its name is also a banned word)', sub('the app does not change.', 'see .claude/x.cjs.'), title, ['no mechanism or AI words', 'no vault paths']],
+    ['a _Working Memory path', sub('the app does not change.', 'see _Working Memory.md.'), title, ['no vault paths']],
+    ['no framing', lean.replace(/\n\nEvery commit[\s\S]*?everything\.\n/, '\n'), title, ['framing summary before Changes']],
+    ['Gates before Changes', lean.replace(/(\*\*Changes\*\*[\s\S]*?)(\*\*Gates\*\*[\s\S]*?)(\*\*Notes\*\*)/, '$2$1$3'), title, ['Changes / Gates / Notes, in order']],
+    ['an open gate', sub('- [x] A one-file', '- [ ] A one-file'), title, ['every gate ticked']],
+    ['a missing dimension', sub('legal and licensing, ', ''), title, ['review names the dimensions']],
+    ['a spaced dash', sub('Tooling only;', 'Tooling only - for now;'), title, ['no spaced dashes in prose']],
+    ['a double dash', sub('Tooling only;', 'Tooling only -- for now;'), title, ['no spaced dashes in prose']],
+    ['a dash in inline code', sub('Tooling only;', 'Tooling only (`a - b`);'), title, []],
+    [`${180 - words} words up to 180`, sub(NOTES, `${NOTES}\n${'w '.repeat(180 - words).trim()}`), title, []],
+    ['181 words', sub(NOTES, `${NOTES}\n${'w '.repeat(181 - words).trim()}`), title, ['size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)']],
+    ['18 lines', sub(NOTES, `${NOTES}${'\nw'.repeat(18 - lines)}`), title, []],
+    ['19 lines', sub(NOTES, `${NOTES}${'\nw'.repeat(19 - lines)}`), title, ['size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)']],
+    ['a fourth change', sub('\n\n**Gates**', '\n- One more.\n\n**Gates**'), title, ['size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)']],
+    ['a fourth gate', sub('\n\n**Notes**', '\n- [x] One more.\n\n**Notes**'), title, ['size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)']],
+  ];
+  for (const word of ['AI', 'agent', 'agents', 'subagent', 'Claude', 'anthropic', 'swarm', 'Opus', 'sonnet', 'builder', 'checkers']) {
+    cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
+  }
+  for (const word of ['AIR', 'reagents', 'checkerboard']) cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, []]);
+  for (const [name, body, t, want] of cases) assert.deepEqual(fails(body, t), want, name);
+});
+
 const notesAudit = (dir, text) => {
   const f = path.join(dir, 'notes.md');
   fs.writeFileSync(f, text);

@@ -69,7 +69,7 @@ function fixtureRepo() {
 		fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
 		fs.writeFileSync(path.join(repo, rel), body);
 	}
-	sh(repo, 'init', '-q'); sh(repo, 'add', '.'); sh(repo, 'commit', '-qm', 'fixture');
+	sh(repo, 'init', '-q', '-b', 'main'); sh(repo, 'add', '.'); sh(repo, 'commit', '-qm', 'fixture');
 	return { repo, log, test: path.join(repo, 'tests', 'x.test.mjs') };
 }
 
