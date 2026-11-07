@@ -98,7 +98,7 @@ function setup() {
 		}
 		if (args[0] === 'pr' && args[1] === 'merge' && args.includes('--disable-auto')) { if (state.disarmHolds) state.armed = false; return { status: 0, stdout: '', stderr: '' }; }
 		if (args[0] === 'pr' && args[1] === 'merge') { state.armed = state.mergeStatus === 0 && state.armOnMerge; return { status: state.mergeStatus, stdout: '', stderr: state.mergeStatus ? 'refused' : '' }; }
-		if (args[0] === 'release') return ok(state.release);
+		if (args[0] === 'release') return ok(Object.fromEntries(args[args.indexOf('--json') + 1].split(',').filter((k) => k in state.release).map((k) => [k, state.release[k]])));
 		return no;
 	};
 	return { root, work, config, state, run, sha, opts: { pr: 7, cwd: work, config, run } };
@@ -136,15 +136,32 @@ const CASES = [
 	['a working copy off the head', (s) => { s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD~1'); }, /not the PR's head/],
 	['a failed repo read', (s) => { s.state.repo = null; }, /could not read the repository/],
 	['a repo read that lands on another repo', (s) => { s.state.repo.html_url = 'https://github.com/x/y'; }, /not the repo of PR 7/],
+	['a repo whose name starts the same as the PR repo', (s) => { s.state.pr.url = 'https://github.com/o/r2/pull/7'; }, /not the repo of PR 7/],
+	['a repo read with no address', (s) => { delete s.state.repo.html_url; }, /not the repo of PR 7/],
 	['a same-named repo on another host', (s) => { s.state.pr.url = 'https://ghe.example/o/r/pull/7'; }, /not the repo of PR 7/],
 	['a repo name that is not owner/name', (s) => { s.state.repo.full_name = 'o/r?x=1#'; }, /not the repo of PR 7/],
 	['settings this login cannot see', (s) => { delete s.state.repo.allow_auto_merge; delete s.state.repo.delete_branch_on_merge; }, /cannot read/],
 	['a setting that is not true', (s) => { s.state.repo.allow_auto_merge = 'false'; }, /allow auto-merge/],
+	['a branch delete setting that is not true', (s) => { s.state.repo.delete_branch_on_merge = 'false'; }, /delete branches on merge/],
 	['a base moved locally with no fetch refspec', (s) => {
-		s.state.baseTip = sh(s.work, 'rev-parse', 'refs/remotes/origin/main');
+		commitOnBranch(s, '.github/x.yml', 'x\n');
 		sh(s.work, 'config', '--unset-all', 'remote.origin.fetch');
-		sh(s.work, 'update-ref', 'refs/remotes/origin/main', s.sha);
-	}, /GitHub's base/],
+		sh(s.work, 'update-ref', 'refs/remotes/origin/main', s.state.pr.headRefOid);
+	}, /gate or rule paths/],
+	['a tag named like the base, at the head', (s) => {
+		commitOnBranch(s, '.github/x.yml', 'x\n');
+		sh(s.work, 'tag', 'origin/main', s.state.pr.headRefOid);
+	}, /gate or rule paths/],
+	['a replace ref that hides the head', (s) => {
+		const clean = s.sha;
+		commitOnBranch(s, '.github/x.yml', 'x\n');
+		sh(s.work, 'replace', s.state.pr.headRefOid, clean);
+	}, /gate or rule paths/],
+	['a grafts file', (s) => {
+		fs.mkdirSync(path.join(s.work, '.git', 'info'), { recursive: true });
+		fs.writeFileSync(path.join(s.work, '.git', 'info', 'grafts'), `${s.sha}\n`);
+	}, /grafts/],
+	['a failed read of the base tip', (s) => { s.state.baseTip = ''; }, /could not read the tip/],
 	['an origin that is another repo', (s) => {
 		const other = path.join(s.root, 'other.git');
 		sh(s.root, 'clone', '-q', '--bare', path.join(s.root, 'origin.git'), other);
@@ -655,4 +672,27 @@ test('merge gate: every --json field it asks for exists in the real gh', (t) => 
 		assert.ok(known.size > 5, `gh ${cmd} view --json listed no fields`);
 		for (const f of fields) assert.ok(known.has(f), `gh ${cmd} view has no field ${f}`);
 	}
+});
+
+test('merge gate: a base that does not match GitHub stops before any audit runs', () => {
+	const s = setup();
+	const ran = [];
+	const run = (cmd, args, cwd) => { ran.push(cmd); return s.run(cmd, args, cwd); };
+	assert.equal(check({ ...s.opts, run }).go, true);
+	assert.ok(ran.includes(process.execPath), 'the control ran no audit, so this test proves nothing');
+	ran.length = 0;
+	s.state.baseTip = '0'.repeat(40);
+	const r = check({ ...s.opts, run });
+	assert.equal(r.go, false);
+	assert.match(r.faults.join('\n'), /GitHub's base/);
+	assert.ok(!ran.includes(process.execPath), 'an audit ran from a base GitHub does not hold');
+});
+
+test('merge gate: live pr holds to the base GitHub has', () => {
+	const s = setup();
+	assert.equal(live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run }).ok, true);
+	s.state.baseTip = '0'.repeat(40);
+	const r = live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run });
+	assert.equal(r.ok, false);
+	assert.match(r.faults.join('\n'), /GitHub's base/);
 });
