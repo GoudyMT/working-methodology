@@ -80,6 +80,15 @@ const ASK = [
 	'"C:/Program Files/GitHub CLI/gh.exe" pr merge 139',
 	'gh run rerun 123',
 	'gh issue create -t x',
+	// Text pasted from a page or a chat: odd spaces, curly quotes and long dashes read as their plain forms.
+	...[0xa0, 0x85, 0x1680, 0x2000, 0x2005, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff].map((c) => 'git' + String.fromCharCode(c) + 'push'),
+	'git -C ' + String.fromCharCode(0x2018) + 'C:/a b' + String.fromCharCode(0x2019) + ' push',
+	'git -C ' + String.fromCharCode(0x201c) + 'C:/a b' + String.fromCharCode(0x201d) + ' push',
+	...[0x2013, 0x2014, 0x2015].map((c) => 'git ' + String.fromCharCode(c) + 'C x push'),
+	// cmd reads a caret as nothing before a letter.
+	'cmd /c g^it push',
+	// git's own push program, called by its path.
+	'"C:/Program Files/Git/mingw64/libexec/git-core/git-push.exe" origin main',
 ];
 
 const PASS = [
