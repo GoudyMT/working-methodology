@@ -17,7 +17,7 @@
 //      project's own folder), with no audit setting the base does not hold
 // A check stops only what is true when it runs: a check that fails later, or a kill switch set later, does not reach an
 // armed PR. `disarm` does, and it needs no check.
-// GO: `gh pr merge <n> --auto --squash --match-head-commit <sha>`, read back, and one line in <git dir>/kit-merge-gate.log.
+// GO: `gh pr merge <n> --auto --squash --match-head-commit <sha>`, read back, and one line in kit-merge-gate.log in the common git folder.
 // NO GO: <git dir>/kit-merge-gate-triage.md says what failed; exit 1.
 //
 // `live` reads a body as published and audits it (rule:release-notes, I21): a PR body with the base's PR-body audit,
