@@ -3550,7 +3550,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     ['an H1 that drops the title subject', lean, title.replace(' on commit', ''), ['H1 line carries the title subject']],
     ['a line of 110', sub(NOTES, `**Notes** - ${'x'.repeat(98)}`), title, []],
     ['a line of 111', sub(NOTES, `**Notes** - ${'x'.repeat(99)}`), title, ['every line <= 110']],
-    ['an em dash', sub('Tooling only;', 'Tooling only—'), title, ['0 non-ASCII characters']],
+    ['an em dash', sub('Tooling only;', `Tooling only${String.fromCharCode(0x2014)}`), title, ['0 non-ASCII characters']],
     ['a tab', sub('Tooling only;', 'Tooling\tonly;'), title, ['0 non-ASCII characters']],
     ['a vault path', sub('the app does not change.', 'see docs/sweeps/x.md.'), title, ['no vault paths']],
     ['a .claude path (its name is also a banned word)', sub('the app does not change.', 'see .claude/x.cjs.'), title, ['no mechanism or AI words', 'no vault paths']],
