@@ -4554,7 +4554,7 @@ test('a project whose settings lack the call-cap hook is sent back to wire it', 
   const r = approveRun(featureContract(), dir);
   assert.equal(r.status, FIX_EXIT, r.stdout);
   assert.match(r.stdout, /call-cap hook is not wired/);
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n');
   commitAll(dir, 'wired', true);
   assert.equal(approveIn(dir, [r.f]).status, 0);
 });
@@ -4636,7 +4636,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
   fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{}\n');
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n');
   commitAll(dir, 'settings', true);
   const w = approveRun(featureContract(), dir);
   assert.equal(w.status, 0, w.stdout);
@@ -4762,9 +4762,48 @@ test('a re-sweep after a first sweep cut short asks the owner, not a loop; an un
   assert.equal(approveIn(first.dir, [one.f, '--outcome', '--none-ran']).status, 0);
   assert.equal(resweep(first, {}, 'second.json').status, 0, 'a re-sweep nobody ran spends nothing');
 });
+// 1.21.0 handoff item 28: the sweep guard must be wired beside the call cap, and no settings layer may turn hooks off.
+test('the sweep guard refuses a reviewer brief under another agent type, and a reviewer started outside git', () => {
+  const dir = makeTemp('guard-');
+  const r = approveRun(featureContract());
+  for (const type of ['general-purpose', 'Explore', 'claude', '']) {
+    const out = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: r.dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: type, prompt: 'Review the diff for injection. Call cap: 5.' } }).stdout;
+    const d = out ? JSON.parse(out).hookSpecificOutput : { permissionDecision: 'allow' };
+    assert.equal(d.permissionDecision, 'deny', `${type || 'no type'} with a call cap`);
+    assert.match(d.permissionDecisionReason, /reviewer/);
+  }
+  assert.equal(sweepGuard(r.dir, { raw: true, tool_input: { subagent_type: 'general-purpose', prompt: 'Find every caller of approve().' } }).permissionDecision, 'allow', 'other work starts freely');
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a reviewer outside git has no log to clear it');
+});
+test('the hook check needs the sweep guard too, and hooks off in the local or user settings is not wired', () => {
+  const both = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
+  const setUp = (text) => {
+    const dir = sweepRepo();
+    fs.mkdirSync(path.join(dir, '.claude'));
+    fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text);
+    commitAll(dir, 'settings', true);
+    return dir;
+  };
+  const cfg = makeTemp('approve-cfg-');
+  const capOnly = setUp('{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n');
+  const r = approveRun(featureContract(), capOnly);
+  assert.equal(r.status, FIX_EXIT, r.stdout);
+  assert.match(r.stdout, /sweep guard/);
+  const dir = setUp(both);
+  const ok = approveRun(featureContract(), dir);
+  assert.equal(ok.status, 0, ok.stdout);
+  approveIn(dir, [ok.f, '--outcome', '--none-ran']);
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"disableAllHooks":true}\n');
+  assert.equal(approveIn(dir, [ok.f], { CLAUDE_CONFIG_DIR: cfg }).status, FIX_EXIT, 'hooks off in the local settings');
+  fs.rmSync(path.join(dir, '.claude', 'settings.local.json'));
+  fs.writeFileSync(path.join(cfg, 'settings.json'), '{"disableAllHooks":true}\n');
+  assert.equal(approveIn(dir, [ok.f], { CLAUDE_CONFIG_DIR: cfg }).status, FIX_EXIT, 'hooks off in the user settings');
+  fs.writeFileSync(path.join(cfg, 'settings.json'), '{}\n');
+  assert.equal(approveIn(dir, [ok.f], { CLAUDE_CONFIG_DIR: cfg }).status, 0, 'and on again');
+});
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
-  const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n';
+  const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
   for (const bad of ['{"hooks":{"PreToolUse":[{"args":["{{CLAUDE_HOME}}/kit-hooks/call-cap.cjs"]}]}}\n', `{"disableAllHooks":true,${wiredText.slice(1)}`, '{"note":"call-cap.cjs removed on purpose"}\n']) {
     const dir = sweepRepo();
     put(dir, bad);
@@ -4810,7 +4849,7 @@ test('install does not rewrite the hook check: an installed script reads an inst
   install({ kit: path.resolve('.'), target: 'user', home });
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ args: [path.join(home, 'kit-hooks', 'call-cap.cjs').split(path.sep).join('/')] }] } }));
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: ['call-cap.cjs', 'sweep-guard.cjs'].map((h) => ({ args: [path.join(home, 'kit-hooks', h).split(path.sep).join('/')] })) } }));
   commitAll(dir, 'settings', true);
   const f = path.join(dir, 'sweeps', 'contract.json');
   fs.writeFileSync(f, JSON.stringify(featureContract()));

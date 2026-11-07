@@ -334,17 +334,23 @@ function callBudgets(roles, cap, why, fix) {
 	return { budgets, total };
 }
 
-// The cap's hook sits in the project's settings, and install skips a settings file the project changed.
+// The cap's hook and the sweep guard sit in the project's settings, and install skips a settings file the project
+// changed. disableAllHooks in any layer Claude Code reads (project, local, user) turns both off.
 function hookState(base) {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	const read = (f) => { try { return fs.readFileSync(path.join(top, '.claude', f), 'utf8'); } catch { return null; } };
-	const wired = (text) => { try { const j = JSON.parse(text); const h = JSON.stringify(j.hooks ?? ''); return !j.disableAllHooks && h.includes('kit-hooks/call-cap.cjs') && !/{{[A-Z_]+}}/.test(h); } catch { return false; } };
+	const json = (text) => { try { return JSON.parse(text) || {}; } catch { return {}; } };
+	const wired = (text) => { const h = JSON.stringify(json(text).hooks ?? ''); return !json(text).disableAllHooks && h.includes('kit-hooks/call-cap.cjs') && h.includes('kit-hooks/sweep-guard.cjs') && !/{{[A-Z_]+}}/.test(h); };
 	const own = read('settings.json');
-	if (wired(own) || wired(read('settings.local.json'))) return 'wired';
+	const local = read('settings.local.json');
+	let user = null;
+	try { user = fs.readFileSync(path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json'), 'utf8'); } catch { /* no user settings */ }
+	if ([own, local, user].some((t) => json(t).disableAllHooks)) return 'missing';
+	if (wired(own) || wired(local)) return 'wired';
 	// A branch that deletes the settings does not get out of the hook.
 	return own === null && !(base && wired(git('show', `${base}:.claude/settings.json`).stdout)) ? 'none' : 'missing';
 }
-const HOOK_MISSING = 'the call-cap hook is not wired in .claude/settings.json: merge its PreToolUse entry from the kit\'s project/.claude/settings.json, with the installed path';
+const HOOK_MISSING = 'the call-cap hook is not wired in .claude/settings.json, or the sweep guard is not, or a settings layer sets disableAllHooks: merge both PreToolUse entries from the kit\'s project/.claude/settings.json, with the installed path, and keep hooks on';
 const HOOK_NONE = '    No project settings here, so no call-cap hook: each cap rests on the reviewer\'s own count, and only the top model held one in the probe.';
 
 // Every reason this contract is not cleared, and the role kinds it needed. `why` is out of bounds, the owner's call;

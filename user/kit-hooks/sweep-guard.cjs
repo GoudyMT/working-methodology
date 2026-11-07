@@ -7,8 +7,9 @@
 // (<git common dir>/kit-sweep-approvals.jsonl), each line chained to the one before; a line that breaks the chain
 // clears nothing. HEAD is read from the contract's own folder, so a sweep run from a worktree is judged by that
 // worktree. A cleared contract lets in at most as many reviewers as it has roles (counted in
-// kit-sweep-starts/ next to the log), plus one more for a role whose crash approve.mjs logged as a retry. Outside a
-// git repository there is no log, so the call goes through.
+// kit-sweep-starts/ next to the log), plus one more for a role whose crash approve.mjs logged as a retry. A reviewer
+// outside a git repository has no log, so it is refused; another agent type is refused only when its brief names a
+// sweep or carries a role's call cap.
 // It stops slips, not a determined workaround: a carefully forged log line passes it.
 const fs = require('fs');
 const path = require('path');
@@ -51,12 +52,16 @@ function retryOpen(lines, i, contract, role) {
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
 	if (!/(^|:)reviewer$/i.test(String((input.tool_input || {}).subagent_type || ''))) {
-		// A brief that names a sweep is a reviewer's whatever the type says, and a slip here would run with no slot.
-		if (/Sweep: [0-9a-f]{16} role \d+/.test(String((input.tool_input || {}).prompt || ''))) deny('This brief names a sweep, so it runs as the reviewer role: set subagent_type to reviewer.');
+		// A brief that names a sweep or carries a role's call cap is a reviewer's whatever the type says, and a slip
+		// here would run with no slot and no cap.
+		const brief = String((input.tool_input || {}).prompt || '');
+		if (/Sweep: [0-9a-f]{16} role \d+/.test(brief)) deny('This brief names a sweep, so it runs as the reviewer role: set subagent_type to reviewer.');
+		else if (/Call cap: \d+/.test(brief)) deny('This brief carries a sweep role\'s call cap, so it runs as the reviewer role: set subagent_type to reviewer, with its "Sweep: <hash> role <n>" line.');
 		return;
 	}
 	const common = git(input.cwd || process.cwd(), 'rev-parse', '--path-format=absolute', '--git-common-dir');
-	if (common.status !== 0) return;
+	// A sweep runs in a repository: a reviewer started outside one has no log to clear it.
+	if (common.status !== 0) return deny(`A reviewer starts from the repository its Swarm Contract was cleared in, and this folder is in none. ${RUN_FIRST}`);
 	const dir = common.stdout.trim();
 	const file = path.join(dir, 'kit-sweep-approvals.jsonl');
 	const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
