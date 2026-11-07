@@ -34,7 +34,7 @@ function appendLog(work, entry) {
 }
 function cleared(work, sha, decision = {}, outcome = {}) {
 	const contract = path.join(work, 'reports/sweeps/c.json');
-	appendLog(work, { kind: 'decision', contract, hash: 'c', tier: 'feature', agents: 1, decision: 'approved', head: sha.slice(0, 7), ...decision });
+	appendLog(work, { kind: 'decision', contract, hash: 'c', tier: 'feature', agents: 1, decision: 'approved', head: sha, ...decision });
 	if (outcome) appendLog(work, { kind: 'outcome', contract, tokens: 10, ...outcome });
 }
 
@@ -235,6 +235,7 @@ const CASES = [
 		cleared(s.work, s.state.pr.headRefOid);
 	}, /gate or rule paths.*\.githooks/],
 	['an uncommitted change in the working copy', (s) => fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nlocal\n'), /uncommitted/],
+	['a clearing logged by a short hash', (s) => { freshLog(s); cleared(s.work, s.sha.slice(0, 7)); }, /never cleared/],
 	['a setting file excluded only in this clone', (s) => {
 		fs.mkdirSync(path.join(s.work, '.kit'), { recursive: true });
 		fs.writeFileSync(path.join(s.work, '.kit', 'pr-body.json'), '{"gates":[]}');
@@ -469,8 +470,8 @@ test('merge gate: an owner yes clears a sweep as an approval does, on the tier o
 	const s = setup();
 	freshLog(s);
 	const c = path.join(s.work, 'reports/sweeps/c.json');
-	appendLog(s.work, { kind: 'decision', contract: c, tier: 'feature', decision: 'owner', head: s.sha.slice(0, 7) });
-	appendLog(s.work, { kind: 'owner-yes', contract: c, head: s.sha.slice(0, 7) });
+	appendLog(s.work, { kind: 'decision', contract: c, tier: 'feature', decision: 'owner', head: s.sha });
+	appendLog(s.work, { kind: 'owner-yes', contract: c, head: s.sha });
 	appendLog(s.work, { kind: 'outcome', contract: c, tokens: 10 });
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));

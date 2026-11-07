@@ -283,7 +283,8 @@ function sweepFaults({ cwd, config, branch, head, git, run }) {
 	// Every report on this branch, not only the nearest: a later clean one does not close an earlier high.
 	const faults = covered.flatMap((r) => openHighs(r, head, git));
 	// A report is typed by the session, so what it claims is held to the log.
-	const clearing = clearings.filter((c) => best.sha.startsWith(c.head)).pop();
+	// The whole commit, never a short prefix: seven hex digits are few enough to match a commit made to match.
+	const clearing = clearings.filter((c) => c.head === best.sha).pop();
 	if (!clearing) faults.push(`the sweep at ${best.sha.slice(0, 12)} was never cleared: no approval in the log names that commit`);
 	else if (!clearing.ran) faults.push(`the sweep at ${best.sha.slice(0, 12)} has no reviewer outcome in the log: none ran, or it was cut short`);
 	for (const r of reports) {

@@ -222,7 +222,7 @@ function diffFacts() {
 		offBase,
 		staleBase,
 		noHome: Boolean(want) && !home,
-		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
+		head: git('rev-parse', 'HEAD').stdout.trim(),
 		dirty,
 		changed: all.length,
 		deps: all.filter((f) => DEP_FILE.test(f)).some((f) => depsChanged(base, f)),
@@ -463,7 +463,7 @@ function decide() {
 	const s = state();
 	const facts = diffFacts();
 	const { why, fix, need, extras, cap, first, refused, budgets = [], total = 0 } = check(c, facts, s.log);
-	const head = git('rev-parse', '--short', 'HEAD').stdout.trim() || null;
+	const head = git('rev-parse', 'HEAD').stdout.trim() || null;
 	// A stop is cured by adding what it named, not by asking for less: a lighter contract at the HEAD of a stop is the
 	// owner's, whatever its file is called, however often it is rerun and whatever outcome came between. A new commit
 	// starts clean: the guard stops slips, not a determined workaround.
@@ -569,7 +569,7 @@ function ownerYes() {
 	const raw = fs.readFileSync(contractFile, 'utf8');
 	const s = state();
 	const last = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
-	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
+	const head = git('rev-parse', 'HEAD').stdout.trim();
 	if (!last || last.decision !== 'owner') { console.log('The script did not send this contract to the owner, so there is no ask to answer. Run approve.mjs on it first.'); return 1; }
 	if (last.hash !== sha(raw) || last.head !== head) { console.log('The contract or HEAD changed since the script asked. Run approve.mjs again, then ask the owner.'); return 1; }
 	// One yes answers one ask: a second would open a second set of start slots.

@@ -2473,7 +2473,7 @@ test('the sweep guard refuses a reviewer agent until the log clears this HEAD an
   commitAll(dir, 'more', true);
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'HEAD moved');
   // A line written by hand does not clear it.
-  const head = g(dir, 'rev-parse', '--short', 'HEAD').stdout.trim();
+  const head = g(dir, 'rev-parse', 'HEAD').stdout.trim();
   const logFile = path.join(dir, '.git', 'kit-sweep-approvals.jsonl');
   fs.appendFileSync(logFile, JSON.stringify({ kind: 'decision', decision: 'approved', contract: r.f, hash: 'x', head, prev: 'forged' }) + '\n');
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a hand-written line');

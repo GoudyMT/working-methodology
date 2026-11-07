@@ -19,7 +19,7 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
 // HEAD per folder, read once per call: the log only grows, and its lines share a few folders.
 const heads = new Map();
-const headOf = (d) => { if (!heads.has(d)) heads.set(d, git(d, 'rev-parse', '--short', 'HEAD').stdout.trim()); return heads.get(d); };
+const headOf = (d) => { if (!heads.has(d)) heads.set(d, git(d, 'rev-parse', 'HEAD').stdout.trim()); return heads.get(d); };
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
 const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). FIX THE CONTRACT: fix it and run it again. APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
 
