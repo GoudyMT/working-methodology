@@ -6446,3 +6446,8 @@ test('the pre-push hook holds a head armed on two PRs until both are disarmed', 
   fs.appendFileSync(log, 't DISARMED 7\n');
   assert.equal(push().status, 0);
 });
+test('both guards read a command through the same plain reading', () => {
+  const block = (f) => { const s = read(path.resolve('project/.claude', f)); return s.slice(s.indexOf('// reading:start'), s.indexOf('// reading:end')); };
+  assert.ok(block('guard-delete.cjs').includes('function plainText'));
+  assert.equal(block('guard-outward.cjs'), block('guard-delete.cjs'));
+});

@@ -27,6 +27,18 @@ const ASK = [
 	'(git push)',
 	'cd x && git push',
 	'git send-pack origin',
+	// Second loop: escapes, braces, odd spaces and plain forms.
+	'gi' + BS + 't push',
+	'git pu' + BS + 'sh',
+	'git pu' + BT + 'sh',
+	'git {push,origin}',
+	'git pu{sh,sh} origin',
+	'git --attr-source HEAD push',
+	'git --shallow-file x push',
+	'git config alias.p push; git p',
+	'git --config-env=alias.p=V p',
+	'git-lfs push origin main',
+	'git' + String.fromCharCode(0xa0) + 'push',
 	// A logged owner yes, in spellings the settings' ask rule cannot match.
 	"node approve.mjs c.json --own'er'-yes \"go\"",
 	'node appr*.mjs c.json --owner-yes "go"',

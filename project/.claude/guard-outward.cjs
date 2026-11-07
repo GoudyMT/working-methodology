@@ -15,13 +15,43 @@ const CR = String.fromCharCode(13);
 const SEGMENT_BREAKS = new Set([';', '|', '&', '(', ')', '{', '}', '<', '>', LF]);
 const MAX_DEPTH = 3;
 
-const GIT_VALUE_OPTIONS = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env']);
+const GIT_VALUE_OPTIONS = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--attr-source', '--shallow-file']);
 const GIT_OUTWARD = new Set(['push', 'send-pack']);
 const GIT_NESTED_PUSH = new Set(['lfs', 'subtree']);
 
 const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
+
+// reading:start - the same in guard-delete.cjs and guard-outward.cjs; a test holds them equal.
+// Characters a shell reads like ASCII ones: curly quotes, Unicode dashes and spaces.
+function normalize(text) {
+	let out = '';
+	for (const ch of text) {
+		const c = ch.codePointAt(0);
+		if (c >= 0x2018 && c <= 0x201b) out += "'";
+		else if (c >= 0x201c && c <= 0x201e) out += '"';
+		else if (c >= 0x2013 && c <= 0x2015) out += '-';
+		else if (c === 0xa0 || c === 0x85 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff) out += ' ';
+		else out += ch;
+	}
+	return out;
+}
+
+// A command the way its shell will read it: escapes, carets, empty expansions and braces gone. Each guard reads this
+// beside the text as written, so one rule covers every spelling these make. Values built at run time stay unread.
+function plainText(text, tool) {
+	let s = normalize(text).replace(/[\\`^]\r?\n/g, '');
+	s = s.replace(/`(?=\S)/g, '');
+	if (!/powershell/i.test(String(tool))) s = s.split(/(\s+)/).map((w) => (/^["']?[A-Za-z]:\\/.test(w) ? w : w.replace(/\\(?!\\)/g, ''))).join('');
+	if (/\bcmd\b/i.test(s)) s = s.replace(/\^(?=[\w.-])/g, '');
+	s = s.replace(/\$\(\s*\)|\$\{\s*\}|\$""|\$''/g, '').replace(/\$(?=['"])/g, '').replace(/(?<=\S)(?:''|"")(?=\S)/g, '');
+	if (/powershell/i.test(String(tool))) return s;
+	const brace = /(?<![$\w])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s{}'"]*)/;
+	for (let i = 0; i < 4 && brace.test(s); i++) s = s.replace(brace, (m, a, b, c) => b.split(',').map((x) => a + x + c).join(' '));
+	return s;
+}
+// reading:end
 
 // Line continuations (PowerShell backtick, bash backslash) join one command across lines.
 function joinContinuations(text) {
@@ -133,12 +163,14 @@ function findOutward(text, depth) {
 	// The owner's logged yes: the settings' ask rule reads the raw text, so any spelling with quotes, escapes or a
 	// wildcard program is read here, anywhere in the command. A text that only names the flag asks too: the safe side.
 	if (/--owner-yes/i.test(text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, ''))) return 'an owner yes for a sweep';
+	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
 	for (const segment of tokenize(joinContinuations(text))) {
 		const words = segment.map((word) => word.value.toLowerCase());
 		for (let i = 0; i < segment.length; i++) {
 			const name = programName(segment[i].value);
 			let hit = '';
-			if (name === 'git' || name === 'git.exe') hit = gitOutward(words, i + 1);
+			if (/^git-(push|send-pack)(\.exe)?$/.test(name) || (/^git-lfs(\.exe)?$/.test(name) && words[i + 1] === 'push')) hit = name;
+			else if (name === 'git' || name === 'git.exe') hit = gitOutward(words, i + 1);
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
 			if (hit) return hit;
 		}
@@ -166,7 +198,8 @@ function collectStrings(value, out, depth) {
 function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
-	return findOutward(strings.join(LF), 0);
+	const text = strings.join(LF);
+	return findOutward(text, 0) || findOutward(plainText(text, input?.tool_name), 0);
 }
 
 function main() {

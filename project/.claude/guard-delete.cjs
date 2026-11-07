@@ -47,7 +47,7 @@ const INLINE_DELETE = /\b(rmSync|rmdirSync|unlinkSync|rmtree|rm_rf|rm_r|remove_t
 // A delete word anywhere in the text, to check text the tokenizer cannot split (backticks, carets).
 const DELETE_WORD = /(^|[^\w-])(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimraf|del-cli|shred)(\.exe)?(?![\w-])/i;
 // New-Item takes the type however it is spelled (-ItemType "Junction", -Type:Junction), and ln takes -s anywhere.
-const MAKES_LINK = /\bmklink\b|\bln(\.exe)?\s([^;|&\n]*\s)?(-[a-z]*s|--sy)|\bsymlink(Sync)?\b|\b(new-item|ni)\b[\s\S]*\b(Junction|SymbolicLink)\b|\b(new-item|ni)\b[\s\S]*\s-(i\w*|t\w*)[\s:]+["']?(j|sy)/i;
+const MAKES_LINK = /\bmklink\b|\bln(\.exe)?\s([^;|&\n]*\s)?(-[a-z]*s|--sy)|\bsymlink(Sync)?\s*\(|\b(new-item|ni)\b[\s\S]*\b(Junction|SymbolicLink)\b|\b(new-item|ni)\b[\s\S]*\s-(i\w*|t\w*)[\s:]+["']?(j|sy)/i;
 // The read-only searchers: a delete word in their arguments is a pattern, not a command.
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls']);
 const GIT_READS = new Set(['grep', 'log', 'show', 'diff', 'blame']);
@@ -99,7 +99,7 @@ const ROBOCOPY_REMOVES = /(?:^|[\s(,=;[@]|robocopy(?:\.exe)?)(?:\/+|-)(?:mir|pur
 // Programs that print their words rather than run them.
 const PRINTERS = new Set(['echo', 'printf', 'write-host', 'write-output']);
 // What can take a printer's output and run it or keep it: a pipe, a redirect, a group, a backtick, or an eval.
-const FEEDS_ON = /[|<>(){}`]|\b(eval|iex|invoke-expression|source)\b/i;
+const FEEDS_ON = /[|<>(){}`]|\b(eval|iex|invoke-expression|source)\b|\s-v\s|\$_\b/i;
 // Programs that run the command after them.
 const WRAPPERS = new Set(['timeout', 'sudo', 'doas', 'env', 'nice', 'nohup', 'command', 'exec', 'time', 'xargs', 'start-process', 'saps', 'stdbuf', 'ionice', 'chrt', 'setsid', 'runas', 'cmd', 'winpty']);
 // Start-Process git with a ( ) or @( ) list: the list is split off where its words cannot be read, so it asks.
@@ -113,6 +113,7 @@ const WILDCARD = /[*?[]/;
 // A session id is a full UUID: it alone finds the session folder, so "../.." or a plain word could name a shared one.
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// reading:start - the same in guard-delete.cjs and guard-outward.cjs; a test holds them equal.
 // Characters a shell reads like ASCII ones: curly quotes, Unicode dashes and spaces.
 function normalize(text) {
 	let out = '';
@@ -126,6 +127,21 @@ function normalize(text) {
 	}
 	return out;
 }
+
+// A command the way its shell will read it: escapes, carets, empty expansions and braces gone. Each guard reads this
+// beside the text as written, so one rule covers every spelling these make. Values built at run time stay unread.
+function plainText(text, tool) {
+	let s = normalize(text).replace(/[\\`^]\r?\n/g, '');
+	s = s.replace(/`(?=\S)/g, '');
+	if (!/powershell/i.test(String(tool))) s = s.split(/(\s+)/).map((w) => (/^["']?[A-Za-z]:\\/.test(w) ? w : w.replace(/\\(?!\\)/g, ''))).join('');
+	if (/\bcmd\b/i.test(s)) s = s.replace(/\^(?=[\w.-])/g, '');
+	s = s.replace(/\$\(\s*\)|\$\{\s*\}|\$""|\$''/g, '').replace(/\$(?=['"])/g, '').replace(/(?<=\S)(?:''|"")(?=\S)/g, '');
+	if (/powershell/i.test(String(tool))) return s;
+	const brace = /(?<![$\w])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s{}'"]*)/;
+	for (let i = 0; i < 4 && brace.test(s); i++) s = s.replace(brace, (m, a, b, c) => b.split(',').map((x) => a + x + c).join(' '));
+	return s;
+}
+// reading:end
 
 // The text with PowerShell block comments (<# ... #>) and line comments (a # that starts a word, to the line's
 // end) cut out.
@@ -233,7 +249,7 @@ function programName(raw) {
 	// A git alias that starts with ! runs a shell command: '!rm -rf x'.
 	const word = raw.replace(/^!+/, '');
 	// cmd ends a builtin's name at a slash, a backslash or an equals sign: rd/s, rd\x, del=x.
-	const glued = word.split(/[/\\=]/)[0].toLowerCase();
+	const glued = word.split(/[/\\=]/)[0].toLowerCase().replace(/\.$/, '');
 	if (glued !== word.toLowerCase() && CMD_DELETERS.has(glued)) return glued;
 	const parts = word.split('/').join(BACKSLASH).split(BACKSLASH);
 	return parts[parts.length - 1].toLowerCase().replace(/\.(exe|cmd|bat)$/, '');
@@ -512,8 +528,13 @@ function findDelete(text, ctx, state, depth) {
 			continue;
 		}
 		// A program held in a variable cannot be read, in any quoting: $X -rf x, ${G} -rf x, $'rm' -rf x, & $x x.
-		const opener = words[0] ?? '';
-		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && words.length > 1 && !NOT_RUN_AFTER.test(words[1])) return 'a program held in a variable';
+		// Behind a wrapper or a keyword too: sudo $X, time $X, then $X. It asks only with a sign of a delete, so ordinary
+		// $s -split ',' and & $node x.mjs pass.
+		const at = words.findIndex((w) => !WRAPPERS.has(w.toLowerCase()) && !/^(\w+=.*|\d+[smhd]?|then|do|else|!)$/.test(w));
+		const opener = words[at] ?? '';
+		const after = words.slice(at + 1);
+		const deleteSign = DELETE_WORD.test(text) || after.some((w) => /^(-[rf]{1,2}|-+recurse|-+force|-+delete|\/s)$/i.test(w));
+		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && after.length > 0 && !NOT_RUN_AFTER.test(after[0]) && deleteSign) return 'a program held in a variable';
 		if (opener === '$' && words.length === 1 && segment.end === '{') return 'a program held in a variable';
 		// A shell expands a wildcard in a program's path: /usr/bin/r[m].
 		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1) return 'a program named by a wildcard';
@@ -582,12 +603,12 @@ function findDelete(text, ctx, state, depth) {
 			// brace asks: find with a brace is rare, and the safe side.
 			else if (name === 'find' && BRACE_EXPANSION.test(text)) return 'a target with a brace expansion';
 			// -delete is looked for in the whole text: a \( ... \) group splits find's words across commands.
-			else if (name === 'find' && (rest.some((w) => w.toLowerCase() === '-delete') || /(^|[\s'"])-delete(?![\w-])/i.test(text))) {
+			else if (name === 'find' && (rest.some((w) => w.toLowerCase() === '-delete' || (/^-(exec|execdir|ok|okdir)$/i.test(w) && DELETE_WORD.test(text))) || /(^|[\s'"])-delete(?![\w-])/i.test(text))) {
 				// -L and -follow walk through links, so what it reaches cannot be placed.
 				if (rest.some((w) => w === '-L' || w === '-follow')) return 'find that follows links and deletes';
 				// find deletes what it finds below its start folders, so each is read like a folder ending in a wildcard.
 				let i = p + 1;
-				while (i < words.length && (FIND_OPTIONS.test(words[i]) || words[i] === '-D')) i += words[i] === '-D' ? 2 : 1;
+				while (i < words.length && (FIND_OPTIONS.test(words[i]) || words[i] === '-D' || words[i] === '--')) i += words[i] === '-D' ? 2 : 1;
 				const starts = [];
 				for (; i < words.length && !/^[-!\\(]/.test(words[i]); i++) starts.push(words[i]);
 				// With nothing to filter on it removes the start folder too, so that must be placed itself.
@@ -602,6 +623,7 @@ function findDelete(text, ctx, state, depth) {
 				if (BRACE_EXPANSION.test(text)) return 'a target with a brace expansion';
 				// xargs adds targets from its input, and a ( ) list holds more: the written ones are not all of them.
 				if (words.slice(0, p).some((w) => programName(w) === 'xargs')) return 'a delete given targets by xargs';
+				if (words.slice(0, p).some((w) => programName(w) === 'find') && words.slice(0, p).some((w) => /^-(exec|execdir|ok|okdir)$/i.test(w))) continue;
 				if (segment.end === '(') return 'a delete with targets in parentheses';
 				let targets = targetsOf(name, words, p + 1);
 				if (targets.length === 0 && p === 0) targets = listedTargets(segments, s) ?? [];
@@ -691,7 +713,7 @@ function decide(input, where = {}) {
 	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
-	const both = strings.flatMap((s) => { const glued = s.replace(/\\\r?\n/g, ''); return glued === s ? [s] : [s, glued]; });
+	const both = strings.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);
 	for (const raw of both) {
 		if (raw.length > MAX_TEXT) return 'a command too long to read';
 		const text = normalize(raw);
@@ -701,7 +723,7 @@ function decide(input, where = {}) {
 		if (LOST_CLEAN.test(raw)) return 'git clean';
 		// Read in the whole text, quotes off: arrays, wrappers and strings hide the switch from a word-by-word read.
 		const bare = flat.replace(/["']/g, '');
-		if (/\brobocopy\b/i.test(bare) && ROBOCOPY_REMOVES.test(bare) && !(ONLY_READS.test(flat) && !RUNS_INSIDE.test(text))) return 'robocopy that removes files';
+		if (/\brobocopy\b/i.test(bare) && ROBOCOPY_REMOVES.test(bare) && !(ONLY_READS.test(flat.replace(/"[^"]*"|'[^']*'/g, '""')) && !RUNS_INSIDE.test(text))) return 'robocopy that removes files';
 		if (START_GIT_LIST.test(flat)) return 'Start-Process git with a list the guard cannot read';
 		const runsGit = /(^|[^\w-])git(\.exe)?(?![\w-])/i.test(flat);
 		if (runsGit && ALIAS_ROUTE.test(flat)) return 'a git alias defined from outside the command';
@@ -709,13 +731,7 @@ function decide(input, where = {}) {
 		if (xg && !xg[2].split(/\s+/).some((w) => WRITTEN_SUB.test(w))) return 'git given its subcommand by xargs';
 		if (XARGS_REPLACE.test(flat)) return 'git given its subcommand by xargs';
 		if (INTERPRETER.test(text) && runsGit && /\bclean\b/.test(text)) return 'inline code that may run git clean';
-		// bash reads gi\t as git and r\m as rm, even inside a nested shell: a delete word an escape hides asks.
-		const unescaped = flat.replace(/\\(?=[A-Za-z0-9])/g, '');
-		const cleans = (s) => /(^|[^\w-])git(\.exe)?\s[^;|&\n]*\bclean\b/i.test(s);
-		if (unescaped !== flat && ((DELETE_WORD.test(unescaped) && !DELETE_WORD.test(flat)) || (cleans(unescaped) && !cleans(flat)))) return 'a delete word hidden by an escape';
-		// Word by word as well, so a harmless delete word elsewhere does not switch this off; a word may end on an escaped space.
-		const hidden = flat.split(/\s+/).filter((w) => w.includes(BACKSLASH) && !/^[A-Za-z]:|^\.{0,2}[\\/]/.test(w)).map((w) => w.split(BACKSLASH).join(''));
-		if (hidden.some((w) => /^(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimraf|shred|git)$/i.test(w))) return 'a delete word hidden by an escape';
+		if (/\bxargs\b[^;|&\n]*\s(-I\S*|-i|--replace\S*)/.test(flat) && DELETE_WORD.test(flat)) return 'a delete given targets by xargs';
 		if (GIT_C_ESCAPED.test(flat)) return 'a git setting the guard cannot read';
 		const deletes = DELETE_WORD.test(flat) || GIT_CLEAN_TEXT.test(flat);
 		if (deletes && (text.includes(BACKTICK) || text.includes('^'))) return 'a delete next to a backtick or caret';
