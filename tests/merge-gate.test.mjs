@@ -136,6 +136,31 @@ const commitOnBranch = (s, file, text, clear = true) => {
 	if (clear) cleared(s.work, s.state.pr.headRefOid);
 };
 
+// The 1.22.0 sweep (N1): the strict up-to-date check makes a branch take main after its sweep. What main brought is
+// not the branch's change; an edit made inside the merge still is.
+const mainMoves = (s) => {
+	sh(s.work, 'checkout', '-q', 'main');
+	fs.writeFileSync(path.join(s.work, 'other-pr.txt'), 'another PR\n');
+	sh(s.work, 'add', 'other-pr.txt'); sh(s.work, 'commit', '-qm', 'another PR lands'); sh(s.work, 'push', '-q', 'origin', 'main');
+	sh(s.work, 'checkout', '-q', 'feat/subtract');
+};
+test('merge gate: a branch brought up to date with main after its sweep still arms, unless the merge edits something', () => {
+	const s = setup();
+	mainMoves(s);
+	sh(s.work, 'merge', '-q', 'main', '-m', 'take main');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	const r = arm(s.opts);
+	assert.equal(r.armed, true, r.faults.join('\n'));
+	const t = setup();
+	mainMoves(t);
+	sh(t.work, 'merge', '-q', '--no-commit', 'main');
+	fs.writeFileSync(path.join(t.work, 'other-pr.txt'), 'changed inside the merge\n');
+	sh(t.work, 'add', 'other-pr.txt'); sh(t.work, 'commit', '-qm', 'take main');
+	t.state.pr.headRefOid = sh(t.work, 'rev-parse', 'HEAD');
+	const n = check(t.opts);
+	assert.equal(n.go, false);
+	assert.match(n.faults.join('\n'), /changed after the sweep covered .* other-pr\.txt/);
+});
 test('merge gate: a PR that passes every check is armed, pinned to the checked head, read back and logged', () => {
 	const s = setup();
 	const r = arm(s.opts);
@@ -263,6 +288,13 @@ const CASES = [
 	// Handoff item 17: the owner's allow rule reaches every repo; each project consents in its own adapter.
 	['a project whose adapter grants no merge', (s) => changeBase(s, () => fs.writeFileSync(path.join(s.work, 'standards', 'project-adapter.md'), '| A27 | Standing grants | Standing Grants | `none` |\n')), /A27 on the base grants no merge \(none\)/],
 	['a base with no adapter', (s) => changeBase(s, () => sh(s.work, 'rm', '-q', 'standards/project-adapter.md')), /names no standing grant/],
+	// The 1.22.0 sweep (G2): a row that names merge only to refuse it grants nothing.
+	...['auto-fix push only; no merge', 'autofix: yes, merge: no', 'never merge', 'not yet (merge after v2)', 'merge: none'].map((v) => [`a grant row that refuses merge in words: ${v}`, (s) => changeBase(s, () => fs.writeFileSync(path.join(s.work, 'standards', 'project-adapter.md'), `| A27 | Standing grants | Standing Grants | \`${v}\` |\n`)), /A27 on the base grants no merge/]),
+	// The 1.22.0 sweep (G1): once the base grants merge, a PR that rewrites the grant is the owner's to merge.
+	['a PR that changes the grant row itself', (s) => {
+		commitOnBranch(s, 'standards/project-adapter.md', '| A27 | Standing grants | Standing Grants | `merge through the merge gate; auto-fix push; release` |\n');
+		rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
+	}, /gate or rule paths.*standards\/project-adapter\.md/],
 	['a grant written on the branch only', (s) => {
 		changeBase(s, () => fs.writeFileSync(path.join(s.work, 'standards', 'project-adapter.md'), '| A27 | Standing grants | Standing Grants | `none` |\n'));
 		commitOnBranch(s, 'standards/project-adapter.md', '| A27 | Standing grants | Standing Grants | `merge gate` |\n');

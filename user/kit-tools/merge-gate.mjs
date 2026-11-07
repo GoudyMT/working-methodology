@@ -54,7 +54,7 @@ import kitTemp from './kit-temp.cjs';
 // project's grant and gate settings, git hooks, and the loaded rule files.
 // Case-blind: Windows folds case, so .GitHooks lands in the real folder.
 // The folder's own name counts too: a link named .githooks lands git's hooks somewhere else.
-export const PROTECTED = [/^\.github(\/|$)/i, /^\.kit(\/|$)/i, /^\.githooks(\/|$)/i, /^\.claude(\/|$)/i, /^project\/\.claude(\/|$)/i, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i];
+export const PROTECTED = [/^\.github(\/|$)/i, /^\.kit(\/|$)/i, /^\.githooks(\/|$)/i, /^\.claude(\/|$)/i, /^project\/\.claude(\/|$)/i, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i, /^standards\/project-adapter\.md$/i];
 // In the kit's own source the same things live here, and install carries them to every project: the owner's merge.
 export const KIT_SOURCE_PROTECTED = [/^user\//i, /^project\//i, /^rules\//i, /^scripts\//i, /^tests\//i, /^kit\.config\.json$/i];
 // git runs a repo's hooks on its own commands, and a branch can ship one under core.hooksPath. Replace refs and diff
@@ -219,7 +219,7 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	if (hold) faults.push(hold);
 
 	// 6. The sweep.
-	faults.push(...sweepFaults({ cwd, config, branch: p.headRefName, head: p.headRefOid, git, run }));
+	faults.push(...sweepFaults({ cwd, config, branch: p.headRefName, head: p.headRefOid, git, run, baseRef }));
 
 	// 7. The live body, by the base branch's own audit.
 	faults.push(...settingFaults({ cwd, baseRef, git }));
@@ -235,7 +235,11 @@ function grantFault(git, baseRef) {
 	if (r.status !== 0) return `the base has no standards/project-adapter.md, so this project names no standing grant (row A27): this merge is the owner's`;
 	const row = r.stdout.split('\n').find((l) => /^\|\s*A27\s*\|/.test(l));
 	const value = row ? row.split('|').slice(1, -1).pop().trim().replace(/`/g, '') : '';
-	return /\bmerge\b/i.test(value) && !/^none\b/i.test(value) ? '' : `adapter row A27 on the base grants no merge (${value || 'no row'}): this merge is the owner's`;
+	// A granted act is its own item, led by its name; an item that also says no, not, never, none or without grants
+	// nothing, so "no merge" or "merge: no" is no grant (the 1.22.0 sweep).
+	const items = value.split(/[;,]/).map((x) => x.trim().toLowerCase());
+	const granted = items.some((x) => /^merge\b/.test(x) && !/\b(no|not|never|none|without|except)\b/.test(x));
+	return granted ? '' : `adapter row A27 on the base grants no merge (${value || 'no row'}): this merge is the owner's. To grant it, the owner merges a row A27 that lists merge, such as: merge through the merge gate; auto-fix push`;
 }
 
 // The hooks folder this clone really uses (the gate's own runs override it on the command line, so that value is
@@ -256,6 +260,21 @@ function holdFault(git, cwd) {
 function changedFiles(git, from, to) {
 	const r = git('diff', '--name-only', '-z', '--no-renames', from, to);
 	return r.status === 0 ? r.stdout.split('\0').filter(Boolean) : null;
+}
+
+// What the branch changed after its swept commit, by its own hand: each side is read against its merge base with the
+// base branch, so a file main brought in (the strict up-to-date check makes a branch take main) is not counted, while an
+// edit made inside a merge still is. Null when git cannot say.
+function changedSince(git, sweep, head, baseRef) {
+	if (!baseRef) return changedFiles(git, sweep, head);
+	const mb = (rev) => git('merge-base', baseRef, rev).stdout.trim();
+	const [now, then] = [mb(head), mb(sweep)];
+	if (!now || !then) return null;
+	const a = changedFiles(git, now, head);
+	const b = changedFiles(git, then, sweep);
+	if (!a || !b) return null;
+	const blob = (rev, f) => git('rev-parse', '-q', '--verify', `${rev}:${f}`).stdout.trim();
+	return [...new Set([...a, ...b])].filter((f) => blob(now, f) !== blob(then, f) || blob(head, f) !== blob(sweep, f));
 }
 
 // approve.mjs's log, the record a report cannot write for itself: every clearing, each line chained to the one
@@ -298,7 +317,7 @@ function openHighs(r, head, git) {
 	return faults;
 }
 
-function sweepFaults({ cwd, config, branch, head, git, run }) {
+function sweepFaults({ cwd, config, branch, head, git, run, baseRef }) {
 	const audit = path.join(config, 'skills', 'pre-pr-sweep', 'audit.mjs');
 	if (!fs.existsSync(audit)) return [`no sweep audit at ${audit}: install the kit's user layer`];
 	const { broken, clearings } = approvals(git);
@@ -337,10 +356,10 @@ function sweepFaults({ cwd, config, branch, head, git, run }) {
 		if (/ACCEPTED owner/.test(r.text)) faults.push(`${r.f} carries an owner acceptance: a session can type one, so this merge is the owner's`);
 		if (r.text.split('\n').some((l) => /align|version goal|version-goal/i.test(l) && /\bNO\b/.test(l) && !/\bYES\b/.test(l))) faults.push(`${r.f} gives the version goal as NO`);
 	}
-	const changed = changedFiles(git, best.sha, head);
+	const changed = changedSince(git, best.sha, head, baseRef);
 	if (!changed) faults.push('git could not list what changed after the sweep');
 	const after = (changed || []).filter((f) => !AFTER_SWEEP.includes(f));
-	if (after.length) faults.push(`changed after the sweep covered ${best.sha.slice(0, 12)} and never reviewed: ${after.join(', ')}`);
+	if (after.length) faults.push(`changed after the sweep covered ${best.sha.slice(0, 12)} and never reviewed: ${after.join(', ')}. Under the one-sweep loop a fix after the sweep rides on its failing-first test and CI, and this merge is the owner's`);
 	for (const r of reports) {
 		const a = run(process.execPath, [audit, r.file], cwd);
 		if (a.status !== 0) faults.push(`sweep report ${r.f} fails its audit: ${a.stdout.trim().split('\n').join('; ')}`);
