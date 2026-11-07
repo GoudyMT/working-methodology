@@ -305,5 +305,7 @@ The first entry on keys v4, with brief v2 and the pass bar of 12. Candidate: thi
 
 Accepted by the owner 2026-11-06 on the moved ruler, on the scorer's reading of Q13.
 
+Re-measured at b4ecc52, after the fixes changed rule text: candidate 13, 12, 12, 13, 13, baseline 12, 12, 12, control 0, one blind scorer over all nine runs. The first three sat on the bar, so two more ran (decision 7), and the median of 5 is 13. The whole lead is Q10 again, and no question fails more in the candidate. The gate line is unchanged.
+
 control: 0
 gate: kit-1.21.0 median 13 baseline 12 brief v2 keys v4 owner-accepted
