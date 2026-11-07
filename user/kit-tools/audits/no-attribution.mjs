@@ -8,14 +8,24 @@ const LEAD = '(?:[ \\t>#*_`~|+\\-[\\]()]|\\d+[.)]\\s|<[^>\\n]*>)*';
 const AT_START = new RegExp(`^(${LEAD})(${BY})`, 'gim');
 const STYLED = new RegExp(`(?:[_*~[(|]|(?<!-)>|=["'])\\s*${BY}|${BY}\\s*(?:\\*\\*|@|\\[)`, 'i');
 
+/**
+ * A body's character entities as a browser reads them: a number, and the five names below, with no semicolon too
+ * (&#82equested). The PR-body audits read the body this way, so &#65;I is the word AI it shows on the page.
+ *
+ * Args:
+ *     text: the body as written
+ *
+ * Returns:
+ *     the text with each entity replaced by its character
+ */
+export const entities = (text) => text.replace(/&(?:#(\d+);?|#x([\da-f]+);?|([a-z]+);|(nbsp|lt|gt|amp|quot))/gi, (_, dec, hex, name, bare) => {
+	if (name || bare) return ENTITIES[(name || bare).toLowerCase()] ?? '';
+	const code = dec ? Number(dec) : parseInt(hex, 16);
+	return code > 0x10FFFF ? ' ' : String.fromCodePoint(code);
+});
+
 // Disguises fall away first: entities, invisible characters, odd spaces, and the wrappers that hide a line from view.
-const plain = (text) => text
-	// A browser reads a number, and the five names below, with no semicolon too (&#82equested).
-	.replace(/&(?:#(\d+);?|#x([\da-f]+);?|([a-z]+);|(nbsp|lt|gt|amp|quot))/gi, (_, dec, hex, name, bare) => {
-		if (name || bare) return ENTITIES[(name || bare).toLowerCase()] ?? '';
-		const code = dec ? Number(dec) : parseInt(hex, 16);
-		return code > 0x10FFFF ? ' ' : String.fromCodePoint(code);
-	})
+const plain = (text) => entities(text)
 	.replace(/[\p{Cf}\x00-\x08\x0B\x0E-\x1F]/gu, '')
 	.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
 	.replace(/<!-{2,}|-{2,}>|^\[[^\]\n]*\]:\s*(?:#|<>)\s*[("']/gm, '\n');

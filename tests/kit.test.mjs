@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status, mainProtection, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -298,6 +298,17 @@ test('session start says when the kit has newer rules, and how many', () => {
   bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
   bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update\./);
+});
+
+// 1.21.1 carry 6: a main held by a ruleset alone is protected, though GitHub has no classic protection for it.
+test('status reads main as protected by a ruleset, and unprotected only when neither holds it', () => {
+  const answers = (prot, rules) => (args) => (args[1].includes('/protection') ? prot : rules);
+  const notProtected = { status: 1, stdout: '{"message":"Branch not protected"}', stderr: 'gh: Branch not protected (HTTP 404)' };
+  assert.equal(mainProtection('.', answers({ status: 0, stdout: '{}', stderr: '' })), 'protected');
+  assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[{"type":"required_status_checks"}]', stderr: '' })), 'protected');
+  assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[]', stderr: '' })), 'unprotected');
+  assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '', stderr: 'HTTP 403' })), null);
+  assert.equal(mainProtection('.', answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
 });
 
 test('status warns when the temp disk runs low on inodes, and is silent when it has room or cannot tell', () => {
@@ -3575,6 +3586,10 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
   }
   for (const word of ['AIR', 'reagents', 'checkerboard']) cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, []]);
+  // Handoff item 15: the page shows an entity as its character, so the audit reads it that way.
+  for (const word of ['&#65;I', '&#x41;I', '&#65I', 'sub&#97;gent']) cases.push([`${word} as written`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
+  cases.push(['an em dash as an entity', sub('Tooling only;', 'Tooling only&#8212;'), title, ['0 non-ASCII characters']]);
+  cases.push(['a vault path behind an entity', sub('the app does not change.', 'see docs&#47;sweeps/x.md.'), title, ['no vault paths']]);
   // A command in a fenced block is code, so its dashes pass; prose after the fence closes is read again.
   const fence = (after) => sub(NOTES, `**Notes** - Tooling.\n\n\`\`\`\nnode --test\n\`\`\`\n${after}`);
   cases.push(['dashes in a fenced block', fence('Done.'), title, []]);
@@ -3600,6 +3615,17 @@ test('the attribution check refuses every disguise in the corpus and passes pros
   const { attributionFaults } = await import('../project/.claude/no-attribution.mjs');
   for (const body of [...CORPUS.mustFail, ...CORPUS.unclear.map((u) => u.s)]) assert.notDeepEqual(attributionFaults(body), [], JSON.stringify(body));
   for (const body of CORPUS.mustPass) assert.deepEqual(attributionFaults(body), [], JSON.stringify(body));
+});
+
+// Handoff item 15, for the Standard audit: a banned word or a dash spelled as an entity is the word on the page.
+test('the Standard PR-body audit reads an entity as the character the page shows', () => {
+  const dir = makeTemp('prb-');
+  assert.equal(stdAudit(dir, honestBody()).status, 0);
+  const fails = (from, to) => stdAudit(dir, honestBody().replace(from, to)).stdout.split('\n').filter((l) => l.startsWith('FAIL'));
+  const line = honestBody().split('\n').find((l) => / the /.test(l) && !l.startsWith('#'));
+  assert.ok(line, 'the example has a prose line to change');
+  assert.match(fails(line, line.replace(' the ', ' the &#67;laude ')).join('\n'), /no mechanism or AI words/);
+  assert.match(fails(line, line.replace(' the ', ' the &#8212; ')).join('\n'), /0 non-ASCII characters/);
 });
 
 test('both PR-body audits fail on the attribution block at the top, in the middle, or either half alone', () => {

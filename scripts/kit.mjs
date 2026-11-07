@@ -769,11 +769,17 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
  * Returns:
  *     'protected', 'unprotected', or null when it cannot tell (no GitHub remote, no gh, no access)
  */
-function mainProtection(projectDir) {
-  const r = spawnSync('gh', ['api', 'repos/{owner}/{repo}/branches/main/protection'], { cwd: projectDir, encoding: 'utf8', timeout: 8000 });
+export function mainProtection(projectDir, gh = (args) => spawnSync('gh', args, { cwd: projectDir, encoding: 'utf8', timeout: 8000 })) {
+  const r = gh(['api', 'repos/{owner}/{repo}/branches/main/protection']);
   if (r.error) return null;
   if (r.status === 0) return 'protected';
-  return /Branch not protected/i.test(`${r.stdout}${r.stderr}`) ? 'unprotected' : null;
+  if (!/Branch not protected/i.test(`${r.stdout}${r.stderr}`)) return null;
+  // A ruleset protects a branch with no classic protection: GitHub answers 404 for the one and lists the other.
+  const rules = gh(['api', 'repos/{owner}/{repo}/rules/branches/main']);
+  if (rules.error || rules.status !== 0) return null;
+  let list = null;
+  try { list = JSON.parse(rules.stdout); } catch { return null; } // an answer that is not JSON tells nothing
+  return Array.isArray(list) && list.length > 0 ? 'protected' : 'unprotected';
 }
 
 /**

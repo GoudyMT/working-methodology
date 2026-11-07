@@ -99,11 +99,13 @@ function setup() {
 			return ok(Object.fromEntries(args[args.indexOf('--json') + 1].split(',').filter((k) => k in full).map((k) => [k, full[k]])));
 		}
 		if (args[0] === 'api' && args[1] === 'repos/{owner}/{repo}') return state.repo ? ok(state.repo) : no;
-		// The paths are matched whole, so a wrong name in them reads nothing, as on GitHub.
-		if (args[0] === 'api' && args[1] === 'repos/o/r/branches/main/protection/required_status_checks') return state.protection ? ok(state.protection) : no;
-		if (args[0] === 'api' && args[1] === 'repos/o/r/rules/branches/main') return ok(state.rules);
-		if (args[0] === 'api' && args[1] === 'repos/o/r/branches/main') {
-			return ok({ commit: { sha: state.baseTip ?? spawnSync('git', ['rev-parse', 'refs/remotes/origin/main'], { cwd, encoding: 'utf8' }).stdout.trim() } });
+		// The paths are matched whole, so a wrong name in them reads nothing, as on GitHub; a base with a slash in its
+		// name is sent encoded.
+		const b = encodeURIComponent(state.pr.baseRefName);
+		if (args[0] === 'api' && args[1] === `repos/o/r/branches/${b}/protection/required_status_checks`) return state.protection ? ok(state.protection) : no;
+		if (args[0] === 'api' && args[1] === `repos/o/r/rules/branches/${b}`) return ok(state.rules);
+		if (args[0] === 'api' && args[1] === `repos/o/r/branches/${b}`) {
+			return ok({ commit: { sha: state.baseTip ?? spawnSync('git', ['rev-parse', `refs/remotes/origin/${state.pr.baseRefName}`], { cwd, encoding: 'utf8' }).stdout.trim() } });
 		}
 		if (args[0] === 'pr' && args[1] === 'merge' && args.includes('--disable-auto')) { if (state.disarmHolds) state.armed = false; return { status: 0, stdout: '', stderr: '' }; }
 		if (args[0] === 'pr' && args[1] === 'merge') { state.armed = state.mergeStatus === 0 && state.armOnMerge; return { status: state.mergeStatus, stdout: '', stderr: state.mergeStatus ? 'refused' : '' }; }
@@ -655,6 +657,16 @@ test('merge gate: autofix disarms an armed PR, pushes the branch and logs the co
 	assert.ok(s.state.calls.includes('pr merge 7 --disable-auto'));
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
 	assert.match(log, new RegExp(`DISARMED 7\\n.* AUTOFIX 7 ${fixed}\\n$`));
+});
+// 1.21.1 carry 8: a base named with a slash, and a PR address in another case, still pass.
+test('merge gate: a base with a slash in its name and a PR address in mixed case arm as any other', () => {
+	const s = setup();
+	sh(s.work, 'push', '-q', 'origin', 'main:refs/heads/release/1.0');
+	s.state.pr.baseRefName = 'release/1.0';
+	s.state.pr.url = 'https://github.com/O/R/pull/7';
+	const r = arm(s.opts);
+	assert.equal(r.armed, true, r.faults.join('\n'));
+	assert.ok(s.state.calls.includes('api repos/o/r/branches/release%2F1.0'), 'the base is read by its encoded name');
 });
 // 1.21.1 carry 2: gh may read the PR through another remote, while the push goes to origin.
 test('merge gate: autofix pushes only when origin is the PR\'s repo', () => {
