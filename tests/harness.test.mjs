@@ -34,6 +34,19 @@ test('the runner splits a harness file into shards that together run every test 
 	assert.match(r.stdout, /pass 7, fail 0/);
 });
 
+test('a run started inside another run ignores the outer run\'s selection and map', () => {
+	const dir = kitTemp.makeTemp('nested-');
+	const log = path.join(dir, 'ran.log');
+	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS}; import fs from 'node:fs';\n` +
+		['a', 'b'].map((n) => `test('${n}', () => { fs.appendFileSync(${JSON.stringify(log)}, '${n}\\n'); });`).join('\n'));
+	const outer = path.join(dir, 'only.json');
+	fs.writeFileSync(outer, '[]');
+	const r = run(dir, ['--shards', '1', path.join(dir, 'x.test.mjs')], { KIT_ONLY: outer, KIT_MAP_DIR: path.join(dir, 'nomap'), KIT_MAP_TEST: 'x' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.deepEqual(ran(log), ['a', 'b']);
+	assert.equal(fs.existsSync(path.join(dir, 'nomap')), false);
+});
+
 test('a failing test in any shard fails the run and is named in the output', () => {
 	const dir = kitTemp.makeTemp('shards-');
 	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS};\n` +

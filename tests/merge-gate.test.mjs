@@ -122,9 +122,10 @@ test('merge gate: a PR that passes every check is armed, pinned to the checked h
 	assert.match(log, new RegExp(`ARMED https://github.com/o/r/pull/7 ${s.sha} required=kit-tests`));
 });
 
-// M30: the canned gh above once answered a field the real gh 2.92.0 does not have, and every live run failed closed.
-// This holds the canned answers to what the real gh said (scripts/record-gh-contracts.mjs records it).
-test('merge gate: every gh read the gate makes has a recorded real answer with the fields and types the canned gh uses', () => {
+// M30: the canned gh above can answer in shapes the real gh never gives. The field names are checked live below;
+// this holds each canned answer's types, and the api answers' shapes, to what the real gh said (recorded by
+// scripts/record-gh-contracts.mjs; re-record after a gh upgrade).
+test('merge gate: the canned gh answers with the types and shapes the real gh gave for every read the gate makes', () => {
 	const rec = JSON.parse(fs.readFileSync(path.join(KIT, 'tests/contracts/gh.json'), 'utf8'));
 	const src = fs.readFileSync(path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'utf8');
 	const fake = setup().state;
@@ -135,7 +136,6 @@ test('merge gate: every gh read the gate makes has a recorded real answer with t
 		assert.equal(c.status, 0, `real ${rec.version} refused --json ${list}: ${c.stderr}`);
 		const canned = list.includes('tagName') ? fake.release : { state: 'OPEN', autoMergeRequest: null, statusCheckRollup: [], reviewDecision: '', labels: [], ...fake.pr };
 		for (const k of list.split(',')) {
-			assert.ok(k in c.json, `real ${rec.version} answers no ${k}`);
 			if (k !== 'autoMergeRequest') assert.equal(type(canned[k]), type(c.json[k]), `${k} is a ${type(c.json[k])} in real gh`);
 		}
 	}

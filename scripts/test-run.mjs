@@ -154,7 +154,8 @@ function runOne(args, env) {
 	const t0 = Date.now();
 	return new Promise((resolve) => {
 		// Run from inside a test, node:test's own context variable would make the child report in its binary protocol.
-		const { NODE_TEST_CONTEXT, ...base } = process.env;
+		// A run inside a run (the runner's own tests) must not inherit the outer run's shard, selection or map.
+		const { NODE_TEST_CONTEXT, KIT_SHARD, KIT_ONLY, KIT_MAP_DIR, KIT_MAP_TEST, ...base } = process.env;
 		const child = spawn(process.execPath, args, { env: { ...base, ...env } });
 		let out = '';
 		child.stdout.on('data', (d) => { out += d; });
