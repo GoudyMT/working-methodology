@@ -5728,6 +5728,8 @@ test('every recall session runs in the probe folder with the question as its inp
   for (const bad of [{ status: 1, stdout: 'words' }, { status: 0, stdout: '  ' }, { status: 0, stdout: 'Not logged in' }]) {
     assert.throws(() => askAll({ qs, projectDir: dir, run: () => bad }), /question 1: no answer/, JSON.stringify(bad));
   }
+  // 1.21.0 handoff item 36: a logged-out session says how to log in, for the config folder the run reads.
+  assert.throws(() => askAll({ qs, projectDir: dir, run: () => ({ status: 1, stdout: 'Not logged in - Please run /login' }) }), /not logged in.*\/login.*CLAUDE_CONFIG_DIR/i);
 });
 
 test('a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself', async () => {
