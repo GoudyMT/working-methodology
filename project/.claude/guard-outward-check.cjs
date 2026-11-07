@@ -89,6 +89,28 @@ const ASK = [
 	'cmd /c g^it push',
 	// git's own push program, called by its path.
 	'"C:/Program Files/Git/mingw64/libexec/git-core/git-push.exe" origin main',
+	// 1.22.0, handoff item 26: other ways out (a package registry, an HTTP write, mail).
+	'npm publish',
+	'npm publish --access public',
+	'pnpm publish',
+	'yarn npm publish',
+	'npm unpublish x@1.0.0',
+	'npm dist-tag add x@1.0.0 latest',
+	'git send-email --to a@b.c 0001.patch',
+	'curl -X POST https://example.com/api',
+	'curl --request PUT https://example.com/api',
+	'curl -XDELETE https://example.com/api/1',
+	'curl -d x=1 https://example.com/api',
+	'curl --data-binary @f https://example.com/api',
+	'curl -F f=@a.zip https://example.com/up',
+	'curl -T a.zip https://example.com/up',
+	'curl --json {} https://example.com/api',
+	'wget --post-data=x=1 https://example.com/api',
+	'wget --method=PUT https://example.com/api',
+	'Invoke-WebRequest -Uri https://example.com/api -Method Post',
+	'Invoke-RestMethod https://example.com/api -Method Delete',
+	'iwr https://example.com/api -Body x',
+	'irm -Method Patch https://example.com/api',
 ];
 
 const PASS = [
@@ -120,6 +142,19 @@ const PASS = [
 	'Get-Content pushed.txt',
 	'echo push',
 	'pnpm --dir C:/wt exec vitest run',
+	// Reads stay quiet: a download, a dry run, a registry look-up.
+	'curl https://example.com',
+	'curl -sSL -o a.zip https://example.com/a.zip',
+	'curl -X GET https://example.com/api',
+	'curl -I https://example.com',
+	'wget https://example.com/a.zip',
+	'Invoke-WebRequest -Uri https://example.com -OutFile a.html',
+	'irm https://example.com/api',
+	'npm publish --dry-run',
+	'npm view x versions',
+	'npm pack',
+	'npm install',
+	'git format-patch -1',
 ];
 
 let wrong = 0;

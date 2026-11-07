@@ -15,7 +15,13 @@ const CR = String.fromCharCode(13);
 const MAX_DEPTH = 3;
 
 const GIT_VALUE_OPTIONS = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--attr-source', '--shallow-file']);
-const GIT_OUTWARD = new Set(['push', 'send-pack']);
+const GIT_OUTWARD = new Set(['push', 'send-pack', 'send-email']);
+// A package registry is public: these subcommands change what it holds (--dry-run changes nothing).
+const PACKAGERS = new Set(['npm', 'npm.cmd', 'pnpm', 'pnpm.cmd', 'yarn', 'yarn.cmd', 'bun', 'bun.exe']);
+const REGISTRY_WRITES = new Set(['publish', 'unpublish', 'dist-tag', 'deprecate', 'owner']);
+// HTTP clients: a method other than GET or HEAD, or a body, sends something out. In Windows PowerShell 5.1, curl and
+// wget are names for Invoke-WebRequest, so its -Method and -Body count for them too.
+const HTTP_CLIENTS = /^(curl|wget|invoke-webrequest|invoke-restmethod|iwr|irm)(\.exe)?$/;
 const GIT_NESTED_PUSH = new Set(['lfs', 'subtree']);
 
 const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
@@ -58,6 +64,32 @@ function ghApiWrites(words, start) {
 	return false;
 }
 
+// npm publish, pnpm publish, yarn npm publish: a registry write among the first two subcommand words.
+function registryWrite(words, start) {
+	const rest = words.slice(start);
+	if (rest.includes('--dry-run')) return '';
+	const hit = rest.filter((w) => !w.startsWith('-')).slice(0, 2).find((w) => REGISTRY_WRITES.has(w));
+	return hit ? 'a package ' + hit : '';
+}
+
+// The words as written: curl's flags are case-sensitive (-F is a form, -f is --fail; -I is HEAD, -i is headers).
+function httpWrite(name, words) {
+	const curl = name.startsWith('curl');
+	for (let i = 0; i < words.length; i++) {
+		const w = words[i];
+		const lower = w.toLowerCase();
+		let method = '';
+		if ((curl && w === '-X') || lower === '--request' || lower === '--method' || /^-me(t(h(o(d)?)?)?)?$/.test(lower)) method = words[i + 1] ?? '';
+		else if (curl && /^-X./.test(w)) method = w.slice(2);
+		else if (/^--(request|method)=/.test(lower)) method = lower.slice(lower.indexOf('=') + 1);
+		else if (curl && (/^-[dFT]/.test(w) || /^--(data(-[\w-]+)?|form(-string)?|upload-file|json)(=|$)/.test(lower))) return 'an HTTP write';
+		else if (/^--(post|body)-(data|file)(=|$)/.test(lower)) return 'an HTTP write';
+		else if (/^-(body|infile)$/.test(lower)) return 'an HTTP write';
+		if (method && !/^(get|head)$/i.test(method)) return 'an HTTP write';
+	}
+	return '';
+}
+
 // gh is read-only only for the subcommands listed; anything else (create, merge, edit, run, sync...) asks.
 function ghOutward(words, start) {
 	const named = [];
@@ -91,6 +123,8 @@ function findOutward(text, depth) {
 			if (/^git-(push|send-pack)(\.exe)?$/.test(name) || (/^git-lfs(\.exe)?$/.test(name) && words[i + 1] === 'push')) hit = name;
 			else if (name === 'git' || name === 'git.exe') hit = gitOutward(words, i + 1);
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
+			else if (PACKAGERS.has(name)) hit = registryWrite(words, i + 1);
+			else if (HTTP_CLIENTS.test(name)) hit = httpWrite(name, segment.slice(i + 1).map((word) => word.value));
 			if (hit) return hit;
 		}
 		// Quoted text may be a whole command handed to another shell: bash -c 'git push'.
