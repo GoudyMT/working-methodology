@@ -5491,14 +5491,6 @@ test('parseRunArgs refuses no label, a label that is a path, too many arguments,
   assert.throws(() => parseRunArgs(['a', '--no-kit', '--no-kit']));
 });
 
-test('parseRunArgs refuses the old "<folder> <label>" usage', async () => {
-  const { parseRunArgs } = await recallTools();
-  assert.throws(() => parseRunArgs(['C:/some/folder', 'kit-1.19.0']));
-  assert.throws(() => parseRunArgs(['C:\\some\\folder', 'kit-1.19.0']));
-  assert.throws(() => parseRunArgs(['./folder', 'x']));
-  assert.throws(() => parseRunArgs([path.resolve(os.tmpdir(), 'proj'), 'x']));
-});
-
 test('setupProbe makes the folder, runs git init in it, then installs the kit project layer with cwd at the kit', async () => {
   const { setupProbe } = await recallTools();
   const dir = scratch();
