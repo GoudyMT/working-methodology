@@ -48,7 +48,11 @@ function retryOpen(lines, i, contract, role) {
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
-	if (!/(^|:)reviewer$/i.test(String((input.tool_input || {}).subagent_type || ''))) return;
+	if (!/(^|:)reviewer$/i.test(String((input.tool_input || {}).subagent_type || ''))) {
+		// A brief that names a sweep is a reviewer's whatever the type says, and a slip here would run with no slot.
+		if (/Sweep: [0-9a-f]{16} role \d+/.test(String((input.tool_input || {}).prompt || ''))) deny('This brief names a sweep, so it runs as the reviewer role: set subagent_type to reviewer.');
+		return;
+	}
 	const common = git(input.cwd || process.cwd(), 'rev-parse', '--path-format=absolute', '--git-common-dir');
 	if (common.status !== 0) return;
 	const dir = common.stdout.trim();

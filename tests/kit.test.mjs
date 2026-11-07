@@ -6451,3 +6451,33 @@ test('both guards read a command through the same plain reading', () => {
   assert.ok(block('guard-delete.cjs').includes('function plainText'));
   assert.equal(block('guard-outward.cjs'), block('guard-delete.cjs'));
 });
+test('a brief that names a sweep runs as a reviewer, whatever type it asks for', () => {
+  const dir = sweepRepo();
+  const named = sweepGuard(dir, { tool_input: { subagent_type: 'general-purpose', prompt: `look. Sweep: ${'0'.repeat(16)} role 1` } });
+  assert.equal(named.permissionDecision, 'deny');
+  assert.match(named.permissionDecisionReason, /reviewer role/);
+  assert.equal(sweepGuard(dir, { tool_input: { subagent_type: 'general-purpose', prompt: 'look around' } }).permissionDecision, 'allow');
+});
+test('--none-ran refuses when a transcript names the sweep, though no slot was taken', () => {
+  const r = approveRun(featureContract());
+  const hash = approvalLog(r.dir).pop().hash;
+  const cfg = transcripts({ slotless: [[0, 5000000, 0, 0]] });
+  setBrief(cfg, 'slotless', (b) => `${b} Sweep: ${hash} role 1`);
+  const none = approveIn(r.dir, [r.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(none.status, 1, none.stdout);
+  assert.match(none.stdout, /reviewer transcript/);
+  assert.notEqual(approvalLog(r.dir).pop().kind, 'outcome');
+});
+test('an owner yes on an older ask waits for the outcome of the sweep approved after it', () => {
+  const dir = sweepRepo();
+  const b = path.join(dir, 'sweeps', 'b.json');
+  const big = featureContract();
+  big.roles[0].calls = 31;
+  fs.writeFileSync(b, JSON.stringify(big));
+  assert.equal(approveIn(dir, [b]).status, 1);
+  const a = approveRun(featureContract(), dir);
+  assert.equal(a.status, 0, a.stdout);
+  const yes = approveIn(dir, [b, '--owner-yes', 'yes go']);
+  assert.equal(yes.status, 1, yes.stdout);
+  assert.match(yes.stdout, /Log the outcome of the last approved sweep first/);
+});

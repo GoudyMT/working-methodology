@@ -575,7 +575,9 @@ function ownerYes() {
 	// One yes answers one ask: a second would open a second set of start slots.
 	const askedAt = s.log.lastIndexOf(last);
 	if (s.log.some((e, j) => j > askedAt && e.kind === 'owner-yes' && e.contract === contractFile && e.hash === last.hash && e.head === head)) { console.log("The owner's yes for this ask is already logged; its reviewers may start. A new ask needs approve.mjs again. Nothing logged."); return 1; }
-	const { open, stuck } = openSweep(s.log);
+	const { open, reported, stuck } = openSweep(s.log);
+	// A yes on an older ask must not open a new set of starts over a sweep whose spend is still unread.
+	if (open && !reported && !stuck && open.contract !== contractFile) { console.log(`Log the outcome of the last approved sweep first (${rel(open.contract)}), then run approve.mjs on this contract again. Nothing logged.`); return 1; }
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
 	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, words: said });
 	console.log(`The owner's yes is logged; the reviewers may start. ${sweepLine(last.hash)}`);
@@ -745,6 +747,10 @@ function outcome() {
 		if (!clearings.length || at < 0) { console.log('--none-ran closes a cleared sweep; this contract has none. Nothing logged.'); return 1; }
 		if (started) { console.log(`${started} reviewer(s) started under this round's clearances, so its spend is measured: log the outcome with --agents. Nothing logged.`); return 1; }
 		const d = answered(s.log, at);
+		// The slots count starts the guard saw; a transcript that names this sweep shows one it did not.
+		const used = usedAgents(s.log);
+		const seen = reviewersOf(d.hash, d.time, (id) => used.has(id.toLowerCase()));
+		if (seen.length) { console.log(`${seen.length} reviewer transcript(s) name this sweep (${seen.join(', ')}), so its spend is measured: log the outcome with --agents. Nothing logged.`); return 1; }
 		write({ kind: 'outcome', contract: contractFile, decisionAt: d.time, budget: d.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, noneRan: true });
 		console.log('Outcome logged: no reviewer ran under this approval.');
 		return 0;
