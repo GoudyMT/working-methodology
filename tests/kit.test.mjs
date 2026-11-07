@@ -3508,6 +3508,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   const dir = makeTemp('lean-');
   const lean = read(path.resolve('user/skills/pr-body/examples/lean.md'));
   const title = lean.split('\n')[0].replace(/^## [A-Za-z ]+: /, 'feat: ');
+  let last = '';
   const fails = (body, t = title) => {
     const f = path.join(dir, 'body.md');
     fs.writeFileSync(f, body);
@@ -3516,6 +3517,8 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     assert.deepEqual(out.map((l) => ROWS.find((n) => l.slice(6).startsWith(n))), ROWS, 'every row is reported, in order');
     const rows = out.filter((l) => l.startsWith('FAIL')).map((l) => ROWS.find((n) => l.slice(6).startsWith(n)));
     assert.equal(r.status, rows.length ? 1 : 0, r.stdout);
+    assert.match(r.stdout, rows.length ? /AUDIT FAILED\s*$/ : /AUDIT PASSED\s*$/);
+    last = r.stdout;
     return rows;
   };
   const ROWS = ['no attribution block', 'title is type: subject (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
@@ -3558,7 +3561,19 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
   }
   for (const word of ['AIR', 'reagents', 'checkerboard']) cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, []]);
+  // A command in a fenced block is code, so its dashes pass; prose after the fence closes is read again.
+  const fence = (after) => sub(NOTES, `**Notes** - Tooling.\n\n\`\`\`\nnode --test\n\`\`\`\n${after}`);
+  cases.push(['dashes in a fenced block', fence('Done.'), title, []]);
+  cases.push(['a spaced dash after a fenced block', fence('Done - now.'), title, ['no spaced dashes in prose']]);
   for (const [name, body, t, want] of cases) assert.deepEqual(fails(body, t), want, name);
+  // The writer is sent to the line at fault.
+  const at = lean.split('\n').indexOf(NOTES) + 1;
+  fails(sub(NOTES, `**Notes** - ${'x'.repeat(99)}`));
+  assert.match(last, new RegExp(`over: \\[\\[${at},111\\]\\]`));
+  fails(sub('the app does not change.', 'the AI does not change.'));
+  assert.match(last, new RegExp(`@${at}\\b`));
+  fails(sub('the app does not change.', 'see docs/sweeps/x.md.'));
+  assert.match(last, new RegExp(`lines ${at}\\b`));
 });
 
 const notesAudit = (dir, text) => {
