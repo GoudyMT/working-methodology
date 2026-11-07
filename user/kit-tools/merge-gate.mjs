@@ -18,6 +18,15 @@
 //      project's own folder), with no audit setting the base does not hold
 // A check stops only what is true when it runs: a check that fails later, or a kill switch set later, does not reach an
 // armed PR. `disarm` does, and it needs no check.
+//
+// Limits, named rather than closed (1.21.0 handoff items 4, 6, 13 and 19):
+//   - Any session of the same user can append to the approval log; check 6 trusts its lines. The log is a record of
+//     the sweep tools, not a signature.
+//   - The pre-push hold follows the armed sha in this clone. A push from another clone, or from GitHub's web editor,
+//     moves the head past it, and GitHub keeps auto-merge on after a writer's push.
+//   - A check that starts after arming, and is not required, does not hold the merge: GitHub reads a running optional
+//     check as mergeable. Check 4 stops arming while one runs; what starts later is not proved on GitHub yet.
+//   - autofix pushes for the owner's or their review tool's comments by rule; the gate binds no comment author.
 // GO: `gh pr merge <n> --auto --squash --match-head-commit <sha>`, read back, and one line in kit-merge-gate.log in the common git folder.
 // NO GO: <git dir>/kit-merge-gate-triage.md says what failed; exit 1.
 //
