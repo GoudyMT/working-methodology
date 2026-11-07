@@ -46,7 +46,8 @@ function child(name) {
 		if (!Array.isArray(args)) { rest.unshift(options); options = args; args = []; }
 		if (process.env.KIT_MAP_TEST) {
 			for (const a of [cmd, ...args]) if (isFile(a)) note(a, false);
-			if (options && typeof options === 'object' && options.env) {
+			// A runner started by a test turns the map off for its own children (KIT_MAP_OFF): theirs is not this test's.
+			if (options && typeof options === 'object' && options.env && !options.env.KIT_MAP_OFF) {
 				const add = Object.fromEntries(MAP_VARS.filter((k) => process.env[k] !== undefined && options.env[k] === undefined).map((k) => [k, process.env[k]]));
 				options = { ...options, env: { ...options.env, ...add } };
 			}

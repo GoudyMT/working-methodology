@@ -11,7 +11,7 @@ import inspector from 'node:inspector';
 
 const [SHARD, SHARDS] = (process.env.KIT_SHARD || '0/1').split('/').map(Number);
 const ONLY = process.env.KIT_ONLY ? new Set(JSON.parse(fs.readFileSync(process.env.KIT_ONLY, 'utf8'))) : null;
-const MAP = process.env.KIT_MAP_DIR || '';
+const MAP = process.env.KIT_MAP_OFF ? '' : process.env.KIT_MAP_DIR || '';
 // node --test runs each file in its own process, as `node <file>`.
 const FILE = path.relative(process.env.KIT_REPO || process.cwd(), process.argv[1] || '').split(path.sep).join('/');
 

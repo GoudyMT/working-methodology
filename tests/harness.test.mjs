@@ -138,6 +138,39 @@ test('a changed run with no map, or a map from a commit not in history, runs eve
 	assert.equal(ran(log).length, 5);
 });
 
+test('a map run keeps the commit it started on, and its children start in a folder with a broken package.json', () => {
+	const repo = kitTemp.makeTemp('maprepo2-');
+	const bad = kitTemp.makeTemp('badpkg-');
+	fs.writeFileSync(path.join(bad, 'package.json'), '{ not json');
+	fs.mkdirSync(path.join(repo, 'tests'));
+	fs.writeFileSync(path.join(repo, 'tests', 'y.test.mjs'), [
+		`import { test } from ${HARNESS};`,
+		"import { spawnSync } from 'node:child_process';",
+		`test('child in a broken package', () => { const r = spawnSync(process.execPath, ['-e', '1'], { cwd: ${JSON.stringify(bad)}, encoding: 'utf8' }); if (r.status !== 0) throw new Error(r.stderr); });`,
+		"test('commits', () => { spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'later'], { encoding: 'utf8' }); });",
+		'',
+	].join('\n'));
+	sh(repo, 'init', '-q', '-b', 'main'); sh(repo, 'add', '.'); sh(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fixture');
+	const start = sh(repo, 'rev-parse', 'HEAD');
+	const r = run(repo, ['--map', '--shards', '1', path.join(repo, 'tests', 'y.test.mjs')]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.notEqual(sh(repo, 'rev-parse', 'HEAD'), start, 'a test committed during the run');
+	assert.equal(JSON.parse(fs.readFileSync(path.join(repo, 'tests', '.map.json'), 'utf8')).sha, start);
+});
+
+test('a runner started by a mapped test maps nothing of its own into the outer map', () => {
+	const { repo, test: file } = fixtureRepo();
+	const inner = kitTemp.makeTemp('inner-');
+	fs.writeFileSync(path.join(inner, 'z.test.mjs'), `import { test } from ${HARNESS};\ntest('inner one', () => {});\n`);
+	fs.appendFileSync(file, `test('runs a runner', () => { spawnSync(process.execPath, [${JSON.stringify(RUNNER)}, '--shards', '2', ${JSON.stringify(path.join(inner, 'z.test.mjs'))}], { cwd: ${JSON.stringify(inner)}, env: { ...process.env } }); });\n`);
+	sh(repo, 'add', '.'); sh(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'runner test');
+	const r = run(repo, ['--map', file]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	const keys = Object.keys(JSON.parse(fs.readFileSync(path.join(repo, 'tests', '.map.json'), 'utf8')).tests);
+	assert.ok(keys.includes('tests/x.test.mjs::runs a runner'), keys.join(', '));
+	assert.deepEqual(keys.filter((k) => /inner one/.test(k)), []);
+});
+
 test('a map is made only from a clean tree, so its line numbers match its commit', () => {
 	const { repo, test: file } = fixtureRepo();
 	fs.appendFileSync(path.join(repo, 'src', 'a.mjs'), '// local edit\n');

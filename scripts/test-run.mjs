@@ -155,8 +155,8 @@ function runOne(args, env) {
 	return new Promise((resolve) => {
 		// Run from inside a test, node:test's own context variable would make the child report in its binary protocol.
 		// A run inside a run (the runner's own tests) must not inherit the outer run's shard, selection or map.
-		const { NODE_TEST_CONTEXT, KIT_SHARD, KIT_ONLY, KIT_MAP_DIR, KIT_MAP_TEST, ...base } = process.env;
-		const child = spawn(process.execPath, args, { env: { ...base, ...env } });
+		const { NODE_TEST_CONTEXT, KIT_SHARD, KIT_ONLY, KIT_MAP_DIR, KIT_MAP_TEST, KIT_MAP_OFF, ...base } = process.env;
+		const child = spawn(process.execPath, args, { env: { ...base, ...(env.KIT_MAP_DIR ? {} : { KIT_MAP_OFF: '1' }), ...env } });
 		let out = '';
 		child.stdout.on('data', (d) => { out += d; });
 		child.stderr.on('data', (d) => { out += d; });
@@ -190,6 +190,8 @@ export async function main(argv) {
 			return 2;
 		}
 	}
+	// The commit the map's line numbers belong to is the one the run starts on, whatever is committed meanwhile.
+	const mapSha = o.map ? git(root, 'rev-parse', 'HEAD').stdout.trim() : '';
 	// Every test process's temp folder lands in this run's own root, so another program's temp files cannot count
 	// as growth, and a run killed outright is swept by the next one.
 	const runRoot = sessionRoot();
@@ -217,7 +219,7 @@ export async function main(argv) {
 		if (o.map) {
 			env.KIT_MAP_DIR = path.join(work, 'map');
 			fs.mkdirSync(env.KIT_MAP_DIR);
-			env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --require "${posix(TRACE)}"`.trim(); // NODE_OPTIONS reads a backslash as an escape
+			env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --import ${pathToFileURL(TRACE).href}`.trim(); // a URL: --require would first read the package.json in the child's folder
 		}
 		const t0 = Date.now();
 		const jobs = [];
@@ -231,10 +233,9 @@ export async function main(argv) {
 		const label = shardFiles.length ? `${shards} shards` : 'no shards';
 		process.stdout.write(`test-run: ${label}, pass ${sum('pass')}, fail ${sum('fail')} in ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
 		if (o.map) {
-			const sha = git(root, 'rev-parse', 'HEAD').stdout.trim();
-			const map = buildMap(env.KIT_MAP_DIR, root, sha);
+			const map = buildMap(env.KIT_MAP_DIR, root, mapSha);
 			fs.writeFileSync(path.join(root, MAP_FILE), JSON.stringify(map));
-			process.stdout.write(`test-run: map of ${Object.keys(map.tests).length} test(s) at ${sha.slice(0, 12)} in ${posix(MAP_FILE)}\n`);
+			process.stdout.write(`test-run: map of ${Object.keys(map.tests).length} test(s) at ${mapSha.slice(0, 12)} in ${posix(MAP_FILE)}\n`);
 		}
 		return results.some((r) => r.status !== 0) ? 1 : 0;
 	})().finally(() => removeTemp(work));
