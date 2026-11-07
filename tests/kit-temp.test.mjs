@@ -1,7 +1,7 @@
 // Tests for the one temp helper (project/.claude/kit-temp.cjs) and the guarded test runner (scripts/test-run.mjs).
 // A killed run once filled the Cowork VM's inodes with test folders; each test here is one way a run can leave
 // something behind, and checks that the next run or the runner clears it or refuses to start.
-import { test } from 'node:test';
+import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

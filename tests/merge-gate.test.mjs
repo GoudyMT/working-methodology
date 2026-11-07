@@ -1,6 +1,6 @@
 // Tests for the merge gate (user/kit-tools/merge-gate.mjs): a real git repo with a bare origin, the kit's real
 // audits, and a fake gh that answers from a state object and records every call.
-import { test } from 'node:test';
+import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
