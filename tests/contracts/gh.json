@@ -1,0 +1,210 @@
+{
+ "version": "gh version 2.92.0 (2026-04-28)",
+ "recorded": "2026-11-07",
+ "pr": 24,
+ "tag": "v1.21.1",
+ "calls": [
+  {
+   "args": [
+    "pr",
+    "view",
+    "24",
+    "--json",
+    "number,state,isDraft,isCrossRepository,headRefName,headRefOid,baseRefName,title,body,url,statusCheckRollup,reviewDecision,labels,autoMergeRequest"
+   ],
+   "status": 0,
+   "stderr": "",
+   "json": {
+    "autoMergeRequest": null,
+    "baseRefName": "main",
+    "body": "(4203 characters)",
+    "headRefName": "fix/merge-gate-repo-read",
+    "headRefOid": "ffdb5aa18c176634ecc159ec399817047fbf5946",
+    "isCrossRepository": false,
+    "isDraft": false,
+    "labels": [],
+    "number": 24,
+    "reviewDecision": "",
+    "state": "MERGED",
+    "statusCheckRollup": [
+     {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-07T06:43:22Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/o/r/actions/runs/42346787422/job/128326172339",
+      "name": "kit-tests",
+      "startedAt": "2026-11-07T06:23:27Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+     }
+    ],
+    "title": "(44 characters)",
+    "url": "https://github.com/o/r/pull/24"
+   }
+  },
+  {
+   "args": [
+    "pr",
+    "view",
+    "24",
+    "--json",
+    "title,body,baseRefName,url"
+   ],
+   "status": 0,
+   "stderr": "",
+   "json": {
+    "baseRefName": "main",
+    "body": "(4203 characters)",
+    "title": "(44 characters)",
+    "url": "https://github.com/o/r/pull/24"
+   }
+  },
+  {
+   "args": [
+    "release",
+    "view",
+    "v1.21.1",
+    "--json",
+    "body,tagName"
+   ],
+   "status": 0,
+   "stderr": "",
+   "json": {
+    "body": "(2155 characters)",
+    "tagName": "v1.21.1"
+   }
+  },
+  {
+   "args": [
+    "pr",
+    "view",
+    "24",
+    "--json",
+    "autoMergeRequest,state"
+   ],
+   "status": 0,
+   "stderr": "",
+   "json": {
+    "autoMergeRequest": null,
+    "state": "MERGED"
+   }
+  },
+  {
+   "args": [
+    "pr",
+    "view",
+    "24",
+    "--json",
+    "state,isCrossRepository,headRefName,headRefOid,autoMergeRequest"
+   ],
+   "status": 0,
+   "stderr": "",
+   "json": {
+    "autoMergeRequest": null,
+    "headRefName": "fix/merge-gate-repo-read",
+    "headRefOid": "ffdb5aa18c176634ecc159ec399817047fbf5946",
+    "isCrossRepository": false,
+    "state": "MERGED"
+   }
+  },
+  {
+   "args": [
+    "api",
+    "repos/{owner}/{repo}"
+   ],
+   "status": 0,
+   "stderr": "",
+   "json": {
+    "full_name": "o/r",
+    "html_url": "https://github.com/o/r",
+    "allow_auto_merge": true,
+    "delete_branch_on_merge": true
+   }
+  },
+  {
+   "args": [
+    "api",
+    "repos/o/r/branches/main/protection/required_status_checks"
+   ],
+   "status": 1,
+   "stderr": "gh: Branch not protected (HTTP 404)",
+   "json": {
+    "message": "Branch not protected",
+    "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-status-checks-protection",
+    "status": "404"
+   }
+  },
+  {
+   "args": [
+    "api",
+    "repos/o/r/rules/branches/main"
+   ],
+   "status": 0,
+   "stderr": "",
+   "json": [
+    {
+     "type": "pull_request",
+     "parameters": {
+      "required_approving_review_count": 0,
+      "dismiss_stale_reviews_on_push": false,
+      "required_reviewers": [],
+      "require_code_owner_review": true,
+      "require_last_push_approval": false,
+      "required_review_thread_resolution": false,
+      "require_extra_approval_for_unattributed_changes": true,
+      "allowed_merge_methods": [
+       "merge",
+       "squash",
+       "rebase"
+      ]
+     },
+     "ruleset_source_type": "Repository",
+     "ruleset_source": "o/r",
+     "ruleset_id": 26299408
+    },
+    {
+     "type": "required_status_checks",
+     "parameters": {
+      "strict_required_status_checks_policy": false,
+      "do_not_enforce_on_create": false,
+      "required_status_checks": [
+       {
+        "context": "kit-tests",
+        "integration_id": 15368
+       }
+      ]
+     },
+     "ruleset_source_type": "Repository",
+     "ruleset_source": "o/r",
+     "ruleset_id": 26299408
+    },
+    {
+     "type": "non_fast_forward",
+     "ruleset_source_type": "Repository",
+     "ruleset_source": "o/r",
+     "ruleset_id": 26299408
+    },
+    {
+     "type": "deletion",
+     "ruleset_source_type": "Repository",
+     "ruleset_source": "o/r",
+     "ruleset_id": 26299408
+    }
+   ]
+  },
+  {
+   "args": [
+    "api",
+    "repos/o/r/branches/main"
+   ],
+   "status": 0,
+   "stderr": "",
+   "json": {
+    "name": "main",
+    "commit": {
+     "sha": "fcf4a8557595f732dc14ca55435c8fb8628df5c7"
+    }
+   }
+  }
+ ]
+}

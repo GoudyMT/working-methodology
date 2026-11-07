@@ -122,6 +122,47 @@ test('merge gate: a PR that passes every check is armed, pinned to the checked h
 	assert.match(log, new RegExp(`ARMED https://github.com/o/r/pull/7 ${s.sha} required=kit-tests`));
 });
 
+// M30: the canned gh above once answered a field the real gh 2.92.0 does not have, and every live run failed closed.
+// This holds the canned answers to what the real gh said (scripts/record-gh-contracts.mjs records it).
+test('merge gate: every gh read the gate makes has a recorded real answer with the fields and types the canned gh uses', () => {
+	const rec = JSON.parse(fs.readFileSync(path.join(KIT, 'tests/contracts/gh.json'), 'utf8'));
+	const src = fs.readFileSync(path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'utf8');
+	const fake = setup().state;
+	const type = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+	for (const list of new Set([...src.matchAll(/'--json', '([^']+)'/g)].map((m) => m[1]))) {
+		const c = rec.calls.find((x) => x.args.includes(list));
+		assert.ok(c, `no real answer recorded for --json ${list}: run scripts/record-gh-contracts.mjs`);
+		assert.equal(c.status, 0, `real ${rec.version} refused --json ${list}: ${c.stderr}`);
+		const canned = list.includes('tagName') ? fake.release : { state: 'OPEN', autoMergeRequest: null, statusCheckRollup: [], reviewDecision: '', labels: [], ...fake.pr };
+		for (const k of list.split(',')) {
+			assert.ok(k in c.json, `real ${rec.version} answers no ${k}`);
+			if (k !== 'autoMergeRequest') assert.equal(type(canned[k]), type(c.json[k]), `${k} is a ${type(c.json[k])} in real gh`);
+		}
+	}
+	const call = (end) => {
+		const c = rec.calls.find((x) => x.args[0] === 'api' && x.args[1] === (end.startsWith('repos/') ? end : `repos/o/r${end}`));
+		assert.ok(c, `no real answer recorded for api ${end}`);
+		return c;
+	};
+	const api = (end) => {
+		const c = call(end);
+		assert.equal(c.status, 0, `real api ...${end}: ${c.stderr}`);
+		return c.json;
+	};
+	const repo = api('repos/{owner}/{repo}');
+	for (const k of Object.keys(fake.repo)) assert.equal(type(repo[k]), type(fake.repo[k]), `repo ${k} is a ${type(repo[k])} in real gh`);
+	// A base held by a ruleset alone has no classic protection: GitHub answers 404, and the gate reads the rules.
+	const prot = call('/branches/main/protection/required_status_checks');
+	if (prot.status === 0) for (const k of Object.keys(fake.protection)) assert.equal(type(prot.json[k]), 'array', `protection ${k}`);
+	else assert.match(prot.stderr, /HTTP 404/);
+	const rules = api('/rules/branches/main');
+	assert.equal(type(rules), 'array');
+	const needed = rules.filter((r) => r.type === 'required_status_checks').flatMap((r) => r.parameters.required_status_checks);
+	assert.ok(prot.status === 0 || needed.length, 'the real base names its required checks in protection or a ruleset');
+	for (const c of needed) assert.equal(type(c.context), 'string');
+	assert.match(api('/branches/main').commit.sha, /^[0-9a-f]{40}$/);
+});
+
 test('merge gate: check never arms, even on GO', () => {
 	const s = setup();
 	assert.equal(check(s.opts).go, true);
