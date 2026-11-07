@@ -65,7 +65,7 @@ function setup() {
 	}
 	const state = {
 		pr: { number: 7, state: 'OPEN', isDraft: false, isCrossRepository: false, headRefName: 'feat/subtract', headRefOid: sha, baseRefName: 'main', title: TITLE, body: BODY, url: 'https://github.com/o/r/pull/7' },
-		repo: { nameWithOwner: 'o/r', autoMergeAllowed: true, deleteBranchOnMerge: true },
+		repo: { full_name: 'o/r', allow_auto_merge: true, delete_branch_on_merge: true },
 		protection: { contexts: ['kit-tests'], checks: [] },
 		rules: [],
 		release: { tagName: 'v1.2.0', body: 'Plans now sync between devices.\n' },
@@ -85,7 +85,7 @@ function setup() {
 		const no = { status: 1, stdout: '', stderr: 'HTTP 404' };
 		if (args[0] === 'pr' && args[1] === 'view') return args.some((a) => a.includes('autoMergeRequest'))
 			? ok({ state: 'OPEN', ...state.pr, autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null }) : ok(state.pr);
-		if (args[0] === 'repo') return ok(state.repo);
+		if (args[0] === 'api' && args[1] === 'repos/{owner}/{repo}') return ok(state.repo);
 		if (args[0] === 'api' && args[1].endsWith('/required_status_checks')) return state.protection ? ok(state.protection) : no;
 		if (args[0] === 'api' && args[1].includes('/rules/branches/')) return ok(state.rules);
 		if (args[0] === 'pr' && args[1] === 'merge' && args.includes('--disable-auto')) { if (state.disarmHolds) state.armed = false; return { status: 0, stdout: '', stderr: '' }; }
@@ -126,8 +126,8 @@ const CASES = [
 	['a draft', (s) => { s.state.pr.isDraft = true; }, /draft/],
 	['a fork', (s) => { s.state.pr.isCrossRepository = true; }, /another repository/],
 	['a working copy off the head', (s) => { s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD~1'); }, /not the PR's head/],
-	['auto-merge not allowed', (s) => { s.state.repo.autoMergeAllowed = false; }, /allow auto-merge/],
-	['no branch delete on merge', (s) => { s.state.repo.deleteBranchOnMerge = false; }, /delete branches on merge/],
+	['auto-merge not allowed', (s) => { s.state.repo.allow_auto_merge = false; }, /allow auto-merge/],
+	['no branch delete on merge', (s) => { s.state.repo.delete_branch_on_merge = false; }, /delete branches on merge/],
 	['no required check', (s) => { s.state.protection = null; }, /requires no status check/],
 	['a workflow change', (s) => commitOnBranch(s, '.github/workflows/ci.yml', 'x\n'), /gate or rule paths.*\.github\/workflows\/ci\.yml/],
 	['a loaded rule change', (s) => commitOnBranch(s, 'AGENTS.md', 'x\n'), /gate or rule paths.*AGENTS\.md/],
@@ -610,4 +610,23 @@ test('merge gate: a linked worktree logs where the pre-push hook reads, the comm
 	assert.equal(disarm({ ...s.opts, cwd: tree }).disarmed, true);
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
 	assert.match(log, /DISARMED 7\n$/);
+});
+
+// The fake gh above answers any field, so only the real gh can say a field exists: 1.21.0 shipped a gate that could
+// never arm because `gh repo view` has no autoMergeAllowed. `gh <cmd> view --json` lists its fields with no login.
+test('merge gate: every --json field it asks for exists in the real gh', (t) => {
+	const source = fs.readFileSync(path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'utf8');
+	const asked = [...source.matchAll(/'(pr|repo|release)', 'view',[^\n]*?'--json', '([^']+)'/g)].map((m) => ({ cmd: m[1], fields: m[2].split(',') }));
+	assert.ok(asked.length >= 5, `the scan found only ${asked.length} calls`);
+	const found = spawnSync('gh', ['--version'], { encoding: 'utf8' });
+	if (found.status !== 0) {
+		assert.ok(!process.env.CI, 'CI must have gh for this test');
+		return t.skip('gh is not on this machine');
+	}
+	for (const { cmd, fields } of asked) {
+		const r = spawnSync('gh', [cmd, 'view', '--json'], { encoding: 'utf8' });
+		const known = new Set(`${r.stdout}\n${r.stderr}`.split(/\r?\n/).map((l) => l.trim()));
+		assert.ok(known.size > 5, `gh ${cmd} view --json listed no fields`);
+		for (const f of fields) assert.ok(known.has(f), `gh ${cmd} view has no field ${f}`);
+	}
 });

@@ -134,15 +134,16 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	if (local !== p.headRefOid) faults.push(`the working copy is at ${local.slice(0, 12) || 'nothing'}, not the PR's head ${p.headRefOid.slice(0, 12)}: check out the branch and pull`);
 
 	// 3. Repo settings.
-	const repo = json(gh('repo', 'view', '--json', 'nameWithOwner,autoMergeAllowed,deleteBranchOnMerge'));
+	// `gh repo view` has no auto-merge field, so this reads the REST repo; {owner}/{repo} is gh's own placeholder for this repo.
+	const repo = json(gh('api', 'repos/{owner}/{repo}'));
 	if (!repo) return { go: false, faults: [...faults, 'gh could not read the repository'], facts };
-	if (!repo.autoMergeAllowed || !repo.deleteBranchOnMerge) {
-		faults.push(`${repo.nameWithOwner} must allow auto-merge and delete branches on merge (the owner runs: gh api -X PATCH repos/${repo.nameWithOwner} -F allow_auto_merge=true -F delete_branch_on_merge=true)`);
+	if (!repo.allow_auto_merge || !repo.delete_branch_on_merge) {
+		faults.push(`${repo.full_name} must allow auto-merge and delete branches on merge (the owner runs: gh api -X PATCH repos/${repo.full_name} -F allow_auto_merge=true -F delete_branch_on_merge=true)`);
 	}
 
 	// 4. A required check on the base: branch protection or a ruleset.
-	const prot = json(gh('api', `repos/${repo.nameWithOwner}/branches/${encodeURIComponent(p.baseRefName)}/protection/required_status_checks`));
-	const rules = json(gh('api', `repos/${repo.nameWithOwner}/rules/branches/${encodeURIComponent(p.baseRefName)}`));
+	const prot = json(gh('api', `repos/${repo.full_name}/branches/${encodeURIComponent(p.baseRefName)}/protection/required_status_checks`));
+	const rules = json(gh('api', `repos/${repo.full_name}/rules/branches/${encodeURIComponent(p.baseRefName)}`));
 	const fromProt = prot ? [...(prot.contexts || []), ...(prot.checks || []).map((c) => c.context)] : [];
 	const fromRules = Array.isArray(rules) ? rules.filter((r) => r.type === 'required_status_checks')
 		.flatMap((r) => ((r.parameters || {}).required_status_checks || []).map((c) => c.context)) : [];
