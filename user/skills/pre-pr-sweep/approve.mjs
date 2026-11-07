@@ -243,11 +243,17 @@ const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '
 const rel = (f) => toPosix(path.relative(process.cwd(), f) || f);
 const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) => j > i && y.kind === 'owner-yes' && y.contract === log[i].contract && y.hash === log[i].hash);
 
-// A first sweep on this branch (its HEAD on the branch, not on the base) that already had its re-sweep, or null.
-function thirdPass(log, base) {
+// The branch this checkout is on, recorded with each decision: a rebase rewrites the heads, not the name.
+const currentBranch = () => git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim();
+
+// The one-sweep loop (the owner, 2026-11-07): a sweep that ran on this branch, found by its HEAD on the branch (not on
+// the base) or by the branch name it was cleared on, or null. A sweep closed with --none-ran ran nothing.
+function secondPass(log, base) {
 	const on = new Map();
 	const onBranch = (h) => { if (!on.has(h)) on.set(h, git('merge-base', '--is-ancestor', h, 'HEAD').status === 0 && git('merge-base', '--is-ancestor', h, base).status !== 0); return on.get(h); };
-	const i = log.findIndex((e, k) => e.kind === 'decision' && !e.resweepOf && e.head && isCleared(log, k) && log.some((r, j) => j > k && r.kind === 'decision' && r.resweepOf === e.contract && isCleared(log, j)) && onBranch(e.head));
+	const branch = currentBranch();
+	const ran = (k) => log.some((e, j) => j > k && e.kind === 'outcome' && !e.noneRan && e.contract === log[k].contract);
+	const i = log.findIndex((e, k) => e.kind === 'decision' && e.head && isCleared(log, k) && ran(k) && ((branch && e.branch === branch) || onBranch(e.head)));
 	return i >= 0 ? log[i].contract : null;
 }
 
@@ -388,10 +394,11 @@ function check(c, facts, log = []) {
 		const r = resweepCheck(c, tier, roles, log, facts, why, fix);
 		if (r.refused) return { why: [], fix: [], need: {}, refused: r.refused, first: r.first };
 		({ need, first } = r);
+		why.push(`a re-sweep is a second pass, the owner's under the one-sweep loop (rule:finding-pipeline): ${rel(first)} was this branch's sweep`);
 	} else {
-		// One sweep and one re-sweep per branch: a plain contract after both is a third pass, the owner's (rule:finding-pipeline).
-		const done = facts && thirdPass(log, facts.base);
-		if (done) why.push(`a third pass on this branch is the owner's (rule:finding-pipeline): ${rel(done)} already had its sweep and re-sweep`);
+		// One sweep per branch: a plain contract after a sweep that ran here is a second pass, the owner's (rule:finding-pipeline).
+		const done = facts && secondPass(log, facts.base);
+		if (done) why.push(`a second sweep on this branch is the owner's under the one-sweep loop (rule:finding-pipeline): ${rel(done)} already ran`);
 		if (c.modifiers !== undefined && !(Array.isArray(c.modifiers) && c.modifiers.every((m) => typeof m === 'string'))) fix.push('modifiers must be a list of names, like ["security-sensitive"]');
 		const modifiers = new Set(Array.isArray(c.modifiers) ? c.modifiers : []);
 		if (facts && facts.deps) modifiers.add('new-dependency');
@@ -498,7 +505,7 @@ function decide() {
 	}
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
