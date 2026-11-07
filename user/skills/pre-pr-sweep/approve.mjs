@@ -187,10 +187,14 @@ function depsChanged(base, file) {
 
 // A file beside the contract counts as the sweep's own only when it parses as a contract.
 const isContract = (f) => { try { const j = JSON.parse(git('show', `HEAD:${f}`).stdout); return typeof j.tier === 'string' && Array.isArray(j.roles); } catch { return false; } };
-// What a sweep itself writes beside its contract: reports and contracts, never the work under review.
+// What a sweep itself writes beside its contract: reports and contracts, never the work under review. Directly in
+// the contract's folder only, and a .json only when it reads as a contract, so work kept there still counts.
 function sweepPaper(f) {
 	const own = git('rev-parse', '--show-prefix').stdout.trim();
-	return Boolean(own) && f.startsWith(own) && /\.(md|json)$/i.test(f);
+	if (!own || !f.startsWith(own) || f.slice(own.length).includes('/')) return false;
+	if (/\.md$/i.test(f)) return true;
+	if (!/\.json$/i.test(f)) return false;
+	try { const j = JSON.parse(fs.readFileSync(path.join(path.dirname(contractFile), f.slice(own.length)), 'utf8')); return typeof j.tier === 'string' && Array.isArray(j.roles); } catch { return false; }
 }
 
 function sweepOwned(f) {
@@ -203,15 +207,18 @@ function sweepOwned(f) {
 function diffFacts() {
 	const want = opt('--base');
 	const known = (b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0;
-	const DEFAULTS = ['origin/main', 'main', 'origin/master', 'master'];
+	// The default branch by its full ref: git reads a plain "origin/main" as a tag of that name first, and a tag
+	// could pick the base the diff is read from (1.21.0 handoff item 34). Messages keep the short name.
+	const DEFAULTS = ['refs/remotes/origin/main', 'refs/heads/main', 'refs/remotes/origin/master', 'refs/heads/master'];
+	const short = (b) => b.replace(/^refs\/(remotes|heads)\//, '');
 	const base = (want ? [want] : DEFAULTS).find(known);
 	if (!base) return null;
 	// A base the lead names must sit on the default branch, or it could shrink the diff the tier is read from.
 	const home = want && DEFAULTS.find(known);
-	const offBase = home && git('merge-base', '--is-ancestor', base, home).status !== 0 ? home : null;
+	const offBase = home && git('merge-base', '--is-ancestor', base, home).status !== 0 ? short(home) : null;
 	// An older commit of the default branch is on it, yet hides what the branch took from it: its caps and its hooks.
 	const left = home ? git('merge-base', home, 'HEAD').stdout.trim() : '';
-	const staleBase = !offBase && left && git('merge-base', '--is-ancestor', left, base).status !== 0 ? home : null;
+	const staleBase = !offBase && left && git('merge-base', '--is-ancestor', left, base).status !== 0 ? short(home) : null;
 	const names = (filter) => git('diff', '--name-only', '-z', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\0').filter(Boolean);
 	const all = names('ACDMRT');
 	const added = names('A').filter((f) => !sweepOwned(f));
@@ -220,6 +227,7 @@ function diffFacts() {
 	const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ':(top)').stdout.split('\n').filter(Boolean).filter((l) => !sweepPaper(l.slice(3)));
 	return {
 		base,
+		baseName: short(base),
 		offBase,
 		staleBase,
 		noHome: Boolean(want) && !home,
@@ -374,11 +382,11 @@ function check(c, facts, log = []) {
 	const fix = [];
 	if (!facts) why.push('cannot read the branch diff against its base (pass --base <ref>)');
 	else if (facts.dirty.length) fix.push(`work not committed (${facts.dirty[0].slice(3)}): commit it, so the diff shows the whole change`);
-	else if (!facts.changed) fix.push(`no changes against ${facts.base}: run it from the branch's own checkout, or pass the right --base`);
+	else if (!facts.changed) fix.push(`no changes against ${facts.baseName}: run it from the branch's own checkout, or pass the right --base`);
 	else {
-		if (facts.offBase) why.push(`--base ${facts.base} is not on ${facts.offBase}: a base off the default branch can shrink the diff the tier is read from`);
-		if (facts.staleBase) why.push(`--base ${facts.base} is older than where this branch left ${facts.staleBase}: it hides the caps and hooks the branch took from there`);
-		if (facts.noHome) why.push(`--base ${facts.base} cannot be checked: this repo has no default branch the script knows (main or master)`);
+		if (facts.offBase) why.push(`--base ${facts.baseName} is not on ${facts.offBase}: a base off the default branch can shrink the diff the tier is read from`);
+		if (facts.staleBase) why.push(`--base ${facts.baseName} is older than where this branch left ${facts.staleBase}: it hides the caps and hooks the branch took from there`);
+		if (facts.noHome) why.push(`--base ${facts.baseName} cannot be checked: this repo has no default branch the script knows (main or master)`);
 		if (tier !== 'feature' && facts.addedSource.length) why.push(`an added source file (${facts.addedSource[0]}) is feature work, not ${tier}`);
 		if (tier === 'triage' && (facts.added.length || facts.lines > TRIAGE_MAX_LINES)) why.push(`${facts.lines} changed lines, ${facts.added.length} added files: more than a triage change`);
 	}
@@ -544,7 +552,7 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash) {
 	return [
 		'Start notice for the owner (checked by approve.mjs; post it as is):',
 		`    ${c.tier} ${first ? 're-sweep' : 'sweep'}, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
-		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.base}`,
+		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.baseName}`,
 		...(hookState(facts.base) === 'none' ? [HOOK_NONE] : []),
 		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}`),
 		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason)`,
@@ -854,6 +862,10 @@ function outcome() {
 		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null };
 	});
 	nums.tokens = per.reduce((t, x) => t + x.tokens, 0);
+	// Ten quiet minutes do not prove a crash: 16 of 303 reviewer transcripts paused that long and went on. A crashed
+	// reviewer that wrote after its retry was logged is marked on its role in the log, where the trial reads it.
+	const alive = (clearAts.length ? retriesSince(s.log, contractFile, clearAts[0]) : []).filter((e) => { const c = read.roles.find((y) => y.agent === e.crashed); return c && c.lastWrite > Date.parse(e.time); }).map((e) => e.crashed);
+	for (const x of per) if (alive.includes(x.crashed)) x.crashedAlive = true;
 	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums, roles: per });
 	const trips = [];
 	if (decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
@@ -865,11 +877,7 @@ function outcome() {
 		if (named && (!x.model || !modelKey(x.model) || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
-	// Ten quiet minutes do not prove a crash: 16 of 303 reviewer transcripts paused that long and went on.
-	for (const e of clearAts.length ? retriesSince(s.log, contractFile, clearAts[0]) : []) {
-		const c = read.roles.find((y) => y.agent === e.crashed);
-		if (c && c.lastWrite > Date.parse(e.time)) console.log(`    ${e.crashed} wrote after its retry was logged: it was not dead, so its role had two reviewers. Its spend so far is counted.`);
-	}
+	for (const id of alive) console.log(`    ${id} wrote after its retry was logged: it was not dead, so its role had two reviewers. Its spend so far is counted.`);
 	// Past the cap's own stop: the hook is missing or did not hold. The trip stays on the whole sweep. A crash and its
 	// retry each had their own cap, so the check reads the retry alone.
 	for (const x of per) { const calls = x.calls - (x.crashedCalls || 0); if (x.cap && calls > x.cap + 1) console.log(`    ${x.role} ran ${calls} calls against its cap of ${x.cap}: no call-cap hook held it.`); }

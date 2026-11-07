@@ -4863,6 +4863,51 @@ test('an outcome counts only the reviewer the guard started for each role, not a
   assert.match(bad.stdout, /decoy \(not the reviewer the guard started for role 1\)/);
   assert.equal(run(ids).status, 0, 'the started reviewer counts');
 });
+// 1.21.0 handoff item 35: a second run on a contract already cleared at this HEAD, with reviewers still to start, is
+// told to log the outcome first, and its line leaves the clearing standing for the roles still to start.
+test('running approve.mjs again on a live cleared contract keeps its clearing, so the other roles still start', () => {
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
+  const again = approveIn(r.dir, [r.f]);
+  assert.equal(again.status, FIX_EXIT, again.stdout);
+  assert.match(again.stdout, /log the outcome of the last approved sweep first/);
+  const hash = approvalLog(r.dir).find((e) => e.decision === 'approved').hash;
+  const brief = `review. Call cap: 5. Sweep: ${hash} role 2`;
+  const role2 = { subagent_type: 'reviewer', prompt: brief + leadQuestion(r.dir, brief) };
+  assert.equal(sweepGuard(r.dir, { raw: true, tool_input: role2 }).permissionDecision, 'allow', 'the next role still starts');
+  // An edited contract is a new decision, and its line does decide.
+  fs.writeFileSync(r.f, JSON.stringify({ ...featureContract(), modifiers: ['user-data'] }));
+  approveIn(r.dir, [r.f]);
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'deny');
+});
+// 1.21.0 handoff item 34: git reads a plain "main" or "origin/main" as a tag of that name first.
+test('a tag named like the default branch does not pick the base the diff is read from', () => {
+  for (const tag of ['main', 'origin/main']) {
+    const dir = sweepRepo();
+    g(dir, 'tag', tag, 'HEAD');
+    const r = approveRun(featureContract(), dir);
+    assert.equal(r.status, 0, `${tag}: ${r.stdout}`);
+    assert.match(r.stdout, /diff against main/);
+  }
+});
+// 1.21.0 handoff item 33: the uncommitted check skipped every .md and .json under the contract's folder, so work
+// kept there passed unseen. Only the sweep's own paper beside the contract is left out: reports, and contracts.
+test('uncommitted work in the contract\'s folder counts, except the reports and contracts beside the contract', () => {
+  for (const [file, text, counts] of [
+    ['sweeps/settings.json', '{"apiUrl":"https://example.test"}\n', true],
+    ['sweeps/data/rows.json', '[1,2]\n', true],
+    ['sweeps/deep/notes.md', 'x\n', true],
+    ['sweeps/2026-11-07-report.md', '# report\n', false],
+    ['sweeps/other.json', JSON.stringify(featureContract()), false],
+  ]) {
+    const dir = sweepRepo();
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), text);
+    const r = approveRun(featureContract(), dir);
+    if (counts) { assert.equal(r.status, FIX_EXIT, `${file}: ${r.stdout}`); assert.match(r.stdout, /work not committed/, file); } else assert.equal(r.status, 0, `${file}: ${r.stdout}`);
+  }
+});
 test('the sweep guard refuses a reviewer brief under another agent type, and a reviewer started outside git', () => {
   const dir = makeTemp('guard-');
   const r = approveRun(featureContract());
@@ -6558,6 +6603,10 @@ test('L1: a crashed reviewer that wrote after its retry is named at the outcome'
   const done = logOutcome(s, ['r1b', 'r2'], s.cfg);
   assert.equal(done.status, 0, done.stdout);
   assert.match(done.stdout, /r1 wrote after its retry was logged: it was not dead/);
+  // 1.21.0 handoff item 34: it is in the log too, where the trial review and the summary read.
+  const out = approvalLog(s.dir).pop();
+  assert.equal(out.roles[0].crashedAlive, true);
+  assert.equal(out.roles[1].crashedAlive, undefined);
 });
 // The 1.21.0 sweep's D1: CI runs the base branch's gate, whose parser may not know a new field, so the control sits on
 // its own line. Main's parser reads the gate line as it always did; the head gate reads the two together.

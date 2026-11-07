@@ -49,6 +49,18 @@ function retryOpen(lines, i, contract, role) {
 	return open;
 }
 
+// Whether a clearing of the same contract, hash and HEAD sits above line i and is still open.
+function standing(lines, i, e) {
+	for (let k = i - 1; k >= 0; k--) {
+		let x;
+		try { x = entry(lines[k]); } catch { continue; }
+		if (x.contract !== e.contract || x.prev !== (k ? sha(lines[k - 1]) : '')) continue;
+		if (x.kind === 'outcome' || x.kind === 'unread') return false;
+		if (((x.kind === 'decision' && x.decision === 'approved') || x.kind === 'owner-yes') && x.hash === e.hash && x.head === e.head) return !closedAfter(lines, k, e.contract);
+	}
+	return false;
+}
+
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
 	if (!/(^|:)reviewer$/i.test(String((input.tool_input || {}).subagent_type || ''))) {
@@ -84,6 +96,9 @@ function main() {
 		if (e.kind === 'decision' && e.decision === 'refused') {
 			return deny('approve.mjs refused this contract: a sweep gets one re-sweep, and a further pass is the owner\'s (a plain contract on this branch asks them). What it left at medium or below goes to the handoff\'s carry-overs for the next feature build, and a high or critical is fixed or the owner accepts it; log the re-sweep\'s outcome with --carried <n>.');
 		}
+		// A rerun on the same contract, unchanged at the same HEAD, while its clearing stands open (no outcome yet) is told
+		// to log that outcome first; its line does not shut the clearing on the roles still to start (1.21.0 item 35).
+		if (e.kind === 'decision' && e.decision !== 'approved' && e.decision !== 'refused' && standing(lines, i, e)) continue;
 		if (e.kind === 'decision' && e.decision === 'fix') {
 			return deny(`approve.mjs answered FIX THE CONTRACT: fix what it named, then run it again. ${RUN_FIRST}`);
 		}
