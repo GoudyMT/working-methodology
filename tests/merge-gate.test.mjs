@@ -84,7 +84,7 @@ function setup() {
 		const ok = (o) => ({ status: 0, stdout: JSON.stringify(o), stderr: '' });
 		const no = { status: 1, stdout: '', stderr: 'HTTP 404' };
 		if (args[0] === 'pr' && args[1] === 'view') return args.some((a) => a.includes('autoMergeRequest'))
-			? ok({ ...state.pr, state: 'OPEN', autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null }) : ok(state.pr);
+			? ok({ state: 'OPEN', ...state.pr, autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null }) : ok(state.pr);
 		if (args[0] === 'repo') return ok(state.repo);
 		if (args[0] === 'api' && args[1].endsWith('/required_status_checks')) return state.protection ? ok(state.protection) : no;
 		if (args[0] === 'api' && args[1].includes('/rules/branches/')) return ok(state.rules);
@@ -371,9 +371,9 @@ test('merge gate: an owner yes clears a sweep as an approval does, on the tier o
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));
 });
-test('merge gate: a passing or pending check on the PR does not stop it', () => {
+test('merge gate: a passing check, a skipped one or a pending required one does not stop it', () => {
 	const s = setup();
-	s.state.pr.statusCheckRollup = [{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'b', status: 'IN_PROGRESS', conclusion: '' }, { name: 'c', status: 'COMPLETED', conclusion: 'SKIPPED' }, { context: 'd', state: 'SUCCESS' }];
+	s.state.pr.statusCheckRollup = [{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'kit-tests', status: 'IN_PROGRESS', conclusion: '' }, { name: 'c', status: 'COMPLETED', conclusion: 'SKIPPED' }, { context: 'd', state: 'SUCCESS' }];
 	assert.equal(check(s.opts).go, true);
 });
 test('merge gate: the sweep folder comes from the cleared contract, as adapter A22 sets it', () => {
@@ -497,36 +497,117 @@ test('merge gate: the CLI exits 1 on NO GO and 2 on a bad call', () => {
 	assert.equal(cli('disarm', 'x').status, 1);
 	assert.equal(cli('nonsense').status, 2);
 });
-// N3: auto-fix's push stays a grant inside bounds. The kill switch stops it, an armed PR is disarmed first, and each is logged.
-test('merge gate: autofix logs the push it clears, and disarms an armed PR first', () => {
+// N3: auto-fix's push is a grant inside bounds: the tool makes the push, so the grant is the one allow rule.
+const fixCommit = (s) => {
+	fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nfix\n');
+	sh(s.work, 'commit', '-qam', 'fix');
+	return sh(s.work, 'rev-parse', 'HEAD');
+};
+const originHead = (s) => sh(s.work, 'ls-remote', 'origin', 'refs/heads/feat/subtract').split(/\s/)[0];
+test('merge gate: autofix disarms an armed PR, pushes the branch and logs the commit that went out', () => {
 	const s = setup();
 	assert.equal(arm(s.opts).armed, true);
+	const fixed = fixCommit(s);
 	const r = autofix(s.opts);
-	assert.equal(r.cleared, true, r.faults.join('\n'));
+	assert.equal(r.pushed, true, r.faults.join('\n'));
+	assert.equal(originHead(s), fixed);
 	assert.ok(s.state.calls.includes('pr merge 7 --disable-auto'));
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
-	assert.match(log, /DISARMED 7\n.* AUTOFIX 7 [0-9a-f]{40}\n$/);
+	assert.match(log, new RegExp(`DISARMED 7\\n.* AUTOFIX 7 ${fixed}\\n$`));
 });
-test('merge gate: autofix stops on the kill switch, on a PR that is not open, and on a disarm that does not take', () => {
+test('merge gate: autofix runs no branch hook on its push', () => {
 	const s = setup();
-	const logged = () => { try { return fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'); } catch { return ''; } };
+	const hooks = path.join(s.work, 'hooks');
+	fs.mkdirSync(hooks);
+	fs.writeFileSync(path.join(hooks, 'pre-push'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+	sh(s.work, 'config', 'core.hooksPath', hooks);
+	fixCommit(s);
+	assert.equal(autofix(s.opts).pushed, true);
+});
+test('merge gate: autofix stops on the kill switch, nothing to push, another branch, a rewrite and a stop set outside', () => {
+	const s = setup();
+	const before = originHead(s);
+	assert.match(autofix(s.opts).faults[0], /nothing to push/);
+	const fixed = fixCommit(s);
 	fs.writeFileSync(path.join(s.config, 'autonomy-off'), '');
-	const off = autofix(s.opts);
-	assert.equal(off.cleared, false);
-	assert.match(off.faults[0], /kill switch/);
+	assert.match(autofix(s.opts).faults[0], /kill switch/);
 	fs.rmSync(path.join(s.config, 'autonomy-off'));
-	arm(s.opts);
-	s.state.disarmHolds = false;
-	assert.equal(autofix(s.opts).cleared, false);
-	assert.doesNotMatch(logged(), /AUTOFIX/);
-	assert.equal(autofix({ ...s.opts, pr: 'x' }).cleared, false);
+	sh(s.work, 'checkout', '-q', '-b', 'feat/other');
+	assert.match(autofix(s.opts).faults[0], /not on the PR's branch/);
+	sh(s.work, 'checkout', '-q', 'feat/subtract');
+	s.state.pr.headRefOid = 'a'.repeat(40);
+	assert.match(autofix(s.opts).faults[0], /does not build on/);
+	s.state.pr.headRefOid = before;
+	fs.writeFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), `t ARMED https://github.com/o/r/pull/7 ${before} required=x\n`);
+	assert.match(autofix(s.opts).faults[0], /someone stopped it/);
+	assert.equal(originHead(s), before, 'nothing went out');
+	assert.ok(fixed);
+	assert.equal(autofix({ ...s.opts, pr: 'x' }).pushed, false);
+});
+test('merge gate: a disarm reads back rather than trusting gh, on a PR with nothing to turn off', () => {
+	const s = setup();
+	const run = (cmd, args, cwd) => (args[1] === 'merge' ? { status: 1, stdout: '', stderr: 'not enabled' } : s.opts.run(cmd, args, cwd));
+	assert.equal(disarm({ ...s.opts, run }).disarmed, true);
+});
+test('merge gate: a stop on GitHub holds: changes requested, a hold label, and auto-merge turned off outside the gate', () => {
+	const s = setup();
+	s.state.pr.reviewDecision = 'CHANGES_REQUESTED';
+	assert.match(check(s.opts).faults.join('\n'), /asks for changes/);
+	delete s.state.pr.reviewDecision;
+	s.state.pr.labels = [{ name: 'do-not-merge' }];
+	assert.match(check(s.opts).faults.join('\n'), /hold label/);
+	s.state.pr.labels = [];
+	assert.equal(arm(s.opts).armed, true);
+	s.state.armed = false;
+	const again = arm(s.opts);
+	assert.equal(again.armed, false);
+	assert.match(again.faults.join('\n'), /someone stopped it/);
+	s.state.armed = true;
+	assert.equal(disarm(s.opts).disarmed, true);
+	assert.equal(check(s.opts).go, true, 'a logged disarm is the gate\'s own, so the gate may run again');
+});
+test('merge gate: a running optional check stops arming, since it could fail after the merge', () => {
+	const s = setup();
+	s.state.pr.statusCheckRollup = [{ name: 'lint', status: 'IN_PROGRESS', conclusion: '' }];
+	assert.match(check(s.opts).faults.join('\n'), /still running.*lint/);
+	s.state.pr.statusCheckRollup = [{ context: 'lint', state: 'PENDING' }];
+	assert.equal(check(s.opts).go, false);
+});
+test('merge gate: a high closes only by a real commit in the branch, in its own cell, in every report', () => {
+	const s = setup();
+	const f = path.join(s.work, 'reports/sweeps/sub.md');
+	const base = fs.readFileSync(f, 'utf8');
+	const withRow = (row) => fs.writeFileSync(f, base + `\n| ID | Severity | Finding | Disposition |\n|---|---|---|---|\n${row}\n`);
+	withRow('| S1 | high | leaks a token | FIXED deadbee |');
+	assert.match(check(s.opts).faults.join('\n'), /not closed by a commit/);
+	withRow('| S1 | high | came back after FIXED 1234567 | OPEN |');
+	assert.match(check(s.opts).faults.join('\n'), /not closed by a commit/);
+	withRow(`| S1 | high | leaks a token | FIXED ${s.sha.slice(0, 7)} |`);
+	assert.equal(check(s.opts).go, true, check(s.opts).faults.join('\n'));
+	// The older report keeps the open high; a clean report at a nearer commit does not close it.
+	withRow('| S1 | high | leaks a token | OPEN |');
+	fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nmore\n');
+	sh(s.work, 'commit', '-qam', 'more');
+	const near = sh(s.work, 'rev-parse', 'HEAD');
+	fs.writeFileSync(path.join(s.work, 'reports/sweeps/later.md'), report('feat/subtract', near));
+	cleared(s.work, near);
+	s.state.pr.headRefOid = near;
+	assert.match(check(s.opts).faults.join('\n'), /sub\.md: a high or critical finding is not closed/);
+});
+test('merge gate: a report that gives the version goal as NO stops it', () => {
+	const s = setup();
+	const f = path.join(s.work, 'reports/sweeps/sub.md');
+	fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/(version.goal[^\n]*?)\bYES\b/i, '$1NO'));
+	assert.match(check(s.opts).faults.join('\n'), /version goal as NO/);
+});
+test('merge gate: project/.claude is protected everywhere, so a branch cannot land an audit there', () => {
+	assert.ok(PROTECTED.some((re) => re.test('project/.claude/pr-body-audit-lean.mjs')));
 });
 test('merge gate: a linked worktree logs where the pre-push hook reads, the common git folder', () => {
 	const s = setup();
 	const tree = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'linked');
 	assert.equal(spawnSync('git', ['-C', s.work, 'worktree', 'add', '-q', '--detach', tree], { encoding: 'utf8' }).status, 0);
 	assert.equal(disarm({ ...s.opts, cwd: tree }).disarmed, true);
-	assert.equal(autofix({ ...s.opts, cwd: tree }).cleared, true);
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
-	assert.match(log, /DISARMED 7\n.* AUTOFIX 7 /);
+	assert.match(log, /DISARMED 7\n$/);
 });

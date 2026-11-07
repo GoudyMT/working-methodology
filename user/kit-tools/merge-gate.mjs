@@ -27,7 +27,7 @@
 //   node merge-gate.mjs arm <pr>          check, then arm on GO
 //   node merge-gate.mjs check <pr>        the same checks, never arms
 //   node merge-gate.mjs disarm <pr>       turn auto-merge off on an armed PR
-//   node merge-gate.mjs autofix <pr>      clear and log one auto-fix push, disarming first
+//   node merge-gate.mjs autofix <pr>      make one auto-fix push and log it, disarming first
 //   node merge-gate.mjs live pr <n>       audit the live PR body
 //   node merge-gate.mjs live release <tag>  audit the live release body
 // Exit 0 = GO / clean; 1 = NO GO / faults; 2 = usage.
@@ -41,7 +41,7 @@ import { fileURLToPath } from 'node:url';
 // A change here is live the moment it merges, in this repo: workflows, the installed kit and its rules, the
 // project's grant and gate settings, git hooks, and the loaded rule files.
 // Case-blind: Windows folds case, so .GitHooks lands in the real folder.
-export const PROTECTED = [/^\.github\//i, /^\.kit\//i, /^\.githooks\//i, /^\.claude\//i, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i];
+export const PROTECTED = [/^\.github\//i, /^\.kit\//i, /^\.githooks\//i, /^\.claude\//i, /^project\/\.claude\//i, /^(AGENTS|CLAUDE|CLAUDE\.local)\.md$/i];
 // In the kit's own source the same things live here, and install carries them to every project: the owner's merge.
 export const KIT_SOURCE_PROTECTED = [/^user\//i, /^project\//i, /^rules\//i, /^scripts\//i, /^tests\//i, /^kit\.config\.json$/i];
 // git runs a repo's hooks on its own commands, and a branch can ship one under core.hooksPath.
@@ -51,6 +51,7 @@ export const AFTER_SWEEP = ['VERSION', 'CHANGELOG.md'];
 const CONVENTIONAL = /^[a-z]+(\([^)]*\))?!?: /;
 const SHA = /^[0-9a-f]{40}$/;
 const BAD_CHECK = /^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE)$/;
+const HOLD_LABEL = /^(do[- ]not[- ]merge|hold|wip)$/i;
 
 // Programs Windows would start from the working folder, ahead of PATH, when a child calls them by bare name.
 const ROOT_TOOL = /^(git|gh|node)\.(exe|com|bat|cmd)$/i;
@@ -117,12 +118,17 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	if (fs.existsSync(path.join(config, 'autonomy-off'))) faults.push(`kill switch: ${path.join(config, 'autonomy-off')} exists; every merge asks the owner`);
 
 	// 2. The PR itself.
-	const p = json(gh('pr', 'view', String(pr), '--json', 'number,state,isDraft,isCrossRepository,headRefName,headRefOid,baseRefName,title,body,url,statusCheckRollup'));
+	const p = json(gh('pr', 'view', String(pr), '--json', 'number,state,isDraft,isCrossRepository,headRefName,headRefOid,baseRefName,title,body,url,statusCheckRollup,reviewDecision,labels,autoMergeRequest'));
 	if (!p) return { go: false, faults: [...faults, `gh could not read PR ${pr}`], facts };
 	Object.assign(facts, { url: p.url, sha: p.headRefOid, base: p.baseRefName, head: p.headRefName });
 	if (p.state !== 'OPEN') faults.push(`PR ${pr} is ${p.state}, not open`);
 	if (p.isDraft) faults.push(`PR ${pr} is a draft`);
 	if (p.isCrossRepository) faults.push(`PR ${pr} comes from another repository`);
+	// A stop the owner set on GitHub is theirs: the gate must not undo it.
+	if (p.reviewDecision === 'CHANGES_REQUESTED') faults.push(`a review on PR ${pr} asks for changes`);
+	const held = (p.labels || []).map((l) => l.name).filter((n) => HOLD_LABEL.test(n || ''));
+	if (held.length) faults.push(`PR ${pr} carries a hold label: ${held.join(', ')}`);
+	if (!p.autoMergeRequest && stoppedOutside(cwd, run, pr)) faults.push(`PR ${pr} was armed and auto-merge is off with no disarm logged: someone stopped it, so this merge is the owner's`);
 	if (!SHA.test(p.headRefOid || '')) return { go: false, faults: [...faults, 'the PR has no head commit'], facts };
 	const local = git('rev-parse', 'HEAD').stdout.trim();
 	if (local !== p.headRefOid) faults.push(`the working copy is at ${local.slice(0, 12) || 'nothing'}, not the PR's head ${p.headRefOid.slice(0, 12)}: check out the branch and pull`);
@@ -146,6 +152,10 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	// GitHub waits only for required checks, and merges at once past a failed optional one, so any failure stops it here.
 	const failed = (p.statusCheckRollup || []).filter((c) => BAD_CHECK.test(c.conclusion || c.state || '')).map((c) => c.name || c.context);
 	if (failed.length) faults.push(`checks are failing: ${failed.join(', ')}`);
+	// A required check holds the merge; a running optional one does not, and could fail after it lands.
+	const running = (p.statusCheckRollup || []).filter((c) => (c.status ? c.status !== 'COMPLETED' : /^(PENDING|EXPECTED)$/.test(c.state || '')))
+		.map((c) => c.name || c.context).filter((n) => !required.includes(n));
+	if (running.length) faults.push(`checks are still running and none requires them: ${running.join(', ')}; wait, then run the gate again`);
 
 	// 5. The diff, from the merge base on the remote base branch.
 	if (git('fetch', '--quiet', 'origin', p.baseRefName).status !== 0) faults.push(`could not fetch ${p.baseRefName} from origin, so the base would be stale`);
@@ -204,6 +214,22 @@ function approvals(git) {
 	return { clearings };
 }
 
+// A report is typed, so a high counts as fixed only when its own cell says FIXED and each commit named is in the branch.
+function openHighs(r, head, git) {
+	const faults = [];
+	for (const line of r.text.split('\n')) {
+		const cells = line.split('|').map((c) => c.trim());
+		const row = cells.slice(1, -1).some((c) => /^(high|critical)$/i.test(c));
+		const bullet = /\*\*[^*]*\((high|critical)\)\*\*/i.test(line);
+		if (!row && !bullet) continue;
+		const said = row ? cells[cells.length - 2] : (line.match(/FIXED [^|]*$/) || [''])[0];
+		const shas = said.match(/\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/g) || [];
+		const real = (s) => { const sha = git('rev-parse', '-q', '--verify', `${s}^{commit}`).stdout.trim(); return sha && git('merge-base', '--is-ancestor', sha, head).status === 0; };
+		if (!/^FIXED\b/.test(said) || !shas.length || !shas.every(real)) faults.push(`${r.f}: a high or critical finding is not closed by a commit in this branch: ${line.trim().slice(0, 100)}`);
+	}
+	return faults;
+}
+
 function sweepFaults({ cwd, config, branch, head, git, run }) {
 	const audit = path.join(config, 'skills', 'pre-pr-sweep', 'audit.mjs');
 	if (!fs.existsSync(audit)) return [`no sweep audit at ${audit}: install the kit's user layer`];
@@ -231,7 +257,8 @@ function sweepFaults({ cwd, config, branch, head, git, run }) {
 	const nearest = Math.min(...covered.map((r) => r.ahead));
 	const reports = covered.filter((r) => r.ahead === nearest);
 	const best = reports[0];
-	const faults = [];
+	// Every report on this branch, not only the nearest: a later clean one does not close an earlier high.
+	const faults = covered.flatMap((r) => openHighs(r, head, git));
 	// A report is typed by the session, so what it claims is held to the log.
 	const clearing = clearings.filter((c) => best.sha.startsWith(c.head)).pop();
 	if (!clearing) faults.push(`the sweep at ${best.sha.slice(0, 12)} was never cleared: no approval in the log names that commit`);
@@ -239,6 +266,7 @@ function sweepFaults({ cwd, config, branch, head, git, run }) {
 	for (const r of reports) {
 		if (clearing && r.tier !== clearing.tier) faults.push(`${r.f} names tier ${r.tier || 'none'}; the sweep was cleared as ${clearing.tier}`);
 		if (/ACCEPTED owner/.test(r.text)) faults.push(`${r.f} carries an owner acceptance: a session can type one, so this merge is the owner's`);
+		if (r.text.split('\n').some((l) => /align|version goal|version-goal/i.test(l) && /\bNO\b/.test(l) && !/\bYES\b/.test(l))) faults.push(`${r.f} gives the version goal as NO`);
 	}
 	const changed = changedFiles(git, best.sha, head);
 	if (!changed) faults.push('git could not list what changed after the sweep');
@@ -332,6 +360,19 @@ export function live({ kind, id, cwd, config = configDir(), run = realRun }) {
 }
 
 // One log per repo, in the common git folder, where the pre-push hook reads it from any worktree.
+// Armed in the log, with no disarm after it: read beside a host showing auto-merge off, it means someone else stopped it.
+function stoppedOutside(cwd, run, pr) {
+	let armed = false;
+	let text = '';
+	try { text = fs.readFileSync(gateLog(cwd, run), 'utf8'); } catch { return false; }
+	for (const line of text.split('\n')) {
+		const [, kind, what] = line.split(' ');
+		if (kind === 'ARMED' && String(what).endsWith(`/${pr}`)) armed = true;
+		if (kind === 'DISARMED' && what === String(pr)) armed = false;
+	}
+	return armed;
+}
+
 const gateLog = (cwd, run) => path.join(path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd).stdout.trim() || '.git'), 'kit-merge-gate.log');
 
 /**
@@ -373,29 +414,42 @@ export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOStr
 	if (!/^\d+$/.test(String(pr))) return { disarmed: false, faults: ['the PR is a number'] };
 	const m = run('gh', ['pr', 'merge', String(pr), '--disable-auto'], cwd);
 	const back = json(run('gh', ['pr', 'view', String(pr), '--json', 'autoMergeRequest,state'], cwd));
-	if (m.status !== 0 || !back || back.autoMergeRequest) return { disarmed: false, faults: [`PR ${pr} is still armed: ${(m.stderr || m.stdout).trim() || 'auto-merge still shows on the PR'}`] };
+	// The read-back decides: gh may exit non-zero on a PR with nothing to turn off.
+	if (!back || back.autoMergeRequest) return { disarmed: false, faults: [`PR ${pr} is still armed: ${(m.stderr || m.stdout).trim() || 'auto-merge still shows on the PR'}`] };
 	fs.appendFileSync(gateLog(cwd, run), `${now()} DISARMED ${pr}\n`);
 	return { disarmed: true, faults: [] };
 }
 
 /**
- * Clear one auto-fix push: the owner's grant keeps it inside bounds, so the kill switch stops it, an armed PR is
- * disarmed first, and the push is logged. Run it before the push; only a clear goes on.
+ * One auto-fix push, inside the owner's grant: the kill switch stops it, an armed PR is disarmed first, it only moves
+ * the PR's own branch forward, and the commit that went out is logged. Git runs with no hooks: the pre-push hook asks
+ * for the owner's go, this grant is that go, and a branch must not ship code that runs inside it.
  *
  * Returns:
- *     { cleared, faults }
+ *     { pushed, sha, faults }
  */
 export function autofix({ pr, cwd, config = configDir(), run = realRun, now = () => new Date().toISOString() }) {
-	if (!/^\d+$/.test(String(pr))) return { cleared: false, faults: ['the PR is a number'] };
-	if (fs.existsSync(path.join(config, 'autonomy-off'))) return { cleared: false, faults: [`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`] };
-	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefOid,autoMergeRequest'], cwd));
-	if (!p || p.state !== 'OPEN' || p.isCrossRepository) return { cleared: false, faults: [`PR ${pr} is not an open PR from this repo`] };
+	const no = (...faults) => ({ pushed: false, faults });
+	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
+	if (!/^\d+$/.test(String(pr))) return no('the PR is a number');
+	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
+	if (planted.length) return no(`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`);
+	if (fs.existsSync(path.join(config, 'autonomy-off'))) return no(`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`);
+	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest'], cwd));
+	if (!p || p.state !== 'OPEN' || p.isCrossRepository) return no(`PR ${pr} is not an open PR from this repo`);
+	if (git('symbolic-ref', '--short', 'HEAD').stdout.trim() !== p.headRefName) return no(`the working copy is not on the PR's branch ${p.headRefName}`);
+	const local = git('rev-parse', 'HEAD').stdout.trim();
+	if (local === p.headRefOid) return no('nothing to push: the working copy is at the PR\'s head');
+	if (git('merge-base', '--is-ancestor', p.headRefOid, local).status !== 0) return no('the working copy does not build on the PR\'s head: pull first; a rewrite is the owner\'s');
+	if (!p.autoMergeRequest && stoppedOutside(cwd, run, pr)) return no(`PR ${pr} was armed and auto-merge is off with no disarm logged: someone stopped it, so this push is the owner's`);
 	if (p.autoMergeRequest) {
 		const d = disarm({ pr, cwd, run, now });
-		if (!d.disarmed) return { cleared: false, faults: d.faults };
+		if (!d.disarmed) return no(...d.faults);
 	}
-	fs.appendFileSync(gateLog(cwd, run), `${now()} AUTOFIX ${pr} ${p.headRefOid}\n`);
-	return { cleared: true, faults: [] };
+	const out = git('push', 'origin', `${local}:refs/heads/${p.headRefName}`);
+	if (out.status !== 0) return no(`the push failed: ${(out.stderr || out.stdout).trim().slice(0, 200)}`);
+	fs.appendFileSync(gateLog(cwd, run), `${now()} AUTOFIX ${pr} ${local}\n`);
+	return { pushed: true, sha: local, faults: [] };
 }
 
 // Paths compared after links, so the gate runs when called through a junction.
@@ -417,8 +471,8 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
 		process.exit(r.disarmed ? 0 : 1);
 	} else if (cmd === 'autofix' && a) {
 		const r = autofix({ pr: a, cwd });
-		console.log(r.cleared ? `CLEARED: auto-fix may push to PR ${a}; logged` : r.faults.join('\n'));
-		process.exit(r.cleared ? 0 : 1);
+		console.log(r.pushed ? `PUSHED: ${r.sha} to PR ${a}; logged. Run the gate again to arm it.` : r.faults.join('\n'));
+		process.exit(r.pushed ? 0 : 1);
 	} else if (cmd === 'live' && a && b) {
 		const r = live({ kind: a, id: b, cwd });
 		console.log(r.ok ? `Live ${a} body: clean` : r.faults.join('\n'));
