@@ -7,12 +7,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
+import kitTemp from '../project/.claude/kit-temp.cjs';
 import { check, arm, disarm, autofix, live, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-tests-'));
-process.env.TMPDIR = process.env.TEMP = process.env.TMP = tmpRoot;
-process.on('exit', () => { try { fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 3 }); } catch {} });
+// kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
+const tmpRoot = kitTemp.sessionRoot();
+const { makeTemp } = kitTemp;
 
 const KIT = path.resolve('.');
 const sh = (cwd, ...a) => {
@@ -38,7 +39,7 @@ function cleared(work, sha, decision = {}, outcome = {}) {
 }
 
 function setup() {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-gate-'));
+	const root = makeTemp('merge-gate-');
 	const origin = path.join(root, 'origin.git');
 	const work = path.join(root, 'work');
 	const config = path.join(root, 'config');
@@ -462,6 +463,19 @@ test('merge gate: with no audit on the base it reads the installed user layer, a
 	assert.match(check(s.opts).faults.join('\n'), /live PR body fails/, 'the installed audit really ran');
 	assert.equal(live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run }).ok, false);
 });
+test('merge gate: an audit copy that fails part way leaves no temp folder behind', () => {
+	const s = setup();
+	baseWithoutAudits(s);
+	const audits = path.join(s.config, 'kit-tools', 'audits');
+	fs.mkdirSync(audits, { recursive: true });
+	for (const f of fs.readdirSync(path.join(KIT, 'user/kit-tools/audits'))) fs.copyFileSync(path.join(KIT, 'user/kit-tools/audits', f), path.join(audits, f));
+	// A folder among the audits: copying it as a file throws after the temp folder exists.
+	fs.mkdirSync(path.join(audits, 'zz-not-a-file'));
+	const leftovers = () => fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('merge-gate-'));
+	const before = leftovers().length;
+	assert.throws(() => check(s.opts));
+	assert.equal(leftovers().length, before, 'the half-filled copy was removed');
+});
 test('merge gate: the audit is read from the kit\'s own layout on the base', () => {
 	const s = setup();
 	sh(s.work, 'checkout', '-q', 'main');
@@ -648,7 +662,7 @@ test('merge gate: project/.claude is protected everywhere, so a branch cannot la
 });
 test('merge gate: a linked worktree logs where the pre-push hook reads, the common git folder', () => {
 	const s = setup();
-	const tree = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'linked');
+	const tree = path.join(makeTemp('wt-'), 'linked');
 	assert.equal(spawnSync('git', ['-C', s.work, 'worktree', 'add', '-q', '--detach', tree], { encoding: 'utf8' }).status, 0);
 	assert.equal(disarm({ ...s.opts, cwd: tree }).disarmed, true);
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');

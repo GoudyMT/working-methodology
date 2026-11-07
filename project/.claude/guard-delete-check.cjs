@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const kitTemp = require('./kit-temp.cjs');
 
 const GUARD = path.resolve(process.argv[2] ?? path.join(__dirname, 'guard-delete.cjs'));
 const { decide } = require(GUARD);
@@ -828,7 +829,7 @@ const uncAsks = Boolean(decide(asSession('Bash', 'rm -rf //' + uncHost + '/share
 result(uncAsks && Date.now() - uncStart < 2000, true, '[UNC] asks in under 2 s (' + (Date.now() - uncStart) + ' ms)');
 
 // A junction inside the project that points outside it: a delete through it reaches the outside folder.
-const real = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-delete-check-'));
+const real = kitTemp.makeTemp('guard-delete-check-');
 try {
 	fs.mkdirSync(path.join(real, 'proj'));
 	fs.mkdirSync(path.join(real, 'outside'));
@@ -878,7 +879,7 @@ try {
 	check('[junction] a wildcard with nothing after it stays in its folder', inTemp(path.join(own, 'scratchpad', '*')), false, tempWhere);
 	check('[junction] a wildcard in a folder with no link', inTemp(path.join(own, 'scratchpad', '*', 'x')), false, tempWhere);
 } finally {
-	fs.rmSync(real, { recursive: true, force: true });
+	kitTemp.removeTemp(real);
 }
 
 // End to end: the hook as a child process, fed JSON on stdin, finding the temp and project from its environment.

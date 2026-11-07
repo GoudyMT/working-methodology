@@ -49,7 +49,7 @@ Arguments: $ARGUMENTS
    back as `{{OWNER_NAME}}` where a rendered file had it. A rule goes into its module in `<kitDir>/rules/` (its one
    home; `node scripts/kit.mjs find <words>` picks the module), with an `{#id}` and tags; then run `node
    scripts/kit.mjs build`. The matching memory subject file gets a `rule:<id>` pointer line, never a copy.
-4. Run the kit's checks: `node --test tests/kit.test.mjs` and `node scripts/kit.mjs scrub`. Both must pass. Before a version
+4. Run the kit's checks: `node scripts/test-run.mjs` and `node scripts/kit.mjs scrub`. Both must pass. Before a version
    bump, do the merge-and-retire pass (rule:kit-standards #5); the tests enforce the size cap,
    a why in every rule section, and memory that points instead of repeating.
    A brand-new rule goes in as a trial: mark it `[trial]` in the CHANGELOG note and add a row to `TRIALS.md`

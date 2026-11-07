@@ -38,6 +38,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import kitTemp from './kit-temp.cjs';
 
 // A change here is live the moment it merges, in this repo: workflows, the installed kit and its rules, the
 // project's grant and gate settings, git hooks, and the loaded rule files.
@@ -294,16 +295,28 @@ function sweepFaults({ cwd, config, branch, head, git, run }) {
 function baseAudit(git, baseRef, name, config) {
 	for (const dir of ['.claude', 'project/.claude']) {
 		if (git('cat-file', '-e', `${baseRef}:${dir}/${name}`).status !== 0) continue;
-		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-gate-'));
-		for (const f of git('ls-tree', '--name-only', `${baseRef}:${dir}`).stdout.split('\n').filter((n) => /\.(mjs|cjs|json)$/.test(n))) {
-			fs.writeFileSync(path.join(tmp, f), git('show', `${baseRef}:${dir}/${f}`).stdout);
-		}
-		return { tmp, script: path.join(tmp, name) };
+		return copied((tmp) => {
+			for (const f of git('ls-tree', '--name-only', `${baseRef}:${dir}`).stdout.split('\n').filter((n) => /\.(mjs|cjs|json)$/.test(n))) {
+				fs.writeFileSync(path.join(tmp, f), git('show', `${baseRef}:${dir}/${f}`).stdout);
+			}
+		}, name);
 	}
 	const installed = path.join(config, 'kit-tools', 'audits');
 	if (!fs.existsSync(path.join(installed, name))) return null;
-	const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-gate-'));
-	for (const f of fs.readdirSync(installed)) fs.copyFileSync(path.join(installed, f), path.join(tmp, f));
+	return copied((tmp) => {
+		for (const f of fs.readdirSync(installed)) fs.copyFileSync(path.join(installed, f), path.join(tmp, f));
+	}, name);
+}
+
+// A copy that fails part way removes its folder before the error goes on; the caller removes it after a good one.
+function copied(fill, name) {
+	const tmp = kitTemp.makeTemp('merge-gate-');
+	try {
+		fill(tmp);
+	} catch (e) {
+		kitTemp.removeTemp(tmp);
+		throw e;
+	}
 	return { tmp, script: path.join(tmp, name) };
 }
 
@@ -352,7 +365,7 @@ function bodyFaults({ cwd, config, body, title, baseRef, git, run }) {
 		const r = run(process.execPath, [found.script, file, title], cwd);
 		return r.status === 0 ? [] : [`the live PR body fails ${name}: ${(r.stdout + r.stderr).trim().split('\n').filter((l) => /FAIL|fault|must|no /i.test(l)).slice(0, 8).join('; ') || 'see the audit'}`];
 	} finally {
-		fs.rmSync(found.tmp, { recursive: true, force: true });
+		kitTemp.removeTemp(found.tmp);
 	}
 }
 
@@ -380,14 +393,14 @@ export function live({ kind, id, cwd, config = configDir(), run = realRun }) {
 		if (!r) return { ok: false, faults: [`gh could not read release ${id}`] };
 		const audit = path.join(config, 'skills', 'release-notes', 'audit.mjs');
 		if (!fs.existsSync(audit)) return { ok: false, faults: [`no release-notes audit at ${audit}`] };
-		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-gate-'));
+		const tmp = kitTemp.makeTemp('merge-gate-');
 		try {
 			const file = path.join(tmp, 'release.md');
 			fs.writeFileSync(file, r.body || '');
 			const a = run(process.execPath, [audit, file, String(r.tagName).replace(/^v/, '')], cwd);
 			return a.status === 0 ? { ok: true, faults: [] } : { ok: false, faults: a.stdout.trim().split('\n') };
 		} finally {
-			fs.rmSync(tmp, { recursive: true, force: true });
+			kitTemp.removeTemp(tmp);
 		}
 	}
 	return { ok: false, faults: ['live takes pr <n> or release <tag>'] };
