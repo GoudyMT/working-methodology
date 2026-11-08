@@ -4314,6 +4314,22 @@ test('a reviewer reads a file over 40 KB by range, and runs nothing in the backg
   }
   assert.equal(capHook(dir, 1, 12, { tool_name: 'Monitor', tool_input: { command: 'tail -f x' } }).permissionDecision, 'deny', 'a monitor waits');
 });
+// N1's other half: a checker reads like a reviewer, so it waits on nothing past 5 minutes either; a builder's own
+// test run may be long, but a background run or a monitor leaves it idle, and its cache is written again.
+test('a checker runs nothing that waits past 5 minutes, and a builder runs nothing in the background', () => {
+  const dir = makeTemp('cap-');
+  const as = (type, tool, input) => capHook(dir, 1, 12, { agent_type: type, tool_name: tool, tool_input: { command: 'npm test', ...input } }).permissionDecision;
+  assert.equal(as('checker', 'Bash', { run_in_background: true }), 'deny');
+  assert.equal(as('checker', 'PowerShell', { timeout: 600000 }), 'deny');
+  assert.equal(as('checker', 'Monitor', {}), 'deny');
+  assert.equal(as('checker', 'Bash', {}), 'allow');
+  assert.equal(as('builder', 'Bash', { run_in_background: true }), 'deny');
+  assert.equal(as('builder', 'Monitor', {}), 'deny');
+  assert.equal(as('builder', 'Bash', { timeout: 600000 }), 'allow', 'a builder\'s long test run is its job');
+  assert.equal(as('builder', 'Bash', {}), 'allow');
+  assert.equal(capHook(dir, 20, 12, { agent_type: 'checker' }).permissionDecision, 'allow', 'no call cap outside a sweep');
+});
+
 test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
   const dir = makeTemp('cap-');
   assert.equal(capHook(dir, 10, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
