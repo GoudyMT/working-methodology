@@ -655,7 +655,7 @@ function ownerMessage(id, setup = false) {
 	const cfg = ownerHome();
 	let owner = null;
 	try { owner = JSON.parse(fs.readFileSync(path.join(cfg, 'kit-owner.json'), 'utf8')); } catch { /* checked below */ }
-	if (!setup && (!owner || typeof owner.authorId !== 'string' || !owner.authorId)) return { err: `no owner is named in ${toPosix(path.join(cfg, 'kit-owner.json'))}. The owner sends any message in this build's thread, and the lead runs node ${toPosix(SELF)} --owner-setup --thread <that message's id>: it names that message's author as the owner` };
+	if (!setup && (!owner || typeof owner.authorId !== 'string' || !owner.authorId)) return { err: `no owner is named in ${toPosix(path.join(cfg, 'kit-owner.json'))}. To name them from the thread, the lead runs node ${toPosix(SELF)} --owner-setup: it gives the words the owner sends, then --owner-setup --thread <that message's id> names its author the owner` };
 	if (!setup && owner.threadYes !== true) return { err: 'the owner turned thread answers off in kit-owner.json ("threadYes")' };
 	if (!MESSAGE_ID.test(String(id || ''))) return { err: '--thread needs the id of the owner\'s message (cmsg_...)' };
 	let relayed = false;
@@ -697,9 +697,20 @@ function ownerMessage(id, setup = false) {
 function ownerSetup() {
 	const file = path.join(ownerHome(), 'kit-owner.json');
 	if (fs.existsSync(file)) { console.log(`Refused: ${toPosix(file)} already names an owner; a change is the owner's own edit of that file. Nothing written.`); return 1; }
+	// The owner's message says so in so many words, with a code this run prints, so no message they sent for another
+	// reason names them (the 1.23.0 sweep's review).
+	const lines = rawLines();
+	const code = sha(`owner-setup ${lines.length ? lines[lines.length - 1] : ''}`).slice(0, 6);
+	const since = lines.length ? (() => { try { return JSON.parse(lines[lines.length - 1]).time; } catch { return null; } })() : null;
+	if (!has('--thread')) {
+		console.log(`To be named the owner whose thread answers count, the owner sends in this build's thread: "setup ${code}". Then: node ${toPosix(SELF)} --owner-setup --thread <that message's id>. Nothing written.`);
+		return 1;
+	}
 	const id = opt('--thread');
 	const m = ownerMessage(id, true);
 	if (m.err) { console.log(`Refused: ${m.err}. Nothing written.`); return 1; }
+	if (!new RegExp(`^setup ${code}[.!]?$`, 'i').test(m.words)) { console.log(`Refused: message ${id} ("${m.words}") is not "setup ${code}". Nothing written.`); return 1; }
+	if (since && !(Date.parse(m.at) > Date.parse(since))) { console.log(`Refused: message ${id} was sent before the code was given. Nothing written.`); return 1; }
 	fs.mkdirSync(path.dirname(file), { recursive: true });
 	fs.writeFileSync(file, JSON.stringify({ authorId: m.author, threadYes: true }, null, 2) + '\n', { flag: 'wx' });
 	console.log(`The owner is the author of message ${id} (${m.author}), written to ${toPosix(file)}. Their thread answers now count: "yes <code>" for an ask, "resume <code>" for a pause. To turn thread answers off, set "threadYes": false there.`);

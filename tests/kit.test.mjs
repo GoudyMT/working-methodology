@@ -9,7 +9,11 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status, mainProtection, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+// The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
+// suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
+const status = (o) => kitStatus({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
+const sessionStartReport = (o) => kitSessionStart({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -2583,20 +2587,28 @@ test('the owner resumes auto-approval from the thread with "resume" and the paus
 });
 
 // The 1.23.0 sweep: nothing wrote kit-owner.json, and Claude may not write it, so the first phone yes was refused with
-// no way forward from the phone. The owner sends any message in the thread; its author is named the owner, once.
+// no way forward from the phone. The owner sends "setup <code>" in the thread, with the code a setup run gives, and
+// its author is named the owner, once.
 test('the owner is named from the thread with --owner-setup, only while no owner is named', () => {
   const r = approveRun(askContract());
   const cfg = makeTemp('cfg-');
-  const setup = (id) => approveIn(r.dir, ['--owner-setup', '--thread', id], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S0ssssss', words: 'set me up', wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` });
+  const setup = (id) => approveIn(r.dir, ['--owner-setup', ...(id ? ['--thread', id] : [])], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  const code = (setup().stdout.match(/sends in this build's thread: "setup ([0-9a-f]{6})"/) || [])[1];
+  assert.ok(code, 'a setup run gives the words to send');
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S0ssssss', words: `setup ${code}`, wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` });
   assert.match(setup('cmsg_S0ssssss').stdout, /relayed or cited copy/, 'a relayed copy names no one');
+  // A message sent for another reason names no one.
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S9ssssss', words: 'looks good' });
+  assert.match(setup('cmsg_S9ssssss').stdout, /is not "setup [0-9a-f]{6}"/);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S8ssssss', words: `setup ${code}`, at: '2020-01-01T00:00:00.000Z' });
+  assert.match(setup('cmsg_S8ssssss').stdout, /sent before the code/);
   assert.equal(fs.existsSync(path.join(cfg, 'kit-owner.json')), false);
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S1ssssss', words: 'set me up' });
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S1ssssss', words: `setup ${code}` });
   const ok = setup('cmsg_S1ssssss');
   assert.equal(ok.status, 0, ok.stdout);
   assert.deepEqual(JSON.parse(read(path.join(cfg, 'kit-owner.json'))), { authorId: OWNER, threadYes: true });
   // Once named, a change is the owner's own edit of the file.
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S2ssssss', words: 'me instead', author: 'user_other' });
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S2ssssss', words: `setup ${code}`, author: 'user_other' });
   const again = setup('cmsg_S2ssssss');
   assert.equal(again.status, 1, again.stdout);
   assert.match(again.stdout, /already names an owner/);
