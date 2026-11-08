@@ -132,6 +132,10 @@ const ASK = [
 	'npm publish --dry-run -no-dry-run',
 	'npm publish --dry-run --no-no-no-dry-run',
 	'npm publish -- --dry-run',
+	// An option that takes a value takes --dry-run as that value.
+	'npm publish --registry --dry-run',
+	'npm publish --fetch-retries --dry-run',
+	'npm publish --tag --dry-run',
 	// S22-12: -B is the only B parameter, so PowerShell binds it to -Body.
 	'Invoke-WebRequest https://example.test -B x',
 	'Invoke-RestMethod https://example.test -B:x',
@@ -184,6 +188,8 @@ const PASS = [
 	'iwr https://example.test -Method:Get',
 	'npm install --registry https://r.test',
 	'npm publish --dry-run',
+	'npm publish --json --dry-run',
+	'npm publish --tag next --dry-run',
 	'echo a b | xargs git add',
 	'git status',
 	'git -C "C:/x y/repo" log --oneline -5',

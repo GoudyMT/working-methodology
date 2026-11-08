@@ -19,6 +19,8 @@ const GIT_OUTWARD = new Set(['push', 'send-pack', 'send-email']);
 // A package registry is public: these subcommands change what it holds (--dry-run changes nothing).
 const PACKAGERS = new Set(['npm', 'npm.cmd', 'pnpm', 'pnpm.cmd', 'yarn', 'yarn.cmd', 'bun', 'bun.exe']);
 const REGISTRY_WRITES = new Set(['publish', 'unpublish', 'dist-tag', 'deprecate', 'owner']);
+// Options that take no value, so a --dry-run after one is a flag. Any other option may take it as its value.
+const NPM_FLAGS = new Set(['--dry-run', '--json', '--force', '-f', '--ignore-scripts', '--provenance', '--workspaces', '-ws', '--include-workspace-root', '--no-git-checks', '--silent', '-s', '--quiet', '-q', '--verbose', '-d']);
 // HTTP clients: a method other than GET or HEAD, or a body, sends something out. In Windows PowerShell 5.1, curl and
 // wget are names for Invoke-WebRequest, so its -Method and -Body count for them too.
 const HTTP_CLIENTS = /^(curl|wget|invoke-webrequest|invoke-restmethod|iwr|irm)(\.exe)?$/;
@@ -92,7 +94,10 @@ function registryWrite(words, start) {
 		let name = w.replace(/^-+/, '').split('=')[0].toLowerCase();
 		while (name.startsWith('no-')) name = name.slice(3);
 		if (name.length < 2 || !'dry-run'.startsWith(name)) continue;
-		if (w === '--dry-run') dry = !/^(false|0|no)$/i.test(rest[i + 1] ?? '');
+		// After an option that may take a value (--registry --dry-run), --dry-run is that value, not a flag.
+		const prev = rest[i - 1] ?? '';
+		const taken = prev.startsWith('-') && !prev.includes('=') && !NPM_FLAGS.has(prev);
+		if (w === '--dry-run') dry = !taken && !/^(false|0|no)$/i.test(rest[i + 1] ?? '');
 		else dry = /^--dry-run=(true|1|yes)$/.test(w);
 	}
 	if (dry) return '';

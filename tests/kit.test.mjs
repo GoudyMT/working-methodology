@@ -344,6 +344,23 @@ test('status and session start flag a Claude Code too old for onFailure, and sta
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.295' }), /older than/);
 });
 
+// The 1.23.0 security review: on Windows cmd looks in the current folder first, and session start runs in the
+// project, so a claude.cmd planted there would run on every session start.
+// A machine as it ships: this sandbox sets NoDefaultCurrentDirectoryInExePath; most machines do not.
+const withoutSafeSearch = (env) => Object.fromEntries(Object.entries(env).filter(([k]) => k.toLowerCase() !== 'nodefaultcurrentdirectoryinexepath'));
+test('the Claude Code version read never runs a claude program planted in the current folder', { skip: process.platform !== 'win32' }, () => {
+  const dir = makeTemp('planted-');
+  const marker = path.join(dir, 'ran.txt');
+  fs.writeFileSync(path.join(dir, 'claude.cmd'), `@echo planted> "${marker}"\r\n@echo 9.9.9\r\n`);
+  const kitUrl = pathToFileURL(path.resolve('scripts/kit.mjs')).href;
+  const r = spawnSync(process.execPath, ['-e', `import(${JSON.stringify(kitUrl)}).then((m) => console.log(JSON.stringify(m.installedClaudeVersion())))`], {
+    cwd: dir, encoding: 'utf8', env: { ...withoutSafeSearch(process.env), PATH: `${process.env.SystemRoot}\\System32` },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.existsSync(marker), false, 'the planted claude.cmd ran');
+  assert.equal(r.stdout.trim(), 'null');
+});
+
 test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });

@@ -703,9 +703,11 @@ const semverAbove = (a, b) => {
 const ON_FAILURE_MIN = '2.1.295';
 let claudeVersionRead;
 // One read per process: `claude --version`, or null where Claude Code is not on the PATH (CI, a cloud thread).
-function installedClaudeVersion() {
+export function installedClaudeVersion() {
   if (claudeVersionRead === undefined) {
-    const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 8000, shell: process.platform === 'win32' });
+    // cmd looks in the current folder before the PATH, and session start runs in the project: from the home folder,
+    // with that search turned off, only a claude on the PATH runs.
+    const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 8000, shell: process.platform === 'win32', cwd: os.homedir(), env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' } });
     claudeVersionRead = r.status === 0 ? r.stdout : null;
   }
   return claudeVersionRead;
