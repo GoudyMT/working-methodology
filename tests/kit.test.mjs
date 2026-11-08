@@ -308,6 +308,8 @@ test('status reads main as protected by a ruleset, and unprotected only when nei
   assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[{"type":"required_status_checks"}]', stderr: '' })), 'protected');
   assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[]', stderr: '' })), 'unprotected');
   assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '', stderr: 'HTTP 403' })), null);
+  // The 1.22.0 sweep (T2): the real gh prints a JSON body on an error (tests/contracts/gh.json); that is no answer.
+  assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '{"message":"Forbidden"}', stderr: 'gh: Forbidden (HTTP 403)' })), null);
   assert.equal(mainProtection('.', answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
 });
 
@@ -4936,6 +4938,18 @@ test('uncommitted work in the contract\'s folder counts, except the reports and 
     const r = approveRun(featureContract(), dir);
     if (counts) { assert.equal(r.status, FIX_EXIT, `${file}: ${r.stdout}`); assert.match(r.stdout, /work not committed/, file); } else assert.equal(r.status, 0, `${file}: ${r.stdout}`);
   }
+});
+// The 1.22.0 sweep (T1): the helper above plays the guard for every outcome, so this one runs approve.mjs itself: a
+// tagged reviewer the guard never started (no slot at all) is not counted.
+test('an outcome refuses a tagged reviewer when the guard recorded no start for its role', () => {
+  const r = approveRun(featureContract());
+  const hash = approvalLog(r.dir).pop().hash;
+  const ids = cheapRoles(5);
+  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[0, 100, 0, 0]]])));
+  ids.forEach((id, i) => setBrief(cfg, id, (b) => `${b} Sweep: ${hash} role ${i + 1}`));
+  const o = spawnSync('node', [APPROVE, r.f, '--outcome', '--agents', ids.join(','), '--findings', '1', '--real', '1', '--duplicates', '0'], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: cfg } });
+  assert.equal(o.status, 1, o.stdout);
+  assert.match(o.stdout, /not the reviewer the guard started for role 1/);
 });
 test('the sweep guard refuses a reviewer brief under another agent type, and a reviewer started outside git', () => {
   const dir = makeTemp('guard-');
