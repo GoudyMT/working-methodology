@@ -24,7 +24,7 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['Edit', { file_path: path.join(cfg, 'Projects', 'C--repo', 's.jsonl'), old_string: 'a', new_string: 'b' }],
 		['NotebookEdit', { notebook_path: path.join(cfg, 'projects', 'x.ipynb'), new_source: 'x' }],
 		['Bash', { command: 'echo x >> ~/.claude/projects/C--repo/s.jsonl' }],
-		['Bash', { command: 'cp a.jsonl /c/Users/Max/.claude/projects/C--repo/' }],
+		['Bash', { command: 'cp a.jsonl ~/.CLAUDE/Projects/C--repo/' }],
 		['Bash', { command: 'mv a.jsonl "$HOME/.claude/projects/C--repo/s.jsonl"' }],
 		['Bash', { command: 'cd ~/.claude/projects/C--repo && printf x > s.jsonl' }],
 		['Bash', { command: 'node -e "require(\'fs\').appendFileSync(process.env.HOME + \'/.claude/projects/p/s.jsonl\', \'x\')"' }],
@@ -33,7 +33,7 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['Bash', { command: `sed -i s/a/b/ ${T.split(path.sep).join('/')}` }],
 		['PowerShell', { command: 'Add-Content "$HOME\\.claude\\projects\\p\\s.jsonl" x' }],
 		['PowerShell', { command: 'Set-Content -Path $env:USERPROFILE\\.claude\\kit-owner.json -Value "{}"' }],
-		['PowerShell', { command: 'Copy-Item a.jsonl C:\\Users\\Max\\.CLAUDE\\Projects\\p\\' }],
+		['PowerShell', { command: 'Copy-Item a.jsonl $env:USERPROFILE\\.CLAUDE\\Projects\\p\\' }],
 		['Bash', { command: 'cp ~/.claude/projects/p/memory/a.md ~/.claude/projects/p/s.jsonl' }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
