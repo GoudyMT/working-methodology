@@ -186,6 +186,9 @@ const ASK = [
 	'docker buildx build --output=type=registry .',
 	'docker buildx build -otype=image,push=1 .',
 	'docker buildx build -o type=oci,dest=x .',
+	'docker buildx build -o type=local,type=registry .',
+	'docker buildx bake --set app.output=type=registry',
+	'docker buildx bake --set app.push=true',
 	// MSYS and Cygwin rsync read C:/x as a host named C, so a drive path is not taken as local.
 	'rsync -a build/ C:/backup/build',
 	// S22-13: an option's value (-C ., -c x=y) is not a subcommand, so git still takes one from xargs.
