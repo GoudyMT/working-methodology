@@ -229,6 +229,26 @@ const ASK = [
 	'Invoke-RestMethod https://example.com/api -Method Delete',
 	'iwr https://example.com/api -Body x',
 	'irm -Method Patch https://example.com/api',
+	// The 1.23.0 sweep: a --thread inside a comment never reaches approve.mjs.
+	'env -u CLAUDECODE -u AI_AGENT node approve.mjs c.json --owner-yes "yes abc123" # --thread cmsg_aaaaaaaaaa',
+	'node approve.mjs c.json --owner-yes "yes abc123" <# --thread cmsg_aaaaaaaaaa #>',
+	// Sequence groups and a group inside another are brace expansions too.
+	'git {p..p}ush origin main',
+	'git -C . {p..p}ush',
+	'git {push,{origin,main}}',
+	// npm reads --DRY-RUN as an unknown setting: the publish is real.
+	'npm publish --DRY-RUN',
+	'npm publish --Dry-Run=true',
+	// xargs -I puts its input in place of any word, git's subcommand too.
+	'echo push | xargs -I % git %',
+	'echo push | xargs -I{} git {}',
+	// gem takes the start of a command's name; aliases from the environment name no git or cargo before them.
+	'gem pu x.gem',
+	'gem ya x',
+	'CARGO_ALIAS_SHIP=publish cargo ship',
+	"cargo --config 'alias.ship=\"publish\"' ship",
+	'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.x GIT_CONFIG_VALUE_0=push git x',
+	"$env:GIT_CONFIG_KEY_0='alias.x'; git x",
 ];
 
 const PASS = [
@@ -295,6 +315,12 @@ const PASS = [
 	'npm pack',
 	'npm install',
 	'git format-patch -1',
+	// The 1.23.0 sweep's readings leave these alone.
+	'echo {1..3}',
+	'git log --oneline -{1..2}',
+	'gem install rake',
+	'gem list',
+	'echo x | xargs -I % echo %',
 ];
 
 let wrong = 0;

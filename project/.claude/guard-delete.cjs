@@ -634,6 +634,8 @@ function decide(input, where = {}) {
 	collectStrings(input.tool_input, strings, 0);
 	if (strings.truncated) return 'a tool input nested deeper than the guard reads';
 	if (strings.length === 0) return '';
+	// Before any reading: the brace reader's time grows fast with a long run of signs (the 1.23.0 sweep).
+	if (strings.some((s) => s.length > MAX_TEXT)) return 'a command too long to read';
 	const projectDir = where.projectDir ?? process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd();
 	const windows = /^[A-Za-z]:/.test(projectDir) || process.platform === 'win32';
 	const api = windows ? path.win32 : path.posix;

@@ -30,6 +30,8 @@ const GIT_NESTED_PUSH = new Set(['lfs', 'subtree']);
 const GIT_BRIDGES = { svn: ['dcommit', 'branch', 'tag', 'set-tree', 'commit-diff'], p4: ['submit', 'commit'] };
 // Other programs that publish or send to a remote: the subcommands that do it. Only cargo has a dry run.
 const PUBLISHERS = { docker: ['push'], podman: ['push'], cargo: ['publish', 'yank', 'owner'], twine: ['upload'], gem: ['push', 'yank', 'owner'], nuget: ['push', 'delete'] };
+// The gem write a word may name: gem takes any start of a command's name that fits one command (gem pu).
+const gemWrite = (w) => (/^[a-z]/.test(w) ? PUBLISHERS.gem.find((c) => c.startsWith(w)) || '' : '');
 // docker and podman build straight to a registry with --push or an output of type registry or push=true.
 const IMAGE_BUILDERS = new Set(['docker', 'podman']);
 
@@ -37,7 +39,7 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -128,8 +130,9 @@ function registryWrite(words, start) {
 		const w = rest[i];
 		if (w === '--') break;
 		if (!w.startsWith('-')) continue;
-		let name = w.replace(/^-+/, '').split('=')[0].toLowerCase();
-		while (name.startsWith('no-')) name = name.slice(3);
+		// npm reads a flag's name as written: --DRY-RUN is an unknown setting, not a dry run (the 1.23.0 sweep).
+		let name = w.replace(/^-+/, '').split('=')[0];
+		while (/^no-/i.test(name)) name = name.slice(3);
 		if (name.length < 2 || !'dry-run'.startsWith(name)) continue;
 		// After an option that may take a value (--registry --dry-run), --dry-run is that value, not a flag.
 		const prev = rest[i - 1] ?? '';
@@ -138,7 +141,7 @@ function registryWrite(words, start) {
 		else dry = /^--dry-run=(true|1|yes)$/.test(w);
 	}
 	if (dry) return '';
-	const hit = rest.find((w) => REGISTRY_WRITES.has(w));
+	const hit = rest.find((w) => REGISTRY_WRITES.has(w.toLowerCase()));
 	return hit ? 'a package ' + hit : '';
 }
 
@@ -198,8 +201,9 @@ function findOutward(text, depth) {
 	if (/--owner-yes/i.test(flat)) {
 		// An escape (\, a backtick, a caret, $'...') can move where a quote ends, so a yes holding one is not proven.
 		if (/[\\`^]|\$'/.test(text)) return 'an owner yes for a sweep';
-		// Read with its quotes, so a quoted span stays one word: a --thread inside the yes's words is no proof.
-		const proven = tokenize(joinContinuations(plainText(text))).some((all) => {
+		// Read with its quotes, so a quoted span stays one word: a --thread inside the yes's words is no proof. A
+		// comment is cut first: the shell never hands approve.mjs a --thread after a # (the 1.23.0 sweep).
+		const proven = tokenize(joinContinuations(withoutComments(plainText(text)))).some((all) => {
 			const w = all.filter((x) => !x.redirect).map((x) => x.value);
 			const at = w.findIndex((x) => /^--owner-yes(=|$)/i.test(x));
 			const t = w.indexOf('--thread');
@@ -209,6 +213,11 @@ function findOutward(text, depth) {
 		if (!proven || segments.length !== 1) return 'an owner yes for a sweep';
 	}
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
+	// An alias set from the environment names no git before it: GIT_CONFIG_KEY_0=alias.x, and cargo's CARGO_ALIAS_X.
+	if (/GIT_CONFIG_(KEY_\d+|PARAMETERS)\W[^\n]*\balias\./i.test(text)) return 'git with an alias';
+	// xargs -I puts its input in place of any word, git's subcommand too; -I{} splits into two commands when read.
+	if (/\bxargs(\.exe)?\b[^;|&\n]*\s(-[iIJ]|--replace)[^;|&\n]*\bgit(\.exe)?\b/.test(text)) return 'git through xargs';
+	if (/CARGO_ALIAS_\w+|\bcargo\b[^;|&\n]*--config[^;|&\n]*\balias\./i.test(text)) return 'cargo with an alias';
 	// A backtick span is a command bash runs first, wherever it sits; the tokenizer splits it into words.
 	if (depth < MAX_DEPTH) for (const m of text.matchAll(/`([^`]+)`/g)) { const hit = findOutward(m[1], depth + 1); if (hit) return hit; }
 	for (const all of tokenize(joinContinuations(text))) {
@@ -225,11 +234,15 @@ function findOutward(text, depth) {
 			else if (name === 'git' || name === 'git.exe') {
 				hit = gitOutward(words, i + 1);
 				// xargs hands git its subcommand from input, so a git with none after xargs could be a push.
-				if (!hit && words.slice(0, i).some((w) => programName(w) === 'xargs' || programName(w) === 'xargs.exe') && gitSubAt(words, i + 1) >= words.length) hit = 'git through xargs';
+				const x = words.slice(0, i).findIndex((w) => programName(w) === 'xargs' || programName(w) === 'xargs.exe');
+				// With -I (or -i, --replace) the input may stand in any word, the subcommand too: git % is git push.
+				if (!hit && x >= 0 && (gitSubAt(words, i + 1) >= words.length || words.slice(x + 1, i).some((w) => /^(-i|-j|--replace)/.test(w)))) hit = 'git through xargs';
 			}
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
-			else if (PACKAGERS.has(name)) hit = registryWrite(words, i + 1);
-			else if (tool && words.slice(i + 1).some((w) => PUBLISHERS[tool].includes(w)) && !(tool === 'cargo' && words.slice(i + 1).includes('publish') && cargoDryRun(words.slice(i + 1)))) {
+			else if (PACKAGERS.has(name)) hit = registryWrite(segment.map((word) => word.value), i + 1);
+			// gem runs any unique start of a command's name: gem pu is gem push.
+			else if (tool === 'gem' && words.slice(i + 1).some((w) => gemWrite(w))) hit = 'gem ' + gemWrite(words.slice(i + 1).find((w) => gemWrite(w)));
+			else if (tool &&words.slice(i + 1).some((w) => PUBLISHERS[tool].includes(w)) && !(tool === 'cargo' && words.slice(i + 1).includes('publish') && cargoDryRun(words.slice(i + 1)))) {
 				hit = tool + ' ' + words.slice(i + 1).find((w) => PUBLISHERS[tool].includes(w));
 			}
 			else if (IMAGE_BUILDERS.has(tool) && imageBuildPush(words.slice(i + 1))) hit = tool + ' build to a registry';
@@ -267,6 +280,8 @@ function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
 	const text = strings.join(LF);
+	// Before any reading: the brace reader's time grows fast with a long run of signs (the 1.23.0 sweep).
+	if (text.length > 100000) return 'a command too long to read';
 	return findOutward(text, 0) || findOutward(plainText(text, input?.tool_name), 0);
 }
 

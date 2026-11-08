@@ -118,6 +118,12 @@ const SWEEP_ASK = [
 	"git grep --open-files-in-pager='rm -rf C:/elsewhere' x",
 	"git grep --open-files-in-pager 'rm -rf C:/elsewhere' x",
 	"'C:\\elsewhere' |" + LF + 'Get-ChildItem | Remove-Item -Recurse',
+	// The 1.23.0 sweep: a sequence group in the program's place is still rm, and so is a group inside another.
+	'{r..r}m -rf C:/elsewhere',
+	'r{m..m} -rf C:/elsewhere',
+	'{rm,{-rf,C:/elsewhere}}',
+	// A command too long to read is refused before it is read, quickly (the hook's timeout blocks).
+	'rm -rf C:/elsewhere ; echo ' + '/'.repeat(150000),
 ];
 
 // Found by the same sweep: ordinary commands that asked and should not.
