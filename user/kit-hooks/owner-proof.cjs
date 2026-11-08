@@ -23,9 +23,16 @@ const REASON = 'The session transcripts and kit-owner.json hold the owner\'s thr
 
 // The real path, through any junction, link or short name; a file not yet written resolves through its nearest
 // existing folder.
-function real(p) {
+// A link whose target is not there yet is followed to that target, a few links deep.
+function real(p, depth = 8) {
 	const rest = [];
-	while (!fs.existsSync(p) && path.dirname(p) !== p) { rest.unshift(path.basename(p)); p = path.dirname(p); }
+	while (!fs.existsSync(p) && path.dirname(p) !== p) {
+		let link = null;
+		try { if (fs.lstatSync(p).isSymbolicLink()) link = fs.readlinkSync(p); } catch { /* not there at all */ }
+		if (link !== null && depth > 0) return real(path.join(path.resolve(path.dirname(p), link), ...rest), depth - 1);
+		rest.unshift(path.basename(p));
+		p = path.dirname(p);
+	}
 	try { return path.join(fs.realpathSync.native(p), ...rest); } catch { return path.join(p, ...rest); }
 }
 

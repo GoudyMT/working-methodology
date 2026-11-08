@@ -45,6 +45,10 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 	const link = path.join(kitTemp.makeTemp('link-'), 'p');
 	fs.symlinkSync(path.join(cfg, 'projects'), link, 'junction');
 	assert.equal(run('Write', { file_path: path.join(link, 'C--repo', 's.jsonl'), content: 'x' }), 'deny', 'through a junction');
+	// A link to a project folder not made yet still points inside.
+	const dangling = path.join(kitTemp.makeTemp('link-'), 'd');
+	fs.symlinkSync(path.join(cfg, 'projects', 'C--new'), dangling, 'junction');
+	assert.equal(run('Write', { file_path: path.join(dangling, 's.jsonl'), content: 'x' }), 'deny', 'through a link whose target is not there yet');
 });
 
 test('the owner-proof guard lets reads of the transcripts through, and every other write', () => {
