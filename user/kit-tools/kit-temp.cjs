@@ -54,6 +54,20 @@ function alive(pid) {
 	}
 }
 
+// A live run's root anywhere under a folder, a few levels down (a shard's folder, then the nested run's root).
+function nestedLive(dir, depth = 4) {
+	if (depth === 0) return false;
+	let entries;
+	try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+	for (const e of entries) {
+		if (!e.isDirectory() || e.isSymbolicLink()) continue;
+		const owned = OWNED.exec(e.name);
+		if (owned && alive(Number(owned[1]))) return true;
+		if (nestedLive(path.join(dir, e.name), depth - 1)) return true;
+	}
+	return false;
+}
+
 /**
  * Remove the run roots in a temp folder whose run is over.
  *
@@ -81,7 +95,8 @@ function sweepStale(dir = os.tmpdir(), now = Date.now()) {
 		if (!st.isDirectory()) continue;
 		const age = now - st.mtimeMs;
 		const stale = owned ? (!alive(Number(owned[1])) || age > LIVE_MAX_MS) : age > LEGACY_MAX_MS;
-		if (stale && removeTemp(p)) removed.push(p);
+		// A run started inside a run (the runner's own tests) keeps its root inside the outer one, and may outlive it.
+		if (stale && !nestedLive(p) && removeTemp(p)) removed.push(p);
 	}
 	return removed;
 }

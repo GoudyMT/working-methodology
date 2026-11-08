@@ -64,6 +64,18 @@ test('the sweep keeps a live owner\'s root, so parallel shards never delete each
 	assert.ok(fs.existsSync(live));
 });
 
+// S22-K3: a test run inside a run makes its own root inside the outer one; the outer runner can die first.
+test('the sweep keeps a dead runner\'s root while a run nested in it is still alive, and clears it after', () => {
+	const dir = base();
+	const outer = path.join(dir, `${ROOT_PREFIX}${deadPid()}-out123`);
+	const inner = path.join(outer, 'shard-x', `${ROOT_PREFIX}${process.pid}-inn123`);
+	fs.mkdirSync(inner, { recursive: true });
+	assert.deepEqual(sweepStale(dir), [], 'a live run is nested in it');
+	assert.ok(fs.existsSync(inner));
+	fs.renameSync(inner, path.join(outer, 'shard-x', `${ROOT_PREFIX}${deadPid()}-inn123`));
+	assert.deepEqual(sweepStale(dir), [outer], 'every run in it is over');
+});
+
 test('the sweep clears a live pid\'s root only past a day (pid reuse), and an old-style root only past an hour', () => {
 	const dir = base();
 	const hours = (h) => new Date(Date.now() - h * 3600e3);
