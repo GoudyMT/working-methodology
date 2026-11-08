@@ -284,12 +284,15 @@ const currentBranch = () => git('symbolic-ref', '--short', '-q', 'HEAD').stdout.
 
 // The patch ids of the branch's own commits (base..HEAD), at most PATCH_MAX: the same change after a rebase.
 const PATCH_MAX = 200;
+// Null when git cannot say: the caller treats that as unknown, never as "no earlier sweep".
 function branchPatches(base) {
 	if (!base) return [];
-	const diff = git('log', '-p', '--no-merges', `-${PATCH_MAX}`, '--format=commit %H', `${base}..HEAD`);
-	if (diff.status !== 0 || !diff.stdout) return [];
-	const ids = spawnSync('git', ['patch-id', '--stable'], { input: diff.stdout, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-	return ids.status === 0 ? ids.stdout.split('\n').map((l) => l.split(' ')[0]).filter(Boolean) : [];
+	const big = { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 };
+	const diff = spawnSync('git', ['-C', path.dirname(contractFile), 'log', '-p', '--no-merges', `-${PATCH_MAX}`, '--format=commit %H', `${base}..HEAD`], big);
+	if (diff.status !== 0 || diff.error) return null;
+	if (!diff.stdout) return [];
+	const ids = spawnSync('git', ['patch-id', '--stable'], { ...big, input: diff.stdout });
+	return ids.status === 0 && !ids.error ? ids.stdout.split('\n').map((l) => l.split(' ')[0]).filter(Boolean) : null;
 }
 
 // The one-sweep loop (the owner, 2026-11-07): a sweep that ran on this branch, found by its HEAD on the branch (not on
@@ -299,8 +302,10 @@ function secondPass(log, base) {
 	const onBranch = (h) => { if (!on.has(h)) on.set(h, git('merge-base', '--is-ancestor', h, 'HEAD').status === 0 && git('merge-base', '--is-ancestor', h, base).status !== 0); return on.get(h); };
 	const branch = currentBranch();
 	// A rebase gives the commits new ids and a rename a new name, but each commit keeps its patch (S22-S3).
-	const mine = new Set(branchPatches(base));
-	const samePatches = (e) => Array.isArray(e.patches) && e.patches.some((p) => mine.has(p));
+	const read = branchPatches(base);
+	const mine = new Set(read || []);
+	// Patches unread here, or unread at an earlier sweep, cannot rule that sweep out: it counts.
+	const samePatches = (e) => read === null || e.patches === null || (Array.isArray(e.patches) && e.patches.some((p) => mine.has(p)));
 	const ran = (k) => log.some((e, j) => j > k && e.kind === 'outcome' && !e.noneRan && e.contract === log[k].contract);
 	const i = log.findIndex((e, k) => e.kind === 'decision' && e.head && isCleared(log, k) && ran(k) && ((branch && e.branch === branch) || onBranch(e.head) || samePatches(e)));
 	return i >= 0 ? log[i].contract : null;

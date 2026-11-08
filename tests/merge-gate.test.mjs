@@ -311,6 +311,26 @@ const CASES = [
 		fs.appendFileSync(path.join(s.work, '.git', 'info', 'exclude'), '.kit/\n');
 	}, /pr-body\.json.*this clone/],
 ];
+// S22-G6 (the 1.22.0 sweep): GIT_CONFIG_COUNT and GIT_CONFIG_PARAMETERS set config for every git this session runs,
+// pushes included, and git names their origin "command line:", which the hold check skips as its own override.
+test('merge gate: a hooks folder set through the environment is NO GO, as a push would use it', () => {
+	for (const env of [
+		{ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/nowhere' },
+		{ GIT_CONFIG_PARAMETERS: "'core.hooksPath'='/nowhere'" },
+	]) {
+		const s = setup();
+		const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+		Object.assign(process.env, env);
+		try {
+			const r = arm(s.opts);
+			assert.equal(r.armed, false, JSON.stringify(env));
+			assert.ok(r.faults.some((f) => /no push hold: core\.hooksPath is set in this session's environment/.test(f)), r.faults.join('\n'));
+		} finally {
+			for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+		}
+	}
+});
+
 for (const [name, breakIt, want] of CASES) {
 	test(`merge gate: ${name} is NO GO, with a triage report, and nothing is armed`, () => {
 		const s = setup();
