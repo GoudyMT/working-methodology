@@ -95,6 +95,20 @@ const MAX_CONTEXT = 30;
 const TOP_ONLY = ['security', 'novel-lens'];
 const TOP_MODEL = /opus/i;
 const OVERRUN = 1.25;
+// M22 option C (the owner, 2026-11-05; workbench results/m22-budget): no pre-run guess lands within 25%, so each role is
+// bounded. Its token ceiling is the p90 of the last CEILING_ROLES roles the log measured, and the call-cap hook stops a
+// reviewer there. The pause then trips on drift signals, each against the log's own baseline. Before CEILING_MIN roles
+// are measured there is no baseline: the ceiling is OVERRUN x the role's budget and the whole-sweep trip stays.
+const CEILING_ROLES = 60;
+const CEILING_MIN = 20;
+const CEILING_PCT = 0.9;
+// Drift: the starting context over its median by this much (rules or tool bloat; its sd was under 2%); content per
+// call over the p95 (a new kind of work); more than this share of roles stopped at their ceiling (the work outgrew
+// it); this many cache re-writes after a role's first call (the cache expired: dollar drift).
+const START_DRIFT = 1.1;
+const CONTENT_PCT = 0.95;
+const STOPPED_SHARE = 1 / 3;
+const REWRITES_TRIP = 2;
 const TRIAL_EVERY = 10;
 const TRIAL_EVERY_EARNED = 20;
 // Two questions sharing this much of their words are one question asked twice. Rewording beats a word count, so the
@@ -115,7 +129,19 @@ const RESWEEP_MIN_LINES = 50;
 const RESWEEP_SHARE = 0.25;
 // The line each reviewer's brief carries: the cleared contract's hash and the role's place in it (the sweep guard reads it).
 const SWEEP_TAG = /Sweep: ([0-9a-f]{16}) role (\d+)/;
-const sweepLine = (hash) => `Each brief carries "Sweep: ${hash} role <n>" (n is the role's place in the contract) and its role's "Call cap: <n>".`;
+const sweepLine = (hash) => `Each brief carries "Sweep: ${hash} role <n>" (n is the role's place in the contract), its role's "Call cap: <n>" and its "Token ceiling: <n>".`;
+
+// The roles the log measured, the last CEILING_ROLES of them: what a ceiling and the drift baselines are read from.
+const measuredRoles = (log) => log.filter((e) => e.kind === 'outcome' && Array.isArray(e.roles)).flatMap((e) => e.roles).filter((r) => r && Number(r.tokens) > 0 && Number(r.calls) > 0).slice(-CEILING_ROLES);
+// Nearest rank, so the value is one a real role spent.
+const nearestRank = (values, p) => { const v = [...values].sort((a, b) => a - b); return v.length ? v[Math.max(0, Math.ceil(p * v.length) - 1)] : 0; };
+const median = (values) => nearestRank(values, 0.5);
+function ceilingsFor(log, budgets) {
+	const past = measuredRoles(log);
+	if (past.length < CEILING_MIN) return { ceilings: budgets.map((b) => Math.round(b * OVERRUN)), from: `${OVERRUN}x each role's budget (fewer than ${CEILING_MIN} roles measured in this repo's log)` };
+	const at = nearestRank(past.map((r) => Number(r.tokens)), CEILING_PCT);
+	return { ceilings: budgets.map(() => at), from: `the p90 of the last ${past.length} roles measured` };
+}
 
 const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
@@ -515,7 +541,8 @@ function decide() {
 	}
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
+	const { ceilings, from: ceilingFrom } = ceilingsFor(s.log, budgets);
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -540,13 +567,13 @@ function decide() {
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} ${first ? `re-sweep of ${rel(first)}` : 'sweep'}, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
-	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash));
+	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash, ceilings, ceilingFrom));
 	for (const l of carryLine) console.log(l);
 	return 0;
 }
 
 // The owner's start notice, written from the checked contract so it carries no hand count. Post it as is.
-function notice(c, need, extras, cap, first, budgets, total, facts, hash) {
+function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilings, ceilingFrom) {
 	const roles = c.roles || [];
 	const n = (x) => x.toLocaleString('en-US');
 	const kinds = {};
@@ -556,8 +583,9 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash) {
 		`    ${c.tier} ${first ? 're-sweep' : 'sweep'}, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
 		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.baseName}`,
 		...(hookState(facts.base) === 'none' ? [HOOK_NONE] : []),
-		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}`),
-		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason)`,
+		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}; brief: "Call cap: ${r.calls}. Token ceiling: ${ceilings[i]}."`),
+		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason); expected, not a trip once the log has a baseline`,
+		`    Token ceiling per role: ${ceilingFrom}; the call-cap hook stops a reviewer there`,
 		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
 		first ? `    Re-sweep of ${rel(first)}: fixed ${(c.fixed || []).length} finding(s); its outcome logs --carried <n>` : `    Extras: ${extras} of ${cap.maxExtras} allowed beyond the floor`,
 		`    ${sweepLine(hash)}`,
@@ -721,11 +749,28 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 			if (m && m.role === 'assistant' && m.usage) seen.set(m.id || e.uuid, m);
 		}
 		const u = (m, k) => Number(m.usage[k]) || 0;
-		const tokens = [...seen.values()].reduce((t, m) => t + u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens'), 0);
+		const calls = [...seen.values()];
+		const per = (m) => u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens');
+		const tokens = calls.reduce((t, m) => t + per(m), 0);
+		// The split by kind (for a dollar ceiling later: cache reads are most of the meter and few of the dollars), the
+		// starting context, the largest and last call (the ceiling's margin), and the cache re-writes after the first
+		// call (a call that wrote over half of what it processed: the cache had expired).
+		const split = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+		for (const m of calls) { split.input += u(m, 'input_tokens'); split.cacheRead += u(m, 'cache_read_input_tokens'); split.cacheWrite += u(m, 'cache_creation_input_tokens'); split.output += u(m, 'output_tokens'); }
+		const shape = {
+			split,
+			firstCall: calls.length ? per(calls[0]) - u(calls[0], 'output_tokens') : 0,
+			maxCall: Math.max(0, ...calls.map(per)),
+			lastCall: calls.length ? per(calls[calls.length - 1]) : 0,
+			rewrites: calls.slice(1).filter((m) => u(m, 'cache_creation_input_tokens') * 2 > per(m)).length,
+			// Stopped: the call-cap hook refused a tool at the ceiling. Its own words in the transcript say so; the spend
+			// alone cannot tell a role that was stopped from one that was done.
+			stopped: parsed.some((e) => e && e.message && e.message.role === 'user' && Array.isArray(e.message.content) && e.message.content.some((x) => x && x.type === 'tool_result' && /Token ceiling reached/.test(typeof x.content === 'string' ? x.content : JSON.stringify(x.content)))),
+		};
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
 		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
 		toolIds.set(id, String(meta.toolUseId || ''));
-		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp) };
+		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, ...shape, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp) };
 	});
 	// A crash and its retry name one role by design.
 	const own = roles.filter((x) => x && !crashed.has(x.agent));
@@ -859,9 +904,9 @@ function outcome() {
 	}
 	let roles = [];
 	try { roles = JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []; } catch { /* labels only */ }
-	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, ...x }, i) => {
+	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, lastCall: _l, ...x }, i) => {
 		const c = read.roles.find((y) => isLost(y.agent) && y.index === index);
-		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null };
+		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null, ceiling: (decision.ceilings || [])[i] ?? null };
 	});
 	nums.tokens = per.reduce((t, x) => t + x.tokens, 0);
 	// Ten quiet minutes do not prove a crash: 16 of 303 reviewer transcripts paused that long and went on. A crashed
@@ -870,7 +915,24 @@ function outcome() {
 	for (const x of per) if (alive.includes(x.crashed)) x.crashedAlive = true;
 	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums, roles: per });
 	const trips = [];
-	if (decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
+	// The baselines are the roles measured before this outcome. Without enough of them the old whole-sweep trip stays.
+	const past = measuredRoles(s.log);
+	const bounded = Array.isArray(decision.ceilings) && past.length >= CEILING_MIN;
+	if (!bounded && decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
+	const n = (x) => Math.round(x).toLocaleString('en-US');
+	for (const x of per) if (x.ceiling && x.tokens > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(x.tokens)} against ${n(x.ceiling)} (the hook is missing or did not fire)`);
+	if (bounded) {
+		const stopped = per.filter((x) => x.stopped).length;
+		if (stopped > STOPPED_SHARE * per.length) trips.push(`${stopped} of ${per.length} roles stopped at their token ceiling (the work outgrew it)`);
+		const firsts = past.filter((r) => Number(r.firstCall) > 0).map((r) => Number(r.firstCall));
+		const start = median(per.map((x) => x.firstCall));
+		if (firsts.length >= CEILING_MIN && start > START_DRIFT * median(firsts)) trips.push(`the starting context (${n(start)}) is ${Math.round((start / median(firsts) - 1) * 100)}% over its median of ${n(median(firsts))} (rules or tools grew)`);
+		const content = median(per.map((x) => x.tokens / x.calls));
+		const p95 = nearestRank(past.map((r) => Number(r.tokens) / Number(r.calls)), CONTENT_PCT);
+		if (content > p95) trips.push(`content per call (${n(content)}) is over its p95 of ${n(p95)} (a new kind of work)`);
+		const rewrites = per.reduce((t, x) => t + (x.rewrites || 0), 0);
+		if (rewrites >= REWRITES_TRIP) trips.push(`${rewrites} cache re-writes after the first call (the cache expired between calls)`);
+	}
 	if (nums.findings > 0 && nums.duplicates * 3 >= nums.findings) trips.push(`${nums.duplicates} of ${nums.findings} findings repeated between roles`);
 	// The reviewer trial and the top-model rule rest on the model a role names, so a reviewer on another one is the owner's.
 	per.forEach((x, i) => {

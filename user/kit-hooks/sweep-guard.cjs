@@ -116,6 +116,9 @@ function main() {
 		if (!tag || tag[1] !== e.hash || !(n >= 0 && n < team)) return deny(`A reviewer's brief names its sweep and role, as the line "Sweep: ${e.hash} role <n>" (n from 1 to ${team}, the role's place in the cleared contract): the sweep skill has the wording.`);
 		// Each role's slot takes only its own cap, so one role cannot borrow another's.
 		if (Array.isArray(e.calls) && e.calls[n] !== Number(cap[1])) return deny(`Role ${n + 1} of the cleared contract has a call cap of ${e.calls[n]}, not ${cap[1]}: the brief carries its own role's cap.`);
+		// The call-cap hook stops a reviewer at the token ceiling its brief carries, so the brief carries its role's own.
+		const ceiling = prompt.match(/Token ceiling: (\d+)/);
+		if (Array.isArray(e.ceilings) && !(ceiling && Number(ceiling[1]) === e.ceilings[n])) return deny(`A reviewer's brief carries its role's token ceiling, as the line "Token ceiling: <n>", from the cleared contract (role ${n + 1}: ${e.ceilings[n]}): the start notice has it.`);
 		// The slot is for this role's review of this checkout: a brief carries its question, and runs where it was cleared.
 		const question = String((JSON.parse(raw).roles?.[n] || {}).question || '');
 		if (question && !prompt.includes(question)) return deny(`A reviewer's brief carries its role's question as the contract wrote it. Role ${n + 1}: "${question}"`);

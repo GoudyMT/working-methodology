@@ -42,7 +42,8 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did
    not get to as 'not checked'." In a project the start notice says has no hook, drop the hook sentence and have the reviewer count. The cap's last two calls are for the report. What a role did not check goes in the
    report as not checked, never as a pass. Each brief also carries `Sweep: <hash> role <n>` from the start notice
-   (n is the role's place in the contract). The sweep guard refuses a brief without both lines. The brief carries the
+   (n is the role's place in the contract) and the role's `Token ceiling: <n>` from it; the hook stops the reviewer
+   while one more call still fits under the ceiling, the same hand-in. The sweep guard refuses a brief without all three lines. The brief carries the
    diff (`git diff <base>...HEAD` for the files its role reads), not whole files: the reviewer reads more by range,
    and the call-cap hook refuses a whole file over 40 KB. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per

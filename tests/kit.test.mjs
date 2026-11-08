@@ -2371,6 +2371,8 @@ function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session
   for (const [id, calls] of Object.entries(spec)) {
     let model = 'claude-opus-5-5';
     const lines = calls.map((c, i) => {
+      // { refused: text } is a hook's refusal of a tool call, as Claude Code writes it into the transcript.
+      if (c && c.refused) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, is_error: true, content: c.refused }] } });
       const { id: mid = `msg_${id}_${i}`, u = c, model: m = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
       model = m;
       return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
@@ -2510,7 +2512,9 @@ function leadTag(dir, prompt) {
   const team = Number(e.agents) || 0;
   const fits = [...Array(team).keys()].filter((n) => !Array.isArray(e.calls) || e.calls[n] === Number(cap[1]));
   const n = fits.find((k) => !fs.existsSync(path.join(slots, String(k)))) ?? fits[0] ?? 0;
-  return ` Sweep: ${e.hash} role ${n + 1}`;
+  // The lead copies the role's token ceiling from the start notice too (M22 C).
+  const ceiling = Array.isArray(e.ceilings) && !/Token ceiling: \d+/.test(prompt) ? ` Token ceiling: ${e.ceilings[n]}.` : '';
+  return ` Sweep: ${e.hash} role ${n + 1}${ceiling}`;
 }
 // The lead also puts the role's own question in its brief; raw leaves a test's prompt as written.
 function leadQuestion(dir, prompt) {
@@ -2519,10 +2523,16 @@ function leadQuestion(dir, prompt) {
   if (!tag || !at) return '';
   try { return ` ${(JSON.parse(read(at[1].contract)).roles[Number(tag[1]) - 1] || {}).question || ''}`; } catch { return ''; }
 }
-const sweepGuard = (dir, { raw, ...extra } = {}) => {
+const sweepGuard = (dir, { raw, noCeiling, ...extra } = {}) => {
   const input = { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review. Call cap: 5.' }, ...extra };
   const p = input.tool_input && input.tool_input.prompt;
   if (typeof p === 'string' && !p.includes('Sweep:')) input.tool_input = { ...input.tool_input, prompt: p + leadTag(dir, p) };
+  // A brief that names its sweep already gets the token ceiling of the role it names, as the lead copies it.
+  else if (!noCeiling && typeof p === 'string' && !/Token ceiling: \d+/.test(p)) {
+    const tag = p.match(/Sweep: ([0-9a-f]{16}) role (\d+)/);
+    const e = tag && sweepLog(dir).map((l) => JSON.parse(l)).filter((x) => x.hash === tag[1] && Array.isArray(x.ceilings)).pop();
+    if (e) input.tool_input = { ...input.tool_input, prompt: `${p} Token ceiling: ${e.ceilings[Number(tag[2]) - 1]}.` };
+  }
   if (!raw && typeof input.tool_input?.prompt === 'string') input.tool_input.prompt += leadQuestion(dir, input.tool_input.prompt);
   const r = runHook('user/kit-hooks/sweep-guard.cjs', input);
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
@@ -4292,6 +4302,114 @@ test('the sweep guard starts a reviewer only with a brief that carries a call ca
   assert.equal(run('review this. Call cap: 40.').permissionDecision, 'deny', 'a cap the contract never set');
   assert.equal(run('review this. Call cap: 5.').permissionDecision, 'allow');
 });
+// M22 option C (the owner, 2026-11-05): a pre-run budget guess cannot land within 25% (sd(log) 0.35+ per sweep), so
+// each role is bounded instead. Its token ceiling is the p90 of the last 60 roles the log measured; the hook stops a
+// reviewer there, and the pause trips on drift signals. With under 20 roles measured there is no baseline yet, so
+// the ceiling is 1.25x the role's budget and the whole-sweep 25% trip stays.
+// Past outcomes, as the log holds them: chained lines (each names a hash of the line before), five roles a line.
+function seedOutcomes(dir, roles) {
+  const f = path.join(dir, '.git', 'kit-sweep-approvals.jsonl');
+  const lines = fs.existsSync(f) ? read(f).split('\n').filter(Boolean) : [];
+  for (let i = 0; i < roles.length; i += 5) {
+    const prev = lines.length ? crypto.createHash('sha256').update(lines[lines.length - 1]).digest('hex').slice(0, 16) : '';
+    lines.push(JSON.stringify({ time: new Date(Date.now() - 86400000).toISOString(), kind: 'outcome', contract: path.join(dir, 'sweeps', `old-${i}.json`), budget: 1, tokens: 1, findings: 0, real: 0, duplicates: 0, roles: roles.slice(i, i + 5), prev }));
+  }
+  fs.writeFileSync(f, lines.join('\n') + '\n');
+}
+const pastRole = (tokens, extra = {}) => ({ role: 'r', kind: 'security', model: 'claude-opus-5-5', tokens, calls: 6, firstCall: 10000, ...extra });
+
+test('a role\'s token ceiling is the p90 of the last 60 roles measured, or 1.25x its budget before 20 are', () => {
+  const dir = sweepRepo();
+  // Ten old roles far over everything, then 60 from 10,000 to 600,000: only the last 60 count.
+  seedOutcomes(dir, [...Array(10).fill(0).map(() => pastRole(9000000)), ...Array.from({ length: 60 }, (_, i) => pastRole((i + 1) * 10000))]);
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const d = approvalLog(dir).pop();
+  assert.deepEqual(d.ceilings, Array(5).fill(540000));
+  assert.match(r.stdout, /Token ceiling: 540000/);
+  assert.match(r.stdout, /p90 of the last 60 roles measured/);
+  const cold = approveRun(featureContract());
+  const c = approvalLog(cold.dir).pop();
+  assert.deepEqual(c.ceilings, c.budgets.map((b) => Math.round(b * 1.25)));
+  assert.match(cold.stdout, /fewer than 20 roles measured/);
+});
+
+test('the sweep guard starts a reviewer only with its role\'s token ceiling from the cleared contract', () => {
+  const r = approveRun(featureContract());
+  const e = approvalLog(r.dir).pop();
+  const brief = (ceiling) => `review. Call cap: 5. Sweep: ${e.hash} role 1.${ceiling} ${JSON.parse(read(r.f)).roles[0].question}`;
+  const run = (prompt) => sweepGuard(r.dir, { raw: true, noCeiling: true, tool_input: { subagent_type: 'reviewer', prompt } });
+  const none = run(brief(''));
+  assert.equal(none.permissionDecision, 'deny');
+  assert.match(none.permissionDecisionReason, /Token ceiling: <n>/);
+  assert.equal(run(brief(` Token ceiling: ${e.ceilings[0] + 1}.`)).permissionDecision, 'deny', 'a ceiling the contract never set');
+  assert.equal(run(brief(` Token ceiling: ${e.ceilings[0]}.`)).permissionDecision, 'allow');
+});
+
+test('the call-cap hook stops a reviewer before a call would take it past its token ceiling', () => {
+  const dir = makeTemp('ceil-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  const hook = (calls, extra = {}) => {
+    const lines = [{ message: { role: 'user', content: 'a brief. Call cap: 12. Token ceiling: 100000.' } }];
+    // Streaming writes a message's id on several lines; it counts once, at its last line.
+    for (let i = 0; i < calls; i++) for (const part of [1, 30000]) lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 0, cache_read_input_tokens: part, cache_creation_input_tokens: 0, output_tokens: 0 } } });
+    fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 }, ...extra });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+  };
+  assert.equal(hook(2).permissionDecision, 'allow', '60,000 spent; one more call of 30,000 stays under 100,000');
+  const stop = hook(3);
+  assert.equal(stop.permissionDecision, 'deny', '90,000 spent; one more call would pass 100,000');
+  assert.match(stop.permissionDecisionReason, /token ceiling reached \(90,000 of 100,000\)[\s\S]*hand in your report/i);
+  assert.equal(hook(3, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow', 'the report always goes');
+  assert.equal(hook(3, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers');
+});
+
+// Each sweep below runs on a log of 25 measured roles of 200,000 tokens over 6 calls, starting at 10,000: the
+// ceiling is 200,000, content per call 33,333, and every baseline the drift signals read exists. Each role's cap is 5.
+function driftSweep(spec) {
+  const dir = sweepRepo();
+  seedOutcomes(dir, Array.from({ length: 25 }, () => pastRole(200000)));
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const ids = spec.map(() => `t${++agentSeq}`);
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, spec[i]])));
+  const o = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  return { o, line: approvalLog(dir).filter((e) => e.kind === 'outcome').pop() };
+}
+// A role that starts at 10,000 and reads 28,000 on each of 5 more calls: 150,000, well inside its ceiling.
+const usual = () => [[10000, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])];
+
+test('under token ceilings a sweep 40% over its budget does not pause: the bound holds each role instead', () => {
+  const { o, line } = driftSweep(Array(5).fill(0).map(usual));
+  assert.equal(line.tokens, 750000, 'over 1.25x the 537,500 budget');
+  assert.doesNotMatch(o.stdout, /paused/);
+  assert.deepEqual(line.roles[0].split, { input: 10000, cacheRead: 140000, cacheWrite: 0, output: 0 }, 'the split is logged, for a dollar ceiling later');
+  assert.equal(line.roles[0].ceiling, 200000);
+  assert.equal(line.roles[0].firstCall, 10000);
+  assert.equal(line.roles[0].stopped, false);
+});
+
+test('the drift signals pause a sweep, each by name', () => {
+  const over = driftSweep([[[10000, 0, 0, 0], ...Array(5).fill([0, 60000, 0, 0])], usual(), usual(), usual(), usual()]);
+  assert.match(over.o.stdout, /paused: .*the token ceiling did not hold for security reviewer: 310,000 against 200,000/, '310,000 is past 200,000 plus one 60,000 call');
+  // A role the hook stopped: its refusal is in the transcript, and the hand-back is the call after it.
+  const atCeiling = () => [[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), { refused: 'Token ceiling reached (122,000 of 200,000): one more call would pass it.' }, [0, 60000, 0, 0]];
+  // One call that would double a role's spend is no stop when the role finished without one.
+  assert.doesNotMatch(driftSweep(Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 120000, 0, 0]])).o.stdout, /stopped at their token ceiling/);
+  const stopped = [atCeiling(), atCeiling(), usual(), usual(), usual()];
+  assert.match(driftSweep(stopped).o.stdout, /paused: .*2 of 5 roles stopped at their token ceiling/);
+  assert.doesNotMatch(driftSweep([stopped[0], usual(), usual(), usual(), usual()]).o.stdout, /paused/, 'one of five is no drift');
+  const start = Array(5).fill(0).map(() => [[11500, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]);
+  assert.match(driftSweep(start).o.stdout, /paused: .*the starting context .*15% over its median of 10,000/);
+  const rewrite = [[[10000, 0, 0, 0], [0, 28000, 0, 0], [0, 0, 30000, 0]], [[10000, 0, 0, 0], [0, 0, 30000, 0]], usual(), usual(), usual()];
+  assert.match(driftSweep(rewrite).o.stdout, /paused: .*2 cache re-writes after the first call/);
+  const heavy = Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 60000, 0, 0], [0, 60000, 0, 0]]);
+  assert.match(driftSweep(heavy).o.stdout, /paused: .*content per call .*over its p95 of 33,333/);
+});
+
 test('the project settings wire the call-cap hook on every tool', () => {
   const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
   const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('kit-hooks/call-cap.cjs')));

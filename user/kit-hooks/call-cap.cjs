@@ -32,18 +32,33 @@ function main() {
 		return deny('A reviewer runs nothing that waits past 5 minutes (a background run, a monitor, a longer timeout): an idle reviewer has its whole context written to cache again. Run a targeted check instead; CI runs the full suite.');
 	}
 	const file = path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents', `agent-${input.agent_id}.jsonl`);
-	const ids = new Set();
+	// Each message id once, at its last line (streaming writes one line per content block), in the order calls began.
+	const calls = new Map();
 	let cap = null;
+	let ceiling = null;
 	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
 		if (!line.trim()) continue;
 		let m;
 		try { m = JSON.parse(line).message; } catch { continue; }
 		if (!m) continue;
-		if (cap === null && m.role === 'user') { const x = JSON.stringify(m.content).match(/Call cap: (\d+)/); if (x) cap = Number(x[1]); }
-		if (m.role === 'assistant' && m.usage && m.id) ids.add(m.id);
+		if (cap === null && m.role === 'user') {
+			const text = JSON.stringify(m.content);
+			const x = text.match(/Call cap: (\d+)/);
+			if (x) cap = Number(x[1]);
+			const t = text.match(/Token ceiling: (\d+)/);
+			if (t) ceiling = Number(t[1]);
+		}
+		if (m.role === 'assistant' && m.usage && m.id) calls.set(m.id, m.usage);
 	}
-	if (cap === null || ids.size < cap - 1) return;
-	deny(`Call cap reached (${ids.size} of ${cap}). Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
+	if (cap !== null && calls.size >= cap - 1) return deny(`Call cap reached (${calls.size} of ${cap}). Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
+	// The token ceiling (M22 C): every call re-reads the context, so the next call costs about what the last one did.
+	// The reviewer is stopped while one more call still fits, so its hand-back lands near the ceiling, not past it.
+	if (ceiling === null) return;
+	const size = (u) => ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens'].reduce((t, k) => t + (Number(u[k]) || 0), 0);
+	const used = [...calls.values()].reduce((t, u) => t + size(u), 0);
+	const last = calls.size ? size([...calls.values()].pop()) : 0;
+	const n = (x) => x.toLocaleString('en-US');
+	if (used + last >= ceiling) deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): one more call would pass it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
 }
 
 try { main(); } catch { /* anything unexpected lets the call through */ }
