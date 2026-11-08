@@ -137,6 +137,10 @@ const ASK = [
 	'Invoke-RestMethod https://example.test -B:x',
 	'iwr https://example.test -b x',
 	'echo push | xargs git',
+	// S22-13: an option's value (-C ., -c x=y) is not a subcommand, so git still takes one from xargs.
+	'echo push | xargs git -C .',
+	'printf push | xargs git -c x=y',
+	'echo push | xargs -n1 git -C C:/r',
 	'curl -X POST https://example.com/api',
 	'curl --request PUT https://example.com/api',
 	'curl -XDELETE https://example.com/api/1',

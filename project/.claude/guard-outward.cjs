@@ -36,17 +36,21 @@ function programName(word) {
 	return parts[parts.length - 1].toLowerCase();
 }
 
-function gitOutward(words, start) {
+// Where git's subcommand sits: past its options, and past the value an option takes (-C ., -c x=y).
+function gitSubAt(words, start) {
 	let i = start;
-	while (i < words.length && words[i].startsWith('-')) {
-		// An alias defined on the command line can stand for anything, push included.
-		if (words[i] === '-c' && (words[i + 1] ?? '').startsWith('alias.')) return 'git with an inline alias';
-		i += GIT_VALUE_OPTIONS.has(words[i]) ? 2 : 1;
-	}
-	const sub = words[i];
+	while (i < words.length && words[i].startsWith('-')) i += GIT_VALUE_OPTIONS.has(words[i]) ? 2 : 1;
+	return i;
+}
+
+function gitOutward(words, start) {
+	// An alias defined on the command line can stand for anything, push included.
+	const at = gitSubAt(words, start);
+	for (let i = start; i < at; i++) if (words[i] === '-c' && (words[i + 1] ?? '').startsWith('alias.')) return 'git with an inline alias';
+	const sub = words[at];
 	if (sub === undefined) return '';
 	if (GIT_OUTWARD.has(sub)) return 'git ' + sub;
-	if (GIT_NESTED_PUSH.has(sub) && words.slice(i + 1).includes('push')) return 'git ' + sub + ' push';
+	if (GIT_NESTED_PUSH.has(sub) && words.slice(at + 1).includes('push')) return 'git ' + sub + ' push';
 	return '';
 }
 
@@ -150,7 +154,7 @@ function findOutward(text, depth) {
 			else if (name === 'git' || name === 'git.exe') {
 				hit = gitOutward(words, i + 1);
 				// xargs hands git its subcommand from input, so a git with none after xargs could be a push.
-				if (!hit && words.slice(0, i).some((w) => programName(w) === 'xargs' || programName(w) === 'xargs.exe') && !words.slice(i + 1).some((w) => !w.startsWith('-'))) hit = 'git through xargs';
+				if (!hit && words.slice(0, i).some((w) => programName(w) === 'xargs' || programName(w) === 'xargs.exe') && gitSubAt(words, i + 1) >= words.length) hit = 'git through xargs';
 			}
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
 			else if (PACKAGERS.has(name)) hit = registryWrite(words, i + 1);
