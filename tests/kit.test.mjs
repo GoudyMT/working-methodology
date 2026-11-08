@@ -325,6 +325,25 @@ test('status warns when the temp disk runs low on inodes, and is silent when it 
   assert.doesNotMatch(at('unknown', null).text, /Temp disk/);
 });
 
+// S22-3: before 2.1.295 Claude Code ignores onFailure, so a guard that crashes or times out lets the command run.
+test('status and session start flag a Claude Code too old for onFailure, and stay quiet when new or unknown', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  const at = (v) => status({ kit, home, projectDir: proj, ahead: () => 0, claudeVersion: () => v });
+  const old = at('2.1.294 (Claude Code)');
+  assert.equal(old.current, false);
+  assert.match(old.text, /Claude Code 2\.1\.294 is older than 2\.1\.295: a guard that crashes or times out lets the command run\. Run claude update\./);
+  assert.match(old.text, /Not current: .*Claude Code is older than 2\.1\.295/);
+  assert.match(at('2.0.999 (Claude Code)').text, /older than 2\.1\.295/);
+  for (const v of ['2.1.295 (Claude Code)', '2.1.302 (Claude Code)', '3.0.0', null, 'garbage']) {
+    assert.doesNotMatch(at(v).text, /older than 2\.1\.295/, String(v));
+  }
+  assert.equal(at('2.1.302 (Claude Code)').current, true);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.200' }), /Claude Code 2\.1\.200 is older than 2\.1\.295/);
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.295' }), /older than/);
+});
+
 test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });

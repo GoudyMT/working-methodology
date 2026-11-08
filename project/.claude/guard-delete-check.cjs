@@ -615,6 +615,9 @@ const CARRY122_ASK = [
 	'cmake -E rm -rf C:/other',
 	'cmake.exe -E remove_directory build C:/other',
 	'"C:/Program Files/CMake/bin/cmake.exe" -E remove_directory C:/other',
+	// The 1.23.0 security review: cmake -E chdir runs the rest of the line in the folder it names.
+	'cmake -E chdir C:/other cmake -E remove_directory x',
+	'cmake -E chdir C:/other rm -rf x',
 ];
 // PowerShell's -Force reaches hidden names, .git among them, where bash's * does not.
 const CARRY122_PS_ASK = ['Remove-Item -Recurse -Force *', 'Remove-Item -Recurse -Force .*', 'rm -r -fo *', 'Remove-Item -Force -Recurse *git'];

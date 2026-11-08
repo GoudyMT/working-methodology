@@ -472,6 +472,8 @@ function findDelete(text, ctx, state, depth) {
 				}
 			}
 			// cmake -E rm, remove and remove_directory delete every word after them that is not an option.
+			// cmake -E chdir runs the rest of the line in the folder it names.
+			else if ((name === 'cmake' || name === 'cmake.exe') && rest[rest.indexOf('-E') + 1] === 'chdir' && rest.includes('-E')) state.moved = true;
 			else if ((name === 'cmake' || name === 'cmake.exe') && /^(rm|remove|remove_directory)$/.test(rest[rest.indexOf('-E') + 1] ?? '') && rest.includes('-E')) {
 				const targets = rest.slice(rest.indexOf('-E') + 2).filter((w) => !w.startsWith('-'));
 				for (const target of targets) {

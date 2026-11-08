@@ -66,18 +66,22 @@ function ghApiWrites(words, start) {
 
 // npm publish, pnpm publish, yarn npm publish: a registry write among the first two subcommand words.
 // An option's value may sit before the subcommand (npm --otp 1 publish), so a write word anywhere counts; asking on a
-// package that happens to share the name is the safe side. npm reads its flags in order and the last one wins, so a
-// dry run counts only when the last word that sets it is a plain --dry-run or --dry-run=true: --dry-run false,
-// --no-dry-run, and abbreviations nopt would also take (--dry, --no-dry) leave it a real write.
+// package that happens to share the name is the safe side. npm (nopt) reads its flags in order and the last one wins;
+// it drops extra dashes, flips the value on each no- in any case, takes a unique abbreviation (--dry), and reads no
+// flag after --. So a dry run counts only when the last word that sets it is exactly --dry-run (not followed by
+// false) or --dry-run=true; any other word that may set it leaves the command a real write.
 function registryWrite(words, start) {
 	const rest = words.slice(start);
 	let dry = false;
 	for (let i = 0; i < rest.length; i++) {
 		const w = rest[i];
-		const flag = w.split('=')[0];
-		if (w === '--dry-run') dry = !/^(false|0|no)$/.test(rest[i + 1] ?? '');
-		else if (flag === '--dry-run') dry = /^--dry-run=(true|1|yes)$/.test(w);
-		else if ((flag.length > 4 && '--dry-run'.startsWith(flag)) || (flag.length > 5 && '--no-dry-run'.startsWith(flag))) dry = false;
+		if (w === '--') break;
+		if (!w.startsWith('-')) continue;
+		let name = w.replace(/^-+/, '').split('=')[0].toLowerCase();
+		while (name.startsWith('no-')) name = name.slice(3);
+		if (name.length < 2 || !'dry-run'.startsWith(name)) continue;
+		if (w === '--dry-run') dry = !/^(false|0|no)$/i.test(rest[i + 1] ?? '');
+		else dry = /^--dry-run=(true|1|yes)$/.test(w);
 	}
 	if (dry) return '';
 	const hit = rest.find((w) => REGISTRY_WRITES.has(w));

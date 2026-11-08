@@ -126,6 +126,12 @@ const ASK = [
 	'npm publish --dry-run --dry false',
 	'npm publish --dry-run=yes --dry-run=no',
 	'pnpm publish --dry-run --no-dry-run',
+	// The 1.23.0 security review: nopt drops extra dashes, toggles on each no- in any case, and takes no flag after --.
+	'npm publish --dry-run ---no-dry-run',
+	'npm publish --dry-run --No-dry-run',
+	'npm publish --dry-run -no-dry-run',
+	'npm publish --dry-run --no-no-no-dry-run',
+	'npm publish -- --dry-run',
 	// S22-12: -B is the only B parameter, so PowerShell binds it to -Body.
 	'Invoke-WebRequest https://example.test -B x',
 	'Invoke-RestMethod https://example.test -B:x',
