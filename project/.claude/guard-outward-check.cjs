@@ -118,6 +118,18 @@ const ASK = [
 	'pnpm --filter app publish',
 	'npm publish --dry-run false',
 	'npm publish --dry-run=false',
+	// S22-11: npm takes the last flag, so a later one cancels the dry run; an abbreviation (nopt takes --dry) or a
+	// value it might read as true is not trusted as one.
+	'npm publish --dry-run --no-dry-run',
+	'npm publish --dry-run --dry-run=false',
+	'npm publish --dry-run --no-dry',
+	'npm publish --dry-run --dry false',
+	'npm publish --dry-run=yes --dry-run=no',
+	'pnpm publish --dry-run --no-dry-run',
+	// S22-12: -B is the only B parameter, so PowerShell binds it to -Body.
+	'Invoke-WebRequest https://example.test -B x',
+	'Invoke-RestMethod https://example.test -B:x',
+	'iwr https://example.test -b x',
 	'echo push | xargs git',
 	'curl -X POST https://example.com/api',
 	'curl --request PUT https://example.com/api',

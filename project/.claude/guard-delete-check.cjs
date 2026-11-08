@@ -609,6 +609,12 @@ const CARRY122_ASK = [
 	'zip --move a.zip C:/other/x',
 	"pythonw -c \"import shutil; shutil.rmtree('C:/other')\"",
 	"pyw -c \"import shutil; shutil.rmtree('C:/other')\"",
+	// S22-6: cmake -E deletes with rm, remove and remove_directory (the last two are older names).
+	'cmake -E remove_directory C:/other',
+	'cmake -E remove -f C:/other/x',
+	'cmake -E rm -rf C:/other',
+	'cmake.exe -E remove_directory build C:/other',
+	'"C:/Program Files/CMake/bin/cmake.exe" -E remove_directory C:/other',
 ];
 // PowerShell's -Force reaches hidden names, .git among them, where bash's * does not.
 const CARRY122_PS_ASK = ['Remove-Item -Recurse -Force *', 'Remove-Item -Recurse -Force .*', 'rm -r -fo *', 'Remove-Item -Force -Recurse *git'];
@@ -617,6 +623,10 @@ const CARRY122_PASS = [
 	'tar --remove-files -cf a.tar build/x',
 	'zip -r a.zip build',
 	'zip -m a.zip build/x',
+	'cmake -E remove_directory build',
+	'cmake -E remove -f build/x',
+	'cmake -E rm -rf build',
+	'cmake -E copy_directory C:/other build',
 	'pnpm --dir build test',
 	'Remove-Item -Recurse build\\*',
 	'Remove-Item -Recurse -Force build\\*',

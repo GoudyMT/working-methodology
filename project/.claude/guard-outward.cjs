@@ -66,10 +66,19 @@ function ghApiWrites(words, start) {
 
 // npm publish, pnpm publish, yarn npm publish: a registry write among the first two subcommand words.
 // An option's value may sit before the subcommand (npm --otp 1 publish), so a write word anywhere counts; asking on a
-// package that happens to share the name is the safe side. --dry-run false is not a dry run.
+// package that happens to share the name is the safe side. npm reads its flags in order and the last one wins, so a
+// dry run counts only when the last word that sets it is a plain --dry-run or --dry-run=true: --dry-run false,
+// --no-dry-run, and abbreviations nopt would also take (--dry, --no-dry) leave it a real write.
 function registryWrite(words, start) {
 	const rest = words.slice(start);
-	const dry = rest.some((w, i) => (w === '--dry-run' && !/^(false|0|no)$/.test(rest[i + 1] ?? '')) || /^--dry-run=(true|1|yes)$/.test(w));
+	let dry = false;
+	for (let i = 0; i < rest.length; i++) {
+		const w = rest[i];
+		const flag = w.split('=')[0];
+		if (w === '--dry-run') dry = !/^(false|0|no)$/.test(rest[i + 1] ?? '');
+		else if (flag === '--dry-run') dry = /^--dry-run=(true|1|yes)$/.test(w);
+		else if ((flag.length > 4 && '--dry-run'.startsWith(flag)) || (flag.length > 5 && '--no-dry-run'.startsWith(flag))) dry = false;
+	}
 	if (dry) return '';
 	const hit = rest.find((w) => REGISTRY_WRITES.has(w));
 	return hit ? 'a package ' + hit : '';
@@ -86,7 +95,8 @@ function httpWrite(name, words) {
 		// letter read from an attached value can only add an ask. PowerShell binds a value with a colon (-Method:Post)
 		// and takes a unique prefix of a parameter (-Bo, -InF).
 		const cluster = curl && /^-[A-Za-z0-9]+$/.test(w) ? w.slice(1) : '';
-		const ps = lower.match(/^-(me(?:t(?:h(?:o(?:d)?)?)?)?|bo(?:d(?:y)?)?|inf(?:i(?:l(?:e)?)?)?)(?::(.*))?$/);
+		// -B alone is a prefix too: Body is the only parameter of either cmdlet that starts with B.
+		const ps = lower.match(/^-(me(?:t(?:h(?:o(?:d)?)?)?)?|b(?:o(?:d(?:y)?)?)?|inf(?:i(?:l(?:e)?)?)?)(?::(.*))?$/);
 		if (cluster.includes('X')) method = cluster.slice(cluster.indexOf('X') + 1) || (words[i + 1] ?? '');
 		else if (cluster && /[dFT]/.test(cluster)) return 'an HTTP write';
 		else if (lower === '--request' || lower === '--method') method = words[i + 1] ?? '';
