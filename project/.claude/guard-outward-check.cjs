@@ -242,6 +242,12 @@ const ASK = [
 	// xargs -I puts its input in place of any word, git's subcommand too.
 	'echo push | xargs -I % git %',
 	'echo push | xargs -I{} git {}',
+	// A resume is the owner's: the terminal's way always asks, the thread's way only with its proof in its own command.
+	'env -u CLAUDECODE -u AI_AGENT KIT_OWNER_RESUME=1 node approve.mjs --resume',
+	"Remove-Item Env:CLAUDECODE; $env:KIT_OWNER_RESUME='1'; node approve.mjs --resume",
+	'node approve.mjs --resume',
+	'node approve.mjs --resume # --thread cmsg_aaaaaaaaaa',
+	'node approve.mjs --resume; echo --thread cmsg_aaaaaaaaaa',
 	'echo push | xargs -0I % git %',
 	'echo push | xargs -rI% git %',
 	// Proven only when the yes is proven with its comments cut too: cutting may not make a proof.
@@ -328,6 +334,9 @@ const PASS = [
 	'gem install rake',
 	'gem list',
 	'echo x | xargs -I % echo %',
+	'node approve.mjs --resume --thread cmsg_Abcdefgh12',
+	'node approve.mjs c.json --owner-yes "yes abc123" --thread cmsg_Abcdefgh12',
+	'claude --resume',
 ];
 
 let wrong = 0;

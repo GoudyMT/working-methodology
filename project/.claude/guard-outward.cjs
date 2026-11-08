@@ -198,21 +198,27 @@ function findOutward(text, depth) {
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	// The proof must be an argument of the same command as the yes: one elsewhere on the line proves nothing.
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
-	if (/--owner-yes/i.test(flat)) {
+	// The terminal's way to resume is the owner's alone; the thread's way carries its proof, as the yes does (the 1.23.0
+	// sweep: a resume with the AI shell's variables unset asked nothing).
+	if (/KIT_OWNER_RESUME/i.test(flat)) return 'an owner resume of the sweep tools';
+	const resume = /appr[^\s;|&]*\s[^;|&\n]*--resume\b/i.test(flat);
+	if (/--owner-yes/i.test(flat) || resume) {
+		const flag = /--owner-yes/i.test(flat) ? /^--owner-yes(=|$)/i : /^--resume$/i;
+		const what = resume && !/--owner-yes/i.test(flat) ? 'an owner resume of the sweep tools' : 'an owner yes for a sweep';
 		// An escape (\, a backtick, a caret, $'...') can move where a quote ends, so a yes holding one is not proven.
-		if (/[\\`^]|\$'/.test(text)) return 'an owner yes for a sweep';
+		if (/[\\`^]|\$'/.test(text)) return what;
 		// Read with its quotes, so a quoted span stays one word: a --thread inside the yes's words is no proof. A
 		// comment is cut first: the shell never hands approve.mjs a --thread after a # (the 1.23.0 sweep).
 		const provenIn = (t) => tokenize(joinContinuations(t)).some((all) => {
 			const w = all.filter((x) => !x.redirect).map((x) => x.value);
-			const at = w.findIndex((x) => /^--owner-yes(=|$)/i.test(x));
+			const at = w.findIndex((x) => flag.test(x));
 			const th = w.indexOf('--thread');
 			return at >= 0 && th >= 0 && /^cmsg_[A-Za-z0-9]{8,64}$/.test(w[th + 1] ?? '');
 		});
 		// Proven as written and with its comments cut: cutting may only take a proof away, never make one.
 		const proven = provenIn(plainText(text)) && provenIn(withoutComments(plainText(text)));
-		const segments = tokenize(joinContinuations(flat)).filter((all) => all.some((x) => /--owner-yes/i.test(x.value)));
-		if (!proven || segments.length !== 1) return 'an owner yes for a sweep';
+		const segments = tokenize(joinContinuations(flat)).filter((all) => all.some((x) => /--owner-yes|--resume/i.test(x.value)));
+		if (!proven || segments.length !== 1) return what;
 	}
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
 	// An alias set from the environment names no git before it (GIT_CONFIG_KEY_0=alias.x, cargo's CARGO_ALIAS_X), and
