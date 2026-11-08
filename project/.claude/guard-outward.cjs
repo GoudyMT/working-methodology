@@ -62,7 +62,7 @@ function imageBuildPush(rest) {
 	if (rest.includes('imagetools') && rest.includes('create')) return true;
 	// The safe side for every other way to set an output (a later type= in one value, bake's --set x.output=, a short
 	// flag cluster): any word naming a registry or a push= asks.
-	if (rest.some((w) => /registry|push=|type=image/.test(w))) return true;
+	if (rest.some((w) => /registry|type=image/.test(w) || /(^|[,.])push=(?!(false|0|f)(,|$))/.test(w))) return true;
 	for (let k = 0; k < rest.length; k++) {
 		const w = rest[k];
 		if (w === '--push' || (w.startsWith('--push=') && !/^--push=(false|0|f)$/.test(w))) return true;
