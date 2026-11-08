@@ -137,6 +137,19 @@ const ASK = [
 	'Invoke-RestMethod https://example.test -B:x',
 	'iwr https://example.test -b x',
 	'echo push | xargs git',
+	// S22-R7: other programs that send to a remote or publish.
+	'git svn dcommit',
+	'git p4 submit',
+	'docker push ghcr.io/o/app:1',
+	'podman push quay.io/o/app',
+	'cargo publish',
+	'twine upload dist/*',
+	'python -m twine upload dist/*',
+	'gem push x.gem',
+	'dotnet nuget push x.nupkg',
+	'scp a.txt user@host:/tmp',
+	'rsync -a build/ host:/srv/www',
+	'rsync -a build/ rsync://host/mod',
 	// S22-13: an option's value (-C ., -c x=y) is not a subcommand, so git still takes one from xargs.
 	'echo push | xargs git -C .',
 	'printf push | xargs git -c x=y',
@@ -158,6 +171,14 @@ const ASK = [
 ];
 
 const PASS = [
+	'git svn log',
+	'docker pull node:22',
+	'docker build -t app .',
+	'cargo build',
+	'cargo publish --dry-run',
+	'twine check dist/*',
+	'rsync -a build/ C:/backup/build',
+	'rsync -a build/ /mnt/c/backup',
 	'curl -sSL https://example.test',
 	'curl -sIL https://example.test',
 	'iwr https://example.test -Method:Get',

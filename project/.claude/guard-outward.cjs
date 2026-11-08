@@ -23,12 +23,19 @@ const REGISTRY_WRITES = new Set(['publish', 'unpublish', 'dist-tag', 'deprecate'
 // wget are names for Invoke-WebRequest, so its -Method and -Body count for them too.
 const HTTP_CLIENTS = /^(curl|wget|invoke-webrequest|invoke-restmethod|iwr|irm)(\.exe)?$/;
 const GIT_NESTED_PUSH = new Set(['lfs', 'subtree']);
+// A git bridge that sends commits to another system: git svn dcommit, git p4 submit.
+const GIT_BRIDGES = { svn: 'dcommit', p4: 'submit' };
+// Other programs that publish or send to a remote: the subcommand that does it.
+const PUBLISHERS = { docker: 'push', podman: 'push', cargo: 'publish', twine: 'upload', gem: 'push', nuget: 'push' };
 
 const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
 const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
+
+// A program name without its .exe: docker.exe -> docker.
+const base = (name) => name.replace(/\.exe$/, '');
 
 // The program a word names, whatever folder it sits in: "C:/Program Files/Git/cmd/git.exe" -> "git.exe".
 function programName(word) {
@@ -51,6 +58,7 @@ function gitOutward(words, start) {
 	if (sub === undefined) return '';
 	if (GIT_OUTWARD.has(sub)) return 'git ' + sub;
 	if (GIT_NESTED_PUSH.has(sub) && words.slice(at + 1).includes('push')) return 'git ' + sub + ' push';
+	if (Object.hasOwn(GIT_BRIDGES, sub) && words.slice(at + 1).includes(GIT_BRIDGES[sub])) return 'git ' + sub + ' ' + GIT_BRIDGES[sub];
 	return '';
 }
 
@@ -158,6 +166,10 @@ function findOutward(text, depth) {
 			}
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
 			else if (PACKAGERS.has(name)) hit = registryWrite(words, i + 1);
+			else if (Object.hasOwn(PUBLISHERS, base(name)) && words.slice(i + 1).includes(PUBLISHERS[base(name)]) && !words.includes('--dry-run')) hit = base(name) + ' ' + PUBLISHERS[base(name)];
+			// scp always copies to or from another host; rsync does when a word names one (host:path, rsync://).
+			else if (base(name) === 'scp') hit = 'scp';
+			else if (base(name) === 'rsync' && words.slice(i + 1).some((w) => !w.startsWith('-') && (w.startsWith('rsync://') || /^[^/\\:]{2,}:/.test(w)))) hit = 'rsync to another host';
 			else if (HTTP_CLIENTS.test(name)) hit = httpWrite(name, segment.slice(i + 1).map((word) => word.value));
 			if (hit) return hit;
 		}
