@@ -715,6 +715,8 @@ const ASK = [
 ];
 
 const PASS = [
+	// M27, from the 1.23.0 mutation check: a command may start with a space, and its search pattern is still not run.
+	' grep -rn "rm -rf /" .',
 	...SWEEP_PASS,
 	...RESWEEP_PASS,
 	...HOLES_PASS,

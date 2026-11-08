@@ -141,6 +141,11 @@ const ASK = [
 	'Invoke-RestMethod https://example.test -B:x',
 	'iwr https://example.test -b x',
 	'echo push | xargs git',
+	// M27, from the 1.23.0 mutation check: the reader stopped after four brace groups, so four decoys hid a fifth.
+	'echo {a,b} {c,d} {e,f} {g,h}; git {push,status} origin',
+	`echo ${'{a,b} '.repeat(40)}; git {push,status} origin`,
+	// Past the reader's size cap the groups left are unread, so it asks.
+	`echo ${'x'.repeat(100001)} {a,b}`,
 	// S22-R7: other programs that send to a remote or publish.
 	'git svn dcommit',
 	'git p4 submit',
