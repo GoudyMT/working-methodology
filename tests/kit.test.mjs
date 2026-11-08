@@ -1271,7 +1271,15 @@ test('the PR body audits read a dash inside inline code as code, and still catch
   };
   assert.match(dashes('pr-body-audit-lean.mjs', lean('run it with `node --experimental-default-type=module math.test.js`.'), 'feat: add a subtract function'), /^PASS/);
   assert.match(dashes('pr-body-audit-lean.mjs', lean('it runs -- for now -- by hand.'), 'feat: add a subtract function'), /^FAIL/);
-  const std = (line) => `## Math: subtract\n\nFraming.\n\n### Summary\n\n${line}\n`;
+  // M28, from the 1.23.0 mutation check: a prose dash before a fenced block is still prose, and the fence is code.
+  const fenced = lean('it runs -- for now -- by hand.').replace('**Notes**', '```\nnode --test\n```\n\n**Notes**');
+  assert.match(dashes('pr-body-audit-lean.mjs', fenced, 'feat: add a subtract function'), /^FAIL.*lines \d+$/);
+  assert.match(dashes('pr-body-audit-lean.mjs', lean('it runs by hand.').replace('**Notes**', '```\nnode --test -- x\n```\n\n**Notes**'), 'feat: add a subtract function'), /^PASS/);
+  // And an H1 with neither an area nor a type prefix fails its row.
+  const h1 = (text) => { const f = path.join(dir, 'h.md'); fs.writeFileSync(f, text); return spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, 'feat: add a subtract function'], { encoding: 'utf8' }).stdout.split('\n').find((l) => l.includes('H1 is <Area>')); };
+  assert.match(h1(lean('by hand.').replace('## Math: add', '## add')), /^FAIL/);
+  assert.match(h1(lean('by hand.')), /^PASS/);
+  const std =(line) => `## Math: subtract\n\nFraming.\n\n### Summary\n\n${line}\n`;
   assert.match(dashes('pr-body-audit.mjs', std('Run `node --test` to check.'), 'Math: subtract'), /^PASS/);
   assert.match(dashes('pr-body-audit.mjs', std('It runs -- for now -- by hand.'), 'Math: subtract'), /^FAIL/);
 });
