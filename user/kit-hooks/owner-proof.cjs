@@ -15,7 +15,8 @@ const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
 // install user fills this in, so a caller cannot move the protected folder with CLAUDE_CONFIG_DIR.
 const INSTALLED_HOME = '{{CLAUDE_HOME}}';
 const home = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
-const READERS = new Set(['cat', 'head', 'tail', 'less', 'more', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'wc', 'stat', 'test-path', 'file']);
+// Plain readers only: rg (--pre) and less (LESSOPEN) can run another program.
+const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'wc', 'stat', 'test-path', 'file']);
 const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
 const REASON = 'The session transcripts and kit-owner.json hold the owner\'s thread answers, so no tool writes them: read them, or leave them to Claude Code and the owner.';
@@ -32,7 +33,8 @@ function insideProof(file, cwd) {
 function names(word) {
 	const w = slash(word).replace(/["']/g, '');
 	const h = slash(path.resolve(home()));
-	if (/\.claude\/projects\/[^/\s]+\/memory(\/|\s|$)/.test(w) && !/kit-owner\.json/.test(w) && !/\.claude\/projects\/[^/\s]+\/(?!memory)[^/\s]/.test(w.replace(/\.claude\/projects\/[^/\s]+\/memory\S*/g, ''))) return false;
+	// A .. can climb out of memory/ to a transcript, so a word with one is never the memory's.
+	if (/\.claude\/projects\/[^/\s]+\/memory(\/|\s|$)/.test(w) && !/\.\.(\/|\s|$)/.test(w) && !/kit-owner\.json/.test(w) && !/\.claude\/projects\/[^/\s]+\/(?!memory)[^/\s]/.test(w.replace(/\.claude\/projects\/[^/\s]+\/memory\S*/g, ''))) return false;
 	return /(^|[/\\]|\$\w+|~|%\w+%)\.claude\/projects(\/|$)/.test(w) || w.includes(`${h}/projects`) || /kit-owner\.json/.test(w);
 }
 

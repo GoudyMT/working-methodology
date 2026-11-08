@@ -35,6 +35,9 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['PowerShell', { command: 'Set-Content -Path $env:USERPROFILE\\.claude\\kit-owner.json -Value "{}"' }],
 		['PowerShell', { command: 'Copy-Item a.jsonl $env:USERPROFILE\\.CLAUDE\\Projects\\p\\' }],
 		['Bash', { command: 'cp ~/.claude/projects/p/memory/a.md ~/.claude/projects/p/s.jsonl' }],
+		['Bash', { command: 'echo x >> ~/.claude/projects/p/memory/../s.jsonl' }],
+		['Write', { file_path: path.join(cfg, 'projects', 'p', 'memory', '..', 's.jsonl'), content: 'x' }],
+		['Bash', { command: 'rg --pre ./w.sh x ~/.claude/projects/p/s.jsonl' }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
 });

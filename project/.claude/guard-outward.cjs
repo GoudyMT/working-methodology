@@ -194,7 +194,8 @@ function findOutward(text, depth) {
 	// The proof must be an argument of the same command as the yes: one elsewhere on the line proves nothing.
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
 	if (/--owner-yes/i.test(flat)) {
-		const proven = tokenize(joinContinuations(flat)).some((all) => {
+		// Read with its quotes, so a quoted span stays one word: a --thread inside the yes's words is no proof.
+		const proven = tokenize(joinContinuations(plainText(text))).some((all) => {
 			const w = all.filter((x) => !x.redirect).map((x) => x.value);
 			const at = w.findIndex((x) => /^--owner-yes(=|$)/i.test(x));
 			const t = w.indexOf('--thread');

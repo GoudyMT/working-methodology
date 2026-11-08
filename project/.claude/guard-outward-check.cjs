@@ -145,6 +145,8 @@ const ASK = [
 	'node approve.mjs c.json --owner-yes "y"; echo --thread cmsg_Abcdefgh12',
 	'node approve.mjs c.json --owner-yes "y" | more --thread cmsg_Abcdefgh12',
 	'node approve.mjs c.json --owner-yes "y" --thread cmsg_short',
+	// A quoted span is one word: a --thread inside the yes's words is no proof.
+	'env -u CLAUDECODE node approve.mjs c.json --owner-yes "y --thread cmsg_Abcdefgh12"',
 	// M27, from the 1.23.0 mutation check: the reader stopped after four brace groups, so four decoys hid a fifth.
 	'echo {a,b} {c,d} {e,f} {g,h}; git {push,status} origin',
 	`echo ${'{a,b} '.repeat(40)}; git {push,status} origin`,
