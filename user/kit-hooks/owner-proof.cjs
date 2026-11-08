@@ -21,9 +21,17 @@ const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
 const REASON = 'The session transcripts and kit-owner.json hold the owner\'s thread answers, so no tool writes them: read them, or leave them to Claude Code and the owner.';
 
+// The real path, through any junction, link or short name; a file not yet written resolves through its nearest
+// existing folder.
+function real(p) {
+	const rest = [];
+	while (!fs.existsSync(p) && path.dirname(p) !== p) { rest.unshift(path.basename(p)); p = path.dirname(p); }
+	try { return path.join(fs.realpathSync.native(p), ...rest); } catch { return path.join(p, ...rest); }
+}
+
 function insideProof(file, cwd) {
-	const p = slash(path.resolve(cwd, file));
-	const h = slash(path.resolve(home()));
+	const p = slash(real(path.resolve(cwd, file)));
+	const h = slash(real(path.resolve(home())));
 	// The auto memory sits beside the transcripts (projects/<project>/memory/), and sessions write it.
 	if (/\/projects\/[^/]+\/memory(\/|$)/.test(p)) return false;
 	return p === `${h}/kit-owner.json` || p === `${h}/projects` || p.startsWith(`${h}/projects/`);

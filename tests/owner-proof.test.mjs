@@ -40,6 +40,11 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['Bash', { command: 'rg --pre ./w.sh x ~/.claude/projects/p/s.jsonl' }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
+	// Another name for the same folder (a junction, a short name) reaches the same files.
+	fs.mkdirSync(path.join(cfg, 'projects', 'C--repo'), { recursive: true });
+	const link = path.join(kitTemp.makeTemp('link-'), 'p');
+	fs.symlinkSync(path.join(cfg, 'projects'), link, 'junction');
+	assert.equal(run('Write', { file_path: path.join(link, 'C--repo', 's.jsonl'), content: 'x' }), 'deny', 'through a junction');
 });
 
 test('the owner-proof guard lets reads of the transcripts through, and every other write', () => {
