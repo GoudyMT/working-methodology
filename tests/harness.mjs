@@ -1,8 +1,9 @@
-// The kit's test() for every test file. node:test's own test(), plus three things the runner (scripts/test-run.mjs)
+// The kit's test() for every test file. node:test's own test(), plus four things the runner (scripts/test-run.mjs)
 // switches on through the environment:
 //   KIT_SHARD=i/n    register only every n-th test, from the i-th: n processes together run each test once
 //   KIT_ONLY=<file>  register only the tests the JSON list names ("<test file>::<name>", or "<test file>::*")
 //   KIT_MAP_DIR=dir  record, per test, the source lines it runs (here and in child processes) for the coverage map
+//   KIT_RUN_AT=file  write each test's file and name there as it starts, so the runner can say where a shard is
 // With none of them set it is node:test's test(), unchanged.
 import { test as nodeTest } from 'node:test';
 import fs from 'node:fs';
@@ -12,6 +13,7 @@ import inspector from 'node:inspector';
 const [SHARD, SHARDS] = (process.env.KIT_SHARD || '0/1').split('/').map(Number);
 const ONLY = process.env.KIT_ONLY ? new Set(JSON.parse(fs.readFileSync(process.env.KIT_ONLY, 'utf8'))) : null;
 const MAP = process.env.KIT_MAP_OFF ? '' : process.env.KIT_MAP_DIR || '';
+const AT = process.env.KIT_RUN_AT || '';
 // node --test runs each file in its own process, as `node <file>`.
 const FILE = path.relative(process.env.KIT_REPO || process.cwd(), process.argv[1] || '').split(path.sep).join('/');
 
@@ -63,7 +65,15 @@ export function test(name, ...rest) {
 	const idx = count++;
 	if (idx % SHARDS !== SHARD) return undefined;
 	if (ONLY && !ONLY.has(`${FILE}::${name}`) && !ONLY.has(`${FILE}::*`)) return undefined;
-	if (!MAP) return nodeTest(name, ...rest);
-	const fn = rest.pop();
-	return nodeTest(name, ...rest, mapped(name, idx, fn));
+	if (!MAP && !AT) return nodeTest(name, ...rest);
+	let fn = rest.pop();
+	if (MAP) fn = mapped(name, idx, fn);
+	if (AT) {
+		const inner = fn;
+		fn = (t) => {
+			fs.writeFileSync(AT, `${FILE} > ${name}`);
+			return inner(t);
+		};
+	}
+	return nodeTest(name, ...rest, fn);
 }

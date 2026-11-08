@@ -150,24 +150,42 @@ function select(root, files) {
 	return { only: [...only].sort() };
 }
 
-function runOne(args, env) {
+// A run killed at CI's cap prints nothing it buffered, so each shard says which test it is in every minute, and its
+// result the moment it ends.
+const BEAT_MS = Number(process.env.KIT_RUN_BEAT_MS) || 60000;
+
+function runOne(args, env, label, atFile) {
 	const t0 = Date.now();
 	return new Promise((resolve) => {
 		// Run from inside a test, node:test's own context variable would make the child report in its binary protocol.
 		// A run inside a run (the runner's own tests) must not inherit the outer run's shard, selection or map.
-		const { NODE_TEST_CONTEXT, KIT_SHARD, KIT_ONLY, KIT_MAP_DIR, KIT_MAP_TEST, KIT_MAP_OFF, ...base } = process.env;
-		const child = spawn(process.execPath, args, { env: { ...base, ...(env.KIT_MAP_DIR ? {} : { KIT_MAP_OFF: '1' }), ...env } });
+		const { NODE_TEST_CONTEXT, KIT_SHARD, KIT_ONLY, KIT_MAP_DIR, KIT_MAP_TEST, KIT_MAP_OFF, KIT_RUN_AT, ...base } = process.env;
+		const child = spawn(process.execPath, args, { env: { ...base, ...(env.KIT_MAP_DIR ? {} : { KIT_MAP_OFF: '1' }), ...env, KIT_RUN_AT: atFile } });
 		let out = '';
 		child.stdout.on('data', (d) => { out += d; });
 		child.stderr.on('data', (d) => { out += d; });
+		// The harness writes each test's name as it starts; node's own report names a test only once it ends, so a
+		// file outside the harness shows the last one that finished.
+		const where = () => {
+			try { return `at '${fs.readFileSync(atFile, 'utf8')}'`; } catch { /* no harnessed test has started */ }
+			const done = [...out.matchAll(/^(?:not )?ok \d+ - (.+)$/gm)].pop();
+			return done ? `past '${done[1]}'` : 'at its start';
+		};
+		const beat = setInterval(() => {
+			process.stdout.write(`test-run: ${label} ${where()} after ${Math.round((Date.now() - t0) / 1000)} s\n`);
+		}, BEAT_MS);
+		beat.unref();
 		const pass = (sig) => () => child.kill(sig);
 		const sigs = ['SIGINT', 'SIGTERM', 'SIGHUP'].map((s) => [s, pass(s)]);
 		// Ahead of the run root's own handler, which exits: the tests hear the signal first and remove their roots.
 		for (const [s, h] of sigs) process.prependListener(s, h);
 		child.on('close', (code, sig) => {
+			clearInterval(beat);
 			for (const [s, h] of sigs) process.off(s, h);
 			const num = (k) => Number((new RegExp(`^# ${k} (\\d+)`, 'm').exec(out) || [])[1] || 0);
-			resolve({ status: code ?? 128 + (os.constants.signals[sig] || 0), out, pass: num('pass'), fail: num('fail'), s: (Date.now() - t0) / 1000 });
+			const s = (Date.now() - t0) / 1000;
+			process.stdout.write(`test-run: ${label} done, pass ${num('pass')}, fail ${num('fail')} in ${s.toFixed(1)} s\n`);
+			resolve({ status: code ?? 128 + (os.constants.signals[sig] || 0), out, pass: num('pass'), fail: num('fail'), s });
 		});
 	});
 }
@@ -224,9 +242,9 @@ export async function main(argv) {
 		const t0 = Date.now();
 		const jobs = [];
 		if (shardFiles.length) {
-			for (let i = 0; i < shards; i++) jobs.push(runOne(['--test', '--test-reporter=tap', '--test-concurrency=1', ...shardFiles], { ...env, KIT_SHARD: `${i}/${shards}` }));
+			for (let i = 0; i < shards; i++) jobs.push(runOne(['--test', '--test-reporter=tap', '--test-concurrency=1', ...shardFiles], { ...env, KIT_SHARD: `${i}/${shards}` }, `shard ${i + 1}/${shards}`, path.join(work, `at-${i}.txt`)));
 		}
-		if (whole.length) jobs.push(runOne(['--test', '--test-reporter=tap', ...whole], env));
+		if (whole.length) jobs.push(runOne(['--test', '--test-reporter=tap', ...whole], env, 'the unsharded files', path.join(work, 'at-whole.txt')));
 		const results = await Promise.all(jobs);
 		for (const r of results) if (r.status !== 0) process.stdout.write(r.out);
 		const sum = (k) => results.reduce((n, r) => n + r[k], 0);

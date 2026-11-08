@@ -57,6 +57,18 @@ test('a failing test in any shard fails the run and is named in the output', () 
 	assert.match(r.stdout, /pass 3, fail 1/);
 });
 
+// CI killed a run at its cap with nothing printed (PR 25): each shard says where it is while it runs and when it ends.
+test('each shard names the test it is in while it runs, and prints its own result when it ends', () => {
+	const dir = kitTemp.makeTemp('beat-');
+	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS};\n` +
+		`test('quick', () => {});\ntest('the slow one', async () => { await new Promise((r) => setTimeout(r, 1500)); });\n`);
+	const r = run(dir, ['--shards', '1', path.join(dir, 'x.test.mjs')], { KIT_RUN_BEAT_MS: '300' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /test-run: shard 1\/1 at 'x\.test\.mjs > the slow one' after \d+ s/);
+	assert.match(r.stdout, /test-run: shard 1\/1 done, pass 2, fail 0 in [\d.]+ s/);
+	assert.ok(r.stdout.indexOf('shard 1/1 done') < r.stdout.indexOf('1 shards, pass'), 'the shard line comes before the total');
+});
+
 // A small repo: a source module with two functions, a script a test runs as a child, and a notes file a test reads.
 function fixtureRepo() {
 	const repo = kitTemp.makeTemp('maprepo-');
