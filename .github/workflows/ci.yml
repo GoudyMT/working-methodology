@@ -19,9 +19,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  kit-tests:
+  # The runner has 2 CPUs, so one job ran the suite as 2 shards in 13 to 18 of its 20 minutes (S22-1). Each slice
+  # runs its own shards of the suite, and the slices together run every test once.
+  unit-tests:
     runs-on: windows-latest
     timeout-minutes: 20
+    strategy:
+      # Every slice reports, so one failure does not hide another.
+      fail-fast: false
+      matrix:
+        slice: [0, 1, 2, 3]
     steps:
       # Vendor paths are long; without this a deep checkout can pass the 260-character Windows limit.
       - run: git config --global core.longpaths true
@@ -48,9 +55,43 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
-      # Through the guarded runner: every tests/*.test.mjs, and the run fails if it leaves anything in the temp folder.
+      # Through the guarded runner: this slice of every tests/*.test.mjs, and the run fails if it leaves anything in
+      # the temp folder.
       - name: Unit tests
-        run: node scripts/test-run.mjs
+        run: node scripts/test-run.mjs --slice ${{ matrix.slice }}/4
+
+  # The required check. It runs even when a slice fails, and fails then: a job skipped because a job it needs failed
+  # counts as passed for a required check.
+  kit-tests:
+    needs: unit-tests
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Every test slice passed
+        if: needs.unit-tests.result != 'success'
+        run: exit 1
+
+      - run: git config --global core.longpaths true
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Prepare the shell and git identity
+        shell: pwsh
+        run: |
+          "C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
 
       - name: Scrub
         run: node scripts/kit.mjs scrub

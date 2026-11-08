@@ -5336,6 +5336,25 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.match(typed.detail, /under the last recorded baseline 9/);
 });
 
+// S22-1: the suite runs over parallel jobs; the required check (kit-tests) passes only when every slice passed. A
+// needed job that fails makes a plain dependent job SKIPPED, and GitHub counts a skipped required check as passed.
+test('CI splits the tests over slices, and the required check fails unless every slice passed', () => {
+  const ci = read(path.resolve('.github/workflows/ci.yml'));
+  const job = (name) => ci.split(new RegExp(`^  ${name}:$`, 'm'))[1].split(/^  [a-z-]+:$/m)[0];
+  const unit = job('unit-tests');
+  const slices = JSON.parse(/^\s+slice: (\[[\d, ]+\])$/m.exec(unit)[1]);
+  const n = Number(/node scripts\/test-run\.mjs --slice \$\{\{ matrix\.slice \}\}\/(\d+)$/m.exec(unit)[1]);
+  assert.deepEqual(slices, [...Array(n).keys()], 'the matrix lists every slice 0..n-1 once');
+  assert.match(unit, /^\s+fail-fast: false$/m);
+  const gate = job('kit-tests');
+  assert.match(gate, /^    needs: unit-tests$/m);
+  assert.match(gate, /^    if: always\(\)$/m);
+  assert.match(gate, /^\s+if: needs\.unit-tests\.result != 'success'$/m);
+  assert.match(gate.split("if: needs.unit-tests.result != 'success'")[1], /^\s+run: exit 1$/m);
+  assert.doesNotMatch(ci, /continue-on-error/);
+  assert.doesNotMatch(gate, /test-run\.mjs/, 'the tests run in the slices, not again in the gate');
+});
+
 test('CI runs the recall gate on the PR\'s real diff', async () => {
   const { passBar, currentVersion } = await recallTools();
   const keysText = read(path.resolve('docs/evals/recall-questions.md'));

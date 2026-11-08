@@ -4,6 +4,8 @@
 //   node scripts/test-run.mjs --changed [files...]  only the tests that reach what changed since the map's commit
 //   node scripts/test-run.mjs --map [files...]      every test, recording the coverage map (needs a clean tree)
 //   --shards <n>                                     processes to split the tests over (default: CPUs, at most 8)
+//   --slice <i>/<n>                                  run only slice i (from 0) of n: CI splits the suite over n jobs,
+//                                                    each running its own shards; files outside the harness run in slice 0
 // Every run:
 // 1. refuses to start above 80% of the temp disk's inodes used (exit 2), and warns above 50%;
 // 2. sweeps the roots of finished or killed runs, before and after;
@@ -33,9 +35,14 @@ const real = (p) => {
 const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
 
 function parseArgs(args) {
-	const o = { shards: Math.min(8, os.availableParallelism()), map: false, changed: false, files: [] };
+	const o = { shards: Math.min(8, os.availableParallelism()), map: false, changed: false, files: [], slice: null };
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === '--shards') o.shards = Math.max(1, Number(args[++i]) || 1);
+		else if (args[i] === '--slice') {
+			const m = /^(\d+)\/(\d+)$/.exec(args[++i] || '');
+			// A slice out of range would run nothing and pass, so a bad one stops the run.
+			o.slice = m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : 'bad';
+		}
 		else if (args[i] === '--map') o.map = true;
 		else if (args[i] === '--changed') o.changed = true;
 		else o.files.push(path.resolve(args[i]));
@@ -199,6 +206,10 @@ function runOne(args, env, label, atFile) {
 
 export async function main(argv) {
 	const o = parseArgs(argv);
+	if (o.slice === 'bad') {
+		process.stderr.write('test-run: --slice takes i/n with 0 <= i < n\n');
+		return 2;
+	}
 	const tmp = os.tmpdir();
 	const use = inodeUse(tmp);
 	if (use.level === 'refuse') {
@@ -248,14 +259,21 @@ export async function main(argv) {
 		}
 		const t0 = Date.now();
 		const jobs = [];
+		// A slice runs its own shards of n x shards in all, so the slices together run each test once.
+		const [slice, slices] = o.slice || [0, 1];
+		const total = shards * slices;
+		const name = o.slice ? `slice ${slice + 1}/${slices} ` : '';
 		if (shardFiles.length) {
-			for (let i = 0; i < shards; i++) jobs.push(runOne(['--test', '--test-reporter=tap', '--test-concurrency=1', ...shardFiles], { ...env, KIT_SHARD: `${i}/${shards}` }, `shard ${i + 1}/${shards}`, path.join(work, `at-${i}.txt`)));
+			for (let j = 0; j < shards; j++) {
+				const k = slice * shards + j;
+				jobs.push(runOne(['--test', '--test-reporter=tap', '--test-concurrency=1', ...shardFiles], { ...env, KIT_SHARD: `${k}/${total}` }, `${name}shard ${k + 1}/${total}`, path.join(work, `at-${j}.txt`)));
+			}
 		}
-		if (whole.length) jobs.push(runOne(['--test', '--test-reporter=tap', ...whole], env, 'the unsharded files', path.join(work, 'at-whole.txt')));
+		if (whole.length && slice === 0) jobs.push(runOne(['--test', '--test-reporter=tap', ...whole], env, 'the unsharded files', path.join(work, 'at-whole.txt')));
 		const results = await Promise.all(jobs);
 		for (const r of results) if (r.status !== 0) process.stdout.write(r.out);
 		const sum = (k) => results.reduce((n, r) => n + r[k], 0);
-		const label = shardFiles.length ? `${shards} shards` : 'no shards';
+		const label = `${name}${shardFiles.length ? `${shards} shards` : 'no shards'}`;
 		process.stdout.write(`test-run: ${label}, pass ${sum('pass')}, fail ${sum('fail')} in ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
 		if (o.map) {
 			const map = buildMap(env.KIT_MAP_DIR, root, mapSha);
