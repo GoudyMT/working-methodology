@@ -31,7 +31,7 @@ export function verify({ tag, pr, copy, project }, deps = {}) {
 	const stop = (why) => { log(`    STOP: ${why}`); return { ok: false, step, why }; };
 
 	at('On the owner\'s PC, not a cloud session');
-	if (env.CLAUDE_CODE_REMOTE) return stop('this is a cloud session: the verify runs on the owner\'s PC only, where the release copy and ~/.claude are');
+	if (env.CLAUDE_CODE_REMOTE === 'true') return stop('this is a cloud session: the verify runs on the owner\'s PC only, where the release copy and ~/.claude are');
 
 	at('The release copy is a clean checkout');
 	if (git('rev-parse', '--git-dir').status !== 0) return stop(`${copy} is not a git checkout`);

@@ -996,6 +996,9 @@ function main() {
 		return 0;
 	}
 	if (!contractFile) { console.log('Usage: node approve.mjs <contract.json> [--outcome ... | --escape "<note>"] [--base <ref>]'); return 2; }
+	// E24 C: a cloud thread loads no repo hooks, so neither the call-cap hook nor the sweep guard would hold its
+	// reviewers, and its log is not the PC's. Claude Code sets CLAUDE_CODE_REMOTE=true in a cloud VM.
+	if (process.env.CLAUDE_CODE_REMOTE === 'true') { console.log('Refused: sweeps run on the owner\'s PC, where the hooks hold each reviewer. A cloud thread runs the worker jobs only (tests, builds, gate checks, research, read-only review). Nothing logged.'); return 1; }
 	if (has('--escape')) {
 		write({ kind: 'escape', contract: contractFile, note: opt('--escape') });
 		const reason = `a bug escaped a passed sweep: ${opt('--escape')}`;

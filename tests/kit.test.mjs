@@ -2393,6 +2393,23 @@ function outcome(r, tokens = '200000', findings = '6', real = '5', dup = '0', ex
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: /sonnet/.test(roles[i].model || '') ? 'claude-sonnet-5-5' : 'claude-opus-5-5', u: [0, each + (i ? 0 : Number(tokens) - each * n), 0, 0] }]])));
   return approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', findings, '--real', real, '--duplicates', dup, ...extra], { CLAUDE_CONFIG_DIR: cfg });
 }
+// E24 option C (the owner, 2026-11-07): a cloud thread loads no repo hooks, so no call-cap hook or sweep guard holds
+// its reviewers; sweeps and installs stay on the owner's PC. Claude Code sets CLAUDE_CODE_REMOTE=true in a cloud VM.
+test('a cloud session cannot clear a sweep or install the kit: both stay on the owner\'s PC', () => {
+  const dir = sweepRepo();
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const r = approveIn(dir, [f], { CLAUDE_CODE_REMOTE: 'true' });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /sweeps run on the owner's PC/);
+  assert.equal(fs.existsSync(path.join(dir, '.git', 'kit-sweep-approvals.jsonl')), false, 'nothing logged');
+  const home = makeTemp('home-');
+  const i = spawnSync(process.execPath, [path.resolve('scripts/kit.mjs'), 'install', 'user', '--unreleased'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_CODE_REMOTE: 'true' } });
+  assert.equal(i.status, 1, i.stdout + i.stderr);
+  assert.match(i.stderr, /installs run on the owner's PC/);
+  assert.equal(fs.existsSync(path.join(home, 'kit-install.json')), false);
+});
+
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout + r.stderr);

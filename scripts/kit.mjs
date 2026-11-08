@@ -1341,6 +1341,12 @@ function main(argv) {
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
+    // E24 C: the kit installs only from the release copy on the owner's PC; a cloud VM has neither.
+    if (process.env.CLAUDE_CODE_REMOTE === 'true') {
+      console.error('Install refused: installs run on the owner\'s PC, from the release copy. A cloud thread runs the worker jobs only.');
+      process.exitCode = 1;
+      return;
+    }
     // Installs run only from a release, or by name for a throwaway test (the owner, 2026-11-02).
     const rel = releaseState(kit);
     if (rel.problems.length && !argv.includes('--unreleased')) {
