@@ -10,7 +10,7 @@ tags:
 
 ## Kit Standards (How the Methodology Improves) {#kit-standards}
 
-The methodology kit is the baseline every project starts from. These rules keep it current, small and enforced. Each is checked by a machine where one can check it; the check is named. Text the owner wrote or approved word for word (Hard Rule 14 among it) stays word for word, and a test pins it; only the owner edits it.
+The methodology kit is the baseline every project starts from. These rules keep it current, small and enforced. Each is checked by a machine where one can check it; the check is named. Text the owner wrote or approved word for word (Hard Rule 14 among it) stays word for word, and only the owner edits it; Hard Rule 14 is pinned by a test, and other owner text gets its pin when it is touched.
 
 1. **The kit check runs itself.** `.claude/settings.json` wires `kit-hook.cjs`. Session start: the kit's GitHub ahead of its folder, newer kit rules, kit files this project changed (update skips them), the skills for its cases. Each message: once per kit release made mid-session. Before a compact: rule changes waiting for the kit, the vault backup, plugins past their backup. A failure warns, never stops a session. Why: a check that relies on memory gets skipped. *Check: tests run the hook.*
 2. **Rule sort at every closeout.** See "Pre-Compact Scan" step 5b: each rule change is tagged project-only or portable; portable ones go to `/methodology-kit fold-back`, and the owner decides each. Why: methods improve inside projects and are lost unless they flow back.

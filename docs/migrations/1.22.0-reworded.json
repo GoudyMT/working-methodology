@@ -2,7 +2,7 @@
   "lines": [
     {
       "before": "The methodology kit is the baseline every project starts from. These rules keep it current, small and enforced. Each is checked by a machine where one can check it; the check is named.",
-      "after": "The methodology kit is the baseline every project starts from. These rules keep it current, small and enforced. Each is checked by a machine where one can check it; the check is named. Text the owner wrote or approved word for word (Hard Rule 14 among it) stays word for word, and a test pins it; only the owner edits it."
+      "after": "The methodology kit is the baseline every project starts from. These rules keep it current, small and enforced. Each is checked by a machine where one can check it; the check is named. Text the owner wrote or approved word for word (Hard Rule 14 among it) stays word for word, and only the owner edits it; Hard Rule 14 is pinned by a test, and other owner text gets its pin when it is touched."
     },
     {
       "before": "**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it.",
@@ -23,6 +23,10 @@
     {
       "before": "**Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> fixes + re-sweep -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body (carrying the sweep summary) + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a \"now\" idea is built and swept inside the same PR.",
       "after": "**Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> test-first fixes -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body (carrying the sweep summary) + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a \"now\" idea is built and swept inside the same PR."
+    },
+    {
+      "before": "- **Full gate:** once per phase end and before every PR; independent steps run side by side, every step still runs; a fix after an Op-Test re-runs only the touched suites, the PR's final gate covers the rest; E2E may run beside the non-building steps (after type-check sync), never beside a build (shared folders and servers). **Size budgets:** once per batch; bisect only when a line is over.",
+      "after": "- **Full gate:** once per phase end and before every PR (where CI runs the full suite, as in the kit, CI is that run); independent steps run side by side, every step still runs; a fix after an Op-Test re-runs only the touched suites, the PR's final gate covers the rest; E2E may run beside the non-building steps (after type-check sync), never beside a build (shared folders and servers). **Size budgets:** once per batch; bisect only when a line is over."
     },
     {
       "before": "- **Team mode:** batch (the main session leads) under about 5 units, orchestrated above. **One review lead** runs the whole tail (sweep, fixes, fix check, re-sweep, op-test, design calls) with one stop.",

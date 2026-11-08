@@ -41,6 +41,11 @@ Run every step of rule:pre-compact-scan (the project's tracking-and-handoff rule
 Write it in the shape rule:handoff-message-structure gives: one self-contained message, any command the owner
 must run first in its own code block, then one copyable text block with its fixed sections.
 
+It carries the self-audit count (rule:pre-compact-scan 5c) as one line, `Feature builds since the last self-audit: <n>
+(last: <version>)`, read from the last handoff and raised by one when this closeout ends a feature-focus build. At 10,
+the handoff's first action is the self-audit; the method is the project's own (for the kit: the token audit method the
+workbench keeps), and a project with none says so in that line.
+
 ## The audit
 
 `audit.mjs` checks the handoff: every section of the rule's shape, in order; the first-actions section names the

@@ -40,8 +40,8 @@ commands are in the project brief.
    step 6), run through `approve.mjs` and sent with its output to the overseer, who checks it, sends a FIX THE CONTRACT back to be fixed and rerun, and takes an ASK to the
    user (`orchestrated.md`, "Sweeps go through the overseer").
 4. The review's report to the overseer (who checks it and delivers it); the findings through the project's finding
-   pipeline; the fixes; the fix check and the re-sweep as `SKILL.md` "The flow" step 6 says (the re-sweep's contract
-   cleared the same way); the gate green again.
+   pipeline; the fixes, each with a test that fails first; the fix check as `SKILL.md` "The flow" step 6 says (no
+   re-sweep: a second pass is the user's call); the gate green again.
 5. User-facing work: the project's pre-push use-and-attack test, where the project has one.
 6. Ready to push: the facts the pull request body needs (the overseer writes the body with the user).
 
