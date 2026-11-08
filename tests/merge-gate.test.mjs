@@ -763,7 +763,8 @@ test('merge gate: autofix pushes only to one push URL that is exactly the PR\'s 
 	sh(s.work, 'remote', 'set-url', '--add', '--push', 'origin', other);
 	assert.match(autofix(s.opts).faults[0], /2 push URLs/);
 	assert.notEqual(sh(other, 'for-each-ref').trim().length > 0, true, 'nothing went to the second URL');
-	for (const url of ['https://evil.example/github.com/o/r', 'git@evil.example:github.com/o/r.git', 'https://github.com.evil.example/o/r']) {
+	// A bare github.com/o/r is a relative folder to git, not GitHub (a security review after the sweep).
+	for (const url of ['https://evil.example/github.com/o/r', 'git@evil.example:github.com/o/r.git', 'https://github.com.evil.example/o/r', 'github.com/o/r', 'github.com/o/r.git', 'https://github.com/o/r?x', 'https://github.com/o/r#x']) {
 		const t = setup();
 		fixCommit(t);
 		sh(t.work, 'remote', 'set-url', '--push', 'origin', url);

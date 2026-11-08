@@ -610,7 +610,9 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 	const want = String(p.url || '').toLowerCase().replace(/^https?:\/\//, '').replace(/\/pull\/\d+$/, '');
 	const have = pushUrl.replace(/\\/g, '/').toLowerCase().replace(/\.git\/?$/, '').replace(/^(https?|ssh|git):\/\/([^@/]+@)?/, '').replace(/^[^@/:]+@([^:/]+):/, '$1/');
 	const folder = localOrigin && /^([a-z]:)?\//.test(have) && have.endsWith('/' + want);
-	if (!/^[^/]+\/[^/]+\/[^/]+$/.test(want) || !(have === want || folder)) return no(`origin (${pushUrl || 'none'}) is not the repo of PR ${pr} (${p.url}): the push would go somewhere else`);
+	// Only a remote form names a host: a bare github.com/o/r is a relative folder to git.
+	const remote = !/[?#\s]/.test(pushUrl) && /^((https?|ssh|git):\/\/|[^@/:\s]+@[^:/\s]+:)/i.test(pushUrl);
+	if (!/^[^/]+\/[^/]+\/[^/]+$/.test(want) || !((remote && have === want) || folder)) return no(`origin (${pushUrl || 'none'}) is not the repo of PR ${pr} (${p.url}): the push would go somewhere else`);
 	if (git('symbolic-ref', '--short', 'HEAD').stdout.trim() !== p.headRefName) return no(`the working copy is not on the PR's branch ${p.headRefName}`);
 	const local = git('rev-parse', 'HEAD').stdout.trim();
 	if (local === p.headRefOid) return no('nothing to push: the working copy is at the PR\'s head');
