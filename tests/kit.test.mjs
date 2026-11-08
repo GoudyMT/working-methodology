@@ -2478,6 +2478,82 @@ function nextBranch(dir, file) {
   g(dir, 'add', rel);
   g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', `feat: next ${n}`, '--no-verify');
 }
+// E27 (the owner, 2026-11-08, option A): the owner answers from the phone thread. Claude Code writes each message the
+// owner sends into the session's own transcript as a human turn, so approve.mjs reads the yes there, from the owner
+// the owner named in kit-owner.json, after the ask, word for word; Claude's own text is never such a turn.
+const OWNER = 'user_owner1';
+function ownerSays(cfg, { cwd, id, words, author = OWNER, at = new Date(Date.now() + 1000).toISOString(), wrap = (m) => m, entry = {}, file = 'session-main.jsonl' }) {
+  const dir = path.join(cfg, 'projects', 'C--repo');
+  fs.mkdirSync(dir, { recursive: true });
+  const content = wrap(`<wake reason="mention" current-time="${at}">\n  <project id="chan_x" type="project">\n    <thread ts="cmsg_root">\n      <message trigger="true" from="human" trust="principal" author-id="${author}" id="${id}" sent-at="${at}" mention="true">${words}</message>\n    </thread>\n  </project>\n</wake>`);
+  fs.appendFileSync(path.join(dir, file), JSON.stringify({ type: 'user', isSidechain: false, timestamp: at, origin: { kind: 'human' }, projectsUserTurn: true, cwd, message: { role: 'user', content }, ...entry }) + '\n');
+}
+const ownerFile = (cfg, value = { authorId: OWNER, threadYes: true }) => fs.writeFileSync(path.join(cfg, 'kit-owner.json'), JSON.stringify(value));
+
+test('the owner\'s yes from the thread clears an ask, read from the session transcript, word for word', () => {
+  const asked = () => { const r = approveRun(askContract()); assert.equal(r.status, 1, r.stdout); return r; };
+  const yes = (r, cfg, id, words = 'yes, run it') => approveIn(r.dir, [r.f, '--owner-yes', words, '--thread', id], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  const r = asked();
+  const cfg = makeTemp('cfg-');
+  ownerFile(cfg);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_A1aaaaaa', words: 'yes, run it' });
+  const ok = yes(r, cfg, 'cmsg_A1aaaaaa');
+  assert.equal(ok.status, 0, ok.stdout);
+  const line = approvalLog(r.dir).pop();
+  assert.equal(line.kind, 'owner-yes');
+  assert.deepEqual([line.words, line.proof, line.message], ['yes, run it', 'thread', 'cmsg_A1aaaaaa']);
+  const refused = [
+    ['no owner named', (c) => fs.rmSync(path.join(c, 'kit-owner.json')), /kit-owner\.json/],
+    ['the owner turned it off', (c) => ownerFile(c, { authorId: OWNER, threadYes: false }), /turned thread answers off/],
+    ['other words', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it now' }), /word for word/],
+    ['another person', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it', author: 'user_other' }), /not from the owner/],
+    ['a message from before the ask', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it', at: '2020-01-01T00:00:00.000Z' }), /before the ask/],
+    ['a relay quoting the owner', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it', wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` }), /no such message/],
+    ['a message in another repo\'s session', (c) => ownerSays(c, { cwd: makeTemp('elsewhere-'), id: 'cmsg_Bbbbbbbb', words: 'yes, run it' }), /no such message/],
+    ['a turn Claude wrote', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it', entry: { origin: { kind: 'agent' } } }), /no such message/],
+    ['a subagent\'s transcript', (c, w) => { const d = path.join(c, 'projects', 'C--repo', 's', 'subagents'); fs.mkdirSync(d, { recursive: true }); ownerSays(c, { cwd: w, id: 'cmsg_Bbbbbbbb', words: 'yes, run it', file: path.join('s', 'subagents', 'agent-x.jsonl') }); }, /no such message/],
+  ];
+  for (const [name, set, why] of refused) {
+    const s = asked();
+    const c = makeTemp('cfg-');
+    ownerFile(c);
+    set(c, s.dir);
+    const before = sweepLog(s.dir).length;
+    const out = yes(s, c, 'cmsg_Bbbbbbbb');
+    assert.equal(out.status, 1, `${name}: ${out.stdout}`);
+    assert.match(out.stdout, why, name);
+    assert.equal(sweepLog(s.dir).length, before, `${name}: nothing logged`);
+  }
+  // Without the thread's proof the yes rests on Claude's word alone, so from an AI tool's shell it is refused.
+  const bare = asked();
+  const word = approveIn(bare.dir, [bare.f, '--owner-yes', 'yes, run it'], { CLAUDECODE: '1' });
+  assert.equal(word.status, 1, word.stdout);
+  assert.match(word.stdout, /--thread/);
+  // One message answers one ask.
+  const next = asked();
+  fs.writeFileSync(next.f, JSON.stringify({ ...askContract(), modifiers: ['user-data'] }));
+  approveIn(next.dir, [next.f]);
+  const reuse = approveIn(next.dir, [next.f, '--owner-yes', 'yes, run it', '--thread', 'cmsg_A1aaaaaa'], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  assert.equal(reuse.status, 1, reuse.stdout);
+});
+
+test('the owner resumes auto-approval from the thread with a message that says resume, sent after the pause', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(Math.ceil(537500 * 1.3)));
+  const cfg = makeTemp('cfg-');
+  ownerFile(cfg);
+  const resume = (id) => approveIn(r.dir, ['--resume', '--thread', id], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R0rrrrrr', words: 'resume it', at: '2020-01-01T00:00:00.000Z' });
+  assert.equal(resume('cmsg_R0rrrrrr').status, 1, 'sent before the pause');
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R1rrrrrr', words: 'looks fine' });
+  assert.match(resume('cmsg_R1rrrrrr').stdout, /says resume/);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R2rrrrrr', words: 'Resume auto-approval' });
+  const ok = resume('cmsg_R2rrrrrr');
+  assert.equal(ok.status, 0, ok.stdout);
+  const line = approvalLog(r.dir).pop();
+  assert.deepEqual([line.kind, line.words, line.message], ['resume', 'Resume auto-approval', 'cmsg_R2rrrrrr']);
+});
+
 test('only the owner resumes, from a terminal no agent runs in', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -4350,6 +4426,18 @@ test('a checker runs nothing that waits past 5 minutes, and a builder runs nothi
   assert.equal(as('builder', 'Bash', { timeout: 600000 }), 'allow', 'a builder\'s long test run is its job');
   assert.equal(as('builder', 'Bash', {}), 'allow');
   assert.equal(capHook(dir, 20, 12, { agent_type: 'checker' }).permissionDecision, 'allow', 'no call cap outside a sweep');
+});
+
+// E27: the owner's yes and resume are the owner's; no agent the lead starts (reviewer, checker, builder) may log one.
+test('no agent may log the owner\'s yes or a resume, in any shell', () => {
+  const dir = makeTemp('cap-');
+  for (const type of ['reviewer', 'checker', 'builder', 'general-purpose'])
+    for (const [tool, command] of [['Bash', 'node ~/.claude/skills/pre-pr-sweep/approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh'], ['PowerShell', 'node "$HOME\\.claude\\skills\\pre-pr-sweep\\approve.mjs" --resume --thread cmsg_Abcdefgh']]) {
+      const r = capHook(dir, 1, 12, { agent_type: type, tool_name: tool, tool_input: { command } });
+      assert.equal(r.permissionDecision, 'deny', `${type} ${tool}`);
+      assert.match(r.permissionDecisionReason, /the owner's/);
+    }
+  assert.equal(capHook(dir, 1, 12, { agent_type: 'reviewer', tool_name: 'Bash', tool_input: { command: 'node approve.mjs c.json --outcome --agents a' } }).permissionDecision, 'allow');
 });
 
 test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
@@ -6871,9 +6959,16 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
   fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
   assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
 });
-test('S6: the shipped project settings make --owner-yes ask, so no session logs a yes unseen', () => {
+// S6, changed by E27 (option A): no session logs a yes unseen. The proof is the owner's own thread message, which
+// approve.mjs checks; a yes without it is refused in an AI shell and still asks the push guard. A permission prompt
+// on the proven form would reach no one on the phone, so the settings no longer ask on it.
+test('S6: a yes with the thread\'s proof passes the guard, and one without it still asks', () => {
   const ask = JSON.parse(read(path.resolve('project/.claude/settings.json'))).permissions.ask;
-  for (const shell of ['Bash', 'PowerShell']) assert.ok(ask.includes(`${shell}(*approve.mjs*--owner-yes*)`), shell);
+  assert.equal(ask.some((r) => /owner-yes/.test(r)), false);
+  const guard = (command) => spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' }).stdout;
+  assert.equal(guard('node approve.mjs c.json --owner-yes "yes, run it" --thread cmsg_Abcdefgh12'), '');
+  assert.match(guard('node approve.mjs c.json --owner-yes "yes, run it"'), /ask/);
+  assert.match(guard('node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12; git push'), /ask/);
 });
 test('S7: a start that cannot be recorded is refused, not let through', () => {
   const r = approveRun(featureContract());

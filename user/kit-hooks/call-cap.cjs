@@ -26,6 +26,11 @@ function main() {
 	const t = input.tool_input || {};
 	const type = String(input.agent_type || '');
 	const shell = input.tool_name === 'Bash' || input.tool_name === 'PowerShell';
+	// E27: the owner's yes and a resume are the owner's alone; an agent the lead started never logs one. Read in the
+	// command's own text, a slip net: a spelling built at run time is the limit the guards already name.
+	if (shell && /approve\.mjs/i.test(String(t.command || '')) && /--owner-yes|--resume/i.test(String(t.command || ''))) {
+		return deny('The owner\'s yes and a resume are the owner\'s: no agent logs one. Hand the owner\'s words back to the lead in your report.');
+	}
 	// N1: a checker reads like a reviewer, so it waits on nothing past 5 minutes; a builder's own test run may be long,
 	// but a background run or a monitor leaves it idle while its cache expires. Neither has a call cap.
 	if (/(^|:)checker$/i.test(type) && (input.tool_name === 'Monitor' || (shell && (t.run_in_background || Number(t.timeout) > IDLE_MS)))) {

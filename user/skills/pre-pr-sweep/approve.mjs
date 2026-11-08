@@ -631,6 +631,50 @@ function openSweep(log) {
 	return { open, reported, stuck: Boolean(open && !reported && log.some((e, i) => i > openAt && e.kind === 'unread' && e.contract === open.contract)) };
 }
 
+// The owner's own message from the phone thread (E27, the owner 2026-11-08, option A). Claude Code writes each
+// message a person sends into the session's transcript as a human turn: a wake whose triggering message names its
+// sender. Only a main session's transcript counts (a subagent's is no owner's), only a turn from a session in this
+// repo, never one inside a relay, and only the sender kit-owner.json names, a file in the Claude config folder the
+// owner writes and turns off with "threadYes": false. Like the spend meter, it stops slips and a turn Claude writes
+// as text, not a hand-forged transcript line. Returns { author, words, at } or { err }.
+const MESSAGE_ID = /^cmsg_[A-Za-z0-9]{8,64}$/;
+const unescapeXml = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
+function ownerMessage(id) {
+	const cfg = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+	let owner = null;
+	try { owner = JSON.parse(fs.readFileSync(path.join(cfg, 'kit-owner.json'), 'utf8')); } catch { /* checked below */ }
+	if (!owner || typeof owner.authorId !== 'string' || !owner.authorId) return { err: `no owner is named in ${toPosix(path.join(cfg, 'kit-owner.json'))}: the owner writes { "authorId": "<their id>", "threadYes": true } there to answer from the thread` };
+	if (owner.threadYes !== true) return { err: 'the owner turned thread answers off in kit-owner.json ("threadYes")' };
+	if (!MESSAGE_ID.test(String(id || ''))) return { err: '--thread needs the id of the owner\'s message (cmsg_...)' };
+	const repo = path.dirname(LOG).toLowerCase();
+	const tag = new RegExp(`<message trigger="true" from="human" trust="principal" author-id="([^"]+)" id="${id}"[^>]*>([\\s\\S]*?)</message>`);
+	for (const project of folders(transcriptRoot())) {
+		let files = [];
+		try { files = fs.readdirSync(project).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(project, f)); } catch { continue; }
+		for (const f of files) {
+			const text = fs.readFileSync(f, 'utf8');
+			if (!text.includes(id)) continue;
+			for (const line of text.split('\n')) {
+				if (!line.includes(id)) continue;
+				let e;
+				try { e = JSON.parse(line); } catch { continue; }
+				const c = e && e.message && e.message.content;
+				if (!e || e.type !== 'user' || e.isSidechain !== false || !e.origin || e.origin.kind !== 'human' || typeof c !== 'string') continue;
+				if (!c.startsWith('<wake ') || /<\/?(coordinator-relay|relay|project_claude_message|cited)\b/.test(c)) continue;
+				const m = tag.exec(c);
+				if (!m || !e.cwd) continue;
+				const { GIT_DIR: _d, GIT_COMMON_DIR: _c, ...env } = process.env;
+				const at = spawnSync('git', ['-C', e.cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', env });
+				if (at.status !== 0 || path.resolve(at.stdout.trim()).toLowerCase() !== repo) continue;
+				if (m[1] !== owner.authorId) return { err: `message ${id} is not from the owner named in kit-owner.json` };
+				return { author: m[1], words: unescapeXml(m[2]).trim(), at: e.timestamp };
+			}
+		}
+	}
+	return { err: `no such message from a person in this repo's sessions: ${id}` };
+}
+const messageUsed = (log, id) => log.some((e) => e.message === id);
+
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
 // about, so the reviewers' guard (sweep-guard) sees the owner's call and the order: script first, then the owner.
 function ownerYes() {
@@ -648,8 +692,25 @@ function ownerYes() {
 	const { open, reported, stuck } = openSweep(s.log);
 	// A yes on an older ask must not open a new set of starts over a sweep whose spend is still unread.
 	if (open && !reported && !stuck && open.contract !== contractFile) { console.log(`Log the outcome of the last approved sweep first (${rel(open.contract)}), then run approve.mjs on this contract again. Nothing logged.`); return 1; }
+	// From the thread: the owner's own message, sent after this ask, in exactly the words logged. Read before anything
+	// is written, so a refusal logs nothing.
+	let proof = {};
+	// Without the thread's proof, the words rest on whoever typed this; from an AI tool's shell that is Claude's word.
+	if (!has('--thread') && ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env)) {
+		console.log('Refused: from an AI tool\'s shell the owner\'s yes needs its proof, the id of the owner\'s own message: --owner-yes "<their words>" --thread <cmsg_...>. Or the owner runs it in their own terminal. Nothing logged.');
+		return 1;
+	}
+	if (has('--thread')) {
+		const id = opt('--thread');
+		const m = ownerMessage(id);
+		if (m.err) { console.log(`Refused: ${m.err}. Nothing logged.`); return 1; }
+		if (messageUsed(s.log, id)) { console.log(`Refused: message ${id} already answered an ask; one message answers one. Nothing logged.`); return 1; }
+		if (!(Date.parse(m.at) > Date.parse(last.time))) { console.log(`Refused: message ${id} was sent before the ask (${last.time}). Nothing logged.`); return 1; }
+		if (m.words !== said.trim()) { console.log(`Refused: --owner-yes must give message ${id} word for word ("${m.words}"). Nothing logged.`); return 1; }
+		proof = { proof: 'thread', message: id };
+	}
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
-	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, words: said });
+	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, words: said, ...proof });
 	console.log(`The owner's yes is logged; the reviewers may start. ${sweepLine(last.hash)}`);
 	return 0;
 }
@@ -1003,6 +1064,20 @@ function summary() {
 function main() {
 	if (!LOG) { console.log('ASK THE OWNER - not inside a git repository, so there is no approval log.'); return 1; }
 	if (has('--summary')) return summary();
+	if (has('--resume') && has('--thread')) {
+		// From the thread (E27): the owner's own message, after the pause, that says resume.
+		const s = state();
+		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
+		const id = opt('--thread');
+		const m = ownerMessage(id);
+		if (m.err) { console.log(`Refused: ${m.err}. Nothing logged.`); return 1; }
+		if (messageUsed(s.log, id)) { console.log(`Refused: message ${id} already answered; one message answers one. Nothing logged.`); return 1; }
+		if (!(Date.parse(m.at) > Date.parse(s.pausedAt || 0))) { console.log(`Refused: message ${id} was sent before the pause (${s.pausedAt}). Nothing logged.`); return 1; }
+		if (!/\bresume\b/i.test(m.words)) { console.log(`Refused: message ${id} ("${m.words}") is not one that says resume. Nothing logged.`); return 1; }
+		write({ kind: 'resume', words: m.words, proof: 'thread', message: id });
+		console.log(`Auto-approval resumed on the owner's message ${id}; the next review comes after ${state().reviewEvery} more.`);
+		return 0;
+	}
 	if (has('--resume')) {
 		// An AI tool's shell carries one of these; the owner's own terminal does not (the push guard's same line).
 		if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_RESUME !== '1') {

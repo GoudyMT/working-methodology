@@ -188,9 +188,11 @@ function ghOutward(words, start) {
 }
 
 function findOutward(text, depth) {
-	// The owner's logged yes: the settings' ask rule reads the raw text, so any spelling with quotes, escapes or a
-	// wildcard program is read here, anywhere in the command. A text that only names the flag asks too: the safe side.
-	if (/--owner-yes/i.test(text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, ''))) return 'an owner yes for a sweep';
+	// The owner's logged yes, in any spelling with quotes, escapes or a wildcard program, anywhere in the command. A
+	// text that only names the flag asks too: the safe side. With --thread <the owner's message id> it passes:
+	// approve.mjs then reads that message from the session transcript and refuses any other (E27).
+	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
+	if (/--owner-yes/i.test(flat) && !/--thread\s+cmsg_[A-Za-z0-9]{8,64}\b/.test(flat)) return 'an owner yes for a sweep';
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
 	// A backtick span is a command bash runs first, wherever it sits; the tokenizer splits it into words.
 	if (depth < MAX_DEPTH) for (const m of text.matchAll(/`([^`]+)`/g)) { const hit = findOutward(m[1], depth + 1); if (hit) return hit; }

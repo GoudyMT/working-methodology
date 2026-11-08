@@ -237,6 +237,8 @@ const PASS = [
 	'npm install --registry https://r.test',
 	'npm publish --dry-run',
 	'npm publish --json --dry-run',
+	// E27: a yes with the owner's thread message as proof; approve.mjs checks that message itself.
+	'node approve.mjs c.json --owner-yes "yes, run it" --thread cmsg_Abcdefgh12',
 	'npm publish --tag next --dry-run',
 	'echo a b | xargs git add',
 	'git status',
