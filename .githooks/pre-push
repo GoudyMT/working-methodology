@@ -1,6 +1,7 @@
 #!/bin/sh
-# The kit source's push hold: the same armed-head stop the kit installs in every project (project/.githooks/pre-push),
-# so the merge gate can arm a PR here too. Pushes stay the owner's by the permission rules; this only stops a push
+# The kit source's push hold: the same armed-head stop the kit installs in every project (project/.githooks/pre-push).
+# The gate itself arms nothing here (the kit source has no standards/project-adapter.md at its root, so row A27 grants
+# no merge), but a head armed by hand is still held. Pushes stay the owner's by the permission rules; this only stops a push
 # over a head still armed, since GitHub documents no head pin past a writer's push (rule:standing-grants).
 refs=$(cat)
 common=$(git rev-parse --git-common-dir)

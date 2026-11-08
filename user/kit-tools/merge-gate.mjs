@@ -152,6 +152,9 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	// The audits read the working copy: an edit not in the head would be judged in its place.
 	const dirty = git('status', '--porcelain', '--untracked-files=no');
 	if (dirty.status !== 0 || dirty.stdout.trim()) faults.push(`the working copy has uncommitted changes the audits would read: ${dirty.stdout.trim().split('\n').map((l) => l.slice(3)).join(', ') || 'git status failed'}`);
+	// assume-unchanged (a lower-case tag) and skip-worktree (S) hide an edit from git status (the 1.22.0 sweep).
+	const flagged = git('ls-files', '-v').stdout.split('\n').filter((l) => /^([a-z]|S) /.test(l)).map((l) => l.slice(2));
+	if (flagged.length) faults.push(`an index flag hides ${flagged.join(', ')} from git status, so an edit there would be judged unseen: clear it with git update-index --no-assume-unchanged --no-skip-worktree`);
 
 	// 3. Repo settings.
 	// `gh repo view` has no auto-merge field, so this reads the REST repo; {owner}/{repo} is gh's own placeholder for this repo.
@@ -588,7 +591,7 @@ export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOStr
  * Returns:
  *     { pushed, sha, faults }
  */
-export function autofix({ pr, cwd, config = configDir(), run = realRun, now = () => new Date().toISOString() }) {
+export function autofix({ pr, cwd, config = configDir(), run = realRun, now = () => new Date().toISOString(), localOrigin = false }) {
 	const no = (...faults) => ({ pushed: false, faults });
 	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
 	if (!/^\d+$/.test(String(pr))) return no('the PR is a number');
@@ -598,10 +601,16 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest,url'], cwd));
 	if (!p || p.state !== 'OPEN' || p.isCrossRepository !== false) return no(`PR ${pr} is not an open PR from this repo`);
 	// gh reads the PR from whichever remote it picks; the push goes to origin, so origin must be the PR's repo.
-	const pushUrl = git('remote', 'get-url', '--push', 'origin').stdout.trim();
+	// git pushes to every push URL, so there must be one; it is read as host and owner/repo and must be the PR's
+	// exactly (a URL that only ends in that path is another host). A local folder named like the repo counts only
+	// for the tests, which pass localOrigin; the CLI never does (the 1.22.0 sweep).
+	const urls = git('remote', 'get-url', '--push', '--all', 'origin').stdout.split('\n').map((u) => u.trim()).filter(Boolean);
+	if (urls.length !== 1) return no(`origin has ${urls.length} push URLs (${urls.join(', ') || 'none'}): a push goes to each, so autofix needs exactly one`);
+	const pushUrl = urls[0];
 	const want = String(p.url || '').toLowerCase().replace(/^https?:\/\//, '').replace(/\/pull\/\d+$/, '');
-	const have = pushUrl.replace(/\\/g, '/').toLowerCase().replace(/\.git\/?$/, '').replace(/^[a-z+]+:\/\/([^@/]+@)?/, '').replace(/^[^@/:]+@([^:/]+):/, '$1/');
-	if (!/^[^/]+\/[^/]+\/[^/]+$/.test(want) || !(have === want || have.endsWith('/' + want))) return no(`origin (${pushUrl || 'none'}) is not the repo of PR ${pr} (${p.url}): the push would go somewhere else`);
+	const have = pushUrl.replace(/\\/g, '/').toLowerCase().replace(/\.git\/?$/, '').replace(/^(https?|ssh|git):\/\/([^@/]+@)?/, '').replace(/^[^@/:]+@([^:/]+):/, '$1/');
+	const folder = localOrigin && /^([a-z]:)?\//.test(have) && have.endsWith('/' + want);
+	if (!/^[^/]+\/[^/]+\/[^/]+$/.test(want) || !(have === want || folder)) return no(`origin (${pushUrl || 'none'}) is not the repo of PR ${pr} (${p.url}): the push would go somewhere else`);
 	if (git('symbolic-ref', '--short', 'HEAD').stdout.trim() !== p.headRefName) return no(`the working copy is not on the PR's branch ${p.headRefName}`);
 	const local = git('rev-parse', 'HEAD').stdout.trim();
 	if (local === p.headRefOid) return no('nothing to push: the working copy is at the PR\'s head');

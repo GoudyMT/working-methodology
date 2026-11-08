@@ -115,7 +115,8 @@ function setup() {
 		if (args[0] === 'release') return ok(Object.fromEntries(args[args.indexOf('--json') + 1].split(',').filter((k) => k in state.release).map((k) => [k, state.release[k]])));
 		return no;
 	};
-	return { root, work, config, state, run, sha, opts: { pr: 7, cwd: work, config, run } };
+	// localOrigin: origin here is a local folder named as GitHub names the repo; only a test passes it.
+	return { root, work, config, state, run, sha, opts: { pr: 7, cwd: work, config, run, localOrigin: true } };
 }
 const merges = (s) => s.state.calls.filter((c) => c.startsWith('pr merge'));
 // A change made on the base and merged into the branch, with the branch's sweep moved to the new head.
@@ -283,6 +284,8 @@ const CASES = [
 		cleared(s.work, s.state.pr.headRefOid);
 	}, /gate or rule paths.*\.githooks/],
 	['an uncommitted change in the working copy', (s) => fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nlocal\n'), /uncommitted/],
+	// The 1.22.0 sweep (G5): an index flag hides an edit from git status, and the audits would read the edited text.
+	...['--assume-unchanged', '--skip-worktree'].map((flag) => [`a tracked file hidden by ${flag}`, (s) => { sh(s.work, 'update-index', flag, 'math.txt'); fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nhidden\n'); }, /hides math\.txt/]),
 	['a clearing logged by a short hash', (s) => { freshLog(s); cleared(s.work, s.sha.slice(0, 7)); }, /never cleared/],
 	['no push hold', (s) => sh(s.work, 'config', '--unset', 'core.hooksPath'), /no push hold: core\.hooksPath is not set/],
 	// Handoff item 17: the owner's allow rule reaches every repo; each project consents in its own adapter.
@@ -749,6 +752,27 @@ test('merge gate: autofix pushes only when origin is the PR\'s repo', () => {
 	assert.match(autofix(s.opts).faults[0], /not the repo of PR 7/);
 	assert.equal(originHead(s), before, 'nothing went out');
 	assert.equal(sh(other, 'rev-parse', 'refs/heads/feat/subtract'), before, 'nor to the other repo');
+});
+// The 1.22.0 sweep (G3, G4): git pushes to every push URL, and a URL that only ends in the repo's path is another host.
+test('merge gate: autofix pushes only to one push URL that is exactly the PR\'s host and repo', () => {
+	const s = setup();
+	fixCommit(s);
+	const other = path.join(s.root, 'other.git');
+	sh(s.root, 'init', '-q', '--bare', other);
+	sh(s.work, 'remote', 'set-url', '--add', '--push', 'origin', path.join(s.root, 'github.com', 'o', 'r.git'));
+	sh(s.work, 'remote', 'set-url', '--add', '--push', 'origin', other);
+	assert.match(autofix(s.opts).faults[0], /2 push URLs/);
+	assert.notEqual(sh(other, 'for-each-ref').trim().length > 0, true, 'nothing went to the second URL');
+	for (const url of ['https://evil.example/github.com/o/r', 'git@evil.example:github.com/o/r.git', 'https://github.com.evil.example/o/r']) {
+		const t = setup();
+		fixCommit(t);
+		sh(t.work, 'remote', 'set-url', '--push', 'origin', url);
+		assert.match(autofix(t.opts).faults[0], /not the repo of PR 7/, url);
+	}
+	// Outside the tests' own option, a local folder is never GitHub, however it is named.
+	const u = setup();
+	fixCommit(u);
+	assert.match(autofix({ ...u.opts, localOrigin: false }).faults[0], /not the repo of PR 7/);
 });
 // Handoff item 7: a merge call that went through and a read-back that did not must not read as nothing armed.
 test('merge gate: a merge that went through with no read-back is logged as armed and named as such', () => {
