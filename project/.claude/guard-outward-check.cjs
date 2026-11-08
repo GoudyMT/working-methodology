@@ -141,6 +141,10 @@ const ASK = [
 	'Invoke-RestMethod https://example.test -B:x',
 	'iwr https://example.test -b x',
 	'echo push | xargs git',
+	// E27, the 1.23.0 review: the proof must sit in the yes's own command, not elsewhere on the line.
+	'node approve.mjs c.json --owner-yes "y"; echo --thread cmsg_Abcdefgh12',
+	'node approve.mjs c.json --owner-yes "y" | more --thread cmsg_Abcdefgh12',
+	'node approve.mjs c.json --owner-yes "y" --thread cmsg_short',
 	// M27, from the 1.23.0 mutation check: the reader stopped after four brace groups, so four decoys hid a fifth.
 	'echo {a,b} {c,d} {e,f} {g,h}; git {push,status} origin',
 	`echo ${'{a,b} '.repeat(40)}; git {push,status} origin`,

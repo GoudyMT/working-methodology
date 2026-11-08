@@ -573,6 +573,7 @@ function decide() {
 		if (hookState(facts && facts.base) === 'none') console.log(HOOK_NONE);
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
 		for (const w of why) console.log(`    ${w}`);
+		console.log(`    The owner can answer from the thread: "yes ${askCode(entry.hash)}" (the code ties the yes to this ask); log it with --owner-yes "<their words>" --thread <their message id>.`);
 		const now = state();
 		if (now.paused) for (const l of resumeHelp(now)) console.log(l);
 		const f = triage(`${c.tier} ${first ? 're-sweep' : 'sweep'} sent to the owner`, why, [
@@ -638,9 +639,17 @@ function openSweep(log) {
 // owner writes and turns off with "threadYes": false. Like the spend meter, it stops slips and a turn Claude writes
 // as text, not a hand-forged transcript line. Returns { author, words, at } or { err }.
 const MESSAGE_ID = /^cmsg_[A-Za-z0-9]{8,64}$/;
+// install user fills in the Claude folder it installed into, so the installed copy reads the owner's file and the
+// transcripts there whatever CLAUDE_CONFIG_DIR a caller sets. Only an uninstalled copy (the kit source's tests)
+// reads the environment.
+const INSTALLED_HOME = '{{CLAUDE_HOME}}';
+const ownerHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
+// The short code an ask or a pause prints and the owner's reply carries, so one reply answers that ask alone.
+const askCode = (hash) => String(hash || '').slice(0, 6);
+const pauseCode = (s) => { const lines = rawLines(); const i = s.log.map((e, k) => (e.kind === 'pause' ? k : -1)).reduce((a, b) => Math.max(a, b), -1); return i >= 0 ? sha(lines[i]).slice(0, 6) : ''; };
 const unescapeXml = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
 function ownerMessage(id) {
-	const cfg = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+	const cfg = ownerHome();
 	let owner = null;
 	try { owner = JSON.parse(fs.readFileSync(path.join(cfg, 'kit-owner.json'), 'utf8')); } catch { /* checked below */ }
 	if (!owner || typeof owner.authorId !== 'string' || !owner.authorId) return { err: `no owner is named in ${toPosix(path.join(cfg, 'kit-owner.json'))}: the owner writes { "authorId": "<their id>", "threadYes": true } there to answer from the thread` };
@@ -648,7 +657,7 @@ function ownerMessage(id) {
 	if (!MESSAGE_ID.test(String(id || ''))) return { err: '--thread needs the id of the owner\'s message (cmsg_...)' };
 	const repo = path.dirname(LOG).toLowerCase();
 	const tag = new RegExp(`<message trigger="true" from="human" trust="principal" author-id="([^"]+)" id="${id}"[^>]*>([\\s\\S]*?)</message>`);
-	for (const project of folders(transcriptRoot())) {
+	for (const project of folders(path.join(cfg, 'projects'))) {
 		let files = [];
 		try { files = fs.readdirSync(project).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(project, f)); } catch { continue; }
 		for (const f of files) {
@@ -707,6 +716,7 @@ function ownerYes() {
 		if (messageUsed(s.log, id)) { console.log(`Refused: message ${id} already answered an ask; one message answers one. Nothing logged.`); return 1; }
 		if (!(Date.parse(m.at) > Date.parse(last.time))) { console.log(`Refused: message ${id} was sent before the ask (${last.time}). Nothing logged.`); return 1; }
 		if (m.words !== said.trim()) { console.log(`Refused: --owner-yes must give message ${id} word for word ("${m.words}"). Nothing logged.`); return 1; }
+		if (!new RegExp(`(^|\\W)${askCode(last.hash)}(\\W|$)`, 'i').test(m.words)) { console.log(`Refused: the owner's message does not carry this ask's code ${askCode(last.hash)}, so it answers no ask of this one; ask again with the code. Nothing logged.`); return 1; }
 		proof = { proof: 'thread', message: id };
 	}
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
@@ -722,6 +732,7 @@ function resumeHelp(s) {
 		`    The owner reviews the log first (node ${toPosix(SELF)} --summary), then resumes from their own terminal:`,
 		`    resume: PowerShell  $env:KIT_OWNER_RESUME='1'; node ${toPosix(SELF)} --resume`,
 		`    resume: bash        KIT_OWNER_RESUME=1 node ${toPosix(SELF)} --resume`,
+		`    Or the owner answers from the thread: "resume ${pauseCode(s)}"; log it with --resume --thread <their message id>.`,
 		'    Until then every sweep goes to the owner. Carry this into the closeout handoff.',
 	];
 }
@@ -1073,7 +1084,9 @@ function main() {
 		if (m.err) { console.log(`Refused: ${m.err}. Nothing logged.`); return 1; }
 		if (messageUsed(s.log, id)) { console.log(`Refused: message ${id} already answered; one message answers one. Nothing logged.`); return 1; }
 		if (!(Date.parse(m.at) > Date.parse(s.pausedAt || 0))) { console.log(`Refused: message ${id} was sent before the pause (${s.pausedAt}). Nothing logged.`); return 1; }
-		if (!/\bresume\b/i.test(m.words)) { console.log(`Refused: message ${id} ("${m.words}") is not one that says resume. Nothing logged.`); return 1; }
+		// The whole message is the resume and this pause's code, nothing hedged around it.
+		const code = pauseCode(s);
+		if (!new RegExp(`^resume ${code}\\.?$`, 'i').test(m.words)) { console.log(`Refused: message ${id} ("${m.words}") is not "resume <code>" with this pause's code (${code}). Nothing logged.`); return 1; }
 		write({ kind: 'resume', words: m.words, proof: 'thread', message: id });
 		console.log(`Auto-approval resumed on the owner's message ${id}; the next review comes after ${state().reviewEvery} more.`);
 		return 0;

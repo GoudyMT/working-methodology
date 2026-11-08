@@ -191,8 +191,18 @@ function findOutward(text, depth) {
 	// The owner's logged yes, in any spelling with quotes, escapes or a wildcard program, anywhere in the command. A
 	// text that only names the flag asks too: the safe side. With --thread <the owner's message id> it passes:
 	// approve.mjs then reads that message from the session transcript and refuses any other (E27).
+	// The proof must be an argument of the same command as the yes: one elsewhere on the line proves nothing.
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
-	if (/--owner-yes/i.test(flat) && !/--thread\s+cmsg_[A-Za-z0-9]{8,64}\b/.test(flat)) return 'an owner yes for a sweep';
+	if (/--owner-yes/i.test(flat)) {
+		const proven = tokenize(joinContinuations(flat)).some((all) => {
+			const w = all.filter((x) => !x.redirect).map((x) => x.value);
+			const at = w.findIndex((x) => /^--owner-yes(=|$)/i.test(x));
+			const t = w.indexOf('--thread');
+			return at >= 0 && t >= 0 && /^cmsg_[A-Za-z0-9]{8,64}$/.test(w[t + 1] ?? '');
+		});
+		const segments = tokenize(joinContinuations(flat)).filter((all) => all.some((x) => /--owner-yes/i.test(x.value)));
+		if (!proven || segments.length !== 1) return 'an owner yes for a sweep';
+	}
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
 	// A backtick span is a command bash runs first, wherever it sits; the tokenizer splits it into words.
 	if (depth < MAX_DEPTH) for (const m of text.matchAll(/`([^`]+)`/g)) { const hit = findOutward(m[1], depth + 1); if (hit) return hit; }
