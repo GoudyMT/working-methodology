@@ -3226,6 +3226,20 @@ test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the ow
   assert.equal(g(rebased.dir, 'rebase', '-q', 'main').status, 0);
   fs.writeFileSync(second.replace(first.dir, rebased.dir), JSON.stringify(featureContract()));
   assert.match(approveIn(rebased.dir, [second.replace(first.dir, rebased.dir)]).stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch/, 'after a rebase');
+  // S22-S3: a rebase plus a new branch name, or the same commits on a detached HEAD: the commits' patches are the same.
+  for (const move of ['rename', 'detach']) {
+    const r = firstSweep();
+    g(r.dir, 'checkout', '-q', 'main');
+    fs.writeFileSync(path.join(r.dir, 'NOTES.md'), 'main moved\n');
+    commitAll(r.dir, 'main moves', true);
+    g(r.dir, 'checkout', '-q', 'feat/sync');
+    assert.equal(g(r.dir, 'rebase', '-q', 'main').status, 0);
+    if (move === 'rename') g(r.dir, 'branch', '-q', '-m', 'feat/sync-two');
+    else g(r.dir, 'checkout', '-q', '--detach');
+    const f = second.replace(first.dir, r.dir);
+    fs.writeFileSync(f, JSON.stringify(featureContract()));
+    assert.match(approveIn(r.dir, [f]).stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch/, `after a rebase and a ${move}`);
+  }
 });
 test('a re-sweep asks the owner; on their yes it runs once, and a second, or a re-sweep of it, is refused with the carry-over pointer and no pause', () => {
   const first = firstSweep();

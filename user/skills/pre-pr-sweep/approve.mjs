@@ -282,14 +282,27 @@ const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) 
 // The branch this checkout is on, recorded with each decision: a rebase rewrites the heads, not the name.
 const currentBranch = () => git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim();
 
+// The patch ids of the branch's own commits (base..HEAD), at most PATCH_MAX: the same change after a rebase.
+const PATCH_MAX = 200;
+function branchPatches(base) {
+	if (!base) return [];
+	const diff = git('log', '-p', '--no-merges', `-${PATCH_MAX}`, '--format=commit %H', `${base}..HEAD`);
+	if (diff.status !== 0 || !diff.stdout) return [];
+	const ids = spawnSync('git', ['patch-id', '--stable'], { input: diff.stdout, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+	return ids.status === 0 ? ids.stdout.split('\n').map((l) => l.split(' ')[0]).filter(Boolean) : [];
+}
+
 // The one-sweep loop (the owner, 2026-11-07): a sweep that ran on this branch, found by its HEAD on the branch (not on
 // the base) or by the branch name it was cleared on, or null. A sweep closed with --none-ran ran nothing.
 function secondPass(log, base) {
 	const on = new Map();
 	const onBranch = (h) => { if (!on.has(h)) on.set(h, git('merge-base', '--is-ancestor', h, 'HEAD').status === 0 && git('merge-base', '--is-ancestor', h, base).status !== 0); return on.get(h); };
 	const branch = currentBranch();
+	// A rebase gives the commits new ids and a rename a new name, but each commit keeps its patch (S22-S3).
+	const mine = new Set(branchPatches(base));
+	const samePatches = (e) => Array.isArray(e.patches) && e.patches.some((p) => mine.has(p));
 	const ran = (k) => log.some((e, j) => j > k && e.kind === 'outcome' && !e.noneRan && e.contract === log[k].contract);
-	const i = log.findIndex((e, k) => e.kind === 'decision' && e.head && isCleared(log, k) && ran(k) && ((branch && e.branch === branch) || onBranch(e.head)));
+	const i = log.findIndex((e, k) => e.kind === 'decision' && e.head && isCleared(log, k) && ran(k) && ((branch && e.branch === branch) || onBranch(e.head) || samePatches(e)));
 	return i >= 0 ? log[i].contract : null;
 }
 
@@ -542,7 +555,7 @@ function decide() {
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
 	const { ceilings, from: ceilingFrom } = ceilingsFor(s.log, budgets);
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, patches: facts ? branchPatches(facts.base) : [], models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
