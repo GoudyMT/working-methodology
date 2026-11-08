@@ -22,6 +22,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TRACE = path.join(HERE, '..', 'tests', 'map-trace.cjs');
 const MAP_FILE = path.join('tests', '.map.json');
 const posix = (p) => p.split(path.sep).join('/');
+// A file by its folder's real name, as git names the repo: a short name (CI's RUNNER~1) or a junction otherwise
+// reads as outside it. A file a test made and removed keeps the name it had.
+const realNames = new Map();
+const real = (p) => {
+	if (!realNames.has(p)) { let r = p; try { r = fs.realpathSync.native(p); } catch { /* gone */ } realNames.set(p, r); }
+	return realNames.get(p);
+};
 
 const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
 
@@ -43,7 +50,7 @@ function ranLines(result, root, into) {
 		let file = s.url;
 		if (file.startsWith('file:')) file = fileURLToPath(file);
 		if (!path.isAbsolute(file) || !/\.(mjs|cjs|js)$/.test(file)) continue;
-		const rel = posix(path.relative(root, file));
+		const rel = posix(path.relative(root, real(file)));
 		if (rel.startsWith('..') || rel.startsWith('tests/') || rel.includes('node_modules/')) continue;
 		let text;
 		try { text = fs.readFileSync(file, 'utf8'); } catch { continue; } // a file a test made and removed
@@ -71,7 +78,7 @@ function buildMap(mapDir, root, sha) {
 			if (f.endsWith('.json')) ranLines(JSON.parse(fs.readFileSync(p, 'utf8')).result, root, lines);
 			else if (f.startsWith('reads-')) {
 				for (const abs of fs.readFileSync(p, 'utf8').split('\n').filter(Boolean)) {
-					const rel = posix(path.relative(root, abs));
+					const rel = posix(path.relative(root, real(abs)));
 					if (!rel.startsWith('..') && !path.isAbsolute(rel)) reads.add(rel);
 				}
 			}
@@ -123,7 +130,7 @@ function select(root, files) {
 	if (!fs.existsSync(mapPath)) return { why: `no coverage map at ${posix(MAP_FILE)} (make one with --map)` };
 	const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
 	if (git(root, 'cat-file', '-e', `${map.sha}^{commit}`).status !== 0) return { why: `the map's commit ${String(map.sha).slice(0, 12)} is not in this repo (make a new one with --map)` };
-	const testFiles = new Map(files.map((f) => [posix(path.relative(root, f)), f]));
+	const testFiles = new Map(files.map((f) => [posix(path.relative(root, real(f))), f]));
 	const only = new Set();
 	const entries = Object.entries(map.tests);
 	const reaches = (read, f) => { const r = read.replace(/\/$/, ''); return r === f || f.startsWith(r + '/'); };
@@ -200,7 +207,7 @@ export async function main(argv) {
 	}
 	if (use.level === 'warn') process.stderr.write(`test-run: warning, ${use.text}\n`);
 	const top = git(process.cwd(), 'rev-parse', '--show-toplevel');
-	const root = top.status === 0 ? path.resolve(top.stdout.trim()) : process.cwd();
+	const root = real(top.status === 0 ? path.resolve(top.stdout.trim()) : process.cwd());
 	if (o.map) {
 		const dirty = git(root, 'status', '--porcelain', '--untracked-files=no').stdout.trim();
 		if (dirty) {
@@ -227,7 +234,7 @@ export async function main(argv) {
 			const pick = select(root, harnessed);
 			if (pick.why) process.stdout.write(`test-run: ${pick.why}; running every test.\n`);
 			else {
-				shardFiles = harnessed.filter((f) => pick.only.some((k) => k.startsWith(posix(path.relative(root, f)) + '::')));
+				shardFiles = harnessed.filter((f) => pick.only.some((k) => k.startsWith(posix(path.relative(root, real(f))) + '::')));
 				fs.writeFileSync(path.join(work, 'only.json'), JSON.stringify(pick.only));
 				env.KIT_ONLY = path.join(work, 'only.json');
 				shards = Math.max(1, Math.min(shards, pick.only.length));

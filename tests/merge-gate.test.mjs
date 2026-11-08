@@ -758,7 +758,7 @@ test('merge gate: autofix pushes only to one push URL that is exactly the PR\'s 
 	const s = setup();
 	fixCommit(s);
 	const other = path.join(s.root, 'other.git');
-	sh(s.root, 'init', '-q', '--bare', other);
+	sh(s.root, 'init', '-q', '--bare', '-b', 'main', other);
 	sh(s.work, 'remote', 'set-url', '--add', '--push', 'origin', path.join(s.root, 'github.com', 'o', 'r.git'));
 	sh(s.work, 'remote', 'set-url', '--add', '--push', 'origin', other);
 	assert.match(autofix(s.opts).faults[0], /2 push URLs/);

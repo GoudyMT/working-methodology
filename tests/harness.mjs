@@ -14,8 +14,10 @@ const [SHARD, SHARDS] = (process.env.KIT_SHARD || '0/1').split('/').map(Number);
 const ONLY = process.env.KIT_ONLY ? new Set(JSON.parse(fs.readFileSync(process.env.KIT_ONLY, 'utf8'))) : null;
 const MAP = process.env.KIT_MAP_OFF ? '' : process.env.KIT_MAP_DIR || '';
 const AT = process.env.KIT_RUN_AT || '';
-// node --test runs each file in its own process, as `node <file>`.
-const FILE = path.relative(process.env.KIT_REPO || process.cwd(), process.argv[1] || '').split(path.sep).join('/');
+// node --test runs each file in its own process, as `node <file>`. Both sides are read by the folder's real name: a
+// short name (CI's RUNNER~1) or a junction would otherwise key the test outside the repo.
+const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+const FILE = path.relative(real(process.env.KIT_REPO || process.cwd()), real(process.argv[1] || '')).split(path.sep).join('/');
 
 let count = 0;
 let session = null;

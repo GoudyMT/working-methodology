@@ -170,6 +170,27 @@ test('a map run keeps the commit it started on, and its children start in a fold
 	assert.equal(JSON.parse(fs.readFileSync(path.join(repo, 'tests', '.map.json'), 'utf8')).sha, start);
 });
 
+// CI's temp folder is a short name (RUNNER~1) that git reports long (PR 25); a junction makes the same split here.
+test('the map keys a test by its path in the repo when the repo is reached through another name for its folder', () => {
+	const { repo, log, test: file } = fixtureRepo();
+	const link = `${repo}-link`;
+	fs.symlinkSync(repo, link, 'junction');
+	try {
+		const r = run(link, ['--map', path.join(link, path.relative(repo, file))]);
+		assert.equal(r.status, 0, r.stdout + r.stderr);
+		const map = JSON.parse(fs.readFileSync(path.join(repo, 'tests', '.map.json'), 'utf8'));
+		assert.ok(map.tests['tests/x.test.mjs::f'], Object.keys(map.tests).join(', '));
+		assert.ok(map.tests['tests/x.test.mjs::f'].lines['src/a.mjs'].includes(2), 'its lines are keyed in the repo too');
+		const p = path.join(repo, 'src', 'a.mjs');
+		fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('return 2;', 'return 1 + 1;'));
+		const c = run(link, ['--changed', path.join(link, path.relative(repo, file))]);
+		assert.equal(c.status, 0, c.stdout + c.stderr);
+		assert.deepEqual(ran(log), ['child', 'f', 'g', 'own env', 'reads', 'g'].sort(), 'the map run, then only g');
+	} finally {
+		fs.unlinkSync(link);
+	}
+});
+
 test('a runner started by a mapped test maps nothing of its own into the outer map', () => {
 	const { repo, test: file } = fixtureRepo();
 	const inner = kitTemp.makeTemp('inner-');

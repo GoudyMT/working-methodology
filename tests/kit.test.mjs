@@ -6613,7 +6613,8 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
   assert.equal(elsewhere.permissionDecision, 'deny');
   assert.match(elsewhere.permissionDecisionReason, /checkout/);
   // 1.21.0 handoff item 30: the cleared folder is named whole, not as the start of another folder's name.
-  const root = r.dir.split(path.sep).join('/');
+  // As git names it: on CI the temp folder is a short name (RUNNER~1) git reports long, and a lead names what git shows.
+  const root = g(r.dir, 'rev-parse', '--show-toplevel').stdout.trim();
   const named = (where) => sweepGuard(r.dir, { cwd: side, tool_input: { subagent_type: 'reviewer', prompt: `review. Work in ${where}\nCall cap: 5.` } }).permissionDecision;
   assert.equal(named(`${root}-old`), 'deny', 'another folder whose name starts the same');
   assert.equal(named(`${root}2/src`), 'deny');
