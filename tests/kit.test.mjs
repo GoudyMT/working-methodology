@@ -2410,6 +2410,22 @@ test('a cloud session cannot clear a sweep or install the kit: both stay on the 
   assert.equal(fs.existsSync(path.join(home, 'kit-install.json')), false);
 });
 
+// S22-S1 (the 1.22.0 sweep): SendMessage to a finished reviewer resumes it, with no clearing, no slot and no spend
+// read. A reviewer is never resumed: a new question is a new reviewer under a clearing.
+test('the sweep guard refuses to resume a reviewer with SendMessage, and lets other agents be messaged', () => {
+  const dir = makeTemp('resume-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.meta.json'), JSON.stringify({ agentType: 'reviewer', finished: true }));
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-b1.meta.json'), JSON.stringify({ agentType: 'builder', finished: true }));
+  const send = (to) => { const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', transcript_path: `${session}.jsonl`, tool_input: { to, message: 'one more check' } }); return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' }; };
+  const r = send('r1');
+  assert.equal(r.permissionDecision, 'deny');
+  assert.match(r.permissionDecisionReason, /never resumed/);
+  assert.equal(send('b1').permissionDecision, 'allow');
+  assert.equal(send('someone-else').permissionDecision, 'allow');
+});
+
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout + r.stderr);

@@ -63,6 +63,16 @@ function standing(lines, i, e) {
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+	// SendMessage resumes a finished agent with its whole context: for a reviewer that is a review with no clearing,
+	// no slot and no spend read (the 1.22.0 sweep, S1). Claude Code's meta file beside the transcript names its type.
+	if (input.tool_name === 'SendMessage') {
+		const to = String((input.tool_input || {}).to || '');
+		if (!/^[A-Za-z0-9_-]{1,64}$/.test(to)) return;
+		let meta = {};
+		try { meta = JSON.parse(fs.readFileSync(path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents', `agent-${to}.meta.json`), 'utf8')); } catch { return; }
+		if (/(^|:)reviewer$/i.test(String(meta.agentType || ''))) deny('A sweep reviewer is never resumed: its spend was read for the sweep it ran. A new question is a new reviewer under a cleared contract.');
+		return;
+	}
 	if (!/(^|:)reviewer$/i.test(String((input.tool_input || {}).subagent_type || ''))) {
 		// A brief that names a sweep or carries a role's call cap is a reviewer's whatever the type says, and a slip
 		// here would run with no slot and no cap.
