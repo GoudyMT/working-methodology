@@ -25,10 +25,13 @@ const NPM_FLAGS = new Set(['--dry-run', '--json', '--force', '-f', '--ignore-scr
 // wget are names for Invoke-WebRequest, so its -Method and -Body count for them too.
 const HTTP_CLIENTS = /^(curl|wget|invoke-webrequest|invoke-restmethod|iwr|irm)(\.exe)?$/;
 const GIT_NESTED_PUSH = new Set(['lfs', 'subtree']);
-// A git bridge that sends commits to another system: git svn dcommit, git p4 submit.
-const GIT_BRIDGES = { svn: 'dcommit', p4: 'submit' };
-// Other programs that publish or send to a remote: the subcommand that does it.
-const PUBLISHERS = { docker: 'push', podman: 'push', cargo: 'publish', twine: 'upload', gem: 'push', nuget: 'push' };
+// A git bridge that writes to another system: git svn dcommit (and the verbs that make branches and tags there),
+// git p4 submit.
+const GIT_BRIDGES = { svn: ['dcommit', 'branch', 'tag', 'set-tree', 'commit-diff'], p4: ['submit'] };
+// Other programs that publish or send to a remote: the subcommands that do it. Only cargo has a dry run.
+const PUBLISHERS = { docker: ['push'], podman: ['push'], cargo: ['publish', 'yank', 'owner'], twine: ['upload'], gem: ['push', 'yank', 'owner'], nuget: ['push', 'delete'] };
+// docker and podman build straight to a registry with --push or an output of type registry or push=true.
+const IMAGE_BUILDERS = new Set(['docker', 'podman']);
 
 const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
@@ -36,8 +39,22 @@ const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch
 
 const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
 
-// A program name without its .exe: docker.exe -> docker.
-const base = (name) => name.replace(/\.exe$/, '');
+// A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
+const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
+
+// cargo's dry run: a standalone --dry-run or -n before any --, not the value of the option before it.
+function cargoDryRun(rest) {
+	for (let i = 0; i < rest.length; i++) {
+		if (rest[i] === '--') return false;
+		const prev = rest[i - 1] ?? '';
+		const taken = prev.startsWith('-') && !prev.includes('=') && !['--dry-run', '-n', '--allow-dirty', '--no-verify', '--locked', '--frozen', '--offline', '-v', '-q'].includes(prev);
+		if ((rest[i] === '--dry-run' || rest[i] === '-n') && !taken) return true;
+	}
+	return false;
+}
+
+// A word naming another host: rsync://, host:path, user@host:path, [::1]:path. A drive letter (C:/x, C:\x) is local.
+const remoteWord = (w) => !w.startsWith('-') && (w.startsWith('rsync://') || (w.includes(':') && !/^[a-z]:[/\\]/.test(w)));
 
 // The program a word names, whatever folder it sits in: "C:/Program Files/Git/cmd/git.exe" -> "git.exe".
 function programName(word) {
@@ -60,7 +77,8 @@ function gitOutward(words, start) {
 	if (sub === undefined) return '';
 	if (GIT_OUTWARD.has(sub)) return 'git ' + sub;
 	if (GIT_NESTED_PUSH.has(sub) && words.slice(at + 1).includes('push')) return 'git ' + sub + ' push';
-	if (Object.hasOwn(GIT_BRIDGES, sub) && words.slice(at + 1).includes(GIT_BRIDGES[sub])) return 'git ' + sub + ' ' + GIT_BRIDGES[sub];
+	const verb = Object.hasOwn(GIT_BRIDGES, sub) ? words.slice(at + 1).find((w) => GIT_BRIDGES[sub].includes(w)) : undefined;
+	if (verb) return 'git ' + sub + ' ' + verb;
 	return '';
 }
 
@@ -163,7 +181,11 @@ function findOutward(text, depth) {
 		for (let i = 0; i < segment.length; i++) {
 			const name = programName(segment[i].value);
 			let hit = '';
-			if (/^git-(push|send-pack)(\.exe)?$/.test(name) || (/^git-lfs(\.exe)?$/.test(name) && words[i + 1] === 'push')) hit = name;
+			const bare = base(name);
+			const tool = Object.hasOwn(PUBLISHERS, bare) ? bare : '';
+			if (/^git-(push|send-pack)$/.test(bare) || (bare === 'git-lfs' && words[i + 1] === 'push')) hit = name;
+			// git-svn and git-p4 are the bridges' own programs: git-svn dcommit is git svn dcommit.
+			else if (/^git-(svn|p4)$/.test(bare)) hit = gitOutward([bare.slice(4), ...words.slice(i + 1)], 0);
 			else if (name === 'git' || name === 'git.exe') {
 				hit = gitOutward(words, i + 1);
 				// xargs hands git its subcommand from input, so a git with none after xargs could be a push.
@@ -171,10 +193,13 @@ function findOutward(text, depth) {
 			}
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
 			else if (PACKAGERS.has(name)) hit = registryWrite(words, i + 1);
-			else if (Object.hasOwn(PUBLISHERS, base(name)) && words.slice(i + 1).includes(PUBLISHERS[base(name)]) && !words.includes('--dry-run')) hit = base(name) + ' ' + PUBLISHERS[base(name)];
+			else if (tool && words.slice(i + 1).some((w) => PUBLISHERS[tool].includes(w)) && !(tool === 'cargo' && words.slice(i + 1).includes('publish') && cargoDryRun(words.slice(i + 1)))) {
+				hit = tool + ' ' + words.slice(i + 1).find((w) => PUBLISHERS[tool].includes(w));
+			}
+			else if (IMAGE_BUILDERS.has(tool) && words.slice(i + 1).some((w, k, r) => w === '--push' || /^--push=(true|1)$/.test(w) || /type=registry|push=true/.test(w) || (/^(-o|--output)$/.test(r[k - 1] ?? '') && /registry|push/.test(w)))) hit = tool + ' build to a registry';
 			// scp always copies to or from another host; rsync does when a word names one (host:path, rsync://).
-			else if (base(name) === 'scp') hit = 'scp';
-			else if (base(name) === 'rsync' && words.slice(i + 1).some((w) => !w.startsWith('-') && (w.startsWith('rsync://') || /^[^/\\:]{2,}:/.test(w)))) hit = 'rsync to another host';
+			else if (bare === 'scp') hit = 'scp';
+			else if (bare === 'rsync' && words.slice(i + 1).some((w) => remoteWord(w) || (w.startsWith('--') && w.includes('=') && remoteWord(w.slice(w.indexOf('=') + 1))))) hit = 'rsync to another host';
 			else if (HTTP_CLIENTS.test(name)) hit = httpWrite(name, segment.slice(i + 1).map((word) => word.value));
 			if (hit) return hit;
 		}
