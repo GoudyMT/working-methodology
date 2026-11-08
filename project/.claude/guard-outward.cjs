@@ -191,9 +191,13 @@ function findOutward(text, depth) {
 	// The owner's logged yes, in any spelling with quotes, escapes or a wildcard program, anywhere in the command. A
 	// text that only names the flag asks too: the safe side. With --thread <the owner's message id> it passes:
 	// approve.mjs then reads that message from the session transcript and refuses any other (E27).
+	// A Claude session started from a shell with a thread message's shape writes a turn like the owner's own (E27).
+	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	// The proof must be an argument of the same command as the yes: one elsewhere on the line proves nothing.
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
 	if (/--owner-yes/i.test(flat)) {
+		// An escape (\, a backtick, a caret, $'...') can move where a quote ends, so a yes holding one is not proven.
+		if (/[\\`^]|\$'/.test(text)) return 'an owner yes for a sweep';
 		// Read with its quotes, so a quoted span stays one word: a --thread inside the yes's words is no proof.
 		const proven = tokenize(joinContinuations(plainText(text))).some((all) => {
 			const w = all.filter((x) => !x.redirect).map((x) => x.value);

@@ -668,7 +668,9 @@ function ownerMessage(id) {
 				let e;
 				try { e = JSON.parse(line); } catch { continue; }
 				const c = e && e.message && e.message.content;
-				if (!e || e.type !== 'user' || e.isSidechain !== false || !e.origin || e.origin.kind !== 'human' || typeof c !== 'string') continue;
+				// projectsUserTurn: Claude Code marks a turn that came from a project thread; a session started from a shell
+				// (claude -p "<wake ...>") writes a human turn without it.
+				if (!e || e.type !== 'user' || e.isSidechain !== false || !e.origin || e.origin.kind !== 'human' || e.projectsUserTurn !== true || typeof c !== 'string') continue;
 				if (!c.startsWith('<wake ') || /<\/?(coordinator-relay|relay|project_claude_message|cited)\b/.test(c)) continue;
 				const m = tag.exec(c);
 				if (!m || !e.cwd) continue;
