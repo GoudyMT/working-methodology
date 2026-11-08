@@ -132,7 +132,9 @@ const SWEEP_TAG = /Sweep: ([0-9a-f]{16}) role (\d+)/;
 const sweepLine = (hash) => `Each brief carries "Sweep: ${hash} role <n>" (n is the role's place in the contract), its role's "Call cap: <n>" and its "Token ceiling: <n>".`;
 
 // The roles the log measured, the last CEILING_ROLES of them: what a ceiling and the drift baselines are read from.
-const measuredRoles = (log) => log.filter((e) => e.kind === 'outcome' && Array.isArray(e.roles)).flatMap((e) => e.roles).filter((r) => r && Number(r.tokens) > 0 && Number(r.calls) > 0).slice(-CEILING_ROLES);
+// A role whose reviewer crashed and was retried counts as its retry: each run had a whole ceiling of its own.
+const ownRun = (r) => (r && r.crashedTokens ? { ...r, tokens: Number(r.tokens) - Number(r.crashedTokens), calls: Number(r.calls) - Number(r.crashedCalls || 0) } : r);
+const measuredRoles = (log) => log.filter((e) => e.kind === 'outcome' && Array.isArray(e.roles)).flatMap((e) => e.roles).map(ownRun).filter((r) => r && Number(r.tokens) > 0 && Number(r.calls) > 0).slice(-CEILING_ROLES);
 // Nearest rank, so the value is one a real role spent.
 const nearestRank = (values, p) => { const v = [...values].sort((a, b) => a - b); return v.length ? v[Math.max(0, Math.ceil(p * v.length) - 1)] : 0; };
 const median = (values) => nearestRank(values, 0.5);
@@ -519,7 +521,7 @@ function triage(title, reasons, numbers) {
 		// The report sits in the working tree, so its log lines carry relative paths and leave out the owner's words.
 		'## The log lines', '', '```json', ...rawLines().slice(-5).map((l) => { try { const { words: _w, note: _n, ...e } = JSON.parse(l); return JSON.stringify({ ...e, ...(e.contract ? { contract: rel(e.contract) } : {}), ...(e.resweepOf ? { resweepOf: rel(e.resweepOf) } : {}) }); } catch { return '(unreadable line)'; } }), '```', '',
 		'## Fix options', '', ...options.map((o) => `- ${o}`),
-		'- Or the owner decides: after an ask, `approve.mjs <contract.json> --owner-yes "<their words>"`; after a pause, the owner resumes from their own terminal.', '',
+		'- Or the owner decides. After an ask: they answer in the thread "yes <the ask\'s code>" (the ask prints the code), and the lead logs it with `approve.mjs <contract.json> --owner-yes "yes <code>" --thread <their message id>`. After a pause: they answer "resume <the pause\'s code>" (`--summary` prints it), or resume from their own terminal.', '',
 	].join('\n');
 	fs.writeFileSync(f, text);
 	return toPosix(f);
@@ -648,13 +650,15 @@ const ownerHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAU
 const askCode = (hash) => String(hash || '').slice(0, 6);
 const pauseCode = (s) => { const lines = rawLines(); const i = s.log.map((e, k) => (e.kind === 'pause' ? k : -1)).reduce((a, b) => Math.max(a, b), -1); return i >= 0 ? sha(lines[i]).slice(0, 6) : ''; };
 const unescapeXml = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
-function ownerMessage(id) {
+// setup: read the message whoever sent it, to name its author as the owner (--owner-setup).
+function ownerMessage(id, setup = false) {
 	const cfg = ownerHome();
 	let owner = null;
 	try { owner = JSON.parse(fs.readFileSync(path.join(cfg, 'kit-owner.json'), 'utf8')); } catch { /* checked below */ }
-	if (!owner || typeof owner.authorId !== 'string' || !owner.authorId) return { err: `no owner is named in ${toPosix(path.join(cfg, 'kit-owner.json'))}: the owner writes { "authorId": "<their id>", "threadYes": true } there to answer from the thread` };
-	if (owner.threadYes !== true) return { err: 'the owner turned thread answers off in kit-owner.json ("threadYes")' };
+	if (!setup && (!owner || typeof owner.authorId !== 'string' || !owner.authorId)) return { err: `no owner is named in ${toPosix(path.join(cfg, 'kit-owner.json'))}. The owner sends any message in this build's thread, and the lead runs node ${toPosix(SELF)} --owner-setup --thread <that message's id>: it names that message's author as the owner` };
+	if (!setup && owner.threadYes !== true) return { err: 'the owner turned thread answers off in kit-owner.json ("threadYes")' };
 	if (!MESSAGE_ID.test(String(id || ''))) return { err: '--thread needs the id of the owner\'s message (cmsg_...)' };
+	let relayed = false;
 	const repo = path.dirname(LOG).toLowerCase();
 	const tag = new RegExp(`<message trigger="true" from="human" trust="principal" author-id="([^"]+)" id="${id}"[^>]*>([\\s\\S]*?)</message>`);
 	for (const project of folders(path.join(cfg, 'projects'))) {
@@ -671,18 +675,35 @@ function ownerMessage(id) {
 				// projectsUserTurn: Claude Code marks a turn that came from a project thread; a session started from a shell
 				// (claude -p "<wake ...>") writes a human turn without it.
 				if (!e || e.type !== 'user' || e.isSidechain !== false || !e.origin || e.origin.kind !== 'human' || e.projectsUserTurn !== true || typeof c !== 'string') continue;
-				if (!c.startsWith('<wake ') || /<\/?(coordinator-relay|relay|project_claude_message|cited)\b/.test(c)) continue;
+				if (!c.startsWith('<wake ') || /<\/?(coordinator-relay|relay|project_claude_message|cited)\b/.test(c)) { relayed = true; continue; }
 				const m = tag.exec(c);
 				if (!m || !e.cwd) continue;
 				const { GIT_DIR: _d, GIT_COMMON_DIR: _c, ...env } = process.env;
 				const at = spawnSync('git', ['-C', e.cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', env });
 				if (at.status !== 0 || path.resolve(at.stdout.trim()).toLowerCase() !== repo) continue;
-				if (m[1] !== owner.authorId) return { err: `message ${id} is not from the owner named in kit-owner.json` };
+				if (!setup && m[1] !== owner.authorId) return { err: `message ${id} is not from the owner named in kit-owner.json` };
 				return { author: m[1], words: unescapeXml(m[2]).trim(), at: e.timestamp };
 			}
 		}
 	}
+	// A relayed or cited copy is another Claude's word for it, so the owner answers in this build's own thread.
+	if (relayed) return { err: `message ${id} reached this repo's sessions only as a relayed or cited copy; the owner answers in this build's own thread, and that message's id is the proof` };
 	return { err: `no such message from a person in this repo's sessions: ${id}` };
+}
+
+// The owner named from the thread: the author of a message the owner sent in this repo's own thread becomes the owner
+// whose yes and resume the thread proof takes. Only while kit-owner.json names no one: a change of owner is the
+// owner's own edit of that file.
+function ownerSetup() {
+	const file = path.join(ownerHome(), 'kit-owner.json');
+	if (fs.existsSync(file)) { console.log(`Refused: ${toPosix(file)} already names an owner; a change is the owner's own edit of that file. Nothing written.`); return 1; }
+	const id = opt('--thread');
+	const m = ownerMessage(id, true);
+	if (m.err) { console.log(`Refused: ${m.err}. Nothing written.`); return 1; }
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, JSON.stringify({ authorId: m.author, threadYes: true }, null, 2) + '\n', { flag: 'wx' });
+	console.log(`The owner is the author of message ${id} (${m.author}), written to ${toPosix(file)}. Their thread answers now count: "yes <code>" for an ask, "resume <code>" for a pause. To turn thread answers off, set "threadYes": false there.`);
+	return 0;
 }
 const messageUsed = (log, id) => log.some((e) => e.message === id);
 
@@ -718,11 +739,15 @@ function ownerYes() {
 		if (messageUsed(s.log, id)) { console.log(`Refused: message ${id} already answered an ask; one message answers one. Nothing logged.`); return 1; }
 		if (!(Date.parse(m.at) > Date.parse(last.time))) { console.log(`Refused: message ${id} was sent before the ask (${last.time}). Nothing logged.`); return 1; }
 		if (m.words !== said.trim()) { console.log(`Refused: --owner-yes must give message ${id} word for word ("${m.words}"). Nothing logged.`); return 1; }
-		if (!new RegExp(`(^|\\W)${askCode(last.hash)}(\\W|$)`, 'i').test(m.words)) { console.log(`Refused: the owner's message does not carry this ask's code ${askCode(last.hash)}, so it answers no ask of this one; ask again with the code. Nothing logged.`); return 1; }
+		// The whole message is the yes and this ask's code, as the resume is: a "no abc123" or a question carrying the
+		// code is no yes (the 1.23.0 sweep).
+		if (!new RegExp(`^yes ${askCode(last.hash)}[.!]?$`, 'i').test(m.words)) { console.log(`Refused: message ${id} ("${m.words}") is not "yes ${askCode(last.hash)}", the yes with this ask's code. Nothing logged.`); return 1; }
 		proof = { proof: 'thread', message: id };
 	}
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
-	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, words: said, ...proof });
+	// The ask's ceilings travel with the yes: the reviewers' guard reads the clearing line, and a yes without them
+	// started reviewers with no ceiling at all (the 1.23.0 sweep).
+	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings } : {}), words: said, ...proof });
 	console.log(`The owner's yes is logged; the reviewers may start. ${sweepLine(last.hash)}`);
 	return 0;
 }
@@ -857,7 +882,9 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 			rewrites: calls.slice(1).filter((m) => u(m, 'cache_creation_input_tokens') * 2 > per(m)).length,
 			// Stopped: the call-cap hook refused a tool at the ceiling. Its own words in the transcript say so; the spend
 			// alone cannot tell a role that was stopped from one that was done.
-			stopped: parsed.some((e) => e && e.message && e.message.role === 'user' && Array.isArray(e.message.content) && e.message.content.some((x) => x && x.type === 'tool_result' && /Token ceiling reached/.test(typeof x.content === 'string' ? x.content : JSON.stringify(x.content)))),
+			// Only a refusal counts, with the hook's numbers in it: a reviewer that read the hook's source or this script
+			// sees the words too (the 1.23.0 sweep).
+			stopped: parsed.some((e) => e && e.message && e.message.role === 'user' && Array.isArray(e.message.content) && e.message.content.some((x) => x && x.type === 'tool_result' && x.is_error === true && /Token ceiling reached \(\d[\d,]* of \d/.test(typeof x.content === 'string' ? x.content : JSON.stringify(x.content)))),
 		};
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
 		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
@@ -998,7 +1025,7 @@ function outcome() {
 	try { roles = JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []; } catch { /* labels only */ }
 	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, lastCall: _l, ...x }, i) => {
 		const c = read.roles.find((y) => isLost(y.agent) && y.index === index);
-		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null, ceiling: (decision.ceilings || [])[i] ?? null };
+		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls, crashedTokens: c.tokens } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null, ceiling: (decision.ceilings || [])[i] ?? null };
 	});
 	nums.tokens = per.reduce((t, x) => t + x.tokens, 0);
 	// Ten quiet minutes do not prove a crash: 16 of 303 reviewer transcripts paused that long and went on. A crashed
@@ -1009,10 +1036,15 @@ function outcome() {
 	const trips = [];
 	// The baselines are the roles measured before this outcome. Without enough of them the old whole-sweep trip stays.
 	const past = measuredRoles(s.log);
-	const bounded = Array.isArray(decision.ceilings) && past.length >= CEILING_MIN;
+	// Bounded only when the decision's own ceilings came from that baseline: ceilings set from the budgets keep the
+	// whole-sweep trip, however many roles were measured since (the 1.23.0 sweep).
+	const bounded = Array.isArray(decision.ceilings) && past.length >= CEILING_MIN && /^the p90/.test(String(decision.ceilingFrom || ''));
 	if (!bounded && decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
 	const n = (x) => Math.round(x).toLocaleString('en-US');
-	for (const x of per) if (x.ceiling && x.tokens > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(x.tokens)} against ${n(x.ceiling)} (the hook is missing or did not fire)`);
+	// A crash and its retry each had the whole ceiling, so the check reads the retry alone, as the call check does.
+	for (const x of per) { const own = x.tokens - (x.crashedTokens || 0); if (x.ceiling && own > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(own)} against ${n(x.ceiling)} (the hook is missing or did not fire)`); }
+	// Past the cap's own stop (one call over is the hook's margin): the hook is missing or did not hold.
+	for (const x of per) { const calls = x.calls - (x.crashedCalls || 0); if (x.cap && calls > x.cap + 1) trips.push(`${x.role} ran ${calls} calls against its cap of ${x.cap}: no call-cap hook held it`); }
 	if (bounded) {
 		const stopped = per.filter((x) => x.stopped).length;
 		if (stopped > STOPPED_SHARE * per.length) trips.push(`${stopped} of ${per.length} roles stopped at their token ceiling (the work outgrew it)`);
@@ -1034,9 +1066,6 @@ function outcome() {
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
 	for (const id of alive) console.log(`    ${id} wrote after its retry was logged: it was not dead, so its role had two reviewers. Its spend so far is counted.`);
-	// Past the cap's own stop: the hook is missing or did not hold. The trip stays on the whole sweep. A crash and its
-	// retry each had their own cap, so the check reads the retry alone.
-	for (const x of per) { const calls = x.calls - (x.crashedCalls || 0); if (x.cap && calls > x.cap + 1) console.log(`    ${x.role} ran ${calls} calls against its cap of ${x.cap}: no call-cap hook held it.`); }
 	console.log(trips.length ? `Outcome logged; auto-approval paused: ${trips.join('; ')}` : `Outcome logged: ${nums.tokens.toLocaleString('en-US')} processed tokens over ${per.length} role(s).`);
 	if (trips.length) {
 		const f = triage('auto-approval paused after a sweep\'s outcome', trips, [
@@ -1070,13 +1099,15 @@ function summary() {
 	const n = (x) => x.toLocaleString('en-US');
 	if (Object.keys(kinds).length) console.log(`spend by role kind (processed tokens): ${Object.entries(kinds).map(([k, v]) => `${k} x${v.n}: up to ${n(v.max)}${v.calls ? ` over ${v.calls} calls` : ''}`).join('; ')}`);
 	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; closed unmeasured by the owner: ${o.filter((e) => e.closedByOwner).length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${s.reviewEvery} since the last review`}`);
-	if (s.paused) console.log(resumeHelp(s)[2].trim());
+	// Both ways to resume: the owner may be at the terminal or on the phone.
+	if (s.paused) for (const line of [resumeHelp(s)[2], resumeHelp(s)[4]]) console.log(line.trim());
 	return 0;
 }
 
 function main() {
 	if (!LOG) { console.log('ASK THE OWNER - not inside a git repository, so there is no approval log.'); return 1; }
 	if (has('--summary')) return summary();
+	if (has('--owner-setup')) return ownerSetup();
 	if (has('--resume') && has('--thread')) {
 		// From the thread (E27): the owner's own message, after the pause, that says resume.
 		const s = state();

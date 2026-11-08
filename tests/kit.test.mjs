@@ -2382,6 +2382,8 @@ function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session
     const lines = calls.map((c, i) => {
       // { refused: text } is a hook's refusal of a tool call, as Claude Code writes it into the transcript.
       if (c && c.refused) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, is_error: true, content: c.refused }] } });
+      // { read: text } is a tool's plain answer, such as a file the reviewer read.
+      if (c && c.read) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, content: c.read }] } });
       const { id: mid = `msg_${id}_${i}`, u = c, model: m = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
       model = m;
       return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
@@ -2427,7 +2429,7 @@ test('the sweep guard refuses to resume a reviewer with SendMessage, and lets ot
   fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
   fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.meta.json'), JSON.stringify({ agentType: 'reviewer', finished: true }));
   fs.writeFileSync(path.join(session, 'subagents', 'agent-b1.meta.json'), JSON.stringify({ agentType: 'builder', finished: true }));
-  const send = (to) => { const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', transcript_path: `${session}.jsonl`, tool_input: { to, message: 'one more check' } }); return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' }; };
+  const send = (to) => { const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', transcript_path: `${session}.jsonl`, tool_input: { to, message: 'one more check' } }); assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`); return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' }; };
   const r = send('r1');
   assert.equal(r.permissionDecision, 'deny');
   assert.match(r.permissionDecisionReason, /never resumed/);
@@ -2498,25 +2500,33 @@ test('the owner\'s yes from the thread clears an ask, read from the session tran
   const r = asked();
   const cfg = makeTemp('cfg-');
   ownerFile(cfg);
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_A1aaaaaa', words: `yes ${r.code}, run it` });
-  const ok = yes(r, cfg, 'cmsg_A1aaaaaa', `yes ${r.code}, run it`);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_A1aaaaaa', words: `yes ${r.code}` });
+  const ok = yes(r, cfg, 'cmsg_A1aaaaaa', `yes ${r.code}`);
   assert.equal(ok.status, 0, ok.stdout);
   const line = approvalLog(r.dir).pop();
   assert.equal(line.kind, 'owner-yes');
-  assert.deepEqual([line.words, line.proof, line.message], [`yes ${r.code}, run it`, 'thread', 'cmsg_A1aaaaaa']);
+  assert.deepEqual([line.words, line.proof, line.message], [`yes ${r.code}`, 'thread', 'cmsg_A1aaaaaa']);
+  // The ask's ceilings travel with the yes, so the reviewers' guard holds them to it (the 1.23.0 sweep).
+  const decided = approvalLog(r.dir).filter((e) => e.kind === 'decision').pop();
+  assert.ok(Array.isArray(decided.ceilings) && decided.ceilings.length > 0, 'the ask set ceilings');
+  assert.deepEqual(line.ceilings, decided.ceilings);
   const refused = [
-    ['no owner named', (c) => fs.rmSync(path.join(c, 'kit-owner.json')), /kit-owner\.json/],
+    ['no owner named', (c) => fs.rmSync(path.join(c, 'kit-owner.json')), /kit-owner\.json[\s\S]*--owner-setup --thread/],
     ['the owner turned it off', (c) => ownerFile(c, { authorId: OWNER, threadYes: false }), /turned thread answers off/],
-    ['other words', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, run it now` }), /word for word/],
-    ['a yes without this ask\'s code', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it' }), /code/, 'yes, run it'],
-    ['another person', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, run it`, author: 'user_other' }), /not from the owner/],
-    ['a message from before the ask', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, run it`, at: '2020-01-01T00:00:00.000Z' }), /before the ask/],
-    ['a relay quoting the owner', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, run it`, wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` }), /no such message/],
-    ['a message in another repo\'s session', (c, d, k) => ownerSays(c, { cwd: makeTemp('elsewhere-'), id: 'cmsg_Bbbbbbbb', words: `yes ${k}, run it` }), /no such message/],
+    ['other words', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}.` }), /word for word/],
+    ['a yes without this ask\'s code', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it' }), /is not "yes [0-9a-f]{6}"/, 'yes, run it'],
+    // The whole message is the yes and the code: a no or a question carrying the code is no yes (the 1.23.0 sweep).
+    ['a no carrying the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `no ${k}` }), /is not "yes [0-9a-f]{6}"/, (k) => `no ${k}`],
+    ['a question carrying the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `is ${k} safe?` }), /is not "yes [0-9a-f]{6}"/, (k) => `is ${k} safe?`],
+    ['a yes hedged around the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, unless it looks off` }), /is not "yes [0-9a-f]{6}"/, (k) => `yes ${k}, unless it looks off`],
+    ['another person', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, author: 'user_other' }), /not from the owner/],
+    ['a message from before the ask', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, at: '2020-01-01T00:00:00.000Z' }), /before the ask/],
+    ['a relay quoting the owner', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` }), /relayed or cited copy[\s\S]*own thread/],
+    ['a message in another repo\'s session', (c, d, k) => ownerSays(c, { cwd: makeTemp('elsewhere-'), id: 'cmsg_Bbbbbbbb', words: `yes ${k}` }), /no such message/],
     // A session Claude starts itself (claude -p "<wake ...>") writes a human turn too, but not a projects thread's.
-    ['a prompt typed into a session Claude started', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, run it`, entry: { projectsUserTurn: undefined, entrypoint: 'cli' } }), /no such message/],
-    ['a turn Claude wrote', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, run it`, entry: { origin: { kind: 'agent' } } }), /no such message/],
-    ['a subagent\'s transcript', (c, w, k) => { fs.mkdirSync(path.join(c, 'projects', 'C--repo', 's', 'subagents'), { recursive: true }); ownerSays(c, { cwd: w, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, run it`, file: path.join('s', 'subagents', 'agent-x.jsonl') }); }, /no such message/],
+    ['a prompt typed into a session Claude started', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, entry: { projectsUserTurn: undefined, entrypoint: 'cli' } }), /no such message/],
+    ['a turn Claude wrote', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, entry: { origin: { kind: 'agent' } } }), /no such message/],
+    ['a subagent\'s transcript', (c, w, k) => { fs.mkdirSync(path.join(c, 'projects', 'C--repo', 's', 'subagents'), { recursive: true }); ownerSays(c, { cwd: w, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, file: path.join('s', 'subagents', 'agent-x.jsonl') }); }, /no such message/],
   ];
   for (const [name, set, why, given] of refused) {
     const s = asked();
@@ -2524,7 +2534,7 @@ test('the owner\'s yes from the thread clears an ask, read from the session tran
     ownerFile(c);
     set(c, s.dir, s.code);
     const before = sweepLog(s.dir).length;
-    const out = yes(s, c, 'cmsg_Bbbbbbbb', given || `yes ${s.code}, run it`);
+    const out = yes(s, c, 'cmsg_Bbbbbbbb', typeof given === 'function' ? given(s.code) : given || `yes ${s.code}`);
     assert.equal(out.status, 1, `${name}: ${out.stdout}`);
     assert.match(out.stdout, why, name);
     assert.equal(sweepLog(s.dir).length, before, `${name}: nothing logged`);
@@ -2534,10 +2544,20 @@ test('the owner\'s yes from the thread clears an ask, read from the session tran
   const word = approveIn(bare.dir, [bare.f, '--owner-yes', 'yes, run it'], { CLAUDECODE: '1' });
   assert.equal(word.status, 1, word.stdout);
   assert.match(word.stdout, /--thread/);
-  // One message answers one ask.
-  const next = asked();
-  const reuse = approveIn(next.dir, [next.f, '--owner-yes', `yes ${r.code}, run it`, '--thread', 'cmsg_A1aaaaaa'], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  // One message answers one ask: a second ask in the same repo, answered with the same message, is refused for that
+  // reason (the 1.23.0 sweep: a new repo's empty log could never show the reuse).
+  assert.equal(approveIn(r.dir, [r.f, '--outcome', '--none-ran']).status, 0, 'the first ask\'s sweep is closed');
+  const c2 = JSON.parse(read(r.f));
+  c2.roles[0].question += ' Also the second ask.';
+  fs.writeFileSync(r.f, JSON.stringify(c2));
+  const again = approveIn(r.dir, [r.f]);
+  const code2 = (again.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/) || [])[1];
+  assert.ok(code2 && code2 !== r.code, again.stdout);
+  const before = sweepLog(r.dir).length;
+  const reuse = approveIn(r.dir, [r.f, '--owner-yes', `yes ${r.code}`, '--thread', 'cmsg_A1aaaaaa'], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
   assert.equal(reuse.status, 1, reuse.stdout);
+  assert.match(reuse.stdout, /already answered an ask/);
+  assert.equal(sweepLog(r.dir).length, before, 'nothing logged');
 });
 
 test('the owner resumes auto-approval from the thread with "resume" and the pause\'s code, sent after the pause', () => {
@@ -2560,6 +2580,27 @@ test('the owner resumes auto-approval from the thread with "resume" and the paus
   assert.equal(ok.status, 0, ok.stdout);
   const line = approvalLog(r.dir).pop();
   assert.deepEqual([line.kind, line.words, line.message], ['resume', `Resume ${code}.`, 'cmsg_R3rrrrrr']);
+});
+
+// The 1.23.0 sweep: nothing wrote kit-owner.json, and Claude may not write it, so the first phone yes was refused with
+// no way forward from the phone. The owner sends any message in the thread; its author is named the owner, once.
+test('the owner is named from the thread with --owner-setup, only while no owner is named', () => {
+  const r = approveRun(askContract());
+  const cfg = makeTemp('cfg-');
+  const setup = (id) => approveIn(r.dir, ['--owner-setup', '--thread', id], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S0ssssss', words: 'set me up', wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` });
+  assert.match(setup('cmsg_S0ssssss').stdout, /relayed or cited copy/, 'a relayed copy names no one');
+  assert.equal(fs.existsSync(path.join(cfg, 'kit-owner.json')), false);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S1ssssss', words: 'set me up' });
+  const ok = setup('cmsg_S1ssssss');
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.deepEqual(JSON.parse(read(path.join(cfg, 'kit-owner.json'))), { authorId: OWNER, threadYes: true });
+  // Once named, a change is the owner's own edit of the file.
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S2ssssss', words: 'me instead', author: 'user_other' });
+  const again = setup('cmsg_S2ssssss');
+  assert.equal(again.status, 1, again.stdout);
+  assert.match(again.stdout, /already names an owner/);
+  assert.equal(JSON.parse(read(path.join(cfg, 'kit-owner.json'))).authorId, OWNER);
 });
 
 // The installed approve.mjs reads the owner's file and transcripts in the Claude folder install user filled in, so
@@ -3193,6 +3234,9 @@ test('while paused, every ask says how the owner resumes and what to review firs
   assert.match(ask.stdout, /KIT_OWNER_RESUME/);
   assert.match(ask.stdout, /--summary/);
   assert.match(approveIn(r.dir, ['--summary']).stdout, /resume: .*KIT_OWNER_RESUME/);
+  // The phone's way too, with the pause's code (the 1.23.0 sweep: the summary showed only the terminal's).
+  const code = ask.stdout.match(/from the thread: "resume ([0-9a-f]{6})"/)[1];
+  assert.ok(approveIn(r.dir, ['--summary']).stdout.includes(`"resume ${code}"`));
 });
 test('an owner-decided sweep can log its outcome, so the trial sees every sweep', () => {
   const r = approveRun(askContract());
@@ -4521,7 +4565,10 @@ test('a role\'s token ceiling is the p90 of the last 60 roles measured, or 1.25x
 });
 
 test('the sweep guard starts a reviewer only with its role\'s token ceiling from the cleared contract', () => {
-  const r = approveRun(featureContract());
+  // Role 2 has a larger cap, so a larger budget and ceiling than role 1's.
+  const contract = featureContract();
+  contract.roles[1].calls = 8;
+  const r = approveRun(contract);
   const e = approvalLog(r.dir).pop();
   const brief = (ceiling) => `review. Call cap: 5. Sweep: ${e.hash} role 1.${ceiling} ${JSON.parse(read(r.f)).roles[0].question}`;
   const run = (prompt) => sweepGuard(r.dir, { raw: true, noCeiling: true, tool_input: { subagent_type: 'reviewer', prompt } });
@@ -4529,7 +4576,31 @@ test('the sweep guard starts a reviewer only with its role\'s token ceiling from
   assert.equal(none.permissionDecision, 'deny');
   assert.match(none.permissionDecisionReason, /Token ceiling: <n>/);
   assert.equal(run(brief(` Token ceiling: ${e.ceilings[0] + 1}.`)).permissionDecision, 'deny', 'a ceiling the contract never set');
+  // Another role's ceiling is not this role's (the 1.23.0 sweep: only a ceiling plus one was tried). Checked before
+  // the allow below, which takes role 1's one start.
+  const other = e.ceilings.find((x) => x !== e.ceilings[0]);
+  assert.ok(other, `the roles' ceilings differ: ${e.ceilings}`);
+  const borrowed = run(brief(` Token ceiling: ${other}.`));
+  assert.equal(borrowed.permissionDecision, 'deny', 'another role\'s ceiling');
+  assert.match(borrowed.permissionDecisionReason, /token ceiling/i);
   assert.equal(run(brief(` Token ceiling: ${e.ceilings[0]}.`)).permissionDecision, 'allow');
+});
+
+test('a sweep the owner cleared from the thread starts its reviewers under the ask\'s token ceilings', () => {
+  const r = approveRun(askContract());
+  const code = r.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/)[1];
+  const cfg = makeTemp('cfg-');
+  ownerFile(cfg);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_C1cccccc', words: `yes ${code}` });
+  const ok = approveIn(r.dir, [r.f, '--owner-yes', `yes ${code}`, '--thread', 'cmsg_C1cccccc'], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  assert.equal(ok.status, 0, ok.stdout);
+  const d = approvalLog(r.dir).filter((e) => e.kind === 'decision').pop();
+  const c = JSON.parse(read(r.f));
+  const brief = (ceiling) => `review. Call cap: ${d.calls[0]}. Sweep: ${d.hash} role 1.${ceiling} ${c.roles[0].question}`;
+  const run = (prompt) => sweepGuard(r.dir, { raw: true, noCeiling: true, tool_input: { subagent_type: 'reviewer', prompt } });
+  assert.equal(run(brief('')).permissionDecision, 'deny', 'no ceiling in the brief');
+  assert.equal(run(brief(` Token ceiling: ${d.ceilings[0] * 10}.`)).permissionDecision, 'deny', 'a ceiling the ask never set');
+  assert.equal(run(brief(` Token ceiling: ${d.ceilings[0]}.`)).permissionDecision, 'allow');
 });
 
 test('the call-cap hook stops a reviewer before a call would take it past its token ceiling', () => {
@@ -4594,6 +4665,36 @@ test('the drift signals pause a sweep, each by name', () => {
   assert.match(driftSweep(rewrite).o.stdout, /paused: .*2 cache re-writes after the first call/);
   const heavy = Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 60000, 0, 0], [0, 60000, 0, 0]]);
   assert.match(driftSweep(heavy).o.stdout, /paused: .*content per call .*over its p95 of 33,333/);
+});
+
+// The 1.23.0 sweep's findings on the drift signals.
+test('a reviewer that only read the hook\'s words was not stopped: only the hook\'s refusal counts', () => {
+  // Roles that read call-cap.cjs or this script see the words in a tool's plain answer.
+  const reader = () => [[10000, 0, 0, 0], { read: 'deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): ...`)' }, { read: 'Token ceiling reached (122,000 of 200,000)' }, ...Array(5).fill([0, 28000, 0, 0])];
+  const { o, line } = driftSweep([reader(), reader(), usual(), usual(), usual()]);
+  assert.doesNotMatch(o.stdout, /stopped at their token ceiling/);
+  assert.equal(line.roles[0].stopped, false);
+});
+test('the ceiling\'s check allows one call past it, the margin the hook works with, and no more', () => {
+  // 10,000 + 4 x 28,000 + 100,000 = 222,000: past the 200,000 ceiling by less than its largest call.
+  const margin = driftSweep([[[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), [0, 100000, 0, 0]], usual(), usual(), usual(), usual()]);
+  assert.doesNotMatch(margin.o.stdout, /did not hold/);
+});
+test('a role past its call cap pauses the sweep under ceilings too: the cap did not hold', () => {
+  // 8 calls of 10,000 against a cap of 5: inside the token ceiling, past the cap's one-call margin.
+  const { o } = driftSweep([[[10000, 0, 0, 0], ...Array(7).fill([0, 10000, 0, 0])], usual(), usual(), usual(), usual()]);
+  assert.match(o.stdout, /paused: .*ran 8 calls against its cap of 5: no call-cap hook held it/);
+});
+test('ceilings set from the budgets keep the whole-sweep trip, however many roles were measured since', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.match(approvalLog(dir).pop().ceilingFrom, /x each role's budget/);
+  // Twenty-five roles are measured after this decision and before its outcome.
+  seedOutcomes(dir, Array.from({ length: 25 }, () => pastRole(200000)));
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[10000, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]])));
+  const o = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.match(o.stdout, /paused: .*tokens 750000 ran 40% over the budget/);
 });
 
 test('the project settings wire the call-cap hook on every tool', () => {
@@ -4848,6 +4949,23 @@ test('a crashed reviewer gets one more start for its role, and its spend stays o
   assert.equal(approveIn(s.dir, [s.f]).status, 0);
   assert.match(logOutcome(s, ['r1', 'r2x'], s.cfg).stdout, /r1 \(already logged/, 'the crashed id counts as used');
   assert.match(s.retry(1, 'r1').stdout, /r1 \(already logged/);
+});
+test('a crash and its retry each had the whole token ceiling: the check reads the retry alone (the 1.23.0 sweep)', () => {
+  const s = crashedSweep();
+  const ceiling = approvalLog(s.dir).filter((e) => e.kind === 'decision').pop().ceilings[0];
+  // The crash spent 70% of the ceiling, the retry 60% in four calls: 130% together, each inside its own.
+  const part = (share, n) => Array(n).fill([0, Math.round((ceiling * share) / n), 0, 0]);
+  transcripts({ r1: part(0.7, 4) }, { r1: { finished: false } }, s.cfg);
+  setBrief(s.cfg, 'r1', () => s.brief(1));
+  ageTranscript(s.cfg, 'r1', { stamps: 11, file: 11 });
+  assert.equal(s.start(1), 'allow');
+  assert.equal(s.start(2), 'allow');
+  assert.equal(s.retry(1, 'r1').status, 0);
+  assert.equal(s.start(1), 'allow');
+  transcripts({ r1c: part(0.6, 4) }, {}, s.cfg);
+  const done = logOutcome(s, ['r1c', 'r2'], s.cfg);
+  assert.equal(done.status, 0, done.stdout);
+  assert.doesNotMatch(done.stdout, /did not hold/);
 });
 // A still-running reviewer has no `finished` either, so only a quiet transcript reads as a crash. Both clocks must be
 // old: the file's mtime and the last entry's timestamp, whichever is later.
@@ -6992,8 +7110,9 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
 test('S6: a yes with the thread\'s proof passes the guard, and one without it still asks', () => {
   const ask = JSON.parse(read(path.resolve('project/.claude/settings.json'))).permissions.ask;
   assert.equal(ask.some((r) => /owner-yes/.test(r)), false);
-  const guard = (command) => spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' }).stdout;
-  assert.equal(guard('node approve.mjs c.json --owner-yes "yes, run it" --thread cmsg_Abcdefgh12'), '');
+  // A crash prints nothing too, and onFailure block makes it a block: only a clean exit counts as a pass.
+  const guard = (command) => { const r = spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' }); assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`); return r.stdout; };
+  assert.equal(guard('node approve.mjs c.json --owner-yes "yes abc123" --thread cmsg_Abcdefgh12'), '');
   assert.match(guard('node approve.mjs c.json --owner-yes "yes, run it"'), /ask/);
   assert.match(guard('node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12; git push'), /ask/);
 });
