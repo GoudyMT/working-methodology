@@ -58,7 +58,7 @@ jobs:
       # Through the guarded runner: this slice of every tests/*.test.mjs, and the run fails if it leaves anything in
       # the temp folder.
       - name: Unit tests
-        run: node scripts/test-run.mjs --slice ${{ matrix.slice }}/4
+        run: node scripts/test-run.mjs --slice ${{ matrix.slice }}/4 --shards 4
 
   # The required check. It runs even when a slice fails, and fails then: a job skipped because a job it needs failed
   # counts as passed for a required check.

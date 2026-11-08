@@ -5,7 +5,8 @@
 //   node scripts/test-run.mjs --map [files...]      every test, recording the coverage map (needs a clean tree)
 //   --shards <n>                                     processes to split the tests over (default: CPUs, at most 8)
 //   --slice <i>/<n>                                  run only slice i (from 0) of n: CI splits the suite over n jobs,
-//                                                    each running its own shards; files outside the harness run in slice 0
+//                                                    each running its own shards; files outside the harness run in slice 0.
+//                                                    It needs --shards, the same on every slice; it takes no --map
 // Every run:
 // 1. refuses to start above 80% of the temp disk's inodes used (exit 2), and warns above 50%;
 // 2. sweeps the roots of finished or killed runs, before and after;
@@ -37,7 +38,7 @@ const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
 function parseArgs(args) {
 	const o = { shards: Math.min(8, os.availableParallelism()), map: false, changed: false, files: [], slice: null };
 	for (let i = 0; i < args.length; i++) {
-		if (args[i] === '--shards') o.shards = Math.max(1, Number(args[++i]) || 1);
+		if (args[i] === '--shards') { o.shards = Math.max(1, Number(args[++i]) || 1); o.shardsGiven = true; }
 		else if (args[i] === '--slice') {
 			const m = /^(\d+)\/(\d+)$/.exec(args[++i] || '');
 			// A slice out of range would run nothing and pass, so a bad one stops the run.
@@ -208,6 +209,15 @@ export async function main(argv) {
 	const o = parseArgs(argv);
 	if (o.slice === 'bad') {
 		process.stderr.write('test-run: --slice takes i/n with 0 <= i < n\n');
+		return 2;
+	}
+	// Every slice must split the tests the same way, so the shard count is named, not read from each runner's CPUs.
+	if (o.slice && !o.shardsGiven) {
+		process.stderr.write('test-run: --slice needs --shards <n>, the same on every slice, or the slices split the tests differently\n');
+		return 2;
+	}
+	if (o.slice && o.map) {
+		process.stderr.write('test-run: a map is of the whole suite; --map with --slice would write one slice\'s map at HEAD\n');
 		return 2;
 	}
 	const tmp = os.tmpdir();

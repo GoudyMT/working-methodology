@@ -52,9 +52,18 @@ test('runner slices split the shards over CI jobs: together every test exactly o
 	}
 	assert.deepEqual(ran(log), [...names, 'whole'].sort());
 	for (const bad of ['3/3', '-1/3', 'x', '1/0']) {
-		const r = run(dir, ['--slice', bad, ...files]);
+		const r = run(dir, ['--slice', bad, '--shards', '2', ...files]);
 		assert.equal(r.status, 2, `--slice ${bad}: ${r.stdout}${r.stderr}`);
 	}
+	// The 1.23.0 sweep. Each runner picked its own shard count from its CPUs, so two slices could split the tests two
+	// ways, skipping some and running others twice: a slice needs --shards, the same on every runner. And a map is of
+	// the whole suite: one slice's map would stand at HEAD with half the tests.
+	const none = run(dir, ['--slice', '0/3', ...files]);
+	assert.equal(none.status, 2, none.stdout + none.stderr);
+	assert.match(none.stderr, /--shards/);
+	const half = run(dir, ['--map', '--slice', '0/2', '--shards', '2', ...files]);
+	assert.equal(half.status, 2, half.stdout + half.stderr);
+	assert.match(half.stderr, /whole suite/);
 });
 
 test('a run started inside another run ignores the outer run\'s selection and map', () => {

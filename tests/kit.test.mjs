@@ -5813,7 +5813,8 @@ test('CI splits the tests over slices, and the required check fails unless every
   const job = (name) => ci.split(new RegExp(`^  ${name}:$`, 'm'))[1].split(/^  [a-z-]+:$/m)[0];
   const unit = job('unit-tests');
   const slices = JSON.parse(/^\s+slice: (\[[\d, ]+\])$/m.exec(unit)[1]);
-  const n = Number(/node scripts\/test-run\.mjs --slice \$\{\{ matrix\.slice \}\}\/(\d+)$/m.exec(unit)[1]);
+  // The shard count is named, so every slice splits the tests the same way (the 1.23.0 sweep).
+  const n = Number(/node scripts\/test-run\.mjs --slice \$\{\{ matrix\.slice \}\}\/(\d+) --shards \d+$/m.exec(unit)[1]);
   assert.deepEqual(slices, [...Array(n).keys()], 'the matrix lists every slice 0..n-1 once');
   assert.match(unit, /^\s+fail-fast: false$/m);
   const gate = job('kit-tests');
