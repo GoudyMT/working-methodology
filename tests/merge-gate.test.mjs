@@ -1,22 +1,24 @@
 // Tests for the merge gate (user/kit-tools/merge-gate.mjs): a real git repo with a bare origin, the kit's real
 // audits, and a fake gh that answers from a state object and records every call.
-import { test } from 'node:test';
+import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
-import { check, arm, disarm, autofix, live, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
+import kitTemp from '../project/.claude/kit-temp.cjs';
+import { check, arm, disarm, autofix, live, status, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-tests-'));
-process.env.TMPDIR = process.env.TEMP = process.env.TMP = tmpRoot;
-process.on('exit', () => { try { fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 3 }); } catch {} });
+// kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
+const tmpRoot = kitTemp.sessionRoot();
+const { makeTemp } = kitTemp;
 
 const KIT = path.resolve('.');
+// The test's own git runs no hooks: the work repo's pre-push is the gate's hold, not a step of the test.
 const sh = (cwd, ...a) => {
-	const r = spawnSync('git', a, { cwd, encoding: 'utf8' });
+	const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', ...a], { cwd, encoding: 'utf8' });
 	if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
 	return r.stdout.trim();
 };
@@ -33,24 +35,33 @@ function appendLog(work, entry) {
 }
 function cleared(work, sha, decision = {}, outcome = {}) {
 	const contract = path.join(work, 'reports/sweeps/c.json');
-	appendLog(work, { kind: 'decision', contract, hash: 'c', tier: 'feature', agents: 1, decision: 'approved', head: sha.slice(0, 7), ...decision });
+	appendLog(work, { kind: 'decision', contract, hash: 'c', tier: 'feature', agents: 1, decision: 'approved', head: sha, ...decision });
 	if (outcome) appendLog(work, { kind: 'outcome', contract, tokens: 10, ...outcome });
 }
 
 function setup() {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-gate-'));
-	const origin = path.join(root, 'origin.git');
+	const root = makeTemp('merge-gate-');
+	// Named as GitHub names it, so the gate's check that origin is the PR's repo reads it as o/r.
+	const origin = path.join(root, 'github.com', 'o', 'r.git');
 	const work = path.join(root, 'work');
 	const config = path.join(root, 'config');
 	sh(root, 'init', '-q', '--bare', '-b', 'main', origin);
 	sh(root, 'clone', '-q', origin, work);
 	sh(work, 'config', 'user.name', 't'); sh(work, 'config', 'user.email', 't@t');
+	// The push hold the kit installs, outside the repo as install puts it.
+	const hooks = path.join(root, 'kit-hooks');
+	fs.mkdirSync(hooks);
+	fs.copyFileSync(path.join(KIT, 'project/.githooks/pre-push'), path.join(hooks, 'pre-push'));
+	sh(work, 'config', 'core.hooksPath', hooks);
 	sh(work, 'checkout', '-q', '-b', 'main');
 	fs.mkdirSync(path.join(work, '.claude'));
 	for (const f of fs.readdirSync(path.join(KIT, 'project/.claude'))) {
 		if (/\.(mjs|cjs|json)$/.test(f)) fs.copyFileSync(path.join(KIT, 'project/.claude', f), path.join(work, '.claude', f));
 	}
 	fs.writeFileSync(path.join(work, 'math.txt'), 'add\n');
+	// The project's consent to the grant (adapter row A27).
+	fs.mkdirSync(path.join(work, 'standards'));
+	fs.writeFileSync(path.join(work, 'standards', 'project-adapter.md'), '| Row | Field | Rule | Value |\n|---|---|---|---|\n| A27 | Standing grants | Standing Grants | `merge through the merge gate; auto-fix push` |\n');
 	sh(work, 'add', '-A'); sh(work, 'commit', '-qm', 'base'); sh(work, 'push', '-q', 'origin', 'main');
 	sh(work, 'checkout', '-q', '-b', 'feat/subtract');
 	fs.writeFileSync(path.join(work, 'math.txt'), 'add\nsub\n');
@@ -67,7 +78,7 @@ function setup() {
 		pr: { number: 7, state: 'OPEN', isDraft: false, isCrossRepository: false, headRefName: 'feat/subtract', headRefOid: sha, baseRefName: 'main', title: TITLE, body: BODY, url: 'https://github.com/o/r/pull/7' },
 		repo: { full_name: 'o/r', html_url: 'https://github.com/o/r', allow_auto_merge: true, delete_branch_on_merge: true },
 		baseTip: null,
-		protection: { contexts: ['kit-tests'], checks: [] },
+		protection: { contexts: ['kit-tests'], checks: [], strict: true },
 		rules: [],
 		release: { tagName: 'v1.2.0', body: 'Plans now sync between devices.\n' },
 		mergeStatus: 0,
@@ -76,34 +87,48 @@ function setup() {
 		armed: false,
 		calls: [],
 	};
-	const run = (cmd, args, cwd) => {
+	const run = (cmd, args, cwd, env) => {
 		if (cmd !== 'gh') {
-			const r = spawnSync(cmd, args, { cwd, encoding: 'utf8' });
+			const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', env: env ? { ...process.env, ...env } : process.env });
 			return { status: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' };
 		}
 		state.calls.push(args.join(' '));
 		const ok = (o) => ({ status: 0, stdout: JSON.stringify(o), stderr: '' });
 		const no = { status: 1, stdout: '', stderr: 'HTTP 404' };
 		// Like the real gh, it answers only the fields asked for, so a field dropped from a list goes missing here too.
+		if (args[0] === 'pr' && args[1] === 'view' && state.readBackFails && args.includes('autoMergeRequest,state')) return no;
 		if (args[0] === 'pr' && args[1] === 'view') {
 			const full = { state: 'OPEN', ...state.pr, autoMergeRequest: state.armed ? { mergeMethod: 'SQUASH' } : null };
 			return ok(Object.fromEntries(args[args.indexOf('--json') + 1].split(',').filter((k) => k in full).map((k) => [k, full[k]])));
 		}
 		if (args[0] === 'api' && args[1] === 'repos/{owner}/{repo}') return state.repo ? ok(state.repo) : no;
-		// The paths are matched whole, so a wrong name in them reads nothing, as on GitHub.
-		if (args[0] === 'api' && args[1] === 'repos/o/r/branches/main/protection/required_status_checks') return state.protection ? ok(state.protection) : no;
-		if (args[0] === 'api' && args[1] === 'repos/o/r/rules/branches/main') return ok(state.rules);
-		if (args[0] === 'api' && args[1] === 'repos/o/r/branches/main') {
-			return ok({ commit: { sha: state.baseTip ?? spawnSync('git', ['rev-parse', 'refs/remotes/origin/main'], { cwd, encoding: 'utf8' }).stdout.trim() } });
+		// The paths are matched whole, so a wrong name in them reads nothing, as on GitHub; a base with a slash in its
+		// name is sent encoded.
+		const b = encodeURIComponent(state.pr.baseRefName);
+		if (args[0] === 'api' && args[1] === `repos/o/r/branches/${b}/protection/required_status_checks`) return state.protection ? ok(state.protection) : no;
+		if (args[0] === 'api' && args[1] === `repos/o/r/rules/branches/${b}`) return ok(state.rules);
+		if (args[0] === 'api' && args[1] === `repos/o/r/branches/${b}`) {
+			return ok({ commit: { sha: state.baseTip ?? spawnSync('git', ['rev-parse', `refs/remotes/origin/${state.pr.baseRefName}`], { cwd, encoding: 'utf8' }).stdout.trim() } });
 		}
 		if (args[0] === 'pr' && args[1] === 'merge' && args.includes('--disable-auto')) { if (state.disarmHolds) state.armed = false; return { status: 0, stdout: '', stderr: '' }; }
 		if (args[0] === 'pr' && args[1] === 'merge') { state.armed = state.mergeStatus === 0 && state.armOnMerge; return { status: state.mergeStatus, stdout: '', stderr: state.mergeStatus ? 'refused' : '' }; }
 		if (args[0] === 'release') return ok(Object.fromEntries(args[args.indexOf('--json') + 1].split(',').filter((k) => k in state.release).map((k) => [k, state.release[k]])));
 		return no;
 	};
-	return { root, work, config, state, run, sha, opts: { pr: 7, cwd: work, config, run } };
+	// localOrigin: origin here is a local folder named as GitHub names the repo; only a test passes it.
+	return { root, work, config, state, run, sha, opts: { pr: 7, cwd: work, config, run, localOrigin: true } };
 }
 const merges = (s) => s.state.calls.filter((c) => c.startsWith('pr merge'));
+// A change made on the base and merged into the branch, with the branch's sweep moved to the new head.
+function changeBase(s, change) {
+	sh(s.work, 'checkout', '-q', 'main');
+	change();
+	sh(s.work, 'add', '-A'); sh(s.work, 'commit', '-qm', 'base change'); sh(s.work, 'push', '-q', 'origin', 'main');
+	sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	cleared(s.work, s.state.pr.headRefOid);
+	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
+}
 const commitOnBranch = (s, file, text, clear = true) => {
 	fs.mkdirSync(path.dirname(path.join(s.work, file)), { recursive: true });
 	fs.writeFileSync(path.join(s.work, file), text);
@@ -112,6 +137,31 @@ const commitOnBranch = (s, file, text, clear = true) => {
 	if (clear) cleared(s.work, s.state.pr.headRefOid);
 };
 
+// The 1.22.0 sweep (N1): the strict up-to-date check makes a branch take main after its sweep. What main brought is
+// not the branch's change; an edit made inside the merge still is.
+const mainMoves = (s) => {
+	sh(s.work, 'checkout', '-q', 'main');
+	fs.writeFileSync(path.join(s.work, 'other-pr.txt'), 'another PR\n');
+	sh(s.work, 'add', 'other-pr.txt'); sh(s.work, 'commit', '-qm', 'another PR lands'); sh(s.work, 'push', '-q', 'origin', 'main');
+	sh(s.work, 'checkout', '-q', 'feat/subtract');
+};
+test('merge gate: a branch brought up to date with main after its sweep still arms, unless the merge edits something', () => {
+	const s = setup();
+	mainMoves(s);
+	sh(s.work, 'merge', '-q', 'main', '-m', 'take main');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	const r = arm(s.opts);
+	assert.equal(r.armed, true, r.faults.join('\n'));
+	const t = setup();
+	mainMoves(t);
+	sh(t.work, 'merge', '-q', '--no-commit', 'main');
+	fs.writeFileSync(path.join(t.work, 'other-pr.txt'), 'changed inside the merge\n');
+	sh(t.work, 'add', 'other-pr.txt'); sh(t.work, 'commit', '-qm', 'take main');
+	t.state.pr.headRefOid = sh(t.work, 'rev-parse', 'HEAD');
+	const n = check(t.opts);
+	assert.equal(n.go, false);
+	assert.match(n.faults.join('\n'), /changed after the sweep covered .* other-pr\.txt/);
+});
 test('merge gate: a PR that passes every check is armed, pinned to the checked head, read back and logged', () => {
 	const s = setup();
 	const r = arm(s.opts);
@@ -119,6 +169,47 @@ test('merge gate: a PR that passes every check is armed, pinned to the checked h
 	assert.deepEqual(merges(s), [`pr merge 7 --auto --squash --match-head-commit ${s.sha}`]);
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
 	assert.match(log, new RegExp(`ARMED https://github.com/o/r/pull/7 ${s.sha} required=kit-tests`));
+});
+
+// M30: the canned gh above can answer in shapes the real gh never gives. The field names are checked live below;
+// this holds each canned answer's types, and the api answers' shapes, to what the real gh said (recorded by
+// scripts/record-gh-contracts.mjs; re-record after a gh upgrade).
+test('merge gate: the canned gh answers with the types and shapes the real gh gave for every read the gate makes', () => {
+	const rec = JSON.parse(fs.readFileSync(path.join(KIT, 'tests/contracts/gh.json'), 'utf8'));
+	const src = fs.readFileSync(path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'utf8');
+	const fake = setup().state;
+	const type = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+	for (const list of new Set([...src.matchAll(/'--json', '([^']+)'/g)].map((m) => m[1]))) {
+		const c = rec.calls.find((x) => x.args.includes(list));
+		assert.ok(c, `no real answer recorded for --json ${list}: run scripts/record-gh-contracts.mjs`);
+		assert.equal(c.status, 0, `real ${rec.version} refused --json ${list}: ${c.stderr}`);
+		const canned = list.includes('tagName') ? fake.release : { state: 'OPEN', autoMergeRequest: null, statusCheckRollup: [], reviewDecision: '', labels: [], ...fake.pr };
+		for (const k of list.split(',')) {
+			if (k !== 'autoMergeRequest') assert.equal(type(canned[k]), type(c.json[k]), `${k} is a ${type(c.json[k])} in real gh`);
+		}
+	}
+	const call = (end) => {
+		const c = rec.calls.find((x) => x.args[0] === 'api' && x.args[1] === (end.startsWith('repos/') ? end : `repos/o/r${end}`));
+		assert.ok(c, `no real answer recorded for api ${end}`);
+		return c;
+	};
+	const api = (end) => {
+		const c = call(end);
+		assert.equal(c.status, 0, `real api ...${end}: ${c.stderr}`);
+		return c.json;
+	};
+	const repo = api('repos/{owner}/{repo}');
+	for (const k of Object.keys(fake.repo)) assert.equal(type(repo[k]), type(fake.repo[k]), `repo ${k} is a ${type(repo[k])} in real gh`);
+	// A base held by a ruleset alone has no classic protection: GitHub answers 404, and the gate reads the rules.
+	const prot = call('/branches/main/protection/required_status_checks');
+	if (prot.status === 0) for (const k of Object.keys(fake.protection)) assert.equal(type(prot.json[k]), 'array', `protection ${k}`);
+	else assert.match(prot.stderr, /HTTP 404/);
+	const rules = api('/rules/branches/main');
+	assert.equal(type(rules), 'array');
+	const needed = rules.filter((r) => r.type === 'required_status_checks').flatMap((r) => r.parameters.required_status_checks);
+	assert.ok(prot.status === 0 || needed.length, 'the real base names its required checks in protection or a ruleset');
+	for (const c of needed) assert.equal(type(c.context), 'string');
+	assert.match(api('/branches/main').commit.sha, /^[0-9a-f]{40}$/);
 });
 
 test('merge gate: check never arms, even on GO', () => {
@@ -164,7 +255,7 @@ const CASES = [
 	['a failed read of the base tip', (s) => { s.state.baseTip = ''; }, /could not read the tip/],
 	['an origin that is another repo', (s) => {
 		const other = path.join(s.root, 'other.git');
-		sh(s.root, 'clone', '-q', '--bare', path.join(s.root, 'origin.git'), other);
+		sh(s.root, 'clone', '-q', '--bare', path.join(s.root, 'github.com', 'o', 'r.git'), other);
 		sh(s.work, 'push', '-q', other, 'HEAD:main');
 		s.state.baseTip = sh(s.work, 'rev-parse', 'refs/remotes/origin/main');
 		sh(s.work, 'remote', 'set-url', 'origin', other);
@@ -179,6 +270,46 @@ const CASES = [
 	['code changed after the sweep', (s) => commitOnBranch(s, 'math.txt', 'add\nsub\nmul\n'), /never reviewed: math\.txt/],
 	['a sweep report that fails its audit', (s) => fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.sha, '\n| ID | Severity | Finding |\n|---|---|---|\n| S1 | high | leaks a token | DEFERRED |\n')), /fails its audit/],
 	['a body that fails its audit', (s) => { s.state.pr.body = BODY.replace('- [x] The test', '- [ ] The test'); }, /live PR body fails/],
+	// 1.22.0: the 1.21.0 and 1.21.1 carry-overs, each a way the gate could arm what it should not.
+	['a read that leaves out the draft field', (s) => { delete s.state.pr.isDraft; }, /draft/],
+	['a read that leaves out the fork field', (s) => { delete s.state.pr.isCrossRepository; }, /another repository/],
+	['a check whose result went stale', (s) => { s.state.pr.statusCheckRollup = [{ name: 'kit-tests', status: 'COMPLETED', conclusion: 'STALE' }]; }, /checks are failing: kit-tests/],
+	['a required-check answer of the wrong shape', (s) => { s.state.protection = { contexts: 'kit-tests', checks: null }; }, /could not read the required checks/],
+	['a base that does not need the branch up to date', (s) => { s.state.protection.strict = false; }, /up to date/],
+	['a link named like a gate folder', (s) => {
+		const blob = sh(s.work, 'hash-object', '-w', 'math.txt');
+		sh(s.work, 'update-index', '--add', '--cacheinfo', `120000,${blob},.githooks`);
+		sh(s.work, 'commit', '-qm', 'link');
+		s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+		cleared(s.work, s.state.pr.headRefOid);
+	}, /gate or rule paths.*\.githooks/],
+	['an uncommitted change in the working copy', (s) => fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nlocal\n'), /uncommitted/],
+	// The 1.22.0 sweep (G5): an index flag hides an edit from git status, and the audits would read the edited text.
+	...['--assume-unchanged', '--skip-worktree'].map((flag) => [`a tracked file hidden by ${flag}`, (s) => { sh(s.work, 'update-index', flag, 'math.txt'); fs.writeFileSync(path.join(s.work, 'math.txt'), 'add\nsub\nhidden\n'); }, /hides math\.txt/]),
+	['a clearing logged by a short hash', (s) => { freshLog(s); cleared(s.work, s.sha.slice(0, 7)); }, /never cleared/],
+	['no push hold', (s) => sh(s.work, 'config', '--unset', 'core.hooksPath'), /no push hold: core\.hooksPath is not set/],
+	// Handoff item 17: the owner's allow rule reaches every repo; each project consents in its own adapter.
+	['a project whose adapter grants no merge', (s) => changeBase(s, () => fs.writeFileSync(path.join(s.work, 'standards', 'project-adapter.md'), '| A27 | Standing grants | Standing Grants | `none` |\n')), /A27 on the base grants no merge \(none\)/],
+	['a base with no adapter', (s) => changeBase(s, () => sh(s.work, 'rm', '-q', 'standards/project-adapter.md')), /names no standing grant/],
+	// The 1.22.0 sweep (G2): a row that names merge only to refuse it grants nothing.
+	...['auto-fix push only; no merge', 'autofix: yes, merge: no', 'never merge', 'not yet (merge after v2)', 'merge: none'].map((v) => [`a grant row that refuses merge in words: ${v}`, (s) => changeBase(s, () => fs.writeFileSync(path.join(s.work, 'standards', 'project-adapter.md'), `| A27 | Standing grants | Standing Grants | \`${v}\` |\n`)), /A27 on the base grants no merge/]),
+	// The 1.22.0 sweep (G1): once the base grants merge, a PR that rewrites the grant is the owner's to merge.
+	['a PR that changes the grant row itself', (s) => {
+		commitOnBranch(s, 'standards/project-adapter.md', '| A27 | Standing grants | Standing Grants | `merge through the merge gate; auto-fix push; release` |\n');
+		rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
+	}, /gate or rule paths.*standards\/project-adapter\.md/],
+	['a grant written on the branch only', (s) => {
+		changeBase(s, () => fs.writeFileSync(path.join(s.work, 'standards', 'project-adapter.md'), '| A27 | Standing grants | Standing Grants | `none` |\n'));
+		commitOnBranch(s, 'standards/project-adapter.md', '| A27 | Standing grants | Standing Grants | `merge gate` |\n');
+		rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
+	}, /grants no merge/],
+	['a pre-push hook that does not hold an armed head', (s) => fs.writeFileSync(path.join(s.root, 'kit-hooks', 'pre-push'), '#!/bin/sh\nexit 0\n'), /no push hold: .*pre-push does not stop/],
+	['a check name that would write its own triage lines', (s) => { s.state.pr.statusCheckRollup = [{ name: 'ci\n# GO: all clear', status: 'COMPLETED', conclusion: 'FAILURE' }]; }, /checks are failing: ci # GO: all clear/],
+	['a setting file excluded only in this clone', (s) => {
+		fs.mkdirSync(path.join(s.work, '.kit'), { recursive: true });
+		fs.writeFileSync(path.join(s.work, '.kit', 'pr-body.json'), '{"gates":[]}');
+		fs.appendFileSync(path.join(s.work, '.git', 'info', 'exclude'), '.kit/\n');
+	}, /pr-body\.json.*this clone/],
 ];
 for (const [name, breakIt, want] of CASES) {
 	test(`merge gate: ${name} is NO GO, with a triage report, and nothing is armed`, () => {
@@ -203,7 +334,7 @@ test('merge gate: a report may name the branch on its Scope line, as the fix exa
 test('merge gate: a ruleset alone counts as the required check', () => {
 	const s = setup();
 	s.state.protection = null;
-	s.state.rules = [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'kit-tests' }] } }];
+	s.state.rules = [{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'kit-tests' }] } }];
 	assert.equal(check(s.opts).go, true);
 });
 
@@ -306,7 +437,7 @@ test('merge gate: no hook from the branch runs inside the gate', () => {
 	sh(s.work, 'config', 'core.hooksPath', '.githooks');
 	const base = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', 'rev-parse', 'origin/main'], { cwd: s.work, encoding: 'utf8' }).stdout.trim();
 	fs.rmSync(marker, { force: true });
-	const origin = path.join(s.root, 'origin.git');
+	const origin = path.join(s.root, 'github.com', 'o', 'r.git');
 	const other = path.join(s.root, 'other');
 	spawnSync('git', ['-c', 'core.hooksPath=/dev/null', 'clone', '-q', origin, other], { encoding: 'utf8' });
 	spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'moved'], { cwd: other, encoding: 'utf8' });
@@ -408,8 +539,8 @@ test('merge gate: an owner yes clears a sweep as an approval does, on the tier o
 	const s = setup();
 	freshLog(s);
 	const c = path.join(s.work, 'reports/sweeps/c.json');
-	appendLog(s.work, { kind: 'decision', contract: c, tier: 'feature', decision: 'owner', head: s.sha.slice(0, 7) });
-	appendLog(s.work, { kind: 'owner-yes', contract: c, head: s.sha.slice(0, 7) });
+	appendLog(s.work, { kind: 'decision', contract: c, tier: 'feature', decision: 'owner', head: s.sha });
+	appendLog(s.work, { kind: 'owner-yes', contract: c, head: s.sha });
 	appendLog(s.work, { kind: 'outcome', contract: c, tokens: 10 });
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));
@@ -429,11 +560,23 @@ test('merge gate: the sweep folder comes from the cleared contract, as adapter A
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));
 });
-test('merge gate: an audit setting kept out of git on purpose is the project\'s own', () => {
+// 1.21.1 carry 1: kept out of git by this clone's own exclude file, a setting is anyone's to write; by the base's
+// .gitignore it is the project's. (Install excludes .kit/ in info/exclude, so a project that wants its own audit
+// settings tracks them, or lists them in .gitignore.)
+test('merge gate: an audit setting ignored by the base\'s .gitignore is the project\'s own; by this clone\'s exclude it is not', () => {
 	const s = setup();
 	fs.mkdirSync(path.join(s.work, '.kit'));
 	fs.writeFileSync(path.join(s.work, '.kit/version-bump.json'), '{"shipped":[]}\n');
 	fs.appendFileSync(path.join(s.work, '.git/info/exclude'), '.kit/\n');
+	assert.match(check(s.opts).faults.join('\n'), /version-bump\.json is kept out of git only in this clone/);
+	fs.writeFileSync(path.join(s.work, '.git/info/exclude'), '');
+	sh(s.work, 'checkout', '-q', 'main');
+	fs.writeFileSync(path.join(s.work, '.gitignore'), '.kit/\n');
+	sh(s.work, 'add', '.gitignore'); sh(s.work, 'commit', '-qm', 'ignore .kit'); sh(s.work, 'push', '-q', 'origin', 'main');
+	sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	cleared(s.work, s.state.pr.headRefOid);
+	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));
 });
@@ -462,6 +605,19 @@ test('merge gate: with no audit on the base it reads the installed user layer, a
 	assert.match(check(s.opts).faults.join('\n'), /live PR body fails/, 'the installed audit really ran');
 	assert.equal(live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run }).ok, false);
 });
+test('merge gate: an audit copy that fails part way leaves no temp folder behind', () => {
+	const s = setup();
+	baseWithoutAudits(s);
+	const audits = path.join(s.config, 'kit-tools', 'audits');
+	fs.mkdirSync(audits, { recursive: true });
+	for (const f of fs.readdirSync(path.join(KIT, 'user/kit-tools/audits'))) fs.copyFileSync(path.join(KIT, 'user/kit-tools/audits', f), path.join(audits, f));
+	// A folder among the audits: copying it as a file throws after the temp folder exists.
+	fs.mkdirSync(path.join(audits, 'zz-not-a-file'));
+	const leftovers = () => fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('merge-gate-'));
+	const before = leftovers().length;
+	assert.throws(() => check(s.opts));
+	assert.equal(leftovers().length, before, 'the half-filled copy was removed');
+});
 test('merge gate: the audit is read from the kit\'s own layout on the base', () => {
 	const s = setup();
 	sh(s.work, 'checkout', '-q', 'main');
@@ -482,7 +638,7 @@ test('merge gate: a squash-style title is read by the full audit, not the lean o
 test('merge gate: the base is fetched, so a stricter audit landed on the remote is the one that judges', () => {
 	const s = setup();
 	const other = path.join(s.root, 'other');
-	sh(s.root, 'clone', '-q', path.join(s.root, 'origin.git'), other);
+	sh(s.root, 'clone', '-q', path.join(s.root, 'github.com', 'o', 'r.git'), other);
 	fs.writeFileSync(path.join(other, '.claude/pr-body-audit-lean.mjs'), 'console.log("FAIL stricter"); process.exit(1);\n');
 	sh(other, 'add', '-A'); sh(other, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'stricter'); sh(other, 'push', '-q', 'origin', 'main');
 	assert.match(check(s.opts).faults.join('\n'), /FAIL stricter/);
@@ -557,6 +713,98 @@ test('merge gate: autofix disarms an armed PR, pushes the branch and logs the co
 	assert.ok(s.state.calls.includes('pr merge 7 --disable-auto'));
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');
 	assert.match(log, new RegExp(`DISARMED 7\\n.* AUTOFIX 7 ${fixed}\\n$`));
+});
+// Handoff item 16: a session can read at any time whether the kill switch is set and what is still armed.
+test('merge gate: status reads the kill switch and each PR still armed, an unread arming included', () => {
+	const s = setup();
+	assert.deepEqual(status(s.opts), { killSwitch: false, armed: [] });
+	assert.equal(arm(s.opts).armed, true);
+	fs.writeFileSync(path.join(s.config, 'autonomy-off'), '');
+	fs.appendFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), `t ARMED https://github.com/o/r/pull/8 ${'c'.repeat(40)} unread\n`);
+	const r = status(s.opts);
+	assert.equal(r.killSwitch, true);
+	assert.deepEqual(r.armed.map((x) => [x.pr, x.unread]), [['7', false], ['8', true]]);
+	assert.equal(disarm(s.opts).disarmed, true);
+	assert.deepEqual(status(s.opts).armed.map((x) => x.pr), ['8']);
+	const cli = spawnSync(process.execPath, [path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'status'], { cwd: s.work, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: s.config } });
+	assert.match(cli.stdout, /Kill switch: SET/);
+	assert.match(cli.stdout, /ARMED: PR 8 .*may be armed/);
+	assert.doesNotMatch(cli.stdout, /PR 7/);
+});
+// 1.21.1 carry 8: a base named with a slash, and a PR address in another case, still pass.
+test('merge gate: a base with a slash in its name and a PR address in mixed case arm as any other', () => {
+	const s = setup();
+	sh(s.work, 'push', '-q', 'origin', 'main:refs/heads/release/1.0');
+	s.state.pr.baseRefName = 'release/1.0';
+	s.state.pr.url = 'https://github.com/O/R/pull/7';
+	const r = arm(s.opts);
+	assert.equal(r.armed, true, r.faults.join('\n'));
+	assert.ok(s.state.calls.includes('api repos/o/r/branches/release%2F1.0'), 'the base is read by its encoded name');
+});
+// 1.21.1 carry 2: gh may read the PR through another remote, while the push goes to origin.
+test('merge gate: autofix pushes only when origin is the PR\'s repo', () => {
+	const s = setup();
+	fixCommit(s);
+	const other = path.join(s.root, 'github.com', 'x', 'y.git');
+	sh(s.root, 'clone', '-q', '--bare', path.join(s.root, 'github.com', 'o', 'r.git'), other);
+	sh(s.work, 'remote', 'set-url', '--push', 'origin', other);
+	const before = originHead(s);
+	assert.match(autofix(s.opts).faults[0], /not the repo of PR 7/);
+	assert.equal(originHead(s), before, 'nothing went out');
+	assert.equal(sh(other, 'rev-parse', 'refs/heads/feat/subtract'), before, 'nor to the other repo');
+});
+// The 1.22.0 sweep (G3, G4): git pushes to every push URL, and a URL that only ends in the repo's path is another host.
+test('merge gate: autofix pushes only to one push URL that is exactly the PR\'s host and repo', () => {
+	const s = setup();
+	fixCommit(s);
+	const other = path.join(s.root, 'other.git');
+	sh(s.root, 'init', '-q', '--bare', '-b', 'main', other);
+	sh(s.work, 'remote', 'set-url', '--add', '--push', 'origin', path.join(s.root, 'github.com', 'o', 'r.git'));
+	sh(s.work, 'remote', 'set-url', '--add', '--push', 'origin', other);
+	assert.match(autofix(s.opts).faults[0], /2 push URLs/);
+	assert.notEqual(sh(other, 'for-each-ref').trim().length > 0, true, 'nothing went to the second URL');
+	// A bare github.com/o/r is a relative folder to git, not GitHub (a security review after the sweep).
+	for (const url of ['https://evil.example/github.com/o/r', 'git@evil.example:github.com/o/r.git', 'https://github.com.evil.example/o/r', 'github.com/o/r', 'github.com/o/r.git', 'https://github.com/o/r?x', 'https://github.com/o/r#x']) {
+		const t = setup();
+		fixCommit(t);
+		sh(t.work, 'remote', 'set-url', '--push', 'origin', url);
+		assert.match(autofix(t.opts).faults[0], /not the repo of PR 7/, url);
+	}
+	// Outside the tests' own option, a local folder is never GitHub, however it is named.
+	const u = setup();
+	fixCommit(u);
+	assert.match(autofix({ ...u.opts, localOrigin: false }).faults[0], /not the repo of PR 7/);
+});
+// Handoff item 7: a merge call that went through and a read-back that did not must not read as nothing armed.
+test('merge gate: a merge that went through with no read-back is logged as armed and named as such', () => {
+	const s = setup();
+	s.state.readBackFails = true;
+	const r = arm(s.opts);
+	assert.equal(r.armed, false);
+	assert.match(r.faults[0], /may be armed: run merge-gate\.mjs disarm 7/);
+	assert.match(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'), new RegExp(`ARMED https://github.com/o/r/pull/7 ${s.sha} unread`));
+	assert.match(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate-triage.md'), 'utf8'), /arming unconfirmed/);
+});
+// Handoff item 12.
+test('merge gate: live stops on a program planted at the repo root, as check does', () => {
+	const s = setup();
+	fs.writeFileSync(path.join(s.work, 'git.exe'), '');
+	const r = live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run });
+	assert.equal(r.ok, false);
+	assert.match(r.faults.join('\n'), /named like a tool/);
+});
+// Handoff item 14 and 1.21.1 carry 10: the version check diffs against the pinned base, not a short name.
+test('merge gate: the PR-body audit runs with PR_BASE at the pinned base commit', () => {
+	const s = setup();
+	sh(s.work, 'checkout', '-q', 'main');
+	fs.writeFileSync(path.join(s.work, '.claude', 'pr-body-audit-lean.mjs'), "console.log('FAIL PR_BASE=' + process.env.PR_BASE); process.exit(1);\n");
+	sh(s.work, 'commit', '-qam', 'audit prints its base'); sh(s.work, 'push', '-q', 'origin', 'main');
+	const tip = sh(s.work, 'rev-parse', 'HEAD');
+	sh(s.work, 'checkout', '-q', 'feat/subtract'); sh(s.work, 'merge', '-q', 'main', '-m', 'in');
+	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
+	cleared(s.work, s.state.pr.headRefOid);
+	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
+	assert.match(check(s.opts).faults.join('\n'), new RegExp(`PR_BASE=${tip}`));
 });
 test('merge gate: autofix runs no branch hook on its push', () => {
 	const s = setup();
@@ -648,7 +896,7 @@ test('merge gate: project/.claude is protected everywhere, so a branch cannot la
 });
 test('merge gate: a linked worktree logs where the pre-push hook reads, the common git folder', () => {
 	const s = setup();
-	const tree = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'linked');
+	const tree = path.join(makeTemp('wt-'), 'linked');
 	assert.equal(spawnSync('git', ['-C', s.work, 'worktree', 'add', '-q', '--detach', tree], { encoding: 'utf8' }).status, 0);
 	assert.equal(disarm({ ...s.opts, cwd: tree }).disarmed, true);
 	const log = fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8');

@@ -2,3 +2,6 @@ node_modules/
 reports/
 scrub.local.json
 scripts/recall-gate-base.mjs
+
+# The test runner's coverage map (scripts/test-run.mjs --map): made per machine, never committed.
+tests/.map.json

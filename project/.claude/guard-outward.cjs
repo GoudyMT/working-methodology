@@ -12,99 +12,23 @@ const BACKSLASH = String.fromCharCode(92);
 const BACKTICK = String.fromCharCode(96);
 const LF = String.fromCharCode(10);
 const CR = String.fromCharCode(13);
-const SEGMENT_BREAKS = new Set([';', '|', '&', '(', ')', '{', '}', '<', '>', LF]);
 const MAX_DEPTH = 3;
 
 const GIT_VALUE_OPTIONS = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--attr-source', '--shallow-file']);
-const GIT_OUTWARD = new Set(['push', 'send-pack']);
+const GIT_OUTWARD = new Set(['push', 'send-pack', 'send-email']);
+// A package registry is public: these subcommands change what it holds (--dry-run changes nothing).
+const PACKAGERS = new Set(['npm', 'npm.cmd', 'pnpm', 'pnpm.cmd', 'yarn', 'yarn.cmd', 'bun', 'bun.exe']);
+const REGISTRY_WRITES = new Set(['publish', 'unpublish', 'dist-tag', 'deprecate', 'owner']);
+// HTTP clients: a method other than GET or HEAD, or a body, sends something out. In Windows PowerShell 5.1, curl and
+// wget are names for Invoke-WebRequest, so its -Method and -Body count for them too.
+const HTTP_CLIENTS = /^(curl|wget|invoke-webrequest|invoke-restmethod|iwr|irm)(\.exe)?$/;
 const GIT_NESTED_PUSH = new Set(['lfs', 'subtree']);
 
 const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-// reading:start - the same in guard-delete.cjs and guard-outward.cjs; a test holds them equal.
-// Characters a shell reads like ASCII ones: curly quotes, Unicode dashes and spaces.
-function normalize(text) {
-	let out = '';
-	for (const ch of text) {
-		const c = ch.codePointAt(0);
-		if (c >= 0x2018 && c <= 0x201b) out += "'";
-		else if (c >= 0x201c && c <= 0x201e) out += '"';
-		else if (c >= 0x2013 && c <= 0x2015) out += '-';
-		else if (c === 0xa0 || c === 0x85 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff) out += ' ';
-		else out += ch;
-	}
-	return out;
-}
-
-// A command the way its shell will read it: escapes, carets, empty expansions and braces gone. Each guard reads this
-// beside the text as written, so one rule covers every spelling these make. Values built at run time stay unread.
-function plainText(text, tool) {
-	let s = normalize(text).replace(/[\\`^]\r?\n/g, '');
-	s = s.replace(/`(?=\S)/g, '');
-	if (!/powershell/i.test(String(tool))) s = s.split(/(\s+)/).map((w) => (/^["']?[A-Za-z]:\\/.test(w) ? w : w.replace(/\\(?!\\)/g, ''))).join('');
-	if (/\bcmd\b/i.test(s)) s = s.replace(/\^(?=[\w.-])/g, '');
-	s = s.replace(/\$\(\s*\)|\$\{\s*\}|\$""|\$''/g, '').replace(/\$(?=['"])/g, '').replace(/(?<=\S)(?:''|"")(?=\S)/g, '');
-	if (/powershell/i.test(String(tool))) return s;
-	const brace = /(?<![$\w])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s{}'"]*)/;
-	for (let i = 0; i < 4 && brace.test(s); i++) s = s.replace(brace, (m, a, b, c) => b.split(',').map((x) => a + x + c).join(' '));
-	return s;
-}
-// reading:end
-
-// Line continuations (PowerShell backtick, bash backslash) join one command across lines.
-function joinContinuations(text) {
-	let out = text;
-	for (const mark of [BACKTICK, BACKSLASH]) {
-		out = out.split(mark + CR + LF).join(' ').split(mark + LF).join(' ');
-	}
-	return out;
-}
-
-// Splits text into commands (at ; | & ( ) { } < > and newlines) and each command into words, keeping quoted
-// text in one word. Quote characters are dropped; a word that held quoted text is marked, so its content can be
-// read again as a nested command.
-function tokenize(text) {
-	const segments = [];
-	let segment = [];
-	let current = '';
-	let inWord = false;
-	let quoted = false;
-	let quote = '';
-	const endWord = () => {
-		if (inWord) segment.push({ value: current, quoted });
-		current = '';
-		inWord = false;
-		quoted = false;
-	};
-	const endSegment = () => {
-		endWord();
-		if (segment.length > 0) segments.push(segment);
-		segment = [];
-	};
-	for (const ch of text) {
-		if (quote) {
-			if (ch === quote) quote = '';
-			else current += ch;
-			continue;
-		}
-		if (ch === "'" || ch === '"') {
-			quote = ch;
-			quoted = true;
-			inWord = true;
-		} else if (SEGMENT_BREAKS.has(ch)) {
-			endSegment();
-		} else if (ch.charCodeAt(0) <= 32 || ch === ',') {
-			endWord();
-		} else {
-			current += ch;
-			inWord = true;
-		}
-	}
-	endSegment();
-	return segments;
-}
+const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
 
 // The program a word names, whatever folder it sits in: "C:/Program Files/Git/cmd/git.exe" -> "git.exe".
 function programName(word) {
@@ -140,6 +64,42 @@ function ghApiWrites(words, start) {
 	return false;
 }
 
+// npm publish, pnpm publish, yarn npm publish: a registry write among the first two subcommand words.
+// An option's value may sit before the subcommand (npm --otp 1 publish), so a write word anywhere counts; asking on a
+// package that happens to share the name is the safe side. --dry-run false is not a dry run.
+function registryWrite(words, start) {
+	const rest = words.slice(start);
+	const dry = rest.some((w, i) => (w === '--dry-run' && !/^(false|0|no)$/.test(rest[i + 1] ?? '')) || /^--dry-run=(true|1|yes)$/.test(w));
+	if (dry) return '';
+	const hit = rest.find((w) => REGISTRY_WRITES.has(w));
+	return hit ? 'a package ' + hit : '';
+}
+
+// The words as written: curl's flags are case-sensitive (-F is a form, -f is --fail; -I is HEAD, -i is headers).
+function httpWrite(name, words) {
+	const curl = name.startsWith('curl');
+	for (let i = 0; i < words.length; i++) {
+		const w = words[i];
+		const lower = w.toLowerCase();
+		let method = '';
+		// curl clusters short flags (-sX POST, -sd x): a cluster holding d, F or T sends a body, X names a method. A
+		// letter read from an attached value can only add an ask. PowerShell binds a value with a colon (-Method:Post)
+		// and takes a unique prefix of a parameter (-Bo, -InF).
+		const cluster = curl && /^-[A-Za-z0-9]+$/.test(w) ? w.slice(1) : '';
+		const ps = lower.match(/^-(me(?:t(?:h(?:o(?:d)?)?)?)?|bo(?:d(?:y)?)?|inf(?:i(?:l(?:e)?)?)?)(?::(.*))?$/);
+		if (cluster.includes('X')) method = cluster.slice(cluster.indexOf('X') + 1) || (words[i + 1] ?? '');
+		else if (cluster && /[dFT]/.test(cluster)) return 'an HTTP write';
+		else if (lower === '--request' || lower === '--method') method = words[i + 1] ?? '';
+		else if (ps && ps[1].startsWith('me')) method = ps[2] !== undefined ? ps[2] : (words[i + 1] ?? '');
+		else if (ps) return 'an HTTP write';
+		else if (/^--(request|method)=/.test(lower)) method = lower.slice(lower.indexOf('=') + 1);
+		else if (curl && (/^-[dFT]/.test(w) || /^--(data(-[\w-]+)?|form(-string)?|upload-file|json)(=|$)/.test(lower))) return 'an HTTP write';
+		else if (/^--(post|body)-(data|file)(=|$)/.test(lower)) return 'an HTTP write';
+		if (method && !/^(get|head)$/i.test(method)) return 'an HTTP write';
+	}
+	return '';
+}
+
 // gh is read-only only for the subcommands listed; anything else (create, merge, edit, run, sync...) asks.
 function ghOutward(words, start) {
 	const named = [];
@@ -164,20 +124,32 @@ function findOutward(text, depth) {
 	// wildcard program is read here, anywhere in the command. A text that only names the flag asks too: the safe side.
 	if (/--owner-yes/i.test(text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, ''))) return 'an owner yes for a sweep';
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
-	for (const segment of tokenize(joinContinuations(text))) {
+	// A backtick span is a command bash runs first, wherever it sits; the tokenizer splits it into words.
+	if (depth < MAX_DEPTH) for (const m of text.matchAll(/`([^`]+)`/g)) { const hit = findOutward(m[1], depth + 1); if (hit) return hit; }
+	for (const all of tokenize(joinContinuations(text))) {
+		const segment = all.filter((word) => !word.redirect);
 		const words = segment.map((word) => word.value.toLowerCase());
 		for (let i = 0; i < segment.length; i++) {
 			const name = programName(segment[i].value);
 			let hit = '';
 			if (/^git-(push|send-pack)(\.exe)?$/.test(name) || (/^git-lfs(\.exe)?$/.test(name) && words[i + 1] === 'push')) hit = name;
-			else if (name === 'git' || name === 'git.exe') hit = gitOutward(words, i + 1);
+			else if (name === 'git' || name === 'git.exe') {
+				hit = gitOutward(words, i + 1);
+				// xargs hands git its subcommand from input, so a git with none after xargs could be a push.
+				if (!hit && words.slice(0, i).some((w) => programName(w) === 'xargs' || programName(w) === 'xargs.exe') && !words.slice(i + 1).some((w) => !w.startsWith('-'))) hit = 'git through xargs';
+			}
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
+			else if (PACKAGERS.has(name)) hit = registryWrite(words, i + 1);
+			else if (HTTP_CLIENTS.test(name)) hit = httpWrite(name, segment.slice(i + 1).map((word) => word.value));
 			if (hit) return hit;
 		}
-		// Quoted text may be a whole command handed to another shell: bash -c 'git push'.
+		// Quoted text may be a whole command handed to another shell: bash -c 'git push'. A redirect target is read too,
+		// as the delete guard reads it: a here-string feeds a shell (bash <<< "git push"), and $( ) or backticks in a
+		// target run before the redirect does (the 1.22.0 sweep).
 		if (depth < MAX_DEPTH) {
-			for (const word of segment) {
-				const hit = word.quoted ? findOutward(word.value, depth + 1) : '';
+			for (const word of all) {
+				const run = word.quoted || (word.redirect && /\$\(|`/.test(word.value));
+				const hit = run ? findOutward(word.value.replace(/^`|`$/g, ''), depth + 1) : '';
 				if (hit) return hit;
 			}
 		}

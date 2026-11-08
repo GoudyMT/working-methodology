@@ -1,6 +1,6 @@
 // Tests for scripts/kit.mjs - each one drives the CLI functions the way the owner does:
 // a fake kit, a fake ~/.claude and a fake project in a temp folder.
-import { test } from 'node:test';
+import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,15 +8,24 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { install, foldBack, bump, scrub, snapshot, restore, status, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import kitTemp from '../project/.claude/kit-temp.cjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status, mainProtection, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-tests-'));
-process.env.TMPDIR = process.env.TEMP = process.env.TMP = tmpRoot;
-process.on('exit', () => { try { fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 3 }); } catch {} });
+// kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
+const tmpRoot = kitTemp.sessionRoot();
+const { makeTemp } = kitTemp;
+
+// A kit folder's CLI is scripts/kit.mjs with the temp helper it imports, as in every real kit folder.
+function copyKitCli(kit) {
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(kit, 'project/.claude'), { recursive: true });
+  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  fs.copyFileSync(path.resolve('project/.claude/kit-temp.cjs'), path.join(kit, 'project/.claude/kit-temp.cjs'));
+}
 
 function makeKit() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-'));
+  const root = makeTemp('kit-');
   const kit = path.join(root, 'kit');
   const home = path.join(root, 'home');
   const proj = path.join(root, 'My App');
@@ -291,6 +300,31 @@ test('session start says when the kit has newer rules, and how many', () => {
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update\./);
 });
 
+// 1.21.1 carry 6: a main held by a ruleset alone is protected, though GitHub has no classic protection for it.
+test('status reads main as protected by a ruleset, and unprotected only when neither holds it', () => {
+  const answers = (prot, rules) => (args) => (args[1].includes('/protection') ? prot : rules);
+  const notProtected = { status: 1, stdout: '{"message":"Branch not protected"}', stderr: 'gh: Branch not protected (HTTP 404)' };
+  assert.equal(mainProtection('.', answers({ status: 0, stdout: '{}', stderr: '' })), 'protected');
+  assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[{"type":"required_status_checks"}]', stderr: '' })), 'protected');
+  assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[]', stderr: '' })), 'unprotected');
+  assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '', stderr: 'HTTP 403' })), null);
+  // The 1.22.0 sweep (T2): the real gh prints a JSON body on an error (tests/contracts/gh.json); that is no answer.
+  assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '{"message":"Forbidden"}', stderr: 'gh: Forbidden (HTTP 403)' })), null);
+  assert.equal(mainProtection('.', answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
+});
+
+test('status warns when the temp disk runs low on inodes, and is silent when it has room or cannot tell', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  const at = (level, pct) => status({ kit, home, projectDir: proj, ahead: () => 0, inodes: () => ({ level, pct, text: `${pct}% of inodes used on /t` }) });
+  assert.match(at('refuse', 90).text, /Temp disk: 90% of inodes used on \/t\. Test runs refuse above 80%/);
+  assert.match(at('warn', 60).text, /Temp disk: 60% of inodes used on \/t\. Test runs refuse above 80%/);
+  assert.equal(at('refuse', 90).current, true, 'disk room is not an install fault');
+  assert.doesNotMatch(at('ok', 10).text, /Temp disk/);
+  assert.doesNotMatch(at('unknown', null).text, /Temp disk/);
+});
+
 test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -403,7 +437,7 @@ test('the hook script prints a user message and context for Claude, and never fa
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
   // The hook loads the kit's own tool from the kit folder, as it does on a real machine.
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  copyKitCli(kit);
   const hook = path.resolve('project/.claude/kit-hook.cjs');
   const run = (mode, env) => spawnSync(process.execPath, [hook, mode], { cwd: proj, input: '{}', encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj, ...env } });
   const start = run('session-start');
@@ -626,7 +660,7 @@ function releaseKit() {
   const ctx = makeKit();
   const { kit } = ctx;
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  copyKitCli(kit);
   fs.writeFileSync(path.join(kit, '.gitignore'), 'node_modules/\n');
   const git = (...a) => spawnSync('git', ['-C', kit, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' });
   git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'kit'); git('tag', 'v1.0.0');
@@ -684,7 +718,7 @@ test('install refuses a kit folder past its release tag, and names where it is a
 test('install refuses a kit folder with no git history, or one inside another repo', () => {
   const { kit, proj, home } = makeKit();
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  copyKitCli(kit);
   const run = () => spawnSync(process.execPath, [path.join(kit, 'scripts/kit.mjs'), 'install', 'project', proj], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home } });
   let r = run();
   assert.equal(r.status, 1);
@@ -835,7 +869,7 @@ test('the hook script speaks at a message only when there is news', async () => 
   const { kit, home, proj } = caseKit();
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
+  copyKitCli(kit);
   const run = () => spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: '{}', encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
   const quiet = run();
   assert.equal(quiet.status, 0);
@@ -879,7 +913,7 @@ test('the load guard defaults to 40% over a 3-second average', async () => {
 // measure models how Claude Code loads a project at session start (memory docs): CLAUDE.md, its @imports up to
 // four hops, and rules with no paths field. A path in an import ends at the first unescaped space.
 test('measure counts what a session loads at start, the way Claude Code reads imports', () => {
-  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'measure-'));
+  const proj = makeTemp('measure-');
   const w = (rel, body) => { fs.mkdirSync(path.dirname(path.join(proj, rel)), { recursive: true }); fs.writeFileSync(path.join(proj, rel), body); };
   w('CLAUDE.md', '# P\n@AGENTS.md\n@_Start Here.md\n@_Working\\ Standards.md\n`@not-an-import.md`\n```\n@in-a-fence.md\n```\n');
   w('AGENTS.md', 'core\n@AGENTS.md\n');
@@ -899,8 +933,8 @@ test('measure counts what a session loads at start, the way Claude Code reads im
 // rule:kit-standards item 14: the cap must guard what really loads - not only CLAUDE.md, but the memory index,
 // the global CLAUDE.md and the name + description of every skill an enabled plugin or the user folder lists.
 test('measureReal counts the memory index, global CLAUDE.md and the skill listings of enabled plugins only', () => {
-  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'real-proj-'));
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'real-home-'));
+  const proj = makeTemp('real-proj-');
+  const home = makeTemp('real-home-');
   const w = (root, rel, body) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), body); };
   w(proj, 'CLAUDE.md', 'p'.repeat(100));
   w(home, 'CLAUDE.md', 'g'.repeat(50));
@@ -1030,7 +1064,7 @@ test('each format skill meets the open skill spec and its module keeps a one-lin
 });
 // Each format audit passes a clean piece and names every fault in a bad one.
 const runAudit = (skill, text, args = [], cwd) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-'));
+  const dir = makeTemp('audit-');
   const file = path.join(dir, 'piece.md');
   fs.writeFileSync(file, text);
   return spawnSync('node', [path.resolve('user/skills', skill, 'audit.mjs'), file, ...args], { encoding: 'utf8', cwd: cwd || dir });
@@ -1043,7 +1077,7 @@ test('the release notes audit passes clean notes and names each public-prose fau
   const out = runAudit('release-notes', bad, ['1.4.0']);
   assert.equal(out.status, 1);
   for (const want of [/non-ASCII/, /double hyphen/, /AI or tool/, /gitignored/, /test or tooling/]) assert.match(out.stdout, want);
-  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-'));
+  const proj = makeTemp('pkg-');
   fs.writeFileSync(path.join(proj, 'package.json'), '{ "version": "1.3.2" }\n');
   assert.match(runAudit('release-notes', good, ['1.4.0'], proj).stdout, /package\.json says 1\.3\.2/);
   assert.equal(runAudit('release-notes', good, ['1.3.2'], proj).status, 0);
@@ -1192,7 +1226,7 @@ test('the ADR audit passes a full record and names each missing part', () => {
 });
 // Found by the Phase 3 live check: a command flag in inline code (`node --flag`) is code, not a prose dash.
 test('the PR body audits read a dash inside inline code as code, and still catch a prose dash', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prdash-'));
+  const dir = makeTemp('prdash-');
   const lean = (notes) => `## Math: add a subtract function\n\nThe math module can now subtract.\n\n**Changes**\n- New \`sub(a, b)\` export.\n\n**Gates**\n- [x] The test passes.\n- [x] Full local gate green.\n- [x] Sweep exempt by dimension: privacy, supply chain, legal, code security; no secrets or account information.\n\n**Notes** - ${notes}\n`;
   const dashes = (script, text, title) => {
     const f = path.join(dir, 'b.md');
@@ -1248,7 +1282,7 @@ test('the release notes audit catches build-process AI words, bug tallies and en
   assert.equal(feature.status, 0, feature.stdout);
 });
 test('the PR body audits read fenced code as code', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prfence-'));
+  const dir = makeTemp('prfence-');
   const f = path.join(dir, 'b.md');
   fs.writeFileSync(f, '## Math: subtract\n\nFraming.\n\n### Summary\n\n```\nnode --test\n```\n');
   const line = spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, 'Math: subtract'], { encoding: 'utf8' }).stdout.split('\n').find((l) => l.includes('no spaced dashes'));
@@ -1271,8 +1305,9 @@ test('build writes AGENTS.md, path rules, on-demand modules and the index from r
     assert.match(out.get('project/AGENTS.md'), new RegExp(`\| ${m.id} \|`), `AGENTS.md index lists ${m.id}`);
   }
   for (const [rel, text] of out) {
-    // The merge gate's audits are exact copies read from the user layer: their source is project/.claude, not rules/.
-    const audit = rel.match(/^user\/kit-tools\/audits\/(.+)$/);
+    // The merge gate's audits and temp helper are exact copies read from the user layer: their source is
+    // project/.claude, not rules/.
+    const audit = rel.match(/^user\/kit-tools\/(?:audits\/)?(.+\.(?:mjs|cjs))$/);
     if (audit) assert.equal(text, read(path.resolve('project/.claude', audit[1])), `${rel} is its source byte for byte`);
     else assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
   }
@@ -1291,7 +1326,7 @@ test('the written-out files in project/ match a fresh build', () => {
 });
 
 test('find ranks a rule by its ID, then its title, then its text', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'find-'));
+  const root = makeTemp('find-');
   fs.mkdirSync(path.join(root, 'rules'));
   fs.writeFileSync(path.join(root, 'rules', 'git.md'), '---\nid: git\nload: on-demand\nwhen: x\n---\n\n# Git\n\n## Branching {#branching}\nName a branch by its type.\n\n### Commit Message Format {#commit-message-format}\nOne line, type then subject.\n');
   fs.writeFileSync(path.join(root, 'rules', 'core.md'), '---\nid: core\nload: always\nwhen: x\n---\n\n## Edit Discipline {#edit-discipline}\nThink before a commit.\n');
@@ -1302,7 +1337,7 @@ test('find ranks a rule by its ID, then its title, then its text', () => {
 });
 
 test('find also matches the tags a module gives its rules, and every rule has tags', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'find-tags-'));
+  const root = makeTemp('find-tags-');
   fs.mkdirSync(path.join(root, 'rules'));
   fs.writeFileSync(path.join(root, 'rules', 'code.md'), '---\nid: code\nload: on-demand\nwhen: x\ntags:\n  size-budgets: bundle, bytes, bloat\n---\n\n## Size Budgets {#size-budgets}\nTrim first.\n\n## Naming {#naming}\nPlain names.\n');
   assert.deepEqual(parseModule(read(path.join(root, 'rules', 'code.md'))).meta.tags, { 'size-budgets': ['bundle', 'bytes', 'bloat'] });
@@ -1458,7 +1493,7 @@ test('build writes each role its rules skill from the IDs in the role table, und
 // proved with a known-good and a known-bad case.
 const runHook = (script, input, env = {}) => spawnSync('node', [path.resolve(script)], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, ...env } });
 function gitTree() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fence-'));
+  const dir = makeTemp('fence-');
   const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
   g('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(dir, 'a.js'), 'a\n'); g('add', '-A'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
   return dir;
@@ -1533,7 +1568,7 @@ test('the builder and checker role files wire their guards to the installed hook
 });
 // A placeholder left in a role file's hook line points the hook at no script, and an agent would start unguarded.
 test('install user leaves no placeholder in any rendered agent role file', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agents-home-'));
+  const home = makeTemp('agents-home-');
   install({ kit: path.resolve('.'), home, target: 'user' });
   const agents = fs.readdirSync(path.join(home, 'agents')).filter((n) => n.endsWith('.md'));
   assert.deepEqual(agents.sort(), fs.readdirSync(path.resolve('user/agents')).filter((n) => n.endsWith('.md')).sort());
@@ -1665,9 +1700,21 @@ test('the canary reads the phrase from the main checkout when the agent works in
   assert.equal(canary({ cwd: wt, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'w', last_assistant_message: `${FAKE_PHRASE} - done` }).status, 0);
   assert.equal(canary({ cwd: wt, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'w2', last_assistant_message: 'done' }).status, 2);
 });
+// The canary lets any error through with exit 0, so "off" is shown against the same input in a project that has
+// the phrase line: there it blocks, here it lets the stop and the brief through and logs nothing.
 test('the canary is off in a project with no phrase line', () => {
-  const dir = canaryRepo(null);
-  assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'n', last_assistant_message: 'done' }).status, 0);
+  const stop = { hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'n', last_assistant_message: 'done' };
+  const brief = { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: `Start your report with ${FAKE_PHRASE}.` } };
+  const on = canaryRepo();
+  assert.equal(canary({ ...stop, cwd: on }).status, 2, 'with the phrase line, the same stop is blocked');
+  assert.match(canary({ ...brief, cwd: on }).stdout, /"permissionDecision":\s*"deny"/, 'and the same brief is denied');
+  const off = canaryRepo(null);
+  for (const input of [stop, brief]) {
+    const r = canary({ ...input, cwd: off });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout + r.stderr, '', `${input.hook_event_name} goes through with no decision`);
+  }
+  assert.deepEqual(canaryLog(off), []);
 });
 test('the leak guard refuses a brief or message that carries the phrase, in any spelling', () => {
   const dir = canaryRepo();
@@ -1764,14 +1811,16 @@ test('every kit role runs the canary at its stop, and the project settings run t
   assert.ok(guard && guard.hooks[0].args.join(' ').includes('kit-hooks/canary.cjs'), 'the leak guard is wired');
   assert.ok(guard.hooks.some((h) => h.args.join(' ').includes('kit-hooks/sweep-guard.cjs')), 'the sweep guard is wired');
 });
-test('the delete guard runs on every shell tool and blocks the call when it fails', () => {
+test('both guards run on every shell tool and block the call when they fail', () => {
   const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
   const shell = settings.hooks.PreToolUse.find((h) => h.matcher.split('|').includes('Bash'));
   for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) assert.ok(shell.matcher.split('|').includes(tool), `${tool} is matched`);
-  const hook = shell.hooks.find((h) => h.args.join(' ').includes('.claude/guard-delete.cjs'));
-  assert.ok(hook, 'the delete guard is wired');
-  // A crash, a timeout or a missing node would otherwise let the delete run.
-  assert.equal(hook.onFailure, 'block');
+  for (const guard of ['guard-delete.cjs', 'guard-outward.cjs']) {
+    const hook = shell.hooks.find((h) => h.args.join(' ').includes(`.claude/${guard}`));
+    assert.ok(hook, `${guard} is wired`);
+    // A crash, a timeout or a missing node would otherwise let the delete or the push run (handoff item 26).
+    assert.equal(hook.onFailure, 'block', guard);
+  }
 });
 test('the real phrase has one home in the kit: the last line of the rules every brief carries', () => {
   const block = read(path.resolve('rules/agent-teams.md')).split('**Rules every brief carries**')[1].split('```')[1];
@@ -1799,8 +1848,8 @@ test('the PR body and release audits fail when the phrase appears', () => {
 test('the git pre-push hook is executable, in the kit and where install writes it', () => {
   for (const h of ['pre-push', 'pre-commit']) assert.match(spawnSync('git', ['ls-files', '-s', `project/.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
   if (process.platform !== 'win32') {
-    const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'hookmode-'));
-    install({ kit: path.resolve('.'), target: 'project', projectDir: proj, home: fs.mkdtempSync(path.join(os.tmpdir(), 'home-')) });
+    const proj = makeTemp('hookmode-');
+    install({ kit: path.resolve('.'), target: 'project', projectDir: proj, home: makeTemp('home-') });
     assert.ok(fs.statSync(path.join(proj, '.githooks', 'pre-push')).mode & 0o111, 'git skips a hook without the execute bit');
   }
 });
@@ -1821,13 +1870,13 @@ const g = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' 
 // Test commits use the house style, so the kit's commit-msg hook (rule:commit-message-format) lets them through.
 const commitAll = (dir, msg, noVerify) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', /^[a-z]+: /.test(msg) ? msg : `chore: ${msg}`, ...(noVerify ? ['--no-verify'] : [])); };
 function localProject() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-'));
+  const dir = makeTemp('local-');
   g(dir, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'main.py'), 'print(1)\n');
   return dir;
 }
 const excludeFile = (dir) => path.join(dir, '.git', 'info', 'exclude');
-const kitInstall = (dir) => install({ kit: path.resolve('.'), target: 'project', projectDir: dir, home: fs.mkdtempSync(path.join(os.tmpdir(), 'home-')) });
+const kitInstall = (dir) => install({ kit: path.resolve('.'), target: 'project', projectDir: dir, home: makeTemp('home-') });
 test('the install keeps every kit file out of git, and git status shows only the project', () => {
   const dir = localProject();
   fs.mkdirSync(path.join(dir, '.git', 'info'), { recursive: true });
@@ -1849,7 +1898,7 @@ test('the owner can choose to track the kit, and a folder without git is left al
   // Tracked: every kit file may go in the repo except the private ones (the owner, 2026-10-31).
   assert.notEqual(g(dir, 'check-ignore', '-q', 'AGENTS.md').status, 0, 'a kit file can be tracked');
   assert.equal(g(dir, 'check-ignore', '-q', 'CLAUDE.md').status, 0, "the kit's CLAUDE.md stays private");
-  const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'nogit-'));
+  const plain = makeTemp('nogit-');
   kitInstall(plain);
   assert.ok(!fs.existsSync(path.join(plain, '.git')), 'the install never makes a repo');
 });
@@ -1902,7 +1951,7 @@ test('the first push check fails on a never path, a missing tracked file, a secr
 });
 test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', () => {
   const dir = readyProject({ track: ['main.py'] });
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  const bare = makeTemp('bare-');
   g(bare, 'init', '-q', '--bare', '-b', 'main');
   g(dir, 'remote', 'add', 'origin', bare);
   const sha = g(dir, 'rev-parse', 'HEAD').stdout.trim();
@@ -2021,9 +2070,9 @@ test('the first push check finds the kit\'s own folder in history and lets revie
 });
 test('the first push gate stays on when the new remote already has a README, and lets a tag of the cleared commit go', () => {
   const dir = readyProject({ track: ['main.py'] });
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  const bare = makeTemp('bare-');
   g(bare, 'init', '-q', '--bare', '-b', 'main');
-  const seed = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-'));
+  const seed = makeTemp('seed-');
   g(seed, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(seed, 'README.md'), '# made on the host\n');
   commitAll(seed, 'readme');
@@ -2053,11 +2102,11 @@ test('the install keeps the never list private in the exclude block', () => {
 });
 test('a project already pushed before the kit came is not held by the first push gate', () => {
   const origin = readyProject({ track: ['main.py'] });
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  const bare = makeTemp('bare-');
   // Named, so the clone checks out main whatever the machine's default branch is (CI's is master).
   g(bare, 'init', '-q', '--bare', '-b', 'main');
   g(origin, 'push', '-q', '--no-verify', bare, 'HEAD:refs/heads/main');
-  const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'clone-'));
+  const clone = makeTemp('clone-');
   g(clone, 'clone', '-q', bare, '.');
   kitInstall(clone);
   fs.writeFileSync(path.join(clone, 'main.py'), 'print(5)\n');
@@ -2071,7 +2120,7 @@ test('a project already pushed before the kit came is not held by the first push
 test('the branch secret scan fails on a secret-shaped value or file and stays quiet on a commit hash', () => {
   const SCAN = path.resolve('project/.claude/secret-shapes.mjs');
   const repo = (files) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shapes-'));
+    const dir = makeTemp('shapes-');
     g(dir, 'init', '-q', '-b', 'main');
     fs.writeFileSync(path.join(dir, 'README.md'), 'x\n');
     commitAll(dir, 'base', true);
@@ -2087,7 +2136,7 @@ test('the branch secret scan fails on a secret-shaped value or file and stays qu
   assert.ok(!leak.stdout.includes(token), 'the value is never printed');
   assert.equal(repo({ '.env': 'A=1\n' }).status, 1, 'a secret file name');
   // A tracked file renamed to a secret name adds no line, so only the file check can see it.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shapes-'));
+  const dir = makeTemp('shapes-');
   g(dir, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'settings.txt'), 'A=1\nB=2\nC=3\n');
   commitAll(dir, 'base', true);
@@ -2105,9 +2154,9 @@ test('the branch secret scan fails on a secret-shaped value or file and stays qu
 // Found in the re-check: the done mark and the track check each had a case that let a slip out or blocked for good.
 test('a new project that pulled the host README before the install is still held by the gate', () => {
   const dir = readyProject({ track: ['main.py'] });
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  const bare = makeTemp('bare-');
   g(bare, 'init', '-q', '--bare', '-b', 'main');
-  const seed = fs.mkdtempSync(path.join(os.tmpdir(), 'seed-'));
+  const seed = makeTemp('seed-');
   g(seed, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(seed, 'README.md'), '# made on the host\n');
   commitAll(seed, 'readme');
@@ -2122,7 +2171,7 @@ test('a new project that pulled the host README before the install is still held
 });
 test('a project pushed by URL before the kit is let through once a fetch shows its history on the remote', () => {
   const dir = readyProject({ track: ['main.py'] });
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'bare-'));
+  const bare = makeTemp('bare-');
   g(bare, 'init', '-q', '--bare', '-b', 'main');
   g(dir, 'push', '-q', '--no-verify', bare, 'HEAD:refs/heads/main');
   g(dir, 'remote', 'add', 'origin', bare);
@@ -2155,7 +2204,7 @@ test('a stash is never pushed, so the first push check leaves it out', () => {
 test('the canary reads a report handed back through a tool, from the agent transcript', () => {
   const dir = canaryRepo();
   const transcript = (msg) => {
-    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tr-')), 'agent.jsonl');
+    const f = path.join(makeTemp('tr-'), 'agent.jsonl');
     const lines = [
       { type: 'user', message: { role: 'user', content: 'brief' } },
       { type: 'assistant', message: { role: 'assistant', content: [{ type: 'thinking', thinking: '' }] } },
@@ -2194,7 +2243,7 @@ const askContract = () => ({ tier: 'fix', modifiers: [], roles: [
 ] });
 // A branch with one feature commit on top of main: a new source file and a test.
 function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/sync.test.ts': 'test\n' }) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const dir = makeTemp('approve-');
   g(dir, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'README.md'), 'x\n');
   commitAll(dir, 'base', true);
@@ -2206,6 +2255,9 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
 }
 const approveIn = (dir, args, env = {}) => {
   if (args.includes('--outcome') && env.CLAUDE_CONFIG_DIR) leadBriefs(dir, args, env.CLAUDE_CONFIG_DIR);
+  // A crashed reviewer was started by the guard too.
+  const crashed = args.includes('--retry') && args[args.indexOf('--crashed') + 1];
+  if (crashed && env.CLAUDE_CONFIG_DIR) startedByBrief(dir, env.CLAUDE_CONFIG_DIR, crashed);
   return spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env } });
 };
 // What a lead does: each reviewer's brief carries "Sweep: <hash> role <n>" for the contract cleared last, n in the
@@ -2233,6 +2285,37 @@ function leadBriefs(dir, args, cfg) {
   const ids = String(args[args.indexOf('--agents') + 1] || '').split(',');
   if (!at || !args.includes('--agents') || !fs.existsSync(path.join(cfg, 'projects'))) return;
   ids.forEach((id, i) => { if (/^[\w-]+$/.test(id)) setBrief(cfg, id, (b) => `${b} Sweep: ${at[1].hash} role ${i + 1}`); });
+  // --agents auto: the lead started every reviewer whose brief it wrote.
+  const all = ids[0] === 'auto' ? fs.readdirSync(path.join(cfg, 'projects')).flatMap((p) => fs.readdirSync(path.join(cfg, 'projects', p)).flatMap((s) => { try { return fs.readdirSync(path.join(cfg, 'projects', p, s, 'subagents')); } catch { return []; } })).map((n) => (n.match(/^agent-(.+)\.jsonl$/) || [])[1]).filter(Boolean) : ids;
+  for (const id of all) startedByBrief(dir, cfg, id);
+}
+// The guard started a reviewer under the clearing and role its brief names.
+function startedByBrief(dir, cfg, id) {
+  let f = /^[\w-]+$/.test(id) && fs.existsSync(path.join(cfg, 'projects')) && transcriptOf(cfg, id);
+  // The guard starts only the reviewer type; another type with a sweep's brief is refused.
+  try { if (f && !/reviewer$/i.test(JSON.parse(read(f.replace(/\.jsonl$/, '.meta.json'))).agentType)) f = null; } catch { f = null; }
+  const content = f && JSON.parse(read(f).split('\n')[0]).message?.content;
+  const tag = f && (Array.isArray(content) ? content.map((x) => (x && x.text) || '').join('\n') : String(content || '')).match(/Sweep: ([0-9a-f]{16}) role (\d+)/);
+  const clearing = tag && sweepLog(dir).filter((l) => { const e = JSON.parse(l); return e.hash === tag[1] && (e.kind === 'owner-yes' || e.decision === 'approved'); }).pop();
+  if (clearing) guardStart(dir, clearing, Number(tag[2]), id);
+}
+const transcriptOf = (cfg, id) => {
+  for (const p of fs.readdirSync(path.join(cfg, 'projects'))) for (const s of fs.readdirSync(path.join(cfg, 'projects', p))) {
+    const f = path.join(cfg, 'projects', p, s, 'subagents', `agent-${id}.jsonl`);
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+};
+// What the guard does at each start: the role's slot under the clearing records the start's tool id, which Claude
+// Code also writes into the reviewer's meta file (toolu_lead_<id> in these transcripts). Tests try several reviewers
+// for one role in turn, so a start this helper wrote gives way to the next; one the real guard wrote stays. A
+// reviewer other than the crashed one, after a logged retry for its role, takes the retry slot.
+function guardStart(dir, clearingLine, role, id) {
+  const slots = path.join(dir, '.git', 'kit-sweep-starts', crypto.createHash('sha256').update(clearingLine).digest('hex').slice(0, 16));
+  fs.mkdirSync(slots, { recursive: true });
+  const retried = sweepLog(dir).some((l) => { const e = JSON.parse(l); return e.kind === 'retry' && e.role === role && e.crashed !== id; });
+  const f = path.join(slots, retried ? `${role - 1}.retry` : String(role - 1));
+  if (!fs.existsSync(f) || !read(f) || read(f).startsWith('toolu_lead_')) fs.writeFileSync(f, `toolu_lead_${id}`);
 }
 function approveRun(contract, dir = sweepRepo()) {
   const f = path.join(dir, 'sweeps', 'contract.json');
@@ -2245,7 +2328,7 @@ const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.js
 // write, output]; a call given as { id, u } keeps its message id, so streaming's repeated lines can be written.
 // Beside each transcript sits Claude Code's agent-<id>.meta.json (agent type, finished); `meta` overrides it per id,
 // and `cfg` adds to an existing folder.
-function transcripts(spec, meta = {}, cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-')), session = 'session-1') {
+function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session-1') {
   const dir = path.join(cfg, 'projects', 'C--repo', session, 'subagents');
   fs.mkdirSync(dir, { recursive: true });
   const at = new Date().toISOString();
@@ -2257,7 +2340,7 @@ function transcripts(spec, meta = {}, cfg = fs.mkdtempSync(path.join(os.tmpdir()
       return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
     });
     fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
-    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
+    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', toolUseId: `toolu_lead_${id}`, model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
   }
   return cfg;
 }
@@ -2300,6 +2383,22 @@ test('the diff sets the floor: a lighter tier or a left-out modifier goes to the
   const fix4 = { tier: 'fix', modifiers: [], roles: [...asFix.roles, role('test-value', 'Does each changed test guard a real use?'), role('modelled-on', 'Was the bug inherited from the code this copied?')] };
   assert.equal(approveRun(fix4, sweepRepo({ 'README.md': 'z\n' })).status, 1, 'a fix sweep is 2-3 agents');
 });
+// The one-sweep loop gives each branch one sweep, so a test that runs a later sweep runs it as a later branch would:
+// a new branch off main with its own change. The contracts in sweeps/ come along, as they would in a real project.
+let branchSeq = 0;
+function nextBranch(dir, file) {
+  const keep = path.join(dir, 'sweeps');
+  const saved = fs.existsSync(keep) ? fs.readdirSync(keep, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => [e.name, fs.readFileSync(path.join(keep, e.name))]) : [];
+  const n = ++branchSeq;
+  assert.equal(g(dir, 'checkout', '-q', '-f', '-b', `feat/next-${n}`, 'main').status, 0);
+  fs.mkdirSync(keep, { recursive: true });
+  for (const [name, bytes] of saved) fs.writeFileSync(path.join(keep, name), bytes);
+  const rel = file || `src/next${n}.ts`;
+  fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+  fs.writeFileSync(path.join(dir, rel), `next ${n}\n`);
+  g(dir, 'add', rel);
+  g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', `feat: next ${n}`, '--no-verify');
+}
 test('only the owner resumes, from a terminal no agent runs in', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -2309,6 +2408,7 @@ test('only the owner resumes, from a terminal no agent runs in', () => {
   }
   assert.notEqual(approveIn(r.dir, ['--resume']).status, 0);
   assert.equal(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1' }).status, 0);
+  nextBranch(r.dir);
   assert.equal(approveIn(r.dir, [r.f]).status, 0);
 });
 // Rule review 2026-10-31 (the owner approved): the trial review comes every 10 auto-approvals until two in a row
@@ -2316,12 +2416,13 @@ test('only the owner resumes, from a terminal no agent runs in', () => {
 test('the trial review widens from every 10 approvals to every 20 after two clean reviews, and a drift pause resets it', () => {
   const r = approveRun(featureContract());
   outcome(r);
-  const approveN = (n) => { for (let i = 0; i < n; i++) { const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 0, `approval ${i + 1}: ${a.stdout}`); outcome(r); } };
-  const due = (every) => { const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 1); assert.match(a.stdout, new RegExp(`trial review due: ${every} auto-approvals`)); };
+  const approveN = (n) => { for (let i = 0; i < n; i++) { nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 0, `approval ${i + 1}: ${a.stdout}`); outcome(r); } };
+  const due = (every) => { nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 1); assert.match(a.stdout, new RegExp(`trial review due: ${every} auto-approvals`)); };
   const resume = () => assert.equal(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1' }).status, 0);
   approveN(9); due(10); resume();
   approveN(10); due(10); resume();
   approveN(20); due(20); resume();
+  nextBranch(r.dir);
   const drift = approveIn(r.dir, [r.f]);
   assert.equal(drift.status, 0);
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -2351,7 +2452,7 @@ test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, 
   outcome(r, '100000', '6', '4', '2');
   assert.match(approveIn(r.dir, [r.f]).stdout, /paused/i, 'a third repeated, found by path after an edit');
   const t = approveRun(featureContract());
-  for (let i = 1; i < 10; i++) { outcome(t); assert.equal(approveIn(t.dir, [t.f]).status, 0, `approval ${i + 1}`); }
+  for (let i = 1; i < 10; i++) { outcome(t); nextBranch(t.dir); assert.equal(approveIn(t.dir, [t.f]).status, 0, `approval ${i + 1}`); }
   outcome(t);
   const due = approveIn(t.dir, [t.f]);
   assert.match(due.stdout, /trial review/i);
@@ -2404,6 +2505,23 @@ test('an approval prints the owner\'s start notice from checked data, not a hand
   assert.match(r.stdout, /security 3 of 3 needed/);
   assert.match(r.stdout, /Findings come when the sweep finishes/);
 });
+// 1.21.0 handoff item 31: a log line that is valid JSON but no entry (null, a number, a list) turned the guard off
+// and crashed approve.mjs. It reads as a hand edit: the guard refuses and the script pauses.
+test('a log line that parses to no entry pauses the sweep tools, and the guard still refuses', () => {
+  for (const junk of ['null', '7', '[]']) {
+    const r = approveRun(featureContract());
+    assert.equal(r.status, 0, r.stdout);
+    const brief = 'review. Call cap: 5.' + leadTag(r.dir, 'Call cap: 5');
+    const tool_input = { subagent_type: 'reviewer', prompt: brief + leadQuestion(r.dir, brief) };
+    assert.equal(sweepGuard(r.dir, { raw: true, tool_input: { ...tool_input } }).permissionDecision, 'allow', `${junk}: cleared before`);
+    fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
+    fs.appendFileSync(path.join(r.dir, '.git', 'kit-sweep-approvals.jsonl'), `${junk}\n`);
+    assert.equal(sweepGuard(r.dir, { raw: true, tool_input }).permissionDecision, 'deny', `${junk}: the guard refuses`);
+    const again = approveIn(r.dir, [r.f]);
+    assert.doesNotMatch(again.stderr, /TypeError/, `${junk}: approve.mjs reads it`);
+    assert.match(again.stdout, /changed by hand/, `${junk}: the script pauses`);
+  }
+});
 test('the owner\'s yes is logged only after the script asked, for this contract and HEAD', () => {
   const r = approveRun(askContract());
   assert.equal(r.status, 1);
@@ -2437,7 +2555,7 @@ test('the sweep guard refuses a reviewer agent until the log clears this HEAD an
   commitAll(dir, 'more', true);
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'HEAD moved');
   // A line written by hand does not clear it.
-  const head = g(dir, 'rev-parse', '--short', 'HEAD').stdout.trim();
+  const head = g(dir, 'rev-parse', 'HEAD').stdout.trim();
   const logFile = path.join(dir, '.git', 'kit-sweep-approvals.jsonl');
   fs.appendFileSync(logFile, JSON.stringify({ kind: 'decision', decision: 'approved', contract: r.f, hash: 'x', head, prev: 'forged' }) + '\n');
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a hand-written line');
@@ -2458,7 +2576,7 @@ test('the canary reads only the latest turn of the transcript, and prefers the h
   const prompt = (text) => ({ type: 'user', message: { role: 'user', content: text } });
   const toolResult = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } };
   const file = (entries, tail = '') => {
-    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tr-')), 'agent.jsonl');
+    const f = path.join(makeTemp('tr-'), 'agent.jsonl');
     fs.writeFileSync(f, entries.map((l) => JSON.stringify(l)).join('\n') + '\n' + tail);
     return f;
   };
@@ -2492,7 +2610,7 @@ test('the approval script asks the owner when the work is not committed or the d
   const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
   fs.writeFileSync(path.join(dir, 'src.js'), 'new\n');
   assert.match(approveRun(one, dir).stdout, /not committed/i);
-  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const empty = makeTemp('approve-');
   g(empty, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(empty, 'README.md'), 'x\n');
   commitAll(empty, 'base', true);
@@ -2507,7 +2625,7 @@ test('the approval script asks the owner when the work is not committed or the d
 });
 test('the canary skips a hook note after the hand-back', () => {
   const dir = canaryRepo();
-  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tr-')), 'agent.jsonl');
+  const f = path.join(makeTemp('tr-'), 'agent.jsonl');
   const lines = [
     { type: 'user', message: { content: 'brief' } },
     { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'SubagentHandback', input: { message: `${FAKE_PHRASE}\nok` } }] } },
@@ -2524,7 +2642,7 @@ test('the canary skips a hook note after the hand-back', () => {
 // file count that no band could raise. The script refuses only on a measured size past what is allowed.
 const BAND = path.resolve('project/.claude/size-band.mjs');
 function bandRun(mode, { band, measured, limits }) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'band-'));
+  const dir = makeTemp('band-');
   const files = { band, measured, limits };
   for (const [k, v] of Object.entries(files)) fs.writeFileSync(path.join(dir, `${k}.json`), JSON.stringify(v));
   const r = spawnSync('node', [BAND, mode, '--band', path.join(dir, 'band.json'), '--measured', path.join(dir, 'measured.json'), '--limits', path.join(dir, 'limits.json')], { encoding: 'utf8' });
@@ -2602,7 +2720,7 @@ test('every kit role checks its hand-back call', () => {
 const REPORT = path.resolve('project/.claude/improvement-report.mjs');
 const reportRun = (dir, args) => spawnSync('node', [REPORT, ...args], { encoding: 'utf8', cwd: dir });
 function reportRepo() {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ir-')), 'course-project');
+  const dir = path.join(makeTemp('ir-'), 'course-project');
   fs.mkdirSync(path.join(dir, '.kit'), { recursive: true });
   g(dir, 'init', '-q', '-b', 'feat/generator');
   fs.writeFileSync(path.join(dir, 'README.md'), 'x\n');
@@ -2630,7 +2748,7 @@ test('a new improvement report starts from the kit template with its facts fille
   assert.match(a.stdout, /placeholder/i);
 });
 test('the kit\'s example report (the first real one, re-filed) passes the audit', () => {
-  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ir-')), 'IR-2026-10-30-sweep-approval-miss.md');
+  const f = path.join(makeTemp('ir-'), 'IR-2026-10-30-sweep-approval-miss.md');
   fs.writeFileSync(f, EXAMPLE());
   const a = reportRun(path.dirname(f), ['audit', f]);
   assert.equal(a.status, 0, a.stdout);
@@ -2650,7 +2768,7 @@ test('the report audit fails a missing field, an unproven cause, a lowered stand
     [(t) => t.replace(/^\| ID \|.*$/m, '| ID | report-1 |'), /ID/],
   ];
   for (const [change, why] of cases) {
-    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ir-')), 'r.md');
+    const f = path.join(makeTemp('ir-'), 'r.md');
     const text = change(EXAMPLE());
     assert.notEqual(text, EXAMPLE(), `the case for ${why} changed nothing`);
     fs.writeFileSync(f, text);
@@ -2683,7 +2801,7 @@ test('the sweep guard holds reviewers to the cleared team size', () => {
 });
 test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sweep runs', () => {
   const dir = sweepRepo();
-  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'wt');
+  const wt = path.join(makeTemp('wt-'), 'wt');
   g(dir, 'worktree', 'add', '-q', '-b', 'feat/other', wt, 'main');
   fs.writeFileSync(path.join(wt, 'src.ts'), 'x\n');
   commitAll(wt, 'other work', true);
@@ -2718,7 +2836,7 @@ test('a report title with $ signs is written as typed', () => {
 });
 test('the report audit reads pipes in code spans, allows angle brackets in prose, and catches a backticked placeholder', () => {
   const check = (text) => {
-    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ir-')), 'r.md');
+    const f = path.join(makeTemp('ir-'), 'r.md');
     fs.writeFileSync(f, text);
     return reportRun(path.dirname(f), ['audit', f]);
   };
@@ -2757,7 +2875,7 @@ test('a security or novel-lens role on a cheaper model goes back to be fixed; ot
 // nothing to cut, so the PR-body audits fail it unless the body says "No user-facing change".
 const BUMP = path.resolve('project/.claude/version-bump-check.mjs');
 function bumpRepo(change) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bump-'));
+  const dir = makeTemp('bump-');
   g(dir, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'package.json'), '{\n  "name": "app",\n  "version": "1.0.0"\n}\n');
   fs.mkdirSync(path.join(dir, 'src'));
@@ -2781,7 +2899,7 @@ test('the version bump check fails shipped code with no bump, unless the body sa
   assert.equal(versionBumpCheck('Fixes a.', bumped).ok, true);
   const testsOnly = bumpRepo((d) => fs.writeFileSync(path.join(d, 'src', 'a.test.js'), 'test\n'));
   assert.equal(versionBumpCheck('Adds a test.', testsOnly).ok, true);
-  assert.equal(versionBumpCheck('x', fs.mkdtempSync(path.join(os.tmpdir(), 'nogit-'))).ok, true, 'outside git there is nothing to check');
+  assert.equal(versionBumpCheck('x', makeTemp('nogit-')).ok, true, 'outside git there is nothing to check');
   // Both PR-body audits carry the row.
   const f = path.join(shipped, 'body.md');
   fs.writeFileSync(f, 'Fixes a.\n');
@@ -2805,7 +2923,7 @@ const honestBody = () => read(path.resolve('user/skills/pr-body/examples/standar
   .replace(/^\| (Static scan|E2E|Build; bundle|Chunks|Lighthouse) \|.*\n/gm, '')
   .replace('- No new package; the corpus and the served documents are unchanged (the recipe index included).\n', '- No new package.\n');
 test('the Standard PR audit passes an honest body for a project with no corpus, no scoped ignores and no web gates', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const dir = makeTemp('prb-');
   const ok = stdAudit(dir, honestBody());
   assert.equal(ok.status, 0, ok.stdout);
   const noSecrets = stdAudit(dir, honestBody().replace('- No secrets or account information in the diff.\n', ''));
@@ -2813,7 +2931,7 @@ test('the Standard PR audit passes an honest body for a project with no corpus, 
   assert.match(noSecrets.stdout, /FAIL.*secrets/);
 });
 test('a project\'s .kit/pr-body.json sets its own gates, audit line and verified-clean lines', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const dir = makeTemp('prb-');
   fs.mkdirSync(path.join(dir, '.kit'));
   fs.writeFileSync(path.join(dir, '.kit', 'pr-body.json'), JSON.stringify({
     gates: ['Dependency audit', 'Lint; type check', 'Static scan', 'Unit', 'E2E', 'Build; bundle', 'Chunks', 'Lighthouse'],
@@ -2830,7 +2948,7 @@ test('a project\'s .kit/pr-body.json sets its own gates, audit line and verified
 // The Review section carries the sweep summary a reviewer needs (the commit covered, a result per dimension, high and
 // critical findings, deferred items, accepted risks), and never a link to the private report.
 test('the Standard PR audit holds the Review section to the sweep summary and refuses a private report link', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const dir = makeTemp('prb-');
   const ok = stdAudit(dir, honestBody());
   assert.match(ok.stdout, /PASS\s+Review parts in order/);
   const noTable = stdAudit(dir, honestBody().replace(/\| Dimension \| Result \|\n\|---\|---\|\n(\|.*\n)+/, ''));
@@ -2861,7 +2979,7 @@ test('the handoff audit prints the full text to send, and only for a clean hando
 test('a version-only package.json change is not a new dependency; a dependency change still is', () => {
   const pkg = (v, deps = '{}') => `{\n  "name": "app",\n  "version": "${v}",\n  "dependencies": ${deps}\n}\n`;
   const repo = (head) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+    const dir = makeTemp('approve-');
     g(dir, 'init', '-q', '-b', 'main');
     fs.writeFileSync(path.join(dir, 'package.json'), pkg('1.0.0'));
     commitAll(dir, 'base', true);
@@ -2939,7 +3057,7 @@ test('the outcome asks the owner when a transcript is missing, and refuses a han
 // Locked: a tier's cap counts only the roles beyond its floor, so no modifier mix can make the floor
 // unreachable, and a sweep still cannot buy more than its extras.
 function fixRepo(extra = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const dir = makeTemp('approve-');
   const put = (files) => { for (const [f, t] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), t); } };
   g(dir, 'init', '-q', '-b', 'main');
   put({ 'README.md': 'x\n', 'src/page.ts': 'export const page = 1;\n', 'src/page.test.ts': 'test 1\n' });
@@ -3008,11 +3126,34 @@ function resweep(first, extra = {}, name = 'resweep.json') {
   fs.writeFileSync(f, JSON.stringify({ tier: 'feature', modifiers: [], resweepOf: first.f, fixed: [{ finding: 'S2: the error path logs the token', kind: 'security' }], roles: resweepRoles(), ...extra }));
   return { ...approveIn(first.dir, [f]), dir: first.dir, f };
 }
-test('one focused re-sweep approves; a second, or a re-sweep of it, is refused with the carry-over pointer and no pause', () => {
+// The one-sweep loop (the owner, 2026-11-07 05:06): one full sweep per branch, then CI. A re-sweep, or a second sweep
+// however it is named, is the owner's call; their yes clears it as any ask. Handoff item 32: a rebase or a fresh
+// contract name does not hide the branch's first sweep.
+// Under the one-sweep loop a re-sweep inside its focus asks the owner for that reason alone; their yes clears it.
+const ownerAsked = (r) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/); assert.doesNotMatch(r.stdout, /FIX THE CONTRACT/); assert.equal(r.stdout.match(/^    \S.*$/gm).filter((l) => !/No project settings|Triage report/.test(l)).length, 1, r.stdout); return ownerYes(r); };
+const ownerYes = (r) => { const y = approveIn(r.dir, [r.f, '--owner-yes', 'yes, run that second pass']); assert.equal(y.status, 0, y.stdout); return r; };
+test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the owner, and a rebase does not hide the first', () => {
+  const first = firstSweep();
+  const second = path.join(first.dir, 'sweeps', 'second.json');
+  fs.writeFileSync(second, JSON.stringify(featureContract()));
+  const again = approveIn(first.dir, [second]);
+  assert.equal(again.status, 1, again.stdout);
+  assert.match(again.stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch is the owner's/);
+  const rebased = firstSweep();
+  g(rebased.dir, 'checkout', '-q', 'main');
+  fs.writeFileSync(path.join(rebased.dir, 'NOTES.md'), 'main moved\n');
+  commitAll(rebased.dir, 'main moves', true);
+  g(rebased.dir, 'checkout', '-q', 'feat/sync');
+  assert.equal(g(rebased.dir, 'rebase', '-q', 'main').status, 0);
+  fs.writeFileSync(second.replace(first.dir, rebased.dir), JSON.stringify(featureContract()));
+  assert.match(approveIn(rebased.dir, [second.replace(first.dir, rebased.dir)]).stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch/, 'after a rebase');
+});
+test('a re-sweep asks the owner; on their yes it runs once, and a second, or a re-sweep of it, is refused with the carry-over pointer and no pause', () => {
   const first = firstSweep();
   const re = resweep(first);
-  assert.equal(re.status, 0, re.stdout);
-  assert.match(re.stdout, /APPROVED[\s\S]*re-sweep/);
+  assert.equal(re.status, 1, re.stdout);
+  assert.match(re.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/);
+  ownerYes(re);
   assert.notEqual(outcome(re).status, 0, 'a re-sweep outcome needs --carried');
   assert.equal(outcome(re, '200000', '2', '2', '0', ['--carried', '0']).status, 0);
   for (const extra of [{}, { resweepOf: re.f }]) {
@@ -3023,10 +3164,10 @@ test('one focused re-sweep approves; a second, or a re-sweep of it, is refused w
     assert.ok(!fs.existsSync(again.f.replace(/\.json$/, '.triage.md')), 'a refusal is the rule working: no triage report');
   }
   assert.ok(!approvalLog(first.dir).some((e) => e.kind === 'pause'), 'no pause');
-  // C8: a plain contract after the sweep and its re-sweep is a third pass, the owner's.
+  // C8: a plain contract after the sweep and its re-sweep is another pass, the owner's.
   const third = approveIn(first.dir, [first.f]);
   assert.equal(third.status, 1, third.stdout);
-  assert.match(third.stdout, /ASK THE OWNER[\s\S]*a third pass on this branch is the owner's/);
+  assert.match(third.stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch is the owner's/);
 });
 test('a re-sweep that loses focus goes back to be fixed; a new risk asks the owner', () => {
   const cases = [
@@ -3050,7 +3191,7 @@ test('a re-sweep that loses focus goes back to be fixed; a new risk asks the own
   const small = { tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) };
   const fr = firstSweep(small, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
   const grow = resweep(fr, { tier: 'fix', fixed: [{ finding: 'F1: the clamp still lets 0 through', kind: 'fix-root' }], roles: resweepRoles(['fix-root']) });
-  assert.match(grow.stdout, /APPROVED - fix re-sweep/);
+  ownerAsked(grow);
   // The first sweep's outcome comes first.
   const open = approveRun(featureContract());
   fs.writeFileSync(path.join(open.dir, 'src', 'fixed.ts'), 'fixed\n');
@@ -3081,7 +3222,7 @@ test('a re-sweep that loses focus goes back to be fixed; a new risk asks the own
 test('what a re-sweep leaves is carried: logged, printed, shown at each sweep start until a later outcome closes it', () => {
   const first = firstSweep();
   const re = resweep(first);
-  assert.equal(re.status, 0, re.stdout);
+  ownerAsked(re);
   assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
   const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
   assert.equal(o.status, 0, o.stdout);
@@ -3117,9 +3258,10 @@ test('every ask and every pause writes a triage report beside the contract; an a
   assert.match(e.stdout, /contract\.triage\.md/);
   assert.match(read(triage(esc.f)), /a sync bug shipped/);
   const t = approveRun(featureContract());
-  for (let i = 1; i < 10; i++) { outcome(t); approveIn(t.dir, [t.f]); }
+  for (let i = 1; i < 10; i++) { outcome(t); nextBranch(t.dir); approveIn(t.dir, [t.f]); }
   outcome(t);
   fs.rmSync(triage(t.f), { force: true });
+  nextBranch(t.dir);
   assert.match(approveIn(t.dir, [t.f]).stdout, /trial review due[\s\S]*contract\.triage\.md/);
   assert.match(read(triage(t.f)), /trial review due/);
   assert.match(read(triage(t.f)), /resumes from their own terminal/, 'the fix options are the report\'s point');
@@ -3158,6 +3300,7 @@ test('the outcome reads only this sweep\'s finished reviewers, each once in the 
   asks('d1', two, /2 transcripts/);
   assert.equal(r.status, 0);
   assert.equal(log('g1', transcripts({ g1: [[1, 1, 1, 1]] })).status, 0);
+  nextBranch(r.dir, 'README.md');
   const again = approveIn(r.dir, [r.f]);
   assert.equal(again.status, 0, again.stdout);
   asks('g1', transcripts({ g1: [[1, 1, 1, 1]] }), /already logged/);
@@ -3188,13 +3331,13 @@ test('an approved sweep that never started can be closed with --none-ran, and on
 test('a re-sweep is one per sweep however the first is re-run, and a re-run of the same re-sweep before it ran is fine', () => {
   const first = firstSweep();
   const re = resweep(first);
-  assert.equal(re.status, 0, re.stdout);
+  ownerAsked(re);
   const rerun = approveIn(first.dir, [re.f]);
   assert.match(rerun.stdout, /log the outcome of the last approved sweep first/, 're-deciding before its outcome asks, as any contract does');
   assert.doesNotMatch(rerun.stdout, /REFUSED/, 'it is not a second re-sweep');
   assert.equal(outcome(re, '200000', '1', '1', '0', ['--carried', '1']).status, 0);
   assert.match(approveIn(first.dir, [re.f]).stdout, /REFUSED/, 'after its outcome it has run');
-  assert.match(approveIn(first.dir, [first.f]).stdout, /a third pass on this branch is the owner's/);
+  assert.match(approveIn(first.dir, [first.f]).stdout, /a second sweep on this branch is the owner's/);
   assert.equal(approveIn(first.dir, [first.f, '--owner-yes', 'yes, a third pass']).status, 0);
   assert.equal(outcome(first).status, 0);
   assert.match(resweep(first, {}, 'resweep2.json').stdout, /REFUSED[\s\S]*already had its re-sweep/, 'clearing the first sweep again does not buy a second');
@@ -3207,7 +3350,7 @@ test('a re-sweep reads the first sweep as it was cleared, carries leftovers from
   assert.match(resweep(first).stdout, /FIX THE CONTRACT[\s\S]*changed since it was cleared/);
   const f2 = firstSweep();
   const re = resweep(f2);
-  assert.equal(re.status, 0, re.stdout);
+  ownerAsked(re);
   assert.equal(outcome(re, '200000', '0', '0', '0', ['--carried', '2']).status, 0, 'first-sweep findings left unfixed carry too');
   // Contracts committed in the sweep folder are not new source; a script there is.
   const f3 = firstSweep();
@@ -3219,7 +3362,7 @@ test('a re-sweep reads the first sweep as it was cleared, carries leftovers from
   fs.writeFileSync(path.join(f4.dir, 'src', 'extra.test.ts'), 'new test\n');
   commitAll(f4.dir, 'a test for the fix', true);
   const withTests = resweep(f4, { roles: [...resweepRoles(), role('test-value', 'Does each new test fail without the fix?')] });
-  assert.equal(withTests.status, 0, `a new test file is not new source: ${withTests.stdout}`);
+  ownerAsked(withTests);
 });
 test('project caps lower every limit', () => {
   const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
@@ -3237,7 +3380,7 @@ test('the default reviewer model in approve.mjs is the reviewer role\'s own mode
 });
 test('the sweep guard says a refused re-sweep has no owner override', () => {
   const first = firstSweep();
-  const re = resweep(first);
+  const re = ownerYes(resweep(first));
   outcome(re, '200000', '1', '1', '0', ['--carried', '0']);
   const r2 = resweep(first, {}, 'resweep2.json');
   assert.match(r2.stdout, /REFUSED/);
@@ -3257,15 +3400,15 @@ test('a sweep closed with --none-ran is neither a base for a re-sweep nor a used
   assert.match(resweep(f).stdout, /FIX THE CONTRACT[\s\S]*outcome of the sweep it re-checks/, 'a first sweep nobody ran has nothing to re-check');
   const first = firstSweep();
   const re = resweep(first);
-  assert.equal(re.status, 0, re.stdout);
+  ownerAsked(re);
   fs.writeFileSync(path.join(first.dir, 'src', 'sync.ts'), 'moved on\n');
   commitAll(first.dir, 'another fix before the reviewers', true);
   assert.equal(approveIn(first.dir, [re.f, '--outcome', '--none-ran']).status, 0);
   const again = resweep(first);
-  assert.equal(again.status, 0, `the unused re-sweep is not spent: ${again.stdout}`);
+  ownerAsked(again);
   // Two different re-sweep contracts cleared back to back: the second is refused before either runs.
   const two = firstSweep();
-  assert.equal(resweep(two).status, 0);
+  ownerAsked(resweep(two));
   assert.match(resweep(two, {}, 'resweep2.json').stdout, /REFUSED/);
 });
 test('--none-ran reads every clearing of this round, and only an approved contract has one', () => {
@@ -3311,7 +3454,7 @@ test('a transcript whose last model is synthetic is read by its real model; one 
 // From a project's kit-gap log (2026-10-31): a second Claude config folder (CLAUDE_CONFIG_DIR) ran without the kit,
 // and a repo with its own CLAUDE.md got no pointer to the kit's rules.
 test('the installer and the session hook honor CLAUDE_CONFIG_DIR, and the hook names the folder it checked', () => {
-  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+  const cfg = makeTemp('cfg-');
   const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg };
   delete env.KIT_CLAUDE_HOME;
   const hook = spawnSync('node', [path.resolve('project/.claude/kit-hook.cjs'), 'session-start'], { input: '{}', encoding: 'utf8', env: { ...env, CLAUDE_PROJECT_DIR: cfg } });
@@ -3411,8 +3554,8 @@ const promptGate = (script, input, env) => {
   return r.stdout ? JSON.parse(r.stdout) : {};
 };
 test('the project hook stops every prompt when the Claude config folder has no kit, and lets the install through', () => {
-  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-'));
-  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+  const proj = makeTemp('gate-');
+  const empty = makeTemp('cfg-');
   const env = { KIT_CLAUDE_HOME: empty, CLAUDE_PROJECT_DIR: proj };
   const hook = path.resolve('project/.claude/kit-hook.cjs');
   const stop = spawnSync('node', [hook, 'prompt'], { input: JSON.stringify({ prompt: 'build the feature' }), encoding: 'utf8', env: { ...process.env, ...env } });
@@ -3480,6 +3623,84 @@ const leanAudit = (dir, text) => {
   const title = lean.split('\n')[0].replace(/^## /, '').replace(/^[A-Za-z ]+: /, 'feat: ');
   return spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
 };
+// M28: CI runs this audit on every PR, and it caught 1 of 13 logic breaks. Each case is a slip a writer really makes,
+// and must fail exactly its own row: a row that stops failing, or starts failing a good body, shows here.
+test('the lean PR-body audit fails each real slip on its own row, and only that row, at each limit', () => {
+  const dir = makeTemp('lean-');
+  const lean = read(path.resolve('user/skills/pr-body/examples/lean.md'));
+  const title = lean.split('\n')[0].replace(/^## [A-Za-z ]+: /, 'feat: ');
+  let last = '';
+  const fails = (body, t = title) => {
+    const f = path.join(dir, 'body.md');
+    fs.writeFileSync(f, body);
+    const r = spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, t], { encoding: 'utf8', cwd: dir });
+    const out = r.stdout.split('\n').filter((l) => /^(PASS|FAIL) {2}/.test(l));
+    assert.deepEqual(out.map((l) => ROWS.find((n) => l.slice(6).startsWith(n))), ROWS, 'every row is reported, in order');
+    const rows = out.filter((l) => l.startsWith('FAIL')).map((l) => ROWS.find((n) => l.slice(6).startsWith(n)));
+    assert.equal(r.status, rows.length ? 1 : 0, r.stdout);
+    assert.match(r.stdout, rows.length ? /AUDIT FAILED\s*$/ : /AUDIT PASSED\s*$/);
+    last = r.stdout;
+    return rows;
+  };
+  const ROWS = ['no attribution block', 'title is type: subject (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
+    'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
+    'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'no spaced dashes in prose',
+    'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
+  const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
+  const NOTES = '**Notes** - Tooling only; the app does not change.';
+  const words = lean.split(/\s+/).filter(Boolean).length;
+  const lines = lean.split('\n').filter((l) => l.trim()).length;
+  const cases = [
+    ['the example', lean, title, []],
+    ['an attribution line', `${lean}\n_Requested by **Pat**_\n`, title, ['no attribution block']],
+    ['a type outside the list', lean, title.replace('feat:', 'feature:'), ['title is type: subject (smaller PR)']],
+    ['a scoped type', lean, title.replace('feat:', 'feat(hooks):'), []],
+    ['a type prefix in the H1', sub('## Commit hook:', '## feat:'), title, ['H1 is <Area>: <line>, no type prefix']],
+    ['an H1 that drops the title subject', lean, title.replace(' on commit', ''), ['H1 line carries the title subject']],
+    ['a line of 110', sub(NOTES, `**Notes** - ${'x'.repeat(98)}`), title, []],
+    ['a line of 111', sub(NOTES, `**Notes** - ${'x'.repeat(99)}`), title, ['every line <= 110']],
+    ['an em dash', sub('Tooling only;', `Tooling only${String.fromCharCode(0x2014)}`), title, ['0 non-ASCII characters']],
+    ['a tab', sub('Tooling only;', 'Tooling\tonly;'), title, ['0 non-ASCII characters']],
+    ['a vault path', sub('the app does not change.', 'see docs/sweeps/x.md.'), title, ['no vault paths']],
+    ['a .claude path (its name is also a banned word)', sub('the app does not change.', 'see .claude/x.cjs.'), title, ['no mechanism or AI words', 'no vault paths']],
+    ['a _Working Memory path', sub('the app does not change.', 'see _Working Memory.md.'), title, ['no vault paths']],
+    ['no framing', lean.replace(/\n\nEvery commit[\s\S]*?everything\.\n/, '\n'), title, ['framing summary before Changes']],
+    ['Gates before Changes', lean.replace(/(\*\*Changes\*\*[\s\S]*?)(\*\*Gates\*\*[\s\S]*?)(\*\*Notes\*\*)/, '$2$1$3'), title, ['Changes / Gates / Notes, in order']],
+    ['an open gate', sub('- [x] A one-file', '- [ ] A one-file'), title, ['every gate ticked']],
+    ['a missing dimension', sub('legal and licensing, ', ''), title, ['review names the dimensions']],
+    ['a spaced dash', sub('Tooling only;', 'Tooling only - for now;'), title, ['no spaced dashes in prose']],
+    ['a double dash', sub('Tooling only;', 'Tooling only -- for now;'), title, ['no spaced dashes in prose']],
+    ['a dash in inline code', sub('Tooling only;', 'Tooling only (`a - b`);'), title, []],
+    [`${180 - words} words up to 180`, sub(NOTES, `${NOTES}\n${'w '.repeat(180 - words).trim()}`), title, []],
+    ['181 words', sub(NOTES, `${NOTES}\n${'w '.repeat(181 - words).trim()}`), title, ['size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)']],
+    ['18 lines', sub(NOTES, `${NOTES}${'\nw'.repeat(18 - lines)}`), title, []],
+    ['19 lines', sub(NOTES, `${NOTES}${'\nw'.repeat(19 - lines)}`), title, ['size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)']],
+    ['a fourth change', sub('\n\n**Gates**', '\n- One more.\n\n**Gates**'), title, ['size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)']],
+    ['a fourth gate', sub('\n\n**Notes**', '\n- [x] One more.\n\n**Notes**'), title, ['size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)']],
+  ];
+  for (const word of ['AI', 'agent', 'agents', 'subagent', 'Claude', 'anthropic', 'swarm', 'Opus', 'sonnet', 'builder', 'checkers']) {
+    cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
+  }
+  for (const word of ['AIR', 'reagents', 'checkerboard']) cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, []]);
+  // Handoff item 15: the page shows an entity as its character, so the audit reads it that way.
+  for (const word of ['&#65;I', '&#x41;I', '&#65I', 'sub&#97;gent']) cases.push([`${word} as written`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
+  cases.push(['an em dash as an entity', sub('Tooling only;', 'Tooling only&#8212;'), title, ['0 non-ASCII characters']]);
+  cases.push(['a vault path behind an entity', sub('the app does not change.', 'see docs&#47;sweeps/x.md.'), title, ['no vault paths']]);
+  // A command in a fenced block is code, so its dashes pass; prose after the fence closes is read again.
+  const fence = (after) => sub(NOTES, `**Notes** - Tooling.\n\n\`\`\`\nnode --test\n\`\`\`\n${after}`);
+  cases.push(['dashes in a fenced block', fence('Done.'), title, []]);
+  cases.push(['a spaced dash after a fenced block', fence('Done - now.'), title, ['no spaced dashes in prose']]);
+  for (const [name, body, t, want] of cases) assert.deepEqual(fails(body, t), want, name);
+  // The writer is sent to the line at fault.
+  const at = lean.split('\n').indexOf(NOTES) + 1;
+  fails(sub(NOTES, `**Notes** - ${'x'.repeat(99)}`));
+  assert.match(last, new RegExp(`over: \\[\\[${at},111\\]\\]`));
+  fails(sub('the app does not change.', 'the AI does not change.'));
+  assert.match(last, new RegExp(`@${at}\\b`));
+  fails(sub('the app does not change.', 'see docs/sweeps/x.md.'));
+  assert.match(last, new RegExp(`lines ${at}\\b`));
+});
+
 const notesAudit = (dir, text) => {
   const f = path.join(dir, 'notes.md');
   fs.writeFileSync(f, text);
@@ -3492,8 +3713,33 @@ test('the attribution check refuses every disguise in the corpus and passes pros
   for (const body of CORPUS.mustPass) assert.deepEqual(attributionFaults(body), [], JSON.stringify(body));
 });
 
+// Handoff item 10: judged against a base, the phrase comes from the base, so a branch cannot change it.
+test('the PR-body canary reads the phrase from PR_BASE when one is set, and from disk when not', async () => {
+  const { carriesPhrase } = await import('../project/.claude/canary-phrase.mjs');
+  const dir = canaryRepo('Tango Lima Seven Delta');
+  const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+  g('add', '-A'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'phrase');
+  const base = g('rev-parse', 'HEAD').stdout.trim();
+  fs.writeFileSync(path.join(dir, 'standards', 'agent-teams.md'), `# Rules\n\n\`\`\`\nRULES EVERY AGENT FOLLOWS\n${phraseLine('Echo Golf Nine Kilo')}\`\`\`\n`);
+  const body = 'Done. Tango Lima Seven Delta.';
+  assert.equal(carriesPhrase(body, dir, base), true, 'the base phrase is still caught');
+  assert.equal(carriesPhrase(body, dir, ''), false, 'with no base, the edited file on disk is read');
+  assert.equal(carriesPhrase('Echo Golf Nine Kilo', dir, ''), true);
+});
+
+// Handoff item 15, for the Standard audit: a banned word or a dash spelled as an entity is the word on the page.
+test('the Standard PR-body audit reads an entity as the character the page shows', () => {
+  const dir = makeTemp('prb-');
+  assert.equal(stdAudit(dir, honestBody()).status, 0);
+  const fails = (from, to) => stdAudit(dir, honestBody().replace(from, to)).stdout.split('\n').filter((l) => l.startsWith('FAIL'));
+  const line = honestBody().split('\n').find((l) => / the /.test(l) && !l.startsWith('#'));
+  assert.ok(line, 'the example has a prose line to change');
+  assert.match(fails(line, line.replace(' the ', ' the &#67;laude ')).join('\n'), /no mechanism or AI words/);
+  assert.match(fails(line, line.replace(' the ', ' the &#8212; ')).join('\n'), /0 non-ASCII characters/);
+});
+
 test('both PR-body audits fail on the attribution block at the top, in the middle, or either half alone', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prb-'));
+  const dir = makeTemp('prb-');
   const FAILED = /FAIL\s+no attribution block/;
   const clean = stdAudit(dir, honestBody());
   assert.equal(clean.status, 0, 'a clean body still passes');
@@ -3520,7 +3766,7 @@ test('the attribution check stays fast on a line of tick boxes', async () => {
 });
 
 test('the release notes audit fails on the attribution block, on the same corpus', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rna-'));
+  const dir = makeTemp('rna-');
   for (const body of [...CORPUS.mustFail, ...CORPUS.unclear.map((u) => u.s)]) assert.match(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
   for (const body of CORPUS.mustPass) assert.doesNotMatch(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
 });
@@ -3553,7 +3799,7 @@ test('the kit ships the main branch rule as settings, and status flags an unprot
 test('both stop messages name the kit folder and the exact steps to install it', () => {
   const kitDir = path.resolve('.').split(path.sep).join('/');
   // The folder gate reads the kit folder from the config folder's install record.
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+  const home = makeTemp('cfg-');
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ version: '1.0.0', kitDir, files: {} }));
   const dir = localProject();
   const stop = promptGate(path.resolve('user/kit-hooks/kit-gate.cjs'), { cwd: dir, prompt: 'hi' }, { KIT_CLAUDE_HOME: home });
@@ -3564,7 +3810,7 @@ test('both stop messages name the kit folder and the exact steps to install it',
   // The project hook reads it from the project's install record when the config folder has none.
   const proj = localProject();
   kitInstall(proj);
-  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+  const empty = makeTemp('cfg-');
   const r = spawnSync('node', [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { input: JSON.stringify({ prompt: 'go' }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: empty, CLAUDE_PROJECT_DIR: proj } });
   const reason = JSON.parse(r.stdout).reason;
   assert.ok(reason.includes(`git -C "${kitDir}" fetch --tags`), reason);
@@ -3578,7 +3824,7 @@ test('both stop messages name the kit folder and the exact steps to install it',
 const MAP = path.resolve('project/.claude/project-map.mjs');
 const mapRun = (dir, args) => spawnSync('node', [MAP, ...args], { encoding: 'utf8', cwd: dir });
 function mapRepo(map) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'map-'));
+  const dir = makeTemp('map-');
   fs.mkdirSync(path.join(dir, 'src', 'ask'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'src', 'ask', 'index.ts'), 'x\n');
   fs.mkdirSync(path.join(dir, '.kit'), { recursive: true });
@@ -3622,7 +3868,7 @@ test('the project map renders one self-contained page with states as words, and 
 });
 test('the project map can be checked from a draft file outside the project, with paths still held to the project', () => {
   const dir = mapRepo(GOOD_MAP);
-  const draft = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'draft-')), 'map.json');
+  const draft = path.join(makeTemp('draft-'), 'map.json');
   fs.writeFileSync(draft, JSON.stringify({ ...GOOD_MAP, parts: [{ ...GOOD_MAP.parts[0], files: ['src/ask', 'src/nope'] }, GOOD_MAP.parts[1]] }));
   const r = mapRun(dir, ['check', '--map', draft]);
   assert.equal(r.status, 1);
@@ -3633,7 +3879,7 @@ test('the project map can be checked from a draft file outside the project, with
 // <type>/<plain-kebab> with no tool prefix or internal code.
 const NAMES = path.resolve('project/.claude/name-check.mjs');
 const nameRun = (args) => spawnSync('node', [NAMES, ...args], { encoding: 'utf8' });
-const msgFile = (text) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'msg-')), 'MSG'); fs.writeFileSync(f, text); return f; };
+const msgFile = (text) => { const f = path.join(makeTemp('msg-'), 'MSG'); fs.writeFileSync(f, text); return f; };
 test('the commit message check passes the house style and names each fault', () => {
   for (const ok of ['fix: hold the page still behind the open reader\n', 'chore(deps-dev): bump vite\n', 'Merge branch main into feature/x\n',
     'fixup! fix: hold the page\n', 'feat: add the map\n# a comment git strips\n']) assert.equal(nameRun(['message', msgFile(ok)]).status, 0, ok);
@@ -3662,7 +3908,7 @@ test('the commit-msg hook runs the message check, and the pre-push hook refuses 
   assert.equal(msgHook.status, 1);
   assert.match(msgHook.stderr, /type: subject/);
   // The pre-push hook, run as git runs it: a push that sends a tool-prefixed branch stops at the name check.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'names-'));
+  const dir = makeTemp('names-');
   fs.mkdirSync(path.join(dir, '.githooks'));
   fs.mkdirSync(path.join(dir, '.claude'));
   fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks/pre-push'));
@@ -3716,7 +3962,7 @@ test('snapshot keeps the vendor copy of a skill that is on standby (not on this 
 const TRACK = path.resolve('project/.claude/tracking-check.mjs');
 const trackRun = (dir, args) => spawnSync('node', [TRACK, ...args], { encoding: 'utf8', cwd: dir });
 test('the tracking check measures the whole-file caps and names each file over its cap', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'track-'));
+  const dir = makeTemp('track-');
   const lines = (n) => Array.from({ length: n }, (_, i) => `line ${i}`).join('\n') + '\n';
   fs.writeFileSync(path.join(dir, '_Working Memory.md'), lines(60));
   fs.writeFileSync(path.join(dir, '_Active Plan.md'), lines(70));
@@ -3732,7 +3978,7 @@ test('the tracking check measures the whole-file caps and names each file over i
   assert.match(over.stdout, /\| _Session Log\.md \| 11 sessions \| 10 \| OVER \|/);
 });
 test('the tracking check refuses a non-empty parking lot and a done line with no evidence', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'track-'));
+  const dir = makeTemp('track-');
   const plan = path.join(dir, 'plan.md');
   fs.writeFileSync(plan, '# Plan\n\n## Parking Lot\n\n## Progress\n\n- DONE: gate green on `ddca2b86`, 21/21\n- [x] sweep report linked (#181)\n\n## Tasks\n');
   assert.equal(trackRun(dir, ['parking', plan]).status, 0);
@@ -3960,8 +4206,37 @@ const capHook = (dir, calls, cap, extra = {}) => {
   const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash', tool_input: {}, ...extra });
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
+// Token audit #7 and #8 (workbench results/token-audit, W5 and W6): results over 40 KB were 57% of reviewer tool
+// bytes, re-read from cache on every later call; and 50 times a reviewer sat over 5 minutes and rewrote its whole
+// cache. A reviewer reads a large file by range, and runs nothing that waits past 5 minutes.
+test('a reviewer reads a file over 40 KB by range, and runs nothing in the background or past 5 minutes', () => {
+  const dir = makeTemp('cap-');
+  const big = path.join(dir, 'big.txt');
+  fs.writeFileSync(big, 'x'.repeat(41 * 1024));
+  const small = path.join(dir, 'small.txt');
+  fs.writeFileSync(small, 'x'.repeat(39 * 1024));
+  const read = (input, extra = {}) => capHook(dir, 1, 12, { tool_name: 'Read', tool_input: input, ...extra });
+  const whole = read({ file_path: big });
+  assert.equal(whole.permissionDecision, 'deny');
+  assert.match(whole.permissionDecisionReason, /offset and limit|Grep/);
+  assert.equal(read({ file_path: big, offset: 100, limit: 200 }).permissionDecision, 'allow', 'a range of it');
+  assert.equal(read({ file_path: big, limit: 200 }).permissionDecision, 'allow');
+  assert.equal(read({ file_path: small }).permissionDecision, 'allow', 'a file under 40 KB, whole');
+  assert.equal(read({ file_path: path.join(dir, 'missing.txt') }).permissionDecision, 'allow', 'Read says it is missing');
+  assert.equal(read({ file_path: big }, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers');
+  for (const tool of ['Bash', 'PowerShell']) {
+    const run = (input) => capHook(dir, 1, 12, { tool_name: tool, tool_input: { command: 'npm test', ...input } });
+    assert.equal(run({ run_in_background: true }).permissionDecision, 'deny', `${tool} in the background`);
+    const long = run({ timeout: 600000 });
+    assert.equal(long.permissionDecision, 'deny', `${tool} past 5 minutes`);
+    assert.match(long.permissionDecisionReason, /5 minutes/);
+    assert.equal(run({ timeout: 300000 }).permissionDecision, 'allow', `${tool} at 5 minutes`);
+    assert.equal(run({}).permissionDecision, 'allow', `${tool} with the default timeout`);
+  }
+  assert.equal(capHook(dir, 1, 12, { tool_name: 'Monitor', tool_input: { command: 'tail -f x' } }).permissionDecision, 'deny', 'a monitor waits');
+});
 test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
+  const dir = makeTemp('cap-');
   assert.equal(capHook(dir, 10, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
   const stop = capHook(dir, 11, 12);
   assert.equal(stop.permissionDecision, 'deny');
@@ -4049,6 +4324,7 @@ test('outcome numbers are whole and not negative; a reused id is caught in any c
     assert.match(o.stdout, /--findings needs a whole number/);
   }
   assert.equal(logOutcome(r, ids, cfg).status, 0);
+  nextBranch(r.dir);
   const again = approveRun(featureContract(), r.dir);
   assert.equal(again.status, 0, again.stdout);
   const o = logOutcome(again, ids.map((id) => id.toUpperCase()), cfg);
@@ -4136,7 +4412,7 @@ test('M14 stays narrow: only docs/migrations is left out, and a contract\'s own 
   assert.match(approveRun(t, nested).stdout, /ASK THE OWNER/, 'a contract in another folder is not this sweep\'s');
 });
 test('a branch cannot drop a cap the project set on its base', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const dir = makeTemp('approve-');
   const put = (f, t) => { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), t); };
   g(dir, 'init', '-q', '-b', 'main');
   put('src/page.ts', '1\n'); put('src/page.test.ts', '1\n'); put('.kit/sweep-approval.json', '{"caps":{"fix":{"maxExtras":0}}}\n');
@@ -4228,6 +4504,7 @@ test('a crashed reviewer gets one more start for its role, and its spend stays o
   assert.equal(out.roles[1].tokens, 500);
   assert.equal(out.roles[1].crashed, undefined);
   assert.equal(s.start(1), 'deny', 'a closed round has no retry left');
+  nextBranch(s.dir, 'NOTES.md');
   assert.equal(approveIn(s.dir, [s.f]).status, 0);
   assert.match(logOutcome(s, ['r1', 'r2x'], s.cfg).stdout, /r1 \(already logged/, 'the crashed id counts as used');
   assert.match(s.retry(1, 'r1').stdout, /r1 \(already logged/);
@@ -4291,9 +4568,9 @@ test('a retry needs an open sweep, and the crashed id cannot also stand as the r
   const s = crashedSweep();
   assert.equal(s.retry(1, 'r1').status, 0);
   const metaFile = path.join(s.cfg, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-r1.meta.json');
-  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', finished: true }));
+  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', toolUseId: 'toolu_lead_r1', finished: true }));
   assert.match(logOutcome(s, ['r1', 'r2'], s.cfg).stdout, /r1 \(logged as crashed/);
-  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', finished: false }));
+  fs.writeFileSync(metaFile, JSON.stringify({ agentType: 'reviewer', toolUseId: 'toolu_lead_r1', finished: false }));
   transcripts({ r1b: [[0, 100, 0, 0]] }, {}, s.cfg);
   assert.equal(logOutcome(s, ['r1b', 'r2'], s.cfg).status, 0);
   const late = s.retry(2, 'r2');
@@ -4350,6 +4627,7 @@ test('a reviewer started before the owner\'s yes is not this round\'s, and a sec
   outcome(r, '200000');
   const old = cheapRoles(5);
   const oldCfg = transcripts(Object.fromEntries(old.map((id) => [id, [[0, 100, 0, 0]]])));
+  nextBranch(r.dir);
   assert.equal(approveIn(r.dir, [r.f]).status, 0);
   assert.match(logOutcome(r, old, oldCfg).stdout, /before this sweep was cleared/, 'the first clearing after the last outcome');
 });
@@ -4387,12 +4665,12 @@ test('a project whose settings lack the call-cap hook is sent back to wire it', 
   const r = approveRun(featureContract(), dir);
   assert.equal(r.status, FIX_EXIT, r.stdout);
   assert.match(r.stdout, /call-cap hook is not wired/);
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n');
   commitAll(dir, 'wired', true);
   assert.equal(approveIn(dir, [r.f]).status, 0);
 });
 test('the call-cap hook reads a real transcript: other lines, a half-written line, and a quoted cap change nothing', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
+  const dir = makeTemp('cap-');
   const session = path.join(dir, 's');
   fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
   const brief = JSON.stringify({ message: { role: 'user', content: 'Call cap: 6.' } });
@@ -4469,7 +4747,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
   fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{}\n');
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n');
   commitAll(dir, 'settings', true);
   const w = approveRun(featureContract(), dir);
   assert.equal(w.status, 0, w.stdout);
@@ -4494,7 +4772,7 @@ test('an out-of-trial model cleared by the owner still pauses at the outcome', (
   assert.match(logOutcome(r, ids, cfg).stdout, /paused[\s\S]*ran on claude-haiku-5-5/);
 });
 test('a branch cannot raise a cap it inherited, and the outcome holds to an owner\'s clearing', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const dir = makeTemp('approve-');
   const put = (f, t) => { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), t); };
   g(dir, 'init', '-q', '-b', 'main');
   put('src/page.ts', '1\n'); put('src/page.test.ts', '1\n'); put('.kit/sweep-approval.json', '{"caps":{"fix":{"maxExtras":0}}}\n');
@@ -4591,19 +4869,135 @@ test('a re-sweep after a first sweep cut short asks the owner, not a loop; an un
   assert.equal(approveIn(dir, [re.f, '--owner-yes', 'yes go']).status, 0);
   const first = firstSweep();
   const one = resweep(first);
-  assert.equal(one.status, 0, one.stdout);
+  ownerAsked(one);
   assert.equal(approveIn(first.dir, [one.f, '--outcome', '--none-ran']).status, 0);
-  assert.equal(resweep(first, {}, 'second.json').status, 0, 'a re-sweep nobody ran spends nothing');
+  ownerAsked(resweep(first, {}, 'second.json'));
+});
+// 1.21.0 handoff item 28: the sweep guard must be wired beside the call cap, and no settings layer may turn hooks off.
+// 1.21.0 handoff item 29: an outcome named any reviewer transcript whose brief carried the tag, so a cheap decoy
+// could stand in for the reviewer the guard started. The guard writes the start's tool id into the role's slot, and
+// the outcome counts only the transcript Claude Code wrote for that start.
+test('an outcome counts only the reviewer the guard started for each role, not a decoy with the same tag', () => {
+  const r = approveRun(featureContract());
+  const at = lastClearing(r.dir);
+  const slots = path.join(r.dir, '.git', 'kit-sweep-starts', crypto.createHash('sha256').update(at[0]).digest('hex').slice(0, 16));
+  const brief = 'review. Call cap: 5.' + leadTag(r.dir, 'Call cap: 5');
+  const started = sweepGuard(r.dir, { raw: true, tool_use_id: 'toolu_real1', tool_input: { subagent_type: 'reviewer', prompt: brief + leadQuestion(r.dir, brief) } });
+  assert.equal(started.permissionDecision, 'allow');
+  assert.equal(read(path.join(slots, '0')), 'toolu_real1', 'the guard records which start took the slot');
+  const ids = ['real1', 'b2', 'b3', 'b4', 'b5'];
+  const cfg = transcripts(Object.fromEntries([...ids, 'decoy'].map((id) => [id, [[0, 1000, 0, 0]]])), { real1: { toolUseId: 'toolu_real1' } });
+  const run = (names) => approveIn(r.dir, [r.f, '--outcome', '--agents', names.join(','), '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  setBrief(cfg, 'decoy', (b) => `${b} Sweep: ${at[1].hash} role 1`);
+  const bad = run(['decoy', ...ids.slice(1)]);
+  assert.equal(bad.status, 1, bad.stdout);
+  assert.match(bad.stdout, /decoy \(not the reviewer the guard started for role 1\)/);
+  assert.equal(run(ids).status, 0, 'the started reviewer counts');
+});
+// 1.21.0 handoff item 35: a second run on a contract already cleared at this HEAD, with reviewers still to start, is
+// told to log the outcome first, and its line leaves the clearing standing for the roles still to start.
+test('running approve.mjs again on a live cleared contract keeps its clearing, so the other roles still start', () => {
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
+  const again = approveIn(r.dir, [r.f]);
+  assert.equal(again.status, FIX_EXIT, again.stdout);
+  assert.match(again.stdout, /log the outcome of the last approved sweep first/);
+  const hash = approvalLog(r.dir).find((e) => e.decision === 'approved').hash;
+  const brief = `review. Call cap: 5. Sweep: ${hash} role 2`;
+  const role2 = { subagent_type: 'reviewer', prompt: brief + leadQuestion(r.dir, brief) };
+  assert.equal(sweepGuard(r.dir, { raw: true, tool_input: role2 }).permissionDecision, 'allow', 'the next role still starts');
+  // An edited contract is a new decision, and its line does decide.
+  fs.writeFileSync(r.f, JSON.stringify({ ...featureContract(), modifiers: ['user-data'] }));
+  approveIn(r.dir, [r.f]);
+  assert.equal(sweepGuard(r.dir).permissionDecision, 'deny');
+});
+// 1.21.0 handoff item 34: git reads a plain "main" or "origin/main" as a tag of that name first.
+test('a tag named like the default branch does not pick the base the diff is read from', () => {
+  for (const tag of ['main', 'origin/main']) {
+    const dir = sweepRepo();
+    g(dir, 'tag', tag, 'HEAD');
+    const r = approveRun(featureContract(), dir);
+    assert.equal(r.status, 0, `${tag}: ${r.stdout}`);
+    assert.match(r.stdout, /diff against main/);
+  }
+});
+// 1.21.0 handoff item 33: the uncommitted check skipped every .md and .json under the contract's folder, so work
+// kept there passed unseen. Only the sweep's own paper beside the contract is left out: reports, and contracts.
+test('uncommitted work in the contract\'s folder counts, except the reports and contracts beside the contract', () => {
+  for (const [file, text, counts] of [
+    ['sweeps/settings.json', '{"apiUrl":"https://example.test"}\n', true],
+    ['sweeps/data/rows.json', '[1,2]\n', true],
+    ['sweeps/deep/notes.md', 'x\n', true],
+    ['sweeps/2026-11-07-report.md', '# report\n', false],
+    ['sweeps/other.json', JSON.stringify(featureContract()), false],
+  ]) {
+    const dir = sweepRepo();
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), text);
+    const r = approveRun(featureContract(), dir);
+    if (counts) { assert.equal(r.status, FIX_EXIT, `${file}: ${r.stdout}`); assert.match(r.stdout, /work not committed/, file); } else assert.equal(r.status, 0, `${file}: ${r.stdout}`);
+  }
+});
+// The 1.22.0 sweep (T1): the helper above plays the guard for every outcome, so this one runs approve.mjs itself: a
+// tagged reviewer the guard never started (no slot at all) is not counted.
+test('an outcome refuses a tagged reviewer when the guard recorded no start for its role', () => {
+  const r = approveRun(featureContract());
+  const hash = approvalLog(r.dir).pop().hash;
+  const ids = cheapRoles(5);
+  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[0, 100, 0, 0]]])));
+  ids.forEach((id, i) => setBrief(cfg, id, (b) => `${b} Sweep: ${hash} role ${i + 1}`));
+  const o = spawnSync('node', [APPROVE, r.f, '--outcome', '--agents', ids.join(','), '--findings', '1', '--real', '1', '--duplicates', '0'], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: cfg } });
+  assert.equal(o.status, 1, o.stdout);
+  assert.match(o.stdout, /not the reviewer the guard started for role 1/);
+});
+test('the sweep guard refuses a reviewer brief under another agent type, and a reviewer started outside git', () => {
+  const dir = makeTemp('guard-');
+  const r = approveRun(featureContract());
+  for (const type of ['general-purpose', 'Explore', 'claude', '']) {
+    const out = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: r.dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: type, prompt: 'Review the diff for injection. Call cap: 5.' } }).stdout;
+    const d = out ? JSON.parse(out).hookSpecificOutput : { permissionDecision: 'allow' };
+    assert.equal(d.permissionDecision, 'deny', `${type || 'no type'} with a call cap`);
+    assert.match(d.permissionDecisionReason, /reviewer/);
+  }
+  assert.equal(sweepGuard(r.dir, { raw: true, tool_input: { subagent_type: 'general-purpose', prompt: 'Find every caller of approve().' } }).permissionDecision, 'allow', 'other work starts freely');
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a reviewer outside git has no log to clear it');
+});
+test('the hook check needs the sweep guard too, and hooks off in the local or user settings is not wired', () => {
+  const both = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
+  const setUp = (text) => {
+    const dir = sweepRepo();
+    fs.mkdirSync(path.join(dir, '.claude'));
+    fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text);
+    commitAll(dir, 'settings', true);
+    return dir;
+  };
+  const cfg = makeTemp('approve-cfg-');
+  const capOnly = setUp('{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n');
+  const r = approveRun(featureContract(), capOnly);
+  assert.equal(r.status, FIX_EXIT, r.stdout);
+  assert.match(r.stdout, /sweep guard/);
+  const dir = setUp(both);
+  const ok = approveRun(featureContract(), dir);
+  assert.equal(ok.status, 0, ok.stdout);
+  approveIn(dir, [ok.f, '--outcome', '--none-ran']);
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{"disableAllHooks":true}\n');
+  assert.equal(approveIn(dir, [ok.f], { CLAUDE_CONFIG_DIR: cfg }).status, FIX_EXIT, 'hooks off in the local settings');
+  fs.rmSync(path.join(dir, '.claude', 'settings.local.json'));
+  fs.writeFileSync(path.join(cfg, 'settings.json'), '{"disableAllHooks":true}\n');
+  assert.equal(approveIn(dir, [ok.f], { CLAUDE_CONFIG_DIR: cfg }).status, FIX_EXIT, 'hooks off in the user settings');
+  fs.writeFileSync(path.join(cfg, 'settings.json'), '{}\n');
+  assert.equal(approveIn(dir, [ok.f], { CLAUDE_CONFIG_DIR: cfg }).status, 0, 'and on again');
 });
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
-  const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]}]}}\n';
+  const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
   for (const bad of ['{"hooks":{"PreToolUse":[{"args":["{{CLAUDE_HOME}}/kit-hooks/call-cap.cjs"]}]}}\n', `{"disableAllHooks":true,${wiredText.slice(1)}`, '{"note":"call-cap.cjs removed on purpose"}\n']) {
     const dir = sweepRepo();
     put(dir, bad);
     assert.equal(approveRun(featureContract(), dir).status, FIX_EXIT, bad);
   }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-'));
+  const dir = makeTemp('approve-');
   g(dir, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'README.md'), 'x\n');
   put(dir, wiredText);
@@ -4639,11 +5033,11 @@ test('the reviewer role keeps clear of the prompt it cannot answer', () => {
   assert.match(read(path.resolve('user/agents/reviewer.md')), /Never run a shell command naming `approve\.mjs` with `--owner-yes`/);
 });
 test('install does not rewrite the hook check: an installed script reads an installed project as wired', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const home = makeTemp('home-');
   install({ kit: path.resolve('.'), target: 'user', home });
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
-  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ args: [path.join(home, 'kit-hooks', 'call-cap.cjs').split(path.sep).join('/')] }] } }));
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: ['call-cap.cjs', 'sweep-guard.cjs'].map((h) => ({ args: [path.join(home, 'kit-hooks', h).split(path.sep).join('/')] })) } }));
   commitAll(dir, 'settings', true);
   const f = path.join(dir, 'sweeps', 'contract.json');
   fs.writeFileSync(f, JSON.stringify(featureContract()));
@@ -4730,7 +5124,7 @@ test('recall run header says what the run read: keys, both kit versions, and whe
   install({ kit, home, target: 'user', release: { release: false, describe: 'abc1234' } });
   assert.equal(installFacts({ projectDir: proj, home }).user, '1.0.0 (unreleased abc1234)');
   // A control has no kit in its project, and that is a fact to record, not a fault.
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'control-'));
+  const bare = makeTemp('control-');
   assert.equal(installFacts({ projectDir: bare, home }).project, 'none');
 });
 
@@ -4758,7 +5152,7 @@ test('a recall run asks the current keys and its header names them', async () =>
 test('an unreleased user layer may run only from a throwaway folder under kit-probes', async () => {
   const { checkUserLayer } = await recallTools();
   const { kit } = makeKit();
-  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  const osHome = makeTemp('oshome-');
   const layer = (home, release) => { fs.mkdirSync(home, { recursive: true }); install({ kit, home, target: 'user', release }); return home; };
   const unreleased = { release: false, describe: 'abc1234' };
   const refused = (home) => assert.throws(() => checkUserLayer(home, osHome), /not a released kit install/, home);
@@ -4773,7 +5167,7 @@ test('an unreleased user layer may run only from a throwaway folder under kit-pr
   fs.symlinkSync(path.join(osHome, '.claude'), link, 'junction');
   refused(link);
   // The default folder is held the same way when no home is passed.
-  assert.throws(() => checkUserLayer(layer(fs.mkdtempSync(path.join(os.tmpdir(), 'plain-')), unreleased)), /not a released kit install/);
+  assert.throws(() => checkUserLayer(layer(makeTemp('plain-'), unreleased)), /not a released kit install/);
 });
 
 test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {
@@ -4838,7 +5232,7 @@ test('frozen keys with no Pass line have no bar', async () => {
 });
 
 test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatebar-'));
+  const dir = makeTemp('gatebar-');
   const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
   const KEYS = 'docs/evals/recall-questions.md';
@@ -4954,7 +5348,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   assert.match(step, /^\s+PR_BASE: origin\/\$\{\{ github\.base_ref \}\}$/m);
   assert.match(step, /^\s+PR_HEAD: \$\{\{ github\.event\.pull_request\.head\.sha \}\}$/m);
   assert.doesNotMatch(step, /continue-on-error/);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-'));
+  const dir = makeTemp('gate-');
   const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
   git('init', '-q', '-b', 'main');
@@ -5120,7 +5514,7 @@ const recorder = (statuses = []) => {
   };
   return { calls, run };
 };
-const scratch = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'probe-')), 'kit-probes', 'abc123', 'pdef456');
+const scratch = () => path.join(makeTemp('probe-'), 'kit-probes', 'abc123', 'pdef456');
 
 test('probePath is random per call and always home/kit-probes/<6 hex>/p<6 hex>', async () => {
   const { probePath } = await recallTools();
@@ -5183,14 +5577,6 @@ test('parseRunArgs refuses no label, a label that is a path, too many arguments,
   assert.throws(() => parseRunArgs(['a', '--no-kit', path.resolve('kit')]));
   assert.throws(() => parseRunArgs(['a', path.resolve('kit'), '--no-kit']));
   assert.throws(() => parseRunArgs(['a', '--no-kit', '--no-kit']));
-});
-
-test('parseRunArgs refuses the old "<folder> <label>" usage', async () => {
-  const { parseRunArgs } = await recallTools();
-  assert.throws(() => parseRunArgs(['C:/some/folder', 'kit-1.19.0']));
-  assert.throws(() => parseRunArgs(['C:\\some\\folder', 'kit-1.19.0']));
-  assert.throws(() => parseRunArgs(['./folder', 'x']));
-  assert.throws(() => parseRunArgs([path.resolve(os.tmpdir(), 'proj'), 'x']));
 });
 
 test('setupProbe makes the folder, runs git init in it, then installs the kit project layer with cwd at the kit', async () => {
@@ -5267,7 +5653,7 @@ test('setupProbe throws when the kit install fails', async () => {
 
 test('checkUserLayer throws unless kit-install.json exists and says release is exactly true', async () => {
   const { checkUserLayer } = await recallTools();
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ul-'));
+  const home = makeTemp('ul-');
   assert.throws(() => checkUserLayer(home), (e) => /is not a released kit install/.test(e.message) && e.message.includes(home));
   const stamp = path.join(home, 'kit-install.json');
   for (const body of [{ release: false }, { release: 'true' }, { release: 1 }, {}, { describe: 'v1.0.0' }]) {
@@ -5279,7 +5665,7 @@ test('checkUserLayer throws unless kit-install.json exists and says release is e
   fs.writeFileSync(stamp, JSON.stringify({ release: true, describe: 'v1.0.0' }));
   assert.doesNotThrow(() => checkUserLayer(home));
   // A folder with that name is not a stamp.
-  const odd = fs.mkdtempSync(path.join(os.tmpdir(), 'ul-'));
+  const odd = makeTemp('ul-');
   fs.mkdirSync(path.join(odd, 'kit-install.json'));
   assert.throws(() => checkUserLayer(odd));
 });
@@ -5315,7 +5701,7 @@ test('runHeader names the path shape and the CLI, and never the real folder name
 
 test('recall refuses the old usage and an unreleased user layer before it creates any folder', () => {
   const { kit, home } = makeKit();
-  const fakeOs = fs.mkdtempSync(path.join(os.tmpdir(), 'fakeos-'));
+  const fakeOs = makeTemp('fakeos-');
   const env = { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home, HOME: fakeOs, USERPROFILE: fakeOs, PATH: '' };
   const go = (args) => spawnSync(process.execPath, [RECALL, ...args], { encoding: 'utf8', env });
   const unstamped = go(['never-saved']);
@@ -5356,14 +5742,16 @@ test('every recall session runs in the probe folder with the question as its inp
   for (const bad of [{ status: 1, stdout: 'words' }, { status: 0, stdout: '  ' }, { status: 0, stdout: 'Not logged in' }]) {
     assert.throws(() => askAll({ qs, projectDir: dir, run: () => bad }), /question 1: no answer/, JSON.stringify(bad));
   }
+  // 1.21.0 handoff item 36: a logged-out session says how to log in, for the config folder the run reads.
+  assert.throws(() => askAll({ qs, projectDir: dir, run: () => ({ status: 1, stdout: 'Not logged in - Please run /login' }) }), /not logged in.*\/login.*CLAUDE_CONFIG_DIR/i);
 });
 
 test('a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself', async () => {
   const { recallRun, currentVersion, questionCount } = await recallTools();
   const { kit, home } = makeKit();
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
-  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'osh-'));
-  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'out-'));
+  const osHome = makeTemp('osh-');
+  const outDir = makeTemp('out-');
   fs.mkdirSync(path.join(home, 'projects', 'other-project'), { recursive: true });
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const calls = [];
@@ -5389,7 +5777,7 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
 
 test('a recall run removes what it made, and nothing else', async () => {
   const { removeProbe, probePath } = await recallTools();
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clean-'));
+  const root = makeTemp('clean-');
   const home = path.join(root, '.claude');
   const dir = probePath(root);
   const other = path.join(root, 'kit-probes', 'keepme');
@@ -5573,7 +5961,7 @@ test('a sheet with Windows line ends reads the same, and the words stay whole', 
 
 test('a sheet file saved in anything but UTF-8 is refused, and a UTF-8 mark is read past', async () => {
   const { readSheet, parseSheet } = await sheetTools();
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'enc-'));
+  const dir = makeTemp('enc-');
   const f = path.join(dir, 's.sheet.md');
   fs.writeFileSync(f, Buffer.from('caf\xE9 sheet', 'latin1'));
   assert.throws(() => readSheet(f), /not saved as UTF-8/);
@@ -5675,7 +6063,7 @@ test('the record names whoever asked, so a sheet from another model reads true',
 
 test('the sheet commands work from the skill folder alone, and the core carries no kit links', () => {
   const src = path.resolve('user/skills/brainstorm');
-  const lifted = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lift-')), 'brainstorm');
+  const lifted = path.join(makeTemp('lift-'), 'brainstorm');
   fs.cpSync(src, lifted, { recursive: true });
   const cmd = (script, ...args) => spawnSync(process.execPath, [path.join(lifted, script), ...args], { encoding: 'utf8', cwd: lifted });
   const f = path.join(lifted, '2026-11-04-export.sheet.md');
@@ -5782,7 +6170,7 @@ test('an update keeps the attribution script while an edited audit still needs i
 // M21: the kit source installs no kit, so before 1.21.0 nothing checked its commit messages until CI did, and the fix
 // needed a history rewrite. Build turns its own hook on once per clone.
 test('build turns on the kit source commit-msg hook, which refuses a bad message, and leaves an owner hooks path alone', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'srchooks-'));
+  const dir = makeTemp('srchooks-');
   const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
   g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
   fs.mkdirSync(path.join(dir, '.githooks')); fs.mkdirSync(path.join(dir, 'project/.claude'), { recursive: true });
@@ -5817,7 +6205,7 @@ test('the sweep audit reads an indented findings table as it reads a flat one', 
 // Carry-overs closed in 1.21.0 for the recall gate and runs (S18-2, S18-3, S18-5, S18-6, S18-7, B7, I20, I27).
 // A small repo with recall.mjs, a ruler and a scores file, gated base..HEAD as CI does.
 function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: median 9 of 13.\n\n', scores = '# Scores\n' } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate11-'));
+  const dir = makeTemp('gate11-');
   const git = (...a) => { const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, a.join(' ') + r.stderr); return r.stdout; };
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
   git('init', '-q', '-b', 'main');
@@ -5870,7 +6258,7 @@ test('recall gate and kit.mjs (S18-2): run through a junction or link, they stil
   fs.symlinkSync(path.join(r.dir, 'scripts'), link, 'junction');
   const out = r.gate(path.join(link, 'recall.mjs'));
   assert.equal(out.status, 1, 'through a link: ' + out.stdout + out.stderr);
-  const kitLink = fs.mkdtempSync(path.join(os.tmpdir(), 'kitlink-'));
+  const kitLink = makeTemp('kitlink-');
   fs.symlinkSync(path.resolve('scripts'), path.join(kitLink, 's'), 'junction');
   const usage = spawnSync('node', [path.join(kitLink, 's', 'kit.mjs'), 'no-such-command'], { encoding: 'utf8' });
   assert.notEqual(usage.stdout + usage.stderr, '', 'kit.mjs through a link prints, so it ran');
@@ -5912,10 +6300,10 @@ test('recall (I20): a released user layer edited by hand is not read as released
 
 test('recall (I27): removeProbe deletes only a probe under this home\'s kit-probes, and only a plain memory slug', async () => {
   const { removeProbe, probePath } = await recallTools();
-  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  const osHome = makeTemp('oshome-');
   const home = path.join(osHome, '.claude');
   fs.mkdirSync(path.join(home, 'projects', 'keep'), { recursive: true });
-  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'elsewhere-'));
+  const elsewhere = makeTemp('elsewhere-');
   const outside = probePath(elsewhere);
   fs.mkdirSync(outside, { recursive: true });
   assert.throws(() => removeProbe({ dir: outside, home, slug: 'x', osHome }), /not a probe folder/);
@@ -5936,7 +6324,7 @@ test('recall (I27): removeProbe deletes only a probe under this home\'s kit-prob
 // Review R1 and R3 (1.21.0): a throwaway user layer is a real unreleased install under a kit-probes that is no link.
 test('recall (R1, R3): kit-probes may not be a link, and a throwaway layer must be a real unreleased install', async () => {
   const { checkUserLayer } = await recallTools();
-  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  const osHome = makeTemp('oshome-');
   const real = path.join(osHome, '.claude');
   fs.mkdirSync(real, { recursive: true });
   fs.writeFileSync(path.join(real, 'kit-install.json'), JSON.stringify({ version: '1.0.0', release: false, describe: 'abc', files: {} }));
@@ -5956,13 +6344,13 @@ test('recall (R1, R3): kit-probes may not be a link, and a throwaway layer must 
 // says which one.
 test('recall (R2): a run on a throwaway layer records the real global layer it also loads', async () => {
   const { installFacts, runHeader } = await recallTools();
-  const osHome = fs.mkdtempSync(path.join(os.tmpdir(), 'oshome-'));
+  const osHome = makeTemp('oshome-');
   fs.mkdirSync(path.join(osHome, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(osHome, '.claude', 'kit-install.json'), JSON.stringify({ version: '1.20.0', release: true, describe: 'v1.20.0' }));
   const home = path.join(osHome, 'kit-probes', 'cfg');
   fs.mkdirSync(home, { recursive: true });
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ version: '1.21.0', release: false, describe: 'abc1234' }));
-  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'proj-'));
+  const proj = makeTemp('proj-');
   const facts = installFacts({ projectDir: proj, home, osHome });
   assert.equal(facts.global, '1.20.0 (v1.20.0)');
   assert.ok(runHeader({ label: 'x', keys: 4, facts, when: 'now', cli: 'c' }).includes('Global CLAUDE.md also loaded from ~/.claude: 1.20.0 (v1.20.0)'));
@@ -5975,7 +6363,7 @@ test('recall (R2): a run on a throwaway layer records the real global layer it a
 test('recall-score blinds runs without a side marker and scores them into a gate line the gate reads', async () => {
   const { blind, score, scrub } = await import('../scripts/recall-score.mjs');
   const { checkGate } = await recallTools();
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rscore-'));
+  const dir = makeTemp('rscore-');
   const keysText = read(path.resolve('docs/evals/recall-questions.md'));
   const n = (await recallTools()).questionCount(keysText, (await recallTools()).currentVersion(keysText));
   const run = (name, extra) => {
@@ -6014,7 +6402,7 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
   const bar = passBar(keysText, keys);
   assert.equal(bar, 12, 'the bar stays at 12');
   const files = (cand) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rtie-'));
+    const dir = makeTemp('rtie-');
     const totals = { ...Object.fromEntries(cand.map((t, i) => [`cand-${i + 1}`, t])), 'base-1': 12, 'control-1': 5 };
     const map = Object.fromEntries(Object.keys(totals).map((run, i) => [`R${String(i + 1).padStart(2, '0')}`, run]));
     const lines = Object.entries(map).flatMap(([id, run]) => Array.from({ length: n }, (_, q) => `${id} Q${q + 1}: ${q < totals[run] ? 1 : 0}`));
@@ -6092,7 +6480,7 @@ test('C4: the guard starts each role once, by the sweep and role its brief names
 test('C9f: the guard reads each folder\'s HEAD once, however long the log', () => {
   const dir = sweepRepo();
   // git's own trace counts its runs, on every system; a shim script would not run on Windows, the only CI system.
-  const count = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'trace-')), 'count');
+  const count = path.join(makeTemp('trace-'), 'count');
   const lines = [];
   const sha = (x) => crypto.createHash('sha256').update(x).digest('hex').slice(0, 16);
   for (let i = 0; i < 200; i++) lines.push(JSON.stringify({ kind: 'decision', contract: path.join(dir, 'sweeps', 'old.json'), hash: 'x', head: '0000000', decision: 'approved', prev: i ? sha(lines[i - 1]) : '' }));
@@ -6138,7 +6526,7 @@ test('C11: a re-sweep reviews the tests its fixes change', () => {
   assert.equal(without.status, FIX_EXIT, without.stdout);
   assert.match(without.stdout, /needs 1 test-value/);
   const withTv = resweep(fr, { tier: 'fix', fixed, roles: [br, dim, tv] });
-  assert.equal(withTv.status, 0, withTv.stdout);
+  ownerAsked(withTv);
 });
 test('C9c: a --base off the default branch asks the owner', () => {
   const dir = sweepRepo();
@@ -6219,11 +6607,24 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
   const wrong = sweepGuard(r.dir, { raw: true, tool_input: { subagent_type: 'reviewer', prompt: `audit the billing service. Call cap: 5. Sweep: ${hash} role 1` } });
   assert.equal(wrong.permissionDecision, 'deny');
   assert.match(wrong.permissionDecisionReason, /its role's question/);
-  const side = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wt-')), 'side');
+  const side = path.join(makeTemp('wt-'), 'side');
   g(r.dir, 'worktree', 'add', '-q', '--detach', side, 'main');
   const elsewhere = sweepGuard(r.dir, { cwd: side });
   assert.equal(elsewhere.permissionDecision, 'deny');
   assert.match(elsewhere.permissionDecisionReason, /checkout/);
+  // 1.21.0 handoff item 30: the cleared folder is named whole, not as the start of another folder's name.
+  // As git names it: on CI the temp folder is a short name (RUNNER~1) git reports long, and a lead names what git shows.
+  const root = g(r.dir, 'rev-parse', '--show-toplevel').stdout.trim();
+  const named = (where) => sweepGuard(r.dir, { cwd: side, tool_input: { subagent_type: 'reviewer', prompt: `review. Work in ${where}\nCall cap: 5.` } }).permissionDecision;
+  assert.equal(named(`${root}-old`), 'deny', 'another folder whose name starts the same');
+  assert.equal(named(`${root}2/src`), 'deny');
+  assert.equal(named(`${root}/src`), 'allow', 'a folder inside the cleared checkout');
+  fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
+  assert.equal(named(`"${root}"`), 'allow', 'the folder itself, quoted');
+  fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
+  assert.equal(named(`${root}.`), 'allow', 'the folder at the end of a sentence');
+  assert.equal(named(`${root}.bak`), 'deny', 'a folder named with a dot after it');
+  fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
   assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
 });
 test('S6: the shipped project settings make --owner-yes ask, so no session logs a yes unseen', () => {
@@ -6248,6 +6649,10 @@ test('L1: a crashed reviewer that wrote after its retry is named at the outcome'
   const done = logOutcome(s, ['r1b', 'r2'], s.cfg);
   assert.equal(done.status, 0, done.stdout);
   assert.match(done.stdout, /r1 wrote after its retry was logged: it was not dead/);
+  // 1.21.0 handoff item 34: it is in the log too, where the trial review and the summary read.
+  const out = approvalLog(s.dir).pop();
+  assert.equal(out.roles[0].crashedAlive, true);
+  assert.equal(out.roles[1].crashedAlive, undefined);
 });
 // The 1.21.0 sweep's D1: CI runs the base branch's gate, whose parser may not know a new field, so the control sits on
 // its own line. Main's parser reads the gate line as it always did; the head gate reads the two together.
@@ -6275,7 +6680,7 @@ test('recall gate (T3): an edit to the score tool needs a gate line, and a git f
 });
 test('recall layer (T3): a released layer with a file missing is refused, and its memory may differ', async () => {
   const { checkUserLayer } = await recallTools();
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'layer-'));
+  const home = makeTemp('layer-');
   const hash = crypto.createHash('sha256').update('a\n').digest('hex');
   fs.writeFileSync(path.join(home, 'a.md'), 'a\n');
   const stamp = (files) => fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ version: '1.0.0', release: true, files }));
@@ -6287,7 +6692,7 @@ test('recall layer (T3): a released layer with a file missing is refused, and it
 // T2: what the recall's blinding promises, each by a break a reviewer showed went unseen.
 test('recall-score (T2): a marker that survives the scrub stops the blinding', async () => {
   const { blind } = await import('../scripts/recall-score.mjs');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blind-'));
+  const dir = makeTemp('blind-');
   const f = path.join(dir, 'cand-1.md');
   fs.writeFileSync(f, '# Recall run\n\n## 1. q\n\nKey: the notice says go\n\nAnswer:\n\n> fine\n');
   assert.throws(() => blind(path.join(dir, 'out'), [f]), /still names a side/);
@@ -6297,7 +6702,7 @@ test('recall-score (T2): a notice line goes and is logged, a Key line stays, and
   const removed = [];
   assert.equal(dropNotice('Key: a kit build\n> keep\n> the notice says x', removed), 'Key: a kit build\n> keep');
   assert.deepEqual(removed, ['> the notice says x']);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blind-'));
+  const dir = makeTemp('blind-');
   const runs = ['cand-1', 'cand-2', 'base-1'].map((n) => {
     const f = path.join(dir, `${n}.md`);
     fs.writeFileSync(f, `# Recall run: ${n}\n\n## 1. q\n\nKey: k\n\nAnswer:\n\n> ${n === 'base-1' ? 'plain' : 'the startup notice says go'}\n`);
@@ -6342,19 +6747,23 @@ test('T3: a brief held as a list of text parts still names its sweep', () => {
 });
 // T4: the build command itself, not the helper it calls.
 test('T4: kit.mjs build turns on the kit source commit-msg hook', () => {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kit-clone-')), 'k');
+  const dir = path.join(makeTemp('kit-clone-'), 'k');
   assert.equal(spawnSync('git', ['clone', '-q', path.resolve('.'), dir], { encoding: 'utf8' }).status, 0);
   assert.equal(spawnSync('git', ['-C', dir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim(), '');
   assert.equal(spawnSync('node', ['scripts/kit.mjs', 'build'], { cwd: dir, encoding: 'utf8' }).status, 0);
   assert.notEqual(spawnSync('git', ['-C', dir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim(), '');
 });
 test('install user lands the merge gate and its audits at the paths the rules give', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tools-home-'));
+  const home = makeTemp('tools-home-');
   install({ kit: path.resolve('.'), home, target: 'user' });
   assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'merge-gate.mjs')));
   for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
     assert.equal(read(path.join(home, 'kit-tools', 'audits', f)), read(path.resolve('project/.claude', f)), f);
   }
+  // The gate imports its temp helper from beside it: without the copy, the installed gate cannot start at all.
+  assert.equal(read(path.join(home, 'kit-tools', 'kit-temp.cjs')), read(path.resolve('project/.claude/kit-temp.cjs')));
+  const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'merge-gate.mjs')], { encoding: 'utf8' });
+  assert.equal(r.status, 2, `the installed gate starts and prints its usage: ${r.stderr}`);
 });
 // Carry 17: a compaction loses the ids in the lead's context; each brief's Sweep tag does not get lost.
 function autoSweep(extra = () => {}) {
@@ -6410,11 +6819,12 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
   assert.throws(() => checkSessionHome(home, () => ({ status: 1, stdout: '', stderr: 'nope' })), /cannot read/);
 });
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
-test('the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'armed-'));
+// The kit source holds its own pushes the same way (.githooks/pre-push), so the gate can arm a PR there too.
+for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, () => {
+  const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.mkdirSync(path.join(dir, '.githooks'));
-  fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+  fs.copyFileSync(path.resolve(hook), path.join(dir, '.githooks', 'pre-push'));
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
   const head = 'a'.repeat(40);
   const other = 'b'.repeat(40);
@@ -6434,7 +6844,7 @@ test('the pre-push hook refuses a push over an armed head until it is disarmed, 
   assert.equal(push(head).status, 1, 'armed again, it holds again');
 });
 test('the pre-push hook holds a head armed on two PRs until both are disarmed', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'armed-'));
+  const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
   const head = 'a'.repeat(40);
@@ -6446,10 +6856,30 @@ test('the pre-push hook holds a head armed on two PRs until both are disarmed', 
   fs.appendFileSync(log, 't DISARMED 7\n');
   assert.equal(push().status, 0);
 });
-test('both guards read a command through the same plain reading', () => {
-  const block = (f) => { const s = read(path.resolve('project/.claude', f)); return s.slice(s.indexOf('// reading:start'), s.indexOf('// reading:end')); };
-  assert.ok(block('guard-delete.cjs').includes('function plainText'));
-  assert.equal(block('guard-outward.cjs'), block('guard-delete.cjs'));
+// Handoff item 23: find walks into .git where a shell's * does not, so only a name or path filter keeps it out.
+test('find with only broad filters asks where its start folder holds .git; a name filter, or a folder without .git, passes', async () => {
+  const { createRequire } = await import('node:module');
+  const guard = createRequire(import.meta.url)(path.resolve('project/.claude/guard-delete.cjs'));
+  const dir = gitTree();
+  fs.mkdirSync(path.join(dir, 'build'));
+  const asks = (command) => Boolean(guard.decide({ tool_name: 'Bash', session_id: '11111111-2222-3333-4444-555555555555', cwd: dir, tool_input: { command } }, { tmpdir: os.tmpdir(), projectDir: dir }));
+  for (const command of ['find . -type f -delete', 'find . -mtime +7 -delete', `find ${dir.split(path.sep).join('/')} -size +1M -delete`, 'find -type f -delete']) assert.equal(asks(command), true, command);
+  for (const command of ["find . -name '*.pyc' -delete", "find . -path './build/*' -delete", 'find build -type f -delete']) assert.equal(asks(command), false, command);
+});
+
+// M27: one reading of a command for both guards, so a spelling fixed for one is fixed for both.
+test('both guards read a command through the one reading module, and keep no reading of their own', async () => {
+  const { createRequire } = await import('node:module');
+  const require2 = createRequire(import.meta.url);
+  for (const f of ['guard-delete.cjs', 'guard-outward.cjs']) {
+    const s = read(path.resolve('project/.claude', f));
+    assert.match(s, /require\('\.\/guard-read\.cjs'\)/, `${f} loads the shared reading`);
+    assert.doesNotMatch(s, /function (normalize|plainText|tokenize|joinContinuations)\b/, `${f} keeps no reading of its own`);
+  }
+  const read2 = require2(path.resolve('project/.claude/guard-read.cjs'));
+  const words = (t) => read2.tokenize(t).map((seg) => seg.filter((w) => !w.redirect).map((w) => w.value));
+  assert.deepEqual(words('git push 2>&1 > log; echo "a b" c'), [['git', 'push'], ['echo', 'a b', 'c']]);
+  assert.equal(read2.plainText(`git${String.fromCharCode(0x2003)}pu\\sh`, 'Bash'), 'git push');
 });
 test('a brief that names a sweep runs as a reviewer, whatever type it asks for', () => {
   const dir = sweepRepo();

@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const kitTemp = require('./kit-temp.cjs');
 
 const GUARD = path.resolve(process.argv[2] ?? path.join(__dirname, 'guard-delete.cjs'));
 const { decide } = require(GUARD);
@@ -585,7 +586,45 @@ const HOLES_PASS = [
 	'git clean -n --quiet',
 ];
 
+// 1.22.0, handoff items 22-25: each read by the rule it belongs to (a dot glob, an option that moves the folder,
+// a tool that removes what it packs, an interpreter's other names), not one spelling at a time.
+const CARRY122_ASK = [
+	'rm -rf .[!.]*',
+	'rm -rf .[^.]*',
+	'pnpm --dir C:/other exec rm -rf x',
+	'pnpm -C C:/other exec rm -rf x',
+	'npm --prefix C:/other exec -- rimraf x',
+	'yarn --cwd C:/other exec rm -rf x',
+	'wsl --cd /mnt/c/other rm -rf x',
+	'cmd /c start /d C:\\other cmd /c rd /s /q x',
+	'tar --remove-files -cf a.tar C:/other/x',
+	'tar -c --remove-files -f a.tar C:/other/x',
+	'tar --remove-files --file=a.tar C:/other/x',
+	'zip -m a.zip C:/other/x',
+	'zip -rm a.zip C:/other/x',
+	// The 1.22.0 sweep: tar takes a long option's unique prefix, and zip has --move and digit levels in a cluster.
+	'tar --remove -cf a.tar C:/other/x',
+	'tar --remove-fi -cf a.tar C:/other/x',
+	'zip -9m a.zip C:/other/x',
+	'zip --move a.zip C:/other/x',
+	"pythonw -c \"import shutil; shutil.rmtree('C:/other')\"",
+	"pyw -c \"import shutil; shutil.rmtree('C:/other')\"",
+];
+// PowerShell's -Force reaches hidden names, .git among them, where bash's * does not.
+const CARRY122_PS_ASK = ['Remove-Item -Recurse -Force *', 'Remove-Item -Recurse -Force .*', 'rm -r -fo *', 'Remove-Item -Force -Recurse *git'];
+const CARRY122_PASS = [
+	'tar -cf a.tar build',
+	'tar --remove-files -cf a.tar build/x',
+	'zip -r a.zip build',
+	'zip -m a.zip build/x',
+	'pnpm --dir build test',
+	'Remove-Item -Recurse build\\*',
+	'Remove-Item -Recurse -Force build\\*',
+	'Remove-Item -Recurse *',
+];
+
 const ASK = [
+	...CARRY122_ASK,
 	...SWEEP_ASK,
 	...RESWEEP_ASK,
 	...HOLES_ASK,
@@ -738,6 +777,9 @@ const asSession = (tool, command, extra) => ({ tool_name: tool, session_id: SESS
 
 for (const command of ASK) check(command, asSession('Bash', command), true);
 for (const command of PASS) check(command, asSession('PowerShell', command), false);
+for (const command of CARRY122_PS_ASK) check('[PowerShell] ' + command, asSession('PowerShell', command), true);
+for (const command of CARRY122_PASS) check(command, asSession('PowerShell', command), false);
+check('[Bash] rm -rf * (bash * skips dot names)', asSession('Bash', 'rm -rf *'), false);
 // Other field names are read; the description is only shown, never run.
 check('[field "script"] rm -rf /tmp/x', { tool_name: 'Monitor', session_id: SESSION_ID, cwd: PROJECT, tool_input: { script: 'rm -rf /tmp/x' } }, true);
 check('[description only] rm -rf /tmp/x', asSession('Bash', 'git status', { tool_input: { command: 'git status', description: 'rm -rf /tmp/x' } }), false);
@@ -828,7 +870,7 @@ const uncAsks = Boolean(decide(asSession('Bash', 'rm -rf //' + uncHost + '/share
 result(uncAsks && Date.now() - uncStart < 2000, true, '[UNC] asks in under 2 s (' + (Date.now() - uncStart) + ' ms)');
 
 // A junction inside the project that points outside it: a delete through it reaches the outside folder.
-const real = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-delete-check-'));
+const real = kitTemp.makeTemp('guard-delete-check-');
 try {
 	fs.mkdirSync(path.join(real, 'proj'));
 	fs.mkdirSync(path.join(real, 'outside'));
@@ -878,7 +920,7 @@ try {
 	check('[junction] a wildcard with nothing after it stays in its folder', inTemp(path.join(own, 'scratchpad', '*')), false, tempWhere);
 	check('[junction] a wildcard in a folder with no link', inTemp(path.join(own, 'scratchpad', '*', 'x')), false, tempWhere);
 } finally {
-	fs.rmSync(real, { recursive: true, force: true });
+	kitTemp.removeTemp(real);
 }
 
 // End to end: the hook as a child process, fed JSON on stdin, finding the temp and project from its environment.

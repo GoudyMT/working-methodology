@@ -14,14 +14,14 @@
 - **G5 Blast radius:** files, shipped vs new, public interfaces, other callers, the revert story, in the report; the owner's go only for shipped code outside the branch's scope or a public interface.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **Two passes:** one large sweep, then ONE short re-sweep over the whole batch (by tier: rule:sweep-tiers; never per fix - an undamped loop) of whether the fixes broke anything; a third only for a major re-sweep finding. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **One sweep:** one large sweep per branch; every fix ships with a test that fails before it, guard and permission fixes too; CI runs the full suite and auto-fix handles red. A second pass is the owner's call; escapes are measured next build. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
 1. **A standalone fix PR only for harm:** data loss, a stuck user, a silent outage.
 2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the trivial (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings at medium or below go to the handoff's carry-overs for the next focus build.
 3. **Then features;** roadmap fixes ride a feature PR that touches their code; folded-in findings go in the before / after table.
-4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, the short re-sweep, one PR. The Resume Point names the feature pick first.
+4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, CI, one PR. The Resume Point names the feature pick first.
 
 **Value check:** tier remaining work by what a user would notice (high: someone hits it; medium: keyboard or screen-reader correctness; low: millisecond races, byte trims, test hygiene), say the tier at each checkpoint, and recommend stopping when reviews return ever smaller things, before the owner asks; the value lens ends the loop, not fatigue. Why: a sweep generates work faster than value.
 
@@ -31,7 +31,7 @@ A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm C
 
 **Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.
 
-**Done iff** a report exists at `<sweep folder>/YYYY-MM-DD-<milestone>.md` with date, milestone, branch / commit; each dimension PASS or with findings; every high / critical `FIXED <commit>` or `ACCEPTED owner <why>`; for the deep tier, "still aligned with the version goals? YES/NO + evidence". <!-- PROJECT ADAPTER A22 -->
+**Done iff** a report exists at `<sweep folder>/YYYY-MM-DD-<milestone>.md` with date, milestone, branch / commit; each dimension PASS or with findings; every high / critical `FIXED <commit>` or `ACCEPTED owner <why>` (the owner then merges); for the deep tier, "still aligned with the version goals? YES/NO + evidence". <!-- PROJECT ADAPTER A22 -->
 
 **Six fixed dimensions:** (1) privacy / data boundary - runtime leaks, third-party calls; (2) supply chain + bundle - dependency risk, build scripts, budgets; (3) legal / content + licenses (A2), citation fidelity; (4) code security + pattern consistency; (5) gaps + scaling - untested paths, deferred-now-load-bearing items, scale assumptions, new-test value; (6) version goal alignment - scope creep, drift from locks, overbuilding (the verdict). Plus any milestone-specific one; read-only reviewers per dimension -> a report grouped by when to act.
 
@@ -49,7 +49,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 **Modifiers add roles at any tier, and never lower one:** security-sensitive code (auth, locks, crypto, permissions, secrets, personal data) gets the security swarm of >= 3 distinct angles; a new dependency or external data flow gets a supply-chain role and a privacy role (trigger 2); public, legal or cited text gets a content role that checks each claim against its source and license; data the user keeps (storage formats, migrations, deletion) gets a role on data loss and the upgrade path from the last release.
 
-**Re-sweep by tier:** feature, first push and launch gate run the one short re-sweep (rule:finding-pipeline); a fix tier's fix check covers it; triage runs none unless it found something. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**
+**After the sweep:** each fix carries its failing-first test and CI runs the full suite (rule:finding-pipeline); a fix tier keeps its fix check. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 
@@ -93,4 +93,4 @@ A user-facing PR is used on the host's own build of the branch before merge, on 
 - **Triage** after all gates pass, BEFORE the deep sweep: **Now** (small, in spirit, cuts churn; growing scope needs the owner's lock) -> built and swept in this PR; **Next** -> one line + pointer in the Roadmap; **Drop** -> deleted with a one-line why.
 - **Done** when the lot is **empty** before the sweep; non-empty = the gate was skipped.
 
-**Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> fixes + re-sweep -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body (carrying the sweep summary) + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a "now" idea is built and swept inside the same PR.
+**Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> test-first fixes -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body (carrying the sweep summary) + audit to the owner -> push + PR (owner) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's go)`. Why: a "now" idea is built and swept inside the same PR.

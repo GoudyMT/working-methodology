@@ -21,7 +21,8 @@
             "args": [
               "{{PROJECT_DIR}}/.claude/guard-outward.cjs"
             ],
-            "timeout": 10
+            "timeout": 10,
+            "onFailure": "block"
           },
           {
             "type": "command",

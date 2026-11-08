@@ -48,8 +48,9 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
+      # Through the guarded runner: every tests/*.test.mjs, and the run fails if it leaves anything in the temp folder.
       - name: Unit tests
-        run: node --test tests/kit.test.mjs tests/merge-gate.test.mjs
+        run: node scripts/test-run.mjs
 
       - name: Scrub
         run: node scripts/kit.mjs scrub

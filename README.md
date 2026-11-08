@@ -153,7 +153,10 @@ latest kit; an existing one catches up with one command.
 2. The owner picks what is general enough for the kit. Claude writes it in `rules/`, generalized, then runs
    `node scripts/kit.mjs build`. A project still on one standards file is compared section by section; the report
    names the kit rule ID for each changed section.
-3. `node --test tests/kit.test.mjs` and `node scripts/kit.mjs scrub` must both pass.
+3. `node scripts/test-run.mjs` and `node scripts/kit.mjs scrub` must both pass. The runner refuses to start above
+   80% of the temp disk's inodes used, clears the folders of killed runs, and fails if a run leaves anything in temp.
+   In the Cowork VM, run the full suite only through it: the VM's shell time limit kills long runs, and a killed
+   run's folder stays until the next run sweeps it.
 4. Merge and retire before the bump. A new rule goes in as a trial (`TRIALS.md`) unless the owner promotes it.
    `node scripts/kit.mjs bump minor "<what changed>"` raises `VERSION` and adds a `CHANGELOG.md` entry.
 5. Commit, then push on the owner's go. Other projects pull it with `install project`.

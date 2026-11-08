@@ -308,7 +308,11 @@ export function askAll({ qs, projectDir, run }) {
       '--no-session-persistence'], { cwd: projectDir, input: q, encoding: 'utf8', timeout: 600000 });
     const answer = (r.stdout || '').trim();
     // A failed session is not an answer: stop rather than save a run that would score as a wrong answer.
-    if (r.status !== 0 || !answer || /Not logged in/i.test(answer)) {
+    if (/Not logged in/i.test(answer)) {
+      const folder = (process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')).split(path.sep).join('/');
+      throw new Error(`question ${n}: no answer: Claude Code is not logged in for the config folder ${folder}. Run claude, then /login, with CLAUDE_CONFIG_DIR set to that folder, and run recall again.`);
+    }
+    if (r.status !== 0 || !answer) {
       throw new Error(`question ${n}: no answer (exit ${r.status}): ${(answer || r.stderr || '').trim().slice(0, 200)}`);
     }
     lines.push(`## ${n}. ${q}`, '', `Key: ${key}`, '', 'Answer:', '', answer.split('\n').map((l) => '> ' + l).join('\n'), '', 'Score: _', '');

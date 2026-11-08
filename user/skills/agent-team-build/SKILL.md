@@ -121,9 +121,9 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
    only it asks, its context and what a finding from it looks like, and gives each role a call cap (`calls`; the
    script computes its budget) and a stop rule: at most 8 findings, each under 80 words, and the first counter-example in each area,
    then move on. Findings go through the project's finding pipeline, one root per
-   commit. Then ONE fix check - a single checker on the fix commits, briefed from the checker brief's fix-check
-   variant - and a re-sweep of the touched areas only, once, its contract cleared the same way. The two may merge
-   into one checker only when the fixes cover at most 2 roots, none above low. Then
+   commit, each fix with a test that fails before it. Then ONE fix check - a single checker on the fix commits, briefed
+   from the checker brief's fix-check variant, that confirms each fix's test fails on the code before it. No re-sweep:
+   a second pass is the user's call (rule:finding-pipeline). Then
    one visual check with the user if anything visible changed. Outward acts (push, pull request, merge, release)
    wait for the user. After the user's go, the lead pushes with `KIT_PUSH_APPROVED=1` set for that one command;
    the project's git pre-push hook blocks an agent's push without it (rule:outward-acts).

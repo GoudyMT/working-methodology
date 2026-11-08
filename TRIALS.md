@@ -7,7 +7,7 @@ is reworked or retired at the next kit release.
 | Rule | Kit version | First project | Second project | Status |
 |---|---|---|---|---|
 | Mid-model reviewers for roles other than security and the novel lens (rule:test-and-review-cadence) | 1.8.0 | course project | - | Open: counting real findings per model in the sweep log |
-| Standing grants: outward acts the owner names run without a yes per act, checked, logged and reported after (rule:standing-grants, A27) | 1.13.0 | the kit repo (autopilot trial) | - | Open: merge is grantable through the merge gate (1.21.0) once the owner adds its allow rule; other acts ask |
+| Standing grants: outward acts the owner names run without a yes per act, checked, logged and reported after (rule:standing-grants, A27) | 1.13.0 | the kit repo (autopilot trial) | - | Open: merge is grantable through the merge gate (1.21.0) once the owner adds its allow rules (arm, disarm, autofix); other acts ask |
 | Open decisions and build threads with a plain 60-second overview, item codes only after the plain name (rule:collaborative-design-locks, rule:session-workflow) | 1.19.0 | the kit repo | - | Open: the owner asked for it in every install; its scenario bar is unmet, 0 of 4 on two wordings |
 
 ## Promoted directly by the owner

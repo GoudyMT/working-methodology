@@ -9,8 +9,10 @@
 //     "testsChanged": true,
 //     "roles": [{ "role", "kind" (KINDS below), "question", "context": [...], "finding", "calls", "callsReason" }] }
 // A re-sweep adds "resweepOf": "<the first sweep's contract.json>" and "fixed": [{ "finding", "kind" }] (the kind of
-// role that found each fixed finding). It gets one: a second re-sweep, or a re-sweep of one, is refused, and what
-// is left at medium or below goes to the handoff's carry-overs; a high or critical is fixed or the owner accepts it.
+// role that found each fixed finding). Under the one-sweep loop (the owner, 2026-11-07) any pass after a sweep that
+// ran on the branch asks the owner, a re-sweep included; on their yes it gets one: a second re-sweep, or a re-sweep
+// of one, is refused, and what is left at medium or below goes to the handoff's carry-overs; a high or critical is
+// fixed or the owner accepts it.
 //
 // Budgets are processed tokens (input + cache read + cache write + output), which the script reads itself from each
 // reviewer's own transcript at --outcome. A role sets its call cap; the script computes its budget from that. More
@@ -135,7 +137,8 @@ function write(entry) {
 // distrusted until the owner resumes.
 function state() {
 	const lines = rawLines();
-	const log = lines.map((l) => { try { return JSON.parse(l); } catch { return { kind: 'broken' }; } });
+	// Valid JSON that is no object (null, a number, a list) is a hand edit, as a broken line is.
+	const log = lines.map((l) => { try { const v = JSON.parse(l); return v && typeof v === 'object' && !Array.isArray(v) ? v : { kind: 'broken' }; } catch { return { kind: 'broken' }; } });
 	let broken = -1;
 	log.forEach((e, i) => { if (e.prev !== (i ? sha(lines[i - 1]) : '')) broken = i; });
 	const lastResume = log.map((e, i) => (e.kind === 'resume' && i > broken ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
@@ -186,10 +189,14 @@ function depsChanged(base, file) {
 
 // A file beside the contract counts as the sweep's own only when it parses as a contract.
 const isContract = (f) => { try { const j = JSON.parse(git('show', `HEAD:${f}`).stdout); return typeof j.tier === 'string' && Array.isArray(j.roles); } catch { return false; } };
-// What a sweep itself writes beside its contract: reports and contracts, never the work under review.
+// What a sweep itself writes beside its contract: reports and contracts, never the work under review. Directly in
+// the contract's folder only, and a .json only when it reads as a contract, so work kept there still counts.
 function sweepPaper(f) {
 	const own = git('rev-parse', '--show-prefix').stdout.trim();
-	return Boolean(own) && f.startsWith(own) && /\.(md|json)$/i.test(f);
+	if (!own || !f.startsWith(own) || f.slice(own.length).includes('/')) return false;
+	if (/\.md$/i.test(f)) return true;
+	if (!/\.json$/i.test(f)) return false;
+	try { const j = JSON.parse(fs.readFileSync(path.join(path.dirname(contractFile), f.slice(own.length)), 'utf8')); return typeof j.tier === 'string' && Array.isArray(j.roles); } catch { return false; }
 }
 
 function sweepOwned(f) {
@@ -202,15 +209,18 @@ function sweepOwned(f) {
 function diffFacts() {
 	const want = opt('--base');
 	const known = (b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0;
-	const DEFAULTS = ['origin/main', 'main', 'origin/master', 'master'];
+	// The default branch by its full ref: git reads a plain "origin/main" as a tag of that name first, and a tag
+	// could pick the base the diff is read from (1.21.0 handoff item 34). Messages keep the short name.
+	const DEFAULTS = ['refs/remotes/origin/main', 'refs/heads/main', 'refs/remotes/origin/master', 'refs/heads/master'];
+	const short = (b) => b.replace(/^refs\/(remotes|heads)\//, '');
 	const base = (want ? [want] : DEFAULTS).find(known);
 	if (!base) return null;
 	// A base the lead names must sit on the default branch, or it could shrink the diff the tier is read from.
 	const home = want && DEFAULTS.find(known);
-	const offBase = home && git('merge-base', '--is-ancestor', base, home).status !== 0 ? home : null;
+	const offBase = home && git('merge-base', '--is-ancestor', base, home).status !== 0 ? short(home) : null;
 	// An older commit of the default branch is on it, yet hides what the branch took from it: its caps and its hooks.
 	const left = home ? git('merge-base', home, 'HEAD').stdout.trim() : '';
-	const staleBase = !offBase && left && git('merge-base', '--is-ancestor', left, base).status !== 0 ? home : null;
+	const staleBase = !offBase && left && git('merge-base', '--is-ancestor', left, base).status !== 0 ? short(home) : null;
 	const names = (filter) => git('diff', '--name-only', '-z', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\0').filter(Boolean);
 	const all = names('ACDMRT');
 	const added = names('A').filter((f) => !sweepOwned(f));
@@ -219,10 +229,11 @@ function diffFacts() {
 	const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ':(top)').stdout.split('\n').filter(Boolean).filter((l) => !sweepPaper(l.slice(3)));
 	return {
 		base,
+		baseName: short(base),
 		offBase,
 		staleBase,
 		noHome: Boolean(want) && !home,
-		head: git('rev-parse', '--short', 'HEAD').stdout.trim(),
+		head: git('rev-parse', 'HEAD').stdout.trim(),
 		dirty,
 		changed: all.length,
 		deps: all.filter((f) => DEP_FILE.test(f)).some((f) => depsChanged(base, f)),
@@ -242,11 +253,17 @@ const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '
 const rel = (f) => toPosix(path.relative(process.cwd(), f) || f);
 const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) => j > i && y.kind === 'owner-yes' && y.contract === log[i].contract && y.hash === log[i].hash);
 
-// A first sweep on this branch (its HEAD on the branch, not on the base) that already had its re-sweep, or null.
-function thirdPass(log, base) {
+// The branch this checkout is on, recorded with each decision: a rebase rewrites the heads, not the name.
+const currentBranch = () => git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim();
+
+// The one-sweep loop (the owner, 2026-11-07): a sweep that ran on this branch, found by its HEAD on the branch (not on
+// the base) or by the branch name it was cleared on, or null. A sweep closed with --none-ran ran nothing.
+function secondPass(log, base) {
 	const on = new Map();
 	const onBranch = (h) => { if (!on.has(h)) on.set(h, git('merge-base', '--is-ancestor', h, 'HEAD').status === 0 && git('merge-base', '--is-ancestor', h, base).status !== 0); return on.get(h); };
-	const i = log.findIndex((e, k) => e.kind === 'decision' && !e.resweepOf && e.head && isCleared(log, k) && log.some((r, j) => j > k && r.kind === 'decision' && r.resweepOf === e.contract && isCleared(log, j)) && onBranch(e.head));
+	const branch = currentBranch();
+	const ran = (k) => log.some((e, j) => j > k && e.kind === 'outcome' && !e.noneRan && e.contract === log[k].contract);
+	const i = log.findIndex((e, k) => e.kind === 'decision' && e.head && isCleared(log, k) && ran(k) && ((branch && e.branch === branch) || onBranch(e.head)));
 	return i >= 0 ? log[i].contract : null;
 }
 
@@ -333,17 +350,23 @@ function callBudgets(roles, cap, why, fix) {
 	return { budgets, total };
 }
 
-// The cap's hook sits in the project's settings, and install skips a settings file the project changed.
+// The cap's hook and the sweep guard sit in the project's settings, and install skips a settings file the project
+// changed. disableAllHooks in any layer Claude Code reads (project, local, user) turns both off.
 function hookState(base) {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	const read = (f) => { try { return fs.readFileSync(path.join(top, '.claude', f), 'utf8'); } catch { return null; } };
-	const wired = (text) => { try { const j = JSON.parse(text); const h = JSON.stringify(j.hooks ?? ''); return !j.disableAllHooks && h.includes('kit-hooks/call-cap.cjs') && !/{{[A-Z_]+}}/.test(h); } catch { return false; } };
+	const json = (text) => { try { return JSON.parse(text) || {}; } catch { return {}; } };
+	const wired = (text) => { const h = JSON.stringify(json(text).hooks ?? ''); return !json(text).disableAllHooks && h.includes('kit-hooks/call-cap.cjs') && h.includes('kit-hooks/sweep-guard.cjs') && !/{{[A-Z_]+}}/.test(h); };
 	const own = read('settings.json');
-	if (wired(own) || wired(read('settings.local.json'))) return 'wired';
+	const local = read('settings.local.json');
+	let user = null;
+	try { user = fs.readFileSync(path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json'), 'utf8'); } catch { /* no user settings */ }
+	if ([own, local, user].some((t) => json(t).disableAllHooks)) return 'missing';
+	if (wired(own) || wired(local)) return 'wired';
 	// A branch that deletes the settings does not get out of the hook.
 	return own === null && !(base && wired(git('show', `${base}:.claude/settings.json`).stdout)) ? 'none' : 'missing';
 }
-const HOOK_MISSING = 'the call-cap hook is not wired in .claude/settings.json: merge its PreToolUse entry from the kit\'s project/.claude/settings.json, with the installed path';
+const HOOK_MISSING = 'the call-cap hook is not wired in .claude/settings.json, or the sweep guard is not, or a settings layer sets disableAllHooks: merge both PreToolUse entries from the kit\'s project/.claude/settings.json, with the installed path, and keep hooks on';
 const HOOK_NONE = '    No project settings here, so no call-cap hook: each cap rests on the reviewer\'s own count, and only the top model held one in the probe.';
 
 // Every reason this contract is not cleared, and the role kinds it needed. `why` is out of bounds, the owner's call;
@@ -361,11 +384,11 @@ function check(c, facts, log = []) {
 	const fix = [];
 	if (!facts) why.push('cannot read the branch diff against its base (pass --base <ref>)');
 	else if (facts.dirty.length) fix.push(`work not committed (${facts.dirty[0].slice(3)}): commit it, so the diff shows the whole change`);
-	else if (!facts.changed) fix.push(`no changes against ${facts.base}: run it from the branch's own checkout, or pass the right --base`);
+	else if (!facts.changed) fix.push(`no changes against ${facts.baseName}: run it from the branch's own checkout, or pass the right --base`);
 	else {
-		if (facts.offBase) why.push(`--base ${facts.base} is not on ${facts.offBase}: a base off the default branch can shrink the diff the tier is read from`);
-		if (facts.staleBase) why.push(`--base ${facts.base} is older than where this branch left ${facts.staleBase}: it hides the caps and hooks the branch took from there`);
-		if (facts.noHome) why.push(`--base ${facts.base} cannot be checked: this repo has no default branch the script knows (main or master)`);
+		if (facts.offBase) why.push(`--base ${facts.baseName} is not on ${facts.offBase}: a base off the default branch can shrink the diff the tier is read from`);
+		if (facts.staleBase) why.push(`--base ${facts.baseName} is older than where this branch left ${facts.staleBase}: it hides the caps and hooks the branch took from there`);
+		if (facts.noHome) why.push(`--base ${facts.baseName} cannot be checked: this repo has no default branch the script knows (main or master)`);
 		if (tier !== 'feature' && facts.addedSource.length) why.push(`an added source file (${facts.addedSource[0]}) is feature work, not ${tier}`);
 		if (tier === 'triage' && (facts.added.length || facts.lines > TRIAGE_MAX_LINES)) why.push(`${facts.lines} changed lines, ${facts.added.length} added files: more than a triage change`);
 	}
@@ -381,10 +404,11 @@ function check(c, facts, log = []) {
 		const r = resweepCheck(c, tier, roles, log, facts, why, fix);
 		if (r.refused) return { why: [], fix: [], need: {}, refused: r.refused, first: r.first };
 		({ need, first } = r);
+		why.push(`a re-sweep is a second pass, the owner's under the one-sweep loop (rule:finding-pipeline): ${rel(first)} was this branch's sweep`);
 	} else {
-		// One sweep and one re-sweep per branch: a plain contract after both is a third pass, the owner's (rule:finding-pipeline).
-		const done = facts && thirdPass(log, facts.base);
-		if (done) why.push(`a third pass on this branch is the owner's (rule:finding-pipeline): ${rel(done)} already had its sweep and re-sweep`);
+		// One sweep per branch: a plain contract after a sweep that ran here is a second pass, the owner's (rule:finding-pipeline).
+		const done = facts && secondPass(log, facts.base);
+		if (done) why.push(`a second sweep on this branch is the owner's under the one-sweep loop (rule:finding-pipeline): ${rel(done)} already ran`);
 		if (c.modifiers !== undefined && !(Array.isArray(c.modifiers) && c.modifiers.every((m) => typeof m === 'string'))) fix.push('modifiers must be a list of names, like ["security-sensitive"]');
 		const modifiers = new Set(Array.isArray(c.modifiers) ? c.modifiers : []);
 		if (facts && facts.deps) modifiers.add('new-dependency');
@@ -463,7 +487,7 @@ function decide() {
 	const s = state();
 	const facts = diffFacts();
 	const { why, fix, need, extras, cap, first, refused, budgets = [], total = 0 } = check(c, facts, s.log);
-	const head = git('rev-parse', '--short', 'HEAD').stdout.trim() || null;
+	const head = git('rev-parse', 'HEAD').stdout.trim() || null;
 	// A stop is cured by adding what it named, not by asking for less: a lighter contract at the HEAD of a stop is the
 	// owner's, whatever its file is called, however often it is rerun and whatever outcome came between. A new commit
 	// starts clean: the guard stops slips, not a determined workaround.
@@ -491,7 +515,7 @@ function decide() {
 	}
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
-	const entry = { kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -530,7 +554,7 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash) {
 	return [
 		'Start notice for the owner (checked by approve.mjs; post it as is):',
 		`    ${c.tier} ${first ? 're-sweep' : 'sweep'}, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
-		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.base}`,
+		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.baseName}`,
 		...(hookState(facts.base) === 'none' ? [HOOK_NONE] : []),
 		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}`),
 		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason)`,
@@ -569,7 +593,7 @@ function ownerYes() {
 	const raw = fs.readFileSync(contractFile, 'utf8');
 	const s = state();
 	const last = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
-	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
+	const head = git('rev-parse', 'HEAD').stdout.trim();
 	if (!last || last.decision !== 'owner') { console.log('The script did not send this contract to the owner, so there is no ask to answer. Run approve.mjs on it first.'); return 1; }
 	if (last.hash !== sha(raw) || last.head !== head) { console.log('The contract or HEAD changed since the script asked. Run approve.mjs again, then ask the owner.'); return 1; }
 	// One yes answers one ask: a second would open a second set of start slots.
@@ -636,13 +660,36 @@ function reviewersOf(hash, since, skip) {
 	return out.sort((a, b) => a.role - b.role).map((x) => x.id);
 }
 
-function spend(ids, since, hash, team, crashed = new Set()) {
+// The tool id of each start the guard let in, per role (1-based), across a round's clearings: the first start and a
+// retry's. Claude Code writes the same id into the reviewer's meta file.
+function startIds(clearings) {
+	const lines = rawLines();
+	const ids = new Map();
+	for (const i of clearings) {
+		const dir = path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]));
+		let names = [];
+		try { names = fs.readdirSync(dir); } catch { continue; }
+		for (const name of names) {
+			const m = name.match(/^(\d+)(\.retry)?$/);
+			let id = '';
+			try { id = fs.readFileSync(path.join(dir, name), 'utf8').trim(); } catch { /* unreadable: no start */ }
+			if (!m || !id) continue;
+			const role = Number(m[1]) + 1;
+			if (!ids.has(role)) ids.set(role, new Set());
+			ids.get(role).add(id);
+		}
+	}
+	return ids;
+}
+
+function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) {
 	const root = transcriptRoot();
 	const found = new Map(ids.map((id) => [id, []]));
 	for (const project of folders(root)) for (const session of folders(project)) {
 		for (const id of ids) { const f = path.join(session, 'subagents', `agent-${id}.jsonl`); if (fs.existsSync(f)) found.get(id).push(f); }
 	}
 	const bad = [];
+	const toolIds = new Map();
 	const roles = ids.map((id) => {
 		const files = found.get(id);
 		if (files.length !== 1) { bad.push(`${id} (${files.length ? `${files.length} transcripts` : 'no transcript'})`); return null; }
@@ -677,11 +724,15 @@ function spend(ids, since, hash, team, crashed = new Set()) {
 		const tokens = [...seen.values()].reduce((t, m) => t + u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens'), 0);
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
 		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
+		toolIds.set(id, String(meta.toolUseId || ''));
 		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp) };
 	});
 	// A crash and its retry name one role by design.
 	const own = roles.filter((x) => x && !crashed.has(x.agent));
 	if (!bad.length) for (const x of own) if (own.filter((y) => y.index === x.index).length > 1) bad.push(`${x.agent} (role ${x.index} is named by more than one brief)`);
+	// A brief anyone can copy; the start is the guard's. Only the transcript of a start it recorded for its role counts.
+	// A sweep the owner decided outside the script had no clearing, so the guard started nothing to match.
+	if (!bad.length && guardStarts) for (const x of roles) if (!(guardStarts.get(x.index) || new Set()).has(toolIds.get(x.agent))) bad.push(`${x.agent} (not the reviewer the guard started for role ${x.index})`);
 	return bad.length ? { root, bad } : { root, roles: roles.sort((a, b) => a.index - b.index) };
 }
 
@@ -707,7 +758,7 @@ function retry() {
 	if (!id || !AGENT_ID.test(id)) { console.log('--retry needs --crashed <id>, the crashed reviewer\'s agent id. Nothing logged.'); return 1; }
 	const before = retriesSince(s.log, contractFile, clearings[0]).find((e) => e.role === n);
 	if (before) { console.log(`Role ${n} already had its retry (${before.crashed} crashed): a further crash is the owner's. Mark it with --outcome --cut-short, and the next contract asks them. Nothing logged.`); return 1; }
-	const read = usedAgents(s.log).has(id.toLowerCase()) ? { bad: [`${id} (already logged for an earlier outcome)`] } : spend([id], clearing.time, clearing.hash, team, new Set([id]));
+	const read = usedAgents(s.log).has(id.toLowerCase()) ? { bad: [`${id} (already logged for an earlier outcome)`] } : spend([id], clearing.time, clearing.hash, team, new Set([id]), startIds(clearings));
 	if (read.bad) { console.log(`--retry needs a crashed reviewer of this sweep: ${read.bad.join(', ')}. Nothing logged.`); return 1; }
 	const [x] = read.roles;
 	if (x.finished) { console.log(`${id} finished, so its report stands and its role needs no retry. Nothing logged.`); return 1; }
@@ -798,7 +849,7 @@ function outcome() {
 	if (!ids.length || ids.some((id) => !AGENT_ID.test(id)) || new Set(ids.map((x) => x.toLowerCase())).size !== ids.length) { console.log('--agents needs the reviewers\' agent ids, comma-separated, each once (letters, digits, - and _). Nothing logged.'); return 1; }
 	if (ids.length !== Number(decision.agents)) { console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role (each brief's Sweep line names its role). Nothing logged. A sweep cut short: --outcome --cut-short.`); return 1; }
 	const refused =[...ids.filter((id) => used.has(id.toLowerCase())).map((id) => `${id} (already logged for an earlier outcome)`), ...ids.filter(isLost).map((id) => `${id} (logged as crashed: name its retry's id)`)];
-	const read = refused.length ? { bad: refused } : spend([...ids, ...lost], since, decision.hash, Number(decision.agents), new Set(lost));
+	const read = refused.length ? { bad: refused } : spend([...ids, ...lost], since, decision.hash, Number(decision.agents), new Set(lost), clearAts.length ? startIds(clearAts) : null);
 	if (read.bad) {
 		const why = [`the spend cannot be read, so it is not guessed: ${read.bad.join(', ')}`];
 		console.log('ASK THE OWNER - the spend cannot be read, so it is not guessed (rule:sweep-auto-approval):');
@@ -813,6 +864,10 @@ function outcome() {
 		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null };
 	});
 	nums.tokens = per.reduce((t, x) => t + x.tokens, 0);
+	// Ten quiet minutes do not prove a crash: 16 of 303 reviewer transcripts paused that long and went on. A crashed
+	// reviewer that wrote after its retry was logged is marked on its role in the log, where the trial reads it.
+	const alive = (clearAts.length ? retriesSince(s.log, contractFile, clearAts[0]) : []).filter((e) => { const c = read.roles.find((y) => y.agent === e.crashed); return c && c.lastWrite > Date.parse(e.time); }).map((e) => e.crashed);
+	for (const x of per) if (alive.includes(x.crashed)) x.crashedAlive = true;
 	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums, roles: per });
 	const trips = [];
 	if (decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
@@ -824,11 +879,7 @@ function outcome() {
 		if (named && (!x.model || !modelKey(x.model) || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
-	// Ten quiet minutes do not prove a crash: 16 of 303 reviewer transcripts paused that long and went on.
-	for (const e of clearAts.length ? retriesSince(s.log, contractFile, clearAts[0]) : []) {
-		const c = read.roles.find((y) => y.agent === e.crashed);
-		if (c && c.lastWrite > Date.parse(e.time)) console.log(`    ${e.crashed} wrote after its retry was logged: it was not dead, so its role had two reviewers. Its spend so far is counted.`);
-	}
+	for (const id of alive) console.log(`    ${id} wrote after its retry was logged: it was not dead, so its role had two reviewers. Its spend so far is counted.`);
 	// Past the cap's own stop: the hook is missing or did not hold. The trip stays on the whole sweep. A crash and its
 	// retry each had their own cap, so the check reads the retry alone.
 	for (const x of per) { const calls = x.calls - (x.crashedCalls || 0); if (x.cap && calls > x.cap + 1) console.log(`    ${x.role} ran ${calls} calls against its cap of ${x.cap}: no call-cap hook held it.`); }

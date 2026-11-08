@@ -42,21 +42,23 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did
    not get to as 'not checked'." In a project the start notice says has no hook, drop the hook sentence and have the reviewer count. The cap's last two calls are for the report. What a role did not check goes in the
    report as not checked, never as a pass. Each brief also carries `Sweep: <hash> role <n>` from the start notice
-   (n is the role's place in the contract). The sweep guard refuses a brief without both lines. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
+   (n is the role's place in the contract). The sweep guard refuses a brief without both lines. The brief carries the
+   diff (`git diff <base>...HEAD` for the files its role reads), not whole files: the reviewer reads more by range,
+   and the call-cap hook refuses a whole file over 40 KB. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
    (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
    gates), with `- **Tier:** <tier>` and `- **Covers:** <full sha of the commit the sweep read>` on its first lines (the merge gate reads it), in the shape of the example for its tier. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.
-5. **Fix, then the tier's re-sweep** (rule:sweep-tiers): the short re-sweep for feature, first push and launch gate, the fix
-   check for a fix, none for triage unless it found something. Log the first sweep's outcome (step 6) BEFORE the
-   re-sweep: the script clears no new contract until it is in. The re-sweep is a new contract on the new HEAD, run
-   through `approve.mjs` like the first, with `"resweepOf": "<first contract.json, relative to this contract>"` and `"fixed": [{ "finding",
-   "kind" }]`; its roles are one blast-radius, one per fixed kind and one `dimension` (alignment). The first contract
-   stays byte for byte as it was cleared, and a re-sweep declares only modifiers the first sweep had. A second re-sweep
-   is refused: what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it. Update the report, its Covers line to the re-sweep's HEAD. Summarize the result in the PR
-   body by dimension and verdict, never by agent (rule:pr-body).
+5. **Fix, each with a test that fails first** (rule:finding-pipeline): one sweep per branch, no re-sweep. Every fix,
+   guard and permission fixes too, ships with a test that fails on the code before it; then push, and CI runs the
+   full suite with auto-fix on red. Log the sweep's outcome (step 6) once its reviewers hand back. A second pass is
+   the owner's call: `approve.mjs` asks for any contract after a sweep that ran on this branch (a rebase or a new file
+   name does not hide it), and for a re-sweep contract (`"resweepOf"`, `"fixed"`; its roles are one blast-radius, one per
+   fixed kind and one `dimension`). After a re-sweep, what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it. The report's Covers line stays the
+   commit the sweep read, and each fix is listed by its commit. Summarize the result in the PR body by dimension and verdict, never by agent
+   (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents auto` finds each reviewer from its brief's Sweep tag, so ids lost to a compaction do not end a sweep; or each reviewer's agent id, one per
    role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a reviewer that crashed (no report, not finished, its transcript quiet for 10 minutes): `node approve.mjs <contract.json> --retry <n> --crashed <id>` gives role n one more start with the same brief, and `--agents` names the retry. A crash's tokens count against its role's budget; a sweep cut short, where none of these works (a role's second crash, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds

@@ -309,3 +309,35 @@ Re-measured at b4ecc52, after the fixes changed rule text: candidate 13, 12, 12,
 
 control: 0
 gate: kit-1.21.0 median 13 baseline 12 brief v2 keys v4 owner-accepted
+
+## Recall v4 - 1.22.0 candidate against the 1.21.1 baseline (2026-11-07)
+
+Keys v4, brief v2, pass bar 12. Candidate: this branch at c2a74b3, the project layer unreleased 1.22.0 in recall's own throwaway folder, the user layer the released 1.21.1. Baseline: 1.21.1 from the release copy at its tag. One blind scorer over all nine runs.
+
+| Q | Candidate 1-5 | Baseline 1.21.1 1, 2, 3 | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 0, 0 | 0 |
+| 11 | 0, 0, 0, 0, 0 | 0, 0, 0 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 12, 12, 12, 12, 12 | 12, 11, 11 | 0 |
+
+- **Scored: median 12, baseline 11, control 0.** The first three candidates sat on the bar, so two more ran (decision 7); all five are 12.
+- **Q11 fails in every run on both sides,** where it passed 3 of 3 on both sides on 2026-11-06. No rule line about temp files changed. The sessions now apply the rule instead of stating it: they look in their own session folder, find it empty, and report two empty lists, so the strict key is not said. The same drop on both sides points to the sessions, not the kit's text.
+- **The baseline is one under the last recorded one (12),** on Q10 and Q11: Q11 as above, Q10 missed by two baseline runs (no sweep summary in the PR body), as the 1.20.0 baseline missed it 3 of 3. The candidate states Q10 in all five.
+- **Borderline calls, not reported as flips:** Q13 for three runs ("starts on its own", no "no keyword" in words), and Q10 and Q5 once each.
+- **Blinding:** the kit version notices removed, each logged in the run's removed-lines file and read by hand.
+
+Accepted by the owner 2026-11-07 ("Lets go with your recommendation and we will monitor it"): the baseline drop is Q11 on both sides, sessions applying the temp-file rule instead of stating it; Q11's key goes to the 1.23.0 list for review.
+
+control: 0
+gate: kit-1.22.0 median 12 baseline 11 brief v2 keys v4 owner-accepted

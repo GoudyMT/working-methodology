@@ -1,14 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { carriesPhrase } from './canary-phrase.mjs';
 import { versionBumpCheck } from './version-bump-check.mjs';
-import { attributionFaults } from './no-attribution.mjs';
+import { attributionFaults, entities } from './no-attribution.mjs';
 
 const [file, title] = process.argv.slice(2);
-const body = readFileSync(file, 'utf8');
+// Read as the page shows it: an entity (&#65;I) is the character it stands for.
+const written = readFileSync(file, 'utf8');
+const body = entities(written);
 const lines = body.split(/\r?\n/);
 const rows = [];
 const row = (name, ok, detail) => rows.push({ name, ok, detail });
-const attribution = attributionFaults(body);
+const attribution = attributionFaults(written);
 row('no attribution block', attribution.length === 0, attribution.join(', ') || 'none');
 
 const subject = title.replace(/^[a-z]+(\([a-z-]+\))?: /, '');

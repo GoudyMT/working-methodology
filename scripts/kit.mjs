@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import kitTemp from '../project/.claude/kit-temp.cjs';
 
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
@@ -390,12 +391,12 @@ function keepKitLocal(projectDir, keys, hostOwned = []) {
 }
 
 function diffText(a, b) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kitdiff-'));
-  const fa = path.join(tmp, 'kit'), fb = path.join(tmp, 'here');
-  fs.writeFileSync(fa, a); fs.writeFileSync(fb, b);
-  const r = spawnSync('git', ['diff', '--no-index', '--no-color', '--', fa, fb], { encoding: 'utf8' });
-  fs.rmSync(tmp, { recursive: true, force: true });
-  return (r.stdout || '').split('\n').slice(4).join('\n');
+  return kitTemp.withTemp('kitdiff-', (tmp) => {
+    const fa = path.join(tmp, 'kit'), fb = path.join(tmp, 'here');
+    fs.writeFileSync(fa, a); fs.writeFileSync(fb, b);
+    const r = spawnSync('git', ['diff', '--no-index', '--no-color', '--', fa, fb], { encoding: 'utf8' });
+    return (r.stdout || '').split('\n').slice(4).join('\n');
+  });
 }
 
 /**
@@ -768,11 +769,17 @@ export function sessionStartReport({ kit, home, projectDir, source }) {
  * Returns:
  *     'protected', 'unprotected', or null when it cannot tell (no GitHub remote, no gh, no access)
  */
-function mainProtection(projectDir) {
-  const r = spawnSync('gh', ['api', 'repos/{owner}/{repo}/branches/main/protection'], { cwd: projectDir, encoding: 'utf8', timeout: 8000 });
+export function mainProtection(projectDir, gh = (args) => spawnSync('gh', args, { cwd: projectDir, encoding: 'utf8', timeout: 8000 })) {
+  const r = gh(['api', 'repos/{owner}/{repo}/branches/main/protection']);
   if (r.error) return null;
   if (r.status === 0) return 'protected';
-  return /Branch not protected/i.test(`${r.stdout}${r.stderr}`) ? 'unprotected' : null;
+  if (!/Branch not protected/i.test(`${r.stdout}${r.stderr}`)) return null;
+  // A ruleset protects a branch with no classic protection: GitHub answers 404 for the one and lists the other.
+  const rules = gh(['api', 'repos/{owner}/{repo}/rules/branches/main']);
+  if (rules.error || rules.status !== 0) return null;
+  let list = null;
+  try { list = JSON.parse(rules.stdout); } catch { return null; } // an answer that is not JSON tells nothing
+  return Array.isArray(list) && list.length > 0 ? 'protected' : 'unprotected';
 }
 
 /**
@@ -786,7 +793,7 @@ function mainProtection(projectDir) {
  * Returns:
  *     { current, text } - current is true only when every line matches
  */
-export function status({ kit, home, projectDir, ahead = remoteKitAhead, protection = mainProtection, newest = newestTag }) {
+export function status({ kit, home, projectDir, ahead = remoteKitAhead, protection = mainProtection, newest = newestTag, inodes = () => kitTemp.inodeUse(os.tmpdir()) }) {
   const { version, commit } = loadKit(kit);
   const lines = [`Kit folder: ${version}${commit ? ` (${commit})` : ''}.`, `Claude config folder: ${toPosix(home)}.`];
   const gaps = [];
@@ -828,6 +835,9 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     .filter((f) => !/^\| Status \| (closed|declined) \|/m.test(fs.readFileSync(path.join(reportDir, f), 'utf8'))) : [];
   if (protection(projectDir) === 'unprotected') lines.push('main is not protected on GitHub: run the "Protect main" step of rule:first-push-gate (an outward act; the owner says go).');
   if (open.length) lines.push(`${open.length} improvement report(s) open: ${open.join(', ')}. Hand filed ones to the kit.`);
+  // A full inode table stops every shell on the disk (the Cowork VM, 2026-11-05); disk room is not an install fault.
+  const disk = inodes();
+  if (disk.level === 'warn' || disk.level === 'refuse') lines.push(`Temp disk: ${disk.text}. Test runs refuse above ${kitTemp.REFUSE_PCT}%: clear old temp folders.`);
   // The real load is a budget, not an install fault, so it does not change the verdict.
   const cap = (loadKit(kit).config.caps || {}).realLoad;
   if (cap) {
@@ -1093,6 +1103,8 @@ export function build({ kit }) {
   for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
     out.set(`user/kit-tools/audits/${f}`, fs.readFileSync(path.join(kit, 'project', '.claude', f), 'utf8'));
   }
+  // The merge gate makes its temp folders through the one helper; the same exact-copy rule keeps them alike.
+  out.set('user/kit-tools/kit-temp.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'kit-temp.cjs'), 'utf8'));
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
     'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
