@@ -62,6 +62,12 @@ test('the mutation check names a flip no test catches, passes one a test catches
 	const also = check(dir, ['src/a.cjs', '--also', `node -e "process.exit(require('fs').readFileSync('src/a.cjs','utf8').includes('x <= 10') ? 1 : 0)"`]);
 	assert.equal(also.status, 0, also.stdout + also.stderr);
 	assert.match(also.stdout, /2 flips, 2 caught, 0 survived/);
+	// The copy is a clone of its own: what runs in it reaches none of the repo's config, refs or hooks (the 1.23.0
+	// sweep: a worktree shares them).
+	const reach = check(dir, ['src/a.cjs', '--also', 'git config kit.probe reached && git branch probe-reached && exit 1']);
+	assert.equal(reach.status, 0, reach.stdout + reach.stderr);
+	assert.equal(spawnSync('git', ['-C', dir, 'config', 'kit.probe'], { encoding: 'utf8' }).stdout.trim(), '', 'the repo\'s config is untouched');
+	assert.doesNotMatch(sh(dir, 'branch', '--list'), /probe-reached/, 'the repo\'s refs are untouched');
 });
 
 test('the mutation check refuses a map from another commit or no map, and says how to make one', () => {

@@ -98,9 +98,14 @@ export async function main(argv) {
 			}
 		}
 	}
+	// A scratch clone, not a worktree: a worktree shares the repo's config, refs, hooks and .git, so broken code and
+	// --also commands could reach them, and its cleanup prunes the repo's other worktrees (the 1.23.0 sweep). The
+	// clone sits in this run's temp root, which the next run's temp sweep removes if this one is killed.
+	kitTemp.sessionRoot();
 	const copy = makeTemp('mutation-');
-	const add = git(root, 'worktree', 'add', '--detach', copy, 'HEAD');
-	if (add.status !== 0) { removeTemp(copy); process.stderr.write(`mutation-check: could not make the copy: ${add.stderr}`); return 2; }
+	const add = git(path.dirname(copy), 'clone', '--quiet', '--no-hardlinks', '--no-checkout', root, copy);
+	const out = add.status === 0 ? git(copy, '-c', 'advice.detachedHead=false', 'checkout', '--quiet', head) : add;
+	if (out.status !== 0) { removeTemp(copy); process.stderr.write(`mutation-check: could not make the copy: ${out.stderr}`); return 2; }
 	let caught = 0;
 	const survived = [];
 	try {
@@ -123,8 +128,6 @@ export async function main(argv) {
 			}
 		}
 	} finally {
-		git(root, 'worktree', 'remove', '--force', copy);
-		git(root, 'worktree', 'prune');
 		removeTemp(copy);
 	}
 	process.stdout.write(`mutation check: ${caught + survived.length} flips, ${caught} caught, ${survived.length} survived\n`);
