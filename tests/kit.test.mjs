@@ -1351,8 +1351,7 @@ test('build writes AGENTS.md, path rules, on-demand modules and the index from r
   for (const [rel, text] of out) {
     // The merge gate's audits and temp helper are exact copies read from the user layer: their source is
     // project/.claude, not rules/.
-    // The owner-proof guard's command reader is the same kind of copy, in the hooks folder.
-    const audit = rel.match(/^user\/kit-tools\/(?:audits\/)?(.+\.(?:mjs|cjs))$/) || rel.match(/^user\/kit-hooks\/(guard-read\.cjs)$/);
+    const audit = rel.match(/^user\/kit-tools\/(?:audits\/)?(.+\.(?:mjs|cjs))$/);
     if (audit) assert.equal(text, read(path.resolve('project/.claude', audit[1])), `${rel} is its source byte for byte`);
     else assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
   }

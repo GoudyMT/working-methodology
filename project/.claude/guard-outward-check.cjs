@@ -242,6 +242,13 @@ const ASK = [
 	// xargs -I puts its input in place of any word, git's subcommand too.
 	'echo push | xargs -I % git %',
 	'echo push | xargs -I{} git {}',
+	'echo push | xargs -0I % git %',
+	'echo push | xargs -rI% git %',
+	// Proven only when the yes is proven with its comments cut too: cutting may not make a proof.
+	'node approve.mjs c.json --owner-yes "yes abc123" "<#" --thread cmsg_aaaaaaaaaa "#>"',
+	'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="alias.x" GIT_CONFIG_VALUE_0=push git x',
+	`$env:GIT_CONFIG_PARAMETERS="'alias.x=push'"; git x`,
+	`cargo --config "alias.ship='publish'" ship`,
 	// gem takes the start of a command's name; aliases from the environment name no git or cargo before them.
 	'gem pu x.gem',
 	'gem ya x',

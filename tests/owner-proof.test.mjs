@@ -1,4 +1,4 @@
-// Tests for the owner-proof guard (user/kit-hooks/owner-proof.cjs, E27): the owner's thread yes is read from the
+// Tests for the owner-proof guard (project/.claude/owner-proof.cjs, E27): the owner's thread yes is read from the
 // session transcripts and kit-owner.json, so no tool call may write them.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
@@ -8,10 +8,12 @@ import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
-const HOOK = path.resolve('user/kit-hooks/owner-proof.cjs');
+const HOOK = path.resolve('project/.claude/owner-proof.cjs');
 const cfg = kitTemp.makeTemp('cfg-');
 const run = (tool_name, tool_input) => {
 	const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: process.cwd() }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+	// A crash is no answer: onFailure block turns it into a block, so it never counts as an allow.
+	assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`);
 	return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
 };
 const T = path.join(cfg, 'projects', 'C--repo', 's.jsonl');
@@ -38,6 +40,19 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['Bash', { command: 'echo x >> ~/.claude/projects/p/memory/../s.jsonl' }],
 		['Write', { file_path: path.join(cfg, 'projects', 'p', 'memory', '..', 's.jsonl'), content: 'x' }],
 		['Bash', { command: 'rg --pre ./w.sh x ~/.claude/projects/p/s.jsonl' }],
+		// The 1.23.0 sweep: other spellings of the same folder, read by the shell as it.
+		['Bash', { command: 'echo hi >> ~/.claude/./projects/A/s.jsonl' }],
+		['Bash', { command: 'echo hi >> ~/.claude//projects/A/s.jsonl' }],
+		['Bash', { command: 'echo hi >> ~/.claude/project[s]/A/s.jsonl' }],
+		['Bash', { command: 'echo hi >> ~/.claude/proj*/A/s.jsonl' }],
+		['Bash', { command: 'echo hi >> C:/Users/x/CLAUDE~1/projects/A/s.jsonl' }],
+		['Bash', { command: 'cd ~/.claude && echo hi >> projects/A/s.jsonl' }],
+		['PowerShell', { command: 'Set-Location $HOME\\.claude; Add-Content projects\\A\\s.jsonl x' }],
+		['Bash', { command: 'cp x.jsonl ~/.claude/./projects/C--repo/forged.jsonl' }],
+		['Bash', { command: 'echo {} > ~/.claude/kit-owne?.json' }],
+		['PowerShell', { command: 'Add-Content "$HOME\\.claude\\.\\projects\\p\\s.jsonl" x' }],
+		['Bash', { command: 'cp a.jsonl b.jsonl ~/.claude/projects/p/' }],
+		['Bash', { command: 'find ~/.claude/projects -name x -delete' }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
 	// Another name for the same folder (a junction, a short name) reaches the same files.
@@ -66,14 +81,25 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 		['Write', { file_path: path.join(cfg, 'projects', 'C--repo', 'memory', 'MEMORY.md'), content: 'x' }],
 		['Edit', { file_path: path.join(cfg, 'projects', 'C--repo', 'memory', 'notes.md'), old_string: 'a', new_string: 'b' }],
 		['Bash', { command: 'echo x >> ~/.claude/projects/C--repo/memory/notes.md' }],
+		// The 1.23.0 sweep: a message that only names the file, and reads that copy a transcript out.
+		['Bash', { command: 'git commit -m "docs: say the owner writes kit-owner.json"' }],
+		['PowerShell', { command: 'git commit -m "the thread yes reads ~/.claude/projects"' }],
+		['Bash', { command: 'gh pr create --title x --body "The thread yes reads kit-owner.json"' }],
+		['Bash', { command: 'cp ~/.claude/projects/p/s.jsonl /tmp/x.jsonl' }],
+		['PowerShell', { command: 'Copy-Item $HOME\\.claude\\projects\\p\\s.jsonl $env:TEMP\\x.jsonl' }],
+		['PowerShell', { command: 'Get-Item "$HOME\\.claude\\projects\\p\\s.jsonl"' }],
+		['Bash', { command: 'jq -c .type ~/.claude/projects/p/s.jsonl' }],
+		['Bash', { command: 'cd ~/.claude && git status' }],
 	];
 	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
 });
 
 test('the shipped project settings wire the owner-proof guard on every write tool and shell', () => {
 	const pre = JSON.parse(fs.readFileSync(path.resolve('project/.claude/settings.json'), 'utf8')).hooks.PreToolUse;
-	const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('kit-hooks/owner-proof.cjs')));
-	assert.ok(entry, 'wired');
+	// It ships in the project layer beside the guards whose reader it uses: a project whose user layer is older
+	// would otherwise block every call on a missing file (the 1.23.0 sweep).
+	const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('{{PROJECT_DIR}}/.claude/owner-proof.cjs')));
+	assert.ok(entry, 'wired from the project layer');
 	for (const tool of ['Write', 'Edit', 'NotebookEdit', 'Bash', 'PowerShell']) assert.match(tool, new RegExp(`^(${entry.matcher})$`), tool);
 	assert.equal(entry.hooks.find((h) => (h.args || []).join(' ').includes('owner-proof')).onFailure, 'block');
 });

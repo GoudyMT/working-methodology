@@ -203,21 +203,24 @@ function findOutward(text, depth) {
 		if (/[\\`^]|\$'/.test(text)) return 'an owner yes for a sweep';
 		// Read with its quotes, so a quoted span stays one word: a --thread inside the yes's words is no proof. A
 		// comment is cut first: the shell never hands approve.mjs a --thread after a # (the 1.23.0 sweep).
-		const proven = tokenize(joinContinuations(withoutComments(plainText(text)))).some((all) => {
+		const provenIn = (t) => tokenize(joinContinuations(t)).some((all) => {
 			const w = all.filter((x) => !x.redirect).map((x) => x.value);
 			const at = w.findIndex((x) => /^--owner-yes(=|$)/i.test(x));
-			const t = w.indexOf('--thread');
-			return at >= 0 && t >= 0 && /^cmsg_[A-Za-z0-9]{8,64}$/.test(w[t + 1] ?? '');
+			const th = w.indexOf('--thread');
+			return at >= 0 && th >= 0 && /^cmsg_[A-Za-z0-9]{8,64}$/.test(w[th + 1] ?? '');
 		});
+		// Proven as written and with its comments cut: cutting may only take a proof away, never make one.
+		const proven = provenIn(plainText(text)) && provenIn(withoutComments(plainText(text)));
 		const segments = tokenize(joinContinuations(flat)).filter((all) => all.some((x) => /--owner-yes/i.test(x.value)));
 		if (!proven || segments.length !== 1) return 'an owner yes for a sweep';
 	}
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
-	// An alias set from the environment names no git before it: GIT_CONFIG_KEY_0=alias.x, and cargo's CARGO_ALIAS_X.
-	if (/GIT_CONFIG_(KEY_\d+|PARAMETERS)\W[^\n]*\balias\./i.test(text)) return 'git with an alias';
+	// An alias set from the environment names no git before it (GIT_CONFIG_KEY_0=alias.x, cargo's CARGO_ALIAS_X), and
+	// its value may be spelled any way: any config from the environment, or cargo's --config, asks.
+	if (/GIT_CONFIG_(COUNT|KEY_\d+|PARAMETERS)/i.test(text) && /\bgit\b/i.test(text)) return 'git with config from the environment';
+	if (/CARGO_ALIAS_\w+/i.test(text) || (/\bcargo\b/i.test(text) && /--config\b/i.test(text))) return 'cargo with an alias or config';
 	// xargs -I puts its input in place of any word, git's subcommand too; -I{} splits into two commands when read.
-	if (/\bxargs(\.exe)?\b[^;|&\n]*\s(-[iIJ]|--replace)[^;|&\n]*\bgit(\.exe)?\b/.test(text)) return 'git through xargs';
-	if (/CARGO_ALIAS_\w+|\bcargo\b[^;|&\n]*--config[^;|&\n]*\balias\./i.test(text)) return 'cargo with an alias';
+	if (/\bxargs(\.exe)?\b[^;|&\n]*\s(-[A-Za-z0-9]*[iIJ]|--replace)[^;|&\n]*\bgit(\.exe)?\b/.test(text)) return 'git through xargs';
 	// A backtick span is a command bash runs first, wherever it sits; the tokenizer splits it into words.
 	if (depth < MAX_DEPTH) for (const m of text.matchAll(/`([^`]+)`/g)) { const hit = findOutward(m[1], depth + 1); if (hit) return hit; }
 	for (const all of tokenize(joinContinuations(text))) {
@@ -236,7 +239,7 @@ function findOutward(text, depth) {
 				// xargs hands git its subcommand from input, so a git with none after xargs could be a push.
 				const x = words.slice(0, i).findIndex((w) => programName(w) === 'xargs' || programName(w) === 'xargs.exe');
 				// With -I (or -i, --replace) the input may stand in any word, the subcommand too: git % is git push.
-				if (!hit && x >= 0 && (gitSubAt(words, i + 1) >= words.length || words.slice(x + 1, i).some((w) => /^(-i|-j|--replace)/.test(w)))) hit = 'git through xargs';
+				if (!hit && x >= 0 && (gitSubAt(words, i + 1) >= words.length || words.slice(x + 1, i).some((w) => /^(-[a-z0-9]*[ij]|--replace)/.test(w)))) hit = 'git through xargs';
 			}
 			else if (name === 'gh' || name === 'gh.exe') hit = ghOutward(words, i + 1);
 			else if (PACKAGERS.has(name)) hit = registryWrite(segment.map((word) => word.value), i + 1);

@@ -17,7 +17,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "{{CLAUDE_HOME}}/kit-hooks/owner-proof.cjs"
+              "{{PROJECT_DIR}}/.claude/owner-proof.cjs"
             ],
             "timeout": 10,
             "onFailure": "block"

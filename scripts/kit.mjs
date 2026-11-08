@@ -1134,8 +1134,6 @@ export function build({ kit }) {
   }
   // The merge gate makes its temp folders through the one helper; the same exact-copy rule keeps them alike.
   out.set('user/kit-tools/kit-temp.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'kit-temp.cjs'), 'utf8'));
-  // The owner-proof guard reads a command as the shell guards do, from its own exact copy in the user layer.
-  out.set('user/kit-hooks/guard-read.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'guard-read.cjs'), 'utf8'));
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
     'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
