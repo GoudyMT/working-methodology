@@ -16,7 +16,9 @@ const REFUSE_PCT = 80;
 const LIVE_MAX_MS = 24 * 3600e3;
 const LEGACY_MAX_MS = 3600e3;
 const OWNED = new RegExp(`^${ROOT_PREFIX}(\\d+)-[A-Za-z0-9]{6}$`);
-const LEGACY = new RegExp(`^${ROOT_PREFIX}[A-Za-z0-9]{6}$`);
+// mkdtemp's six random characters, with a capital or a digit among them: a folder a person named in lower-case
+// letters (kit-tests-backup) is not one (the 1.22.0 sweep).
+const LEGACY = new RegExp(`^${ROOT_PREFIX}(?=[A-Za-z0-9]{0,5}[A-Z0-9])[A-Za-z0-9]{6}$`);
 
 let current = null;
 

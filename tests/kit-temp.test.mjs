@@ -80,7 +80,9 @@ test('the sweep clears a live pid\'s root only past a day (pid reuse), and an ol
 
 test('the sweep touches only kit run roots: other names, files and look-alikes stay', () => {
 	const dir = base();
-	const keep = ['approve-abc123', 'kit-tests', 'kit-tests-notes.txt', `x${ROOT_PREFIX}1-abc123`, 'node-compile-cache'];
+	// A folder a person named like an old root (all lower-case letters) stays; mkdtemp's six random characters carry a
+	// capital or a digit (the 1.22.0 sweep, K1).
+	const keep = ['approve-abc123', 'kit-tests', 'kit-tests-notes.txt', `x${ROOT_PREFIX}1-abc123`, 'node-compile-cache', 'kit-tests-backup', 'kit-tests-golden'];
 	for (const n of keep) n.endsWith('.txt') ? fs.writeFileSync(path.join(dir, n), '') : fs.mkdirSync(path.join(dir, n));
 	fs.writeFileSync(path.join(dir, `${ROOT_PREFIX}1-abc123`), 'a file, not a root');
 	const old = new Date(Date.now() - 48 * 3600e3);
