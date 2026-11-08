@@ -8,6 +8,8 @@ const LF = String.fromCharCode(10);
 const CR = String.fromCharCode(13);
 // The longest a brace expansion may grow: groups side by side multiply (x{a,b}{c,d} is four words).
 const MAX_PLAIN = 100000;
+// The most brace groups read; past it the rest asks. Far more than any real command holds.
+const MAX_GROUPS = 500;
 // < and > start a redirection, read inside a command (its target is marked), not a break between commands.
 const SEGMENT_BREAKS = new Set([';', '|', '&', '(', ')', '{', '}', LF]);
 
@@ -37,7 +39,8 @@ function plainText(text, tool) {
 	const brace = /(?<![$\w])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s{}'"]*)/;
 	// Every group is expanded: a fixed count let decoy groups hide a later one (the 1.23.0 mutation check, M27). Each
 	// pass removes one group, so it ends; the size cap stops a nested blow-up, and what is left asks (below).
-	while (brace.test(s) && s.length < MAX_PLAIN) s = s.replace(brace, (m, a, b, c) => b.split(',').map((x) => a + x + c).join(' '));
+	// Each pass scans the whole text, so the passes are bounded too: a hook that runs past its timeout blocks.
+	for (let pass = 0; pass < MAX_GROUPS && brace.test(s) && s.length < MAX_PLAIN; pass++) s = s.replace(brace, (m, a, b, c) => b.split(',').map((x) => a + x + c).join(' '));
 	// Past the cap the rest is unread: a word the guards always ask on stands in for it.
 	if (brace.test(s)) s += ' ; git push ; rm -rf /';
 	return s;

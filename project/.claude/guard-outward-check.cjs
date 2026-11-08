@@ -146,6 +146,8 @@ const ASK = [
 	`echo ${'{a,b} '.repeat(40)}; git {push,status} origin`,
 	// Past the reader's size cap the groups left are unread, so it asks.
 	`echo ${'x'.repeat(100001)} {a,b}`,
+	// Past the group limit too, and quickly: a guard that runs past its hook timeout blocks the command.
+	`echo ${'{a,b} '.repeat(5000)}`,
 	// S22-R7: other programs that send to a remote or publish.
 	'git svn dcommit',
 	'git p4 submit',
