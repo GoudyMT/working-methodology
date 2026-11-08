@@ -1351,7 +1351,8 @@ test('build writes AGENTS.md, path rules, on-demand modules and the index from r
   for (const [rel, text] of out) {
     // The merge gate's audits and temp helper are exact copies read from the user layer: their source is
     // project/.claude, not rules/.
-    const audit = rel.match(/^user\/kit-tools\/(?:audits\/)?(.+\.(?:mjs|cjs))$/);
+    // The owner-proof guard's command reader is the same kind of copy, in the hooks folder.
+    const audit = rel.match(/^user\/kit-tools\/(?:audits\/)?(.+\.(?:mjs|cjs))$/) || rel.match(/^user\/kit-hooks\/(guard-read\.cjs)$/);
     if (audit) assert.equal(text, read(path.resolve('project/.claude', audit[1])), `${rel} is its source byte for byte`);
     else assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
   }
@@ -1857,7 +1858,8 @@ test('every kit role runs the canary at its stop, and the project settings run t
 });
 test('both guards run on every shell tool and block the call when they fail', () => {
   const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
-  const shell = settings.hooks.PreToolUse.find((h) => h.matcher.split('|').includes('Bash'));
+  // The entry that holds the two guards (the owner-proof guard has its own, also on Bash).
+  const shell = settings.hooks.PreToolUse.find((h) => h.hooks.some((x) => (x.args || []).join(' ').includes('.claude/guard-delete.cjs')));
   for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) assert.ok(shell.matcher.split('|').includes(tool), `${tool} is matched`);
   for (const guard of ['guard-delete.cjs', 'guard-outward.cjs']) {
     const hook = shell.hooks.find((h) => h.args.join(' ').includes(`.claude/${guard}`));
