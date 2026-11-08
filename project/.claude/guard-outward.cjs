@@ -27,7 +27,7 @@ const HTTP_CLIENTS = /^(curl|wget|invoke-webrequest|invoke-restmethod|iwr|irm)(\
 const GIT_NESTED_PUSH = new Set(['lfs', 'subtree']);
 // A git bridge that writes to another system: git svn dcommit (and the verbs that make branches and tags there),
 // git p4 submit.
-const GIT_BRIDGES = { svn: ['dcommit', 'branch', 'tag', 'set-tree', 'commit-diff'], p4: ['submit'] };
+const GIT_BRIDGES = { svn: ['dcommit', 'branch', 'tag', 'set-tree', 'commit-diff'], p4: ['submit', 'commit'] };
 // Other programs that publish or send to a remote: the subcommands that do it. Only cargo has a dry run.
 const PUBLISHERS = { docker: ['push'], podman: ['push'], cargo: ['publish', 'yank', 'owner'], twine: ['upload'], gem: ['push', 'yank', 'owner'], nuget: ['push', 'delete'] };
 // docker and podman build straight to a registry with --push or an output of type registry or push=true.
@@ -54,7 +54,23 @@ function cargoDryRun(rest) {
 }
 
 // A word naming another host: rsync://, host:path, user@host:path, [::1]:path. A drive letter (C:/x, C:\x) is local.
-const remoteWord = (w) => !w.startsWith('-') && (w.startsWith('rsync://') || (w.includes(':') && !/^[a-z]:[/\\]/.test(w)));
+// MSYS and Cygwin rsync read C:/x as a host named C, so any word with a colon may name another host.
+const remoteWord = (w) => !w.startsWith('-') && w.includes(':');
+// A docker or podman build that sends its image to a registry: --push (unless =false), an output that is not a
+// local one, or imagetools create (writes a manifest to the registry).
+function imageBuildPush(rest) {
+	if (rest.includes('imagetools') && rest.includes('create')) return true;
+	for (let k = 0; k < rest.length; k++) {
+		const w = rest[k];
+		if (w === '--push' || (w.startsWith('--push=') && !/^--push=(false|0|f)$/.test(w))) return true;
+		let out = null;
+		if (w === '-o' || w === '--output') out = rest[k + 1] ?? '';
+		else if (w.startsWith('--output=')) out = w.slice('--output='.length);
+		else if (/^-o./.test(w)) out = w.slice(2);
+		if (out !== null && !/^(type=(local|tar|docker)(,|$)|-$|[^=,]+$)/.test(out)) return true;
+	}
+	return false;
+}
 
 // The program a word names, whatever folder it sits in: "C:/Program Files/Git/cmd/git.exe" -> "git.exe".
 function programName(word) {
@@ -196,7 +212,7 @@ function findOutward(text, depth) {
 			else if (tool && words.slice(i + 1).some((w) => PUBLISHERS[tool].includes(w)) && !(tool === 'cargo' && words.slice(i + 1).includes('publish') && cargoDryRun(words.slice(i + 1)))) {
 				hit = tool + ' ' + words.slice(i + 1).find((w) => PUBLISHERS[tool].includes(w));
 			}
-			else if (IMAGE_BUILDERS.has(tool) && words.slice(i + 1).some((w, k, r) => w === '--push' || /^--push=(true|1)$/.test(w) || /type=registry|push=true/.test(w) || (/^(-o|--output)$/.test(r[k - 1] ?? '') && /registry|push/.test(w)))) hit = tool + ' build to a registry';
+			else if (IMAGE_BUILDERS.has(tool) && imageBuildPush(words.slice(i + 1))) hit = tool + ' build to a registry';
 			// scp always copies to or from another host; rsync does when a word names one (host:path, rsync://).
 			else if (bare === 'scp') hit = 'scp';
 			else if (bare === 'rsync' && words.slice(i + 1).some((w) => remoteWord(w) || (w.startsWith('--') && w.includes('=') && remoteWord(w.slice(w.indexOf('=') + 1))))) hit = 'rsync to another host';
