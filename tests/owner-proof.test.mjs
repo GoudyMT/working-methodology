@@ -53,6 +53,20 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['PowerShell', { command: 'Add-Content "$HOME\\.claude\\.\\projects\\p\\s.jsonl" x' }],
 		['Bash', { command: 'cp a.jsonl b.jsonl ~/.claude/projects/p/' }],
 		['Bash', { command: 'find ~/.claude/projects -name x -delete' }],
+		// The shell's folder is followed through every cd, and one it cannot read is the safe side.
+		['Bash', { command: 'cd ~ && cd .claude && echo hi >> projects/A/s.jsonl' }],
+		['Bash', { command: 'cd ~/.claude/x && cd .. && echo hi >> projects/A/s.jsonl' }],
+		['Bash', { command: 'cd $(echo ~/.claude) && echo hi >> projects/A/s.jsonl' }],
+		['PowerShell', { command: 'Set-Location -Path $HOME\\.claude; Add-Content projects\\A\\s.jsonl x' }],
+		// A copy with an option that may name its destination, or a destination inside.
+		['Bash', { command: 'cp -t ~/.claude/projects/p x.jsonl' }],
+		['Bash', { command: 'cp -rt ~/.claude/projects/p x.jsonl' }],
+		['PowerShell', { command: 'Copy-Item -Dest $HOME\\.claude\\projects\\p\\s.jsonl -Path x.jsonl' }],
+		// A message is only the value right after its flag; a redirect is never one.
+		['Bash', { command: 'git log "a b" > "~/.claude/projects/p/s.jsonl x"' }],
+		['Bash', { command: 'git commit -F "~/.claude/projects/p/s .jsonl"' }],
+		// A read piped on goes only into another reader.
+		['Bash', { command: 'cat ~/.claude/projects/p/s.jsonl | tee ~/x' }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
 	// Another name for the same folder (a junction, a short name) reaches the same files.
@@ -90,6 +104,9 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 		['PowerShell', { command: 'Get-Item "$HOME\\.claude\\projects\\p\\s.jsonl"' }],
 		['Bash', { command: 'jq -c .type ~/.claude/projects/p/s.jsonl' }],
 		['Bash', { command: 'cd ~/.claude && git status' }],
+		['Bash', { command: 'grep -h cmsg_ ~/.claude/projects/p/s.jsonl | sort | uniq -c' }],
+		['PowerShell', { command: 'Get-Content $HOME\\.claude\\projects\\p\\s.jsonl | ConvertFrom-Json | Select-Object type' }],
+		['Bash', { command: 'cd src && echo x > out.txt' }],
 	];
 	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
 });

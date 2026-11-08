@@ -74,55 +74,82 @@ function protectedFrom(p, i) {
 	return !(p.length > i + 2 && p[i + 2] === 'memory' && !/[*?[]/.test(p[i + 1]) && p[i] === 'projects');
 }
 
+// Whether a word is written from the root, a home or a variable, so no cd before it moves where it points.
+const rooted = (word) => /^([/~$%]|[a-z]:)/.test(slash(word));
+
 // Whether a shell word names the protected places, in any of the spellings a command uses for the Claude folder.
-// inHome: a cd before it moved the shell into the Claude folder, so a relative word is read from there.
-function names(word, inHome) {
-	const p = parts(word);
+// cwd: where a cd before it moved the shell (its parts), 'unknown' when that cannot be read, null when none did.
+function names(word, cwd) {
+	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
 	const h = parts(path.resolve(home()));
 	for (let i = 0; i < p.length; i++) {
 		if (fits(p[i], '.claude') || (p[i] === h[h.length - 1] && h.length > 0)) {
 			if (protectedFrom(p, i + 1)) return true;
 		}
 	}
-	if (/kit-owner/.test(slash(word)) && p.some((x) => fits(x, 'kit-owner.json'))) return true;
-	return Boolean(inHome) && !/^([/~$%]|[a-z]:)/.test(slash(word)) && protectedFrom(p, 0);
+	if (p.some((x) => fits(x, 'kit-owner.json'))) return true;
+	// After a cd that cannot be read, a relative word may start inside the Claude folder: the safe side.
+	if (cwd === 'unknown' && !rooted(word)) return protectedFrom(p, p.findIndex((x) => x !== '..'));
+	return false;
 }
 
-// Whether a word holds the Claude folder itself as its last part: a cd there moves the shell into it.
-function isHome(word) {
-	const p = parts(word);
-	const h = parts(path.resolve(home()));
-	return p.length > 0 && (fits(p[p.length - 1], '.claude') || p[p.length - 1] === h[h.length - 1]);
+// Where a cd, pushd or Set-Location moves the shell: its folder's parts, or 'unknown'.
+function moved(segment, cwd) {
+	const args = segment.slice(1).map((x) => x.value);
+	const at = args.findIndex((a) => /^-(path|literalpath|lp)$/i.test(a));
+	const arg = at >= 0 ? args[at + 1] : args.find((a) => !a.startsWith('-'));
+	if (arg === undefined) return args.length ? 'unknown' : ['~'];
+	if (/[$`(]/.test(arg) && !/^(\$home|\$env:userprofile|\$\{?home\}?)([/\\]|$)/i.test(arg)) return 'unknown';
+	if (rooted(arg)) return parts(arg);
+	return Array.isArray(cwd) ? parts([...cwd, arg].join('/')) : 'unknown';
 }
+
+// The words of a git or gh command that are a message (-m, --body, --title, --notes): text, not paths.
+const MESSAGE_FLAGS = /^(-m|--message|-b|--body|-t|--title|-n|--notes)$/i;
+// Programs a reader may pipe a transcript into: they read their input and write only their output.
+const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-object', 'select', 'convertfrom-json', 'measure-object', 'measure', 'out-string']);
 
 function shellWrites(command, tool) {
 	const text = plainText(joinContinuations(String(command || '')), tool);
-	let inHome = false;
+	const segments = tokenize(text);
+	let cwd = null;
 	let named = false;
-	for (const segment of tokenize(text)) {
+	for (let s = 0; s < segments.length; s++) {
+		const segment = segments[s];
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
-		if (CHANGERS.has(program)) inHome = all.slice(1).some(isHome);
-		// A quoted message (git commit -m "...", gh pr create --body "...") is text, not a path.
-		const message = (x) => MESSAGES.has(program) && /\s/.test(x.value);
-		if (segment.some((x) => names(x.value, inHome) || (message(x) && x.value.split(/\s+/).some((w) => names(w, inHome))))) named = true;
-		const hits = segment.filter((x) => !message(x) && names(x.value, inHome));
+		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
+		const message = (x, k) => MESSAGES.has(program) && !x.redirect && k > 0 && (MESSAGE_FLAGS.test(all[k - 1]) || false);
+		const inline = (x) => MESSAGES.has(program) && !x.redirect && /^(--message|--body|--title|--notes)=/i.test(x.value);
+		if (segment.some((x) => names(x.value, cwd) || x.value.split(/\s+/).some((w) => names(w, cwd)))) named = true;
+		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && names(x.value, cwd));
+		if (CHANGERS.has(program)) {
+			if (hits.length) return true;
+			cwd = moved(segment, cwd);
+			continue;
+		}
 		if (hits.length === 0) continue;
-		if (segment.some((x) => x.redirect && names(x.value, inHome))) return true;
-		if (READERS.has(program)) continue;
+		if (segment.some((x) => x.redirect && names(x.value, cwd))) return true;
+		if (READERS.has(program)) {
+			// Piped on, the read must go to another reader.
+			if (segment.end === '|' && segments[s + 1] && !PIPE_READERS.has(path.basename(slash(segments[s + 1][0]?.value || '')).replace(/\.(exe|cmd|bat)$/, ''))) return true;
+			continue;
+		}
 		if (COPIERS.has(program)) {
-			// The destination: the word after -t, --target-directory or -Destination, else the last plain word.
+			// A copy out is a read. Any option that may name the destination (-t, --target-directory, -Destination and
+			// its short forms) asks nothing more: the guard cannot be sure, so it refuses.
+			const options = segment.slice(1).filter((x) => x.value.startsWith('-'));
 			const plain = segment.slice(1).filter((x) => !x.value.startsWith('-'));
-			const flag = segment.findIndex((x) => /^(-t|--target-directory|-destination)(=|$)/i.test(x.value));
-			const dest = flag > 0 ? (segment[flag].value.includes('=') ? segment[flag] : segment[flag + 1]) : plain[plain.length - 1];
-			if (plain.length >= 2 && dest && !names(dest.value.split('=').pop(), inHome)) continue;
+			const risky = options.some((x) => /^-[a-z]*t|^--target|^-d/i.test(x.value));
+			const dest = plain[plain.length - 1];
+			if (!risky && plain.length >= 2 && !names(dest.value, cwd)) continue;
 		}
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.
 	if (named) return false;
 	const raw = String(command || '');
-	return [raw, text].some((t) => t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(w, false)));
+	return [raw, text].some((t) => t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(w, null)));
 }
 
 function main() {
