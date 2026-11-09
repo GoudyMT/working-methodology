@@ -13,6 +13,9 @@ const ROOT_PREFIX = 'kit-tests-';
 const WARN_PCT = 50;
 const REFUSE_PCT = 80;
 // A live pid past a day is a reused pid, not a run; an old-style root (no pid in its name) is a run of an older kit.
+// Limits, written down (K2, K4, closed by the owner as limits in 1.23.0): a pid is read in this machine's own pid
+// space, so runs in sandboxes that share one temp folder across pid spaces could read each other's live runs as dead;
+// and a clock that jumps past a day makes a live run's root look a day old. Either removes a live run's temp root.
 const LIVE_MAX_MS = 24 * 3600e3;
 const LEGACY_MAX_MS = 3600e3;
 const OWNED = new RegExp(`^${ROOT_PREFIX}(\\d+)-[A-Za-z0-9]{6}$`);

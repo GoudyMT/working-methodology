@@ -30,8 +30,10 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    (rule:sweep-auto-approval; its log is `kit-sweep-approvals.jsonl` in the repo's git folder). (d) APPROVED: post
    the start notice it printed, as is, and go on; never restate counts by hand. FIX THE CONTRACT (exit 3): the mistake is
    yours; add what it named and run it again, the owner is not asked (going lighter at that HEAD asks the owner). ASK THE OWNER: show the table and
-   the reasons it printed, and stop; on the owner's yes, log it with `approve.mjs <contract.json> --owner-yes
-   "<their words>"`, then go on. First push and launch gate always ask. A hook (`sweep-guard.cjs`) refuses any
+   the reasons it printed, with its line `The owner can answer from the thread: "yes <code>"`, and stop. The owner's
+   yes is the whole message `yes <code>`; log it with `approve.mjs <contract.json> --owner-yes "yes <code>" --thread
+   <their message id>`, then go on (from an AI shell a yes without `--thread` is refused). No owner named yet: run
+   `approve.mjs --owner-setup` and pass on the words it gives. First push and launch gate always ask. A hook (`sweep-guard.cjs`) refuses any
    `reviewer` agent until the log clears this HEAD and this contract, so a new commit or an edited contract means
    running the script again. **Limits:** it stops slips, not a determined workaround: deleting or rewriting the log,
    a false `--base`, clearing the AI-shell marker, invented outcome numbers, or an `--owner-yes` the owner never gave

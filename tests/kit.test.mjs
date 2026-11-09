@@ -4515,7 +4515,7 @@ test('a checker runs nothing that waits past 5 minutes, and a builder runs nothi
 test('no agent may log the owner\'s yes or a resume, in any shell', () => {
   const dir = makeTemp('cap-');
   for (const type of ['reviewer', 'checker', 'builder', 'general-purpose'])
-    for (const [tool, command] of [['Bash', 'node ~/.claude/skills/pre-pr-sweep/approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh'], ['PowerShell', 'node "$HOME\\.claude\\skills\\pre-pr-sweep\\approve.mjs" --resume --thread cmsg_Abcdefgh']]) {
+    for (const [tool, command] of [['Bash', 'node ~/.claude/skills/pre-pr-sweep/approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh'], ['PowerShell', 'node "$HOME\\.claude\\skills\\pre-pr-sweep\\approve.mjs" --resume --thread cmsg_Abcdefgh'], ['Bash', 'node approve.mjs --owner-setup --thread cmsg_Abcdefgh']]) {
       const r = capHook(dir, 1, 12, { agent_type: type, tool_name: tool, tool_input: { command } });
       assert.equal(r.permissionDecision, 'deny', `${type} ${tool}`);
       assert.match(r.permissionDecisionReason, /the owner's/);
