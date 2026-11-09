@@ -80,7 +80,8 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 	assert.equal(run('Bash', { command: 'echo hi >> projects/A/s.jsonl' }, cfg), 'deny', 'from the Claude folder itself');
 	assert.equal(run('Bash', { command: 'echo hi >> notes.txt' }, cfg), 'allow', 'another file there');
 	// A cd in a group opened first, after ||, or piped with |& does not move the shell the next command runs in.
-	for (const command of ['(cd /tmp) ; echo hi >> projects/A/s.jsonl', 'cd /tmp || true ; echo hi >> projects/A/s.jsonl', 'cd /tmp |& cat ; echo hi >> projects/A/s.jsonl']) {
+	// A cd that may fail, and a move through the stack or history, leave the folder unknown too.
+	for (const command of ['cd /nowhere ; echo hi >> projects/A/s.jsonl', 'cd /tmp && cd - && echo hi >> projects/A/s.jsonl', 'pushd /tmp && pushd +1 && echo hi >> projects/A/s.jsonl', '(cd /tmp) ; echo hi >> projects/A/s.jsonl','cd /tmp || true ; echo hi >> projects/A/s.jsonl', 'cd /tmp |& cat ; echo hi >> projects/A/s.jsonl']) {
 		assert.equal(run('Bash', { command }, cfg), 'deny', command);
 	}
 	// PowerShell takes a parameter's start, and some take a value: a copy with one is refused rather than guessed.

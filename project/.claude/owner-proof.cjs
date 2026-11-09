@@ -98,8 +98,12 @@ function names(word, cwd) {
 // Where a cd, pushd or Set-Location moves the shell: its folder's parts, or 'unknown'.
 function moved(segment, cwd) {
 	// popd and Pop-Location go back to a folder the stack holds, which the guard does not follow.
-	if (/^(popd|pop-location)$/.test(path.basename(slash(segment[0].value)))) return 'unknown';
+	const prog = path.basename(slash(segment[0].value));
+	if (/^(popd|pop-location)$/.test(prog)) return 'unknown';
 	const args = segment.slice(1).map((x) => x.value);
+	// A move through the stack or the history (pushd with no folder, pushd +1, cd -, Set-Location +) is not followed.
+	if (/^(pushd|push-location)$/.test(prog) && (args.length === 0 || args.some((a) => /^[+-]\d*$/.test(a)))) return 'unknown';
+	if (args.some((a) => a === '-' || a === '+')) return 'unknown';
 	const at = args.findIndex((a) => /^-(path|literalpath|lp)$/i.test(a));
 	const arg = at >= 0 ? args[at + 1] : args.find((a) => !a.startsWith('-'));
 	if (arg === undefined) return args.length ? 'unknown' : ['~'];
@@ -136,7 +140,9 @@ function shellWrites(command, tool, start) {
 		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && names(x.value, cwd));
 		if (CHANGERS.has(program)) {
 			if (hits.length) return true;
-			cwd = apart ? 'unknown' : moved(segment, cwd);
+			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
+			const sure = segment.end === '&&' || s === segments.length - 1;
+			cwd = apart || !sure ? 'unknown' : moved(segment, cwd);
 			continue;
 		}
 		if (hits.length === 0) continue;
@@ -151,7 +157,8 @@ function shellWrites(command, tool, start) {
 			// -Destination and its short forms), so the guard refuses rather than guess.
 			// PowerShell takes any start of a parameter's name and some take a value, so there only a bare two-word copy
 			// (source, destination) or -Recurse / -Force passes; cp takes its plain letter flags.
-			const pwsh = /powershell/i.test(String(tool)) || program !== 'cp';
+			// Only Bash's own cp is read by cp's rules; any other shell or copier gets the strict ones.
+			const pwsh = tool !== 'Bash' || program !== 'cp';
 			const options = segment.slice(1).filter((x) => x.value.startsWith('-'));
 			const plain = segment.slice(1).filter((x) => !x.value.startsWith('-'));
 			const risky = options.some((x) => (pwsh ? !/^-(recurse|force)$/i.test(x.value) : !COPY_OPTIONS.test(x.value)));
