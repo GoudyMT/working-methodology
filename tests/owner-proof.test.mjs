@@ -79,6 +79,12 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 	// A session whose own folder is the Claude folder: a relative word is read from there.
 	assert.equal(run('Bash', { command: 'echo hi >> projects/A/s.jsonl' }, cfg), 'deny', 'from the Claude folder itself');
 	assert.equal(run('Bash', { command: 'echo hi >> notes.txt' }, cfg), 'allow', 'another file there');
+	// A cd in a group opened first, after ||, or piped with |& does not move the shell the next command runs in.
+	for (const command of ['(cd /tmp) ; echo hi >> projects/A/s.jsonl', 'cd /tmp || true ; echo hi >> projects/A/s.jsonl', 'cd /tmp |& cat ; echo hi >> projects/A/s.jsonl']) {
+		assert.equal(run('Bash', { command }, cfg), 'deny', command);
+	}
+	// PowerShell takes a parameter's start, and some take a value: a copy with one is refused rather than guessed.
+	assert.equal(run('PowerShell', { command: 'Copy-Item -Pa x.jsonl -Fi y $HOME\\.claude\\projects\\p\\s.jsonl' }), 'deny', 'a PowerShell copy with parameters');
 	// Another name for the same folder (a junction, a short name) reaches the same files.
 	fs.mkdirSync(path.join(cfg, 'projects', 'C--repo'), { recursive: true });
 	const link = path.join(kitTemp.makeTemp('link-'), 'p');

@@ -24,7 +24,7 @@ const COPIERS = new Set(['cp', 'copy', 'copy-item', 'cpi']);
 // Programs that move a shell into a folder: a relative word after one is read from there.
 const CHANGERS = new Set(['cd', 'pushd', 'chdir', 'set-location', 'sl', 'push-location', 'popd', 'pop-location']);
 // A copier's options that name no destination; any other may (--t is --target-directory to cp), so it refuses.
-const COPY_OPTIONS = /^(-[rRpafvni]+|--recursive|--preserve|--archive|--force|--verbose|--no-clobber|--interactive|-path|-literalpath|-recurse|-force)$/i;
+const COPY_OPTIONS = /^(-[rRpafvni]+|--recursive|--preserve|--archive|--force|--verbose|--no-clobber|--interactive)$/;
 // Programs whose quoted words are messages, not paths: a commit message or a PR body may name the file.
 const MESSAGES = new Set(['git', 'gh']);
 const slash = (p) => p.split('\\').join('/').toLowerCase();
@@ -119,14 +119,14 @@ function shellWrites(command, tool, start) {
 	const segments = tokenize(text);
 	let cwd = start ? parts(start) : null;
 	let named = false;
-	let depth = 0;
+	// A cd is followed only in a plain run of commands (; && or a new line), with no group anywhere: a cd in ( ), a
+	// pipeline, the background or after || may not move the shell the later commands run in, so the folder is then
+	// unknown, the safe side.
+	const grouped = /[(){}]/.test(text);
+	const plainBreak = (end) => end === undefined || end === ';' || end === '&&' || end === '\n';
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s];
-		// A cd inside ( ), in a pipeline or in the background moves a shell the later commands may not run in: from
-		// there the folder is not followed, the safe side.
-		const apart = depth > 0 || ['|', '||', '&'].includes(segment.end) || (s > 0 && ['|', '&'].includes(segments[s - 1].end));
-		if (segment.end === '(') depth++;
-		if (segment.endsGroup) depth = Math.max(0, depth - 1);
+		const apart = grouped || !segments.slice(0, s + 1).every((g) => plainBreak(g.end));
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
@@ -149,11 +149,14 @@ function shellWrites(command, tool, start) {
 		if (COPIERS.has(program)) {
 			// A copy out is a read. Any option outside the known plain ones may name the destination (-t, --t...,
 			// -Destination and its short forms), so the guard refuses rather than guess.
+			// PowerShell takes any start of a parameter's name and some take a value, so there only a bare two-word copy
+			// (source, destination) or -Recurse / -Force passes; cp takes its plain letter flags.
+			const pwsh = /powershell/i.test(String(tool)) || program !== 'cp';
 			const options = segment.slice(1).filter((x) => x.value.startsWith('-'));
 			const plain = segment.slice(1).filter((x) => !x.value.startsWith('-'));
-			const risky = options.some((x) => !COPY_OPTIONS.test(x.value));
+			const risky = options.some((x) => (pwsh ? !/^-(recurse|force)$/i.test(x.value) : !COPY_OPTIONS.test(x.value)));
 			const dest = plain[plain.length - 1];
-			if (!risky && plain.length >= 2 && !names(dest.value, cwd)) continue;
+			if (!risky && (pwsh ? plain.length === 2 : plain.length >= 2) && !names(dest.value, cwd)) continue;
 		}
 		return true;
 	}
