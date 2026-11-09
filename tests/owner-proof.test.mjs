@@ -45,7 +45,7 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['Bash', { command: 'echo hi >> ~/.claude//projects/A/s.jsonl' }],
 		['Bash', { command: 'echo hi >> ~/.claude/project[s]/A/s.jsonl' }],
 		['Bash', { command: 'echo hi >> ~/.claude/proj*/A/s.jsonl' }],
-		['Bash', { command: 'echo hi >> C:/Users/x/CLAUDE~1/projects/A/s.jsonl' }],
+		['Bash', { command: 'echo hi >> $USERPROFILE/CLAUDE~1/projects/A/s.jsonl' }],
 		['Bash', { command: 'cd ~/.claude && echo hi >> projects/A/s.jsonl' }],
 		['PowerShell', { command: 'Set-Location $HOME\\.claude; Add-Content projects\\A\\s.jsonl x' }],
 		['Bash', { command: 'cp x.jsonl ~/.claude/./projects/C--repo/forged.jsonl' }],
