@@ -521,7 +521,7 @@ function triage(title, reasons, numbers) {
 		// The report sits in the working tree, so its log lines carry relative paths and leave out the owner's words.
 		'## The log lines', '', '```json', ...rawLines().slice(-5).map((l) => { try { const { words: _w, note: _n, ...e } = JSON.parse(l); return JSON.stringify({ ...e, ...(e.contract ? { contract: rel(e.contract) } : {}), ...(e.resweepOf ? { resweepOf: rel(e.resweepOf) } : {}) }); } catch { return '(unreadable line)'; } }), '```', '',
 		'## Fix options', '', ...options.map((o) => `- ${o}`),
-		'- Or the owner decides. After an ask: they answer in the thread "yes <the ask\'s code>" (the ask prints the code), and the lead logs it with `approve.mjs <contract.json> --owner-yes "yes <code>" --thread <their message id>`. After a pause: they answer "resume <the pause\'s code>" (`--summary` prints it), or resume from their own terminal.', '',
+		'- Or the owner decides. After an ask: they answer in the thread "yes <the ask\'s code>" (the ask prints the code), and the lead logs it with `approve.mjs <contract.json> --owner-yes "yes <code>" --thread <their message id>`. After a pause: they answer "resume <the pause\'s code>" (`--summary` prints it), or the owner resumes from their own terminal.', '',
 	].join('\n');
 	fs.writeFileSync(f, text);
 	return toPosix(f);
@@ -1054,8 +1054,14 @@ function outcome() {
 	const n = (x) => Math.round(x).toLocaleString('en-US');
 	// A crash and its retry each had the whole ceiling, so the check reads the retry alone, as the call check does.
 	for (const x of per) { const own = x.tokens - (x.crashedTokens || 0); if (x.ceiling && own > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(own)} against ${n(x.ceiling)} (the hook is missing or did not fire)`); }
-	// Past the cap's own stop (one call over is the hook's margin): the hook is missing or did not hold.
-	for (const x of per) { const calls = x.calls - (x.crashedCalls || 0); if (x.cap && calls > x.cap + 1) trips.push(`${x.role} ran ${calls} calls against its cap of ${x.cap}: no call-cap hook held it`); }
+	// Past the cap's own stop (one call over is the hook's margin): the hook is missing or did not hold. Without a
+	// baseline the whole-sweep trip covers it and this is a note; under the bound nothing else would, so it trips (the
+	// 1.23.0 sweep).
+	for (const x of per) {
+		const calls = x.calls - (x.crashedCalls || 0);
+		const said = `${x.role} ran ${calls} calls against its cap of ${x.cap}: no call-cap hook held it`;
+		if (x.cap && calls > x.cap + 1) { if (bounded) trips.push(said); else console.log(`    ${said}.`); }
+	}
 	if (bounded) {
 		const stopped = per.filter((x) => x.stopped).length;
 		if (stopped > STOPPED_SHARE * per.length) trips.push(`${stopped} of ${per.length} roles stopped at their token ceiling (the work outgrew it)`);
