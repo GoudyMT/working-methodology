@@ -22,7 +22,9 @@ const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'gr
 // Copiers: a transcript copied out is a read; one copied in is a write.
 const COPIERS = new Set(['cp', 'copy', 'copy-item', 'cpi']);
 // Programs that move a shell into a folder: a relative word after one is read from there.
-const CHANGERS = new Set(['cd', 'pushd', 'chdir', 'set-location', 'sl', 'push-location']);
+const CHANGERS = new Set(['cd', 'pushd', 'chdir', 'set-location', 'sl', 'push-location', 'popd', 'pop-location']);
+// A copier's options that name no destination; any other may (--t is --target-directory to cp), so it refuses.
+const COPY_OPTIONS = /^(-[rRpafvni]+|--recursive|--preserve|--archive|--force|--verbose|--no-clobber|--interactive|-path|-literalpath|-recurse|-force)$/i;
 // Programs whose quoted words are messages, not paths: a commit message or a PR body may name the file.
 const MESSAGES = new Set(['git', 'gh']);
 const slash = (p) => p.split('\\').join('/').toLowerCase();
@@ -95,6 +97,8 @@ function names(word, cwd) {
 
 // Where a cd, pushd or Set-Location moves the shell: its folder's parts, or 'unknown'.
 function moved(segment, cwd) {
+	// popd and Pop-Location go back to a folder the stack holds, which the guard does not follow.
+	if (/^(popd|pop-location)$/.test(path.basename(slash(segment[0].value)))) return 'unknown';
 	const args = segment.slice(1).map((x) => x.value);
 	const at = args.findIndex((a) => /^-(path|literalpath|lp)$/i.test(a));
 	const arg = at >= 0 ? args[at + 1] : args.find((a) => !a.startsWith('-'));
@@ -109,13 +113,20 @@ const MESSAGE_FLAGS = /^(-m|--message|-b|--body|-t|--title|-n|--notes)$/i;
 // Programs a reader may pipe a transcript into: they read their input and write only their output.
 const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-object', 'select', 'convertfrom-json', 'measure-object', 'measure', 'out-string']);
 
-function shellWrites(command, tool) {
+// start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
+function shellWrites(command, tool, start) {
 	const text = plainText(joinContinuations(String(command || '')), tool);
 	const segments = tokenize(text);
-	let cwd = null;
+	let cwd = start ? parts(start) : null;
 	let named = false;
+	let depth = 0;
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s];
+		// A cd inside ( ), in a pipeline or in the background moves a shell the later commands may not run in: from
+		// there the folder is not followed, the safe side.
+		const apart = depth > 0 || ['|', '||', '&'].includes(segment.end) || (s > 0 && ['|', '&'].includes(segments[s - 1].end));
+		if (segment.end === '(') depth++;
+		if (segment.endsGroup) depth = Math.max(0, depth - 1);
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
@@ -125,7 +136,7 @@ function shellWrites(command, tool) {
 		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && names(x.value, cwd));
 		if (CHANGERS.has(program)) {
 			if (hits.length) return true;
-			cwd = moved(segment, cwd);
+			cwd = apart ? 'unknown' : moved(segment, cwd);
 			continue;
 		}
 		if (hits.length === 0) continue;
@@ -136,11 +147,11 @@ function shellWrites(command, tool) {
 			continue;
 		}
 		if (COPIERS.has(program)) {
-			// A copy out is a read. Any option that may name the destination (-t, --target-directory, -Destination and
-			// its short forms) asks nothing more: the guard cannot be sure, so it refuses.
+			// A copy out is a read. Any option outside the known plain ones may name the destination (-t, --t...,
+			// -Destination and its short forms), so the guard refuses rather than guess.
 			const options = segment.slice(1).filter((x) => x.value.startsWith('-'));
 			const plain = segment.slice(1).filter((x) => !x.value.startsWith('-'));
-			const risky = options.some((x) => /^-[a-z]*t|^--target|^-d/i.test(x.value));
+			const risky = options.some((x) => !COPY_OPTIONS.test(x.value));
 			const dest = plain[plain.length - 1];
 			if (!risky && plain.length >= 2 && !names(dest.value, cwd)) continue;
 		}
@@ -162,7 +173,7 @@ function main() {
 		return;
 	}
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name)) {
-		if (shellWrites(t.command, input.tool_name)) deny(REASON);
+		if (shellWrites(t.command, input.tool_name, cwd)) deny(REASON);
 	}
 }
 

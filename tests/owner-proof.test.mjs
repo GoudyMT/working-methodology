@@ -10,8 +10,8 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 kitTemp.sessionRoot();
 const HOOK = path.resolve('project/.claude/owner-proof.cjs');
 const cfg = kitTemp.makeTemp('cfg-');
-const run = (tool_name, tool_input) => {
-	const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: process.cwd() }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+const run = (tool_name, tool_input, cwd = process.cwd()) => {
+	const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
 	// A crash is no answer: onFailure block turns it into a block, so it never counts as an allow.
 	assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`);
 	return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
@@ -58,7 +58,14 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['Bash', { command: 'cd ~/.claude/x && cd .. && echo hi >> projects/A/s.jsonl' }],
 		['Bash', { command: 'cd $(echo ~/.claude) && echo hi >> projects/A/s.jsonl' }],
 		['PowerShell', { command: 'Set-Location -Path $HOME\\.claude; Add-Content projects\\A\\s.jsonl x' }],
+		// A cd in a subshell, a pipeline or the background, or a popd, leaves the folder unknown: the safe side.
+		['Bash', { command: 'cd ~/.claude && (cd /tmp) && echo hi >> projects/A/s.jsonl' }],
+		['Bash', { command: 'cd ~/.claude && cd /tmp | true && echo hi >> projects/A/s.jsonl' }],
+		['Bash', { command: 'pushd ~/.claude && pushd /tmp && popd && echo hi >> projects/A/s.jsonl' }],
 		// A copy with an option that may name its destination, or a destination inside.
+		['Bash', { command: 'cp --ta=~/.claude/projects/p x.jsonl' }],
+		['Bash', { command: 'cp --t ~/.claude/projects/p x.jsonl' }],
+		['PowerShell', { command: 'Copy-Item x.jsonl -De $HOME\\.claude\\projects\\p\\s.jsonl' }],
 		['Bash', { command: 'cp -t ~/.claude/projects/p x.jsonl' }],
 		['Bash', { command: 'cp -rt ~/.claude/projects/p x.jsonl' }],
 		['PowerShell', { command: 'Copy-Item -Dest $HOME\\.claude\\projects\\p\\s.jsonl -Path x.jsonl' }],
@@ -69,6 +76,9 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['Bash', { command: 'cat ~/.claude/projects/p/s.jsonl | tee ~/x' }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
+	// A session whose own folder is the Claude folder: a relative word is read from there.
+	assert.equal(run('Bash', { command: 'echo hi >> projects/A/s.jsonl' }, cfg), 'deny', 'from the Claude folder itself');
+	assert.equal(run('Bash', { command: 'echo hi >> notes.txt' }, cfg), 'allow', 'another file there');
 	// Another name for the same folder (a junction, a short name) reaches the same files.
 	fs.mkdirSync(path.join(cfg, 'projects', 'C--repo'), { recursive: true });
 	const link = path.join(kitTemp.makeTemp('link-'), 'p');
