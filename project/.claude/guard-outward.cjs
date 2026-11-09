@@ -39,7 +39,7 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-const { plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { plainText, withoutComments, joinContinuations, tokenize, holdFor } = require('./guard-read.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -304,8 +304,10 @@ function main() {
 		let reason = '';
 		let toolName = '';
 		let prNote = '';
+		let hold = holdFor(null);
 		try {
 			const input = JSON.parse(raw);
+			hold = holdFor(input);
 			toolName = String(input.tool_name ?? '');
 			reason = decide(input);
 			// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
@@ -319,8 +321,8 @@ function main() {
 			const output = {
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
-					permissionDecision: 'ask',
-					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.',
+					permissionDecision: hold.decision,
+					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.' + hold.note,
 				},
 			};
 			// The reason on an "ask" is shown to the user; added context is what reaches Claude.
