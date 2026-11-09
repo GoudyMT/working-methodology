@@ -182,4 +182,38 @@ function tokenize(text) {
 	return segments;
 }
 
-module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize };
+// A here-document that is only data for a file: the text of `cat > f <<'EOF'` is never run, so its words (a path,
+// a backtick, a command it describes) are not the command's. Such a body is left out of the reading; every other
+// body stays in: one bash expands ($( ), backticks, unquoted with a $), one fed to anything but cat or tee, and one
+// whose line pipes on (cat <<'EOF' | bash). Writing a file to run it later is the Write tool's limit too.
+const DATA_WRITERS = /^(cat|tee)(\.exe)?$/i;
+function heredocData(text) {
+	const lines = String(text).split(LF);
+	const out = [];
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		out.push(line);
+		// A mark inside quotes, or after a backslash, is text: bash starts no here-document there.
+		const open = (at) => /['"]/.test(line.slice(0, at).replace(/'[^']*'|"(\\.|[^"\\])*"/g, ''));
+		const marks = [...line.matchAll(/<<(?!<)(-?)\s*(['"]?)([A-Za-z_][\w.-]*)\2/g)].filter((m) => !open(m.index) && line[m.index - 1] !== BACKSLASH && line[m.index - 1] !== '<');
+		if (marks.length === 0) continue;
+		// The command that reads the body: the part of the line holding the first mark, past any NAME=value words.
+		const part = line.slice(0, marks[0].index).split(/;|&&|\|\||\|/).pop();
+		const words = part.trim().split(/\s+/).filter((w) => w && !/^[A-Za-z_]\w*=/.test(w));
+		const program = (words[0] || '').replace(/^["']|["']$/g, '').split(/[\\/]/).pop();
+		const pipesOn = /\|/.test(line.slice(marks[0].index).replace(/'[^']*'|"[^"]*"/g, ''));
+		for (const m of marks) {
+			const body = [];
+			let j = i + 1;
+			const ends = (l) => (m[1] ? l.replace(/^\t+/, '') : l).replace(/\r$/, '') === m[3];
+			while (j < lines.length && !ends(lines[j])) body.push(lines[j++]);
+			const literal = m[2] !== '' || !/[$`]/.test(body.join(LF));
+			if (!(literal && DATA_WRITERS.test(program) && !pipesOn)) out.push(...body);
+			if (j < lines.length) out.push(lines[j]);
+			i = j;
+		}
+	}
+	return out.join(LF);
+}
+
+module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize, heredocData };

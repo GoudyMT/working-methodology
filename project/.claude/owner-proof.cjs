@@ -12,7 +12,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { plainText, joinContinuations, tokenize, heredocData } = require('./guard-read.cjs');
 
 // install project fills this in, so a caller cannot move the protected folder with CLAUDE_CONFIG_DIR.
 const INSTALLED_HOME = '{{CLAUDE_HOME}}';
@@ -89,7 +89,10 @@ function names(word, cwd) {
 			if (protectedFrom(p, i + 1)) return true;
 		}
 	}
-	if (p.some((x) => fits(x, 'kit-owner.json'))) return true;
+	// kit-owner.json in a folder the guard cannot place (a variable, or no known folder to start from) may be the
+	// owner's; one in a known folder elsewhere, or a word that only holds the name (a sed script), is not (S23-2).
+	const last = p[p.length - 1];
+	if (last && fits(last, 'kit-owner.json') && (/[$%]/.test(word) || (!rooted(word) && !Array.isArray(cwd)))) return true;
 	// After a cd that cannot be read, a relative word may start inside the Claude folder: the safe side.
 	if (cwd === 'unknown' && !rooted(word)) return protectedFrom(p, p.findIndex((x) => x !== '..'));
 	return false;
@@ -123,17 +126,35 @@ const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-o
 
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
 function shellWrites(command, tool, start) {
-	const text = plainText(joinContinuations(String(command || '')), tool);
+	// A quoted here-document written to a file is data, not a command: its words are not read (S23-2).
+	const source = tool === 'PowerShell' ? String(command || '') : heredocData(String(command || ''));
+	const text = plainText(joinContinuations(source), tool);
 	const segments = tokenize(text);
 	let cwd = start ? parts(start) : null;
 	let named = false;
+	// A variable set to a plain value earlier in the command (P=~/.claude/projects) is read as that value where it is
+	// used, so a read through it passes and a write through it is refused (S23-2). One the guard did not see set stays
+	// unread, as before.
+	const vars = new Map();
+	const sub = (v) => v.replace(/\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g, (m, a, b) => (vars.has(a || b) ? vars.get(a || b) : m));
 	// A cd is followed only in a plain run of commands (; && or a new line), with no group anywhere: a cd in ( ), a
 	// pipeline, the background or after || may not move the shell the later commands run in, so the folder is then
 	// unknown, the safe side.
 	const grouped = /[(){}]/.test(text);
-	const plainBreak = (end) => end === undefined || end === ';' || end === '&&' || end === '\n';
+	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
+	// mutation check's survivor at "sure").
+	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
 	for (let s = 0; s < segments.length; s++) {
-		const segment = segments[s];
+		const segment = segments[s].map((x) => ({ ...x, value: sub(x.value) }));
+		segment.end = segments[s].end;
+		// Only assignments (P=x, export P=x): nothing is written but a redirect.
+		const assigns = segment.filter((x) => !x.redirect);
+		const lead = /^(export|declare|local|readonly)$/.test(assigns[0]?.value || '') ? 1 : 0;
+		if (assigns.length > lead && assigns.slice(lead).every((x) => /^[A-Za-z_]\w*=/.test(x.value) && !x.value.startsWith('-'))) {
+			if (segment.some((x) => x.redirect && names(x.value, cwd))) return true;
+			for (const x of assigns.slice(lead)) vars.set(x.value.slice(0, x.value.indexOf('=')), x.value.slice(x.value.indexOf('=') + 1));
+			if (tool === 'Bash' || tool === 'Monitor' || tool === 'mcp__terminal__run_in_terminal') continue;
+		}
 		// Any break that is not plain anywhere in the command (a later || runs on a failure too) makes every cd unsure.
 		const apart = grouped || !segments.every((g) => plainBreak(g.end));
 		const all = segment.map((x) => x.value);
@@ -144,10 +165,12 @@ function shellWrites(command, tool, start) {
 		if (segment.some((x) => names(x.value, cwd) || x.value.split(/\s+/).some((w) => names(w, cwd)))) named = true;
 		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && names(x.value, cwd));
 		if (CHANGERS.has(program)) {
-			if (hits.length) return true;
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
 			cwd = apart || !sure ? 'unknown' : moved(segment, cwd);
+			// Into the transcripts only where the guard follows the folder: every later word is then read from there, so
+			// only plain reads pass (S23-2). A move it cannot follow, into them, is refused as before.
+			if (hits.length && cwd === 'unknown') return true;
 			continue;
 		}
 		if (hits.length === 0) continue;
@@ -174,8 +197,9 @@ function shellWrites(command, tool, start) {
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.
 	if (named) return false;
-	const raw = String(command || '');
-	return [raw, text].some((t) => t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(w, null)));
+	const raw = source;
+	// Read from the folder the shell starts in, as the words above are: a bare kit-owner.json there is placed.
+	return [raw, text].some((t) => t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(w, start ? parts(start) : null)));
 }
 
 function main() {
