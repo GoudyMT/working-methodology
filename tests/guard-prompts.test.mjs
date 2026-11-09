@@ -3,6 +3,7 @@
 // were on text a command only writes to a file (a here-document). Each case runs the shipped hook as Claude Code does.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -21,6 +22,12 @@ test('a guard in a subagent refuses instead of asking, so the agent hands the ac
 	assert.equal(hook('guard-delete.cjs', 'rm -rf C:/elsewhere/x'), 'ask');
 	assert.equal(hook('guard-outward.cjs', 'git status', sub), 'pass');
 	assert.equal(hook('guard-delete.cjs', 'git status', sub), 'pass');
+});
+
+// N10: off a terminal, npm assumes yes, so `npx <name>` in an agent's shell fetched and ran any registry package.
+test('the shipped project settings turn off npm and npx installing a missing package without a prompt', () => {
+	const settings = JSON.parse(fs.readFileSync(path.resolve('project/.claude/settings.json'), 'utf8'));
+	assert.equal(settings.env && settings.env.npm_config_yes, 'false');
 });
 
 test('the delete guard reads a quoted here-document written to a file as data, and every run body as a command', () => {
