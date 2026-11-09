@@ -34,6 +34,38 @@ test('the runner splits a harness file into shards that together run every test 
 	assert.match(r.stdout, /pass 7, fail 0/);
 });
 
+// CI splits the suite over several runners (S22-1): the slices together run each test once, and a file outside the
+// harness runs in the first slice only.
+test('runner slices split the shards over CI jobs: together every test exactly once, a whole file once', () => {
+	const dir = kitTemp.makeTemp('slices-');
+	const log = path.join(dir, 'ran.log');
+	const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
+	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS}; import fs from 'node:fs';\n` +
+		names.map((n) => `test('${n}', () => { fs.appendFileSync(${JSON.stringify(log)}, '${n}\\n'); });`).join('\n'));
+	fs.writeFileSync(path.join(dir, 'w.test.mjs'), `import { test } from 'node:test'; import fs from 'node:fs';\n` +
+		`test('whole', () => { fs.appendFileSync(${JSON.stringify(log)}, 'whole\\n'); });`);
+	const files = [path.join(dir, 'x.test.mjs'), path.join(dir, 'w.test.mjs')];
+	for (let i = 0; i < 3; i++) {
+		const r = run(dir, ['--slice', `${i}/3`, '--shards', '2', ...files]);
+		assert.equal(r.status, 0, r.stdout + r.stderr);
+		assert.match(r.stdout, new RegExp(`slice ${i + 1}/3`));
+	}
+	assert.deepEqual(ran(log), [...names, 'whole'].sort());
+	for (const bad of ['3/3', '-1/3', 'x', '1/0']) {
+		const r = run(dir, ['--slice', bad, '--shards', '2', ...files]);
+		assert.equal(r.status, 2, `--slice ${bad}: ${r.stdout}${r.stderr}`);
+	}
+	// The 1.23.0 sweep. Each runner picked its own shard count from its CPUs, so two slices could split the tests two
+	// ways, skipping some and running others twice: a slice needs --shards, the same on every runner. And a map is of
+	// the whole suite: one slice's map would stand at HEAD with half the tests.
+	const none = run(dir, ['--slice', '0/3', ...files]);
+	assert.equal(none.status, 2, none.stdout + none.stderr);
+	assert.match(none.stderr, /--shards/);
+	const half = run(dir, ['--map', '--slice', '0/2', '--shards', '2', ...files]);
+	assert.equal(half.status, 2, half.stdout + half.stderr);
+	assert.match(half.stderr, /whole suite/);
+});
+
 test('a run started inside another run ignores the outer run\'s selection and map', () => {
 	const dir = kitTemp.makeTemp('nested-');
 	const log = path.join(dir, 'ran.log');

@@ -9,7 +9,11 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status, mainProtection, sessionStartReport, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+// The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
+// suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
+const status = (o) => kitStatus({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
+const sessionStartReport = (o) => kitSessionStart({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -323,6 +327,42 @@ test('status warns when the temp disk runs low on inodes, and is silent when it 
   assert.equal(at('refuse', 90).current, true, 'disk room is not an install fault');
   assert.doesNotMatch(at('ok', 10).text, /Temp disk/);
   assert.doesNotMatch(at('unknown', null).text, /Temp disk/);
+});
+
+// S22-3: before 2.1.295 Claude Code ignores onFailure, so a guard that crashes or times out lets the command run.
+test('status and session start flag a Claude Code too old for onFailure, and stay quiet when new or unknown', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  const at = (v) => status({ kit, home, projectDir: proj, ahead: () => 0, claudeVersion: () => v });
+  const old = at('2.1.294 (Claude Code)');
+  assert.equal(old.current, false);
+  assert.match(old.text, /Claude Code 2\.1\.294 is older than 2\.1\.295: a guard that crashes or times out lets the command run\. Run claude update\./);
+  assert.match(old.text, /Not current: .*Claude Code is older than 2\.1\.295/);
+  assert.match(at('2.0.999 (Claude Code)').text, /older than 2\.1\.295/);
+  for (const v of ['2.1.295 (Claude Code)', '2.1.302 (Claude Code)', '3.0.0', null, 'garbage']) {
+    assert.doesNotMatch(at(v).text, /older than 2\.1\.295/, String(v));
+  }
+  assert.equal(at('2.1.302 (Claude Code)').current, true);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.200' }), /Claude Code 2\.1\.200 is older than 2\.1\.295/);
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.295' }), /older than/);
+});
+
+// The 1.23.0 security review: on Windows cmd looks in the current folder first, and session start runs in the
+// project, so a claude.cmd planted there would run on every session start.
+// A machine as it ships: this sandbox sets NoDefaultCurrentDirectoryInExePath; most machines do not.
+const withoutSafeSearch = (env) => Object.fromEntries(Object.entries(env).filter(([k]) => k.toLowerCase() !== 'nodefaultcurrentdirectoryinexepath'));
+test('the Claude Code version read never runs a claude program planted in the current folder', { skip: process.platform !== 'win32' }, () => {
+  const dir = makeTemp('planted-');
+  const marker = path.join(dir, 'ran.txt');
+  fs.writeFileSync(path.join(dir, 'claude.cmd'), `@echo planted> "${marker}"\r\n@echo 9.9.9\r\n`);
+  const kitUrl = pathToFileURL(path.resolve('scripts/kit.mjs')).href;
+  const r = spawnSync(process.execPath, ['-e', `import(${JSON.stringify(kitUrl)}).then((m) => console.log(JSON.stringify(m.installedClaudeVersion())))`], {
+    cwd: dir, encoding: 'utf8', env: { ...withoutSafeSearch(process.env), PATH: `${process.env.SystemRoot}\\System32` },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.existsSync(marker), false, 'the planted claude.cmd ran');
+  assert.equal(r.stdout.trim(), 'null');
 });
 
 test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
@@ -1235,7 +1275,15 @@ test('the PR body audits read a dash inside inline code as code, and still catch
   };
   assert.match(dashes('pr-body-audit-lean.mjs', lean('run it with `node --experimental-default-type=module math.test.js`.'), 'feat: add a subtract function'), /^PASS/);
   assert.match(dashes('pr-body-audit-lean.mjs', lean('it runs -- for now -- by hand.'), 'feat: add a subtract function'), /^FAIL/);
-  const std = (line) => `## Math: subtract\n\nFraming.\n\n### Summary\n\n${line}\n`;
+  // M28, from the 1.23.0 mutation check: a prose dash before a fenced block is still prose, and the fence is code.
+  const fenced = lean('it runs -- for now -- by hand.').replace('**Notes**', '```\nnode --test\n```\n\n**Notes**');
+  assert.match(dashes('pr-body-audit-lean.mjs', fenced, 'feat: add a subtract function'), /^FAIL.*lines \d+$/);
+  assert.match(dashes('pr-body-audit-lean.mjs', lean('it runs by hand.').replace('**Notes**', '```\nnode --test -- x\n```\n\n**Notes**'), 'feat: add a subtract function'), /^PASS/);
+  // And an H1 with neither an area nor a type prefix fails its row.
+  const h1 = (text) => { const f = path.join(dir, 'h.md'); fs.writeFileSync(f, text); return spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, 'feat: add a subtract function'], { encoding: 'utf8' }).stdout.split('\n').find((l) => l.includes('H1 is <Area>')); };
+  assert.match(h1(lean('by hand.').replace('## Math: add', '## add')), /^FAIL/);
+  assert.match(h1(lean('by hand.')), /^PASS/);
+  const std =(line) => `## Math: subtract\n\nFraming.\n\n### Summary\n\n${line}\n`;
   assert.match(dashes('pr-body-audit.mjs', std('Run `node --test` to check.'), 'Math: subtract'), /^PASS/);
   assert.match(dashes('pr-body-audit.mjs', std('It runs -- for now -- by hand.'), 'Math: subtract'), /^FAIL/);
 });
@@ -1813,7 +1861,8 @@ test('every kit role runs the canary at its stop, and the project settings run t
 });
 test('both guards run on every shell tool and block the call when they fail', () => {
   const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
-  const shell = settings.hooks.PreToolUse.find((h) => h.matcher.split('|').includes('Bash'));
+  // The entry that holds the two guards (the owner-proof guard has its own, also on Bash).
+  const shell = settings.hooks.PreToolUse.find((h) => h.hooks.some((x) => (x.args || []).join(' ').includes('.claude/guard-delete.cjs')));
   for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) assert.ok(shell.matcher.split('|').includes(tool), `${tool} is matched`);
   for (const guard of ['guard-delete.cjs', 'guard-outward.cjs']) {
     const hook = shell.hooks.find((h) => h.args.join(' ').includes(`.claude/${guard}`));
@@ -2335,6 +2384,10 @@ function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session
   for (const [id, calls] of Object.entries(spec)) {
     let model = 'claude-opus-5-5';
     const lines = calls.map((c, i) => {
+      // { refused: text } is a hook's refusal of a tool call, as Claude Code writes it into the transcript.
+      if (c && c.refused) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, is_error: true, content: c.refused }] } });
+      // { read: text } is a tool's plain answer, such as a file the reviewer read.
+      if (c && c.read) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, content: c.read }] } });
       const { id: mid = `msg_${id}_${i}`, u = c, model: m = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
       model = m;
       return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
@@ -2355,6 +2408,39 @@ function outcome(r, tokens = '200000', findings = '6', real = '5', dup = '0', ex
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: /sonnet/.test(roles[i].model || '') ? 'claude-sonnet-5-5' : 'claude-opus-5-5', u: [0, each + (i ? 0 : Number(tokens) - each * n), 0, 0] }]])));
   return approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', findings, '--real', real, '--duplicates', dup, ...extra], { CLAUDE_CONFIG_DIR: cfg });
 }
+// E24 option C (the owner, 2026-11-07): a cloud thread loads no repo hooks, so no call-cap hook or sweep guard holds
+// its reviewers; sweeps and installs stay on the owner's PC. Claude Code sets CLAUDE_CODE_REMOTE=true in a cloud VM.
+test('a cloud session cannot clear a sweep or install the kit: both stay on the owner\'s PC', () => {
+  const dir = sweepRepo();
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const r = approveIn(dir, [f], { CLAUDE_CODE_REMOTE: 'true' });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /sweeps run on the owner's PC/);
+  assert.equal(fs.existsSync(path.join(dir, '.git', 'kit-sweep-approvals.jsonl')), false, 'nothing logged');
+  const home = makeTemp('home-');
+  const i = spawnSync(process.execPath, [path.resolve('scripts/kit.mjs'), 'install', 'user', '--unreleased'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_CODE_REMOTE: 'true' } });
+  assert.equal(i.status, 1, i.stdout + i.stderr);
+  assert.match(i.stderr, /installs run on the owner's PC/);
+  assert.equal(fs.existsSync(path.join(home, 'kit-install.json')), false);
+});
+
+// S22-S1 (the 1.22.0 sweep): SendMessage to a finished reviewer resumes it, with no clearing, no slot and no spend
+// read. A reviewer is never resumed: a new question is a new reviewer under a clearing.
+test('the sweep guard refuses to resume a reviewer with SendMessage, and lets other agents be messaged', () => {
+  const dir = makeTemp('resume-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.meta.json'), JSON.stringify({ agentType: 'reviewer', finished: true }));
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-b1.meta.json'), JSON.stringify({ agentType: 'builder', finished: true }));
+  const send = (to) => { const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', transcript_path: `${session}.jsonl`, tool_input: { to, message: 'one more check' } }); assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`); return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' }; };
+  const r = send('r1');
+  assert.equal(r.permissionDecision, 'deny');
+  assert.match(r.permissionDecisionReason, /never resumed/);
+  assert.equal(send('b1').permissionDecision, 'allow');
+  assert.equal(send('someone-else').permissionDecision, 'allow');
+});
+
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -2399,6 +2485,155 @@ function nextBranch(dir, file) {
   g(dir, 'add', rel);
   g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', `feat: next ${n}`, '--no-verify');
 }
+// E27 (the owner, 2026-11-08, option A): the owner answers from the phone thread. Claude Code writes each message the
+// owner sends into the session's own transcript as a human turn, so approve.mjs reads the yes there, from the owner
+// the owner named in kit-owner.json, after the ask, word for word; Claude's own text is never such a turn.
+const OWNER = 'user_owner1';
+function ownerSays(cfg, { cwd, id, words, author = OWNER, at = new Date(Date.now() + 1000).toISOString(), wrap = (m) => m, entry = {}, file = 'session-main.jsonl' }) {
+  const dir = path.join(cfg, 'projects', 'C--repo');
+  fs.mkdirSync(dir, { recursive: true });
+  const content = wrap(`<wake reason="mention" current-time="${at}">\n  <project id="chan_x" type="project">\n    <thread ts="cmsg_root">\n      <message trigger="true" from="human" trust="principal" author-id="${author}" id="${id}" sent-at="${at}" mention="true">${words}</message>\n    </thread>\n  </project>\n</wake>`);
+  fs.appendFileSync(path.join(dir, file), JSON.stringify({ type: 'user', isSidechain: false, timestamp: at, origin: { kind: 'human' }, projectsUserTurn: true, cwd, message: { role: 'user', content }, ...entry }) + '\n');
+}
+const ownerFile = (cfg, value = { authorId: OWNER, threadYes: true }) => fs.writeFileSync(path.join(cfg, 'kit-owner.json'), JSON.stringify(value));
+
+test('the owner\'s yes from the thread clears an ask, read from the session transcript, word for word', () => {
+  // The ask prints a short code; the owner's reply carries it, so a yes answers this ask and no other.
+  const asked = () => { const r = approveRun(askContract()); assert.equal(r.status, 1, r.stdout); const m = r.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/); assert.ok(m, r.stdout); return { ...r, code: m[1] }; };
+  const yes = (r, cfg, id, words) => approveIn(r.dir, [r.f, '--owner-yes', words, '--thread', id], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  const r = asked();
+  const cfg = makeTemp('cfg-');
+  ownerFile(cfg);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_A1aaaaaa', words: `yes ${r.code}` });
+  const ok = yes(r, cfg, 'cmsg_A1aaaaaa', `yes ${r.code}`);
+  assert.equal(ok.status, 0, ok.stdout);
+  const line = approvalLog(r.dir).pop();
+  assert.equal(line.kind, 'owner-yes');
+  assert.deepEqual([line.words, line.proof, line.message], [`yes ${r.code}`, 'thread', 'cmsg_A1aaaaaa']);
+  // The ask's ceilings travel with the yes, so the reviewers' guard holds them to it (the 1.23.0 sweep).
+  const decided = approvalLog(r.dir).filter((e) => e.kind === 'decision').pop();
+  assert.ok(Array.isArray(decided.ceilings) && decided.ceilings.length > 0, 'the ask set ceilings');
+  assert.deepEqual(line.ceilings, decided.ceilings);
+  const refused = [
+    ['no owner named', (c) => fs.rmSync(path.join(c, 'kit-owner.json')), /kit-owner\.json[\s\S]*--owner-setup --thread/],
+    ['the owner turned it off', (c) => ownerFile(c, { authorId: OWNER, threadYes: false }), /turned thread answers off/],
+    ['other words', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}.` }), /word for word/],
+    ['a yes without this ask\'s code', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it' }), /is not "yes [0-9a-f]{6}"/, 'yes, run it'],
+    // The whole message is the yes and the code: a no or a question carrying the code is no yes (the 1.23.0 sweep).
+    ['a no carrying the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `no ${k}` }), /is not "yes [0-9a-f]{6}"/, (k) => `no ${k}`],
+    ['a question carrying the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `is ${k} safe?` }), /is not "yes [0-9a-f]{6}"/, (k) => `is ${k} safe?`],
+    ['a yes hedged around the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, unless it looks off` }), /is not "yes [0-9a-f]{6}"/, (k) => `yes ${k}, unless it looks off`],
+    ['another person', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, author: 'user_other' }), /not from the owner/],
+    ['a message from before the ask', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, at: '2020-01-01T00:00:00.000Z' }), /before the ask/],
+    ['a relay quoting the owner', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` }), /relayed or cited copy[\s\S]*own thread/],
+    ['a message in another repo\'s session', (c, d, k) => ownerSays(c, { cwd: makeTemp('elsewhere-'), id: 'cmsg_Bbbbbbbb', words: `yes ${k}` }), /no such message/],
+    // A session Claude starts itself (claude -p "<wake ...>") writes a human turn too, but not a projects thread's.
+    ['a prompt typed into a session Claude started', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, entry: { projectsUserTurn: undefined, entrypoint: 'cli' } }), /no such message/],
+    ['a turn Claude wrote', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, entry: { origin: { kind: 'agent' } } }), /no such message/],
+    ['a subagent\'s transcript', (c, w, k) => { fs.mkdirSync(path.join(c, 'projects', 'C--repo', 's', 'subagents'), { recursive: true }); ownerSays(c, { cwd: w, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, file: path.join('s', 'subagents', 'agent-x.jsonl') }); }, /no such message/],
+  ];
+  for (const [name, set, why, given] of refused) {
+    const s = asked();
+    const c = makeTemp('cfg-');
+    ownerFile(c);
+    set(c, s.dir, s.code);
+    const before = sweepLog(s.dir).length;
+    const out = yes(s, c, 'cmsg_Bbbbbbbb', typeof given === 'function' ? given(s.code) : given || `yes ${s.code}`);
+    assert.equal(out.status, 1, `${name}: ${out.stdout}`);
+    assert.match(out.stdout, why, name);
+    assert.equal(sweepLog(s.dir).length, before, `${name}: nothing logged`);
+  }
+  // Without the thread's proof the yes rests on Claude's word alone, so from an AI tool's shell it is refused.
+  const bare = asked();
+  const word = approveIn(bare.dir, [bare.f, '--owner-yes', 'yes, run it'], { CLAUDECODE: '1' });
+  assert.equal(word.status, 1, word.stdout);
+  assert.match(word.stdout, /--thread/);
+  // One message answers one ask: a second ask in the same repo, answered with the same message, is refused for that
+  // reason (the 1.23.0 sweep: a new repo's empty log could never show the reuse).
+  assert.equal(approveIn(r.dir, [r.f, '--outcome', '--none-ran']).status, 0, 'the first ask\'s sweep is closed');
+  const c2 = JSON.parse(read(r.f));
+  c2.roles[0].question += ' Also the second ask.';
+  fs.writeFileSync(r.f, JSON.stringify(c2));
+  const again = approveIn(r.dir, [r.f]);
+  const code2 = (again.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/) || [])[1];
+  assert.ok(code2 && code2 !== r.code, again.stdout);
+  const before = sweepLog(r.dir).length;
+  const reuse = approveIn(r.dir, [r.f, '--owner-yes', `yes ${r.code}`, '--thread', 'cmsg_A1aaaaaa'], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  assert.equal(reuse.status, 1, reuse.stdout);
+  assert.match(reuse.stdout, /already answered an ask/);
+  assert.equal(sweepLog(r.dir).length, before, 'nothing logged');
+});
+
+test('the owner resumes auto-approval from the thread with "resume" and the pause\'s code, sent after the pause', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(Math.ceil(537500 * 1.3)));
+  const ask = approveIn(r.dir, [r.f]);
+  const code = (ask.stdout.match(/from the thread: "resume ([0-9a-f]{6})"/) || [])[1];
+  assert.ok(code, ask.stdout);
+  const cfg = makeTemp('cfg-');
+  ownerFile(cfg);
+  const resume = (id) => approveIn(r.dir, ['--resume', '--thread', id], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R0rrrrrr', words: `resume ${code}`, at: '2020-01-01T00:00:00.000Z' });
+  assert.equal(resume('cmsg_R0rrrrrr').status, 1, 'sent before the pause');
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R1rrrrrr', words: 'resume, I guess, unless the last sweep looks off' });
+  assert.match(resume('cmsg_R1rrrrrr').stdout, /resume <code>/);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R2rrrrrr', words: 'resume 000000' });
+  assert.equal(resume('cmsg_R2rrrrrr').status, 1, 'another pause\'s code');
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R3rrrrrr', words: `Resume ${code}.` });
+  const ok = resume('cmsg_R3rrrrrr');
+  assert.equal(ok.status, 0, ok.stdout);
+  const line = approvalLog(r.dir).pop();
+  assert.deepEqual([line.kind, line.words, line.message], ['resume', `Resume ${code}.`, 'cmsg_R3rrrrrr']);
+});
+
+// The 1.23.0 sweep: nothing wrote kit-owner.json, and Claude may not write it, so the first phone yes was refused with
+// no way forward from the phone. The owner sends "setup <code>" in the thread, with the code a setup run gives, and
+// its author is named the owner, once.
+test('the owner is named from the thread with --owner-setup, only while no owner is named', () => {
+  const r = approveRun(askContract());
+  const cfg = makeTemp('cfg-');
+  const setup = (id) => approveIn(r.dir, ['--owner-setup', ...(id ? ['--thread', id] : [])], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  const code = (setup().stdout.match(/sends in this build's thread: "setup ([0-9a-f]{6})"/) || [])[1];
+  assert.ok(code, 'a setup run gives the words to send');
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S0ssssss', words: `setup ${code}`, wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` });
+  assert.match(setup('cmsg_S0ssssss').stdout, /relayed or cited copy/, 'a relayed copy names no one');
+  // A message sent for another reason names no one.
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S9ssssss', words: 'looks good' });
+  assert.match(setup('cmsg_S9ssssss').stdout, /is not "setup [0-9a-f]{6}"/);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S8ssssss', words: `setup ${code}`, at: '2020-01-01T00:00:00.000Z' });
+  assert.match(setup('cmsg_S8ssssss').stdout, /sent before the code/);
+  assert.equal(fs.existsSync(path.join(cfg, 'kit-owner.json')), false);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S1ssssss', words: `setup ${code}` });
+  const ok = setup('cmsg_S1ssssss');
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.deepEqual(JSON.parse(read(path.join(cfg, 'kit-owner.json'))), { authorId: OWNER, threadYes: true });
+  // Once named, a change is the owner's own edit of the file.
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S2ssssss', words: `setup ${code}`, author: 'user_other' });
+  const again = setup('cmsg_S2ssssss');
+  assert.equal(again.status, 1, again.stdout);
+  assert.match(again.stdout, /already names an owner/);
+  assert.equal(JSON.parse(read(path.join(cfg, 'kit-owner.json'))).authorId, OWNER);
+});
+
+// The installed approve.mjs reads the owner's file and transcripts in the Claude folder install user filled in, so
+// a caller cannot point it at a forged pair through CLAUDE_CONFIG_DIR.
+test('an installed approve.mjs reads the owner\'s proof only from the folder it was installed into', () => {
+  const home = makeTemp('home-');
+  const i = spawnSync(process.execPath, [path.resolve('scripts/kit.mjs'), 'install', 'user', '--unreleased'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_CODE_REMOTE: '' } });
+  assert.equal(i.status, 0, i.stdout + i.stderr);
+  const installed = path.join(home, 'skills', 'pre-pr-sweep', 'approve.mjs');
+  assert.doesNotMatch(read(installed), /\{\{CLAUDE_HOME\}\}/);
+  const r = approveRun(askContract());
+  const code = r.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/)[1];
+  const forged = makeTemp('cfg-');
+  ownerFile(forged);
+  ownerSays(forged, { cwd: r.dir, id: 'cmsg_F1ffffff', words: `yes ${code}` });
+  const out = spawnSync('node', [installed, r.f, '--owner-yes', `yes ${code}`, '--thread', 'cmsg_F1ffffff'], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: forged, CLAUDECODE: '1' } });
+  assert.equal(out.status, 1, out.stdout);
+  assert.match(out.stdout, /no owner is named in /);
+  assert.ok(out.stdout.includes(home.split(path.sep).join('/')), out.stdout);
+});
+
 test('only the owner resumes, from a terminal no agent runs in', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -2474,7 +2709,9 @@ function leadTag(dir, prompt) {
   const team = Number(e.agents) || 0;
   const fits = [...Array(team).keys()].filter((n) => !Array.isArray(e.calls) || e.calls[n] === Number(cap[1]));
   const n = fits.find((k) => !fs.existsSync(path.join(slots, String(k)))) ?? fits[0] ?? 0;
-  return ` Sweep: ${e.hash} role ${n + 1}`;
+  // The lead copies the role's token ceiling from the start notice too (M22 C).
+  const ceiling = Array.isArray(e.ceilings) && !/Token ceiling: \d+/.test(prompt) ? ` Token ceiling: ${e.ceilings[n]}.` : '';
+  return ` Sweep: ${e.hash} role ${n + 1}${ceiling}`;
 }
 // The lead also puts the role's own question in its brief; raw leaves a test's prompt as written.
 function leadQuestion(dir, prompt) {
@@ -2483,10 +2720,16 @@ function leadQuestion(dir, prompt) {
   if (!tag || !at) return '';
   try { return ` ${(JSON.parse(read(at[1].contract)).roles[Number(tag[1]) - 1] || {}).question || ''}`; } catch { return ''; }
 }
-const sweepGuard = (dir, { raw, ...extra } = {}) => {
+const sweepGuard = (dir, { raw, noCeiling, ...extra } = {}) => {
   const input = { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review. Call cap: 5.' }, ...extra };
   const p = input.tool_input && input.tool_input.prompt;
   if (typeof p === 'string' && !p.includes('Sweep:')) input.tool_input = { ...input.tool_input, prompt: p + leadTag(dir, p) };
+  // A brief that names its sweep already gets the token ceiling of the role it names, as the lead copies it.
+  else if (!noCeiling && typeof p === 'string' && !/Token ceiling: \d+/.test(p)) {
+    const tag = p.match(/Sweep: ([0-9a-f]{16}) role (\d+)/);
+    const e = tag && sweepLog(dir).map((l) => JSON.parse(l)).filter((x) => x.hash === tag[1] && Array.isArray(x.ceilings)).pop();
+    if (e) input.tool_input = { ...input.tool_input, prompt: `${p} Token ceiling: ${e.ceilings[Number(tag[2]) - 1]}.` };
+  }
   if (!raw && typeof input.tool_input?.prompt === 'string') input.tool_input.prompt += leadQuestion(dir, input.tool_input.prompt);
   const r = runHook('user/kit-hooks/sweep-guard.cjs', input);
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
@@ -3003,6 +3246,9 @@ test('while paused, every ask says how the owner resumes and what to review firs
   assert.match(ask.stdout, /KIT_OWNER_RESUME/);
   assert.match(ask.stdout, /--summary/);
   assert.match(approveIn(r.dir, ['--summary']).stdout, /resume: .*KIT_OWNER_RESUME/);
+  // The phone's way too, with the pause's code (the 1.23.0 sweep: the summary showed only the terminal's).
+  const code = ask.stdout.match(/from the thread: "resume ([0-9a-f]{6})"/)[1];
+  assert.ok(approveIn(r.dir, ['--summary']).stdout.includes(`"resume ${code}"`));
 });
 test('an owner-decided sweep can log its outcome, so the trial sees every sweep', () => {
   const r = approveRun(askContract());
@@ -3130,7 +3376,7 @@ function resweep(first, extra = {}, name = 'resweep.json') {
 // however it is named, is the owner's call; their yes clears it as any ask. Handoff item 32: a rebase or a fresh
 // contract name does not hide the branch's first sweep.
 // Under the one-sweep loop a re-sweep inside its focus asks the owner for that reason alone; their yes clears it.
-const ownerAsked = (r) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/); assert.doesNotMatch(r.stdout, /FIX THE CONTRACT/); assert.equal(r.stdout.match(/^    \S.*$/gm).filter((l) => !/No project settings|Triage report/.test(l)).length, 1, r.stdout); return ownerYes(r); };
+const ownerAsked = (r) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/); assert.doesNotMatch(r.stdout, /FIX THE CONTRACT/); assert.equal(r.stdout.match(/^    \S.*$/gm).filter((l) => !/No project settings|Triage report|answer from the thread/.test(l)).length, 1, r.stdout); return ownerYes(r); };
 const ownerYes = (r) => { const y = approveIn(r.dir, [r.f, '--owner-yes', 'yes, run that second pass']); assert.equal(y.status, 0, y.stdout); return r; };
 test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the owner, and a rebase does not hide the first', () => {
   const first = firstSweep();
@@ -3147,6 +3393,20 @@ test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the ow
   assert.equal(g(rebased.dir, 'rebase', '-q', 'main').status, 0);
   fs.writeFileSync(second.replace(first.dir, rebased.dir), JSON.stringify(featureContract()));
   assert.match(approveIn(rebased.dir, [second.replace(first.dir, rebased.dir)]).stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch/, 'after a rebase');
+  // S22-S3: a rebase plus a new branch name, or the same commits on a detached HEAD: the commits' patches are the same.
+  for (const move of ['rename', 'detach']) {
+    const r = firstSweep();
+    g(r.dir, 'checkout', '-q', 'main');
+    fs.writeFileSync(path.join(r.dir, 'NOTES.md'), 'main moved\n');
+    commitAll(r.dir, 'main moves', true);
+    g(r.dir, 'checkout', '-q', 'feat/sync');
+    assert.equal(g(r.dir, 'rebase', '-q', 'main').status, 0);
+    if (move === 'rename') g(r.dir, 'branch', '-q', '-m', 'feat/sync-two');
+    else g(r.dir, 'checkout', '-q', '--detach');
+    const f = second.replace(first.dir, r.dir);
+    fs.writeFileSync(f, JSON.stringify(featureContract()));
+    assert.match(approveIn(r.dir, [f]).stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch/, `after a rebase and a ${move}`);
+  }
 });
 test('a re-sweep asks the owner; on their yes it runs once, and a second, or a re-sweep of it, is refused with the carry-over pointer and no pause', () => {
   const first = firstSweep();
@@ -4235,6 +4495,34 @@ test('a reviewer reads a file over 40 KB by range, and runs nothing in the backg
   }
   assert.equal(capHook(dir, 1, 12, { tool_name: 'Monitor', tool_input: { command: 'tail -f x' } }).permissionDecision, 'deny', 'a monitor waits');
 });
+// N1's other half: a checker reads like a reviewer, so it waits on nothing past 5 minutes either; a builder's own
+// test run may be long, but a background run or a monitor leaves it idle, and its cache is written again.
+test('a checker runs nothing that waits past 5 minutes, and a builder runs nothing in the background', () => {
+  const dir = makeTemp('cap-');
+  const as = (type, tool, input) => capHook(dir, 1, 12, { agent_type: type, tool_name: tool, tool_input: { command: 'npm test', ...input } }).permissionDecision;
+  assert.equal(as('checker', 'Bash', { run_in_background: true }), 'deny');
+  assert.equal(as('checker', 'PowerShell', { timeout: 600000 }), 'deny');
+  assert.equal(as('checker', 'Monitor', {}), 'deny');
+  assert.equal(as('checker', 'Bash', {}), 'allow');
+  assert.equal(as('builder', 'Bash', { run_in_background: true }), 'deny');
+  assert.equal(as('builder', 'Monitor', {}), 'deny');
+  assert.equal(as('builder', 'Bash', { timeout: 600000 }), 'allow', 'a builder\'s long test run is its job');
+  assert.equal(as('builder', 'Bash', {}), 'allow');
+  assert.equal(capHook(dir, 20, 12, { agent_type: 'checker' }).permissionDecision, 'allow', 'no call cap outside a sweep');
+});
+
+// E27: the owner's yes and resume are the owner's; no agent the lead starts (reviewer, checker, builder) may log one.
+test('no agent may log the owner\'s yes or a resume, in any shell', () => {
+  const dir = makeTemp('cap-');
+  for (const type of ['reviewer', 'checker', 'builder', 'general-purpose'])
+    for (const [tool, command] of [['Bash', 'node ~/.claude/skills/pre-pr-sweep/approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh'], ['PowerShell', 'node "$HOME\\.claude\\skills\\pre-pr-sweep\\approve.mjs" --resume --thread cmsg_Abcdefgh'], ['Bash', 'node approve.mjs --owner-setup --thread cmsg_Abcdefgh']]) {
+      const r = capHook(dir, 1, 12, { agent_type: type, tool_name: tool, tool_input: { command } });
+      assert.equal(r.permissionDecision, 'deny', `${type} ${tool}`);
+      assert.match(r.permissionDecisionReason, /the owner's/);
+    }
+  assert.equal(capHook(dir, 1, 12, { agent_type: 'reviewer', tool_name: 'Bash', tool_input: { command: 'node approve.mjs c.json --outcome --agents a' } }).permissionDecision, 'allow');
+});
+
 test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
   const dir = makeTemp('cap-');
   assert.equal(capHook(dir, 10, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
@@ -4256,6 +4544,171 @@ test('the sweep guard starts a reviewer only with a brief that carries a call ca
   assert.equal(run('review this. Call cap: 40.').permissionDecision, 'deny', 'a cap the contract never set');
   assert.equal(run('review this. Call cap: 5.').permissionDecision, 'allow');
 });
+// M22 option C (the owner, 2026-11-05): a pre-run budget guess cannot land within 25% (sd(log) 0.35+ per sweep), so
+// each role is bounded instead. Its token ceiling is the p90 of the last 60 roles the log measured; the hook stops a
+// reviewer there, and the pause trips on drift signals. With under 20 roles measured there is no baseline yet, so
+// the ceiling is 1.25x the role's budget and the whole-sweep 25% trip stays.
+// Past outcomes, as the log holds them: chained lines (each names a hash of the line before), five roles a line.
+function seedOutcomes(dir, roles) {
+  const f = path.join(dir, '.git', 'kit-sweep-approvals.jsonl');
+  const lines = fs.existsSync(f) ? read(f).split('\n').filter(Boolean) : [];
+  for (let i = 0; i < roles.length; i += 5) {
+    const prev = lines.length ? crypto.createHash('sha256').update(lines[lines.length - 1]).digest('hex').slice(0, 16) : '';
+    lines.push(JSON.stringify({ time: new Date(Date.now() - 86400000).toISOString(), kind: 'outcome', contract: path.join(dir, 'sweeps', `old-${i}.json`), budget: 1, tokens: 1, findings: 0, real: 0, duplicates: 0, roles: roles.slice(i, i + 5), prev }));
+  }
+  fs.writeFileSync(f, lines.join('\n') + '\n');
+}
+const pastRole = (tokens, extra = {}) => ({ role: 'r', kind: 'security', model: 'claude-opus-5-5', tokens, calls: 6, firstCall: 10000, ...extra });
+
+test('a role\'s token ceiling is the p90 of the last 60 roles measured, or 1.25x its budget before 20 are', () => {
+  const dir = sweepRepo();
+  // Ten old roles far over everything, then 60 from 10,000 to 600,000: only the last 60 count.
+  seedOutcomes(dir, [...Array(10).fill(0).map(() => pastRole(9000000)), ...Array.from({ length: 60 }, (_, i) => pastRole((i + 1) * 10000))]);
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const d = approvalLog(dir).pop();
+  assert.deepEqual(d.ceilings, Array(5).fill(540000));
+  assert.match(r.stdout, /Token ceiling: 540000/);
+  assert.match(r.stdout, /p90 of the last 60 roles measured/);
+  const cold = approveRun(featureContract());
+  const c = approvalLog(cold.dir).pop();
+  assert.deepEqual(c.ceilings, c.budgets.map((b) => Math.round(b * 1.25)));
+  assert.match(cold.stdout, /fewer than 20 roles measured/);
+});
+
+test('the sweep guard starts a reviewer only with its role\'s token ceiling from the cleared contract', () => {
+  // Role 2 has a larger cap, so a larger budget and ceiling than role 1's.
+  const contract = featureContract();
+  contract.roles[1].calls = 8;
+  const r = approveRun(contract);
+  const e = approvalLog(r.dir).pop();
+  const brief = (ceiling) => `review. Call cap: 5. Sweep: ${e.hash} role 1.${ceiling} ${JSON.parse(read(r.f)).roles[0].question}`;
+  const run = (prompt) => sweepGuard(r.dir, { raw: true, noCeiling: true, tool_input: { subagent_type: 'reviewer', prompt } });
+  const none = run(brief(''));
+  assert.equal(none.permissionDecision, 'deny');
+  assert.match(none.permissionDecisionReason, /Token ceiling: <n>/);
+  assert.equal(run(brief(` Token ceiling: ${e.ceilings[0] + 1}.`)).permissionDecision, 'deny', 'a ceiling the contract never set');
+  // Another role's ceiling is not this role's (the 1.23.0 sweep: only a ceiling plus one was tried). Checked before
+  // the allow below, which takes role 1's one start.
+  const other = e.ceilings.find((x) => x !== e.ceilings[0]);
+  assert.ok(other, `the roles' ceilings differ: ${e.ceilings}`);
+  const borrowed = run(brief(` Token ceiling: ${other}.`));
+  assert.equal(borrowed.permissionDecision, 'deny', 'another role\'s ceiling');
+  assert.match(borrowed.permissionDecisionReason, /token ceiling/i);
+  assert.equal(run(brief(` Token ceiling: ${e.ceilings[0]}.`)).permissionDecision, 'allow');
+});
+
+test('a sweep the owner cleared from the thread starts its reviewers under the ask\'s token ceilings', () => {
+  const r = approveRun(askContract());
+  const code = r.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/)[1];
+  const cfg = makeTemp('cfg-');
+  ownerFile(cfg);
+  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_C1cccccc', words: `yes ${code}` });
+  const ok = approveIn(r.dir, [r.f, '--owner-yes', `yes ${code}`, '--thread', 'cmsg_C1cccccc'], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  assert.equal(ok.status, 0, ok.stdout);
+  const d = approvalLog(r.dir).filter((e) => e.kind === 'decision').pop();
+  const c = JSON.parse(read(r.f));
+  const brief = (ceiling) => `review. Call cap: ${d.calls[0]}. Sweep: ${d.hash} role 1.${ceiling} ${c.roles[0].question}`;
+  const run = (prompt) => sweepGuard(r.dir, { raw: true, noCeiling: true, tool_input: { subagent_type: 'reviewer', prompt } });
+  assert.equal(run(brief('')).permissionDecision, 'deny', 'no ceiling in the brief');
+  assert.equal(run(brief(` Token ceiling: ${d.ceilings[0] * 10}.`)).permissionDecision, 'deny', 'a ceiling the ask never set');
+  assert.equal(run(brief(` Token ceiling: ${d.ceilings[0]}.`)).permissionDecision, 'allow');
+});
+
+test('the call-cap hook stops a reviewer before a call would take it past its token ceiling', () => {
+  const dir = makeTemp('ceil-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  const hook = (calls, extra = {}) => {
+    const lines = [{ message: { role: 'user', content: 'a brief. Call cap: 12. Token ceiling: 100000.' } }];
+    // Streaming writes a message's id on several lines; it counts once, at its last line.
+    for (let i = 0; i < calls; i++) for (const part of [1, 30000]) lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 0, cache_read_input_tokens: part, cache_creation_input_tokens: 0, output_tokens: 0 } } });
+    fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 }, ...extra });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+  };
+  assert.equal(hook(2).permissionDecision, 'allow', '60,000 spent; one more call of 30,000 stays under 100,000');
+  const stop = hook(3);
+  assert.equal(stop.permissionDecision, 'deny', '90,000 spent; one more call would pass 100,000');
+  assert.match(stop.permissionDecisionReason, /token ceiling reached \(90,000 of 100,000\)[\s\S]*hand in your report/i);
+  assert.equal(hook(3, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow', 'the report always goes');
+  assert.equal(hook(3, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers');
+});
+
+// Each sweep below runs on a log of 25 measured roles of 200,000 tokens over 6 calls, starting at 10,000: the
+// ceiling is 200,000, content per call 33,333, and every baseline the drift signals read exists. Each role's cap is 5.
+function driftSweep(spec) {
+  const dir = sweepRepo();
+  seedOutcomes(dir, Array.from({ length: 25 }, () => pastRole(200000)));
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const ids = spec.map(() => `t${++agentSeq}`);
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, spec[i]])));
+  const o = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  return { o, line: approvalLog(dir).filter((e) => e.kind === 'outcome').pop() };
+}
+// A role that starts at 10,000 and reads 28,000 on each of 5 more calls: 150,000, well inside its ceiling.
+const usual = () => [[10000, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])];
+
+test('under token ceilings a sweep 40% over its budget does not pause: the bound holds each role instead', () => {
+  const { o, line } = driftSweep(Array(5).fill(0).map(usual));
+  assert.equal(line.tokens, 750000, 'over 1.25x the 537,500 budget');
+  assert.doesNotMatch(o.stdout, /paused/);
+  assert.deepEqual(line.roles[0].split, { input: 10000, cacheRead: 140000, cacheWrite: 0, output: 0 }, 'the split is logged, for a dollar ceiling later');
+  assert.equal(line.roles[0].ceiling, 200000);
+  assert.equal(line.roles[0].firstCall, 10000);
+  assert.equal(line.roles[0].stopped, false);
+});
+
+test('the drift signals pause a sweep, each by name', () => {
+  const over = driftSweep([[[10000, 0, 0, 0], ...Array(5).fill([0, 60000, 0, 0])], usual(), usual(), usual(), usual()]);
+  assert.match(over.o.stdout, /paused: .*the token ceiling did not hold for security reviewer: 310,000 against 200,000/, '310,000 is past 200,000 plus one 60,000 call');
+  // A role the hook stopped: its refusal is in the transcript, and the hand-back is the call after it.
+  const atCeiling = () => [[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), { refused: 'Token ceiling reached (122,000 of 200,000): one more call would pass it.' }, [0, 60000, 0, 0]];
+  // One call that would double a role's spend is no stop when the role finished without one.
+  assert.doesNotMatch(driftSweep(Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 120000, 0, 0]])).o.stdout, /stopped at their token ceiling/);
+  const stopped = [atCeiling(), atCeiling(), usual(), usual(), usual()];
+  assert.match(driftSweep(stopped).o.stdout, /paused: .*2 of 5 roles stopped at their token ceiling/);
+  assert.doesNotMatch(driftSweep([stopped[0], usual(), usual(), usual(), usual()]).o.stdout, /paused/, 'one of five is no drift');
+  const start = Array(5).fill(0).map(() => [[11500, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]);
+  assert.match(driftSweep(start).o.stdout, /paused: .*the starting context .*15% over its median of 10,000/);
+  const rewrite = [[[10000, 0, 0, 0], [0, 28000, 0, 0], [0, 0, 30000, 0]], [[10000, 0, 0, 0], [0, 0, 30000, 0]], usual(), usual(), usual()];
+  assert.match(driftSweep(rewrite).o.stdout, /paused: .*2 cache re-writes after the first call/);
+  const heavy = Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 60000, 0, 0], [0, 60000, 0, 0]]);
+  assert.match(driftSweep(heavy).o.stdout, /paused: .*content per call .*over its p95 of 33,333/);
+});
+
+// The 1.23.0 sweep's findings on the drift signals.
+test('a reviewer that only read the hook\'s words was not stopped: only the hook\'s refusal counts', () => {
+  // Roles that read call-cap.cjs or this script see the words in a tool's plain answer.
+  const reader = () => [[10000, 0, 0, 0], { read: 'deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): ...`)' }, { read: 'Token ceiling reached (122,000 of 200,000)' }, ...Array(5).fill([0, 28000, 0, 0])];
+  const { o, line } = driftSweep([reader(), reader(), usual(), usual(), usual()]);
+  assert.doesNotMatch(o.stdout, /stopped at their token ceiling/);
+  assert.equal(line.roles[0].stopped, false);
+});
+test('the ceiling\'s check allows one call past it, the margin the hook works with, and no more', () => {
+  // 10,000 + 4 x 28,000 + 100,000 = 222,000: past the 200,000 ceiling by less than its largest call.
+  const margin = driftSweep([[[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), [0, 100000, 0, 0]], usual(), usual(), usual(), usual()]);
+  assert.doesNotMatch(margin.o.stdout, /did not hold/);
+});
+test('a role past its call cap pauses the sweep under ceilings too: the cap did not hold', () => {
+  // 8 calls of 10,000 against a cap of 5: inside the token ceiling, past the cap's one-call margin.
+  const { o } = driftSweep([[[10000, 0, 0, 0], ...Array(7).fill([0, 10000, 0, 0])], usual(), usual(), usual(), usual()]);
+  assert.match(o.stdout, /paused: .*ran 8 calls against its cap of 5: no call-cap hook held it/);
+});
+test('ceilings set from the budgets keep the whole-sweep trip, however many roles were measured since', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.match(approvalLog(dir).pop().ceilingFrom, /x each role's budget/);
+  // Twenty-five roles are measured after this decision and before its outcome.
+  seedOutcomes(dir, Array.from({ length: 25 }, () => pastRole(200000)));
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[10000, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]])));
+  const o = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.match(o.stdout, /paused: .*tokens 750000 ran 40% over the budget/);
+});
+
 test('the project settings wire the call-cap hook on every tool', () => {
   const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
   const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('kit-hooks/call-cap.cjs')));
@@ -4508,6 +4961,23 @@ test('a crashed reviewer gets one more start for its role, and its spend stays o
   assert.equal(approveIn(s.dir, [s.f]).status, 0);
   assert.match(logOutcome(s, ['r1', 'r2x'], s.cfg).stdout, /r1 \(already logged/, 'the crashed id counts as used');
   assert.match(s.retry(1, 'r1').stdout, /r1 \(already logged/);
+});
+test('a crash and its retry each had the whole token ceiling: the check reads the retry alone (the 1.23.0 sweep)', () => {
+  const s = crashedSweep();
+  const ceiling = approvalLog(s.dir).filter((e) => e.kind === 'decision').pop().ceilings[0];
+  // The crash spent 70% of the ceiling, the retry 60% in four calls: 130% together, each inside its own.
+  const part = (share, n) => Array(n).fill([0, Math.round((ceiling * share) / n), 0, 0]);
+  transcripts({ r1: part(0.7, 4) }, { r1: { finished: false } }, s.cfg);
+  setBrief(s.cfg, 'r1', () => s.brief(1));
+  ageTranscript(s.cfg, 'r1', { stamps: 11, file: 11 });
+  assert.equal(s.start(1), 'allow');
+  assert.equal(s.start(2), 'allow');
+  assert.equal(s.retry(1, 'r1').status, 0);
+  assert.equal(s.start(1), 'allow');
+  transcripts({ r1c: part(0.6, 4) }, {}, s.cfg);
+  const done = logOutcome(s, ['r1c', 'r2'], s.cfg);
+  assert.equal(done.status, 0, done.stdout);
+  assert.doesNotMatch(done.stdout, /did not hold/);
 });
 // A still-running reviewer has no `finished` either, so only a quiet transcript reads as a crash. Both clocks must be
 // old: the file's mtime and the last entry's timestamp, whichever is later.
@@ -5334,6 +5804,26 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   const typed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: ['gate: o median 1 baseline 1 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } }));
   assert.equal(typed.ok, false);
   assert.match(typed.detail, /under the last recorded baseline 9/);
+});
+
+// S22-1: the suite runs over parallel jobs; the required check (kit-tests) passes only when every slice passed. A
+// needed job that fails makes a plain dependent job SKIPPED, and GitHub counts a skipped required check as passed.
+test('CI splits the tests over slices, and the required check fails unless every slice passed', () => {
+  const ci = read(path.resolve('.github/workflows/ci.yml'));
+  const job = (name) => ci.split(new RegExp(`^  ${name}:$`, 'm'))[1].split(/^  [a-z-]+:$/m)[0];
+  const unit = job('unit-tests');
+  const slices = JSON.parse(/^\s+slice: (\[[\d, ]+\])$/m.exec(unit)[1]);
+  // The shard count is named, so every slice splits the tests the same way (the 1.23.0 sweep).
+  const n = Number(/node scripts\/test-run\.mjs --slice \$\{\{ matrix\.slice \}\}\/(\d+) --shards \d+$/m.exec(unit)[1]);
+  assert.deepEqual(slices, [...Array(n).keys()], 'the matrix lists every slice 0..n-1 once');
+  assert.match(unit, /^\s+fail-fast: false$/m);
+  const gate = job('kit-tests');
+  assert.match(gate, /^    needs: unit-tests$/m);
+  assert.match(gate, /^    if: always\(\)$/m);
+  assert.match(gate, /^\s+if: needs\.unit-tests\.result != 'success'$/m);
+  assert.match(gate.split("if: needs.unit-tests.result != 'success'")[1], /^\s+run: exit 1$/m);
+  assert.doesNotMatch(ci, /continue-on-error/);
+  assert.doesNotMatch(gate, /test-run\.mjs/, 'the tests run in the slices, not again in the gate');
 });
 
 test('CI runs the recall gate on the PR\'s real diff', async () => {
@@ -6627,9 +7117,17 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
   fs.rmSync(path.join(r.dir, '.git', 'kit-sweep-starts'), { recursive: true, force: true });
   assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
 });
-test('S6: the shipped project settings make --owner-yes ask, so no session logs a yes unseen', () => {
+// S6, changed by E27 (option A): no session logs a yes unseen. The proof is the owner's own thread message, which
+// approve.mjs checks; a yes without it is refused in an AI shell and still asks the push guard. A permission prompt
+// on the proven form would reach no one on the phone, so the settings no longer ask on it.
+test('S6: a yes with the thread\'s proof passes the guard, and one without it still asks', () => {
   const ask = JSON.parse(read(path.resolve('project/.claude/settings.json'))).permissions.ask;
-  for (const shell of ['Bash', 'PowerShell']) assert.ok(ask.includes(`${shell}(*approve.mjs*--owner-yes*)`), shell);
+  assert.equal(ask.some((r) => /owner-yes/.test(r)), false);
+  // A crash prints nothing too, and onFailure block makes it a block: only a clean exit counts as a pass.
+  const guard = (command) => { const r = spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' }); assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`); return r.stdout; };
+  assert.equal(guard('node approve.mjs c.json --owner-yes "yes abc123" --thread cmsg_Abcdefgh12'), '');
+  assert.match(guard('node approve.mjs c.json --owner-yes "yes, run it"'), /ask/);
+  assert.match(guard('node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12; git push'), /ask/);
 });
 test('S7: a start that cannot be recorded is refused, not let through', () => {
   const r = approveRun(featureContract());

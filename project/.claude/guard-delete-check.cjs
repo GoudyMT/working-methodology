@@ -118,6 +118,12 @@ const SWEEP_ASK = [
 	"git grep --open-files-in-pager='rm -rf C:/elsewhere' x",
 	"git grep --open-files-in-pager 'rm -rf C:/elsewhere' x",
 	"'C:\\elsewhere' |" + LF + 'Get-ChildItem | Remove-Item -Recurse',
+	// The 1.23.0 sweep: a sequence group in the program's place is still rm, and so is a group inside another.
+	'{r..r}m -rf C:/elsewhere',
+	'r{m..m} -rf C:/elsewhere',
+	'{rm,{-rf,C:/elsewhere}}',
+	// A command too long to read is refused before it is read, quickly (the hook's timeout blocks).
+	'rm -rf C:/elsewhere ; echo ' + '/'.repeat(150000),
 ];
 
 // Found by the same sweep: ordinary commands that asked and should not.
@@ -609,6 +615,15 @@ const CARRY122_ASK = [
 	'zip --move a.zip C:/other/x',
 	"pythonw -c \"import shutil; shutil.rmtree('C:/other')\"",
 	"pyw -c \"import shutil; shutil.rmtree('C:/other')\"",
+	// S22-6: cmake -E deletes with rm, remove and remove_directory (the last two are older names).
+	'cmake -E remove_directory C:/other',
+	'cmake -E remove -f C:/other/x',
+	'cmake -E rm -rf C:/other',
+	'cmake.exe -E remove_directory build C:/other',
+	'"C:/Program Files/CMake/bin/cmake.exe" -E remove_directory C:/other',
+	// The 1.23.0 security review: cmake -E chdir runs the rest of the line in the folder it names.
+	'cmake -E chdir C:/other cmake -E remove_directory x',
+	'cmake -E chdir C:/other rm -rf x',
 ];
 // PowerShell's -Force reaches hidden names, .git among them, where bash's * does not.
 const CARRY122_PS_ASK = ['Remove-Item -Recurse -Force *', 'Remove-Item -Recurse -Force .*', 'rm -r -fo *', 'Remove-Item -Force -Recurse *git'];
@@ -617,6 +632,10 @@ const CARRY122_PASS = [
 	'tar --remove-files -cf a.tar build/x',
 	'zip -r a.zip build',
 	'zip -m a.zip build/x',
+	'cmake -E remove_directory build',
+	'cmake -E remove -f build/x',
+	'cmake -E rm -rf build',
+	'cmake -E copy_directory C:/other build',
 	'pnpm --dir build test',
 	'Remove-Item -Recurse build\\*',
 	'Remove-Item -Recurse -Force build\\*',
@@ -702,6 +721,8 @@ const ASK = [
 ];
 
 const PASS = [
+	// M27, from the 1.23.0 mutation check: a command may start with a space, and its search pattern is still not run.
+	' grep -rn "rm -rf /" .',
 	...SWEEP_PASS,
 	...RESWEEP_PASS,
 	...HOLES_PASS,

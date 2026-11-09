@@ -5,13 +5,25 @@
   "permissions": {
     "ask": [
       "Bash(git push *)",
-      "PowerShell(git push *)",
-      "Bash(*approve.mjs*--owner-yes*)",
-      "PowerShell(*approve.mjs*--owner-yes*)"
+      "PowerShell(git push *)"
     ]
   },
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{PROJECT_DIR}}/.claude/owner-proof.cjs"
+            ],
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      },
       {
         "matcher": "Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal",
         "hooks": [

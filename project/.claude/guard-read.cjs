@@ -6,6 +6,10 @@ const BACKSLASH = String.fromCharCode(92);
 const BACKTICK = String.fromCharCode(96);
 const LF = String.fromCharCode(10);
 const CR = String.fromCharCode(13);
+// The longest a brace expansion may grow: groups side by side multiply (x{a,b}{c,d} is four words).
+const MAX_PLAIN = 100000;
+// The most brace groups read; past it the rest asks. Far more than any real command holds.
+const MAX_GROUPS = 500;
 // < and > start a redirection, read inside a command (its target is marked), not a break between commands.
 const SEGMENT_BREAKS = new Set([';', '|', '&', '(', ')', '{', '}', LF]);
 
@@ -32,9 +36,51 @@ function plainText(text, tool) {
 	if (/\bcmd\b/i.test(s)) s = s.replace(/\^(?=[\w.-])/g, '');
 	s = s.replace(/\$\(\s*\)|\$\{\s*\}|\$""|\$''/g, '').replace(/\$(?=['"])/g, '').replace(/(?<=\S)(?:''|"")(?=\S)/g, '');
 	if (/powershell/i.test(String(tool))) return s;
-	const brace = /(?<![$\w])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s{}'"]*)/;
-	for (let i = 0; i < 4 && brace.test(s); i++) s = s.replace(brace, (m, a, b, c) => b.split(',').map((x) => a + x + c).join(' '));
+	// A group's prefix is read whole (it starts after a space, a brace, a quote or the text's start): a prefix that may
+	// start anywhere made each read scan a long run of signs again from every place in it (the 1.23.0 sweep).
+	const brace = /(?<![^\s{}'"])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s{}'"]*)/;
+	// A sequence group ({r..r}m, {1..3}, {a..e..2}) is a brace expansion too (the 1.23.0 sweep).
+	const sequence = /(?<![^\s{}'"])([^\s{}'"]*)\{([A-Za-z]|-?\d+)\.\.([A-Za-z]|-?\d+)(?:\.\.(-?\d+))?\}([^\s{}'"]*)/;
+	// Every group is expanded: a fixed count let decoy groups hide a later one (the 1.23.0 mutation check, M27). Each
+	// pass removes one group, so it ends; the size cap stops a nested blow-up, and what is left asks (below).
+	// Each pass scans the whole text, so the passes are bounded too: a hook that runs past its timeout blocks.
+	// A group inside another one ({push,{origin,main}}) adds its words to the outer group, as bash reads it, so the
+	// outer group is read on a later pass.
+	const inGroup = (offset) => {
+		const before = s.slice(Math.max(s.lastIndexOf(' ', offset), s.lastIndexOf(LF, offset), s.lastIndexOf('\t', offset)) + 1, offset);
+		return before.split('{').length > before.split('}').length;
+	};
+	// Inside an outer group, the prefix and suffix stop at that group's commas: {push,{origin,main}} is push origin main.
+	const wrap = (items, a, c, offset) => {
+		if (!inGroup(offset)) return items.map((x) => a + x + c).join(' ');
+		const i = a.lastIndexOf(',') + 1;
+		const j = c.includes(',') ? c.indexOf(',') : c.length;
+		return a.slice(0, i) + items.map((x) => a.slice(i) + x + c.slice(0, j)).join(',') + c.slice(j);
+	};
+	for (let pass = 0; pass < MAX_GROUPS && (brace.test(s) || sequence.test(s)) && s.length < MAX_PLAIN; pass++) {
+		if (sequence.test(s)) {
+			s = s.replace(sequence, (m, a, from, to, step, c, offset) => {
+				const items = seqItems(from, to, step);
+				return items ? wrap(items, a, c, offset) : m.replace('..', '\u0000');
+			});
+		} else s = s.replace(brace, (m, a, b, c, offset) => wrap(b.split(','), a, c, offset));
+	}
+	// Past the cap the rest is unread: a word the guards always ask on stands in for it.
+	if (brace.test(s) || sequence.test(s) || s.includes('\u0000')) s = s.split('\u0000').join('..') + ' ; git push ; rm -rf /';
 	return s;
+}
+
+// The words of a sequence group, or null when it is not one bash expands or holds too many to read.
+function seqItems(from, to, step) {
+	const letters = /^[A-Za-z]$/.test(from);
+	if (letters !== /^[A-Za-z]$/.test(to)) return null;
+	const a = letters ? from.charCodeAt(0) : Number(from);
+	const b = letters ? to.charCodeAt(0) : Number(to);
+	const by = Math.abs(Number(step || 1)) || 1;
+	if (Math.abs(b - a) / by > MAX_GROUPS) return null;
+	const out = [];
+	for (let x = a; a <= b ? x <= b : x >= b; x += a <= b ? by : -by) out.push(letters ? String.fromCharCode(x) : String(x));
+	return out;
 }
 
 // The text with PowerShell block comments (<# ... #>) and line comments (a # that starts a word, to the line's

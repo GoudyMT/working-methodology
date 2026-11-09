@@ -13,6 +13,9 @@ const ROOT_PREFIX = 'kit-tests-';
 const WARN_PCT = 50;
 const REFUSE_PCT = 80;
 // A live pid past a day is a reused pid, not a run; an old-style root (no pid in its name) is a run of an older kit.
+// Limits, written down (K2, K4, closed by the owner as limits in 1.23.0): a pid is read in this machine's own pid
+// space, so runs in sandboxes that share one temp folder across pid spaces could read each other's live runs as dead;
+// and a clock that jumps past a day makes a live run's root look a day old. Either removes a live run's temp root.
 const LIVE_MAX_MS = 24 * 3600e3;
 const LEGACY_MAX_MS = 3600e3;
 const OWNED = new RegExp(`^${ROOT_PREFIX}(\\d+)-[A-Za-z0-9]{6}$`);
@@ -54,6 +57,20 @@ function alive(pid) {
 	}
 }
 
+// A live run's root anywhere under a folder, a few levels down (a shard's folder, then the nested run's root).
+function nestedLive(dir, depth = 4) {
+	if (depth === 0) return false;
+	let entries;
+	try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+	for (const e of entries) {
+		if (!e.isDirectory() || e.isSymbolicLink()) continue;
+		const owned = OWNED.exec(e.name);
+		if (owned && alive(Number(owned[1]))) return true;
+		if (nestedLive(path.join(dir, e.name), depth - 1)) return true;
+	}
+	return false;
+}
+
 /**
  * Remove the run roots in a temp folder whose run is over.
  *
@@ -81,7 +98,8 @@ function sweepStale(dir = os.tmpdir(), now = Date.now()) {
 		if (!st.isDirectory()) continue;
 		const age = now - st.mtimeMs;
 		const stale = owned ? (!alive(Number(owned[1])) || age > LIVE_MAX_MS) : age > LEGACY_MAX_MS;
-		if (stale && removeTemp(p)) removed.push(p);
+		// A run started inside a run (the runner's own tests) keeps its root inside the outer one, and may outlive it.
+		if (stale && !nestedLive(p) && removeTemp(p)) removed.push(p);
 	}
 	return removed;
 }

@@ -247,7 +247,12 @@ function grantFault(git, baseRef) {
 
 // The hooks folder this clone really uses (the gate's own runs override it on the command line, so that value is
 // skipped), and whether its pre-push holds an armed head. Another clone of the repo is out of its sight.
-function holdFault(git, cwd) {
+function holdFault(git, cwd, env = process.env) {
+	// Config from the environment reaches every git this session runs, a push included, and git names its origin
+	// "command line:" as it does the gate's own override, so it is read here (the 1.22.0 sweep, G6).
+	const count = Number(env.GIT_CONFIG_COUNT) || 0;
+	const fromEnv = [...Array(count).keys()].some((i) => String(env[`GIT_CONFIG_KEY_${i}`] || '').toLowerCase() === 'core.hookspath') || /core\.hookspath/i.test(String(env.GIT_CONFIG_PARAMETERS || ''));
+	if (fromEnv) return 'no push hold: core.hooksPath is set in this session\'s environment (GIT_CONFIG_COUNT or GIT_CONFIG_PARAMETERS), so a push here would skip the hooks folder the gate checks';
 	const set = git('config', '--show-origin', '--get-all', 'core.hooksPath').stdout.split('\n').filter((l) => l.trim() && !l.startsWith('command line:'));
 	let value = set.length ? set[set.length - 1].split('\t').slice(1).join('\t').trim() : '';
 	if (!value) return 'no push hold: core.hooksPath is not set here, so a push over an armed head would go through (install the kit project layer)';

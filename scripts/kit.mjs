@@ -698,6 +698,28 @@ const semverAbove = (a, b) => {
   return false;
 };
 
+// The guards' onFailure "block" (a guard that crashes or times out stops the command) needs this Claude Code; an
+// older one ignores the key, and the command runs.
+const ON_FAILURE_MIN = '2.1.295';
+let claudeVersionRead;
+// One read per process: `claude --version`, or null where Claude Code is not on the PATH (CI, a cloud thread).
+export function installedClaudeVersion() {
+  if (claudeVersionRead === undefined) {
+    // cmd looks in the current folder before the PATH, and session start runs in the project: from the home folder,
+    // with that search turned off, only a claude on the PATH runs.
+    const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 8000, shell: process.platform === 'win32', cwd: os.homedir(), env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' } });
+    claudeVersionRead = r.status === 0 ? r.stdout : null;
+  }
+  return claudeVersionRead;
+}
+
+/** The line to give when Claude Code is too old for onFailure, or '' when it is new enough or cannot be read. */
+function claudeCodeTooOld(text) {
+  const m = /(\d+\.\d+\.\d+)/.exec(String(text ?? ''));
+  if (!m || !semverAbove(ON_FAILURE_MIN, m[1])) return '';
+  return `Claude Code ${m[1]} is older than ${ON_FAILURE_MIN}: a guard that crashes or times out lets the command run. Run claude update.`;
+}
+
 /**
  * What a session should know at start: whether the kit has moved past this project, and which
  * skills apply to the cases this project turned on. The session-start hook adds it to Claude's
@@ -709,8 +731,10 @@ const semverAbove = (a, b) => {
  * Returns:
  *     the message text (one or more lines)
  */
-export function sessionStartReport({ kit, home, projectDir, source }) {
+export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion }) {
   const lines = [];
+  const old = claudeCodeTooOld(claudeVersion());
+  if (old) lines.push(old);
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - fresh reads of the Reading Order before any edit.');
   const ahead = remoteKitAhead(kit);
@@ -793,10 +817,15 @@ export function mainProtection(projectDir, gh = (args) => spawnSync('gh', args, 
  * Returns:
  *     { current, text } - current is true only when every line matches
  */
-export function status({ kit, home, projectDir, ahead = remoteKitAhead, protection = mainProtection, newest = newestTag, inodes = () => kitTemp.inodeUse(os.tmpdir()) }) {
+export function status({ kit, home, projectDir, ahead = remoteKitAhead, protection = mainProtection, newest = newestTag, inodes = () => kitTemp.inodeUse(os.tmpdir()), claudeVersion = installedClaudeVersion }) {
   const { version, commit } = loadKit(kit);
   const lines = [`Kit folder: ${version}${commit ? ` (${commit})` : ''}.`, `Claude config folder: ${toPosix(home)}.`];
   const gaps = [];
+  const old = claudeCodeTooOld(claudeVersion());
+  if (old) {
+    lines.push(old);
+    gaps.push(`Claude Code is older than ${ON_FAILURE_MIN}`);
+  }
   const n = ahead(kit);
   if (n > 0) {
     lines.push(`    GitHub has ${n} newer kit commit(s): check out its newest release tag (${releaseCheckout(kit, newest(kit))}), then update both below.`);
@@ -1312,6 +1341,12 @@ function main(argv) {
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
+    // E24 C: the kit installs only from the release copy on the owner's PC; a cloud VM has neither.
+    if (process.env.CLAUDE_CODE_REMOTE === 'true') {
+      console.error('Install refused: installs run on the owner\'s PC, from the release copy. A cloud thread runs the worker jobs only.');
+      process.exitCode = 1;
+      return;
+    }
     // Installs run only from a release, or by name for a throwaway test (the owner, 2026-11-02).
     const rel = releaseState(kit);
     if (rel.problems.length && !argv.includes('--unreleased')) {
