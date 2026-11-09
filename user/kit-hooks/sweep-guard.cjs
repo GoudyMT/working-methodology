@@ -69,7 +69,11 @@ function main() {
 		const to = String((input.tool_input || {}).to || '');
 		if (!/^[A-Za-z0-9_-]{1,64}$/.test(to)) return;
 		let meta = {};
-		try { meta = JSON.parse(fs.readFileSync(path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents', `agent-${to}.meta.json`), 'utf8')); } catch { return; }
+		const agentDir = path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents');
+		// An agent whose transcript is there but whose type cannot be read may be a reviewer (F36, the 1.23.0 sweep). A
+		// name with no transcript behind it is a teammate's, and is messaged as before.
+		try { meta = JSON.parse(fs.readFileSync(path.join(agentDir, `agent-${to}.meta.json`), 'utf8')); } catch { meta = fs.existsSync(path.join(agentDir, `agent-${to}.jsonl`)) ? { agentType: 'reviewer' } : {}; }
+		if (!meta || typeof meta !== 'object') meta = { agentType: 'reviewer' };
 		if (/(^|:)reviewer$/i.test(String(meta.agentType || ''))) deny('A sweep reviewer is never resumed: its spend was read for the sweep it ran. A new question is a new reviewer under a cleared contract.');
 		return;
 	}

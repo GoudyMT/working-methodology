@@ -2439,6 +2439,13 @@ test('the sweep guard refuses to resume a reviewer with SendMessage, and lets ot
   assert.match(r.permissionDecisionReason, /never resumed/);
   assert.equal(send('b1').permissionDecision, 'allow');
   assert.equal(send('someone-else').permissionDecision, 'allow');
+  // F36 (the 1.23.0 sweep): an agent whose transcript is there but whose type cannot be read may be a reviewer, so it
+  // is refused; a name with no agent behind it (a teammate) is still messaged.
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-x1.jsonl'), '{}\n');
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-x1.meta.json'), '{not json');
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-x2.jsonl'), '{}\n');
+  assert.equal(send('x1').permissionDecision, 'deny');
+  assert.equal(send('x2').permissionDecision, 'deny');
 });
 
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
