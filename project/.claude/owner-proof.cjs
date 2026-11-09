@@ -104,6 +104,10 @@ function moved(segment, cwd) {
 	// A move through the stack or the history (pushd with no folder, pushd +1, cd -, Set-Location +) is not followed.
 	if (/^(pushd|push-location)$/.test(prog) && (args.length === 0 || args.some((a) => /^[+-]\d*$/.test(a)))) return 'unknown';
 	if (args.some((a) => a === '-' || a === '+')) return 'unknown';
+	// Any option the guard does not model (pushd -n, -StackName) and any ~ form but home itself (~+, ~-, ~2) is
+	// not followed either: fail closed on what it does not read.
+	if (args.some((a, k) => a.startsWith('-') && !/^-(path|literalpath|lp)$/i.test(a) && !(k > 0 && /^-(path|literalpath|lp)$/i.test(args[k - 1])))) return 'unknown';
+	if (args.some((a) => /^~[^/\\]/.test(a))) return 'unknown';
 	const at = args.findIndex((a) => /^-(path|literalpath|lp)$/i.test(a));
 	const arg = at >= 0 ? args[at + 1] : args.find((a) => !a.startsWith('-'));
 	if (arg === undefined) return args.length ? 'unknown' : ['~'];
@@ -130,7 +134,8 @@ function shellWrites(command, tool, start) {
 	const plainBreak = (end) => end === undefined || end === ';' || end === '&&' || end === '\n';
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s];
-		const apart = grouped || !segments.slice(0, s + 1).every((g) => plainBreak(g.end));
+		// Any break that is not plain anywhere in the command (a later || runs on a failure too) makes every cd unsure.
+		const apart = grouped || !segments.every((g) => plainBreak(g.end));
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
