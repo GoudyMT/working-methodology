@@ -5,6 +5,8 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
@@ -67,8 +69,6 @@ test('the gate passes when it cannot read the transcript, and the shipped settin
 	const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git commit -m x' }, transcript_path: path.join(kitTemp.makeTemp('none-'), 'missing.jsonl') }), encoding: 'utf8' });
 	assert.equal(r.status, 0);
 	assert.equal(r.stdout, '', 'a gate that cannot read never blocks a commit');
-	const pre = JSON.parse(fs.readFileSync(path.resolve('project/.claude/settings.json'), 'utf8')).hooks.PreToolUse;
-	const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('{{PROJECT_DIR}}/.claude/task-gate.cjs')));
-	assert.ok(entry, 'wired from the project layer');
-	for (const tool of ['Bash', 'PowerShell', 'Agent', 'Task']) assert.match(tool, new RegExp(`^(${entry.matcher})$`), tool);
+	const { routes } = require(path.resolve('project/.claude/guard.cjs'));
+	for (const tool of ['Bash', 'PowerShell', 'Agent', 'Task']) assert.ok(routes(tool).includes('task-gate.cjs'), tool);
 });

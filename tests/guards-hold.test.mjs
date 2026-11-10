@@ -1,6 +1,6 @@
 // T1 (v2.0 build 1): the six commands that passed every guard live on Windows in 1.24.0 (workbench
 // results/v2-prep/RESULT.md, P1), and the secret shapes the scan missed. Each case runs every project hook the way
-// Claude Code runs it (a child process, the hook input on stdin) and needs at least one to hold the command.
+// Claude Code runs it (the one guard process, the hook input on stdin) and needs it to hold the command.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +9,8 @@ import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
-const HOOKS = ['owner-proof.cjs', 'guard-outward.cjs', 'guard-delete.cjs'].map((h) => path.resolve('project/.claude', h));
+// The one guard process (T2), as the shipped settings run it on every tool call.
+const HOOKS = [path.resolve('project/.claude/guard.cjs')];
 const cfg = kitTemp.makeTemp('cfg-');
 const proj = kitTemp.makeTemp('proj-');
 fs.mkdirSync(path.join(proj, '.claude'));

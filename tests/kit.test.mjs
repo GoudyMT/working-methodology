@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -1859,22 +1861,19 @@ test('every kit role runs the canary at its stop, and the project settings run t
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
     assert.match(read(path.resolve('user/agents', `${role}.md`)), /Stop:\n {4}- hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, `${role} wires the canary`); // pin: 1 Claude Code reads the hook block
   }
-  const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
-  const guard = settings.hooks.PreToolUse.find((h) => h.matcher === 'Agent|Task|SendMessage');
-  assert.ok(guard && guard.hooks[0].args.join(' ').includes('kit-hooks/canary.cjs'), 'the leak guard is wired');
-  assert.ok(guard.hooks.some((h) => h.args.join(' ').includes('kit-hooks/sweep-guard.cjs')), 'the sweep guard is wired');
+  // T2: the one guard process runs the leak guard and the sweep guard on every agent start and message.
+  const { routes } = require(path.resolve('project/.claude/guard.cjs'));
+  for (const tool of ['Agent', 'Task', 'SendMessage']) for (const g of ['canary.cjs', 'sweep-guard.cjs']) assert.ok(routes(tool).includes(g), `${g} on ${tool}`);
 });
 test('both guards run on every shell tool and block the call when they fail', () => {
-  const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
-  // The entry that holds the two guards (the owner-proof guard has its own, also on Bash).
-  const shell = settings.hooks.PreToolUse.find((h) => h.hooks.some((x) => (x.args || []).join(' ').includes('.claude/guard-delete.cjs')));
-  for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) assert.ok(shell.matcher.split('|').includes(tool), `${tool} is matched`);
-  for (const guard of ['guard-delete.cjs', 'guard-outward.cjs']) {
-    const hook = shell.hooks.find((h) => h.args.join(' ').includes(`.claude/${guard}`));
-    assert.ok(hook, `${guard} is wired`);
-    // A crash, a timeout or a missing node would otherwise let the delete or the push run (handoff item 26).
-    assert.equal(hook.onFailure, 'block', guard);
-  }
+  // T2: one entry runs the one guard process on every tool; a crash, a timeout or a missing node would otherwise let
+  // the delete or the push run (handoff item 26), so it blocks on failure.
+  const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
+  assert.equal(pre.length, 1);
+  assert.equal(pre[0].matcher, '.*');
+  assert.deepEqual(pre[0].hooks.map((h) => [h.args.join(' '), h.onFailure]), [['{{PROJECT_DIR}}/.claude/guard.cjs', 'block']]);
+  const { routes } = require(path.resolve('project/.claude/guard.cjs'));
+  for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) for (const g of ['guard-delete.cjs', 'guard-outward.cjs']) assert.ok(routes(tool).includes(g), `${g} on ${tool}`);
 });
 test('the real phrase has one home in the kit: the last line of the rules every brief carries', () => {
   const block = read(path.resolve('rules/agent-teams.md')).split('**Rules every brief carries**')[1].split('```')[1];
@@ -4813,11 +4812,10 @@ test('ceilings set from the budgets keep the whole-sweep trip, however many role
   assert.match(o.stdout, /paused: .*tokens 750000 ran 40% over the budget/);
 });
 
-test('the project settings wire the call-cap hook on every tool', () => {
-  const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
-  const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('kit-hooks/call-cap.cjs')));
-  assert.ok(entry, 'wired');
-  assert.equal(entry.matcher, '.*');
+test('the one guard process runs the call-cap hook on every tool an agent calls, and never for the main session', () => {
+  const { routes } = require(path.resolve('project/.claude/guard.cjs'));
+  for (const tool of ['Read', 'Grep', 'Bash', 'Agent']) assert.ok(routes(tool, { agent_id: 'a1' }).includes('call-cap.cjs'), tool);
+  assert.ok(!routes('Read').includes('call-cap.cjs'), 'the main session');
 });
 test('the sweep skill gives the lead the brief\'s call-cap wording', () => {
   const skill = read(path.resolve('user/skills/pre-pr-sweep/SKILL.md'));
@@ -5260,8 +5258,8 @@ test('the call-cap hook reads a real transcript: other lines, a half-written lin
   assert.match(JSON.parse(said.stdout).hookSpecificOutput.permissionDecisionReason, /Only your hand-back still works/);
 });
 test('the settings wire the hook at its installed path', () => {
-  const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
-  assert.ok(pre.some((e) => e.hooks.some((h) => (h.args || []).join(' ') === '{{CLAUDE_HOME}}/kit-hooks/call-cap.cjs')));
+  // The one guard process finds the user layer's hooks where install put them.
+  assert.match(read(path.resolve('project/.claude/guard.cjs')), /const INSTALLED_HOME = '\{\{CLAUDE_HOME\}\}';/); // pin: 1 install fills the placeholder
   assert.ok(fs.existsSync(path.resolve('user/kit-hooks/call-cap.cjs')));
 });
 test('a reviewer past its cap is named at the outcome, and the notice shows modifiers and base', () => {

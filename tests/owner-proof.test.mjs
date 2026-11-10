@@ -4,6 +4,8 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
@@ -161,11 +163,8 @@ test('the owner-proof guard follows a variable and a cd into the transcripts, an
 });
 
 test('the shipped project settings wire the owner-proof guard on every write tool and shell', () => {
-	const pre = JSON.parse(fs.readFileSync(path.resolve('project/.claude/settings.json'), 'utf8')).hooks.PreToolUse;
-	// It ships in the project layer beside the guards whose reader it uses: a project whose user layer is older
-	// would otherwise block every call on a missing file (the 1.23.0 sweep).
-	const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('{{PROJECT_DIR}}/.claude/owner-proof.cjs')));
-	assert.ok(entry, 'wired from the project layer');
-	for (const tool of ['Write', 'Edit', 'NotebookEdit', 'Bash', 'PowerShell']) assert.match(tool, new RegExp(`^(${entry.matcher})$`), tool);
-	assert.equal(entry.hooks.find((h) => (h.args || []).join(' ').includes('owner-proof')).onFailure, 'block');
+	// It ships in the project layer, run by the one guard process (T2) beside the guards whose reader it uses: a project
+	// whose user layer is older would otherwise block every call on a missing file (the 1.23.0 sweep).
+	const { routes } = require(path.resolve('project/.claude/guard.cjs'));
+	for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell']) assert.ok(routes(tool).includes('owner-proof.cjs'), tool);
 });
