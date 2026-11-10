@@ -184,7 +184,11 @@ function shellWrites(command, tool, start, names = proofNames) {
 		const other = new RegExp(`\\$\\{${name}:?=|(^|[^\\w$])${name}\\+=|\\b(read|for|mapfile|readarray|unset|getopts)\\b[^;&|\\n]*[\\s'"]${name}\\b|\\b(declare|local|typeset)\\s+-[^;&|\\n]*[\\s'"]${name}\\b|\\bprintf\\b[^;&|\\n]*-v\\s*['"]?${name}\\b`);
 		// Any assignment beyond the plain ones read above (P="$HOME/x", eval "P=x") is a value the guard did not read.
 		const every = [...String(command).matchAll(new RegExp(`(^|[\\s;&|(\`"'])${name}\\+?=`, 'g'))].length;
-		if ((other.test(String(command)) || every > given.get(name).length) && new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command))) return true;
+		// A value read only in part (P=/tmp"x", P=~/.cla$Q, P=a\ b) or a command that runs text as shell (eval, source,
+		// .) leaves the value unknown: refused when the variable is used (the same review, its third pass).
+		const cut = [...String(command).matchAll(new RegExp(`(?:^|[\\s;&|(])${name}=[^\\s;&|()'"\`$]+(.?)`, 'g'))].some((m) => /['"`$\\]/.test(m[1]));
+		const runs = /(^|[\s;&|(`"'])(eval|source|\.)(\s|$)/.test(String(command));
+		if ((other.test(String(command)) || every > given.get(name).length || cut || runs) && new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command))) return true;
 	}
 	const used = (name) => new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`).test(String(command || ''));
 	const twice = [...given].filter(([name, values]) => new Set(values).size > 1 && used(name));
