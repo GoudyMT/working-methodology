@@ -15,7 +15,8 @@ import { spawnSync } from 'node:child_process';
 
 const dir = process.cwd();
 const has = (rel) => fs.existsSync(path.join(dir, rel));
-const git = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+// git starts from Node's own folder, so a git.exe planted in the project is not the one found first on Windows.
+const git = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', cwd: path.dirname(process.execPath) });
 const isRepo = () => git('rev-parse', '--git-dir').status === 0;
 const settings = () => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8')); } catch { return null; } };
 
