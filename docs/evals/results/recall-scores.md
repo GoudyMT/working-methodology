@@ -373,5 +373,7 @@ Keys v4, brief v2, pass bar 12. Candidate: this branch at 1d88f33, the project l
 - **Borderline calls, not reported as flips:** Q13 in seven runs ("starts on its own", no "no keyword" in words), Q11 in three (all but "that have served" stated).
 - **Blinding:** the kit version notices removed by the script, each logged; one hand redaction in a candidate (the word for the throwaway test folder, which every run shares), logged beside its runs.
 
+Accepted by the owner 2026-11-10 ("A"): the marker covers only the newline artifact. Appending this entry gave the file its missing final newline, so the 1.22.0 gate line shows as removed and re-added unchanged, and main's gate reads that as a drop. The median meets the pass bar on its own.
+
 control: 0
-gate: kit-1.24.0 median 12 baseline 12 brief v2 keys v4
+gate: kit-1.24.0 median 12 baseline 12 brief v2 keys v4 owner-accepted
