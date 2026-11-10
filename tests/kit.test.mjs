@@ -2306,32 +2306,45 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
   fs.mkdirSync(path.join(dir, 'sweeps'));
   return dir;
 }
-// S23-4: the owner's yes or resume with no thread proof now needs a real terminal, where the owner types the code; a
-// test has none. Where a test stands for the owner at their terminal, the owner answers from the thread instead.
-let ownerSeq = 0;
+// T2 (the owner 2026-11-10: "Pop-up record"): the owner's yes and resume are their tap on a Claude Code choice pop-up,
+// read from the session's own transcript. Where a test stands for the owner saying yes or resuming, the owner taps Yes
+// on the pop-up that quotes the ask's or the pause's act, and the call runs in that session.
+const TAP_SID = '0aaaaaaa-1bbb-2ccc-3ddd-4eeeeeeeeeee';
+// One answered pop-up, as Claude Code writes it in the session's transcript (shape read from a live record).
+function ownerTaps(cfg, dir, act, { answer = 'Yes, go', labels = ['Yes, go', 'No'], at = new Date(Date.now() + 1000).toISOString(), source = 'user_temporary', sid = TAP_SID, folder } = {}) {
+  const where = path.join(cfg, 'projects', folder || fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'));
+  fs.mkdirSync(where, { recursive: true });
+  const id = `toolu_${crypto.randomBytes(6).toString('hex')}`;
+  const question = `May I go on? \`${act}\``;
+  const questions = [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }];
+  fs.appendFileSync(path.join(where, `${sid}.jsonl`), [
+    { type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions } }] } },
+    { type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'answered' }] } },
+  ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+}
+const tapEnv = (cfg) => ({ CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID, CLAUDECODE: '1' });
 function asOwner(dir, args, env) {
-  const terminal = !('CLAUDECODE' in env) && !('AI_AGENT' in env) && !args.includes('--thread');
-  const yes = terminal && args.includes('--owner-yes') && filledWords(args[args.indexOf('--owner-yes') + 1]);
-  const resume = terminal && args.includes('--resume') && env.KIT_OWNER_RESUME === '1';
+  const owner = !('CLAUDECODE' in env) && !('AI_AGENT' in env) && !('CLAUDE_CODE_SESSION_ID' in env);
+  const yes = owner && args.includes('--owner-yes') && filledWords(args[args.indexOf('--owner-yes') + 1]);
+  const resume = owner && args.includes('--resume') && env.KIT_OWNER_RESUME === '1';
   if (!yes && !resume) return null;
   const log = sweepLog(dir);
-  let words;
+  let act;
   if (yes) {
     const f = path.resolve(dir, args[0]);
     const ask = log.map((l) => JSON.parse(l)).filter((e) => e.kind === 'decision' && path.resolve(e.contract) === f).pop();
     if (!ask) return null;
-    words = `yes ${String(ask.hash).slice(0, 6)}`;
+    act = `sweep yes ${String(ask.hash).slice(0, 6)}`;
   } else {
     const i = log.map((l) => JSON.parse(l).kind).lastIndexOf('pause');
     if (i < 0) return null;
-    words = `resume ${crypto.createHash('sha256').update(log[i]).digest('hex').slice(0, 6)}`;
+    act = `sweep resume ${crypto.createHash('sha256').update(log[i]).digest('hex').slice(0, 6)}`;
   }
   const cfg = env.CLAUDE_CONFIG_DIR || makeTemp('cfg-');
-  if (!fs.existsSync(path.join(cfg, 'kit-owner.json'))) ownerFile(cfg);
-  const id = `cmsg_T${String(++ownerSeq).padStart(8, '0')}`;
-  ownerSays(cfg, { cwd: dir, id, words, at: new Date(Date.now() + 1000).toISOString() });
-  const out = yes ? [...args.slice(0, args.indexOf('--owner-yes')), '--owner-yes', words, '--thread', id, ...args.slice(args.indexOf('--owner-yes') + 2)] : ['--resume', '--thread', id];
-  return spawnSync('node', [APPROVE, ...out], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env, CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' } });
+  ownerTaps(cfg, dir, act);
+  const out = yes ? [...args.slice(0, args.indexOf('--owner-yes')), '--owner-yes', ...args.slice(args.indexOf('--owner-yes') + 2)] : ['--resume'];
+  const { KIT_OWNER_RESUME: _r, ...rest } = env;
+  return spawnSync('node', [APPROVE, ...out], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...rest, ...tapEnv(cfg) } });
 }
 const filledWords = (w) => typeof w === 'string' && w.trim().split(/\s+/).filter(Boolean).length >= 1 && w.trim().length > 1;
 const approveIn = (dir, args, env = {}) => {
@@ -2531,205 +2544,98 @@ function nextBranch(dir, file) {
   g(dir, 'add', rel);
   g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', `feat: next ${n}`, '--no-verify');
 }
-// E27 (the owner, 2026-11-08, option A): the owner answers from the phone thread. Claude Code writes each message the
-// owner sends into the session's own transcript as a human turn, so approve.mjs reads the yes there, from the owner
-// the owner named in kit-owner.json, after the ask, word for word; Claude's own text is never such a turn.
-const OWNER = 'user_owner1';
-function ownerSays(cfg, { cwd, id, words, author = OWNER, at = new Date(Date.now() + 1000).toISOString(), wrap = (m) => m, entry = {}, file = 'session-main.jsonl' }) {
-  const dir = path.join(cfg, 'projects', 'C--repo');
-  fs.mkdirSync(dir, { recursive: true });
-  const content = wrap(`<wake reason="mention" current-time="${at}">\n  <project id="chan_x" type="project">\n    <thread ts="cmsg_root">\n      <message trigger="true" from="human" trust="principal" author-id="${author}" id="${id}" sent-at="${at}" mention="true">${words}</message>\n    </thread>\n  </project>\n</wake>`);
-  fs.appendFileSync(path.join(dir, file), JSON.stringify({ type: 'user', isSidechain: false, timestamp: at, origin: { kind: 'human' }, projectsUserTurn: true, cwd, message: { role: 'user', content }, ...entry }) + '\n');
-}
-const ownerFile = (cfg, value = { authorId: OWNER, threadYes: true }) => fs.writeFileSync(path.join(cfg, 'kit-owner.json'), JSON.stringify(value));
-
-test('the owner\'s yes from the thread clears an ask, read from the session transcript, word for word', () => {
-  // The ask prints a short code; the owner's reply carries it, so a yes answers this ask and no other.
-  const asked = () => { const r = approveRun(askContract()); assert.equal(r.status, 1, r.stdout); const m = r.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/); assert.ok(m, r.stdout); return { ...r, code: m[1] }; };
-  const yes = (r, cfg, id, words) => approveIn(r.dir, [r.f, '--owner-yes', words, '--thread', id], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+// T2 (the owner 2026-11-10: "Pop-up record"): the typed codes of 1.23 are retired. An ask or a pause prints an act
+// with its code; the lead quotes it in Claude Code's choice pop-up, and the owner's tap, in this session's own
+// transcript, is the yes. Each refusal below is a way a tap that is not the owner's Yes to this ask could pass.
+test('the owner\'s pop-up Yes to the ask\'s act clears an ask, and nothing else does', () => {
+  const asked = () => { const r = approveRun(askContract()); assert.equal(r.status, 1, r.stdout); const m = r.stdout.match(/`sweep yes ([0-9a-f]{6})`/); assert.ok(m, r.stdout); return { ...r, code: m[1] }; };
+  const yes = (r, cfg, env = {}) => approveIn(r.dir, [r.f, '--owner-yes'], { ...tapEnv(cfg), ...env });
   const r = asked();
   const cfg = makeTemp('cfg-');
-  ownerFile(cfg);
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_A1aaaaaa', words: `yes ${r.code}` });
-  const ok = yes(r, cfg, 'cmsg_A1aaaaaa', `yes ${r.code}`);
+  ownerTaps(cfg, r.dir, `sweep yes ${r.code}`);
+  const ok = yes(r, cfg);
   assert.equal(ok.status, 0, ok.stdout);
   const line = approvalLog(r.dir).pop();
-  assert.equal(line.kind, 'owner-yes');
-  assert.deepEqual([line.words, line.proof, line.message], [`yes ${r.code}`, 'thread', 'cmsg_A1aaaaaa']);
+  assert.deepEqual([line.kind, line.proof], ['owner-yes', 'popup']);
+  assert.match(line.tap, new RegExp(`^${TAP_SID}:toolu_`));
   // The ask's ceilings travel with the yes, so the reviewers' guard holds them to it (the 1.23.0 sweep).
   const decided = approvalLog(r.dir).filter((e) => e.kind === 'decision').pop();
   assert.ok(Array.isArray(decided.ceilings) && decided.ceilings.length > 0, 'the ask set ceilings');
   assert.deepEqual(line.ceilings, decided.ceilings);
   const refused = [
-    ['no owner named', (c) => fs.rmSync(path.join(c, 'kit-owner.json')), /kit-owner\.json[\s\S]*--owner-setup --thread/],
-    ['the owner turned it off', (c) => ownerFile(c, { authorId: OWNER, threadYes: false }), /turned thread answers off/],
-    ['other words', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}.` }), /word for word/],
-    ['a yes without this ask\'s code', (c, d) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: 'yes, run it' }), /is not "yes [0-9a-f]{6}"/, 'yes, run it'],
-    // The whole message is the yes and the code: a no or a question carrying the code is no yes (the 1.23.0 sweep).
-    ['a no carrying the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `no ${k}` }), /is not "yes [0-9a-f]{6}"/, (k) => `no ${k}`],
-    ['a question carrying the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `is ${k} safe?` }), /is not "yes [0-9a-f]{6}"/, (k) => `is ${k} safe?`],
-    ['a yes hedged around the code', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}, unless it looks off` }), /is not "yes [0-9a-f]{6}"/, (k) => `yes ${k}, unless it looks off`],
-    ['another person', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, author: 'user_other' }), /not from the owner/],
-    ['a message from before the ask', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, at: '2020-01-01T00:00:00.000Z' }), /before the ask/],
-    ['a relay quoting the owner', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` }), /relayed or cited copy[\s\S]*own thread/],
-    ['a message in another repo\'s session', (c, d, k) => ownerSays(c, { cwd: makeTemp('elsewhere-'), id: 'cmsg_Bbbbbbbb', words: `yes ${k}` }), /no such message/],
-    // A session Claude starts itself (claude -p "<wake ...>") writes a human turn too, but not a projects thread's.
-    ['a prompt typed into a session Claude started', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, entry: { projectsUserTurn: undefined, entrypoint: 'cli' } }), /no such message/],
-    ['a turn Claude wrote', (c, d, k) => ownerSays(c, { cwd: d, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, entry: { origin: { kind: 'agent' } } }), /no such message/],
-    ['a subagent\'s transcript', (c, w, k) => { fs.mkdirSync(path.join(c, 'projects', 'C--repo', 's', 'subagents'), { recursive: true }); ownerSays(c, { cwd: w, id: 'cmsg_Bbbbbbbb', words: `yes ${k}`, file: path.join('s', 'subagents', 'agent-x.jsonl') }); }, /no such message/],
+    ['no tap at all', () => {}],
+    ['a No', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { answer: 'No' })],
+    ['a Yes to another ask\'s act', (c, d) => ownerTaps(c, d, 'sweep yes 000000')],
+    ['a Yes to an act that only holds this one', (c, d, k) => ownerTaps(c, d, `echo sweep yes ${k}`)],
+    ['a tap from before the ask', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { at: '2020-01-01T00:00:00.000Z' })],
+    ['a pop-up with no way to say no', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { labels: ['Yes, go', 'Yes, later'] })],
+    ['an answer no person gave', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { source: 'classifier' })],
+    ['another session\'s tap', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { sid: '9aaaaaaa-1bbb-2ccc-3ddd-4eeeeeeeeeee' })],
+    ['a tap in another repo\'s sessions', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { folder: 'C--elsewhere' })],
   ];
-  for (const [name, set, why, given] of refused) {
-    const s = asked();
+  for (const [name, set] of refused) {
+    const a = asked();
     const c = makeTemp('cfg-');
-    ownerFile(c);
-    set(c, s.dir, s.code);
-    const before = sweepLog(s.dir).length;
-    const out = yes(s, c, 'cmsg_Bbbbbbbb', typeof given === 'function' ? given(s.code) : given || `yes ${s.code}`);
+    set(c, a.dir, a.code);
+    const before = sweepLog(a.dir).length;
+    const out = yes(a, c);
     assert.equal(out.status, 1, `${name}: ${out.stdout}`);
-    assert.match(out.stdout, why, name);
-    assert.equal(sweepLog(s.dir).length, before, `${name}: nothing logged`);
+    assert.match(out.stdout, /no Yes from the owner/, name);
+    assert.equal(sweepLog(a.dir).length, before, `${name}: nothing logged`);
   }
-  // S23-5: where Claude Code names the session, only its own transcript is read: the owner's message reaches the
-  // session that runs this thread, and a turn in another session's file is no proof.
-  const other = asked();
-  const oc = makeTemp('cfg-');
-  ownerFile(oc);
-  ownerSays(oc, { cwd: other.dir, id: 'cmsg_Ssssssss', words: `yes ${other.code}`, file: 'session-other.jsonl' });
-  const inSession = (id) => approveIn(other.dir, [other.f, '--owner-yes', `yes ${other.code}`, '--thread', id], { CLAUDE_CONFIG_DIR: oc, CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'session-main' });
-  const elsewhere = inSession('cmsg_Ssssssss');
-  assert.equal(elsewhere.status, 1, elsewhere.stdout);
-  assert.match(elsewhere.stdout, /no such message/);
-  // The 1.24.0 sweep: a session id no file can carry (a dot, an empty value) narrows to nothing, never to every file.
-  for (const id of ['a.b', '']) assert.equal(approveIn(other.dir, [other.f, '--owner-yes', `yes ${other.code}`, '--thread', 'cmsg_Ssssssss'], { CLAUDE_CONFIG_DIR: oc, CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: id }).status, 1, `session id '${id}'`);
-  ownerSays(oc, { cwd: other.dir, id: 'cmsg_Mmmmmmmm', words: `yes ${other.code}` });
-  assert.equal(inSession('cmsg_Mmmmmmmm').status, 0, 'its own session\'s message');
-  // Without the thread's proof the yes rests on Claude's word alone, so from an AI tool's shell it is refused.
-  const bare = asked();
-  const word = approveIn(bare.dir, [bare.f, '--owner-yes', 'yes, run it'], { CLAUDECODE: '1' });
-  assert.equal(word.status, 1, word.stdout);
-  assert.match(word.stdout, /--thread/);
-  // One message answers one ask: a second ask in the same repo, answered with the same message, is refused for that
-  // reason (the 1.23.0 sweep: a new repo's empty log could never show the reuse).
+  // One tap answers one ask: the same Yes cannot clear a second ask in this repo.
   assert.equal(approveIn(r.dir, [r.f, '--outcome', '--none-ran']).status, 0, 'the first ask\'s sweep is closed');
   const c2 = JSON.parse(read(r.f));
   c2.roles[0].question += ' Also the second ask.';
   fs.writeFileSync(r.f, JSON.stringify(c2));
   const again = approveIn(r.dir, [r.f]);
-  const code2 = (again.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/) || [])[1];
+  const code2 = (again.stdout.match(/`sweep yes ([0-9a-f]{6})`/) || [])[1];
   assert.ok(code2 && code2 !== r.code, again.stdout);
-  const before = sweepLog(r.dir).length;
-  const reuse = approveIn(r.dir, [r.f, '--owner-yes', `yes ${r.code}`, '--thread', 'cmsg_A1aaaaaa'], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
-  assert.equal(reuse.status, 1, reuse.stdout);
-  assert.match(reuse.stdout, /already answered an ask/);
-  assert.equal(sweepLog(r.dir).length, before, 'nothing logged');
+  assert.equal(yes(r, cfg).status, 1, 'the first ask\'s Yes is not this ask\'s');
 });
 
-test('the owner resumes auto-approval from the thread with "resume" and the pause\'s code, sent after the pause', () => {
+test('the owner resumes auto-approval with a pop-up Yes to the pause\'s act, after the pause', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
   const ask = approveIn(r.dir, [r.f]);
-  const code = (ask.stdout.match(/from the thread: "resume ([0-9a-f]{6})"/) || [])[1];
+  const code = (ask.stdout.match(/`sweep resume ([0-9a-f]{6})`/) || [])[1];
   assert.ok(code, ask.stdout);
   const cfg = makeTemp('cfg-');
-  ownerFile(cfg);
-  const resume = (id) => approveIn(r.dir, ['--resume', '--thread', id], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R0rrrrrr', words: `resume ${code}`, at: '2020-01-01T00:00:00.000Z' });
-  assert.equal(resume('cmsg_R0rrrrrr').status, 1, 'sent before the pause');
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R1rrrrrr', words: 'resume, I guess, unless the last sweep looks off' });
-  assert.match(resume('cmsg_R1rrrrrr').stdout, /resume <code>/);
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R2rrrrrr', words: 'resume 000000' });
-  assert.equal(resume('cmsg_R2rrrrrr').status, 1, 'another pause\'s code');
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_R3rrrrrr', words: `Resume ${code}.` });
-  const ok = resume('cmsg_R3rrrrrr');
+  const resume = () => approveIn(r.dir, ['--resume'], tapEnv(cfg));
+  ownerTaps(cfg, r.dir, `sweep resume ${code}`, { at: '2020-01-01T00:00:00.000Z' });
+  assert.equal(resume().status, 1, 'a tap from before the pause');
+  ownerTaps(cfg, r.dir, 'sweep resume 000000');
+  assert.equal(resume().status, 1, 'another pause\'s code');
+  // No terminal way is left: the owner's variable from 1.23 resumes nothing.
+  assert.equal(approveIn(r.dir, ['--resume'], { CLAUDE_CODE_SESSION_ID: TAP_SID, CLAUDE_CONFIG_DIR: cfg, KIT_OWNER_RESUME: '1' }).status, 1, 'the retired terminal resume');
+  ownerTaps(cfg, r.dir, `sweep resume ${code}`);
+  const ok = resume();
   assert.equal(ok.status, 0, ok.stdout);
   const line = approvalLog(r.dir).pop();
-  assert.deepEqual([line.kind, line.words, line.message], ['resume', `Resume ${code}.`, 'cmsg_R3rrrrrr']);
+  assert.deepEqual([line.kind, line.proof], ['resume', 'popup']);
+  assert.equal(resume().status, 1, 'nothing left to resume');
 });
 
-// The 1.23.0 sweep: nothing wrote kit-owner.json, and Claude may not write it, so the first phone yes was refused with
-// no way forward from the phone. The owner sends "setup <code>" in the thread, with the code a setup run gives, and
-// its author is named the owner, once.
-test('the owner is named from the thread with --owner-setup, only while no owner is named', () => {
-  const r = approveRun(askContract());
-  const cfg = makeTemp('cfg-');
-  const setup = (id) => approveIn(r.dir, ['--owner-setup', ...(id ? ['--thread', id] : [])], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
-  const code = (setup().stdout.match(/sends in this build's thread: "setup ([0-9a-f]{6})"/) || [])[1];
-  assert.ok(code, 'a setup run gives the words to send');
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S0ssssss', words: `setup ${code}`, wrap: (m) => `<coordinator-relay>${m}</coordinator-relay>` });
-  assert.match(setup('cmsg_S0ssssss').stdout, /relayed or cited copy/, 'a relayed copy names no one');
-  // A message sent for another reason names no one.
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S9ssssss', words: 'looks good' });
-  assert.match(setup('cmsg_S9ssssss').stdout, /is not "setup [0-9a-f]{6}"/);
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S8ssssss', words: `setup ${code}`, at: '2020-01-01T00:00:00.000Z' });
-  assert.match(setup('cmsg_S8ssssss').stdout, /sent before the code/);
-  assert.equal(fs.existsSync(path.join(cfg, 'kit-owner.json')), false);
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S1ssssss', words: `setup ${code}` });
-  const ok = setup('cmsg_S1ssssss');
-  assert.equal(ok.status, 0, ok.stdout);
-  assert.deepEqual(JSON.parse(read(path.join(cfg, 'kit-owner.json'))), { authorId: OWNER, threadYes: true });
-  // Once named, a change is the owner's own edit of the file.
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_S2ssssss', words: `setup ${code}`, author: 'user_other' });
-  const again = setup('cmsg_S2ssssss');
-  assert.equal(again.status, 1, again.stdout);
-  assert.match(again.stdout, /already names an owner/);
-  assert.equal(JSON.parse(read(path.join(cfg, 'kit-owner.json'))).authorId, OWNER);
-});
-
-// The installed approve.mjs reads the owner's file and transcripts in the Claude folder install user filled in, so
-// a caller cannot point it at a forged pair through CLAUDE_CONFIG_DIR.
-test('an installed approve.mjs reads the owner\'s proof only from the folder it was installed into', () => {
+// The installed approve.mjs reads the owner's taps in the Claude folder install user filled in, so a caller cannot
+// point it at a forged transcript through CLAUDE_CONFIG_DIR.
+test('an installed approve.mjs reads the owner\'s taps only from the folder it was installed into', () => {
   const home = makeTemp('home-');
   const i = spawnSync(process.execPath, [path.resolve('scripts/kit.mjs'), 'install', 'user', '--unreleased'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_CODE_REMOTE: '' } });
   assert.equal(i.status, 0, i.stdout + i.stderr);
   const installed = path.join(home, 'skills', 'pre-pr-sweep', 'approve.mjs');
-  assert.doesNotMatch(read(installed), /\{\{CLAUDE_HOME\}\}/);
+  assert.doesNotMatch(read(path.join(home, 'kit-tools', 'owner-yes.cjs')), /\{\{CLAUDE_HOME\}\}/);
   const r = approveRun(askContract());
-  const code = r.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/)[1];
+  const code = r.stdout.match(/`sweep yes ([0-9a-f]{6})`/)[1];
   const forged = makeTemp('cfg-');
-  ownerFile(forged);
-  ownerSays(forged, { cwd: r.dir, id: 'cmsg_F1ffffff', words: `yes ${code}` });
-  const out = spawnSync('node', [installed, r.f, '--owner-yes', `yes ${code}`, '--thread', 'cmsg_F1ffffff'], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: forged, CLAUDECODE: '1' } });
+  ownerTaps(forged, r.dir, `sweep yes ${code}`);
+  const out = spawnSync('node', [installed, r.f, '--owner-yes'], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, ...tapEnv(forged) } });
   assert.equal(out.status, 1, out.stdout);
-  assert.match(out.stdout, /no owner is named in /);
-  assert.ok(out.stdout.includes(home.split(path.sep).join('/')), out.stdout);
+  assert.match(out.stdout, /no Yes from the owner/);
+  ownerTaps(home, r.dir, `sweep yes ${code}`);
+  const real = spawnSync('node', [installed, r.f, '--owner-yes'], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, ...tapEnv(forged) } });
+  assert.equal(real.status, 0, real.stdout);
 });
 
-// S23-4 (the 1.23.0 verify): with the AI shell's two variables cleared, a resume or a yes with no thread proof was
-// logged; a variable or a glob kept the push guard from seeing it. With no terminal to type the code in, nothing is.
-test('a resume or a yes with no thread proof needs a real terminal, even with the AI shell\'s variables cleared', () => {
-  const r = approveRun(featureContract());
-  outcome(r, String(Math.ceil(537500 * 1.3)));
-  const before = sweepLog(r.dir).length;
-  const bare = (args, env) => spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, ...env } });
-  const resume = bare(['--resume'], { KIT_OWNER_RESUME: '1' });
-  assert.equal(resume.status, 1, resume.stdout);
-  // Refused for the terminal, not for some other reason first (the 1.24.0 sweep).
-  assert.match(resume.stdout, /owner's own terminal/);
-  const ask = approveRun(askContract());
-  const yesThere = spawnSync('node', [APPROVE, ask.f, '--owner-yes', 'yes go ahead'], { encoding: 'utf8', cwd: ask.dir, env: { PATH: process.env.PATH } });
-  assert.equal(yesThere.status, 1, yesThere.stdout);
-  assert.match(yesThere.stdout, /owner's own terminal/);
-  assert.equal(sweepLog(r.dir).length, before, 'nothing logged for the resume');
-  assert.ok(!sweepLog(ask.dir).some((l) => JSON.parse(l).kind === 'owner-yes'), 'nothing logged for the yes');
-  // With nothing paused, the terminal's resume has nothing to resume, as the thread's has not (the 1.24.0 sweep).
-  const running = approveRun(featureContract());
-  const idle = spawnSync('node', [APPROVE, '--resume'], { encoding: 'utf8', cwd: running.dir, env: { PATH: process.env.PATH, KIT_OWNER_RESUME: '1' } });
-  assert.equal(idle.status, 1);
-  assert.match(idle.stdout, /not paused/);
-});
-
-test('only the owner resumes, from a terminal no agent runs in', () => {
-  const r = approveRun(featureContract());
-  outcome(r, String(Math.ceil(537500 * 1.3)));
-  assert.match(approveIn(r.dir, [r.f]).stdout, /paused/i);
-  for (const agent of [{ CLAUDECODE: '1' }, { AI_AGENT: 'x' }]) {
-    assert.notEqual(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1', ...agent }).status, 0, JSON.stringify(agent));
-  }
-  assert.notEqual(approveIn(r.dir, ['--resume']).status, 0);
-  assert.equal(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1' }).status, 0);
-  nextBranch(r.dir);
-  assert.equal(approveIn(r.dir, [r.f]).status, 0);
-});
 // Rule review 2026-10-31 (the owner approved): the trial review comes every 10 auto-approvals until two in a row
 // passed clean, then every 20; any other pause (a drift trip) puts it back to 10.
 test('the trial review widens from every 10 approvals to every 20 after two clean reviews, and a drift pause resets it', () => {
@@ -2737,7 +2643,7 @@ test('the trial review widens from every 10 approvals to every 20 after two clea
   outcome(r);
   const approveN = (n) => { for (let i = 0; i < n; i++) { nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 0, `approval ${i + 1}: ${a.stdout}`); outcome(r); } };
   const due = (every) => { nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 1); assert.match(a.stdout, new RegExp(`trial review due: ${every} auto-approvals`)); };
-  const resume = () => assert.equal(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1' }).status, 0);
+  const resume = () => { const o = approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1' }); assert.equal(o.status, 0, o.stdout); };
   approveN(9); due(10); resume();
   approveN(10); due(10); resume();
   approveN(20); due(20); resume();
@@ -3328,12 +3234,11 @@ test('while paused, every ask says how the owner resumes and what to review firs
   outcome(r, String(Math.ceil(537500 * 1.3)));
   const ask = approveIn(r.dir, [r.f]);
   assert.match(ask.stdout, /paused since \d{4}-\d{2}-\d{2}/);
-  assert.match(ask.stdout, /KIT_OWNER_RESUME/);
   assert.match(ask.stdout, /--summary/);
-  assert.match(approveIn(r.dir, ['--summary']).stdout, /resume: .*KIT_OWNER_RESUME/);
-  // The phone's way too, with the pause's code (the 1.23.0 sweep: the summary showed only the terminal's).
-  const code = ask.stdout.match(/from the thread: "resume ([0-9a-f]{6})"/)[1];
-  assert.ok(approveIn(r.dir, ['--summary']).stdout.includes(`"resume ${code}"`));
+  // The one way to resume, the owner's pop-up Yes to the pause's act, in the ask and the summary alike.
+  const code = ask.stdout.match(/`sweep resume ([0-9a-f]{6})`/)[1];
+  assert.ok(approveIn(r.dir, ['--summary']).stdout.includes(`\`sweep resume ${code}\``));
+  assert.doesNotMatch(ask.stdout, /KIT_OWNER_RESUME|--thread/, 'the retired ways');
 });
 test('an owner-decided sweep can log its outcome, so the trial sees every sweep', () => {
   const r = approveRun(askContract());
@@ -3461,7 +3366,7 @@ function resweep(first, extra = {}, name = 'resweep.json') {
 // however it is named, is the owner's call; their yes clears it as any ask. Handoff item 32: a rebase or a fresh
 // contract name does not hide the branch's first sweep.
 // Under the one-sweep loop a re-sweep inside its focus asks the owner for that reason alone; their yes clears it.
-const ownerAsked = (r) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/); assert.doesNotMatch(r.stdout, /FIX THE CONTRACT/); assert.equal(r.stdout.match(/^    \S.*$/gm).filter((l) => !/No project settings|Triage report|answer from the thread/.test(l)).length, 1, r.stdout); return ownerYes(r); };
+const ownerAsked = (r) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/); assert.doesNotMatch(r.stdout, /FIX THE CONTRACT/); assert.equal(r.stdout.match(/^    \S.*$/gm).filter((l) => !/No project settings|Triage report|answers in the pop-up/.test(l)).length, 1, r.stdout); return ownerYes(r); };
 const ownerYes = (r) => { const y = approveIn(r.dir, [r.f, '--owner-yes', 'yes, run that second pass']); assert.equal(y.status, 0, y.stdout); return r; };
 test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the owner, and a rebase does not hide the first', () => {
   const first = firstSweep();
@@ -4701,13 +4606,12 @@ test('the sweep guard starts a reviewer only with its role\'s token ceiling from
   assert.equal(run(brief(` Token ceiling: ${e.ceilings[0]}.`)).permissionDecision, 'allow');
 });
 
-test('a sweep the owner cleared from the thread starts its reviewers under the ask\'s token ceilings', () => {
+test('a sweep the owner cleared in the pop-up starts its reviewers under the ask\'s token ceilings', () => {
   const r = approveRun(askContract());
-  const code = r.stdout.match(/from the thread: "yes ([0-9a-f]{6})"/)[1];
+  const code = r.stdout.match(/`sweep yes ([0-9a-f]{6})`/)[1];
   const cfg = makeTemp('cfg-');
-  ownerFile(cfg);
-  ownerSays(cfg, { cwd: r.dir, id: 'cmsg_C1cccccc', words: `yes ${code}` });
-  const ok = approveIn(r.dir, [r.f, '--owner-yes', `yes ${code}`, '--thread', 'cmsg_C1cccccc'], { CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' });
+  ownerTaps(cfg, r.dir, `sweep yes ${code}`);
+  const ok = approveIn(r.dir, [r.f, '--owner-yes'], tapEnv(cfg));
   assert.equal(ok.status, 0, ok.stdout);
   const d = approvalLog(r.dir).filter((e) => e.kind === 'decision').pop();
   const c = JSON.parse(read(r.f));
@@ -7238,14 +7142,16 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
 // S6, changed by E27 (option A): no session logs a yes unseen. The proof is the owner's own thread message, which
 // approve.mjs checks; a yes without it is refused in an AI shell and still asks the push guard. A permission prompt
 // on the proven form would reach no one on the phone, so the settings no longer ask on it.
-test('S6: a yes with the thread\'s proof passes the guard, and one without it still asks', () => {
+// T2: approve.mjs reads the owner's pop-up tap itself, so logging a yes needs no second pop-up for the command; a
+// push beside it is held all the same, and clearing the AI shell's markers still is.
+test('S6: the owner\'s yes runs through the guard on its own proof, and a push beside it is still held', () => {
   const ask = JSON.parse(read(path.resolve('project/.claude/settings.json'))).permissions.ask || [];
   assert.equal(ask.some((r) => /owner-yes/.test(r)), false);
   // A crash prints nothing too, and onFailure block makes it a block: only a clean exit counts as a pass.
   const guard = (command) => { const r = spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' }); assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`); return r.stdout; };
-  assert.equal(guard('node approve.mjs c.json --owner-yes "yes abc123" --thread cmsg_Abcdefgh12'), '');
-  assert.match(guard('node approve.mjs c.json --owner-yes "yes, run it"'), /"deny"/);
-  assert.match(guard('node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12; git push'), /"deny"/);
+  assert.equal(guard('node approve.mjs c.json --owner-yes'), '');
+  assert.match(guard('node approve.mjs c.json --owner-yes; git push origin main'), /"deny"/);
+  assert.match(guard('env -u CLAUDECODE node approve.mjs c.json --owner-yes'), /"deny"/);
 });
 test('S7: a start that cannot be recorded is refused, not let through', () => {
   const r = approveRun(featureContract());

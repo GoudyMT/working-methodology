@@ -41,7 +41,7 @@ function actText(input) {
 // The code spans of a question: the acts it quotes, each read whole.
 const spans = (question) => [...String(question).matchAll(/`([^`]+)`/g)].map((m) => squash(m[1]));
 
-// Every accepted Yes in a transcript, oldest first: { at, acts, line } for each pop-up a person answered Yes to.
+// Every accepted Yes in a transcript, oldest first: { at, acts, line, id } for each pop-up a person answered Yes to.
 function yeses(lines) {
 	const asked = new Map();
 	const out = [];
@@ -64,7 +64,7 @@ function yeses(lines) {
 			for (const q of asked.get(b.tool_use_id)) {
 				const answer = String(r.answers[q.question] ?? '');
 				const labels = (q.options || []).map((o) => String(o.label || ''));
-				if (/^yes\b/i.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l))) out.push({ at, acts: spans(q.question), line: n });
+				if (/^yes\b/i.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l))) out.push({ at, acts: spans(q.question), line: n, id: String(b.tool_use_id) });
 			}
 		}
 	}
@@ -156,6 +156,27 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	return false;
 }
 
+// The owner's latest Yes to one act in this session's own transcript, in this repo's folder of transcripts, after a
+// time: { at, tap } (tap names the answer, so one answer is used once), or null. For approve.mjs: an ask or a pause
+// prints the act ("sweep yes <code>"), the lead quotes it in a pop-up, and the owner's tap is the yes.
+function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
+	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return null;
+	const root = path.join(home(), 'projects');
+	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
+	let real = repo;
+	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
+	const here = key(real);
+	let dirs = [];
+	try { dirs = fs.readdirSync(root).filter((d) => here === d.toLowerCase() || here.startsWith(d.toLowerCase() + '-')); } catch { return null; }
+	let best = null;
+	for (const d of dirs) {
+		let lines;
+		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
+		for (const y of yeses(lines)) if (y.at > since && y.acts.includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at, tap: `${sessionId}:${y.id}` };
+	}
+	return best;
+}
+
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { ownerYes, actText, howToAsk, pushGrant, FRESH_MS };
+module.exports = { ownerYes, actText, howToAsk, pushGrant, sessionYes, FRESH_MS };

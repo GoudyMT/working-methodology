@@ -24,7 +24,7 @@ function setup({ drop = null, userHooks = false } = {}) {
 		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs']) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
 	}
 	return (tool_name, tool_input, extra = {}) => {
-		const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: dir, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+		const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: dir, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg } });
 		assert.equal(r.status, 0, r.stderr);
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
 	};

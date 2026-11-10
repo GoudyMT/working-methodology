@@ -4,7 +4,7 @@
 // Usage (settings.json): command "node", args [<this file>]; an optional second arg is a log file that records
 // each decision (time, tool, ask/pass - never the command), used to prove the hook fires.
 // Limits: it reads ordinary spellings, nested shells (bash -c, powershell -Command) and inline aliases; it is no
-// match for a command built at run time (a variable holding "push" or part of --owner-yes, $'..' escapes,
+// match for a command built at run time (a variable holding "push", $'..' escapes,
 // Invoke-Expression on joined strings).
 const fs = require('node:fs');
 
@@ -39,7 +39,7 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-const { plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
 const { ownerYes, howToAsk } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
@@ -126,6 +126,10 @@ function gitOutward(words, start) {
 	if (/[$`%]/.test(sub)) return 'git with a subcommand built at run time';
 	const hooks = gitHooksOff(words, start, at);
 	if (hooks) return hooks;
+	// A read that writes a file anywhere or runs a program (--output, grep's -O pager, an external diff or textconv)
+	// is no read: the allow list lets git diff, log and show run without a prompt, so these spellings are held (T2).
+	// The words are read in lower case, so grep's -O (a pager) and -o (only the match) look alike: both are held.
+	if (words.slice(at + 1).some((w) => /^(--output(=|$)|--open-files-in-pager|--ext-diff$|--textconv$)/.test(w) || (sub === 'grep' && /^-o/.test(w)))) return 'git that writes a file or runs a program';
 	// Where origin points decides where a feature-branch push goes without a yes, so moving it is held (T1).
 	const after = words.slice(at + 1).filter((w) => !w.startsWith('-'));
 	if (sub === 'remote' && ['add', 'set-url', 'rename'].includes(after[0])) return 'git with its remote changed';
@@ -228,45 +232,21 @@ function ghOutward(words, start) {
 }
 
 function findOutward(text, depth) {
-	// The owner's logged yes, in any spelling with quotes, escapes or a wildcard program, anywhere in the command. A
-	// text that only names the flag asks too: the safe side. With --thread <the owner's message id> it passes:
-	// approve.mjs then reads that message from the session transcript and refuses any other (E27).
-	// A Claude session started from a shell with a thread message's shape writes a turn like the owner's own (E27).
+	// The owner's yes and resume for the sweep tools are read by approve.mjs itself from the owner's pop-up tap (T2), so
+	// their spelling needs no hold here. A Claude session started from a shell with a thread message's shape writes a
+	// turn like the owner's own (E27), so it is held still.
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
-	// The proof must be an argument of the same command as the yes: one elsewhere on the line proves nothing.
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
-	// S23-4 (the 1.23.0 verify): approve.mjs takes a shell without CLAUDECODE and AI_AGENT for the owner's terminal, and
-	// a variable or a glob spells the yes past the reading above. Clearing either marker, or the whole environment, asks.
+	// S23-4 (the 1.23.0 verify): the pre-push hook takes a shell without CLAUDECODE and AI_AGENT for the owner's own
+	// terminal, so clearing either marker, or the whole environment, is held.
 	// PowerShell needs no full name (the 1.24.0 sweep): a removal on the Env: drive, by wildcard or by a filter piped
 	// from it, or a .NET call that sets the environment, asks too; reading Env: or setting $env:X does not.
 	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
 	if (/\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat)) return 'a command that clears the AI shell\'s markers';
-	// The terminal's way to resume is the owner's alone; the thread's way carries its proof, as the yes does (the 1.23.0
-	// sweep: a resume with the AI shell's variables unset asked nothing).
-	if (/KIT_OWNER_RESUME/i.test(flat)) return 'an owner resume of the sweep tools';
 	// The pre-push hook lets an AI push to main or a tag only with this marker set, so setting it is the owner's yes.
 	if (/KIT_PUSH_APPROVED/i.test(flat)) return 'the push hook\'s owner-yes marker';
 	// A program or a word built at run time, then an outward verb in the same command: $G push, "$(which git)" push.
 	if (/[$`%][^;|&\n]*?(^|[\s)"'`])(push|send-pack|publish|dcommit|upload)(\s|$)/i.test(flat)) return 'a command built at run time';
-	const resume = /appr[^\s;|&]*\s[^;|&\n]*--resume\b/i.test(flat);
-	if (/--owner-yes/i.test(flat) || resume) {
-		const flag = /--owner-yes/i.test(flat) ? /^--owner-yes(=|$)/i : /^--resume$/i;
-		const what = resume && !/--owner-yes/i.test(flat) ? 'an owner resume of the sweep tools' : 'an owner yes for a sweep';
-		// An escape (\, a backtick, a caret, $'...') can move where a quote ends, so a yes holding one is not proven.
-		if (/[\\`^]|\$'/.test(text)) return what;
-		// Read with its quotes, so a quoted span stays one word: a --thread inside the yes's words is no proof. A
-		// comment is cut first: the shell never hands approve.mjs a --thread after a # (the 1.23.0 sweep).
-		const provenIn = (t) => tokenize(joinContinuations(t)).some((all) => {
-			const w = all.filter((x) => !x.redirect).map((x) => x.value);
-			const at = w.findIndex((x) => flag.test(x));
-			const th = w.indexOf('--thread');
-			return at >= 0 && th >= 0 && /^cmsg_[A-Za-z0-9]{8,64}$/.test(w[th + 1] ?? '');
-		});
-		// Proven as written and with its comments cut: cutting may only take a proof away, never make one.
-		const proven = provenIn(plainText(text)) && provenIn(withoutComments(plainText(text)));
-		const segments = tokenize(joinContinuations(flat)).filter((all) => all.some((x) => /--owner-yes|--resume/i.test(x.value)));
-		if (!proven || segments.length !== 1) return what;
-	}
 	if (/\bgit\b[^;|&\n]*\balias\.[\w-]+/i.test(text)) return 'git with an alias';
 	// An alias set from the environment names no git before it (GIT_CONFIG_KEY_0=alias.x, cargo's CARGO_ALIAS_X), and
 	// its value may be spelled any way: any config from the environment, or cargo's --config, asks.
