@@ -295,10 +295,6 @@ function holdsLink(folder, depth) {
 // fixed folder before it may also be the session folder or the project itself.
 function placeOf(target, ctx, state, keepLast = false) {
 	const api = ctx.api;
-	// A folder this command made with mktemp and holds in a variable it sets once is its own: the lead-session narrowing
-	// carried from 1.24.0 (E27). Any other variable is unread.
-	const own = /^\$\{?([A-Za-z_]\w*)\}?(\/[\w./-]*)?$/.exec(target);
-	if (own && ctx.ownTemps && ctx.ownTemps.has(own[1]) && !String(own[2] || '').includes('..')) return '';
 	if (/[$%]/.test(target) || target.includes(BACKTICK)) return 'a target holding a variable';
 	if (target.startsWith('@')) return 'a splatted target';
 	// A PowerShell drive other than a disk (HKCU:, Env:, Function:) or a provider path (FileSystem::C:\x).
@@ -658,10 +654,6 @@ function decide(input, where = {}) {
 	const id = String(input.session_id ?? '');
 	const session = SESSION_ID.test(id) ? { id, claude: realOf(api.join(tmpdir, 'claude'), api) } : null;
 	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
-	// The variables a bash command sets once, to a folder or file mktemp makes (tmp=$(mktemp -d)), and never again.
-	const text0 = strings.join('\n');
-	const sets = [...text0.matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=/g)].map((m) => m[1]);
-	ctx.ownTemps = input.tool_name === 'Bash' ? new Set([...text0.matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=\$\(mktemp(?:\s+-[dtu]+)*(?:\s+[\w.-]*X{3,}[\w.-]*)?\)/g)].map((m) => m[1]).filter((v) => sets.filter((x) => x === v).length === 1)) : new Set();
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
 	const both = strings.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);

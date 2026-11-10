@@ -178,6 +178,12 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// A variable set more than once (P=~/.claude; ... $P ...; P=x) is read as each value it is given in turn: the
 	// command is refused if any reading of it writes a protected place (a security review of this build). Past 32
 	// readings it fails closed.
+	// A variable set to a plain value here and also some way the guard cannot read (P+=x, read P, export P, ${P:=x},
+	// for P in, printf -v P), then used, is refused: read as either value it could be wrong (a security review).
+	for (const name of given.keys()) {
+		const other = new RegExp(`\\$\\{${name}:?=|(^|[^\\w$])${name}\\+=|\\b(read|for|mapfile|readarray|unset|getopts)\\b[^;&|\\n]*[\\s'"]${name}\\b|\\b(declare|local|typeset)\\s+-[^;&|\\n]*[\\s'"]${name}\\b|\\bprintf\\b[^;&|\\n]*-v\\s*['"]?${name}\\b`);
+		if (other.test(String(command)) && new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command))) return true;
+	}
 	const used = (name) => new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`).test(String(command || ''));
 	const twice = [...given].filter(([name, values]) => new Set(values).size > 1 && used(name));
 	if (twice.length) {

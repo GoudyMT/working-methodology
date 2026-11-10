@@ -84,6 +84,8 @@ test('the same holes in the spellings beside them are held', () => {
 		// The same variable set again after its use: the write reads the first value (a security review of this build).
 		'P=~/.cla; echo x > ${P}ude/projects/x/s.jsonl; P=/tmp',
 		'P=~/.cla; echo x > $P/../.claude/projects/x/s.jsonl; P=/tmp',
+		'P=~/.cla; P+=ude; echo x > $P/projects/x/s.jsonl',
+		'P=/tmp; read -r P < f; echo x > ${P}/x/s.jsonl',
 	];
 	for (const c of held) assert.notEqual(bash(c), 'allow', c);
 });

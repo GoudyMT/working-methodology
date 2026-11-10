@@ -801,15 +801,14 @@ for (const command of PASS) check(command, asSession('PowerShell', command), fal
 for (const command of CARRY122_PS_ASK) check('[PowerShell] ' + command, asSession('PowerShell', command), true);
 for (const command of CARRY122_PASS) check(command, asSession('PowerShell', command), false);
 check('[Bash] rm -rf * (bash * skips dot names)', asSession('Bash', 'rm -rf *'), false);
-// The lead-session narrowing (E27, carried from 1.24.0): a look-up runs nothing; a mktemp folder the same command
-// made, held in a variable set once, is its own. Each spelling beside it that could hide a delete still asks.
+// The lead-session narrowing (E27, carried from 1.24.0): a look-up of plain names runs nothing. Each spelling beside it
+// that could hide a delete still asks. A command's own mktemp folder is not exempt: a variable can be unset, reread,
+// left empty by a failed mktemp or set in a subshell (a security review of this build), so it asks like any variable.
 for (const [command, wantAsk] of [
 	['man rm', false], ['which rm', false], ['type del', false], ['command -v rm', false], ['Get-Help Remove-Item', false],
-	['tmp=$(mktemp -d); touch "$tmp/a"; rm -rf "$tmp"', false], ['f=$(mktemp); echo x > "$f"; rm -f "$f"', false],
-	['tmp=$(mktemp -d); rm -rf "$tmp/sub"', false],
 	['command rm -rf /x', true], ['man rm; rm -rf /x', true], ['which $(rm -rf /x)', true], ['man rm > /x', true],
-	['tmp=$(mktemp -d); tmp=/x; rm -rf "$tmp"', true], ['tmp=$(mktemp -d); rm -rf "$tmp/../.."', true],
-	['tmp=$(mktemp -d); rm -rf "$other"', true], ['tmp=$(mktemp -d) other=/x; rm -rf "$tmp" "$other"', true],
+	['tmp=$(mktemp -d); rm -rf "$tmp"', true], ['tmp=$(mktemp -d); unset tmp; rm -rf "$tmp/home"', true],
+	['(HOME=$(mktemp -d)); rm -rf "$HOME"', true], ['tmp=$(mktemp -d) true; rm -rf "$tmp/x"', true],
 ]) check('[Bash] ' + command, asSession('Bash', command), wantAsk);
 // Other field names are read; the description is only shown, never run.
 check('[field "script"] rm -rf /tmp/x', { tool_name: 'Monitor', session_id: SESSION_ID, cwd: PROJECT, tool_input: { script: 'rm -rf /tmp/x' } }, true);
