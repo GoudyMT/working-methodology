@@ -128,6 +128,38 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
 });
 
+// S23-2 (the 1.23.0 verify): reads through a variable or after a cd into the transcripts, and a file whose text only
+// names kit-owner.json, were refused. S23-1: the mutation check found writes no test covered.
+test('the owner-proof guard follows a variable and a cd into the transcripts, and reads a quoted heredoc as data', () => {
+	const deny = [
+		['Bash', { command: 'P=~/.claude/projects; echo x >> $P/p/s.jsonl' }],
+		['Bash', { command: 'P=~/.claude/projects/p; cp x.jsonl ${P}/s.jsonl' }],
+		['Bash', { command: 'cd ~/.claude/projects/p && touch s.jsonl' }],
+		['Bash', { command: 'cd ~/.claude/projects/p && forge' }],
+		['Bash', { command: 'cd ~/.claude/projects/p; touch s.jsonl' }],
+		['Bash', { command: 'echo {} > $CFG/kit-owner.json' }],
+		['PowerShell', { command: 'Set-Content $env:CFG\\kit-owner.json "{}"' }],
+		['Bash', { command: "cat > ~/.claude/projects/p/s.jsonl <<'EOF'\nx\nEOF" }],
+		['Bash', { command: "cat <<'EOF' | bash\necho x >> ~/.claude/projects/p/s.jsonl\nEOF" }],
+		['Bash', { command: 'cat <<EOF > notes.md\n$(echo x >> ~/.claude/projects/p/s.jsonl)\nEOF' }],
+		['PowerShell', { command: 'cp -n ~/.claude/projects/p/s.jsonl ./out.txt' }],
+		// The 1.24.0 sweep: an end mark bash reads otherwise, a variable glued to the name, and CDPATH.
+		['Bash', { command: 'cat <<E"OF" > /tmp/x\nhi\nEOF\necho x > ~/.claude/kit-owner.json' }],
+		['Bash', { command: "cat > notes.md <<E'OF'\nx\nEOF\necho x >> ~/.claude/projects/p/s.jsonl\nE'OF'" }],
+		['Bash', { command: 'P=~/.claude/; echo x > ${P}kit-owner.json' }],
+		['Bash', { command: 'echo x > ${Q}kit-owner.json' }],
+		['Bash', { command: 'export CDPATH=~/.claude; cd projects && echo x > p/s.jsonl' }],
+	];
+	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
+	const allow = [
+		['Bash', { command: 'P=~/.claude/projects; grep -c x $P/p/s.jsonl' }],
+		['Bash', { command: 'cd ~/.claude/projects/p && grep -c x s.jsonl' }],
+		['Bash', { command: "cat > notes.md <<'EOF'\nThe owner file is ~/.claude/kit-owner.json.\nEOF" }],
+		['Bash', { command: "sed -i 's/old/kit-owner.json/' notes.md" }],
+	];
+	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
+});
+
 test('the shipped project settings wire the owner-proof guard on every write tool and shell', () => {
 	const pre = JSON.parse(fs.readFileSync(path.resolve('project/.claude/settings.json'), 'utf8')).hooks.PreToolUse;
 	// It ships in the project layer beside the guards whose reader it uses: a project whose user layer is older

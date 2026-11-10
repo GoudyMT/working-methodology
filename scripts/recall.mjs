@@ -214,8 +214,14 @@ export function runHeader({ label, keys, facts, when, cli }) {
  *     { ok, detail }
  */
 export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {} }) {
-  const lines = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
-  const dropped = removed.some((l) => /^gate:/i.test(l.trim()));
+  const all = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
+  // A file with no newline at its end shows its last line removed and added back unchanged when an entry is
+  // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no drop, and
+  // the re-added copy is never the PR's own line. With no new line of its own, a re-add stays a drop.
+  const removedGate = removed.map((l) => l.trim()).filter((l) => /^gate:/i.test(l));
+  const own = all.filter((l) => !removedGate.includes(l));
+  const lines = own.length ? own : all;
+  const dropped = removedGate.some((l) => !(own.length && all.includes(l)));
   if (!lines.length && !dropped && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
   if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the floor rests on it. Only the owner may: add a current gate line ending in owner-accepted' };
   if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it` };

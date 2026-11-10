@@ -117,7 +117,10 @@ const WILDCARD = /[*?[]/;
 // A session id is a full UUID: it alone finds the session folder, so "../.." or a plain word could name a shared one.
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const { normalize, plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
+const shared = require('./guard-read.cjs');
+// install skips a guard-read.cjs the owner changed, so an older one may sit here: without holdFor, every hold asks.
+const { normalize, plainText, withoutComments, joinContinuations, tokenize } = shared;
+const holdFor = shared.holdFor || (() => ({ decision: 'ask', note: '' }));
 
 // The program a word names, whatever folder it sits in, without .exe: "C:/Git/usr/bin/rm.exe" -> "rm"; cmd
 // reads a switch glued to a builtin, so "rd/s/q" -> "rd".
@@ -689,8 +692,11 @@ function main() {
 	});
 	process.stdin.on('end', () => {
 		let reason = '';
+		let hold = holdFor(null);
 		try {
-			reason = decide(JSON.parse(raw));
+			const input = JSON.parse(raw);
+			hold = holdFor(input);
+			reason = decide(input);
 		} catch {
 			// A guard that cannot read the command asks rather than lets it through.
 			reason = 'the guard could not read this command';
@@ -699,8 +705,8 @@ function main() {
 			process.stdout.write(JSON.stringify({
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
-					permissionDecision: 'ask',
-					permissionDecisionReason: 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): it runs only with the user saying yes.',
+					permissionDecision: hold.decision,
+					permissionDecisionReason: 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): it runs only with the user saying yes.' + hold.note,
 				},
 			}));
 		}

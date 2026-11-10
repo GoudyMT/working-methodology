@@ -69,7 +69,22 @@ function main() {
 		const to = String((input.tool_input || {}).to || '');
 		if (!/^[A-Za-z0-9_-]{1,64}$/.test(to)) return;
 		let meta = {};
-		try { meta = JSON.parse(fs.readFileSync(path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents', `agent-${to}.meta.json`), 'utf8')); } catch { return; }
+		const agentDir = path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents');
+		// An agent whose transcript is there but whose type cannot be read may be a reviewer (F36, the 1.23.0 sweep). A
+		// name with no transcript behind it is a teammate's, and is messaged as before.
+		try { meta = JSON.parse(fs.readFileSync(path.join(agentDir, `agent-${to}.meta.json`), 'utf8')); } catch { meta = fs.existsSync(path.join(agentDir, `agent-${to}.jsonl`)) ? { agentType: 'reviewer' } : {}; }
+		if (!meta || typeof meta !== 'object') meta = { agentType: 'reviewer' };
+		// A reviewer is also addressed by the name its meta file gives it (the 1.24.0 sweep): any agent of this session
+		// by that name that is a reviewer, or whose meta cannot be read, is refused.
+		if (!meta.agentType) {
+			let files = [];
+			try { files = fs.readdirSync(agentDir).filter((f) => f.endsWith('.meta.json')); } catch { /* no agents yet */ }
+			for (const f of files) {
+				let m = null;
+				try { m = JSON.parse(fs.readFileSync(path.join(agentDir, f), 'utf8')); } catch { /* unreadable: checked below by name only */ }
+				if (m && m.name === to && /(^|:)reviewer$/i.test(String(m.agentType || ''))) { meta = m; break; }
+			}
+		}
 		if (/(^|:)reviewer$/i.test(String(meta.agentType || ''))) deny('A sweep reviewer is never resumed: its spend was read for the sweep it ran. A new question is a new reviewer under a cleared contract.');
 		return;
 	}

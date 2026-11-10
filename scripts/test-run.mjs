@@ -248,7 +248,11 @@ export async function main(argv) {
 
 	const work = makeTemp('kit-run-');
 	const status = await (async () => {
-		const env = { KIT_REPO: root };
+		// Every test runs with a throwaway Claude folder: a test that loses its own (a mutant, a slip) lands there, never in
+		// the owner's ~/.claude (the 1.24.0 build: a mutation run rewrote the owner's install record).
+		const claudeDir = path.join(work, 'claude');
+		fs.mkdirSync(claudeDir);
+		const env = { KIT_REPO: root, KIT_CLAUDE_HOME: claudeDir, CLAUDE_CONFIG_DIR: claudeDir };
 		let shardFiles = harnessed;
 		let shards = o.shards;
 		if (o.changed) {

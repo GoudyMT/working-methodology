@@ -63,7 +63,18 @@ function mapped(name, idx, fn) {
 	};
 }
 
+// E31: CI runs the suite on Linux, where it is about 20 times faster, and only the tests marked { windows: true } on
+// Windows (what the owner's machine alone shows: drive paths, Git for Windows' sh running the git hooks, junctions).
+// KIT_WINDOWS_SLICE=1 registers only those; elsewhere than Windows they are registered as skipped.
+const WINDOWS_SLICE = process.env.KIT_WINDOWS_SLICE === '1';
 export function test(name, ...rest) {
+	const opts = rest.length > 1 && rest[0] && typeof rest[0] === 'object' ? rest[0] : null;
+	const windows = Boolean(opts && opts.windows);
+	if (WINDOWS_SLICE && !windows) return undefined;
+	if (opts) {
+		const { windows: _w, ...own } = opts;
+		rest[0] = windows && process.platform !== 'win32' ? { ...own, skip: 'Windows only: the Windows slice runs it' } : own;
+	}
 	const idx = count++;
 	if (idx % SHARDS !== SHARD) return undefined;
 	if (ONLY && !ONLY.has(`${FILE}::${name}`) && !ONLY.has(`${FILE}::*`)) return undefined;

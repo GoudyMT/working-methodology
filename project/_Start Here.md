@@ -71,52 +71,19 @@ Full rules: [`AGENTS.md`](AGENTS.md). Tests come first, watched failing.
 
 ## Project Structure
 
-```
-<project root>/
-  _Start Here.md                  <- YOU ARE HERE
-  AGENTS.md                       <- Read FIRST (core rules + module index)
-  _Loop Learnings.md              <- Open lessons (a repeat = regression)
-  _Working Memory.md              <- Project state dashboard
-  _Active Plan.md                 <- Current focus + next action
-  _Master Roadmap.md              <- Status across versions
-  _Session Log.md                 <- Chronological history
-  _Archive/                       <- Moved-out history (never deleted)
-  _Templates/                     <- Templates for sessions, ADRs, components, PR bodies
-  CLAUDE.md                       <- Claude Code entry
-  README.md                       <- Public-facing intro
-  docs/
-    <specs>/                      <- Master design spec
-    <decisions>/                  <- ADRs
-    <plans>/                      <- Implementation plans
-    <sweeps>/                     <- Sweep reports
-  <src>/                          <- Source code
-  <tests>/                        <- E2E / integration tests
-```
+<The top folders and what each holds, or a pointer to the README's tree. The tracking files sit at the root; history moves to `_Archive/`, never deleted.>
 
 ---
 
 ## Recovery Protocol (If You Lose Context Mid-Session)
 
-1. Read `_Active Plan.md` - resolved decisions, open issues
-2. Read `_Working Memory.md` - dashboard, resume point
-3. Read `_Loop Learnings.md` - open lessons
-4. Read the last `_Session Log.md` entry - where we stopped
-5. Read the specific spec / ADR / plan referenced
-6. Resume from the first OPEN issue
-
-If unclear which issue is open: **one clarification question** to the owner before presenting options. Do NOT recreate prior decisions from memory.
+rule:recovery-protocol: the start reads, then the first OPEN issue; if it is unclear which issue is open, one clarification question to the owner. Never recreate prior decisions from memory.
 
 ---
 
 ## Templates
 
-| Template | When to Use |
-|---|---|
-| [`_Templates/_Session Log Template.md`](_Templates/_Session Log Template.md) | New session log entries |
-| [`_Templates/_Decision Record Template.md`](_Templates/_Decision Record Template.md) | New ADR (MADR format) |
-| [`_Templates/_Component Spec Template.md`](_Templates/_Component Spec Template.md) | New component design doc |
-| [`_Templates/_Component Security Checklist.md`](_Templates/_Component Security Checklist.md) | Before marking any component complete |
-| [`_Templates/_PR Body Template.md`](_Templates/_PR Body Template.md) | Every PR description |
+[`_Templates/`](_Templates/) holds one per job: the session log entry, the ADR (MADR), the component spec and its security checklist (before a component is marked complete), and the PR body.
 
 ---
 

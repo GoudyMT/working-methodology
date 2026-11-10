@@ -3,6 +3,7 @@
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -32,6 +33,23 @@ test('the runner splits a harness file into shards that together run every test 
 	assert.deepEqual(ran(log), names);
 	assert.match(r.stdout, /3 shards/);
 	assert.match(r.stdout, /pass 7, fail 0/);
+});
+
+// E31: Linux runs the suite and Windows the tests marked { windows: true }; together every test runs, and each one
+// marked runs on Windows (off Windows it is skipped, never dropped silently).
+test('the Windows slice runs only the marked tests, and elsewhere the marked tests are skipped', () => {
+	const dir = kitTemp.makeTemp('winslice-');
+	const log = path.join(dir, 'ran.log');
+	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS}; import fs from 'node:fs';\n` +
+		['a', 'b'].map((n) => `test('${n}', () => { fs.appendFileSync(${JSON.stringify(log)}, '${n}\\n'); });`).join('\n') +
+		`\ntest('w', { windows: true }, () => { fs.appendFileSync(${JSON.stringify(log)}, 'w\\n'); });`);
+	const slice = run(dir, ['--shards', '2', path.join(dir, 'x.test.mjs')], { KIT_WINDOWS_SLICE: '1' });
+	assert.equal(slice.status, 0, slice.stdout + slice.stderr);
+	assert.deepEqual(ran(log), process.platform === 'win32' ? ['w'] : []);
+	fs.rmSync(log, { force: true });
+	const all = run(dir, ['--shards', '2', path.join(dir, 'x.test.mjs')]);
+	assert.equal(all.status, 0, all.stdout + all.stderr);
+	assert.deepEqual(ran(log), process.platform === 'win32' ? ['a', 'b', 'w'] : ['a', 'b']);
 });
 
 // CI splits the suite over several runners (S22-1): the slices together run each test once, and a file outside the
@@ -89,6 +107,23 @@ test('a failing test in any shard fails the run and is named in the output', () 
 	assert.match(r.stdout, /pass 3, fail 1/);
 });
 
+// The 1.24.0 build: a mutant dropped a test's own Claude folder, and an install wrote into the owner's real one. Every
+// run gives its tests a throwaway Claude folder, so a test that loses its own falls back there, never to ~/.claude.
+test('every run gives its tests a throwaway Claude folder, never the real one', () => {
+	const dir = kitTemp.makeTemp('home-');
+	const seen = path.join(dir, 'seen.json');
+	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS};\nimport fs from 'node:fs';\n` +
+		`test('reads', () => { fs.writeFileSync(${JSON.stringify(seen)}, JSON.stringify([process.env.KIT_CLAUDE_HOME, process.env.CLAUDE_CONFIG_DIR, fs.existsSync(process.env.KIT_CLAUDE_HOME || '')])); });\n`);
+	const { KIT_CLAUDE_HOME: _k, CLAUDE_CONFIG_DIR: _c, ...env } = process.env;
+	const r = spawnSync(process.execPath, [RUNNER, '--shards', '1', path.join(dir, 'x.test.mjs')], { cwd: dir, encoding: 'utf8', env });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	const [kit, config, exists] = JSON.parse(fs.readFileSync(seen, 'utf8'));
+	assert.ok(kit && exists, 'a Claude folder the run made');
+	assert.equal(config, kit, 'Claude Code\'s own variable names the same throwaway');
+	assert.notEqual(path.resolve(kit), path.join(os.homedir(), '.claude'));
+	assert.ok(!path.resolve(kit).startsWith(path.join(os.homedir(), '.claude')));
+});
+
 // CI killed a run at its cap with nothing printed (PR 25): each shard says where it is while it runs and when it ends.
 test('each shard names the test it is in while it runs, and prints its own result when it ends', () => {
 	const dir = kitTemp.makeTemp('beat-');
@@ -96,7 +131,7 @@ test('each shard names the test it is in while it runs, and prints its own resul
 		`test('quick', () => {});\ntest('the slow one', async () => { await new Promise((r) => setTimeout(r, 1500)); });\n`);
 	const r = run(dir, ['--shards', '1', path.join(dir, 'x.test.mjs')], { KIT_RUN_BEAT_MS: '300' });
 	assert.equal(r.status, 0, r.stdout + r.stderr);
-	assert.match(r.stdout, /test-run: shard 1\/1 at 'x\.test\.mjs > the slow one' after \d+ s/);
+	assert.match(r.stdout, /test-run: shard 1\/1 at[\s\S]*'x\.test\.mjs > the slow one'.*after \d+ s/);
 	assert.match(r.stdout, /test-run: shard 1\/1 done, pass 2, fail 0 in [\d.]+ s/);
 	assert.ok(r.stdout.indexOf('shard 1/1 done') < r.stdout.indexOf('1 shards, pass'), 'the shard line comes before the total');
 });

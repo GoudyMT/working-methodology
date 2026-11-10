@@ -53,12 +53,15 @@ function main() {
 	const calls = new Map();
 	let cap = null;
 	let ceiling = null;
+	// Only the brief, the first user message, sets them: a later one is a tool's answer and may hold any text (F37).
+	let brief = true;
 	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
 		if (!line.trim()) continue;
 		let m;
 		try { m = JSON.parse(line).message; } catch { continue; }
 		if (!m) continue;
-		if (cap === null && m.role === 'user') {
+		if (brief && m.role === 'user') {
+			brief = false;
 			const text = JSON.stringify(m.content);
 			const x = text.match(/Call cap: (\d+)/);
 			if (x) cap = Number(x[1]);

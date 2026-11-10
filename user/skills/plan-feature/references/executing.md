@@ -69,7 +69,7 @@ The approved plan is approved scope, so do not pause to ask "should I continue?"
    design happened to name the input that triggers it. Then run every finding through rule:finding-pipeline
    (a finding is a hypothesis; fix roots; one root per commit; each fix proved by a test that failed first).
    Small and easy findings are fixed now, not deferred (rule:autonomous-fixes, rule:features-first).
-5. Each fix with a test that fails first (no re-sweep: a second pass is the owner's call), then the pre-push op-test where it applies (rule:pre-push-op-test).
+5. Each behaviour fix with a test that fails first and meets rule:test-value; a prose fix by the recall eval or an invariant (no re-sweep: a second pass is the owner's call), then the pre-push op-test where it applies (rule:pre-push-op-test).
 6. Close with the rundown (rule:delegated-decisions). Under `Decided alone`, list every Ruling line in the
    order made, each with its cost if wrong, and every finding deliberately left with where it is recorded.
    These lists are complete: the rundown is the only place the owner sees the calls you made for them.

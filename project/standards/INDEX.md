@@ -77,6 +77,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | sub-agent-verification | Sub-Agent Verification Step | `.claude/rules/testing.md` | agent results, verify agent, check builder |
 | test-integrity | Test Integrity (Tests Never Yield to Implementation) | `.claude/rules/testing.md` | failing test, weaken, skip, assertion |
 | test-value | Test Value (Practical Tests, Not Test Counts) | `.claude/rules/testing.md` | useful tests, fluff, test count, coverage |
+| word-pins | Word Pins (Behaviour, Not Sentences) | `.claude/rules/testing.md` | exact wording, sentence regex, message text, snapshot |
 | sdd-triangle | Spec-Driven Development (SDD) Triangle | `.claude/rules/testing.md` | spec, drift, adr, superseded |
 | tracking-file-size-caps | Tracking File Size Caps (Hard Limits) | `.claude/rules/tracking-and-handoff.md` | size limit, too long, line limit, log length, tracking files |
 | session-log-compression | Session Log Compression Pattern | `.claude/rules/tracking-and-handoff.md` | compress, old entries, history, log |

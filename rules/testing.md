@@ -13,6 +13,7 @@ tags:
   sub-agent-verification: agent results, verify agent, check builder
   test-integrity: failing test, weaken, skip, assertion
   test-value: useful tests, fluff, test count, coverage
+  word-pins: exact wording, sentence regex, message text, snapshot
   sdd-triangle: spec, drift, adr, superseded
 ---
 
@@ -80,7 +81,12 @@ Do not edit any files.
 
 - **Keep:** behaviour through its user's seam (screen, exported function, protocol), not private helpers; every security / privacy / legal rule and reachable failure path; boundaries, one case each side; a named regression test per real bug; table rows only for distinct branches or real inputs.
 - **Cut:** tests restating the code; second proofs; assertions on freely changeable internals; rows reaching no new branch; tests passing against a do-nothing stub (unless a break-checked "nothing happens" check).
+- **A new test stays** only if it fails first and catches a mutant or guards a security / owner rule.
 - **Checked by:** the break check; builders naming the use of any test beyond the brief; checkers' `test-value` findings (keep / cut / repoint per added or edited test); the sweep's Test Value agent; **fix forward** (cut fluff only in files a PR already touches, when cheap and safe).
+
+## Word Pins (Behaviour, Not Sentences) {#word-pins}
+
+**A test pins exact words only when the words are the behaviour:** (1) a machine reads them (a hook, audit or CI keys on the string); (2) a guardrail's order at a stop (the directive and the command, not the sentence around them); (3) frozen text (released recall keys, built copies: compared byte for byte); (4) words the owner locked (named in the test). The assertion names its case with `pin: <n>` on its line or the two above; an unmarked whole-sentence pin (8 or more words in one run) fails the pin check. Everything else asserts the exit code, the files written, what is blocked, and the stable tokens a reader acts on (an ID, a verdict word, a path, a number, the next command); rule meaning is the recall eval's, and a prose-only fix is proven by the recall eval or an invariant, never by a sentence regex. Why: a whole-sentence pin turns red on a harmless rewording ("change-detector tests", Google); 175 of 527 tests did before 1.24.0.
 
 ## Spec-Driven Development (SDD) Triangle {#sdd-triangle}
 

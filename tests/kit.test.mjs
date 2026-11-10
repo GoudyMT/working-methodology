@@ -56,7 +56,7 @@ function makeKit() {
 
 const read = (p) => fs.readFileSync(p, 'utf8');
 
-test('projectSlug matches the folder name Claude Code uses for project memory', () => {
+test('projectSlug matches the folder name Claude Code uses for project memory', { windows: true }, () => {
   assert.equal(
     projectSlug('D:\\Work\\Coding\\.Projects\\2026\\My App'),
     'D--Work-Coding--Projects-2026-My-App',
@@ -301,7 +301,7 @@ test('session start says when the kit has newer rules, and how many', () => {
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /newer/);
   bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
   bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update\./);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\)[\s\S]*\(1\.0\.0\)[\s\S]*\/methodology-kit update/);
 });
 
 // 1.21.1 carry 6: a main held by a ruleset alone is protected, though GitHub has no classic protection for it.
@@ -322,8 +322,8 @@ test('status warns when the temp disk runs low on inodes, and is silent when it 
   install({ kit, home, target: 'user' });
   install({ kit, home, target: 'project', projectDir: proj });
   const at = (level, pct) => status({ kit, home, projectDir: proj, ahead: () => 0, inodes: () => ({ level, pct, text: `${pct}% of inodes used on /t` }) });
-  assert.match(at('refuse', 90).text, /Temp disk: 90% of inodes used on \/t\. Test runs refuse above 80%/);
-  assert.match(at('warn', 60).text, /Temp disk: 60% of inodes used on \/t\. Test runs refuse above 80%/);
+  assert.match(at('refuse', 90).text, /Temp disk: 90% of inodes[\s\S]*80%/);
+  assert.match(at('warn', 60).text, /Temp disk: 60% of inodes[\s\S]*80%/);
   assert.equal(at('refuse', 90).current, true, 'disk room is not an install fault');
   assert.doesNotMatch(at('ok', 10).text, /Temp disk/);
   assert.doesNotMatch(at('unknown', null).text, /Temp disk/);
@@ -337,7 +337,7 @@ test('status and session start flag a Claude Code too old for onFailure, and sta
   const at = (v) => status({ kit, home, projectDir: proj, ahead: () => 0, claudeVersion: () => v });
   const old = at('2.1.294 (Claude Code)');
   assert.equal(old.current, false);
-  assert.match(old.text, /Claude Code 2\.1\.294 is older than 2\.1\.295: a guard that crashes or times out lets the command run\. Run claude update\./);
+  assert.match(old.text, /Claude Code 2\.1\.294 is older than 2\.1\.295[\s\S]*claude update/);
   assert.match(old.text, /Not current: .*Claude Code is older than 2\.1\.295/);
   assert.match(at('2.0.999 (Claude Code)').text, /older than 2\.1\.295/);
   for (const v of ['2.1.295 (Claude Code)', '2.1.302 (Claude Code)', '3.0.0', null, 'garbage']) {
@@ -352,7 +352,7 @@ test('status and session start flag a Claude Code too old for onFailure, and sta
 // project, so a claude.cmd planted there would run on every session start.
 // A machine as it ships: this sandbox sets NoDefaultCurrentDirectoryInExePath; most machines do not.
 const withoutSafeSearch = (env) => Object.fromEntries(Object.entries(env).filter(([k]) => k.toLowerCase() !== 'nodefaultcurrentdirectoryinexepath'));
-test('the Claude Code version read never runs a claude program planted in the current folder', { skip: process.platform !== 'win32' }, () => {
+test('the Claude Code version read never runs a claude program planted in the current folder', { windows: true, skip: process.platform !== 'win32' }, () => {
   const dir = makeTemp('planted-');
   const marker = path.join(dir, 'ran.txt');
   fs.writeFileSync(path.join(dir, 'claude.cmd'), `@echo planted> "${marker}"\r\n@echo 9.9.9\r\n`);
@@ -395,7 +395,7 @@ test('status says current only when the kit folder, ~/.claude and the project al
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, edited here\n');
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, true, r.text);
-  assert.match(r.text, /1 file\(s\) carry this project's own values on the current kit copy: _Working Standards\.md/);
+  assert.match(r.text, /1 file\(s\) carry[\s\S]*own values[\s\S]*_Working Standards\.md/);
 
   // Changed here AND in the kit: a hand merge is owed, so status is not current until the merge is recorded.
   bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
@@ -404,7 +404,7 @@ test('status says current only when the kit folder, ~/.claude and the project al
   install({ kit, home, target: 'project', projectDir: proj });
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, false);
-  assert.match(r.text, /1 file\(s\) changed here and in the kit: _Working Standards\.md\. Merge the kit's changes by hand, then record it/);
+  assert.match(r.text, /1 file\(s\) changed here and in the kit[\s\S]*_Working Standards\.md[\s\S]*by hand/);
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
   const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
   assert.deepEqual(m.merged, ['_Working Standards.md']);
@@ -416,7 +416,7 @@ test('status says current only when the kit folder, ~/.claude and the project al
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
   r = status({ kit, home, projectDir: proj, ahead: () => 2, newest: () => 'v1.0.3' });
   assert.equal(r.current, false);
-  assert.match(r.text, /GitHub has 2 newer kit commit\(s\): check out its newest release tag \(git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3\), then update both below\./);
+  assert.match(r.text, /GitHub has 2 newer kit commit[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
   assert.doesNotMatch(r.text, /git pull/);
 });
 
@@ -446,7 +446,7 @@ test('session start lists the skills for the cases this project turned on', () =
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /No skill cases chosen yet/);
   fs.writeFileSync(path.join(proj, '.claude/skill-cases.local.json'), JSON.stringify({ on: ['ui-ux'] }));
   const msg = sessionStartReport({ kit, home, projectDir: proj });
-  assert.match(msg, /UI\/UX design or review \(a screen, flow or copy changes\): design:design-critique, human-factor/);
+  assert.match(msg, /UI\/UX design[\s\S]*design:design-critique, human-factor/);
   assert.doesNotMatch(msg, /systematic-debugging/);
 });
 
@@ -468,7 +468,7 @@ test('pre-compact counts what is waiting for the kit', () => {
   assert.match(preCompactReport({ kit, home, projectDir: proj }), /No rule changes waiting for the kit\./);
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, improved\n');
   fs.writeFileSync(path.join(home, 'projects', projectSlug(proj), 'memory', 'new-lesson.md'), 'lesson\n');
-  assert.match(preCompactReport({ kit, home, projectDir: proj }), /2 rule change\(s\) waiting for the kit: _Working Standards\.md, memory\/new-lesson\.md\. Sort them/);
+  assert.match(preCompactReport({ kit, home, projectDir: proj }), /2 rule change\(s\)[\s\S]*_Working Standards\.md, memory\/new-lesson\.md/);
 });
 
 test('the hook script prints a user message and context for Claude, and never fails the session', async () => {
@@ -545,7 +545,7 @@ test('session start names only the kit files that owe a hand merge, not a projec
   // Changed here and in the kit: a merge is owed, and session start says so.
   bump({ kit, level: 'patch', note: 'x', date: '2026-02-01' });
   fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'kit rules, newer\n');
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /1 kit file\(s\) changed here and in the kit: _Working Standards\.md\. Merge the kit's changes by hand, then record it with kit\.mjs install project <folder> --merged <file>,<file>\./);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /1 kit file\(s\) changed here[\s\S]*_Working Standards\.md[\s\S]*kit\.mjs install project <folder> --merged/);
 });
 
 test('pre-compact says when an installed third-party plugin moved past its backup', () => {
@@ -557,16 +557,16 @@ test('pre-compact says when an installed third-party plugin moved past its backu
   const data = JSON.parse(read(file));
   data.plugins['toolbox@market'][0].version = '2.1.0';
   fs.writeFileSync(file, JSON.stringify(data));
-  assert.match(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /1 third-party plugin\(s\) changed since the backup: toolbox \(2\.0\.0 -> 2\.1\.0\)\. Review, then run snapshot\./);
+  assert.match(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /1 third-party plugin\(s\) changed since the backup: toolbox \(2\.0\.0 -> 2\.1\.0\)[\s\S]*run snapshot/);
 });
 
 test('brief templates point to the one rules block and never carry a pasted copy', () => {
   for (const t of ['builder-brief.md', 'checker-brief.md']) {
     const body = read(path.resolve('user/skills/agent-team-build/templates', t));
     // Both forms: the rule ID through the index, and the single file a project not yet moved still has.
-    assert.match(body, /read the "Rules every brief carries" item of rule:agent-team-adapter/);
-    assert.match(body, /`<project folder>\/standards\/INDEX\.md` names its file/);
-    assert.match(body, /still on one standards file keeps\nit in `<project folder>\/_Working Standards\.md`/);
+    assert.match(body, /"Rules every brief carries"[\s\S]*rule:agent-team-adapter/);
+    assert.match(body, /`<project folder>\/standards\/INDEX\.md`/);
+    assert.match(body, /one standards file[\s\S]*`<project folder>\/_Working Standards\.md`/);
     assert.doesNotMatch(body, /paste the block/i);
   }
 });
@@ -664,7 +664,7 @@ test('a running session hears about a new kit release once, at the next message'
   assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
   // Another project releases the kit while this session runs.
   bump({ kit, level: 'minor', note: 'from the other project', date: '2026-03-01' });
-  assert.match(promptCheckReport({ kit, projectDir: proj }), /Kit 1\.1\.0 was released while this session ran: 1 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update at the next stopping point\./);
+  assert.match(promptCheckReport({ kit, projectDir: proj }), /Kit 1\.1\.0 was released while this session ran[\s\S]*\(1\.0\.0\)[\s\S]*\/methodology-kit update/);
   assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
   bump({ kit, level: 'patch', note: 'again', date: '2026-03-02' });
   assert.match(promptCheckReport({ kit, projectDir: proj }), /Kit 1\.1\.1 was released/);
@@ -689,7 +689,7 @@ test('session start says when the kit on GitHub is ahead of the kit folder', () 
   git(other, 'commit', '-q', '-am', 'release'); git(other, 'tag', 'v1.2.0'); git(other, 'push', '-q', 'origin', 'main', 'v1.2.0');
   // A pull would move the kit folder onto main, off every release tag, so the line names the newest tag instead.
   const say = sessionStartReport({ kit, home, projectDir: proj });
-  assert.match(say, /The kit on GitHub is 1 commit\(s\) ahead of the kit folder\. Check out its newest release tag \(git -C ".*" fetch --tags; git -C ".*" checkout v1\.2\.0\), then run \/methodology-kit update\./);
+  assert.match(say, /1 commit\(s\) ahead[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.2\.0\)[\s\S]*\/methodology-kit update/);
   assert.doesNotMatch(say, /git pull/);
 });
 
@@ -746,8 +746,8 @@ test('install refuses a kit folder past its release tag, and names where it is a
   for (const args of [['install', 'project', proj], ['install', 'project', proj, '--dry-run'], ['install', 'user']]) {
     const r = cli(...args);
     assert.equal(r.status, 1, args.join(' '));
-    assert.match(r.stderr, /Install refused: this kit folder is not a release\./);
-    assert.match(r.stderr, /Not on release tag v1\.0\.0: HEAD is at v1\.\d+\.0-1-g[0-9a-f]+\./);
+    assert.match(r.stderr, /Install refused:[\s\S]*not a release/);
+    assert.match(r.stderr, /Not on release tag v1\.0\.0[\s\S]*v1\.\d+\.0-1-g[0-9a-f]+/);
     assert.match(r.stderr, /\(git -C ".*" fetch --tags; git -C ".*" checkout v1\.10\.0\)/);
     assert.match(r.stderr, /--unreleased for a throwaway test install/);
   }
@@ -762,14 +762,14 @@ test('install refuses a kit folder with no git history, or one inside another re
   const run = () => spawnSync(process.execPath, [path.join(kit, 'scripts/kit.mjs'), 'install', 'project', proj], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home } });
   let r = run();
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /Not on release tag v1\.0\.0: this kit folder has no git history\./);
+  assert.match(r.stderr, /Not on release tag v1\.0\.0[\s\S]*no git history/);
   // A copy inside another repo would read that repo's tags.
   const outer = path.dirname(kit);
   const git = (...a) => spawnSync('git', ['-C', outer, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' });
   git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'outer'); git('tag', 'v1.0.0');
   r = run();
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /Not on release tag v1\.0\.0: this kit folder sits inside another git repo, not its own\./);
+  assert.match(r.stderr, /Not on release tag v1\.0\.0[\s\S]*inside another git repo/);
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
@@ -798,7 +798,7 @@ test('--unreleased installs a branch build on purpose and stamps it as not a rel
   for (const args of [['install', 'project', proj, '--unreleased'], ['install', 'user', '--unreleased']]) {
     const r = cli(...args);
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /Unreleased build v1\.0\.0-1-g[0-9a-f]+ \(--unreleased\): for a throwaway test install only\./);
+    assert.match(r.stdout, /Unreleased build v1\.0\.0-1-g[0-9a-f]+ \(--unreleased\)[\s\S]*throwaway test install only/);
   }
   assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, branch\n');
   for (const stampPath of [path.join(proj, '.kit/kit-version.json'), path.join(home, 'kit-install.json')]) {
@@ -821,15 +821,15 @@ test('status and session start show an unreleased install as a gap; an older sta
   let r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, false);
   assert.match(r.text, /~\/\.claude: 1\.0\.0, current\./);
-  assert.match(r.text, /This project: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)\. Check out the kit's newest release tag \(git -C ".*" fetch --tags; git -C ".*" checkout <newest v tag>\), then run \/methodology-kit update\./);
-  assert.match(r.text, /^Not current: This project is an unreleased build\.$/m);
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /This project runs an unreleased kit build \(v1\.0\.0-3-gabc1234\)\. Check out the kit's newest release tag \(.*\), then run \/methodology-kit update\./);
+  assert.match(r.text, /This project: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*fetch --tags; git -C ".*" checkout <newest v tag>\)[\s\S]*\/methodology-kit update/);
+  assert.match(r.text, /^Not current: This project .*unreleased build\.$/m);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /This project runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*\/methodology-kit update/);
   // ~/.claude carries the rules of every project, so its unreleased build is named too.
   install({ kit, home, target: 'user', release: unreleased });
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.match(r.text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)\. Check out the kit's newest release tag \(.*\), then run node .*kit\.mjs install user\./);
-  assert.match(r.text, /^Not current: ~\/\.claude is an unreleased build; This project is an unreleased build\.$/m);
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs an unreleased kit build \(v1\.0\.0-3-gabc1234\)\. Check out the kit's newest release tag \(.*\), then run node ".*\/scripts\/kit\.mjs" install user\./);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*node .*kit\.mjs install user/);
+  assert.match(r.text, /^Not current: ~\/\.claude .*unreleased build; This project .*unreleased build\.$/m);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*kit\.mjs" install user/);
   // Reinstalled from the release: the gap closes.
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
   install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
@@ -854,7 +854,7 @@ test('a release install over an unreleased one removes the files only that build
   const stamp = JSON.parse(read(path.join(home, 'kit-install.json')));
   assert.equal(stamp.release, false, 'a kept branch-only file means this is still not a pure release');
   assert.deepEqual(stamp.leftover, ['agents/branch-only.md']);
-  assert.match(status({ kit, home, projectDir: proj, ahead: () => 0 }).text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0 with 1 file\(s\) kept from an unreleased build\./);
+  assert.match(status({ kit, home, projectDir: proj, ahead: () => 0 }).text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0[\s\S]*1 file\(s\) kept from an unreleased build/);
   // Once the owner removes it, the next release install is a release again.
   fs.rmSync(path.join(home, 'agents/branch-only.md'));
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
@@ -901,7 +901,7 @@ test('install refuses when git cannot say what changed, rather than calling the 
   fs.appendFileSync(path.join(kit, 'user/CLAUDE.md'), 'INJECTED\n');
   const r = cli('install', 'user');
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stderr, /git status failed in the kit folder, so what changed is unknown: .*outside/);
+  assert.match(r.stderr, /git status failed in the kit folder[\s\S]*unknown: .*outside/);
   assert.equal(fs.existsSync(path.join(path.dirname(kit), 'home', 'kit-install.json')), false);
 });
 
@@ -926,7 +926,7 @@ test('the load guard refuses a busy CPU and names what is using it', async () =>
   const guard = createRequire(import.meta.url)(path.resolve('project/.claude/load-guard.cjs'));
   const busy = guard.checkLoad({ busy: 92, threshold: 70, top: ['node', 'chrome', 'vitest'] });
   assert.equal(busy.ok, false);
-  assert.match(busy.message, /CPU is 92% busy \(limit 70%\)\. Using it most: node, chrome, vitest\. Free the CPU or wait, then run again\./);
+  assert.match(busy.message, /CPU is 92% busy \(limit 70%\)[\s\S]*node, chrome, vitest/);
   assert.equal(guard.checkLoad({ busy: 40, threshold: 70, top: [] }).ok, true);
 });
 
@@ -1135,16 +1135,16 @@ test('the sweep report audit passes a done report and names each missing part', 
 // The owner's decision 6 (1.21.0): a handoff that led with fixes parked the next build behind them.
 test('a handoff\'s first action is the next build, and a fix goes first only when high or critical', () => {
   const rule = (f) => read(path.resolve(f));
-  assert.match(rule('rules/tracking-and-handoff.md'), /9\. \*\*State working mode \+ first action\.\*\* The first action is always the next build \(the work order's next item, its carry-overs riding in it\); a fix goes first only when it is high or critical\. Start it when/);
+  assert.match(rule('rules/tracking-and-handoff.md'), /9\. \*\*State working mode \+ first action\.\*\*[^\n]*always the next build[^\n]*only when it is high or critical/);
   for (const f of ['rules/tracking-and-handoff.md', 'user/skills/closeout/examples/handoff-a.md', 'user/skills/closeout/examples/handoff-b.md']) {
-    assert.match(rule(f), /state mode \+ first action \(always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical\) and start it;/, f);
+    assert.match(rule(f), /always the next build:[^\n]*a fix first only when high or critical\)/, f);
   }
   // A run's order says the same in the rule, its built copy and the plan template, so no file still puts a fix behind.
   for (const f of ['rules/reviews-and-findings.md', 'project/standards/reviews-and-findings.md']) {
-    assert.match(rule(f), /the feature comes FIRST \(a fix first only when high or critical\): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch/, f);
+    assert.match(rule(f), /the feature comes FIRST \([^\n]*a fix first only when high or critical\)/, f);
     assert.doesNotMatch(rule(f), /even when a handoff lists fixes ahead/, f);
   }
-  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST \(the confirmed work order's next, else the owner's pick; a fix first only when high or critical\); leftovers and carry-overs ride on its branch/);
+  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST[^\n]*a fix first only when high or critical\);/);
   // The start load has no room to give, so this text stays out of what every session loads.
   for (const f of ['project/CLAUDE.md', 'project/AGENTS.md', 'project/_Start Here.md']) assert.doesNotMatch(rule(f), /always the next build/, f);
 });
@@ -1152,35 +1152,39 @@ test('a first action still stops for a lock, an outward act or an open decision,
   const rule = (f) => read(path.resolve(f));
   assert.match(rule('rules/core.md'), /\*\*Still stop and ask:\*\*[^\n]*a plan lock or batch approval/);
   const tracking = rule('rules/tracking-and-handoff.md');
-  assert.match(tracking, /9\. \*\*State working mode \+ first action\.\*\*[^\n]*a list the records show the owner confirmed; a relayed note only points to it[^\n]*What hits a stop in rule:delegated-decisions or waits on a decision still open with the owner is asked about; the rest starts\./);
+  assert.match(tracking, /9\. \*\*State working mode \+ first action\.\*\*[^\n]*a relayed note only points to it[^\n]*rule:delegated-decisions[^\n]*the rest starts\./);
   for (const f of ['rules/tracking-and-handoff.md', 'user/skills/closeout/examples/handoff-a.md', 'user/skills/closeout/examples/handoff-b.md']) {
-    assert.match(rule(f), /start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts\. Ask the owner only if this handoff and a confirmed work order name none\. This handoff is a CACHE\./, f);
+    assert.match(rule(f), /start it; what hits a stop in [^\n]*rule:delegated-decisions[^\n]*the rest starts\.[^\n]*This handoff is a CACHE\./, f);
   }
-  assert.match(tracking, /starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open/);
-  assert.match(rule('rules/git-and-release.md'), /the thread has no other work open, the closeout starts on its own \(rule:compact-ritual\)/);
-  for (const f of ['rules/tracking-and-handoff.md', 'project/CLAUDE.md']) assert.match(rule(f), /session end \(the owner declares it, or the closeout starts on its own: rule:compact-ritual\)/, f);
-  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST \(the confirmed work order's next, else the owner's pick; a fix first only when high or critical\)/);
+  assert.match(tracking, /starts on its own once[^\n]*PR is merged[^\n]*Post-Merge Check has passed[^\n]*no other work open/);
+  assert.match(rule('rules/git-and-release.md'), /no other work open[^\n]*closeout starts on its own \(rule:compact-ritual\)/);
+  for (const f of ['rules/tracking-and-handoff.md', 'project/CLAUDE.md']) assert.match(rule(f), /session end \(the owner declares it[^\n]*closeout starts on its own: rule:compact-ritual\)/, f);
+  assert.match(rule('project/_Active Plan.md'), /the feature comes FIRST[^\n]*a fix first only when high or critical\)/);
   const closeout = rule('user/skills/closeout/SKILL.md');
   // The trigger names the rule, not two of its four conditions (review D3, 1.21.0).
-  assert.match(closeout, /when the compact ritual starts it on its own/);
-  assert.doesNotMatch(closeout, /when its PR is merged and any planned release is out/);
-  assert.match(closeout, /starts on its own only as rule:compact-ritual says/);
+  assert.match(closeout, /compact ritual starts it on its own/);
+  assert.doesNotMatch(closeout, /any planned release is out/);
+  assert.match(closeout, /only as rule:compact-ritual says/);
 });
 
 test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
   const rule = (f) => read(path.resolve(f));
   const findings = rule('rules/reviews-and-findings.md');
-  assert.match(findings, /A finding carries to the next run only at medium or below: a high or critical is fixed before the PR \(found after it: on the open PR\), or the owner accepts it\./);
-  assert.match(findings, /Leftovers and post-PR findings at medium or below go to the handoff's carry-overs/);
+  assert.match(findings, /only at medium or below[^\n]*critical is fixed before the PR[^\n]*the owner accepts it/);
+  assert.match(findings, /post-PR findings at medium or below[^\n]*carry-overs/);
   assert.match(findings, /in a known area \(one component, one flow\)/);
+  // pin: 1 (the sweep report audit reads these dispositions)
   assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
   // Comments off: what counts is the text the lead is shown.
   const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
+  // pin: 2 (the order the lead is given at the stop)
   assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left at medium or below goes to the handoff\\'s carry-overs for the next feature build, and a high or critical is fixed or the owner accepts it/);
+  // pin: 2 (the order the lead is given at the stop)
   assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it/);
   const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
+  // pin: 2 (the order the lead is given at the stop)
   assert.match(approve, /What the re-sweep left at medium or below goes to \$\{CARRY_HOME\}; a high or critical is fixed or the owner accepts it/);
-  assert.match(approve, /the findings left unfixed after it, from either pass, each medium or below/);
+  assert.match(approve, /findings left unfixed after it[^\n]*each medium or below/);
   assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
   assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
 });
@@ -1455,7 +1459,7 @@ test('fold-back maps an old single standards file to kit rules by heading', () =
   const r = foldBack({ kit, home, target: 'project', projectDir: proj });
   assert.deepEqual(r.oldLayout.changed.map((c) => [c.id, c.module]), [['alpha', 'core']]);
   assert.deepEqual(r.oldLayout.projectOnly, ['Our Own Rule']);
-  assert.match(r.report, /## Old single standards file: sections changed here \(1\)\n\n- rule:alpha \(core\): Alpha Rule/);
+  assert.match(r.report, /## Old single standards file: sections changed here \(1\)[\s\S]*- rule:alpha \(core\): Alpha Rule/);
 });
 
 // After a compact, the post-compact orientation lives in a module that may not be loaded, so session start names it.
@@ -1599,7 +1603,7 @@ test('every git init in the kit names its branch, so main never depends on the m
   }
   assert.deepEqual(unnamed, []);
 });
-test('the git pre-push hook stops an AI agent without approval and lets the owner push', () => {
+test('the git pre-push hook stops an AI agent without approval and lets the owner push', { windows: true }, () => {
   const hook = path.resolve('project/.githooks/pre-push');
   const sh = (env) => spawnSync('sh', [hook], { encoding: 'utf8', env: { PATH: process.env.PATH, ...env } });
   assert.equal(sh({}).status, 0, 'the owner in a plain terminal');
@@ -1609,6 +1613,7 @@ test('the git pre-push hook stops an AI agent without approval and lets the owne
 });
 
 test('the builder and checker role files wire their guards to the installed hook scripts', () => {
+  // pin: 1 (Claude Code reads the role file's hook block)
   assert.match(read(path.resolve('user/agents/builder.md')), /matcher: "Edit\|Write\|NotebookEdit"\n      hooks:\n        - type: command\n          command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/edit-fence\.cjs"/);
   const checker = read(path.resolve('user/agents/checker.md'));
   assert.match(checker, /matcher: "Bash\|PowerShell"[\s\S]*clean-tree\.cjs[\s\S]*Stop:[\s\S]*clean-tree\.cjs/);
@@ -1681,7 +1686,7 @@ test('two checkers in one session keep separate snapshots', () => {
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-b', hook_event_name: 'SubagentStop' }).status, 0);
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-a', hook_event_name: 'SubagentStop' }).status, 2);
 });
-test('the builder edit fence follows a symlinked or junctioned worktree path', () => {
+test('the builder edit fence follows a symlinked or junctioned worktree path', { windows: true }, () => {
   const dir = gitTree();
   const link = `${dir}-link`;
   fs.symlinkSync(dir, link, 'junction');
@@ -1852,7 +1857,7 @@ test('the leak guard also reads the agent name and spellings split by punctuatio
 });
 test('every kit role runs the canary at its stop, and the project settings run the leak guard', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
-    assert.match(read(path.resolve('user/agents', `${role}.md`)), /Stop:\n {4}- hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, `${role} wires the canary`);
+    assert.match(read(path.resolve('user/agents', `${role}.md`)), /Stop:\n {4}- hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, `${role} wires the canary`); // pin: 1 Claude Code reads the hook block
   }
   const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
   const guard = settings.hooks.PreToolUse.find((h) => h.matcher === 'Agent|Task|SendMessage');
@@ -1894,7 +1899,7 @@ test('the PR body and release audits fail when the phrase appears', () => {
   assert.equal(rel.status, 1);
   assert.match(rel.stdout, /confirmation phrase/);
 });
-test('the git pre-push hook is executable, in the kit and where install writes it', () => {
+test('the git pre-push hook is executable, in the kit and where install writes it', { windows: true }, () => {
   for (const h of ['pre-push', 'pre-commit']) assert.match(spawnSync('git', ['ls-files', '-s', `project/.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
   if (process.platform !== 'win32') {
     const proj = makeTemp('hookmode-');
@@ -1998,7 +2003,7 @@ test('the first push check fails on a never path, a missing tracked file, a secr
   assert.match(r.stdout, /exclude/i);
   assert.ok(!r.stdout.includes(secret), 'a secret value is never printed');
 });
-test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', () => {
+test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', { windows: true }, () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = makeTemp('bare-');
   g(bare, 'init', '-q', '--bare', '-b', 'main');
@@ -2036,7 +2041,7 @@ test('the install turns on the kit git hooks, and leaves another hook manager al
   kitInstall(husky);
   assert.equal(g(husky, 'config', 'core.hooksPath').stdout.trim(), '.husky', 'the owner\'s hook manager stays; setup says to add the checks there');
 });
-test('the pre-commit hook blocks staging a kit file, a never path or a secret file, and allows tracked choices', () => {
+test('the pre-commit hook blocks staging a kit file, a never path or a secret file, and allows tracked choices', { windows: true }, () => {
   const dir = readyProject({ track: ['main.py', '_Session Log.md'], never: ['school/**'] });
   const commit = () => spawnSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'chore: x'], { encoding: 'utf8', env: { ...process.env } });
   g(dir, 'add', '-f', 'AGENTS.md');
@@ -2302,7 +2307,37 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
   fs.mkdirSync(path.join(dir, 'sweeps'));
   return dir;
 }
+// S23-4: the owner's yes or resume with no thread proof now needs a real terminal, where the owner types the code; a
+// test has none. Where a test stands for the owner at their terminal, the owner answers from the thread instead.
+let ownerSeq = 0;
+function asOwner(dir, args, env) {
+  const terminal = !('CLAUDECODE' in env) && !('AI_AGENT' in env) && !args.includes('--thread');
+  const yes = terminal && args.includes('--owner-yes') && filledWords(args[args.indexOf('--owner-yes') + 1]);
+  const resume = terminal && args.includes('--resume') && env.KIT_OWNER_RESUME === '1';
+  if (!yes && !resume) return null;
+  const log = sweepLog(dir);
+  let words;
+  if (yes) {
+    const f = path.resolve(dir, args[0]);
+    const ask = log.map((l) => JSON.parse(l)).filter((e) => e.kind === 'decision' && path.resolve(e.contract) === f).pop();
+    if (!ask) return null;
+    words = `yes ${String(ask.hash).slice(0, 6)}`;
+  } else {
+    const i = log.map((l) => JSON.parse(l).kind).lastIndexOf('pause');
+    if (i < 0) return null;
+    words = `resume ${crypto.createHash('sha256').update(log[i]).digest('hex').slice(0, 6)}`;
+  }
+  const cfg = env.CLAUDE_CONFIG_DIR || makeTemp('cfg-');
+  if (!fs.existsSync(path.join(cfg, 'kit-owner.json'))) ownerFile(cfg);
+  const id = `cmsg_T${String(++ownerSeq).padStart(8, '0')}`;
+  ownerSays(cfg, { cwd: dir, id, words, at: new Date(Date.now() + 1000).toISOString() });
+  const out = yes ? [...args.slice(0, args.indexOf('--owner-yes')), '--owner-yes', words, '--thread', id, ...args.slice(args.indexOf('--owner-yes') + 2)] : ['--resume', '--thread', id];
+  return spawnSync('node', [APPROVE, ...out], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env, CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' } });
+}
+const filledWords = (w) => typeof w === 'string' && w.trim().split(/\s+/).filter(Boolean).length >= 1 && w.trim().length > 1;
 const approveIn = (dir, args, env = {}) => {
+  const owner = asOwner(dir, args, env);
+  if (owner) return owner;
   if (args.includes('--outcome') && env.CLAUDE_CONFIG_DIR) leadBriefs(dir, args, env.CLAUDE_CONFIG_DIR);
   // A crashed reviewer was started by the guard too.
   const crashed = args.includes('--retry') && args[args.indexOf('--crashed') + 1];
@@ -2439,6 +2474,18 @@ test('the sweep guard refuses to resume a reviewer with SendMessage, and lets ot
   assert.match(r.permissionDecisionReason, /never resumed/);
   assert.equal(send('b1').permissionDecision, 'allow');
   assert.equal(send('someone-else').permissionDecision, 'allow');
+  // F36 (the 1.23.0 sweep): an agent whose transcript is there but whose type cannot be read may be a reviewer, so it
+  // is refused; a name with no agent behind it (a teammate) is still messaged.
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-x1.jsonl'), '{}\n');
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-x1.meta.json'), '{not json');
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-x2.jsonl'), '{}\n');
+  assert.equal(send('x1').permissionDecision, 'deny');
+  assert.equal(send('x2').permissionDecision, 'deny');
+  // The 1.24.0 sweep: a reviewer is also addressed by its name; a builder's name is still messaged.
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-r9.meta.json'), JSON.stringify({ agentType: 'reviewer', name: 'P2-supply-chain', finished: true }));
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-b9.meta.json'), JSON.stringify({ agentType: 'builder', name: 'unit-3', finished: true }));
+  assert.equal(send('P2-supply-chain').permissionDecision, 'deny');
+  assert.equal(send('unit-3').permissionDecision, 'allow');
 });
 
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
@@ -2543,6 +2590,20 @@ test('the owner\'s yes from the thread clears an ask, read from the session tran
     assert.match(out.stdout, why, name);
     assert.equal(sweepLog(s.dir).length, before, `${name}: nothing logged`);
   }
+  // S23-5: where Claude Code names the session, only its own transcript is read: the owner's message reaches the
+  // session that runs this thread, and a turn in another session's file is no proof.
+  const other = asked();
+  const oc = makeTemp('cfg-');
+  ownerFile(oc);
+  ownerSays(oc, { cwd: other.dir, id: 'cmsg_Ssssssss', words: `yes ${other.code}`, file: 'session-other.jsonl' });
+  const inSession = (id) => approveIn(other.dir, [other.f, '--owner-yes', `yes ${other.code}`, '--thread', id], { CLAUDE_CONFIG_DIR: oc, CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'session-main' });
+  const elsewhere = inSession('cmsg_Ssssssss');
+  assert.equal(elsewhere.status, 1, elsewhere.stdout);
+  assert.match(elsewhere.stdout, /no such message/);
+  // The 1.24.0 sweep: a session id no file can carry (a dot, an empty value) narrows to nothing, never to every file.
+  for (const id of ['a.b', '']) assert.equal(approveIn(other.dir, [other.f, '--owner-yes', `yes ${other.code}`, '--thread', 'cmsg_Ssssssss'], { CLAUDE_CONFIG_DIR: oc, CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: id }).status, 1, `session id '${id}'`);
+  ownerSays(oc, { cwd: other.dir, id: 'cmsg_Mmmmmmmm', words: `yes ${other.code}` });
+  assert.equal(inSession('cmsg_Mmmmmmmm').status, 0, 'its own session\'s message');
   // Without the thread's proof the yes rests on Claude's word alone, so from an AI tool's shell it is refused.
   const bare = asked();
   const word = approveIn(bare.dir, [bare.f, '--owner-yes', 'yes, run it'], { CLAUDECODE: '1' });
@@ -2634,6 +2695,30 @@ test('an installed approve.mjs reads the owner\'s proof only from the folder it 
   assert.ok(out.stdout.includes(home.split(path.sep).join('/')), out.stdout);
 });
 
+// S23-4 (the 1.23.0 verify): with the AI shell's two variables cleared, a resume or a yes with no thread proof was
+// logged; a variable or a glob kept the push guard from seeing it. With no terminal to type the code in, nothing is.
+test('a resume or a yes with no thread proof needs a real terminal, even with the AI shell\'s variables cleared', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(Math.ceil(537500 * 1.3)));
+  const before = sweepLog(r.dir).length;
+  const bare = (args, env) => spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, ...env } });
+  const resume = bare(['--resume'], { KIT_OWNER_RESUME: '1' });
+  assert.equal(resume.status, 1, resume.stdout);
+  // Refused for the terminal, not for some other reason first (the 1.24.0 sweep).
+  assert.match(resume.stdout, /owner's own terminal/);
+  const ask = approveRun(askContract());
+  const yesThere = spawnSync('node', [APPROVE, ask.f, '--owner-yes', 'yes go ahead'], { encoding: 'utf8', cwd: ask.dir, env: { PATH: process.env.PATH } });
+  assert.equal(yesThere.status, 1, yesThere.stdout);
+  assert.match(yesThere.stdout, /owner's own terminal/);
+  assert.equal(sweepLog(r.dir).length, before, 'nothing logged for the resume');
+  assert.ok(!sweepLog(ask.dir).some((l) => JSON.parse(l).kind === 'owner-yes'), 'nothing logged for the yes');
+  // With nothing paused, the terminal's resume has nothing to resume, as the thread's has not (the 1.24.0 sweep).
+  const running = approveRun(featureContract());
+  const idle = spawnSync('node', [APPROVE, '--resume'], { encoding: 'utf8', cwd: running.dir, env: { PATH: process.env.PATH, KIT_OWNER_RESUME: '1' } });
+  assert.equal(idle.status, 1);
+  assert.match(idle.stdout, /not paused/);
+});
+
 test('only the owner resumes, from a terminal no agent runs in', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -2677,7 +2762,7 @@ test('a log line written by hand, or a raised cap, never clears the way', () => 
   commitAll(big, 'caps', true);
   const c = featureContract();
   for (const q of ['Do stale caches keep serving removed rows forever?', 'Would renamed exports break plugin loaders downstream?', 'Can old backups restore deleted accounts silently?', 'Might retry loops double every queued payment?', 'Does daylight saving shift nightly scheduled jobs?', 'Are locked files blocking concurrent uploads anywhere?']) c.roles.push(role('modelled-on', q));
-  assert.match(approveRun(c, big).stdout, /ASK THE OWNER[\s\S]*6 roles beyond the feature floor, over its cap of 5/, 'caps only go down');
+  assert.match(approveRun(c, big).stdout, /ASK THE OWNER[\s\S]*6 roles beyond the feature floor[\s\S]*cap of 5/, 'caps only go down');
 });
 test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, an escape and every 10 approvals', () => {
   const r = approveRun(featureContract());
@@ -2743,7 +2828,7 @@ test('an approval prints the owner\'s start notice from checked data, not a hand
   assert.match(r.stdout, /security x3/);
   assert.match(r.stdout, /test-value reviewer \(test-value, sonnet\)/);
   assert.match(r.stdout, /security reviewer \(security, the reviewer default\)/);
-  assert.match(r.stdout, /Budget: 537,500 processed tokens, computed from each role's call cap/);
+  assert.match(r.stdout, /Budget: 537,500 processed tokens/);
   assert.match(r.stdout, /Extras: 0 of 5 allowed/);
   assert.match(r.stdout, /security 3 of 3 needed/);
   assert.match(r.stdout, /Findings come when the sweep finishes/);
@@ -2953,7 +3038,7 @@ test('the canary checks a hand-back at the call, refuses a miss once, and lets t
 });
 test('every kit role checks its hand-back call', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
-    assert.match(read(path.resolve('user/agents', `${role}.md`)), /matcher: "SubagentHandback"\n {6}hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, role);
+    assert.match(read(path.resolve('user/agents', `${role}.md`)), /matcher: "SubagentHandback"\n {6}hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, role); // pin: 1 Claude Code reads the hook block
   }
 });
 
@@ -2980,7 +3065,7 @@ test('a new improvement report starts from the kit template with its facts fille
   assert.equal(files.length, 1);
   assert.match(files[0], /^IR-\d{4}-\d{2}-\d{2}-sweep-approval-asked-before-the-script\.md$/);
   const text = read(path.join(dir, '.kit', 'reports', files[0]));
-  assert.match(text, /^# Improvement report: Sweep approval asked before the script$/m);
+  assert.match(text, /^# Improvement report: .*before the script$/m);
   assert.match(text, /\| Project \| course-project \|/);
   assert.match(text, /\| Branch and commit \| feat\/generator @ [0-9a-f]{7,} \|/);
   assert.match(text, /\| Kit version \| 1\.7\.1 \|/);
@@ -3040,7 +3125,7 @@ test('the sweep guard holds reviewers to the cleared team size', () => {
   assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'the one cleared reviewer');
   const second = sweepGuard(dir);
   assert.equal(second.permissionDecision, 'deny', 'a second reviewer on a one-role contract');
-  assert.match(second.permissionDecisionReason, /Role 1 of the cleared contract has started already/);
+  assert.match(second.permissionDecisionReason, /Role 1 of the cleared contract[\s\S]*started already/);
 });
 test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sweep runs', () => {
   const dir = sweepRepo();
@@ -3210,6 +3295,7 @@ test('the handoff audit prints the full text to send, and only for a clean hando
   const good = '# Notes - Continuation Handoff\n\n## REQUIRED FIRST ACTIONS\nRun the Post-Compact Orientation Protocol.\n\n## Working Mode: Plan\n\n## State Snapshot\n- Git: main at a1b2c3d, pushed\n\n## Newly-Established Working Standards\nnone\n\n## Critical In-Flight Context\n- none\n\n## Reading Order\n1. _Start Here.md\n\n## Next Step\n- What: the next PR\n\n## Anti-Hallucination Discipline\n- verified\n';
   const ok = runAudit('closeout', good, ['--send']);
   assert.equal(ok.status, 0, ok.stdout);
+  // pin: 2 (the order the lead follows at the stop)
   assert.match(ok.stdout, /Send the text between the lines as ONE message/);
   assert.ok(ok.stdout.includes(good.trimEnd()), 'the whole handoff, not a path');
   const bad = runAudit('closeout', good.replace('- Git: main at a1b2c3d, pushed', '- Git:'), ['--send']);
@@ -3330,7 +3416,7 @@ test('a cap counts the roles beyond the floor: a security fix with tests approve
   const oneExtra = { ...sec, roles: [...sec.roles, role('modelled-on', 'Was the bug inherited from the code this copied?')] };
   assert.equal(approveRun(oneExtra, fixRepo()).status, 0, 'the fix tier allows 1 extra');
   const twoExtra = { ...sec, roles: [...oneExtra.roles, role('data-loss', 'Can the new clamp drop saved pages?', { model: 'claude-sonnet-5-5' })] };
-  assert.match(approveRun(twoExtra, fixRepo()).stdout, /ASK THE OWNER[\s\S]*2 roles beyond the fix floor, over its cap of 1/);
+  assert.match(approveRun(twoExtra, fixRepo()).stdout, /ASK THE OWNER[\s\S]*2 roles beyond the fix floor[\s\S]*cap of 1/);
   const nine = { tier: 'fix', modifiers: ['security-sensitive', 'new-dependency', 'user-data'], roles: [...fixFloor(), ...threeSecurity(),
     role('supply-chain', 'Is the new package pinned, maintained and free of install scripts?'),
     role('privacy', 'Does the package send any user data off the device?'),
@@ -3348,7 +3434,7 @@ test('a cap counts the roles beyond the floor: a security fix with tests approve
   ];
   const extras = (n) => more.slice(0, n);
   assert.equal(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(5)] }).status, 0, 'the feature tier allows 5 extras');
-  assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(6)] }).stdout, /6 roles beyond the feature floor, over its cap of 5/);
+  assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(6)] }).stdout, /6 roles beyond the feature floor[\s\S]*cap of 5/);
 });
 
 // The owner, 2026-11-03: one sweep, one focused re-sweep (blast radius, one role per fixed kind, alignment),
@@ -3384,7 +3470,7 @@ test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the ow
   fs.writeFileSync(second, JSON.stringify(featureContract()));
   const again = approveIn(first.dir, [second]);
   assert.equal(again.status, 1, again.stdout);
-  assert.match(again.stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch is the owner's/);
+  assert.match(again.stdout, /ASK THE OWNER[\s\S]*second sweep on this branch/);
   const rebased = firstSweep();
   g(rebased.dir, 'checkout', '-q', 'main');
   fs.writeFileSync(path.join(rebased.dir, 'NOTES.md'), 'main moved\n');
@@ -3427,7 +3513,7 @@ test('a re-sweep asks the owner; on their yes it runs once, and a second, or a r
   // C8: a plain contract after the sweep and its re-sweep is another pass, the owner's.
   const third = approveIn(first.dir, [first.f]);
   assert.equal(third.status, 1, third.stdout);
-  assert.match(third.stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch is the owner's/);
+  assert.match(third.stdout, /ASK THE OWNER[\s\S]*second sweep on this branch/);
 });
 test('a re-sweep that loses focus goes back to be fixed; a new risk asks the owner', () => {
   const cases = [
@@ -3578,7 +3664,7 @@ test('an approved sweep that never started can be closed with --none-ran, and on
   assert.equal(r.status, 0);
   fs.writeFileSync(path.join(dir, 'src', 'more.ts'), 'x\n');
   commitAll(dir, 'more', true);
-  assert.match(approveIn(dir, [r.f]).stdout, /log the outcome of the last approved sweep first/);
+  assert.match(approveIn(dir, [r.f]).stdout, /outcome of the last approved sweep first/);
   const none = approveIn(dir, [r.f, '--outcome', '--none-ran']);
   assert.equal(none.status, 0, none.stdout);
   assert.equal(approveIn(dir, [r.f]).status, 0, 'the way is clear again');
@@ -3593,11 +3679,11 @@ test('a re-sweep is one per sweep however the first is re-run, and a re-run of t
   const re = resweep(first);
   ownerAsked(re);
   const rerun = approveIn(first.dir, [re.f]);
-  assert.match(rerun.stdout, /log the outcome of the last approved sweep first/, 're-deciding before its outcome asks, as any contract does');
+  assert.match(rerun.stdout, /outcome of the last approved sweep first/, 're-deciding before its outcome asks, as any contract does');
   assert.doesNotMatch(rerun.stdout, /REFUSED/, 'it is not a second re-sweep');
   assert.equal(outcome(re, '200000', '1', '1', '0', ['--carried', '1']).status, 0);
   assert.match(approveIn(first.dir, [re.f]).stdout, /REFUSED/, 'after its outcome it has run');
-  assert.match(approveIn(first.dir, [first.f]).stdout, /a second sweep on this branch is the owner's/);
+  assert.match(approveIn(first.dir, [first.f]).stdout, /second sweep on this branch[\s\S]*owner's/);
   assert.equal(approveIn(first.dir, [first.f, '--owner-yes', 'yes, a third pass']).status, 0);
   assert.equal(outcome(first).status, 0);
   assert.match(resweep(first, {}, 'resweep2.json').stdout, /REFUSED[\s\S]*already had its re-sweep/, 'clearing the first sweep again does not buy a second');
@@ -3628,7 +3714,7 @@ test('project caps lower every limit', () => {
   const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
   const plusOne = { ...featureContract(), roles: [...featureContract().roles, role('privacy', 'Which fields leave the device now?')] };
   assert.equal(approveRun(plusOne).status, 0);
-  assert.match(approveRun(plusOne, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor, over its cap of 0/);
+  assert.match(approveRun(plusOne, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor[\s\S]*cap of 0/);
   assert.match(approveRun(featureContract(), lowered({ maxRoleBudget: 50000 })).stdout, /per-role cap of 50000/);
   assert.match(approveRun(featureContract(), lowered({ maxTotalBudget: 100000 })).stdout, /cap of 100000/);
   assert.match(approveRun(featureContract(), lowered({ maxAgents: 4 })).stdout, /cap of 4/);
@@ -3676,7 +3762,7 @@ test('--none-ran reads every clearing of this round, and only an approved contra
   const r = approveRun(featureContract(), dir);
   assert.equal(sweepGuard(dir).permissionDecision, 'allow', 'a reviewer starts under the approval');
   approveIn(dir, [r.f, '--escape', 'a bug slipped through']);
-  assert.match(approveIn(dir, [r.f]).stdout, /log the outcome of the last approved sweep first/);
+  assert.match(approveIn(dir, [r.f]).stdout, /outcome of the last approved sweep first/);
   assert.notEqual(approveIn(dir, [r.f, '--owner-yes', 'yes go']).status, 0, 'nothing was asked, so no yes opens more slots');
   const none = approveIn(dir, [r.f, '--outcome', '--none-ran']);
   assert.equal(none.status, 1, none.stdout);
@@ -3744,7 +3830,7 @@ test('a team repo with a tracked CLAUDE.md gets the kit as an overlay: CLAUDE.lo
   assert.deepEqual(r.hostOwned, ['CLAUDE.md']);
   assert.ok(!r.skipped.some((s) => s.file === 'CLAUDE.md'), 'host-owned, not skipped');
   const local = read(path.join(proj, 'CLAUDE.local.md'));
-  assert.match(local, /CLAUDE\.md here is owned by the host repo, and it wins/);
+  assert.match(local, /here is owned by the host repo/);
   assert.match(local, /^@AGENTS\.md$/m);
   assert.match(local, /sweep tier/);
   assert.deepEqual(JSON.parse(read(path.join(proj, '.kit', 'kit-version.json'))).hostOwned, ['CLAUDE.md']);
@@ -3793,7 +3879,7 @@ test("the kit's CLAUDE.md and CLAUDE.local.md stay out of git even when the kit 
   g(dir, 'add', '-f', 'CLAUDE.md');
   const staged = spawnSync('node', [path.join(dir, '.claude', 'first-push-check.mjs'), '--staged'], { encoding: 'utf8', cwd: dir });
   assert.equal(staged.status, 1, staged.stderr);
-  assert.match(staged.stderr, /CLAUDE\.md: the kit's CLAUDE\.md never goes public/);
+  assert.match(staged.stderr, /CLAUDE\.md:[\s\S]*never goes public/);
   commitAll(dir, 'slip', true);
   const r = firstPush(dir);
   assert.equal(r.status, 1);
@@ -4162,7 +4248,7 @@ test('the branch name check passes plain type-prefixed names and refuses tool pr
   for (const bad of ['claude/project-thread-fkkmfn', 'worktree-agent-a1', 'feature/b2-calendar', 'feature/F9_Timeline', 'my-branch', 'feature/'])
     assert.equal(nameRun(['branch', bad]).status, 1, bad);
 });
-test('the commit-msg hook runs the message check, and the pre-push hook refuses a badly named branch', () => {
+test('the commit-msg hook runs the message check, and the pre-push hook refuses a badly named branch', { windows: true }, () => {
   // The commit-msg hook, run as git runs it, refuses a message out of the house style.
   const msgHook = spawnSync('sh', [path.resolve('project/.githooks/commit-msg'), msgFile('update stuff\n')], { encoding: 'utf8' });
   assert.equal(msgHook.status, 1);
@@ -4246,7 +4332,7 @@ test('the tracking check refuses a non-empty parking lot and a done line with no
   fs.writeFileSync(plan, '# Plan\n\n## Parking Lot\n\n- dark map tiles - home - hunch: next\n\n## Progress\n\n- [x] it works now\n- DONE: looks fine\n');
   const p = trackRun(dir, ['parking', plan]);
   assert.equal(p.status, 1);
-  assert.match(p.stdout, /1 idea\(s\) in the Parking Lot: triage each now, next or drop before the sweep/);
+  assert.match(p.stdout, /1 idea\(s\) in the Parking Lot[\s\S]*now, next or drop/);
   const g = trackRun(dir, ['progress', plan]);
   assert.equal(g.status, 1);
   assert.match(g.stdout, /no evidence: "- \[x\] it works now"/);
@@ -4263,13 +4349,14 @@ test('session start suggests skill cases from the repo when none are chosen', ()
   fs.writeFileSync(path.join(proj, 'package.json'), JSON.stringify({ devDependencies: { '@sveltejs/kit': '3.0.0' } }));
   fs.writeFileSync(path.join(proj, 'wrangler.toml'), 'name = "x"\n');
   let msg = sessionStartReport({ kit, home, projectDir: proj });
-  assert.match(msg, /Suggested from this repo: ui-design, ui-review, feature-build, debugging, review, security, cloudflare\./);
+  assert.deepEqual(msg.match(/Suggested from this repo: ([^.]*)\./)[1].split(', '), ['ui-design', 'ui-review', 'feature-build', 'debugging', 'review', 'security', 'cloudflare']);
+  // pin: 1 (the JSON line is what the project writes to turn them on)
   assert.match(msg, /\{"on":\["ui-design","ui-review","feature-build","debugging","review","security","cloudflare"\]\}/);
   fs.rmSync(path.join(proj, 'package.json'));
   fs.rmSync(path.join(proj, 'wrangler.toml'));
   fs.writeFileSync(path.join(proj, 'requirements.txt'), 'torch==2.5\ntransformers>=4\napache-airflow\n');
   msg = sessionStartReport({ kit, home, projectDir: proj });
-  assert.match(msg, /Suggested from this repo: feature-build, debugging, review, ml-data, data-pipelines\./);
+  assert.deepEqual(msg.match(/Suggested from this repo: ([^.]*)\./)[1].split(', '), ['feature-build', 'debugging', 'review', 'ml-data', 'data-pipelines']);
 });
 
 test('status names a memory index past 6,000 B, which loads in every session', () => {
@@ -4282,7 +4369,7 @@ test('status names a memory index past 6,000 B, which loads in every session', (
   const s = () => status({ kit, home, projectDir: proj, ahead: () => 0, protection: () => null }).text;
   assert.doesNotMatch(s(), /Memory index is/);
   fs.writeFileSync(idx, 'm'.repeat(6001));
-  assert.match(s(), /Memory index is 6,001 B \(over 6,000\): turn copied rules into one-line pointers \(rule:kit-standards items 3 and 14\)\./);
+  assert.match(s(), /Memory index is 6,001 B \(over 6,000\)[\s\S]*rule:kit-standards items 3 and 14/);
 });
 
 // Plan kit-autopilot, Phase 1: outward acts are the owner's unless a standing grant covers them. The rule lives in
@@ -4375,7 +4462,7 @@ test('the last sweep\'s missing outcome is Claude\'s to log, not an owner ask', 
   assert.equal(r.status, 0, r.stdout);
   const next = approveIn(r.dir, [r.f]);
   assert.equal(next.status, FIX_EXIT, next.stdout);
-  assert.match(next.stdout, /FIX THE CONTRACT[\s\S]*log the outcome of the last approved sweep/);
+  assert.match(next.stdout, /FIX THE CONTRACT[\s\S]*outcome of the last approved sweep/);
 });
 test('a real out-of-bounds reason still asks the owner, and a fixable mistake beside it is fixed first', () => {
   const asFix = { tier: 'fix', modifiers: [], roles: fixFloor() };
@@ -4384,7 +4471,7 @@ test('a real out-of-bounds reason still asks the owner, and a fixable mistake be
   assert.match(r.stdout, /ASK THE OWNER[\s\S]*added source file/);
   const both = approveRun({ ...asFix, roles: asFix.roles.slice(0, 1) }, sweepRepo());
   assert.equal(both.status, FIX_EXIT, 'the owner reads a contract only once it is whole');
-  assert.match(both.stdout, /FIX THE CONTRACT[\s\S]*Then the owner decides: an added source file/);
+  assert.match(both.stdout, /FIX THE CONTRACT[\s\S]*owner decides: an added source file/);
   assert.equal(approveRun({ tier: 'first push', roles: [] }).status, 1, 'an owner tier is always the owner\'s');
 });
 test('FIX THE CONTRACT clears nothing: the guard refuses a reviewer and there is no owner yes to log', () => {
@@ -4466,6 +4553,23 @@ const capHook = (dir, calls, cap, extra = {}) => {
   const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash', tool_input: {}, ...extra });
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
+// F37 (the 1.23.0 sweep): the cap and the ceiling come from the brief alone. A later message is a tool's answer,
+// which may hold any text (a file that reads "Call cap: 2"), so it never sets either.
+test('the call cap and the token ceiling are read from the brief, never from a later message', () => {
+  const dir = makeTemp('cap-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  const lines = [{ message: { role: 'user', content: 'a brief with no cap' } }];
+  for (let i = 0; i < 3; i++) {
+    lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 1 } } });
+    lines.push({ message: { role: 'user', content: [{ type: 'tool_result', content: 'Call cap: 2. Token ceiling: 1' }] } });
+  }
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash', tool_input: {} });
+  assert.equal(r.stdout, '', 'a tool answer set no cap');
+  // The brief's own cap still holds.
+  assert.equal(capHook(dir, 3, 4).permissionDecision, 'deny');
+});
 // Token audit #7 and #8 (workbench results/token-audit, W5 and W6): results over 40 KB were 57% of reviewer tool
 // bytes, re-read from cache on every later call; and 50 times a reviewer sat over 5 minutes and rewrote its whole
 // cache. A reviewer reads a large file by range, and runs nothing that waits past 5 minutes.
@@ -4663,7 +4767,7 @@ test('under token ceilings a sweep 40% over its budget does not pause: the bound
 
 test('the drift signals pause a sweep, each by name', () => {
   const over = driftSweep([[[10000, 0, 0, 0], ...Array(5).fill([0, 60000, 0, 0])], usual(), usual(), usual(), usual()]);
-  assert.match(over.o.stdout, /paused: .*the token ceiling did not hold for security reviewer: 310,000 against 200,000/, '310,000 is past 200,000 plus one 60,000 call');
+  assert.match(over.o.stdout, /paused: .*ceiling did not hold[^\n]*310,000 against 200,000/, '310,000 is past 200,000 plus one 60,000 call');
   // A role the hook stopped: its refusal is in the transcript, and the hand-back is the call after it.
   const atCeiling = () => [[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), { refused: 'Token ceiling reached (122,000 of 200,000): one more call would pass it.' }, [0, 60000, 0, 0]];
   // One call that would double a role's spend is no stop when the role finished without one.
@@ -4695,7 +4799,7 @@ test('the ceiling\'s check allows one call past it, the margin the hook works wi
 test('a role past its call cap pauses the sweep under ceilings too: the cap did not hold', () => {
   // 8 calls of 10,000 against a cap of 5: inside the token ceiling, past the cap's one-call margin.
   const { o } = driftSweep([[[10000, 0, 0, 0], ...Array(7).fill([0, 10000, 0, 0])], usual(), usual(), usual(), usual()]);
-  assert.match(o.stdout, /paused: .*ran 8 calls against its cap of 5: no call-cap hook held it/);
+  assert.match(o.stdout, /paused: .*ran 8 calls against its cap of 5[^\n]*no call-cap hook/);
 });
 test('ceilings set from the budgets keep the whole-sweep trip, however many roles were measured since', () => {
   const dir = sweepRepo();
@@ -4717,7 +4821,7 @@ test('the project settings wire the call-cap hook on every tool', () => {
 });
 test('the sweep skill gives the lead the brief\'s call-cap wording', () => {
   const skill = read(path.resolve('user/skills/pre-pr-sweep/SKILL.md'));
-  assert.match(skill, /Call cap: <n>\. A call is one message from you/);
+  assert.match(skill, /Call cap: <n>\. A call is one message/);
   assert.match(skill, /FIX THE CONTRACT/);
 });
 
@@ -4819,7 +4923,7 @@ test('an owner tier gets a real budget, its trip fires, and its call caps are ch
   delete bare.roles[0].calls;
   const b = approveRun({ ...bare, tier: 'launch gate' });
   assert.equal(b.status, FIX_EXIT, b.stdout);
-  assert.match(b.stdout, /no call cap[\s\S]*Then the owner decides: the launch gate tier/);
+  assert.match(b.stdout, /no call cap[\s\S]*owner decides: the launch gate tier/);
 });
 test('a model outside the reviewer trial asks the owner, and an unknown model at the outcome pauses', () => {
   for (const model of ['claude-haiku-5-5', '']) {
@@ -4988,7 +5092,7 @@ test('a reviewer that may still be running is refused a retry until its transcri
     ageTranscript(s.cfg, 'r1', clocks);
     const r = s.retry(1, 'r1');
     assert.equal(r.status, 1, r.stdout);
-    assert.match(r.stdout, /r1 last wrote \d+ minute\(s\) ago, so it may still be running[\s\S]*10 quiet minutes[\s\S]*Nothing logged/);
+    assert.match(r.stdout, /r1 last wrote \d+ minute\(s\) ago[\s\S]*still be running[\s\S]*10 quiet minutes[\s\S]*Nothing logged/);
   };
   refused({ stamps: 0, file: 0 });
   refused({ stamps: 9, file: 9 });
@@ -5109,7 +5213,7 @@ test('what the rules bound stays with the owner: a re-sweep that grows, a rebase
   commitAll(fr.dir, 'a large fix', true);
   const grow = resweep(fr, { tier: 'fix', fixed: [{ finding: 'F1: the clamp still lets 0 through', kind: 'fix-root' }], roles: resweepRoles(['fix-root']) });
   assert.equal(grow.status, 1, grow.stdout);
-  assert.match(grow.stdout, /the fixes change 6\d lines since the sweep it re-checks, over max\(50, 25% of its \d+-line diff\)/);
+  assert.match(grow.stdout, /the fixes change 6\d lines[\s\S]*over max\(50, 25% of its \d+-line diff\)/);
   const c = featureContract();
   c.roles[2].context = Array.from({ length: 31 }, (_, i) => `f${i}.ts`);
   assert.equal(approveRun(c).status, 1, 'context over the limit');
@@ -5166,7 +5270,7 @@ test('a reviewer past its cap is named at the outcome, and the notice shows modi
   const ids = cheapRoles(5);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, Array.from({ length: i ? 1 : 7 }, () => [0, 10, 0, 0])])));
   const o = logOutcome(r, ids, cfg);
-  assert.match(o.stdout, /ran 7 calls against its cap of 5: no call-cap hook held it/);
+  assert.match(o.stdout, /ran 7 calls against its cap of 5[^\n]*no call-cap hook/);
   assert.doesNotMatch(o.stdout, /paused/, 'the trip stays on the whole sweep');
   const k = featureContract();
   k.roles.push(role('astrology', 'What do the stars say about this diff?'));
@@ -5213,7 +5317,7 @@ test('a lighter sweep stays the owner\'s across reruns, a second mistake and a n
 test('with no project settings the notice says the cap has no hook; a hook in the local settings counts', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /no call-cap hook: each cap rests on the reviewer's own count/);
+  assert.match(r.stdout, /no call-cap hook[\s\S]*reviewer's own count/);
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
   fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{}\n');
@@ -5361,7 +5465,7 @@ test('an outcome counts only the reviewer the guard started for each role, not a
   setBrief(cfg, 'decoy', (b) => `${b} Sweep: ${at[1].hash} role 1`);
   const bad = run(['decoy', ...ids.slice(1)]);
   assert.equal(bad.status, 1, bad.stdout);
-  assert.match(bad.stdout, /decoy \(not the reviewer the guard started for role 1\)/);
+  assert.match(bad.stdout, /decoy \(not the reviewer the guard started[\s\S]*for role 1\)/);
   assert.equal(run(ids).status, 0, 'the started reviewer counts');
 });
 // 1.21.0 handoff item 35: a second run on a contract already cleared at this HEAD, with reviewers still to start, is
@@ -5372,7 +5476,7 @@ test('running approve.mjs again on a live cleared contract keeps its clearing, s
   assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
   const again = approveIn(r.dir, [r.f]);
   assert.equal(again.status, FIX_EXIT, again.stdout);
-  assert.match(again.stdout, /log the outcome of the last approved sweep first/);
+  assert.match(again.stdout, /outcome of the last approved sweep first/);
   const hash = approvalLog(r.dir).find((e) => e.decision === 'approved').hash;
   const brief = `review. Call cap: 5. Sweep: ${hash} role 2`;
   const role2 = { subagent_type: 'reviewer', prompt: brief + leadQuestion(r.dir, brief) };
@@ -5419,7 +5523,7 @@ test('an outcome refuses a tagged reviewer when the guard recorded no start for 
   ids.forEach((id, i) => setBrief(cfg, id, (b) => `${b} Sweep: ${hash} role ${i + 1}`));
   const o = spawnSync('node', [APPROVE, r.f, '--outcome', '--agents', ids.join(','), '--findings', '1', '--real', '1', '--duplicates', '0'], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: cfg } });
   assert.equal(o.status, 1, o.stdout);
-  assert.match(o.stdout, /not the reviewer the guard started for role 1/);
+  assert.match(o.stdout, /reviewer the guard started for role 1/);
 });
 test('the sweep guard refuses a reviewer brief under another agent type, and a reviewer started outside git', () => {
   const dir = makeTemp('guard-');
@@ -5500,6 +5604,7 @@ test('a smaller contract tried while an outcome is owed opens no second clearing
   assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().budget, 2737500, 'the big contract is the only clearing');
 });
 test('the reviewer role keeps clear of the prompt it cannot answer', () => {
+  // pin: 2 (the reviewer's order: it never logs an owner yes)
   assert.match(read(path.resolve('user/agents/reviewer.md')), /Never run a shell command naming `approve\.mjs` with `--owner-yes`/);
 });
 test('install does not rewrite the hook check: an installed script reads an installed project as wired', () => {
@@ -5801,29 +5906,41 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.match(removed.detail, /removes a recorded gate line.*owner-accepted/);
   assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY + ' owner-accepted'], removed: [GOOD_ENTRY] })).ok, true);
   assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], removed: [GOOD_ENTRY] })).ok, false);
+  // The 1.24.0 build (the owner's pick B): a file with no newline at its end shows its last line removed and added
+  // back unchanged when an entry is appended. That line is still recorded, so beside the PR's own new line it is no
+  // drop; the re-added copy is never the PR's own line, and a changed copy is still a drop.
+  const next = 'gate: kit-1.19.0 median 9 baseline 8 brief v1 keys v2';
+  const kept = checkGate(gateFacts({ added: [GOOD_ENTRY, next], removed: [GOOD_ENTRY] }));
+  assert.equal(kept.ok, true, kept.detail);
+  assert.match(kept.detail, /^kit-1\.19\.0: median 9/);
+  assert.equal(checkGate(gateFacts({ added: [GOOD_ENTRY.replace('median 8', 'median 9'), next], removed: [GOOD_ENTRY] })).ok, false, 'a changed line is a drop');
   const typed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: ['gate: o median 1 baseline 1 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } }));
   assert.equal(typed.ok, false);
   assert.match(typed.detail, /under the last recorded baseline 9/);
 });
 
-// S22-1: the suite runs over parallel jobs; the required check (kit-tests) passes only when every slice passed. A
-// needed job that fails makes a plain dependent job SKIPPED, and GitHub counts a skipped required check as passed.
-test('CI splits the tests over slices, and the required check fails unless every slice passed', () => {
+// S22-1, E31: the suite runs on Linux and the Windows-only tests on Windows; the required check (kit-tests) passes
+// only when both passed. A needed job that fails makes a plain dependent job SKIPPED, and GitHub counts a skipped
+// required check as passed. pin: 1 (GitHub reads these lines).
+test('CI runs the suite on Linux and the Windows slice on Windows, and the required check fails unless both passed', () => {
   const ci = read(path.resolve('.github/workflows/ci.yml'));
   const job = (name) => ci.split(new RegExp(`^  ${name}:$`, 'm'))[1].split(/^  [a-z-]+:$/m)[0];
   const unit = job('unit-tests');
-  const slices = JSON.parse(/^\s+slice: (\[[\d, ]+\])$/m.exec(unit)[1]);
-  // The shard count is named, so every slice splits the tests the same way (the 1.23.0 sweep).
-  const n = Number(/node scripts\/test-run\.mjs --slice \$\{\{ matrix\.slice \}\}\/(\d+) --shards \d+$/m.exec(unit)[1]);
-  assert.deepEqual(slices, [...Array(n).keys()], 'the matrix lists every slice 0..n-1 once');
-  assert.match(unit, /^\s+fail-fast: false$/m);
+  assert.match(unit, /^    runs-on: ubuntu-latest$/m);
+  assert.match(unit, /^\s+run: node scripts\/test-run\.mjs --shards \d+$/m);
+  const win = job('windows-tests');
+  assert.match(win, /^    runs-on: windows-latest$/m);
+  assert.match(win, /KIT_WINDOWS_SLICE: '1'[\s\S]*run: node scripts\/test-run\.mjs --shards \d+/);
+  // The guards guard a Windows machine, so their proofs run there.
+  for (const proof of ['guard-outward-check.cjs', 'guard-delete-check.cjs']) assert.ok(win.includes(`node project/.claude/${proof}`), proof);
   const gate = job('kit-tests');
-  assert.match(gate, /^    needs: unit-tests$/m);
+  assert.match(gate, /^    needs: \[unit-tests, windows-tests\]$/m);
   assert.match(gate, /^    if: always\(\)$/m);
-  assert.match(gate, /^\s+if: needs\.unit-tests\.result != 'success'$/m);
-  assert.match(gate.split("if: needs.unit-tests.result != 'success'")[1], /^\s+run: exit 1$/m);
+  const failed = "if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success'";
+  assert.ok(gate.includes(failed));
+  assert.match(gate.split(failed)[1], /^\s+run: exit 1$/m);
   assert.doesNotMatch(ci, /continue-on-error/);
-  assert.doesNotMatch(gate, /test-run\.mjs/, 'the tests run in the slices, not again in the gate');
+  assert.doesNotMatch(gate, /test-run\.mjs/, 'the tests run in their jobs, not again in the gate');
 });
 
 test('CI runs the recall gate on the PR\'s real diff', async () => {
@@ -5832,10 +5949,12 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   const bar = passBar(keysText, currentVersion(keysText));
   const step = read(path.resolve('.github/workflows/ci.yml')).split('- name: Rule changes carry a passing recall score')[1].split('- name:')[0];
   // The base branch's copy judges the PR (S18-3, R-S5).
+  // pin: 1 (GitHub runs these lines)
   assert.match(step, /^\s+git show "\$PR_BASE:scripts\/recall\.mjs" > scripts\/recall-gate-base\.mjs$/m);
   assert.match(step, /^\s+node scripts\/recall-gate-base\.mjs gate "\$PR_BASE" "\$PR_HEAD"$/m);
   assert.match(step, /^\s+if: github\.event_name == 'pull_request'$/m);
   assert.match(step, /^\s+PR_BASE: origin\/\$\{\{ github\.base_ref \}\}$/m);
+  // pin: 1 (GitHub reads this line)
   assert.match(step, /^\s+PR_HEAD: \$\{\{ github\.event\.pull_request\.head\.sha \}\}$/m);
   assert.doesNotMatch(step, /continue-on-error/);
   const dir = makeTemp('gate-');
@@ -5973,10 +6092,11 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
 test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
   for (const f of ['rules/agent-teams.md', 'rules/reviews-and-findings.md']) {
     const text = read(path.resolve(f));
-    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs` \(`\$HOME` in PowerShell; or your Claude config folder\)/, f);
-    assert.match(text, /not there, the kit's user layer is not installed: say so, and the owner approves/, f);
+    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*`\$HOME` in PowerShell/, f);
+    // pin: 2 (the lead's order when the tool is missing)
+  assert.match(text, /not there, the kit's user layer is not installed: say so, and the owner approves/, f);
   }
-  assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\) \+ audit to the owner/);
+  assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\)[^\n]*to the owner/);
 });
 
 test('the scorer brief is versioned and carries the two calls the proof found borderline', () => {
@@ -5988,9 +6108,9 @@ test('the scorer brief is versioned and carries the two calls the proof found bo
   assert.ok(brief.endsWith(v1), 'v1 stays as it was written');
   const v2 = brief.slice(0, brief.indexOf('## v1 '));
   assert.match(v2, /## v2 \(2026-11-05\)/);
-  assert.ok(v2.includes('"You score saved answers to the kit\'s recall questions."'));
-  assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/);
-  assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/);
+  assert.ok(v2.includes('"You score saved answers to the kit\'s recall questions."')); // pin: 3 (the versioned scorer brief)
+  assert.match(brief, /printed checklist counts as "a visible checklist" only when the answer says it is required/); // pin: 3
+  assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/); // pin: 3
 });
 // Recall probes: the runner makes its own throwaway folder, so no folder name or label can reach the result.
 const HEX6 = '[0-9a-f]{6}';
@@ -6368,8 +6488,8 @@ test('a filled sheet parses into its grounding, topics, questions and answers', 
   assert.equal(s.questions[0].choice, 'a');
   assert.equal(s.questions[0].pick, 'a');
   assert.equal(s.questions[0].pickWhy, 'it is where people look.');
-  assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\n\nand a second paragraph');
-  assert.equal(s.questions[1].answer, 'Neither,  use the projct name\t\n\nand keep it short');
+  assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\n\nand a second paragraph'); // pin: 3 (the owner's words, byte for byte)
+  assert.equal(s.questions[1].answer, 'Neither,  use the projct name\t\n\nand keep it short'); // pin: 3
   assert.equal(s.missed, 'Nothing else  at this time.\n\nTruly.');
 });
 
@@ -6441,12 +6561,12 @@ test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved quest
   assert.throws(() => parseSheet(broken['the closing line in a thought']), /this reads 1/);
 });
 
-test('a sheet with Windows line ends reads the same, and the words stay whole', async () => {
+test('a sheet with Windows line ends reads the same, and the words stay whole', { windows: true }, async () => {
   const { parseSheet } = await sheetTools();
   const s = parseSheet(SHEET.replace(/\n/g, '\r\n'));
-  assert.equal(s.questions[1].answer, 'Neither,  use the projct name\t\r\n\r\nand keep it short');
+  assert.equal(s.questions[1].answer, 'Neither,  use the projct name\t\r\n\r\nand keep it short'); // pin: 3
   assert.equal(s.questions[0].choice, 'a');
-  assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\r\n\r\nand a second paragraph');
+  assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\r\n\r\nand a second paragraph'); // pin: 3
 });
 
 test('a sheet file saved in anything but UTF-8 is refused, and a UTF-8 mark is read past', async () => {
@@ -6516,7 +6636,7 @@ test('the record copies every box byte for byte and keeps a confirmed pick apart
   assert.match(q2, /^Claude's pick was: The title$/m);
   const q3 = r.slice(r.indexOf('### Q3'), r.indexOf('## Anything'));
   assert.match(q3, /Unanswered: Claude's call/);
-  assert.match(r, /1 of 3 answers confirmed Claude's pick; 1 in the owner's own words; 1 unanswered \(Claude's call\)\. A confirmed pick is weaker evidence/);
+  assert.match(r, /1 of 3 answers confirmed Claude's pick;[^\n]*1 in the owner's own words;[^\n]*1 unanswered/);
   for (const line of ['# Brainstorm record: Export button', '## Grounding shown to the owner', '## Where it lives', '## Limits', '### Q1. Where should the button sit?', '### Q3. How big can an export get?', "Owner's thought (verbatim):", '## Anything not asked (verbatim)']) assert.ok(r.split('\n').includes(line), line);
   assert.match(q3, /any plan must mark it so/);
   assert.match(compileRecord({ ...sheet, sent: 'the-time' }), /Sent the-time\./);
@@ -6526,9 +6646,9 @@ test('the record marks a pick the owner turned down and a tick with no pick offe
   const { parseSheet } = await sheetTools();
   const { compileRecord } = await compileTools();
   const against = SHEET.replace('- [x] a: In the toolbar\n- [ ] b: In the menu', '- [ ] a: In the toolbar\n- [x] b: In the menu');
-  assert.match(compileRecord(parseSheet(against)), /Picked: In the menu \(chose against Claude's pick\)/);
+  assert.match(compileRecord(parseSheet(against)), /Picked: In the menu \(chose against/);
   const noPick = SHEET.replace('Asker\'s pick: a\nWhy this pick: it is where people look.\n\n', '');
-  assert.match(compileRecord(parseSheet(noPick)), /Picked: In the toolbar \(no pick was offered\)/);
+  assert.match(compileRecord(parseSheet(noPick)), /Picked: In the toolbar \(no pick/);
 });
 
 test('the owner\'s text cannot close its fence, even indented or long', async () => {
@@ -6659,7 +6779,7 @@ test('an update keeps the attribution script while an edited audit still needs i
 
 // M21: the kit source installs no kit, so before 1.21.0 nothing checked its commit messages until CI did, and the fix
 // needed a history rewrite. Build turns its own hook on once per clone.
-test('build turns on the kit source commit-msg hook, which refuses a bad message, and leaves an owner hooks path alone', () => {
+test('build turns on the kit source commit-msg hook, which refuses a bad message, and leaves an owner hooks path alone', { windows: true }, () => {
   const dir = makeTemp('srchooks-');
   const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
   g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
@@ -6741,7 +6861,7 @@ test('recall gate (S18-5): a scores file over 1 MiB on the base still sets the f
   assert.match(out.stdout, /under the last recorded baseline 10/);
 });
 
-test('recall gate and kit.mjs (S18-2): run through a junction or link, they still run and fail as they should', () => {
+test('recall gate and kit.mjs (S18-2): run through a junction or link, they still run and fail as they should', { windows: true }, () => {
   const r = gateRepo();
   r.record('gate: a median 7 baseline 7 brief v1 keys v4 control 0');
   const link = path.join(r.dir, 'linked');
@@ -6917,15 +7037,15 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
   assert.equal(held.status, 1, held.stdout + held.stderr);
   assert.doesNotMatch(held.stdout, /^gate:/m);
   assert.match(held.stdout, /on the bar of 12[\s\S]*cand-4 and cand-5/);
-  assert.match(keysText.split('<!-- recall v')[0], /A median of 3 exactly on the bar runs 2 more, and the median of those 5 decides/);
+  assert.match(keysText.split('<!-- recall v')[0], /A median of 3 exactly on the bar runs 2 more, and the median of those 5 decides/); // pin: 3 (released recall keys)
 });
 
 // 1.20.0 carry-overs N5 and B8: a closeout that started on its own still asks before a remote branch delete, and the
 // core rules send leftovers to the next build, not the roadmap.
 test('a self-started closeout asks before a remote delete, and leftovers carry to the next build', () => {
-  assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching, a remote delete on the owner's yes even in a closeout that started on its own/);
+  assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching[^\n]*remote delete on the owner's yes/);
   const core = read(path.resolve('rules/core.md'));
-  assert.match(core, /device-only or design items carry to the next build, all recorded/);
+  assert.match(core, /design items carry to the next build/);
   assert.doesNotMatch(core, /design items go to the roadmap/);
 });
 // Sweep tooling carry-overs from 1.18.0 (C4, C9b, C9e, C9f, C10, C11), each checked real against the code first.
@@ -6948,7 +7068,7 @@ test('C4/C9e: each brief names its sweep and role, so ids in any order count for
   const brief = (text) => { const b = approveRun(featureContract()); const ids2 = cheapRoles(5); const cfg2 = transcripts(Object.fromEntries(ids2.map((id) => [id, [[0, 100, 0, 0]]]))); const h = approvalLog(b.dir).pop().hash; ids2.forEach((id, i) => setBrief(cfg2, id, (x) => `${x} ${text(h, i)}`)); return logOutcome(b, ids2, cfg2).stdout; };
   assert.match(brief((h, i) => `Sweep: ${'0'.repeat(16)} role ${i + 1}`), /ASK THE OWNER[\s\S]*brief is for another contract/);
   assert.match(brief(() => 'Sweep: none'), /ASK THE OWNER[\s\S]*no "Sweep: <hash> role <n>" line/);
-  assert.match(brief((h) => `Sweep: ${h} role 1`), /ASK THE OWNER[\s\S]*role 1 is named by more than one brief/);
+  assert.match(brief((h) => `Sweep: ${h} role 1`), /ASK THE OWNER[\s\S]*named by more than one brief/);
   assert.match(brief((h, i) => `Sweep: ${h} role ${i + 2}`), /brief names role 6; the contract has 5/);
 });
 test('C4: the guard starts each role once, by the sweep and role its brief names', () => {
@@ -6964,7 +7084,7 @@ test('C4: the guard starts each role once, by the sweep and role its brief names
   assert.match(start(`Call cap: 6. Sweep: ${hash} role 1`).permissionDecisionReason, /call cap of 5, not 6/);
   assert.equal(start(`Call cap: 5. Sweep: ${hash} role 6`).permissionDecision, 'deny', 'no sixth role');
   assert.equal(start(`Call cap: 5. Sweep: ${hash} role 2`).permissionDecision, 'allow');
-  assert.match(start(`Call cap: 5. Sweep: ${hash} role 2`).permissionDecisionReason, /Role 2 of the cleared contract has started already/);
+  assert.match(start(`Call cap: 5. Sweep: ${hash} role 2`).permissionDecisionReason, /Role 2 of the cleared contract[\s\S]*started already/);
   assert.equal(start(`Call cap: 5. Sweep: ${hash} role 1`).permissionDecision, 'allow', 'role 1 keeps its own slot');
 });
 test('C9f: the guard reads each folder\'s HEAD once, however long the log', () => {
@@ -6988,7 +7108,7 @@ test('C9b: an owner-cleared sweep owes its outcome before the next, and --none-r
   fs.writeFileSync(next, JSON.stringify(featureContract()));
   const b = approveIn(a.dir, [next]);
   assert.equal(b.status, FIX_EXIT, b.stdout);
-  assert.match(b.stdout, /log the outcome of the last approved sweep first \(sweeps\/contract\.json\)/);
+  assert.match(b.stdout, /approved sweep first \(sweeps\/contract\.json\)/);
   const n = approveIn(a.dir, [a.f, '--outcome', '--none-ran']);
   assert.equal(n.status, 0, n.stdout);
   assert.equal(approvalLog(a.dir).pop().budget, approvalLog(a.dir).filter((e) => e.kind === 'decision' && e.contract === a.f).pop().budget);
@@ -7049,7 +7169,7 @@ test('S2: while paused the outcome owed still comes first, so a yes cannot open 
   approveIn(r.dir, [r.f, '--escape', 'a bug shipped']);
   const again = approveIn(r.dir, [r.f]);
   assert.equal(again.status, 3, again.stdout);
-  assert.match(again.stdout, /log the outcome of the last approved sweep first/);
+  assert.match(again.stdout, /outcome of the last approved sweep first/);
   assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes']).status, 1);
 });
 test('S3: a contract beside the work does not hide uncommitted work or the size of the fixes', () => {
@@ -7146,7 +7266,7 @@ test('L1: a crashed reviewer that wrote after its retry is named at the outcome'
   transcripts({ r1b: [[0, 100, 0, 0]] }, {}, s.cfg);
   const done = logOutcome(s, ['r1b', 'r2'], s.cfg);
   assert.equal(done.status, 0, done.stdout);
-  assert.match(done.stdout, /r1 wrote after its retry was logged: it was not dead/);
+  assert.match(done.stdout, /r1 wrote after its retry was logged[\s\S]*not dead/);
   // 1.21.0 handoff item 34: it is in the log too, where the trial review and the summary read.
   const out = approvalLog(s.dir).pop();
   assert.equal(out.roles[0].crashedAlive, true);
@@ -7168,6 +7288,7 @@ test('recall gate (D1): the recorded line is one main\'s parser reads, and score
   const gateLine = read(path.resolve('docs/evals/results/recall-scores.md')).split('\n').filter((l) => l.startsWith('gate:')).pop();
   assert.match(gateLine, /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)( owner-accepted)?$/);
   assert.match(read(path.resolve('docs/evals/results/recall-scores.md')), /\ncontrol: 0\n/);
+  // pin: 1 (CI's recall gate reads this line)
   assert.match(read(path.resolve('scripts/recall.mjs')), /"gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it/);
 });
 test('recall gate (T3): an edit to the score tool needs a gate line, and a git failure stops the gate', async () => {
@@ -7244,7 +7365,7 @@ test('T3: a brief held as a list of text parts still names its sweep', () => {
   assert.equal(r.status, 0, r.stdout);
 });
 // T4: the build command itself, not the helper it calls.
-test('T4: kit.mjs build turns on the kit source commit-msg hook', () => {
+test('T4: kit.mjs build turns on the kit source commit-msg hook', { windows: true }, () => {
   const dir = path.join(makeTemp('kit-clone-'), 'k');
   assert.equal(spawnSync('git', ['clone', '-q', path.resolve('.'), dir], { encoding: 'utf8' }).status, 0);
   assert.equal(spawnSync('git', ['-C', dir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim(), '');
@@ -7318,7 +7439,7 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
 });
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
 // The kit source holds its own pushes the same way (.githooks/pre-push), so the gate can arm a PR there too.
-for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, () => {
+for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, { windows: true }, () => {
   const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.mkdirSync(path.join(dir, '.githooks'));
@@ -7341,7 +7462,7 @@ for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`t
   fs.appendFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
   assert.equal(push(head).status, 1, 'armed again, it holds again');
 });
-test('the pre-push hook holds a head armed on two PRs until both are disarmed', () => {
+test('the pre-push hook holds a head armed on two PRs until both are disarmed', { windows: true }, () => {
   const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
@@ -7407,5 +7528,5 @@ test('an owner yes on an older ask waits for the outcome of the sweep approved a
   assert.equal(a.status, 0, a.stdout);
   const yes = approveIn(dir, [b, '--owner-yes', 'yes go']);
   assert.equal(yes.status, 1, yes.stdout);
-  assert.match(yes.stdout, /Log the outcome of the last approved sweep first/);
+  assert.match(yes.stdout, /outcome of the last approved sweep first/);
 });

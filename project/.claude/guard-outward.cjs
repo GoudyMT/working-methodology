@@ -39,7 +39,10 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-const { plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
+const shared = require('./guard-read.cjs');
+// install skips a guard-read.cjs the owner changed, so an older one may sit here: without holdFor, every hold asks.
+const { plainText, withoutComments, joinContinuations, tokenize } = shared;
+const holdFor = shared.holdFor || (() => ({ decision: 'ask', note: '' }));
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -198,6 +201,12 @@ function findOutward(text, depth) {
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	// The proof must be an argument of the same command as the yes: one elsewhere on the line proves nothing.
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
+	// S23-4 (the 1.23.0 verify): approve.mjs takes a shell without CLAUDECODE and AI_AGENT for the owner's terminal, and
+	// a variable or a glob spells the yes past the reading above. Clearing either marker, or the whole environment, asks.
+	// PowerShell needs no full name (the 1.24.0 sweep): a removal on the Env: drive, by wildcard or by a filter piped
+	// from it, or a .NET call that sets the environment, asks too; reading Env: or setting $env:X does not.
+	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
+	if (/\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat)) return 'a command that clears the AI shell\'s markers';
 	// The terminal's way to resume is the owner's alone; the thread's way carries its proof, as the yes does (the 1.23.0
 	// sweep: a resume with the AI shell's variables unset asked nothing).
 	if (/KIT_OWNER_RESUME/i.test(flat)) return 'an owner resume of the sweep tools';
@@ -304,8 +313,10 @@ function main() {
 		let reason = '';
 		let toolName = '';
 		let prNote = '';
+		let hold = holdFor(null);
 		try {
 			const input = JSON.parse(raw);
+			hold = holdFor(input);
 			toolName = String(input.tool_name ?? '');
 			reason = decide(input);
 			// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
@@ -319,8 +330,8 @@ function main() {
 			const output = {
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
-					permissionDecision: 'ask',
-					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.',
+					permissionDecision: hold.decision,
+					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.' + hold.note,
 				},
 			};
 			// The reason on an "ask" is shown to the user; added context is what reaches Claude.

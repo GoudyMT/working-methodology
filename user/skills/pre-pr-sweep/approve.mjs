@@ -648,6 +648,18 @@ const INSTALLED_HOME = '{{CLAUDE_HOME}}';
 const ownerHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
 // The short code an ask or a pause prints and the owner's reply carries, so one reply answers that ask alone.
 const askCode = (hash) => String(hash || '').slice(0, 6);
+// S23-4 (the 1.23.0 verify): a yes or a resume with no thread proof rested on two variables any shell can clear, and
+// on the push guard reading the command's spelling; a variable or a glob got past both. It now also needs a real
+// terminal, where the owner types the code: an AI tool's shell has none (its stdin is no TTY), however the command is
+// spelled. A process set on forging can still write the log itself (its links are not keyed): the written-down limit.
+function typedAtTerminal(code, what) {
+	if (!process.stdin.isTTY) return `${what} without a thread message needs the owner's own terminal, where they type its code; this shell has none. From the phone: the thread's way`;
+	process.stdout.write(`Type ${code} to confirm ${what}: `);
+	let line = '';
+	const one = Buffer.alloc(1);
+	try { while (line.length < 64 && fs.readSync(0, one, 0, 1, null) === 1 && one[0] !== 10) line += String.fromCharCode(one[0]); } catch { return 'the terminal could not be read'; }
+	return line.trim().toLowerCase() === String(code).toLowerCase() ? '' : `the code typed was not ${code}`;
+}
 const pauseCode = (s) => { const lines = rawLines(); const i = s.log.map((e, k) => (e.kind === 'pause' ? k : -1)).reduce((a, b) => Math.max(a, b), -1); return i >= 0 ? sha(lines[i]).slice(0, 6) : ''; };
 const unescapeXml = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
 // setup: read the message whoever sent it, to name its author as the owner (--owner-setup).
@@ -663,7 +675,12 @@ function ownerMessage(id, setup = false) {
 	const tag = new RegExp(`<message trigger="true" from="human" trust="principal" author-id="([^"]+)" id="${id}"[^>]*>([\\s\\S]*?)</message>`);
 	for (const project of folders(path.join(cfg, 'projects'))) {
 		let files = [];
-		try { files = fs.readdirSync(project).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(project, f)); } catch { continue; }
+		// S23-5: where Claude Code names the session this runs in, only its own transcript is read, so a turn written
+		// into another session's file is no proof. A shell with no session id (the owner's terminal) reads them all.
+		// A set id no file can carry (a dot, an empty value) narrows to nothing, never back to every file (the 1.24.0 sweep).
+		const sid = process.env.CLAUDE_CODE_SESSION_ID;
+		const session = sid === undefined ? null : /^[\w-]{1,128}$/.test(sid) ? `${sid}.jsonl` : '\0';
+		try { files = fs.readdirSync(project).filter((f) => f.endsWith('.jsonl') && (!session || f === session)).map((f) => path.join(project, f)); } catch { continue; }
 		for (const f of files) {
 			const text = fs.readFileSync(f, 'utf8');
 			if (!text.includes(id)) continue;
@@ -742,6 +759,10 @@ function ownerYes() {
 	if (!has('--thread') && ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env)) {
 		console.log('Refused: from an AI tool\'s shell the owner\'s yes needs its proof, the id of the owner\'s own message: --owner-yes "<their words>" --thread <cmsg_...>. Or the owner runs it in their own terminal. Nothing logged.');
 		return 1;
+	}
+	if (!has('--thread')) {
+		const why = typedAtTerminal(askCode(last.hash), 'the owner\'s yes');
+		if (why) { console.log(`Refused: ${why}. Nothing logged.`); return 1; }
 	}
 	if (has('--thread')) {
 		const id = opt('--thread');
@@ -1144,9 +1165,14 @@ function main() {
 	if (has('--resume')) {
 		// An AI tool's shell carries one of these; the owner's own terminal does not (the push guard's same line).
 		if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_RESUME !== '1') {
-			console.log('Only the owner resumes auto-approval, from their own terminal: review the log, then run KIT_OWNER_RESUME=1 node approve.mjs --resume.');
+			console.log('Only the owner resumes auto-approval, from their own terminal: review the log, then run KIT_OWNER_RESUME=1 node approve.mjs --resume (PowerShell: $env:KIT_OWNER_RESUME=\'1\'; node approve.mjs --resume).');
 			return 1;
 		}
+		const s = state();
+		// As the thread's way: with nothing paused there is nothing to resume, and no code to type (the 1.24.0 sweep).
+		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
+		const why = typedAtTerminal(pauseCode(s) || 'resume', 'the resume');
+		if (why) { console.log(`Refused: ${why}. Nothing logged.`); return 1; }
 		write({ kind: 'resume' });
 		console.log(`Auto-approval resumed; the next review comes after ${state().reviewEvery} more.`);
 		return 0;

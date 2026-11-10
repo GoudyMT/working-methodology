@@ -2,6 +2,9 @@
   "worktree": {
     "baseRef": "head"
   },
+  "env": {
+    "npm_config_yes": "false"
+  },
   "permissions": {
     "ask": [
       "Bash(git push *)",
@@ -21,6 +24,19 @@
             ],
             "timeout": 10,
             "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{PROJECT_DIR}}/.claude/task-gate.cjs"
+            ],
+            "timeout": 10
           }
         ]
       },
