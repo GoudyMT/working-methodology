@@ -23,6 +23,10 @@
     {
       "before": "- **Standard:** before / after table; decisions and review result on screen; file list, gate results and clean checks in folds; total, on-screen and per-bullet ceilings (\"wall of text\" = on-screen words and bullet length); plain engineer speak.",
       "after": "- **Standard:** before / after table; decisions and review result on screen; review rows are the project's (A16), files and gates left to GitHub; word and bullet ceilings; plain speak."
+    },
+    {
+      "before": "**The A/B/C shape:** plain overview a reader takes in within 60 seconds (what this is, why it is in front of the owner now, and what measurement or finding raised it; item codes only after the plain name) -> context (problem, what is locked, what is at stake) -> options with pros / cons -> security / design impact -> honest recommendation -> stop. Cover the whole space, extensive and rule-bending options included, each labelled by effort (Small / Moderate / EXTENSIVE) and rules (OK / BENDS <the lock> / BREAKS Tier 0), with whether pros beat cons for extensive or bending ones; the impossible marked so, with proof; a rule-breaking option is for contrast, never recommended. Why: a partial list hides the option the owner would pick.",
+      "after": "**The A/B/C shape:** plain overview a reader takes in within 60 seconds (`_Templates/_Ask Formats.md`: what this is, why it is in front of the owner now, and what measurement or finding raised it; item codes only after the plain name) -> context (problem, what is locked, what is at stake) -> options with pros / cons -> security / design impact -> honest recommendation -> stop. Cover the whole space, extensive and rule-bending options included, each labelled by effort (Small / Moderate / EXTENSIVE) and rules (OK / BENDS <the lock> / BREAKS Tier 0), with whether pros beat cons for extensive or bending ones; the impossible marked so, with proof; a rule-breaking option is for contrast, never recommended. Why: a partial list hides the option the owner would pick."
     }
   ]
 }
