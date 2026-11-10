@@ -36,8 +36,19 @@ test('a PR, commit, tag or release waits until the session has read its rules, i
 		assert.equal(held.decision, 'deny', command);
 		// The refusal names the file to read, so the session can go on by itself.
 		assert.ok(held.reason.includes(RELEASE), command);
-		assert.equal(gate([read(`C:/proj/${RELEASE}`), read('C:\\proj\\standards\\reviews-and-findings.md')], 'Bash', { command }).decision, 'pass', `${command} after the read`);
+		assert.equal(gate([read(RELEASE), read('standards/reviews-and-findings.md')], 'Bash', { command }).decision, 'pass', `${command} after the read`);
+		// F12: another folder's copy of the rules (the kit source, another project) is not this project's read.
+		assert.equal(gate([read(`/elsewhere/${RELEASE}`), read('/elsewhere/standards/reviews-and-findings.md'), shell(`cat ../other/${RELEASE}`)], 'Bash', { command }).decision, 'deny', `${command} after another copy's read`);
 	}
+	// F14: an env prefix, a wrapper or a shell handed the command still waits.
+	for (const command of ['X=1 git commit -m x', 'env X=1 git commit -m x', 'command git tag v1', 'bash -c "git commit -m x"', 'powershell -Command "git commit -m x"', 'sh -c \'cd a && gh pr create -t x -b y\'']) {
+		assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
+	}
+	// F13: a list, a manual or a label-only edit writes no commit, tag or body, so it never waits.
+	for (const command of ['git tag', 'git tag -l', 'git tag --list "v1*"', 'git tag -n --sort=-v:refname', 'git commit --help', 'git tag -h', 'gh pr create --help', 'gh pr edit 3 --add-label bug']) {
+		assert.equal(gate([], 'Bash', { command }).decision, 'pass', command);
+	}
+	for (const command of ['git tag -d v1', 'git tag -a v1 -m x', 'gh pr edit 3 --add-label bug --body x', 'gh pr edit 3 --title=y']) assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
 	// A PR also needs the findings rule (the sweep summary in its body).
 	assert.ok(gate([read(RELEASE)], 'Bash', { command: 'gh pr create -t x -b y' }).reason.includes('standards/reviews-and-findings.md'));
 	assert.equal(gate([read(RELEASE), read('standards/reviews-and-findings.md')], 'Bash', { command: 'gh pr create -t x -b y' }).decision, 'pass');
