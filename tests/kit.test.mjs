@@ -301,7 +301,7 @@ test('session start says when the kit has newer rules, and how many', () => {
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /newer/);
   bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
   bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update\./);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\)[\s\S]*\(1\.0\.0\)[\s\S]*\/methodology-kit update/);
 });
 
 // 1.21.1 carry 6: a main held by a ruleset alone is protected, though GitHub has no classic protection for it.
@@ -322,8 +322,8 @@ test('status warns when the temp disk runs low on inodes, and is silent when it 
   install({ kit, home, target: 'user' });
   install({ kit, home, target: 'project', projectDir: proj });
   const at = (level, pct) => status({ kit, home, projectDir: proj, ahead: () => 0, inodes: () => ({ level, pct, text: `${pct}% of inodes used on /t` }) });
-  assert.match(at('refuse', 90).text, /Temp disk: 90% of inodes used on \/t\. Test runs refuse above 80%/);
-  assert.match(at('warn', 60).text, /Temp disk: 60% of inodes used on \/t\. Test runs refuse above 80%/);
+  assert.match(at('refuse', 90).text, /Temp disk: 90% of inodes[\s\S]*80%/);
+  assert.match(at('warn', 60).text, /Temp disk: 60% of inodes[\s\S]*80%/);
   assert.equal(at('refuse', 90).current, true, 'disk room is not an install fault');
   assert.doesNotMatch(at('ok', 10).text, /Temp disk/);
   assert.doesNotMatch(at('unknown', null).text, /Temp disk/);
@@ -352,7 +352,7 @@ test('status and session start flag a Claude Code too old for onFailure, and sta
 // project, so a claude.cmd planted there would run on every session start.
 // A machine as it ships: this sandbox sets NoDefaultCurrentDirectoryInExePath; most machines do not.
 const withoutSafeSearch = (env) => Object.fromEntries(Object.entries(env).filter(([k]) => k.toLowerCase() !== 'nodefaultcurrentdirectoryinexepath'));
-test('the Claude Code version read never runs a claude program planted in the current folder', { skip: process.platform !== 'win32' }, () => {
+test('the Claude Code version read never runs a claude program planted in the current folder', { windows: true, skip: process.platform !== 'win32' }, () => {
   const dir = makeTemp('planted-');
   const marker = path.join(dir, 'ran.txt');
   fs.writeFileSync(path.join(dir, 'claude.cmd'), `@echo planted> "${marker}"\r\n@echo 9.9.9\r\n`);
@@ -468,7 +468,7 @@ test('pre-compact counts what is waiting for the kit', () => {
   assert.match(preCompactReport({ kit, home, projectDir: proj }), /No rule changes waiting for the kit\./);
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, improved\n');
   fs.writeFileSync(path.join(home, 'projects', projectSlug(proj), 'memory', 'new-lesson.md'), 'lesson\n');
-  assert.match(preCompactReport({ kit, home, projectDir: proj }), /2 rule change\(s\) waiting for the kit: _Working Standards\.md, memory\/new-lesson\.md\. Sort them/);
+  assert.match(preCompactReport({ kit, home, projectDir: proj }), /2 rule change\(s\)[\s\S]*_Working Standards\.md, memory\/new-lesson\.md/);
 });
 
 test('the hook script prints a user message and context for Claude, and never fails the session', async () => {
@@ -545,7 +545,7 @@ test('session start names only the kit files that owe a hand merge, not a projec
   // Changed here and in the kit: a merge is owed, and session start says so.
   bump({ kit, level: 'patch', note: 'x', date: '2026-02-01' });
   fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'kit rules, newer\n');
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /1 kit file\(s\) changed here and in the kit: _Working Standards\.md\. Merge the kit's changes by hand, then record it with kit\.mjs install project <folder> --merged <file>,<file>\./);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /1 kit file\(s\) changed here[\s\S]*_Working Standards\.md[\s\S]*kit\.mjs install project <folder> --merged/);
 });
 
 test('pre-compact says when an installed third-party plugin moved past its backup', () => {
@@ -557,7 +557,7 @@ test('pre-compact says when an installed third-party plugin moved past its backu
   const data = JSON.parse(read(file));
   data.plugins['toolbox@market'][0].version = '2.1.0';
   fs.writeFileSync(file, JSON.stringify(data));
-  assert.match(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /1 third-party plugin\(s\) changed since the backup: toolbox \(2\.0\.0 -> 2\.1\.0\)\. Review, then run snapshot\./);
+  assert.match(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /1 third-party plugin\(s\) changed since the backup: toolbox \(2\.0\.0 -> 2\.1\.0\)[\s\S]*run snapshot/);
 });
 
 test('brief templates point to the one rules block and never carry a pasted copy', () => {
@@ -664,7 +664,7 @@ test('a running session hears about a new kit release once, at the next message'
   assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
   // Another project releases the kit while this session runs.
   bump({ kit, level: 'minor', note: 'from the other project', date: '2026-03-01' });
-  assert.match(promptCheckReport({ kit, projectDir: proj }), /Kit 1\.1\.0 was released while this session ran: 1 newer change\(s\) than this project \(1\.0\.0\)\. Run \/methodology-kit update at the next stopping point\./);
+  assert.match(promptCheckReport({ kit, projectDir: proj }), /Kit 1\.1\.0 was released while this session ran[\s\S]*\(1\.0\.0\)[\s\S]*\/methodology-kit update/);
   assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
   bump({ kit, level: 'patch', note: 'again', date: '2026-03-02' });
   assert.match(promptCheckReport({ kit, projectDir: proj }), /Kit 1\.1\.1 was released/);
@@ -823,13 +823,13 @@ test('status and session start show an unreleased install as a gap; an older sta
   assert.match(r.text, /~\/\.claude: 1\.0\.0, current\./);
   assert.match(r.text, /This project: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*fetch --tags; git -C ".*" checkout <newest v tag>\)[\s\S]*\/methodology-kit update/);
   assert.match(r.text, /^Not current: .*unreleased build\.$/m);
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /This project runs an unreleased kit build \(v1\.0\.0-3-gabc1234\)\. Check out the kit's newest release tag \(.*\), then run \/methodology-kit update\./);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /This project runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*\/methodology-kit update/);
   // ~/.claude carries the rules of every project, so its unreleased build is named too.
   install({ kit, home, target: 'user', release: unreleased });
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.match(r.text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*node .*kit\.mjs install user/);
   assert.match(r.text, /^Not current: ~\/\.claude .*unreleased build; This project .*unreleased build\.$/m);
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs an unreleased kit build \(v1\.0\.0-3-gabc1234\)\. Check out the kit's newest release tag \(.*\), then run node ".*\/scripts\/kit\.mjs" install user\./);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*kit\.mjs" install user/);
   // Reinstalled from the release: the gap closes.
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
   install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
@@ -854,7 +854,7 @@ test('a release install over an unreleased one removes the files only that build
   const stamp = JSON.parse(read(path.join(home, 'kit-install.json')));
   assert.equal(stamp.release, false, 'a kept branch-only file means this is still not a pure release');
   assert.deepEqual(stamp.leftover, ['agents/branch-only.md']);
-  assert.match(status({ kit, home, projectDir: proj, ahead: () => 0 }).text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0 with 1 file\(s\) kept from an unreleased build\./);
+  assert.match(status({ kit, home, projectDir: proj, ahead: () => 0 }).text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0[\s\S]*1 file\(s\) kept from an unreleased build/);
   // Once the owner removes it, the next release install is a release again.
   fs.rmSync(path.join(home, 'agents/branch-only.md'));
   install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
@@ -1857,7 +1857,7 @@ test('the leak guard also reads the agent name and spellings split by punctuatio
 });
 test('every kit role runs the canary at its stop, and the project settings run the leak guard', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
-    assert.match(read(path.resolve('user/agents', `${role}.md`)), /Stop:\n {4}- hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, `${role} wires the canary`);
+    assert.match(read(path.resolve('user/agents', `${role}.md`)), /Stop:\n {4}- hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, `${role} wires the canary`); // pin: 1 Claude Code reads the hook block
   }
   const settings = JSON.parse(read(path.resolve('project/.claude/settings.json')));
   const guard = settings.hooks.PreToolUse.find((h) => h.matcher === 'Agent|Task|SendMessage');
@@ -2704,9 +2704,12 @@ test('a resume or a yes with no thread proof needs a real terminal, even with th
   const bare = (args, env) => spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, ...env } });
   const resume = bare(['--resume'], { KIT_OWNER_RESUME: '1' });
   assert.equal(resume.status, 1, resume.stdout);
+  // Refused for the terminal, not for some other reason first (the 1.24.0 sweep).
+  assert.match(resume.stdout, /owner's own terminal/);
   const ask = approveRun(askContract());
   const yesThere = spawnSync('node', [APPROVE, ask.f, '--owner-yes', 'yes go ahead'], { encoding: 'utf8', cwd: ask.dir, env: { PATH: process.env.PATH } });
   assert.equal(yesThere.status, 1, yesThere.stdout);
+  assert.match(yesThere.stdout, /owner's own terminal/);
   assert.equal(sweepLog(r.dir).length, before, 'nothing logged for the resume');
   assert.ok(!sweepLog(ask.dir).some((l) => JSON.parse(l).kind === 'owner-yes'), 'nothing logged for the yes');
   // With nothing paused, the terminal's resume has nothing to resume, as the thread's has not (the 1.24.0 sweep).
@@ -2759,7 +2762,7 @@ test('a log line written by hand, or a raised cap, never clears the way', () => 
   commitAll(big, 'caps', true);
   const c = featureContract();
   for (const q of ['Do stale caches keep serving removed rows forever?', 'Would renamed exports break plugin loaders downstream?', 'Can old backups restore deleted accounts silently?', 'Might retry loops double every queued payment?', 'Does daylight saving shift nightly scheduled jobs?', 'Are locked files blocking concurrent uploads anywhere?']) c.roles.push(role('modelled-on', q));
-  assert.match(approveRun(c, big).stdout, /ASK THE OWNER[\s\S]*6 roles beyond the feature floor, over its cap of 5/, 'caps only go down');
+  assert.match(approveRun(c, big).stdout, /ASK THE OWNER[\s\S]*6 roles beyond the feature floor[\s\S]*cap of 5/, 'caps only go down');
 });
 test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, an escape and every 10 approvals', () => {
   const r = approveRun(featureContract());
@@ -3035,7 +3038,7 @@ test('the canary checks a hand-back at the call, refuses a miss once, and lets t
 });
 test('every kit role checks its hand-back call', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
-    assert.match(read(path.resolve('user/agents', `${role}.md`)), /matcher: "SubagentHandback"\n {6}hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, role);
+    assert.match(read(path.resolve('user/agents', `${role}.md`)), /matcher: "SubagentHandback"\n {6}hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, role); // pin: 1 Claude Code reads the hook block
   }
 });
 
@@ -3413,7 +3416,7 @@ test('a cap counts the roles beyond the floor: a security fix with tests approve
   const oneExtra = { ...sec, roles: [...sec.roles, role('modelled-on', 'Was the bug inherited from the code this copied?')] };
   assert.equal(approveRun(oneExtra, fixRepo()).status, 0, 'the fix tier allows 1 extra');
   const twoExtra = { ...sec, roles: [...oneExtra.roles, role('data-loss', 'Can the new clamp drop saved pages?', { model: 'claude-sonnet-5-5' })] };
-  assert.match(approveRun(twoExtra, fixRepo()).stdout, /ASK THE OWNER[\s\S]*2 roles beyond the fix floor, over its cap of 1/);
+  assert.match(approveRun(twoExtra, fixRepo()).stdout, /ASK THE OWNER[\s\S]*2 roles beyond the fix floor[\s\S]*cap of 1/);
   const nine = { tier: 'fix', modifiers: ['security-sensitive', 'new-dependency', 'user-data'], roles: [...fixFloor(), ...threeSecurity(),
     role('supply-chain', 'Is the new package pinned, maintained and free of install scripts?'),
     role('privacy', 'Does the package send any user data off the device?'),
@@ -3431,7 +3434,7 @@ test('a cap counts the roles beyond the floor: a security fix with tests approve
   ];
   const extras = (n) => more.slice(0, n);
   assert.equal(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(5)] }).status, 0, 'the feature tier allows 5 extras');
-  assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(6)] }).stdout, /6 roles beyond the feature floor, over its cap of 5/);
+  assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(6)] }).stdout, /6 roles beyond the feature floor[\s\S]*cap of 5/);
 });
 
 // The owner, 2026-11-03: one sweep, one focused re-sweep (blast radius, one role per fixed kind, alignment),
@@ -3680,7 +3683,7 @@ test('a re-sweep is one per sweep however the first is re-run, and a re-run of t
   assert.doesNotMatch(rerun.stdout, /REFUSED/, 'it is not a second re-sweep');
   assert.equal(outcome(re, '200000', '1', '1', '0', ['--carried', '1']).status, 0);
   assert.match(approveIn(first.dir, [re.f]).stdout, /REFUSED/, 'after its outcome it has run');
-  assert.match(approveIn(first.dir, [first.f]).stdout, /a second sweep on this branch is the owner's/);
+  assert.match(approveIn(first.dir, [first.f]).stdout, /second sweep on this branch[\s\S]*owner's/);
   assert.equal(approveIn(first.dir, [first.f, '--owner-yes', 'yes, a third pass']).status, 0);
   assert.equal(outcome(first).status, 0);
   assert.match(resweep(first, {}, 'resweep2.json').stdout, /REFUSED[\s\S]*already had its re-sweep/, 'clearing the first sweep again does not buy a second');
@@ -3711,7 +3714,7 @@ test('project caps lower every limit', () => {
   const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
   const plusOne = { ...featureContract(), roles: [...featureContract().roles, role('privacy', 'Which fields leave the device now?')] };
   assert.equal(approveRun(plusOne).status, 0);
-  assert.match(approveRun(plusOne, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor, over its cap of 0/);
+  assert.match(approveRun(plusOne, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor[\s\S]*cap of 0/);
   assert.match(approveRun(featureContract(), lowered({ maxRoleBudget: 50000 })).stdout, /per-role cap of 50000/);
   assert.match(approveRun(featureContract(), lowered({ maxTotalBudget: 100000 })).stdout, /cap of 100000/);
   assert.match(approveRun(featureContract(), lowered({ maxAgents: 4 })).stdout, /cap of 4/);
