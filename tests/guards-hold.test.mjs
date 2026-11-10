@@ -166,6 +166,8 @@ test('reads of the guards and ordinary commands still pass', () => {
 		'git diff .claude/settings.json',
 		'curl -s http://127.0.0.1:9/',
 		'echo x > notes.md',
+		// A short name that can name no protected file (CI's temp folder) is an ordinary path (PR 28).
+		'echo x > C:/Users/RUNNER~1/AppData/Local/Temp/x/notes.txt',
 	];
 	for (const c of pass) assert.equal(bash(c), 'allow', c);
 	assert.equal(decide('Write', { file_path: path.join(proj, 'src', 'a.js'), content: 'x' }), 'allow', 'Write src/a.js');

@@ -73,7 +73,13 @@ function fits(part, name) {
 // reads them, and a short name (CLAUDE~1) as the folder it names.
 function parts(word) {
 	const w = path.posix.normalize(slash(word).replace(/["']/g, '')).replace(/(^|\/)claude~\d+(?=\/|$)/g, '$1.claude');
-	return w.split('/').filter(Boolean);
+	// Any other short name (SETTIN~1.JSO, GITHOO~1) is read as the wildcard of the long names it may stand for
+	// (*settin*.jso*, *githoo*: the leading dot is dropped in a short name), so it is held where it can name a
+	// protected file and nowhere else (the 1.25.0 sweep; CI's RUNNER~1 temp folder names none).
+	return w.split('/').filter(Boolean).map((x) => {
+		const m = /^([^~*?[]{1,6})~\d{1,6}(?:\.([^.~*?[]{1,3}))?$/.exec(x);
+		return m ? `*${m[1]}*${m[2] ? `.${m[2]}*` : ''}` : x;
+	});
 }
 
 // Whether the parts, from index i, name the transcripts (outside a project's memory) or kit-owner.json.
@@ -118,12 +124,8 @@ function settingsShape(p) {
 }
 // A shell word named by its shape, read from the folder a cd moved to. After a cd the guard cannot follow, a relative
 // word may sit in a .claude folder: the safe side.
-// A Windows short name (SETTIN~1.JSO, GITHOO~1) may be any protected file the guard reads by its long name: refused
-// wherever it appears in a path (the 1.25.0 sweep), but the Claude folder's own, which parts() reads as .claude.
-const SHORT = /^[^~]{1,6}~\d{1,6}(\.[^.]{1,3})?$/;
 const shapeNames = (shape) => (word, cwd) => {
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
-	if (p.some((x) => SHORT.test(x))) return true;
 	if (shape(p)) return true;
 	return cwd === 'unknown' && !rooted(word) && shape(['.claude', ...p.filter((x) => x !== '..')]);
 };
@@ -135,7 +137,6 @@ const rooted = (word) => /^([/~$%]|[a-z]:)/.test(slash(word));
 // cwd: where a cd before it moved the shell (its parts), 'unknown' when that cannot be read, null when none did.
 function proofNames(word, cwd) {
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
-	if (p.some((x) => SHORT.test(x))) return true;
 	const h = parts(path.resolve(home()));
 	for (let i = 0; i < p.length; i++) {
 		if (fits(p[i], '.claude') || (p[i] === h[h.length - 1] && h.length > 0)) {
