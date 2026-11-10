@@ -14,7 +14,7 @@ const KIT = path.resolve('.');
 function project({ git = true } = {}) {
 	const dir = kitTemp.makeTemp('use-');
 	const home = kitTemp.makeTemp('use-home-');
-	if (git) spawnSync('git', ['init', '-q', dir]);
+	if (git) spawnSync('git', ['init', '-q', '-b', 'main', dir]);
 	install({ kit: KIT, home, target: 'project', projectDir: dir });
 	return dir;
 }
@@ -86,7 +86,7 @@ test('a part the project opts out of is named, not missing; a folder without git
 test('install project prints the use check and fails when a part is not wired; status names it', () => {
 	const dir = kitTemp.makeTemp('use-cli-');
 	const home = kitTemp.makeTemp('use-cli-home-');
-	spawnSync('git', ['init', '-q', dir]);
+	spawnSync('git', ['init', '-q', '-b', 'main', dir]);
 	const cli = (...a) => spawnSync(process.execPath, [path.resolve('scripts/kit.mjs'), ...a], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home } });
 	const ok = cli('install', 'project', dir, '--unreleased');
 	assert.equal(ok.status, 0, ok.stdout + ok.stderr);

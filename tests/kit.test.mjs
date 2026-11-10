@@ -5193,7 +5193,7 @@ test('the call-cap hook reads a real transcript: other lines, a half-written lin
 });
 test('the settings wire the hook at its installed path', () => {
   // The one guard process finds the user layer's hooks where install put them.
-  assert.match(read(path.resolve('project/.claude/guard.cjs')), /const INSTALLED_HOME = '\{\{CLAUDE_HOME\}\}';/); // pin: 1 install fills the placeholder
+  assert.match(read(path.resolve('project/.claude/guard.cjs')), /const INSTALLED_HOME = "\{\{CLAUDE_HOME\}\}";/); // pin: 1 install fills the placeholder (double quotes: a path may hold an apostrophe)
   assert.ok(fs.existsSync(path.resolve('user/kit-hooks/call-cap.cjs')));
 });
 test('a reviewer past its cap is named at the outcome, and the notice shows modifiers and base', () => {
