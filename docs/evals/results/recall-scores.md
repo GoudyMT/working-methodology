@@ -409,5 +409,7 @@ Keys v5 (the owner's ruling, 2026-11-10), brief v2, pass bar 12. Candidate: this
 - **Q10 fell in 2 of 5 candidates and 0 of 3 baselines,** both on "the agents must actually run" stated outright (borderline calls by the scorer), as in the 1.24.0 first measurement; no Q10 text changed in this build.
 - **Blinding:** the kit version notices removed by the script and logged.
 
+Accepted by the owner 2026-11-10 (pop-up, "Yes, add owner-accepted"): the marker covers only the ruler move from v4 to v5 that the owner chose; the median meets the pass bar on its own.
+
 control: 0
-gate: kit-1.25.0 median 12 baseline 10 brief v2 keys v5 control 0
+gate: kit-1.25.0 median 12 baseline 10 brief v2 keys v5 control 0 owner-accepted
