@@ -5906,6 +5906,14 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.match(removed.detail, /removes a recorded gate line.*owner-accepted/);
   assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY + ' owner-accepted'], removed: [GOOD_ENTRY] })).ok, true);
   assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], removed: [GOOD_ENTRY] })).ok, false);
+  // The 1.24.0 build (the owner's pick B): a file with no newline at its end shows its last line removed and added
+  // back unchanged when an entry is appended. That line is still recorded, so beside the PR's own new line it is no
+  // drop; the re-added copy is never the PR's own line, and a changed copy is still a drop.
+  const next = 'gate: kit-1.19.0 median 9 baseline 8 brief v1 keys v2';
+  const kept = checkGate(gateFacts({ added: [GOOD_ENTRY, next], removed: [GOOD_ENTRY] }));
+  assert.equal(kept.ok, true, kept.detail);
+  assert.match(kept.detail, /^kit-1\.19\.0: median 9/);
+  assert.equal(checkGate(gateFacts({ added: [GOOD_ENTRY.replace('median 8', 'median 9'), next], removed: [GOOD_ENTRY] })).ok, false, 'a changed line is a drop');
   const typed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: ['gate: o median 1 baseline 1 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } }));
   assert.equal(typed.ok, false);
   assert.match(typed.detail, /under the last recorded baseline 9/);
