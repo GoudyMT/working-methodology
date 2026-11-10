@@ -187,7 +187,8 @@ function shellWrites(command, tool, start, names = proofNames) {
 		// A value read only in part (P=/tmp"x", P=~/.cla$Q, P=a\ b) or a command that runs text as shell (eval, source,
 		// .) leaves the value unknown: refused when the variable is used (the same review, its third pass).
 		const cut = [...String(command).matchAll(new RegExp(`(?:^|[\\s;&|(])${name}=[^\\s;&|()'"\`$]+(.?)`, 'g'))].some((m) => /['"`$\\]/.test(m[1]));
-		const runs = /(^|[\s;&|(`"'])(eval|source|\.)(\s|$)/.test(String(command));
+		// Read with the shell's quote and backslash removal first (e\val, 'eval', ev""al), and through builtin or command.
+		const runs = /(^|[\s;&|(`{])(builtin\s+|command\s+)*(eval|source|\.)(\s|$)/.test(String(command).replace(/["'\\]/g, ''));
 		if ((other.test(String(command)) || every > given.get(name).length || cut || runs) && new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command))) return true;
 	}
 	const used = (name) => new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`).test(String(command || ''));

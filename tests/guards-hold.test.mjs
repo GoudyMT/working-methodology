@@ -89,6 +89,8 @@ test('the same holes in the spellings beside them are held', () => {
 		'P=/tmp; P="$HOME/.cla"; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=/tmp; eval "P=~/.cla"; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=/tmp; eval P\\=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
+		'P=/tmp; e\\val P\\=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
+		'P=/tmp; builtin "ev"al P\\=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=~/.c"la"; echo x > ${P}ude/projects/x/s.jsonl',
 	];
 	for (const c of held) assert.notEqual(bash(c), 'allow', c);
