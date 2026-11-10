@@ -38,7 +38,7 @@ test('the six commands that passed every guard in 1.24.0 are held (P1)', () => {
 		'sed -i s/ask/allow/ .claude/settings.json',
 		'git config core.hooksPath /dev/null',
 	];
-	for (const c of held) assert.notEqual(bash(c), 'allow', c);
+	for (const c of held) assert.equal(bash(c), 'deny', c);
 });
 
 test('the same holes in the spellings beside them are held', () => {
@@ -143,7 +143,7 @@ test('the same holes in the spellings beside them are held', () => {
 		'PATH=/tmp:$PATH cat .claude/settings.json',
 		'chmod 444 .git/kit-sweep-approvals.jsonl',
 	];
-	for (const c of held) assert.notEqual(bash(c), 'allow', c);
+	for (const c of held) assert.equal(bash(c), 'deny', c);
 });
 
 test('a write tool aimed at a guard, its settings or a git hook is held', () => {
