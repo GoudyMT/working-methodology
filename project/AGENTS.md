@@ -58,26 +58,13 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 ## Cross-Tool File Mapping (Memory-Bank Style Tools)
 
-If your tool expects standard memory-bank files, here is where their content lives:
-
-| Memory-bank file | This project's equivalent |
-|---|---|
-| `projectbrief.md` (foundation, core requirements) | The master design spec (`_Start Here.md` links it) |
-| `productContext.md` (why this exists) | Design spec section 1 + any research folder |
-| `activeContext.md` (current focus, next steps) | [`_Active Plan.md`](_Active Plan.md) + last [`_Session Log.md`](_Session Log.md) entry |
-| `systemPatterns.md` (architecture, key decisions) | Design spec architecture section + ADRs |
-| `techContext.md` (technologies, setup, constraints) | rule:project-adapter + ADRs |
-| `progress.md` (status, what's left) | [`_Master Roadmap.md`](_Master Roadmap.md) + [`_Working Memory.md`](_Working Memory.md) |
+A memory-bank tool's files live here: the brief and product context in the design spec (`_Start Here.md` links it); the active context in [`_Active Plan.md`](_Active Plan.md) and the last [`_Session Log.md`](_Session Log.md) entry; system patterns and tech context in the ADRs and rule:project-adapter; progress in [`_Master Roadmap.md`](_Master Roadmap.md) and [`_Working Memory.md`](_Working Memory.md).
 
 ---
 
 ## When Subagents Are Dispatched
 
-- Subagents inherit session permissions; web tools may be denied. Verify per session.
-- Subagents do NOT have chat history. Write self-contained briefs.
-- Subagent claims need verification - direct-read files before locking decisions on an agent's report.
-- No swarm without an approved Swarm Contract (rule:multi-agent-discipline).
-- Build work inside a batch the owner approved follows the Agent-Team Build, in one of two modes (batch: the main session leads, mid-tier builders build in their own worktrees, a top-tier checker verifies each high-risk unit, the lead integrates and runs the full gate; orchestrated: the main session oversees an orchestrator per phase that runs its own team). See rule:agent-team-adapter.
+Read rule:multi-agent-discipline first (`standards/agent-teams.md`; in Claude Code the task gate holds an agent fan-out until it is read): agents get self-contained briefs, their claims are direct-read verified, no swarm runs without an approved Swarm Contract, and an approved batch follows the Agent-Team Build (rule:agent-team-adapter).
 
 ---
 
@@ -194,7 +181,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 
 ## Session Workflow {#session-workflow}
 
-**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
+**Start:** the Read Order, fresh reads (they beat rebuilding context from memory). Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
 
 **Work:** one issue at a time; context before options; scope loop-worthiness; **plan the whole cycle before branching** (every task, edge case, what is in and out) so work lands in one branch; with >2 units left, plan the rest as one batch (one-question investigators -> small probes -> one plan resolving cross-unit interactions -> one pass). Why: piecemeal planning splits a feature across PRs. **Audit a long branch against the objective:** commits grouped by what they buy the user, overhead named, the cumbersome fix cut.
 
