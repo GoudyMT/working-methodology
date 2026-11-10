@@ -59,7 +59,7 @@ EOF
     echo "Push blocked: the secret scan (.claude/secret-shapes.mjs) is missing; reinstall the kit." >&2
     exit 1
   fi
-  printf '%s\n' "$refs" | node "$scan" --push || { echo "Push blocked: a secret-shaped file or value is in a pushed commit. Take it out of the history, and rotate any real key." >&2; exit 1; }
+  printf '%s\n' "$refs" | node "$scan" --push "$2" || { echo "Push blocked: a secret-shaped file or value is in a pushed commit. Take it out of the history, and rotate any real key." >&2; exit 1; }
 fi
 # Branch names in the house style (rule:branching): every branch this push sends.
 names="$(dirname "$0")/../.claude/name-check.mjs"
@@ -110,10 +110,17 @@ if [ -f "$gatelog" ]; then
 $refs
 EOF
 fi
-# Every check passed: an AI push is logged (time, auto or owner, ref, commit), the record the owner reads after.
+# Every check passed: an AI push is logged (time to the millisecond, auto or owner, ref, commit), the record the owner
+# reads after. An owner push the log cannot record does not go: the log is what spends the owner's yes (the 1.25.0
+# sweep: a read-only log let one yes push main three times).
 if [ -n "$AI_AGENT$CLAUDECODE" ]; then
   how=auto
   [ "$KIT_PUSH_APPROVED" = "1" ] && how=owner
-  printf '%s\n' "$refs" | awk -v t="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -v h="$how" 'NF { print t, h, $3, $2 }' >> "$common/kit-push.log" 2>/dev/null
+  if ! printf '%s\n' "$refs" | awk -v t="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" -v h="$how" 'NF { print t, h, $3, $2 }' >> "$common/kit-push.log" 2>/dev/null; then
+    if [ "$how" = owner ]; then
+      echo "Push blocked: the push log ($common/kit-push.log) cannot be written, so the owner's yes cannot be spent." >&2
+      exit 1
+    fi
+  fi
 fi
 exit 0

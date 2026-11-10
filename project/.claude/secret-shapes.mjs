@@ -6,8 +6,11 @@ import { SECRET_FILE, SECRET_VALUE } from './secret-patterns.mjs';
 // check uses. The pre-commit hook stops a slip on the owner's machine; a commit made anywhere else (the web, a cloud
 // session) skips it, so CI runs this on each PR. A value is never printed: only its kind and file.
 // Usage: node .claude/secret-shapes.mjs [<base>]   (base: the argument, else PR_BASE, else origin/main); exit 1 on a hit.
-//        node .claude/secret-shapes.mjs --push     (the pre-push hook: git's ref lines on stdin) - every commit the push
-//                                                  sends, one by one, since a key added and then removed still goes out.
+//        node .claude/secret-shapes.mjs --push <remote url>   (the pre-push hook: git's ref lines on stdin) - every
+//          commit the push sends, one by one, since a key added and then removed still goes out. A new branch is read
+//          against what the remote itself says it has (ls-remote), never the local remote-tracking refs, which a session
+//          can write (the 1.25.0 sweep: a decoy refs/remotes ref hid a secret); a remote that cannot be read means all
+//          of the branch's history is read.
 const git = (...a) => execFileSync('git', ['-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 const ZERO = /^0+$/;
 const SHA = /^[0-9a-f]{40,64}$/;
@@ -17,8 +20,12 @@ function scan(patch, names, hits, where) {
 	for (const f of names) if (SECRET_FILE.test(f)) hits.push(`secret file name: ${f}${where}`);
 	let file = '';
 	let added = 0;
+	let prev = '';
 	for (const line of patch.split('\n')) {
-		if (line.startsWith('+++ ')) file = line.replace(/^\+\+\+ (b\/)?/, '');
+		// A file header is "+++ " right after "--- "; an added line that starts "++ " is content (the 1.25.0 sweep).
+		const header = line.startsWith('+++ ') && prev.startsWith('--- ');
+		prev = line;
+		if (header) file = line.replace(/^\+\+\+ (b\/)?/, '');
 		else if (line.startsWith('+')) {
 			added++;
 			for (const [name, re] of SECRET_VALUE) if (re.test(line)) hits.push(`${name} in ${file}${where}`);
@@ -40,12 +47,21 @@ if (process.argv[2] === '--push') {
 	const hits = [];
 	let added = 0;
 	const seen = new Set();
+	// The commits the remote already has, as it says: each head and tag it lists that exists here.
+	let known = null;
+	const url = process.argv[3];
+	if (url && !url.startsWith('-')) {
+		try {
+			known = git('ls-remote', '--end-of-options', url).split('\n').map((l) => l.split('\t')[0]).filter((s) => SHA.test(s))
+				.filter((s) => { try { git('cat-file', '-e', `${s}^{commit}`); return true; } catch { return false; } });
+		} catch { known = null; }
+	}
 	for (const line of fs.readFileSync(0, 'utf8').split('\n')) {
 		const [, lsha, , rsha] = line.trim().split(/\s+/);
 		if (!lsha || ZERO.test(lsha)) continue;
 		// A sha git did not give in its own shape is refused, never passed to git as an option.
 		if (!SHA.test(lsha) || (rsha && !SHA.test(rsha))) { console.log('secret scan: a ref line is not in git\'s shape'); process.exit(2); }
-		const range = rsha && !ZERO.test(rsha) ? [`${rsha}..${lsha}`] : [lsha, '--not', '--remotes'];
+		const range = rsha && !ZERO.test(rsha) ? [`${rsha}..${lsha}`] : [lsha, ...(known && known.length ? ['--not', ...known] : [])];
 		for (const c of git('rev-list', ...range).split('\n').filter(Boolean)) {
 			if (seen.has(c)) continue;
 			seen.add(c);

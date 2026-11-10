@@ -313,4 +313,31 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.match(r.stdout + r.stderr, /github token in b\.md/);
 	assert.doesNotMatch(r.stdout + r.stderr, /Zx9Qk2Lm/, 'the value is never printed');
 	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /auto refs\/heads\/feat\/x/);
+	// The 1.25.0 sweep: a decoy remote-tracking ref does not hide the commits from the scan.
+	g('update-ref', 'refs/remotes/origin/decoy', head);
+	assert.notEqual(push(`refs/heads/feat/x ${head} refs/heads/feat/x ${Z}`).status, 0, 'a secret behind a decoy remote ref');
+	g('update-ref', '-d', 'refs/remotes/origin/decoy');
+	// An added line that starts "++ " is content, not a file header.
+	g('checkout', '-q', '-b', 'feat/plus');
+	fs.writeFileSync(path.join(dir, 'p.md'), '++ x = "' + 'gh' + 'p_' + 'Zx9Qk2Lm'.repeat(5) + '"\n');
+	g('add', '.');
+	g('commit', '-qm', 'plus');
+	const plus = g('rev-parse', 'HEAD').stdout.trim();
+	assert.notEqual(push(`refs/heads/feat/plus ${plus} refs/heads/feat/plus ${head}`).status, 0, 'a secret on a line that starts with ++');
+	g('checkout', '-q', 'main');
+	// A yes in a sibling folder's sessions ("...\push" for "...\push-abc") is no yes here.
+	const real = fs.realpathSync.native(dir);
+	const sibling = path.join(cfg, 'projects', real.replace(/[^A-Za-z0-9]/g, '-').replace(/-[^-]*$/, ''), `${SID}.jsonl`);
+	fs.rmSync(file, { force: true });
+	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file: sibling, minutesAgo: 0 });
+	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a sibling folder\'s yes');
+	fs.rmSync(sibling, { force: true });
+	// An owner push the log cannot record does not go, so the yes cannot be used again.
+	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file, minutesAgo: 0 });
+	const logFile = path.join(dir, '.git', 'kit-push.log');
+	fs.chmodSync(logFile, 0o444);
+	try {
+		assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a push log that cannot be written');
+	} finally { fs.chmodSync(logFile, 0o644); }
+	assert.equal(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the same yes, unspent, once the log can be written');
 });
