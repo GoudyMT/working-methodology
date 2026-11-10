@@ -91,6 +91,9 @@ function guardShape(p) {
 	for (let i = 0; i < p.length; i++) {
 		if (fits(p[i], '.githooks')) return true;
 		if (fits(p[i], '.git') && i + 1 < p.length && (fits(p[i + 1], 'hooks') || fits(p[i + 1], 'config'))) return true;
+		// The push log and the sweep log spend the owner's yes; emptied or made read-only, a yes is used again (the
+		// 1.25.0 sweep).
+		if (fits(p[i], '.git') && i + 1 < p.length && /^kit-/i.test(p[i + 1])) return true;
 		// The user's git config can move the hooks or where origin points, as .git/config can.
 		if (i === p.length - 1 && fits(p[i], '.gitconfig')) return true;
 		if (fits(p[i], '.config') && p[i + 1] === 'git' && i + 2 < p.length && fits(p[i + 2], 'config')) return true;
@@ -115,8 +118,12 @@ function settingsShape(p) {
 }
 // A shell word named by its shape, read from the folder a cd moved to. After a cd the guard cannot follow, a relative
 // word may sit in a .claude folder: the safe side.
+// A Windows short name (SETTIN~1.JSO, GITHOO~1) may be any protected file the guard reads by its long name: refused
+// wherever it appears in a path (the 1.25.0 sweep), but the Claude folder's own, which parts() reads as .claude.
+const SHORT = /^[^~]{1,6}~\d{1,6}(\.[^.]{1,3})?$/;
 const shapeNames = (shape) => (word, cwd) => {
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
+	if (p.some((x) => SHORT.test(x))) return true;
 	if (shape(p)) return true;
 	return cwd === 'unknown' && !rooted(word) && shape(['.claude', ...p.filter((x) => x !== '..')]);
 };
@@ -128,6 +135,7 @@ const rooted = (word) => /^([/~$%]|[a-z]:)/.test(slash(word));
 // cwd: where a cd before it moved the shell (its parts), 'unknown' when that cannot be read, null when none did.
 function proofNames(word, cwd) {
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
+	if (p.some((x) => SHORT.test(x))) return true;
 	const h = parts(path.resolve(home()));
 	for (let i = 0; i < p.length; i++) {
 		if (fits(p[i], '.claude') || (p[i] === h[h.length - 1] && h.length > 0)) {
@@ -175,6 +183,15 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// sweep (an end mark bash reads otherwise, a cat function, continued lines, nested quotes), so it fails closed.
 	// A variable set in the command (P=~/.claude) is read as its value where it is used, before the reader splits ${P} at
 	// its braces (F6, the 1.24.0 sweep: P=~/.claude; echo x > ${P}/projects/x/s.jsonl passed).
+	// A default or an array element the command writes out (${U:-.claude}, ${P:=x}, P[0]=x; ${P[0]}; a whole list,
+	// P=(x), is held by the variable rules below) is read as the
+	// text it gives too: the command is refused if that reading writes a protected place (the 1.25.0 sweep).
+	const elements = new Map();
+	for (const m of String(command || '').matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)\[([^\]\s]*)\]=([^\s;&|()'"`$]+)/g)) elements.set(`${m[1]}[${m[2]}]`, m[3]);
+	const filled = String(command || '')
+		.replace(/\$\{([A-Za-z_]\w*):?[-=+?]([^}]*)\}/g, (m, name, word) => word)
+		.replace(/\$\{([A-Za-z_]\w*\[[^\]]*\])\}/g, (m, el) => (elements.has(el) ? elements.get(el) : m));
+	if (filled !== String(command || '') && shellWrites(filled, tool, start, names)) return true;
 	const given = new Map();
 	for (const m of String(command || '').matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=([^\s;&|()'"`$]+)/g)) given.set(m[1], [...(given.get(m[1]) || []), m[2]]);
 	// A variable set more than once (P=~/.claude; ... $P ...; P=x) is read as each value it is given in turn: the
@@ -226,6 +243,9 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// pipeline, the background or after || may not move the shell the later commands run in, so the folder is then
 	// unknown, the safe side.
 	const grouped = /[(){}]/.test(text);
+	// A function or alias the command defines can stand in for any program name, so no program's exemption holds
+	// (the 1.25.0 sweep: git() { cp x "$2"; }; git add .claude/guard.cjs overwrote the guard).
+	const defines = /(^|[\s;&|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|unalias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s)/i.test(text);
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
@@ -264,12 +284,12 @@ function shellWrites(command, tool, start, names = proofNames) {
 		}
 		if (hits.length === 0) continue;
 		if (segment.some((x) => x.redirect && names(x.value, cwd))) return true;
-		if (READERS.has(program)) {
+		if (READERS.has(program) && !defines) {
 			// Piped on, the read must go to another reader.
 			if (segment.end === '|' && segments[s + 1] && !PIPE_READERS.has(path.basename(slash(segments[s + 1][0]?.value || '')).replace(/\.(exe|cmd|bat)$/, ''))) return true;
 			continue;
 		}
-		if (COPIERS.has(program)) {
+		if (COPIERS.has(program) && !defines) {
 			// A copy out is a read. Any option outside the known plain ones may name the destination (-t, --t...,
 			// -Destination and its short forms), so the guard refuses rather than guess.
 			// PowerShell takes any start of a parameter's name and some take a value, so there only a bare two-word copy
@@ -285,10 +305,10 @@ function shellWrites(command, tool, start, names = proofNames) {
 		// For the guards and settings (T1): running a script is no write to it (node <file>, the file the only word named,
 		// no inline code), and git reading or staging a file writes none (git diff --output does, so it is refused). The
 		// transcripts keep the stricter reading they had.
-		if (names !== proofNames && program === 'node' && hits.length === 1 && hits[0] === segment[1]) continue;
+		if (names !== proofNames && !defines && program === 'node' && hits.length === 1 && hits[0] === segment[1]) continue;
 		// Only the subcommand right after git (no global option, which can move git or run a program), no option that runs
 		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
-		if (names !== proofNames && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => names(h.value, cwd)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
+		if (names !== proofNames && !defines && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => names(h.value, cwd)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.

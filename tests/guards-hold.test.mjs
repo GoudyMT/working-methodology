@@ -106,6 +106,19 @@ test('the same holes in the spellings beside them are held', () => {
 		'P=/tmp; $1 P\\=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=/tmp; $1 "$(printf P)=~/.cla"; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=~/.c"la"; echo x > ${P}ude/projects/x/s.jsonl',
+		// The 1.25.0 sweep: a Windows short name, a function or alias standing in for a program the guard lets read, a
+		// default or array element that gives the protected path, and the push and sweep logs that spend a yes.
+		'echo {} > .claude/SETTIN~1.JSO',
+		'echo x > GITHOO~1/pre-push',
+		'git() { cp /tmp/x "$2"; }; git add .claude/guard.cjs',
+		'node() { cp /tmp/x "$1"; }; node .claude/settings.json',
+		'cat() { cp /tmp/x "$1"; }; cat ~/.claude/projects/p/s.jsonl',
+		'alias cat=tee; cat .claude/settings.json',
+		'echo x > ${U:-.claude}/settings.json',
+		'echo x > ${P:=.claude}/settings.json',
+		'P[0]=.claude; echo x > ${P[0]}/settings.json',
+		'echo > .git/kit-push.log',
+		'chmod 444 .git/kit-sweep-approvals.jsonl',
 	];
 	for (const c of held) assert.notEqual(bash(c), 'allow', c);
 });
@@ -324,6 +337,16 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	g('commit', '-qm', 'plus');
 	const plus = g('rev-parse', 'HEAD').stdout.trim();
 	assert.notEqual(push(`refs/heads/feat/plus ${plus} refs/heads/feat/plus ${head}`).status, 0, 'a secret on a line that starts with ++');
+	// A removed "-- " line right above an added "++ " line is still a hunk's content, not a file header.
+	fs.writeFileSync(path.join(dir, 'p.md'), '-- a\n');
+	g('add', '.');
+	g('commit', '-qm', 'dash');
+	fs.writeFileSync(path.join(dir, 'p.md'), '++ x = "' + 'gh' + 'p_' + 'Zx9Qk2Lm'.repeat(5) + '"\n');
+	g('add', '.');
+	g('commit', '-qm', 'swap');
+	const swap = g('rev-parse', 'HEAD').stdout.trim();
+	const dash = g('rev-parse', 'HEAD~1').stdout.trim();
+	assert.notEqual(push(`refs/heads/feat/plus ${swap} refs/heads/feat/plus ${dash}`).status, 0, 'a secret under a removed -- line');
 	g('checkout', '-q', 'main');
 	// A yes in a sibling folder's sessions ("...\push" for "...\push-abc") is no yes here.
 	const real = fs.realpathSync.native(dir);
@@ -340,4 +363,9 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 		assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a push log that cannot be written');
 	} finally { fs.chmodSync(logFile, 0o644); }
 	assert.equal(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the same yes, unspent, once the log can be written');
+	// A log time no reader can parse (a date without milliseconds support writes "3NZ") spends the yes.
+	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file, minutesAgo: 0 });
+	fs.writeFileSync(logFile, `2026-11-10T00:00:00.3NZ owner refs/heads/main ${main}\n`);
+	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a log line whose time cannot be read');
+	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
 });
