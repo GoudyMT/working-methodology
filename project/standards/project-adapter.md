@@ -15,7 +15,7 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | A5 | Product red lines (e.g. no ads, no trackers, no telemetry) | Tier 0 | `<fill in>` |
 | A6 | **Stack** (languages, frameworks, runtimes, package manager + version) | Code Standards | `<fill in>` |
 | A7 | File naming, linter / formatter, import grouping | Code Standards | `<fill in>` |
-| A8 | Test layout and runners | TDD | `<fill in>` |
+| A8 | Test layout and runners; test lanes in `.kit/lanes.json` (rule:test-lanes) | TDD, Test Lanes | `<fill in>` |
 | A9 | **Commands:** lint / format / type-check / unit / E2E / build / audit / full gate | Pre-Commit, CI Gate, team field 2 | `<fill in>` |
 | A10 | CI workflow files; CI-only scanners | CI Gate | `<fill in>` |
 | A11 | Tool-shell command prefix | Loop, team field 3 | `<fill in>` |

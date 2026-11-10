@@ -90,16 +90,65 @@ jobs:
       - name: Delete guard proof
         run: node project/.claude/guard-delete-check.cjs
 
+  # E32 (option C, the owner 2026-11-10): two lanes on the same PR. The fast lane is unit-tests above; large tests
+  # (another machine, a real service, a browser, a live model) live in tests/slow and run here, beside it. The slow
+  # job is turned on by a job-level if on what this job finds, never by a path filter on the workflow, so a PR with no
+  # slow test still gets a result for every required job.
+  lanes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      slow: ${{ steps.find.outputs.slow }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: find
+        shell: bash
+        run: |
+          if [ -n "$(find tests/slow -type f -name '*.test.mjs' 2>/dev/null | head -n 1)" ]; then echo "slow=true" >> "$GITHUB_OUTPUT"; else echo "slow=false" >> "$GITHUB_OUTPUT"; fi
+
+  slow-tests:
+    needs: [lanes]
+    if: needs.lanes.outputs.slow == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Prepare git identity
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+
+      # A large test's own time limit is the large size's (900 s), not the fast lane's.
+      - name: Slow tests
+        shell: bash
+        env:
+          KIT_TEST_LIMIT_MS: '900000'
+        run: node scripts/test-run.mjs $(find tests/slow -type f -name '*.test.mjs')
+
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
-  # failed counts as passed for a required check.
+  # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
   kit-tests:
-    needs: [unit-tests, windows-tests]
+    needs: [unit-tests, windows-tests, lanes, slow-tests]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Every test job passed
-        if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success'
+        if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')
         run: exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

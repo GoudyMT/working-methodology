@@ -67,7 +67,12 @@ function mapped(name, idx, fn) {
 // Windows (what the owner's machine alone shows: drive paths, Git for Windows' sh running the git hooks, junctions).
 // KIT_WINDOWS_SLICE=1 registers only those; elsewhere than Windows they are registered as skipped.
 const WINDOWS_SLICE = process.env.KIT_WINDOWS_SLICE === '1';
+// E32: a fast-lane test runs on one machine, so it has the medium size's time limit (300 s, the reference Bazel
+// sets); one over it fails with node:test's own message naming the limit, and is fixed or moved to the slow lane.
+const LIMIT_MS = Number(process.env.KIT_TEST_LIMIT_MS) || 300000;
 export function test(name, ...rest) {
+	if (!(rest.length > 1 && rest[0] && typeof rest[0] === 'object')) rest.unshift({});
+	if (rest[0].timeout === undefined) rest[0] = { ...rest[0], timeout: LIMIT_MS };
 	const opts = rest.length > 1 && rest[0] && typeof rest[0] === 'object' ? rest[0] : null;
 	const windows = Boolean(opts && opts.windows);
 	if (WINDOWS_SLICE && !windows) return undefined;
