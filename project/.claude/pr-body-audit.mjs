@@ -58,8 +58,8 @@ const section = (name) => {
 const wordCount = (s) => s.split(/\s+/).filter(Boolean).length;
 
 // The title is the squash commit's subject on main (T13, the owner: "type: subject"); the H1 leads with the area.
-const subject = title.replace(/^[a-z]+(\([a-z-]+\))?: /, '');
-row('title is type: subject, at most 72', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z-]+\))?: [a-z]/.test(title) && title.length <= 72, title);
+const subject = title.replace(/^[a-z]+(\([a-z0-9-]+\))?: /, '');
+row('title is type: subject, at most 72', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z0-9-]+\))?: [a-z0-9`]/.test(title) && title.length <= 72, title);
 row('H1 is <Area>: <line>, no type prefix', /^## [A-Z][A-Za-z ]+: [a-z]/.test(lines[0]) && !/^## (feat|fix|chore|security|docs)/.test(lines[0]), lines[0]);
 row('H1 line carries the title subject', lines[0].endsWith(subject), `subject: ${subject}`);
 

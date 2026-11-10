@@ -31,8 +31,9 @@ const PARTS = [
 		},
 		wired: () => {
 			const hooks = (settings()?.hooks?.PreToolUse) || [];
-			const ok = hooks.some((h) => h.matcher === '.*' && (h.hooks || []).some((x) => /(^|[\\/])guard\.cjs$/.test([x.command, ...(x.args || [])].map(String).find((w) => /guard\.cjs$/.test(w)) || '')));
-			return [ok, ok ? 'settings.json runs guard.cjs on every tool' : 'settings.json does not run guard.cjs on every tool'];
+			// Claude Code reads ".*", "*", "" and no matcher alike: every tool.
+			const ok = hooks.some((h) => ['.*', '*', ''].includes(h.matcher ?? '') && (h.hooks || []).some((x) => /(^|[\\/])guard\.cjs$/.test([x.command, ...(x.args || [])].map(String).find((w) => /guard\.cjs$/.test(w)) || '')));
+			return [ok, ok ? 'settings.json runs guard.cjs on every tool' : 'settings.json does not run guard.cjs on every tool: merge the kit\'s PreToolUse entry into it by hand, or run install project again with --force'];
 		},
 		used: () => [null, 'no trace yet: the guards keep no log (a later step adds one)'],
 	},

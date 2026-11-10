@@ -192,11 +192,13 @@ jobs:
         env:
           HEAD_REF: ${{ github.head_ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BASE: origin/${{ github.base_ref }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           node project/.claude/name-check.mjs branch "$HEAD_REF"
-          node project/.claude/name-check.mjs title "$PR_TITLE"
+          # The squash subject is the title with " (#n)" added: that whole line is held to the limit.
+          node project/.claude/name-check.mjs title "$PR_TITLE (#$PR_NUMBER)"
           for c in $(git rev-list --no-merges "$PR_BASE..$PR_HEAD"); do
             git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg.txt"
             node project/.claude/name-check.mjs message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }

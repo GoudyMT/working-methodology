@@ -3165,6 +3165,8 @@ test('the Standard PR audit passes an honest body for a project with no corpus, 
   // The title is the squash commit's subject: an area title, or one over 72, fails; the H1 carries its subject.
   for (const title of ['Live check: an automatic alarm for online search and a data date on About', `feat: ${'x'.repeat(70)}`]) assert.match(stdAudit(dir, honestBody(), title).stdout, /FAIL\s+title is type: subject/, title);
   assert.match(stdAudit(dir, honestBody(), 'feat: something else').stdout, /FAIL\s+H1 line carries the title subject/);
+  // A scope with a digit is a scope, as the commit check reads it (the 1.25.0 sweep).
+  assert.doesNotMatch(stdAudit(dir, honestBody(), STD_TITLE.replace('feat:', 'feat(v2):')).stdout, /FAIL\s+title/);
 });
 test('a project\'s .kit/pr-body.json sets its own review dimensions, audit line and checked lines', () => {
   const dir = makeTemp('prb-');

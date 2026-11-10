@@ -13,8 +13,8 @@ const row = (name, ok, detail) => rows.push({ name, ok, detail });
 const attribution = attributionFaults(written);
 row('no attribution block', attribution.length === 0, attribution.join(', ') || 'none');
 
-const subject = title.replace(/^[a-z]+(\([a-z-]+\))?: /, '');
-row('title is type: subject (smaller PR)', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z-]+\))?: [a-z]/.test(title), title);
+const subject = title.replace(/^[a-z]+(\([a-z0-9-]+\))?: /, '');
+row('title is type: subject (smaller PR)', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z0-9-]+\))?: [a-z0-9`]/.test(title), title);
 row('H1 is <Area>: <line>, no type prefix', /^## [A-Z][A-Za-z ]+: [a-z]/.test(lines[0]) && !/^## (feat|fix|chore|security|docs)/.test(lines[0]), lines[0]);
 row('H1 line carries the title subject', lines[0].endsWith(subject), `subject: ${subject}`);
 

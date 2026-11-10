@@ -46,6 +46,17 @@ test('an unwired part fails the check by name: the guard entry gone, git hooks n
 	const a = check(unwired);
 	assert.equal(a.code, 1);
 	assert.deepEqual(a.out.failing, ['guards']);
+	// The fix is named: a settings.json the owner changed is merged by hand, or reinstalled with --force.
+	assert.match(part(a.out, 'guards').wired.detail, /by hand[\s\S]*--force/);
+	// Claude Code reads an empty or "*" matcher, or none, as every tool, the same as ".*" (the 1.25.0 sweep).
+	for (const matcher of ['', '*', undefined]) {
+		const other = project();
+		const f = path.join(other, '.claude', 'settings.json');
+		const t = JSON.parse(fs.readFileSync(f, 'utf8'));
+		for (const h of t.hooks.PreToolUse) if (matcher === undefined) delete h.matcher; else h.matcher = matcher;
+		fs.writeFileSync(f, JSON.stringify(t));
+		assert.deepEqual(check(other).out.failing, [], `matcher ${JSON.stringify(matcher)}`);
+	}
 	const noHooks = project();
 	spawnSync('git', ['-C', noHooks, 'config', '--unset', 'core.hooksPath']);
 	assert.deepEqual(check(noHooks).out.failing, ['git-hooks']);
