@@ -1070,7 +1070,7 @@ test('the format skills keep every 1.1.0 rule line exactly once', () => {
   const names = spawnSync('git', ['ls-tree', '--name-only', 'v1.1.0', 'rules/'], { encoding: 'utf8' });
   assert.equal(names.status, 0, 'the v1.1.0 tag must exist locally');
   // Every release since 1.1.0 records its reworded lines in its own file.
-  const reworded = fs.readdirSync(path.resolve('docs/migrations')).filter((n) => /^1\.(?:[2-9]|\d\d)\.\d+-reworded\.json$/.test(n))
+  const reworded = fs.readdirSync(path.resolve('docs/migrations')).filter((n) => /^(?:1\.(?:[2-9]|\d\d)|[2-9]\.\d+)\.\d+-reworded\.json$/.test(n))
     .flatMap((n) => JSON.parse(read(path.resolve('docs/migrations', n))).lines);
   const swap = new Map(reworded.map((r) => [r.before, r.after]));
   // A line reworded in more than one release follows its records to the latest wording.
@@ -3514,7 +3514,7 @@ test('every ask and every pause writes a triage report beside the contract; an a
   nextBranch(t.dir);
   assert.match(approveIn(t.dir, [t.f]).stdout, /trial review due[\s\S]*contract\.triage\.md/);
   assert.match(read(triage(t.f)), /trial review due/);
-  assert.match(read(triage(t.f)), /resumes from their own terminal/, 'the fix options are the report\'s point');
+  assert.match(read(triage(t.f)), /resumes with a Yes in the pop-up/, 'the fix options are the report\'s point');
   // A tier that always asks still gets real numbers, and no absolute path or owner's words leak into the report.
   const fp = approveRun({ ...featureContract(), tier: 'first push' });
   const fpText = read(triage(fp.f));

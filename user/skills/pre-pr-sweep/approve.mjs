@@ -497,7 +497,7 @@ const openCarries = (log) => log.filter((e) => e.kind === 'outcome').reduce((t, 
 
 // What the owner reads at a stop: what tripped, the numbers, the log lines and the ways forward.
 const FIXES = [
-	[/paused|trial review due/, 'The owner reviews the log first (`approve.mjs --summary`), then resumes from their own terminal; until then every sweep goes to the owner.'],
+	[/paused|trial review due/, 'The owner reviews the log first (`approve.mjs --summary`), then resumes with a Yes in the pop-up; until then every sweep goes to the owner.'],
 	[/not committed|no changes|cannot read the branch diff/, 'Commit the work and run approve.mjs from the branch\'s own checkout (pass `--base <ref>` if it cannot find the base).'],
 	[/needs \d+ \S+ role/, 'Add the missing floor role(s) and run approve.mjs again.'],
 	[/beyond the \S+ floor|agents, over/, 'Drop the extra roles, or split the change into smaller PRs.'],
@@ -524,7 +524,7 @@ function triage(title, reasons, numbers) {
 		// The report sits in the working tree, so its log lines carry relative paths and leave out the owner's words.
 		'## The log lines', '', '```json', ...rawLines().slice(-5).map((l) => { try { const { words: _w, note: _n, ...e } = JSON.parse(l); return JSON.stringify({ ...e, ...(e.contract ? { contract: rel(e.contract) } : {}), ...(e.resweepOf ? { resweepOf: rel(e.resweepOf) } : {}) }); } catch { return '(unreadable line)'; } }), '```', '',
 		'## Fix options', '', ...options.map((o) => `- ${o}`),
-		'- Or the owner decides. After an ask: they answer in the thread "yes <the ask\'s code>" (the ask prints the code), and the lead logs it with `approve.mjs <contract.json> --owner-yes "yes <code>" --thread <their message id>`. After a pause: they answer "resume <the pause\'s code>" (`--summary` prints it), or the owner resumes from their own terminal.', '',
+		'- Or the owner decides. After an ask: they tap Yes in a pop-up quoting the act the ask printed (`sweep yes <code>`), and the lead logs it with `approve.mjs <contract.json> --owner-yes`. After a pause: the same, with `sweep resume <code>` (`--summary` prints it) and `approve.mjs --resume`.', '',
 	].join('\n');
 	fs.writeFileSync(f, text);
 	return toPosix(f);

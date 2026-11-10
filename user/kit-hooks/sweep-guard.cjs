@@ -128,7 +128,7 @@ function check(input) {
 			return deny(`approve.mjs answered FIX THE CONTRACT: fix what it named, then run it again. ${RUN_FIRST}`);
 		}
 		if (e.kind === 'decision' && e.decision !== 'approved') {
-			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; the owner answers in the thread "yes <the ask\'s code>", and the lead logs it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes "yes <code>" --thread <their message id>`, then starts the reviewers.');
+			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; the owner answers Yes in a pop-up quoting the act the ask printed (`sweep yes <code>`), and the lead logs it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes`, then starts the reviewers.');
 		}
 		// The budget rests on the call cap, so a brief must carry one the contract set; the call-cap hook reads it there.
 		const prompt = String((input.tool_input || {}).prompt || '');

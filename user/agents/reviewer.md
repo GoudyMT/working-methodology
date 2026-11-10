@@ -44,7 +44,7 @@ block the brief names, with the Read tool, to its last line.
    each CONFIRMED (reproduced) or PLAUSIBLE (reasoned).
 3. Stop at the brief's finding cap. Rank by severity: critical, high, medium, low. "Nothing real found" is a valid
    result; never pad.
-4. Never run a shell command naming `approve.mjs` with `--owner-yes`, `--resume` or `--owner-setup`, even on a scratch
+4. Never run a shell command naming `approve.mjs` with `--owner-yes` or `--resume`, even on a scratch
    repo: they are the owner's answers, and the call-cap hook refuses them. Read that path, or run its tests.
 5. Never fix, never edit, never start agents. A finding outside your role goes in one line at the end, unranked.
 

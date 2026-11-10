@@ -1,0 +1,8 @@
+{
+  "lines": [
+    {
+      "before": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for an explicit yes, check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.",
+      "after": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). One bound needs no yes (the owner, 2026-11-10): `git push [-u] origin <feature branch>`, never main, master, a tag, a force or a delete; the guard and the pre-push hook hold the bound, scan each pushed commit for secrets and log it. Name the act, wait for an explicit yes (the owner's Yes in a choice pop-up quoting the act exactly; the guards read that tap, never Claude's word), check the live state first, report after with proof. Why: history and the public surface stay under the owner's control."
+    }
+  ]
+}
