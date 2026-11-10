@@ -175,13 +175,14 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes, run it', labels = ['Yes, run it', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], file = TRANSCRIPT }) {
+function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], file = TRANSCRIPT }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
 	const question = `May I run \`${act}\`?`;
 	const input = { questions: [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }] };
 	if (filled) input.answers = { [question]: answer };
 	const lines = [
-		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_ask1', name: 'AskUserQuestion', input }] } },
+		// An act sent in the same message as the pop-up is written before the answer, as Claude Code writes it.
+		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_ask1', name: 'AskUserQuestion', input }, ...beside.map((command, k) => ({ type: 'tool_use', id: `toolu_beside${k}`, name: 'Bash', input: { command } }))] } },
 		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask1', content: 'answered' }] } },
 		...then.map((command, k) => ({ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: `toolu_run${k}`, name: 'Bash', input: { command } }] } })),
 	];
@@ -208,8 +209,19 @@ test('a held command runs once on the owner\'s own pop-up yes for that exact com
 	assert.equal(withYes('Bash', { command: act }), 'deny', 'a pop-up Claude answered itself');
 	popUp({ act, source: 'classifier' });
 	assert.equal(withYes('Bash', { command: act }), 'deny', 'not accepted by a person');
-	popUp({ act, labels: ['Yes, run it', 'Yes, later'] });
+	popUp({ act, labels: ['Yes', 'Yes, later'] });
 	assert.equal(withYes('Bash', { command: act }), 'deny', 'no way to say no');
+	// The 1.25.0 sweep: a Yes label that limits the act is no yes; an act beside the pop-up spends it on its first run;
+	// a quote on one line is no yes to the same words over two lines.
+	popUp({ act, answer: 'Yes, but only a dry run', labels: ['Yes, but only a dry run', 'No'] });
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a Yes that limits the act');
+	popUp({ act, answer: 'Yes (Recommended)', labels: ['Yes (Recommended)', 'No'] });
+	assert.equal(withYes('Bash', { command: act }), 'allow', 'the recommended Yes');
+	popUp({ act, beside: [act] });
+	assert.equal(withYes('Bash', { command: act }, { tool_use_id: 'toolu_beside0' }), 'allow', 'the act sent beside the pop-up runs once');
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'and not again');
+	popUp({ act: 'echo ok # git push origin main' });
+	assert.equal(withYes('Bash', { command: 'echo ok #\ngit push origin main' }), 'deny', 'one line quoted, two lines run');
 	popUp({ act, minutesAgo: 90 });
 	assert.equal(withYes('Bash', { command: act }), 'deny', 'an old yes');
 	popUp({ act });

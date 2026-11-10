@@ -2311,7 +2311,7 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
 // on the pop-up that quotes the ask's or the pause's act, and the call runs in that session.
 const TAP_SID = '0aaaaaaa-1bbb-2ccc-3ddd-4eeeeeeeeeee';
 // One answered pop-up, as Claude Code writes it in the session's transcript (shape read from a live record).
-function ownerTaps(cfg, dir, act, { answer = 'Yes, go', labels = ['Yes, go', 'No'], at = new Date(Date.now() + 1000).toISOString(), source = 'user_temporary', sid = TAP_SID, folder } = {}) {
+function ownerTaps(cfg, dir, act, { answer = 'Yes', labels = ['Yes', 'No'], at = new Date(Date.now() + 1000).toISOString(), source = 'user_temporary', sid = TAP_SID, folder } = {}) {
   const where = path.join(cfg, 'projects', folder || fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'));
   fs.mkdirSync(where, { recursive: true });
   const id = `toolu_${crypto.randomBytes(6).toString('hex')}`;
@@ -2568,7 +2568,7 @@ test('the owner\'s pop-up Yes to the ask\'s act clears an ask, and nothing else 
     ['a Yes to another ask\'s act', (c, d) => ownerTaps(c, d, 'sweep yes 000000')],
     ['a Yes to an act that only holds this one', (c, d, k) => ownerTaps(c, d, `echo sweep yes ${k}`)],
     ['a tap from before the ask', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { at: '2020-01-01T00:00:00.000Z' })],
-    ['a pop-up with no way to say no', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { labels: ['Yes, go', 'Yes, later'] })],
+    ['a pop-up with no way to say no', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { labels: ['Yes', 'Yes, later'] })],
     ['an answer no person gave', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { source: 'classifier' })],
     ['another session\'s tap', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { sid: '9aaaaaaa-1bbb-2ccc-3ddd-4eeeeeeeeeee' })],
     ['a tap in another repo\'s sessions', (c, d, k) => ownerTaps(c, d, `sweep yes ${k}`, { folder: 'C--elsewhere' })],

@@ -1,7 +1,7 @@
 'use strict';
 // The owner's yes for one held act (T1, the owner 2026-11-10: "Pop-up record"). A guard that holds an act refuses it
 // and names it; Claude asks the owner with Claude Code's choice pop-up (AskUserQuestion), the question quoting the act
-// exactly in one code span (`...`), one option starting "Yes" and one starting "No". When the owner picks Yes, the same
+// exactly in one code span (`...`), one option labelled "Yes" and one starting "No". When the owner picks Yes, the same
 // act run again passes, once. The proof is the record Claude Code writes when a person answers: the session
 // transcript's answered pop-up, marked accepted by the user, for a pop-up Claude asked with no answers filled in.
 // Never Claude's own account of it.
@@ -17,11 +17,15 @@ const path = require('path');
 // How long a yes stays good: long enough to run the act, short enough that an old answer does not linger.
 const FRESH_MS = 60 * 60 * 1000;
 // install project fills this in, so a caller cannot move the transcripts with CLAUDE_CONFIG_DIR.
-const INSTALLED_HOME = '{{CLAUDE_HOME}}';
+const INSTALLED_HOME = "{{CLAUDE_HOME}}";
 const home = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
 const slash = (p) => path.resolve(p).split('\\').join('/').toLowerCase();
-// The words an act is matched by: runs of white space read as one, ends trimmed.
-const squash = (s) => String(s).replace(/\s+/g, ' ').trim();
+// The words an act is matched by: runs of spaces and tabs read as one, ends trimmed. A line break stays one: a shell
+// runs a new line as a new command, so a quote on one line never stands for an act on two (the 1.25.0 sweep).
+const squash = (s) => String(s).replace(/\r\n?/g, '\n').replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').trim();
+// The answer that is a yes: the label "Yes" itself (with the pop-up's "(Recommended)" mark). A label that limits it
+// ("Yes, but only a dry run") is not the act quoted, so it is no yes (the 1.25.0 sweep).
+const YES_LABEL = /^yes(\s*\(recommended\))?$/i;
 
 // The act as the pop-up must quote it. A write is bound to everything that decides what it writes: the place it
 // replaces and the text it puts there. A tool whose input is not one of these shapes gets no act, so no yes.
@@ -54,17 +58,17 @@ function yeses(lines) {
 		for (const b of c) {
 			if (!b) continue;
 			// A pop-up Claude filled in itself is no person's answer.
-			if (b.type === 'tool_use' && b.name === 'AskUserQuestion' && e.type === 'assistant' && b.input && b.input.answers === undefined && Array.isArray(b.input.questions)) asked.set(b.id, b.input.questions);
+			if (b.type === 'tool_use' && b.name === 'AskUserQuestion' && e.type === 'assistant' && b.input && b.input.answers === undefined && Array.isArray(b.input.questions)) asked.set(b.id, { questions: b.input.questions, line: n });
 			if (b.type !== 'tool_result' || e.type !== 'user' || !asked.has(b.tool_use_id)) continue;
 			const d = e.permissionDecision || {};
 			const r = e.toolUseResult || {};
 			if (d.decision !== 'accept' || !/^user/.test(String(d.source || '')) || !r.answers) continue;
 			const at = Date.parse(e.timestamp);
 			if (!Number.isFinite(at)) continue;
-			for (const q of asked.get(b.tool_use_id)) {
+			for (const q of asked.get(b.tool_use_id).questions) {
 				const answer = String(r.answers[q.question] ?? '');
 				const labels = (q.options || []).map((o) => String(o.label || ''));
-				if (/^yes\b/i.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l))) out.push({ at, acts: spans(q.question), line: n, id: String(b.tool_use_id) });
+				if (YES_LABEL.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l))) out.push({ at, acts: spans(q.question), line: n, asked: asked.get(b.tool_use_id).line, id: String(b.tool_use_id) });
 			}
 		}
 	}
@@ -88,7 +92,10 @@ function ownerYes(input, now = Date.now()) {
 	try { lines = fs.readFileSync(String(input.transcript_path), 'utf8').split('\n'); } catch { return null; }
 	const yes = yeses(lines).filter((y) => y.acts.includes(act)).pop();
 	if (!yes || now - yes.at < 0 || now - yes.at > FRESH_MS) return null;
-	for (const raw of lines.slice(yes.line + 1)) {
+	// Spent by any run of the act after the pop-up was asked, the answer's own line or not: Claude Code writes every
+	// tool call of a message before their results, so an act sent beside the pop-up sits above the answer (the 1.25.0
+	// sweep: one tap ran it twice).
+	for (const raw of lines.slice(yes.asked)) {
 		let e;
 		try { e = JSON.parse(raw); } catch { continue; }
 		if (e.isSidechain || e.type !== 'assistant') continue;
@@ -102,13 +109,22 @@ function ownerYes(input, now = Date.now()) {
 // What Claude is told when an act is held: how to get the owner's yes, or, in a subagent, to hand it back.
 function howToAsk(input) {
 	if (input && input.agent_id) return ' A subagent cannot get that yes: leave this out and name it in your report, so the lead asks.';
-	return ' To run it: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (`<the exact command>`, or for a file `Edit <file>: <old text> => <new text>`), one option starting "Yes" and one starting "No"; after the owner picks Yes, run it again unchanged, once.';
+	return ' To run it: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (`<the exact command>`, or for a file `Edit <file>: <old text> => <new text>`), one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run it again unchanged, once.';
 }
 
 // The destination refs of a push command the owner said yes to, and whether it forces or deletes:
 // `KIT_PUSH_APPROVED=1 git push origin main` -> { dests: ['main'], force: false, del: false }.
+// This folder and every folder above it: the folders a session may have run in for this repo. A sibling folder whose
+// name this one starts with is not one of them (the 1.25.0 sweep: "...\working" passed for "...\working-methodology").
+function above(dir) {
+	const out = [];
+	for (let d = path.resolve(dir); ; d = path.dirname(d)) {
+		out.push(d);
+		if (path.dirname(d) === d) return out;
+	}
+}
 function pushAct(act) {
-	const w = act.split(' ');
+	const w = act.split(/\s+/);
 	const at = w.indexOf('push');
 	if (at < 0 || !w.slice(0, at).includes('git')) return null;
 	const rest = w.slice(at + 1);
@@ -134,9 +150,9 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
 	let real = repo;
 	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
-	const here = key(real);
+	const keys = above(real).map(key);
 	let dirs = [];
-	try { dirs = fs.readdirSync(root).filter((d) => here === d.toLowerCase() || here.startsWith(d.toLowerCase() + '-')); } catch { return false; }
+	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return false; }
 	// The push log the hook writes, in the repo's common git folder (a worktree shares it); unreadable but present
 	// refuses, so a yes is never reused by hiding its use.
 	const log = path.join(common || path.join(repo, '.git'), 'kit-push.log');
@@ -165,9 +181,9 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
 	let real = repo;
 	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
-	const here = key(real);
+	const keys = above(real).map(key);
 	let dirs = [];
-	try { dirs = fs.readdirSync(root).filter((d) => here === d.toLowerCase() || here.startsWith(d.toLowerCase() + '-')); } catch { return null; }
+	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return null; }
 	let best = null;
 	for (const d of dirs) {
 		let lines;

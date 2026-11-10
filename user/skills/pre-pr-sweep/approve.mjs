@@ -645,7 +645,7 @@ function openSweep(log) {
 // the same user, so a program set on forging can write it, as it can the log (its links are not keyed).
 const askCode = (hash) => String(hash || '').slice(0, 6);
 const pauseCode = (s) => { const lines = rawLines(); const i = s.log.map((e, k) => (e.kind === 'pause' ? k : -1)).reduce((a, b) => Math.max(a, b), -1); return i >= 0 ? sha(lines[i]).slice(0, 6) : ''; };
-const popUpHow = (act) => `ask with the AskUserQuestion pop-up, the question quoting \`${act}\`, one option starting "Yes" and one starting "No"`;
+const popUpHow = (act) => `ask with the AskUserQuestion pop-up, the question quoting \`${act}\`, one option labelled "Yes" and one starting "No"`;
 // One tap answers one ask or one pause.
 const tapUsed = (log, tap) => log.some((e) => e.tap === tap);
 const repoRoot = () => path.dirname(path.dirname(LOG));
