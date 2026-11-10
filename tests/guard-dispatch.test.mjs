@@ -15,10 +15,14 @@ const SRC = path.resolve('project/.claude');
 const GUARDS = ['guard.cjs', 'owner-proof.cjs', 'task-gate.cjs', 'guard-outward.cjs', 'guard-delete.cjs', 'guard-read.cjs', 'owner-yes.cjs'];
 
 // A copy of the project guards, so one can be taken away; a Claude folder with or without the user layer's hooks.
-function setup({ drop = null, userHooks = false } = {}) {
+function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	const dir = kitTemp.makeTemp('dispatch-');
 	for (const f of GUARDS) if (f !== drop) fs.copyFileSync(path.join(SRC, f), path.join(dir, f));
 	const cfg = kitTemp.makeTemp('cfg-');
+	if (oldHook) {
+		fs.mkdirSync(path.join(cfg, 'kit-hooks'));
+		fs.writeFileSync(path.join(cfg, 'kit-hooks', 'sweep-guard.cjs'), oldHook);
+	}
 	if (userHooks) {
 		fs.mkdirSync(path.join(cfg, 'kit-hooks'));
 		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs']) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
@@ -52,6 +56,21 @@ test('a Claude folder with no agent-team hooks never stops a call; with them, an
 	fs.writeFileSync(big, 'x'.repeat(50 * 1024));
 	assert.equal(full('Read', { file_path: big }, { agent_id: 'r1', agent_type: 'reviewer', transcript_path: path.join(path.dirname(big), 's.jsonl') }).permissionDecision, 'deny');
 	assert.equal(full('Read', { file_path: big }).permissionDecision, undefined, 'the main session reads it');
+});
+
+// The 1.25.0 sweep: a user layer still on 1.24.0 has hooks that read stdin and export no check, so the one process
+// skipped them and an agent ran with no sweep guard until the user layer was reinstalled.
+test('a user-layer hook from before the one process still holds its call', () => {
+	const old = [
+		'const fs = require("fs");',
+		'const input = JSON.parse(fs.readFileSync(0, "utf8"));',
+		'if (input.tool_name === "Agent") process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "old sweep guard" } }));',
+	].join('\n');
+	const run = setup({ oldHook: old });
+	const out = run('Agent', { subagent_type: 'reviewer', prompt: 'review' });
+	assert.equal(out.permissionDecision, 'deny');
+	assert.match(out.permissionDecisionReason, /old sweep guard/);
+	assert.equal(run('Bash', { command: 'git status' }).permissionDecision, undefined, 'a tool it does not read goes on');
 });
 
 test('the strictest answer wins and every reason and note is kept', () => {

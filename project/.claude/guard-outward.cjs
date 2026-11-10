@@ -195,8 +195,10 @@ function httpWrite(name, words) {
 	if (curl && words.some((w) => /^(-[A-Za-z0-9]*K|--config(=|$))/.test(w))) return 'an HTTP request with options from a file';
 	// Options that read a file into the request (a header, a query or a variable from @file), and wget's list of
 	// addresses from a file.
-	if (curl && words.some((w, k) => /^--(url-query|variable|expand-[\w-]+)(=|$)/.test(w) || (/^(-[A-Za-z0-9]*H|--header)$/.test(w) && /^@/.test(words[k + 1] ?? '')) || /^(-H|--header=)@/.test(w))) return 'an HTTP request that reads a file';
-	if (/^wget/.test(name) && words.some((w) => /^(-[A-Za-z0-9]*i|--input-file(=|$))/.test(w))) return 'an HTTP request that reads a file';
+	// Any value curl reads from @file, whatever option holds it (-H @f, -sH@f, --proxy-header=@f), and wget's commands
+	// and options from a file or the command line (-e, --execute, --config).
+	if (curl && words.some((w) => /^--(url-query|variable|expand-[\w-]+)(=|$)/.test(w) || /^(@|-[A-Za-z0-9]*@|--[\w-]+=@)/.test(w))) return 'an HTTP request that reads a file';
+	if (/^wget/.test(name) && words.some((w) => /^(-[A-Za-z0-9]*[ie]|--(input-file|execute|config)(=|$))/.test(w))) return 'an HTTP request that reads a file';
 	for (let i = 0; i < words.length; i++) {
 		const w = words[i];
 		const lower = w.toLowerCase();

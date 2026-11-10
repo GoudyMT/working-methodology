@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 
 // install project fills this in: where the user layer's kit-hooks sit.
-const INSTALLED_HOME = '{{CLAUDE_HOME}}';
+const INSTALLED_HOME = "{{CLAUDE_HOME}}";
 const SHELLS = ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'];
 const WRITES = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
 const AGENTS = ['Agent', 'Task'];
@@ -55,7 +55,15 @@ function answers(input) {
 		if (!reads(tool, input)) continue;
 		const where = path.join(userHooks(), file);
 		if (!fs.existsSync(where)) continue;
-		try { out.push([file, require(where).check(input)]); } catch { /* a slip-catcher that fails lets the call through */ }
+		try {
+			// A user layer from before the one process (1.24.0) has hooks that read stdin and export no check: loading one
+			// would run it here with no input, so it runs as its own process, as Claude Code ran it (the 1.25.0 sweep).
+			if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(fs.readFileSync(where, 'utf8'))) out.push([file, require(where).check(input)]);
+			else {
+				const r = require('child_process').spawnSync(process.execPath, [where], { input: JSON.stringify(input), encoding: 'utf8', timeout: 5000 });
+				out.push([file, r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : null]);
+			}
+		} catch { /* a slip-catcher that fails lets the call through */ }
 	}
 	return out;
 }
