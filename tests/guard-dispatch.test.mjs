@@ -63,6 +63,9 @@ test('the strictest answer wins and every reason and note is kept', () => {
 	assert.equal(m.additionalContext, 'note a note d');
 	assert.equal(merge([['a', null]]), null);
 	assert.equal(merge([['a', o('allow', 'owner yes')], ['b', null]]).hookSpecificOutput.permissionDecision, 'allow');
+	// The mutation check: an allow after a deny, or after an ask, never loosens it.
+	assert.equal(merge([['a', o('deny', 'held')], ['b', o('allow', 'owner yes')]]).hookSpecificOutput.permissionDecision, 'deny');
+	assert.equal(merge([['a', o('ask', 'asks')], ['b', o('allow', 'owner yes')]]).hookSpecificOutput.permissionDecision, 'ask');
 });
 
 // The teardown (T2): a 98 KB command took 21 s in owner-proof and 7 s in the delete guard, past the hook's 10 s

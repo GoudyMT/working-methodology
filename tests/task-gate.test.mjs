@@ -57,6 +57,8 @@ test('a PR, commit, tag or release waits until the session has read its rules, i
 
 test('a read before the last compact does not count, a shell read does, and other commands never wait', () => {
 	assert.equal(gate([read(RELEASE), compact], 'Bash', { command: 'git commit -m x' }).decision, 'deny', 'read before the compact');
+	// A transcript line with no message (a summary, a snapshot) is read past: the gate still holds (the mutation check).
+	assert.equal(gate([{ type: 'summary', summary: 'x' }], 'Bash', { command: 'git commit -m x' }).decision, 'deny', 'a line with no message');
 	assert.equal(gate([compact, read(RELEASE)], 'Bash', { command: 'git commit -m x' }).decision, 'pass');
 	assert.equal(gate([shell(`cat ${RELEASE}`)], 'Bash', { command: 'git commit -m x' }).decision, 'pass', 'read in a shell');
 	// The 1.24.0 sweep: a command that only names the file is no read, the gated step's own text included.

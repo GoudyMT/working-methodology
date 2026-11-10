@@ -62,6 +62,9 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		['Bash', { command: 'cd ~- && echo x > projects/p/s.jsonl' }],
 		// S23-1: a variable set in the command and glued to the rest of the path (F6).
 		['Bash', { command: 'P=~/.cla; echo x > ${P}ude/projects/x/s.jsonl' }],
+		// The mutation check: an expansion with an operator is not read ahead, and past 32 readings it fails closed.
+		['Bash', { command: 'P=~/.cla; echo x > ${P:-y}ude/projects/x/s.jsonl' }],
+		['Bash', { command: 'A=1; A=2; A=3; A=4; A=5; A=6; B=1; B=2; B=3; B=4; B=5; B=6; echo $A$B > out.txt' }],
 		['Bash', { command: 'cd $(echo ~/.claude) && echo hi >> projects/A/s.jsonl' }],
 		['PowerShell', { command: 'Set-Location -Path $HOME\\.claude; Add-Content projects\\A\\s.jsonl x' }],
 		// A cd in a subshell, a pipeline or the background, or a popd, leaves the folder unknown: the safe side.
@@ -114,6 +117,8 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 		['Bash', { command: 'git status' }],
 		// S23-1: a read through a quoted variable passes (the sequential reader's flip survived without it).
 		['Bash', { command: 'P="~/.claude/projects"; grep x $P/p/s.jsonl' }],
+		// The mutation check: a set variable used in braces is read ahead as its value.
+		['Bash', { command: 'P=/tmp/x; cat ${P}/a.txt' }],
 		// S23-1: a word written from the root is not read from the folder the shell starts in, a .claude folder here.
 		['Bash', { command: 'echo x > /tmp/a.cjs' }, path.join(cfg, 'repo', '.claude', 'agents')],
 		['Bash', { command: 'node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12' }],

@@ -225,6 +225,20 @@ test('the settings take the owner\'s yes for the exact edit; the guards and hook
 	assert.equal(withYes('Edit', { file_path: settings, old_string: '"deny": []', new_string: '"allow": ["Bash(*)"]' }), 'deny', 'another edit');
 	assert.equal(withYes('Edit', { file_path: settings, old_string: '"hooks": {', new_string: '"deny": ["Bash(x)"]' }), 'deny', 'the same text put in another place');
 	assert.equal(withYes('MultiEdit', { file_path: settings, edits: [{ old_string: '"deny": []', new_string: '"deny": ["Bash(x)"]' }, { old_string: 'a', new_string: 'b' }] }), 'deny', 'a write the yes did not show');
+	// The mutation check: a whole-file Write and a MultiEdit each take a yes that quotes all they write.
+	popUp({ act: `Write ${settings}: {}` });
+	assert.equal(withYes('Write', { file_path: settings, content: '{}' }), 'allow', 'the file the owner read');
+	assert.equal(withYes('Write', { file_path: settings, content: '{ }' }), 'deny', 'other content');
+	popUp({ act: `MultiEdit ${settings}: a => b ; c => d` });
+	assert.equal(withYes('MultiEdit', { file_path: settings, edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: 'd' }] }), 'allow', 'every edit the owner read');
+	// A real transcript holds lines with no message (a summary, a snapshot); they are read past, never a crash.
+	popUp({ act: `Write ${settings}: {}` });
+	fs.writeFileSync(TRANSCRIPT, '{"type":"summary","summary":"x"}\n{"type":"file-history-snapshot"}\n' + fs.readFileSync(TRANSCRIPT, 'utf8') + '{"type":"summary","summary":"y"}\n');
+	assert.equal(withYes('Write', { file_path: settings, content: '{}' }), 'allow', 'a yes after lines with no message');
+	// What a held write tells Claude: the main session asks in the pop-up; a subagent hands it back.
+	const reason = (extra) => JSON.parse(spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: settings, content: '{"x":1}' }, cwd: proj, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } }).stdout).hookSpecificOutput.permissionDecisionReason;
+	assert.match(reason({}), /AskUserQuestion pop-up/);
+	assert.match(reason({ agent_id: 'a1' }), /subagent cannot get that yes/);
 	const guard = path.join(proj, '.claude', 'guard-outward.cjs');
 	popUp({ act: `Write ${guard}: x` });
 	assert.equal(withYes('Write', { file_path: guard, content: 'x' }), 'deny', 'a guard file, even with a yes');
