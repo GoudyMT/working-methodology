@@ -17,7 +17,7 @@ const TEAMS = 'standards/agent-teams.md';
 const GH_VALUE = new Set(['-R', '--repo', '--hostname']);
 // A shell command that reads a file: its first program is a plain reader.
 const READERS = /^(cat|head|tail|less|more|type|gc|get-content|sed\s+-n|select-string|sls|grep|rg)(\.exe)?\s/i;
-const GIT_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env']);
+const GIT_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--attr-source', '--super-prefix', '--shallow-file']);
 
 // git tag options that only list (F13); a git tag with no word after it lists too.
 const TAG_LISTS = /^(-l|--list|-n\d*|--contains|--no-contains|--points-at|--merged|--no-merged|--sort|--column|--no-column|--format)(=|$)/;
@@ -48,8 +48,10 @@ function needs(command, tool, depth = 0) {
 				if (sub === 'commit' || (sub === 'tag' && !lists)) out.push([RELEASE, `git ${sub}`]);
 			} else {
 				const [group, sub] = rest(GH_VALUE);
-				const writes = sub === 'create' || after.some((x) => PR_TEXT.test(x));
-				if (group === 'pr' && (sub === 'create' || sub === 'edit') && writes) out.push([RELEASE, 'a PR body'], [FINDINGS, 'the sweep summary in a PR body']);
+				// gh pr new is gh pr create.
+				const create = sub === 'create' || sub === 'new';
+				const writes = create || after.some((x) => PR_TEXT.test(x));
+				if (group === 'pr' && (create || sub === 'edit') && writes) out.push([RELEASE, 'a PR body'], [FINDINGS, 'the sweep summary in a PR body']);
 				if (group === 'release' && sub === 'create') out.push([RELEASE, 'a release']);
 			}
 		}

@@ -198,7 +198,10 @@ function httpWrite(name, words) {
 	// Any value curl reads from @file, whatever option holds it (-H @f, -sH@f, --proxy-header=@f), and wget's commands
 	// and options from a file or the command line (-e, --execute, --config).
 	if (curl && words.some((w) => /^--(url-query|variable|expand-[\w-]+)(=|$)/.test(w) || /^(@|-[A-Za-z0-9]*@|--[\w-]+=@)/.test(w))) return 'an HTTP request that reads a file';
-	if (/^wget/.test(name) && words.some((w) => /^(-[A-Za-z0-9]*[ie]|--(input-file|execute|config)(=|$))/.test(w))) return 'an HTTP request that reads a file';
+	// wget, like getopt, takes any start of a long option's name (--exec, --conf, --post-f).
+	const WGET_READS = ['input-file', 'execute', 'config', 'post-file', 'post-data', 'body-file', 'body-data'];
+	const wgetLong = (w) => { const n = w.slice(2).split('=')[0].toLowerCase(); return n.length >= 2 && WGET_READS.some((o) => o.startsWith(n)); };
+	if (/^wget/.test(name) && words.some((w) => /^-[A-Za-z0-9]*[ie]/.test(w) || (w.startsWith('--') && wgetLong(w)))) return 'an HTTP request that reads a file';
 	for (let i = 0; i < words.length; i++) {
 		const w = words[i];
 		const lower = w.toLowerCase();

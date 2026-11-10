@@ -40,8 +40,9 @@ test('a PR, commit, tag or release waits until the session has read its rules, i
 		// F12: another folder's copy of the rules (the kit source, another project) is not this project's read.
 		assert.equal(gate([read(`/elsewhere/${RELEASE}`), read('/elsewhere/standards/reviews-and-findings.md'), shell(`cat ../other/${RELEASE}`)], 'Bash', { command }).decision, 'deny', `${command} after another copy's read`);
 	}
-	// F14: an env prefix, a wrapper or a shell handed the command still waits.
-	for (const command of ['X=1 git commit -m x', 'env X=1 git commit -m x', 'command git tag v1', 'bash -c "git commit -m x"', 'powershell -Command "git commit -m x"', 'sh -c \'cd a && gh pr create -t x -b y\'']) {
+	// F14: an env prefix, a wrapper or a shell handed the command still waits. The 1.25.0 sweep: a git option that takes
+	// a value hid the subcommand behind it, and gh pr new is gh pr create.
+	for (const command of ['X=1 git commit -m x', 'env X=1 git commit -m x', 'command git tag v1', 'bash -c "git commit -m x"', 'powershell -Command "git commit -m x"', 'sh -c \'cd a && gh pr create -t x -b y\'', 'git --attr-source HEAD commit -m x', 'gh pr new -t x -b y']) {
 		assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
 	}
 	// F13: a list, a manual or a label-only edit writes no commit, tag or body, so it never waits.
