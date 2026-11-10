@@ -4334,14 +4334,14 @@ test('session start suggests skill cases from the repo when none are chosen', ()
   fs.writeFileSync(path.join(proj, 'package.json'), JSON.stringify({ devDependencies: { '@sveltejs/kit': '3.0.0' } }));
   fs.writeFileSync(path.join(proj, 'wrangler.toml'), 'name = "x"\n');
   let msg = sessionStartReport({ kit, home, projectDir: proj });
-  assert.deepEqual(msg.match(/Suggested from this repo: (.*)\./)[1].split(', '), ['ui-design', 'ui-review', 'feature-build', 'debugging', 'review', 'security', 'cloudflare']);
+  assert.deepEqual(msg.match(/Suggested from this repo: ([^.]*)\./)[1].split(', '), ['ui-design', 'ui-review', 'feature-build', 'debugging', 'review', 'security', 'cloudflare']);
   // pin: 1 (the JSON line is what the project writes to turn them on)
   assert.match(msg, /\{"on":\["ui-design","ui-review","feature-build","debugging","review","security","cloudflare"\]\}/);
   fs.rmSync(path.join(proj, 'package.json'));
   fs.rmSync(path.join(proj, 'wrangler.toml'));
   fs.writeFileSync(path.join(proj, 'requirements.txt'), 'torch==2.5\ntransformers>=4\napache-airflow\n');
   msg = sessionStartReport({ kit, home, projectDir: proj });
-  assert.deepEqual(msg.match(/Suggested from this repo: (.*)\./)[1].split(', '), ['feature-build', 'debugging', 'review', 'ml-data', 'data-pipelines']);
+  assert.deepEqual(msg.match(/Suggested from this repo: ([^.]*)\./)[1].split(', '), ['feature-build', 'debugging', 'review', 'ml-data', 'data-pipelines']);
 });
 
 test('status names a memory index past 6,000 B, which loads in every session', () => {

@@ -29,7 +29,7 @@ tags:
 - **G5 Blast radius:** files, shipped vs new, public interfaces, other callers, the revert story, in the report; the owner's go only for shipped code outside the branch's scope or a public interface.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **One sweep:** one large sweep per branch; every fix ships with a test that fails before it, guard and permission fixes too (a prose-only fix: the recall eval or an invariant, rule:test-value); CI runs the full suite and auto-fix handles red. A second pass is the owner's call; escapes are measured next build. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **One sweep:** one large sweep per branch; every fix ships with a test that fails before it, guard and permission fixes too; CI runs the full suite and auto-fix handles red. A second pass is the owner's call; escapes are measured next build. A finding carries to the next run only at medium or below: a high or critical is fixed before the PR (found after it: on the open PR), or the owner accepts it.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
