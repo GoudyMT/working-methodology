@@ -46,6 +46,10 @@ test('the delete guard reads a quoted here-document written to a file as data, a
 	assert.equal(hook('guard-delete.cjs', "cat <<'A' > notes.md; bash <<'B'\nx\nA\nrm -rf " + OUT + "\nB"), 'ask');
 	assert.equal(hook('guard-delete.cjs', "cat <<'A' > >(bash)\nrm -rf " + OUT + "\nA"), 'ask');
 	assert.equal(hook('guard-delete.cjs', "cat <<'A' && bash x.sh\nrm -rf " + OUT + "\nA"), 'ask');
+	// A line continued with a backslash carries its pipe on the next line.
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' \\\n| bash\nrm -rf " + OUT + "\nA"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' \\\n> >(bash)\nrm -rf " + OUT + "\nA"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' $'x'\nrm -rf " + OUT + "\nA"), 'ask');
 	// A mark inside quotes starts no here-document, so the lines after it are commands.
 	assert.equal(hook('guard-delete.cjs', `cat "a<<'X'"\nrm -rf ${OUT}\nX`), 'ask');
 });

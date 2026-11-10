@@ -203,7 +203,10 @@ function heredocData(text) {
 		const bare = line.replace(/'[^']*'|"(\\.|[^"\\])*"/g, '');
 		const words = bare.trim().split(/\s+/).filter((w) => w && !/^[A-Za-z_]\w*=/.test(w));
 		const program = (words[0] || '').split(/[\\/]/).pop();
-		const simple = marks.length === 1 && !/;|&|\||[<>]\(|\$\(|`/.test(bare);
+		// A line continued with a backslash, a $'...' quote or a quote left open may carry a pipe or a command the
+		// reading here cannot see, so its body stays in (the security review).
+		const continued = /\\\r?$/.test(line) || /\$'/.test(line) || /['"]/.test(bare);
+		const simple = marks.length === 1 && !continued && !/;|&|\||[<>]\(|\$\(|`/.test(bare);
 		const pipesOn = !simple;
 		for (const m of marks) {
 			const body = [];
