@@ -182,7 +182,9 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// for P in, printf -v P), then used, is refused: read as either value it could be wrong (a security review).
 	for (const name of given.keys()) {
 		const other = new RegExp(`\\$\\{${name}:?=|(^|[^\\w$])${name}\\+=|\\b(read|for|mapfile|readarray|unset|getopts)\\b[^;&|\\n]*[\\s'"]${name}\\b|\\b(declare|local|typeset)\\s+-[^;&|\\n]*[\\s'"]${name}\\b|\\bprintf\\b[^;&|\\n]*-v\\s*['"]?${name}\\b`);
-		if (other.test(String(command)) && new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command))) return true;
+		// Any assignment beyond the plain ones read above (P="$HOME/x", eval "P=x") is a value the guard did not read.
+		const every = [...String(command).matchAll(new RegExp(`(^|[\\s;&|(\`"'])${name}\\+?=`, 'g'))].length;
+		if ((other.test(String(command)) || every > given.get(name).length) && new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command))) return true;
 	}
 	const used = (name) => new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`).test(String(command || ''));
 	const twice = [...given].filter(([name, values]) => new Set(values).size > 1 && used(name));
