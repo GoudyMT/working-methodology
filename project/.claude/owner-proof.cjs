@@ -19,8 +19,16 @@ const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
 const { ownerYes, howToAsk } = require('./owner-yes.cjs');
 
 // install project fills this in, so a caller cannot move the protected folder with CLAUDE_CONFIG_DIR.
-const INSTALLED_HOME = '{{CLAUDE_HOME}}';
+// Double quotes: an installed path may hold an apostrophe (the 1.25.0 sweep).
+const INSTALLED_HOME = "{{CLAUDE_HOME}}";
 const home = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
+// The Claude folder's parts, worked out once per folder: a long command reads it for every word.
+let homeMemo = ['', []];
+function homeParts() {
+	const h = home();
+	if (homeMemo[0] !== h) homeMemo = [h, parts(path.resolve(h))];
+	return homeMemo[1];
+}
 // Plain readers only: rg (--pre) and less (LESSOPEN) can run another program.
 const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'get-item', 'gi', 'jq', 'wc', 'stat', 'test-path', 'file']);
 // Copiers: a transcript copied out is a read; one copied in is a write.
@@ -71,7 +79,17 @@ function fits(part, name) {
 
 // The parts of a shell word read as a path: slashes one way, . and .. and doubled slashes read the way the shell
 // reads them, and a short name (CLAUDE~1) as the folder it names.
+// Read once per spelling: each word of a long command is read by several shapes (the T2 teardown's 98 KB command).
+const partsSeen = new Map();
 function parts(word) {
+	const key = String(word);
+	if (partsSeen.has(key)) return partsSeen.get(key).slice();
+	if (partsSeen.size > 5000) partsSeen.clear();
+	const out = partsOf(key);
+	partsSeen.set(key, out);
+	return out.slice();
+}
+function partsOf(word) {
 	const w = path.posix.normalize(slash(word).replace(/["']/g, '')).replace(/(^|\/)claude~\d+(?=\/|$)/g, '$1.claude');
 	// Any other short name (SETTIN~1.JSO, GITHOO~1) is read as the wildcard of the long names it may stand for
 	// (*settin*.jso*, *githoo*: the leading dot is dropped in a short name), so it is held where it can name a
@@ -141,7 +159,7 @@ const rooted = (word) => /^([/~$%]|[a-z]:)/.test(slash(word));
 // cwd: where a cd before it moved the shell (its parts), 'unknown' when that cannot be read, null when none did.
 function proofNames(word, cwd) {
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
-	const h = parts(path.resolve(home()));
+	const h = homeParts();
 	for (let i = 0; i < p.length; i++) {
 		if (fits(p[i], '.claude') || (p[i] === h[h.length - 1] && h.length > 0)) {
 			if (protectedFrom(p, i + 1)) return true;
