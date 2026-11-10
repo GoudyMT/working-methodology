@@ -198,6 +198,9 @@ function findOutward(text, depth) {
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	// The proof must be an argument of the same command as the yes: one elsewhere on the line proves nothing.
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
+	// S23-4 (the 1.23.0 verify): approve.mjs takes a shell without CLAUDECODE and AI_AGENT for the owner's terminal, and
+	// a variable or a glob spells the yes past the reading above. Clearing either marker, or the whole environment, asks.
+	if (/\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat)) return 'a command that clears the AI shell\'s markers';
 	// The terminal's way to resume is the owner's alone; the thread's way carries its proof, as the yes does (the 1.23.0
 	// sweep: a resume with the AI shell's variables unset asked nothing).
 	if (/KIT_OWNER_RESUME/i.test(flat)) return 'an owner resume of the sweep tools';
