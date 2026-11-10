@@ -3186,6 +3186,11 @@ test('a project\'s .kit/pr-body.json sets its own review dimensions, audit line 
   }));
   const full = stdAudit(dir, read(path.resolve('user/skills/pr-body/examples/standard.md')));
   assert.equal(full.status, 0, full.stdout);
+  // A file from before 1.25.0 names its rows "gates": the audit says so, never falling back in silence (the sweep).
+  const old = makeTemp('prb-');
+  fs.mkdirSync(path.join(old, '.kit'));
+  fs.writeFileSync(path.join(old, '.kit', 'pr-body.json'), JSON.stringify({ gates: ['Code security', 'Accessibility'] }));
+  assert.match(stdAudit(old, honestBody()).stdout, /FAIL.*"gates" is now "dimensions"/);
   // A project with no file needs only a code security row, so no row is written to say "not touched".
   const plain = makeTemp('prb-');
   const oneRow = honestBody().replace(/\| (Privacy|Supply|Legal|Test value).*\n/g, '');

@@ -31,6 +31,8 @@ const body = entities(written);
 const lines = body.split(/\r?\n/);
 const rows = [];
 const row = (name, ok, detail) => rows.push({ name, ok, detail });
+// 1.25.0 renamed the key; an old file would otherwise drop its rows to the default without a word.
+if (project.gates !== undefined) row('.kit/pr-body.json: "gates" is now "dimensions"', false, 'rename the key');
 const attribution = attributionFaults(written);
 row('no attribution block', attribution.length === 0, attribution.join(', ') || 'none');
 const norm = (s) => s.replace(/\s+/g, ' ');
