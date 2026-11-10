@@ -56,7 +56,7 @@ function makeKit() {
 
 const read = (p) => fs.readFileSync(p, 'utf8');
 
-test('projectSlug matches the folder name Claude Code uses for project memory', () => {
+test('projectSlug matches the folder name Claude Code uses for project memory', { windows: true }, () => {
   assert.equal(
     projectSlug('D:\\Work\\Coding\\.Projects\\2026\\My App'),
     'D--Work-Coding--Projects-2026-My-App',
@@ -1599,7 +1599,7 @@ test('every git init in the kit names its branch, so main never depends on the m
   }
   assert.deepEqual(unnamed, []);
 });
-test('the git pre-push hook stops an AI agent without approval and lets the owner push', () => {
+test('the git pre-push hook stops an AI agent without approval and lets the owner push', { windows: true }, () => {
   const hook = path.resolve('project/.githooks/pre-push');
   const sh = (env) => spawnSync('sh', [hook], { encoding: 'utf8', env: { PATH: process.env.PATH, ...env } });
   assert.equal(sh({}).status, 0, 'the owner in a plain terminal');
@@ -1681,7 +1681,7 @@ test('two checkers in one session keep separate snapshots', () => {
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-b', hook_event_name: 'SubagentStop' }).status, 0);
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-a', hook_event_name: 'SubagentStop' }).status, 2);
 });
-test('the builder edit fence follows a symlinked or junctioned worktree path', () => {
+test('the builder edit fence follows a symlinked or junctioned worktree path', { windows: true }, () => {
   const dir = gitTree();
   const link = `${dir}-link`;
   fs.symlinkSync(dir, link, 'junction');
@@ -1894,7 +1894,7 @@ test('the PR body and release audits fail when the phrase appears', () => {
   assert.equal(rel.status, 1);
   assert.match(rel.stdout, /confirmation phrase/);
 });
-test('the git pre-push hook is executable, in the kit and where install writes it', () => {
+test('the git pre-push hook is executable, in the kit and where install writes it', { windows: true }, () => {
   for (const h of ['pre-push', 'pre-commit']) assert.match(spawnSync('git', ['ls-files', '-s', `project/.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
   if (process.platform !== 'win32') {
     const proj = makeTemp('hookmode-');
@@ -1998,7 +1998,7 @@ test('the first push check fails on a never path, a missing tracked file, a secr
   assert.match(r.stdout, /exclude/i);
   assert.ok(!r.stdout.includes(secret), 'a secret value is never printed');
 });
-test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', () => {
+test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', { windows: true }, () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = makeTemp('bare-');
   g(bare, 'init', '-q', '--bare', '-b', 'main');
@@ -2036,7 +2036,7 @@ test('the install turns on the kit git hooks, and leaves another hook manager al
   kitInstall(husky);
   assert.equal(g(husky, 'config', 'core.hooksPath').stdout.trim(), '.husky', 'the owner\'s hook manager stays; setup says to add the checks there');
 });
-test('the pre-commit hook blocks staging a kit file, a never path or a secret file, and allows tracked choices', () => {
+test('the pre-commit hook blocks staging a kit file, a never path or a secret file, and allows tracked choices', { windows: true }, () => {
   const dir = readyProject({ track: ['main.py', '_Session Log.md'], never: ['school/**'] });
   const commit = () => spawnSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'chore: x'], { encoding: 'utf8', env: { ...process.env } });
   g(dir, 'add', '-f', 'AGENTS.md');
@@ -2302,7 +2302,37 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
   fs.mkdirSync(path.join(dir, 'sweeps'));
   return dir;
 }
+// S23-4: the owner's yes or resume with no thread proof now needs a real terminal, where the owner types the code; a
+// test has none. Where a test stands for the owner at their terminal, the owner answers from the thread instead.
+let ownerSeq = 0;
+function asOwner(dir, args, env) {
+  const terminal = !('CLAUDECODE' in env) && !('AI_AGENT' in env) && !args.includes('--thread');
+  const yes = terminal && args.includes('--owner-yes') && filledWords(args[args.indexOf('--owner-yes') + 1]);
+  const resume = terminal && args.includes('--resume') && env.KIT_OWNER_RESUME === '1';
+  if (!yes && !resume) return null;
+  const log = sweepLog(dir);
+  let words;
+  if (yes) {
+    const f = path.resolve(dir, args[0]);
+    const ask = log.map((l) => JSON.parse(l)).filter((e) => e.kind === 'decision' && path.resolve(e.contract) === f).pop();
+    if (!ask) return null;
+    words = `yes ${String(ask.hash).slice(0, 6)}`;
+  } else {
+    const i = log.map((l) => JSON.parse(l).kind).lastIndexOf('pause');
+    if (i < 0) return null;
+    words = `resume ${crypto.createHash('sha256').update(log[i]).digest('hex').slice(0, 6)}`;
+  }
+  const cfg = env.CLAUDE_CONFIG_DIR || makeTemp('cfg-');
+  if (!fs.existsSync(path.join(cfg, 'kit-owner.json'))) ownerFile(cfg);
+  const id = `cmsg_T${String(++ownerSeq).padStart(8, '0')}`;
+  ownerSays(cfg, { cwd: dir, id, words, at: new Date(Date.now() + 1000).toISOString() });
+  const out = yes ? [...args.slice(0, args.indexOf('--owner-yes')), '--owner-yes', words, '--thread', id, ...args.slice(args.indexOf('--owner-yes') + 2)] : ['--resume', '--thread', id];
+  return spawnSync('node', [APPROVE, ...out], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env, CLAUDE_CONFIG_DIR: cfg, CLAUDECODE: '1' } });
+}
+const filledWords = (w) => typeof w === 'string' && w.trim().split(/\s+/).filter(Boolean).length >= 1 && w.trim().length > 1;
 const approveIn = (dir, args, env = {}) => {
+  const owner = asOwner(dir, args, env);
+  if (owner) return owner;
   if (args.includes('--outcome') && env.CLAUDE_CONFIG_DIR) leadBriefs(dir, args, env.CLAUDE_CONFIG_DIR);
   // A crashed reviewer was started by the guard too.
   const crashed = args.includes('--retry') && args[args.indexOf('--crashed') + 1];
@@ -2639,6 +2669,22 @@ test('an installed approve.mjs reads the owner\'s proof only from the folder it 
   assert.equal(out.status, 1, out.stdout);
   assert.match(out.stdout, /no owner is named in /);
   assert.ok(out.stdout.includes(home.split(path.sep).join('/')), out.stdout);
+});
+
+// S23-4 (the 1.23.0 verify): with the AI shell's two variables cleared, a resume or a yes with no thread proof was
+// logged; a variable or a glob kept the push guard from seeing it. With no terminal to type the code in, nothing is.
+test('a resume or a yes with no thread proof needs a real terminal, even with the AI shell\'s variables cleared', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(Math.ceil(537500 * 1.3)));
+  const before = sweepLog(r.dir).length;
+  const bare = (args, env) => spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: r.dir, env: { PATH: process.env.PATH, ...env } });
+  const resume = bare(['--resume'], { KIT_OWNER_RESUME: '1' });
+  assert.equal(resume.status, 1, resume.stdout);
+  const ask = approveRun(askContract());
+  const yesThere = spawnSync('node', [APPROVE, ask.f, '--owner-yes', 'yes go ahead'], { encoding: 'utf8', cwd: ask.dir, env: { PATH: process.env.PATH } });
+  assert.equal(yesThere.status, 1, yesThere.stdout);
+  assert.equal(sweepLog(r.dir).length, before, 'nothing logged for the resume');
+  assert.ok(!sweepLog(ask.dir).some((l) => JSON.parse(l).kind === 'owner-yes'), 'nothing logged for the yes');
 });
 
 test('only the owner resumes, from a terminal no agent runs in', () => {
@@ -4169,7 +4215,7 @@ test('the branch name check passes plain type-prefixed names and refuses tool pr
   for (const bad of ['claude/project-thread-fkkmfn', 'worktree-agent-a1', 'feature/b2-calendar', 'feature/F9_Timeline', 'my-branch', 'feature/'])
     assert.equal(nameRun(['branch', bad]).status, 1, bad);
 });
-test('the commit-msg hook runs the message check, and the pre-push hook refuses a badly named branch', () => {
+test('the commit-msg hook runs the message check, and the pre-push hook refuses a badly named branch', { windows: true }, () => {
   // The commit-msg hook, run as git runs it, refuses a message out of the house style.
   const msgHook = spawnSync('sh', [path.resolve('project/.githooks/commit-msg'), msgFile('update stuff\n')], { encoding: 'utf8' });
   assert.equal(msgHook.status, 1);
@@ -5830,24 +5876,28 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.match(typed.detail, /under the last recorded baseline 9/);
 });
 
-// S22-1: the suite runs over parallel jobs; the required check (kit-tests) passes only when every slice passed. A
-// needed job that fails makes a plain dependent job SKIPPED, and GitHub counts a skipped required check as passed.
-test('CI splits the tests over slices, and the required check fails unless every slice passed', () => {
+// S22-1, E31: the suite runs on Linux and the Windows-only tests on Windows; the required check (kit-tests) passes
+// only when both passed. A needed job that fails makes a plain dependent job SKIPPED, and GitHub counts a skipped
+// required check as passed. pin: 1 (GitHub reads these lines).
+test('CI runs the suite on Linux and the Windows slice on Windows, and the required check fails unless both passed', () => {
   const ci = read(path.resolve('.github/workflows/ci.yml'));
   const job = (name) => ci.split(new RegExp(`^  ${name}:$`, 'm'))[1].split(/^  [a-z-]+:$/m)[0];
   const unit = job('unit-tests');
-  const slices = JSON.parse(/^\s+slice: (\[[\d, ]+\])$/m.exec(unit)[1]);
-  // The shard count is named, so every slice splits the tests the same way (the 1.23.0 sweep).
-  const n = Number(/node scripts\/test-run\.mjs --slice \$\{\{ matrix\.slice \}\}\/(\d+) --shards \d+$/m.exec(unit)[1]);
-  assert.deepEqual(slices, [...Array(n).keys()], 'the matrix lists every slice 0..n-1 once');
-  assert.match(unit, /^\s+fail-fast: false$/m);
+  assert.match(unit, /^    runs-on: ubuntu-latest$/m);
+  assert.match(unit, /^\s+run: node scripts\/test-run\.mjs --shards \d+$/m);
+  const win = job('windows-tests');
+  assert.match(win, /^    runs-on: windows-latest$/m);
+  assert.match(win, /KIT_WINDOWS_SLICE: '1'[\s\S]*run: node scripts\/test-run\.mjs --shards \d+/);
+  // The guards guard a Windows machine, so their proofs run there.
+  for (const proof of ['guard-outward-check.cjs', 'guard-delete-check.cjs']) assert.ok(win.includes(`node project/.claude/${proof}`), proof);
   const gate = job('kit-tests');
-  assert.match(gate, /^    needs: unit-tests$/m);
+  assert.match(gate, /^    needs: \[unit-tests, windows-tests\]$/m);
   assert.match(gate, /^    if: always\(\)$/m);
-  assert.match(gate, /^\s+if: needs\.unit-tests\.result != 'success'$/m);
-  assert.match(gate.split("if: needs.unit-tests.result != 'success'")[1], /^\s+run: exit 1$/m);
+  const failed = "if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success'";
+  assert.ok(gate.includes(failed));
+  assert.match(gate.split(failed)[1], /^\s+run: exit 1$/m);
   assert.doesNotMatch(ci, /continue-on-error/);
-  assert.doesNotMatch(gate, /test-run\.mjs/, 'the tests run in the slices, not again in the gate');
+  assert.doesNotMatch(gate, /test-run\.mjs/, 'the tests run in their jobs, not again in the gate');
 });
 
 test('CI runs the recall gate on the PR\'s real diff', async () => {
@@ -6465,7 +6515,7 @@ test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved quest
   assert.throws(() => parseSheet(broken['the closing line in a thought']), /this reads 1/);
 });
 
-test('a sheet with Windows line ends reads the same, and the words stay whole', async () => {
+test('a sheet with Windows line ends reads the same, and the words stay whole', { windows: true }, async () => {
   const { parseSheet } = await sheetTools();
   const s = parseSheet(SHEET.replace(/\n/g, '\r\n'));
   assert.equal(s.questions[1].answer, 'Neither,  use the projct name\t\r\n\r\nand keep it short');
@@ -6683,7 +6733,7 @@ test('an update keeps the attribution script while an edited audit still needs i
 
 // M21: the kit source installs no kit, so before 1.21.0 nothing checked its commit messages until CI did, and the fix
 // needed a history rewrite. Build turns its own hook on once per clone.
-test('build turns on the kit source commit-msg hook, which refuses a bad message, and leaves an owner hooks path alone', () => {
+test('build turns on the kit source commit-msg hook, which refuses a bad message, and leaves an owner hooks path alone', { windows: true }, () => {
   const dir = makeTemp('srchooks-');
   const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
   g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
@@ -6765,7 +6815,7 @@ test('recall gate (S18-5): a scores file over 1 MiB on the base still sets the f
   assert.match(out.stdout, /under the last recorded baseline 10/);
 });
 
-test('recall gate and kit.mjs (S18-2): run through a junction or link, they still run and fail as they should', () => {
+test('recall gate and kit.mjs (S18-2): run through a junction or link, they still run and fail as they should', { windows: true }, () => {
   const r = gateRepo();
   r.record('gate: a median 7 baseline 7 brief v1 keys v4 control 0');
   const link = path.join(r.dir, 'linked');
@@ -7268,7 +7318,7 @@ test('T3: a brief held as a list of text parts still names its sweep', () => {
   assert.equal(r.status, 0, r.stdout);
 });
 // T4: the build command itself, not the helper it calls.
-test('T4: kit.mjs build turns on the kit source commit-msg hook', () => {
+test('T4: kit.mjs build turns on the kit source commit-msg hook', { windows: true }, () => {
   const dir = path.join(makeTemp('kit-clone-'), 'k');
   assert.equal(spawnSync('git', ['clone', '-q', path.resolve('.'), dir], { encoding: 'utf8' }).status, 0);
   assert.equal(spawnSync('git', ['-C', dir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim(), '');
@@ -7342,7 +7392,7 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
 });
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
 // The kit source holds its own pushes the same way (.githooks/pre-push), so the gate can arm a PR there too.
-for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, () => {
+for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, { windows: true }, () => {
   const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.mkdirSync(path.join(dir, '.githooks'));
@@ -7365,7 +7415,7 @@ for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`t
   fs.appendFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
   assert.equal(push(head).status, 1, 'armed again, it holds again');
 });
-test('the pre-push hook holds a head armed on two PRs until both are disarmed', () => {
+test('the pre-push hook holds a head armed on two PRs until both are disarmed', { windows: true }, () => {
   const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');

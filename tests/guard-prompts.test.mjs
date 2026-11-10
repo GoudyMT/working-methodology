@@ -7,6 +7,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+// A folder outside the project and the session's own, as each platform writes one.
+const OUT = process.platform === 'win32' ? 'C:/elsewhere/x' : '/elsewhere/x';
 const hook = (file, command, extra = {}) => {
 	const r = spawnSync(process.execPath, [path.resolve('project/.claude', file)], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: process.cwd(), ...extra }), encoding: 'utf8' });
 	assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`);
@@ -16,10 +18,10 @@ const hook = (file, command, extra = {}) => {
 test('a guard in a subagent refuses instead of asking, so the agent hands the act back and never waits on a prompt', () => {
 	const sub = { agent_id: 'a1b2c3', agent_type: 'builder' };
 	assert.equal(hook('guard-outward.cjs', 'git push origin main', sub), 'deny');
-	assert.equal(hook('guard-delete.cjs', 'rm -rf C:/elsewhere/x', sub), 'deny');
+	assert.equal(hook('guard-delete.cjs', 'rm -rf ' + OUT, sub), 'deny');
 	// The main session still asks the owner, and a plain command still passes in both.
 	assert.equal(hook('guard-outward.cjs', 'git push origin main'), 'ask');
-	assert.equal(hook('guard-delete.cjs', 'rm -rf C:/elsewhere/x'), 'ask');
+	assert.equal(hook('guard-delete.cjs', 'rm -rf ' + OUT), 'ask');
 	assert.equal(hook('guard-outward.cjs', 'git status', sub), 'pass');
 	assert.equal(hook('guard-delete.cjs', 'git status', sub), 'pass');
 });
@@ -32,13 +34,13 @@ test('the shipped project settings turn off npm and npx installing a missing pac
 
 test('the delete guard reads a quoted here-document written to a file as data, and every run body as a command', () => {
 	// Markdown with backticks and a delete it only describes, written to a file: nothing runs.
-	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nRun `rm -rf C:/elsewhere/x` to clean up.\nEOF"), 'pass');
-	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' > notes.md\nrm -rf C:/elsewhere/x\nEOF"), 'pass');
+	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nRun `rm -rf " + OUT + "` to clean up.\nEOF"), 'pass');
+	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' > notes.md\nrm -rf " + OUT + "\nEOF"), 'pass');
 	// The same body fed to a shell, expanded by bash, or after the here-document ends, runs.
-	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' | bash\nrm -rf C:/elsewhere/x\nEOF"), 'ask');
-	assert.equal(hook('guard-delete.cjs', 'cat > notes.md <<EOF\n$(rm -rf C:/elsewhere/x)\nEOF'), 'ask');
-	assert.equal(hook('guard-delete.cjs', "bash <<'EOF'\nrm -rf C:/elsewhere/x\nEOF"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nx\nEOF\nrm -rf C:/elsewhere/x"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' | bash\nrm -rf " + OUT + "\nEOF"), 'ask');
+	assert.equal(hook('guard-delete.cjs', 'cat > notes.md <<EOF\n$(rm -rf ' + OUT + ')\nEOF'), 'ask');
+	assert.equal(hook('guard-delete.cjs', "bash <<'EOF'\nrm -rf " + OUT + "\nEOF"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nx\nEOF\nrm -rf " + OUT + ""), 'ask');
 	// A mark inside quotes starts no here-document, so the lines after it are commands.
-	assert.equal(hook('guard-delete.cjs', `cat "a<<'X'"\nrm -rf C:/elsewhere/x\nX`), 'ask');
+	assert.equal(hook('guard-delete.cjs', `cat "a<<'X'"\nrm -rf ${OUT}\nX`), 'ask');
 });

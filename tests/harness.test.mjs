@@ -34,6 +34,23 @@ test('the runner splits a harness file into shards that together run every test 
 	assert.match(r.stdout, /pass 7, fail 0/);
 });
 
+// E31: Linux runs the suite and Windows the tests marked { windows: true }; together every test runs, and each one
+// marked runs on Windows (off Windows it is skipped, never dropped silently).
+test('the Windows slice runs only the marked tests, and elsewhere the marked tests are skipped', () => {
+	const dir = kitTemp.makeTemp('winslice-');
+	const log = path.join(dir, 'ran.log');
+	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS}; import fs from 'node:fs';\n` +
+		['a', 'b'].map((n) => `test('${n}', () => { fs.appendFileSync(${JSON.stringify(log)}, '${n}\\n'); });`).join('\n') +
+		`\ntest('w', { windows: true }, () => { fs.appendFileSync(${JSON.stringify(log)}, 'w\\n'); });`);
+	const slice = run(dir, ['--shards', '2', path.join(dir, 'x.test.mjs')], { KIT_WINDOWS_SLICE: '1' });
+	assert.equal(slice.status, 0, slice.stdout + slice.stderr);
+	assert.deepEqual(ran(log), process.platform === 'win32' ? ['w'] : []);
+	fs.rmSync(log, { force: true });
+	const all = run(dir, ['--shards', '2', path.join(dir, 'x.test.mjs')]);
+	assert.equal(all.status, 0, all.stdout + all.stderr);
+	assert.deepEqual(ran(log), process.platform === 'win32' ? ['a', 'b', 'w'] : ['a', 'b']);
+});
+
 // CI splits the suite over several runners (S22-1): the slices together run each test once, and a file outside the
 // harness runs in the first slice only.
 test('runner slices split the shards over CI jobs: together every test exactly once, a whole file once', () => {

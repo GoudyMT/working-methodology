@@ -914,7 +914,7 @@ test('merge gate: a report that gives the version goal as NO stops it', () => {
 test('merge gate: project/.claude is protected everywhere, so a branch cannot land an audit there', () => {
 	assert.ok(PROTECTED.some((re) => re.test('project/.claude/pr-body-audit-lean.mjs')));
 });
-test('merge gate: a linked worktree logs where the pre-push hook reads, the common git folder', () => {
+test('merge gate: a linked worktree logs where the pre-push hook reads, the common git folder', { windows: true }, () => {
 	const s = setup();
 	const tree = path.join(makeTemp('wt-'), 'linked');
 	assert.equal(spawnSync('git', ['-C', s.work, 'worktree', 'add', '-q', '--detach', tree], { encoding: 'utf8' }).status, 0);
