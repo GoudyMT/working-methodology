@@ -94,7 +94,7 @@ test('the same holes in the spellings beside them are held', () => {
 		'P=/tmp; $(echo ev)al P\\=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=/tmp; e{v}al P=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=/tmp; `printf ev`al P=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
-		'P\=/tmp; $1 P\=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
+		'P=/tmp; $1 P\\=~/.cla; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=/tmp; $1 "$(printf P)=~/.cla"; echo x > ${P}ude/projects/x/s.jsonl',
 		'P=~/.c"la"; echo x > ${P}ude/projects/x/s.jsonl',
 	];
