@@ -43,6 +43,15 @@ test('the six commands that passed every guard in 1.24.0 are held (P1)', () => {
 
 test('the same holes in the spellings beside them are held', () => {
 	const held = [
+		// S23-1, the mutation check: each row below turned a surviving flip red. The user's git config, the kit folders
+		// themselves, a wildcard that names a guard, a cd the guard cannot read or follow, and pushd back.
+		'echo x > ~/.config/git/config',
+		'rm -rf .claude/kit-hooks',
+		'cp evil .claude/owner-pro*',
+		'cd $X && echo x > settings.json',
+		'cd sub; echo x > guard-delete.cjs',
+		'pushd && touch guard.cjs',
+		'export F=~/.claude/kit-tools/owner-yes.cjs',
 		// A git subcommand or program built at run time.
 		'git `echo push` origin main',
 		'git ${SUB} origin main',
@@ -118,6 +127,7 @@ test('reads of the guards and ordinary commands still pass', () => {
 		'git commit -m "no-verify is now held"',
 		'git status',
 		'git diff --stat',
+		'git diff .claude/settings.json',
 		'curl -s http://127.0.0.1:9/',
 		'echo x > notes.md',
 	];

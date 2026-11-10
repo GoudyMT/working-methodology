@@ -58,6 +58,10 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		// The shell's folder is followed through every cd, and one it cannot read is the safe side.
 		['Bash', { command: 'cd ~ && cd .claude && echo hi >> projects/A/s.jsonl' }],
 		['Bash', { command: 'cd ~/.claude/x && cd .. && echo hi >> projects/A/s.jsonl' }],
+		// S23-1: a ~ form the guard does not follow (~-, ~+, ~2) leaves the folder unknown.
+		['Bash', { command: 'cd ~- && echo x > projects/p/s.jsonl' }],
+		// S23-1: a variable set in the command and glued to the rest of the path (F6).
+		['Bash', { command: 'P=~/.cla; echo x > ${P}ude/projects/x/s.jsonl' }],
 		['Bash', { command: 'cd $(echo ~/.claude) && echo hi >> projects/A/s.jsonl' }],
 		['PowerShell', { command: 'Set-Location -Path $HOME\\.claude; Add-Content projects\\A\\s.jsonl x' }],
 		// A cd in a subshell, a pipeline or the background, or a popd, leaves the folder unknown: the safe side.
@@ -108,6 +112,10 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 		['Bash', { command: 'ls ~/.claude/projects' }],
 		['PowerShell', { command: 'Get-Content "$HOME\\.claude\\kit-owner.json"' }],
 		['Bash', { command: 'git status' }],
+		// S23-1: a read through a quoted variable passes (the sequential reader's flip survived without it).
+		['Bash', { command: 'P="~/.claude/projects"; grep x $P/p/s.jsonl' }],
+		// S23-1: a word written from the root is not read from the folder the shell starts in, a .claude folder here.
+		['Bash', { command: 'echo x > /tmp/a.cjs' }, path.join(cfg, 'repo', '.claude', 'agents')],
 		['Bash', { command: 'node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12' }],
 		['Read', { file_path: T }],
 		// The auto memory lives beside the transcripts, and sessions write it.
@@ -127,7 +135,7 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 		['PowerShell', { command: 'Get-Content $HOME\\.claude\\projects\\p\\s.jsonl | ConvertFrom-Json | Select-Object type' }],
 		['Bash', { command: 'cd src && echo x > out.txt' }],
 	];
-	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
+	for (const [tool, input, cwd] of allow) assert.equal(run(tool, input, cwd), 'allow', `${tool} ${JSON.stringify(input)}`);
 });
 
 // S23-2 (the 1.23.0 verify): reads through a variable or after a cd into the transcripts, and a file whose text only

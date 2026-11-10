@@ -100,7 +100,9 @@ function guardShape(p) {
 		if (rest[0] === 'worktrees' || rest[0] === 'projects') continue;
 		if (rest.length === 1 && (rest[0] === 'kit-hooks' || rest[0] === 'kit-tools')) return true;
 		const last = rest[rest.length - 1];
-		if (CODE.test(last) || (/[*?[]/.test(last) && fits(last, 'guard.cjs'))) return true;
+		// A wildcard may name any guard the shell finds there (owner-pro* is owner-proof.cjs): it fails closed (S23-1, the
+		// mutation check showed only guard.cjs was matched).
+		if (CODE.test(last) || /[*?[]/.test(last)) return true;
 	}
 	return false;
 }
