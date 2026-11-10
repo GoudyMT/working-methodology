@@ -117,10 +117,8 @@ const WILDCARD = /[*?[]/;
 // A session id is a full UUID: it alone finds the session folder, so "../.." or a plain word could name a shared one.
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const shared = require('./guard-read.cjs');
-// install skips a guard-read.cjs the owner changed, so an older one may sit here: without holdFor, every hold asks.
-const { normalize, plainText, withoutComments, joinContinuations, tokenize } = shared;
-const holdFor = shared.holdFor || (() => ({ decision: 'ask', note: '' }));
+const { normalize, plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { ownerYes, howToAsk } = require('./owner-yes.cjs');
 
 // The program a word names, whatever folder it sits in, without .exe: "C:/Git/usr/bin/rm.exe" -> "rm"; cmd
 // reads a switch glued to a builtin, so "rd/s/q" -> "rd".
@@ -692,21 +690,25 @@ function main() {
 	});
 	process.stdin.on('end', () => {
 		let reason = '';
-		let hold = holdFor(null);
+		let verdict = 'deny';
+		let note = howToAsk(null);
 		try {
 			const input = JSON.parse(raw);
-			hold = holdFor(input);
+			note = howToAsk(input);
 			reason = decide(input);
+			// The owner's own pop-up answer for this exact command lets it run once (T1); a subagent hands it back.
+			if (reason && !input.agent_id && ownerYes(input)) verdict = 'allow';
 		} catch {
-			// A guard that cannot read the command asks rather than lets it through.
+			// A guard that cannot read the command refuses rather than lets it through.
 			reason = 'the guard could not read this command';
 		}
 		if (reason) {
+			const what = 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): ';
 			process.stdout.write(JSON.stringify({
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
-					permissionDecision: hold.decision,
-					permissionDecisionReason: 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): it runs only with the user saying yes.' + hold.note,
+					permissionDecision: verdict,
+					permissionDecisionReason: what + (verdict === 'allow' ? 'the owner said yes to this exact command in the pop-up.' : 'it runs only with the owner\'s yes.' + note),
 				},
 			}));
 		}

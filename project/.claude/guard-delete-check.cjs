@@ -949,14 +949,14 @@ const env = { ...process.env, TEMP, TMP: TEMP, CLAUDE_PROJECT_DIR: PROJECT };
 const runHook = (stdin) => spawnSync(process.execPath, [GUARD], { input: stdin, encoding: 'utf8', env });
 const outRun = runHook(JSON.stringify(asSession('PowerShell', 'Remove-Item C:\\elsewhere\\x')));
 const outJson = outRun.stdout ? JSON.parse(outRun.stdout) : {};
-const outAsks = outRun.status === 0 && outJson.hookSpecificOutput?.hookEventName === 'PreToolUse' && outJson.hookSpecificOutput?.permissionDecision === 'ask';
+const outAsks = outRun.status === 0 && outJson.hookSpecificOutput?.hookEventName === 'PreToolUse' && outJson.hookSpecificOutput?.permissionDecision === 'deny';
 result(outAsks, true, '[child process] Remove-Item C:\\elsewhere\\x -> ' + outRun.stdout);
 const ownRun = runHook(JSON.stringify(asSession('Bash', 'rm -rf ' + OWN + '\\scratchpad\\x')));
 result(ownRun.status === 0 && ownRun.stdout === '', false, '[child process] own session folder -> (' + ownRun.stdout.length + ' bytes)');
 const hexRun = runHook(JSON.stringify(asSession('Bash', 'rm -rf ' + HEX_OWN + '\\scratchpad\\x')));
 result(hexRun.status === 0 && hexRun.stdout === '', false, '[child process] own session folder under a hex key -> (' + hexRun.stdout.length + ' bytes)');
 const brokenRun = runHook('not json');
-result(brokenRun.stdout.includes('"ask"'), true, '[child process] stdin not JSON -> asks');
+result(brokenRun.stdout.includes('"deny"'), true, '[child process] stdin not JSON -> refuses');
 
 console.log(wrong === 0 ? 'ALL ' + cases + ' CASES RIGHT' : 'Expected all ' + cases + ' right: ' + wrong + ' WRONG');
 process.exit(wrong === 0 ? 0 : 1);

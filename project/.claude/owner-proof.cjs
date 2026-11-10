@@ -1,5 +1,8 @@
 // The owner-proof guard (E27): the owner's yes and resume from the phone thread are read from Claude Code's session
-// transcripts (<Claude folder>/projects) and the owner's kit-owner.json, so no tool call may write either. PreToolUse
+// transcripts (<Claude folder>/projects) and the owner's kit-owner.json, so no tool call may write either. T1 (v2.0):
+// the guards are held the same way. The kit's code under any .claude folder, the git hooks (.githooks, .git/hooks)
+// and .git/config are never written by a tool (only kit.mjs install writes them); the settings that wire the hooks
+// (.claude/settings.json, settings.local.json) are written only with the owner's pop-up yes for that act. PreToolUse
 // on Write, Edit, NotebookEdit and every shell. A write tool aimed inside them is refused. A shell command that names
 // them is refused unless each command naming them is a plain read (cat, grep, Get-Content ...) with no redirect into
 // them. Reads stay open: the sweep tools and the owner read the transcripts.
@@ -13,6 +16,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { ownerYes, howToAsk } = require('./owner-yes.cjs');
 
 // install project fills this in, so a caller cannot move the protected folder with CLAUDE_CONFIG_DIR.
 const INSTALLED_HOME = '{{CLAUDE_HOME}}';
@@ -27,9 +31,13 @@ const CHANGERS = new Set(['cd', 'pushd', 'chdir', 'set-location', 'sl', 'push-lo
 const COPY_OPTIONS = /^(-[rRpafvni]+|--recursive|--preserve|--archive|--force|--verbose|--no-clobber|--interactive)$/;
 // Programs whose quoted words are messages, not paths: a commit message or a PR body may name the file.
 const MESSAGES = new Set(['git', 'gh']);
+// git subcommands that read or stage a file and write none of the files they name.
+const GIT_READS = new Set(['add', 'diff', 'log', 'show', 'status', 'blame', 'ls-files', 'grep', 'cat-file', 'check-ignore', 'commit']);
 const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
 const REASON = 'The session transcripts and kit-owner.json hold the owner\'s thread answers, so no tool writes them: read them, or leave them to Claude Code and the owner.';
+const GUARD_REASON = 'The kit\'s guards, the git hooks and .git/config are written only by kit.mjs install, never by a tool: read them, or ask the owner to reinstall the kit.';
+const SETTINGS_REASON = 'The settings file wires the guards, so a tool writes it only with the owner\'s yes.';
 
 // The real path, through any junction, link or short name; a file not yet written resolves through its nearest
 // existing folder.
@@ -76,12 +84,44 @@ function protectedFrom(p, i) {
 	return !(p.length > i + 2 && p[i + 2] === 'memory' && !/[*?[]/.test(p[i + 1]) && p[i] === 'projects');
 }
 
+// The kit's guards by their place (T1): code under a .claude folder (not a worktree or the transcripts), the folders
+// that hold it, the git hooks and .git/config. A wildcard counts when it can name one.
+const CODE = /\.(cjs|mjs|js)$/;
+function guardShape(p) {
+	for (let i = 0; i < p.length; i++) {
+		if (fits(p[i], '.githooks')) return true;
+		if (fits(p[i], '.git') && i + 1 < p.length && (fits(p[i + 1], 'hooks') || fits(p[i + 1], 'config'))) return true;
+		if (!fits(p[i], '.claude')) continue;
+		const rest = p.slice(i + 1);
+		if (rest.length === 0) return true;
+		if (rest[0] === 'worktrees' || rest[0] === 'projects') continue;
+		if (rest.length === 1 && (rest[0] === 'kit-hooks' || rest[0] === 'kit-tools')) return true;
+		const last = rest[rest.length - 1];
+		if (CODE.test(last) || (/[*?[]/.test(last) && fits(last, 'guard.cjs'))) return true;
+	}
+	return false;
+}
+// The settings that wire the hooks: a .claude folder's settings.json or settings.local.json.
+function settingsShape(p) {
+	for (let i = 0; i + 1 < p.length; i++) {
+		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json'))) return true;
+	}
+	return false;
+}
+// A shell word named by its shape, read from the folder a cd moved to. After a cd the guard cannot follow, a relative
+// word may sit in a .claude folder: the safe side.
+const shapeNames = (shape) => (word, cwd) => {
+	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
+	if (shape(p)) return true;
+	return cwd === 'unknown' && !rooted(word) && shape(['.claude', ...p.filter((x) => x !== '..')]);
+};
+
 // Whether a word is written from the root, a home or a variable, so no cd before it moves where it points.
 const rooted = (word) => /^([/~$%]|[a-z]:)/.test(slash(word));
 
 // Whether a shell word names the protected places, in any of the spellings a command uses for the Claude folder.
 // cwd: where a cd before it moved the shell (its parts), 'unknown' when that cannot be read, null when none did.
-function names(word, cwd) {
+function proofNames(word, cwd) {
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
 	const h = parts(path.resolve(home()));
 	for (let i = 0; i < p.length; i++) {
@@ -125,10 +165,14 @@ const MESSAGE_FLAGS = /^(-m|--message|-b|--body|-t|--title|-n|--notes)$/i;
 const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-object', 'select', 'convertfrom-json', 'measure-object', 'measure', 'out-string']);
 
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
-function shellWrites(command, tool, start) {
+function shellWrites(command, tool, start, names = proofNames) {
 	// Every line is read, here-document bodies too: reading a body as data was spelled around five ways in the 1.24.0
 	// sweep (an end mark bash reads otherwise, a cat function, continued lines, nested quotes), so it fails closed.
-	const source = String(command || '');
+	// A variable set in the command (P=~/.claude) is read as its value where it is used, before the reader splits ${P} at
+	// its braces (F6, the 1.24.0 sweep: P=~/.claude; echo x > ${P}/projects/x/s.jsonl passed).
+	const given = new Map();
+	for (const m of String(command || '').matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=([^\s;&|()'"`$]+)/g)) given.set(m[1], m[2]);
+	const source = String(command || '').replace(/\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)\b/g, (m, a, b) => (given.has(a || b) ? given.get(a || b) : m));
 	// A variable glued to kit-owner.json (${P}kit-owner.json, $X/kit-owner.json) may be the Claude folder: the reader
 	// splits a word at braces, so it is refused here, before the split (the 1.24.0 sweep).
 	if (/[$%][{(]?[A-Za-z_][\w:]*[})%]?[\\/]?kit-owner\.json/i.test(source)) return true;
@@ -169,7 +213,10 @@ function shellWrites(command, tool, start) {
 		const message = (x, k) => MESSAGES.has(program) && !x.redirect && k > 0 && (MESSAGE_FLAGS.test(all[k - 1]) || false);
 		const inline = (x) => MESSAGES.has(program) && !x.redirect && /^(--message|--body|--title|--notes)=/i.test(x.value);
 		if (segment.some((x) => names(x.value, cwd) || x.value.split(/\s+/).some((w) => names(w, cwd)))) named = true;
-		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && names(x.value, cwd));
+		// A quoted word is read in pieces too: inline code (node -e "...writeFileSync('.claude/settings.json')") names a
+		// file inside it.
+		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && names(w, cwd));
+		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && (names(x.value, cwd) || inside(x)));
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
@@ -199,6 +246,11 @@ function shellWrites(command, tool, start) {
 			const dest = plain[plain.length - 1];
 			if (!risky && (pwsh ? plain.length === 2 : plain.length >= 2) && !names(dest.value, cwd)) continue;
 		}
+		// For the guards and settings (T1): running a script is no write to it (node <file>, the file the only word named,
+		// no inline code), and git reading or staging a file writes none (git diff --output does, so it is refused). The
+		// transcripts keep the stricter reading they had.
+		if (names !== proofNames && program === 'node' && hits.length === 1 && hits[0] === segment[1]) continue;
+		if (names !== proofNames && program === 'git' && GIT_READS.has(all.slice(1).find((a) => !a.startsWith('-'))) && !all.some((a) => /^--output/.test(a))) continue;
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.
@@ -212,13 +264,21 @@ function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
 	const t = input.tool_input || {};
 	const cwd = input.cwd || process.cwd();
+	// The settings take the owner's pop-up yes for this exact act; a subagent never has one.
+	const settings = () => (!input.agent_id && ownerYes(input) ? null : deny(SETTINGS_REASON + howToAsk(input)));
 	if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name)) {
 		const file = t.file_path || t.notebook_path;
-		if (file && insideProof(String(file), cwd)) deny(REASON);
+		if (!file) return;
+		if (insideProof(String(file), cwd)) return deny(REASON);
+		const p = parts(real(path.resolve(cwd, String(file))));
+		if (guardShape(p)) return deny(GUARD_REASON);
+		if (settingsShape(p)) settings();
 		return;
 	}
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name)) {
-		if (shellWrites(t.command, input.tool_name, cwd)) deny(REASON);
+		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
+		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);
+		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) settings();
 	}
 }
 

@@ -1,13 +1,51 @@
 #!/bin/sh
-# Pushes are the owner's (rule:outward-acts). Claude Code's own guard asks first; this git hook holds the same line
-# for any AI tool that marks its shell (AI_AGENT, or CLAUDECODE for Claude Code), and leaves the owner's own
-# terminal alone. After the owner's go, the agent pushes with KIT_PUSH_APPROVED=1 set for that one command.
-if [ -n "$AI_AGENT$CLAUDECODE" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
-  echo "Push blocked: an AI agent is pushing without the owner's go. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
-  exit 1
-fi
-# Git gives the refs being pushed on stdin once; keep them for both checks below.
+# Pushes are the owner's (rule:outward-acts), with one bound the owner set (T1, 2026-11-10): an AI tool (its shell
+# marked AI_AGENT, or CLAUDECODE for Claude Code) may push a feature branch without a yes. Anything else from an AI
+# tool - main, master, the remote's default branch, a tag, a delete, a force push - needs the owner's go, after which
+# the agent runs the push with KIT_PUSH_APPROVED=1 (Claude Code's guard lets that through only on the owner's pop-up
+# yes). Every AI push is scanned for secrets, commit by commit, and logged. The owner's own terminal is left alone.
+# Git gives the refs being pushed on stdin once; keep them for every check below.
 refs=$(cat)
+if [ -n "$AI_AGENT$CLAUDECODE" ]; then
+  common=$(git rev-parse --git-common-dir)
+  if [ "$KIT_PUSH_APPROVED" != "1" ]; then
+    default=$(git symbolic-ref --short "refs/remotes/$1/HEAD" 2>/dev/null)
+    default=${default#"$1"/}
+    sent=0
+    while read -r lref lsha rref rsha; do
+      [ -n "$lref" ] || continue
+      sent=1
+      why=""
+      case "$lsha" in *[!0]*) ;; *) why="a delete" ;; esac
+      case "$rref" in refs/heads/*) ;; *) why="${why:-not a branch}" ;; esac
+      branch=${rref#refs/heads/}
+      case "$branch" in main|master) why="${why:-the main branch}" ;; esac
+      if [ -n "$default" ] && [ "$branch" = "$default" ]; then why="${why:-the default branch}"; fi
+      case "$rsha" in *[!0]*)
+        git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null || why="${why:-a force push}" ;;
+      esac
+      if [ -n "$why" ]; then
+        echo "Push blocked: an AI agent may push only a feature branch without the owner's go ($rref: $why). Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
+        exit 1
+      fi
+    done <<EOF
+$refs
+EOF
+    if [ "$sent" = 0 ]; then
+      echo "Push blocked: an AI agent is pushing without the owner's go. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
+      exit 1
+    fi
+  fi
+  scan="$(dirname "$0")/../.claude/secret-shapes.mjs"
+  if [ ! -f "$scan" ]; then
+    echo "Push blocked: the secret scan (.claude/secret-shapes.mjs) is missing; reinstall the kit." >&2
+    exit 1
+  fi
+  printf '%s\n' "$refs" | node "$scan" --push || { echo "Push blocked: a secret-shaped file or value is in a pushed commit. Take it out of the history, and rotate any real key." >&2; exit 1; }
+  how=auto
+  [ "$KIT_PUSH_APPROVED" = "1" ] && how=owner
+  [ -n "$common" ] && printf '%s\n' "$refs" | awk -v t="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -v h="$how" 'NF { print t, h, $3, $2 }' >> "$common/kit-push.log" 2>/dev/null
+fi
 # Branch names in the house style (rule:branching): every branch this push sends.
 names="$(dirname "$0")/../.claude/name-check.mjs"
 if [ -f "$names" ]; then

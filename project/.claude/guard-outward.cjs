@@ -39,10 +39,8 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-const shared = require('./guard-read.cjs');
-// install skips a guard-read.cjs the owner changed, so an older one may sit here: without holdFor, every hold asks.
-const { plainText, withoutComments, joinContinuations, tokenize } = shared;
-const holdFor = shared.holdFor || (() => ({ decision: 'ask', note: '' }));
+const { plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { ownerYes, howToAsk } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -93,12 +91,41 @@ function gitSubAt(words, start) {
 	return i;
 }
 
+// The git hooks are the last check before a commit or a push leaves: skipping them, or moving where git finds them,
+// holds the command (T1: on 1.24.0 both ran with no guard, and a push then landed on main). Reading the setting passes.
+function gitHooksOff(words, start, at) {
+	if (words.slice(start).some((w) => w === '--no-verify' || /^--no-verify=/.test(w))) return 'git with its hooks skipped';
+	// commit's -n is --no-verify, alone or in a cluster of short flags (-anm x); a flag that takes a value ends the
+	// cluster, so -mn is a message "n".
+	if (words[at] === 'commit') {
+		for (const w of words.slice(at + 1)) {
+			if (w === '--') break;
+			if (!/^-[a-z]/.test(w)) continue;
+			for (const ch of w.slice(1)) {
+				if (ch === 'n') return 'git with its hooks skipped';
+				if ('mfcct'.includes(ch) || /[^a-z]/.test(ch)) break;
+			}
+		}
+	}
+	if (words.some((w) => w.includes('hookspath'))) {
+		const reads = words[at] === 'config' && words.slice(at + 1).some((w) => /^(--get|--get-all|--get-regexp|--list|-l|get|list|--show-origin|--show-scope)$/.test(w));
+		if (!reads) return 'git with its hooks moved';
+	}
+	// git config --edit opens the whole file, hooksPath included.
+	if (words[at] === 'config' && words.slice(at + 1).some((w) => w === '-e' || w === '--edit' || w === 'edit')) return 'git with its hooks moved';
+	return '';
+}
+
 function gitOutward(words, start) {
 	// An alias defined on the command line can stand for anything, push included.
 	const at = gitSubAt(words, start);
 	for (let i = start; i < at; i++) if (words[i] === '-c' && (words[i + 1] ?? '').startsWith('alias.')) return 'git with an inline alias';
 	const sub = words[at];
 	if (sub === undefined) return '';
+	// A subcommand built at run time ($(echo push), ${SUB}, a backtick span) may be push: the safe side (T1).
+	if (/[$`%]/.test(sub)) return 'git with a subcommand built at run time';
+	const hooks = gitHooksOff(words, start, at);
+	if (hooks) return hooks;
 	if (GIT_OUTWARD.has(sub)) return 'git ' + sub;
 	if (GIT_NESTED_PUSH.has(sub) && words.slice(at + 1).includes('push')) return 'git ' + sub + ' push';
 	const verb = Object.hasOwn(GIT_BRIDGES, sub) ? words.slice(at + 1).find((w) => GIT_BRIDGES[sub].includes(w)) : undefined;
@@ -158,7 +185,8 @@ function httpWrite(name, words) {
 		// curl clusters short flags (-sX POST, -sd x): a cluster holding d, F or T sends a body, X names a method. A
 		// letter read from an attached value can only add an ask. PowerShell binds a value with a colon (-Method:Post)
 		// and takes a unique prefix of a parameter (-Bo, -InF).
-		const cluster = curl && /^-[A-Za-z0-9]+$/.test(w) ? w.slice(1) : '';
+		// The cluster's letters end at its first sign: -sT.env is -s -T .env and -sd@.env is -s -d @.env (T1: both passed).
+		const cluster = curl && /^-[A-Za-z0-9]/.test(w) ? w.slice(1).match(/^[A-Za-z0-9]*/)[0] : '';
 		// -B alone is a prefix too: Body is the only parameter of either cmdlet that starts with B.
 		const ps = lower.match(/^-(me(?:t(?:h(?:o(?:d)?)?)?)?|b(?:o(?:d(?:y)?)?)?|inf(?:i(?:l(?:e)?)?)?)(?::(.*))?$/);
 		if (cluster.includes('X')) method = cluster.slice(cluster.indexOf('X') + 1) || (words[i + 1] ?? '');
@@ -210,6 +238,10 @@ function findOutward(text, depth) {
 	// The terminal's way to resume is the owner's alone; the thread's way carries its proof, as the yes does (the 1.23.0
 	// sweep: a resume with the AI shell's variables unset asked nothing).
 	if (/KIT_OWNER_RESUME/i.test(flat)) return 'an owner resume of the sweep tools';
+	// The pre-push hook lets an AI push to main or a tag only with this marker set, so setting it is the owner's yes.
+	if (/KIT_PUSH_APPROVED/i.test(flat)) return 'the push hook\'s owner-yes marker';
+	// A program or a word built at run time, then an outward verb in the same command: $G push, "$(which git)" push.
+	if (/[$`%][^;|&\n]*?(^|[\s)"'`])(push|send-pack|publish|dcommit|upload)(\s|$)/i.test(flat)) return 'a command built at run time';
 	const resume = /appr[^\s;|&]*\s[^;|&\n]*--resume\b/i.test(flat);
 	if (/--owner-yes/i.test(flat) || resume) {
 		const flag = /--owner-yes/i.test(flat) ? /^--owner-yes(=|$)/i : /^--resume$/i;
@@ -294,6 +326,28 @@ function collectStrings(value, out, depth) {
 	}
 }
 
+// A push to a feature branch of origin, in the owner's bounds (T1, the owner 2026-11-10: "Tight bounds"): the whole
+// command is one `git push [-u|--set-upstream] [-q|-v] origin <branch>` (or HEAD:<branch>, <branch>:<branch>), the
+// branch written out, not main or master, with no force, delete, tag, mirror or skipped hooks. It goes without a yes:
+// main is protected on GitHub, and the pre-push hook scans every pushed commit for secrets and logs the push.
+const PUSH_FLAGS = new Set(['-u', '--set-upstream', '-q', '--quiet', '-v', '--verbose']);
+const BRANCH = /^(?!-)(?!.*\.\.)(?!.*@\{)[A-Za-z0-9._/-]+$/;
+function boundedPush(input) {
+	const command = String((input && input.tool_input && input.tool_input.command) ?? '');
+	// Plain characters only: no quote, escape, variable, glob, redirect or second command can hide in it.
+	if (!/^[A-Za-z0-9 ._/:+=-]+$/.test(command)) return false;
+	const words = command.trim().split(/ +/);
+	if (words[0] !== 'git' || words[1] !== 'push') return false;
+	const rest = words.slice(2).filter((w) => !PUSH_FLAGS.has(w));
+	if (rest.length !== 2 || rest[0] !== 'origin') return false;
+	const parts = rest[1].split(':');
+	if (parts.length > 2) return false;
+	const [from, to = parts[0]] = parts;
+	const target = to.replace(/^refs\/heads\//, '');
+	if (!BRANCH.test(target) || target.startsWith('refs/') || /^(main|master|head)$/i.test(target)) return false;
+	return from === 'HEAD' || (BRANCH.test(from) && !from.startsWith('refs/'));
+}
+
 function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
@@ -313,36 +367,47 @@ function main() {
 		let reason = '';
 		let toolName = '';
 		let prNote = '';
-		let hold = holdFor(null);
+		let input = null;
+		let verdict = 'deny';
+		let note = howToAsk(null);
 		try {
-			const input = JSON.parse(raw);
-			hold = holdFor(input);
+			input = JSON.parse(raw);
+			note = howToAsk(input);
 			toolName = String(input.tool_name ?? '');
 			reason = decide(input);
 			// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
 			const command = String((input.tool_input && input.tool_input.command) ?? '');
 			if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = ' Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
+			// Inside the owner's bounds a feature-branch push goes without a yes; anything else held needs the owner's
+			// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
+			if (reason && boundedPush(input)) reason = '';
+			else if (reason && !input.agent_id && ownerYes(input)) verdict = 'allow';
 		} catch {
-			// A guard that cannot read the command asks rather than lets it through.
+			// A guard that cannot read the command refuses rather than lets it through.
 			reason = 'the guard could not read this command';
 		}
 		if (reason) {
 			const output = {
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
-					permissionDecision: hold.decision,
-					permissionDecisionReason: 'Outward action (' + reason + '): it runs only with the user saying yes.' + hold.note,
+					permissionDecision: verdict,
+					permissionDecisionReason: verdict === 'allow'
+						? 'Outward action (' + reason + '): the owner said yes to this exact command in the pop-up.'
+						: 'Outward action (' + reason + '): it runs only with the owner\'s yes.' + note,
 				},
 			};
 			// The reason on an "ask" is shown to the user; added context is what reaches Claude.
 			if (prNote) output.hookSpecificOutput.additionalContext = prNote.trim();
 			process.stdout.write(JSON.stringify(output));
+		} else if (prNote) {
+			// A push inside the owner's bounds runs with no decision from here, and still carries the PR body note.
+			process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: prNote.trim() } }));
 		}
 		// The decision is out before the log is touched: a log that cannot be written must never cost the ask.
 		const logFile = process.argv[2];
 		if (logFile) {
 			try {
-				fs.appendFileSync(logFile, new Date().toISOString() + ' ' + toolName + ' ' + (reason ? 'ask' : 'pass') + LF);
+				fs.appendFileSync(logFile, new Date().toISOString() + ' ' + toolName + ' ' + (reason ? verdict : 'pass') + LF);
 			} catch {
 				// The log is a proof aid only.
 			}
@@ -352,4 +417,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { decide };
+module.exports = { decide, boundedPush };

@@ -7241,13 +7241,13 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
 // approve.mjs checks; a yes without it is refused in an AI shell and still asks the push guard. A permission prompt
 // on the proven form would reach no one on the phone, so the settings no longer ask on it.
 test('S6: a yes with the thread\'s proof passes the guard, and one without it still asks', () => {
-  const ask = JSON.parse(read(path.resolve('project/.claude/settings.json'))).permissions.ask;
+  const ask = JSON.parse(read(path.resolve('project/.claude/settings.json'))).permissions.ask || [];
   assert.equal(ask.some((r) => /owner-yes/.test(r)), false);
   // A crash prints nothing too, and onFailure block makes it a block: only a clean exit counts as a pass.
   const guard = (command) => { const r = spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' }); assert.equal(r.status, 0, `the guard crashed: ${r.stderr}`); return r.stdout; };
   assert.equal(guard('node approve.mjs c.json --owner-yes "yes abc123" --thread cmsg_Abcdefgh12'), '');
-  assert.match(guard('node approve.mjs c.json --owner-yes "yes, run it"'), /ask/);
-  assert.match(guard('node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12; git push'), /ask/);
+  assert.match(guard('node approve.mjs c.json --owner-yes "yes, run it"'), /"deny"/);
+  assert.match(guard('node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12; git push'), /"deny"/);
 });
 test('S7: a start that cannot be recorded is refused, not let through', () => {
   const r = approveRun(featureContract());

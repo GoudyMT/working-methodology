@@ -6,9 +6,18 @@
     "npm_config_yes": "false"
   },
   "permissions": {
-    "ask": [
-      "Bash(git push *)",
-      "PowerShell(git push *)"
+    "deny": [
+      "Edit(**/.claude/*.cjs)",
+      "Edit(**/.claude/*.mjs)",
+      "Edit(**/.githooks/**)",
+      "Edit(**/.git/hooks/**)",
+      "Edit(**/.git/config)",
+      "Bash(git config core.hooksPath *)",
+      "Bash(git commit --no-verify *)",
+      "Bash(git push --no-verify *)",
+      "PowerShell(git config core.hooksPath *)",
+      "PowerShell(git commit --no-verify *)",
+      "PowerShell(git push --no-verify *)"
     ]
   },
   "hooks": {

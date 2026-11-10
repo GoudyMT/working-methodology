@@ -1,5 +1,5 @@
 // Proof for guard-outward.cjs: every command in ASK must ask, every command in PASS must pass, and the hook run
-// as a child process (the way Claude Code runs it) must print the ask decision for a push and nothing for a
+// as a child process (the way Claude Code runs it) must print the hold (a refusal until the owner's pop-up yes) for a push and nothing for a
 // status. Usage: node .claude/guard-outward-check.cjs [guard file]; exit 1 on any wrong answer.
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -379,7 +379,7 @@ check('[no tool_input] nothing to run', { tool_name: 'Bash' }, false);
 const runHook = (stdin) => spawnSync(process.execPath, [GUARD], { input: stdin, encoding: 'utf8' });
 const pushRun = runHook(JSON.stringify({ tool_name: 'PowerShell', tool_input: { command: 'git -C C:/r push' } }));
 const pushOut = pushRun.stdout ? JSON.parse(pushRun.stdout) : {};
-const pushAsks = pushRun.status === 0 && pushOut.hookSpecificOutput?.permissionDecision === 'ask';
+const pushAsks = pushRun.status === 0 && pushOut.hookSpecificOutput?.permissionDecision === 'deny';
 console.log((pushAsks ? 'ask  ' : 'MISSED     ') + '[child process] git -C C:/r push -> ' + pushRun.stdout);
 if (!pushAsks) wrong++;
 const statusRun = runHook(JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git status' } }));
@@ -392,12 +392,12 @@ const badLogRun = spawnSync(process.execPath, [GUARD, badLog], {
 	input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git push' } }),
 	encoding: 'utf8',
 });
-const badLogAsks = badLogRun.status === 0 && badLogRun.stdout.includes('"ask"');
+const badLogAsks = badLogRun.status === 0 && badLogRun.stdout.includes('"deny"');
 console.log((badLogAsks ? 'ask  ' : 'MISSED     ') + '[child process] unwritable log -> exit ' + badLogRun.status);
 if (!badLogAsks) wrong++;
 const brokenRun = runHook('not json');
-const brokenAsks = brokenRun.stdout.includes('"ask"');
-console.log((brokenAsks ? 'ask  ' : 'MISSED     ') + '[child process] stdin not JSON -> asks');
+const brokenAsks = brokenRun.stdout.includes('"deny"');
+console.log((brokenAsks ? 'ask  ' : 'MISSED     ') + '[child process] stdin not JSON -> refuses');
 if (!brokenAsks) wrong++;
 
 const total = ASK.length + PASS.length + 7;

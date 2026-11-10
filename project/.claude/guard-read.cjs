@@ -182,12 +182,4 @@ function tokenize(text) {
 	return segments;
 }
 
-// How a guard holds a command: the main session asks the owner; a subagent (Claude Code names it in agent_id) is
-// refused, because its ask reaches no one and the agent waits on it (E27: 76 of 512 live asks in ten days). The
-// refusal tells it to hand the command back, so the lead asks.
-function holdFor(input) {
-	const sub = Boolean(input && typeof input.agent_id === 'string' && input.agent_id);
-	return { decision: sub ? 'deny' : 'ask', note: sub ? ' A subagent cannot get that yes: leave this command out and name it in your report, so the lead asks.' : '' };
-}
-
-module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize, holdFor };
+module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize };
