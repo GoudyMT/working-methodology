@@ -42,17 +42,19 @@ function needs(command, tool, depth = 0) {
 			if (name !== 'git' && name !== 'gh') continue;
 			const after = w.slice(at + 1);
 			const rest = (values) => { const a = []; for (let i = 0; i < after.length; i++) { if (values.has(after[i])) { i++; continue; } if (!after[i].startsWith('-')) a.push(after[i]); } return a; };
-			// Help reads a manual, whatever it names (F13); -h is help only as the last word, never as another option's
-			// value (git tag -m -h v9 makes a tag; the 1.25.0 sweep).
-			if (after.includes('--help') || after[after.length - 1] === '-h') continue;
+			// Help reads a manual (F13), but only as the first word after the subcommand: anywhere else it may be another
+			// option's value (git tag -m -h v9, git commit -m --help make a tag and a commit; the 1.25.0 sweep).
+			const help = (i) => i >= 0 && (after[i + 1] === '--help' || after[i + 1] === '-h');
 			if (name === 'git') {
 				const sub = rest(GIT_VALUE)[0];
+				if (help(after.indexOf(sub))) continue;
 				const args = after.slice(after.indexOf(sub) + 1);
 				const named = args.some((x) => !x.startsWith('-'));
 				const lists = sub === 'tag' && (args.length === 0 || args.some((x) => TAG_LISTS.test(x)) || (!named && args.every((x) => TAG_SHAPES.test(x))));
 				if (sub === 'commit' || (sub === 'tag' && !lists)) out.push([RELEASE, `git ${sub}`]);
 			} else {
 				const [group, sub] = rest(GH_VALUE);
+				if (help(after.indexOf(sub, after.indexOf(group) + 1))) continue;
 				// gh pr new is gh pr create.
 				const create = sub === 'create' || sub === 'new';
 				const writes = create || after.some((x) => PR_TEXT.test(x));

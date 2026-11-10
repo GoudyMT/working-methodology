@@ -54,7 +54,7 @@ test('a PR, commit, tag or release waits until the session has read its rules, i
 		assert.equal(gate([], 'Bash', { command }).decision, 'pass', command);
 	}
 	// The 1.25.0 sweep: --sort or --format with a tag name makes the tag, and -h as a message's value is no help.
-	for (const command of ['git tag -d v1', 'git tag -a v1 -m x', 'gh pr edit 3 --add-label bug --body x', 'gh pr edit 3 --title=y', 'git tag --sort=refname v9.9', 'git tag --format=x v9.8', 'git tag -m -h v9.7']) assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
+	for (const command of ['git tag -d v1', 'git tag -a v1 -m x', 'gh pr edit 3 --add-label bug --body x', 'gh pr edit 3 --title=y', 'git tag --sort=refname v9.9', 'git tag --format=x v9.8', 'git tag -m -h v9.7', 'git commit -m --help', 'git tag v9.6 -m -h', 'gh pr create -t x -b --help'])assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
 	// A PR also needs the findings rule (the sweep summary in its body).
 	assert.ok(gate([read(RELEASE)], 'Bash', { command: 'gh pr create -t x -b y' }).reason.includes('standards/reviews-and-findings.md'));
 	assert.equal(gate([read(RELEASE), read('standards/reviews-and-findings.md')], 'Bash', { command: 'gh pr create -t x -b y' }).decision, 'pass');
