@@ -5568,7 +5568,6 @@ test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was rele
   const released = spawnSync('git', ['show', 'v1.20.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(released.status, 0, 'the v1.20.0 tag must exist locally');
   assert.equal(versionText(text, 3), versionText(released.stdout, 3));
-  assert.equal(currentVersion(text), 4);
   assert.equal(questionCount(text, 4), 13);
   assert.equal(passBar(text, 4), 12);
   const [v3, v4] = [questions(text, 3), questions(text, 4)];
@@ -5576,6 +5575,26 @@ test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was rele
   assert.equal(v4[2].q, v3[2].q);
   assert.match(v4[2].key, /before any source-of-truth edit or agent dispatch/);
   assert.match(read(path.resolve('project/CLAUDE.md')), /BEFORE any source-of-truth edits or agent dispatch/);
+});
+
+// The owner's ruling (2026-11-10, S22-4): v5 asks question 11 for the rule itself, and key 4 names the feature-branch
+// push bound; every other row is v4's, the bar stays 12 of 13, and v4 stays as 1.24.0 released it.
+test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the push bound, and v4 stays as released', async () => {
+  const { versionText, currentVersion, questions, questionCount, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const released = spawnSync('git', ['show', 'v1.24.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
+  assert.equal(released.status, 0, 'the v1.24.0 tag must exist locally');
+  assert.equal(versionText(text, 4), versionText(released.stdout, 4));
+  assert.equal(currentVersion(text), 5);
+  assert.equal(questionCount(text, 5), 13);
+  assert.equal(passBar(text, 5), 12);
+  const [v4, v5] = [questions(text, 4), questions(text, 5)];
+  assert.deepEqual(v5.filter((r) => r.n !== 4 && r.n !== 11), v4.filter((r) => r.n !== 4 && r.n !== 11));
+  assert.equal(v5[3].q, v4[3].q);
+  assert.equal(v5[10].key, v4[10].key);
+  assert.notEqual(v5[10].q, v4[10].q);
+  assert.match(v5[10].q, /^Without looking in any folder/);
+  assert.match(v5[3].key, /feature branch/);
 });
 
 test('recall run header says what the run read: keys, both kit versions, and whether approve.mjs is there', async () => {
