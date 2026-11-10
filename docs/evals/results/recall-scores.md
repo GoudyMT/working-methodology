@@ -341,3 +341,37 @@ Accepted by the owner 2026-11-07 ("Lets go with your recommendation and we will 
 
 control: 0
 gate: kit-1.22.0 median 12 baseline 11 brief v2 keys v4 owner-accepted
+
+## Recall v4 - 1.24.0 candidate against the 1.23.0 baseline (2026-11-10)
+
+Keys v4, brief v2, pass bar 12. Candidate: this branch at 1d88f33, the project layer unreleased 1.24.0 in recall's own throwaway folder, the user layer the released 1.23.0. Baseline: 1.23.0 from the release copy at its tag. Rule text changed: rule:word-pins, rule:test-value and the findings rule's sweep line.
+
+**First measurement: failed the gate.** Five candidates scored 13, 12, 11, 11, 11 (median 11) against a baseline of 12, 11, 12 and a control of 0. Q10 fell in 3 of 5 candidates and 0 of 3 baselines: two never said the agents must actually run, one never said the summary goes in the PR. The text Q10 draws from (rule 13 of the project CLAUDE.md and the Pre-PR Deep Sweep section) is byte for byte the same on both sides, and the 1.22.0 baseline missed Q10 in 2 of 3. The owner chose one fresh measurement fixed in advance, its result standing either way (2026-11-10, "your recommendation" on option A).
+
+**Second measurement, which decides:**
+
+| Q | Candidate 1-5 | Baseline 1.23.0 1, 2, 3 | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 0 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 0, 0, 0, 0, 0 | 0, 0, 0 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 0, 1 | 1, 1, 1 | 0 |
+| Total | 12, 12, 12, 11, 12 | 12, 12, 11 | 0 |
+
+- **Scored: median 12, baseline 12, control 0.** The first three candidates sat on the bar (12, 12, 11 at three), so two more ran and all five were scored blind together.
+- **Q10 passes in all eight runs,** which supports run noise over a text change for the first measurement's drop.
+- **Q11 fails in every run on both sides,** as since 1.22.0: sessions apply the temp-file rule instead of stating it. Its key is on the list for review.
+- **Borderline calls, not reported as flips:** Q13 in seven runs ("starts on its own", no "no keyword" in words), Q11 in three (all but "that have served" stated).
+- **Blinding:** the kit version notices removed by the script, each logged; one hand redaction in a candidate (the word for the throwaway test folder, which every run shares), logged beside its runs.
+
+control: 0
+gate: kit-1.24.0 median 12 baseline 12 brief v2 keys v4
