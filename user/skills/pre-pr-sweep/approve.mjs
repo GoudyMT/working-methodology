@@ -675,7 +675,10 @@ function ownerMessage(id, setup = false) {
 	const tag = new RegExp(`<message trigger="true" from="human" trust="principal" author-id="([^"]+)" id="${id}"[^>]*>([\\s\\S]*?)</message>`);
 	for (const project of folders(path.join(cfg, 'projects'))) {
 		let files = [];
-		try { files = fs.readdirSync(project).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(project, f)); } catch { continue; }
+		// S23-5: where Claude Code names the session this runs in, only its own transcript is read, so a turn written
+		// into another session's file is no proof. A shell with no session id (the owner's terminal) reads them all.
+		const session = /^[\w-]{1,128}$/.test(String(process.env.CLAUDE_CODE_SESSION_ID || '')) ? `${process.env.CLAUDE_CODE_SESSION_ID}.jsonl` : null;
+		try { files = fs.readdirSync(project).filter((f) => f.endsWith('.jsonl') && (!session || f === session)).map((f) => path.join(project, f)); } catch { continue; }
 		for (const f of files) {
 			const text = fs.readFileSync(f, 'utf8');
 			if (!text.includes(id)) continue;

@@ -2580,6 +2580,18 @@ test('the owner\'s yes from the thread clears an ask, read from the session tran
     assert.match(out.stdout, why, name);
     assert.equal(sweepLog(s.dir).length, before, `${name}: nothing logged`);
   }
+  // S23-5: where Claude Code names the session, only its own transcript is read: the owner's message reaches the
+  // session that runs this thread, and a turn in another session's file is no proof.
+  const other = asked();
+  const oc = makeTemp('cfg-');
+  ownerFile(oc);
+  ownerSays(oc, { cwd: other.dir, id: 'cmsg_Ssssssss', words: `yes ${other.code}`, file: 'session-other.jsonl' });
+  const inSession = (id) => approveIn(other.dir, [other.f, '--owner-yes', `yes ${other.code}`, '--thread', id], { CLAUDE_CONFIG_DIR: oc, CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'session-main' });
+  const elsewhere = inSession('cmsg_Ssssssss');
+  assert.equal(elsewhere.status, 1, elsewhere.stdout);
+  assert.match(elsewhere.stdout, /no such message/);
+  ownerSays(oc, { cwd: other.dir, id: 'cmsg_Mmmmmmmm', words: `yes ${other.code}` });
+  assert.equal(inSession('cmsg_Mmmmmmmm').status, 0, 'its own session\'s message');
   // Without the thread's proof the yes rests on Claude's word alone, so from an AI tool's shell it is refused.
   const bare = asked();
   const word = approveIn(bare.dir, [bare.f, '--owner-yes', 'yes, run it'], { CLAUDECODE: '1' });
