@@ -81,7 +81,8 @@ test('(d) a fast-lane test over its time limit fails, and the failure names the 
 	const harness = path.resolve('tests/harness.mjs').split(path.sep).join('/');
 	fs.writeFileSync(path.join(dir, 'slow.test.mjs'), `import { test } from 'file:///${harness.replace(/^\//, '')}';\ntest('waits', () => new Promise((r) => setTimeout(r, 2000)));\n`);
 	// The runner's own shard, filter and map settings stay out: this child runs its one test whole.
-	const { KIT_SHARD: _s, KIT_ONLY: _o, KIT_MAP_DIR: _m, KIT_RUN_AT: _a, ...env } = process.env;
+	// Nor the test runner's own context: Node 22 runs no file for a node --test that inherits it (CI, PR 28).
+	const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_ONLY: _o, KIT_MAP_DIR: _m, KIT_RUN_AT: _a, ...env } = process.env;
 	const r = spawnSync(process.execPath, ['--test', 'slow.test.mjs'], { cwd: dir, encoding: 'utf8', env: { ...env, KIT_TEST_LIMIT_MS: '200' } });
 	assert.notEqual(r.status, 0);
 	assert.match(r.stdout, /timed out after 200ms/);

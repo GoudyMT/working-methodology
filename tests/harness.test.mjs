@@ -18,7 +18,11 @@ const sh = (cwd, ...a) => {
 	if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
 	return r.stdout.trim();
 };
-const run = (cwd, args, env = {}) => spawnSync(process.execPath, [RUNNER, ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+// The fixture's run is its own: the Windows slice this suite may run in is not passed on (a test sets it itself).
+const run = (cwd, args, env = {}) => {
+	const { KIT_WINDOWS_SLICE: _w, ...base } = process.env;
+	return spawnSync(process.execPath, [RUNNER, ...args], { cwd, encoding: 'utf8', env: { ...base, ...env } });
+};
 // Each test the fixture runs writes its name to the log, so a run shows exactly which tests ran and how often.
 const ran = (log) => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).sort() : []);
 
