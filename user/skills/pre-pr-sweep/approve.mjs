@@ -1167,6 +1167,8 @@ function main() {
 			return 1;
 		}
 		const s = state();
+		// As the thread's way: with nothing paused there is nothing to resume, and no code to type (the 1.24.0 sweep).
+		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
 		const why = typedAtTerminal(pauseCode(s) || 'resume', 'the resume');
 		if (why) { console.log(`Refused: ${why}. Nothing logged.`); return 1; }
 		write({ kind: 'resume' });

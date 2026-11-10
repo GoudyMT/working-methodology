@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import kitTemp from '../project/.claude/kit-temp.cjs';
+
+kitTemp.sessionRoot();
 
 // A folder outside the project and the session's own, as each platform writes one.
 const OUT = process.platform === 'win32' ? 'C:/elsewhere/x' : '/elsewhere/x';
@@ -32,6 +35,23 @@ test('the shipped project settings turn off npm and npx installing a missing pac
 	assert.equal(settings.env && settings.env.npm_config_yes, 'false');
 });
 
+// The 1.24.0 sweep: install skips a guard-read.cjs the owner changed, so an updated guard can sit beside an older
+// reader; it must still hold the command, never crash and let it through.
+test('a guard beside an older shared reader still asks, and owner-proof still refuses', () => {
+	const dir = kitTemp.makeTemp('stale-');
+	for (const f of ['guard-delete.cjs', 'guard-outward.cjs', 'owner-proof.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, f));
+	const old = fs.readFileSync(path.resolve('project/.claude/guard-read.cjs'), 'utf8').replace(/module\.exports = \{[^}]*\};/, 'module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize };');
+	fs.writeFileSync(path.join(dir, 'guard-read.cjs'), old);
+	const run = (file, command, extra = {}) => {
+		const r = spawnSync(process.execPath, [path.join(dir, file)], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: process.cwd(), ...extra }), encoding: 'utf8' });
+		assert.equal(r.status, 0, `${file} crashed: ${r.stderr}`);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'pass';
+	};
+	assert.equal(run('guard-delete.cjs', 'rm -rf ' + OUT), 'ask');
+	assert.equal(run('guard-outward.cjs', 'git push origin main'), 'ask');
+	assert.equal(run('owner-proof.cjs', 'echo x >> ~/.claude/projects/p/s.jsonl'), 'deny');
+});
+
 test('the delete guard reads a quoted here-document written to a file as data, and every run body as a command', () => {
 	// Markdown with backticks and a delete it only describes, written to a file: nothing runs.
 	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nRun `rm -rf " + OUT + "` to clean up.\nEOF"), 'pass');
@@ -53,6 +73,8 @@ test('the delete guard reads a quoted here-document written to a file as data, a
 	// Double quotes do not stop an expansion: one anywhere on the line keeps the body read.
 	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"$(bash)\"\nrm -rf " + OUT + "\nA"), 'ask');
 	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"`bash`\"\nrm -rf " + OUT + "\nA"), 'ask');
+	// A single quote inside double quotes is text, so it hides nothing.
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"a'$(bash)'\"\nrm -rf " + OUT + "\nA"), 'ask');
 	// A mark inside quotes starts no here-document, so the lines after it are commands.
 	assert.equal(hook('guard-delete.cjs', `cat "a<<'X'"\nrm -rf ${OUT}\nX`), 'ask');
 });

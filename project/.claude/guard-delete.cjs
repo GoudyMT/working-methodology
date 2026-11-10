@@ -117,7 +117,11 @@ const WILDCARD = /[*?[]/;
 // A session id is a full UUID: it alone finds the session folder, so "../.." or a plain word could name a shared one.
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const { normalize, plainText, withoutComments, joinContinuations, tokenize, heredocData, holdFor } = require('./guard-read.cjs');
+const shared = require('./guard-read.cjs');
+// install skips a guard-read.cjs the owner changed, so an older one may sit here: without a helper, the stricter reading.
+const { normalize, plainText, withoutComments, joinContinuations, tokenize } = shared;
+const heredocData = shared.heredocData || ((t) => t);
+const holdFor = shared.holdFor || (() => ({ decision: 'ask', note: '' }));
 
 // The program a word names, whatever folder it sits in, without .exe: "C:/Git/usr/bin/rm.exe" -> "rm"; cmd
 // reads a switch glued to a builtin, so "rd/s/q" -> "rd".

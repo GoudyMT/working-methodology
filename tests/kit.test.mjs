@@ -2702,6 +2702,11 @@ test('a resume or a yes with no thread proof needs a real terminal, even with th
   assert.equal(yesThere.status, 1, yesThere.stdout);
   assert.equal(sweepLog(r.dir).length, before, 'nothing logged for the resume');
   assert.ok(!sweepLog(ask.dir).some((l) => JSON.parse(l).kind === 'owner-yes'), 'nothing logged for the yes');
+  // With nothing paused, the terminal's resume has nothing to resume, as the thread's has not (the 1.24.0 sweep).
+  const running = approveRun(featureContract());
+  const idle = spawnSync('node', [APPROVE, '--resume'], { encoding: 'utf8', cwd: running.dir, env: { PATH: process.env.PATH, KIT_OWNER_RESUME: '1' } });
+  assert.equal(idle.status, 1);
+  assert.match(idle.stdout, /not paused/);
 });
 
 test('only the owner resumes, from a terminal no agent runs in', () => {

@@ -12,7 +12,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { plainText, joinContinuations, tokenize, heredocData } = require('./guard-read.cjs');
+const shared = require('./guard-read.cjs');
+// install skips a guard-read.cjs the owner changed: without heredocData every body is read, the stricter side.
+const { plainText, joinContinuations, tokenize } = shared;
+const heredocData = shared.heredocData || ((t) => t);
 
 // install project fills this in, so a caller cannot move the protected folder with CLAUDE_CONFIG_DIR.
 const INSTALLED_HOME = '{{CLAUDE_HOME}}';

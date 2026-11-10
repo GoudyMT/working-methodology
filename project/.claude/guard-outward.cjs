@@ -39,7 +39,10 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-const { plainText, withoutComments, joinContinuations, tokenize, holdFor } = require('./guard-read.cjs');
+const shared = require('./guard-read.cjs');
+// install skips a guard-read.cjs the owner changed, so an older one may sit here: without holdFor, every hold asks.
+const { plainText, withoutComments, joinContinuations, tokenize } = shared;
+const holdFor = shared.holdFor || (() => ({ decision: 'ask', note: '' }));
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
