@@ -12,10 +12,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const shared = require('./guard-read.cjs');
-// install skips a guard-read.cjs the owner changed: without heredocData every body is read, the stricter side.
-const { plainText, joinContinuations, tokenize } = shared;
-const heredocData = shared.heredocData || ((t) => t);
+const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
 
 // install project fills this in, so a caller cannot move the protected folder with CLAUDE_CONFIG_DIR.
 const INSTALLED_HOME = '{{CLAUDE_HOME}}';
@@ -129,8 +126,14 @@ const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-o
 
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
 function shellWrites(command, tool, start) {
-	// A quoted here-document written to a file is data, not a command: its words are not read (S23-2).
-	const source = tool === 'PowerShell' ? String(command || '') : heredocData(String(command || ''));
+	// Every line is read, here-document bodies too: reading a body as data was spelled around five ways in the 1.24.0
+	// sweep (an end mark bash reads otherwise, a cat function, continued lines, nested quotes), so it fails closed.
+	const source = String(command || '');
+	// A variable glued to kit-owner.json (${P}kit-owner.json, $X/kit-owner.json) may be the Claude folder: the reader
+	// splits a word at braces, so it is refused here, before the split (the 1.24.0 sweep).
+	if (/[$%][{(]?[A-Za-z_][\w:]*[})%]?[\\/]?kit-owner\.json/i.test(source)) return true;
+	// CDPATH moves a cd the guard cannot follow, so a cd beside it is refused (the 1.24.0 sweep).
+	if (/\bCDPATH\b/.test(source) && /(^|[\s;&|(])(cd|pushd|chdir)\b/i.test(source)) return true;
 	const text = plainText(joinContinuations(source), tool);
 	const segments = tokenize(text);
 	let cwd = start ? parts(start) : null;

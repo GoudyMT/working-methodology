@@ -158,6 +158,11 @@ const ASK = [
 	'env -i PATH=/usr/bin node x.mjs',
 	'env --ignore-environment node x.mjs',
 	'CLAUDECODE= node x.mjs',
+	// The 1.24.0 sweep: PowerShell clears a marker by a wildcard, a filter or .NET, no full name in sight.
+	'Remove-Item Env:CLAUDE*; Remove-Item Env:AI_*; $O="--owner"; node a.mjs c.json "$O-yes" "yes ab12"',
+	'Remove-Item Env:*; node x.mjs',
+	'Get-ChildItem Env: | Where-Object Name -match "^(CLA|AI)" | Remove-Item; node x.mjs',
+	'[Environment]::SetEnvironmentVariable("CLAUDE" + "CODE", $null); node x.mjs',
 	// Escapes inside a yes are not proven, they ask: \" and $'...' and a backtick change where a quote ends.
 	'node approve.mjs c.json --owner-yes "y \\" --thread cmsg_Abcdefgh12 \\""',
 	"node approve.mjs c.json --owner-yes $'y\\' --thread cmsg_Abcdefgh12 \\''",
@@ -347,6 +352,9 @@ const PASS = [
 	'node approve.mjs --resume --thread cmsg_Abcdefgh12',
 	'node approve.mjs c.json --owner-yes "yes abc123" --thread cmsg_Abcdefgh12',
 	'claude --resume',
+	// Reading or setting the environment is not clearing it.
+	'Get-ChildItem Env:',
+	'$env:PATH = "C:\\tools;" + $env:PATH; node x.mjs',
 ];
 
 let wrong = 0;

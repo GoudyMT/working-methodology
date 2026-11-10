@@ -182,48 +182,6 @@ function tokenize(text) {
 	return segments;
 }
 
-// A here-document that is only data for a file: the text of `cat > f <<'EOF'` is never run, so its words (a path,
-// a backtick, a command it describes) are not the command's. Such a body is left out of the reading; every other
-// body stays in: one bash expands ($( ), backticks, unquoted with a $), one fed to anything but cat or tee, and one
-// whose line pipes on (cat <<'EOF' | bash). Writing a file to run it later is the Write tool's limit too.
-const DATA_WRITERS = /^(cat|tee)(\.exe)?$/i;
-function heredocData(text) {
-	const lines = String(text).split(LF);
-	const out = [];
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		out.push(line);
-		// A mark inside quotes, or after a backslash, is text: bash starts no here-document there.
-		const open = (at) => /['"]/.test(line.slice(0, at).replace(/'[^']*'|"(\\.|[^"\\])*"/g, ''));
-		const marks = [...line.matchAll(/<<(?!<)(-?)\s*(['"]?)([A-Za-z_][\w.-]*)\2/g)].filter((m) => !open(m.index) && line[m.index - 1] !== BACKSLASH && line[m.index - 1] !== '<');
-		if (marks.length === 0) continue;
-		// Data only on a line that is one plain cat or tee with one mark: no other command, pipe, process
-		// substitution or expansion anywhere on it (the security review: a second mark read by bash, a body sent into
-		// >(bash)). Anything else keeps every body in the reading.
-		const bare = line.replace(/'[^']*'|"(\\.|[^"\\])*"/g, '');
-		const words = bare.trim().split(/\s+/).filter((w) => w && !/^[A-Za-z_]\w*=/.test(w));
-		const program = (words[0] || '').split(/[\\/]/).pop();
-		// A line continued with a backslash, a $'...' quote or a quote left open may carry a pipe or a command the
-		// reading here cannot see, so its body stays in (the security review).
-		const continued = /\\\r?$/.test(line) || /\$'/.test(line) || /['"]/.test(bare);
-		// Any $ or backtick anywhere on the line keeps the body read: quotes nest in ways this reading does not model
-		// (a single quote inside double quotes is text), so it fails closed (the security review).
-		const simple = marks.length === 1 && !continued && !/;|&|\||[<>]\(/.test(bare) && !/[$`]/.test(line);
-		const pipesOn = !simple;
-		for (const m of marks) {
-			const body = [];
-			let j = i + 1;
-			const ends = (l) => (m[1] ? l.replace(/^\t+/, '') : l).replace(/\r$/, '') === m[3];
-			while (j < lines.length && !ends(lines[j])) body.push(lines[j++]);
-			const literal = m[2] !== '' || !/[$`]/.test(body.join(LF));
-			if (!(literal && DATA_WRITERS.test(program) && !pipesOn)) out.push(...body);
-			if (j < lines.length) out.push(lines[j]);
-			i = j;
-		}
-	}
-	return out.join(LF);
-}
-
 // How a guard holds a command: the main session asks the owner; a subagent (Claude Code names it in agent_id) is
 // refused, because its ask reaches no one and the agent waits on it (E27: 76 of 512 live asks in ten days). The
 // refusal tells it to hand the command back, so the lead asks.
@@ -232,4 +190,4 @@ function holdFor(input) {
 	return { decision: sub ? 'deny' : 'ask', note: sub ? ' A subagent cannot get that yes: leave this command out and name it in your report, so the lead asks.' : '' };
 }
 
-module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize, heredocData, holdFor };
+module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize, holdFor };

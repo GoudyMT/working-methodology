@@ -52,10 +52,14 @@ test('a guard beside an older shared reader still asks, and owner-proof still re
 	assert.equal(run('owner-proof.cjs', 'echo x >> ~/.claude/projects/p/s.jsonl'), 'deny');
 });
 
-test('the delete guard reads a quoted here-document written to a file as data, and every run body as a command', () => {
-	// Markdown with backticks and a delete it only describes, written to a file: nothing runs.
-	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nRun `rm -rf " + OUT + "` to clean up.\nEOF"), 'pass');
-	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' > notes.md\nrm -rf " + OUT + "\nEOF"), 'pass');
+// The 1.24.0 sweep: reading a here-document body as data was spelled around six ways (an end mark bash reads
+// otherwise, a cat function, continued lines, nested quotes, a second mark, a process substitution), and it saved about
+// 10 of 518 prompts. Every body is read as commands again; each spelling the sweep found stays here as a case.
+test('the delete guard reads every here-document body as commands, in every spelling that runs one', () => {
+	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' > notes.md\nrm -rf " + OUT + "\nEOF"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<E\"OF\" > notes.md\nhi\nEOF\nrm -rf " + OUT), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat > n.md <<E'OF'\nx\nEOF\nrm -rf " + OUT + "\nE'OF'"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat() { bash; }\ncat <<EOF\nrm -rf " + OUT + "\nEOF"), 'ask');
 	// The same body fed to a shell, expanded by bash, or after the here-document ends, runs.
 	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' | bash\nrm -rf " + OUT + "\nEOF"), 'ask');
 	assert.equal(hook('guard-delete.cjs', 'cat > notes.md <<EOF\n$(rm -rf ' + OUT + ')\nEOF'), 'ask');

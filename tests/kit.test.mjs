@@ -2481,6 +2481,11 @@ test('the sweep guard refuses to resume a reviewer with SendMessage, and lets ot
   fs.writeFileSync(path.join(session, 'subagents', 'agent-x2.jsonl'), '{}\n');
   assert.equal(send('x1').permissionDecision, 'deny');
   assert.equal(send('x2').permissionDecision, 'deny');
+  // The 1.24.0 sweep: a reviewer is also addressed by its name; a builder's name is still messaged.
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-r9.meta.json'), JSON.stringify({ agentType: 'reviewer', name: 'P2-supply-chain', finished: true }));
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-b9.meta.json'), JSON.stringify({ agentType: 'builder', name: 'unit-3', finished: true }));
+  assert.equal(send('P2-supply-chain').permissionDecision, 'deny');
+  assert.equal(send('unit-3').permissionDecision, 'allow');
 });
 
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
@@ -2595,6 +2600,8 @@ test('the owner\'s yes from the thread clears an ask, read from the session tran
   const elsewhere = inSession('cmsg_Ssssssss');
   assert.equal(elsewhere.status, 1, elsewhere.stdout);
   assert.match(elsewhere.stdout, /no such message/);
+  // The 1.24.0 sweep: a session id no file can carry (a dot, an empty value) narrows to nothing, never to every file.
+  for (const id of ['a.b', '']) assert.equal(approveIn(other.dir, [other.f, '--owner-yes', `yes ${other.code}`, '--thread', 'cmsg_Ssssssss'], { CLAUDE_CONFIG_DIR: oc, CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: id }).status, 1, `session id '${id}'`);
   ownerSays(oc, { cwd: other.dir, id: 'cmsg_Mmmmmmmm', words: `yes ${other.code}` });
   assert.equal(inSession('cmsg_Mmmmmmmm').status, 0, 'its own session\'s message');
   // Without the thread's proof the yes rests on Claude's word alone, so from an AI tool's shell it is refused.

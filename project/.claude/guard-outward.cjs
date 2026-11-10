@@ -203,7 +203,10 @@ function findOutward(text, depth) {
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
 	// S23-4 (the 1.23.0 verify): approve.mjs takes a shell without CLAUDECODE and AI_AGENT for the owner's terminal, and
 	// a variable or a glob spells the yes past the reading above. Clearing either marker, or the whole environment, asks.
-	if (/\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat)) return 'a command that clears the AI shell\'s markers';
+	// PowerShell needs no full name (the 1.24.0 sweep): a removal on the Env: drive, by wildcard or by a filter piped
+	// from it, or a .NET call that sets the environment, asks too; reading Env: or setting $env:X does not.
+	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
+	if (/\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat)) return 'a command that clears the AI shell\'s markers';
 	// The terminal's way to resume is the owner's alone; the thread's way carries its proof, as the yes does (the 1.23.0
 	// sweep: a resume with the AI shell's variables unset asked nothing).
 	if (/KIT_OWNER_RESUME/i.test(flat)) return 'an owner resume of the sweep tools';

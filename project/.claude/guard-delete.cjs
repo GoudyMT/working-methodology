@@ -118,9 +118,8 @@ const WILDCARD = /[*?[]/;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const shared = require('./guard-read.cjs');
-// install skips a guard-read.cjs the owner changed, so an older one may sit here: without a helper, the stricter reading.
+// install skips a guard-read.cjs the owner changed, so an older one may sit here: without holdFor, every hold asks.
 const { normalize, plainText, withoutComments, joinContinuations, tokenize } = shared;
-const heredocData = shared.heredocData || ((t) => t);
 const holdFor = shared.holdFor || (() => ({ decision: 'ask', note: '' }));
 
 // The program a word names, whatever folder it sits in, without .exe: "C:/Git/usr/bin/rm.exe" -> "rm"; cmd
@@ -650,10 +649,7 @@ function decide(input, where = {}) {
 	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
-	// A quoted here-document written to a file is data: its backticks and the deletes it describes never run (E27:
-	// about a third of the delete asks in ten days were on such text). PowerShell has no here-documents.
-	const read = input.tool_name === 'PowerShell' ? strings : strings.map(heredocData);
-	const both = read.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);
+	const both = strings.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);
 	for (const raw of both) {
 		if (raw.length > MAX_TEXT) return 'a command too long to read';
 		const text = normalize(raw);

@@ -677,7 +677,9 @@ function ownerMessage(id, setup = false) {
 		let files = [];
 		// S23-5: where Claude Code names the session this runs in, only its own transcript is read, so a turn written
 		// into another session's file is no proof. A shell with no session id (the owner's terminal) reads them all.
-		const session = /^[\w-]{1,128}$/.test(String(process.env.CLAUDE_CODE_SESSION_ID || '')) ? `${process.env.CLAUDE_CODE_SESSION_ID}.jsonl` : null;
+		// A set id no file can carry (a dot, an empty value) narrows to nothing, never back to every file (the 1.24.0 sweep).
+		const sid = process.env.CLAUDE_CODE_SESSION_ID;
+		const session = sid === undefined ? null : /^[\w-]{1,128}$/.test(sid) ? `${sid}.jsonl` : '\0';
 		try { files = fs.readdirSync(project).filter((f) => f.endsWith('.jsonl') && (!session || f === session)).map((f) => path.join(project, f)); } catch { continue; }
 		for (const f of files) {
 			const text = fs.readFileSync(f, 'utf8');
