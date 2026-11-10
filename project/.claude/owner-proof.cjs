@@ -1,5 +1,5 @@
 // The owner-proof guard (E27): the owner's yes and resume from the phone thread are read from Claude Code's session
-// transcripts (<Claude folder>/projects) and the owner's kit-owner.json, so no tool call may write either. T1 (v2.0):
+// transcripts (<Claude folder>/projects) and the owner's kit-owner.json, so no tool call may write either. T1 (1.25.0):
 // the guards are held the same way. The kit's code under any .claude folder, the git hooks (.githooks, .git/hooks)
 // and .git/config are never written by a tool (only kit.mjs install writes them); the settings that wire the hooks
 // (.claude/settings.json, settings.local.json) are written only with the owner's pop-up yes for that act. PreToolUse

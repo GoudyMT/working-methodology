@@ -1,4 +1,4 @@
-// T1 (v2.0 build 1): the six commands that passed every guard live on Windows in 1.24.0 (workbench
+// T1 (1.25.0, build 1): the six commands that passed every guard live on Windows in 1.24.0 (workbench
 // results/v2-prep/RESULT.md, P1), and the secret shapes the scan missed. Each case runs every project hook the way
 // Claude Code runs it (the one guard process, the hook input on stdin) and needs it to hold the command.
 import { test } from './harness.mjs';

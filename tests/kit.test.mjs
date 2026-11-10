@@ -1070,7 +1070,7 @@ test('the format skills keep every 1.1.0 rule line exactly once', () => {
   const names = spawnSync('git', ['ls-tree', '--name-only', 'v1.1.0', 'rules/'], { encoding: 'utf8' });
   assert.equal(names.status, 0, 'the v1.1.0 tag must exist locally');
   // Every release since 1.1.0 records its reworded lines in its own file.
-  const reworded = fs.readdirSync(path.resolve('docs/migrations')).filter((n) => /^(?:1\.(?:[2-9]|\d\d)|[2-9]\.\d+)\.\d+-reworded\.json$/.test(n))
+  const reworded = fs.readdirSync(path.resolve('docs/migrations')).filter((n) => /^1\.(?:[2-9]|\d\d)\.\d+-reworded\.json$/.test(n))
     .flatMap((n) => JSON.parse(read(path.resolve('docs/migrations', n))).lines);
   const swap = new Map(reworded.map((r) => [r.before, r.after]));
   // A line reworded in more than one release follows its records to the latest wording.

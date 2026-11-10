@@ -1,4 +1,4 @@
-// T2 (v2.0 build 1, the owner 2026-11-10: "One process, every tool"): the one guard process. It must fail closed when
+// T2 (1.25.0, build 1, the owner 2026-11-10: "One process, every tool"): the one guard process. It must fail closed when
 // a project guard is missing or broken, never brick the session over the agent-team checks, and keep the strictest
 // answer when the guards disagree.
 import { test } from './harness.mjs';
