@@ -822,7 +822,7 @@ test('status and session start show an unreleased install as a gap; an older sta
   assert.equal(r.current, false);
   assert.match(r.text, /~\/\.claude: 1\.0\.0, current\./);
   assert.match(r.text, /This project: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*fetch --tags; git -C ".*" checkout <newest v tag>\)[\s\S]*\/methodology-kit update/);
-  assert.match(r.text, /^Not current: .*unreleased build\.$/m);
+  assert.match(r.text, /^Not current: This project .*unreleased build\.$/m);
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /This project runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*\/methodology-kit update/);
   // ~/.claude carries the rules of every project, so its unreleased build is named too.
   install({ kit, home, target: 'user', release: unreleased });
@@ -5465,7 +5465,7 @@ test('an outcome counts only the reviewer the guard started for each role, not a
   setBrief(cfg, 'decoy', (b) => `${b} Sweep: ${at[1].hash} role 1`);
   const bad = run(['decoy', ...ids.slice(1)]);
   assert.equal(bad.status, 1, bad.stdout);
-  assert.match(bad.stdout, /decoy \(not the reviewer the guard started/);
+  assert.match(bad.stdout, /decoy \(not the reviewer the guard started[\s\S]*for role 1\)/);
   assert.equal(run(ids).status, 0, 'the started reviewer counts');
 });
 // 1.21.0 handoff item 35: a second run on a contract already cleared at this HEAD, with reviewers still to start, is

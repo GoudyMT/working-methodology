@@ -1165,7 +1165,7 @@ function main() {
 	if (has('--resume')) {
 		// An AI tool's shell carries one of these; the owner's own terminal does not (the push guard's same line).
 		if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_RESUME !== '1') {
-			console.log('Only the owner resumes auto-approval, from their own terminal: review the log, then run KIT_OWNER_RESUME=1 node approve.mjs --resume.');
+			console.log('Only the owner resumes auto-approval, from their own terminal: review the log, then run KIT_OWNER_RESUME=1 node approve.mjs --resume (PowerShell: $env:KIT_OWNER_RESUME=\'1\'; node approve.mjs --resume).');
 			return 1;
 		}
 		const s = state();
