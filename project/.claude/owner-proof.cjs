@@ -197,6 +197,9 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
+	// Any break that is not plain anywhere in the command (a later || runs on a failure too) makes every cd unsure. Read
+	// once, before the loop: read per command it made a long command quadratic (98 KB took 21 s, past the hook's 10 s).
+	const apart = grouped || !segments.every((g) => plainBreak(g.end));
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s].map((x) => ({ ...x, value: sub(x.value) }));
 		segment.end = segments[s].end;
@@ -208,8 +211,6 @@ function shellWrites(command, tool, start, names = proofNames) {
 			for (const x of assigns.slice(lead)) vars.set(x.value.slice(0, x.value.indexOf('=')), x.value.slice(x.value.indexOf('=') + 1));
 			if (tool === 'Bash' || tool === 'Monitor' || tool === 'mcp__terminal__run_in_terminal') continue;
 		}
-		// Any break that is not plain anywhere in the command (a later || runs on a failure too) makes every cd unsure.
-		const apart = grouped || !segments.every((g) => plainBreak(g.end));
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.

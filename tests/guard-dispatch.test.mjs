@@ -64,3 +64,12 @@ test('the strictest answer wins and every reason and note is kept', () => {
 	assert.equal(merge([['a', null]]), null);
 	assert.equal(merge([['a', o('allow', 'owner yes')], ['b', null]]).hookSpecificOutput.permissionDecision, 'allow');
 });
+
+// The teardown (T2): a 98 KB command took 21 s in owner-proof and 7 s in the delete guard, past the hook's 10 s
+// timeout, because each command re-read the whole text. Read once, the whole guard process stays well inside it.
+test('a long command is read in time: the whole guard process answers a 98 KB command inside the hook timeout', () => {
+	const run = setup();
+	const started = Date.now();
+	run('Bash', { command: 'a;'.repeat(49000) });
+	assert.ok(Date.now() - started < 8000, `${Date.now() - started} ms`);
+});

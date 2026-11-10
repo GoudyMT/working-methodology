@@ -397,6 +397,9 @@ function listedTargets(segments, index) {
 
 function findDelete(text, ctx, state, depth) {
 	const segments = tokenize(joinContinuations(text));
+	// A delete word anywhere in the text, read once: read per command it made a long command quadratic (98 KB of a; took
+	// 7 s, near the hook's 10 s; T2).
+	const textDeletes = DELETE_WORD.test(text);
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s];
 		// How the command before this one ended, applied here so no skipped command can miss it. A ( ... ) group may
@@ -431,7 +434,7 @@ function findDelete(text, ctx, state, depth) {
 		const at = words.findIndex((w) => !WRAPPERS.has(w.toLowerCase()) && !/^(\w+=.*|\d+[smhd]?|then|do|else|!)$/.test(w));
 		const opener = words[at] ?? '';
 		const after = words.slice(at + 1);
-		const deleteSign = DELETE_WORD.test(text) || after.some((w) => /^(-[rf]{1,2}|-+recurse|-+force|-+delete|\/s)$/i.test(w));
+		const deleteSign = textDeletes || after.some((w) => /^(-[rf]{1,2}|-+recurse|-+force|-+delete|\/s)$/i.test(w));
 		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && after.length > 0 && !NOT_RUN_AFTER.test(after[0]) && deleteSign) return 'a program held in a variable';
 		if (opener === '$' && words.length === 1 && segment.end === '{') return 'a program held in a variable';
 		// A shell expands a wildcard in a program's path: /usr/bin/r[m].
