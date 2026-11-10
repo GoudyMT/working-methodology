@@ -50,6 +50,9 @@ test('the delete guard reads a quoted here-document written to a file as data, a
 	assert.equal(hook('guard-delete.cjs', "cat <<'A' \\\n| bash\nrm -rf " + OUT + "\nA"), 'ask');
 	assert.equal(hook('guard-delete.cjs', "cat <<'A' \\\n> >(bash)\nrm -rf " + OUT + "\nA"), 'ask');
 	assert.equal(hook('guard-delete.cjs', "cat <<'A' $'x'\nrm -rf " + OUT + "\nA"), 'ask');
+	// Double quotes do not stop an expansion: one anywhere on the line keeps the body read.
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"$(bash)\"\nrm -rf " + OUT + "\nA"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"`bash`\"\nrm -rf " + OUT + "\nA"), 'ask');
 	// A mark inside quotes starts no here-document, so the lines after it are commands.
 	assert.equal(hook('guard-delete.cjs', `cat "a<<'X'"\nrm -rf ${OUT}\nX`), 'ask');
 });

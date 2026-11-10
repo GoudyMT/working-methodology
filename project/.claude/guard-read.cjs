@@ -206,7 +206,9 @@ function heredocData(text) {
 		// A line continued with a backslash, a $'...' quote or a quote left open may carry a pipe or a command the
 		// reading here cannot see, so its body stays in (the security review).
 		const continued = /\\\r?$/.test(line) || /\$'/.test(line) || /['"]/.test(bare);
-		const simple = marks.length === 1 && !continued && !/;|&|\||[<>]\(|\$\(|`/.test(bare);
+		// Double quotes do not stop $ or a backtick, so either one outside single quotes keeps the body read.
+		const outsideSingle = line.replace(/'[^']*'/g, '');
+		const simple = marks.length === 1 && !continued && !/;|&|\||[<>]\(/.test(bare) && !/[$`]/.test(outsideSingle);
 		const pipesOn = !simple;
 		for (const m of marks) {
 			const body = [];
