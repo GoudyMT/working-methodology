@@ -3,6 +3,7 @@
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -68,6 +69,18 @@ test('the mutation check names a flip no test catches, passes one a test catches
 	assert.equal(reach.status, 0, reach.stdout + reach.stderr);
 	assert.equal(spawnSync('git', ['-C', dir, 'config', 'kit.probe'], { encoding: 'utf8' }).stdout.trim(), '', 'the repo\'s config is untouched');
 	assert.doesNotMatch(sh(dir, 'branch', '--list'), /probe-reached/, 'the repo\'s refs are untouched');
+	// The 1.24.0 build: a flip that drops a test's own Claude folder must land in a throwaway, never ~/.claude. The
+	// tests and the outside checks both run with one, set by the check itself.
+	const seen = path.join(kitTemp.makeTemp('seen-'), 'home.txt');
+	const write = `node -e "require('fs').appendFileSync(${JSON.stringify(seen).replace(/"/g, '\'')}, [process.env.KIT_CLAUDE_HOME, process.env.CLAUDE_CONFIG_DIR].join('|') + '\\n')"`;
+	const { KIT_CLAUDE_HOME: _k, CLAUDE_CONFIG_DIR: _c, ...bare } = process.env;
+	spawnSync(process.execPath, [CHECK, 'src/a.cjs', '--also', `${write} && exit 1`], { cwd: dir, encoding: 'utf8', env: bare });
+	const homes = fs.readFileSync(seen, 'utf8').trim().split('\n');
+	for (const line of homes) {
+		const [kit, config] = line.split('|');
+		assert.ok(kit && kit === config, line);
+		assert.ok(!path.resolve(kit).startsWith(path.join(os.homedir(), '.claude')), line);
+	}
 });
 
 test('the mutation check refuses a map from another commit or no map, and says how to make one', () => {

@@ -3,6 +3,7 @@
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -104,6 +105,23 @@ test('a failing test in any shard fails the run and is named in the output', () 
 	assert.equal(r.status, 1, r.stdout + r.stderr);
 	assert.match(r.stdout, /not ok \d+ - the broken one/);
 	assert.match(r.stdout, /pass 3, fail 1/);
+});
+
+// The 1.24.0 build: a mutant dropped a test's own Claude folder, and an install wrote into the owner's real one. Every
+// run gives its tests a throwaway Claude folder, so a test that loses its own falls back there, never to ~/.claude.
+test('every run gives its tests a throwaway Claude folder, never the real one', () => {
+	const dir = kitTemp.makeTemp('home-');
+	const seen = path.join(dir, 'seen.json');
+	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS};\nimport fs from 'node:fs';\n` +
+		`test('reads', () => { fs.writeFileSync(${JSON.stringify(seen)}, JSON.stringify([process.env.KIT_CLAUDE_HOME, process.env.CLAUDE_CONFIG_DIR, fs.existsSync(process.env.KIT_CLAUDE_HOME || '')])); });\n`);
+	const { KIT_CLAUDE_HOME: _k, CLAUDE_CONFIG_DIR: _c, ...env } = process.env;
+	const r = spawnSync(process.execPath, [RUNNER, '--shards', '1', path.join(dir, 'x.test.mjs')], { cwd: dir, encoding: 'utf8', env });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	const [kit, config, exists] = JSON.parse(fs.readFileSync(seen, 'utf8'));
+	assert.ok(kit && exists, 'a Claude folder the run made');
+	assert.equal(config, kit, 'Claude Code\'s own variable names the same throwaway');
+	assert.notEqual(path.resolve(kit), path.join(os.homedir(), '.claude'));
+	assert.ok(!path.resolve(kit).startsWith(path.join(os.homedir(), '.claude')));
 });
 
 // CI killed a run at its cap with nothing printed (PR 25): each shard says where it is while it runs and when it ends.

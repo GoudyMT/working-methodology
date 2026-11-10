@@ -54,13 +54,13 @@ function changedLines(root, base) {
 	return out;
 }
 
-function runTests(copy, keys, timeout) {
+function runTests(copy, keys, timeout, home) {
 	return new Promise((resolve) => {
 		const only = path.join(copy, '.mutation-only.json');
 		fs.writeFileSync(only, JSON.stringify(keys));
 		const files = [...new Set(keys.map((k) => k.slice(0, k.indexOf('::'))))].map((f) => path.join(copy, f));
 		const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...env } = process.env;
-		const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: copy, env: { ...env, KIT_ONLY: only, KIT_REPO: copy, KIT_MAP_OFF: '1' } });
+		const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: copy, env: { ...env, ...home, KIT_ONLY: only, KIT_REPO: copy, KIT_MAP_OFF: '1' } });
 		let out = '';
 		child.stdout.on('data', (d) => { out += d; });
 		const kill = setTimeout(() => child.kill('SIGKILL'), timeout);
@@ -106,6 +106,10 @@ export async function main(argv) {
 	const add = git(path.dirname(copy), 'clone', '--quiet', '--no-hardlinks', '--no-checkout', root, copy);
 	const out = add.status === 0 ? git(copy, '-c', 'advice.detachedHead=false', 'checkout', '--quiet', head) : add;
 	if (out.status !== 0) { removeTemp(copy); process.stderr.write(`mutation-check: could not make the copy: ${out.stderr}`); return 2; }
+	// Every test and outside check runs with a throwaway Claude folder: a flip that drops a test's own one must land
+	// there, never in the owner's ~/.claude (the 1.24.0 build: a mutation run rewrote the owner's install record).
+	const claudeDir = makeTemp('claude-home-');
+	const home = { KIT_CLAUDE_HOME: claudeDir, CLAUDE_CONFIG_DIR: claudeDir };
 	let caught = 0;
 	const survived = [];
 	try {
@@ -119,8 +123,8 @@ export async function main(argv) {
 			lines[s.line - 1] = f.text;
 			fs.writeFileSync(file, lines.join('\n'));
 			try {
-				let r = await runTests(copy, s.tests, o.timeout);
-				for (const cmd of o.also) if (!r.caught) r = { caught: spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout }).status !== 0 };
+				let r = await runTests(copy, s.tests, o.timeout, home);
+				for (const cmd of o.also) if (!r.caught) r = { caught: spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout, env: { ...process.env, ...home } }).status !== 0 };
 				if (r.caught) { caught++; process.stdout.write(`caught ${s.file}:${s.line} ${f.op}${r.timedOut ? ' (timed out)' : ''}\n`); }
 				else { survived.push(s); process.stdout.write(`SURVIVED ${s.file}:${s.line} ${f.op}: ${lines[s.line - 1].trim()} was ${original.split('\n')[s.line - 1].trim()} (tests: ${s.tests.join(', ')})\n`); }
 			} finally {
@@ -129,6 +133,7 @@ export async function main(argv) {
 		}
 	} finally {
 		removeTemp(copy);
+		removeTemp(claudeDir);
 	}
 	process.stdout.write(`mutation check: ${caught + survived.length} flips, ${caught} caught, ${survived.length} survived\n`);
 	return survived.length ? 1 : 0;
