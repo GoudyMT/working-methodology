@@ -60,9 +60,9 @@ function readSince(transcript) {
 	return seen.map((s) => s.split('\\').join('/'));
 }
 
-function main() {
-	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
-	if (input.agent_id) return;
+// The gate's answer for one tool call: a refusal, or null. The dispatcher (guard.cjs) calls this.
+function check(input) {
+	if (input.agent_id) return null;
 	const t = input.tool_input || {};
 	let want = [];
 	if (input.tool_name === 'Agent' || input.tool_name === 'Task') want = [[TEAMS, 'an agent fan-out']];
@@ -70,13 +70,20 @@ function main() {
 	// A project without the module (the kit not installed here) has nothing to read: the step goes on.
 	const root = process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
 	want = want.filter(([file]) => fs.existsSync(path.join(root, file)));
-	if (want.length === 0) return;
+	if (want.length === 0) return null;
 	const seen = readSince(String(input.transcript_path));
 	const missing = want.filter(([file]) => !seen.some((s) => s.includes(file)));
-	if (missing.length === 0) return;
+	if (missing.length === 0) return null;
 	const files = [...new Set(missing.map(([f]) => f))];
-	process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Before ${missing[0][1]}: read ${files.join(' and ')} (the step's rules, kept out of the start load), then run this again.` } }));
+	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Before ${missing[0][1]}: read ${files.join(' and ')} (the step's rules, kept out of the start load), then run this again.` } };
 }
 
 // A gate that cannot read the transcript passes: the output checks behind it still hold.
-try { main(); } catch { /* passes */ }
+const safeCheck = (input) => { try { return check(input); } catch { return null; } };
+if (require.main === module) {
+	let out = null;
+	try { out = safeCheck(JSON.parse(fs.readFileSync(0, 'utf8') || '{}')); } catch { /* passes */ }
+	if (out) process.stdout.write(JSON.stringify(out));
+}
+
+module.exports = { check: safeCheck };

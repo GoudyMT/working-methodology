@@ -34,7 +34,7 @@ const MESSAGES = new Set(['git', 'gh']);
 // git subcommands that read or stage a file and write none of the files they name.
 const GIT_READS = new Set(['add', 'diff', 'log', 'show', 'status', 'blame', 'ls-files', 'grep', 'cat-file', 'check-ignore', 'commit']);
 const slash = (p) => p.split('\\').join('/').toLowerCase();
-const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
+const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const REASON = 'The session transcripts and kit-owner.json hold the owner\'s thread answers, so no tool writes them: read them, or leave them to Claude Code and the owner.';
 const GUARD_REASON = 'The kit\'s guards, the git hooks and .git/config are written only by kit.mjs install, never by a tool: read them, or ask the owner to reinstall the kit.';
 const SETTINGS_REASON = 'The settings file wires the guards, so a tool writes it only with the owner\'s yes.';
@@ -265,26 +265,31 @@ function shellWrites(command, tool, start, names = proofNames) {
 	return [raw, text].some((t) => t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(w, start ? parts(start) : null)));
 }
 
-function main() {
-	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+// The hook's answer for one tool call: a refusal, or null to let it go on. The dispatcher (guard.cjs) calls this.
+function check(input) {
 	const t = input.tool_input || {};
 	const cwd = input.cwd || process.cwd();
 	// The settings take the owner's pop-up yes for this exact act; a subagent never has one.
 	const settings = () => (!input.agent_id && ownerYes(input) ? null : deny(SETTINGS_REASON + howToAsk(input)));
 	if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name)) {
 		const file = t.file_path || t.notebook_path;
-		if (!file) return;
+		if (!file) return null;
 		if (insideProof(String(file), cwd)) return deny(REASON);
 		const p = parts(real(path.resolve(cwd, String(file))));
 		if (guardShape(p)) return deny(GUARD_REASON);
-		if (settingsShape(p)) settings();
-		return;
+		return settingsShape(p) ? settings() : null;
 	}
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name)) {
 		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);
-		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) settings();
+		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) return settings();
 	}
+	return null;
 }
 
-main();
+if (require.main === module) {
+	const out = check(JSON.parse(fs.readFileSync(0, 'utf8') || '{}'));
+	if (out) process.stdout.write(JSON.stringify(out));
+}
+
+module.exports = { check };

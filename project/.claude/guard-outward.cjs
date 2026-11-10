@@ -363,6 +363,41 @@ function decide(input) {
 	return findOutward(text, 0) || findOutward(plainText(text, input?.tool_name), 0);
 }
 
+// The guard's answer for one tool call (the input already parsed, or null when it could not be): the output to print,
+// or null. The dispatcher (guard.cjs) calls this.
+function check(input) {
+	let reason = '';
+	let prNote = '';
+	let verdict = 'deny';
+	try {
+		if (!input || typeof input !== 'object') throw new Error('no input');
+		reason = decide(input);
+		// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
+		const command = String((input.tool_input && input.tool_input.command) ?? '');
+		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
+		// Inside the owner's bounds a feature-branch push goes without a yes; anything else held needs the owner's
+		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
+		if (reason && boundedPush(input)) reason = '';
+		else if (reason && !input.agent_id && ownerYes(input)) verdict = 'allow';
+	} catch {
+		// A guard that cannot read the command refuses rather than lets it through.
+		reason = 'the guard could not read this command';
+	}
+	if (!reason) return prNote ? { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: prNote } } : null;
+	const output = {
+		hookSpecificOutput: {
+			hookEventName: 'PreToolUse',
+			permissionDecision: verdict,
+			permissionDecisionReason: verdict === 'allow'
+				? 'Outward action (' + reason + '): the owner said yes to this exact command in the pop-up.'
+				: 'Outward action (' + reason + '): it runs only with the owner\'s yes.' + howToAsk(input),
+		},
+	};
+	// The reason is shown to the user; added context is what reaches Claude.
+	if (prNote) output.hookSpecificOutput.additionalContext = prNote;
+	return output;
+}
+
 function main() {
 	let raw = '';
 	process.stdin.setEncoding('utf8');
@@ -370,50 +405,16 @@ function main() {
 		raw += chunk;
 	});
 	process.stdin.on('end', () => {
-		let reason = '';
-		let toolName = '';
-		let prNote = '';
 		let input = null;
-		let verdict = 'deny';
-		let note = howToAsk(null);
-		try {
-			input = JSON.parse(raw);
-			note = howToAsk(input);
-			toolName = String(input.tool_name ?? '');
-			reason = decide(input);
-			// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
-			const command = String((input.tool_input && input.tool_input.command) ?? '');
-			if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = ' Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
-			// Inside the owner's bounds a feature-branch push goes without a yes; anything else held needs the owner's
-			// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
-			if (reason && boundedPush(input)) reason = '';
-			else if (reason && !input.agent_id && ownerYes(input)) verdict = 'allow';
-		} catch {
-			// A guard that cannot read the command refuses rather than lets it through.
-			reason = 'the guard could not read this command';
-		}
-		if (reason) {
-			const output = {
-				hookSpecificOutput: {
-					hookEventName: 'PreToolUse',
-					permissionDecision: verdict,
-					permissionDecisionReason: verdict === 'allow'
-						? 'Outward action (' + reason + '): the owner said yes to this exact command in the pop-up.'
-						: 'Outward action (' + reason + '): it runs only with the owner\'s yes.' + note,
-				},
-			};
-			// The reason on an "ask" is shown to the user; added context is what reaches Claude.
-			if (prNote) output.hookSpecificOutput.additionalContext = prNote.trim();
-			process.stdout.write(JSON.stringify(output));
-		} else if (prNote) {
-			// A push inside the owner's bounds runs with no decision from here, and still carries the PR body note.
-			process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: prNote.trim() } }));
-		}
-		// The decision is out before the log is touched: a log that cannot be written must never cost the ask.
+		try { input = JSON.parse(raw); } catch { /* refused below */ }
+		const out = check(input);
+		if (out) process.stdout.write(JSON.stringify(out));
+		// The decision is out before the log is touched: a log that cannot be written must never cost the hold.
 		const logFile = process.argv[2];
 		if (logFile) {
 			try {
-				fs.appendFileSync(logFile, new Date().toISOString() + ' ' + toolName + ' ' + (reason ? verdict : 'pass') + LF);
+				const d = out && out.hookSpecificOutput.permissionDecision;
+				fs.appendFileSync(logFile, new Date().toISOString() + ' ' + String((input && input.tool_name) ?? '') + ' ' + (d || 'pass') + LF);
 			} catch {
 				// The log is a proof aid only.
 			}
@@ -423,4 +424,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { decide, boundedPush };
+module.exports = { decide, boundedPush, check };

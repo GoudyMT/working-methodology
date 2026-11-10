@@ -682,6 +682,31 @@ function decide(input, where = {}) {
 	return '';
 }
 
+// The guard's answer for one tool call (the input already parsed, or null when it could not be): the output to print,
+// or null. The dispatcher (guard.cjs) calls this.
+function check(input) {
+	let reason = '';
+	let verdict = 'deny';
+	try {
+		if (!input || typeof input !== 'object') throw new Error('no input');
+		reason = decide(input);
+		// The owner's own pop-up answer for this exact command lets it run once (T1); a subagent hands it back.
+		if (reason && !input.agent_id && ownerYes(input)) verdict = 'allow';
+	} catch {
+		// A guard that cannot read the command refuses rather than lets it through.
+		reason = 'the guard could not read this command';
+	}
+	if (!reason) return null;
+	const what = 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): ';
+	return {
+		hookSpecificOutput: {
+			hookEventName: 'PreToolUse',
+			permissionDecision: verdict,
+			permissionDecisionReason: what + (verdict === 'allow' ? 'the owner said yes to this exact command in the pop-up.' : 'it runs only with the owner\'s yes.' + howToAsk(input)),
+		},
+	};
+}
+
 function main() {
 	let raw = '';
 	process.stdin.setEncoding('utf8');
@@ -689,32 +714,13 @@ function main() {
 		raw += chunk;
 	});
 	process.stdin.on('end', () => {
-		let reason = '';
-		let verdict = 'deny';
-		let note = howToAsk(null);
-		try {
-			const input = JSON.parse(raw);
-			note = howToAsk(input);
-			reason = decide(input);
-			// The owner's own pop-up answer for this exact command lets it run once (T1); a subagent hands it back.
-			if (reason && !input.agent_id && ownerYes(input)) verdict = 'allow';
-		} catch {
-			// A guard that cannot read the command refuses rather than lets it through.
-			reason = 'the guard could not read this command';
-		}
-		if (reason) {
-			const what = 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): ';
-			process.stdout.write(JSON.stringify({
-				hookSpecificOutput: {
-					hookEventName: 'PreToolUse',
-					permissionDecision: verdict,
-					permissionDecisionReason: what + (verdict === 'allow' ? 'the owner said yes to this exact command in the pop-up.' : 'it runs only with the owner\'s yes.' + note),
-				},
-			}));
-		}
+		let input = null;
+		try { input = JSON.parse(raw); } catch { /* refused below */ }
+		const out = check(input);
+		if (out) process.stdout.write(JSON.stringify(out));
 	});
 }
 
 if (require.main === module) main();
 
-module.exports = { decide };
+module.exports = { decide, check };

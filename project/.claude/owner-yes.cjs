@@ -8,7 +8,7 @@
 // Limits: the transcript is a file of the same user; the owner-proof guard refuses tool writes to it, but a program
 // that writes it outside the tools is not stopped (the hard layer for main is GitHub's protection). A subagent never
 // gets a yes: its transcript is not the owner's.
-// CLI, for the pre-push hook: node owner-yes.cjs --push <ref>  exits 0 when the owner said yes, in this session's
+// CLI, for the pre-push hook: node owner-yes.cjs --push <ref> [force|delete] [<git common dir>]  exits 0 when the owner said yes, in this session's
 // pop-up, to a push command naming that ref's branch or tag in the last hour.
 const fs = require('fs');
 const os = require('os');
@@ -125,20 +125,23 @@ function pushAct(act) {
 // tool shell), in this repo's folder of transcripts, holds a fresh Yes to a push whose destination is this ref, that
 // forces or deletes only if the yes says so, and that no owner push of this ref in the push log has used yet.
 // kind: '' (a plain push), 'force' or 'delete', as the hook read the ref line.
-function pushGrant(ref, sessionId, kind = '', repo = process.cwd(), now = Date.now()) {
+function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(), now = Date.now()) {
 	const name = String(ref).replace(/^refs\/(heads|tags)\//, '');
 	if (!name || !/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return false;
 	const root = path.join(home(), 'projects');
 	// Claude Code names a project's transcript folder by its path, every other sign a dash: the session ran in this
-	// repo, a folder above it or one inside it.
+	// repo or a folder above it, its name ending where a part of the path ends.
 	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
 	let real = repo;
 	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
 	const here = key(real);
 	let dirs = [];
-	try { dirs = fs.readdirSync(root).filter((d) => here.startsWith(d.toLowerCase()) || d.toLowerCase().startsWith(here)); } catch { return false; }
+	try { dirs = fs.readdirSync(root).filter((d) => here === d.toLowerCase() || here.startsWith(d.toLowerCase() + '-')); } catch { return false; }
+	// The push log the hook writes, in the repo's common git folder (a worktree shares it); unreadable but present
+	// refuses, so a yes is never reused by hiding its use.
+	const log = path.join(common || path.join(repo, '.git'), 'kit-push.log');
 	let used = [];
-	try { used = fs.readFileSync(path.join(repo, '.git', 'kit-push.log'), 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && p[2] === ref).map((p) => Date.parse(p[0])); } catch { /* none yet */ }
+	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && p[2] === ref).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
 	for (const d of dirs) {
 		let lines;
 		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
@@ -153,6 +156,6 @@ function pushGrant(ref, sessionId, kind = '', repo = process.cwd(), now = Date.n
 	return false;
 }
 
-if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '') ? 0 : 1;
+if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
 module.exports = { ownerYes, actText, howToAsk, pushGrant, FRESH_MS };
