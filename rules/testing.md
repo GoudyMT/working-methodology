@@ -81,7 +81,7 @@ Do not edit any files.
 
 - **Keep:** behaviour through its user's seam (screen, exported function, protocol), not private helpers; every security / privacy / legal rule and reachable failure path; boundaries, one case each side; a named regression test per real bug; table rows only for distinct branches or real inputs.
 - **Cut:** tests restating the code; second proofs; assertions on freely changeable internals; rows reaching no new branch; tests passing against a do-nothing stub (unless a break-checked "nothing happens" check).
-- **A new test stays** only if it catches a mutation-check break or guards a security or owner rule; wording per rule:word-pins.
+- **Stays** if it catches a mutant or guards a security / owner rule; words: rule:word-pins.
 - **Checked by:** the break check; builders naming the use of any test beyond the brief; checkers' `test-value` findings (keep / cut / repoint per added or edited test); the sweep's Test Value agent; **fix forward** (cut fluff only in files a PR already touches, when cheap and safe).
 
 ## Word Pins (Behaviour, Not Sentences) {#word-pins}
