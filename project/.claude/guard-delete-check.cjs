@@ -801,6 +801,15 @@ for (const command of PASS) check(command, asSession('PowerShell', command), fal
 for (const command of CARRY122_PS_ASK) check('[PowerShell] ' + command, asSession('PowerShell', command), true);
 for (const command of CARRY122_PASS) check(command, asSession('PowerShell', command), false);
 check('[Bash] rm -rf * (bash * skips dot names)', asSession('Bash', 'rm -rf *'), false);
+// The lead-session narrowing (E27, carried from 1.24.0): a look-up of plain names runs nothing. Each spelling beside it
+// that could hide a delete still asks. A command's own mktemp folder is not exempt: a variable can be unset, reread,
+// left empty by a failed mktemp or set in a subshell (a security review of this build), so it asks like any variable.
+for (const [command, wantAsk] of [
+	['man rm', false], ['which rm', false], ['type del', false], ['command -v rm', false], ['Get-Help Remove-Item', false],
+	['command rm -rf /x', true], ['man rm; rm -rf /x', true], ['which $(rm -rf /x)', true], ['man rm > /x', true],
+	['tmp=$(mktemp -d); rm -rf "$tmp"', true], ['tmp=$(mktemp -d); unset tmp; rm -rf "$tmp/home"', true],
+	['(HOME=$(mktemp -d)); rm -rf "$HOME"', true], ['tmp=$(mktemp -d) true; rm -rf "$tmp/x"', true],
+]) check('[Bash] ' + command, asSession('Bash', command), wantAsk);
 // Other field names are read; the description is only shown, never run.
 check('[field "script"] rm -rf /tmp/x', { tool_name: 'Monitor', session_id: SESSION_ID, cwd: PROJECT, tool_input: { script: 'rm -rf /tmp/x' } }, true);
 check('[description only] rm -rf /tmp/x', asSession('Bash', 'git status', { tool_input: { command: 'git status', description: 'rm -rf /tmp/x' } }), false);
@@ -949,14 +958,14 @@ const env = { ...process.env, TEMP, TMP: TEMP, CLAUDE_PROJECT_DIR: PROJECT };
 const runHook = (stdin) => spawnSync(process.execPath, [GUARD], { input: stdin, encoding: 'utf8', env });
 const outRun = runHook(JSON.stringify(asSession('PowerShell', 'Remove-Item C:\\elsewhere\\x')));
 const outJson = outRun.stdout ? JSON.parse(outRun.stdout) : {};
-const outAsks = outRun.status === 0 && outJson.hookSpecificOutput?.hookEventName === 'PreToolUse' && outJson.hookSpecificOutput?.permissionDecision === 'ask';
+const outAsks = outRun.status === 0 && outJson.hookSpecificOutput?.hookEventName === 'PreToolUse' && outJson.hookSpecificOutput?.permissionDecision === 'deny';
 result(outAsks, true, '[child process] Remove-Item C:\\elsewhere\\x -> ' + outRun.stdout);
 const ownRun = runHook(JSON.stringify(asSession('Bash', 'rm -rf ' + OWN + '\\scratchpad\\x')));
 result(ownRun.status === 0 && ownRun.stdout === '', false, '[child process] own session folder -> (' + ownRun.stdout.length + ' bytes)');
 const hexRun = runHook(JSON.stringify(asSession('Bash', 'rm -rf ' + HEX_OWN + '\\scratchpad\\x')));
 result(hexRun.status === 0 && hexRun.stdout === '', false, '[child process] own session folder under a hex key -> (' + hexRun.stdout.length + ' bytes)');
 const brokenRun = runHook('not json');
-result(brokenRun.stdout.includes('"ask"'), true, '[child process] stdin not JSON -> asks');
+result(brokenRun.stdout.includes('"deny"'), true, '[child process] stdin not JSON -> refuses');
 
 console.log(wrong === 0 ? 'ALL ' + cases + ' CASES RIGHT' : 'Expected all ' + cases + ' right: ' + wrong + ' WRONG');
 process.exit(wrong === 0 ? 0 : 1);

@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.25.0 - 2026-11-10
+
+The guards hold against the six ways around them found in 1.24.0, and the owner's yes is a tap in the choice pop-up.
+
+### Added
+- One guard process runs every PreToolUse check, and a missing guard blocks with the fix.
+- The owner's yes and the sweep's yes and resume come from the choice pop-up record.
+- A plain push of a feature branch to origin needs no yes; the pre-push hook bounds and scans it.
+- Two test lanes: a slow lane beside the fast one, both required, and a lane-state report. No test is in the slow lane yet, so it skips today.
+- The use check: each kit part is present, wired and used; install finishes only when wired. A settings.json you changed is not overwritten: merge the kit's PreToolUse entry by hand, or install again with --force.
+- Templates for the changelog entry, the decision pop-up, the 60-second overview and thread rules.
+- Recall ruler v5: question 11 asks for the rule, key 4 names the push bound.
+
+### Changed
+- Commit subjects and PR titles are `type: subject`, at most 72 characters, checked in CI.
+- The Standard PR body drops the file list and gate folds; review rows come from the project.
+- Junction tests run on Windows and Linux both; the runner reports tests skipped off Windows.
+- The task gate counts only this project's rules read and skips lists, help and label edits.
+
+### Fixed
+- The delete guard lets look-ups (man, which, type) pass.
+- The guards read a 98 KB command inside the hook's 10-second limit; it took 21 seconds before.
+- A user layer still on 1.24.0 keeps its agent-team hooks running until it is reinstalled.
+
+### Security
+- Pushes to main, tags, forces and deletes are held unless the owner tapped yes for that act.
+- Skipped hooks, a moved hooks folder, a changed origin and writes to guards or settings are held.
+- `curl` uploads of files are held, and the secret scan reads every pushed commit.
+- Owner-proof refuses a write through a variable it cannot read whole, or a wildcard on a guard.
+- Windows short names, a program redefined in the same command, defaults like `${X:-.claude}` and the push and sweep logs are held.
+- One pop-up yes runs its act once, only from a plain Yes, and only in this folder's sessions.
+- The secret scan asks the remote what it has, reads diffs by hunk, and knows 8 more key shapes.
+- `--no-verif`, a remote's push refspec, curl reading `@file` or its config, and wget's `-e` are held.
+
+### Removed
+- Typed approval codes: the owner's yes is the pop-up tap.
+- The delete guard's exemption for files made by mktemp.
+
 ## 1.24.0 - 2026-11-10
 - Tests check behaviour instead of sentences, CI runs on Linux, the owner's yes holds against a spelled-around guard, and fewer prompts reach no one. Practical tests (E31): a test pins exact words only when the words are the behaviour (a machine reads them, a guardrail's order at a stop, frozen text, words the owner locked), and says which with "pin: <n>"; a new pin check fails any whole sentence of 8 or more words pinned without one, and 142 such pins were repointed to the tokens a reader acts on or named by case (rule:word-pins). A new test stays only if it fails first and catches a mutant or guards a security or owner rule; a sweep fix that is prose, wiring or a removal adds no test (rule:test-value). Every test run and mutation check now gives its tests a throwaway Claude folder, so a test that loses its own (a mutant, a slip) lands there and never in the owner's: a Windows mutation run had rewritten the owner's install record (its files stayed the released ones). The recall gate no longer reads a recorded line as removed when appending an entry only adds the file's missing final newline; a line that changes is still a drop. The mutation check ran before and after the repointing: both runs stopped early when WSL ran out of memory, and on the 365 flips both reached, every one caught before is still caught. CI runs the suite on Linux (623 tests in about 20 s on the owner's PC through WSL, against about 7 minutes on Windows) and on Windows only the tests marked { windows: true } (drive paths, Git for Windows' sh, junctions) and both guard proofs; the required kit-tests check fails unless both jobs passed. A yes or a resume with no thread message now needs a real terminal, where the owner types the code (S23-4): with the AI shell's two variables cleared, a variable or a glob spelled both past the outward guard, and approve.mjs logged them; the outward guard also asks on any command that clears CLAUDECODE or AI_AGENT or the whole environment, PowerShell's wildcard, filtered and .NET removals included. The thread proof reads only the running session's own transcript (S23-5), and a session id no file can carry reads none. Remote Control prompts: in a subagent the delete and outward guards refuse instead of asking, so the agent hands the command back rather than waiting on a prompt no one sees (80 of the 518 guard prompts in the ten days before this build were in subagents); here-document bodies stay read as commands (reading them as data opened three bypasses in the sweep), and narrowing the delete guard's lead-session prompts is carried. The owner-proof guard now follows a cd (it never did: the last command's empty break read as not plain), a variable set earlier in the same command, and a cd into the transcripts, so reads there pass and writes are refused; a file whose text only names kit-owner.json passes (S23-1, S23-2). A task gate (E30) holds a PR, a commit, a tag or release and an agent fan-out until the session has read that step's rules since it started or last compacted, as a refusal, never a prompt, and counts a read only by the Read tool or a reader program. 2.36 KB of repeated text left the start load (the memory-bank table, the subagent list, the start file's generic tree, recovery and templates), short of the 9 KB planned: the rest is the owner's locked Rule 14 text and a rule a released recall key checks, which stay word for word. npx cancels instead of installing a missing package without a prompt (N10). E8: the rules hold no new logical-yes stops (audited). The sweep guard refuses to message an agent whose type it cannot read, or a reviewer addressed by its name (F36), and the call cap and token ceiling come from the brief alone (F37). Carried by decision: F29 (logs from before 1.23.0 only), F34 (keeps a root, never removes one), F35 (install copies; a failed step is named, nothing live changes); S22-2 (not inflated: a table loop registers one test per row, as merge-gate's two tables and the pre-push pair do; a file without loops reports one pass per test); S22-8 (no 8.3 names on this machine); S22-9 (fix forward). Changes to note: the project settings add the task gate and npm_config_yes=false (merge them in by hand if your settings changed); the kit repo's main now requires the kit-tests check and an up-to-date branch (S23-3).
 

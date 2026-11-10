@@ -54,6 +54,9 @@ const DELETE_WORD = /(^|[^\w-])(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimr
 const MAKES_LINK = /\bmklink\b|\bln(\.exe)?\s([^;|&\n]*\s)?(-[a-z]*s|--sy)|\bsymlink(Sync)?\s*\(|\b(new-item|ni)\b[\s\S]*\b(Junction|SymbolicLink)\b|\b(new-item|ni)\b[\s\S]*\s-(i\w*|t\w*)[\s:]+["']?(j|sy)/i;
 // The read-only searchers: a delete word in their arguments is a pattern, not a command.
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls']);
+// Programs that look a name up and run nothing it names: man rm, which rm, type del, Get-Help Remove-Item (the
+// lead-session narrowing carried from 1.24.0, E27). command looks up only with -v or -V; plain command runs it.
+const LOOKUPS = new Set(['man', 'which', 'whereis', 'where', 'whatis', 'apropos', 'help', 'info', 'type', 'get-help', 'get-command', 'gcm']);
 const GIT_READS = new Set(['grep', 'log', 'show', 'diff', 'blame']);
 // get-item and gi list the items themselves, the others what is inside them.
 const LISTERS = new Set(['get-childitem', 'gci', 'get-item', 'gi']);
@@ -117,10 +120,8 @@ const WILDCARD = /[*?[]/;
 // A session id is a full UUID: it alone finds the session folder, so "../.." or a plain word could name a shared one.
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const shared = require('./guard-read.cjs');
-// install skips a guard-read.cjs the owner changed, so an older one may sit here: without holdFor, every hold asks.
-const { normalize, plainText, withoutComments, joinContinuations, tokenize } = shared;
-const holdFor = shared.holdFor || (() => ({ decision: 'ask', note: '' }));
+const { normalize, plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { ownerYes, howToAsk } = require('./owner-yes.cjs');
 
 // The program a word names, whatever folder it sits in, without .exe: "C:/Git/usr/bin/rm.exe" -> "rm"; cmd
 // reads a switch glued to a builtin, so "rd/s/q" -> "rd".
@@ -399,6 +400,9 @@ function listedTargets(segments, index) {
 
 function findDelete(text, ctx, state, depth) {
 	const segments = tokenize(joinContinuations(text));
+	// A delete word anywhere in the text, read once: read per command it made a long command quadratic (98 KB of a; took
+	// 7 s, near the hook's 10 s; T2).
+	const textDeletes = DELETE_WORD.test(text);
 	for (let s = 0; s < segments.length; s++) {
 		const segment = segments[s];
 		// How the command before this one ended, applied here so no skipped command can miss it. A ( ... ) group may
@@ -415,6 +419,9 @@ function findDelete(text, ctx, state, depth) {
 		// A search's pattern is not a command; skipped only when nothing in it runs another program (rg --pre, a git
 		// option before the subcommand such as -c core.pager, an external diff or pager).
 		// git takes any unambiguous prefix of a long option, and short options cluster (-nO).
+		// A look-up of plain names runs nothing: no variable, substitution or second command hides in it.
+		const lookup = (LOOKUPS.has(first) || (first === 'command' && /^-[vV]$/.test(words[1] ?? ''))) && segment.every((w) => !w.redirect && /^[\w.-]+$/.test(w.value));
+		if (lookup && depth === 0) continue;
 		const search = SEARCHERS.has(first) || (first === 'git' && words.slice(1).some((w) => GIT_READS.has(w)));
 		const runsOther = words.some((w) => /^(--pre|--hostname-bin|--o(p(e(n(-[\w-]*)?)?)?)?(=|$)|--ext-|--textc|-[A-Za-z]*O)/.test(w));
 		if (search && runsOther) return 'a search option that runs another program';
@@ -433,7 +440,7 @@ function findDelete(text, ctx, state, depth) {
 		const at = words.findIndex((w) => !WRAPPERS.has(w.toLowerCase()) && !/^(\w+=.*|\d+[smhd]?|then|do|else|!)$/.test(w));
 		const opener = words[at] ?? '';
 		const after = words.slice(at + 1);
-		const deleteSign = DELETE_WORD.test(text) || after.some((w) => /^(-[rf]{1,2}|-+recurse|-+force|-+delete|\/s)$/i.test(w));
+		const deleteSign = textDeletes || after.some((w) => /^(-[rf]{1,2}|-+recurse|-+force|-+delete|\/s)$/i.test(w));
 		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && after.length > 0 && !NOT_RUN_AFTER.test(after[0]) && deleteSign) return 'a program held in a variable';
 		if (opener === '$' && words.length === 1 && segment.end === '{') return 'a program held in a variable';
 		// A shell expands a wildcard in a program's path: /usr/bin/r[m].
@@ -684,6 +691,31 @@ function decide(input, where = {}) {
 	return '';
 }
 
+// The guard's answer for one tool call (the input already parsed, or null when it could not be): the output to print,
+// or null. The dispatcher (guard.cjs) calls this.
+function check(input) {
+	let reason = '';
+	let verdict = 'deny';
+	try {
+		if (!input || typeof input !== 'object') throw new Error('no input');
+		reason = decide(input);
+		// The owner's own pop-up answer for this exact command lets it run once (T1); a subagent hands it back.
+		if (reason && !input.agent_id && ownerYes(input)) verdict = 'allow';
+	} catch {
+		// A guard that cannot read the command refuses rather than lets it through.
+		reason = 'the guard could not read this command';
+	}
+	if (!reason) return null;
+	const what = 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): ';
+	return {
+		hookSpecificOutput: {
+			hookEventName: 'PreToolUse',
+			permissionDecision: verdict,
+			permissionDecisionReason: what + (verdict === 'allow' ? 'the owner said yes to this exact command in the pop-up.' : 'it runs only with the owner\'s yes.' + howToAsk(input)),
+		},
+	};
+}
+
 function main() {
 	let raw = '';
 	process.stdin.setEncoding('utf8');
@@ -691,28 +723,13 @@ function main() {
 		raw += chunk;
 	});
 	process.stdin.on('end', () => {
-		let reason = '';
-		let hold = holdFor(null);
-		try {
-			const input = JSON.parse(raw);
-			hold = holdFor(input);
-			reason = decide(input);
-		} catch {
-			// A guard that cannot read the command asks rather than lets it through.
-			reason = 'the guard could not read this command';
-		}
-		if (reason) {
-			process.stdout.write(JSON.stringify({
-				hookSpecificOutput: {
-					hookEventName: 'PreToolUse',
-					permissionDecision: hold.decision,
-					permissionDecisionReason: 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): it runs only with the user saying yes.' + hold.note,
-				},
-			}));
-		}
+		let input = null;
+		try { input = JSON.parse(raw); } catch { /* refused below */ }
+		const out = check(input);
+		if (out) process.stdout.write(JSON.stringify(out));
 	});
 }
 
 if (require.main === module) main();
 
-module.exports = { decide };
+module.exports = { decide, check };

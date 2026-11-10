@@ -22,9 +22,9 @@ test('a guard in a subagent refuses instead of asking, so the agent hands the ac
 	const sub = { agent_id: 'a1b2c3', agent_type: 'builder' };
 	assert.equal(hook('guard-outward.cjs', 'git push origin main', sub), 'deny');
 	assert.equal(hook('guard-delete.cjs', 'rm -rf ' + OUT, sub), 'deny');
-	// The main session still asks the owner, and a plain command still passes in both.
-	assert.equal(hook('guard-outward.cjs', 'git push origin main'), 'ask');
-	assert.equal(hook('guard-delete.cjs', 'rm -rf ' + OUT), 'ask');
+	// The main session holds it too, until the owner's pop-up yes (T1), and a plain command still passes in both.
+	assert.equal(hook('guard-outward.cjs', 'git push origin main'), 'deny');
+	assert.equal(hook('guard-delete.cjs', 'rm -rf ' + OUT), 'deny');
 	assert.equal(hook('guard-outward.cjs', 'git status', sub), 'pass');
 	assert.equal(hook('guard-delete.cjs', 'git status', sub), 'pass');
 });
@@ -37,9 +37,9 @@ test('the shipped project settings turn off npm and npx installing a missing pac
 
 // The 1.24.0 sweep: install skips a guard-read.cjs the owner changed, so an updated guard can sit beside an older
 // reader; it must still hold the command, never crash and let it through.
-test('a guard beside an older shared reader still asks, and owner-proof still refuses', () => {
+test('a guard beside an older shared reader still holds the command, and owner-proof still refuses', () => {
 	const dir = kitTemp.makeTemp('stale-');
-	for (const f of ['guard-delete.cjs', 'guard-outward.cjs', 'owner-proof.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, f));
+	for (const f of ['guard-delete.cjs', 'guard-outward.cjs', 'owner-proof.cjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, f));
 	const old = fs.readFileSync(path.resolve('project/.claude/guard-read.cjs'), 'utf8').replace(/module\.exports = \{[^}]*\};/, 'module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize };');
 	fs.writeFileSync(path.join(dir, 'guard-read.cjs'), old);
 	const run = (file, command, extra = {}) => {
@@ -47,8 +47,8 @@ test('a guard beside an older shared reader still asks, and owner-proof still re
 		assert.equal(r.status, 0, `${file} crashed: ${r.stderr}`);
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'pass';
 	};
-	assert.equal(run('guard-delete.cjs', 'rm -rf ' + OUT), 'ask');
-	assert.equal(run('guard-outward.cjs', 'git push origin main'), 'ask');
+	assert.equal(run('guard-delete.cjs', 'rm -rf ' + OUT), 'deny');
+	assert.equal(run('guard-outward.cjs', 'git push origin main'), 'deny');
 	assert.equal(run('owner-proof.cjs', 'echo x >> ~/.claude/projects/p/s.jsonl'), 'deny');
 });
 
@@ -56,29 +56,29 @@ test('a guard beside an older shared reader still asks, and owner-proof still re
 // otherwise, a cat function, continued lines, nested quotes, a second mark, a process substitution), and it saved about
 // 10 of 518 prompts. Every body is read as commands again; each spelling the sweep found stays here as a case.
 test('the delete guard reads every here-document body as commands, in every spelling that runs one', () => {
-	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' > notes.md\nrm -rf " + OUT + "\nEOF"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat <<E\"OF\" > notes.md\nhi\nEOF\nrm -rf " + OUT), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat > n.md <<E'OF'\nx\nEOF\nrm -rf " + OUT + "\nE'OF'"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat() { bash; }\ncat <<EOF\nrm -rf " + OUT + "\nEOF"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' > notes.md\nrm -rf " + OUT + "\nEOF"), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat <<E\"OF\" > notes.md\nhi\nEOF\nrm -rf " + OUT), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat > n.md <<E'OF'\nx\nEOF\nrm -rf " + OUT + "\nE'OF'"), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat() { bash; }\ncat <<EOF\nrm -rf " + OUT + "\nEOF"), 'deny');
 	// The same body fed to a shell, expanded by bash, or after the here-document ends, runs.
-	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' | bash\nrm -rf " + OUT + "\nEOF"), 'ask');
-	assert.equal(hook('guard-delete.cjs', 'cat > notes.md <<EOF\n$(rm -rf ' + OUT + ')\nEOF'), 'ask');
-	assert.equal(hook('guard-delete.cjs', "bash <<'EOF'\nrm -rf " + OUT + "\nEOF"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nx\nEOF\nrm -rf " + OUT + ""), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' | bash\nrm -rf " + OUT + "\nEOF"), 'deny');
+	assert.equal(hook('guard-delete.cjs', 'cat > notes.md <<EOF\n$(rm -rf ' + OUT + ')\nEOF'), 'deny');
+	assert.equal(hook('guard-delete.cjs', "bash <<'EOF'\nrm -rf " + OUT + "\nEOF"), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nx\nEOF\nrm -rf " + OUT + ""), 'deny');
 	// The security review of this branch: a second here-document on the line read by bash, and a body sent into a
 	// process substitution, run; only a line holding one cat or tee and one mark is data.
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' > notes.md; bash <<'B'\nx\nA\nrm -rf " + OUT + "\nB"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' > >(bash)\nrm -rf " + OUT + "\nA"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' && bash x.sh\nrm -rf " + OUT + "\nA"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > notes.md; bash <<'B'\nx\nA\nrm -rf " + OUT + "\nB"), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > >(bash)\nrm -rf " + OUT + "\nA"), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' && bash x.sh\nrm -rf " + OUT + "\nA"), 'deny');
 	// A line continued with a backslash carries its pipe on the next line.
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' \\\n| bash\nrm -rf " + OUT + "\nA"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' \\\n> >(bash)\nrm -rf " + OUT + "\nA"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' $'x'\nrm -rf " + OUT + "\nA"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' \\\n| bash\nrm -rf " + OUT + "\nA"), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' \\\n> >(bash)\nrm -rf " + OUT + "\nA"), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' $'x'\nrm -rf " + OUT + "\nA"), 'deny');
 	// Double quotes do not stop an expansion: one anywhere on the line keeps the body read.
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"$(bash)\"\nrm -rf " + OUT + "\nA"), 'ask');
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"`bash`\"\nrm -rf " + OUT + "\nA"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"$(bash)\"\nrm -rf " + OUT + "\nA"), 'deny');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"`bash`\"\nrm -rf " + OUT + "\nA"), 'deny');
 	// A single quote inside double quotes is text, so it hides nothing.
-	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"a'$(bash)'\"\nrm -rf " + OUT + "\nA"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > \"a'$(bash)'\"\nrm -rf " + OUT + "\nA"), 'deny');
 	// A mark inside quotes starts no here-document, so the lines after it are commands.
-	assert.equal(hook('guard-delete.cjs', `cat "a<<'X'"\nrm -rf ${OUT}\nX`), 'ask');
+	assert.equal(hook('guard-delete.cjs', `cat "a<<'X'"\nrm -rf ${OUT}\nX`), 'deny');
 });

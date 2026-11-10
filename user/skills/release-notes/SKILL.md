@@ -16,7 +16,8 @@ release format wins over anything here.
    the examples below.
 3. **Size the version** by semver against the version plan, and say why.
 4. **Draft** from the rule below, then audit: `node <this skill's folder>/audit.mjs <notes.md> <version>`,
-   and audit each claim to the file, test or measurement that proves it.
+   and audit each claim to the file, test or measurement that proves it. The changelog entry follows
+   `_Templates/_Changelog Entry Template.md`: grouped one-line changes, the detail left in the PR body.
 5. **Hand off** the draft, its audit result and the sources to the owner. Create the tag and publish only on
    the owner's explicit go (rule:outward-acts); after publishing, read the live body back and diff it.
 

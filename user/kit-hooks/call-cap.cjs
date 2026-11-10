@@ -18,10 +18,10 @@ const path = require('path');
 
 const LARGE_READ = 40 * 1024;
 const IDLE_MS = 5 * 60 * 1000;
-const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
+const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 
-function main() {
-	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+// The hook's answer for one tool call: a refusal, or nothing. The dispatcher (guard.cjs) calls this.
+function check(input) {
 	if (!input.agent_id || input.tool_name === 'SubagentHandback') return;
 	const t = input.tool_input || {};
 	const type = String(input.agent_type || '');
@@ -78,7 +78,15 @@ function main() {
 	const used = [...calls.values()].reduce((t, u) => t + size(u), 0);
 	const last = calls.size ? size([...calls.values()].pop()) : 0;
 	const n = (x) => x.toLocaleString('en-US');
-	if (used + last >= ceiling) deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): one more call would pass it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
+	if (used + last >= ceiling) return deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): one more call would pass it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
 }
 
-try { main(); } catch { /* anything unexpected lets the call through */ }
+// Anything unexpected lets the call through.
+const safeCheck = (input) => { try { return check(input) || null; } catch { return null; } };
+if (require.main === module) {
+	let out = null;
+	try { out = safeCheck(JSON.parse(fs.readFileSync(0, 'utf8') || '{}')); } catch { /* lets it through */ }
+	if (out) process.stdout.write(JSON.stringify(out));
+}
+
+module.exports = { check: safeCheck };

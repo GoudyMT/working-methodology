@@ -23,7 +23,7 @@
 // sets the tier's floor, adds the dependency modifier and marks changed tests. The log lives in the repo's git folder
 // (never pushed, one per repo), each line chained to the one before, so a careless hand edit shows (a careful one does not; the owner reads the log at
 // each trial review). The script
-// pauses itself, and only the owner resumes it from a terminal no AI tool runs in, after: tokens a quarter or more
+// pauses itself, and only the owner resumes it, by their Yes in Claude Code's choice pop-up, after: tokens a quarter or more
 // over budget, a third or more of the findings repeated between roles, a bug that escaped a sweep it passed, or
 // every 10 auto-approvals (the trial review; every 20 after two clean ones in a row). The next approval waits for the
 // last sweep's outcome. A mistake Claude can fix itself is not the owner's: it answers FIX THE CONTRACT, and the owner
@@ -35,19 +35,22 @@
 //                                                                       3 fix the contract: Claude's to fix and rerun)
 //   node approve.mjs <contract.json> --outcome --agents <id,...> --findings N --real N --duplicates N [--real-mid N]
 //        [--carried N (a re-sweep: findings left unfixed)] [--closed-carries N (carried findings this sweep fixed)]
-//   node approve.mjs <contract.json> --owner-yes "<the owner's words>"  after an ASK, once the owner says yes
+//   node approve.mjs <contract.json> --owner-yes                       after an ASK, once the owner tapped Yes in the pop-up
 //   node approve.mjs <contract.json> --retry <n> --crashed <id>         one more start for role n, whose reviewer crashed
 //   node approve.mjs <contract.json> --escape "<what slipped through>"
 //   node approve.mjs --summary
-//   KIT_OWNER_RESUME=1 node approve.mjs --resume                        the owner, in their own terminal
+//   node approve.mjs --resume                                           after a pause, once the owner tapped Yes in the pop-up
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const SELF = fileURLToPath(import.meta.url);
+// The owner's pop-up answers, read the way the guards read them (an exact copy the kit's build keeps in kit-tools).
+const { sessionYes } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
 const toPosix = (p) => p.split(path.sep).join('/');
 
 // A tier's cap counts only the roles beyond its floor (2026-11-03): a cap below the floor made a
@@ -494,7 +497,7 @@ const openCarries = (log) => log.filter((e) => e.kind === 'outcome').reduce((t, 
 
 // What the owner reads at a stop: what tripped, the numbers, the log lines and the ways forward.
 const FIXES = [
-	[/paused|trial review due/, 'The owner reviews the log first (`approve.mjs --summary`), then resumes from their own terminal; until then every sweep goes to the owner.'],
+	[/paused|trial review due/, 'The owner reviews the log first (`approve.mjs --summary`), then resumes with a Yes in the pop-up; until then every sweep goes to the owner.'],
 	[/not committed|no changes|cannot read the branch diff/, 'Commit the work and run approve.mjs from the branch\'s own checkout (pass `--base <ref>` if it cannot find the base).'],
 	[/needs \d+ \S+ role/, 'Add the missing floor role(s) and run approve.mjs again.'],
 	[/beyond the \S+ floor|agents, over/, 'Drop the extra roles, or split the change into smaller PRs.'],
@@ -521,7 +524,7 @@ function triage(title, reasons, numbers) {
 		// The report sits in the working tree, so its log lines carry relative paths and leave out the owner's words.
 		'## The log lines', '', '```json', ...rawLines().slice(-5).map((l) => { try { const { words: _w, note: _n, ...e } = JSON.parse(l); return JSON.stringify({ ...e, ...(e.contract ? { contract: rel(e.contract) } : {}), ...(e.resweepOf ? { resweepOf: rel(e.resweepOf) } : {}) }); } catch { return '(unreadable line)'; } }), '```', '',
 		'## Fix options', '', ...options.map((o) => `- ${o}`),
-		'- Or the owner decides. After an ask: they answer in the thread "yes <the ask\'s code>" (the ask prints the code), and the lead logs it with `approve.mjs <contract.json> --owner-yes "yes <code>" --thread <their message id>`. After a pause: they answer "resume <the pause\'s code>" (`--summary` prints it), or the owner resumes from their own terminal.', '',
+		'- Or the owner decides. After an ask: they tap Yes in a pop-up quoting the act the ask printed (`sweep yes <code>`), and the lead logs it with `approve.mjs <contract.json> --owner-yes`. After a pause: the same, with `sweep resume <code>` (`--summary` prints it) and `approve.mjs --resume`.', '',
 	].join('\n');
 	fs.writeFileSync(f, text);
 	return toPosix(f);
@@ -575,7 +578,7 @@ function decide() {
 		if (hookState(facts && facts.base) === 'none') console.log(HOOK_NONE);
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
 		for (const w of why) console.log(`    ${w}`);
-		console.log(`    The owner can answer from the thread: "yes ${askCode(entry.hash)}" (the code ties the yes to this ask); log it with --owner-yes "<their words>" --thread <their message id>.`);
+		console.log(`    The owner answers in the pop-up: ${popUpHow(`sweep yes ${askCode(entry.hash)}`)}; after their Yes, log it with --owner-yes.`);
 		const now = state();
 		if (now.paused) for (const l of resumeHelp(now)) console.log(l);
 		const f = triage(`${c.tier} ${first ? 're-sweep' : 'sweep'} sent to the owner`, why, [
@@ -634,112 +637,22 @@ function openSweep(log) {
 	return { open, reported, stuck: Boolean(open && !reported && log.some((e, i) => i > openAt && e.kind === 'unread' && e.contract === open.contract)) };
 }
 
-// The owner's own message from the phone thread (E27, the owner 2026-11-08, option A). Claude Code writes each
-// message a person sends into the session's transcript as a human turn: a wake whose triggering message names its
-// sender. Only a main session's transcript counts (a subagent's is no owner's), only a turn from a session in this
-// repo, never one inside a relay, and only the sender kit-owner.json names, a file in the Claude config folder the
-// owner writes and turns off with "threadYes": false. Like the spend meter, it stops slips and a turn Claude writes
-// as text, not a hand-forged transcript line. Returns { author, words, at } or { err }.
-const MESSAGE_ID = /^cmsg_[A-Za-z0-9]{8,64}$/;
-// install user fills in the Claude folder it installed into, so the installed copy reads the owner's file and the
-// transcripts there whatever CLAUDE_CONFIG_DIR a caller sets. Only an uninstalled copy (the kit source's tests)
-// reads the environment.
-const INSTALLED_HOME = '{{CLAUDE_HOME}}';
-const ownerHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
-// The short code an ask or a pause prints and the owner's reply carries, so one reply answers that ask alone.
+// The owner's yes and resume (T2, the owner 2026-11-10: "Pop-up record"). An ask or a pause prints an act with its
+// short code ("sweep yes <code>", "sweep resume <code>"), so one answer is for that ask alone; the lead asks the owner
+// in Claude Code's choice pop-up, quoting the act in a code span, with a Yes and a No. The owner's tap, in this
+// session's own transcript (in this repo's folder of them), is the proof: no code is typed and no message id copied,
+// so the typed codes of 1.23 are retired. A subagent's transcript is never read. Limits: the transcript is a file of
+// the same user, so a program set on forging can write it, as it can the log (its links are not keyed).
 const askCode = (hash) => String(hash || '').slice(0, 6);
-// S23-4 (the 1.23.0 verify): a yes or a resume with no thread proof rested on two variables any shell can clear, and
-// on the push guard reading the command's spelling; a variable or a glob got past both. It now also needs a real
-// terminal, where the owner types the code: an AI tool's shell has none (its stdin is no TTY), however the command is
-// spelled. A process set on forging can still write the log itself (its links are not keyed): the written-down limit.
-function typedAtTerminal(code, what) {
-	if (!process.stdin.isTTY) return `${what} without a thread message needs the owner's own terminal, where they type its code; this shell has none. From the phone: the thread's way`;
-	process.stdout.write(`Type ${code} to confirm ${what}: `);
-	let line = '';
-	const one = Buffer.alloc(1);
-	try { while (line.length < 64 && fs.readSync(0, one, 0, 1, null) === 1 && one[0] !== 10) line += String.fromCharCode(one[0]); } catch { return 'the terminal could not be read'; }
-	return line.trim().toLowerCase() === String(code).toLowerCase() ? '' : `the code typed was not ${code}`;
-}
 const pauseCode = (s) => { const lines = rawLines(); const i = s.log.map((e, k) => (e.kind === 'pause' ? k : -1)).reduce((a, b) => Math.max(a, b), -1); return i >= 0 ? sha(lines[i]).slice(0, 6) : ''; };
-const unescapeXml = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
-// setup: read the message whoever sent it, to name its author as the owner (--owner-setup).
-function ownerMessage(id, setup = false) {
-	const cfg = ownerHome();
-	let owner = null;
-	try { owner = JSON.parse(fs.readFileSync(path.join(cfg, 'kit-owner.json'), 'utf8')); } catch { /* checked below */ }
-	if (!setup && (!owner || typeof owner.authorId !== 'string' || !owner.authorId)) return { err: `no owner is named in ${toPosix(path.join(cfg, 'kit-owner.json'))}. To name them from the thread, the lead runs node ${toPosix(SELF)} --owner-setup: it gives the words the owner sends, then --owner-setup --thread <that message's id> names its author the owner` };
-	if (!setup && owner.threadYes !== true) return { err: 'the owner turned thread answers off in kit-owner.json ("threadYes")' };
-	if (!MESSAGE_ID.test(String(id || ''))) return { err: '--thread needs the id of the owner\'s message (cmsg_...)' };
-	let relayed = false;
-	const repo = path.dirname(LOG).toLowerCase();
-	const tag = new RegExp(`<message trigger="true" from="human" trust="principal" author-id="([^"]+)" id="${id}"[^>]*>([\\s\\S]*?)</message>`);
-	for (const project of folders(path.join(cfg, 'projects'))) {
-		let files = [];
-		// S23-5: where Claude Code names the session this runs in, only its own transcript is read, so a turn written
-		// into another session's file is no proof. A shell with no session id (the owner's terminal) reads them all.
-		// A set id no file can carry (a dot, an empty value) narrows to nothing, never back to every file (the 1.24.0 sweep).
-		const sid = process.env.CLAUDE_CODE_SESSION_ID;
-		const session = sid === undefined ? null : /^[\w-]{1,128}$/.test(sid) ? `${sid}.jsonl` : '\0';
-		try { files = fs.readdirSync(project).filter((f) => f.endsWith('.jsonl') && (!session || f === session)).map((f) => path.join(project, f)); } catch { continue; }
-		for (const f of files) {
-			const text = fs.readFileSync(f, 'utf8');
-			if (!text.includes(id)) continue;
-			for (const line of text.split('\n')) {
-				if (!line.includes(id)) continue;
-				let e;
-				try { e = JSON.parse(line); } catch { continue; }
-				const c = e && e.message && e.message.content;
-				// projectsUserTurn: Claude Code marks a turn that came from a project thread; a session started from a shell
-				// (claude -p "<wake ...>") writes a human turn without it.
-				if (!e || e.type !== 'user' || e.isSidechain !== false || !e.origin || e.origin.kind !== 'human' || e.projectsUserTurn !== true || typeof c !== 'string') continue;
-				if (!c.startsWith('<wake ') || /<\/?(coordinator-relay|relay|project_claude_message|cited)\b/.test(c)) { relayed = true; continue; }
-				const m = tag.exec(c);
-				if (!m || !e.cwd) continue;
-				const { GIT_DIR: _d, GIT_COMMON_DIR: _c, ...env } = process.env;
-				const at = spawnSync('git', ['-C', e.cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', env });
-				if (at.status !== 0 || path.resolve(at.stdout.trim()).toLowerCase() !== repo) continue;
-				if (!setup && m[1] !== owner.authorId) return { err: `message ${id} is not from the owner named in kit-owner.json` };
-				return { author: m[1], words: unescapeXml(m[2]).trim(), at: e.timestamp };
-			}
-		}
-	}
-	// A relayed or cited copy is another Claude's word for it, so the owner answers in this build's own thread.
-	if (relayed) return { err: `message ${id} reached this repo's sessions only as a relayed or cited copy; the owner answers in this build's own thread, and that message's id is the proof` };
-	return { err: `no such message from a person in this repo's sessions: ${id}` };
-}
-
-// The owner named from the thread: the author of a message the owner sent in this repo's own thread becomes the owner
-// whose yes and resume the thread proof takes. Only while kit-owner.json names no one: a change of owner is the
-// owner's own edit of that file.
-function ownerSetup() {
-	const file = path.join(ownerHome(), 'kit-owner.json');
-	if (fs.existsSync(file)) { console.log(`Refused: ${toPosix(file)} already names an owner; a change is the owner's own edit of that file. Nothing written.`); return 1; }
-	// The owner's message says so in so many words, with a code this run prints, so no message they sent for another
-	// reason names them (the 1.23.0 sweep's review).
-	const lines = rawLines();
-	const code = sha(`owner-setup ${lines.length ? lines[lines.length - 1] : ''}`).slice(0, 6);
-	const since = lines.length ? (() => { try { return JSON.parse(lines[lines.length - 1]).time; } catch { return null; } })() : null;
-	if (!has('--thread')) {
-		console.log(`To be named the owner whose thread answers count, the owner sends in this build's thread: "setup ${code}". Then: node ${toPosix(SELF)} --owner-setup --thread <that message's id>. Nothing written.`);
-		return 1;
-	}
-	const id = opt('--thread');
-	const m = ownerMessage(id, true);
-	if (m.err) { console.log(`Refused: ${m.err}. Nothing written.`); return 1; }
-	if (!new RegExp(`^setup ${code}[.!]?$`, 'i').test(m.words)) { console.log(`Refused: message ${id} ("${m.words}") is not "setup ${code}". Nothing written.`); return 1; }
-	if (since && !(Date.parse(m.at) > Date.parse(since))) { console.log(`Refused: message ${id} was sent before the code was given. Nothing written.`); return 1; }
-	fs.mkdirSync(path.dirname(file), { recursive: true });
-	fs.writeFileSync(file, JSON.stringify({ authorId: m.author, threadYes: true }, null, 2) + '\n', { flag: 'wx' });
-	console.log(`The owner is the author of message ${id} (${m.author}), written to ${toPosix(file)}. Their thread answers now count: "yes <code>" for an ask, "resume <code>" for a pause. To turn thread answers off, set "threadYes": false there.`);
-	return 0;
-}
-const messageUsed = (log, id) => log.some((e) => e.message === id);
+const popUpHow = (act) => `ask with the AskUserQuestion pop-up, the question quoting \`${act}\`, one option labelled "Yes" and one starting "No"`;
+// One tap answers one ask or one pause.
+const tapUsed = (log, tap) => log.some((e) => e.tap === tap);
+const repoRoot = () => path.dirname(path.dirname(LOG));
 
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
 // about, so the reviewers' guard (sweep-guard) sees the owner's call and the order: script first, then the owner.
 function ownerYes() {
-	const said = opt('--owner-yes');
-	if (!filled(said, 2)) { console.log("--owner-yes needs the owner's own words, quoted; nothing logged."); return 1; }
 	const raw = fs.readFileSync(contractFile, 'utf8');
 	const s = state();
 	const last = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile).pop();
@@ -752,34 +665,16 @@ function ownerYes() {
 	const { open, reported, stuck } = openSweep(s.log);
 	// A yes on an older ask must not open a new set of starts over a sweep whose spend is still unread.
 	if (open && !reported && !stuck && open.contract !== contractFile) { console.log(`Log the outcome of the last approved sweep first (${rel(open.contract)}), then run approve.mjs on this contract again. Nothing logged.`); return 1; }
-	// From the thread: the owner's own message, sent after this ask, in exactly the words logged. Read before anything
-	// is written, so a refusal logs nothing.
-	let proof = {};
-	// Without the thread's proof, the words rest on whoever typed this; from an AI tool's shell that is Claude's word.
-	if (!has('--thread') && ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env)) {
-		console.log('Refused: from an AI tool\'s shell the owner\'s yes needs its proof, the id of the owner\'s own message: --owner-yes "<their words>" --thread <cmsg_...>. Or the owner runs it in their own terminal. Nothing logged.');
-		return 1;
-	}
-	if (!has('--thread')) {
-		const why = typedAtTerminal(askCode(last.hash), 'the owner\'s yes');
-		if (why) { console.log(`Refused: ${why}. Nothing logged.`); return 1; }
-	}
-	if (has('--thread')) {
-		const id = opt('--thread');
-		const m = ownerMessage(id);
-		if (m.err) { console.log(`Refused: ${m.err}. Nothing logged.`); return 1; }
-		if (messageUsed(s.log, id)) { console.log(`Refused: message ${id} already answered an ask; one message answers one. Nothing logged.`); return 1; }
-		if (!(Date.parse(m.at) > Date.parse(last.time))) { console.log(`Refused: message ${id} was sent before the ask (${last.time}). Nothing logged.`); return 1; }
-		if (m.words !== said.trim()) { console.log(`Refused: --owner-yes must give message ${id} word for word ("${m.words}"). Nothing logged.`); return 1; }
-		// The whole message is the yes and this ask's code, as the resume is: a "no abc123" or a question carrying the
-		// code is no yes (the 1.23.0 sweep).
-		if (!new RegExp(`^yes ${askCode(last.hash)}[.!]?$`, 'i').test(m.words)) { console.log(`Refused: message ${id} ("${m.words}") is not "yes ${askCode(last.hash)}", the yes with this ask's code. Nothing logged.`); return 1; }
-		proof = { proof: 'thread', message: id };
-	}
+	// The owner's tap on this ask's act, after the ask. Read before anything is written, so a refusal logs nothing.
+	const act = `sweep yes ${askCode(last.hash)}`;
+	const yes = sessionYes(act, { since: Date.parse(last.time), repo: repoRoot() });
+	if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask. ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
+	if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered an ask; one answer is for one ask. Nothing logged.'); return 1; }
+	const proof = { proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() };
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
 	// The ask's ceilings travel with the yes: the reviewers' guard reads the clearing line, and a yes without them
 	// started reviewers with no ceiling at all (the 1.23.0 sweep).
-	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings } : {}), words: said, ...proof });
+	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings } : {}), ...proof });
 	console.log(`The owner's yes is logged; the reviewers may start. ${sweepLine(last.hash)}`);
 	return 0;
 }
@@ -788,10 +683,8 @@ function ownerYes() {
 function resumeHelp(s) {
 	return [
 		`Auto-approval is paused since ${String(s.pausedAt || '').slice(0, 10) || 'an unknown date'}: ${s.paused}.`,
-		`    The owner reviews the log first (node ${toPosix(SELF)} --summary), then resumes from their own terminal:`,
-		`    resume: PowerShell  $env:KIT_OWNER_RESUME='1'; node ${toPosix(SELF)} --resume`,
-		`    resume: bash        KIT_OWNER_RESUME=1 node ${toPosix(SELF)} --resume`,
-		`    Or the owner answers from the thread: "resume ${pauseCode(s)}"; log it with --resume --thread <their message id>.`,
+		`    The owner reviews the log first (node ${toPosix(SELF)} --summary), then resumes in the pop-up:`,
+		`    ${popUpHow(`sweep resume ${pauseCode(s)}`)}; after their Yes, node ${toPosix(SELF)} --resume.`,
 		'    Until then every sweep goes to the owner. Carry this into the closeout handoff.',
 	];
 }
@@ -1137,44 +1030,23 @@ function summary() {
 	const n = (x) => x.toLocaleString('en-US');
 	if (Object.keys(kinds).length) console.log(`spend by role kind (processed tokens): ${Object.entries(kinds).map(([k, v]) => `${k} x${v.n}: up to ${n(v.max)}${v.calls ? ` over ${v.calls} calls` : ''}`).join('; ')}`);
 	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; closed unmeasured by the owner: ${o.filter((e) => e.closedByOwner).length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${s.reviewEvery} since the last review`}`);
-	// Both ways to resume: the owner may be at the terminal or on the phone.
-	if (s.paused) for (const line of [resumeHelp(s)[2], resumeHelp(s)[4]]) console.log(line.trim());
+	if (s.paused) console.log(resumeHelp(s)[2].trim());
 	return 0;
 }
 
 function main() {
 	if (!LOG) { console.log('ASK THE OWNER - not inside a git repository, so there is no approval log.'); return 1; }
 	if (has('--summary')) return summary();
-	if (has('--owner-setup')) return ownerSetup();
-	if (has('--resume') && has('--thread')) {
-		// From the thread (E27): the owner's own message, after the pause, that says resume.
-		const s = state();
-		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
-		const id = opt('--thread');
-		const m = ownerMessage(id);
-		if (m.err) { console.log(`Refused: ${m.err}. Nothing logged.`); return 1; }
-		if (messageUsed(s.log, id)) { console.log(`Refused: message ${id} already answered; one message answers one. Nothing logged.`); return 1; }
-		if (!(Date.parse(m.at) > Date.parse(s.pausedAt || 0))) { console.log(`Refused: message ${id} was sent before the pause (${s.pausedAt}). Nothing logged.`); return 1; }
-		// The whole message is the resume and this pause's code, nothing hedged around it.
-		const code = pauseCode(s);
-		if (!new RegExp(`^resume ${code}\\.?$`, 'i').test(m.words)) { console.log(`Refused: message ${id} ("${m.words}") is not "resume <code>" with this pause's code (${code}). Nothing logged.`); return 1; }
-		write({ kind: 'resume', words: m.words, proof: 'thread', message: id });
-		console.log(`Auto-approval resumed on the owner's message ${id}; the next review comes after ${state().reviewEvery} more.`);
-		return 0;
-	}
 	if (has('--resume')) {
-		// An AI tool's shell carries one of these; the owner's own terminal does not (the push guard's same line).
-		if ('CLAUDECODE' in process.env || 'AI_AGENT' in process.env || process.env.KIT_OWNER_RESUME !== '1') {
-			console.log('Only the owner resumes auto-approval, from their own terminal: review the log, then run KIT_OWNER_RESUME=1 node approve.mjs --resume (PowerShell: $env:KIT_OWNER_RESUME=\'1\'; node approve.mjs --resume).');
-			return 1;
-		}
 		const s = state();
-		// As the thread's way: with nothing paused there is nothing to resume, and no code to type (the 1.24.0 sweep).
 		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
-		const why = typedAtTerminal(pauseCode(s) || 'resume', 'the resume');
-		if (why) { console.log(`Refused: ${why}. Nothing logged.`); return 1; }
-		write({ kind: 'resume' });
-		console.log(`Auto-approval resumed; the next review comes after ${state().reviewEvery} more.`);
+		// The owner's tap on this pause's act, after the pause.
+		const act = `sweep resume ${pauseCode(s)}`;
+		const yes = sessionYes(act, { since: Date.parse(s.pausedAt || 0), repo: repoRoot() });
+		if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause. Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
+		if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered; one answer is for one pause. Nothing logged.'); return 1; }
+		write({ kind: 'resume', proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() });
+		console.log(`Auto-approval resumed on the owner's Yes; the next review comes after ${state().reviewEvery} more.`);
 		return 0;
 	}
 	if (!contractFile) { console.log('Usage: node approve.mjs <contract.json> [--outcome ... | --escape "<note>"] [--base <ref>]'); return 2; }

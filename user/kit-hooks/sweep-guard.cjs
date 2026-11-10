@@ -23,7 +23,7 @@ const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8
 // HEAD per folder, read once per call: the log only grows, and its lines share a few folders.
 const heads = new Map();
 const headOf = (d) => { if (!heads.has(d)) heads.set(d, git(d, 'rev-parse', 'HEAD').stdout.trim()); return heads.get(d); };
-const deny = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
+const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). FIX THE CONTRACT: fix it and run it again. APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
 
 // Whether a chained outcome or cut short for this contract came after this clearing.
@@ -61,8 +61,8 @@ function standing(lines, i, e) {
 	return false;
 }
 
-function main() {
-	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+// The hook's answer for one tool call: a refusal, or nothing. The dispatcher (guard.cjs) calls this.
+function check(input) {
 	// SendMessage resumes a finished agent with its whole context: for a reviewer that is a review with no clearing,
 	// no slot and no spend read (the 1.22.0 sweep, S1). Claude Code's meta file beside the transcript names its type.
 	if (input.tool_name === 'SendMessage') {
@@ -85,15 +85,15 @@ function main() {
 				if (m && m.name === to && /(^|:)reviewer$/i.test(String(m.agentType || ''))) { meta = m; break; }
 			}
 		}
-		if (/(^|:)reviewer$/i.test(String(meta.agentType || ''))) deny('A sweep reviewer is never resumed: its spend was read for the sweep it ran. A new question is a new reviewer under a cleared contract.');
+		if (/(^|:)reviewer$/i.test(String(meta.agentType || ''))) return deny('A sweep reviewer is never resumed: its spend was read for the sweep it ran. A new question is a new reviewer under a cleared contract.');
 		return;
 	}
 	if (!/(^|:)reviewer$/i.test(String((input.tool_input || {}).subagent_type || ''))) {
 		// A brief that names a sweep or carries a role's call cap is a reviewer's whatever the type says, and a slip
 		// here would run with no slot and no cap.
 		const brief = String((input.tool_input || {}).prompt || '');
-		if (/Sweep: [0-9a-f]{16} role \d+/.test(brief)) deny('This brief names a sweep, so it runs as the reviewer role: set subagent_type to reviewer.');
-		else if (/Call cap: \d+/.test(brief)) deny('This brief carries a sweep role\'s call cap, so it runs as the reviewer role: set subagent_type to reviewer, with its "Sweep: <hash> role <n>" line.');
+		if (/Sweep: [0-9a-f]{16} role \d+/.test(brief)) return deny('This brief names a sweep, so it runs as the reviewer role: set subagent_type to reviewer.');
+		if (/Call cap: \d+/.test(brief)) return deny('This brief carries a sweep role\'s call cap, so it runs as the reviewer role: set subagent_type to reviewer, with its "Sweep: <hash> role <n>" line.');
 		return;
 	}
 	const common = git(input.cwd || process.cwd(), 'rev-parse', '--path-format=absolute', '--git-common-dir');
@@ -128,7 +128,7 @@ function main() {
 			return deny(`approve.mjs answered FIX THE CONTRACT: fix what it named, then run it again. ${RUN_FIRST}`);
 		}
 		if (e.kind === 'decision' && e.decision !== 'approved') {
-			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; the owner answers in the thread "yes <the ask\'s code>", and the lead logs it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes "yes <code>" --thread <their message id>`, then starts the reviewers.');
+			return deny('approve.mjs sent this contract to the owner. Show the owner the table with its reasons; the owner answers Yes in a pop-up quoting the act the ask printed (`sweep yes <code>`), and the lead logs it with `node <pre-pr-sweep skill folder>/approve.mjs <contract.json> --owner-yes`, then starts the reviewers.');
 		}
 		// The budget rests on the call cap, so a brief must carry one the contract set; the call-cap hook reads it there.
 		const prompt = String((input.tool_input || {}).prompt || '');
@@ -180,4 +180,12 @@ function main() {
 	return deny(`No cleared Swarm Contract at its checkout's current HEAD. ${RUN_FIRST}`);
 }
 
-try { main(); } catch { /* anything unexpected lets the call through */ }
+// Anything unexpected lets the call through.
+const safeCheck = (input) => { try { return check(input) || null; } catch { return null; } };
+if (require.main === module) {
+	let out = null;
+	try { out = safeCheck(JSON.parse(fs.readFileSync(0, 'utf8') || '{}')); } catch { /* lets it through */ }
+	if (out) process.stdout.write(JSON.stringify(out));
+}
+
+module.exports = { check: safeCheck };

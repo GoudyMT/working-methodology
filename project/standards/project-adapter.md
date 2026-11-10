@@ -15,7 +15,7 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | A5 | Product red lines (e.g. no ads, no trackers, no telemetry) | Tier 0 | `<fill in>` |
 | A6 | **Stack** (languages, frameworks, runtimes, package manager + version) | Code Standards | `<fill in>` |
 | A7 | File naming, linter / formatter, import grouping | Code Standards | `<fill in>` |
-| A8 | Test layout and runners | TDD | `<fill in>` |
+| A8 | Test layout and runners; test lanes in `.kit/lanes.json` (rule:test-lanes) | TDD, Test Lanes | `<fill in>` |
 | A9 | **Commands:** lint / format / type-check / unit / E2E / build / audit / full gate | Pre-Commit, CI Gate, team field 2 | `<fill in>` |
 | A10 | CI workflow files; CI-only scanners | CI Gate | `<fill in>` |
 | A11 | Tool-shell command prefix | Loop, team field 3 | `<fill in>` |
@@ -23,7 +23,7 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | A13 | Safe logger + error-code lint rules | Code Standards | `<fill in>` |
 | A14 | Git split + push guard + its check | Edit Discipline | `<fill in>` |
 | A15 | Commit hook + commit-message check | Commit format | `<fill in>` |
-| A16 | PR body ceilings + audit commands; the audit's gates, dependency-audit line and verified-clean lines (`.kit/pr-body.json`) | PR Body Standard | `<fill in>` |
+| A16 | PR body ceilings + audit commands; the review dimensions that apply, the dependency-audit line and the checked lines (`.kit/pr-body.json`) | PR Body Standard | `<fill in>` |
 | A17 | Release format + release audit | Release Notes | `<fill in>` |
 | A18 | **Deploy model** (on merge vs by hand; where secrets live) + post-merge checks + runbook | Post-Merge Check | `<fill in>` |
 | A19 | Preview builds (how reached / switched on, who does what) | Preview Test | `<fill in>` |

@@ -125,8 +125,9 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
    from the checker brief's fix-check variant, that confirms each fix's test fails on the code before it. No re-sweep:
    a second pass is the user's call (rule:finding-pipeline). Then
    one visual check with the user if anything visible changed. Outward acts (push, pull request, merge, release)
-   wait for the user. After the user's go, the lead pushes with `KIT_PUSH_APPROVED=1` set for that one command;
-   the project's git pre-push hook blocks an agent's push without it (rule:outward-acts).
+   wait for the user, except a feature-branch push inside the user's bound (rule:outward-acts). For any other push
+   the lead asks in a pop-up quoting the exact command, `KIT_PUSH_APPROVED=1` included, and runs it after the user's
+   Yes; the project's git pre-push hook blocks an agent's push to main, a tag, a force or a delete without both.
 7. **Record (lead).** The plan's progress, ticked with evidence; the scoreboard line, with the canary counts from
    `<git common dir>/kit-canary.log`; the rundown.
 

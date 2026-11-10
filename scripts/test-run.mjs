@@ -199,8 +199,9 @@ function runOne(args, env, label, atFile) {
 			for (const [s, h] of sigs) process.off(s, h);
 			const num = (k) => Number((new RegExp(`^# ${k} (\\d+)`, 'm').exec(out) || [])[1] || 0);
 			const s = (Date.now() - t0) / 1000;
-			process.stdout.write(`test-run: ${label} done, pass ${num('pass')}, fail ${num('fail')} in ${s.toFixed(1)} s\n`);
-			resolve({ status: code ?? 128 + (os.constants.signals[sig] || 0), out, pass: num('pass'), fail: num('fail'), s });
+			const skipped = num('skipped') ? `, skipped ${num('skipped')}` : '';
+			process.stdout.write(`test-run: ${label} done, pass ${num('pass')}, fail ${num('fail')}${skipped} in ${s.toFixed(1)} s\n`);
+			resolve({ status: code ?? 128 + (os.constants.signals[sig] || 0), out, pass: num('pass'), fail: num('fail'), skipped: num('skipped'), s });
 		});
 	});
 }
@@ -288,7 +289,8 @@ export async function main(argv) {
 		for (const r of results) if (r.status !== 0) process.stdout.write(r.out);
 		const sum = (k) => results.reduce((n, r) => n + r[k], 0);
 		const label = `${name}${shardFiles.length ? `${shards} shards` : 'no shards'}`;
-		process.stdout.write(`test-run: ${label}, pass ${sum('pass')}, fail ${sum('fail')} in ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
+		const skipped = sum('skipped') ? `, skipped ${sum('skipped')}` : '';
+		process.stdout.write(`test-run: ${label}, pass ${sum('pass')}, fail ${sum('fail')}${skipped} in ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
 		if (o.map) {
 			const map = buildMap(env.KIT_MAP_DIR, root, mapSha);
 			fs.writeFileSync(path.join(root, MAP_FILE), JSON.stringify(map));

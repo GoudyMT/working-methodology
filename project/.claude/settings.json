@@ -6,63 +6,54 @@
     "npm_config_yes": "false"
   },
   "permissions": {
-    "ask": [
-      "Bash(git push *)",
-      "PowerShell(git push *)"
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show)",
+      "Bash(git show *)",
+      "Bash(git rev-parse)",
+      "Bash(git rev-parse *)",
+      "Bash(git branch --list)",
+      "Bash(git branch --list *)",
+      "Bash(ls)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(grep *)",
+      "PowerShell(git status)",
+      "PowerShell(git status *)",
+      "PowerShell(git diff)",
+      "PowerShell(git diff *)",
+      "PowerShell(git log)",
+      "PowerShell(git log *)",
+      "PowerShell(git show)",
+      "PowerShell(git show *)",
+      "PowerShell(Get-ChildItem)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-Content *)"
+    ],
+    "deny": [
+      "Edit(**/.claude/*.cjs)",
+      "Edit(**/.claude/*.mjs)",
+      "Edit(**/.githooks/**)",
+      "Edit(**/.git/hooks/**)",
+      "Edit(**/.git/config)",
+      "Bash(git config core.hooksPath *)",
+      "Bash(git commit --no-verify *)",
+      "Bash(git push --no-verify *)",
+      "PowerShell(git config core.hooksPath *)",
+      "PowerShell(git commit --no-verify *)",
+      "PowerShell(git push --no-verify *)"
     ]
   },
   "hooks": {
     "PreToolUse": [
-      {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "{{PROJECT_DIR}}/.claude/owner-proof.cjs"
-            ],
-            "timeout": 10,
-            "onFailure": "block"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal|Agent|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "{{PROJECT_DIR}}/.claude/task-gate.cjs"
-            ],
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "{{PROJECT_DIR}}/.claude/guard-outward.cjs"
-            ],
-            "timeout": 10,
-            "onFailure": "block"
-          },
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "{{PROJECT_DIR}}/.claude/guard-delete.cjs"
-            ],
-            "timeout": 10,
-            "onFailure": "block"
-          }
-        ]
-      },
       {
         "matcher": ".*",
         "hooks": [
@@ -70,30 +61,10 @@
             "type": "command",
             "command": "node",
             "args": [
-              "{{CLAUDE_HOME}}/kit-hooks/call-cap.cjs"
+              "{{PROJECT_DIR}}/.claude/guard.cjs"
             ],
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Agent|Task|SendMessage",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
-            ],
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "{{CLAUDE_HOME}}/kit-hooks/sweep-guard.cjs"
-            ],
-            "timeout": 10
+            "timeout": 10,
+            "onFailure": "block"
           }
         ]
       }

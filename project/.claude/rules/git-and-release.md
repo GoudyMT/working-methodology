@@ -15,7 +15,7 @@ Every commit passes the hook (-> rule:test-and-review-cadence). **Never `--no-ve
 
 One line: `git commit -m "fix: hold the page still behind the open reader"`.
 - **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`; a scope is optional and rare.
-- **Subject:** imperative, lowercase, no period, what the change does for a `git log` reader; no task / phase tags or asides. **No body, footer or AI / tool trailer** (detail goes in the PR body, the Session Log and comments). Reaching for `-F`, a heredoc or a second `-m` means the message is already wrong.
+- **Subject:** <= 72 characters, one change; imperative, lowercase, no period, what the change does for a `git log` reader; no task / phase tags or asides. **No body, footer or AI / tool trailer** (detail goes in the PR body, the Session Log and comments). Reaching for `-F`, a heredoc or a second `-m` means the message is already wrong.
 - **Checked by script:** the commit-msg hook and CI run `.claude/name-check.mjs` on every message; a refusal is fixed in the message, and a style the check gets wrong is fixed in the check. Why: a documented convention nobody practises misleads every new agent.
 - **Enforced** by a `commit-msg` hook + a CI check over the branch's commits. <!-- PROJECT ADAPTER A15 -->
 
@@ -35,10 +35,10 @@ Formats in `_Templates/_PR Body Template.md`: **Standard** for features, design 
 
 **How: the pr-body skill** (steps, two examples, the audit run).
 
-- **Hard rules (outward-facing):** ASCII; no AI / agent / tool references (reviews described BY DIMENSION + verdict); no links to gitignored vault docs; value-led title `<Area>: <line>`, H1 = the title.
+- **Hard rules (outward-facing):** ASCII; no AI / agent / tool references (reviews described BY DIMENSION + verdict); no links to gitignored vault docs; title `type: subject` (the squash subject, <= 72, CI checks it), H1 `<Area>: <line>` ending in it.
 - **Lean:** 1-2 sentence framing, <= 3 changes (what and why, no file lists), 3 gates (the proof; the full gate as one line; the sweep tier and its result by dimension, rule:sweep-tiers), <= 1 sentence of notes.
 - **Summary, not tallies:** outward summaries state the end result, and each thing once. No per-step tallies (size raises, finding, test or mutant counts); keep a number only if it is the result or the reader acts on it. Test each line: who reads it, and why care? Detail stays in the sweep report and plan. Why: tallies bury the result.
-- **Standard:** before / after table; decisions and review result on screen; file list, gate results and clean checks in folds; total, on-screen and per-bullet ceilings ("wall of text" = on-screen words and bullet length); plain engineer speak.
+- **Standard:** before / after table; decisions and review result on screen; review rows are the project's (A16), files and gates left to GitHub; word and bullet ceilings; plain speak.
 - **Never inflate a small PR.** The audit script (sections, width, word caps, banned words, ASCII) runs with every body; it cannot see content drift, so keep the conventions of the lived bodies (below; a budget raise states the final old -> new and its basis; a proof gate claims only what ran). Body + audit go to the owner BEFORE any push or PR command. After a trim, reread for flow. <!-- PROJECT ADAPTER A16 -->
 
 **Every outward piece starts from its format:** a PR body, release notes, doc, README or post starts from its template, its rule and the two latest pieces of its kind, and runs its audit; the hand-off names the sources. Prose the owner publishes as themselves avoids AI tells: dash-free (no em dash, no double hyphen), no neat triads or stock phrases. Why: writing from memory drifts the format a little every time.

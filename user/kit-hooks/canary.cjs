@@ -85,11 +85,12 @@ function finalReport(input) {
 // Kit roles that report up and task no one; an orchestrator and the main session are taskers.
 const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer'];
 
-function main() {
-	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+// One event's answer: { out } for a tool call to refuse, { code: 2 } for a stop to hold. The dispatcher (guard.cjs)
+// calls it for tool calls; Claude Code runs this file itself for the stop events.
+function run(input) {
 	const cwd = input.cwd || process.cwd();
 	const found = findPhrase(cwd);
-	if (!found) return 0;
+	if (!found) return {};
 	const phrase = words(found.phrase);
 
 	const who = { role: input.agent_type || 'unknown', agent: input.agent_id || '', session: input.session_id || '' };
@@ -110,14 +111,13 @@ function main() {
 			fs.rmSync(mark, { force: true });
 			touch(seen);
 			log(found.commonDir, { ...who, result: /^\W*closed out\b/i.test(report) ? 'closed-out' : 'void-after-miss' });
-			return 0;
+			return {};
 		}
 		const opens = words(report).startsWith(phrase);
 		log(found.commonDir, { ...who, result: opens ? 'hit' : 'miss' });
-		if (opens) { touch(seen); return 0; }
+		if (opens) { touch(seen); return {}; }
 		touch(mark);
-		process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: CLOSE_OUT } }));
-		return 0;
+		return { out: { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: CLOSE_OUT } } };
 	}
 
 	if (input.hook_event_name === 'PreToolUse') {
@@ -126,28 +126,39 @@ function main() {
 		const ownReport = input.tool_name === 'SendMessage' && REPORTING_ROLES.includes(input.agent_type) && words(t.message).startsWith(phrase);
 		if (!ownReport && words([t.prompt, t.message, t.description, t.name].filter(Boolean).join(' ')).includes(phrase)) {
 			log(found.commonDir, { tool: input.tool_name || 'unknown', session: input.session_id || '', result: 'leak-refused' });
-			process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
-				permissionDecisionReason: 'A brief or message to an agent must never carry the confirmation phrase: the agent finds it by reading its rules (rule:agent-canary). Remove it and send again.' } }));
+			return { out: { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
+				permissionDecisionReason: 'A brief or message to an agent must never carry the confirmation phrase: the agent finds it by reading its rules (rule:agent-canary). Remove it and send again.' } } };
 		}
-		return 0;
+		return {};
 	}
 
-	if (fs.existsSync(seen)) return 0;
+	if (fs.existsSync(seen)) return {};
 	if (fs.existsSync(mark)) {
 		fs.rmSync(mark, { force: true });
 		// The agent was told to close out, so it may end; any other report after a miss is void all the same.
 		log(found.commonDir, { ...who, result: /^\W*closed out\b/i.test(finalReport(input) || '') ? 'closed-out' : 'void-after-miss' });
-		return 0;
+		return {};
 	}
 	const report = finalReport(input);
-	if (report === null) { log(found.commonDir, { ...who, result: 'unchecked' }); return 0; }
+	if (report === null) { log(found.commonDir, { ...who, result: 'unchecked' }); return {}; }
 	const opens = words(report).startsWith(phrase);
 	log(found.commonDir, { ...who, result: opens ? 'hit' : 'miss' });
-	if (opens) return 0;
+	if (opens) return {};
 	fs.mkdirSync(path.dirname(mark), { recursive: true });
 	fs.writeFileSync(mark, '');
-	process.stderr.write(CLOSE_OUT + '\n');
-	return 2;
+	return { code: 2 };
 }
 
-try { process.exitCode = main(); } catch { process.exitCode = 0; }
+// A tool call's answer for the dispatcher: a refusal, or null. Anything unexpected lets the call through.
+const check = (input) => { try { return run(input).out || null; } catch { return null; } };
+
+if (require.main === module) {
+	try {
+		const r = run(JSON.parse(fs.readFileSync(0, 'utf8') || '{}'));
+		if (r.out) process.stdout.write(JSON.stringify(r.out));
+		if (r.code === 2) process.stderr.write(CLOSE_OUT + '\n');
+		process.exitCode = r.code || 0;
+	} catch { process.exitCode = 0; }
+}
+
+module.exports = { check };

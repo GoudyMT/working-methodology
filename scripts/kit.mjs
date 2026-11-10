@@ -875,9 +875,31 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     lines.push(`Real start load: ${n(total)} B of ${n(cap)} (project ${n(parts.project)}, memory index ${n(parts.memoryIndex)}, global CLAUDE.md ${n(parts.globalClaude)}, skill listings ${n(parts.userSkills + parts.plugins)}).${total > cap ? ' Over its cap: trim per rule:kit-standards item 14.' : ''}`);
     if (parts.memoryIndex > 6000) lines.push(`Memory index is ${n(parts.memoryIndex)} B (over 6,000): turn copied rules into one-line pointers (rule:kit-standards items 3 and 14).`);
   }
+  // E32: the project's test lanes; over budget is a finding, never an install fault. The kit's own copy of the script
+  // runs, never the project's, so status runs no code a branch of the project could have changed.
+  const lanes = path.join(kit, 'project', '.claude', 'lane-state.mjs');
+  if (projectDir && fs.existsSync(path.join(projectDir, '.claude', 'lane-state.mjs')) && fs.existsSync(lanes)) {
+    const r = spawnSync(process.execPath, [lanes], { cwd: projectDir, encoding: 'utf8' });
+    const first = String(r.stdout || '').trim().split('\n')[0];
+    if (first) lines.push(`${first}${r.status === 1 ? ' - a finding: walk the lever order (rule:test-lanes).' : ''}`);
+  }
+  // T14: a part not present or wired is an install fault; its first line names the part.
+  const use = useCheck(kit, projectDir);
+  if (use) {
+    lines.push(use.text.split('\n')[0]);
+    if (use.code !== 0) gaps.push('the use check fails (run kit.mjs install project, or opt the part out in .kit/parts.json)');
+  }
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
   return { current, text: lines.join('\n') };
+}
+
+/** The use check (T14) from the kit's own copy, run in a project that has it installed; null where it does not. */
+function useCheck(kit, projectDir) {
+  const script = path.join(kit, 'project', '.claude', 'use-check.mjs');
+  if (!projectDir || !fs.existsSync(path.join(projectDir, '.claude', 'use-check.mjs')) || !fs.existsSync(script)) return null;
+  const r = spawnSync(process.execPath, [script], { cwd: projectDir, encoding: 'utf8' });
+  return { code: r.status, text: String(r.stdout || r.stderr || '').trim() || 'Use check: no output' };
 }
 
 /** Installed plugins whose version differs from the backup copy in vendor/. */
@@ -1134,6 +1156,8 @@ export function build({ kit }) {
   }
   // The merge gate makes its temp folders through the one helper; the same exact-copy rule keeps them alike.
   out.set('user/kit-tools/kit-temp.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'kit-temp.cjs'), 'utf8'));
+  // approve.mjs reads the owner's pop-up answers the way the guards do (T2): the same exact-copy rule.
+  out.set('user/kit-tools/owner-yes.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'owner-yes.cjs'), 'utf8'));
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
     'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
@@ -1366,6 +1390,12 @@ function main(argv) {
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
+    // T14: install is finished only when every part is present and wired. The kit's own copy runs, never the project's.
+    const use = useCheck(kit, projectDir);
+    if (target === 'project' && !dryRun && use) {
+      console.log(use.text);
+      if (use.code !== 0) process.exitCode = 1;
+    }
   } else if (cmd === 'fold-back') {
     const r = foldBack({ kit, home, target, projectDir });
     const name = target === 'user' ? 'user' : 'project-' + path.basename(path.resolve(projectDir)).replace(/[^A-Za-z0-9]+/g, '-');

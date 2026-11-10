@@ -73,6 +73,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | mid-design-red-team | Mid-Design Red-Team (Security Before Lock) | `standards/security.md` | red team, threat, attack, design review |
 | tdd | Test-Driven Development (TDD) | `.claude/rules/testing.md` | test first, test-driven, red green, write tests |
 | ci-gate | CI Gate | `.claude/rules/testing.md` | ci, pipeline, checks, green |
+| test-lanes | Test Lanes | `.claude/rules/testing.md` | slow tests, fast lane, test size, ci budget, large test |
 | test-and-review-cadence | Test and Review Cadence | `.claude/rules/testing.md` | when to run tests, hook, full gate, review |
 | sub-agent-verification | Sub-Agent Verification Step | `.claude/rules/testing.md` | agent results, verify agent, check builder |
 | test-integrity | Test Integrity (Tests Never Yield to Implementation) | `.claude/rules/testing.md` | failing test, weaken, skip, assertion |

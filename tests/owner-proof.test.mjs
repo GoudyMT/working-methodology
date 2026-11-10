@@ -4,6 +4,8 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
@@ -18,7 +20,7 @@ const run = (tool_name, tool_input, cwd = process.cwd()) => {
 };
 const T = path.join(cfg, 'projects', 'C--repo', 's.jsonl');
 
-test('the owner-proof guard refuses every tool write to the session transcripts and kit-owner.json', () => {
+test('the owner-proof guard refuses every tool write to the session transcripts and kit-owner.json', { windows: 'also' }, () => {
 	const deny = [
 		['Write', { file_path: T, content: 'x' }],
 		['Edit', { file_path: T, old_string: 'a', new_string: 'b' }],
@@ -56,6 +58,13 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		// The shell's folder is followed through every cd, and one it cannot read is the safe side.
 		['Bash', { command: 'cd ~ && cd .claude && echo hi >> projects/A/s.jsonl' }],
 		['Bash', { command: 'cd ~/.claude/x && cd .. && echo hi >> projects/A/s.jsonl' }],
+		// S23-1: a ~ form the guard does not follow (~-, ~+, ~2) leaves the folder unknown.
+		['Bash', { command: 'cd ~- && echo x > projects/p/s.jsonl' }],
+		// S23-1: a variable set in the command and glued to the rest of the path (F6).
+		['Bash', { command: 'P=~/.cla; echo x > ${P}ude/projects/x/s.jsonl' }],
+		// The mutation check: an expansion with an operator is not read ahead, and past 32 readings it fails closed.
+		['Bash', { command: 'P=~/.cla; echo x > ${P:-y}ude/projects/x/s.jsonl' }],
+		['Bash', { command: 'A=1; A=2; A=3; A=4; A=5; A=6; B=1; B=2; B=3; B=4; B=5; B=6; echo $A$B > out.txt' }],
 		['Bash', { command: 'cd $(echo ~/.claude) && echo hi >> projects/A/s.jsonl' }],
 		['PowerShell', { command: 'Set-Location -Path $HOME\\.claude; Add-Content projects\\A\\s.jsonl x' }],
 		// A cd in a subshell, a pipeline or the background, or a popd, leaves the folder unknown: the safe side.
@@ -106,6 +115,12 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 		['Bash', { command: 'ls ~/.claude/projects' }],
 		['PowerShell', { command: 'Get-Content "$HOME\\.claude\\kit-owner.json"' }],
 		['Bash', { command: 'git status' }],
+		// S23-1: a read through a quoted variable passes (the sequential reader's flip survived without it).
+		['Bash', { command: 'P="~/.claude/projects"; grep x $P/p/s.jsonl' }],
+		// The mutation check: a set variable used in braces is read ahead as its value.
+		['Bash', { command: 'P=/tmp/x; cat ${P}/a.txt' }],
+		// S23-1: a word written from the root is not read from the folder the shell starts in, a .claude folder here.
+		['Bash', { command: 'echo x > /tmp/a.cjs' }, path.join(cfg, 'repo', '.claude', 'agents')],
 		['Bash', { command: 'node approve.mjs c.json --owner-yes "yes" --thread cmsg_Abcdefgh12' }],
 		['Read', { file_path: T }],
 		// The auto memory lives beside the transcripts, and sessions write it.
@@ -125,7 +140,7 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 		['PowerShell', { command: 'Get-Content $HOME\\.claude\\projects\\p\\s.jsonl | ConvertFrom-Json | Select-Object type' }],
 		['Bash', { command: 'cd src && echo x > out.txt' }],
 	];
-	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
+	for (const [tool, input, cwd] of allow) assert.equal(run(tool, input, cwd), 'allow', `${tool} ${JSON.stringify(input)}`);
 });
 
 // S23-2 (the 1.23.0 verify): reads through a variable or after a cd into the transcripts, and a file whose text only
@@ -161,11 +176,8 @@ test('the owner-proof guard follows a variable and a cd into the transcripts, an
 });
 
 test('the shipped project settings wire the owner-proof guard on every write tool and shell', () => {
-	const pre = JSON.parse(fs.readFileSync(path.resolve('project/.claude/settings.json'), 'utf8')).hooks.PreToolUse;
-	// It ships in the project layer beside the guards whose reader it uses: a project whose user layer is older
-	// would otherwise block every call on a missing file (the 1.23.0 sweep).
-	const entry = pre.find((e) => e.hooks.some((h) => (h.args || []).join(' ').includes('{{PROJECT_DIR}}/.claude/owner-proof.cjs')));
-	assert.ok(entry, 'wired from the project layer');
-	for (const tool of ['Write', 'Edit', 'NotebookEdit', 'Bash', 'PowerShell']) assert.match(tool, new RegExp(`^(${entry.matcher})$`), tool);
-	assert.equal(entry.hooks.find((h) => (h.args || []).join(' ').includes('owner-proof')).onFailure, 'block');
+	// It ships in the project layer, run by the one guard process (T2) beside the guards whose reader it uses: a project
+	// whose user layer is older would otherwise block every call on a missing file (the 1.23.0 sweep).
+	const { routes } = require(path.resolve('project/.claude/guard.cjs'));
+	for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell']) assert.ok(routes(tool).includes('owner-proof.cjs'), tool);
 });

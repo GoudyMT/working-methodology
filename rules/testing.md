@@ -9,6 +9,7 @@ when: Before planning or writing tests, and when a test file is opened.
 tags:
   tdd: test first, test-driven, red green, write tests
   ci-gate: ci, pipeline, checks, green
+  test-lanes: slow tests, fast lane, test size, ci budget, large test
   test-and-review-cadence: when to run tests, hook, full gate, review
   sub-agent-verification: agent results, verify agent, check builder
   test-integrity: failing test, weaken, skip, assertion
@@ -33,6 +34,10 @@ tags:
 ### CI Gate {#ci-gate}
 
 **"Green" = every step of every CI workflow file**, not a remembered subset - or name the skipped step and why. Run the FULL local gate before every PR, however small ("reasoned unaffected" is not "ran it green"); copy each command from a full read of the workflow (a folded run block is one command); the exit code is the gate - echo it, never filter output through an invented pattern; re-run the dependency audit before the PR and before merge commands. A test runner may reuse a server already on its port and test a stale build - check who owns it, never kill the owner's. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->
+
+### Test Lanes {#test-lanes}
+
+Size a test by what it needs, not its type: **small** (one process), **medium** (this machine), **large** (another machine, a real service, a browser, a live model); ask before writing it. Large tests live in the slow-lane folder (`tests/slow`, or `.kit/lanes.json`). Two lanes on one PR, both required to merge: the fast lane reports first; the slow lane runs beside it, on by a job-level `if` when its folder holds a test, never a path filter. `node .claude/lane-state.mjs` reports one lane, two lanes or over budget (fast lane over its budget, default 10 minutes, 3 PR runs in a row); then the levers in order: measure, parallel, cancel stale runs, change-scoped selection, and moving a test to the slow lane last. A fast test over its limit (300 s) fails: fix or move it, with the reason. A bug the slow lane catches gets a fast test before its fix. The owner's alone: a lane leaving the merge decision. A security or owner-rule test never changes lane for speed. Model-calling evals run in their own lane against the owner's threshold. pytest: mark by folder in a `conftest.py` hook, markers registered, `--strict-markers`. Why: fast feedback without lowering the gate.
 
 ### Test and Review Cadence {#test-and-review-cadence}
 
