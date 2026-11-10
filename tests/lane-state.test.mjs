@@ -80,7 +80,9 @@ test('(d) a fast-lane test over its time limit fails, and the failure names the 
 	const dir = kitTemp.makeTemp('limit-');
 	const harness = path.resolve('tests/harness.mjs').split(path.sep).join('/');
 	fs.writeFileSync(path.join(dir, 'slow.test.mjs'), `import { test } from 'file:///${harness.replace(/^\//, '')}';\ntest('waits', () => new Promise((r) => setTimeout(r, 2000)));\n`);
-	const r = spawnSync(process.execPath, ['--test', 'slow.test.mjs'], { cwd: dir, encoding: 'utf8', env: { ...process.env, KIT_TEST_LIMIT_MS: '200' } });
+	// The runner's own shard, filter and map settings stay out: this child runs its one test whole.
+	const { KIT_SHARD: _s, KIT_ONLY: _o, KIT_MAP_DIR: _m, KIT_RUN_AT: _a, ...env } = process.env;
+	const r = spawnSync(process.execPath, ['--test', 'slow.test.mjs'], { cwd: dir, encoding: 'utf8', env: { ...env, KIT_TEST_LIMIT_MS: '200' } });
 	assert.notEqual(r.status, 0);
 	assert.match(r.stdout, /timed out after 200ms/);
 });
@@ -88,12 +90,13 @@ test('(d) a fast-lane test over its time limit fails, and the failure names the 
 test('(c) the kit\'s own CI runs the slow lane beside the fast one, only when it holds a test, and needs both to merge', () => {
 	const ci = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
 	// The slow job is skipped by a job-level if on what a detect step found, never by a path filter on the workflow.
+	// pin: 1 (GitHub reads these lines)
 	assert.match(ci, /\n {2}slow-tests:\n {4}needs: \[lanes\]\n {4}if: needs\.lanes\.outputs\.slow == 'true'/);
 	assert.doesNotMatch(ci, /\n {2}(pull_request|push):\n {4}paths:/);
-	// The required check fails on a slow lane that failed, and takes a skipped one as passed.
+	// The required check fails on a slow lane that failed, and takes a skipped one as passed. pin: 1 (GitHub reads it)
 	const gate = ci.slice(ci.indexOf('\n  kit-tests:'));
 	assert.match(gate, /needs: \[[^\]]*slow-tests[^\]]*\]/);
-	assert.match(gate, /needs\.slow-tests\.result != 'success' && needs\.slow-tests\.result != 'skipped'/);
+	assert.match(gate, /needs\.slow-tests\.result != 'success' && needs\.slow-tests\.result != 'skipped'/); // pin: 1
 	// The kit itself has no large test today, so the script says one lane for it.
 	const kit = spawnSync(process.execPath, [SCRIPT, '--json'], { encoding: 'utf8' });
 	assert.equal(JSON.parse(kit.stdout).state, 'one-lane');

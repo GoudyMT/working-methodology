@@ -5836,9 +5836,10 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   // The guards guard a Windows machine, so their proofs run there.
   for (const proof of ['guard-outward-check.cjs', 'guard-delete-check.cjs']) assert.ok(win.includes(`node project/.claude/${proof}`), proof);
   const gate = job('kit-tests');
-  assert.match(gate, /^    needs: \[unit-tests, windows-tests\]$/m);
+  // E32: the lanes job and the slow lane join the gate; a slow lane skipped for having no test passes.
+  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests\]$/m);
   assert.match(gate, /^    if: always\(\)$/m);
-  const failed = "if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success'";
+  const failed = "if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')";
   assert.ok(gate.includes(failed));
   assert.match(gate.split(failed)[1], /^\s+run: exit 1$/m);
   assert.doesNotMatch(ci, /continue-on-error/);

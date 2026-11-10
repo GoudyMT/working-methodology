@@ -875,11 +875,13 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     lines.push(`Real start load: ${n(total)} B of ${n(cap)} (project ${n(parts.project)}, memory index ${n(parts.memoryIndex)}, global CLAUDE.md ${n(parts.globalClaude)}, skill listings ${n(parts.userSkills + parts.plugins)}).${total > cap ? ' Over its cap: trim per rule:kit-standards item 14.' : ''}`);
     if (parts.memoryIndex > 6000) lines.push(`Memory index is ${n(parts.memoryIndex)} B (over 6,000): turn copied rules into one-line pointers (rule:kit-standards items 3 and 14).`);
   }
-  // E32: the project's test lanes, as its lane-state script reads them; over budget is a finding, never an install fault.
-  const lanes = projectDir && path.join(projectDir, '.claude', 'lane-state.mjs');
-  if (lanes && fs.existsSync(lanes)) {
+  // E32: the project's test lanes; over budget is a finding, never an install fault. The kit's own copy of the script
+  // runs, never the project's, so status runs no code a branch of the project could have changed.
+  const lanes = path.join(kit, 'project', '.claude', 'lane-state.mjs');
+  if (projectDir && fs.existsSync(path.join(projectDir, '.claude', 'lane-state.mjs')) && fs.existsSync(lanes)) {
     const r = spawnSync(process.execPath, [lanes], { cwd: projectDir, encoding: 'utf8' });
-    if (r.stdout.trim()) lines.push(`${r.stdout.trim().split('\n')[0]}${r.status === 1 ? ' - a finding: walk the lever order (rule:test-lanes).' : ''}`);
+    const first = String(r.stdout || '').trim().split('\n')[0];
+    if (first) lines.push(`${first}${r.status === 1 ? ' - a finding: walk the lever order (rule:test-lanes).' : ''}`);
   }
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
