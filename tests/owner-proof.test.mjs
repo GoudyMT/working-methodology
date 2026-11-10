@@ -20,7 +20,7 @@ const run = (tool_name, tool_input, cwd = process.cwd()) => {
 };
 const T = path.join(cfg, 'projects', 'C--repo', 's.jsonl');
 
-test('the owner-proof guard refuses every tool write to the session transcripts and kit-owner.json', () => {
+test('the owner-proof guard refuses every tool write to the session transcripts and kit-owner.json', { windows: 'also' }, () => {
 	const deny = [
 		['Write', { file_path: T, content: 'x' }],
 		['Edit', { file_path: T, old_string: 'a', new_string: 'b' }],

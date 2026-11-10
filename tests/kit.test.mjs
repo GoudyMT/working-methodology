@@ -5626,7 +5626,7 @@ test('a recall run asks the current keys and its header names them', async () =>
   refused(text.replace('Pass: median 12 of 13.', ''), /no "Pass: median <n> of <m>\." line/);
 });
 
-test('an unreleased user layer may run only from a throwaway folder under kit-probes', async () => {
+test('an unreleased user layer may run only from a throwaway folder under kit-probes', { windows: 'also' }, async () => {
   const { checkUserLayer } = await recallTools();
   const { kit } = makeKit();
   const osHome = makeTemp('oshome-');
@@ -6811,7 +6811,7 @@ test('recall (I20): a released user layer edited by hand is not read as released
   assert.throws(() => checkUserLayer(home, os.tmpdir()), /changed by hand.*skills\/human-factor\/SKILL\.md/);
 });
 
-test('recall (I27): removeProbe deletes only a probe under this home\'s kit-probes, and only a plain memory slug', async () => {
+test('recall (I27): removeProbe deletes only a probe under this home\'s kit-probes, and only a plain memory slug', { windows: 'also' }, async () => {
   const { removeProbe, probePath } = await recallTools();
   const osHome = makeTemp('oshome-');
   const home = path.join(osHome, '.claude');
@@ -6835,7 +6835,7 @@ test('recall (I27): removeProbe deletes only a probe under this home\'s kit-prob
 });
 
 // Review R1 and R3 (1.21.0): a throwaway user layer is a real unreleased install under a kit-probes that is no link.
-test('recall (R1, R3): kit-probes may not be a link, and a throwaway layer must be a real unreleased install', async () => {
+test('recall (R1, R3): kit-probes may not be a link, and a throwaway layer must be a real unreleased install', { windows: 'also' }, async () => {
   const { checkUserLayer } = await recallTools();
   const osHome = makeTemp('oshome-');
   const real = path.join(osHome, '.claude');

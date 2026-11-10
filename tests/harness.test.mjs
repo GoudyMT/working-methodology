@@ -36,20 +36,31 @@ test('the runner splits a harness file into shards that together run every test 
 });
 
 // E31: Linux runs the suite and Windows the tests marked { windows: true }; together every test runs, and each one
-// marked runs on Windows (off Windows it is skipped, never dropped silently).
-test('the Windows slice runs only the marked tests, and elsewhere the marked tests are skipped', () => {
+// marked runs on Windows (off Windows it is skipped and reported, never dropped silently, F20). { windows: 'also' }
+// runs everywhere and in the slice (F16). Both platforms are checked on either, through KIT_TEST_PLATFORM.
+test('the Windows slice runs only the marked tests, and elsewhere the Windows-only ones are reported skipped', () => {
 	const dir = kitTemp.makeTemp('winslice-');
 	const log = path.join(dir, 'ran.log');
 	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS}; import fs from 'node:fs';\n` +
 		['a', 'b'].map((n) => `test('${n}', () => { fs.appendFileSync(${JSON.stringify(log)}, '${n}\\n'); });`).join('\n') +
-		`\ntest('w', { windows: true }, () => { fs.appendFileSync(${JSON.stringify(log)}, 'w\\n'); });`);
-	const slice = run(dir, ['--shards', '2', path.join(dir, 'x.test.mjs')], { KIT_WINDOWS_SLICE: '1' });
-	assert.equal(slice.status, 0, slice.stdout + slice.stderr);
-	assert.deepEqual(ran(log), process.platform === 'win32' ? ['w'] : []);
-	fs.rmSync(log, { force: true });
-	const all = run(dir, ['--shards', '2', path.join(dir, 'x.test.mjs')]);
-	assert.equal(all.status, 0, all.stdout + all.stderr);
-	assert.deepEqual(ran(log), process.platform === 'win32' ? ['a', 'b', 'w'] : ['a', 'b']);
+		`\ntest('w', { windows: true }, () => { fs.appendFileSync(${JSON.stringify(log)}, 'w\\n'); });` +
+		`\ntest('j', { windows: 'also' }, () => { fs.appendFileSync(${JSON.stringify(log)}, 'j\\n'); });`);
+	const runAs = (platform, slice) => {
+		fs.rmSync(log, { force: true });
+		const r = run(dir, ['--shards', '2', path.join(dir, 'x.test.mjs')], { KIT_TEST_PLATFORM: platform, KIT_WINDOWS_SLICE: slice ? '1' : '' });
+		assert.equal(r.status, 0, r.stdout + r.stderr);
+		return { ran: ran(log), out: r.stdout };
+	};
+	const winSlice = runAs('win32', true);
+	assert.deepEqual(winSlice.ran, ['j', 'w']);
+	assert.deepEqual(runAs('win32', false).ran, ['a', 'b', 'j', 'w']);
+	const linux = runAs('linux', false);
+	assert.deepEqual(linux.ran, ['a', 'b', 'j']);
+	assert.match(linux.out, /, pass 3, fail 0, skipped 1 in/);
+	// A slice run off Windows (a misconfigured job) runs nothing silently: the marked test is reported skipped.
+	const linuxSlice = runAs('linux', true);
+	assert.deepEqual(linuxSlice.ran, ['j']);
+	assert.match(linuxSlice.out, /skipped 1 in/);
 });
 
 // CI splits the suite over several runners (S22-1): the slices together run each test once, and a file outside the
@@ -238,7 +249,7 @@ test('a map run keeps the commit it started on, and its children start in a fold
 });
 
 // CI's temp folder is a short name (RUNNER~1) that git reports long (PR 25); a junction makes the same split here.
-test('the map keys a test by its path in the repo when the repo is reached through another name for its folder', () => {
+test('the map keys a test by its path in the repo when the repo is reached through another name for its folder', { windows: 'also' }, () => {
 	const { repo, log, test: file } = fixtureRepo();
 	const link = `${repo}-link`;
 	fs.symlinkSync(repo, link, 'junction');
