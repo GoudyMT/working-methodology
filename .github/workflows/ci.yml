@@ -237,9 +237,10 @@ jobs:
           PR_BASE: origin/${{ github.base_ref }}
         run: |
           node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/pr-body.md', process.env.PR_BODY || '')"
-          # A conventional title (feat: ..., chore: ...) is a Lean body; an <Area>: title is a Standard one.
-          if node -e "process.exit(/^[a-z]+(\([^)]*\))?!?: /.test(process.env.PR_TITLE) ? 0 : 1)"; then
-            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
-          else
+          # Every title is type: subject now (1.25.0), so the body says which format it is: a Standard body has a
+          # "### Summary" section, a Lean one does not.
+          if grep -q '^### Summary$' "$RUNNER_TEMP/pr-body.md"; then
             node project/.claude/pr-body-audit.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
+          else
+            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
           fi
