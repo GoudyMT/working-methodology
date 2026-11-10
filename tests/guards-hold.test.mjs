@@ -126,6 +126,7 @@ test('the same holes in the spellings beside them are held', () => {
 		// default or array element that gives the protected path, and the push and sweep logs that spend a yes.
 		'echo {} > .claude/SETTIN~1.JSO',
 		'echo x > GITHOO~1/pre-push',
+		'echo x > GI1A2B~1/pre-push',
 		'git() { cp /tmp/x "$2"; }; git add .claude/guard.cjs',
 		'node() { cp /tmp/x "$1"; }; node .claude/settings.json',
 		'cat() { cp /tmp/x "$1"; }; cat ~/.claude/projects/p/s.jsonl',

@@ -76,9 +76,13 @@ function parts(word) {
 	// Any other short name (SETTIN~1.JSO, GITHOO~1) is read as the wildcard of the long names it may stand for
 	// (*settin*.jso*, *githoo*: the leading dot is dropped in a short name), so it is held where it can name a
 	// protected file and nowhere else (the 1.25.0 sweep; CI's RUNNER~1 temp folder names none).
+	// Past a few names alike, Windows makes the short name from the first two letters and a 4-digit hex hash
+	// (SE1A2B~1.JSO), so a name of that shape is read by its two letters only.
 	return w.split('/').filter(Boolean).map((x) => {
 		const m = /^([^~*?[]{1,6})~\d{1,6}(?:\.([^.~*?[]{1,3}))?$/.exec(x);
-		return m ? `*${m[1]}*${m[2] ? `.${m[2]}*` : ''}` : x;
+		if (!m) return x;
+		const stem = m[1].length === 6 && /^[0-9a-f]{4}$/.test(m[1].slice(2)) ? m[1].slice(0, 2) : m[1];
+		return `*${stem}*${m[2] ? `.${m[2]}*` : ''}`;
 	});
 }
 
