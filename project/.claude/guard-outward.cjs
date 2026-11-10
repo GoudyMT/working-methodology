@@ -126,6 +126,12 @@ function gitOutward(words, start) {
 	if (/[$`%]/.test(sub)) return 'git with a subcommand built at run time';
 	const hooks = gitHooksOff(words, start, at);
 	if (hooks) return hooks;
+	// Where origin points decides where a feature-branch push goes without a yes, so moving it is held (T1).
+	const after = words.slice(at + 1).filter((w) => !w.startsWith('-'));
+	if (sub === 'remote' && ['add', 'set-url', 'rename'].includes(after[0])) return 'git with its remote changed';
+	const remoteKey = (w) => /^(remote\.[^=]*\.(url|pushurl)|url\.[^=]*\.(insteadof|pushinsteadof))(=|$)/.test(w);
+	if (words.slice(start, at).some(remoteKey)) return 'git with its remote changed';
+	if (sub === 'config' && words.slice(at + 1).some(remoteKey) && !words.slice(at + 1).some((w) => /^(--get|--get-all|--get-regexp|--list|-l|get|list)$/.test(w))) return 'git with its remote changed';
 	if (GIT_OUTWARD.has(sub)) return 'git ' + sub;
 	if (GIT_NESTED_PUSH.has(sub) && words.slice(at + 1).includes('push')) return 'git ' + sub + ' push';
 	const verb = Object.hasOwn(GIT_BRIDGES, sub) ? words.slice(at + 1).find((w) => GIT_BRIDGES[sub].includes(w)) : undefined;

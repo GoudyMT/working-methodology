@@ -35,6 +35,19 @@ EOF
       echo "Push blocked: an AI agent is pushing without the owner's go. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
       exit 1
     fi
+  else
+    # The marker is a variable any script can set, so it counts only beside the owner's own pop-up yes, in this
+    # session's transcript, to a push that names each ref (T1).
+    yes="$(dirname "$0")/../.claude/owner-yes.cjs"
+    while read -r lref lsha rref rsha; do
+      [ -n "$rref" ] || continue
+      if [ ! -f "$yes" ] || ! node "$yes" --push "$rref"; then
+        echo "Push blocked: KIT_PUSH_APPROVED is set, but this session holds no fresh pop-up yes from the owner to a push naming $rref. Ask the owner with the pop-up first." >&2
+        exit 1
+      fi
+    done <<EOF
+$refs
+EOF
   fi
   scan="$(dirname "$0")/../.claude/secret-shapes.mjs"
   if [ ! -f "$scan" ]; then

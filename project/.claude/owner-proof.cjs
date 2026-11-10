@@ -91,6 +91,9 @@ function guardShape(p) {
 	for (let i = 0; i < p.length; i++) {
 		if (fits(p[i], '.githooks')) return true;
 		if (fits(p[i], '.git') && i + 1 < p.length && (fits(p[i + 1], 'hooks') || fits(p[i + 1], 'config'))) return true;
+		// The user's git config can move the hooks or where origin points, as .git/config can.
+		if (i === p.length - 1 && fits(p[i], '.gitconfig')) return true;
+		if (fits(p[i], '.config') && p[i + 1] === 'git' && i + 2 < p.length && fits(p[i + 2], 'config')) return true;
 		if (!fits(p[i], '.claude')) continue;
 		const rest = p.slice(i + 1);
 		if (rest.length === 0) return true;
@@ -250,7 +253,9 @@ function shellWrites(command, tool, start, names = proofNames) {
 		// no inline code), and git reading or staging a file writes none (git diff --output does, so it is refused). The
 		// transcripts keep the stricter reading they had.
 		if (names !== proofNames && program === 'node' && hits.length === 1 && hits[0] === segment[1]) continue;
-		if (names !== proofNames && program === 'git' && GIT_READS.has(all.slice(1).find((a) => !a.startsWith('-'))) && !all.some((a) => /^--output/.test(a))) continue;
+		// Only the subcommand right after git (no global option, which can move git or run a program), no option that runs
+		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
+		if (names !== proofNames && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => names(h.value, cwd)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.
