@@ -105,23 +105,54 @@ function howToAsk(input) {
 	return ' To run it: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (`<the exact command>`, or for a file `Edit <file>: <old text> => <new text>`), one option starting "Yes" and one starting "No"; after the owner picks Yes, run it again unchanged, once.';
 }
 
-// The pre-push hook's check: this session's own transcript (Claude Code names the session in the tool shell) holds
-// a fresh Yes to a push command that names the ref's branch or tag.
-function pushGrant(ref, sessionId, now = Date.now()) {
+// The destination refs of a push command the owner said yes to, and whether it forces or deletes:
+// `KIT_PUSH_APPROVED=1 git push origin main` -> { dests: ['main'], force: false, del: false }.
+function pushAct(act) {
+	const w = act.split(' ');
+	const at = w.indexOf('push');
+	if (at < 0 || !w.slice(0, at).includes('git')) return null;
+	const rest = w.slice(at + 1);
+	const flags = rest.filter((x) => x.startsWith('-'));
+	const specs = rest.filter((x) => !x.startsWith('-')).slice(1);
+	return {
+		dests: specs.map((s) => s.replace(/^\+/, '').split(':').pop().replace(/^refs\/(heads|tags)\//, '')),
+		force: flags.some((f) => /^(-f|--force|--force-with-lease)/.test(f)) || specs.some((s) => s.startsWith('+')),
+		del: flags.includes('-d') || flags.includes('--delete') || specs.some((s) => s.startsWith(':')),
+	};
+}
+
+// The pre-push hook's check behind the marker: this session's own transcript (Claude Code names the session in the
+// tool shell), in this repo's folder of transcripts, holds a fresh Yes to a push whose destination is this ref, that
+// forces or deletes only if the yes says so, and that no owner push of this ref in the push log has used yet.
+// kind: '' (a plain push), 'force' or 'delete', as the hook read the ref line.
+function pushGrant(ref, sessionId, kind = '', repo = process.cwd(), now = Date.now()) {
 	const name = String(ref).replace(/^refs\/(heads|tags)\//, '');
 	if (!name || !/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return false;
 	const root = path.join(home(), 'projects');
+	// Claude Code names a project's transcript folder by its path, every other sign a dash: the session ran in this
+	// repo, a folder above it or one inside it.
+	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
+	let real = repo;
+	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
+	const here = key(real);
 	let dirs = [];
-	try { dirs = fs.readdirSync(root); } catch { return false; }
-	const word = new RegExp(`(^|[\\s:/+])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`);
+	try { dirs = fs.readdirSync(root).filter((d) => here.startsWith(d.toLowerCase()) || d.toLowerCase().startsWith(here)); } catch { return false; }
+	let used = [];
+	try { used = fs.readFileSync(path.join(repo, '.git', 'kit-push.log'), 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && p[2] === ref).map((p) => Date.parse(p[0])); } catch { /* none yet */ }
 	for (const d of dirs) {
 		let lines;
 		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
-		if (yeses(lines).some((y) => now - y.at >= 0 && now - y.at <= FRESH_MS && y.acts.some((a) => /\bpush\b/.test(a) && word.test(a)))) return true;
+		for (const y of yeses(lines)) {
+			if (now - y.at < 0 || now - y.at > FRESH_MS || used.some((t) => t >= y.at)) continue;
+			for (const a of y.acts) {
+				const p = pushAct(a);
+				if (p && p.dests.includes(name) && (kind !== 'force' || p.force) && (kind !== 'delete' || p.del)) return true;
+			}
+		}
 	}
 	return false;
 }
 
-if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID) ? 0 : 1;
+if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '') ? 0 : 1;
 
 module.exports = { ownerYes, actText, howToAsk, pushGrant, FRESH_MS };

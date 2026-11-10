@@ -143,7 +143,7 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes, run it', labels = ['Yes, run it', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [] }) {
+function popUp({ act, answer = 'Yes, run it', labels = ['Yes, run it', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], file = TRANSCRIPT }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
 	const question = `May I run \`${act}\`?`;
 	const input = { questions: [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }] };
@@ -153,7 +153,8 @@ function popUp({ act, answer = 'Yes, run it', labels = ['Yes, run it', 'No'], so
 		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask1', content: 'answered' }] } },
 		...then.map((command, k) => ({ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: `toolu_run${k}`, name: 'Bash', input: { command } }] } })),
 	];
-	fs.writeFileSync(TRANSCRIPT, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
 }
 const withYes = (tool_name, tool_input, extra = {}) => decide(tool_name, tool_input, { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now', ...extra });
 
@@ -231,11 +232,16 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.notEqual(push('').status, 0, 'nothing named');
 	// The marker is any script's to set, so it counts only beside the owner's own pop-up yes to that push.
 	const go = { KIT_PUSH_APPROVED: '1', CLAUDE_CODE_SESSION_ID: SID, CLAUDE_CONFIG_DIR: cfg };
-	popUp({ act: 'git status' });
+	// Claude Code keeps a session's transcript in a folder named by the session's path.
+	const file = path.join(cfg, 'projects', fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`);
+	popUp({ act: 'git status', file });
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the marker alone');
-	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main' });
-	assert.equal(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'main after the owner\'s pop-up go');
+	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file });
+	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, { ...go, CLAUDE_CODE_SESSION_ID: '99999999-2222-3333-4444-555555555555' }).status, 0, 'another session\'s record');
 	assert.notEqual(push(`refs/tags/v1 ${main} refs/tags/v1 ${Z}`, go).status, 0, 'a yes for main is no yes for a tag');
+	assert.notEqual(push(`refs/heads/mainline ${main} refs/heads/mainline ${Z}`, go).status, 0, 'nor for a branch whose name starts the same');
+	assert.equal(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'main after the owner\'s pop-up go');
+	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the yes is spent once the push went');
 	// A key added in one commit and removed in the next still goes out with the push.
 	fs.writeFileSync(path.join(dir, 'b.md'), 'token: ' + 'gh' + 'p_' + 'Zx9Qk2Lm'.repeat(5) + '\n');
 	g('add', '.');

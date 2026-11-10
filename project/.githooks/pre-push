@@ -41,7 +41,12 @@ EOF
     yes="$(dirname "$0")/../.claude/owner-yes.cjs"
     while read -r lref lsha rref rsha; do
       [ -n "$rref" ] || continue
-      if [ ! -f "$yes" ] || ! node "$yes" --push "$rref"; then
+      kind=""
+      case "$lsha" in *[!0]*) ;; *) kind=delete ;; esac
+      case "$rsha" in *[!0]*)
+        [ -z "$kind" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null && kind=force ;;
+      esac
+      if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind"; then
         echo "Push blocked: KIT_PUSH_APPROVED is set, but this session holds no fresh pop-up yes from the owner to a push naming $rref. Ask the owner with the pop-up first." >&2
         exit 1
       fi
