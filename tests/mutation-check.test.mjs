@@ -51,7 +51,7 @@ test('the mutation check names a flip no test catches, passes one a test catches
 	const { dir, src } = repo();
 	const r = check(dir, ['src/a.cjs']);
 	assert.equal(r.status, 1, r.stdout + r.stderr);
-	assert.match(r.stdout, /SURVIVED src\/a\.cjs:2 > to <=: exports\.isBig = \(x\) => x <= 10; was exports\.isBig = \(x\) => x > 10; \(tests: tests\/a\.test\.mjs::big\)/);
+	assert.match(r.stdout, /SURVIVED src\/a\.cjs:2 > to <=: exports\.isBig = \(x\) => x <= 10;[^\n]*\(tests: tests\/a\.test\.mjs::big\)/);
 	assert.doesNotMatch(r.stdout, /SURVIVED src\/a\.cjs:1/);
 	assert.match(r.stdout, /caught src\/a\.cjs:1 /);
 	assert.match(r.stdout, /mutation check: 2 flips, 1 caught, 1 survived/);

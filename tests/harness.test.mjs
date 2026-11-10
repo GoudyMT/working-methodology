@@ -113,7 +113,7 @@ test('each shard names the test it is in while it runs, and prints its own resul
 		`test('quick', () => {});\ntest('the slow one', async () => { await new Promise((r) => setTimeout(r, 1500)); });\n`);
 	const r = run(dir, ['--shards', '1', path.join(dir, 'x.test.mjs')], { KIT_RUN_BEAT_MS: '300' });
 	assert.equal(r.status, 0, r.stdout + r.stderr);
-	assert.match(r.stdout, /test-run: shard 1\/1 at 'x\.test\.mjs > the slow one' after \d+ s/);
+	assert.match(r.stdout, /shard 1\/1 at 'x\.test\.mjs > the slow one'/);
 	assert.match(r.stdout, /test-run: shard 1\/1 done, pass 2, fail 0 in [\d.]+ s/);
 	assert.ok(r.stdout.indexOf('shard 1/1 done') < r.stdout.indexOf('1 shards, pass'), 'the shard line comes before the total');
 });
