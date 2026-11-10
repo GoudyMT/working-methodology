@@ -20,6 +20,8 @@ function gate(lines, tool_name, tool_input, extra = {}, modules = true) {
 	const dir = kitTemp.makeTemp('gate-');
 	if (modules) for (const f of ['.claude/rules/git-and-release.md', 'standards/reviews-and-findings.md', 'standards/agent-teams.md']) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), '# rules\n'); }
 	const t = path.join(dir, 's.jsonl');
+	// A row may build its reads from the project folder: the Read tool always sends an absolute path.
+	if (typeof lines === 'function') lines = lines(dir);
 	fs.writeFileSync(t, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
 	const { CLAUDE_PROJECT_DIR: _p, ...env } = process.env;
 	const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, transcript_path: t, cwd: dir, ...extra }), encoding: 'utf8', env });
@@ -37,6 +39,8 @@ test('a PR, commit, tag or release waits until the session has read its rules, i
 		// The refusal names the file to read, so the session can go on by itself.
 		assert.ok(held.reason.includes(RELEASE), command);
 		assert.equal(gate([read(RELEASE), read('standards/reviews-and-findings.md')], 'Bash', { command }).decision, 'pass', `${command} after the read`);
+		// As the Read tool sends it: the absolute path inside this project (the 1.25.0 sweep: no row read one).
+		assert.equal(gate((dir) => [read(path.join(dir, RELEASE)), read(path.join(dir, 'standards', 'reviews-and-findings.md'))], 'Bash', { command }).decision, 'pass', `${command} after an absolute read`);
 		// F12: another folder's copy of the rules (the kit source, another project) is not this project's read.
 		assert.equal(gate([read(`/elsewhere/${RELEASE}`), read('/elsewhere/standards/reviews-and-findings.md'), shell(`cat ../other/${RELEASE}`)], 'Bash', { command }).decision, 'deny', `${command} after another copy's read`);
 	}
@@ -49,7 +53,8 @@ test('a PR, commit, tag or release waits until the session has read its rules, i
 	for (const command of ['git tag', 'git tag -l', 'git tag --list "v1*"', 'git tag -n --sort=-v:refname', 'git commit --help', 'git tag -h', 'gh pr create --help', 'gh pr edit 3 --add-label bug']) {
 		assert.equal(gate([], 'Bash', { command }).decision, 'pass', command);
 	}
-	for (const command of ['git tag -d v1', 'git tag -a v1 -m x', 'gh pr edit 3 --add-label bug --body x', 'gh pr edit 3 --title=y']) assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
+	// The 1.25.0 sweep: --sort or --format with a tag name makes the tag, and -h as a message's value is no help.
+	for (const command of ['git tag -d v1', 'git tag -a v1 -m x', 'gh pr edit 3 --add-label bug --body x', 'gh pr edit 3 --title=y', 'git tag --sort=refname v9.9', 'git tag --format=x v9.8', 'git tag -m -h v9.7']) assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
 	// A PR also needs the findings rule (the sweep summary in its body).
 	assert.ok(gate([read(RELEASE)], 'Bash', { command: 'gh pr create -t x -b y' }).reason.includes('standards/reviews-and-findings.md'));
 	assert.equal(gate([read(RELEASE), read('standards/reviews-and-findings.md')], 'Bash', { command: 'gh pr create -t x -b y' }).decision, 'pass');

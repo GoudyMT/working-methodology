@@ -20,7 +20,10 @@ const READERS = /^(cat|head|tail|less|more|type|gc|get-content|sed\s+-n|select-s
 const GIT_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--attr-source', '--super-prefix', '--shallow-file']);
 
 // git tag options that only list (F13); a git tag with no word after it lists too.
-const TAG_LISTS = /^(-l|--list|-n\d*|--contains|--no-contains|--points-at|--merged|--no-merged|--sort|--column|--no-column|--format)(=|$)/;
+// These put git tag in list mode whatever follows; --sort, --format and --column list only with no tag name after them
+// (the 1.25.0 sweep: git tag --sort=refname v9 makes v9).
+const TAG_LISTS = /^(-l|--list|-n\d*|--contains|--no-contains|--points-at|--merged|--no-merged)(=|$)/;
+const TAG_SHAPES = /^(--sort|--column|--no-column|--format)(=|$)/;
 // gh pr edit options that write the body or title (F13): an edit of labels, reviewers or a milestone waits for none.
 const PR_TEXT = /^(-b|--body|-F|--body-file|-t|--title)(=|$)/;
 const MAX_DEPTH = 3;
@@ -39,12 +42,14 @@ function needs(command, tool, depth = 0) {
 			if (name !== 'git' && name !== 'gh') continue;
 			const after = w.slice(at + 1);
 			const rest = (values) => { const a = []; for (let i = 0; i < after.length; i++) { if (values.has(after[i])) { i++; continue; } if (!after[i].startsWith('-')) a.push(after[i]); } return a; };
-			// Help reads a manual, whatever it names (F13).
-			if (after.some((x) => x === '--help' || x === '-h')) continue;
+			// Help reads a manual, whatever it names (F13); -h is help only as the last word, never as another option's
+			// value (git tag -m -h v9 makes a tag; the 1.25.0 sweep).
+			if (after.includes('--help') || after[after.length - 1] === '-h') continue;
 			if (name === 'git') {
 				const sub = rest(GIT_VALUE)[0];
 				const args = after.slice(after.indexOf(sub) + 1);
-				const lists = sub === 'tag' && (args.length === 0 || args.some((x) => TAG_LISTS.test(x)));
+				const named = args.some((x) => !x.startsWith('-'));
+				const lists = sub === 'tag' && (args.length === 0 || args.some((x) => TAG_LISTS.test(x)) || (!named && args.every((x) => TAG_SHAPES.test(x))));
 				if (sub === 'commit' || (sub === 'tag' && !lists)) out.push([RELEASE, `git ${sub}`]);
 			} else {
 				const [group, sub] = rest(GH_VALUE);
