@@ -41,6 +41,11 @@ test('the delete guard reads a quoted here-document written to a file as data, a
 	assert.equal(hook('guard-delete.cjs', 'cat > notes.md <<EOF\n$(rm -rf ' + OUT + ')\nEOF'), 'ask');
 	assert.equal(hook('guard-delete.cjs', "bash <<'EOF'\nrm -rf " + OUT + "\nEOF"), 'ask');
 	assert.equal(hook('guard-delete.cjs', "cat > notes.md <<'EOF'\nx\nEOF\nrm -rf " + OUT + ""), 'ask');
+	// The security review of this branch: a second here-document on the line read by bash, and a body sent into a
+	// process substitution, run; only a line holding one cat or tee and one mark is data.
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > notes.md; bash <<'B'\nx\nA\nrm -rf " + OUT + "\nB"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' > >(bash)\nrm -rf " + OUT + "\nA"), 'ask');
+	assert.equal(hook('guard-delete.cjs', "cat <<'A' && bash x.sh\nrm -rf " + OUT + "\nA"), 'ask');
 	// A mark inside quotes starts no here-document, so the lines after it are commands.
 	assert.equal(hook('guard-delete.cjs', `cat "a<<'X'"\nrm -rf ${OUT}\nX`), 'ask');
 });

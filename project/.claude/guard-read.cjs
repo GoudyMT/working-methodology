@@ -197,11 +197,14 @@ function heredocData(text) {
 		const open = (at) => /['"]/.test(line.slice(0, at).replace(/'[^']*'|"(\\.|[^"\\])*"/g, ''));
 		const marks = [...line.matchAll(/<<(?!<)(-?)\s*(['"]?)([A-Za-z_][\w.-]*)\2/g)].filter((m) => !open(m.index) && line[m.index - 1] !== BACKSLASH && line[m.index - 1] !== '<');
 		if (marks.length === 0) continue;
-		// The command that reads the body: the part of the line holding the first mark, past any NAME=value words.
-		const part = line.slice(0, marks[0].index).split(/;|&&|\|\||\|/).pop();
-		const words = part.trim().split(/\s+/).filter((w) => w && !/^[A-Za-z_]\w*=/.test(w));
-		const program = (words[0] || '').replace(/^["']|["']$/g, '').split(/[\\/]/).pop();
-		const pipesOn = /\|/.test(line.slice(marks[0].index).replace(/'[^']*'|"[^"]*"/g, ''));
+		// Data only on a line that is one plain cat or tee with one mark: no other command, pipe, process
+		// substitution or expansion anywhere on it (the security review: a second mark read by bash, a body sent into
+		// >(bash)). Anything else keeps every body in the reading.
+		const bare = line.replace(/'[^']*'|"(\\.|[^"\\])*"/g, '');
+		const words = bare.trim().split(/\s+/).filter((w) => w && !/^[A-Za-z_]\w*=/.test(w));
+		const program = (words[0] || '').split(/[\\/]/).pop();
+		const simple = marks.length === 1 && !/;|&|\||[<>]\(|\$\(|`/.test(bare);
+		const pipesOn = !simple;
 		for (const m of marks) {
 			const body = [];
 			let j = i + 1;
