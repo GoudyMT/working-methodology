@@ -178,24 +178,23 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// A variable set more than once (P=~/.claude; ... $P ...; P=x) is read as each value it is given in turn: the
 	// command is refused if any reading of it writes a protected place (a security review of this build). Past 32
 	// readings it fails closed.
-	// A variable set to a plain value here and also some way the guard cannot read (P+=x, read P, export P, ${P:=x},
-	// for P in, printf -v P), then used, is refused: read as either value it could be wrong (a security review).
-	// A command word built at run time ($X, `...`, $(...)) may be any program, eval among them: not read by its spelling.
-	const dynamic = () => tokenize(plainText(joinContinuations(String(command || '')), tool)).some((segment) => {
-		const word = segment.filter((x) => !x.redirect).map((x) => x.value).find((v) => !/^[A-Za-z_]\w*=/.test(v) && !/^(builtin|command|exec|env|nohup|time)$/.test(v));
-		return word !== undefined && /[$`]/.test(word);
-	});
-	for (const name of given.keys()) {
-		const other = new RegExp(`\\$\\{${name}:?=|(^|[^\\w$])${name}\\+=|\\b(read|for|mapfile|readarray|unset|getopts)\\b[^;&|\\n]*[\\s'"]${name}\\b|\\b(declare|local|typeset)\\s+-[^;&|\\n]*[\\s'"]${name}\\b|\\bprintf\\b[^;&|\\n]*-v\\s*['"]?${name}\\b`);
-		// Any assignment beyond the plain ones read above (P="$HOME/x", eval "P=x") is a value the guard did not read.
-		const every = [...String(command).matchAll(new RegExp(`(^|[\\s;&|(\`"'])${name}\\+?=`, 'g'))].length;
-		// A value read only in part (P=/tmp"x", P=~/.cla$Q, P=a\ b) or a command that runs text as shell (eval, source,
-		// .) leaves the value unknown: refused when the variable is used (the same review, its third pass).
-		const cut = [...String(command).matchAll(new RegExp(`(?:^|[\\s;&|(])${name}=[^\\s;&|()'"\`$]+(.?)`, 'g'))].some((m) => /['"`$\\]/.test(m[1]));
-		// Anywhere in the command, read with quotes, backslashes and expansion marks taken out (e\val, ev""al, $(eval),
-		// builtin eval): a run of text as shell, or a word built by $'...' or $"...", fails closed.
-		const runs = /\b(eval|source)\b|(^|\s)\.(\s|$)/.test(String(command).replace(/["'\\$(){}`]/g, '')) || /\$['"]/.test(String(command)) || dynamic() || new RegExp(`${name}\\\\=`).test(String(command));
-		if ((other.test(String(command)) || every > given.get(name).length || cut || runs) && new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command))) return true;
+	// The value is read ahead only in a command the guard can follow whole (a security review of this build, five passes:
+	// each spelling closed showed another). When a variable set here is used, the command is refused unless it has no
+	// expansion but plain uses of the variables it sets ($P, ${P}), no command or arithmetic substitution, no backslash,
+	// no quoted or escaped assignment, no other way to set a variable (P+=, read, for, declare, printf -v, ${P:=x}), no
+	// text run as shell (eval, source, .), and every set is a plain value.
+	const usedHere = [...given.keys()].filter((name) => new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command)));
+	if (usedHere.length) {
+		const text0 = String(command);
+		const expansions = [...text0.matchAll(/\$(\{?)/g)].every((m) => {
+			const rest = text0.slice(m.index + 1 + m[1].length);
+			const name = (/^[A-Za-z_]\w*/.exec(rest) || [''])[0];
+			return name !== '' && given.has(name) && (!m[1] || rest[name.length] === '}');
+		});
+		const sets = [...text0.matchAll(/([A-Za-z_]\w*)\+?=/g)].length === [...given.values()].reduce((n, v) => n + v.length, 0);
+		const cut = [...text0.matchAll(/(?:^|[\s;&|(])[A-Za-z_]\w*=[^\s;&|()'"`$]+(.?)/g)].some((m) => /['"`$\\]/.test(m[1]));
+		const setters = /\b(read|for|mapfile|readarray|unset|getopts|declare|local|typeset|printf|let|eval|source|alias|export|readonly)\b|(^|\s)\.(\s|$)/.test(text0.replace(/["']/g, ''));
+		if (!expansions || !sets || cut || setters || /[`\\]|\$\(/.test(text0)) return true;
 	}
 	const used = (name) => new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`).test(String(command || ''));
 	const twice = [...given].filter(([name, values]) => new Set(values).size > 1 && used(name));
