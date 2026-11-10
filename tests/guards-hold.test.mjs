@@ -201,14 +201,14 @@ test('the secret patterns catch the 11 shapes the 1.24.0 scan missed', async () 
 	};
 	// The 1.25.0 sweep: shapes the list still missed, written bare so no assignment shape can catch them.
 	Object.assign(shapes, {
-		'pgp private key': '-----BEGIN PGP PRIVATE KEY BLOCK-----',
+		'pgp private key': '-----BEGIN PGP ' + 'PRIVATE KEY BLOCK-----',
 		'azure storage key': 'DefaultEndpointsProtocol=https;AccountName=x;Account' + 'Key=' + al(86) + '==',
 		'gitlab token': 'glp' + 'at-' + al(20),
 		'hugging face token': 'h' + 'f_' + al(34),
 		'sendgrid key': 'S' + 'G.' + al(22) + '.' + al(43),
 		'google oauth secret': 'GOC' + 'SPX-' + al(28),
 		'slack webhook': 'https://hooks.slack.com/services/T' + al(8) + '/B' + al(8) + '/' + al(24),
-		'putty private key': 'PuTTY-User-Key-File-3: ssh-ed25519',
+		'putty private key': 'PuTTY-User-' + 'Key-File-3: ssh-ed25519',
 	});
 	for (const [name, line] of Object.entries(shapes)) assert.ok(SECRET_VALUE.some(([, re]) => re.test(line)), name);
 	assert.ok(SECRET_FILE.test('deploy.ppk'), 'a PuTTY key file');
