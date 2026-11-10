@@ -883,9 +883,23 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     const first = String(r.stdout || '').trim().split('\n')[0];
     if (first) lines.push(`${first}${r.status === 1 ? ' - a finding: walk the lever order (rule:test-lanes).' : ''}`);
   }
+  // T14: a part not present or wired is an install fault; its first line names the part.
+  const use = useCheck(kit, projectDir);
+  if (use) {
+    lines.push(use.text.split('\n')[0]);
+    if (use.code !== 0) gaps.push('the use check fails (run kit.mjs install project, or opt the part out in .kit/parts.json)');
+  }
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
   return { current, text: lines.join('\n') };
+}
+
+/** The use check (T14) from the kit's own copy, run in a project that has it installed; null where it does not. */
+function useCheck(kit, projectDir) {
+  const script = path.join(kit, 'project', '.claude', 'use-check.mjs');
+  if (!projectDir || !fs.existsSync(path.join(projectDir, '.claude', 'use-check.mjs')) || !fs.existsSync(script)) return null;
+  const r = spawnSync(process.execPath, [script], { cwd: projectDir, encoding: 'utf8' });
+  return { code: r.status, text: String(r.stdout || r.stderr || '').trim() || 'Use check: no output' };
 }
 
 /** Installed plugins whose version differs from the backup copy in vendor/. */
@@ -1376,6 +1390,12 @@ function main(argv) {
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
+    // T14: install is finished only when every part is present and wired. The kit's own copy runs, never the project's.
+    const use = useCheck(kit, projectDir);
+    if (target === 'project' && !dryRun && use) {
+      console.log(use.text);
+      if (use.code !== 0) process.exitCode = 1;
+    }
   } else if (cmd === 'fold-back') {
     const r = foldBack({ kit, home, target, projectDir });
     const name = target === 'user' ? 'user' : 'project-' + path.basename(path.resolve(projectDir)).replace(/[^A-Za-z0-9]+/g, '-');
