@@ -20,13 +20,20 @@ function scan(patch, names, hits, where) {
 	for (const f of names) if (SECRET_FILE.test(f)) hits.push(`secret file name: ${f}${where}`);
 	let file = '';
 	let added = 0;
-	let prev = '';
+	// Read by structure: inside a hunk, the lines its @@ header counts are content, whatever they start with; a file
+	// header is read only between hunks (the 1.25.0 sweep: a removed "-- x" over an added "++ <key>" read as a header).
+	let left = 0;
 	for (const line of patch.split('\n')) {
-		// A file header is "+++ " right after "--- "; an added line that starts "++ " is content (the 1.25.0 sweep).
-		const header = line.startsWith('+++ ') && prev.startsWith('--- ');
-		prev = line;
-		if (header) file = line.replace(/^\+\+\+ (b\/)?/, '');
-		else if (line.startsWith('+')) {
+		if (left > 0) {
+			if (line.startsWith('\\')) continue;
+			left--;
+		} else {
+			const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line);
+			if (hunk) left = Number(hunk[1] ?? 1) + Number(hunk[2] ?? 1);
+			if (line.startsWith('+++ ')) file = line.replace(/^\+\+\+ (b\/)?/, '');
+			continue;
+		}
+		if (line.startsWith('+')) {
 			added++;
 			for (const [name, re] of SECRET_VALUE) if (re.test(line)) hits.push(`${name} in ${file}${where}`);
 		}

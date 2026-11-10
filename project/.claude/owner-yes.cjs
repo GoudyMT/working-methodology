@@ -162,7 +162,7 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 		let lines;
 		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
 		for (const y of yeses(lines)) {
-			if (now - y.at < 0 || now - y.at > FRESH_MS || used.some((t) => t >= y.at)) continue;
+			if (now - y.at < 0 || now - y.at > FRESH_MS || used.some((t) => !Number.isFinite(t) || t >= y.at)) continue;
 			for (const a of y.acts) {
 				const p = pushAct(a);
 				if (p && p.dests.includes(name) && (kind !== 'force' || p.force) && (kind !== 'delete' || p.del)) return true;
