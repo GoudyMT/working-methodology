@@ -81,6 +81,9 @@ test('the same holes in the spellings beside them are held', () => {
 		'Set-Content .claude/owner-proof.cjs ""',
 		// F6 (the 1.24.0 sweep): a transcript path spelled through a variable set in the same command.
 		'P=~/.claude; echo x > ${P}/projects/x/s.jsonl',
+		// The same variable set again after its use: the write reads the first value (a security review of this build).
+		'P=~/.cla; echo x > ${P}ude/projects/x/s.jsonl; P=/tmp',
+		'P=~/.cla; echo x > $P/../.claude/projects/x/s.jsonl; P=/tmp',
 	];
 	for (const c of held) assert.notEqual(bash(c), 'allow', c);
 });

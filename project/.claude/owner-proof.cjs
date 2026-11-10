@@ -174,7 +174,19 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// A variable set in the command (P=~/.claude) is read as its value where it is used, before the reader splits ${P} at
 	// its braces (F6, the 1.24.0 sweep: P=~/.claude; echo x > ${P}/projects/x/s.jsonl passed).
 	const given = new Map();
-	for (const m of String(command || '').matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=([^\s;&|()'"`$]+)/g)) given.set(m[1], m[2]);
+	for (const m of String(command || '').matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=([^\s;&|()'"`$]+)/g)) given.set(m[1], [...(given.get(m[1]) || []), m[2]]);
+	// A variable set more than once (P=~/.claude; ... $P ...; P=x) is read as each value it is given in turn: the
+	// command is refused if any reading of it writes a protected place (a security review of this build). Past 32
+	// readings it fails closed.
+	const used = (name) => new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`).test(String(command || ''));
+	const twice = [...given].filter(([name, values]) => new Set(values).size > 1 && used(name));
+	if (twice.length) {
+		if (twice.reduce((n, [, values]) => n * new Set(values).size, 1) > 32) return true;
+		const [name, values] = twice[0];
+		const use = new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`, 'g');
+		return [...new Set(values)].some((value) => shellWrites(String(command).replace(use, () => value), tool, start, names));
+	}
+	for (const [name, values] of given) given.set(name, values[0]);
 	const source = String(command || '').replace(/\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)\b/g, (m, a, b) => (given.has(a || b) ? given.get(a || b) : m));
 	// A variable glued to kit-owner.json (${P}kit-owner.json, $X/kit-owner.json) may be the Claude folder: the reader
 	// splits a word at braces, so it is refused here, before the split (the 1.24.0 sweep).

@@ -54,6 +54,9 @@ const DELETE_WORD = /(^|[^\w-])(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimr
 const MAKES_LINK = /\bmklink\b|\bln(\.exe)?\s([^;|&\n]*\s)?(-[a-z]*s|--sy)|\bsymlink(Sync)?\s*\(|\b(new-item|ni)\b[\s\S]*\b(Junction|SymbolicLink)\b|\b(new-item|ni)\b[\s\S]*\s-(i\w*|t\w*)[\s:]+["']?(j|sy)/i;
 // The read-only searchers: a delete word in their arguments is a pattern, not a command.
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls']);
+// Programs that look a name up and run nothing it names: man rm, which rm, type del, Get-Help Remove-Item (the
+// lead-session narrowing carried from 1.24.0, E27). command looks up only with -v or -V; plain command runs it.
+const LOOKUPS = new Set(['man', 'which', 'whereis', 'where', 'whatis', 'apropos', 'help', 'info', 'type', 'get-help', 'get-command', 'gcm']);
 const GIT_READS = new Set(['grep', 'log', 'show', 'diff', 'blame']);
 // get-item and gi list the items themselves, the others what is inside them.
 const LISTERS = new Set(['get-childitem', 'gci', 'get-item', 'gi']);
@@ -292,6 +295,10 @@ function holdsLink(folder, depth) {
 // fixed folder before it may also be the session folder or the project itself.
 function placeOf(target, ctx, state, keepLast = false) {
 	const api = ctx.api;
+	// A folder this command made with mktemp and holds in a variable it sets once is its own: the lead-session narrowing
+	// carried from 1.24.0 (E27). Any other variable is unread.
+	const own = /^\$\{?([A-Za-z_]\w*)\}?(\/[\w./-]*)?$/.exec(target);
+	if (own && ctx.ownTemps && ctx.ownTemps.has(own[1]) && !String(own[2] || '').includes('..')) return '';
 	if (/[$%]/.test(target) || target.includes(BACKTICK)) return 'a target holding a variable';
 	if (target.startsWith('@')) return 'a splatted target';
 	// A PowerShell drive other than a disk (HKCU:, Env:, Function:) or a provider path (FileSystem::C:\x).
@@ -416,6 +423,9 @@ function findDelete(text, ctx, state, depth) {
 		// A search's pattern is not a command; skipped only when nothing in it runs another program (rg --pre, a git
 		// option before the subcommand such as -c core.pager, an external diff or pager).
 		// git takes any unambiguous prefix of a long option, and short options cluster (-nO).
+		// A look-up of plain names runs nothing: no variable, substitution or second command hides in it.
+		const lookup = (LOOKUPS.has(first) || (first === 'command' && /^-[vV]$/.test(words[1] ?? ''))) && segment.every((w) => !w.redirect && /^[\w.-]+$/.test(w.value));
+		if (lookup && depth === 0) continue;
 		const search = SEARCHERS.has(first) || (first === 'git' && words.slice(1).some((w) => GIT_READS.has(w)));
 		const runsOther = words.some((w) => /^(--pre|--hostname-bin|--o(p(e(n(-[\w-]*)?)?)?)?(=|$)|--ext-|--textc|-[A-Za-z]*O)/.test(w));
 		if (search && runsOther) return 'a search option that runs another program';
@@ -648,6 +658,10 @@ function decide(input, where = {}) {
 	const id = String(input.session_id ?? '');
 	const session = SESSION_ID.test(id) ? { id, claude: realOf(api.join(tmpdir, 'claude'), api) } : null;
 	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
+	// The variables a bash command sets once, to a folder or file mktemp makes (tmp=$(mktemp -d)), and never again.
+	const text0 = strings.join('\n');
+	const sets = [...text0.matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=/g)].map((m) => m[1]);
+	ctx.ownTemps = input.tool_name === 'Bash' ? new Set([...text0.matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=\$\(mktemp(?:\s+-[dtu]+)*(?:\s+[\w.-]*X{3,}[\w.-]*)?\)/g)].map((m) => m[1]).filter((v) => sets.filter((x) => x === v).length === 1)) : new Set();
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
 	const both = strings.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);
