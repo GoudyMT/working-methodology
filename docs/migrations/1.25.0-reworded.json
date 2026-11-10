@@ -7,6 +7,22 @@
     {
       "before": "| A8 | Test layout and runners | TDD | `<fill in>` |",
       "after": "| A8 | Test layout and runners; test lanes in `.kit/lanes.json` (rule:test-lanes) | TDD, Test Lanes | `<fill in>` |"
+    },
+    {
+      "before": "- **Subject:** imperative, lowercase, no period, what the change does for a `git log` reader; no task / phase tags or asides. **No body, footer or AI / tool trailer** (detail goes in the PR body, the Session Log and comments). Reaching for `-F`, a heredoc or a second `-m` means the message is already wrong.",
+      "after": "- **Subject:** <= 72 characters, one change; imperative, lowercase, no period, what the change does for a `git log` reader; no task / phase tags or asides. **No body, footer or AI / tool trailer** (detail goes in the PR body, the Session Log and comments). Reaching for `-F`, a heredoc or a second `-m` means the message is already wrong."
+    },
+    {
+      "before": "- **Hard rules (outward-facing):** ASCII; no AI / agent / tool references (reviews described BY DIMENSION + verdict); no links to gitignored vault docs; value-led title `<Area>: <line>`, H1 = the title.",
+      "after": "- **Hard rules (outward-facing):** ASCII; no AI / agent / tool references (reviews described BY DIMENSION + verdict); no links to gitignored vault docs; title `type: subject` (the squash subject, <= 72, CI checks it), H1 `<Area>: <line>` ending in it."
+    },
+    {
+      "before": "| A16 | PR body ceilings + audit commands; the audit's gates, dependency-audit line and verified-clean lines (`.kit/pr-body.json`) | PR Body Standard | `<fill in>` |",
+      "after": "| A16 | PR body ceilings + audit commands; the review dimensions that apply, the dependency-audit line and the checked lines (`.kit/pr-body.json`) | PR Body Standard | `<fill in>` |"
+    },
+    {
+      "before": "- **Standard:** before / after table; decisions and review result on screen; file list, gate results and clean checks in folds; total, on-screen and per-bullet ceilings (\"wall of text\" = on-screen words and bullet length); plain engineer speak.",
+      "after": "- **Standard:** before / after table; decisions and review result on screen; review rows are the project's (A16), files and gates left to GitHub; word and bullet ceilings; plain speak."
     }
   ]
 }

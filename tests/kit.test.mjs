@@ -3145,37 +3145,50 @@ test('the version bump check fails shipped code with no bump, unless the body sa
 // Improvement report IR-2026-10-30-pr-body-audit-holds-checks-from-another-project: the Standard audit held one
 // project's facts (its dependency-audit wording, a corpus line, web gates), so an honest body elsewhere could only
 // fail or lie. Those checks now come from the project's .kit/pr-body.json; the secrets line stays fixed for all.
-const STD_TITLE = 'Live check: an automatic alarm for online search, a data date on About, and cooking class links';
-const stdAudit = (dir, text) => {
+// T13 (the owner, 2026-11-10): the title is the squash subject (`type: subject`), the review rows are the project's
+// own, and what GitHub shows (files, gates) is not repeated.
+const STD_TITLE = 'feat: an automatic alarm for online search and a data date on About';
+const stdAudit = (dir, text, title = STD_TITLE) => {
   const f = path.join(dir, 'body.md');
   fs.writeFileSync(f, text);
-  return spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, STD_TITLE], { encoding: 'utf8', cwd: dir });
+  return spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, title], { encoding: 'utf8', cwd: dir });
 };
 const honestBody = () => read(path.resolve('user/skills/pr-body/examples/standard.md'))
-  .replace('| Dependency audit | 0 high (2 documented scoped ignores) |', '| Dependency audit | 0 high |')
-  .replace(/^\| (Static scan|E2E|Build; bundle|Chunks|Lighthouse) \|.*\n/gm, '')
-  .replace('- No new package; the corpus and the served documents are unchanged (the recipe index included).\n', '- No new package.\n');
+  .replace('; the corpus and the served documents are unchanged', '');
 test('the Standard PR audit passes an honest body for a project with no corpus, no scoped ignores and no web gates', () => {
   const dir = makeTemp('prb-');
   const ok = stdAudit(dir, honestBody());
   assert.equal(ok.status, 0, ok.stdout);
-  const noSecrets = stdAudit(dir, honestBody().replace('- No secrets or account information in the diff.\n', ''));
+  const noSecrets = stdAudit(dir, honestBody().replace('- **Secrets:** no secrets or account information in the diff.\n', ''));
   assert.equal(noSecrets.status, 1, 'the secrets line is required in every project');
   assert.match(noSecrets.stdout, /FAIL.*secrets/);
+  // The title is the squash commit's subject: an area title, or one over 72, fails; the H1 carries its subject.
+  for (const title of ['Live check: an automatic alarm for online search and a data date on About', `feat: ${'x'.repeat(70)}`]) assert.match(stdAudit(dir, honestBody(), title).stdout, /FAIL\s+title is type: subject/, title);
+  assert.match(stdAudit(dir, honestBody(), 'feat: something else').stdout, /FAIL\s+H1 line carries the title subject/);
 });
-test('a project\'s .kit/pr-body.json sets its own gates, audit line and verified-clean lines', () => {
+test('a project\'s .kit/pr-body.json sets its own review dimensions, audit line and checked lines', () => {
   const dir = makeTemp('prb-');
   fs.mkdirSync(path.join(dir, '.kit'));
   fs.writeFileSync(path.join(dir, '.kit', 'pr-body.json'), JSON.stringify({
-    gates: ['Dependency audit', 'Lint; type check', 'Static scan', 'Unit', 'E2E', 'Build; bundle', 'Chunks', 'Lighthouse'],
-    auditLine: '0 high (2 documented scoped ignores)',
+    dimensions: ['Privacy and the PII boundary', 'Code security', 'Supply chain and bundle', 'Legal content and licensing', 'Accessibility'],
+    auditLine: '0 high (3 documented scoped ignores)',
     verifiedClean: ['the corpus and the served documents are unchanged'],
   }));
   const strict = stdAudit(dir, honestBody());
   assert.equal(strict.status, 1);
-  for (const why of [/missing Static scan/, /keeps its ignores/, /corpus/]) assert.match(strict.stdout, why);
+  for (const why of [/missing Accessibility/, /keeps its ignores/, /corpus/]) assert.match(strict.stdout, why);
+  fs.writeFileSync(path.join(dir, '.kit', 'pr-body.json'), JSON.stringify({
+    dimensions: ['Privacy and the PII boundary', 'Code security', 'Supply chain and bundle', 'Legal content and licensing'],
+    auditLine: '0 high (2 documented scoped ignores)',
+    verifiedClean: ['the corpus and the served documents are unchanged'],
+  }));
   const full = stdAudit(dir, read(path.resolve('user/skills/pr-body/examples/standard.md')));
   assert.equal(full.status, 0, full.stdout);
+  // A project with no file needs only a code security row, so no row is written to say "not touched".
+  const plain = makeTemp('prb-');
+  const oneRow = honestBody().replace(/\| (Privacy|Supply|Legal|Test value).*\n/g, '');
+  assert.equal(stdAudit(plain, oneRow).status, 0, stdAudit(plain, oneRow).stdout);
+  assert.match(stdAudit(plain, oneRow.replace(/\| Code security.*\n/, '')).stdout, /missing Code security/);
 });
 
 // The Review section carries the sweep summary a reviewer needs (the commit covered, a result per dimension, high and
@@ -4139,12 +4152,21 @@ test('the commit message check passes the house style and names each fault', () 
     ['feat: add the map\n\nlonger body\n', /one line/],
     ['feat: add the map\n\nCo-Authored-By: Someone <x@y.z>\n', /AI or tool trailer/],
     ['feat: add the map\nGenerated with a tool\n', /one line/],
+    // T13 (the owner, 2026-11-10: "72 limit"): one change per line, detail in the PR body.
+    [`fix: ${'x'.repeat(68)}\n`, /over 72/],
   ];
   for (const [text, fault] of cases) {
     const r = nameRun(['message', msgFile(text)]);
     assert.equal(r.status, 1, text);
     assert.match(r.stderr, fault, text);
   }
+  assert.equal(nameRun(['message', msgFile(`fix: ${'x'.repeat(67)}\n`)]).status, 0, '72 characters pass');
+});
+// T13 (the owner, 2026-11-10: "type: subject"): the PR title is the squash commit's subject on main, so it is held to
+// the same rule, and a script can group the changelog from main's history.
+test('the PR title check holds a title to the commit subject rule', () => {
+  assert.equal(nameRun(['title', 'fix: guards that hold']).status, 0);
+  for (const bad of ['Guards: hold the six holes', 'fix: guards that hold.', `feat: ${'x'.repeat(70)}`]) assert.equal(nameRun(['title', bad]).status, 1, bad);
 });
 test('the branch name check passes plain type-prefixed names and refuses tool prefixes and internal codes', () => {
   for (const ok of ['main', 'feature/branch-blind-timeline', 'fix/hold-the-reader', 'chore/bump-vite', 'feat/project-map', 'dependabot/npm_and_yarn/vite-7.1.0'])

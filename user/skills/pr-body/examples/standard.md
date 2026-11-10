@@ -1,6 +1,6 @@
-## Live check: an automatic alarm for online search, a data date on About, and cooking class links
+## Live check: an automatic alarm for online search and a data date on About
 
-Three changes that keep the app honest with no one running it. Releases as v2.4.0.
+Three changes that keep the app honest with no one running it, and cooking class links. Releases as v2.4.0.
 
 ### Summary
 
@@ -11,17 +11,6 @@ Three changes that keep the app honest with no one running it. Releases as v2.4.
 | Meal plan, first week step | One link (the public food guide) | Also two free community cooking classes |
 | Resources page | "trusted nonprofits" | "trusted free programs": one class is free but run by a company |
 | Engineering doc 03 | No payment method; a manual check | The real cost guarantee; the automatic check |
-
-### Included
-
-<details>
-<summary>Where the change lives</summary>
-
-- `.github/workflows/live-check.yml` and `scripts/live-check*.mjs` (new).
-- `src/lib/sources/`, `src/routes/about/`, `src/lib/resources/`, `src/routes/resources/`.
-- `docs/engineering/03-online-search.md`, the size limits, the version.
-
-</details>
 
 ### Design decisions
 
@@ -38,22 +27,7 @@ Three changes that keep the app honest with no one running it. Releases as v2.4.
 - The live check passed against the live site.
 - About, Resources and the meal plan step walked on a production build: both engines, 320 px and desktop,
   light and dark, no sideways scroll.
-
-<details>
-<summary>Every gate</summary>
-
-| Check | Result |
-|---|---|
-| Dependency audit | 0 high (2 documented scoped ignores) |
-| Lint; type check | pass |
-| Static scan | 0 findings |
-| Unit | pass |
-| E2E | pass on chromium and webkit, slow suite included |
-| Build; bundle | pass |
-| Chunks | within the raised limits |
-| Lighthouse | pass |
-
-</details>
+- Dependency audit: 0 high (2 documented scoped ignores).
 
 ### Review
 
@@ -70,17 +44,8 @@ Feature review of `9a1d6e20`.
 - **High and critical findings:** none.
 - **Deferred:** none.
 - **Accepted risks:** the one limit named above.
-
-<details>
-<summary>Verified clean and enumerated rather than asserted</summary>
-
-- The check sends one fixed public search with a read-only token, and a fork cannot start it.
-- The cooking class links are not health or diet advice links.
-- No new package; the corpus and the served documents are unchanged (the recipe index included).
-- No secrets or account information in the diff.
-
-</details>
-
-Scaling: no per-use cost.
+- **Checked:** the check sends one fixed public search with a read-only token; a fork cannot start it.
+- **Also checked:** no class link is health or diet advice; the corpus and the served documents are unchanged.
+- **Secrets:** no secrets or account information in the diff.
 
 Version alignment: YES. It serves the goal of an app that keeps working with no one operating it.

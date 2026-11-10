@@ -6,22 +6,23 @@ import { versionBumpCheck } from './version-bump-check.mjs';
 import { attributionFaults, entities } from './no-attribution.mjs';
 
 // The large-PR body audit: a feature or large PR body that is detailed but not a text wall. The
-// changes read as a before / after table; decisions and the review stay on screen; the gate figures, the file
-// list and the enumerated checks sit in folds (<details>), so nothing is cut and little is in the way.
+// changes read as a before / after table; decisions and the review stay on screen. T13 (the owner, 2026-11-10): what
+// GitHub already shows (the file list on the Files tab, every gate on the Checks tab) is not repeated, and the review
+// rows are the project's own (.kit/pr-body.json), so no row says "not touched".
 // Small PRs (docs, chore, test, bump, a quality-of-life fix) keep their own short form: pr-body-audit-lean.mjs.
 // // Usage: node .claude/pr-body-audit.mjs <body.md> "<title>"
 
 const [file, title] = process.argv.slice(2);
 
-// The checks that are project facts - which gates the project runs, the wording its dependency audit must keep, the
-// extra lines "Verified clean" must name - come from .kit/pr-body.json (rule:pr-body; adapter A16):
-//   { "gates": ["Dependency audit", ...], "auditLine": "0 high", "verifiedClean": ["..."] }
-// Without it, the gates every project runs are required and nothing else; the secrets line is required always.
+// The checks that are project facts - the review dimensions that apply to it, the wording its dependency audit must
+// keep, the extra lines the review must name - come from .kit/pr-body.json (rule:pr-body; adapter A16):
+//   { "dimensions": ["Code security", ...], "auditLine": "0 high", "verifiedClean": ["..."] }
+// Without it, code security is the one dimension required; the secrets line is required always.
 const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 const root = top.status === 0 ? top.stdout.trim() : process.cwd();
 let project = {};
 try { project = JSON.parse(readFileSync(path.join(root, '.kit', 'pr-body.json'), 'utf8')); } catch { /* the defaults */ }
-const GATES = Array.isArray(project.gates) && project.gates.length ? project.gates : ['Dependency audit', 'Lint; type check', 'Unit'];
+const DIMENSIONS = Array.isArray(project.dimensions) && project.dimensions.length ? project.dimensions : ['Code security'];
 const AUDIT_LINE = typeof project.auditLine === 'string' && project.auditLine ? project.auditLine : null;
 const CLEAN = ['secrets or account information in the diff', ...(Array.isArray(project.verifiedClean) ? project.verifiedClean : [])];
 // Read as the page shows it: an entity (&#65;I) is the character it stands for.
@@ -56,8 +57,11 @@ const section = (name) => {
 };
 const wordCount = (s) => s.split(/\s+/).filter(Boolean).length;
 
-row('H1 equals the title', lines[0] === `## ${title}`, lines[0]);
-row('title is <Area>: <line>', /^[A-Z][A-Za-z ]+: [a-z]/.test(title), title);
+// The title is the squash commit's subject on main (T13, the owner: "type: subject"); the H1 leads with the area.
+const subject = title.replace(/^[a-z]+(\([a-z-]+\))?: /, '');
+row('title is type: subject, at most 72', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z-]+\))?: [a-z]/.test(title) && title.length <= 72, title);
+row('H1 is <Area>: <line>, no type prefix', /^## [A-Z][A-Za-z ]+: [a-z]/.test(lines[0]) && !/^## (feat|fix|chore|security|docs)/.test(lines[0]), lines[0]);
+row('H1 line carries the title subject', lines[0].endsWith(subject), `subject: ${subject}`);
 
 const long = lines.map((l, i) => [i + 1, l]).filter(([, l]) => !isTable(l) && l.length > 110).map(([n, l]) => [n, l.length]);
 row('every prose line <= 110 (tables exempt)', long.length === 0, long.length ? `over: ${JSON.stringify(long)}` : 'none over');
@@ -74,35 +78,28 @@ const vaultHits = lines.flatMap((l, i) => (vault.test(l) ? [i + 1] : []));
 row('no vault paths', vaultHits.length === 0, vaultHits.length ? `lines ${vaultHits}` : 'none');
 
 const sections = lines.filter((l) => l.startsWith('### ')).map((l) => l.slice(4));
-const wanted = ['Summary', 'Included', 'Design decisions', 'Verification', 'Review'];
-row('the five ### sections, in order', JSON.stringify(sections) === JSON.stringify(wanted), sections.join(' / '));
+const wanted = ['Summary', 'Design decisions', 'Verification', 'Review'];
+row('the four ### sections, in order', JSON.stringify(sections) === JSON.stringify(wanted), sections.join(' / '));
 
 const framing = body.slice(body.indexOf('\n') + 1, body.indexOf('### Summary')).trim();
 row('framing of 1-3 lines before Summary', framing.length > 0 && !framing.startsWith('#') && framing.split('\n').length <= 3, `${framing.split('\n').length} lines`);
 
 row('Summary is a before / after table', /\n\| *Where *\| *Before *\| *After *\|/.test(section('Summary')), 'header | Where | Before | After |');
 
-row('Included sits in a fold', section('Included').includes('<details>'), section('Included').includes('<details>') ? 'folded' : 'not folded');
-
 const verification = section('Verification');
 const verificationBullets = visibleText(verification).split('\n').filter((l) => l.startsWith('- ')).length;
 row('Verification: at most 4 bullets on screen', verificationBullets > 0 && verificationBullets <= 4, `${verificationBullets} bullets`);
-const gateLabels = GATES;
-const folded = verification.slice(verification.indexOf('<details>'));
-const missingGates = gateLabels.filter((g) => !folded.includes(`| ${g} |`));
-row('Verification: every gate in a folded table', verification.includes('<details>') && missingGates.length === 0, missingGates.length ? `missing ${missingGates.join(', ')}` : `${gateLabels.length} gate rows`);
-if (AUDIT_LINE) row('Verification: the audit line keeps its ignores', folded.includes(AUDIT_LINE), `Dependency audit row: ${AUDIT_LINE}`);
+if (AUDIT_LINE) row('Verification: the audit line keeps its ignores', verification.includes(AUDIT_LINE), `dependency audit: ${AUDIT_LINE}`);
 
 const review = section('Review');
-const order = ['review of `', '| Dimension | Result |', '**High and critical findings:**', '**Deferred:**', '**Accepted risks:**', 'Verified clean and enumerated rather than asserted', 'Scaling:', 'Version alignment: YES.'];
+const order = ['review of `', '| Dimension | Result |', '**High and critical findings:**', '**Deferred:**', '**Accepted risks:**', 'Version alignment: YES.'];
 const at = order.map((s) => review.indexOf(s));
 row('Review parts in order', at.every((n, i) => n > 0 && (i === 0 || n > at[i - 1])), JSON.stringify(at));
-const dims = ['privacy and the PII boundary', 'supply chain and bundle', 'legal content and licensing', 'code security', 'scaling', 'version alignment'];
-const missingDims = dims.filter((d) => !norm(review).toLowerCase().includes(d.toLowerCase()));
-row('Review names every standard dimension', missingDims.length === 0, missingDims.length ? `missing ${missingDims}` : 'all six');
-const clean = CLEAN;
-const missingClean = clean.filter((p) => !norm(review).toLowerCase().includes(p.toLowerCase()));
-row('Verified clean names secrets and the project lines', missingClean.length === 0, missingClean.length ? `missing: ${missingClean.join(' | ')}` : `all ${clean.length}`);
+const dimRows = review.split('\n').filter((l) => l.startsWith('| ') && !/^\| *(Dimension|-+) *\|/.test(l)).map((l) => l.toLowerCase());
+const missingDims = DIMENSIONS.filter((d) => !dimRows.some((l) => l.startsWith(`| ${d.toLowerCase()}`)));
+row('Review has a row for each project dimension', missingDims.length === 0, missingDims.length ? `missing ${missingDims.join(', ')}` : `all ${DIMENSIONS.length}`);
+const missingClean = CLEAN.filter((p) => !norm(review).toLowerCase().includes(p.toLowerCase()));
+row('Review names secrets and the project lines', missingClean.length === 0, missingClean.length ? `missing: ${missingClean.join(' | ')}` : `all ${CLEAN.length}`);
 
 const opens = (body.match(/<details>/g) ?? []).length;
 const closes = (body.match(/<\/details>/g) ?? []).length;
