@@ -22,14 +22,18 @@ function scan(patch, names, hits, where) {
 	let added = 0;
 	// Read by structure: inside a hunk, the lines its @@ header counts are content, whatever they start with; a file
 	// header is read only between hunks (the 1.25.0 sweep: a removed "-- x" over an added "++ <key>" read as a header).
-	let left = 0;
+	// The old and new sides are counted apart: a context line is one of each.
+	let oldLeft = 0;
+	let newLeft = 0;
 	for (const line of patch.split('\n')) {
-		if (left > 0) {
+		if (oldLeft > 0 || newLeft > 0) {
 			if (line.startsWith('\\')) continue;
-			left--;
+			if (line.startsWith('+')) newLeft--;
+			else if (line.startsWith('-')) oldLeft--;
+			else { oldLeft--; newLeft--; }
 		} else {
 			const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line);
-			if (hunk) left = Number(hunk[1] ?? 1) + Number(hunk[2] ?? 1);
+			if (hunk) { oldLeft = Number(hunk[1] ?? 1); newLeft = Number(hunk[2] ?? 1); }
 			if (line.startsWith('+++ ')) file = line.replace(/^\+\+\+ (b\/)?/, '');
 			continue;
 		}
