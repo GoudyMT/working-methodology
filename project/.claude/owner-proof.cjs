@@ -180,6 +180,11 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// readings it fails closed.
 	// A variable set to a plain value here and also some way the guard cannot read (P+=x, read P, export P, ${P:=x},
 	// for P in, printf -v P), then used, is refused: read as either value it could be wrong (a security review).
+	// A command word built at run time ($X, `...`, $(...)) may be any program, eval among them: not read by its spelling.
+	const dynamic = () => tokenize(plainText(joinContinuations(String(command || '')), tool)).some((segment) => {
+		const word = segment.filter((x) => !x.redirect).map((x) => x.value).find((v) => !/^[A-Za-z_]\w*=/.test(v) && !/^(builtin|command|exec|env|nohup|time)$/.test(v));
+		return word !== undefined && /[$`]/.test(word);
+	});
 	for (const name of given.keys()) {
 		const other = new RegExp(`\\$\\{${name}:?=|(^|[^\\w$])${name}\\+=|\\b(read|for|mapfile|readarray|unset|getopts)\\b[^;&|\\n]*[\\s'"]${name}\\b|\\b(declare|local|typeset)\\s+-[^;&|\\n]*[\\s'"]${name}\\b|\\bprintf\\b[^;&|\\n]*-v\\s*['"]?${name}\\b`);
 		// Any assignment beyond the plain ones read above (P="$HOME/x", eval "P=x") is a value the guard did not read.
@@ -189,7 +194,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 		const cut = [...String(command).matchAll(new RegExp(`(?:^|[\\s;&|(])${name}=[^\\s;&|()'"\`$]+(.?)`, 'g'))].some((m) => /['"`$\\]/.test(m[1]));
 		// Anywhere in the command, read with quotes, backslashes and expansion marks taken out (e\val, ev""al, $(eval),
 		// builtin eval): a run of text as shell, or a word built by $'...' or $"...", fails closed.
-		const runs = /\b(eval|source)\b|(^|\s)\.(\s|$)/.test(String(command).replace(/["'\\$(){}`]/g, '')) || /\$['"]/.test(String(command));
+		const runs = /\b(eval|source)\b|(^|\s)\.(\s|$)/.test(String(command).replace(/["'\\$(){}`]/g, '')) || /\$['"]/.test(String(command)) || dynamic() || new RegExp(`${name}\\\\=`).test(String(command));
 		if ((other.test(String(command)) || every > given.get(name).length || cut || runs) && new RegExp(`\\$\\{${name}\\b|\\$${name}\\b`).test(String(command))) return true;
 	}
 	const used = (name) => new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`).test(String(command || ''));
