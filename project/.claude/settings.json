@@ -28,6 +28,19 @@
         ]
       },
       {
+        "matcher": "Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{PROJECT_DIR}}/.claude/task-gate.cjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal",
         "hooks": [
           {
