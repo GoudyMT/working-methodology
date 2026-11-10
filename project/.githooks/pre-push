@@ -42,9 +42,6 @@ EOF
     exit 1
   fi
   printf '%s\n' "$refs" | node "$scan" --push || { echo "Push blocked: a secret-shaped file or value is in a pushed commit. Take it out of the history, and rotate any real key." >&2; exit 1; }
-  how=auto
-  [ "$KIT_PUSH_APPROVED" = "1" ] && how=owner
-  [ -n "$common" ] && printf '%s\n' "$refs" | awk -v t="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -v h="$how" 'NF { print t, h, $3, $2 }' >> "$common/kit-push.log" 2>/dev/null
 fi
 # Branch names in the house style (rule:branching): every branch this push sends.
 names="$(dirname "$0")/../.claude/name-check.mjs"
@@ -94,5 +91,11 @@ if [ -f "$gatelog" ]; then
   done <<EOF
 $refs
 EOF
+fi
+# Every check passed: an AI push is logged (time, auto or owner, ref, commit), the record the owner reads after.
+if [ -n "$AI_AGENT$CLAUDECODE" ]; then
+  how=auto
+  [ "$KIT_PUSH_APPROVED" = "1" ] && how=owner
+  printf '%s\n' "$refs" | awk -v t="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -v h="$how" 'NF { print t, h, $3, $2 }' >> "$common/kit-push.log" 2>/dev/null
 fi
 exit 0
