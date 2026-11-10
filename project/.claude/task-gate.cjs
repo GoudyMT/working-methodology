@@ -15,6 +15,8 @@ const FINDINGS = 'standards/reviews-and-findings.md';
 const TEAMS = 'standards/agent-teams.md';
 // gh options that take a value before the subcommand (gh -R owner/repo pr create).
 const GH_VALUE = new Set(['-R', '--repo', '--hostname']);
+// A shell command that reads a file: its first program is a plain reader.
+const READERS = /^(cat|head|tail|less|more|type|gc|get-content|sed\s+-n|select-string|sls|grep|rg)(\.exe)?\s/i;
 const GIT_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env']);
 
 // What a shell command's step needs read: [file, why] pairs.
@@ -50,7 +52,9 @@ function readSince(transcript) {
 		for (const b of c) {
 			if (!b || b.type !== 'tool_use' || !b.input) continue;
 			if (b.name === 'Read') seen.push(String(b.input.file_path || ''));
-			else if (b.name === 'Bash' || b.name === 'PowerShell') seen.push(String(b.input.command || ''));
+			// A shell read counts only by a reader program, never a command that merely names the file (a commit message
+			// citing it, Test-Path), the gated step itself included (the 1.24.0 sweep).
+			else if ((b.name === 'Bash' || b.name === 'PowerShell') && READERS.test(String(b.input.command || '').trim())) seen.push(String(b.input.command || ''));
 		}
 	}
 	return seen.map((s) => s.split('\\').join('/'));

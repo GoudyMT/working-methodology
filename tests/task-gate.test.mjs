@@ -46,6 +46,9 @@ test('a read before the last compact does not count, a shell read does, and othe
 	assert.equal(gate([read(RELEASE), compact], 'Bash', { command: 'git commit -m x' }).decision, 'deny', 'read before the compact');
 	assert.equal(gate([compact, read(RELEASE)], 'Bash', { command: 'git commit -m x' }).decision, 'pass');
 	assert.equal(gate([shell(`cat ${RELEASE}`)], 'Bash', { command: 'git commit -m x' }).decision, 'pass', 'read in a shell');
+	// The 1.24.0 sweep: a command that only names the file is no read, the gated step's own text included.
+	assert.equal(gate([shell(`git commit -m "per ${RELEASE}"`)], 'Bash', { command: `git commit -m "per ${RELEASE}"` }).decision, 'deny');
+	assert.equal(gate([shell(`Test-Path ${RELEASE}`)], 'Bash', { command: 'git commit -m x' }).decision, 'deny');
 	for (const command of ['git status', 'git log --oneline -3', 'gh pr view 3', 'echo "git commit" > notes.md', 'npm test']) assert.equal(gate([], 'Bash', { command }).decision, 'pass', command);
 });
 
