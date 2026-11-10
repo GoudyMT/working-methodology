@@ -54,8 +54,10 @@ as done. This skill adds the steps, the examples and the audit; it never restate
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
    gates), with `- **Tier:** <tier>` and `- **Covers:** <full sha of the commit the sweep read>` on its first lines (the merge gate reads it), in the shape of the example for its tier. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.
-5. **Fix, each with a test that fails first** (rule:finding-pipeline): one sweep per branch, no re-sweep. Every fix,
-   guard and permission fixes too, ships with a test that fails on the code before it; then push, and CI runs the
+5. **Fix, each held to the test bar** (rule:finding-pipeline): one sweep per branch, no re-sweep. A fix that changes
+   behaviour, guard and permission fixes above all, ships with a test that fails on the code before it and meets
+   rule:test-value; a prose-only fix is proven by the recall eval or an invariant, and a removal or a wiring change
+   adds no test (a removed behaviour's tests go with it); then push, and CI runs the
    full suite with auto-fix on red. Log the sweep's outcome (step 6) once its reviewers hand back. A second pass is
    the owner's call: `approve.mjs` asks for any contract after a sweep that ran on this branch (a rebase or a new file
    name does not hide it), and for a re-sweep contract (`"resweepOf"`, `"fixed"`; its roles are one blast-radius, one per

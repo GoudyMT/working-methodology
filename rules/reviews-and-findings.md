@@ -64,7 +64,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 **Modifiers add roles at any tier, and never lower one:** security-sensitive code (auth, locks, crypto, permissions, secrets, personal data) gets the security swarm of >= 3 distinct angles; a new dependency or external data flow gets a supply-chain role and a privacy role (trigger 2); public, legal or cited text gets a content role that checks each claim against its source and license; data the user keeps (storage formats, migrations, deletion) gets a role on data loss and the upgrade path from the last release.
 
-**After the sweep:** each fix carries its failing-first test and CI runs the full suite (rule:finding-pipeline); a fix tier keeps its fix check. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**
+**After the sweep:** each fix meets rule:test-value and CI runs the full suite (rule:finding-pipeline); a fix tier keeps its fix check. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 
