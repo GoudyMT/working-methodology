@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const dir = process.cwd();
 const has = (rel) => fs.existsSync(path.join(dir, rel));
@@ -22,8 +23,10 @@ const isRepo = () => git('rev-parse', '--git-dir').status === 0;
 const toPosix = (p) => p.split(path.sep).join('/');
 // The Claude config folder: status passes it in; otherwise the one Claude Code uses.
 const HOME = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-// Where install keeps this project's guard record and hook shims (V3), named as kit.mjs guardDir names it.
-const guardDir = () => { const slug = path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-'); return path.join(HOME, 'kit-guard', process.platform === 'win32' ? slug.toLowerCase() : slug); };
+// The launcher install user put in the Claude config folder (V3, 1.25.1): its own reading of its wiring and its records.
+const launcher = () => { try { return createRequire(import.meta.url)(path.join(HOME, 'kit-tools', 'kit-launch.cjs')); } catch { return null; } };
+// Where install keeps this project's guard record and hook shims, named as the launcher names it.
+const guardDir = () => { const L = launcher(); return L ? path.join(HOME, 'kit-guard', L.recordName(dir)) : path.join(HOME, 'kit-guard', '-'); };
 
 // Each check returns [ok, detail]; ok null means the level does not apply here (said why, and never a fault).
 const PARTS = [
@@ -37,10 +40,15 @@ const PARTS = [
 		wired: () => {
 			// V3 (1.25.1): the guards run through the launcher in the Claude config folder's settings, and only against the
 			// record install wrote there; the project's own settings carry no guard entry.
-			const user = (() => { try { return JSON.parse(fs.readFileSync(path.join(HOME, 'settings.json'), 'utf8')); } catch { return null; } })();
-			const on = (event, all) => ((user?.hooks?.[event]) || []).some((h) => (!all || ['.*', '*', ''].includes(h.matcher ?? '')) && (h.hooks || []).some((x) => [x.command, ...(x.args || [])].map(String).some((w) => /kit-launch.cjs$/.test(w))));
-			if (!on('PreToolUse', true)) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs on every tool: run kit.mjs install user`];
-			if (!on('ConfigChange', false)) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs on settings changes: run kit.mjs install user`];
+			const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, '')); } catch { return null; } };
+			const L = launcher();
+			if (!L) return [false, `${toPosix(HOME)}/kit-tools/kit-launch.cjs is missing: run kit.mjs install user`];
+			// The 1.25.0 entry that ran guard.cjs straight from the project would still run a swapped guard as code.
+			for (const name of ['settings.json', 'settings.local.json']) {
+				const s = read(path.join(dir, '.claude', name));
+				if (JSON.stringify(s?.hooks?.PreToolUse || '').includes('.claude/guard.cjs')) return [false, `.claude/${name} still runs guard.cjs itself: run kit.mjs install project, which takes that entry out`];
+			}
+			if (!L.launcherWired(read(path.join(HOME, 'settings.json')), path.join(HOME, 'kit-tools', 'kit-launch.cjs'))) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs whole, on every tool and every settings change: run kit.mjs install user`];
 			if (!fs.existsSync(path.join(guardDir(), 'record.json'))) return [false, 'no guard record for this project in the Claude config folder: run kit.mjs install project'];
 			return [true, 'the Claude config folder runs kit-launch.cjs on every tool, against the record of this project'];
 		},

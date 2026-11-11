@@ -7,27 +7,37 @@
 // install puts the kit's copies back; with none, it runs the project's guard in this process, from the bytes it just
 // hashed, so a file swapped after the check is never the one that runs.
 //   node kit-launch.cjs                       PreToolUse (stdin: the hook input)
-//   node kit-launch.cjs config-change         ConfigChange: refuses a settings change that would turn the hooks off
+//   node kit-launch.cjs config-change         ConfigChange: refuses a settings change that would take the guards off
 //   node kit-launch.cjs git-hook <project>    the kit's git hook shims: exit 1 when the guard files changed
-// Its home is always the folder it sits in, never an environment variable a project's settings could set. In a
-// folder with no record it does nothing: that folder is not a kit project, or predates this launcher.
+// Its home is always the folder it sits in, never an environment variable a project's settings could set. The entry
+// that starts it is a shell line that clears NODE_OPTIONS and puts node's own folder first on PATH: a settings env
+// reaches every hook process (proven live, 2026-11-11), and NODE_OPTIONS would run code here before this file loads.
+// In a folder with no record it does nothing: that folder is not a kit project, or predates this launcher.
 // What it cannot reach: a script that also rewrites this folder (no OS barrier on native Windows), and a payload that
 // acts inside the same command that planted it; the git hook shims narrow the second for commits and pushes.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const Module = require('module');
+const { spawnSync } = require('child_process');
 
 const HOME = path.dirname(__dirname);
 const RECORDS = path.join(HOME, 'kit-guard');
 const SHELLS = ['Bash', 'PowerShell'];
+const WIN = process.platform === 'win32';
 const posix = (p) => String(p).split(path.sep).join('/');
+const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
+const same = (a, b) => (WIN ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b));
 
-/** The record folder for a project: Claude Code's folder name for it, lower-cased on Windows (one drive, any case). */
-function recordDir(dir) {
-	const slug = path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-');
-	return path.join(RECORDS, process.platform === 'win32' ? slug.toLowerCase() : slug);
+/**
+ * The record folder's name for a project: Claude Code's folder name for it, plus a short hash of the full path, so two
+ * projects whose names differ only in punctuation (app-x, app_x) never share a record. One case on Windows.
+ */
+function recordName(dir) {
+	const full = WIN ? path.resolve(dir).toLowerCase() : path.resolve(dir);
+	return `${full.replace(/[^A-Za-z0-9]/g, '-')}-${sha(full).slice(0, 10)}`;
 }
+const recordDir = (dir) => path.join(RECORDS, recordName(dir));
 
 function readRecord(dir) {
 	try { return JSON.parse(fs.readFileSync(path.join(recordDir(dir), 'record.json'), 'utf8')); } catch { return null; }
@@ -36,38 +46,90 @@ function readRecord(dir) {
 /** The project a call belongs to: the nearest folder with a record, from the call's folder, then the session's. */
 function findProject(input) {
 	const tried = new Set();
-	const starts = [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean);
-	// The transcript sits in <home>/projects/<the session's project slug>/: Claude Code names it, no setting can.
-	for (const start of starts) {
+	for (const start of [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean)) {
 		for (let d = path.resolve(String(start)); !tried.has(d); d = path.dirname(d)) {
 			tried.add(d);
 			const rec = readRecord(d);
 			if (rec) return { dir: rec.projectDir ? path.resolve(rec.projectDir) : d, rec };
 		}
 	}
+	// The transcript sits in <home>/projects/<the session's project slug>/: Claude Code names it, no setting can.
 	if (input.transcript_path) {
 		const slug = path.basename(path.dirname(String(input.transcript_path)));
-		try {
-			const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, process.platform === 'win32' ? slug.toLowerCase() : slug, 'record.json'), 'utf8'));
-			if (rec && rec.projectDir) return { dir: path.resolve(rec.projectDir), rec };
-		} catch { /* no record for that session */ }
+		let names = [];
+		try { names = fs.readdirSync(RECORDS); } catch { /* none */ }
+		for (const n of names.filter((x) => x.toLowerCase().startsWith(slug.toLowerCase() + '-'))) {
+			try {
+				const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, n, 'record.json'), 'utf8'));
+				if (rec && rec.projectDir && path.resolve(rec.projectDir).replace(/[^A-Za-z0-9]/g, '-').toLowerCase() === slug.toLowerCase()) return { dir: path.resolve(rec.projectDir), rec };
+			} catch { /* not a record */ }
+		}
 	}
 	return null;
 }
 
-const SETTINGS_KEYS = ['CLAUDE_CONFIG_DIR', 'CLAUDE_PROJECT_DIR', 'KIT_CLAUDE_HOME'];
+// The settings env keys that change how node, git or the guards start, or where they look. A settings env reaches
+// every hook and every command Claude Code runs, so one of these in a project file is a hold.
+const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|GIT_CONFIG\w*|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*)$/i;
+
 /** Why a settings file's text would take the guards off, or ''. */
 function settingsProblem(text) {
-	let s;
-	try { s = JSON.parse(text); } catch { return ''; }
-	if (!s || typeof s !== 'object') return '';
+	const body = String(text).replace(/^\uFEFF/, '');
+	let s = null;
+	try { s = JSON.parse(body); } catch { /* read the text itself below */ }
+	if (!s || typeof s !== 'object') {
+		// A file JSON.parse cannot read may still be one another reader takes (a comment, a stray comma): the safe side.
+		if (/"disableAllHooks"\s*:\s*true/.test(body)) return '"disableAllHooks": true turns off every hook, the kit guards with them';
+		const named = [...body.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)"\s*:/g)].map((m) => m[1]).filter((k) => ENV_KEYS.test(k));
+		return named.length ? `its env may set ${[...new Set(named)].join(', ')}, which changes how the guards start` : '';
+	}
 	if (s.disableAllHooks === true) return '"disableAllHooks": true turns off every hook, the kit guards with them';
-	const env = s.env && typeof s.env === 'object' ? Object.keys(s.env).filter((k) => SETTINGS_KEYS.includes(k)) : [];
-	if (env.length) return `its env sets ${env.join(', ')}, which moves where the guards look`;
+	const env = s.env && typeof s.env === 'object' ? Object.keys(s.env).filter((k) => ENV_KEYS.test(k)) : [];
+	if (env.length) return `its env sets ${env.join(', ')}, which changes how the guards start or where they look`;
 	return '';
 }
 
-/** Everything that differs from the record: guard files, the git hooks setting, settings that turn hooks off. */
+const normPath = (p) => { const x = String(p || '').replace(/^"(.*)"$/, '$1').replace(/\\\\/g, '/').replace(/\\/g, '/'); return WIN ? x.toLowerCase() : x; };
+
+/**
+ * The hooks path git uses in this repo. The repo's own config file is read when it is plain (one value, in [core], no
+ * include, no worktree config); anything else asks git itself, which takes the last value across every file it reads.
+ */
+function hooksPathNow(dir) {
+	const gitDir = path.join(dir, '.git');
+	let cfg;
+	try { cfg = fs.readFileSync(path.join(gitDir, 'config'), 'utf8'); } catch { return null; }
+	let section = '';
+	let plain = !fs.existsSync(path.join(gitDir, 'config.worktree'));
+	const values = [];
+	for (const raw of cfg.split(/\r?\n/)) {
+		const line = raw.trim();
+		if (!line || line[0] === '#' || line[0] === ';') continue;
+		const head = /^\[([^\]]*)\](.*)$/.exec(line);
+		if (head) {
+			section = head[1].trim().toLowerCase();
+			if (head[2].trim() || /^include/.test(section)) plain = false;
+			continue;
+		}
+		const kv = /^([A-Za-z][A-Za-z0-9-]*)\s*(?:=\s*(.*))?$/.exec(line);
+		if (!kv) { plain = false; continue; }
+		const key = kv[1].toLowerCase();
+		if (section === 'extensions' && key === 'worktreeconfig') plain = false;
+		if (key === 'hookspath') {
+			if (section !== 'core' || /[#;\\]/.test(kv[2] || '')) plain = false;
+			else values.push(kv[2] || '');
+		}
+	}
+	if (plain && values.length <= 1) return normPath(values[0] || '');
+	const env = { ...process.env };
+	for (const k of Object.keys(env)) if (/^GIT_/i.test(k)) delete env[k];
+	// git starts from node's own folder, so a git planted in the project is not the one found first on Windows.
+	const r = spawnSync('git', ['-C', dir, 'config', '--get-all', 'core.hooksPath'], { encoding: 'utf8', env, cwd: path.dirname(process.execPath), timeout: 5000 });
+	const all = String(r.stdout || '').split(/\r?\n/).filter(Boolean);
+	return normPath(all[all.length - 1] || '');
+}
+
+/** Everything that differs from the record: guard files, the hook shims, the git hooks setting, settings that take hooks off. */
 function verify(dir, rec, extraDirs = []) {
 	const changed = [];
 	const files = new Map();
@@ -75,14 +137,14 @@ function verify(dir, rec, extraDirs = []) {
 		const file = path.join(dir, key);
 		let bytes = null;
 		try { bytes = fs.readFileSync(file); } catch { /* missing */ }
-		if (!bytes || crypto.createHash('sha256').update(bytes).digest('hex') !== want) changed.push(key);
+		if (!bytes || sha(bytes) !== want) changed.push(key);
 		else files.set(path.resolve(file), bytes.toString('utf8'));
 	}
 	// The git hook shims beside the record: one swapped there would skip this check at the next commit or push.
 	for (const [name, want] of Object.entries(rec.shims || {})) {
 		let bytes = null;
 		try { bytes = fs.readFileSync(path.join(recordDir(dir), 'hooks', name)); } catch { /* missing */ }
-		if (!bytes || crypto.createHash('sha256').update(bytes).digest('hex') !== want) changed.push(`kit-guard hooks/${name}`);
+		if (!bytes || sha(bytes) !== want) changed.push(`kit-guard hooks/${name}`);
 	}
 	const settings = [];
 	for (const d of [dir, ...extraDirs]) {
@@ -91,17 +153,13 @@ function verify(dir, rec, extraDirs = []) {
 			let text = null;
 			try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
 			const why = settingsProblem(text);
-			if (why && !settings.some((x) => x.file === f)) settings.push({ file: f, why });
+			if (why && !settings.some((x) => same(x.file, f))) settings.push({ file: f, why });
 		}
 	}
 	let hooksPath = null;
 	if (rec.hooksPath) {
-		// Read from the repo's own config file (no git process per call); a branch or a patch cannot reach .git.
-		let cfg = '';
-		try { cfg = fs.readFileSync(path.join(dir, '.git', 'config'), 'utf8'); } catch { /* a worktree or no repo */ }
-		const m = /^\s*hookspath\s*=\s*(.*?)\s*$/im.exec(cfg);
-		const now = m ? m[1].replace(/^"(.*)"$/, '$1').replace(/\\\\/g, '/').replace(/\\/g, '/') : '';
-		if (cfg && now !== rec.hooksPath) hooksPath = now || 'unset';
+		const now = hooksPathNow(dir);
+		if (now !== null && now !== normPath(rec.hooksPath)) hooksPath = now || 'unset';
 	}
 	return { changed, settings, hooksPath, files };
 }
@@ -134,7 +192,7 @@ function isFix(input, rec, dir) {
 function clearsSettings(input, v) {
 	const t = String(input.tool_name);
 	const ti = input.tool_input || {};
-	const target = v.settings.find((s) => ti.file_path && path.resolve(String(ti.file_path)) === path.resolve(s.file));
+	const target = v.settings.find((s) => ti.file_path && same(String(ti.file_path), s.file));
 	if (!target || v.settings.length !== 1) return false;
 	let next = null;
 	if (t === 'Write') next = String(ti.content ?? '');
@@ -151,13 +209,15 @@ const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', p
 function runGuard(dir, files, input) {
 	const guard = path.resolve(dir, '.claude', 'guard.cjs');
 	if (!files.has(guard)) return deny('The kit guard (.claude/guard.cjs) is not in the install record, so this call is held. Reinstall the kit: ' + 'kit.mjs install project.');
+	const inside = (f, root) => path.resolve(f).toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep);
 	for (const ext of ['.js', '.cjs']) {
 		const disk = Module._extensions[ext] || Module._extensions['.js'];
 		Module._extensions[ext] = function load(mod, filename) {
 			const text = files.get(path.resolve(filename));
 			if (text !== undefined) return mod._compile(text, filename);
-			// A project file the record does not cover never loads in the guard process.
-			if (path.resolve(filename).toLowerCase().startsWith(path.resolve(dir).toLowerCase() + path.sep)) throw new Error(`${posix(path.relative(dir, filename))} is not in the install record`);
+			// A project file the record does not cover never loads in the guard process. The Claude config folder's own
+			// hooks load even when that folder sits inside the project (a home folder project, a dotfiles repo).
+			if (inside(filename, dir) && !inside(filename, HOME)) throw new Error(`${posix(path.relative(dir, filename))} is not in the install record`);
 			return disk(mod, filename);
 		};
 	}
@@ -189,26 +249,62 @@ function preToolUse(input) {
 		return deny(`This kit project has no guard record in ${posix(RECORDS)}, so no guard can check it and every call is held. Run, alone: ${fixLine(rec, dir)} (or ask the owner to).`);
 	}
 	const { dir, rec } = found;
-	const extra = [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean).map((d) => path.resolve(String(d))).filter((d) => d !== dir);
+	const extra = [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean).map((d) => path.resolve(String(d))).filter((d) => !same(d, dir));
 	const v = verify(dir, rec, extra);
 	if (v.changed.length || v.hooksPath) return isFix(input, rec, dir) ? null : deny(describe(v, rec, dir));
 	if (v.settings.length && !clearsSettings(input, v)) return deny(describe(v, rec, dir));
 	return runGuard(dir, v.files, input);
 }
 
+// ---- The entries install user writes, and the strict check that they are still whole. ----
+
+const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+/** A folder as a POSIX shell's PATH names it: Git Bash on Windows reads C:\x as /c/x. */
+const shellDir = (p) => (WIN && /^[A-Za-z]:/.test(p) ? `/${p[0].toLowerCase()}${posix(p.slice(2))}` : posix(p));
+
+/**
+ * The shell line that starts the launcher: NODE_OPTIONS cleared and node's own folder first on PATH, so no settings env
+ * can run code in it or swap the node that runs it.
+ *
+ * Args:
+ *     launcher: the launcher's path
+ *     nodeDir: the folder of the node install user ran with
+ *     mode: '' for PreToolUse, 'config-change' for ConfigChange
+ */
+function launchCommand(launcher, nodeDir, mode = '') {
+	return `NODE_OPTIONS= PATH=${shq(shellDir(nodeDir))}:"$PATH" node ${shq(posix(launcher))}${mode ? ` ${mode}` : ''}`;
+}
+
+const everyTool = (m) => m === undefined || m === null || m === '' || m === '*' || m === '.*';
+
+/**
+ * Whether a settings object still runs this launcher whole: on every tool, blocking on failure, with no condition, and
+ * on every settings change. A name kept in a neutered entry does not count.
+ */
+function launcherWired(s, launcher = __filename) {
+	const line = (mode) => new RegExp(`^NODE_OPTIONS= PATH='(?:[^']|'\\\\'')*':"\\$PATH" node ${shq(posix(launcher)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${mode ? ` ${mode}` : ''}$`, WIN ? 'i' : '');
+	const has = (event, mode, extra) => (((s && s.hooks) || {})[event] || []).some((e) => everyTool(e.matcher)
+		&& (e.hooks || []).some((h) => h.type === 'command' && !h.args && !h.if && line(mode).test(String(h.command || '')) && extra(h)));
+	return has('PreToolUse', '', (h) => h.onFailure === 'block') && has('ConfigChange', 'config-change', () => true);
+}
+
 // ConfigChange: a settings file changed mid-session. A block keeps the old settings in force for this session.
 function configChange(input) {
 	const source = String(input.source || '');
 	if (!['project_settings', 'local_settings', 'user_settings'].includes(source) || !input.file_path) return null;
-	let text = '';
-	try { text = fs.readFileSync(String(input.file_path), 'utf8'); } catch { return null; }
-	if (source !== 'user_settings' && !findProject(input)) return null;
-	let why = settingsProblem(text);
-	if (!why && source === 'user_settings') {
-		let s = {};
-		try { s = JSON.parse(text) || {}; } catch { return null; }
-		const wired = (event) => JSON.stringify(((s.hooks || {})[event]) || '').includes('kit-launch.cjs');
-		if (!wired('PreToolUse') || !wired('ConfigChange')) why = 'it removes the kit guard launcher from the user settings';
+	let text = null;
+	try { text = fs.readFileSync(String(input.file_path), 'utf8'); } catch { /* gone */ }
+	let why = '';
+	if (source === 'user_settings') {
+		// The user settings carry the launcher itself: deleted, unreadable or neutered, every guard goes with them.
+		let s = null;
+		try { s = JSON.parse(String(text).replace(/^\uFEFF/, '')); } catch { /* below */ }
+		why = text === null ? 'it deletes the user settings that run the kit guard launcher'
+			: !s ? 'the user settings are no longer valid JSON, so Claude Code would drop the kit guard launcher'
+			: settingsProblem(text) || (launcherWired(s) ? '' : 'it removes or changes the kit guard launcher entry in the user settings');
+	} else {
+		if (text === null || !findProject(input)) return null;
+		why = settingsProblem(text);
 	}
 	if (!why) return null;
 	const msg = `Kit: the change to ${posix(input.file_path)} was not applied: ${why}. The owner edits that file by hand, then starts a new session.`;
@@ -234,16 +330,16 @@ if (require.main === module) {
 	let input = null;
 	try { input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch { /* below */ }
 	let out = null;
+	const inKit = (i) => { try { return Boolean(findProject(i) || unrecorded(i)); } catch { return true; } };
 	try {
 		if (mode === 'config-change') out = input ? configChange(input) : null;
-		else if (!input || typeof input !== 'object') out = null;
+		// Input it cannot read: inside a kit project the call is held, anywhere else it stays out of the way.
+		else if (!input || typeof input !== 'object') out = inKit({}) ? deny('The kit guard launcher could not read this call, so it is held.') : null;
 		else out = preToolUse(input);
 	} catch (e) {
-		// In a kit project a launcher that fails holds the call; anywhere else it stays out of the way.
-		const kit = input && typeof input === 'object' && (() => { try { return findProject(input); } catch { return null; } })();
-		if (kit && mode !== 'config-change') out = deny(`The kit guard launcher could not run (${String(e && e.message).slice(0, 160)}), so this call is held.`);
+		if (mode !== 'config-change' && inKit(input && typeof input === 'object' ? input : {})) out = deny(`The kit guard launcher could not run (${String(e && e.message).slice(0, 160)}), so this call is held.`);
 	}
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { verify, settingsProblem, recordDir, findProject, isFix };
+module.exports = { verify, settingsProblem, recordName, recordDir, findProject, isFix, launchCommand, launcherWired, shellDir, shq, hooksPathNow };

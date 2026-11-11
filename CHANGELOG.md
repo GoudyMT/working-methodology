@@ -19,6 +19,18 @@ a script the agent wrote could replace them, and the replaced guard then passed 
   kit's copy back, keeping the project's edit in the backup folder; status reports a changed one, or hooks turned off,
   as a gap; fold-back shows its diff but never offers it to the kit; the use check reads the new wiring.
 
+- The launcher starts from a shell line that clears NODE_OPTIONS and puts node's own folder first on PATH: a settings
+  env reaches every hook process (proven live), so a project's env could otherwise load code into it. A project
+  settings env that sets NODE_OPTIONS, PATH, a GIT_CONFIG key or another key that changes how node, git or the guards
+  start is refused mid-session and holds every call while it is there.
+- The hooks path is read the way git reads it (a second value, an include, a worktree config), and a tool may not
+  write .git/config.worktree, the install record or the guard records, by the config folder's own name too.
+- The hook shims cover every git hook: a host that keeps its own hooks in .githooks keeps them all. A git hook the
+  host tracks and the kit never wrote is left as it is, reported, and guarded as it stands.
+- install project takes the 1.25.0 guard entry out of a settings.json the owner changed, keeping the rest and a backup.
+- After install user, a project whose kit scripts were edited is held on its first call until install project puts the
+  kit's copies back; the hold names the files and the one install line that may run.
+
 ### Known limits
 - A script that also rewrites the Claude config folder; only an admin-owned managed settings file would close it.
 - A session started after "disableAllHooks" was already in a project settings file runs no hooks; the git hook shims

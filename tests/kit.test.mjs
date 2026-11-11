@@ -28,6 +28,9 @@ function copyKitCli(kit) {
   fs.mkdirSync(path.join(kit, 'project/.claude'), { recursive: true });
   fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
   fs.copyFileSync(path.resolve('project/.claude/kit-temp.cjs'), path.join(kit, 'project/.claude/kit-temp.cjs'));
+  // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
+  fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
+  fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
 }
 
 function makeKit() {
