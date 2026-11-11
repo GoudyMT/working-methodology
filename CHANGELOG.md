@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.25.1 - 2026-11-11
+
+V3: the guard files are checked from outside the project before every call. In 1.25.0 a patch, a branch, a stash or
+a script the agent wrote could replace them, and the replaced guard then passed a main push.
+
+### Changed
+- One launcher in the Claude config folder runs the guards on every tool, wired by install user. Before each call it
+  hashes the project's guard scripts and git hooks against a record install project writes beside it, outside the
+  project. Any difference holds every call until install project puts the kit's copies back; that install line may
+  run alone while held. With none, it runs the project's guard from the bytes it just hashed.
+- The project's settings.json no longer runs guard.cjs itself. Run install user before install project.
+- A settings change that sets "disableAllHooks" (which turns off every hook, the user's own included) or removes the
+  launcher is refused mid-session, and every call is held while a project settings file carries the key.
+- core.hooksPath points at hook shims beside the record: they check the guard files, then run the project's
+  .githooks, so a hook swapped by a branch cannot pass the push in the same command.
+- Every script in a project's .claude folder and every git hook is a guard file now. install project always puts the
+  kit's copy back, keeping the project's edit in the backup folder; status reports a changed one, or hooks turned off,
+  as a gap; fold-back shows its diff but never offers it to the kit; the use check reads the new wiring.
+
+### Known limits
+- A script that also rewrites the Claude config folder; only an admin-owned managed settings file would close it.
+- A session started after "disableAllHooks" was already in a project settings file runs no hooks; the git hook shims
+  still refuse every commit and push there, and status names it.
+
 ## 1.25.0 - 2026-11-10
 
 The guards hold against the six ways around them found in 1.24.0, and the owner's yes is a tap in the choice pop-up.
