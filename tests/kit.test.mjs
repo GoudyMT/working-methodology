@@ -5495,6 +5495,23 @@ test('the hook check needs the sweep guard too, and hooks off in the local or us
   fs.writeFileSync(path.join(cfg, 'settings.json'), '{}\n');
   assert.equal(approveIn(dir, [ok.f], { CLAUDE_CONFIG_DIR: cfg }).status, 0, 'and on again');
 });
+// The 1.25.1 sweep: since V3 the call cap and the sweep guard run through the launcher the user settings wire (and
+// guard.cjs before it), never from a project's settings, so the hook check reads that wiring too.
+test('the hook check reads the call cap and sweep guard the guard launcher runs from the Claude config folder', () => {
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), read(path.resolve('project/.claude/settings.json')));
+  commitAll(dir, 'settings', true);
+  const cfg = path.join(makeTemp('approve-home-'), '.claude');
+  install({ kit: path.resolve('.'), home: cfg, target: 'user' });
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const r = approveIn(dir, [f], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(r.status, 0, r.stdout);
+  approveIn(dir, [f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
+  fs.rmSync(path.join(cfg, 'kit-hooks', 'call-cap.cjs'));
+  assert.equal(approveIn(dir, [f], { CLAUDE_CONFIG_DIR: cfg }).status, FIX_EXIT, 'the launcher wired but the call cap gone');
+});
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
   const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';

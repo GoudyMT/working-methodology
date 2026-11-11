@@ -30,6 +30,11 @@ a script the agent wrote could replace them, and the replaced guard then passed 
 - install project takes the 1.25.0 guard entry out of a settings.json the owner changed, keeping the rest and a backup.
 - After install user, a project whose kit scripts were edited is held on its first call until install project puts the
   kit's copies back; the hold names the files and the one install line that may run.
+- A launcher that is missing or cannot load blocks every tool call in every folder (the owner's pick: a broken guard
+  never lets a call through), and the kit gate says so on every prompt, with the install user line that repairs it.
+- A host's own git hook that changes after it was recorded stays held through a reinstall until the owner accepts it
+  with install project --accept-host <file>, which the held fix line may not carry.
+- The sweep's hook check (approve.mjs) reads the call cap and sweep guard the launcher runs, not only project settings.
 
 ### Known limits
 - A script that also rewrites the Claude config folder; only an admin-owned managed settings file would close it.

@@ -48,7 +48,7 @@ const PARTS = [
 				const s = read(path.join(dir, '.claude', name));
 				if (JSON.stringify(s?.hooks?.PreToolUse || '').includes('.claude/guard.cjs')) return [false, `.claude/${name} still runs guard.cjs itself: run kit.mjs install project, which takes that entry out`];
 			}
-			if (!L.launcherWired(read(path.join(HOME, 'settings.json')), path.join(HOME, 'kit-tools', 'kit-launch.cjs'))) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs whole, on every tool and every settings change: run kit.mjs install user`];
+			if (!L.launcherWired(read(path.join(HOME, 'settings.json')), path.join(HOME, 'kit-tools', 'kit-launch.cjs'), read(path.join(HOME, 'kit-install.json'))?.node)) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs whole, on every tool and every settings change: run kit.mjs install user`];
 			if (!fs.existsSync(path.join(guardDir(), 'record.json'))) return [false, 'no guard record for this project in the Claude config folder: run kit.mjs install project'];
 			return [true, 'the Claude config folder runs kit-launch.cjs on every tool, against the record of this project'];
 		},

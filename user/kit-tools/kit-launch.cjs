@@ -70,7 +70,9 @@ function findProject(input) {
 
 // The settings env keys that change how node, git or the guards start, or where they look. A settings env reaches
 // every hook and every command Claude Code runs, so one of these in a project file is a hold.
-const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|GIT_CONFIG\w*|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*)$/i;
+// The shell's own start-up variables are here too (the review of 670b3a2): an exported function, SHELLOPTS with PS4,
+// or BASH_ENV runs code in the shell line before node starts.
+const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_CONFIG\w*|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*)$/i;
 
 /** Why a settings file's text would take the guards off, or ''. */
 function settingsProblem(text) {
@@ -80,7 +82,7 @@ function settingsProblem(text) {
 	if (!s || typeof s !== 'object') {
 		// A file JSON.parse cannot read may still be one another reader takes (a comment, a stray comma): the safe side.
 		if (/"disableAllHooks"\s*:\s*true/.test(body)) return '"disableAllHooks": true turns off every hook, the kit guards with them';
-		const named = [...body.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)"\s*:/g)].map((m) => m[1]).filter((k) => ENV_KEYS.test(k));
+		const named = [...body.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]).filter((k) => ENV_KEYS.test(k));
 		return named.length ? `its env may set ${[...new Set(named)].join(', ')}, which changes how the guards start` : '';
 	}
 	if (s.disableAllHooks === true) return '"disableAllHooks": true turns off every hook, the kit guards with them';
@@ -97,10 +99,11 @@ const normPath = (p) => { const x = String(p || '').replace(/^"(.*)"$/, '$1').re
  */
 function hooksPathNow(dir) {
 	const gitDir = path.join(dir, '.git');
-	let cfg;
-	try { cfg = fs.readFileSync(path.join(gitDir, 'config'), 'utf8'); } catch { return null; }
-	let section = '';
+	// A config this cannot read goes to git; one git cannot read either is a hold, never a pass (the review of 670b3a2).
+	let cfg = '';
 	let plain = !fs.existsSync(path.join(gitDir, 'config.worktree'));
+	try { cfg = fs.readFileSync(path.join(gitDir, 'config'), 'utf8'); } catch { plain = false; }
+	let section = '';
 	const values = [];
 	for (const raw of cfg.split(/\r?\n/)) {
 		const line = raw.trim();
@@ -125,6 +128,8 @@ function hooksPathNow(dir) {
 	for (const k of Object.keys(env)) if (/^GIT_/i.test(k)) delete env[k];
 	// git starts from node's own folder, so a git planted in the project is not the one found first on Windows.
 	const r = spawnSync('git', ['-C', dir, 'config', '--get-all', 'core.hooksPath'], { encoding: 'utf8', env, cwd: path.dirname(process.execPath), timeout: 5000 });
+	// git config exits 1 for a key that is not set; anything else means it could not read its config.
+	if (r.status !== 0 && r.status !== 1) return 'unreadable (git could not read this repo\'s config)';
 	const all = String(r.stdout || '').split(/\r?\n/).filter(Boolean);
 	return normPath(all[all.length - 1] || '');
 }
@@ -263,28 +268,35 @@ const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const shellDir = (p) => (WIN && /^[A-Za-z]:/.test(p) ? `/${p[0].toLowerCase()}${posix(p.slice(2))}` : posix(p));
 
 /**
- * The shell line that starts the launcher: NODE_OPTIONS cleared and node's own folder first on PATH, so no settings env
- * can run code in it or swap the node that runs it.
+ * The shell line that starts the launcher: NODE_OPTIONS cleared, and node named by its full path, so neither a
+ * settings env nor a PATH or shell function can run code in it or swap the node that runs it.
  *
  * Args:
  *     launcher: the launcher's path
- *     nodeDir: the folder of the node install user ran with
+ *     nodePath: the node install user ran with (kit-install.json keeps it)
  *     mode: '' for PreToolUse, 'config-change' for ConfigChange
  */
-function launchCommand(launcher, nodeDir, mode = '') {
-	return `NODE_OPTIONS= PATH=${shq(shellDir(nodeDir))}:"$PATH" node ${shq(posix(launcher))}${mode ? ` ${mode}` : ''}`;
+function launchCommand(launcher, nodePath, mode = '') {
+	return `NODE_OPTIONS= ${shq(shellDir(nodePath))} ${shq(posix(launcher))}${mode ? ` ${mode}` : ''}`;
+}
+
+/** The node install user recorded beside this launcher, or null. */
+function installedNode() {
+	try { return JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')).node || null; } catch { return null; }
 }
 
 const everyTool = (m) => m === undefined || m === null || m === '' || m === '*' || m === '.*';
 
 /**
- * Whether a settings object still runs this launcher whole: on every tool, blocking on failure, with no condition, and
- * on every settings change. A name kept in a neutered entry does not count.
+ * Whether a settings object still runs this launcher whole, as install wrote it: the exact line (this launcher, the
+ * recorded node), on every tool, blocking on failure, with no condition, and on every settings change. A name kept in
+ * a neutered entry, or another node, does not count.
  */
-function launcherWired(s, launcher = __filename) {
-	const line = (mode) => new RegExp(`^NODE_OPTIONS= PATH='(?:[^']|'\\\\'')*':"\\$PATH" node ${shq(posix(launcher)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${mode ? ` ${mode}` : ''}$`, WIN ? 'i' : '');
+function launcherWired(s, launcher = __filename, nodePath = installedNode()) {
+	if (!nodePath) return false;
+	const eq = (a, b) => (WIN ? a.toLowerCase() === b.toLowerCase() : a === b);
 	const has = (event, mode, extra) => (((s && s.hooks) || {})[event] || []).some((e) => everyTool(e.matcher)
-		&& (e.hooks || []).some((h) => h.type === 'command' && !h.args && !h.if && line(mode).test(String(h.command || '')) && extra(h)));
+		&& (e.hooks || []).some((h) => h.type === 'command' && !h.args && !h.if && eq(String(h.command || ''), launchCommand(launcher, nodePath, mode)) && extra(h)));
 	return has('PreToolUse', '', (h) => h.onFailure === 'block') && has('ConfigChange', 'config-change', () => true);
 }
 
@@ -342,4 +354,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { verify, settingsProblem, recordName, recordDir, findProject, isFix, launchCommand, launcherWired, shellDir, shq, hooksPathNow };
+module.exports = { verify, settingsProblem, recordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };

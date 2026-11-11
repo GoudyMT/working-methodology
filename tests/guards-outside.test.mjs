@@ -476,7 +476,7 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 		'an if that never matches': (u) => { launch(u.hooks.PreToolUse).hooks[0].if = 'Bash(nothing *)'; },
 		'onFailure dropped': (u) => { delete launch(u.hooks.PreToolUse).hooks[0].onFailure; },
 		'ConfigChange narrowed to skills': (u) => { launch(u.hooks.ConfigChange).matcher = 'skills'; },
-		'another node': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/N='[^']*'/, "N='/tmp/node'"); },
+		'another node': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/^NODE_OPTIONS= '[^']*'/, "NODE_OPTIONS= '/tmp/node'"); },
 	};
 	for (const [name, change] of Object.entries(breakers)) {
 		const { home, proj, session: s } = setup();
@@ -570,4 +570,22 @@ test('V3 host hooks: a swapped host hook stays held through a reinstall until th
 	const fix = `node "${posix(KIT)}/scripts/kit.mjs" install project "${posix(proj)}" --accept-host .githooks/pre-commit`;
 	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), HOST);
 	assert.equal(bash(s, fix).decision, 'deny', 'accepting a host hook is the owner\'s act, not the held fix line');
+});
+
+// The owner's pick A (2026-11-11): a broken launcher keeps blocking every tool, and the kit gate tells the owner why and what
+// to run, on every prompt, in any folder.
+test('V3 broken launcher: the kit gate names it and the one command that repairs it', () => {
+	const { root, home } = setup();
+	const other = path.join(root, 'plain');
+	fs.mkdirSync(path.join(other, '.kit'), { recursive: true });
+	fs.writeFileSync(path.join(other, '.kit', 'no-kit'), '');
+	const gate = (env = {}) => spawnSync(process.execPath, [path.join(home, 'kit-hooks', 'kit-gate.cjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'hi', cwd: other }), encoding: 'utf8', env: { ...ENV, KIT_CLAUDE_HOME: home, ...env } });
+	assert.equal(gate().stdout.trim(), '', 'a whole launcher says nothing');
+	fs.writeFileSync(path.join(home, 'kit-tools', 'kit-launch.cjs'), Buffer.alloc(64));
+	const out = JSON.parse(gate().stdout || '{}');
+	assert.equal(out.decision, 'block');
+	assert.match(out.reason, /kit-launch\.cjs/);
+	assert.match(out.reason, /install user/);
+	fs.rmSync(path.join(home, 'kit-tools', 'kit-launch.cjs'));
+	assert.equal(JSON.parse(gate().stdout || '{}').decision, 'block', 'a missing launcher too');
 });

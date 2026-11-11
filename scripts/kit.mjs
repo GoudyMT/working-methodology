@@ -189,7 +189,7 @@ const readRecord = (home, projectDir) => { try { return JSON.parse(fs.readFileSy
  * Returns:
  *     the shims folder, in the form core.hooksPath takes
  */
-function writeGuardRecord(ctx, kitInfo, files, keys) {
+function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
   const dir = guardDir(ctx.home, ctx.projectDir);
   const hooks = path.join(dir, 'hooks');
   fs.mkdirSync(hooks, { recursive: true });
@@ -203,7 +203,7 @@ function writeGuardRecord(ctx, kitInfo, files, keys) {
   for (const name of [...GIT_HOOKS, ...OTHER_HOOKS]) {
     const own = `${proj}/.githooks/${name}`;
     const body = GIT_HOOKS.includes(name) ? [
-      `node ${q(launcher)} git-hook ${q(proj)} </dev/null || exit 1`,
+      `${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} </dev/null || exit 1`,
       `[ -f ${q(own)} ] || { echo "Kit: .githooks/${name} is missing; run kit.mjs install project." >&2; exit 1; }`,
     ] : [`[ -x ${q(own)} ] || exit 0`];
     fs.writeFileSync(path.join(hooks, name), [...head, ...body, `exec ${q(own)} "$@"`, ''].join('\n'));
@@ -211,13 +211,24 @@ function writeGuardRecord(ctx, kitInfo, files, keys) {
   }
   // A guard file the kit did not write (a host's own tracked hook it skipped) is recorded as it is, so a swap of it
   // still holds every call.
+  // A host's own guard file is recorded as it stands the first time; after that a change to it stays held, even through
+  // a reinstall, until the owner accepts it with --accept-host (which the held fix line may not carry).
   const guarded = {};
+  const host = [];
   for (const key of keys.filter(isGuarded).sort()) {
-    if (files[key]) guarded[key] = files[key];
-    else if (fs.existsSync(path.join(ctx.projectDir, key))) guarded[key] = crypto.createHash('sha256').update(fs.readFileSync(path.join(ctx.projectDir, key))).digest('hex');
+    const file = path.join(ctx.projectDir, key);
+    if (!isHost(key)) { if (files[key]) guarded[key] = files[key]; continue; }
+    if (!fs.existsSync(file)) continue;
+    host.push(key);
+    const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    const was = prev && prev.files && prev.files[key];
+    if (was && was !== now && !(ctx.acceptHost || []).includes(key)) {
+      guarded[key] = was;
+      skipped.push({ file: key, reason: `the host's own hook changed since it was recorded, so every call stays held: restore it from git, or the owner accepts it with install project --accept-host ${key}` });
+    } else guarded[key] = now;
   }
   const shims = Object.fromEntries([...GIT_HOOKS, ...OTHER_HOOKS].map((name) => [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(hooks, name))).digest('hex')]));
-  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), version: kitInfo.version, files: guarded, shims, hooksPath: null };
+  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), version: kitInfo.version, files: guarded, host, shims, hooksPath: null };
   fs.writeFileSync(path.join(dir, 'record.json'), JSON.stringify(record, null, 2) + '\n');
   return toPosix(hooks);
 }
@@ -245,6 +256,9 @@ function dropProjectGuardEntry(projectDir, backupDir) {
   return true;
 }
 
+/** The node install user recorded in a Claude config folder, which the launcher entry names. */
+const homeNode = (home) => { try { return JSON.parse(fs.readFileSync(path.join(home, STAMP_USER), 'utf8')).node || null; } catch { return null; } };
+
 /** The guard faults status reports for a project: files changed outside install, hooks turned off, no launcher. */
 function guardFaults(home, projectDir) {
   const rec = readRecord(home, projectDir);
@@ -263,7 +277,7 @@ function guardFaults(home, projectDir) {
   }
   let user = null;
   try { user = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* none */ }
-  if (!launch.launcherWired(user, path.join(home, 'kit-tools', 'kit-launch.cjs'))) faults.push('the guard launcher is not wired whole in the Claude config folder settings.json (run kit.mjs install user)');
+  if (!launch.launcherWired(user, path.join(home, 'kit-tools', 'kit-launch.cjs'), homeNode(home))) faults.push('the guard launcher is not wired whole in the Claude config folder settings.json (run kit.mjs install user)');
   return faults;
 }
 
@@ -285,11 +299,10 @@ function wireGate(home, dryRun) {
   // The launcher starts from a shell line that clears NODE_OPTIONS and puts this node's folder first (the 1.25.1 sweep:
   // a settings env reaches every hook). An entry of an older form is replaced, never kept beside the new one.
   const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
-  const nodeDir = path.dirname(process.execPath);
   const wants = [
     ['UserPromptSubmit', 'kit-gate.cjs', { hooks: [{ type: 'command', command: 'node', args: [toPosix(path.join(home, 'kit-hooks', 'kit-gate.cjs'))], timeout: 10 }] }],
-    ['PreToolUse', 'kit-launch.cjs', { matcher: '.*', hooks: [{ type: 'command', command: launch.launchCommand(launcher, nodeDir), timeout: 10, onFailure: 'block' }] }],
-    ['ConfigChange', 'kit-launch.cjs', { hooks: [{ type: 'command', command: launch.launchCommand(launcher, nodeDir, 'config-change'), timeout: 10 }] }],
+    ['PreToolUse', 'kit-launch.cjs', { matcher: '.*', hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath), timeout: 10, onFailure: 'block' }] }],
+    ['ConfigChange', 'kit-launch.cjs', { hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath, 'config-change'), timeout: 10 }] }],
   ];
   const before = JSON.stringify(settings);
   for (const [event, file, entry] of wants) {
@@ -328,6 +341,12 @@ export function install(ctx) {
   const { entries, stampPath } = plan(ctx);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
+  // Which guard files are a host's own (the review of 670b3a2): read from the record outside the project, never from
+  // the project's stamp, which a script can edit. A file the record holds as the kit's is always put back; one it does
+  // not hold is the host's only when git tracks it.
+  const prevRecord = ctx.target === 'project' && ctx.home ? readRecord(ctx.home, ctx.projectDir) : null;
+  const gitTracks = (f) => spawnSync('git', ['-C', ctx.projectDir, 'ls-files', '--error-unmatch', f], { encoding: 'utf8' }).status === 0;
+  const isHost = (key) => ((prevRecord && prevRecord.host) || []).includes(key) || (prevRecord ? !(prevRecord.files && prevRecord.files[key]) && gitTracks(key) : !stamp.files[key] && gitTracks(key));
   const created = [], updated = [], replaced = [], skipped = [], merged = [];
   const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
@@ -351,7 +370,7 @@ export function install(ctx) {
       files[entry.key] = wantHash;
     } else if (base && cur === base) {
       write(); updated.push(entry.key); files[entry.key] = wantHash;
-    } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && base)) {
+    } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && !isHost(entry.key))) {
       // A guard file the kit wrote and something else changed is put back (V3). One the kit never wrote (a host's own
       // tracked hook) is the host's: it is skipped below and recorded as it is (the 1.25.1 sweep).
       if (!ctx.dryRun) {
@@ -448,6 +467,8 @@ export function install(ctx) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
+    // The node the launcher entry names (V3): kept here so status and the launcher can check the entry is the one written.
+    if (ctx.target === 'user') out.node = toPosix(process.execPath);
     // Set by the CLI's release check; a stamp without it predates the check and reads as unknown, not unreleased.
     if (ctx.release) {
       // A kept branch-only file means the folder still holds more than the release.
@@ -470,7 +491,7 @@ export function install(ctx) {
       // The project's guards run only through the launcher in the Claude config folder (V3). Without it the shims could
       // not run, so the hooks stay on the project's own .githooks until install user has run.
       const launcher = fs.existsSync(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
-      const shims = guards ? writeGuardRecord(ctx, kitInfo, files, keys) : null;
+      const shims = guards ? writeGuardRecord(ctx, kitInfo, files, keys, prevRecord, isHost, skipped) : null;
       const hooksPath = keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned], launcher ? shims : null);
       if (shims && hooksPath === shims) {
         const recFile = path.join(guardDir(ctx.home, ctx.projectDir), 'record.json');
@@ -478,7 +499,7 @@ export function install(ctx) {
       }
       let user = null;
       try { user = JSON.parse(fs.readFileSync(path.join(ctx.home, 'settings.json'), 'utf8')); } catch { /* none */ }
-      if (guards && (!launcher || !launch.launcherWired(user, path.join(ctx.home, 'kit-tools', 'kit-launch.cjs')))) {
+      if (guards && (!launcher || !launch.launcherWired(user, path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'), homeNode(ctx.home)))) {
         skipped.push({ file: 'guard launcher', reason: `not wired in ${toPosix(path.join(ctx.home, 'settings.json'))}, so no guard runs here: run kit.mjs install user, then install project again` });
       }
     }
@@ -1530,6 +1551,8 @@ function main(argv) {
   const overlay = argv.includes('--overlay');
   const mergedAt = argv.indexOf('--merged');
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const acceptAt = argv.indexOf('--accept-host');
+  const acceptHost = acceptAt >= 0 ? String(argv[acceptAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
     // E24 C: the kit installs only from the release copy on the owner's PC; a cloud VM has neither.
@@ -1547,7 +1570,7 @@ function main(argv) {
       return;
     }
     const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty };
-    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release });
+    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release, acceptHost });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
