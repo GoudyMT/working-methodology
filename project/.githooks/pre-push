@@ -1,7 +1,7 @@
 #!/bin/sh
 # Pushes are the owner's (rule:outward-acts), with one bound the owner set (T1, 2026-11-10): an AI tool (its shell
 # marked AI_AGENT, or CLAUDECODE for Claude Code) may push a feature branch without a yes. Anything else from an AI
-# tool - main, master, the remote's default branch, a tag, a delete, a force push - needs the owner's go, after which
+# tool - main, master, the remote's default branch, a tag, a delete, a force push - needs the owner's yes, after which
 # the agent runs the push with KIT_PUSH_APPROVED=1 (Claude Code's guard lets that through only on the owner's pop-up
 # yes). Every AI push is scanned for secrets, commit by commit, and logged. The owner's own terminal is left alone.
 # Git gives the refs being pushed on stdin once; keep them for every check below.
@@ -25,14 +25,14 @@ if [ -n "$AI_AGENT$CLAUDECODE" ]; then
         git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null || why="${why:-a force push}" ;;
       esac
       if [ -n "$why" ]; then
-        echo "Push blocked: an AI agent may push only a feature branch without the owner's go ($rref: $why). Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
+        echo "Push blocked: an AI agent may push only a feature branch without the owner's yes ($rref: $why). Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
         exit 1
       fi
     done <<EOF
 $refs
 EOF
     if [ "$sent" = 0 ]; then
-      echo "Push blocked: an AI agent is pushing without the owner's go. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
+      echo "Push blocked: an AI agent is pushing without the owner's yes. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
       exit 1
     fi
   else

@@ -607,7 +607,7 @@ test('vault backup copies the private notes, never a secret, and commits without
   // A second backup with nothing new makes no commit.
   assert.equal(vaultBackup({ projectDir: proj, date: '2026-10-27' }).committed, false);
   fs.writeFileSync(path.join(proj, 'notes.md'), 'my notes, more\n');
-  assert.match(preCompactReport({ kit, home, projectDir: proj }), /Vault backup: 1 file\(s\) changed, committed in .*vault\. Push on the owner's go\./);
+  assert.match(preCompactReport({ kit, home, projectDir: proj }), /Vault backup: 1 file\(s\) changed, committed in .*vault\. Push on the owner's yes\./);
 });
 
 test('pre-compact reminds a project with no vault backup to set one up', () => {

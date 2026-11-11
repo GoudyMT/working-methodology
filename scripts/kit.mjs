@@ -1291,7 +1291,7 @@ export function preCompactReport({ kit, home, projectDir }) {
     : 'No rule changes waiting for the kit.'];
   const vault = vaultBackup({ projectDir });
   if (!vault.configured) lines.push('No vault backup set up for this project. Set one up (NEW-PROJECT.md step 3b) so the private notes are never lost.');
-  else if (vault.committed) lines.push(`Vault backup: ${vault.changed.length} file(s) changed, committed in ${vault.dir}. Push on the owner's go.`);
+  else if (vault.committed) lines.push(`Vault backup: ${vault.changed.length} file(s) changed, committed in ${vault.dir}. Push on the owner's yes.`);
   const drift = vendorDrift({ kit, home });
   if (drift.length) lines.push(`${drift.length} third-party plugin(s) changed since the backup: ${drift.map((d) => `${d.name} (${d.backup} -> ${d.installed})`).join(', ')}. Review, then run snapshot.`);
   return lines.join('\n');

@@ -432,6 +432,11 @@ test('a held push names the limit of the push bound it hit', () => {
 		assert.match(text, re, c);
 		assert.match(text, /AskUserQuestion pop-up/, `${c}: the pop-up shape the guard reads`);
 	}
+	// The pre-push hook lets an AI push outside the bound only with its marker set, so the act to quote names it: one
+	// pop-up, not a second one after the hook refuses the first push.
+	assert.ok(why('Bash', { command: 'git push origin main' }).includes('`KIT_PUSH_APPROVED=1 git push origin main`'), 'the push act to quote');
+	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main' });
+	assert.equal(withYes('Bash', { command: 'KIT_PUSH_APPROVED=1 git push origin main' }), 'allow', 'the act the refusal names runs on that yes');
 	assert.match(why('Bash', { command: 'gh pr create --fill' }), /^Owner's yes needed: gh pr create is an outward act/);
 	assert.match(why('Bash', { command: 'git push origin main' }, { agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 });

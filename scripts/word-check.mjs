@@ -3,7 +3,7 @@
 // session reads the same words in a rule and in the refusal that enforces it. CI runs it on every PR.
 //   node scripts/word-check.mjs [kit folder]    exit 1, with file:line and the name to use, on a banned variant
 // The five names: the owner's yes, outward act, the push bound, gate bypass, protected file (rules/core.md, Terms).
-// Frozen text is not read: the changelog, the recall keys and results, reports, tests and vendored code. Two files
+// It reads rules, user, project (git hooks too), memory and scripts. Frozen text is not read: the changelog, the recall keys and results, reports, tests and vendored code. Two files
 // quote another source word for word and are skipped by name.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +16,7 @@ const BANNED = [
 	[/\bowner's approval\b/i, "the owner's yes"],
 	[/\boutward action\b/i, 'outward act'],
 ];
-const ROOTS = ['rules', 'user', 'project', 'memory'];
+const ROOTS = ['rules', 'user', 'project', 'memory', 'scripts'];
 const SKIP = new Set(['user/skills/agent-team-build/references/SOURCES.md', 'project/.claude/kit/improvement-report-example.md']);
 const TEXT = /\.(md|cjs|mjs|js|json)$/;
 
@@ -28,7 +28,7 @@ const walk = (abs, rel) => {
 	for (const e of entries) {
 		const r = rel ? `${rel}/${e.name}` : e.name;
 		if (e.isDirectory()) { if (e.name !== 'node_modules') walk(path.join(abs, e.name), r); continue; }
-		if (!e.isFile() || !TEXT.test(e.name) || SKIP.has(r)) continue;
+		if (!e.isFile() || !(TEXT.test(e.name) || /(^|\/)\.githooks$/.test(rel)) || SKIP.has(r)) continue;
 		fs.readFileSync(path.join(abs, e.name), 'utf8').split(/\r?\n/).forEach((line, i) => {
 			for (const [re, use] of BANNED) {
 				const m = re.exec(line);

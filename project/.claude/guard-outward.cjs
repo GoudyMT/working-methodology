@@ -414,7 +414,10 @@ function check(input) {
 	const what = reason === 'git push' ? pushLimit(command) : `${reason} is an outward act (rule:outward-acts)`;
 	const text = BYPASS.has(reason)
 		? neverText(`${reason === 'git with its hooks skipped' ? 'skipping the git hooks' : 'moving the git hooks path'} is a gate bypass; it switches off the checks the owner's yes relies on. Fix what the hook reports; a skip is the owner's own, in their own terminal`)
-		: verdict === 'allow' ? yesText(what) : askText(what, input);
+		: verdict === 'allow' ? yesText(what) : askText(what, input)
+			// The pre-push hook lets an AI push outside the bound only with its marker set: name the act to quote, so one
+			// pop-up covers it rather than a second after the hook refuses the first push.
+			+ (reason === 'git push' && !input.agent_id && input.tool_name === 'Bash' && /^git\s/.test(command.trim()) ? ` For this push the act to quote and run is \`KIT_PUSH_APPROVED=1 ${command.trim()}\`: the pre-push hook needs that marker.` : '');
 	const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: verdict, permissionDecisionReason: text } };
 	// The reason is shown to the user; added context is what reaches Claude.
 	if (prNote) output.hookSpecificOutput.additionalContext = prNote;
