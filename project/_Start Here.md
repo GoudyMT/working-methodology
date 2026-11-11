@@ -42,7 +42,7 @@ Tell the owner which mode you are in:
 
 | Mode | What You Do | What You Don't Do |
 |---|---|---|
-| **Plan** | Research, explore, propose options (A/B/C), ask questions | No code writes. No design decisions without the owner's approval. |
+| **Plan** | Research, explore, propose options (A/B/C), ask questions | No code writes. No design decisions without the owner's yes. |
 | **Implement** | Write code under Edit Discipline after the design is locked | No unlocked decisions; no outward acts (push, PR, merge, release). |
 | **Review** | Cross-examine, find contradictions, audit consistency | No edits unless the owner asks. |
 

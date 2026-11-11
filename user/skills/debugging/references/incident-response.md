@@ -33,7 +33,7 @@ Send on a fixed cadence (SEV1 about every 30 minutes) even when nothing changed;
 update time. Contents: severity and state (investigating, identified, monitoring, resolved); who is affected;
 what we know; what we have done; what happens next and when the next update comes. Facts only, no guesses
 about cause, no blame. Drafting is free; sending to users, a channel or a pager is an outward act that needs
-the owner's go (rule:outward-acts).
+the owner's yes (rule:outward-acts).
 
 ## Postmortem shape (short, blameless)
 

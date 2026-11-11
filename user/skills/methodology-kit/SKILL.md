@@ -25,7 +25,7 @@ Arguments: $ARGUMENTS
   It runs only when `<kitDir>` sits on its newest release tag. A refusal names why: show it to the owner and stop;
   never add `--unreleased` to a real project (that flag is for throwaway test installs only).
   Report what was created, updated and skipped; for each skipped file, show the kit's change and merge by hand
-  only on the owner's go. Once a file carries the kit's changes, record it: `node <kitDir>/scripts/kit.mjs install
+  only on the owner's yes. Once a file carries the kit's changes, record it: `node <kitDir>/scripts/kit.mjs install
   project . --merged <file>,<file>`. A file that differs only by this project's own values (adapter rows, tracking
   files) is normal and does not block "Current".
 - **`status`** - the version check, read-only: `node <kitDir>/scripts/kit.mjs status .` It compares the kit

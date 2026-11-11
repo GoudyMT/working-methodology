@@ -1,6 +1,6 @@
 ---
 name: release-notes
-description: Draft the release notes that follow a merge that changes what users get, sized by semver, audited claim by claim, and published only on the owner's go. Use after a user-facing merge, when the owner asks for a release, a changelog entry or release notes, or before creating a git tag for a release. Serves rule:release-notes.
+description: Draft the release notes that follow a merge that changes what users get, sized by semver, audited claim by claim, and published only on the owner's yes. Use after a user-facing merge, when the owner asks for a release, a changelog entry or release notes, or before creating a git tag for a release. Serves rule:release-notes.
 ---
 
 # Release Notes

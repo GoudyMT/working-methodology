@@ -119,4 +119,4 @@ instead.
 
 Link the plan to the owner with: the execution approach you recommend and the one-sentence reason (how much
 the tasks depend on each other's interfaces, how many there are, what a shipped mistake would cost), and
-every hard-stop question the plan raises, in one list. The owner's approval is the start.
+every hard-stop question the plan raises, in one list. The owner's yes is the start.

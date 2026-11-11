@@ -99,7 +99,7 @@ Before handing a project's doc over, run the builder check (a fresh read-only ag
 the questions it would have to guess at). Sort its questions into answered-by-the-records, minor (settle and mark
 as your call) and the owner's (asked the brainstorm skill's way: one message for one or two, its sheet from three up).
 
-**The gate:** nothing is built until the owner approves the design - no product code, no scaffolding, no
+**The gate:** nothing is built until the owner says yes to the design - no product code, no scaffolding, no
 installs, no new project. Reading and probing are fine. A throwaway spike the owner said yes to may be built; it
 stays labelled throwaway, is never merged, and keeping any of it is a new request back through this gate,
 rebuilt test-first (rule:tdd).

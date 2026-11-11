@@ -22,7 +22,7 @@ visible checklist, scans), then state mode + first action (always the next build
 - Open issues: none on this branch. Five follow-ups moved to the Roadmap "Known issues" (offline search setup
   unbounded, Feedback send, import caps, the abandoned page request, map index fetches).
 - Git: on main at 5e0a7c19 (#88 squash), clean; no open PRs; feature branch deleted local and remote.
-  Vault backup NOT pushed (needs the owner's go).
+  Vault backup NOT pushed (needs the owner's yes).
 
 ## Newly-Established Working Standards
 - Size budgets: one size request per plan, estimate + max(10%, 40 B) per line, and one end check that trims or

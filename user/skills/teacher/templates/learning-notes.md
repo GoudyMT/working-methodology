@@ -28,7 +28,7 @@
 
 ## Proposals for the overseer
 
-> the owner's ideas and Teacher's suggestions. The Teacher never marks one approved; the owner approves in the main session's
+> the owner's ideas and Teacher's suggestions. The Teacher never marks one approved; the owner says yes in the main session's
 > chat, and the main session records it in the decision log.
 
 - **P1 - <title> (<who>, <date>).** <the idea> Status: <proposed | approved by the owner, date | declined by the owner, date | deferred by the owner to <when>, date>

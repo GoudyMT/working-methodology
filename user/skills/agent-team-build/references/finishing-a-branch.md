@@ -48,7 +48,7 @@ commit with its hash, the worktree path), wait for the explicit word, then give 
 
 Done when: the options and commands are in the rundown and the lead is waiting.
 
-## 5. After the owner's go
+## 5. After the owner's yes
 
 - Worktree: keep it while a pull request is open. Remove it by `worktrees.md` section 4 after the work landed, or
   when the owner says so.

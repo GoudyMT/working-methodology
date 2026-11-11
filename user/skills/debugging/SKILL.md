@@ -76,7 +76,7 @@ these -> back to step 2. Why: each is a guess dressed as progress.
 
 When users are affected now, mitigate first, diagnose second. Roles, severity, update cadence and the
 postmortem shape are in `references/incident-response.md`. Posting a status, paging someone or messaging
-users is an outward act: name it and wait for the owner's go (rule:outward-acts). Why: stopping harm comes
+users is an outward act: name it and wait for the owner's yes (rule:outward-acts). Why: stopping harm comes
 before understanding it, but it still needs the owner's say.
 
 ## Gotchas
