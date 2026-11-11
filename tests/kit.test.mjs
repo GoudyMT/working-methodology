@@ -5523,6 +5523,26 @@ test('the hook check reads the call cap and sweep guard the guard launcher runs 
   assert.equal(installed({ CLAUDE_CONFIG_DIR: fake }).status, FIX_EXIT, 'a fake launcher named by CLAUDE_CONFIG_DIR');
   assert.equal(installed().status, FIX_EXIT, 'the launcher wired but the call cap gone');
 });
+// B18 (the 1.25.1 sweep): the clause "the install folder's own settings turn hooks off" had no test; taking it out left
+// every hook-check test green. Here CLAUDE_CONFIG_DIR names another folder, so only that clause can see it.
+test('the hook check is not wired when the settings of the folder it was installed in turn hooks off', () => {
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), read(path.resolve('project/.claude/settings.json')));
+  commitAll(dir, 'settings', true);
+  const cfg = path.join(makeTemp('approve-home-'), '.claude');
+  install({ kit: path.resolve('.'), home: cfg, target: 'user' });
+  const other = makeTemp('approve-other-');
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const installed = () => spawnSync('node', [path.join(cfg, 'skills', 'pre-pr-sweep', 'approve.mjs'), f], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: other } });
+  const r = installed();
+  assert.equal(r.status, 0, r.stdout);
+  spawnSync('node', [path.join(cfg, 'skills', 'pre-pr-sweep', 'approve.mjs'), f, '--outcome', '--none-ran'], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: other } });
+  const settings = JSON.parse(read(path.join(cfg, 'settings.json')));
+  fs.writeFileSync(path.join(cfg, 'settings.json'), JSON.stringify({ ...settings, disableAllHooks: true }));
+  assert.equal(installed().status, FIX_EXIT, 'hooks off in the install folder\'s own settings read as wired');
+});
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
   const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
