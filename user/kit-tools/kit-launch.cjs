@@ -278,18 +278,25 @@ function runGuard(real, files, input) {
 	const guard = path.join(real, '.claude', 'guard.cjs');
 	if (!files.has(WIN ? guard.toLowerCase() : guard)) return deny('The kit guard (.claude/guard.cjs) is not in the install record, so this call is held. Reinstall the kit: ' + 'kit.mjs install project.');
 	const inside = (f, root) => path.resolve(f).toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep);
+	const key = (f) => (WIN ? path.resolve(f).toLowerCase() : path.resolve(f));
 	for (const ext of ['.js', '.cjs']) {
 		const disk = Module._extensions[ext] || Module._extensions['.js'];
 		Module._extensions[ext] = function load(mod, filename) {
-			const text = files.get(WIN ? path.resolve(filename).toLowerCase() : path.resolve(filename));
+			const text = files.get(key(filename));
 			if (text !== undefined) return mod._compile(text, filename);
-			// A project file the record does not cover never loads in the guard process. The Claude config folder's own
-			// hooks load even when that folder sits inside the project (a home folder project, a dotfiles repo).
-			if (inside(filename, dir) && !inside(filename, HOME)) throw new Error(`${posix(path.relative(dir, filename))} is not in the install record`);
+			// Only the bytes verify() checked load here, and the Claude config folder's own hooks (even when that folder
+			// sits inside the project: a home folder project, a dotfiles repo). Anything else is refused, wherever it is:
+			// a link swapped after the check can send a require outside the project (the security review on 330dbbf).
+			if (!inside(filename, HOME)) throw new Error(`${posix(inside(filename, dir) ? path.relative(dir, filename) : filename)} is not in the install record`);
 			return disk(mod, filename);
 		};
 	}
-	return require(guard).check(input);
+	// The guard itself is compiled from the checked bytes under its checked name, never found again by require.
+	const m = new Module(guard, null);
+	m.filename = guard;
+	m.paths = Module._nodeModulePaths(path.dirname(guard));
+	m._compile(files.get(key(guard)), guard);
+	return m.exports.check(input);
 }
 
 /** A kit project with guard files but no record here: its record was deleted, or it predates this launcher. */
