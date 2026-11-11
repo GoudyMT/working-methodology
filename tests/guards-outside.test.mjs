@@ -912,6 +912,8 @@ test('B15 host hooks: a host hook accepted on each branch no longer holds a plai
 			ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
 		},
 	});
+	// The first install holds a kit-named host hook until the owner accepts it (B16).
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
 	ok(git(proj, ['checkout', '-q', '-b', 'feature/b']));
 	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo branch', ''].join(NL));
 	ok(git(proj, ['commit', '-q', '--no-verify', '-am', 'chore: branch hook']));

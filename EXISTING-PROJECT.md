@@ -63,7 +63,9 @@ inferred.
 
 Present the plan as A/B/C choices and stop. On the owner's go:
 
-1. Run the install for real. New files land; existing ones stay.
+1. Run the install for real. New files land; existing ones stay. A project that keeps its own file where the kit ships
+   a guard file (often its own `.githooks/pre-commit`) is held on every call until the owner checks that file and runs
+   `install project <folder> --accept-host <file>` in a terminal; a session cannot accept it.
 2. Merge each listed file by hand (never a host-owned file in a shared repo; see step 1): keep the project's specifics, add the kit's rules, and fill the adapters
    (see NEW-PROJECT.md step 4). The pre-compact closeout must carry the rule sort for the kit
    (rule:pre-compact-scan, step 5b), even when the project keeps its own standards.
