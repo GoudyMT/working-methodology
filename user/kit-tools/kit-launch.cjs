@@ -208,18 +208,35 @@ const KIT_SKIP = new Set(['reports', 'node_modules', 'tests', 'scrub.local.json'
 const GIT_KEEP = new Set(['config', 'config.worktree', 'commondir', 'info', 'hooks']);
 function kitFingerprint(kitDir) {
 	const h = crypto.createHash('sha256');
+	// A git folder counts only its parts that name programs git runs or what it reads.
+	const gitTop = (rel) => ['.git/', '@gitdir/', '@common/'].includes(rel);
 	const walk = (abs, rel) => {
 		for (const e of fs.readdirSync(abs, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
 			if (!rel && KIT_SKIP.has(e.name)) continue;
-			if (rel === '.git/' && !GIT_KEEP.has(e.name)) continue;
-			if (!rel && e.name === '.git' && !e.isDirectory()) throw new Error('a .git file');
+			if (gitTop(rel) && !GIT_KEEP.has(e.name)) continue;
 			const r = rel + e.name;
 			if (e.isSymbolicLink()) throw new Error('link');
 			if (e.isDirectory()) walk(path.join(abs, e.name), r + '/');
 			else if (e.isFile()) h.update(`${r}\0${sha(fs.readFileSync(path.join(abs, e.name)))}\n`);
 		}
 	};
-	try { walk(path.resolve(kitDir), ''); } catch { return null; }
+	try {
+		const top = path.resolve(kitDir);
+		walk(top, '');
+		// A worktree (W2): its .git file names its own git folder, and that names the shared one; both are pinned the way
+		// a plain clone's .git folder is.
+		const dotGit = path.join(top, '.git');
+		if (fs.lstatSync(dotGit).isFile()) {
+			const m = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+			if (!m) throw new Error('a .git file that names no git folder');
+			const own = path.resolve(top, m[1]);
+			h.update(`@gitdir\0${posix(own)}\n`);
+			walk(own, '@gitdir/');
+			let common = null;
+			try { common = path.resolve(own, fs.readFileSync(path.join(own, 'commondir'), 'utf8').trim()); } catch { /* none */ }
+			if (common) { h.update(`@common\0${posix(common)}\n`); walk(common, '@common/'); }
+		}
+	} catch { return null; }
 	return h.digest('hex');
 }
 const kitUnchanged = (rec) => !!rec.kitFingerprint && kitFingerprint(rec.kitDir) === rec.kitFingerprint;
