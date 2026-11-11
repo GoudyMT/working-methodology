@@ -556,6 +556,25 @@ test('V3 host hooks: a hook added to .githooks after install holds every call un
 
 // The second pass on 0772397 (role 1): with .claude a junction, the launcher hashed the files through it while require
 // loaded them again from their real place, so a swap between the two ran unverified code (6 of 40 tries passed).
+// The security review on 330dbbf: a link swapped after the check can send a require outside the project, where the
+// loader read the file from disk. The guard process loads only the bytes it checked, and the config folder's own hooks.
+test('V3 links: the guard process never loads a file from outside the record and the config folder', () => {
+	const { root, home, proj } = setup();
+	const mark = posix(path.join(root, 'LOADED'));
+	const outside = path.join(root, 'outside.cjs');
+	fs.writeFileSync(outside, `require('fs').writeFileSync(${JSON.stringify(mark)}, 'x'); exports.check = () => null;\n`);
+	const guard = path.join(fs.realpathSync(proj), '.claude', 'guard.cjs');
+	const script = [
+		`const L = require(${JSON.stringify(path.join(home, 'kit-tools', 'kit-launch.cjs'))});`,
+		`const g = ${JSON.stringify(guard)};`,
+		`const files = new Map([[process.platform === 'win32' ? g.toLowerCase() : g, 'exports.check = () => require(' + JSON.stringify(${JSON.stringify(outside)}) + ').check();']]);`,
+		`try { L.runGuard(${JSON.stringify(fs.realpathSync(proj))}, files, {}); } catch (e) { console.log('refused: ' + e.message); }`,
+	].join('\n');
+	const r = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+	assert.equal(fs.existsSync(mark), false, `a file outside the record loaded: ${r.stdout}${r.stderr}`);
+	assert.match(r.stdout, /refused: .*not in the install record/);
+});
+
 test('V3 links: a guard file reached through a junction or link holds every call', () => {
 	const { root, proj, session: s } = setup();
 	const real = path.join(root, 'real-claude');
