@@ -47,6 +47,18 @@ function setup({ homeAt = '.claude', projName = 'app', before = () => {}, kit = 
 	return { root, home, proj, remote, session: session(home, proj) };
 }
 
+// The shell Claude Code runs a hook's command line in: Git Bash on Windows, found beside git itself (never the bash PATH
+// finds first, which from PowerShell is WSL's: B17); bash elsewhere.
+function gitBash() {
+	if (process.platform !== 'win32') return 'bash';
+	let d = spawnSync('git', ['--exec-path'], { encoding: 'utf8' }).stdout.trim();
+	for (let i = 0; i < 5 && d && path.dirname(d) !== d; i++, d = path.dirname(d)) {
+		for (const b of [path.join(d, 'bin', 'bash.exe'), path.join(d, 'usr', 'bin', 'bash.exe')]) if (fs.existsSync(b)) return b;
+	}
+	return 'bash';
+}
+const BASH = gitBash();
+
 // Claude Code, as far as these tests need it: the hooks of the user and project settings files, read at session
 // start. disableAllHooks in any of them turns off every hook (managed hooks aside, which the kit has none of). A
 // settings file that changes mid-session runs the ConfigChange hooks first; a block keeps the old settings in force.
@@ -71,7 +83,7 @@ function session(home, proj) {
 	};
 	const run = (h, input) => {
 		// A command with no args runs through the shell, as Claude Code runs it (Git Bash on Windows).
-		const [cmd, args] = h.args ? [h.command === 'node' ? process.execPath : h.command, h.args] : ['bash', ['-c', h.command]];
+		const [cmd, args] = h.args ? [h.command === 'node' ? process.execPath : h.command, h.args] : [BASH, ['-c', h.command]];
 		const r = spawnSync(cmd, args, { input: JSON.stringify(input), encoding: 'utf8', env: env(), cwd: proj, timeout: 20000 });
 		let out = null;
 		try { out = r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : null; } catch { /* not JSON */ }
