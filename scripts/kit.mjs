@@ -20,7 +20,10 @@ import launch from '../user/kit-tools/kit-launch.cjs';
 // every git it runs turns that off, and fetches nothing (a partial clone fetches a missing object through a transport the
 // config names). It starts from node's own folder: on Windows a program is looked for in the current folder first, and
 // the fix line runs from the project, where the agent could leave a git.exe.
-const NO_PROGRAMS = ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never'];
+// A protocol.<name>.allow in the repo config beats protocol.allow, so each transport is named too (the security review on
+// 0696ddf; no lazy fetch from these commands was reproduced on git 2.56, 2026-11-11).
+const NO_PROGRAMS = ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never',
+  ...['ext', 'file', 'ssh', 'git', 'http', 'https'].flatMap((p) => ['-c', `protocol.${p}.allow=never`])];
 const SAFE_CWD = path.dirname(process.execPath);
 
 const STAMP_USER = 'kit-install.json';
