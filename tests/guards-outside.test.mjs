@@ -23,7 +23,7 @@ const git = (cwd, args, env = {}) => spawnSync('git', [...ID, ...args], { cwd, e
 const ok = (r) => { assert.equal(r.status, 0, `${r.stderr}${r.stdout}`); return r.stdout.trim(); };
 
 // A git project with a first commit on main and a local bare remote, then the kit installed into it and a temp home.
-function setup({ homeAt = '.claude', projName = 'app', before = () => {} } = {}) {
+function setup({ homeAt = '.claude', projName = 'app', before = () => {}, kit = KIT } = {}) {
 	const root = kitTemp.makeTemp('v3-');
 	// Named as the real one is, so the guards that read a path by its .claude folder see it as the owner's.
 	const home = path.join(root, homeAt);
@@ -38,8 +38,8 @@ function setup({ homeAt = '.claude', projName = 'app', before = () => {} } = {})
 	ok(git(proj, ['remote', 'add', 'origin', remote]));
 	ok(git(proj, ['push', '-q', 'origin', 'main']));
 	before(proj);
-	install({ kit: KIT, home, target: 'user' });
-	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	install({ kit, home, target: 'user' });
+	install({ kit, home, target: 'project', projectDir: proj });
 	return { root, home, proj, remote, session: session(home, proj) };
 }
 
@@ -296,6 +296,45 @@ test('V3 fix line: while held, the install that restores the guards may run, alo
 	for (const c of [`${fix} && git push origin main`, `${fix}; git push origin main`, `${fix} | sh`, `${fix} $(git push origin main)`]) {
 		assert.equal(bash(s, c).decision, 'deny', c);
 	}
+});
+
+// The second pass on 0772397 (role 1): the fix line was matched by path.resolve on a loose regex, so a preload flag or a
+// path that climbs out and back in passed as the fix line.
+test('V3 fix line: only the exact command passes, with the kit script and the project as full paths', () => {
+	const { proj, session: s } = setup();
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
+	const script = `${posix(KIT)}/scripts/kit.mjs`;
+	const climb = '/..'.repeat(posix(KIT).split('/').length + 2) + posix(KIT).replace(/^[A-Za-z]:/, '');
+	for (const c of [
+		`node -r ./evil.cjs "${script}" install project "${posix(proj)}"`,
+		`node -r ./evil.cjs ${climb}/scripts/kit.mjs install project "${posix(proj)}"`,
+		`node "${posix(KIT)}/scripts/../scripts/kit.mjs" install project "${posix(proj)}"`,
+		`node "${script}" install project "${posix(proj)}/."`,
+		`node "${script}" install project .`,
+		`node "${script}" install project "${posix(proj)}" --unreleased`,
+		`node "${script}" install project "${posix(proj)}" --force --force`,
+		`node --import=./evil.mjs "${script}" install project "${posix(proj)}"`,
+	]) assert.equal(bash(s, c).decision, 'deny', c);
+	assert.notEqual(bash(s, `node ${script} install project ${posix(proj)} --force`).decision, 'deny', 'the plain unquoted form still passes');
+});
+
+// The second pass on 0772397 (role 1): the fix line runs the install from the kit folder, which nothing checked; a branch
+// checked out there, or one changed file, made the held install record a swapped guard as good.
+test('V3 fix line: a kit folder changed since the install no longer offers the fix line', () => {
+	const tmp = kitTemp.makeTemp('v3kit-');
+	const kit = path.join(tmp, 'kit');
+	fs.cpSync(KIT, kit, { recursive: true, filter: (src) => !/[\\/](\.git|reports|node_modules)$/.test(src) });
+	const { proj, session: s } = setup({ kit });
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
+	const fix = `node "${posix(kit)}/scripts/kit.mjs" install project "${posix(proj)}"`;
+	assert.notEqual(bash(s, fix).decision, 'deny', 'an unchanged kit folder still offers the fix line');
+	fs.appendFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), '\n// changed\n');
+	assert.equal(bash(s, fix).decision, 'deny', 'a kit file changed after the install');
+	assert.match(bash(s, 'git status').reason, /kit folder .*changed since/i, 'the refusal says why the fix line is gone');
+	fs.writeFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), fs.readFileSync(path.join(KIT, 'project', '.claude', 'guard.cjs')));
+	assert.notEqual(bash(s, fix).decision, 'deny', 'put back, it passes again');
+	fs.writeFileSync(path.join(kit, 'project', '.claude', 'extra.cjs'), EVIL_GUARD);
+	assert.equal(bash(s, fix).decision, 'deny', 'a file added to the kit after the install');
 });
 
 test('V3 wiring: install user wires the launcher on every tool and the settings check, once', () => {
