@@ -364,14 +364,14 @@ const ALLOW_ALL = (dir) => {
 };
 
 test('V3 env: a settings env key that changes how node, git or the guards start is refused mid-session and holds every call', () => {
-	for (const [key, value] of [['NODE_OPTIONS', '--require x.cjs'], ['PATH', '/tmp/evil'], ['GIT_CONFIG_PARAMETERS', "'core.hookspath'='/tmp'"], ['NODE_PATH', '/tmp']]) {
+	for (const [key, value] of [['NODE_OPTIONS', '--require x.cjs'], ['PATH', '/tmp/evil'], ['GIT_CONFIG_PARAMETERS', "'core.hookspath'='/tmp'"], ['NODE_PATH', '/tmp'], ['SHELLOPTS', 'xtrace'], ['PS4', '$(id)'], ['BASH_FUNC_node%%', '() { :; }']]) {
 		const { proj, session: s } = setup();
 		const local = path.join(proj, '.claude', 'settings.local.json');
 		fs.writeFileSync(local, JSON.stringify({ env: { [key]: value } }));
 		assert.equal(s.changed(local, 'local_settings'), 'blocked', key);
 		const d = bash(s, 'git status');
 		assert.equal(d.decision, 'deny', key);
-		assert.match(d.reason, new RegExp(key), key);
+		assert.match(d.reason, new RegExp(key.replace(/[%]/g, '.')), key);
 	}
 });
 
@@ -476,6 +476,7 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 		'an if that never matches': (u) => { launch(u.hooks.PreToolUse).hooks[0].if = 'Bash(nothing *)'; },
 		'onFailure dropped': (u) => { delete launch(u.hooks.PreToolUse).hooks[0].onFailure; },
 		'ConfigChange narrowed to skills': (u) => { launch(u.hooks.ConfigChange).matcher = 'skills'; },
+		'another node': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/N='[^']*'/, "N='/tmp/node'"); },
 	};
 	for (const [name, change] of Object.entries(breakers)) {
 		const { home, proj, session: s } = setup();
@@ -524,4 +525,49 @@ test('V3 shims: a project folder with a dollar sign in its name still commits th
 	fs.writeFileSync(path.join(proj, 'README.md'), 'two\n');
 	const r = git(proj, ['commit', '-q', '-am', 'docs: change the readme']);
 	assert.equal(r.status, 0, r.stderr);
+});
+
+// ---- The automatic review of 670b3a2 (fix all). ----
+
+test('V3 hooksPath: a git config the launcher cannot read holds every call', () => {
+	const { proj, session: s } = setup();
+	const cfg = path.join(proj, '.git', 'config');
+	fs.renameSync(cfg, cfg + '.moved');
+	fs.mkdirSync(cfg);
+	const d = bash(s, 'git status');
+	assert.equal(d.decision, 'deny');
+	assert.match(d.reason, /hooksPath/);
+});
+
+test('V3 install: a kit guard file is put back even when the project stamp was edited to forget it', () => {
+	const { home, proj } = setup();
+	const stamp = path.join(proj, '.kit', 'kit-version.json');
+	const st = JSON.parse(fs.readFileSync(stamp, 'utf8'));
+	delete st.files['.githooks/pre-push'];
+	fs.writeFileSync(stamp, JSON.stringify(st));
+	const EVIL = ['#!/bin/sh', 'exit 0', ''].join(String.fromCharCode(10));
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-push'), EVIL);
+	const r = install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.notEqual(fs.readFileSync(path.join(proj, '.githooks', 'pre-push'), 'utf8'), EVIL);
+	assert.ok(r.replaced.includes('.githooks/pre-push'));
+});
+
+test('V3 host hooks: a swapped host hook stays held through a reinstall until the owner accepts it', () => {
+	const HOST = ['#!/bin/sh', 'echo host-pre-commit', ''].join(String.fromCharCode(10));
+	const { home, proj, session: s } = setup({
+		before: (p) => {
+			fs.mkdirSync(path.join(p, '.githooks'));
+			fs.writeFileSync(path.join(p, '.githooks', 'pre-commit'), HOST);
+			ok(git(p, ['add', '.githooks/pre-commit']));
+			ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
+		},
+	});
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 0', ''].join(String.fromCharCode(10)));
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a reinstall took the swapped host hook as the new normal');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
+	const fix = `node "${posix(KIT)}/scripts/kit.mjs" install project "${posix(proj)}" --accept-host .githooks/pre-commit`;
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), HOST);
+	assert.equal(bash(s, fix).decision, 'deny', 'accepting a host hook is the owner\'s act, not the held fix line');
 });
