@@ -35,7 +35,10 @@ const same = (a, b) => (WIN ? path.resolve(a).toLowerCase() === path.resolve(b).
  */
 function recordName(dir) {
 	const full = WIN ? path.resolve(dir).toLowerCase() : path.resolve(dir);
-	return `${full.replace(/[^A-Za-z0-9]/g, '-')}-${sha(full).slice(0, 10)}`;
+	// The name is cut to its first 100 characters (B13): the shims sit in it, and a long project path took them past
+	// Windows' 260, where git finds no hook and the kit hooks stop silently. The hash of the full path keeps two long
+	// paths apart; a name that fits is the one 1.25.1 gave, so an installed project keeps its record.
+	return `${full.replace(/[^A-Za-z0-9]/g, '-').slice(0, 100)}-${sha(full).slice(0, 10)}`;
 }
 const recordDir = (dir) => path.join(RECORDS, recordName(dir));
 
@@ -58,7 +61,7 @@ function findProject(input) {
 		const slug = path.basename(path.dirname(String(input.transcript_path)));
 		let names = [];
 		try { names = fs.readdirSync(RECORDS); } catch { /* none */ }
-		for (const n of names.filter((x) => x.toLowerCase().startsWith(slug.toLowerCase() + '-'))) {
+		for (const n of names.filter((x) => x.toLowerCase().startsWith(slug.toLowerCase().slice(0, 100) + '-'))) {
 			try {
 				const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, n, 'record.json'), 'utf8'));
 				if (rec && rec.projectDir && path.resolve(rec.projectDir).replace(/[^A-Za-z0-9]/g, '-').toLowerCase() === slug.toLowerCase()) return { dir: path.resolve(rec.projectDir), rec };
