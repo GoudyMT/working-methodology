@@ -407,3 +407,42 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a log line whose time cannot be read');
 	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
 });
+
+// T16a (the owner's locks, 2026-11-11): one voice for refusals. Each opens with its kind, names the limit it hit and
+// what to do; a gate bypass is never allowed by a tool, even with a pop-up yes. Pinned here because the openings are
+// the order a session acts on.
+const why = (tool_name, tool_input, extra = {}) => {
+	const r = spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+	return (r.stdout && JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason) || '';
+};
+test('a held push names the limit of the push bound it hit', () => {
+	const limits = [
+		['git push origin main', /a push to main is outside the push bound; main normally takes a PR/],
+		['git push origin master', /a push to master is outside the push bound/],
+		['git push --force origin feat/x', /a force push is outside the push bound/],
+		['git push origin +feat/x', /a force push is outside the push bound/],
+		['git push origin --delete feat/x', /a delete is outside the push bound/],
+		['git push origin :feat/x', /a delete is outside the push bound/],
+		['git push --tags origin feat/x', /a tag push is outside the push bound/],
+		['git push upstream feat/x', /not a plain push to origin, so it is outside the push bound/],
+	];
+	for (const [c, re] of limits) {
+		const text = why('Bash', { command: c });
+		assert.match(text, /^Owner's yes needed: /, c);
+		assert.match(text, re, c);
+		assert.match(text, /AskUserQuestion pop-up/, `${c}: the pop-up shape the guard reads`);
+	}
+	assert.match(why('Bash', { command: 'gh pr create --fill' }), /^Owner's yes needed: gh pr create is an outward act/);
+	assert.match(why('Bash', { command: 'git push origin main' }, { agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
+});
+test('a gate bypass is never allowed by a tool, even with the owner\'s pop-up yes', () => {
+	for (const act of ['git commit --no-verify -m x', 'git -c core.hooksPath=/dev/null commit -m x', 'git config core.hooksPath /dev/null']) {
+		popUp({ act });
+		assert.equal(withYes('Bash', { command: act }), 'deny', `${act} ran on a pop-up yes`);
+		assert.match(why('Bash', { command: act }), /^Never by a tool: .*gate bypass/, act);
+	}
+});
+test('a protected file and the owner\'s answers are refused in the never voice', () => {
+	assert.match(why('Write', { file_path: path.join(proj, '.claude', 'guard-outward.cjs'), content: 'x' }), /^Never by a tool: .*protected file/);
+	assert.match(why('Write', { file_path: TRANSCRIPT, content: 'x' }), /^Never by a tool: /);
+});
