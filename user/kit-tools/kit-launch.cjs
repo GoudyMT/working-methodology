@@ -78,6 +78,12 @@ function verify(dir, rec, extraDirs = []) {
 		if (!bytes || crypto.createHash('sha256').update(bytes).digest('hex') !== want) changed.push(key);
 		else files.set(path.resolve(file), bytes.toString('utf8'));
 	}
+	// The git hook shims beside the record: one swapped there would skip this check at the next commit or push.
+	for (const [name, want] of Object.entries(rec.shims || {})) {
+		let bytes = null;
+		try { bytes = fs.readFileSync(path.join(recordDir(dir), 'hooks', name)); } catch { /* missing */ }
+		if (!bytes || crypto.createHash('sha256').update(bytes).digest('hex') !== want) changed.push(`kit-guard hooks/${name}`);
+	}
 	const settings = [];
 	for (const d of [dir, ...extraDirs]) {
 		for (const name of ['settings.json', 'settings.local.json']) {
@@ -158,9 +164,30 @@ function runGuard(dir, files, input) {
 	return require(guard).check(input);
 }
 
+/** A kit project with guard files but no record here: its record was deleted, or it predates this launcher. */
+function unrecorded(input) {
+	for (const start of [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean)) {
+		let d = path.resolve(String(start));
+		for (let up = path.dirname(d); ; d = up, up = path.dirname(d)) {
+			if (fs.existsSync(path.join(d, '.kit', 'kit-version.json')) && fs.existsSync(path.join(d, '.claude', 'guard.cjs'))) return d;
+			if (up === d) break;
+		}
+	}
+	return null;
+}
+
 function preToolUse(input) {
 	const found = findProject(input);
-	if (!found) return null;
+	if (!found) {
+		// Fails closed: a kit project the launcher has no record for runs no guard until install writes one.
+		const dir = unrecorded(input);
+		if (!dir) return null;
+		let kitDir = null;
+		try { kitDir = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')).kitDir || null; } catch { /* none */ }
+		const rec = { kitDir };
+		if (isFix(input, rec, dir)) return null;
+		return deny(`This kit project has no guard record in ${posix(RECORDS)}, so no guard can check it and every call is held. Run, alone: ${fixLine(rec, dir)} (or ask the owner to).`);
+	}
 	const { dir, rec } = found;
 	const extra = [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean).map((d) => path.resolve(String(d))).filter((d) => d !== dir);
 	const v = verify(dir, rec, extra);

@@ -25,7 +25,8 @@ const ok = (r) => { assert.equal(r.status, 0, `${r.stderr}${r.stdout}`); return 
 // A git project with a first commit on main and a local bare remote, then the kit installed into it and a temp home.
 function setup() {
 	const root = kitTemp.makeTemp('v3-');
-	const home = path.join(root, 'home');
+	// Named as the real one is, so the guards that read a path by its .claude folder see it as the owner's.
+	const home = path.join(root, '.claude');
 	const proj = path.join(root, 'app');
 	const remote = path.join(root, 'remote.git');
 	fs.mkdirSync(proj);
@@ -291,7 +292,8 @@ test('V3 fix line: while held, the install that restores the guards may run, alo
 
 test('V3 wiring: install user wires the launcher on every tool and the settings check, once', () => {
 	const { root } = setup();
-	const home = path.join(root, 'home');
+	// Named as the real one is, so the guards that read a path by its .claude folder see it as the owner's.
+	const home = path.join(root, '.claude');
 	install({ kit: KIT, home, target: 'user' });
 	const user = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
 	const named = (list, file) => (list || []).filter((e) => (e.hooks || []).some((h) => [h.command, ...(h.args || [])].join(' ').includes(file)));
@@ -324,4 +326,25 @@ test('V3 worktree: a session in a worktree under the project is guarded by the p
 	const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
 	const r = spawnSync(process.execPath, [launcher], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: wt }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: wt } });
 	assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'deny');
+});
+
+// The 1.25.1 security review: the record and the shims are what the launcher trusts, so a tool may not write them, a
+// shim swapped there holds every call, and a kit project whose record is gone runs no call until install writes it.
+test('V3 record: a tool that writes the guard record or a shim is held, and a swapped shim holds every call', () => {
+	const { home, proj, session: s } = setup();
+	const dir = path.join(home, 'kit-guard', fs.readdirSync(path.join(home, 'kit-guard'))[0]);
+	assert.equal(s.decide('Write', { file_path: path.join(dir, 'record.json'), content: '{}' }).decision, 'deny');
+	assert.equal(bash(s, `echo x > "${posix(path.join(dir, 'hooks', 'pre-push'))}"`).decision, 'deny');
+	fs.writeFileSync(path.join(dir, 'hooks', 'pre-push'), '#!/bin/sh\nexec "$(git rev-parse --show-toplevel)/.githooks/pre-push" "$@"\n');
+	const d = bash(s, 'git status');
+	assert.equal(d.decision, 'deny');
+	assert.match(d.reason, /kit-guard hooks\/pre-push/);
+});
+
+test('V3 record: a kit project whose record is gone holds every call but the install line', () => {
+	const { home, proj, session: s } = setup();
+	fs.rmSync(path.join(home, 'kit-guard'), { recursive: true });
+	assert.equal(bash(s, 'git push origin main').decision, 'deny');
+	assert.match(bash(s, 'git status').reason, /no guard record/);
+	assert.notEqual(bash(s, `node "${posix(KIT)}/scripts/kit.mjs" install project "${posix(proj)}"`).decision, 'deny');
 });

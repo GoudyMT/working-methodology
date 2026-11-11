@@ -130,6 +130,8 @@ function guardShape(p) {
 		if (rest.length === 0) return true;
 		if (rest[0] === 'worktrees' || rest[0] === 'projects') continue;
 		if (rest.length === 1 && (rest[0] === 'kit-hooks' || rest[0] === 'kit-tools')) return true;
+		// V3 (1.25.1): the guard records and git hook shims the launcher trusts, every file under them.
+		if (fits(rest[0], 'kit-guard')) return true;
 		const last = rest[rest.length - 1];
 		// A wildcard may name any guard the shell finds there (owner-pro* is owner-proof.cjs): it fails closed (S23-1, the
 		// mutation check showed only guard.cjs was matched).

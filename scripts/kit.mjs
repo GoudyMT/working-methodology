@@ -202,7 +202,8 @@ function writeGuardRecord(ctx, kitInfo, files) {
     fs.chmodSync(shim, 0o755);
   }
   const guarded = Object.fromEntries(Object.entries(files).filter(([k]) => isGuarded(k)).sort());
-  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), version: kitInfo.version, files: guarded, hooksPath: null };
+  const shims = Object.fromEntries(GIT_HOOKS.map((name) => [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(hooks, name))).digest('hex')]));
+  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), version: kitInfo.version, files: guarded, shims, hooksPath: null };
   fs.writeFileSync(path.join(dir, 'record.json'), JSON.stringify(record, null, 2) + '\n');
   return toPosix(hooks);
 }
