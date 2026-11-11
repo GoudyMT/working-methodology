@@ -575,6 +575,33 @@ test('V3 links: the guard process never loads a file from outside the record and
 	assert.match(r.stdout, /refused: .*not in the install record/);
 });
 
+// B23 (the security review on the 1.25.1 push): the loader still took any file under the config folder, so a file a
+// tool wrote there (or one of the kit's hooks changed since install user) loaded into the guard process. Only the
+// kit's own hook files, with the bytes install user recorded, load from there.
+test('B23 loader: from the config folder only the kit hook files install user recorded load', () => {
+	const { root, home, proj } = setup();
+	const mark = posix(path.join(root, 'LOADED'));
+	const planted = path.join(home, 'projects', 'planted.cjs');
+	fs.mkdirSync(path.dirname(planted), { recursive: true });
+	const body = `require('fs').writeFileSync(${JSON.stringify(mark)}, 'x'); exports.check = () => null;\n`;
+	fs.writeFileSync(planted, body);
+	const guard = path.join(fs.realpathSync(proj), '.claude', 'guard.cjs');
+	const tryLoad = (target) => spawnSync(process.execPath, ['-e', [
+		`const L = require(${JSON.stringify(path.join(home, 'kit-tools', 'kit-launch.cjs'))});`,
+		`const g = ${JSON.stringify(guard)};`,
+		`const files = new Map([[process.platform === 'win32' ? g.toLowerCase() : g, 'exports.check = () => require(' + JSON.stringify(${JSON.stringify(target)}) + ').check();']]);`,
+		`try { L.runGuard(${JSON.stringify(fs.realpathSync(proj))}, files, {}); console.log('loaded'); } catch (e) { console.log('refused: ' + e.message); }`,
+	].join('\n')], { encoding: 'utf8' });
+	let r = tryLoad(planted);
+	assert.equal(fs.existsSync(mark), false, `a planted file in the config folder loaded: ${r.stdout}${r.stderr}`);
+	const hook = path.join(home, 'kit-hooks', 'canary.cjs');
+	r = tryLoad(hook);
+	assert.match(r.stdout, /^loaded/, `the kit's own hook no longer loads: ${r.stdout}${r.stderr}`);
+	fs.writeFileSync(hook, body);
+	r = tryLoad(hook);
+	assert.equal(fs.existsSync(mark), false, `a kit hook changed since install user loaded: ${r.stdout}${r.stderr}`);
+});
+
 test('V3 links: a guard file reached through a junction or link holds every call', () => {
 	const { root, proj, session: s } = setup();
 	const real = path.join(root, 'real-claude');
