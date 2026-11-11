@@ -40,7 +40,7 @@ const PARTS = [
 		wired: () => {
 			// V3 (1.25.1): the guards run through the launcher in the Claude config folder's settings, and only against the
 			// record install wrote there; the project's own settings carry no guard entry.
-			const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, '')); } catch { return null; } };
+			const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; } };
 			const L = launcher();
 			if (!L) return [false, `${toPosix(HOME)}/kit-tools/kit-launch.cjs is missing: run kit.mjs install user`];
 			// The 1.25.0 entry that ran guard.cjs straight from the project would still run a swapped guard as code.

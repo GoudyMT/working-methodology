@@ -262,7 +262,7 @@ function guardFaults(home, projectDir) {
     if (why) faults.push(`.claude/${name}: ${why}`);
   }
   let user = null;
-  try { user = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^﻿/, '')); } catch { /* none */ }
+  try { user = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* none */ }
   if (!launch.launcherWired(user, path.join(home, 'kit-tools', 'kit-launch.cjs'))) faults.push('the guard launcher is not wired whole in the Claude config folder settings.json (run kit.mjs install user)');
   return faults;
 }
