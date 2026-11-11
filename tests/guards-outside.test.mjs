@@ -854,3 +854,21 @@ test('V3 broken launcher: the kit gate names it and the one command that repairs
 	fs.rmSync(path.join(home, 'kit-tools', 'kit-launch.cjs'));
 	assert.equal(JSON.parse(gate().stdout || '{}').decision, 'block', 'a missing launcher too');
 });
+
+// B14 (the 1.25.1 sweep): the launcher entry names node by the path install user recorded. A node moved or upgraded
+// blocks every call with "No such file", and the gate named only a missing launcher, so the owner saw no reason.
+test('B14 moved node: the kit gate names the missing recorded node and the command that repairs it', () => {
+	const { root, home } = setup();
+	const other = path.join(root, 'plain');
+	fs.mkdirSync(path.join(other, '.kit'), { recursive: true });
+	fs.writeFileSync(path.join(other, '.kit', 'no-kit'), '');
+	const gate = () => spawnSync(process.execPath, [path.join(home, 'kit-hooks', 'kit-gate.cjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'hi', cwd: other }), encoding: 'utf8', env: { ...ENV, KIT_CLAUDE_HOME: home } });
+	const stampFile = path.join(home, 'kit-install.json');
+	const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+	stamp.node = posix(path.join(root, 'gone', 'node.exe'));
+	fs.writeFileSync(stampFile, JSON.stringify(stamp));
+	const out = JSON.parse(gate().stdout || '{}');
+	assert.equal(out.decision, 'block', 'a moved node blocked every call and the gate said nothing');
+	assert.match(out.reason, /gone\/node\.exe/);
+	assert.match(out.reason, /install user/);
+});
