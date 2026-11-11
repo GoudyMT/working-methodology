@@ -227,9 +227,17 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
   // a reinstall, until the owner accepts it with --accept-host (which the held fix line may not carry).
   const guarded = {};
   const host = [];
-  for (const key of keys.filter(isGuarded).sort()) {
+  // Every other hook in .githooks is the host's: the shims run it, so it is recorded too. One that appears after the
+  // first record holds every call until the owner accepts it (the second pass on 0772397).
+  let extras = [];
+  try { extras = fs.readdirSync(path.join(ctx.projectDir, '.githooks'), { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => `.githooks/${e.name}`).filter((k) => !keys.includes(k)); } catch { /* none */ }
+  for (const key of [...keys.filter(isGuarded), ...extras].sort()) {
     const file = path.join(ctx.projectDir, key);
-    if (!isHost(key)) { if (files[key]) guarded[key] = files[key]; continue; }
+    if (extras.includes(key) && prev && !(prev.files && prev.files[key]) && !(ctx.acceptHost || []).includes(key)) {
+      skipped.push({ file: key, reason: `a hook added to .githooks since the last install, so every call stays held: remove it, or the owner accepts it with install project --accept-host ${key}` });
+      continue;
+    }
+    if (!extras.includes(key) && !isHost(key)) { if (files[key]) guarded[key] = files[key]; continue; }
     if (!fs.existsSync(file)) continue;
     host.push(key);
     const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');

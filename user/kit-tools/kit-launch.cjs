@@ -138,13 +138,25 @@ function hooksPathNow(dir) {
 function verify(dir, rec, extraDirs = []) {
 	const changed = [];
 	const files = new Map();
+	// Each guard file is read at its real place, and only when that is where the project says it is: through a junction
+	// or link, require would load it again from the link's target, which can change between the two (the second pass on
+	// 0772397). The loader is keyed by that real place, found the way require finds it (fs.realpathSync).
+	let real = null;
+	try { real = fs.realpathSync(dir); } catch { /* the project is gone: every file below is missing */ }
+	const same2 = (a, b) => (WIN ? a.toLowerCase() === b.toLowerCase() : a === b);
 	for (const [key, want] of Object.entries(rec.files || {})) {
-		const file = path.join(dir, key);
+		let at = null;
+		try { at = fs.realpathSync(path.join(dir, key)); } catch { /* missing */ }
+		if (at && real && !same2(at, path.join(real, key))) { changed.push(`${key} (reached through a link)`); continue; }
 		let bytes = null;
-		try { bytes = fs.readFileSync(file); } catch { /* missing */ }
+		try { bytes = at && fs.readFileSync(at); } catch { /* missing */ }
 		if (!bytes || sha(bytes) !== want) changed.push(key);
-		else files.set(path.resolve(file), bytes.toString('utf8'));
+		else files.set(WIN ? at.toLowerCase() : at, bytes.toString('utf8'));
 	}
+	// A hook in .githooks that no record holds would run through the shims with no check (the second pass on 0772397).
+	let hookNames = [];
+	try { hookNames = fs.readdirSync(path.join(dir, '.githooks'), { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => e.name); } catch { /* none */ }
+	for (const name of hookNames) if (!(rec.files || {})[`.githooks/${name}`]) changed.push(`.githooks/${name} (not in the install record)`);
 	// The git hook shims beside the record: one swapped there would skip this check at the next commit or push.
 	for (const [name, want] of Object.entries(rec.shims || {})) {
 		let bytes = null;
@@ -166,7 +178,7 @@ function verify(dir, rec, extraDirs = []) {
 		const now = hooksPathNow(dir);
 		if (now !== null && now !== normPath(rec.hooksPath)) hooksPath = now || 'unset';
 	}
-	return { changed, settings, hooksPath, files };
+	return { changed, settings, hooksPath, files, real: real || path.resolve(dir) };
 }
 
 const fixLine = (rec, dir) => `"${posix(installedNode() || 'node')}" "${posix(rec.kitDir || '<kit folder>')}/scripts/kit.mjs" install project "${posix(dir)}"`;
@@ -261,14 +273,15 @@ function clearsSettings(input, v) {
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 
 /** Run the project's guard from the bytes verify() hashed: a file swapped after the check is never loaded. */
-function runGuard(dir, files, input) {
-	const guard = path.resolve(dir, '.claude', 'guard.cjs');
-	if (!files.has(guard)) return deny('The kit guard (.claude/guard.cjs) is not in the install record, so this call is held. Reinstall the kit: ' + 'kit.mjs install project.');
+function runGuard(real, files, input) {
+	const dir = real;
+	const guard = path.join(real, '.claude', 'guard.cjs');
+	if (!files.has(WIN ? guard.toLowerCase() : guard)) return deny('The kit guard (.claude/guard.cjs) is not in the install record, so this call is held. Reinstall the kit: ' + 'kit.mjs install project.');
 	const inside = (f, root) => path.resolve(f).toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep);
 	for (const ext of ['.js', '.cjs']) {
 		const disk = Module._extensions[ext] || Module._extensions['.js'];
 		Module._extensions[ext] = function load(mod, filename) {
-			const text = files.get(path.resolve(filename));
+			const text = files.get(WIN ? path.resolve(filename).toLowerCase() : path.resolve(filename));
 			if (text !== undefined) return mod._compile(text, filename);
 			// A project file the record does not cover never loads in the guard process. The Claude config folder's own
 			// hooks load even when that folder sits inside the project (a home folder project, a dotfiles repo).
@@ -307,7 +320,7 @@ function preToolUse(input) {
 	const v = verify(dir, rec, extra);
 	if (v.changed.length || v.hooksPath) return isFix(input, rec, dir) ? null : deny(describe(v, rec, dir));
 	if (v.settings.length && !clearsSettings(input, v)) return deny(describe(v, rec, dir));
-	return runGuard(dir, v.files, input);
+	return runGuard(v.real, v.files, input);
 }
 
 // ---- The entries install user writes, and the strict check that they are still whole. ----
