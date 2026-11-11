@@ -1866,12 +1866,9 @@ test('every kit role runs the canary at its stop, and the project settings run t
   for (const tool of ['Agent', 'Task', 'SendMessage']) for (const g of ['canary.cjs', 'sweep-guard.cjs']) assert.ok(routes(tool).includes(g), `${g} on ${tool}`);
 });
 test('both guards run on every shell tool and block the call when they fail', () => {
-  // T2: one entry runs the one guard process on every tool; a crash, a timeout or a missing node would otherwise let
-  // the delete or the push run (handoff item 26), so it blocks on failure.
-  const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
-  assert.equal(pre.length, 1);
-  assert.equal(pre[0].matcher, '.*');
-  assert.deepEqual(pre[0].hooks.map((h) => [h.args.join(' '), h.onFailure]), [['{{PROJECT_DIR}}/.claude/guard.cjs', 'block']]);
+  // T2: one entry runs the one guard process on every tool and blocks on failure (handoff item 26). Since V3 (1.25.1)
+  // that entry is the launcher in the user settings (tests/guards-outside.test.mjs); a project file carries none.
+  assert.equal(JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse, undefined);
   const { routes } = require(path.resolve('project/.claude/guard.cjs'));
   for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) for (const g of ['guard-delete.cjs', 'guard-outward.cjs']) assert.ok(routes(tool).includes(g), `${g} on ${tool}`);
 });
@@ -6706,7 +6703,7 @@ test('the sheet page ships no private data, calls no third party, and writes the
   for (const field of ['grounding', 'sectionTitle', 'recWhy', 'submitted']) assert.ok(page.includes(field), field);
 });
 
-test('an update keeps the attribution script while an edited audit still needs it, and retires the moved reference', () => {
+test('an update retires a script once the edited audit that needed it is put back; a non-guard file still waits on an edited heir', () => {
   const { kit, home, proj } = makeKit();
   const put = (f, text) => { fs.mkdirSync(path.dirname(path.join(kit, f)), { recursive: true }); fs.writeFileSync(path.join(kit, f), text); };
   put('project/.claude/attribution.mjs', 'old\n');
@@ -6721,9 +6718,21 @@ test('an update keeps the attribution script while an edited audit still needs i
   put('project/.claude/pr-body-audit.mjs', 'two\n');
   fs.appendFileSync(path.join(proj, '.claude/pr-body-audit.mjs'), 'edited here\n');
   const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.ok(fs.existsSync(path.join(proj, '.claude/attribution.mjs')), 'an edited audit still imports it');
-  assert.ok(r.skipped.some((s) => s.file === '.claude/attribution.mjs'));
+  // A script in .claude is a guard file since V3 (1.25.1): the edited audit is put back (a backup keeps the edit), so
+  // nothing here imports the retired script any more, and it goes.
+  assert.ok(r.replaced.includes('.claude/pr-body-audit.mjs'));
+  assert.equal(read(path.join(r.backupDir, '.claude/pr-body-audit.mjs')), 'one\nedited here\n');
+  assert.ok(!fs.existsSync(path.join(proj, '.claude/attribution.mjs')));
   assert.deepEqual(install({ kit, home, target: 'user' }).retired, ['skills/human-factor/references/old.md']);
+  // A file that is not a guard still waits on an edited heir.
+  put('project/old-notes.md', 'old\n');
+  install({ kit, home, target: 'project', projectDir: proj });
+  fs.writeFileSync(config, JSON.stringify({ ...JSON.parse(read(config)), retired: { project: { 'old-notes.md': '_Working Standards.md' } } }));
+  fs.rmSync(path.join(kit, 'project/old-notes.md'));
+  fs.appendFileSync(path.join(proj, '_Working Standards.md'), 'edited here\n');
+  const kept = install({ kit, home, target: 'project', projectDir: proj });
+  assert.ok(fs.existsSync(path.join(proj, 'old-notes.md')), 'an edited heir still needs it');
+  assert.ok(kept.skipped.some((x) => x.file === 'old-notes.md'));
   const real = JSON.parse(read(path.resolve('kit.config.json'))).retired;
   assert.deepEqual(real.project['.claude/attribution.mjs'], ['.claude/pr-body-audit.mjs', '.claude/pr-body-audit-lean.mjs']);
   assert.deepEqual(real.user['skills/plan-feature/references/explore-and-options.md'], ['skills/brainstorm/references/question-craft.md', 'skills/plan-feature/SKILL.md']);

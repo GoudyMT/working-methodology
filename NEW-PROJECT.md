@@ -25,19 +25,19 @@ node <kit folder>/scripts/kit.mjs install project <project folder>
 ```
 
 This copies the standards, the four tracking files, `_Templates/`, the tools and `.claude/settings.json`, and
-seeds the working-style memory into Claude Code's memory folder for this project. The settings wire three hooks
-pointed at this folder: the push guard, and the kit hook at session start, on each message and before
-each compact (rule:kit-standards #1). It writes `.kit/kit-version.json`, the record
-that later updates and fold-backs read.
+seeds the working-style memory into Claude Code's memory folder for this project. The settings wire the kit hook
+at session start, on each message and before each compact (rule:kit-standards #1). It writes `.kit/kit-version.json`,
+the record that later updates and fold-backs read.
 
-Then turn on the git push guard, so a push by any AI tool waits for the owner's go (rule:outward-acts):
+The guards run from outside the project (1.25.1): `install user` wires a launcher in `~/.claude/kit-tools` on every
+tool, and `install project` writes a record of the project's guard files to `~/.claude/kit-guard/<project>/`. Before
+every call the launcher checks the files against that record; one changed outside install holds every call until
+`install project` puts the kit's copy back. So run `install user` before `install project`.
 
-```bash
-git -C <project folder> config core.hooksPath .githooks
-```
-
-If the project already runs git hooks from another folder (husky, lefthook), add the check in
-`.githooks/pre-push` to that pre-push hook instead.
+The same install turns on the git push guard, so a push by any AI tool waits for the owner's go (rule:outward-acts):
+it points `core.hooksPath` at the hook shims beside the record, which check the guard files and then run the
+project's `.githooks`. If the project already runs git hooks from another folder (husky, lefthook), install leaves
+it alone: add the check in `.githooks/pre-push` to that pre-push hook instead.
 
 Then install the third-party plugins the work needs: see [THIRD-PARTY.md](THIRD-PARTY.md).
 

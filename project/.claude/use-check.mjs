@@ -10,6 +10,7 @@
 // It reads only; it writes nothing. Usage: node .claude/use-check.mjs [--json]   (run in the project folder)
 // Exit 0 every part present and wired (or opted out), 1 a part is not, 2 it could not run.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -18,7 +19,11 @@ const has = (rel) => fs.existsSync(path.join(dir, rel));
 // git starts from Node's own folder, so a git.exe planted in the project is not the one found first on Windows.
 const git = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', cwd: path.dirname(process.execPath) });
 const isRepo = () => git('rev-parse', '--git-dir').status === 0;
-const settings = () => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8')); } catch { return null; } };
+const toPosix = (p) => p.split(path.sep).join('/');
+// The Claude config folder: status passes it in; otherwise the one Claude Code uses.
+const HOME = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+// Where install keeps this project's guard record and hook shims (V3), named as kit.mjs guardDir names it.
+const guardDir = () => { const slug = path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-'); return path.join(HOME, 'kit-guard', process.platform === 'win32' ? slug.toLowerCase() : slug); };
 
 // Each check returns [ok, detail]; ok null means the level does not apply here (said why, and never a fault).
 const PARTS = [
@@ -30,10 +35,14 @@ const PARTS = [
 			return [missing.length === 0, missing.length ? `missing ${missing.join(', ')}` : 'all 7 files'];
 		},
 		wired: () => {
-			const hooks = (settings()?.hooks?.PreToolUse) || [];
-			// Claude Code reads ".*", "*", "" and no matcher alike: every tool.
-			const ok = hooks.some((h) => ['.*', '*', ''].includes(h.matcher ?? '') && (h.hooks || []).some((x) => /(^|[\\/])guard\.cjs$/.test([x.command, ...(x.args || [])].map(String).find((w) => /guard\.cjs$/.test(w)) || '')));
-			return [ok, ok ? 'settings.json runs guard.cjs on every tool' : 'settings.json does not run guard.cjs on every tool: merge the kit\'s PreToolUse entry into it by hand, or run install project again with --force'];
+			// V3 (1.25.1): the guards run through the launcher in the Claude config folder's settings, and only against the
+			// record install wrote there; the project's own settings carry no guard entry.
+			const user = (() => { try { return JSON.parse(fs.readFileSync(path.join(HOME, 'settings.json'), 'utf8')); } catch { return null; } })();
+			const on = (event, all) => ((user?.hooks?.[event]) || []).some((h) => (!all || ['.*', '*', ''].includes(h.matcher ?? '')) && (h.hooks || []).some((x) => [x.command, ...(x.args || [])].map(String).some((w) => /kit-launch.cjs$/.test(w))));
+			if (!on('PreToolUse', true)) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs on every tool: run kit.mjs install user`];
+			if (!on('ConfigChange', false)) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs on settings changes: run kit.mjs install user`];
+			if (!fs.existsSync(path.join(guardDir(), 'record.json'))) return [false, 'no guard record for this project in the Claude config folder: run kit.mjs install project'];
+			return [true, 'the Claude config folder runs kit-launch.cjs on every tool, against the record of this project'];
 		},
 		used: () => [null, 'no trace yet: the guards keep no log (a later step adds one)'],
 	},
@@ -47,8 +56,10 @@ const PARTS = [
 		wired: () => {
 			if (!isRepo()) return [null, 'not a git repository'];
 			const now = git('config', 'core.hooksPath').stdout.trim().replace(/\\/g, '/');
-			const ok = /(^|\/)\.githooks\/?$/.test(now);
-			return [ok, ok ? `core.hooksPath is ${now}` : `core.hooksPath is ${now || 'unset'}, not .githooks`];
+			// V3: the shims beside the record check the guard files, then run the project's .githooks.
+			const want = toPosix(path.join(guardDir(), 'hooks'));
+			const ok = now.toLowerCase() === want.toLowerCase();
+			return [ok, ok ? `core.hooksPath is ${now}` : `core.hooksPath is ${now || 'unset'}, not the kit's hook shims (${want}): run kit.mjs install project`];
 		},
 		used: () => {
 			if (!isRepo()) return [null, 'not a git repository'];

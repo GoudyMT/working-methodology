@@ -53,22 +53,6 @@
     ]
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "{{PROJECT_DIR}}/.claude/guard.cjs"
-            ],
-            "timeout": 10,
-            "onFailure": "block"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [
