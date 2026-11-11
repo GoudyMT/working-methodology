@@ -166,8 +166,37 @@ function plan({ kit, home, target, projectDir }) {
   return { entries, stampPath: path.join(projectDir, STAMP_PROJECT), memoryDir };
 }
 
-function renderEntry(kitInfo, entry, projectDir, home) {
-  const text = fs.readFileSync(entry.src, 'utf8');
+/**
+ * Read every file a release install copies, once, and check each against the release tag's own tree (B20). The
+ * release check and the fix line's fingerprint run before install reads the files, so a process left running could
+ * swap one in between; the bytes install renders are the ones checked here, never read again.
+ *
+ * Returns:
+ *     Map of source path to text
+ */
+function releaseBytes(kit, version, entries) {
+  const r = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'ls-tree', '-r', '-z', '--full-tree', `refs/tags/v${version}`], { encoding: 'utf8', cwd: SAFE_CWD, maxBuffer: 64 * 1024 * 1024 });
+  if (r.status !== 0) throw new Error(`Install refused: the release tag v${version} could not be read in the kit folder.`);
+  const blobs = new Map();
+  for (const line of r.stdout.split('\0')) {
+    const m = /^\d+ blob ([0-9a-f]{40})\t(.+)$/s.exec(line);
+    if (m) blobs.set(m[2], m[1]);
+  }
+  const out = new Map();
+  const changed = [];
+  for (const e of entries) {
+    const rel = toPosix(path.relative(kit, e.src));
+    const bytes = fs.readFileSync(e.src);
+    const blob = crypto.createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+    if (blobs.get(rel) !== blob) changed.push(rel);
+    out.set(e.src, bytes.toString('utf8'));
+  }
+  if (changed.length) throw new Error(`Install refused: kit file(s) changed since the release check, so nothing was installed: ${changed.slice(0, 10).join(', ')}. Check out the release tag again, then rerun install.`);
+  return out;
+}
+
+function renderEntry(kitInfo, entry, projectDir, home, checked = null) {
+  const text = checked && checked.has(entry.src) ? checked.get(entry.src) : fs.readFileSync(entry.src, 'utf8');
   return render(text, {
     ownerName: kitInfo.config.ownerName,
     ownerProfile: kitInfo.ownerProfile,
@@ -399,8 +428,10 @@ export function install(ctx) {
   const created = [], updated = [], replaced = [], skipped = [], merged = [];
   const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
+  // A release install copies only bytes that match the release tag (B20); a fixture or --unreleased install reads the folder.
+  const checked = ctx.release && ctx.release.release ? releaseBytes(ctx.kit, kitInfo.version, entries) : null;
   for (const entry of entries) {
-    const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home);
+    const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, checked);
     const wantHash = sha(want);
     const write = () => {
       if (ctx.dryRun) return;
@@ -451,7 +482,7 @@ export function install(ctx) {
     const agents = skipped.find((s) => s.file === 'AGENTS.md' && !stamp.files['AGENTS.md']);
     if (agents) agents.reason += "; CLAUDE.local.md imports it, so the kit's core rules are not loaded here - give them a home by hand";
     const local = path.join(ctx.projectDir, 'CLAUDE.local.md');
-    const kitClaude = renderEntry(kitInfo, entries.find((e) => e.key === 'CLAUDE.md'), ctx.projectDir, ctx.home);
+    const kitClaude = renderEntry(kitInfo, entries.find((e) => e.key === 'CLAUDE.md'), ctx.projectDir, ctx.home, checked);
     const text = [
       '<!-- The methodology kit\'s overlay (install --overlay); kept out of git. -->',
       '> **Kit overlay.** The CLAUDE.md here is owned by the host repo, and it wins any conflict with the kit rules',
