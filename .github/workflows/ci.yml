@@ -165,6 +165,10 @@ jobs:
       - name: Scrub
         run: node scripts/kit.mjs scrub
 
+      # One name for each thing the guards and rules talk about (T16a): a banned variant fails here.
+      - name: Word check
+        run: node scripts/word-check.mjs
+
       # Every part the map names exists, every link joins known parts, every "done" has evidence.
       - name: Project map
         run: node project/.claude/project-map.mjs check
