@@ -1,8 +1,0 @@
-{
-  "lines": [
-    {
-      "before": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop are role-file hooks; the push guard is also a git pre-push hook (`core.hooksPath` = `.githooks`), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards.",
-      "after": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop are role-file hooks; the push guard is also a git pre-push hook (through the kit's hook shims), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards."
-    }
-  ]
-}
