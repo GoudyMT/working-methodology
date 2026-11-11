@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, guardDir, releaseState, status as kitStatus } from '../scripts/kit.mjs';
 
@@ -382,6 +383,25 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 	// The kit folder's git config names programs git runs (core.fsmonitor runs on git status), and install runs git there.
 	fs.appendFileSync(path.join(kit, '.git', 'config'), '[core]\n\tfsmonitor = ./evil.sh\n');
 	assert.equal(bash(s, fix).decision, 'deny', 'the kit folder git config changed after the install');
+});
+
+// W2 (the 1.25.1 verify): the kit pin refused a kit folder that is a git worktree (a .git file), so the held install's
+// fix line was never offered there. A worktree is pinned by its own git folder and the shared one it names.
+test('W2 fix line: a kit folder that is a git worktree is pinned, and a change to its git config unpins it', () => {
+	const launch = createRequire(import.meta.url)('../user/kit-tools/kit-launch.cjs');
+	const tmp = kitTemp.makeTemp('w2kit-');
+	const main = path.join(tmp, 'main');
+	fs.mkdirSync(main);
+	ok(git(main, ['init', '-q', '-b', 'main']));
+	fs.writeFileSync(path.join(main, 'VERSION'), '1.0.0\n');
+	ok(git(main, ['add', '-A']));
+	ok(git(main, ['commit', '-q', '-m', 'init']));
+	const wt = path.join(tmp, 'kit');
+	ok(git(main, ['worktree', 'add', '-q', '--detach', wt]));
+	const pin = launch.kitFingerprint(wt);
+	assert.ok(pin, 'a worktree kit folder has no pin, so no fix line is offered');
+	ok(git(main, ['config', 'core.fsmonitor', './evil.sh']));
+	assert.notEqual(launch.kitFingerprint(wt), pin, 'the shared git config named a program and the pin did not change');
 });
 
 // B20 (the security review on 1.25.1): the release check and the fix line's fingerprint are read before install reads
