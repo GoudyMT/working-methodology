@@ -706,6 +706,10 @@ test('V3 host hooks: install never overwrites a git hook the host tracks, and st
 	});
 	assert.equal(fs.readFileSync(path.join(proj, '.githooks', 'pre-commit'), 'utf8'), HOST);
 	assert.equal(ok(git(proj, ['status', '--porcelain', '--', '.githooks'])), '');
+	// B16, widened by the owner (2026-11-11): a first install takes a file the kit ships as the host's only once the
+	// owner accepts it, whatever git tracks; until then every call is held.
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a first install took a kit-named hook as the host\'s on its own');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
 	const again = install({ kit: KIT, home, target: 'project', projectDir: proj });
 	assert.ok(again.skipped.some((x) => x.file === '.githooks/pre-commit'));
 	assert.equal(bash(s, 'git status').decision, 'allow');
