@@ -283,6 +283,19 @@ test('V3 status: a guard file changed outside install is a gap, never the projec
 	assert.ok(!foldBack({ kit: KIT, home, target: 'project', projectDir: proj }).foldBack.includes('.claude/guard.cjs'), 'fold-back offers a swapped guard to the kit');
 });
 
+// B22 (the 1.25.1 sweep, a low): status hashed the guard files but not the shims, and did not list a hook added to
+// .githooks, while the launcher holds every call for both. Status reads the same check the launcher runs.
+test('B22 status: a swapped hook shim and a hook added to .githooks are gaps, as the launcher holds them', () => {
+	const { home, proj } = setup();
+	fs.appendFileSync(path.join(guardDir(home, proj), 'hooks', 'pre-push'), '\nexit 0\n');
+	fs.mkdirSync(path.join(proj, '.githooks'), { recursive: true });
+	fs.writeFileSync(path.join(proj, '.githooks', 'post-merge'), '#!/bin/sh\n');
+	const r = status(home, proj);
+	assert.equal(r.current, false, r.text);
+	assert.match(r.text, /hooks\/pre-push/);
+	assert.match(r.text, /\.githooks\/post-merge/);
+});
+
 test('V3 status: hooks turned off in the project settings is a gap', () => {
 	const { home, proj } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'settings.local.json'), JSON.stringify({ disableAllHooks: true }));
