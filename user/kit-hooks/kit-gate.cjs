@@ -22,6 +22,10 @@ function launcherBroken(home) {
 	const f = path.join(home, 'kit-tools', 'kit-launch.cjs');
 	if (!fs.existsSync(f)) return 'missing';
 	try { new (require('vm').Script)(fs.readFileSync(f, 'utf8'), { filename: f }); } catch { return 'broken (it does not load)'; }
+	// Its entry names node by the path install user recorded (B14): a node moved or upgraded since fails every call.
+	let node = null;
+	try { node = JSON.parse(fs.readFileSync(path.join(home, 'kit-install.json'), 'utf8')).node || null; } catch { /* none */ }
+	if (node && !fs.existsSync(node)) return `started by a node that is no longer there (${String(node).split(path.sep).join('/')}; moved or upgraded since install user)`;
 	return '';
 }
 
