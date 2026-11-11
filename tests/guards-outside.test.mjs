@@ -794,6 +794,23 @@ test('V3 host hooks: a swapped host hook stays held through a reinstall until th
 	assert.equal(bash(s, fix).decision, 'deny', 'accepting a host hook is the owner\'s act, not the held fix line');
 });
 
+// B16 (the 1.25.1 sweep): in tracked mode the project stamp is in git, so a branch can edit it. On the first install
+// with no outside record, install read "the kit never wrote this file" from that stamp and recorded a swapped
+// guard.cjs as the host's own. Now such a file holds every call until the owner accepts it.
+test('B16 first record: a tracked stamp that forgets a swapped kit guard file does not make it the host\'s', () => {
+	const { home, proj, session: s } = setup();
+	fs.rmSync(guardDir(home, proj), { recursive: true, force: true });
+	const stampFile = path.join(proj, '.kit', 'kit-version.json');
+	const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+	delete stamp.files['.claude/guard.cjs'];
+	fs.writeFileSync(stampFile, JSON.stringify(stamp, null, 2));
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
+	ok(git(proj, ['add', '-f', '.kit/kit-version.json', '.claude/guard.cjs']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'chore: tracked kit']));
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.equal(bash(s, 'git push origin main').decision, 'deny', 'the swapped guard was recorded as the host\'s and ran');
+});
+
 // B15 (the 1.25.1 sweep): a host hook that differs between branches held after a plain checkout, and accepting it on
 // one branch held the other. Each version the owner accepts stays accepted; a version never accepted still holds.
 test('B15 host hooks: a host hook accepted on each branch no longer holds a plain checkout', () => {
