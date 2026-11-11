@@ -323,6 +323,8 @@ test('V3 fix line: only the exact command passes, with the kit script and the pr
 		`${fixOf(KIT, proj)}\n--force`,
 		`"${NODE}"\n"${script}" install project "${posix(proj)}"`,
 		`${fixOf(KIT, proj)}\r\n--force`,
+		// A backslash outside quotes is an escape in a shell, not part of the path (the security review on c8099f4).
+		`"${NODE}" ${script.replace(/\//g, '\\')} install project "${posix(proj)}"`,
 	]) assert.equal(bash(s, c).decision, 'deny', c);
 	assert.notEqual(bash(s, fixOf(KIT, proj, ' --force')).decision, 'deny', 'with --force it still passes');
 	assert.notEqual(s.decide('PowerShell', { command: `& ${fixOf(KIT, proj)}` }).decision, 'deny', 'PowerShell runs a quoted program with &');

@@ -169,7 +169,7 @@ function verify(dir, rec, extraDirs = []) {
 	return { changed, settings, hooksPath, files };
 }
 
-const fixLine = (rec, dir) => `node "${posix(rec.kitDir || '<kit folder>')}/scripts/kit.mjs" install project "${posix(dir)}"`;
+const fixLine = (rec, dir) => `"${posix(installedNode() || 'node')}" "${posix(rec.kitDir || '<kit folder>')}/scripts/kit.mjs" install project "${posix(dir)}"`;
 
 function describe(v, rec, dir) {
 	const parts = [];
@@ -185,12 +185,17 @@ function describe(v, rec, dir) {
 // tests (install reads none of them), by path and content. The record keeps the one install wrote from; a kit folder
 // changed since (a branch checked out there, one file edited or added) no longer matches, so the held install cannot
 // record a swapped guard as good (the second pass on 0772397). A link anywhere in it leaves it unpinned: no fix line.
-const KIT_SKIP = new Set(['.git', 'reports', 'node_modules', 'tests', 'scrub.local.json']);
+// Of its git folder, the parts that name programs git runs or what it reads count (config, info, hooks); a .git file
+// (a worktree whose git folder is elsewhere) leaves it unpinned.
+const KIT_SKIP = new Set(['reports', 'node_modules', 'tests', 'scrub.local.json']);
+const GIT_KEEP = new Set(['config', 'config.worktree', 'commondir', 'info', 'hooks']);
 function kitFingerprint(kitDir) {
 	const h = crypto.createHash('sha256');
 	const walk = (abs, rel) => {
 		for (const e of fs.readdirSync(abs, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
 			if (!rel && KIT_SKIP.has(e.name)) continue;
+			if (rel === '.git/' && !GIT_KEEP.has(e.name)) continue;
+			if (!rel && e.name === '.git' && !e.isDirectory()) throw new Error('a .git file');
 			const r = rel + e.name;
 			if (e.isSymbolicLink()) throw new Error('link');
 			if (e.isDirectory()) walk(path.join(abs, e.name), r + '/');
@@ -202,11 +207,13 @@ function kitFingerprint(kitDir) {
 }
 const kitUnchanged = (rec) => !!rec.kitFingerprint && kitFingerprint(rec.kitDir) === rec.kitFingerprint;
 
-// The shell words of a command: plain words, or words in double quotes (no $, backtick or backslash) or single
-// quotes. Anything else (an operator, a substitution, a redirect) gives null.
+// The shell words of a command, split on spaces and tabs only: plain words, or words in double quotes (no $, backtick
+// or backslash) or single quotes; a backslash outside single quotes is an escape in a shell, so it is refused. Anything else (an operator, a substitution, a redirect, a line break, which ends a
+// command in a shell) gives null.
 function words(cmd) {
+	if (/[^\x20-\x7e\t]/.test(cmd)) return null;
 	const out = [];
-	const re = /\s*(?:"([^"$`\\]*)"|'([^']*)'|([A-Za-z0-9_.:/@%+=,\\-]+))(?=\s|$)/y;
+	const re = /[ \t]*(?:"([^"$`\\]*)"|'([^']*)'|([A-Za-z0-9_.:/@%+=,-]+))(?=[ \t]|$)/y;
 	let m;
 	while (re.lastIndex < cmd.length && (m = re.exec(cmd))) out.push(m[1] ?? m[2] ?? m[3]);
 	return re.lastIndex === cmd.length ? out : null;
@@ -217,8 +224,11 @@ function words(cmd) {
 // folder is the one the record was written from.
 function isFix(input, rec, dir) {
 	if (!SHELLS.includes(String(input.tool_name)) || !rec.kitDir) return false;
-	const w = words(String((input.tool_input && input.tool_input.command) || '').trim());
-	if (!w || w.length < 5 || w.length > 6 || w[0] !== 'node' || w[2] !== 'install' || w[3] !== 'project') return false;
+	let cmd = String((input.tool_input && input.tool_input.command) || '').trim();
+	// PowerShell runs a quoted program with its call operator.
+	if (String(input.tool_name) === 'PowerShell' && /^&[ \t]/.test(cmd)) cmd = cmd.slice(1);
+	const w = words(cmd);
+	if (!w || w.length < 5 || w.length > 6 || w[2] !== 'install' || w[3] !== 'project') return false;
 	if (w.length === 6 && w[5] !== '--force') return false;
 	const exact = (word, want) => {
 		const p = word.replace(/\\/g, '/');
@@ -227,7 +237,9 @@ function isFix(input, rec, dir) {
 		const b = posix(path.resolve(want));
 		return WIN ? a.toLowerCase() === b.toLowerCase() : a === b;
 	};
-	return exact(w[1], path.join(rec.kitDir, 'scripts', 'kit.mjs')) && exact(w[4], dir) && kitUnchanged(rec);
+	// node as install user recorded it, never as PATH finds it: a node planted earlier on PATH would run the install.
+	const node = installedNode();
+	return !!node && exact(w[0], node) && exact(w[1], path.join(rec.kitDir, 'scripts', 'kit.mjs')) && exact(w[4], dir) && kitUnchanged(rec);
 }
 
 // A write that takes the offending key back out of a settings file is the way out of a settings hold: it goes on to

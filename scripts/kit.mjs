@@ -15,6 +15,11 @@ import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
 
+// git runs a program the config names on some commands (core.fsmonitor on git status and git ls-files, proven on Git for
+// Windows, 2026-11-11), and a project's git config is the agent's to write. Install runs inside a held fix line, so
+// every git it runs turns that off.
+const NO_PROGRAMS = ['-c', 'core.fsmonitor=false'];
+
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
 // Files that hold the owner's details on purpose, and folders that are not kit content.
@@ -61,7 +66,7 @@ function loadKit(kit) {
   const profilePath = path.join(kit, config.ownerProfileFile || 'owner-profile.md');
   const ownerProfile = fs.existsSync(profilePath) ? fs.readFileSync(profilePath, 'utf8').trimEnd() : '';
   const version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
-  const git = spawnSync('git', ['-C', kit, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' });
+  const git = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' });
   const commit = git.status === 0 ? git.stdout.trim() : null;
   return { config, ownerProfile, version, commit };
 }
@@ -81,7 +86,11 @@ export function releaseState(kit) {
   const tag = 'v' + fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
   const paths = [...RELEASE_PATHS, config.ownerProfileFile || 'owner-profile.md'];
-  const git = (...a) => spawnSync('git', ['-C', kit, '-c', 'core.quotepath=false', ...a], { encoding: 'utf8' });
+  // git status runs a program the config names: core.fsmonitor (off for every git install runs), or a filter that a
+  // .gitattributes file names. The kit folder's own attributes and git config are in the fingerprint the held fix line
+  // checks; the user's global attributes file is not read here. The rest of the global config stays (core.autocrlf
+  // decides what a clean checkout looks like on Windows).
+  const git = (...a) => spawnSync('git', ['-C', kit, ...NO_PROGRAMS, '-c', 'core.attributesFile=/dev/null', '-c', 'core.quotepath=false', ...a], { encoding: 'utf8' });
   // A kit folder copied inside another repo would read that repo's tags, so the kit folder must be the repo's top.
   const prefix = git('rev-parse', '--show-prefix');
   if (prefix.status !== 0) return { describe: null, dirty: [], problems: [`Not on release tag ${tag}: this kit folder has no git history.`] };
@@ -106,7 +115,7 @@ export function releaseState(kit) {
 
 /** The newest release tag the kit folder knows, or null. */
 function newestTag(kit) {
-  const r = spawnSync('git', ['-C', kit, 'tag', '--list', 'v*', '--sort=-v:refname'], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'tag', '--list', 'v*', '--sort=-v:refname'], { encoding: 'utf8' });
   return r.status === 0 ? r.stdout.split(/\r?\n/).find((t) => /^v\d+\.\d+\.\d+$/.test(t)) || null : null;
 }
 
@@ -345,7 +354,7 @@ export function install(ctx) {
   // the project's stamp, which a script can edit. A file the record holds as the kit's is always put back; one it does
   // not hold is the host's only when git tracks it.
   const prevRecord = ctx.target === 'project' && ctx.home ? readRecord(ctx.home, ctx.projectDir) : null;
-  const gitTracks = (f) => spawnSync('git', ['-C', ctx.projectDir, 'ls-files', '--error-unmatch', f], { encoding: 'utf8' }).status === 0;
+  const gitTracks = (f) => spawnSync('git', ['-C', ctx.projectDir, ...NO_PROGRAMS, 'ls-files', '--error-unmatch', f], { encoding: 'utf8' }).status === 0;
   const isHost = (key) => ((prevRecord && prevRecord.host) || []).includes(key) || (prevRecord ? !(prevRecord.files && prevRecord.files[key]) && gitTracks(key) : !stamp.files[key] && gitTracks(key));
   const created = [], updated = [], replaced = [], skipped = [], merged = [];
   const hostOwned = new Set(stamp.hostOwned || []);
@@ -394,7 +403,7 @@ export function install(ctx) {
   // file is recorded as host-owned so no later check flags it. A tracked CLAUDE.md is taken as host-owned; an
   // untracked one of the owner's own is skipped unless install runs with --overlay.
   const claudeEntry = ctx.target === 'project' && skipped.find((s) => s.file === 'CLAUDE.md' && !stamp.files['CLAUDE.md']);
-  const tracked = (f) => spawnSync('git', ['-C', ctx.projectDir, 'ls-files', '--error-unmatch', f], { encoding: 'utf8' }).status === 0;
+  const tracked = (f) => spawnSync('git', ['-C', ctx.projectDir, ...NO_PROGRAMS, 'ls-files', '--error-unmatch', f], { encoding: 'utf8' }).status === 0;
   if (claudeEntry && (hostOwned.has('CLAUDE.md') || ctx.overlay || tracked('CLAUDE.md'))) {
     skipped.splice(skipped.indexOf(claudeEntry), 1);
     hostOwned.add('CLAUDE.md');
@@ -517,7 +526,7 @@ export function install(ctx) {
  *     keys: the installed kit paths, relative to the project folder
  */
 function keepKitLocal(projectDir, keys, hostOwned = [], shims = null) {
-  const git = (...a) => spawnSync('git', ['-C', projectDir, ...a], { encoding: 'utf8' });
+  const git = (...a) => spawnSync('git', ['-C', projectDir, ...NO_PROGRAMS, ...a], { encoding: 'utf8' });
   const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
   if (common.status !== 0) return null;
   const prefix = git('rev-parse', '--show-prefix').stdout.trim();
