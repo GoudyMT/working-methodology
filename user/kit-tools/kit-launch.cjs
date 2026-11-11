@@ -175,21 +175,59 @@ function describe(v, rec, dir) {
 	const parts = [];
 	if (v.changed.length) parts.push(`Kit guard files changed outside install: ${v.changed.join(', ')}.`);
 	if (v.hooksPath) parts.push(`core.hooksPath changed outside install (now ${v.hooksPath}).`);
-	if (parts.length) parts.push(`Every call is held until the kit's copies are back. Run, alone: ${fixLine(rec, dir)} (or ask the owner to).`);
+	if (parts.length && kitUnchanged(rec)) parts.push(`Every call is held until the kit's copies are back. Run, alone: ${fixLine(rec, dir)} (or ask the owner to).`);
+	else if (parts.length) parts.push(`Every call is held until the kit's copies are back. The kit folder (${posix(rec.kitDir || '<kit folder>')}) has changed since this install, so no install may run from this session: the owner runs ${fixLine(rec, dir)} in a terminal, from the release copy on its tag.`);
 	for (const s of v.settings) parts.push(`${posix(s.file)}: ${s.why}. Every call is held until the owner takes that out of the file.`);
 	return parts.join(' ');
 }
 
-// The one call that may run while the guards are held: the install that puts them back, alone on its line.
+// What the fix line may install from: every file under the kit folder but its git data, the owner's reports and the
+// tests (install reads none of them), by path and content. The record keeps the one install wrote from; a kit folder
+// changed since (a branch checked out there, one file edited or added) no longer matches, so the held install cannot
+// record a swapped guard as good (the second pass on 0772397). A link anywhere in it leaves it unpinned: no fix line.
+const KIT_SKIP = new Set(['.git', 'reports', 'node_modules', 'tests', 'scrub.local.json']);
+function kitFingerprint(kitDir) {
+	const h = crypto.createHash('sha256');
+	const walk = (abs, rel) => {
+		for (const e of fs.readdirSync(abs, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+			if (!rel && KIT_SKIP.has(e.name)) continue;
+			const r = rel + e.name;
+			if (e.isSymbolicLink()) throw new Error('link');
+			if (e.isDirectory()) walk(path.join(abs, e.name), r + '/');
+			else if (e.isFile()) h.update(`${r}\0${sha(fs.readFileSync(path.join(abs, e.name)))}\n`);
+		}
+	};
+	try { walk(path.resolve(kitDir), ''); } catch { return null; }
+	return h.digest('hex');
+}
+const kitUnchanged = (rec) => !!rec.kitFingerprint && kitFingerprint(rec.kitDir) === rec.kitFingerprint;
+
+// The shell words of a command: plain words, or words in double quotes (no $, backtick or backslash) or single
+// quotes. Anything else (an operator, a substitution, a redirect) gives null.
+function words(cmd) {
+	const out = [];
+	const re = /\s*(?:"([^"$`\\]*)"|'([^']*)'|([A-Za-z0-9_.:/@%+=,\\-]+))(?=\s|$)/y;
+	let m;
+	while (re.lastIndex < cmd.length && (m = re.exec(cmd))) out.push(m[1] ?? m[2] ?? m[3]);
+	return re.lastIndex === cmd.length ? out : null;
+}
+
+// The one call that may run while the guards are held: the install that puts them back, alone on its line, with the
+// kit script and the project as full paths (no . or .. part, no flag before the script), and only while the kit
+// folder is the one the record was written from.
 function isFix(input, rec, dir) {
-	if (!SHELLS.includes(String(input.tool_name))) return false;
-	const cmd = String((input.tool_input && input.tool_input.command) || '').trim();
-	if (/[;&|`$<>\r\n(){}]/.test(cmd.replace(/"[^"$`]*"/g, '""'))) return false;
-	const norm = (p) => posix(path.resolve(p)).toLowerCase();
-	const m = /^node\s+"?([^"\s]+|[^"]+)"?\s+install\s+project\s+("([^"]+)"|(\S+))(\s+--(force|unreleased))*$/.exec(cmd.replace(/\\/g, '/'));
-	if (!m || !rec.kitDir) return false;
-	const script = m[1].replace(/^"|"$/g, '');
-	return norm(script) === norm(path.join(rec.kitDir, 'scripts', 'kit.mjs')) && norm(m[3] || m[4]) === norm(dir);
+	if (!SHELLS.includes(String(input.tool_name)) || !rec.kitDir) return false;
+	const w = words(String((input.tool_input && input.tool_input.command) || '').trim());
+	if (!w || w.length < 5 || w.length > 6 || w[0] !== 'node' || w[2] !== 'install' || w[3] !== 'project') return false;
+	if (w.length === 6 && w[5] !== '--force') return false;
+	const exact = (word, want) => {
+		const p = word.replace(/\\/g, '/');
+		if (!path.isAbsolute(p) || p.split('/').some((x) => x === '.' || x === '..') || p.endsWith('/')) return false;
+		const a = posix(path.normalize(p));
+		const b = posix(path.resolve(want));
+		return WIN ? a.toLowerCase() === b.toLowerCase() : a === b;
+	};
+	return exact(w[1], path.join(rec.kitDir, 'scripts', 'kit.mjs')) && exact(w[4], dir) && kitUnchanged(rec);
 }
 
 // A write that takes the offending key back out of a settings file is the way out of a settings hold: it goes on to
@@ -247,9 +285,8 @@ function preToolUse(input) {
 		// Fails closed: a kit project the launcher has no record for runs no guard until install writes one.
 		const dir = unrecorded(input);
 		if (!dir) return null;
-		let kitDir = null;
-		try { kitDir = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')).kitDir || null; } catch { /* none */ }
-		const rec = { kitDir };
+		let rec = {};
+		try { const u = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')); rec = { kitDir: u.kitDir || null, kitFingerprint: u.kitFingerprint || null }; } catch { /* none */ }
 		if (isFix(input, rec, dir)) return null;
 		return deny(`This kit project has no guard record in ${posix(RECORDS)}, so no guard can check it and every call is held. Run, alone: ${fixLine(rec, dir)} (or ask the owner to).`);
 	}
@@ -354,4 +391,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { verify, settingsProblem, recordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { kitFingerprint, verify, settingsProblem, recordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };

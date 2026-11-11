@@ -228,7 +228,7 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     } else guarded[key] = now;
   }
   const shims = Object.fromEntries([...GIT_HOOKS, ...OTHER_HOOKS].map((name) => [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(hooks, name))).digest('hex')]));
-  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), version: kitInfo.version, files: guarded, host, shims, hooksPath: null };
+  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), version: kitInfo.version, files: guarded, host, shims, hooksPath: null };
   fs.writeFileSync(path.join(dir, 'record.json'), JSON.stringify(record, null, 2) + '\n');
   return toPosix(hooks);
 }
@@ -465,7 +465,7 @@ export function install(ctx) {
   }
   if (!ctx.dryRun) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
-    const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), installedAt: new Date().toISOString(), files };
+    const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
     // The node the launcher entry names (V3): kept here so status and the launcher can check the entry is the one written.
     if (ctx.target === 'user') out.node = toPosix(process.execPath);
