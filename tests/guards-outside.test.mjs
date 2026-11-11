@@ -730,6 +730,19 @@ test('V3 record names: two projects whose names differ only in punctuation keep 
 	assert.notEqual(guardDir('/h', '/w/app.x'), guardDir('/h', '/w/app-x'));
 });
 
+// B13 (the 1.25.1 sweep): the shims sit at <config>/kit-guard/<the whole project path, then a hash>/hooks/<name>. A long
+// project path took that past Windows' 260 characters, git found no hook there, and the kit hooks stopped silently.
+test('B13 record names: a long project path still gives a shim path git can open on Windows', () => {
+	const deep = (tail) => '/w/' + 'a-very-long-folder-name/'.repeat(12) + tail;
+	const shim = path.join(guardDir('C:/Users/someone/.claude', deep('app')), 'hooks', 'p4-prepare-changelist');
+	assert.ok(shim.length < 260, `the shim path is ${shim.length} characters`);
+	assert.notEqual(guardDir('/h', deep('app-1')), guardDir('/h', deep('app-2')), 'two long paths that share a start share a record');
+	// An installed project keeps its record across the upgrade: a short path's name is the one 1.25.1 gave it.
+	const full = process.platform === 'win32' ? path.resolve('/w/app').toLowerCase() : path.resolve('/w/app');
+	const was = `${full.replace(/[^A-Za-z0-9]/g, '-')}-${crypto.createHash('sha256').update(full).digest('hex').slice(0, 10)}`;
+	assert.equal(path.basename(guardDir('/h', '/w/app')), was, 'a short path lost the record name 1.25.1 gave it');
+});
+
 test('V3 launcher: input it cannot read inside a kit project holds the call', () => {
 	const { home, proj } = setup();
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: 'not json', encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj } });
