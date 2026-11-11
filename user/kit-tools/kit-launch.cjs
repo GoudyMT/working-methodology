@@ -168,6 +168,10 @@ function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'h
 		try { bytes = fs.readFileSync(path.join(shimsAt, name)); } catch { /* missing */ }
 		if (!bytes || sha(bytes) !== want) changed.push(`kit-guard hooks/${name}`);
 	}
+	// A file in the shims folder that install did not write is a hook git would run with no check.
+	let inShims = [];
+	try { inShims = fs.readdirSync(shimsAt); } catch { /* none */ }
+	for (const name of inShims) if (rec.shims && !Object.prototype.hasOwnProperty.call(rec.shims, name)) changed.push(`kit-guard hooks/${name} (not in the install record)`);
 	const settings = [];
 	for (const d of [dir, ...extraDirs]) {
 		for (const name of ['settings.json', 'settings.local.json']) {

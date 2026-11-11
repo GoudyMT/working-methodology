@@ -290,12 +290,15 @@ test('V3 status: a guard file changed outside install is a gap, never the projec
 test('B22 status: a swapped hook shim and a hook added to .githooks are gaps, as the launcher holds them', () => {
 	const { home, proj } = setup();
 	fs.appendFileSync(path.join(guardDir(home, proj), 'hooks', 'pre-push'), '\nexit 0\n');
+	// A hook name the kit writes no shim for, planted beside the shims, would run with no check.
+	fs.writeFileSync(path.join(guardDir(home, proj), 'hooks', 'push-to-checkout'), '#!/bin/sh\n');
 	fs.mkdirSync(path.join(proj, '.githooks'), { recursive: true });
 	fs.writeFileSync(path.join(proj, '.githooks', 'post-merge'), '#!/bin/sh\n');
 	const r = status(home, proj);
 	assert.equal(r.current, false, r.text);
 	assert.match(r.text, /hooks\/pre-push/);
 	assert.match(r.text, /\.githooks\/post-merge/);
+	assert.match(r.text, /hooks\/push-to-checkout/);
 });
 
 test('V3 status: hooks turned off in the project settings is a gap', () => {
