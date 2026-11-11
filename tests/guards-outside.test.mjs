@@ -900,6 +900,22 @@ test('B16 first record: a tracked stamp that forgets a swapped kit guard file do
 	assert.equal(bash(s, 'git push origin main').decision, 'deny', 'the swapped guard was recorded as the host\'s and ran');
 });
 
+// The 1.26.0 sweep: the first-install hold named install project --force as a way out, but --force wrote the kit's copy
+// and the hold stayed. Either way out the refusal names must lift it.
+test('B16 first record: the --force way out puts the kit\'s copy back and lifts the hold', () => {
+	const { home, proj, session: s } = setup({
+		before: (p) => {
+			fs.mkdirSync(path.join(p, '.githooks'));
+			fs.writeFileSync(path.join(p, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo team', ''].join(String.fromCharCode(10)));
+			ok(git(p, ['add', '.githooks/pre-commit']));
+			ok(git(p, ['commit', '-q', '-m', 'chore: team hook']));
+		},
+	});
+	assert.equal(bash(s, 'git status').decision, 'deny');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, force: true });
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the --force way out left the hold in place');
+});
+
 // B15 (the 1.25.1 sweep): a host hook that differs between branches held after a plain checkout, and accepting it on
 // one branch held the other. Each version the owner accepts stays accepted; a version never accepted still holds.
 test('B15 host hooks: a host hook accepted on each branch no longer holds a plain checkout', () => {
