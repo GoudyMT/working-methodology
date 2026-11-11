@@ -286,10 +286,20 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     // The first record (B16): with no record, "the kit never wrote this" came from the project stamp, which a branch
     // can edit in tracked mode and a script can edit in any. A file the kit ships, taken as the host's on that word
     // alone, holds every call until the owner accepts it (widened by the owner, 2026-11-11: whatever git tracks).
-    if (!prev && keys.includes(key) && !(ctx.acceptHost || []).includes(key)) {
+    // A file held this way stays in that state on later installs until one of its two ways out is taken (the 1.26.0
+    // sweep: --force wrote the kit's copy and the hold stayed).
+    const firstHold = !prev || (prev.files && prev.files[key] === 'not yet accepted');
+    if (firstHold && keys.includes(key) && !(ctx.acceptHost || []).includes(key)) {
+      const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+      if (files[key] && now === files[key]) {
+        // The kit's own copy is there (install project --force put it back): it is the kit's file, not the host's.
+        host.pop();
+        guarded[key] = files[key];
+        continue;
+      }
       guarded[key] = 'not yet accepted';
       accepted[key] = [];
-      skipped.push({ file: key, reason: `the kit ships this file and the project keeps its own, so every call stays held until the owner checks it: restore the kit's copy with install project --force, or the owner accepts it with install project --accept-host ${key}` });
+      skipped.push({ file: key, reason: `the kit ships this file and the project keeps its own, so every call stays held until the owner checks it: the owner accepts the project's file with install project --accept-host ${key}, or puts the kit's copy in its place with install project --force (that overwrites the project's file)` });
       continue;
     }
     const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
