@@ -27,6 +27,12 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 		fs.mkdirSync(path.join(cfg, 'kit-hooks'));
 		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs']) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
 	}
+	// Recorded as install user records them: since B23 a kit hook runs only with the bytes its stamp names.
+	if (oldHook || userHooks) {
+		const files = {};
+		for (const f of fs.readdirSync(path.join(cfg, 'kit-hooks'))) files[`kit-hooks/${f}`] = require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(cfg, 'kit-hooks', f))).digest('hex');
+		fs.writeFileSync(path.join(cfg, 'kit-install.json'), JSON.stringify({ files }));
+	}
 	return (tool_name, tool_input, extra = {}) => {
 		const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: dir, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg } });
 		assert.equal(r.status, 0, r.stderr);

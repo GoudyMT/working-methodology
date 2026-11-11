@@ -52,16 +52,23 @@ function answers(input) {
 			out.push([file, refuse(`Held: the kit guard ${file} could not run (${String(e && e.message).slice(0, 120)}), so this call is held. Reinstall the kit: node <kit>/scripts/kit.mjs install project .`)]);
 		}
 	}
+	// The kit hooks run only with the bytes install user recorded (B23, and the 1.26.0 sweep: one in the old shape ran
+	// as its own process, past the loader's check). A changed or unrecorded one is skipped, never run.
+	let stamp = {};
+	try { stamp = JSON.parse(fs.readFileSync(path.join(path.dirname(userHooks()), 'kit-install.json'), 'utf8')).files || {}; } catch { /* none */ }
 	for (const [file, reads] of USER) {
 		if (!reads(tool, input)) continue;
 		const where = path.join(userHooks(), file);
 		if (!fs.existsSync(where)) continue;
 		try {
+			const bytes = fs.readFileSync(where);
+			if (require('crypto').createHash('sha256').update(bytes).digest('hex') !== stamp[`kit-hooks/${file}`]) continue;
+			const text = bytes.toString('utf8');
 			// A user layer from before the one process (1.24.0) has hooks that read stdin and export no check: loading one
-			// would run it here with no input, so it runs as its own process, as Claude Code ran it (the 1.25.0 sweep).
-			if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(fs.readFileSync(where, 'utf8'))) out.push([file, require(where).check(input)]);
+			// would run it here with no input, so it runs as its own process, from the checked bytes (the 1.25.0 sweep).
+			if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(text)) out.push([file, require(where).check(input)]);
 			else {
-				const r = require('child_process').spawnSync(process.execPath, [where], { input: JSON.stringify(input), encoding: 'utf8', timeout: 5000 });
+				const r = require('child_process').spawnSync(process.execPath, ['-e', text], { input: JSON.stringify(input), encoding: 'utf8', timeout: 5000 });
 				out.push([file, r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : null]);
 			}
 		} catch { /* a slip-catcher that fails lets the call through */ }
