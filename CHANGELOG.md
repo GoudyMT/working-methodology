@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.26.0 - 2026-11-11
+
+Guard wording (T16a): one name for each thing, one home for the push bound, one voice for every refusal, and gate
+bypasses as their own kind. The 1.25.1 sweep's carry-overs are closed first. No guard reads a command differently.
+
+### Changed
+- Every refusal opens with its kind: "Owner's yes needed", "Hand back" (a subagent), "Never by a tool" or "Held" (a
+  guard file or setting is not as install left it). A held push names the limit it hit (main or master, a tag, a
+  force, a delete, not a plain push to origin) and the act to quote, with the marker the pre-push hook needs, so one
+  pop-up covers it.
+- A gate bypass (skipping the git hooks, moving the hooks path) is refused even with the owner's pop-up yes, as
+  settings.json already refused the plain spellings (the owner's lock).
+- Five names in rules, skills, agents and guard texts: the owner's yes, outward act, the push bound, gate bypass,
+  protected file. A word check in CI fails the old variants. The push bound is written once, as a list, in
+  rule:outward-acts; non-negotiable 6 and Hard Rule 14 point to it (the owner's lock).
+- Kit memory carries three owner preferences: nothing by hand, a short status at each step of long work, no
+  throwaway drafts in the project library (N15).
+- A first install holds every call while a project keeps its own file where the kit ships a guard file, until the
+  owner runs install project --accept-host for it in a terminal (the owner's lock, B16).
+
+### Fixed
+- The guard loader takes from the Claude config folder only the kit's own hooks, with the bytes install user recorded.
+- Every git hook shim checks the guard files before it runs a project hook, so a hook a branch carries never runs in
+  the checkout that brings it. Shims for the server-side push-to-checkout and proc-receive are gone, and a file in the
+  shims folder that install did not write holds every call.
+- A host hook the owner accepted stays accepted, so one that differs between branches no longer holds each checkout.
+- A release install copies only bytes that match the release tag's own tree, so a file swapped after the release
+  check is refused, never copied.
+- Record names are cut to keep shim paths under Windows' 260 characters; a short path keeps its record.
+- The kit gate names a recorded node that is gone, and the command that repairs it.
+- The kit pin covers a kit folder that is a git worktree.
+- status runs the launcher's own check: a swapped shim, an added .githooks hook and a changed hooks path are gaps.
+- The agent-teams rule names the hook shims as core.hooksPath; the tests run hooks in Git Bash on Windows; the sweep
+  check's hooks-off clause has a test; the 1.25.1 changelog's PATH line is corrected.
+
+### Known limits
+- A process that can move the kit folder's release tag can still choose what a release install copies.
+- The pop-up block in each "Owner's yes needed" refusal is unchanged: shrinking it waits for build 2's planted-case
+  job, which can measure whether sessions still build the pop-up right.
+
 ## 1.25.1 - 2026-11-11
 
 V3: the guard files are checked from outside the project before every call. In 1.25.0 a patch, a branch, a stash or
