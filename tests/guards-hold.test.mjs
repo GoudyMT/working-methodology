@@ -351,6 +351,14 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.notEqual(push(`refs/heads/mainline ${main} refs/heads/mainline ${Z}`, go).status, 0, 'nor for a branch whose name starts the same');
 	assert.equal(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'main after the owner\'s pop-up go');
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the yes is spent once the push went');
+	// The owner, 2026-11-11: an AI pushes to main only as a new repo's first push; once the remote has main, main takes
+	// a PR, whatever the yes. Git fills the remote's value from the remote itself, so no local ref can fake "new".
+	for (const ref of ['main', 'master']) {
+		popUp({ act: `KIT_PUSH_APPROVED=1 git push origin ${ref}`, file });
+		const r = push(`refs/heads/${ref} ${main} refs/heads/${ref} ${main}`, go);
+		assert.notEqual(r.status, 0, `a push to an existing ${ref} ran on a yes`);
+		assert.match(r.stderr, /takes a PR/);
+	}
 	// A key added in one commit and removed in the next still goes out with the push.
 	fs.writeFileSync(path.join(dir, 'b.md'), 'token: ' + 'gh' + 'p_' + 'Zx9Qk2Lm'.repeat(5) + '\n');
 	g('add', '.');
