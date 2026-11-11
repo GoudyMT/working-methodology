@@ -150,7 +150,9 @@ function verify(dir, rec, extraDirs = []) {
 		if (at && real && !same2(at, path.join(real, key))) { changed.push(`${key} (reached through a link)`); continue; }
 		let bytes = null;
 		try { bytes = at && fs.readFileSync(at); } catch { /* missing */ }
-		if (!bytes || sha(bytes) !== want) changed.push(key);
+		// A host's own file passes at any version the owner accepted (B15); only the host's, never a kit file.
+		const ok = bytes && (sha(bytes) === want || ((rec.host || []).includes(key) && ((rec.accepted || {})[key] || []).includes(sha(bytes))));
+		if (!ok) changed.push(key);
 		else files.set(WIN ? at.toLowerCase() : at, bytes.toString('utf8'));
 	}
 	// A hook in .githooks that no record holds would run through the shims with no check (the second pass on 0772397).

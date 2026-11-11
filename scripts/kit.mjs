@@ -233,6 +233,11 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
   // a reinstall, until the owner accepts it with --accept-host (which the held fix line may not carry).
   const guarded = {};
   const host = [];
+  // Every version of a host file the owner has accepted (B15): a host hook that differs between branches would
+  // otherwise hold after each plain checkout, and accepting it on one branch held the other. A version never
+  // accepted still holds every call.
+  const accepted = {};
+  const acceptedOf = (key) => [...new Set([...((prev && prev.accepted && prev.accepted[key]) || []), ...(prev && prev.files && prev.files[key] ? [prev.files[key]] : [])])];
   // Every other hook in .githooks is the host's: the shims run it, so it is recorded too. One that appears after the
   // first record holds every call until the owner accepts it (the second pass on 0772397).
   let extras = [];
@@ -248,13 +253,15 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     host.push(key);
     const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     const was = prev && prev.files && prev.files[key];
-    if (was && was !== now && !(ctx.acceptHost || []).includes(key)) {
+    const known = acceptedOf(key);
+    if (was && !known.includes(now) && !(ctx.acceptHost || []).includes(key)) {
       guarded[key] = was;
       skipped.push({ file: key, reason: `the host's own hook changed since it was recorded, so every call stays held: restore it from git, or the owner accepts it with install project --accept-host ${key}` });
     } else guarded[key] = now;
+    accepted[key] = [...new Set([...known, guarded[key]])];
   }
   const shims = Object.fromEntries([...GIT_HOOKS, ...OTHER_HOOKS].map((name) => [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(hooks, name))).digest('hex')]));
-  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), version: kitInfo.version, files: guarded, host, shims, hooksPath: null };
+  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), version: kitInfo.version, files: guarded, host, accepted, shims, hooksPath: null };
   fs.writeFileSync(path.join(dir, 'record.json'), JSON.stringify(record, null, 2) + '\n');
   return toPosix(hooks);
 }
@@ -297,7 +304,9 @@ function guardFaults(home, projectDir) {
   if (!rec) return [`no outside guard record in ${toPosix(path.join(home, 'kit-guard'))}`];
   const changed = Object.entries(rec.files || {}).filter(([k, want]) => {
     const f = path.join(projectDir, k);
-    return !fs.existsSync(f) || crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex') !== want;
+    if (!fs.existsSync(f)) return true;
+    const now = crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+    return now !== want && !((rec.host || []).includes(k) && ((rec.accepted || {})[k] || []).includes(now));
   }).map(([k]) => k);
   if (changed.length) faults.push(`${changed.length} kit guard file(s) changed outside install: ${changed.join(', ')}`);
   for (const name of ['settings.json', 'settings.local.json']) {
