@@ -246,23 +246,28 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
 export const runsProjectGuard = (s) => JSON.stringify(((s && s.hooks) || {}).PreToolUse || '').includes('.claude/guard.cjs');
 
 /**
- * Take the old project-level guard entry out of .claude/settings.json, keeping a backup and every other line.
+ * Take the old project-level guard entry out of .claude/settings.json and settings.local.json, keeping a backup and
+ * every other line. A byte-order mark is read past (the second pass on 0772397: the parse failed and the entry stayed).
  *
  * Returns:
- *     true when the file changed
+ *     the files that changed, relative to the project
  */
 function dropProjectGuardEntry(projectDir, backupDir) {
-  const file = path.join(projectDir, '.claude', 'settings.json');
-  let s;
-  try { s = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return false; }
-  if (!runsProjectGuard(s)) return false;
-  const named = (h) => [h.command, ...(h.args || [])].join(' ').includes('.claude/guard.cjs');
-  const kept = s.hooks.PreToolUse.map((e) => ({ ...e, hooks: (e.hooks || []).filter((h) => !named(h)) })).filter((e) => e.hooks.length);
-  if (kept.length) s.hooks.PreToolUse = kept; else delete s.hooks.PreToolUse;
-  fs.mkdirSync(path.join(backupDir, '.claude'), { recursive: true });
-  fs.copyFileSync(file, path.join(backupDir, '.claude', 'settings.json'));
-  fs.writeFileSync(file, JSON.stringify(s, null, 2) + '\n');
-  return true;
+  const changed = [];
+  for (const name of ['settings.json', 'settings.local.json']) {
+    const file = path.join(projectDir, '.claude', name);
+    let s;
+    try { s = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch { continue; }
+    if (!runsProjectGuard(s)) continue;
+    const named = (h) => [h.command, ...(h.args || [])].join(' ').includes('.claude/guard.cjs');
+    const kept = s.hooks.PreToolUse.map((e) => ({ ...e, hooks: (e.hooks || []).filter((h) => !named(h)) })).filter((e) => e.hooks.length);
+    if (kept.length) s.hooks.PreToolUse = kept; else delete s.hooks.PreToolUse;
+    fs.mkdirSync(path.join(backupDir, '.claude'), { recursive: true });
+    fs.copyFileSync(file, path.join(backupDir, '.claude', name));
+    fs.writeFileSync(file, JSON.stringify(s, null, 2) + '\n');
+    changed.push(`.claude/${name}`);
+  }
+  return changed;
 }
 
 /** The node install user recorded in a Claude config folder, which the launcher entry names. */
@@ -496,7 +501,7 @@ export function install(ctx) {
       const guards = keys.some(isGuarded);
       // A settings.json the owner changed keeps the PreToolUse entry that ran .claude/guard.cjs straight from the
       // project, which V3 takes away: it comes out here, with a backup, and the owner's other changes stay.
-      if (dropProjectGuardEntry(ctx.projectDir, backupDir)) replaced.push('.claude/settings.json (the old guard entry)');
+      for (const f of dropProjectGuardEntry(ctx.projectDir, backupDir)) replaced.push(`${f} (the old guard entry)`);
       // The project's guards run only through the launcher in the Claude config folder (V3). Without it the shims could
       // not run, so the hooks stay on the project's own .githooks until install user has run.
       const launcher = fs.existsSync(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
