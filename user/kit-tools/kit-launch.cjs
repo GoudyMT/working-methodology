@@ -279,16 +279,25 @@ function runGuard(real, files, input) {
 	if (!files.has(WIN ? guard.toLowerCase() : guard)) return deny('The kit guard (.claude/guard.cjs) is not in the install record, so this call is held. Reinstall the kit: ' + 'kit.mjs install project.');
 	const inside = (f, root) => path.resolve(f).toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep);
 	const key = (f) => (WIN ? path.resolve(f).toLowerCase() : path.resolve(f));
+	// The config folder's kit hooks, by the hash install user recorded for each (B23): any other file there, or one
+	// changed since install user, is refused like a file outside the record.
+	let userFiles = {};
+	try { userFiles = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')).files || {}; } catch { /* none */ }
 	for (const ext of ['.js', '.cjs']) {
-		const disk = Module._extensions[ext] || Module._extensions['.js'];
 		Module._extensions[ext] = function load(mod, filename) {
 			const text = files.get(key(filename));
 			if (text !== undefined) return mod._compile(text, filename);
-			// Only the bytes verify() checked load here, and the Claude config folder's own hooks (even when that folder
-			// sits inside the project: a home folder project, a dotfiles repo). Anything else is refused, wherever it is:
-			// a link swapped after the check can send a require outside the project (the security review on 330dbbf).
-			if (!inside(filename, HOME)) throw new Error(`${posix(inside(filename, dir) ? path.relative(dir, filename) : filename)} is not in the install record`);
-			return disk(mod, filename);
+			// Only the bytes verify() checked load here, and the Claude config folder's own kit hooks with the bytes install
+			// user recorded (even when that folder sits inside the project: a home folder project, a dotfiles repo).
+			// Anything else is refused, wherever it is: a link swapped after the check can send a require outside the
+			// project (the security review on 330dbbf).
+			const rel = inside(filename, HOME) ? posix(path.relative(HOME, filename)) : '';
+			const named = /^kit-hooks\/[^/]+\.cjs$/i.test(rel) && Object.keys(userFiles).find((k) => (WIN ? k.toLowerCase() === rel.toLowerCase() : k === rel));
+			const want = named ? userFiles[named] : null;
+			let bytes = null;
+			try { bytes = want && fs.readFileSync(filename); } catch { /* missing */ }
+			if (!bytes || sha(bytes) !== want) throw new Error(`${posix(inside(filename, dir) ? path.relative(dir, filename) : filename)} is not in the install record`);
+			return mod._compile(bytes.toString('utf8'), filename);
 		};
 	}
 	// The guard itself is compiled from the checked bytes under its checked name, never found again by require.

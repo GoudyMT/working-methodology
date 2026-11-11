@@ -7,6 +7,7 @@
 // installed settings wire, the way Claude Code runs them.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -696,7 +697,13 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 
 test('V3 config folder inside a project: the user slip-catchers still run', () => {
 	const { home, proj } = setup({ homeAt: path.join('app', 'u', '.claude') });
-	fs.writeFileSync(path.join(home, 'kit-hooks', 'call-cap.cjs'), "exports.check = () => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'cap reached' } });\n");
+	const cap = "exports.check = () => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'cap reached' } });\n";
+	fs.writeFileSync(path.join(home, 'kit-hooks', 'call-cap.cjs'), cap);
+	// Recorded as install user would record it: since B23 a kit hook loads only with the bytes the stamp names.
+	const stampFile = path.join(home, 'kit-install.json');
+	const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+	stamp.files['kit-hooks/call-cap.cjs'] = crypto.createHash('sha256').update(cap).digest('hex');
+	fs.writeFileSync(stampFile, JSON.stringify(stamp));
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: 'README.md' }, agent_id: 'r1', cwd: proj }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj } });
 	assert.notEqual(r.stdout.trim(), '', r.stderr);
 	assert.match(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, /cap reached/);
