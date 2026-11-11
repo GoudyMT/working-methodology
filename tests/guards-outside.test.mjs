@@ -535,6 +535,22 @@ test('V3 host hooks: a host that keeps its own hooks in .githooks still runs eve
 	assert.ok(fs.existsSync(path.join(proj, '.git', 'host-post-checkout')), 'the host post-checkout hook did not run');
 });
 
+// B19 (the security review on 1.25.1): the shims for git's other hooks ran the project's hook with no check, so a
+// branch that carries a new .githooks/post-checkout ran it inside the very checkout that wrote it.
+test('B19 shims: a hook a branch carries never runs in the checkout that brings it', () => {
+	const { proj } = setup();
+	ok(git(proj, ['checkout', '-q', '-b', 'feature/evil']));
+	fs.mkdirSync(path.join(proj, '.githooks'), { recursive: true });
+	fs.writeFileSync(path.join(proj, '.githooks', 'post-checkout'), ['#!/bin/sh', 'echo ran > "$(git rev-parse --git-dir)/evil-post-checkout"', ''].join(String.fromCharCode(10)));
+	fs.chmodSync(path.join(proj, '.githooks', 'post-checkout'), 0o755);
+	ok(git(proj, ['add', '.githooks/post-checkout']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'chore: hook']));
+	ok(git(proj, ['checkout', '-q', 'main']));
+	fs.rmSync(path.join(proj, '.git', 'evil-post-checkout'), { force: true });
+	git(proj, ['checkout', '-q', 'feature/evil']);
+	assert.equal(fs.existsSync(path.join(proj, '.git', 'evil-post-checkout')), false, 'the carried hook ran unchecked');
+});
+
 // The second pass on 0772397 (role 1): the shims run any hook in .githooks, and one added after install was in no record,
 // so it ran with no hold. A host's own hooks there at the first install are recorded as they stand.
 test('V3 host hooks: a hook added to .githooks after install holds every call until the owner accepts it', () => {
