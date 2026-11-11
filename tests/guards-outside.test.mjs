@@ -370,6 +370,23 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 	assert.equal(bash(s, fix).decision, 'deny', 'the kit folder git config changed after the install');
 });
 
+// B20 (the security review on 1.25.1): the release check and the fix line's fingerprint are read before install reads
+// the kit's files, so a process left running could swap a kit file in between and install would copy it. A release
+// install now copies only bytes that match the release tag's own tree.
+test('B20 release install: a kit file changed after the release check is refused, never copied', () => {
+	const tmp = kitTemp.makeTemp('b20kit-');
+	const kit = path.join(tmp, 'kit');
+	fs.cpSync(KIT, kit, { recursive: true, filter: (src) => !/[\\/](\.git|reports|node_modules|tests|vendor)$/.test(src) });
+	ok(git(kit, ['init', '-q', '-b', 'main']));
+	ok(git(kit, ['add', '-A']));
+	ok(git(kit, ['commit', '-q', '--no-verify', '-m', 'release']));
+	ok(git(kit, ['tag', 'v' + fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim()]));
+	const { home, proj } = setup();
+	fs.appendFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), '\n// swapped after the check\n');
+	assert.throws(() => install({ kit, home, target: 'project', projectDir: proj, release: { release: true } }), /changed since the release/);
+	assert.doesNotMatch(fs.readFileSync(path.join(proj, '.claude', 'guard.cjs'), 'utf8'), /swapped after the check/);
+});
+
 // The security review on c453ec1: core.fsmonitor names a program git runs on git status and git ls-files (proven on
 // Git for Windows, 2026-11-11). The held fix line runs install, which runs git in the kit folder and in the project; a
 // program named in the project's git config or the user's global one would run inside the one call a hold lets through.
