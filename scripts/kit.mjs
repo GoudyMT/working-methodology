@@ -204,7 +204,7 @@ const readRecord = (home, projectDir) => { try { return JSON.parse(fs.readFileSy
  * Returns:
  *     the shims folder, in the form core.hooksPath takes
  */
-function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
+function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped, stampTracked = false) {
   const dir = guardDir(ctx.home, ctx.projectDir);
   const hooks = path.join(dir, 'hooks');
   fs.mkdirSync(hooks, { recursive: true });
@@ -237,7 +237,7 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
   // otherwise hold after each plain checkout, and accepting it on one branch held the other. A version never
   // accepted still holds every call.
   const accepted = {};
-  const acceptedOf = (key) => [...new Set([...((prev && prev.accepted && prev.accepted[key]) || []), ...(prev && prev.files && prev.files[key] ? [prev.files[key]] : [])])];
+  const acceptedOf = (key) => [...new Set([...((prev && prev.accepted && prev.accepted[key]) || []), ...(prev && prev.files && prev.files[key] ? [prev.files[key]] : [])])].filter((h) => /^[0-9a-f]{64}$/.test(h));
   // Every other hook in .githooks is the host's: the shims run it, so it is recorded too. One that appears after the
   // first record holds every call until the owner accepts it (the second pass on 0772397).
   let extras = [];
@@ -251,6 +251,15 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     if (!extras.includes(key) && !isHost(key)) { if (files[key]) guarded[key] = files[key]; continue; }
     if (!fs.existsSync(file)) continue;
     host.push(key);
+    // The first record (B16): with no record, "the kit never wrote this" came from the project stamp, and in tracked
+    // mode a branch can edit that stamp. A file the kit ships, taken as the host's on that word alone, holds every
+    // call until the owner accepts it.
+    if (!prev && stampTracked && keys.includes(key) && !(ctx.acceptHost || []).includes(key)) {
+      guarded[key] = 'not yet accepted';
+      accepted[key] = [];
+      skipped.push({ file: key, reason: `the kit ships this file, and only the project's tracked stamp says it is the host's, so every call stays held: restore the kit's copy with install project --force, or the owner accepts it with install project --accept-host ${key}` });
+      continue;
+    }
     const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     const was = prev && prev.files && prev.files[key];
     const known = acceptedOf(key);
@@ -531,7 +540,7 @@ export function install(ctx) {
       // The project's guards run only through the launcher in the Claude config folder (V3). Without it the shims could
       // not run, so the hooks stay on the project's own .githooks until install user has run.
       const launcher = fs.existsSync(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
-      const shims = guards ? writeGuardRecord(ctx, kitInfo, files, keys, prevRecord, isHost, skipped) : null;
+      const shims = guards ? writeGuardRecord(ctx, kitInfo, files, keys, prevRecord, isHost, skipped, gitTracks('.kit/kit-version.json')) : null;
       const hooksPath = keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned], launcher ? shims : null);
       if (shims && hooksPath === shims) {
         const recFile = path.join(guardDir(ctx.home, ctx.projectDir), 'record.json');
