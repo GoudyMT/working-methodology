@@ -6727,7 +6727,7 @@ test('an update retires a script once the edited audit that needed it is put bac
   // A file that is not a guard still waits on an edited heir.
   put('project/old-notes.md', 'old\n');
   install({ kit, home, target: 'project', projectDir: proj });
-  fs.writeFileSync(config, JSON.stringify({ ...JSON.parse(read(config)), retired: { project: { 'old-notes.md': '_Working Standards.md' } } }));
+  fs.writeFileSync(config, JSON.stringify({ ...JSON.parse(read(config)), retired: { project: { 'old-notes.md': ['no-such-heir.md', '_Working Standards.md'] } } }));
   fs.rmSync(path.join(kit, 'project/old-notes.md'));
   fs.appendFileSync(path.join(proj, '_Working Standards.md'), 'edited here\n');
   const kept = install({ kit, home, target: 'project', projectDir: proj });
