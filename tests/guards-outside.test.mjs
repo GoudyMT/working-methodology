@@ -549,6 +549,25 @@ test('V3 upgrade: install takes the old guard entry out of a settings.json the o
 	assert.equal(use().parts.find((p) => p.name === 'guards').wired.ok, true);
 });
 
+// The second pass on 0772397 (role 2): the cleanup read settings.json without taking off a byte-order mark, so the parse
+// failed and the old entry stayed; and the use check names settings.local.json, which the cleanup never read.
+test('V3 upgrade: the old guard entry comes out of a settings file with a byte-order mark, and out of settings.local.json', () => {
+	const { home, proj } = setup();
+	const entry = [{ matcher: '.*', hooks: [{ type: 'command', command: 'node', args: [`${posix(proj)}/.claude/guard.cjs`], timeout: 10, onFailure: 'block' }] }];
+	const file = path.join(proj, '.claude', 'settings.json');
+	const s = JSON.parse(fs.readFileSync(file, 'utf8'));
+	s.hooks.PreToolUse = entry;
+	fs.writeFileSync(file, '﻿' + JSON.stringify(s, null, 2));
+	const local = path.join(proj, '.claude', 'settings.local.json');
+	fs.writeFileSync(local, JSON.stringify({ permissions: { allow: ['Bash(ls)'] }, hooks: { PreToolUse: entry } }, null, 2));
+	const r = install({ kit: KIT, home, target: 'project', projectDir: proj });
+	for (const f of [file, local]) assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /guard\.cjs/, `${path.basename(f)} still runs guard.cjs`);
+	assert.deepEqual(JSON.parse(fs.readFileSync(local, 'utf8')).permissions.allow, ['Bash(ls)'], 'the rest of settings.local.json stays');
+	assert.ok(fs.existsSync(path.join(r.backupDir, '.claude', 'settings.local.json')), 'the old settings.local.json is backed up');
+	const use = JSON.parse(spawnSync(process.execPath, [path.join(proj, '.claude', 'use-check.mjs'), '--json'], { cwd: proj, encoding: 'utf8', env: { ...ENV, KIT_CLAUDE_HOME: home } }).stdout);
+	assert.equal(use.parts.find((p) => p.name === 'guards').wired.ok, true);
+});
+
 test('V3 user settings: a launcher entry kept by name but made harmless is refused mid-session, and status calls it a fault', () => {
 	const launch = (list) => list.find((e) => JSON.stringify(e).includes('kit-launch'));
 	const breakers = {
