@@ -405,6 +405,11 @@ test('W2 fix line: a kit folder that is a git worktree is pinned, and a change t
 	assert.ok(pin, 'a worktree kit folder has no pin, so no fix line is offered');
 	ok(git(main, ['config', 'core.fsmonitor', './evil.sh']));
 	assert.notEqual(launch.kitFingerprint(wt), pin, 'the shared git config named a program and the pin did not change');
+	// A kit folder with no git at all is pinned as before (the 1.26.0 sweep: the worktree read threw there).
+	const plain = path.join(tmp, 'plain');
+	fs.mkdirSync(plain);
+	fs.writeFileSync(path.join(plain, 'VERSION'), '1.0.0\n');
+	assert.ok(launch.kitFingerprint(plain), 'a kit folder with no .git lost its pin');
 });
 
 // B20 (the security review on 1.25.1): the release check and the fix line's fingerprint are read before install reads
@@ -882,6 +887,9 @@ test('V3 host hooks: a swapped host hook stays held through a reinstall until th
 			ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
 		},
 	});
+	// Accepted first, so the hold below comes from the swap, not from the first-install hold (the 1.26.0 sweep).
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
 	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 0', ''].join(String.fromCharCode(10)));
 	install({ kit: KIT, home, target: 'project', projectDir: proj });
 	assert.equal(bash(s, 'git status').decision, 'deny', 'a reinstall took the swapped host hook as the new normal');

@@ -230,7 +230,7 @@ function kitFingerprint(kitDir) {
 		// A worktree (W2): its .git file names its own git folder, and that names the shared one; both are pinned the way
 		// a plain clone's .git folder is.
 		const dotGit = path.join(top, '.git');
-		if (fs.lstatSync(dotGit).isFile()) {
+		if (fs.existsSync(dotGit) && fs.lstatSync(dotGit).isFile()) {
 			const m = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dotGit, 'utf8'));
 			if (!m) throw new Error('a .git file that names no git folder');
 			const own = path.resolve(top, m[1]);
