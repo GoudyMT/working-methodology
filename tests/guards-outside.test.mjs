@@ -379,6 +379,28 @@ test('V3 fix line: the install it runs starts no program a git config names', ()
 	assert.equal(fs.existsSync(ran), false, 'a program named by core.fsmonitor ran during install');
 });
 
+// The security review on e4b3203: on Windows a program is looked for in the current folder before PATH, and the fix line
+// runs from the project, so a git.exe the agent left there would run inside the held install. A copy of node named
+// git.exe stands in for it here; NODE_OPTIONS makes it leave a mark if it ever starts (the real git ignores it).
+test('V3 fix line: the install it runs never starts a git found in the current folder', { skip: process.platform !== 'win32' }, () => {
+	const { root, home, proj } = setup();
+	const mark = path.join(root, 'PLANTED');
+	const pre = path.join(root, 'mark.cjs');
+	fs.writeFileSync(pre, `require('fs').writeFileSync(${JSON.stringify(mark)}, 'ran');\n`);
+	fs.copyFileSync(process.execPath, path.join(proj, 'git.exe'));
+	const saved = { cwd: process.cwd(), opts: process.env.NODE_OPTIONS };
+	process.chdir(proj);
+	process.env.NODE_OPTIONS = `--require ${JSON.stringify(pre)}`;
+	try {
+		install({ kit: KIT, home, target: 'project', projectDir: proj });
+		releaseState(KIT);
+	} finally {
+		process.chdir(saved.cwd);
+		if (saved.opts === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = saved.opts;
+	}
+	assert.equal(fs.existsSync(mark), false, 'a git.exe in the current folder ran during install');
+});
+
 test('V3 wiring: install user wires the launcher on every tool and the settings check, once', () => {
 	const { root } = setup();
 	// Named as the real one is, so the guards that read a path by its .claude folder see it as the owner's.
