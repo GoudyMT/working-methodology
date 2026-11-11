@@ -414,12 +414,15 @@ function hookState(base) {
 	if (wired(own) || wired(local)) return 'wired';
 	// Since V3 (1.25.1) the guard launcher the user settings run loads guard.cjs, which runs the call cap and the sweep
 	// guard from the Claude config folder's kit-hooks: wired when that entry is whole and both hooks are there.
-	const cfg = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+	// The launcher and the folder are the ones this script was installed with (its own skills folder's home), never a
+	// folder an environment variable names, so no fake launcher can answer for them (the review of fa37f84).
+	const cfg = path.resolve(path.dirname(SELF), '..', '..');
 	const launcher = path.join(cfg, 'kit-tools', 'kit-launch.cjs');
 	try {
 		const { launcherWired } = createRequire(import.meta.url)(launcher);
 		const node = json(fs.readFileSync(path.join(cfg, 'kit-install.json'), 'utf8')).node;
-		if (launcherWired(json(user), launcher, node) && ['call-cap.cjs', 'sweep-guard.cjs'].every((f) => fs.existsSync(path.join(cfg, 'kit-hooks', f)))) return 'wired';
+		const own = fs.readFileSync(path.join(cfg, 'settings.json'), 'utf8');
+		if (!json(own).disableAllHooks && launcherWired(json(own), launcher, node) && ['call-cap.cjs', 'sweep-guard.cjs'].every((f) => fs.existsSync(path.join(cfg, 'kit-hooks', f)))) return 'wired';
 	} catch { /* no launcher: the project's own settings decide */ }
 	// A branch that deletes the settings does not get out of the hook.
 	return own === null && !(base && wired(git('show', `${base}:.claude/settings.json`).stdout)) ? 'none' : 'missing';

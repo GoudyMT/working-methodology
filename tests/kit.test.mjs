@@ -5506,11 +5506,22 @@ test('the hook check reads the call cap and sweep guard the guard launcher runs 
   install({ kit: path.resolve('.'), home: cfg, target: 'user' });
   const f = path.join(dir, 'sweeps', 'contract.json');
   fs.writeFileSync(f, JSON.stringify(featureContract()));
-  const r = approveIn(dir, [f], { CLAUDE_CONFIG_DIR: cfg });
+  // The installed copy, as a session runs it: it reads the launcher and settings of the folder it sits in.
+  const installed = (env = {}) => spawnSync('node', [path.join(cfg, 'skills', 'pre-pr-sweep', 'approve.mjs'), f], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: cfg, ...env } });
+  const r = installed();
   assert.equal(r.status, 0, r.stdout);
-  approveIn(dir, [f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
+  spawnSync('node', [path.join(cfg, 'skills', 'pre-pr-sweep', 'approve.mjs'), f, '--outcome', '--none-ran'], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: cfg } });
+  // A config folder an env variable names, holding a launcher that says yes to anything, proves nothing (the review of fa37f84).
+  const fake = makeTemp('approve-fake-');
+  fs.mkdirSync(path.join(fake, 'kit-tools'));
+  fs.mkdirSync(path.join(fake, 'kit-hooks'));
+  fs.writeFileSync(path.join(fake, 'kit-tools', 'kit-launch.cjs'), 'exports.launcherWired = () => true;\n');
+  for (const h of ['call-cap.cjs', 'sweep-guard.cjs']) fs.writeFileSync(path.join(fake, 'kit-hooks', h), '');
+  fs.writeFileSync(path.join(fake, 'settings.json'), '{}');
+  fs.writeFileSync(path.join(fake, 'kit-install.json'), '{}');
   fs.rmSync(path.join(cfg, 'kit-hooks', 'call-cap.cjs'));
-  assert.equal(approveIn(dir, [f], { CLAUDE_CONFIG_DIR: cfg }).status, FIX_EXIT, 'the launcher wired but the call cap gone');
+  assert.equal(installed({ CLAUDE_CONFIG_DIR: fake }).status, FIX_EXIT, 'a fake launcher named by CLAUDE_CONFIG_DIR');
+  assert.equal(installed().status, FIX_EXIT, 'the launcher wired but the call cap gone');
 });
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
