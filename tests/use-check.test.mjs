@@ -15,11 +15,15 @@ function project({ git = true } = {}) {
 	const dir = kitTemp.makeTemp('use-');
 	const home = kitTemp.makeTemp('use-home-');
 	if (git) spawnSync('git', ['init', '-q', '-b', 'main', dir]);
+	// The guards run from the Claude config folder since V3 (1.25.1), so the owner installs it first.
+	install({ kit: KIT, home, target: 'user' });
 	install({ kit: KIT, home, target: 'project', projectDir: dir });
+	homes.set(dir, home);
 	return dir;
 }
+const homes = new Map();
 const check = (dir) => {
-	const r = spawnSync(process.execPath, [path.join(dir, '.claude', 'use-check.mjs'), '--json'], { cwd: dir, encoding: 'utf8' });
+	const r = spawnSync(process.execPath, [path.join(dir, '.claude', 'use-check.mjs'), '--json'], { cwd: dir, encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: homes.get(dir) } });
 	return { code: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, err: r.stderr };
 };
 const part = (out, name) => out.parts.find((p) => p.name === name);
@@ -39,19 +43,19 @@ test('a fresh install has every part present and wired, and a part with no trace
 
 test('an unwired part fails the check by name: the guard entry gone, git hooks not set, a guard file missing', () => {
 	const unwired = project();
-	const file = path.join(unwired, '.claude', 'settings.json');
+	const file = path.join(homes.get(unwired), 'settings.json');
 	const s = JSON.parse(fs.readFileSync(file, 'utf8'));
 	s.hooks.PreToolUse = [];
 	fs.writeFileSync(file, JSON.stringify(s));
 	const a = check(unwired);
 	assert.equal(a.code, 1);
 	assert.deepEqual(a.out.failing, ['guards']);
-	// The fix is named: a settings.json the owner changed is merged by hand, or reinstalled with --force.
-	assert.match(part(a.out, 'guards').wired.detail, /by hand[\s\S]*--force/);
+	// The fix is named: the user install wires the launcher again.
+	assert.match(part(a.out, 'guards').wired.detail, /install user/);
 	// Claude Code reads an empty or "*" matcher, or none, as every tool, the same as ".*" (the 1.25.0 sweep).
 	for (const matcher of ['', '*', undefined]) {
 		const other = project();
-		const f = path.join(other, '.claude', 'settings.json');
+		const f = path.join(homes.get(other), 'settings.json');
 		const t = JSON.parse(fs.readFileSync(f, 'utf8'));
 		for (const h of t.hooks.PreToolUse) if (matcher === undefined) delete h.matcher; else h.matcher = matcher;
 		fs.writeFileSync(f, JSON.stringify(t));
@@ -88,6 +92,7 @@ test('install project prints the use check and fails when a part is not wired; s
 	const home = kitTemp.makeTemp('use-cli-home-');
 	spawnSync('git', ['init', '-q', '-b', 'main', dir]);
 	const cli = (...a) => spawnSync(process.execPath, [path.resolve('scripts/kit.mjs'), ...a], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home } });
+	assert.equal(cli('install', 'user', '--unreleased').status, 0);
 	const ok = cli('install', 'project', dir, '--unreleased');
 	assert.equal(ok.status, 0, ok.stdout + ok.stderr);
 	assert.match(ok.stdout, /Use check: every part present and wired/);

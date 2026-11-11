@@ -118,18 +118,25 @@ const CODE = /\.(cjs|mjs|js)$/;
 function guardShape(p) {
 	for (let i = 0; i < p.length; i++) {
 		if (fits(p[i], '.githooks')) return true;
-		if (fits(p[i], '.git') && i + 1 < p.length && (fits(p[i + 1], 'hooks') || fits(p[i + 1], 'config'))) return true;
+		// config.worktree too: with extensions.worktreeConfig on, git reads hooksPath there (the 1.25.1 sweep).
+		if (fits(p[i], '.git') && i + 1 < p.length && (fits(p[i + 1], 'hooks') || fits(p[i + 1], 'config') || fits(p[i + 1], 'config.worktree') || fits(p[p.length - 1], 'config.worktree'))) return true;
 		// The push log and the sweep log spend the owner's yes; emptied or made read-only, a yes is used again (the
 		// 1.25.0 sweep).
 		if (fits(p[i], '.git') && i + 1 < p.length && (/^kit-/i.test(p[i + 1]) || /[*?[]/.test(p[i + 1]))) return true;
 		// The user's git config can move the hooks or where origin points, as .git/config can.
 		if (i === p.length - 1 && fits(p[i], '.gitconfig')) return true;
 		if (fits(p[i], '.config') && p[i + 1] === 'git' && i + 2 < p.length && fits(p[i + 2], 'config')) return true;
+		// V3 (1.25.1): what the launcher trusts in the Claude config folder - the guard records and hook shims, and the
+		// install record that names the kit folder - by the folder's own name too, when CLAUDE_CONFIG_DIR names another.
+		const h = homeParts();
+		const trusted = (r) => r.length > 0 && (fits(r[0], 'kit-guard') || fits(r[0], 'kit-install.json') || fits(r[0], 'kit-tools') || fits(r[0], 'kit-hooks'));
+		if (h.length && p[i] === h[h.length - 1] && trusted(p.slice(i + 1))) return true;
 		if (!fits(p[i], '.claude')) continue;
 		const rest = p.slice(i + 1);
 		if (rest.length === 0) return true;
 		if (rest[0] === 'worktrees' || rest[0] === 'projects') continue;
 		if (rest.length === 1 && (rest[0] === 'kit-hooks' || rest[0] === 'kit-tools')) return true;
+		if (fits(rest[0], 'kit-guard') || fits(rest[0], 'kit-install.json')) return true;
 		const last = rest[rest.length - 1];
 		// A wildcard may name any guard the shell finds there (owner-pro* is owner-proof.cjs): it fails closed (S23-1, the
 		// mutation check showed only guard.cjs was matched).

@@ -8,7 +8,8 @@
 //     are slip-catchers for agent teams, and a broken user layer must never stop the session (teardown, "brick mode").
 // The answers are merged the way Claude Code merges several hooks: a refusal wins, then an ask, then an allow (only an
 // owner's pop-up yes allows); the added context of each is kept.
-// Usage (settings.json): command "node", args [<this file>], matcher ".*", onFailure block.
+// Usage: the launcher in the Claude config folder (kit-tools/kit-launch.cjs, V3 in 1.25.1) loads this file after it has
+// checked every guard file against the record outside the project; the project's own settings no longer run it.
 const fs = require('fs');
 const path = require('path');
 

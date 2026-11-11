@@ -171,6 +171,26 @@ test('merge gate: a PR that passes every check is armed, pinned to the checked h
 	assert.match(log, new RegExp(`ARMED https://github.com/o/r/pull/7 ${s.sha} required=kit-tests`));
 });
 
+// The second pass on 1.25.1 (role 4): with V3 the hooks folder holds the kit's shims, which check the guards from outside
+// and then exec the project's .githooks/pre-push. The hold is read through the shim, so the gate still arms.
+test('merge gate: under the kit\'s hook shims the push hold is read in the hook the shim runs', () => {
+	const s = setup();
+	const own = path.join(s.root, 'own-hooks');
+	fs.mkdirSync(own);
+	fs.copyFileSync(path.join(KIT, 'project/.githooks/pre-push'), path.join(own, 'pre-push'));
+	const target = `${own.split(path.sep).join('/')}/pre-push`.replace(/'/g, `'\\''`);
+	const shim = (to) => ['#!/bin/sh', '# The kit\'s hook shim (V3): the guard files are checked from outside the project before the project\'s hook runs.', 'NODE_OPTIONS=; export NODE_OPTIONS', `exec '${to}' "$@"`, ''].join('\n');
+	fs.writeFileSync(path.join(s.root, 'kit-hooks', 'pre-push'), shim(target));
+	const r = arm(s.opts);
+	assert.equal(r.armed, true, r.faults.join('\n'));
+	const t = setup();
+	fs.writeFileSync(path.join(t.root, 'own-hooks-pre-push'), '#!/bin/sh\nexit 0\n');
+	fs.writeFileSync(path.join(t.root, 'kit-hooks', 'pre-push'), shim(`${t.root.split(path.sep).join('/')}/own-hooks-pre-push`));
+	const n = arm(t.opts);
+	assert.equal(n.armed, false);
+	assert.ok(n.faults.some((f) => /no push hold: .*own-hooks-pre-push does not stop/.test(f)), n.faults.join('\n'));
+});
+
 // M30: the canned gh above can answer in shapes the real gh never gives. The field names are checked live below;
 // this holds each canned answer's types, and the api answers' shapes, to what the real gh said (recorded by
 // scripts/record-gh-contracts.mjs; re-record after a gh upgrade).

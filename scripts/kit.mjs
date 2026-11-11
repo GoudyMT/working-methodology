@@ -13,6 +13,18 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
+import launch from '../user/kit-tools/kit-launch.cjs';
+
+// git runs a program the config names on some commands (core.fsmonitor on git status and git ls-files, proven on Git for
+// Windows, 2026-11-11), and a project's git config is the agent's to write. Install runs inside a held fix line, so
+// every git it runs turns that off, and fetches nothing (a partial clone fetches a missing object through a transport the
+// config names). It starts from node's own folder: on Windows a program is looked for in the current folder first, and
+// the fix line runs from the project, where the agent could leave a git.exe.
+// A protocol.<name>.allow in the repo config beats protocol.allow, so each transport is named too (the security review on
+// 0696ddf; no lazy fetch from these commands was reproduced on git 2.56, 2026-11-11).
+const NO_PROGRAMS = ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never',
+  ...['ext', 'file', 'ssh', 'git', 'http', 'https'].flatMap((p) => ['-c', `protocol.${p}.allow=never`])];
+const SAFE_CWD = path.dirname(process.execPath);
 
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
@@ -60,7 +72,7 @@ function loadKit(kit) {
   const profilePath = path.join(kit, config.ownerProfileFile || 'owner-profile.md');
   const ownerProfile = fs.existsSync(profilePath) ? fs.readFileSync(profilePath, 'utf8').trimEnd() : '';
   const version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
-  const git = spawnSync('git', ['-C', kit, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' });
+  const git = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8', cwd: SAFE_CWD });
   const commit = git.status === 0 ? git.stdout.trim() : null;
   return { config, ownerProfile, version, commit };
 }
@@ -80,7 +92,11 @@ export function releaseState(kit) {
   const tag = 'v' + fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
   const paths = [...RELEASE_PATHS, config.ownerProfileFile || 'owner-profile.md'];
-  const git = (...a) => spawnSync('git', ['-C', kit, '-c', 'core.quotepath=false', ...a], { encoding: 'utf8' });
+  // git status runs a program the config names: core.fsmonitor (off for every git install runs), or a filter that a
+  // .gitattributes file names. The kit folder's own attributes and git config are in the fingerprint the held fix line
+  // checks; the user's global attributes file is not read here. The rest of the global config stays (core.autocrlf
+  // decides what a clean checkout looks like on Windows).
+  const git = (...a) => spawnSync('git', ['-C', kit, ...NO_PROGRAMS, '-c', 'core.attributesFile=/dev/null', '-c', 'core.quotepath=false', ...a], { encoding: 'utf8', cwd: SAFE_CWD });
   // A kit folder copied inside another repo would read that repo's tags, so the kit folder must be the repo's top.
   const prefix = git('rev-parse', '--show-prefix');
   if (prefix.status !== 0) return { describe: null, dirty: [], problems: [`Not on release tag ${tag}: this kit folder has no git history.`] };
@@ -105,7 +121,7 @@ export function releaseState(kit) {
 
 /** The newest release tag the kit folder knows, or null. */
 function newestTag(kit) {
-  const r = spawnSync('git', ['-C', kit, 'tag', '--list', 'v*', '--sort=-v:refname'], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'tag', '--list', 'v*', '--sort=-v:refname'], { encoding: 'utf8', cwd: SAFE_CWD });
   return r.status === 0 ? r.stdout.split(/\r?\n/).find((t) => /^v\d+\.\d+\.\d+$/.test(t)) || null : null;
 }
 
@@ -162,6 +178,137 @@ function renderEntry(kitInfo, entry, projectDir, home) {
 
 const readStamp = (p) => ({ files: {}, ...(fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {}) });
 
+// V3 (1.25.1): the files that guard a project - every script in .claude and every git hook. The launcher in the
+// Claude config folder hashes them against a record kept there before every call, so one changed outside install holds
+// every call; install always puts the kit's copy back, and fold-back never offers one to the kit.
+export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
+// The kit's own git hooks, which the shims check the guard files before. Every other hook git knows gets a shim that
+// runs the project's own hook of that name, so a host that keeps its hooks in .githooks keeps every one (1.25.1 sweep).
+const GIT_HOOKS = ['pre-commit', 'commit-msg', 'pre-push'];
+const OTHER_HOOKS = ['applypatch-msg', 'pre-applypatch', 'post-applypatch', 'pre-merge-commit', 'prepare-commit-msg', 'post-commit',
+  'pre-rebase', 'post-checkout', 'post-merge', 'pre-receive', 'update', 'proc-receive', 'post-receive', 'post-update',
+  'reference-transaction', 'push-to-checkout', 'pre-auto-gc', 'post-rewrite', 'sendemail-validate', 'fsmonitor-watchman',
+  'p4-changelist', 'p4-prepare-changelist', 'p4-post-changelist', 'p4-pre-submit', 'post-index-change'];
+
+/** Where the outside record and git hook shims of a project live (the launcher names them the same way). */
+export function guardDir(home, projectDir) {
+  return path.join(home, 'kit-guard', launch.recordName(projectDir));
+}
+
+const readRecord = (home, projectDir) => { try { return JSON.parse(fs.readFileSync(path.join(guardDir(home, projectDir), 'record.json'), 'utf8')); } catch { return null; } };
+
+/**
+ * Write the outside record and the git hook shims for a project. Each shim asks the launcher first, then runs the
+ * project's own hook, so a hook swapped by a branch cannot pass the push in the same command that swapped it.
+ *
+ * Returns:
+ *     the shims folder, in the form core.hooksPath takes
+ */
+function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
+  const dir = guardDir(ctx.home, ctx.projectDir);
+  const hooks = path.join(dir, 'hooks');
+  fs.mkdirSync(hooks, { recursive: true });
+  const proj = toPosix(path.resolve(ctx.projectDir));
+  const launcher = toPosix(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
+  // Single quotes, so no $, backtick or quote in a folder name is read by the shell (the 1.25.1 sweep); NODE_OPTIONS
+  // cleared and node's own folder first, as the launcher's own entry does.
+  const q = launch.shq;
+  const head = ['#!/bin/sh', '# The kit\'s hook shim (V3): the guard files are checked from outside the project before the project\'s hook runs.',
+    'NODE_OPTIONS=; export NODE_OPTIONS', `PATH=${q(launch.shellDir(path.dirname(process.execPath)))}:"$PATH"; export PATH`];
+  for (const name of [...GIT_HOOKS, ...OTHER_HOOKS]) {
+    const own = `${proj}/.githooks/${name}`;
+    const body = GIT_HOOKS.includes(name) ? [
+      `${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} </dev/null || exit 1`,
+      `[ -f ${q(own)} ] || { echo "Kit: .githooks/${name} is missing; run kit.mjs install project." >&2; exit 1; }`,
+    ] : [`[ -x ${q(own)} ] || exit 0`];
+    fs.writeFileSync(path.join(hooks, name), [...head, ...body, `exec ${q(own)} "$@"`, ''].join('\n'));
+    fs.chmodSync(path.join(hooks, name), 0o755);
+  }
+  // A guard file the kit did not write (a host's own tracked hook it skipped) is recorded as it is, so a swap of it
+  // still holds every call.
+  // A host's own guard file is recorded as it stands the first time; after that a change to it stays held, even through
+  // a reinstall, until the owner accepts it with --accept-host (which the held fix line may not carry).
+  const guarded = {};
+  const host = [];
+  // Every other hook in .githooks is the host's: the shims run it, so it is recorded too. One that appears after the
+  // first record holds every call until the owner accepts it (the second pass on 0772397).
+  let extras = [];
+  try { extras = fs.readdirSync(path.join(ctx.projectDir, '.githooks'), { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => `.githooks/${e.name}`).filter((k) => !keys.includes(k)); } catch { /* none */ }
+  for (const key of [...keys.filter(isGuarded), ...extras].sort()) {
+    const file = path.join(ctx.projectDir, key);
+    if (extras.includes(key) && prev && !(prev.files && prev.files[key]) && !(ctx.acceptHost || []).includes(key)) {
+      skipped.push({ file: key, reason: `a hook added to .githooks since the last install, so every call stays held: remove it, or the owner accepts it with install project --accept-host ${key}` });
+      continue;
+    }
+    if (!extras.includes(key) && !isHost(key)) { if (files[key]) guarded[key] = files[key]; continue; }
+    if (!fs.existsSync(file)) continue;
+    host.push(key);
+    const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    const was = prev && prev.files && prev.files[key];
+    if (was && was !== now && !(ctx.acceptHost || []).includes(key)) {
+      guarded[key] = was;
+      skipped.push({ file: key, reason: `the host's own hook changed since it was recorded, so every call stays held: restore it from git, or the owner accepts it with install project --accept-host ${key}` });
+    } else guarded[key] = now;
+  }
+  const shims = Object.fromEntries([...GIT_HOOKS, ...OTHER_HOOKS].map((name) => [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(hooks, name))).digest('hex')]));
+  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), version: kitInfo.version, files: guarded, host, shims, hooksPath: null };
+  fs.writeFileSync(path.join(dir, 'record.json'), JSON.stringify(record, null, 2) + '\n');
+  return toPosix(hooks);
+}
+
+/** Whether a settings object still runs the project's guard.cjs itself, the way 1.25.0 wired it. */
+export const runsProjectGuard = (s) => JSON.stringify(((s && s.hooks) || {}).PreToolUse || '').includes('.claude/guard.cjs');
+
+/**
+ * Take the old project-level guard entry out of .claude/settings.json and settings.local.json, keeping a backup and
+ * every other line. A byte-order mark is read past (the second pass on 0772397: the parse failed and the entry stayed).
+ *
+ * Returns:
+ *     the files that changed, relative to the project
+ */
+function dropProjectGuardEntry(projectDir, backupDir) {
+  const changed = [];
+  for (const name of ['settings.json', 'settings.local.json']) {
+    const file = path.join(projectDir, '.claude', name);
+    let s;
+    try { s = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { continue; }
+    if (!runsProjectGuard(s)) continue;
+    const named = (h) => [h.command, ...(h.args || [])].join(' ').includes('.claude/guard.cjs');
+    const kept = s.hooks.PreToolUse.map((e) => ({ ...e, hooks: (e.hooks || []).filter((h) => !named(h)) })).filter((e) => e.hooks.length);
+    if (kept.length) s.hooks.PreToolUse = kept; else delete s.hooks.PreToolUse;
+    fs.mkdirSync(path.join(backupDir, '.claude'), { recursive: true });
+    fs.copyFileSync(file, path.join(backupDir, '.claude', name));
+    fs.writeFileSync(file, JSON.stringify(s, null, 2) + '\n');
+    changed.push(`.claude/${name}`);
+  }
+  return changed;
+}
+
+/** The node install user recorded in a Claude config folder, which the launcher entry names. */
+const homeNode = (home) => { try { return JSON.parse(fs.readFileSync(path.join(home, STAMP_USER), 'utf8')).node || null; } catch { return null; } };
+
+/** The guard faults status reports for a project: files changed outside install, hooks turned off, no launcher. */
+function guardFaults(home, projectDir) {
+  const rec = readRecord(home, projectDir);
+  const faults = [];
+  if (!rec) return [`no outside guard record in ${toPosix(path.join(home, 'kit-guard'))}`];
+  const changed = Object.entries(rec.files || {}).filter(([k, want]) => {
+    const f = path.join(projectDir, k);
+    return !fs.existsSync(f) || crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex') !== want;
+  }).map(([k]) => k);
+  if (changed.length) faults.push(`${changed.length} kit guard file(s) changed outside install: ${changed.join(', ')}`);
+  for (const name of ['settings.json', 'settings.local.json']) {
+    let text = null;
+    try { text = fs.readFileSync(path.join(projectDir, '.claude', name), 'utf8'); } catch { continue; }
+    const why = launch.settingsProblem(text);
+    if (why) faults.push(`.claude/${name}: ${why}`);
+  }
+  let user = null;
+  try { user = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* none */ }
+  if (!launch.launcherWired(user, path.join(home, 'kit-tools', 'kit-launch.cjs'), homeNode(home))) faults.push('the guard launcher is not wired whole in the Claude config folder settings.json (run kit.mjs install user)');
+  return faults;
+}
+
 /**
  * Wire the kit gate into the Claude config folder's own settings.json, once, keeping everything else in it. The
  * gate must run in every folder, including one with no kit files to carry a hook (the owner, 2026-10-31).
@@ -175,10 +322,28 @@ function wireGate(home, dryRun) {
   if (fs.existsSync(file)) {
     try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return 'settings.json is not valid JSON, so the gate was not added: fix it and install again'; }
   }
-  const list = ((settings.hooks ||= {}).UserPromptSubmit ||= []);
-  const named = (h) => [h.command, ...(h.args || [])].join(' ').includes('kit-gate.cjs');
-  if (list.some((entry) => (entry.hooks || []).some(named))) return 'present';
-  list.push({ hooks: [{ type: 'command', command: 'node', args: [toPosix(path.join(home, 'kit-hooks', 'kit-gate.cjs'))], timeout: 10 }] });
+  // V3 (1.25.1): the guard launcher runs on every tool from here, where a project file cannot reach it, and refuses a
+  // settings change that would turn the hooks off mid-session.
+  // The launcher starts from a shell line that clears NODE_OPTIONS and puts this node's folder first (the 1.25.1 sweep:
+  // a settings env reaches every hook). An entry of an older form is replaced, never kept beside the new one.
+  const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
+  const wants = [
+    ['UserPromptSubmit', 'kit-gate.cjs', { hooks: [{ type: 'command', command: 'node', args: [toPosix(path.join(home, 'kit-hooks', 'kit-gate.cjs'))], timeout: 10 }] }],
+    ['PreToolUse', 'kit-launch.cjs', { matcher: '.*', hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath), timeout: 10, onFailure: 'block' }] }],
+    ['ConfigChange', 'kit-launch.cjs', { hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath, 'config-change'), timeout: 10 }] }],
+  ];
+  const before = JSON.stringify(settings);
+  for (const [event, file, entry] of wants) {
+    const named = (h) => [h.command, ...(h.args || [])].join(' ').includes(file);
+    const list = ((settings.hooks ||= {})[event] ||= []);
+    if (file === 'kit-gate.cjs') {
+      if (!list.some((e) => (e.hooks || []).some(named))) list.push(entry);
+      continue;
+    }
+    if (list.length === 1 && JSON.stringify(list[0]) === JSON.stringify(entry)) continue;
+    settings.hooks[event] = [...list.filter((e) => !(e.hooks || []).some(named)), entry];
+  }
+  if (JSON.stringify(settings) === before) return 'present';
   if (!dryRun) {
     fs.mkdirSync(home, { recursive: true });
     fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
@@ -204,6 +369,12 @@ export function install(ctx) {
   const { entries, stampPath } = plan(ctx);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
+  // Which guard files are a host's own (the review of 670b3a2): read from the record outside the project, never from
+  // the project's stamp, which a script can edit. A file the record holds as the kit's is always put back; one it does
+  // not hold is the host's only when git tracks it.
+  const prevRecord = ctx.target === 'project' && ctx.home ? readRecord(ctx.home, ctx.projectDir) : null;
+  const gitTracks = (f) => spawnSync('git', ['-C', ctx.projectDir, ...NO_PROGRAMS, 'ls-files', '--error-unmatch', f], { encoding: 'utf8', cwd: SAFE_CWD }).status === 0;
+  const isHost = (key) => ((prevRecord && prevRecord.host) || []).includes(key) || (prevRecord ? !(prevRecord.files && prevRecord.files[key]) && gitTracks(key) : !stamp.files[key] && gitTracks(key));
   const created = [], updated = [], replaced = [], skipped = [], merged = [];
   const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
@@ -227,7 +398,9 @@ export function install(ctx) {
       files[entry.key] = wantHash;
     } else if (base && cur === base) {
       write(); updated.push(entry.key); files[entry.key] = wantHash;
-    } else if (ctx.force) {
+    } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && !isHost(entry.key))) {
+      // A guard file the kit wrote and something else changed is put back (V3). One the kit never wrote (a host's own
+      // tracked hook) is the host's: it is skipped below and recorded as it is (the 1.25.1 sweep).
       if (!ctx.dryRun) {
         const keep = path.join(backupDir, entry.key);
         fs.mkdirSync(path.dirname(keep), { recursive: true });
@@ -249,7 +422,7 @@ export function install(ctx) {
   // file is recorded as host-owned so no later check flags it. A tracked CLAUDE.md is taken as host-owned; an
   // untracked one of the owner's own is skipped unless install runs with --overlay.
   const claudeEntry = ctx.target === 'project' && skipped.find((s) => s.file === 'CLAUDE.md' && !stamp.files['CLAUDE.md']);
-  const tracked = (f) => spawnSync('git', ['-C', ctx.projectDir, 'ls-files', '--error-unmatch', f], { encoding: 'utf8' }).status === 0;
+  const tracked = (f) => spawnSync('git', ['-C', ctx.projectDir, ...NO_PROGRAMS, 'ls-files', '--error-unmatch', f], { encoding: 'utf8', cwd: SAFE_CWD }).status === 0;
   if (claudeEntry && (hostOwned.has('CLAUDE.md') || ctx.overlay || tracked('CLAUDE.md'))) {
     skipped.splice(skipped.indexOf(claudeEntry), 1);
     hostOwned.add('CLAUDE.md');
@@ -320,8 +493,10 @@ export function install(ctx) {
   }
   if (!ctx.dryRun) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
-    const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), installedAt: new Date().toISOString(), files };
+    const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
+    // The node the launcher entry names (V3): kept here so status and the launcher can check the entry is the one written.
+    if (ctx.target === 'user') out.node = toPosix(process.execPath);
     // Set by the CLI's release check; a stamp without it predates the check and reads as unknown, not unreleased.
     if (ctx.release) {
       // A kept branch-only file means the folder still holds more than the release.
@@ -335,7 +510,27 @@ export function install(ctx) {
       const gate = wireGate(ctx.home, ctx.dryRun);
       if (gate !== 'added' && gate !== 'present') skipped.push({ file: 'settings.json', reason: gate });
     }
-    if (ctx.target === 'project') keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned]);
+    if (ctx.target === 'project') {
+      const keys = entries.map((e) => e.key);
+      const guards = keys.some(isGuarded);
+      // A settings.json the owner changed keeps the PreToolUse entry that ran .claude/guard.cjs straight from the
+      // project, which V3 takes away: it comes out here, with a backup, and the owner's other changes stay.
+      for (const f of dropProjectGuardEntry(ctx.projectDir, backupDir)) replaced.push(`${f} (the old guard entry)`);
+      // The project's guards run only through the launcher in the Claude config folder (V3). Without it the shims could
+      // not run, so the hooks stay on the project's own .githooks until install user has run.
+      const launcher = fs.existsSync(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
+      const shims = guards ? writeGuardRecord(ctx, kitInfo, files, keys, prevRecord, isHost, skipped) : null;
+      const hooksPath = keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned], launcher ? shims : null);
+      if (shims && hooksPath === shims) {
+        const recFile = path.join(guardDir(ctx.home, ctx.projectDir), 'record.json');
+        fs.writeFileSync(recFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(recFile, 'utf8')), hooksPath: shims }, null, 2) + '\n');
+      }
+      let user = null;
+      try { user = JSON.parse(fs.readFileSync(path.join(ctx.home, 'settings.json'), 'utf8')); } catch { /* none */ }
+      if (guards && (!launcher || !launch.launcherWired(user, path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'), homeNode(ctx.home)))) {
+        skipped.push({ file: 'guard launcher', reason: `not wired in ${toPosix(path.join(ctx.home, 'settings.json'))}, so no guard runs here: run kit.mjs install user, then install project again` });
+      }
+    }
   }
   return { created, updated, replaced, retired, skipped, merged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
 }
@@ -349,10 +544,10 @@ export function install(ctx) {
  *     projectDir: the project folder
  *     keys: the installed kit paths, relative to the project folder
  */
-function keepKitLocal(projectDir, keys, hostOwned = []) {
-  const git = (...a) => spawnSync('git', ['-C', projectDir, ...a], { encoding: 'utf8' });
+function keepKitLocal(projectDir, keys, hostOwned = [], shims = null) {
+  const git = (...a) => spawnSync('git', ['-C', projectDir, ...NO_PROGRAMS, ...a], { encoding: 'utf8', cwd: SAFE_CWD });
   const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
-  if (common.status !== 0) return;
+  if (common.status !== 0) return null;
   const prefix = git('rev-parse', '--show-prefix').stdout.trim();
   const file = path.join(common.stdout.trim(), 'info', 'exclude');
   const old = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
@@ -378,9 +573,14 @@ function keepKitLocal(projectDir, keys, hostOwned = []) {
   // The kit's git hooks hold the line for any tool (the commit check, the push guard, the first push gate). Another
   // hook manager already set stays; the setup says to add the kit's checks to it.
   // Absolute, so an agent worktree (which has no .githooks of its own: kit files stay untracked) runs the main
-  // checkout's hooks too. The relative value earlier installs set is upgraded.
+  // checkout's hooks too. Since V3 (1.25.1) it names the shims outside the project, which check the guard files before
+  // the project's hook runs; the values earlier installs set (.githooks, relative or absolute) are upgraded.
   const hooksNow = git('config', 'core.hooksPath').stdout.trim();
-  if (!hooksNow || hooksNow === `${prefix}.githooks`) git('config', 'core.hooksPath', toPosix(path.join(path.resolve(projectDir), '.githooks')));
+  const kitValues = ['', `${prefix}.githooks`, toPosix(path.join(path.resolve(projectDir), '.githooks'))];
+  if (shims && /\/kit-guard\/[^/]+\/hooks$/.test(toPosix(hooksNow))) kitValues.push(toPosix(hooksNow));
+  const want = shims || toPosix(path.join(path.resolve(projectDir), '.githooks'));
+  if (kitValues.includes(toPosix(hooksNow))) git('config', 'core.hooksPath', want);
+  const hooksPath = toPosix(git('config', 'core.hooksPath').stdout.trim());
   // A project whose own first commits are already on a remote had its first push before the kit came: the gate is
   // done. Sharing history is not enough: a host-made README pulled in shares history while nothing of ours is out.
   const hasRemote = git('for-each-ref', '--count=1', 'refs/remotes/').stdout.trim();
@@ -388,6 +588,7 @@ function keepKitLocal(projectDir, keys, hostOwned = []) {
   if (hasRemote && head && !git('rev-list', '--max-parents=0', 'HEAD', '--not', '--remotes').stdout.trim()) {
     fs.writeFileSync(path.join(common.stdout.trim(), 'kit-first-push-done'), '');
   }
+  return hooksPath;
 }
 
 function diffText(a, b) {
@@ -443,7 +644,7 @@ export function foldBack(ctx) {
   const kitInfo = loadKit(ctx.kit);
   const { entries, stampPath, memoryDir } = plan(ctx);
   const stamp = readStamp(stampPath);
-  const out = { foldBack: [], update: [], conflict: [], added: [], missing: [] };
+  const out = { foldBack: [], update: [], conflict: [], added: [], missing: [], guarded: [] };
   const diffs = [];
   for (const entry of entries) {
     // A host-owned file (rule:kit-stays-local, overlay) is the host repo's, never a kit file to fold back.
@@ -454,6 +655,12 @@ export function foldBack(ctx) {
     const curText = fs.readFileSync(entry.dest, 'utf8');
     const cur = sha(curText), wantHash = sha(want);
     if (cur === wantHash) continue;
+    // A guard file that differs is never the project's own work to fold back: install puts the kit's copy back (V3).
+    if (ctx.target === 'project' && isGuarded(entry.key)) {
+      out.guarded.push(entry.key);
+      diffs.push(`### ${entry.key} (guard file, changed outside install)\n\n\`\`\`diff\n${diffText(want, curText)}\n\`\`\`\n`);
+      continue;
+    }
     let bucket;
     if (!base) bucket = 'conflict';
     else if (cur !== base && wantHash === base) bucket = 'foldBack';
@@ -491,6 +698,7 @@ export function foldBack(ctx) {
     list('Conflict: merge by hand', out.conflict),
     list('New here: the kit has never seen these', out.added),
     list('Missing here: installed once, now deleted', out.missing),
+    list('Guard files changed outside install: run install project to put the kit\'s copies back', out.guarded),
     ...oldParts,
     '## Details\n',
     ...diffs,
@@ -857,6 +1065,14 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     if (held.length) lines.push(`    ${held.length} file(s) changed here and in the kit: ${held.join(', ')}. Merge the kit's changes by hand, then record it with kit.mjs install ${w.target === 'user' ? 'user' : 'project <folder>'} --merged <file>,<file>.`);
     if (own.length) lines.push(`    ${own.length} file(s) carry this project's own values on the current kit copy: ${own.join(', ')}. Not a gap; fold-back offers any that are portable.`);
     if (!ok) gaps.push(unreleased ? `${w.name} is an unreleased build` : `${w.name} differs from the kit`);
+    // V3: read against the record outside the project, which a branch, a patch or a project script cannot rewrite.
+    // Only a project whose install has guard files (a fixture or a docs-only kit has none).
+    if (w.target === 'project' && Object.keys(stamp.files).some(isGuarded)) {
+      for (const f of guardFaults(home, projectDir)) {
+        lines.push(`    Guard fault: ${f}. Run node ${toPosix(kit)}/scripts/kit.mjs install project "${toPosix(path.resolve(projectDir))}"${/disableAllHooks/.test(f) ? ' after the owner takes the key out' : ''}.`);
+        gaps.push(f);
+      }
+    }
   }
   // Improvement reports still open here are work for the kit, not a stale install, so they do not change the verdict.
   const reportDir = path.join(projectDir, '.kit', 'reports');
@@ -884,7 +1100,7 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     if (first) lines.push(`${first}${r.status === 1 ? ' - a finding: walk the lever order (rule:test-lanes).' : ''}`);
   }
   // T14: a part not present or wired is an install fault; its first line names the part.
-  const use = useCheck(kit, projectDir);
+  const use = useCheck(kit, projectDir, home);
   if (use) {
     lines.push(use.text.split('\n')[0]);
     if (use.code !== 0) gaps.push('the use check fails (run kit.mjs install project, or opt the part out in .kit/parts.json)');
@@ -895,10 +1111,10 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
 }
 
 /** The use check (T14) from the kit's own copy, run in a project that has it installed; null where it does not. */
-function useCheck(kit, projectDir) {
+function useCheck(kit, projectDir, home) {
   const script = path.join(kit, 'project', '.claude', 'use-check.mjs');
   if (!projectDir || !fs.existsSync(path.join(projectDir, '.claude', 'use-check.mjs')) || !fs.existsSync(script)) return null;
-  const r = spawnSync(process.execPath, [script], { cwd: projectDir, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [script], { cwd: projectDir, encoding: 'utf8', env: home ? { ...process.env, KIT_CLAUDE_HOME: path.resolve(home) } : process.env });
   return { code: r.status, text: String(r.stdout || r.stderr || '').trim() || 'Use check: no output' };
 }
 
@@ -1363,6 +1579,8 @@ function main(argv) {
   const overlay = argv.includes('--overlay');
   const mergedAt = argv.indexOf('--merged');
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const acceptAt = argv.indexOf('--accept-host');
+  const acceptHost = acceptAt >= 0 ? String(argv[acceptAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
     // E24 C: the kit installs only from the release copy on the owner's PC; a cloud VM has neither.
@@ -1380,7 +1598,7 @@ function main(argv) {
       return;
     }
     const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty };
-    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release });
+    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release, acceptHost });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
@@ -1391,7 +1609,7 @@ function main(argv) {
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
     // T14: install is finished only when every part is present and wired. The kit's own copy runs, never the project's.
-    const use = useCheck(kit, projectDir);
+    const use = useCheck(kit, projectDir, home);
     if (target === 'project' && !dryRun && use) {
       console.log(use.text);
       if (use.code !== 0) process.exitCode = 1;

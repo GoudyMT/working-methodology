@@ -28,6 +28,9 @@ function copyKitCli(kit) {
   fs.mkdirSync(path.join(kit, 'project/.claude'), { recursive: true });
   fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
   fs.copyFileSync(path.resolve('project/.claude/kit-temp.cjs'), path.join(kit, 'project/.claude/kit-temp.cjs'));
+  // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
+  fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
+  fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
 }
 
 function makeKit() {
@@ -1866,12 +1869,9 @@ test('every kit role runs the canary at its stop, and the project settings run t
   for (const tool of ['Agent', 'Task', 'SendMessage']) for (const g of ['canary.cjs', 'sweep-guard.cjs']) assert.ok(routes(tool).includes(g), `${g} on ${tool}`);
 });
 test('both guards run on every shell tool and block the call when they fail', () => {
-  // T2: one entry runs the one guard process on every tool; a crash, a timeout or a missing node would otherwise let
-  // the delete or the push run (handoff item 26), so it blocks on failure.
-  const pre = JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse;
-  assert.equal(pre.length, 1);
-  assert.equal(pre[0].matcher, '.*');
-  assert.deepEqual(pre[0].hooks.map((h) => [h.args.join(' '), h.onFailure]), [['{{PROJECT_DIR}}/.claude/guard.cjs', 'block']]);
+  // T2: one entry runs the one guard process on every tool and blocks on failure (handoff item 26). Since V3 (1.25.1)
+  // that entry is the launcher in the user settings (tests/guards-outside.test.mjs); a project file carries none.
+  assert.equal(JSON.parse(read(path.resolve('project/.claude/settings.json'))).hooks.PreToolUse, undefined);
   const { routes } = require(path.resolve('project/.claude/guard.cjs'));
   for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) for (const g of ['guard-delete.cjs', 'guard-outward.cjs']) assert.ok(routes(tool).includes(g), `${g} on ${tool}`);
 });
@@ -5495,6 +5495,34 @@ test('the hook check needs the sweep guard too, and hooks off in the local or us
   fs.writeFileSync(path.join(cfg, 'settings.json'), '{}\n');
   assert.equal(approveIn(dir, [ok.f], { CLAUDE_CONFIG_DIR: cfg }).status, 0, 'and on again');
 });
+// The 1.25.1 sweep: since V3 the call cap and the sweep guard run through the launcher the user settings wire (and
+// guard.cjs before it), never from a project's settings, so the hook check reads that wiring too.
+test('the hook check reads the call cap and sweep guard the guard launcher runs from the Claude config folder', () => {
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), read(path.resolve('project/.claude/settings.json')));
+  commitAll(dir, 'settings', true);
+  const cfg = path.join(makeTemp('approve-home-'), '.claude');
+  install({ kit: path.resolve('.'), home: cfg, target: 'user' });
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  // The installed copy, as a session runs it: it reads the launcher and settings of the folder it sits in.
+  const installed = (env = {}) => spawnSync('node', [path.join(cfg, 'skills', 'pre-pr-sweep', 'approve.mjs'), f], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: cfg, ...env } });
+  const r = installed();
+  assert.equal(r.status, 0, r.stdout);
+  spawnSync('node', [path.join(cfg, 'skills', 'pre-pr-sweep', 'approve.mjs'), f, '--outcome', '--none-ran'], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: cfg } });
+  // A config folder an env variable names, holding a launcher that says yes to anything, proves nothing (the review of fa37f84).
+  const fake = makeTemp('approve-fake-');
+  fs.mkdirSync(path.join(fake, 'kit-tools'));
+  fs.mkdirSync(path.join(fake, 'kit-hooks'));
+  fs.writeFileSync(path.join(fake, 'kit-tools', 'kit-launch.cjs'), 'exports.launcherWired = () => true;\n');
+  for (const h of ['call-cap.cjs', 'sweep-guard.cjs']) fs.writeFileSync(path.join(fake, 'kit-hooks', h), '');
+  fs.writeFileSync(path.join(fake, 'settings.json'), '{}');
+  fs.writeFileSync(path.join(fake, 'kit-install.json'), '{}');
+  fs.rmSync(path.join(cfg, 'kit-hooks', 'call-cap.cjs'));
+  assert.equal(installed({ CLAUDE_CONFIG_DIR: fake }).status, FIX_EXIT, 'a fake launcher named by CLAUDE_CONFIG_DIR');
+  assert.equal(installed().status, FIX_EXIT, 'the launcher wired but the call cap gone');
+});
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
   const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
@@ -6706,7 +6734,7 @@ test('the sheet page ships no private data, calls no third party, and writes the
   for (const field of ['grounding', 'sectionTitle', 'recWhy', 'submitted']) assert.ok(page.includes(field), field);
 });
 
-test('an update keeps the attribution script while an edited audit still needs it, and retires the moved reference', () => {
+test('an update retires a script once the edited audit that needed it is put back; a non-guard file still waits on an edited heir', () => {
   const { kit, home, proj } = makeKit();
   const put = (f, text) => { fs.mkdirSync(path.dirname(path.join(kit, f)), { recursive: true }); fs.writeFileSync(path.join(kit, f), text); };
   put('project/.claude/attribution.mjs', 'old\n');
@@ -6721,9 +6749,21 @@ test('an update keeps the attribution script while an edited audit still needs i
   put('project/.claude/pr-body-audit.mjs', 'two\n');
   fs.appendFileSync(path.join(proj, '.claude/pr-body-audit.mjs'), 'edited here\n');
   const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.ok(fs.existsSync(path.join(proj, '.claude/attribution.mjs')), 'an edited audit still imports it');
-  assert.ok(r.skipped.some((s) => s.file === '.claude/attribution.mjs'));
+  // A script in .claude is a guard file since V3 (1.25.1): the edited audit is put back (a backup keeps the edit), so
+  // nothing here imports the retired script any more, and it goes.
+  assert.ok(r.replaced.includes('.claude/pr-body-audit.mjs'));
+  assert.equal(read(path.join(r.backupDir, '.claude/pr-body-audit.mjs')), 'one\nedited here\n');
+  assert.ok(!fs.existsSync(path.join(proj, '.claude/attribution.mjs')));
   assert.deepEqual(install({ kit, home, target: 'user' }).retired, ['skills/human-factor/references/old.md']);
+  // A file that is not a guard still waits on an edited heir.
+  put('project/old-notes.md', 'old\n');
+  install({ kit, home, target: 'project', projectDir: proj });
+  fs.writeFileSync(config, JSON.stringify({ ...JSON.parse(read(config)), retired: { project: { 'old-notes.md': ['no-such-heir.md', '_Working Standards.md'] } } }));
+  fs.rmSync(path.join(kit, 'project/old-notes.md'));
+  fs.appendFileSync(path.join(proj, '_Working Standards.md'), 'edited here\n');
+  const kept = install({ kit, home, target: 'project', projectDir: proj });
+  assert.ok(fs.existsSync(path.join(proj, 'old-notes.md')), 'an edited heir still needs it');
+  assert.ok(kept.skipped.some((x) => x.file === 'old-notes.md'));
   const real = JSON.parse(read(path.resolve('kit.config.json'))).retired;
   assert.deepEqual(real.project['.claude/attribution.mjs'], ['.claude/pr-body-audit.mjs', '.claude/pr-body-audit-lean.mjs']);
   assert.deepEqual(real.user['skills/plan-feature/references/explore-and-options.md'], ['skills/brainstorm/references/question-craft.md', 'skills/plan-feature/SKILL.md']);

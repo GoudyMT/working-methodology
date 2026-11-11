@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.25.1 - 2026-11-11
+
+V3: the guard files are checked from outside the project before every call. In 1.25.0 a patch, a branch, a stash or
+a script the agent wrote could replace them, and the replaced guard then passed a main push.
+
+### Changed
+- One launcher in the Claude config folder runs the guards on every tool, wired by install user. Before each call it
+  hashes the project's guard scripts and git hooks against a record install project writes beside it, outside the
+  project. Any difference holds every call until install project puts the kit's copies back; that install line may
+  run alone while held. With none, it runs the project's guard from the bytes it just hashed.
+- The project's settings.json no longer runs guard.cjs itself. Run install user before install project.
+- A settings change that sets "disableAllHooks" (which turns off every hook, the user's own included) or removes the
+  launcher is refused mid-session, and every call is held while a project settings file carries the key.
+- core.hooksPath points at hook shims beside the record: they check the guard files, then run the project's
+  .githooks, so a hook swapped by a branch cannot pass the push in the same command.
+- Every script in a project's .claude folder and every git hook is a guard file now. install project always puts the
+  kit's copy back, keeping the project's edit in the backup folder; status reports a changed one, or hooks turned off,
+  as a gap; fold-back shows its diff but never offers it to the kit; the use check reads the new wiring.
+
+- The launcher starts from a shell line that clears NODE_OPTIONS and puts node's own folder first on PATH: a settings
+  env reaches every hook process (proven live), so a project's env could otherwise load code into it. A project
+  settings env that sets NODE_OPTIONS, PATH, a GIT_CONFIG key or another key that changes how node, git or the guards
+  start is refused mid-session and holds every call while it is there.
+- The hooks path is read the way git reads it (a second value, an include, a worktree config), and a tool may not
+  write .git/config.worktree, the install record or the guard records, by the config folder's own name too.
+- The hook shims cover every git hook: a host that keeps its own hooks in .githooks keeps them all. A git hook the
+  host tracks and the kit never wrote is left as it is, reported, and guarded as it stands.
+- install project takes the 1.25.0 guard entry out of a settings.json the owner changed, keeping the rest and a backup.
+- After install user, a project whose kit scripts were edited is held on its first call until install project puts the
+  kit's copies back; the hold names the files and the one install line that may run.
+- A launcher that is missing or cannot load blocks every tool call in every folder (the owner's pick: a broken guard
+  never lets a call through), and the kit gate says so on every prompt, with the install user line that repairs it.
+- A host's own git hook that changes after it was recorded stays held through a reinstall until the owner accepts it
+  with install project --accept-host <file>, which the held fix line may not carry.
+- The sweep's hook check (approve.mjs) reads the call cap and sweep guard the launcher runs, not only project settings.
+- The held fix line is matched exactly: the recorded node and the kit script as full paths, the project, and at most
+  --force, on one line; --unreleased is gone from it. It runs only while the kit folder (files and git config) matches
+  the fingerprint the record keeps, so a kit folder changed since the install cannot record a swapped guard as good.
+- install runs every git with fsmonitor off and no transport allowed, from node's own folder, so neither a project's
+  git config nor a git.exe left in the project runs inside the held fix line.
+- The merge gate reads the push hold in the project hook the shim runs.
+- The old guard entry comes out past a byte-order mark, and out of settings.local.json too.
+- A hook added to .githooks after install, or a guard file reached through a junction or link, holds every call; the
+  guard process loads only the bytes it checked and the config folder's own hooks.
+
+### Known limits
+- A script that also rewrites the Claude config folder; only an admin-owned managed settings file would close it.
+- A session started after "disableAllHooks" was already in a project settings file runs no hooks; the git hook shims
+  still refuse every commit and push there, and status names it.
+- A payload that acts inside the same command that planted it, and a process left running that changes the kit folder
+  between the fix line's check and install's reads.
+
 ## 1.25.0 - 2026-11-10
 
 The guards hold against the six ways around them found in 1.24.0, and the owner's yes is a tap in the choice pop-up.
