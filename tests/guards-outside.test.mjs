@@ -790,8 +790,34 @@ test('V3 host hooks: a swapped host hook stays held through a reinstall until th
 	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
 	assert.equal(bash(s, 'git status').decision, 'allow');
 	const fix = fixOf(KIT, proj, ' --accept-host .githooks/pre-commit');
-	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), HOST);
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 3', ''].join(String.fromCharCode(10)));
 	assert.equal(bash(s, fix).decision, 'deny', 'accepting a host hook is the owner\'s act, not the held fix line');
+});
+
+// B15 (the 1.25.1 sweep): a host hook that differs between branches held after a plain checkout, and accepting it on
+// one branch held the other. Each version the owner accepts stays accepted; a version never accepted still holds.
+test('B15 host hooks: a host hook accepted on each branch no longer holds a plain checkout', () => {
+	const NL = String.fromCharCode(10);
+	const { home, proj, session: s } = setup({
+		before: (p) => {
+			fs.mkdirSync(path.join(p, '.githooks'));
+			fs.writeFileSync(path.join(p, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo main', ''].join(NL));
+			ok(git(p, ['add', '.githooks/pre-commit']));
+			ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
+		},
+	});
+	ok(git(proj, ['checkout', '-q', '-b', 'feature/b']));
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo branch', ''].join(NL));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-am', 'chore: branch hook']));
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a host hook never accepted must hold');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
+	ok(git(proj, ['checkout', '-q', 'main']));
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the version on main, accepted at the first install, held again');
+	ok(git(proj, ['checkout', '-q', 'feature/b']));
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the accepted branch version held again');
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 0', ''].join(NL));
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a third version, never accepted, passed');
 });
 
 // The owner's pick A (2026-11-11): a broken launcher keeps blocking every tool, and the kit gate tells the owner why and what
