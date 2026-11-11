@@ -11,13 +11,15 @@ bypasses as their own kind. The 1.25.1 sweep's carry-overs are closed first. No 
   force, a delete, not a plain push to origin) and the act to quote, with the marker the pre-push hook needs, so one
   pop-up covers it.
 - A gate bypass (skipping the git hooks, moving the hooks path) is refused even with the owner's pop-up yes, as
-  settings.json already refused the plain spellings (the owner's lock).
+  settings.json already refused the plain spellings (the owner's lock), wherever it sits in a command: behind a push,
+  the push marker, an alias body or another command.
 - An AI push to main, master or the remote's default branch is refused, whatever the yes, once the remote has that
   branch: it takes a PR. Only a new repo's first push goes there, with the owner's yes. The pre-push hook reads this
   from the remote's own answer during the push, so no local ref can fake a new repo. This decision change was added
-  to the wording build on the owner's word, 2026-11-11.
+  to the wording build on the owner's word, 2026-11-11. A write to main that runs no pre-push hook (git send-pack, a
+  ref write through the GitHub API) is refused outright.
 - Five names in rules, skills, agents and guard texts: the owner's yes, outward act, the push bound, gate bypass,
-  protected file. A word check in CI fails the old variants. The push bound is written once, as a list, in
+  protected file. A word check in CI fails the old names for the owner's yes and an outward act. The push bound is written once, as a list, in
   rule:outward-acts; non-negotiable 6 and Hard Rule 14 point to it (the owner's lock).
 - Kit memory carries three owner preferences: nothing by hand, a short status at each step of long work, no
   throwaway drafts in the project library (N15).
@@ -25,7 +27,8 @@ bypasses as their own kind. The 1.25.1 sweep's carry-overs are closed first. No 
   owner runs install project --accept-host for it in a terminal (the owner's lock, B16).
 
 ### Fixed
-- The guard loader takes from the Claude config folder only the kit's own hooks, with the bytes install user recorded.
+- The guard loader takes from the Claude config folder only the kit's own hooks, with the bytes install user recorded;
+  a kit hook in the old one-process shape runs only from those checked bytes.
 - Every git hook shim checks the guard files before it runs a project hook, so a hook a branch carries never runs in
   the checkout that brings it. Shims for the server-side push-to-checkout and proc-receive are gone, and a file in the
   shims folder that install did not write holds every call.
@@ -40,7 +43,10 @@ bypasses as their own kind. The 1.25.1 sweep's carry-overs are closed first. No 
   check's hooks-off clause has a test; the 1.25.1 changelog's PATH line is corrected.
 
 ### Known limits
-- A process that can move the kit folder's release tag can still choose what a release install copies.
+- A process that can move the kit folder's release tag can still choose what a release install copies, and the kit
+  config and owner profile are read before the tag check.
+- "A new repo's first push" is judged per branch: a remote with other branches and no main still takes a first push
+  to main on the owner's yes.
 - The pop-up block in each "Owner's yes needed" refusal is unchanged: shrinking it waits for build 2's planted-case
   job, which can measure whether sessions still build the pop-up right.
 

@@ -42,4 +42,4 @@ if (hits.length) {
 	console.log(`Word check: ${hits.length} banned variant(s); one name for each thing (rules/core.md, Terms):`);
 	for (const h of hits) console.log(`    ${h}`);
 	process.exitCode = 1;
-} else console.log('Word check: every rule, skill, agent and guard text uses the five names.');
+} else console.log('Word check: no banned variant in the rules, skills, agents, guard texts or scripts.');
