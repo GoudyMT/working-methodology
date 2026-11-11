@@ -11,11 +11,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, guardDir, status as kitStatus } from '../scripts/kit.mjs';
+import { install, foldBack, guardDir, releaseState, status as kitStatus } from '../scripts/kit.mjs';
 
 kitTemp.sessionRoot();
 const KIT = path.resolve('.');
 const posix = (p) => p.split(path.sep).join('/');
+// The fix line names the node install user recorded (here, the node running the tests), never `node` from PATH.
+const NODE = posix(process.execPath);
+const fixOf = (kit, proj, extra = '') => `"${NODE}" "${posix(kit)}/scripts/kit.mjs" install project "${posix(proj)}"${extra}`;
 const ENV = { ...process.env };
 for (const k of ['CLAUDECODE', 'AI_AGENT', 'KIT_PUSH_APPROVED', 'CLAUDE_CONFIG_DIR', 'KIT_CLAUDE_HOME', 'CLAUDE_PROJECT_DIR', 'GIT_DIR', 'GIT_INDEX_FILE']) delete ENV[k];
 const ID = ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false'];
@@ -289,7 +292,7 @@ test('V3 install: a plain install project restores a swapped guard file and keep
 test('V3 fix line: while held, the install that restores the guards may run, alone', () => {
 	const { proj, session: s } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
-	const fix = `node "${posix(KIT)}/scripts/kit.mjs" install project "${posix(proj)}"`;
+	const fix = fixOf(KIT, proj);
 	assert.match(bash(s, 'git status').reason, /kit\.mjs" install project/);
 	assert.notEqual(bash(s, fix).decision, 'deny');
 	assert.notEqual(bash(s, fix + ' --force').decision, 'deny');
@@ -314,8 +317,16 @@ test('V3 fix line: only the exact command passes, with the kit script and the pr
 		`node "${script}" install project "${posix(proj)}" --unreleased`,
 		`node "${script}" install project "${posix(proj)}" --force --force`,
 		`node --import=./evil.mjs "${script}" install project "${posix(proj)}"`,
+		// node as PATH finds it: a node planted earlier on PATH would run the install (the security review on c453ec1).
+		`node "${script}" install project "${posix(proj)}"`,
+		// A newline ends a command in a shell: the second line runs as its own command.
+		`${fixOf(KIT, proj)}\n--force`,
+		`"${NODE}"\n"${script}" install project "${posix(proj)}"`,
+		`${fixOf(KIT, proj)}\r\n--force`,
 	]) assert.equal(bash(s, c).decision, 'deny', c);
-	assert.notEqual(bash(s, `node ${script} install project ${posix(proj)} --force`).decision, 'deny', 'the plain unquoted form still passes');
+	assert.notEqual(bash(s, fixOf(KIT, proj, ' --force')).decision, 'deny', 'with --force it still passes');
+	assert.notEqual(s.decide('PowerShell', { command: `& ${fixOf(KIT, proj)}` }).decision, 'deny', 'PowerShell runs a quoted program with &');
+	assert.ok(bash(s, 'git status').reason.includes(`"${NODE}"`), 'the refusal names the full node path');
 });
 
 // The second pass on 0772397 (role 1): the fix line runs the install from the kit folder, which nothing checked; a branch
@@ -324,9 +335,11 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 	const tmp = kitTemp.makeTemp('v3kit-');
 	const kit = path.join(tmp, 'kit');
 	fs.cpSync(KIT, kit, { recursive: true, filter: (src) => !/[\\/](\.git|reports|node_modules)$/.test(src) });
+	fs.mkdirSync(path.join(kit, '.git'));
+	fs.writeFileSync(path.join(kit, '.git', 'config'), '[core]\n\tbare = false\n');
 	const { proj, session: s } = setup({ kit });
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
-	const fix = `node "${posix(kit)}/scripts/kit.mjs" install project "${posix(proj)}"`;
+	const fix = fixOf(kit, proj);
 	assert.notEqual(bash(s, fix).decision, 'deny', 'an unchanged kit folder still offers the fix line');
 	fs.appendFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), '\n// changed\n');
 	assert.equal(bash(s, fix).decision, 'deny', 'a kit file changed after the install');
@@ -335,6 +348,33 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 	assert.notEqual(bash(s, fix).decision, 'deny', 'put back, it passes again');
 	fs.writeFileSync(path.join(kit, 'project', '.claude', 'extra.cjs'), EVIL_GUARD);
 	assert.equal(bash(s, fix).decision, 'deny', 'a file added to the kit after the install');
+	fs.rmSync(path.join(kit, 'project', '.claude', 'extra.cjs'));
+	assert.notEqual(bash(s, fix).decision, 'deny', 'taken out, it passes again');
+	// The kit folder's git config names programs git runs (core.fsmonitor runs on git status), and install runs git there.
+	fs.appendFileSync(path.join(kit, '.git', 'config'), '[core]\n\tfsmonitor = ./evil.sh\n');
+	assert.equal(bash(s, fix).decision, 'deny', 'the kit folder git config changed after the install');
+});
+
+// The security review on c453ec1: core.fsmonitor names a program git runs on git status and git ls-files (proven on
+// Git for Windows, 2026-11-11). The held fix line runs install, which runs git in the kit folder and in the project; a
+// program named in the project's git config or the user's global one would run inside the one call a hold lets through.
+test('V3 fix line: the install it runs starts no program a git config names', () => {
+	const { root, home, proj } = setup();
+	const ran = posix(path.join(root, 'RAN'));
+	const mon = path.join(root, 'mon.sh');
+	fs.writeFileSync(mon, `#!/bin/sh\ntouch '${ran}'\nexit 1\n`);
+	const cfg = path.join(root, 'global.cfg');
+	fs.writeFileSync(cfg, `[core]\n\tfsmonitor = ${posix(mon)}\n`);
+	ok(git(proj, ['config', 'core.fsmonitor', posix(mon)]));
+	const saved = process.env.GIT_CONFIG_GLOBAL;
+	process.env.GIT_CONFIG_GLOBAL = cfg;
+	try {
+		install({ kit: KIT, home, target: 'project', projectDir: proj });
+		releaseState(KIT);
+	} finally {
+		if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = saved;
+	}
+	assert.equal(fs.existsSync(ran), false, 'a program named by core.fsmonitor ran during install');
 });
 
 test('V3 wiring: install user wires the launcher on every tool and the settings check, once', () => {
@@ -391,7 +431,7 @@ test('V3 record: a kit project whose record is gone holds every call but the ins
 	fs.rmSync(path.join(home, 'kit-guard'), { recursive: true });
 	assert.equal(bash(s, 'git push origin main').decision, 'deny');
 	assert.match(bash(s, 'git status').reason, /no guard record/);
-	assert.notEqual(bash(s, `node "${posix(KIT)}/scripts/kit.mjs" install project "${posix(proj)}"`).decision, 'deny');
+	assert.notEqual(bash(s, fixOf(KIT, proj)).decision, 'deny');
 });
 
 // ---- The 1.25.1 sweep (fix all, the owner 2026-11-11). Each case failed on 22d1f99 before its fix. ----
@@ -606,7 +646,7 @@ test('V3 host hooks: a swapped host hook stays held through a reinstall until th
 	assert.equal(bash(s, 'git status').decision, 'deny', 'a reinstall took the swapped host hook as the new normal');
 	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
 	assert.equal(bash(s, 'git status').decision, 'allow');
-	const fix = `node "${posix(KIT)}/scripts/kit.mjs" install project "${posix(proj)}" --accept-host .githooks/pre-commit`;
+	const fix = fixOf(KIT, proj, ' --accept-host .githooks/pre-commit');
 	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), HOST);
 	assert.equal(bash(s, fix).decision, 'deny', 'accepting a host hook is the owner\'s act, not the held fix line');
 });
