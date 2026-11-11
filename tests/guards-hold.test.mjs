@@ -425,7 +425,7 @@ const why = (tool_name, tool_input, extra = {}) => {
 };
 test('a held push names the limit of the push bound it hit', () => {
 	const limits = [
-		['git push origin main', /a push to main is outside the push bound; main normally takes a PR/],
+		['git push origin main', /a push to main is outside the push bound; main takes a PR, and a tool pushes there only as a new repo's first push/],
 		['git push origin master', /a push to master is outside the push bound/],
 		['git push --force origin feat/x', /a force push is outside the push bound/],
 		['git push origin +feat/x', /a force push is outside the push bound/],

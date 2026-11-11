@@ -12,6 +12,10 @@ bypasses as their own kind. The 1.25.1 sweep's carry-overs are closed first. No 
   pop-up covers it.
 - A gate bypass (skipping the git hooks, moving the hooks path) is refused even with the owner's pop-up yes, as
   settings.json already refused the plain spellings (the owner's lock).
+- An AI push to main, master or the remote's default branch is refused, whatever the yes, once the remote has that
+  branch: it takes a PR. Only a new repo's first push goes there, with the owner's yes. The pre-push hook reads this
+  from the remote's own answer during the push, so no local ref can fake a new repo. This decision change was added
+  to the wording build on the owner's word, 2026-11-11.
 - Five names in rules, skills, agents and guard texts: the owner's yes, outward act, the push bound, gate bypass,
   protected file. A word check in CI fails the old variants. The push bound is written once, as a list, in
   rule:outward-acts; non-negotiable 6 and Hard Rule 14 point to it (the owner's lock).

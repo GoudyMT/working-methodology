@@ -370,7 +370,7 @@ function pushLimit(command) {
 	if (flags.some((f) => /^(-f|--force|--force-with-lease|--force-if-includes)(=|$)/.test(f)) || specs.slice(1).some((s) => s.startsWith('+'))) return 'a force push is outside the push bound';
 	if (flags.some((f) => /^--(tags|follow-tags|mirror|all|branches)$/.test(f)) || specs.slice(1).some((s) => /refs\/tags\//.test(s))) return 'a tag push is outside the push bound';
 	const main = dests.find((d) => /^(main|master)$/i.test(d));
-	if (main) return `a push to ${main.toLowerCase()} is outside the push bound; ${main.toLowerCase()} normally takes a PR`;
+	if (main) return `a push to ${main.toLowerCase()} is outside the push bound; ${main.toLowerCase()} takes a PR, and a tool pushes there only as a new repo's first push (the pre-push hook refuses any other)`;
 	if (specs[0] !== 'origin') return 'it is not a plain push to origin, so it is outside the push bound';
 	return 'it is not a plain push of one named feature branch, so it is outside the push bound';
 }
