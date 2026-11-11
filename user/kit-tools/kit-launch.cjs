@@ -296,7 +296,8 @@ function clearsSettings(input, v) {
 	return next !== null && !settingsProblem(next);
 }
 
-const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
+// Every launcher refusal is a hold (T16a's "Held" kind): the guard files or settings are not as install left them.
+const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Held: ' + reason } });
 
 /** Run the project's guard from the bytes verify() hashed: a file swapped after the check is never loaded. */
 function runGuard(real, files, input) {

@@ -40,7 +40,7 @@ const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'hel
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
 const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
-const { ownerYes, howToAsk } = require('./owner-yes.cjs');
+const { ownerYes, askText, yesText, neverText } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -355,6 +355,30 @@ function boundedPush(input) {
 	return from === 'HEAD' || (BRANCH.test(from) && !from.startsWith('refs/'));
 }
 
+// Which limit of the push bound a held push hit, for the refusal's words only: the decision above never reads this.
+// rule:outward-acts holds the bound: a plain `git push [-u] origin <feature branch>`, never main or master, a tag, a
+// force or a delete.
+function pushLimit(command) {
+	const words = String(command).trim().split(/\s+/);
+	const at = words.indexOf('push');
+	if (at < 0) return 'it is not a plain push to origin, so it is outside the push bound';
+	const rest = words.slice(at + 1);
+	const flags = rest.filter((w) => w.startsWith('-'));
+	const specs = rest.filter((w) => !w.startsWith('-'));
+	const dests = specs.slice(1).map((s) => s.replace(/^\+/, '').split(':').pop().replace(/^refs\/heads\//, ''));
+	if (flags.some((f) => /^(-d|--delete)$/.test(f)) || specs.slice(1).some((s) => s.startsWith(':'))) return 'a delete is outside the push bound';
+	if (flags.some((f) => /^(-f|--force|--force-with-lease|--force-if-includes)(=|$)/.test(f)) || specs.slice(1).some((s) => s.startsWith('+'))) return 'a force push is outside the push bound';
+	if (flags.some((f) => /^--(tags|follow-tags|mirror|all|branches)$/.test(f)) || specs.slice(1).some((s) => /refs\/tags\//.test(s))) return 'a tag push is outside the push bound';
+	const main = dests.find((d) => /^(main|master)$/i.test(d));
+	if (main) return `a push to ${main.toLowerCase()} is outside the push bound; ${main.toLowerCase()} normally takes a PR`;
+	if (specs[0] !== 'origin') return 'it is not a plain push to origin, so it is outside the push bound';
+	return 'it is not a plain push of one named feature branch, so it is outside the push bound';
+}
+
+// A gate bypass switches a check off; it sends nothing outward, and no pop-up yes lets a tool do it (the owner's lock,
+// 2026-11-11, matching the deny rules settings.json already holds for the plain spellings).
+const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved']);
+
 function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
@@ -379,21 +403,19 @@ function check(input) {
 		// Inside the owner's bounds a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
 		if (reason && boundedPush(input)) reason = '';
-		else if (reason && !input.agent_id && ownerYes(input)) verdict = 'allow';
+		else if (reason && !BYPASS.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
 		// A guard that cannot read the command refuses rather than lets it through.
 		reason = 'the guard could not read this command';
 	}
 	if (!reason) return prNote ? { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: prNote } } : null;
-	const output = {
-		hookSpecificOutput: {
-			hookEventName: 'PreToolUse',
-			permissionDecision: verdict,
-			permissionDecisionReason: verdict === 'allow'
-				? 'Outward action (' + reason + '): the owner said yes to this exact command in the pop-up.'
-				: 'Outward action (' + reason + '): it runs only with the owner\'s yes.' + howToAsk(input),
-		},
-	};
+	let command = '';
+	try { command = String((input.tool_input && input.tool_input.command) ?? ''); } catch { /* no command */ }
+	const what = reason === 'git push' ? pushLimit(command) : `${reason} is an outward act (rule:outward-acts)`;
+	const text = BYPASS.has(reason)
+		? neverText(`${reason === 'git with its hooks skipped' ? 'skipping the git hooks' : 'moving the git hooks path'} is a gate bypass; it switches off the checks the owner's yes relies on. Fix what the hook reports; a skip is the owner's own, in their own terminal`)
+		: verdict === 'allow' ? yesText(what) : askText(what, input);
+	const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: verdict, permissionDecisionReason: text } };
 	// The reason is shown to the user; added context is what reaches Claude.
 	if (prNote) output.hookSpecificOutput.additionalContext = prNote;
 	return output;

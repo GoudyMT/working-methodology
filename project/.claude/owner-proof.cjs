@@ -16,7 +16,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
-const { ownerYes, howToAsk } = require('./owner-yes.cjs');
+const { ownerYes, askText } = require('./owner-yes.cjs');
 
 // install project fills this in, so a caller cannot move the protected folder with CLAUDE_CONFIG_DIR.
 // Double quotes: an installed path may hold an apostrophe (the 1.25.0 sweep).
@@ -43,9 +43,9 @@ const MESSAGES = new Set(['git', 'gh']);
 const GIT_READS = new Set(['add', 'diff', 'log', 'show', 'status', 'blame', 'ls-files', 'grep', 'cat-file', 'check-ignore', 'commit']);
 const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
-const REASON = 'The session transcripts and kit-owner.json hold the owner\'s thread answers, so no tool writes them: read them, or leave them to Claude Code and the owner.';
-const GUARD_REASON = 'The kit\'s guards, the git hooks and .git/config are written only by kit.mjs install, never by a tool: read them, or ask the owner to reinstall the kit.';
-const SETTINGS_REASON = 'The settings file wires the guards, so a tool writes it only with the owner\'s yes.';
+const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold the owner\'s answers, so they are protected files. Read them; Claude Code and the owner write them.';
+const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
+const SETTINGS_REASON = 'a write to a settings file, which wires the guards';
 
 // The real path, through any junction, link or short name; a file not yet written resolves through its nearest
 // existing folder.
@@ -358,7 +358,7 @@ function check(input) {
 	const t = input.tool_input || {};
 	const cwd = input.cwd || process.cwd();
 	// The settings take the owner's pop-up yes for this exact act; a subagent never has one.
-	const settings = () => (!input.agent_id && ownerYes(input) ? null : deny(SETTINGS_REASON + howToAsk(input)));
+	const settings = () => (!input.agent_id && ownerYes(input) ? null : deny(askText(SETTINGS_REASON, input)));
 	if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name)) {
 		const file = t.file_path || t.notebook_path;
 		if (!file) return null;

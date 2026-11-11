@@ -301,7 +301,7 @@ test('the settings take the owner\'s yes for the exact edit; the guards and hook
 	// What a held write tells Claude: the main session asks in the pop-up; a subagent hands it back.
 	const reason = (extra) => JSON.parse(spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: settings, content: '{"x":1}' }, cwd: proj, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } }).stdout).hookSpecificOutput.permissionDecisionReason;
 	assert.match(reason({}), /AskUserQuestion pop-up/);
-	assert.match(reason({ agent_id: 'a1' }), /subagent cannot get that yes/);
+	assert.match(reason({ agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 	const guard = path.join(proj, '.claude', 'guard-outward.cjs');
 	popUp({ act: `Write ${guard}: x` });
 	assert.equal(withYes('Write', { file_path: guard, content: 'x' }), 'deny', 'a guard file, even with a yes');

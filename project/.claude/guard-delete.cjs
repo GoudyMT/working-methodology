@@ -121,7 +121,7 @@ const WILDCARD = /[*?[]/;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const { normalize, plainText, withoutComments, joinContinuations, tokenize } = require('./guard-read.cjs');
-const { ownerYes, howToAsk } = require('./owner-yes.cjs');
+const { ownerYes, askText, yesText } = require('./owner-yes.cjs');
 
 // The program a word names, whatever folder it sits in, without .exe: "C:/Git/usr/bin/rm.exe" -> "rm"; cmd
 // reads a switch glued to a builtin, so "rd/s/q" -> "rd".
@@ -706,12 +706,12 @@ function check(input) {
 		reason = 'the guard could not read this command';
 	}
 	if (!reason) return null;
-	const what = 'Possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + '): ';
+	const what = 'a possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + ')';
 	return {
 		hookSpecificOutput: {
 			hookEventName: 'PreToolUse',
 			permissionDecision: verdict,
-			permissionDecisionReason: what + (verdict === 'allow' ? 'the owner said yes to this exact command in the pop-up.' : 'it runs only with the owner\'s yes.' + howToAsk(input)),
+			permissionDecisionReason: verdict === 'allow' ? yesText(what) : askText(what, input),
 		},
 	};
 }

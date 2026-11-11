@@ -810,7 +810,7 @@ test('V3 record names: two projects whose names differ only in punctuation keep 
 // project path took that past Windows' 260 characters, git found no hook there, and the kit hooks stopped silently.
 test('B13 record names: a long project path still gives a shim path git can open on Windows', () => {
 	const deep = (tail) => '/w/' + 'a-very-long-folder-name/'.repeat(12) + tail;
-	const shim = path.join(guardDir('C:/Users/someone/.claude', deep('app')), 'hooks', 'p4-prepare-changelist');
+	const shim = path.join(guardDir('D:/a-home-folder/.claude', deep('app')), 'hooks', 'p4-prepare-changelist');
 	assert.ok(shim.length < 260, `the shim path is ${shim.length} characters`);
 	assert.notEqual(guardDir('/h', deep('app-1')), guardDir('/h', deep('app-2')), 'two long paths that share a start share a record');
 	// An installed project keeps its record across the upgrade: a short path's name is the one 1.25.1 gave it.

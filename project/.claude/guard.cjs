@@ -49,7 +49,7 @@ function answers(input) {
 		try {
 			out.push([file, require(path.join(__dirname, file)).check(input)]);
 		} catch (e) {
-			out.push([file, refuse(`The kit guard ${file} could not run (${String(e && e.message).slice(0, 120)}), so this call is held. Reinstall the kit: node <kit>/scripts/kit.mjs install project .`)]);
+			out.push([file, refuse(`Held: the kit guard ${file} could not run (${String(e && e.message).slice(0, 120)}), so this call is held. Reinstall the kit: node <kit>/scripts/kit.mjs install project .`)]);
 		}
 	}
 	for (const [file, reads] of USER) {
@@ -87,7 +87,7 @@ function merge(list) {
 }
 
 function check(input) {
-	if (!input || typeof input !== 'object') return refuse('The kit guard could not read this call, so it is held.');
+	if (!input || typeof input !== 'object') return refuse('Held: the kit guard could not read this call.');
 	return merge(answers(input));
 }
 
