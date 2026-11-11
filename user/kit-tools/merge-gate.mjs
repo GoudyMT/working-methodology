@@ -258,9 +258,16 @@ function holdFault(git, cwd, env = process.env) {
 	if (!value) return 'no push hold: core.hooksPath is not set here, so a push over an armed head would go through (install the kit project layer)';
 	if (value === '~' || /^~[\\/]/.test(value)) value = path.join(os.homedir(), value.slice(1));
 	const dir = path.resolve(git('rev-parse', '--show-toplevel').stdout.trim() || cwd, value);
-	const hook = path.join(dir, 'pre-push');
+	let hook = path.join(dir, 'pre-push');
 	let text = '';
 	try { text = fs.readFileSync(hook, 'utf8'); } catch { /* no hook: the fault below says so */ }
+	// The kit's hook shim (V3) checks the guards from outside, then execs the project's own hook: the hold is in that one.
+	const shim = /^# The kit's hook shim/m.test(text) && /^exec '((?:[^']|'\'')*)' "\$@"$/m.exec(text);
+	if (shim) {
+		hook = shim[1].split("'\''").join("'");
+		text = '';
+		try { text = fs.readFileSync(hook, 'utf8'); } catch { /* no hook: the fault below says so */ }
+	}
 	return text.includes('kit-merge-gate.log') ? '' : `no push hold: ${hook} does not stop a push over an armed head`;
 }
 
