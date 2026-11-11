@@ -340,13 +340,12 @@ function guardFaults(home, projectDir) {
   const rec = readRecord(home, projectDir);
   const faults = [];
   if (!rec) return [`no outside guard record in ${toPosix(path.join(home, 'kit-guard'))}`];
-  const changed = Object.entries(rec.files || {}).filter(([k, want]) => {
-    const f = path.join(projectDir, k);
-    if (!fs.existsSync(f)) return true;
-    const now = crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
-    return now !== want && !((rec.host || []).includes(k) && ((rec.accepted || {})[k] || []).includes(now));
-  }).map(([k]) => k);
+  // The same check the launcher runs before every call (B22): guard files, the shims, .githooks extras, links and the
+  // hooks path, so status never calls current what the launcher holds.
+  const v = launch.verify(path.resolve(projectDir), rec, [], path.join(guardDir(home, projectDir), 'hooks'));
+  const changed = v.changed;
   if (changed.length) faults.push(`${changed.length} kit guard file(s) changed outside install: ${changed.join(', ')}`);
+  if (v.hooksPath) faults.push(`core.hooksPath changed outside install (now ${v.hooksPath})`);
   for (const name of ['settings.json', 'settings.local.json']) {
     let text = null;
     try { text = fs.readFileSync(path.join(projectDir, '.claude', name), 'utf8'); } catch { continue; }

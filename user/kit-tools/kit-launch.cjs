@@ -138,7 +138,7 @@ function hooksPathNow(dir) {
 }
 
 /** Everything that differs from the record: guard files, the hook shims, the git hooks setting, settings that take hooks off. */
-function verify(dir, rec, extraDirs = []) {
+function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'hooks')) {
 	const changed = [];
 	const files = new Map();
 	// Each guard file is read at its real place, and only when that is where the project says it is: through a junction
@@ -165,7 +165,7 @@ function verify(dir, rec, extraDirs = []) {
 	// The git hook shims beside the record: one swapped there would skip this check at the next commit or push.
 	for (const [name, want] of Object.entries(rec.shims || {})) {
 		let bytes = null;
-		try { bytes = fs.readFileSync(path.join(recordDir(dir), 'hooks', name)); } catch { /* missing */ }
+		try { bytes = fs.readFileSync(path.join(shimsAt, name)); } catch { /* missing */ }
 		if (!bytes || sha(bytes) !== want) changed.push(`kit-guard hooks/${name}`);
 	}
 	const settings = [];
