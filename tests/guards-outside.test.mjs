@@ -685,6 +685,15 @@ test('B23 loader: from the config folder only the kit hook files install user re
 	assert.equal(fs.existsSync(mark), false, `a kit hook changed since install user loaded: ${r.stdout}${r.stderr}`);
 });
 
+// The 1.26.0 sweep: a kit hook with no "exports.check" ran as its own node process, past B23's hash check.
+test('B23 loader: a changed kit hook in the old one-process shape never runs either', () => {
+	const { root, home, proj } = setup();
+	const mark = posix(path.join(root, 'RAN'));
+	fs.writeFileSync(path.join(home, 'kit-hooks', 'canary.cjs'), `require('fs').writeFileSync(${JSON.stringify(mark)}, 'ran');\n`);
+	spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SendMessage', tool_input: { to: 'x', message: 'y' }, cwd: proj }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj } });
+	assert.equal(fs.existsSync(mark), false, 'a changed kit hook ran as its own process');
+});
+
 test('V3 links: a guard file reached through a junction or link holds every call', () => {
 	const { root, proj, session: s } = setup();
 	const real = path.join(root, 'real-claude');

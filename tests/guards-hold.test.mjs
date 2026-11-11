@@ -459,3 +459,24 @@ test('a protected file and the owner\'s answers are refused in the never voice',
 	assert.match(why('Write', { file_path: path.join(proj, '.claude', 'guard-outward.cjs'), content: 'x' }), /^Never by a tool: .*protected file/);
 	assert.match(why('Write', { file_path: TRANSCRIPT, content: 'x' }), /^Never by a tool: /);
 });
+
+// The 1.26.0 sweep: a gate bypass was refused only when it was the first reason the guard found, so a push or the
+// marker in front of it hid it, and the owner's pop-up yes then let it run. And a write to main that runs no pre-push
+// hook (send-pack, the API) passed on a yes, though main takes a PR.
+test('a gate bypass anywhere in a command, and a hook-free write to main, are never a tool\'s act', () => {
+	const acts = [
+		'KIT_PUSH_APPROVED=1 git push --no-verify origin main',
+		'KIT_PUSH_APPROVED=1 git -c core.hooksPath=/dev/null push origin main',
+		'git push origin main && git commit -n -m x',
+		'git config alias.c "commit --no-verify"',
+		'git send-pack https://github.com/o/r main',
+		'gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc',
+	];
+	for (const act of acts) {
+		popUp({ act });
+		assert.equal(withYes('Bash', { command: act }), 'deny', `${act} ran on a pop-up yes`);
+		assert.match(why('Bash', { command: act }), /^Never by a tool: /, act);
+	}
+	// The act to quote is offered only for a plain push on its own; a compound command gets none.
+	assert.ok(!why('Bash', { command: 'git add . && git push origin main' }).includes('KIT_PUSH_APPROVED=1 git add'), 'the marker offered in front of a compound command');
+});
