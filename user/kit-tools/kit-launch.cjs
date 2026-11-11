@@ -85,7 +85,7 @@ function settingsProblem(text) {
 	if (!s || typeof s !== 'object') {
 		// A file JSON.parse cannot read may still be one another reader takes (a comment, a stray comma): the safe side.
 		if (/"disableAllHooks"\s*:\s*true/.test(body)) return '"disableAllHooks": true turns off every hook, the kit guards with them';
-		const named = [...body.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]).filter((k) => ENV_KEYS.test(k));
+		const named = [...body.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]).filter((k) => k !== 'env' && ENV_KEYS.test(k));
 		return named.length ? `its env may set ${[...new Set(named)].join(', ')}, which changes how the guards start` : '';
 	}
 	if (s.disableAllHooks === true) return '"disableAllHooks": true turns off every hook, the kit guards with them';

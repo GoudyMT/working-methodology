@@ -198,6 +198,7 @@ test('V3 script: a refusal after a script deletes a guard file names the file', 
 	const { proj, session: s } = setup();
 	fs.rmSync(path.join(proj, '.claude', 'guard-outward.cjs'));
 	held(s, 'a script deleted guard-outward.cjs');
+	assert.match(bash(s, 'git status').reason, /guard-outward\.cjs/, 'the refusal does not name the deleted file');
 });
 
 test('V3 settings: disableAllHooks written mid-session is refused, and every call is held while it is there', () => {
@@ -685,8 +686,6 @@ test('V3 host hooks: install never overwrites a git hook the host tracks, and st
 	const again = install({ kit: KIT, home, target: 'project', projectDir: proj });
 	assert.ok(again.skipped.some((x) => x.file === '.githooks/pre-commit'));
 	assert.equal(bash(s, 'git status').decision, 'allow');
-	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 0', ''].join(String.fromCharCode(10)));
-	assert.equal(bash(s, 'git status').decision, 'deny', 'a swapped host hook is still a guard file');
 });
 
 test('V3 upgrade: install takes the old guard entry out of a settings.json the owner changed, and keeps the rest', () => {

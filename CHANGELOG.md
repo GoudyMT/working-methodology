@@ -19,7 +19,8 @@ a script the agent wrote could replace them, and the replaced guard then passed 
   kit's copy back, keeping the project's edit in the backup folder; status reports a changed one, or hooks turned off,
   as a gap; fold-back shows its diff but never offers it to the kit; the use check reads the new wiring.
 
-- The launcher starts from a shell line that clears NODE_OPTIONS and puts node's own folder first on PATH: a settings
+- The launcher starts from a shell line that clears NODE_OPTIONS and names node by its full path (the git hook shims
+  also put node's own folder first on PATH): a settings
   env reaches every hook process (proven live), so a project's env could otherwise load code into it. A project
   settings env that sets NODE_OPTIONS, PATH, a GIT_CONFIG key or another key that changes how node, git or the guards
   start is refused mid-session and holds every call while it is there.

@@ -215,8 +215,8 @@ export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^
 // runs the project's own hook of that name, so a host that keeps its hooks in .githooks keeps every one (1.25.1 sweep).
 const GIT_HOOKS = ['pre-commit', 'commit-msg', 'pre-push'];
 const OTHER_HOOKS = ['applypatch-msg', 'pre-applypatch', 'post-applypatch', 'pre-merge-commit', 'prepare-commit-msg', 'post-commit',
-  'pre-rebase', 'post-checkout', 'post-merge', 'pre-receive', 'update', 'proc-receive', 'post-receive', 'post-update',
-  'reference-transaction', 'push-to-checkout', 'pre-auto-gc', 'post-rewrite', 'sendemail-validate', 'fsmonitor-watchman',
+  'pre-rebase', 'post-checkout', 'post-merge', 'pre-receive', 'update', 'post-receive', 'post-update',
+  'reference-transaction', 'pre-auto-gc', 'post-rewrite', 'sendemail-validate', 'fsmonitor-watchman',
   'p4-changelist', 'p4-prepare-changelist', 'p4-post-changelist', 'p4-pre-submit', 'post-index-change'];
 
 /** Where the outside record and git hook shims of a project live (the launcher names them the same way). */
@@ -256,6 +256,9 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped, stam
     fs.writeFileSync(path.join(hooks, name), [...head, ...body, `exec ${q(own)} "$@"`, ''].join('\n'));
     fs.chmodSync(path.join(hooks, name), 0o755);
   }
+  // A shim the kit no longer writes (push-to-checkout and proc-receive, dropped in 1.26.0) would still run its project
+  // hook unchecked, so it goes.
+  for (const e of fs.readdirSync(hooks)) if (![...GIT_HOOKS, ...OTHER_HOOKS].includes(e)) fs.rmSync(path.join(hooks, e), { force: true });
   // A guard file the kit did not write (a host's own tracked hook it skipped) is recorded as it is, so a swap of it
   // still holds every call.
   // A host's own guard file is recorded as it stands the first time; after that a change to it stays held, even through
