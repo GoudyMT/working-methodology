@@ -271,7 +271,7 @@ function dropProjectGuardEntry(projectDir, backupDir) {
   for (const name of ['settings.json', 'settings.local.json']) {
     const file = path.join(projectDir, '.claude', name);
     let s;
-    try { s = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch { continue; }
+    try { s = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { continue; }
     if (!runsProjectGuard(s)) continue;
     const named = (h) => [h.command, ...(h.args || [])].join(' ').includes('.claude/guard.cjs');
     const kept = s.hooks.PreToolUse.map((e) => ({ ...e, hooks: (e.hooks || []).filter((h) => !named(h)) })).filter((e) => e.hooks.length);

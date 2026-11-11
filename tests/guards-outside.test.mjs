@@ -629,7 +629,7 @@ test('V3 upgrade: the old guard entry comes out of a settings file with a byte-o
 	const file = path.join(proj, '.claude', 'settings.json');
 	const s = JSON.parse(fs.readFileSync(file, 'utf8'));
 	s.hooks.PreToolUse = entry;
-	fs.writeFileSync(file, '﻿' + JSON.stringify(s, null, 2));
+	fs.writeFileSync(file, '\uFEFF' + JSON.stringify(s, null, 2));
 	const local = path.join(proj, '.claude', 'settings.local.json');
 	fs.writeFileSync(local, JSON.stringify({ permissions: { allow: ['Bash(ls)'] }, hooks: { PreToolUse: entry } }, null, 2));
 	const r = install({ kit: KIT, home, target: 'project', projectDir: proj });
