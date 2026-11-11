@@ -725,6 +725,14 @@ test('V3 config folder inside a project: the user slip-catchers still run', () =
 	assert.match(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, /cap reached/);
 });
 
+// B17 (the 1.25.1 sweep): the emulator ran a shell-form hook with the bash PATH finds first. From PowerShell on Windows
+// that is WSL's bash, which cannot run the launcher line, so the suite failed at its baseline and a deny-only test
+// passed for the wrong reason. Claude Code runs these lines with Git Bash, so the emulator does too.
+test('B17 emulator: a shell-form hook runs in Git Bash on Windows, whatever bash PATH finds first', { skip: process.platform !== 'win32' }, () => {
+	const r = spawnSync(BASH, ['-c', 'uname -s'], { encoding: 'utf8', env: { ...ENV, PATH: path.dirname(process.execPath) } });
+	assert.match(r.stdout, /MINGW|MSYS/, `the emulator's shell is ${BASH}: ${r.stdout}${r.stderr}`);
+});
+
 test('V3 record names: two projects whose names differ only in punctuation keep separate records', () => {
 	assert.notEqual(guardDir('/h', '/w/app-x'), guardDir('/h', '/w/app_x'));
 	assert.notEqual(guardDir('/h', '/w/app.x'), guardDir('/h', '/w/app-x'));
