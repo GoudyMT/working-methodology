@@ -35,11 +35,22 @@ a script the agent wrote could replace them, and the replaced guard then passed 
 - A host's own git hook that changes after it was recorded stays held through a reinstall until the owner accepts it
   with install project --accept-host <file>, which the held fix line may not carry.
 - The sweep's hook check (approve.mjs) reads the call cap and sweep guard the launcher runs, not only project settings.
+- The held fix line is matched exactly: the recorded node and the kit script as full paths, the project, and at most
+  --force, on one line; --unreleased is gone from it. It runs only while the kit folder (files and git config) matches
+  the fingerprint the record keeps, so a kit folder changed since the install cannot record a swapped guard as good.
+- install runs every git with fsmonitor off and no transport allowed, from node's own folder, so neither a project's
+  git config nor a git.exe left in the project runs inside the held fix line.
+- The merge gate reads the push hold in the project hook the shim runs.
+- The old guard entry comes out past a byte-order mark, and out of settings.local.json too.
+- A hook added to .githooks after install, or a guard file reached through a junction or link, holds every call; the
+  guard process loads only the bytes it checked and the config folder's own hooks.
 
 ### Known limits
 - A script that also rewrites the Claude config folder; only an admin-owned managed settings file would close it.
 - A session started after "disableAllHooks" was already in a project settings file runs no hooks; the git hook shims
   still refuse every commit and push there, and status names it.
+- A payload that acts inside the same command that planted it, and a process left running that changes the kit folder
+  between the fix line's check and install's reads.
 
 ## 1.25.0 - 2026-11-10
 
