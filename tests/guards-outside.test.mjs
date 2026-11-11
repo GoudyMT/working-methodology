@@ -534,6 +534,37 @@ test('V3 host hooks: a host that keeps its own hooks in .githooks still runs eve
 	assert.ok(fs.existsSync(path.join(proj, '.git', 'host-post-checkout')), 'the host post-checkout hook did not run');
 });
 
+// The second pass on 0772397 (role 1): the shims run any hook in .githooks, and one added after install was in no record,
+// so it ran with no hold. A host's own hooks there at the first install are recorded as they stand.
+test('V3 host hooks: a hook added to .githooks after install holds every call until the owner accepts it', () => {
+	const HOOK = ['#!/bin/sh', 'echo ran', ''].join(String.fromCharCode(10));
+	const { home, proj, session: s } = setup({
+		before: (p) => {
+			fs.mkdirSync(path.join(p, '.githooks'));
+			fs.writeFileSync(path.join(p, '.githooks', 'post-merge'), HOOK);
+		},
+	});
+	assert.equal(bash(s, 'git status').decision, 'allow', 'a host hook there at the first install is recorded');
+	fs.writeFileSync(path.join(proj, '.githooks', 'post-checkout'), HOOK);
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a hook added after install ran with no hold');
+	assert.match(bash(s, 'git status').reason, /\.githooks\/post-checkout/);
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a plain reinstall (the held fix line) took the new hook as normal');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/post-checkout'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
+});
+
+// The second pass on 0772397 (role 1): with .claude a junction, the launcher hashed the files through it while require
+// loaded them again from their real place, so a swap between the two ran unverified code (6 of 40 tries passed).
+test('V3 links: a guard file reached through a junction or link holds every call', () => {
+	const { root, proj, session: s } = setup();
+	const real = path.join(root, 'real-claude');
+	fs.renameSync(path.join(proj, '.claude'), real);
+	fs.symlinkSync(real, path.join(proj, '.claude'), 'junction');
+	assert.equal(bash(s, 'git status').decision, 'deny');
+	assert.match(bash(s, 'git status').reason, /link/i);
+});
+
 test('V3 host hooks: install never overwrites a git hook the host tracks, and still guards it', () => {
 	const HOST = ['#!/bin/sh', 'echo host-pre-commit', ''].join(String.fromCharCode(10));
 	const { home, proj, session: s } = setup({
