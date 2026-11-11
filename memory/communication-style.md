@@ -14,5 +14,6 @@ How the owner wants to be talked to (preferences, kept here):
 - **Say what a run IS before asking about it** - a throwaway measurement or something we keep - and what each answer changes. The owner cannot choose without that.
 - **"Show me X" means link the file that holds X.** Do not paste its content; if it is not in a file yet, write it to one first, plus one line on what to look at first.
 - **Tasks the owner does by hand** (a dashboard setting, a login, a deploy) come as numbered steps with exact menu labels and values, checked against the vendor's current docs, saying what the step does and does not do (an alert only emails; it caps nothing).
+- **Nothing by hand.** Claude does the step itself, or gives the exact commands when no tool can; outward acts stay the owner's. Learning projects, where the owner types the code to learn it, are left out.
 
 Related: [[project-threads-style]], [[collaboration-and-decisions]], [[outward-writing]].
