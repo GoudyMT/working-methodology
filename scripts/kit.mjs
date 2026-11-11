@@ -217,10 +217,13 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     'NODE_OPTIONS=; export NODE_OPTIONS', `PATH=${q(launch.shellDir(path.dirname(process.execPath)))}:"$PATH"; export PATH`];
   for (const name of [...GIT_HOOKS, ...OTHER_HOOKS]) {
     const own = `${proj}/.githooks/${name}`;
+    const checkFirst = `${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} </dev/null || exit 1`;
+    // Every shim that runs a project hook checks the guard files first (B19): a branch that carries a new hook would
+    // otherwise run it in the same checkout that wrote it. A shim with no project hook to run exits at once.
     const body = GIT_HOOKS.includes(name) ? [
-      `${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} </dev/null || exit 1`,
+      checkFirst,
       `[ -f ${q(own)} ] || { echo "Kit: .githooks/${name} is missing; run kit.mjs install project." >&2; exit 1; }`,
-    ] : [`[ -x ${q(own)} ] || exit 0`];
+    ] : [`[ -x ${q(own)} ] || exit 0`, checkFirst];
     fs.writeFileSync(path.join(hooks, name), [...head, ...body, `exec ${q(own)} "$@"`, ''].join('\n'));
     fs.chmodSync(path.join(hooks, name), 0o755);
   }
