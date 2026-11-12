@@ -636,10 +636,13 @@ export function install(ctx) {
         if (!rec || !rec.projectDir || !rec.shims || !fs.existsSync(rec.projectDir)) continue;
         // The shims run a hook from the launcher's checked copy, and only a first-push-check that reads its project
         // from KIT_HOOK_PROJECT can run there (the 1.27.0 sweep): a project still on an older kit keeps its shims,
-        // and is named, until install project brings its hooks up to this release.
-        let fpc = '';
-        try { fpc = fs.readFileSync(path.join(rec.projectDir, '.claude', 'first-push-check.mjs'), 'utf8'); } catch { /* none */ }
-        if (fpc && !fpc.includes('process.env.KIT_HOOK_PROJECT')) {
+        // and is named, until install project brings its hooks up to this release. Only the file the record accepted
+        // counts as the older kit (the security review of this fix): an edited one gets the new shims, and the
+        // launcher holds it anyway.
+        let fpc = null;
+        try { fpc = fs.readFileSync(path.join(rec.projectDir, '.claude', 'first-push-check.mjs')); } catch { /* none */ }
+        const recorded = fpc && (rec.files || {})['.claude/first-push-check.mjs'] === crypto.createHash('sha256').update(fpc).digest('hex');
+        if (recorded && !fpc.toString('utf8').includes('process.env.KIT_HOOK_PROJECT')) {
           skipped.push({ file: `kit-guard/${n}`, reason: `${toPosix(path.resolve(rec.projectDir))} runs an older kit, so its git hook shims stay as they are; run install project there to bring them up to this release` });
           continue;
         }

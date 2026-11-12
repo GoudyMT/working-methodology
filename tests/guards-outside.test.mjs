@@ -1158,10 +1158,19 @@ test('install user leaves the shims of a project still on an older kit, and says
 	assert.doesNotMatch(fs.readFileSync(fpc, 'utf8'), /KIT_HOOK_PROJECT/, 'the old script was not made');
 	fs.writeFileSync(path.join(hooks, 'pre-commit'), before + '# old\n');
 	rec.shims['pre-commit'] = crypto.createHash('sha256').update(before + '# old\n').digest('hex');
+	// The record accepted this older file, as an install project of the older kit would have.
+	const older = crypto.createHash('sha256').update(fs.readFileSync(fpc)).digest('hex');
+	rec.files['.claude/first-push-check.mjs'] = older;
 	fs.writeFileSync(file, JSON.stringify(rec, null, 2));
 	const r = install({ kit: KIT, home, target: 'user' });
 	assert.equal(shim('pre-commit'), before + '# old\n', 'an older project got shims its hooks cannot run under');
 	assert.ok(r.skipped.some((x) => x.reason.includes(posix(proj)) && /install project/.test(x.reason)), JSON.stringify(r.skipped));
+	// An old-looking file the record never accepted is not an older kit: the project gets this release's shims (the
+	// security review of the fix: the project's live file alone must not keep the old shims).
+	fs.appendFileSync(fpc, '// edited\n');
+	const r2 = install({ kit: KIT, home, target: 'user' });
+	assert.notEqual(shim('pre-commit'), before + '# old\n', 'an unrecorded file kept the old shims');
+	assert.ok(!r2.skipped.some((x) => x.reason.includes('runs an older kit')), JSON.stringify(r2.skipped));
 });
 
 // why: guards rule:security-standards (the hook that runs is the one the launcher checked). The 1.26.0 carry-over C11:
