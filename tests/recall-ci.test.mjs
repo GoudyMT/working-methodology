@@ -27,7 +27,9 @@ test('the CI recall job runs only by hand from main, through federation with no 
 	assert.match(wf, /ref: refs\/heads\/\$\{\{ inputs\.ref \}\}/);
 	assert.match(wf, /\$MEASURE_REF" =~ \^\[A-Za-z0-9\]/);
 	assert.match(wf.split('- name: Keep the runs')[1], /path: \$\{\{ runner\.temp \}\}\/recall\n/);
-	assert.match(wf, /deny:\['Read\(\/\/\*\*\)'/);
+	// The scorer's desk is readable; the sealed map, the raw runs and the token are not (a blanket deny beat the allow).
+	assert.doesNotMatch(wf, /Read\(\/\/\*\*\)/);
+	assert.ok(wf.includes('"$desk" "$out" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/oidc"'), 'the scorer may read the map, the runs or the token');
 	// The harness, keys and brief that judge are main's; the candidate is only data.
 	assert.match(wf, /node base\/scripts\/recall\.mjs "cand-\$i" cand/);
 	assert.match(wf, /node base\/scripts\/recall-score\.mjs score/);

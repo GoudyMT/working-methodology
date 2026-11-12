@@ -262,7 +262,9 @@ jobs:
           # The scorer reads only its own folder: a copy of the blinded runs, apart from the sealed map, the raw runs
           # and the token, with Read denied everywhere else (the security review of this build).
           desk="$RUNNER_TEMP/desk" && mkdir -p "$desk" && cp "$out"/scorer/R*.md "$desk"/
-          deny="$(node -e "const d=process.argv[1];console.log(JSON.stringify({permissions:{allow:['Read('+d+'/**)','Glob('+d+'/**)'],deny:['Read(//**)','Glob(//**)']}}))" "$desk")"
+          # A deny rule wins over an allow, so "deny everything" left the scorer unable to read its own desk (the 1.27.0
+          # sweep, role 3): only the places that would unblind it are denied, by absolute path (// in a rule).
+          deny="$(node -e "const a=(p)=>'/'+p+'/**';const [d,o,w,k]=process.argv.slice(1);console.log(JSON.stringify({permissions:{allow:['Read('+a(d)+')','Glob('+a(d)+')'],deny:[o,w,k].flatMap((p)=>['Read('+a(p)+')','Glob('+a(p)+')'])}}))" "$desk" "$out" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/oidc")"
           brief="$(cat base/docs/evals/recall-scorer-brief.md)"
           keys="$(cat base/docs/evals/recall-questions.md)"
           ( cd "$desk" && claude -p "$(printf '%s\n\n%s\n\n%s\n' "$brief" "$keys" 'Score every run file R*.md in this folder under the current brief and keys above.')" \
