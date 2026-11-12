@@ -19,8 +19,10 @@ bypasses as their own kind. The 1.25.1 sweep's carry-overs are closed first. No 
   to the wording build on the owner's word, 2026-11-11. A write to main that runs no pre-push hook (git send-pack, a
   ref write through the GitHub API) is refused outright.
 - Five names in rules, skills, agents and guard texts: the owner's yes, outward act, the push bound, gate bypass,
-  protected file. A word check in CI fails the old names for the owner's yes and an outward act. The push bound is written once, as a list, in
-  rule:outward-acts; non-negotiable 6 and Hard Rule 14 point to it (the owner's lock).
+  protected file. A word check in CI fails the old names for the owner's yes and an outward act.
+- The push bound is written in full once, in rule:outward-acts, with its four limits named every time it is
+  stated (never main, a tag, a force or a delete); non-negotiable 6 names the four and Hard Rule 14 points to it
+  (the owner's locks).
 - Kit memory carries three owner preferences: nothing by hand, a short status at each step of long work, no
   throwaway drafts in the project library (N15).
 - A first install holds every call while a project keeps its own file where the kit ships a guard file, until the
