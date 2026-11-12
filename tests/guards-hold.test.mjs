@@ -90,6 +90,10 @@ test('the same holes in the spellings beside them are held', () => {
 		'git config --global url.https://example.com/.insteadOf https://github.com/',
 		'git -c remote.origin.url=https://example.com/x.git push origin feat/x',
 		'echo "[url]" >> ~/.gitconfig',
+		// The local origin/HEAD names the default branch when the remote names none (K29): moving it is held too.
+		'git remote set-head origin feat/x',
+		'git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/feat/x',
+		'git update-ref -d refs/remotes/origin/HEAD',
 		// A git read that writes a file or runs a program: the allow list lets git diff, log and show run unprompted.
 		'git diff --output=.claude/guard-outward.cjs',
 		'git diff --ext-diff',

@@ -142,7 +142,9 @@ function gitOutward(words, start) {
 	if (words.slice(at + 1).some((w) => /^(--output(=|$)|--open-files-in-pager|--ext-diff$|--textconv$)/.test(w) || (sub === 'grep' && /^-o/.test(w)))) return 'git that writes a file or runs a program';
 	// Where origin points decides where a feature-branch push goes without a yes, so moving it is held (T1).
 	const after = words.slice(at + 1).filter((w) => !w.startsWith('-'));
-	if (sub === 'remote' && ['add', 'set-url', 'rename'].includes(after[0])) return 'git with its remote changed';
+	if (sub === 'remote' && ['add', 'set-url', 'rename', 'set-head'].includes(after[0])) return 'git with its remote changed';
+	// The local origin/HEAD names the default branch the pre-push hook holds when the remote names none (K29).
+	if ((sub === 'symbolic-ref' || sub === 'update-ref') && after.some((w) => /^refs\/remotes\/[^/]+\/head$/i.test(w))) return 'git with its remote changed';
 	// A remote's push refspec decides which branch a bare git push lands on (remote.origin.push HEAD:main), so it is
 	// held with the url (the 1.25.0 sweep).
 	const remoteKey = (w) => /^(remote\.[^=]*\.(url|pushurl|push)|url\.[^=]*\.(insteadof|pushinsteadof))(=|$)/.test(w);
