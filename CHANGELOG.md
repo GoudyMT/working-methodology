@@ -2,7 +2,7 @@
 
 ## 1.27.0 - 2026-11-12
 
-Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first; three were security holes.
+Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first, three of them security holes; C17 moves to build 3 after its recall run fell under the bar.
 
 ### Added
 - The use check says whether the latest pop-up answer carries the field the guards read.
@@ -19,7 +19,7 @@ Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing 
 
 ### Fixed
 - The pre-push hook asks the remote for its default branch and whether it is new, so a local ref cannot fake a first push.
-- A reinstall holds a guard file a later release adds until the owner accepts it, moves records from the old long names, and rewrites the hook shims of every recorded project; a changed or slow kit hook says why it did not run.
+- A reinstall holds a guard file a later release adds until the owner accepts it, moves records from the old long names, and rewrites the hook shims of every recorded project, except one still on an older kit, which it names until that project runs install project; a changed or slow kit hook says why it did not run.
 - The task gate lets a command that only prints git commit through, and still holds a substitution inside a printed line.
 - Settings deny git log, diff and show with --output anywhere in the command.
 - The owner's yes is found at the end of a transcript too long to read whole.

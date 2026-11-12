@@ -4,7 +4,7 @@
  "level": "minor",
  "area": "Tests and CI",
  "title": "feat: every test says why it is kept; a PR runs only what it reaches",
- "headline": "Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first; three were security holes.",
+ "headline": "Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first, three of them security holes; C17 moves to build 3 after its recall run fell under the bar.",
  "items": [
   {
    "id": "S2-S4",
@@ -45,7 +45,7 @@
   {
    "id": "C1-C12",
    "kind": "fixed",
-   "text": "A reinstall holds a guard file a later release adds until the owner accepts it, moves records from the old long names, and rewrites the hook shims of every recorded project; a changed or slow kit hook says why it did not run.",
+   "text": "A reinstall holds a guard file a later release adds until the owner accepts it, moves records from the old long names, and rewrites the hook shims of every recorded project, except one still on an older kit, which it names until that project runs install project; a changed or slow kit hook says why it did not run.",
    "evidence": "tests/guards-outside.test.mjs"
   },
   {
@@ -153,10 +153,88 @@
    "why": "Federation swaps GitHub's short-lived token for an Anthropic one bound to this repo's main; the kit could later teach the same to projects."
   }
  ],
- "verification": [],
+ "verification": [
+  "CI run 43169062013 at d990d12 measured 2,326 code flips across 707 tests; the why tags and the cut were written from it.",
+  "Each fix of the sweep shipped with a test that fails on the code before it: the older-project shim test (13eb916, ede5e1e) and the recall job test (7fb389c).",
+  "The C17 rule text was measured by five recall runs (candidate median 11, baseline 11, bar 12) and reverted on the owner's call; it moves to build 3.",
+  "The sweep guard refused a probe reviewer before the sweep, and the sweep report passes its audit."
+ ],
  "tests": {
   "before": 707,
   "after": 678,
-  "flips": "1,810 of 2,326 code flips caught before and after the cut"
+  "flips": "707 to 678 is the cut at d990d12; the tests this build added after it (build record, recall job, the sweep fix) come on top, and the PR run gives the final count. 1,810 of 2,326 code flips caught before and after the cut"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive, new dependency)",
+  "commit": "e570f83",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "One medium (the first push gh call names no host), two low; deferred"
+   },
+   {
+    "name": "Supply chain",
+    "result": "One high (Claude Code installed without its binary), fixed; one low"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Security swarm",
+    "result": "Mediums only (guard spellings, the recall job token reach, the install lane); deferred"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Mediums (cut tests that held unique owner-facing checks, tag accuracy); deferred"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES; one high on upgrade order, fixed"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 2,
+   "medium": 19,
+   "low": 16
+  },
+  "fixed": [
+   "H1, caught by the sweep: install user rewrote the hook shims of a project still on 1.26.0, which then could not commit. Fixed in 13eb916, hardened in ede5e1e after the security review of the fix.",
+   "H2, caught by the sweep: the recall job installed Claude Code without its binary. Fixed in 7fb389c."
+  ],
+  "deferred": [
+   "C17 (the four refusal kinds wording): recall under the bar, to build 3",
+   "Guard spellings that reach the owner's yes instead of a flat refusal, and the marker and cd false holds",
+   "A tag pointing at a blob or tree is pushed unscanned",
+   "Install project 1.27.0 over a 1.26.0 user layer fails commits with no fix named",
+   "The first push gh call names no host",
+   "The recall job token reach and install-lane gaps in kit CI",
+   "Tests the cut lost (dry-run, --merged, update line, status lines), the install check reading HEAD, pr-scope coverage, wrong why tags"
+  ],
+  "accepted": [],
+  "caughtBy": {
+   "sweep": 2,
+   "plan": 0,
+   "ci": 0,
+   "securityReview": 1,
+   "escaped": 0
+  },
+  "spend": {
+   "budget": 4752000,
+   "spent": 5701345,
+   "roles": {
+    "1": 704323,
+    "2": 690499,
+    "3": 554498,
+    "4": 807682,
+    "5": 586341,
+    "6": 781754,
+    "7": 665780,
+    "8": 314378,
+    "9": 596090
+   }
+  },
+  "findingsNote": "Counted from the role reports of roles 1-3 and 5-9. Role 4 (what the cut lost) handed in at its call cap with every finding plausible and no list by severity; its findings are in the outcome log total (56 raised, 50 real, 4 repeated) and in the deferred test gaps."
  }
 }
