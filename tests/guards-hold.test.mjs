@@ -716,3 +716,18 @@ test('every spelling of a gate bypass is never by a tool, not an ask', () => {
 	// A plain push to main stays the owner's yes, not a flat refusal: the reader adds holds of the right kind only.
 	assert.match(reason('Bash', 'git push origin main'), /^Owner's yes needed/);
 });
+// why: guards rule:outward-acts (only clearing the AI shell's markers is a bypass). K2, the 1.27.0 sweep: naming a
+// marker at all was read as clearing it, so a grep, an echo or a commit message that named one was refused.
+test('reading or naming a marker runs; every way of clearing one is still never by a tool', () => {
+	const reason = (tool_name, command) => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name, tool_input: { command }, cwd: process.cwd() }), encoding: 'utf8' });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
+	};
+	for (const command of ['grep -n CLAUDECODE notes.txt', 'echo $CLAUDECODE', 'git commit -m "docs: name the CLAUDECODE marker"', 'rg AI_AGENT -n project/.githooks']) {
+		assert.doesNotMatch(reason('Bash', command), /markers/, command);
+	}
+	assert.doesNotMatch(reason('PowerShell', 'Get-Content notes.txt | Select-String CLAUDECODE'), /markers/);
+	for (const [tool, command] of [['Bash', 'unset CLAUDECODE; git push origin feat/x'], ['Bash', 'CLAUDECODE= git push origin feat/x'], ['Bash', 'grep -h CLAUDECODE notes.txt | sh'], ['Bash', 'env -u CLAUDECODE git push origin feat/x'], ['PowerShell', 'Remove-Item Env:CLAUDECODE; git push origin feat/x'], ['Bash', 'echo unset CLAUDECODE > x.sh; . ./x.sh; git push origin feat/x']]) {
+		assert.match(reason(tool, command), /^Never by a tool: clearing the AI shell's markers/, command);
+	}
+});

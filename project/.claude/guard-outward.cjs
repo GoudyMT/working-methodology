@@ -265,13 +265,31 @@ function markersCleared(flat) {
 	return /\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat);
 }
 
+// K2 (the 1.27.0 sweep): a marker named only as a word a plain reader prints or searches for, or inside a commit
+// message, clears nothing. The exemption holds only for a command with no way to clear or run anything: no setting,
+// unsetting or env, no shell, eval or source, no Env: drive, and every command that names a marker a reader of it.
+const MARKER = /\b(CLAUDECODE|AI_AGENT)\b/i;
+const MARKER_READERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls', 'echo', 'printf', 'cat', 'type', 'get-content', 'gc', 'head', 'tail', 'git']);
+function markerOnlyNamed(text) {
+	if (/\b(CLAUDECODE|AI_AGENT)\s*\+?=|\b(unset|export|declare|typeset|local|readonly|set|setx|env|exec|eval|source|iex|invoke-expression|xargs|sh|bash|zsh|dash|ksh|pwsh|powershell|cmd|start-process|saps|remove-item|ri|clear-item|cli|new-item|ni|set-item|si|set-content|sc|rv|remove-variable)(\.exe)?\b|env:|setenvironmentvariable|(^|[\s;|&(])\.\s|[`]|\$\(/i.test(text)) return false;
+	for (const segment of tokenize(joinContinuations(text))) {
+		const words = segment.filter((w) => !w.redirect);
+		if (!words.some((w) => MARKER.test(w.value))) continue;
+		const name = programName(words[0]?.value || '');
+		if (!MARKER_READERS.has(name)) return false;
+		// In git, only inside the message given to -m or --message.
+		if (name === 'git' && words.some((w, k) => MARKER.test(w.value) && !(k > 0 && /^(-m|--message)$/.test(words[k - 1].value)))) return false;
+	}
+	return true;
+}
+
 function findOutward(text, depth) {
 	// The owner's yes and resume for the sweep tools are read by approve.mjs itself from the owner's pop-up tap (T2), so
 	// their spelling needs no hold here. A Claude session started from a shell with a thread message's shape writes a
 	// turn like the owner's own (E27), so it is held still.
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
-	if (markersCleared(flat)) return MARKERS;
+	if (markersCleared(flat) && !markerOnlyNamed(text)) return MARKERS;
 	// The pre-push hook lets an AI push to main or a tag only with this marker set, so setting it is the owner's yes.
 	if (/KIT_PUSH_APPROVED/i.test(flat)) return 'the push hook\'s owner-yes marker';
 	// A program or a word built at run time, then an outward verb in the same command: $G push, "$(which git)" push.
@@ -328,7 +346,10 @@ function findOutward(text, depth) {
 		// as the delete guard reads it: a here-string feeds a shell (bash <<< "git push"), and $( ) or backticks in a
 		// target run before the redirect does (the 1.22.0 sweep).
 		if (depth < MAX_DEPTH) {
-			for (const word of all) {
+			// A message git or gh is handed (-m, --body ...) is text it stores, never a command it runs (K2).
+			const tool = programName(all[0]?.value || '');
+			for (const [k, word] of all.entries()) {
+				if ((tool === 'git' || tool === 'gh') && k > 0 && !word.redirect && /^(-m|--message|--body|--title|--notes)$/.test(all[k - 1].value) && !/\$\(|`/.test(word.value)) continue;
 				const run = word.quoted || (word.redirect && /\$\(|`/.test(word.value));
 				const hit = run ? findOutward(word.value.replace(/^`|`$/g, ''), depth + 1) : '';
 				if (hit) return hit;
@@ -419,7 +440,7 @@ function bypassIn(text, depth = 0) {
 	// environment (S2).
 	if (/\bGIT_(DIR|COMMON_DIR)\s*=/i.test(flat) && /\bgit\b/i.test(flat)) return 'git with its hooks moved';
 	if (/GIT_CONFIG_(KEY_\d+=\s*include|PARAMETERS=[^;&|\n]*include)/i.test(flat)) return 'git with its hooks moved';
-	if (markersCleared(flat)) return MARKERS;
+	if (markersCleared(flat) && !markerOnlyNamed(text)) return MARKERS;
 	for (const all of tokenize(joinContinuations(text))) {
 		const words = all.filter((w) => !w.redirect).map((w) => w.value.toLowerCase());
 		for (let i = 0; i < words.length; i++) {
@@ -427,7 +448,9 @@ function bypassIn(text, depth = 0) {
 			const hit = gitHooksOff(words, i + 1, gitSubAt(words, i + 1));
 			if (hit) return hit;
 		}
-		if (depth < MAX_DEPTH) for (const w of all) if (w.quoted) { const hit = bypassIn(w.value, depth + 1); if (hit) return hit; }
+		// A message git or gh stores (-m, --body ...) is never run (K2); one with $( ) or a backtick in it is still read.
+		const msg = (k) => (words[0] === 'git' || words[0] === 'gh') && k > 0 && /^(-m|--message|--body|--title|--notes)$/.test(all[k - 1].value) && !/\$\(|`/.test(all[k].value);
+		if (depth < MAX_DEPTH) for (const [k, w] of all.entries()) if (w.quoted && !msg(k)) { const hit = bypassIn(w.value, depth + 1); if (hit) return hit; }
 	}
 	return '';
 }
