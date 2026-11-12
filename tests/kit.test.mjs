@@ -7615,3 +7615,27 @@ test('an owner yes on an older ask waits for the outcome of the sweep approved a
   assert.equal(yes.status, 1, yes.stdout);
   assert.match(yes.stdout, /outcome of the last approved sweep first/);
 });
+
+// why: guards rule:first-push-gate. K27, the 1.27.0 install review: the check took its project from KIT_HOOK_PROJECT
+// whenever it was set, so a tool that set it before a git command pointed the gate at another folder.
+test('the first push check reads only the repository it runs in, whatever KIT_HOOK_PROJECT names', () => {
+  const run = (...a) => spawnSync(...a);
+  const root = kitTemp.makeTemp('k27-');
+  const mk = (name) => {
+    const d = path.join(root, name);
+    fs.mkdirSync(d);
+    run('git', ['init', '-q', '-b', 'main', d]);
+    run('git', ['-C', d, '-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-q', '--allow-empty', '-m', 'one']);
+    return d;
+  };
+  const app = mk('app');
+  const other = mk('other');
+  const check = (cwd, project) => run(process.execPath, [path.resolve('project/.claude/first-push-check.mjs'), '--staged'], { cwd, encoding: 'utf8', env: { ...process.env, KIT_HOOK_PROJECT: project } });
+  const r = check(app, other);
+  assert.notEqual(r.status, 0, 'the gate read another repository');
+  assert.match(r.stdout + r.stderr, /KIT_HOOK_PROJECT names another repository/);
+  // An agent worktree of the project shares its repository: the shim's name for the main checkout stands.
+  run('git', ['-C', app, 'worktree', 'add', '-q', path.join(root, 'wt'), '-b', 'feat/wt']);
+  const w = check(path.join(root, 'wt'), app);
+  assert.doesNotMatch(w.stdout + w.stderr, /names another repository/);
+});
