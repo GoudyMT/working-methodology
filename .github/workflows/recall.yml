@@ -7,6 +7,11 @@
 # Run by hand from main (Actions, Recall, Run workflow), naming the branch to measure: a run spends model tokens, so
 # it is the owner's act, never a push or PR trigger. The federation rule admits only this repo's main ref, so a
 # workflow edited on a branch cannot get a token. It stays off until the owner sets the federation variables.
+#
+# Known limit (the security review of this build): a recall run installs the candidate branch and its sessions load
+# that branch's hooks, so the branch's own code runs where the short-lived credentials are. It is bounded by the
+# owner pressing Run for a branch of this private repo, the rule admitting main only, the workspace spend limit, and
+# tokens that last minutes; it is the same code a recall run on the owner's PC runs under the owner's own login.
 name: Recall
 
 on:
@@ -40,6 +45,12 @@ jobs:
       OIDC_AUDIENCE: ${{ vars.ANTHROPIC_OIDC_AUDIENCE }}
       MEASURE_REF: ${{ inputs.ref }}
     steps:
+      # The candidate is a branch of this repo, named plainly: never a PR merge ref or a fork's.
+      - name: The branch to measure is a plain branch name
+        shell: bash
+        run: |
+          [[ "$MEASURE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$MEASURE_REF" != *..* ]] || { echo "Not a plain branch name: $MEASURE_REF"; exit 1; }
+
       # The harness, keys and brief are main's (the base judges, as the typed gate does); the candidate is data.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,7 +62,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: cand
-          ref: ${{ inputs.ref }}
+          ref: refs/heads/${{ inputs.ref }}
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -80,7 +91,8 @@ jobs:
       - name: Federation token
         shell: bash
         run: |
-          token_file="$RUNNER_TEMP/oidc-token"
+          mkdir -p "$RUNNER_TEMP/oidc" && chmod 700 "$RUNNER_TEMP/oidc"
+          token_file="$RUNNER_TEMP/oidc/token"
           fetch() { curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$OIDC_AUDIENCE" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).value))" > "$token_file.new" && mv "$token_file.new" "$token_file"; }
           fetch
           ( while sleep 240; do fetch || true; done ) > /dev/null 2>&1 &
@@ -100,19 +112,22 @@ jobs:
         run: |
           out="$RUNNER_TEMP/recall"
           node base/scripts/recall-score.mjs blind "$out" base/reports/evals/*.md
+          # The scorer reads only its own folder: a copy of the blinded runs, apart from the sealed map, the raw runs
+          # and the token, with Read denied everywhere else (the security review of this build).
+          desk="$RUNNER_TEMP/desk" && mkdir -p "$desk" && cp "$out"/scorer/R*.md "$desk"/
+          deny="$(node -e "const d=process.argv[1];console.log(JSON.stringify({permissions:{allow:['Read('+d+'/**)','Glob('+d+'/**)'],deny:['Read(//**)','Glob(//**)']}}))" "$desk")"
           brief="$(cat base/docs/evals/recall-scorer-brief.md)"
           keys="$(cat base/docs/evals/recall-questions.md)"
-          ( cd "$out/scorer" && claude -p "$(printf '%s\n\n%s\n\n%s\n' "$brief" "$keys" 'Score every run file R*.md in this folder under the current brief and keys above.')" \
-              --setting-sources project --allowedTools 'Read,Glob' --disallowedTools 'Edit,Write,Bash,WebFetch,WebSearch,Agent' --max-turns 60 ) > "$out/scorer.txt"
+          ( cd "$desk" && claude -p "$(printf '%s\n\n%s\n\n%s\n' "$brief" "$keys" 'Score every run file R*.md in this folder under the current brief and keys above.')" \
+              --setting-sources project --settings "$deny" --allowedTools 'Read,Glob' --disallowedTools 'Edit,Write,Bash,WebFetch,WebSearch,Agent' --max-turns 60 ) > "$out/scorer.txt"
           label="ci-$(printf '%s' "$MEASURE_REF" | tr -c 'A-Za-z0-9.-' '-')"
           node base/scripts/recall-score.mjs score "$out/scorer.txt" "$out/sealed-map.json" "$label" | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # The blinded runs, the scorer's output and the map: never the token folder.
       - name: Keep the runs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recall-runs
-          path: |
-            base/reports/evals
-            ${{ runner.temp }}/recall
+          path: ${{ runner.temp }}/recall
           retention-days: 30

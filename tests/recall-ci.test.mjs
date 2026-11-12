@@ -20,6 +20,11 @@ test('the CI recall job runs only by hand from main, through federation with no 
 	// Claude Code is pinned, and a branch's name reaches the shell only through env, never into the script text.
 	assert.match(wf, /@anthropic-ai\/claude-code@\d+\.\d+\.\d+\b/);
 	for (const run of wf.split(/\n\s+run: \|/).slice(1)) assert.doesNotMatch(run.split(/\n\s+- /)[0], /\$\{\{/, 'an expression inside a run script');
+	// Only a plain branch of this repo is measured, and the token folder is never uploaded nor in the scorer's reach.
+	assert.match(wf, /ref: refs\/heads\/\$\{\{ inputs\.ref \}\}/);
+	assert.match(wf, /\$MEASURE_REF" =~ \^\[A-Za-z0-9\]/);
+	assert.match(wf.split('- name: Keep the runs')[1], /path: \$\{\{ runner\.temp \}\}\/recall\n/);
+	assert.match(wf, /deny:\['Read\(\/\/\*\*\)'/);
 	// The harness, keys and brief that judge are main's; the candidate is only data.
 	assert.match(wf, /node base\/scripts\/recall\.mjs "cand-\$i" cand/);
 	assert.match(wf, /node base\/scripts\/recall-score\.mjs score/);
