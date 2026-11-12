@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 // The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
 // suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
 const status = (o) => kitStatus({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
@@ -7762,4 +7762,37 @@ test('the branch-only clean-up runs only over an unreleased install, never remov
 test('status names the Claude config folder it read', () => {
   const { kit, home, proj } = makeKit();
   assert.ok(status({ kit, home, projectDir: proj, ahead: () => 0 }).text.includes(`Claude config folder: ${home.split(path.sep).join('/')}`));
+});
+
+// why: guards rule:tracking-file-functions (a session removes what it made once it has served, and lists the rest for
+// the owner). Max, 2026-11-12: the closeout cleans a thread's own probe folders as part of the process, not by a
+// string of delete asks; 56 probe folders, 37 guard records and a throwaway had built up over eight releases.
+test('scratch: closeout removes a thread\'s own probe folders and guard records, names the kept, lists strays', () => {
+  const root = makeTemp('probes-');
+  const home = makeTemp('home-');
+  const made = (thread, label) => kitScratch({ root, home, cmd: 'new', thread, label }).path;
+  const a = made('feat/x', 'repro');
+  const b = made('feat/x', 'mutation');
+  const c = made('feat/y', 'other');
+  assert.ok(fs.statSync(a).isDirectory() && a.startsWith(root));
+  kitScratch({ root, home, cmd: 'keep', path: b, reason: 'the next build reads its survivors' });
+  fs.mkdirSync(guardDir(home, a), { recursive: true });
+  fs.writeFileSync(path.join(guardDir(home, a), 'record.json'), '{}');
+  const stray = path.join(root, 'old-stray');
+  fs.mkdirSync(stray);
+  const old = new Date(Date.now() - 5 * 86400e3);
+  fs.utimesSync(stray, old, old);
+  // A ledger line pointing outside the probe folder is never followed.
+  const ledger = path.join(root, '.ledger.json');
+  const l = JSON.parse(read(ledger));
+  l.entries.push({ path: home, thread: 'feat/x', label: 'evil', created: new Date().toISOString() });
+  fs.writeFileSync(ledger, JSON.stringify(l));
+  const gone = [];
+  const r = kitScratch({ root, home, cmd: 'clean', thread: 'feat/x', trash: (p) => gone.push(p) });
+  assert.deepEqual(gone.sort(), [a, guardDir(home, a)].sort());
+  assert.match(r.text, /kept: .*mutation.*the next build reads its survivors/);
+  assert.match(r.text, /refused: .*outside the probe folder/);
+  assert.match(r.text, /stray.*old-stray/);
+  const after = JSON.parse(read(ledger)).entries.map((e) => e.path);
+  assert.ok(!after.includes(a) && after.includes(b) && after.includes(c), 'the ledger lost the wrong entry');
 });
