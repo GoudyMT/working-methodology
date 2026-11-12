@@ -1142,6 +1142,28 @@ test('C9 install user: every recorded project gets the current shims, and the la
 	assert.equal(bash(s, 'git status').decision, 'allow');
 });
 
+// why: guards rule:first-push-gate (the 1.27.0 sweep, high): the new shims run a project's hooks from the launcher's
+// copy, which only a 1.27.0 first-push-check can place; a project still on an older kit could no longer commit, so
+// install user leaves its shims and names the project.
+test('install user leaves the shims of a project still on an older kit, and says so', () => {
+	const { home, proj } = setup();
+	const hooks = path.join(guardDir(home, proj), 'hooks');
+	const file = path.join(guardDir(home, proj), 'record.json');
+	const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+	const shim = (name) => fs.readFileSync(path.join(hooks, name), 'utf8');
+	const before = shim('pre-commit');
+	// A 1.26.0 first-push-check finds its project from its own folder only.
+	const fpc = path.join(proj, '.claude', 'first-push-check.mjs');
+	fs.writeFileSync(fpc, fs.readFileSync(fpc, 'utf8').replace(/process\.env\.KIT_HOOK_PROJECT \? path\.resolve\(process\.env\.KIT_HOOK_PROJECT\) : /, '').split('\n').filter((l) => !/^\/\/.*KIT_HOOK_PROJECT/.test(l)).join('\n'));
+	assert.doesNotMatch(fs.readFileSync(fpc, 'utf8'), /KIT_HOOK_PROJECT/, 'the old script was not made');
+	fs.writeFileSync(path.join(hooks, 'pre-commit'), before + '# old\n');
+	rec.shims['pre-commit'] = crypto.createHash('sha256').update(before + '# old\n').digest('hex');
+	fs.writeFileSync(file, JSON.stringify(rec, null, 2));
+	const r = install({ kit: KIT, home, target: 'user' });
+	assert.equal(shim('pre-commit'), before + '# old\n', 'an older project got shims its hooks cannot run under');
+	assert.ok(r.skipped.some((x) => x.reason.includes(posix(proj)) && /install project/.test(x.reason)), JSON.stringify(r.skipped));
+});
+
 // why: guards rule:security-standards (the hook that runs is the one the launcher checked). The 1.26.0 carry-over C11:
 // a shim checked the hook's hash, then ran the project's file by its path, so a swap in between ran.
 test('C11 shims: a git hook runs from the copy the launcher checked, never from the project file read again', () => {

@@ -634,6 +634,15 @@ export function install(ctx) {
         let rec = null;
         try { rec = JSON.parse(fs.readFileSync(recFile, 'utf8')); } catch { continue; }
         if (!rec || !rec.projectDir || !rec.shims || !fs.existsSync(rec.projectDir)) continue;
+        // The shims run a hook from the launcher's checked copy, and only a first-push-check that reads its project
+        // from KIT_HOOK_PROJECT can run there (the 1.27.0 sweep): a project still on an older kit keeps its shims,
+        // and is named, until install project brings its hooks up to this release.
+        let fpc = '';
+        try { fpc = fs.readFileSync(path.join(rec.projectDir, '.claude', 'first-push-check.mjs'), 'utf8'); } catch { /* none */ }
+        if (fpc && !fpc.includes('process.env.KIT_HOOK_PROJECT')) {
+          skipped.push({ file: `kit-guard/${n}`, reason: `${toPosix(path.resolve(rec.projectDir))} runs an older kit, so its git hook shims stay as they are; run install project there to bring them up to this release` });
+          continue;
+        }
         rec.shims = writeShims(ctx.home, path.join(ctx.home, 'kit-guard', n, 'hooks'), toPosix(path.resolve(rec.projectDir)));
         fs.writeFileSync(recFile, JSON.stringify(rec, null, 2) + '\n');
       }
