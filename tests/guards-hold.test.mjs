@@ -334,7 +334,10 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	// The first push gate is done: this test is about the AI bounds.
 	fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
 	const Z = '0'.repeat(40);
-	const push = (line, env = {}) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', 'x'], { cwd: dir, encoding: 'utf8', input: line + '\n', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: '', KIT_PUSH_APPROVED: '', ...env } });
+	// An empty remote the hook can ask (C19): with no branch there, a push of main is a new repo's first push.
+	const bare = kitTemp.makeTemp('push-remote-');
+	spawnSync('git', ['init', '-q', '--bare', bare], { encoding: 'utf8' });
+	const push = (line, env = {}) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: line + '\n', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: '', KIT_PUSH_APPROVED: '', ...env } });
 	assert.equal(push(`refs/heads/feat/x ${main} refs/heads/feat/x ${Z}`).status, 0, 'a new feature branch');
 	for (const [why, line] of [['main', `refs/heads/main ${main} refs/heads/main ${Z}`], ['a tag', `refs/tags/v1 ${main} refs/tags/v1 ${Z}`], ['a delete', `(delete) ${Z} refs/heads/feat/x ${main}`]]) {
 		assert.notEqual(push(line).status, 0, why);

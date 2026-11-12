@@ -265,6 +265,30 @@ test('V3 pre-push: with hooks turned off in the project settings, even a feature
 	assert.equal(git(remote, ['rev-parse', '-q', '--verify', 'refs/heads/feature/x']).status, 1);
 });
 
+// why: guards rule:outward-acts (the remote's default branch and an existing main take a PR; the owner 2026-11-11).
+// The 1.26.0 carry-overs C5 (V4) and C19: the default branch was read from the local origin/HEAD, which a command can
+// move, and "a new repo's first push" was judged by that one branch, so main went out new beside an existing master.
+test('C5 C19 pre-push: the default branch and a new repo are asked of the remote itself', () => {
+	const { proj, remote } = setup();
+	ok(git(proj, ['checkout', '-q', '-b', 'feat/base']));
+	ok(git(proj, ['push', '-q', 'origin', 'feat/base']));
+	ok(git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/feat/base']));
+	ok(git(proj, ['remote', 'set-head', 'origin', 'main']));
+	fs.writeFileSync(path.join(proj, 'b.md'), 'b\n');
+	ok(git(proj, ['add', 'b.md']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: b']));
+	const r = aiPush(proj, 'feat/base');
+	assert.notEqual(r.status, 0, 'a push to the remote\'s default branch went out with no yes');
+	assert.match(r.stderr, /default branch/);
+	// A remote with master only is no new repo: main is no first push there.
+	const other = path.join(path.dirname(remote), 'other.git');
+	ok(git(path.dirname(remote), ['init', '-q', '--bare', '-b', 'master', other]));
+	ok(git(proj, ['push', '-q', other, 'HEAD:refs/heads/master']));
+	const m = git(proj, ['push', other, 'HEAD:refs/heads/main'], { CLAUDECODE: '1', KIT_PUSH_APPROVED: '1' });
+	assert.notEqual(m.status, 0);
+	assert.match(m.stderr, /not new/);
+});
+
 test('V3 pre-push: an intact install still lets an AI push a feature branch', () => {
 	const { proj, remote } = setup();
 	ok(git(proj, ['checkout', '-q', '-b', 'feature/ok']));
