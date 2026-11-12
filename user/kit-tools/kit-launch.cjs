@@ -40,6 +40,11 @@ function recordName(dir) {
 	// paths apart; a name that fits is the one 1.25.1 gave, so an installed project keeps its record.
 	return `${full.replace(/[^A-Za-z0-9]/g, '-').slice(0, 100)}-${sha(full).slice(0, 10)}`;
 }
+/** The name 1.25.1 gave a record, before B13 cut it: install finds an old record by it and moves it (C2). */
+function legacyRecordName(dir) {
+	const full = WIN ? path.resolve(dir).toLowerCase() : path.resolve(dir);
+	return `${full.replace(/[^A-Za-z0-9]/g, '-')}-${sha(full).slice(0, 10)}`;
+}
 const recordDir = (dir) => path.join(RECORDS, recordName(dir));
 
 function readRecord(dir) {
@@ -459,4 +464,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { kitFingerprint, runGuard, verify, settingsProblem, recordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { kitFingerprint, runGuard, verify, settingsProblem, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };

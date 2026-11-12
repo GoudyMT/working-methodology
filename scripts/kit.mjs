@@ -237,21 +237,31 @@ export function guardDir(home, projectDir) {
   return path.join(home, 'kit-guard', launch.recordName(projectDir));
 }
 
-const readRecord = (home, projectDir) => { try { return JSON.parse(fs.readFileSync(path.join(guardDir(home, projectDir), 'record.json'), 'utf8')); } catch { return null; } };
+/** Where 1.25.1 kept a project's record, when its name was too long for B13 to keep (C2); null when it is the same. */
+function legacyGuardDir(home, projectDir) {
+  const old = path.join(home, 'kit-guard', launch.legacyRecordName(projectDir));
+  return old === guardDir(home, projectDir) ? null : old;
+}
+
+// A project's record, or the one 1.25.1 wrote under the long name, so an upgrade keeps the owner's accepts (C2).
+const readRecord = (home, projectDir) => {
+  for (const dir of [guardDir(home, projectDir), legacyGuardDir(home, projectDir)].filter(Boolean)) {
+    try { return JSON.parse(fs.readFileSync(path.join(dir, 'record.json'), 'utf8')); } catch { /* next */ }
+  }
+  return null;
+};
 
 /**
- * Write the outside record and the git hook shims for a project. Each shim asks the launcher first, then runs the
- * project's own hook, so a hook swapped by a branch cannot pass the push in the same command that swapped it.
+ * Write a project's git hook shims into its record folder. Each asks the launcher first, then runs the project's own
+ * hook. install project writes them; install user rewrites them for every recorded project, so a project installed
+ * before a shim change never keeps an old shim that runs a hook unchecked (the 1.26.0 sweep, C9).
  *
  * Returns:
- *     the shims folder, in the form core.hooksPath takes
+ *     the sha256 of each shim, by hook name
  */
-function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
-  const dir = guardDir(ctx.home, ctx.projectDir);
-  const hooks = path.join(dir, 'hooks');
+function writeShims(home, hooks, proj) {
   fs.mkdirSync(hooks, { recursive: true });
-  const proj = toPosix(path.resolve(ctx.projectDir));
-  const launcher = toPosix(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
+  const launcher = toPosix(path.join(home, 'kit-tools', 'kit-launch.cjs'));
   // Single quotes, so no $, backtick or quote in a folder name is read by the shell (the 1.25.1 sweep); NODE_OPTIONS
   // cleared and node's own folder first, as the launcher's own entry does.
   const q = launch.shq;
@@ -272,6 +282,21 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
   // A shim the kit no longer writes (push-to-checkout and proc-receive, dropped in 1.26.0) would still run its project
   // hook unchecked, so it goes.
   for (const e of fs.readdirSync(hooks)) if (![...GIT_HOOKS, ...OTHER_HOOKS].includes(e)) fs.rmSync(path.join(hooks, e), { force: true });
+  return Object.fromEntries([...GIT_HOOKS, ...OTHER_HOOKS].map((name) => [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(hooks, name))).digest('hex')]));
+}
+
+/**
+ * Write the outside record and the git hook shims for a project. Each shim asks the launcher first, then runs the
+ * project's own hook, so a hook swapped by a branch cannot pass the push in the same command that swapped it.
+ *
+ * Returns:
+ *     the shims folder, in the form core.hooksPath takes
+ */
+function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
+  const dir = guardDir(ctx.home, ctx.projectDir);
+  const hooks = path.join(dir, 'hooks');
+  const proj = toPosix(path.resolve(ctx.projectDir));
+  writeShims(ctx.home, hooks, proj);
   // A guard file the kit did not write (a host's own tracked hook it skipped) is recorded as it is, so a swap of it
   // still holds every call.
   // A host's own guard file is recorded as it stands the first time; after that a change to it stays held, even through
@@ -301,7 +326,12 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     // alone, holds every call until the owner accepts it (widened by the owner, 2026-11-11: whatever git tracks).
     // A file held this way stays in that state on later installs until one of its two ways out is taken (the 1.26.0
     // sweep: --force wrote the kit's copy and the hold stayed).
-    const firstHold = !prev || (prev.files && prev.files[key] === 'not yet accepted');
+    // A file the kit ships is the host's only once the owner accepts it, on any install, not just the first (the 1.26.0
+    // sweep: a guard file a later release adds, tracked by a branch first, was taken on a reinstall, C1; and a record
+    // written before the owner had to accept kept its host entries, C10). The record keeps which keys the owner
+    // accepted; a record with none of them holds each kit file it calls the host's until the owner accepts it.
+    const ownerOk = ((prev && prev.ownerAccepted) || []).includes(key);
+    const firstHold = !prev || !ownerOk || (prev.files && prev.files[key] === 'not yet accepted');
     if (firstHold && keys.includes(key) && !(ctx.acceptHost || []).includes(key)) {
       const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
       if (files[key] && now === files[key]) {
@@ -325,8 +355,12 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     accepted[key] = [...new Set([...known, guarded[key]])];
   }
   const shims = Object.fromEntries([...GIT_HOOKS, ...OTHER_HOOKS].map((name) => [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(hooks, name))).digest('hex')]));
-  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), version: kitInfo.version, files: guarded, host, accepted, shims, hooksPath: null };
+  const ownerAccepted = [...new Set([...((prev && prev.ownerAccepted) || []), ...(ctx.acceptHost || [])])].filter((k) => host.includes(k)).sort();
+  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), version: kitInfo.version, files: guarded, host, accepted, ownerAccepted, shims, hooksPath: null };
   fs.writeFileSync(path.join(dir, 'record.json'), JSON.stringify(record, null, 2) + '\n');
+  // A record 1.25.1 kept under the long name has moved here (C2); the old folder and its shims go.
+  const old = legacyGuardDir(ctx.home, ctx.projectDir);
+  if (old) fs.rmSync(old, { recursive: true, force: true });
   return toPosix(hooks);
 }
 
@@ -590,6 +624,17 @@ export function install(ctx) {
     if (ctx.target === 'user') {
       const gate = wireGate(ctx.home, ctx.dryRun);
       if (gate !== 'added' && gate !== 'present') skipped.push({ file: 'settings.json', reason: gate });
+      // Every recorded project gets this release's shims now, not at its next install project (the 1.26.0 sweep, C9).
+      let names = [];
+      try { names = fs.readdirSync(path.join(ctx.home, 'kit-guard')); } catch { /* no project recorded */ }
+      for (const n of names) {
+        const recFile = path.join(ctx.home, 'kit-guard', n, 'record.json');
+        let rec = null;
+        try { rec = JSON.parse(fs.readFileSync(recFile, 'utf8')); } catch { continue; }
+        if (!rec || !rec.projectDir || !rec.shims || !fs.existsSync(rec.projectDir)) continue;
+        rec.shims = writeShims(ctx.home, path.join(ctx.home, 'kit-guard', n, 'hooks'), toPosix(path.resolve(rec.projectDir)));
+        fs.writeFileSync(recFile, JSON.stringify(rec, null, 2) + '\n');
+      }
     }
     if (ctx.target === 'project') {
       const keys = entries.map((e) => e.key);

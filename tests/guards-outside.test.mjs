@@ -987,6 +987,88 @@ test('B15 host hooks: a host hook accepted on each branch no longer holds a plai
 	assert.equal(bash(s, 'git status').decision, 'deny', 'a third version, never accepted, passed');
 });
 
+// why: guards rule:security-standards (a guard file is the kit's unless the owner accepts the project's own). The
+// 1.26.0 carry-overs: on a reinstall a guard file a later release adds, already tracked by a branch, was taken as the
+// host's and recorded as good (C1); a host entry for a kit file from a record written before the owner had to accept
+// one stayed accepted (C10).
+const hostHook = (p) => {
+	fs.mkdirSync(path.join(p, '.githooks'));
+	fs.writeFileSync(path.join(p, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo host', ''].join(String.fromCharCode(10)));
+	ok(git(p, ['add', '.githooks/pre-commit']));
+	ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
+};
+test('C1 reinstall: a guard file a later release adds, already tracked by a branch, holds until the owner accepts it', () => {
+	const { home, proj, session: s } = setup();
+	const kit = path.join(kitTemp.makeTemp('c1kit-'), 'kit');
+	fs.cpSync(KIT, kit, { recursive: true, filter: (src) => !/[\\/](\.git|reports|node_modules|tests|vendor)$/.test(src) });
+	fs.writeFileSync(path.join(kit, 'project', '.claude', 'later-guard.cjs'), "'use strict';\nmodule.exports = {};\n");
+	fs.writeFileSync(path.join(proj, '.claude', 'later-guard.cjs'), EVIL_GUARD);
+	ok(git(proj, ['add', '-f', '.claude/later-guard.cjs']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'chore: plant']));
+	const r = install({ kit, home, target: 'project', projectDir: proj });
+	assert.ok(r.skipped.some((x) => x.file === '.claude/later-guard.cjs'), 'the planted file was recorded as the host\'s');
+	assert.equal(bash(s, 'git status').decision, 'deny');
+	install({ kit, home, target: 'project', projectDir: proj, acceptHost: ['.claude/later-guard.cjs'] });
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the owner\'s accept is the way out');
+});
+test('C10 reinstall: a kit file a record took as the host\'s before the owner had to accept it holds until accepted', () => {
+	const { home, proj, session: s } = setup({ before: hostHook });
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
+	// A record from before the owner's accept was kept: the host entry is there, the accept is not.
+	const file = path.join(guardDir(home, proj), 'record.json');
+	const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+	delete rec.ownerAccepted;
+	rec.version = '1.25.1';
+	fs.writeFileSync(file, JSON.stringify(rec, null, 2));
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a host entry the owner never accepted stayed accepted');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
+});
+
+// why: catches a lost record on upgrade (the 1.26.0 carry-over C2): B13 cut long record names, and a record 1.25.1 wrote
+// under the whole name was no longer found, so the owner's host accepts were lost.
+test('C2 record names: install finds a long-named record 1.25.1 wrote, keeps its accepts and moves it', () => {
+	const { home, proj, session: s } = setup({ projName: 'app-with-a-long-name-' + 'x'.repeat(40), before: hostHook });
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	const now = guardDir(home, proj);
+	const full = process.platform === 'win32' ? path.resolve(proj).toLowerCase() : path.resolve(proj);
+	const legacy = path.join(home, 'kit-guard', `${full.replace(/[^A-Za-z0-9]/g, '-')}-${crypto.createHash('sha256').update(full).digest('hex').slice(0, 10)}`);
+	assert.notEqual(now, legacy, 'the test path is not long enough to be cut');
+	fs.renameSync(now, legacy);
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.equal(fs.existsSync(legacy), false, 'the old record was left behind');
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the owner\'s accept was lost with the old record');
+});
+
+// why: guards rule:security-standards (every shim checks the guard files before a project hook runs). The 1.26.0
+// carry-over C9: a project installed before the shims checked every hook kept its old shims until install project ran.
+test('C9 install user: every recorded project gets the current shims, and the launcher still passes', () => {
+	const { home, proj, session: s } = setup();
+	const hooks = path.join(guardDir(home, proj), 'hooks');
+	const file = path.join(guardDir(home, proj), 'record.json');
+	const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+	// An old shim: it runs the project hook with no check first.
+	const old = ['#!/bin/sh', `[ -x '${posix(proj)}/.githooks/post-checkout' ] || exit 0`, `exec '${posix(proj)}/.githooks/post-checkout' "$@"`, ''].join(String.fromCharCode(10));
+	fs.writeFileSync(path.join(hooks, 'post-checkout'), old);
+	rec.shims['post-checkout'] = crypto.createHash('sha256').update(old).digest('hex');
+	fs.writeFileSync(file, JSON.stringify(rec, null, 2));
+	install({ kit: KIT, home, target: 'user' });
+	assert.match(fs.readFileSync(path.join(hooks, 'post-checkout'), 'utf8'), /git-hook/, 'the old shim was kept');
+	assert.equal(bash(s, 'git status').decision, 'allow');
+});
+
+// why: catches a silent switch-off (the 1.26.0 carry-over C12): a kit hook the owner kept or merged by hand no longer
+// matches its recorded bytes, so the one guard process skips it; the session must hear that, not lose it in silence.
+test('C12 kit hooks: a changed kit hook that is skipped says so', () => {
+	const { home, proj } = setup();
+	fs.appendFileSync(path.join(home, 'kit-hooks', 'canary.cjs'), '\n// merged by hand\n');
+	const input = { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: 'x', subagent_type: 'reviewer' }, cwd: proj, session_id: 's1' };
+	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify(input), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home } });
+	assert.match(r.stdout, /canary\.cjs[^"]*install user/, `a skipped kit hook went unmentioned: ${r.stdout}`);
+});
+
 // The owner's pick A (2026-11-11): a broken launcher keeps blocking every tool, and the kit gate tells the owner why and what
 // to run, on every prompt, in any folder.
 test('V3 broken launcher: the kit gate names it and the one command that repairs it', () => {

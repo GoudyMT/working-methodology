@@ -62,7 +62,12 @@ function answers(input) {
 		if (!fs.existsSync(where)) continue;
 		try {
 			const bytes = fs.readFileSync(where);
-			if (require('crypto').createHash('sha256').update(bytes).digest('hex') !== stamp[`kit-hooks/${file}`]) continue;
+			// A kit hook kept or merged by hand no longer matches what install user recorded: it is skipped, and the session
+			// is told so, never left to lose it in silence (the 1.26.0 sweep, C12).
+			if (require('crypto').createHash('sha256').update(bytes).digest('hex') !== stamp[`kit-hooks/${file}`]) {
+				out.push([file, { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `Kit: the kit hook ${file} differs from what install user recorded, so it did not run; the owner runs install user to put it back.` } }]);
+				continue;
+			}
 			const text = bytes.toString('utf8');
 			// A user layer from before the one process (1.24.0) has hooks that read stdin and export no check: loading one
 			// would run it here with no input, so it runs as its own process, from the checked bytes (the 1.25.0 sweep).
