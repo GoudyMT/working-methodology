@@ -27,7 +27,8 @@ const ask = (args) => spawnSync('gh', args, { encoding: 'utf8', timeout: 8000 })
 export function scanningNotes(remotesText, gh = ask) {
 	const notes = [];
 	for (const repo of githubRepos(remotesText)) {
-		const r = gh(['api', `repos/${repo}`, '--jq', '[.private, .security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status] | map(tostring) | join(" ")']);
+		// The host is named: the remote said github.com, so a GH_HOST or another login never gets the repo name (K5).
+		const r = gh(['api', '--hostname', 'github.com', `repos/${repo}`, '--jq', '[.private, .security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status] | map(tostring) | join(" ")']);
 		const [priv, scanning, protection] = String((r && r.stdout) || '').trim().split(' ');
 		if (!r || r.status !== 0 || !/^(true|false)$/.test(priv || '')) {
 			notes.push(`NOTE  GitHub did not say whether ${repo} has secret scanning and push protection on (${String((r && r.stderr) || '').trim().split('\n')[0] || 'no answer'}); check Settings > Code security before you push.`);

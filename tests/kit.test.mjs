@@ -1771,7 +1771,14 @@ test('the first push check names a public GitHub repo whose secret scanning or p
   assert.deepEqual(githubRepos(remotes), ['pat/app', 'pat/tool'], 'only plain GitHub names reach the API');
   const asked = [];
   const answers = { 'repos/pat/app': 'false disabled enabled', 'repos/pat/tool': 'false enabled enabled' };
-  const gh = (args) => { asked.push(args[1]); return { status: 0, stdout: answers[args[1]] + '\n', stderr: '' }; };
+  // K5, the 1.27.0 sweep: the call names github.com, so a GH_HOST or an enterprise-only login never gets the repo name.
+  const gh = (args) => {
+    const at = args.indexOf('--hostname');
+    assert.equal(args[at + 1], 'github.com', 'the gh call names no host');
+    const repo = args.find((a) => a.startsWith('repos/'));
+    asked.push(repo);
+    return { status: 0, stdout: answers[repo] + '\n', stderr: '' };
+  };
   const notes = scanningNotes(remotes, gh);
   assert.deepEqual(asked, ['repos/pat/app', 'repos/pat/tool']);
   assert.equal(notes.length, 1);
