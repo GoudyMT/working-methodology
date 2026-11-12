@@ -41,7 +41,8 @@ function needs(command, tool, depth = 0) {
 			const name = String(w[at] || '').split(/[\\/]/).pop().replace(/\.exe$/i, '').toLowerCase();
 			if (name !== 'git' && name !== 'gh') continue;
 			// A word printed by echo and its kind is text, not a command (the 1.25.0 sweep, R3.6).
-			if (/^(echo|printf|write-output|write-host|print)$/i.test(String(w[0] || ''))) break;
+			// A substitution inside it ($( ), a backtick) still runs, so then it is read as a command.
+			if (/^(echo|printf|write-output|write-host|print)$/i.test(String(w[0] || '')) && !/\$\(|`/.test(text)) break;
 			const after = w.slice(at + 1);
 			const rest = (values) => { const a = []; for (let i = 0; i < after.length; i++) { if (values.has(after[i])) { i++; continue; } if (!after[i].startsWith('-')) a.push(after[i]); } return a; };
 			// Help reads a manual (F13), but only as the first word after the subcommand: anywhere else it may be another

@@ -98,3 +98,6 @@ test('a command that only prints git commit does not wait; the commit itself doe
 	for (const command of ['echo git commit', 'printf "%s" git commit', 'Write-Output git commit']) assert.equal(gate([], 'Bash', { command }).decision, 'pass', command);
 	assert.equal(gate([], 'Bash', { command: 'echo x; git commit -m x' }).decision, 'deny');
 });
+test('a substitution inside a printed line still runs, so a commit there waits', () => {
+	assert.equal(gate([], 'Bash', { command: 'echo $(git commit -m x)' }).decision, 'deny');
+});
