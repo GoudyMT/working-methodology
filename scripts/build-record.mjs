@@ -35,6 +35,8 @@ export function problems(rec) {
 		need(!it.where || (text(it.before) && text(it.after)), `item ${i + 1} (${it.id}) names a where without its before and after`);
 	});
 	need(Array.isArray(rec.verification) && rec.verification.length > 0, 'verification is empty');
+	// The Standard body's four sections are all required, Design decisions among them (K15).
+	need(Array.isArray(rec.decisions) && rec.decisions.length > 0 && rec.decisions.every((d) => d && text(d.decision) && text(d.why)), 'decisions is empty, or one has no decision and why');
 	const s = rec.sweep;
 	need(s && text(s.tier) && text(s.commit), 'sweep has no tier or commit');
 	if (s) {
@@ -45,7 +47,38 @@ export function problems(rec) {
 	// The record is the source of outward text: plain ASCII, as the PR body and changelog must be.
 	const nonAscii = [...JSON.stringify(rec)].find((ch) => ch.charCodeAt(0) > 126);
 	need(!nonAscii, `the record holds a non-ASCII character (code ${nonAscii ? nonAscii.charCodeAt(0) : ''})`);
+	// What the PR body audit would fail in the text the body is written from, named here (K15): the same words, the
+	// same dash rule, the same bullet size; the body adds one Tests bullet to at most 3 verification lines.
+	const prose = [rec.headline, rec.alignment, ...(rec.items || []).flatMap((it) => [it.text, it.before, it.after]),
+		...(rec.decisions || []).flatMap((d) => [d.decision, d.why]), ...(rec.verification || []), ...((s && [s.fixed, s.deferred, s.accepted].flat()) || [])].filter(text);
+	for (const p of prose) {
+		const plain = p.replace(/`[^`]*`/g, '');
+		const word = BANNED.find((re) => re.test(plain));
+		need(!word, `"${p.slice(0, 40)}..." has a mechanism or AI word (${word})`);
+		need(!/ - |--/.test(plain), `"${p.slice(0, 40)}..." has a spaced dash`);
+		// The headline and the alignment line are paragraphs; every other line becomes a bullet.
+		need(p === rec.headline || p === rec.alignment || p.length <= 240, `"${p.slice(0, 40)}..." is over 240 characters`);
+	}
+	need(!Array.isArray(rec.verification) || rec.verification.length <= 3, 'verification has more than 3 lines (the body adds the tests line; the audit shows 4)');
+	need(!s || (s.dimensions || []).some((d) => /^code security$/i.test(d.name || '')), 'sweep has no Code security dimension');
 	return out;
+}
+
+// The PR body audit's mechanism words (project/.claude/pr-body-audit.mjs), so a record cannot write a body it fails.
+const BANNED = [/\bAI\b/, /\bagents?\b/i, /\bsubagents?\b/i, /\bclaude\b/i, /\banthropic\b/i, /\bswarm\b/i, /\bopus\b/i, /\bsonnet\b/i, /\bbuilders?\b/i, /\bcheckers?\b/i, /\bLLM\b/];
+
+// Prose wrapped to the audit's 110 characters; a bullet's later lines are indented under it.
+function wrap(line, width = 110) {
+	const lead = /^(\s*- )/.exec(line)?.[1] || '';
+	const pad = ' '.repeat(lead.length);
+	const out = [];
+	let cur = '';
+	for (const w of line.slice(lead.length).split(' ')) {
+		const start = out.length ? pad : lead;
+		if (cur && (start + cur + ' ' + w).length > width) { out.push(start + cur); cur = w; } else cur = cur ? `${cur} ${w}` : w;
+	}
+	out.push((out.length ? pad : lead) + cur);
+	return out.join('\n');
 }
 
 /** The CHANGELOG entry, items grouped by kind in a fixed order. */
@@ -77,7 +110,7 @@ export function prBody(rec) {
 	out.push(`- **Deferred:** ${count(s.deferred) ? `\n${count(s.deferred)}` : 'none.'}`);
 	out.push(`- **Accepted risks:** ${count(s.accepted) ? `\n${count(s.accepted)}` : 'none.'}`);
 	out.push('- **Secrets:** no secrets or account information in the diff.', '', `Version alignment: YES. ${rec.alignment || `v${rec.version} is the ${rec.level} release this build plans.`}`, '');
-	return out.join('\n');
+	return out.map((l) => (l.startsWith('|') ? l : l.split('\n').map((x) => wrap(x)).join('\n'))).join('\n');
 }
 
 /** The record for the version in VERSION, its path, and the checks against VERSION and CHANGELOG.md. */

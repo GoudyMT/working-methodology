@@ -4,6 +4,7 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { problems, changelog, prBody, checkRepo } from '../scripts/build-record.mjs';
 
@@ -16,8 +17,9 @@ const record = () => ({
 		{ id: 'S1', kind: 'security', text: 'A PR cannot choose its own map.', evidence: 'commit abc1234' },
 		{ id: 'T2', kind: 'added', text: 'A test check.', evidence: 'scripts/test-check.mjs' },
 	],
+	decisions: [{ decision: 'One record', why: 'the changelog and the body never differ' }],
 	verification: ['Every test passed in CI.'],
-	sweep: { tier: 'Feature', commit: 'abc1234', dimensions: [{ name: 'Security', result: 'clean' }], findings: { critical: 0, high: 1, medium: 2, low: 0 }, fixed: ['one high, fixed here'] },
+	sweep: { tier: 'Feature', commit: 'abc1234', dimensions: [{ name: 'Code security', result: 'clean' }], findings: { critical: 0, high: 1, medium: 2, low: 0 }, fixed: ['one high, fixed here'] },
 	tests: { before: 10, after: 8 },
 });
 
@@ -67,4 +69,23 @@ test('the repo check fails when VERSION, the record and the top changelog entry 
 	assert.match(checkRepo(dir).problems.join('\n'), /top CHANGELOG\.md entry.*record writes/);
 	fs.writeFileSync(path.join(dir, 'VERSION'), '1.3.0\n');
 	assert.match(checkRepo(dir).problems.join('\n'), /cannot read docs[\\/]builds[\\/]1\.3\.0\.json/);
+});
+
+// why: guards rule:pr-body. K15, the 1.27.0 build: the body the record wrote failed the PR body audit (line length,
+// AI words, too many verification bullets, a dimension missing), so it was fitted by hand. Now a record either names
+// what the audit would fail, or writes a body that passes it.
+test('a whole record writes a PR body that passes the audit, and one that would fail names why', () => {
+	const real = problems(JSON.parse(fs.readFileSync(path.resolve('docs/builds/1.27.0.json'), 'utf8'))).join('\n');
+	for (const gap of [/mechanism or AI word/, /spaced dash/, /over 240 characters/, /verification has more than 3/]) assert.match(real, gap);
+	const rec = record();
+	rec.headline = `${'Every kit test now names the rule it guards, and the ones that guarded nothing new are gone. '.repeat(3)}`.trim();
+	rec.items[0].text = 'Each test carries a why line naming the rule it guards, read by a script that holds new tests to the same bar. '.repeat(2).trim();
+	rec.verification = ['Every test passed in CI on Linux and Windows, and the install check passed on both.', 'The mutation check ran.', 'The planted cases held.'];
+	rec.sweep.dimensions = [{ name: 'Code security', result: 'clean' }];
+	assert.deepEqual(problems(rec), []);
+	const dir = kitTemp.makeTemp('recbody-');
+	const f = path.join(dir, 'body.md');
+	fs.writeFileSync(f, prBody(rec));
+	const r = spawnSync(process.execPath, [path.resolve('project/.claude/pr-body-audit.mjs'), f, rec.title, '31'], { encoding: 'utf8', cwd: dir });
+	assert.equal(r.status, 0, r.stdout.split('\n').filter((l) => l.startsWith('FAIL')).join('\n'));
 });
