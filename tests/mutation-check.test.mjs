@@ -48,6 +48,7 @@ function repo() {
 }
 const check = (cwd, args = []) => spawnSync(process.execPath, [CHECK, ...args], { cwd, encoding: 'utf8' });
 
+// why: catches a break at scripts/mutation-check.mjs:144 that no other test catches
 test('the mutation check names a flip no test catches, passes one a test catches, and leaves the code as it was', () => {
 	const { dir, src } = repo();
 	const r = check(dir, ['src/a.cjs']);
@@ -83,6 +84,7 @@ test('the mutation check names a flip no test catches, passes one a test catches
 	}
 });
 
+// why: guards rule:outward-acts
 test('the mutation check refuses a map from another commit or no map, and says how to make one', () => {
 	const { dir } = repo();
 	fs.appendFileSync(path.join(dir, 'src', 'a.cjs'), '// later\n');

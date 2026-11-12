@@ -41,6 +41,7 @@ test('a fresh install has every part present and wired, and a part with no trace
 	assert.equal(part(check(dir).out, 'git-hooks').used.ok, true);
 });
 
+// why: guards rule:outward-acts
 test('an unwired part fails the check by name: the guard entry gone, git hooks not set, a guard file missing', () => {
 	const unwired = project();
 	const file = path.join(homes.get(unwired), 'settings.json');
@@ -87,6 +88,7 @@ test('a part the project opts out of is named, not missing; a folder without git
 	assert.equal(part(p.out, 'git-hooks').wired.ok, null);
 });
 
+// why: catches a break at project/.claude/use-check.mjs:89 that no other test catches
 test('install project prints the use check and fails when a part is not wired; status names it', () => {
 	const dir = kitTemp.makeTemp('use-cli-');
 	const home = kitTemp.makeTemp('use-cli-home-');

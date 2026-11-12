@@ -26,6 +26,7 @@ const run = (cwd, args, env = {}) => {
 // Each test the fixture runs writes its name to the log, so a run shows exactly which tests ran and how often.
 const ran = (log) => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).sort() : []);
 
+// why: guards rule:test-and-review-cadence
 test('the runner splits a harness file into shards that together run every test exactly once', () => {
 	const dir = kitTemp.makeTemp('shards-');
 	const log = path.join(dir, 'ran.log');
@@ -42,6 +43,7 @@ test('the runner splits a harness file into shards that together run every test 
 // E31: Linux runs the suite and Windows the tests marked { windows: true }; together every test runs, and each one
 // marked runs on Windows (off Windows it is skipped and reported, never dropped silently, F20). { windows: 'also' }
 // runs everywhere and in the slice (F16). Both platforms are checked on either, through KIT_TEST_PLATFORM.
+// why: guards rule:test-and-review-cadence
 test('the Windows slice runs only the marked tests, and elsewhere the Windows-only ones are reported skipped', () => {
 	const dir = kitTemp.makeTemp('winslice-');
 	const log = path.join(dir, 'ran.log');
@@ -69,6 +71,7 @@ test('the Windows slice runs only the marked tests, and elsewhere the Windows-on
 
 // CI splits the suite over several runners (S22-1): the slices together run each test once, and a file outside the
 // harness runs in the first slice only.
+// why: guards rule:test-and-review-cadence
 test('runner slices split the shards over CI jobs: together every test exactly once, a whole file once', () => {
 	const dir = kitTemp.makeTemp('slices-');
 	const log = path.join(dir, 'ran.log');
@@ -99,6 +102,7 @@ test('runner slices split the shards over CI jobs: together every test exactly o
 	assert.match(half.stderr, /whole suite/);
 });
 
+// why: guards rule:test-and-review-cadence
 test('a run started inside another run ignores the outer run\'s selection and map', () => {
 	const dir = kitTemp.makeTemp('nested-');
 	const log = path.join(dir, 'ran.log');
@@ -112,6 +116,7 @@ test('a run started inside another run ignores the outer run\'s selection and ma
 	assert.equal(fs.existsSync(path.join(dir, 'nomap')), false);
 });
 
+// why: guards rule:test-and-review-cadence
 test('a failing test in any shard fails the run and is named in the output', () => {
 	const dir = kitTemp.makeTemp('shards-');
 	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS};\n` +
@@ -124,6 +129,7 @@ test('a failing test in any shard fails the run and is named in the output', () 
 
 // The 1.24.0 build: a mutant dropped a test's own Claude folder, and an install wrote into the owner's real one. Every
 // run gives its tests a throwaway Claude folder, so a test that loses its own falls back there, never to ~/.claude.
+// why: guards rule:test-and-review-cadence
 test('every run gives its tests a throwaway Claude folder, never the real one', () => {
 	const dir = kitTemp.makeTemp('home-');
 	const seen = path.join(dir, 'seen.json');
@@ -140,6 +146,7 @@ test('every run gives its tests a throwaway Claude folder, never the real one', 
 });
 
 // CI killed a run at its cap with nothing printed (PR 25): each shard says where it is while it runs and when it ends.
+// why: guards rule:test-and-review-cadence
 test('each shard names the test it is in while it runs, and prints its own result when it ends', () => {
 	const dir = kitTemp.makeTemp('beat-');
 	fs.writeFileSync(path.join(dir, 'x.test.mjs'), `import { test } from ${HARNESS};\n` +
@@ -181,6 +188,7 @@ function fixtureRepo() {
 	return { repo, log, test: path.join(repo, 'tests', 'x.test.mjs') };
 }
 
+// why: guards rule:test-and-review-cadence
 test('the coverage map records the lines each test runs, in its own process and in children, and the files it reads', () => {
 	const { repo, test: file } = fixtureRepo();
 	const r = run(repo, ['--map', file]);
@@ -198,6 +206,7 @@ test('the coverage map records the lines each test runs, in its own process and 
 	assert.ok(!t('f').reads.includes('notes.md'));
 });
 
+// why: guards rule:test-and-review-cadence
 test('a changed run picks only the tests that reach the changed lines or files, and new tests', () => {
 	const { repo, log, test: file } = fixtureRepo();
 	assert.equal(run(repo, ['--map', file]).status, 0);
@@ -219,6 +228,7 @@ test('a changed run picks only the tests that reach the changed lines or files, 
 	assert.deepEqual(changed(() => {}), [], 'nothing changed, nothing runs');
 });
 
+// why: guards rule:test-and-review-cadence
 test('a changed run with no map, or a map from a commit not in history, runs everything and says why', () => {
 	const { repo, log, test: file } = fixtureRepo();
 	let r = run(repo, ['--changed', file]);
@@ -232,6 +242,7 @@ test('a changed run with no map, or a map from a commit not in history, runs eve
 	assert.equal(ran(log).length, 5);
 });
 
+// why: guards rule:test-and-review-cadence
 test('a map run keeps the commit it started on, and its children start in a folder with a broken package.json', () => {
 	const repo = kitTemp.makeTemp('maprepo2-');
 	const bad = kitTemp.makeTemp('badpkg-');
@@ -253,6 +264,7 @@ test('a map run keeps the commit it started on, and its children start in a fold
 });
 
 // CI's temp folder is a short name (RUNNER~1) that git reports long (PR 25); a junction makes the same split here.
+// why: guards rule:test-and-review-cadence
 test('the map keys a test by its path in the repo when the repo is reached through another name for its folder', { windows: 'also' }, () => {
 	const { repo, log, test: file } = fixtureRepo();
 	const link = `${repo}-link`;
@@ -273,6 +285,7 @@ test('the map keys a test by its path in the repo when the repo is reached throu
 	}
 });
 
+// why: guards rule:test-and-review-cadence
 test('a runner started by a mapped test maps nothing of its own into the outer map', () => {
 	const { repo, test: file } = fixtureRepo();
 	const inner = kitTemp.makeTemp('inner-');
@@ -286,6 +299,7 @@ test('a runner started by a mapped test maps nothing of its own into the outer m
 	assert.deepEqual(keys.filter((k) => /inner one/.test(k)), []);
 });
 
+// why: guards rule:test-and-review-cadence
 test('a map is made only from a clean tree, so its line numbers match its commit', () => {
 	const { repo, test: file } = fixtureRepo();
 	fs.appendFileSync(path.join(repo, 'src', 'a.mjs'), '// local edit\n');

@@ -44,6 +44,7 @@ function setup() {
 }
 const head = (copy) => sh(copy, 'rev-parse', 'HEAD');
 
+// why: guards rule:outward-acts
 test('the release verify moves the copy to the tag of the merged PR, installs both and reads status current', () => {
 	const s = setup();
 	const lines = [];
@@ -54,6 +55,7 @@ test('the release verify moves the copy to the tag of the merged PR, installs bo
 	assert.match(lines.join('\n'), /\[7\/7\] Status/);
 });
 
+// why: catches a break at scripts/release-verify.mjs:31 that no other test catches
 test('the release verify stops at the first failed check, names it, and installs nothing after it', () => {
 	const cases = [
 		['a cloud session', (s) => { s.deps.env = { CLAUDE_CODE_REMOTE: 'true' }; }, 1, /owner's PC/],

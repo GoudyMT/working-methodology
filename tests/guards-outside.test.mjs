@@ -150,12 +150,14 @@ const held = (s, why) => {
 	assert.match(bash(s, 'git status').reason, /changed outside install/i, 'the refusal names the cause');
 };
 
+// why: guards rule:outward-acts
 test('V3 setup: on a clean install the outside launcher passes git status and still holds a main push', () => {
 	const { session: s } = setup();
 	assert.equal(bash(s, 'git status').decision, 'allow');
 	assert.equal(bash(s, 'git push origin main').decision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 git apply: a patch that replaces guard.cjs holds every later call', () => {
 	const { proj, session: s } = setup();
 	const patch = path.join(proj, '..', 'p.patch');
@@ -165,6 +167,7 @@ test('V3 git apply: a patch that replaces guard.cjs holds every later call', () 
 	held(s, 'git apply');
 });
 
+// why: guards rule:outward-acts
 test('V3 git checkout: a branch that carries guard.cjs holds every later call', () => {
 	const { proj, session: s } = setup();
 	const evil = commitWith(proj, '.claude/guard.cjs', EVIL_GUARD, ['HEAD']);
@@ -174,6 +177,7 @@ test('V3 git checkout: a branch that carries guard.cjs holds every later call', 
 	held(s, 'git checkout');
 });
 
+// why: guards rule:outward-acts
 test('V3 git stash pop: a stash that carries guard.cjs holds every later call', () => {
 	const { proj, session: s } = setup();
 	const head = ok(git(proj, ['rev-parse', 'HEAD']));
@@ -187,6 +191,7 @@ test('V3 git stash pop: a stash that carries guard.cjs holds every later call', 
 	held(s, 'git stash pop');
 });
 
+// why: guards rule:outward-acts
 test('V3 script: a script that rewrites a guard module the guard loads holds every later call', () => {
 	const { proj, session: s } = setup();
 	// What tools/fix.mjs did in the proof: a module that exits 0 on load disarms the one guard process.
@@ -195,6 +200,7 @@ test('V3 script: a script that rewrites a guard module the guard loads holds eve
 });
 
 // 1.25.0 already failed closed here; what this adds is a refusal that names the deleted file (the 1.25.1 sweep).
+// why: guards rule:outward-acts
 test('V3 script: a refusal after a script deletes a guard file names the file', () => {
 	const { proj, session: s } = setup();
 	fs.rmSync(path.join(proj, '.claude', 'guard-outward.cjs'));
@@ -202,6 +208,7 @@ test('V3 script: a refusal after a script deletes a guard file names the file', 
 	assert.match(bash(s, 'git status').reason, /guard-outward\.cjs/, 'the refusal does not name the deleted file');
 });
 
+// why: guards rule:outward-acts
 test('V3 settings: disableAllHooks written mid-session is refused, and every call is held while it is there', () => {
 	const { proj, session: s } = setup();
 	const local = path.join(proj, '.claude', 'settings.local.json');
@@ -213,6 +220,7 @@ test('V3 settings: disableAllHooks written mid-session is refused, and every cal
 	assert.match(bash(s, 'git status').reason, /disableAllHooks/);
 });
 
+// why: guards rule:outward-acts
 test('V3 settings: a branch that carries a settings.json turning hooks off is refused the same way', () => {
 	const { proj, session: s } = setup();
 	const file = path.join(proj, '.claude', 'settings.json');
@@ -222,6 +230,7 @@ test('V3 settings: a branch that carries a settings.json turning hooks off is re
 	assert.equal(bash(s, 'git push origin main').decision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 settings: an ordinary settings change still applies', () => {
 	const { proj, session: s } = setup();
 	const local = path.join(proj, '.claude', 'settings.local.json');
@@ -230,6 +239,7 @@ test('V3 settings: an ordinary settings change still applies', () => {
 	assert.equal(bash(s, 'git status').decision, 'allow');
 });
 
+// why: guards rule:outward-acts
 test('V3 user settings: removing the launcher from the user settings mid-session is refused', () => {
 	const { home, session: s } = setup();
 	const file = path.join(home, 'settings.json');
@@ -243,6 +253,7 @@ test('V3 user settings: removing the launcher from the user settings mid-session
 // The pre-push hook as git runs it for an AI shell: a real push to the local bare remote.
 const aiPush = (proj, ...ref) => git(proj, ['push', 'origin', ...ref], { CLAUDECODE: '1' });
 
+// why: guards rule:outward-acts
 test('V3 pre-push: a hook swapped by a branch cannot let a main push out in the same command', () => {
 	const { proj, remote } = setup();
 	const before = ok(git(remote, ['rev-parse', 'main']));
@@ -255,6 +266,7 @@ test('V3 pre-push: a hook swapped by a branch cannot let a main push out in the 
 	assert.match(r.stderr, /changed outside install/i);
 });
 
+// why: guards rule:outward-acts
 test('V3 pre-push: with hooks turned off in the project settings, even a feature push is refused', () => {
 	const { proj, remote } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'settings.local.json'), JSON.stringify({ disableAllHooks: true }));
@@ -289,6 +301,7 @@ test('C5 C19 pre-push: the default branch and a new repo are asked of the remote
 	assert.match(m.stderr, /not new/);
 });
 
+// why: guards rule:outward-acts
 test('V3 pre-push: an intact install still lets an AI push a feature branch', () => {
 	const { proj, remote } = setup();
 	ok(git(proj, ['checkout', '-q', '-b', 'feature/ok']));
@@ -299,6 +312,7 @@ test('V3 pre-push: an intact install still lets an AI push a feature branch', ()
 
 const status = (home, proj) => kitStatus({ kit: KIT, home, projectDir: proj, ahead: () => 0, protection: () => null, newest: () => null, inodes: () => ({ level: 'ok', text: '' }), claudeVersion: () => '2.1.302 (Claude Code)' });
 
+// why: guards rule:outward-acts
 test('V3 status: a guard file changed outside install is a gap, never the project\'s own values', () => {
 	const { home, proj } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
@@ -311,6 +325,7 @@ test('V3 status: a guard file changed outside install is a gap, never the projec
 
 // B22 (the 1.25.1 sweep, a low): status hashed the guard files but not the shims, and did not list a hook added to
 // .githooks, while the launcher holds every call for both. Status reads the same check the launcher runs.
+// why: guards rule:outward-acts
 test('B22 status: a swapped hook shim and a hook added to .githooks are gaps, as the launcher holds them', () => {
 	const { home, proj } = setup();
 	fs.appendFileSync(path.join(guardDir(home, proj), 'hooks', 'pre-push'), '\nexit 0\n');
@@ -325,6 +340,7 @@ test('B22 status: a swapped hook shim and a hook added to .githooks are gaps, as
 	assert.match(r.text, /hooks\/push-to-checkout/);
 });
 
+// why: guards rule:outward-acts
 test('V3 status: hooks turned off in the project settings is a gap', () => {
 	const { home, proj } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'settings.local.json'), JSON.stringify({ disableAllHooks: true }));
@@ -333,6 +349,7 @@ test('V3 status: hooks turned off in the project settings is a gap', () => {
 	assert.match(r.text, /disableAllHooks/);
 });
 
+// why: guards rule:outward-acts
 test('V3 install: a plain install project restores a swapped guard file and keeps a backup', () => {
 	const { home, proj, session: s } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
@@ -344,6 +361,7 @@ test('V3 install: a plain install project restores a swapped guard file and keep
 	assert.equal(bash(s, 'git push origin main').decision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 fix line: while held, the install that restores the guards may run, alone', () => {
 	const { proj, session: s } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
@@ -358,6 +376,7 @@ test('V3 fix line: while held, the install that restores the guards may run, alo
 
 // The second pass on 0772397 (role 1): the fix line was matched by path.resolve on a loose regex, so a preload flag or a
 // path that climbs out and back in passed as the fix line.
+// why: guards rule:outward-acts
 test('V3 fix line: only the exact command passes, with the kit script and the project as full paths', () => {
 	const { proj, session: s } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
@@ -388,6 +407,7 @@ test('V3 fix line: only the exact command passes, with the kit script and the pr
 
 // The second pass on 0772397 (role 1): the fix line runs the install from the kit folder, which nothing checked; a branch
 // checked out there, or one changed file, made the held install record a swapped guard as good.
+// why: guards rule:outward-acts
 test('V3 fix line: a kit folder changed since the install no longer offers the fix line', () => {
 	const tmp = kitTemp.makeTemp('v3kit-');
 	const kit = path.join(tmp, 'kit');
@@ -414,6 +434,7 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 
 // W2 (the 1.25.1 verify): the kit pin refused a kit folder that is a git worktree (a .git file), so the held install's
 // fix line was never offered there. A worktree is pinned by its own git folder and the shared one it names.
+// why: guards rule:outward-acts
 test('W2 fix line: a kit folder that is a git worktree is pinned, and a change to its git config unpins it', () => {
 	const launch = createRequire(import.meta.url)('../user/kit-tools/kit-launch.cjs');
 	const tmp = kitTemp.makeTemp('w2kit-');
@@ -439,6 +460,7 @@ test('W2 fix line: a kit folder that is a git worktree is pinned, and a change t
 // B20 (the security review on 1.25.1): the release check and the fix line's fingerprint are read before install reads
 // the kit's files, so a process left running could swap a kit file in between and install would copy it. A release
 // install now copies only bytes that match the release tag's own tree.
+// why: guards rule:outward-acts
 test('B20 release install: a kit file changed after the release check is refused, never copied', () => {
 	const tmp = kitTemp.makeTemp('b20kit-');
 	const kit = path.join(tmp, 'kit');
@@ -482,6 +504,7 @@ test('B20 release install: no tree id is a refusal, and the config, profile and 
 // The security review on c453ec1: core.fsmonitor names a program git runs on git status and git ls-files (proven on
 // Git for Windows, 2026-11-11). The held fix line runs install, which runs git in the kit folder and in the project; a
 // program named in the project's git config or the user's global one would run inside the one call a hold lets through.
+// why: guards rule:outward-acts
 test('V3 fix line: the install it runs starts no program a git config names', () => {
 	const { root, home, proj } = setup();
 	const ran = posix(path.join(root, 'RAN'));
@@ -504,6 +527,7 @@ test('V3 fix line: the install it runs starts no program a git config names', ()
 // The security review on e4b3203: on Windows a program is looked for in the current folder before PATH, and the fix line
 // runs from the project, so a git.exe the agent left there would run inside the held install. A copy of node named
 // git.exe stands in for it here; NODE_OPTIONS makes it leave a mark if it ever starts (the real git ignores it).
+// why: guards rule:outward-acts
 test('V3 fix line: the install it runs never starts a git found in the current folder', { skip: process.platform !== 'win32' }, () => {
 	const { root, home, proj } = setup();
 	const mark = path.join(root, 'PLANTED');
@@ -523,6 +547,7 @@ test('V3 fix line: the install it runs never starts a git found in the current f
 	assert.equal(fs.existsSync(mark), false, 'a git.exe in the current folder ran during install');
 });
 
+// why: guards rule:outward-acts
 test('V3 wiring: install user wires the launcher on every tool and the settings check, once', () => {
 	const { root } = setup();
 	// Named as the real one is, so the guards that read a path by its .claude folder see it as the owner's.
@@ -538,6 +563,7 @@ test('V3 wiring: install user wires the launcher on every tool and the settings 
 	assert.equal(named(user.hooks.UserPromptSubmit, 'kit-gate.cjs').length, 1, 'the kit gate stays');
 });
 
+// why: guards rule:outward-acts
 test('V3 wiring: in a folder with no kit install the launcher says nothing and lets every call through', () => {
 	const { root, home } = setup();
 	const other = path.join(root, 'other');
@@ -548,6 +574,7 @@ test('V3 wiring: in a folder with no kit install the launcher says nothing and l
 	assert.equal(r.stdout.trim(), '');
 });
 
+// why: guards rule:outward-acts
 test('V3 worktree: a session in a worktree under the project is guarded by the project record', () => {
 	const { proj, home } = setup();
 	const wt = path.join(proj, '.claude', 'worktrees', 'w1');
@@ -561,6 +588,7 @@ test('V3 worktree: a session in a worktree under the project is guarded by the p
 
 // The 1.25.1 security review: the record and the shims are what the launcher trusts, so a tool may not write them, a
 // shim swapped there holds every call, and a kit project whose record is gone runs no call until install writes it.
+// why: guards rule:outward-acts
 test('V3 record: a tool that writes the guard record or a shim is held, and a swapped shim holds every call', () => {
 	const { home, proj, session: s } = setup();
 	const dir = path.join(home, 'kit-guard', fs.readdirSync(path.join(home, 'kit-guard'))[0]);
@@ -572,6 +600,7 @@ test('V3 record: a tool that writes the guard record or a shim is held, and a sw
 	assert.match(d.reason, /kit-guard hooks\/pre-push/);
 });
 
+// why: guards rule:outward-acts
 test('V3 record: a kit project whose record is gone holds every call but the install line', () => {
 	const { home, proj, session: s } = setup();
 	fs.rmSync(path.join(home, 'kit-guard'), { recursive: true });
@@ -588,6 +617,7 @@ const ALLOW_ALL = (dir) => {
 	return posix(f);
 };
 
+// why: guards rule:outward-acts
 test('V3 env: a settings env key that changes how node, git or the guards start is refused mid-session and holds every call', () => {
 	for (const [key, value] of [['NODE_OPTIONS', '--require x.cjs'], ['PATH', '/tmp/evil'], ['GIT_CONFIG_PARAMETERS', "'core.hookspath'='/tmp'"], ['NODE_PATH', '/tmp'], ['SHELLOPTS', 'xtrace'], ['PS4', '$(id)'], ['BASH_FUNC_node%%', '() { :; }']]) {
 		const { proj, session: s } = setup();
@@ -600,6 +630,7 @@ test('V3 env: a settings env key that changes how node, git or the guards start 
 	}
 });
 
+// why: guards rule:outward-acts
 test('V3 env: NODE_OPTIONS planted before the session starts cannot load code into the launcher', () => {
 	const { root, home, proj } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'settings.json'), JSON.stringify({ env: { NODE_OPTIONS: `--require ${ALLOW_ALL(root)}` } }));
@@ -609,6 +640,7 @@ test('V3 env: NODE_OPTIONS planted before the session starts cannot load code in
 	assert.match(d.reason, /NODE_OPTIONS/);
 });
 
+// why: guards rule:outward-acts
 test('V3 settings: a settings file with a byte-order mark is read, not skipped', () => {
 	const { proj, session: s } = setup();
 	const local = path.join(proj, '.claude', 'settings.local.json');
@@ -617,6 +649,7 @@ test('V3 settings: a settings file with a byte-order mark is read, not skipped',
 	assert.match(bash(s, 'git status').reason, /disableAllHooks/);
 });
 
+// why: guards rule:outward-acts
 test('V3 hooksPath: every way git can take another hooks path is held, not just the first line of .git/config', () => {
 	const evil = (proj) => posix(path.join(proj, '..', 'evil-hooks'));
 	const NL = String.fromCharCode(10), TAB = String.fromCharCode(9);
@@ -643,6 +676,7 @@ test('V3 hooksPath: every way git can take another hooks path is held, not just 
 	assert.equal(s.decide('Write', { file_path: path.join(proj, '.git', 'config.worktree'), content: '[core]' }).decision, 'deny', 'a tool writes .git/config.worktree');
 });
 
+// why: guards rule:outward-acts
 test('V3 host hooks: a host that keeps its own hooks in .githooks still runs every one of them after install', () => {
 	const { proj } = setup({
 		before: (p) => {
@@ -658,6 +692,7 @@ test('V3 host hooks: a host that keeps its own hooks in .githooks still runs eve
 
 // B19 (the security review on 1.25.1): the shims for git's other hooks ran the project's hook with no check, so a
 // branch that carries a new .githooks/post-checkout ran it inside the very checkout that wrote it.
+// why: guards rule:outward-acts
 test('B19 shims: a hook a branch carries never runs in the checkout that brings it', () => {
 	const { proj } = setup();
 	ok(git(proj, ['checkout', '-q', '-b', 'feature/evil']));
@@ -674,6 +709,7 @@ test('B19 shims: a hook a branch carries never runs in the checkout that brings 
 
 // The second pass on 0772397 (role 1): the shims run any hook in .githooks, and one added after install was in no record,
 // so it ran with no hold. A host's own hooks there at the first install are recorded as they stand.
+// why: guards rule:outward-acts
 test('V3 host hooks: a hook added to .githooks after install holds every call until the owner accepts it', () => {
 	const HOOK = ['#!/bin/sh', 'echo ran', ''].join(String.fromCharCode(10));
 	const { home, proj, session: s } = setup({
@@ -696,6 +732,7 @@ test('V3 host hooks: a hook added to .githooks after install holds every call un
 // loaded them again from their real place, so a swap between the two ran unverified code (6 of 40 tries passed).
 // The security review on 330dbbf: a link swapped after the check can send a require outside the project, where the
 // loader read the file from disk. The guard process loads only the bytes it checked, and the config folder's own hooks.
+// why: guards rule:outward-acts
 test('V3 links: the guard process never loads a file from outside the record and the config folder', () => {
 	const { root, home, proj } = setup();
 	const mark = posix(path.join(root, 'LOADED'));
@@ -716,6 +753,7 @@ test('V3 links: the guard process never loads a file from outside the record and
 // B23 (the security review on the 1.25.1 push): the loader still took any file under the config folder, so a file a
 // tool wrote there (or one of the kit's hooks changed since install user) loaded into the guard process. Only the
 // kit's own hook files, with the bytes install user recorded, load from there.
+// why: guards rule:outward-acts
 test('B23 loader: from the config folder only the kit hook files install user recorded load', () => {
 	const { root, home, proj } = setup();
 	const mark = posix(path.join(root, 'LOADED'));
@@ -741,6 +779,7 @@ test('B23 loader: from the config folder only the kit hook files install user re
 });
 
 // The 1.26.0 sweep: a kit hook with no "exports.check" ran as its own node process, past B23's hash check.
+// why: guards rule:outward-acts
 test('B23 loader: a changed kit hook in the old one-process shape never runs either', () => {
 	const { root, home, proj } = setup();
 	const mark = posix(path.join(root, 'RAN'));
@@ -749,6 +788,7 @@ test('B23 loader: a changed kit hook in the old one-process shape never runs eit
 	assert.equal(fs.existsSync(mark), false, 'a changed kit hook ran as its own process');
 });
 
+// why: guards rule:outward-acts
 test('V3 links: a guard file reached through a junction or link holds every call', () => {
 	const { root, proj, session: s } = setup();
 	const real = path.join(root, 'real-claude');
@@ -758,6 +798,7 @@ test('V3 links: a guard file reached through a junction or link holds every call
 	assert.match(bash(s, 'git status').reason, /link/i);
 });
 
+// why: guards rule:outward-acts
 test('V3 host hooks: install never overwrites a git hook the host tracks, and still guards it', () => {
 	const HOST = ['#!/bin/sh', 'echo host-pre-commit', ''].join(String.fromCharCode(10));
 	const { home, proj, session: s } = setup({
@@ -779,6 +820,7 @@ test('V3 host hooks: install never overwrites a git hook the host tracks, and st
 	assert.equal(bash(s, 'git status').decision, 'allow');
 });
 
+// why: guards rule:outward-acts
 test('V3 upgrade: install takes the old guard entry out of a settings.json the owner changed, and keeps the rest', () => {
 	const { home, proj } = setup();
 	const file = path.join(proj, '.claude', 'settings.json');
@@ -799,6 +841,7 @@ test('V3 upgrade: install takes the old guard entry out of a settings.json the o
 
 // The second pass on 0772397 (role 2): the cleanup read settings.json without taking off a byte-order mark, so the parse
 // failed and the old entry stayed; and the use check names settings.local.json, which the cleanup never read.
+// why: guards rule:outward-acts
 test('V3 upgrade: the old guard entry comes out of a settings file with a byte-order mark, and out of settings.local.json', () => {
 	const { home, proj } = setup();
 	const entry = [{ matcher: '.*', hooks: [{ type: 'command', command: 'node', args: [`${posix(proj)}/.claude/guard.cjs`], timeout: 10, onFailure: 'block' }] }];
@@ -816,6 +859,7 @@ test('V3 upgrade: the old guard entry comes out of a settings file with a byte-o
 	assert.equal(use.parts.find((p) => p.name === 'guards').wired.ok, true);
 });
 
+// why: guards rule:outward-acts
 test('V3 user settings: a launcher entry kept by name but made harmless is refused mid-session, and status calls it a fault', () => {
 	const launch = (list) => list.find((e) => JSON.stringify(e).includes('kit-launch'));
 	const breakers = {
@@ -843,6 +887,7 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 	}
 });
 
+// why: guards rule:outward-acts
 test('V3 config folder inside a project: the user slip-catchers still run', () => {
 	const { home, proj } = setup({ homeAt: path.join('app', 'u', '.claude') });
 	const cap = "exports.check = () => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'cap reached' } });\n";
@@ -860,11 +905,13 @@ test('V3 config folder inside a project: the user slip-catchers still run', () =
 // B17 (the 1.25.1 sweep): the emulator ran a shell-form hook with the bash PATH finds first. From PowerShell on Windows
 // that is WSL's bash, which cannot run the launcher line, so the suite failed at its baseline and a deny-only test
 // passed for the wrong reason. Claude Code runs these lines with Git Bash, so the emulator does too.
+// why: guards rule:outward-acts
 test('B17 emulator: a shell-form hook runs in Git Bash on Windows, whatever bash PATH finds first', { skip: process.platform !== 'win32' }, () => {
 	const r = spawnSync(BASH, ['-c', 'uname -s'], { encoding: 'utf8', env: { ...ENV, PATH: path.dirname(process.execPath) } });
 	assert.match(r.stdout, /MINGW|MSYS/, `the emulator's shell is ${BASH}: ${r.stdout}${r.stderr}`);
 });
 
+// why: guards rule:outward-acts
 test('V3 record names: two projects whose names differ only in punctuation keep separate records', () => {
 	assert.notEqual(guardDir('/h', '/w/app-x'), guardDir('/h', '/w/app_x'));
 	assert.notEqual(guardDir('/h', '/w/app.x'), guardDir('/h', '/w/app-x'));
@@ -872,6 +919,7 @@ test('V3 record names: two projects whose names differ only in punctuation keep 
 
 // B13 (the 1.25.1 sweep): the shims sit at <config>/kit-guard/<the whole project path, then a hash>/hooks/<name>. A long
 // project path took that past Windows' 260 characters, git found no hook there, and the kit hooks stopped silently.
+// why: guards rule:outward-acts
 test('B13 record names: a long project path still gives a shim path git can open on Windows', () => {
 	const deep = (tail) => '/w/' + 'a-very-long-folder-name/'.repeat(12) + tail;
 	const shim = path.join(guardDir('D:/a-home-folder/.claude', deep('app')), 'hooks', 'p4-prepare-changelist');
@@ -883,18 +931,21 @@ test('B13 record names: a long project path still gives a shim path git can open
 	assert.equal(path.basename(guardDir('/h', '/w/app')), was, 'a short path lost the record name 1.25.1 gave it');
 });
 
+// why: guards rule:outward-acts
 test('V3 launcher: input it cannot read inside a kit project holds the call', () => {
 	const { home, proj } = setup();
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: 'not json', encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj } });
 	assert.equal(JSON.parse(r.stdout || '{}').hookSpecificOutput?.permissionDecision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 record: the install record and a config folder with another name are guarded too', () => {
 	const { home, proj, session: s } = setup({ homeAt: 'cfg' });
 	assert.equal(s.decide('Write', { file_path: path.join(home, 'kit-install.json'), content: '{"kitDir":"/tmp/evil"}' }).decision, 'deny');
 	assert.equal(s.decide('Write', { file_path: path.join(guardDir(home, proj), 'record.json'), content: '{}' }).decision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 shims: a project folder with a dollar sign in its name still commits through the shims', () => {
 	const { proj } = setup({ projName: 'app$x' });
 	fs.writeFileSync(path.join(proj, 'README.md'), 'two\n');
@@ -904,6 +955,7 @@ test('V3 shims: a project folder with a dollar sign in its name still commits th
 
 // ---- The automatic review of 670b3a2 (fix all). ----
 
+// why: guards rule:outward-acts
 test('V3 hooksPath: a git config the launcher cannot read holds every call', () => {
 	const { proj, session: s } = setup();
 	const cfg = path.join(proj, '.git', 'config');
@@ -914,6 +966,7 @@ test('V3 hooksPath: a git config the launcher cannot read holds every call', () 
 	assert.match(d.reason, /hooksPath/);
 });
 
+// why: guards rule:outward-acts
 test('V3 install: a kit guard file is put back even when the project stamp was edited to forget it', () => {
 	const { home, proj } = setup();
 	const stamp = path.join(proj, '.kit', 'kit-version.json');
@@ -927,6 +980,7 @@ test('V3 install: a kit guard file is put back even when the project stamp was e
 	assert.ok(r.replaced.includes('.githooks/pre-push'));
 });
 
+// why: guards rule:outward-acts
 test('V3 host hooks: a swapped host hook stays held through a reinstall until the owner accepts it', () => {
 	const HOST = ['#!/bin/sh', 'echo host-pre-commit', ''].join(String.fromCharCode(10));
 	const { home, proj, session: s } = setup({
@@ -953,6 +1007,7 @@ test('V3 host hooks: a swapped host hook stays held through a reinstall until th
 // B16 (the 1.25.1 sweep): in tracked mode the project stamp is in git, so a branch can edit it. On the first install
 // with no outside record, install read "the kit never wrote this file" from that stamp and recorded a swapped
 // guard.cjs as the host's own. Now such a file holds every call until the owner accepts it.
+// why: guards rule:outward-acts
 test('B16 first record: a tracked stamp that forgets a swapped kit guard file does not make it the host\'s', () => {
 	const { home, proj, session: s } = setup();
 	fs.rmSync(guardDir(home, proj), { recursive: true, force: true });
@@ -969,6 +1024,7 @@ test('B16 first record: a tracked stamp that forgets a swapped kit guard file do
 
 // The 1.26.0 sweep: the first-install hold named install project --force as a way out, but --force wrote the kit's copy
 // and the hold stayed. Either way out the refusal names must lift it.
+// why: guards rule:outward-acts
 test('B16 first record: the --force way out puts the kit\'s copy back and lifts the hold', () => {
 	const { home, proj, session: s } = setup({
 		before: (p) => {
@@ -985,6 +1041,7 @@ test('B16 first record: the --force way out puts the kit\'s copy back and lifts 
 
 // B15 (the 1.25.1 sweep): a host hook that differs between branches held after a plain checkout, and accepting it on
 // one branch held the other. Each version the owner accepts stays accepted; a version never accepted still holds.
+// why: guards rule:outward-acts
 test('B15 host hooks: a host hook accepted on each branch no longer holds a plain checkout', () => {
 	const NL = String.fromCharCode(10);
 	const { home, proj, session: s } = setup({
@@ -1021,6 +1078,7 @@ const hostHook = (p) => {
 	ok(git(p, ['add', '.githooks/pre-commit']));
 	ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
 };
+// why: guards rule:outward-acts
 test('C1 reinstall: a guard file a later release adds, already tracked by a branch, holds until the owner accepts it', () => {
 	const { home, proj, session: s } = setup();
 	const kit = path.join(kitTemp.makeTemp('c1kit-'), 'kit');
@@ -1035,6 +1093,7 @@ test('C1 reinstall: a guard file a later release adds, already tracked by a bran
 	install({ kit, home, target: 'project', projectDir: proj, acceptHost: ['.claude/later-guard.cjs'] });
 	assert.equal(bash(s, 'git status').decision, 'allow', 'the owner\'s accept is the way out');
 });
+// why: guards rule:outward-acts
 test('C10 reinstall: a kit file a record took as the host\'s before the owner had to accept it holds until accepted', () => {
 	const { home, proj, session: s } = setup({ before: hostHook });
 	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
@@ -1139,6 +1198,7 @@ test('C12 kit hooks: a changed kit hook that is skipped says so', () => {
 
 // The owner's pick A (2026-11-11): a broken launcher keeps blocking every tool, and the kit gate tells the owner why and what
 // to run, on every prompt, in any folder.
+// why: guards rule:outward-acts
 test('V3 broken launcher: the kit gate names it and the one command that repairs it', () => {
 	const { root, home } = setup();
 	const other = path.join(root, 'plain');
@@ -1157,6 +1217,7 @@ test('V3 broken launcher: the kit gate names it and the one command that repairs
 
 // B14 (the 1.25.1 sweep): the launcher entry names node by the path install user recorded. A node moved or upgraded
 // blocks every call with "No such file", and the gate named only a missing launcher, so the owner saw no reason.
+// why: guards rule:outward-acts
 test('B14 moved node: the kit gate names the missing recorded node and the command that repairs it', () => {
 	const { root, home } = setup();
 	const other = path.join(root, 'plain');

@@ -26,6 +26,7 @@ const state = (dir, ...args) => {
 	return { code: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, err: r.stderr };
 };
 
+// why: guards rule:test-lanes
 test('(a) with no large test a project is in one lane; (b) one large test turns the slow lane on with no other edit', () => {
 	for (const kind of ['node', 'pytest']) {
 		const dir = project(kind);
@@ -45,6 +46,7 @@ test('(a) with no large test a project is in one lane; (b) one large test turns 
 	}
 });
 
+// why: guards rule:sweep-auto-approval
 test('(e) three fast-lane runs over budget in a row report over budget, the slowest tests and the next lever', () => {
 	const dir = project('node', { budgetMinutes: 10, levers: ['measure', 'parallel'] });
 	const runs = (mins) => mins.map((m, i) => ({ minutes: m, tests: [{ name: `slow one ${i}`, seconds: 300 }, { name: 'quick', seconds: 1 }] }));
@@ -67,6 +69,7 @@ test('(e) three fast-lane runs over budget in a row report over budget, the slow
 	assert.equal(plain.nextLever, 'measure');
 });
 
+// why: guards rule:test-lanes
 test('the script only reports: it changes no file, and a broken lanes file is an error, not a lane state', () => {
 	const dir = project('node', { budgetMinutes: 10 });
 	const before = fs.readdirSync(dir, { recursive: true }).sort();
@@ -76,6 +79,7 @@ test('the script only reports: it changes no file, and a broken lanes file is an
 	assert.equal(state(dir).code, 2);
 });
 
+// why: guards rule:test-lanes
 test('(d) a fast-lane test over its time limit fails, and the failure names the limit', () => {
 	const dir = kitTemp.makeTemp('limit-');
 	const harness = path.resolve('tests/harness.mjs').split(path.sep).join('/');
@@ -88,6 +92,7 @@ test('(d) a fast-lane test over its time limit fails, and the failure names the 
 	assert.match(r.stdout, /timed out after 200ms/);
 });
 
+// why: guards rule:outward-acts
 test('(c) the kit\'s own CI runs the slow lane beside the fast one, only when it holds a test, and needs both to merge', () => {
 	const ci = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
 	// The slow job is skipped by a job-level if on what a detect step found, never by a path filter on the workflow.

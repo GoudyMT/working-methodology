@@ -29,6 +29,7 @@ function decide(tool_name, tool_input, extra = {}) {
 }
 const bash = (command) => decide('Bash', { command });
 
+// why: guards rule:outward-acts
 test('the six commands that passed every guard in 1.24.0 are held (P1)', () => {
 	const held = [
 		'KIT_PUSH_APPROVED=1 git $(echo push) origin HEAD:main',
@@ -41,6 +42,7 @@ test('the six commands that passed every guard in 1.24.0 are held (P1)', () => {
 	for (const c of held) assert.equal(bash(c), 'deny', c);
 });
 
+// why: guards rule:outward-acts
 test('the same holes in the spellings beside them are held', () => {
 	const held = [
 		// S23-1, the mutation check: each row below turned a surviving flip red. The user's git config, the kit folders
@@ -147,6 +149,7 @@ test('the same holes in the spellings beside them are held', () => {
 	for (const c of held) assert.equal(bash(c), 'deny', c);
 });
 
+// why: guards rule:outward-acts
 test('a write tool aimed at a guard, its settings or a git hook is held', () => {
 	const files = ['.claude/guard-outward.cjs', '.claude/guard-read.cjs', '.claude/settings.json', '.claude/settings.local.json', '.githooks/pre-push', '.git/hooks/pre-commit'];
 	for (const f of files) {
@@ -155,6 +158,7 @@ test('a write tool aimed at a guard, its settings or a git hook is held', () => 
 	}
 });
 
+// why: guards rule:outward-acts
 test('reads of the guards and ordinary commands still pass', () => {
 	const pass = [
 		'cat .claude/settings.json',
@@ -174,6 +178,7 @@ test('reads of the guards and ordinary commands still pass', () => {
 	assert.equal(decide('Write', { file_path: path.join(proj, 'src', 'a.js'), content: 'x' }), 'allow', 'Write src/a.js');
 });
 
+// why: guards rule:outward-acts
 test('a subagent is refused, not asked, for each held command', () => {
 	for (const c of ['git commit --no-verify -m x', 'echo x > .claude/guard-outward.cjs', 'git config core.hooksPath /dev/null']) {
 		assert.equal(decide('Bash', { command: c }, { agent_id: 'a1' }), 'deny', c);
@@ -181,6 +186,7 @@ test('a subagent is refused, not asked, for each held command', () => {
 });
 
 // The secret scan: every shape below is a real key format; each value is built here so this file holds none.
+// why: guards rule:outward-acts
 test('the secret patterns catch the 11 shapes the 1.24.0 scan missed', async () => {
 	const { SECRET_FILE, SECRET_VALUE } = await import('../project/.claude/secret-patterns.mjs');
 	const hex = (n) => 'a3f9'.repeat(n).slice(0, n);
@@ -244,6 +250,7 @@ function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_tem
 }
 const withYes = (tool_name, tool_input, extra = {}) => decide(tool_name, tool_input, { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now', ...extra });
 
+// why: guards rule:outward-acts
 test('a held command runs once on the owner\'s own pop-up yes for that exact command', () => {
 	const act = 'git push origin main';
 	popUp({ act });
@@ -283,6 +290,7 @@ test('a held command runs once on the owner\'s own pop-up yes for that exact com
 	assert.equal(decide('Bash', { command: act }, { transcript_path: outside, session_id: SID, tool_use_id: 'toolu_now' }), 'deny', 'a transcript outside the Claude folder');
 });
 
+// why: guards rule:outward-acts
 test('the settings take the owner\'s yes for the exact edit; the guards and hooks never do', () => {
 	const settings = path.join(proj, '.claude', 'settings.json');
 	popUp({ act: `Edit ${settings}: "deny": [] => "deny": ["Bash(x)"]` });
@@ -310,6 +318,7 @@ test('the settings take the owner\'s yes for the exact edit; the guards and hook
 	assert.equal(withYes('Write', { file_path: guard, content: 'x' }), 'deny', 'a guard file, even with a yes');
 });
 
+// why: guards rule:outward-acts
 test('a feature-branch push goes without a yes only inside the owner\'s bounds', () => {
 	for (const c of ['git push -u origin feat/x', 'git push origin HEAD:fix/guards-that-hold', 'git push --set-upstream origin feat/x:feat/x']) assert.equal(bash(c), 'allow', c);
 	const held = ['git push origin main', 'git push origin HEAD:refs/heads/main', 'git push origin master', 'git push origin HEAD', 'git push --force origin feat/x',
@@ -319,6 +328,7 @@ test('a feature-branch push goes without a yes only inside the owner\'s bounds',
 });
 
 // The pre-push hook, run as git runs it: the other half of the owner's bounds.
+// why: guards rule:outward-acts
 test('the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest', { windows: true }, () => {
 	const dir = kitTemp.makeTemp('push-');
 	const g = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
@@ -506,6 +516,7 @@ const why = (tool_name, tool_input, extra = {}) => {
 	const r = spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
 	return (r.stdout && JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason) || '';
 };
+// why: guards rule:outward-acts
 test('a held push names the limit of the push bound it hit', () => {
 	const limits = [
 		['git push origin main', /a push to main is outside the push bound; main takes a PR, and a tool pushes there only as a new repo's first push/],
@@ -532,6 +543,7 @@ test('a held push names the limit of the push bound it hit', () => {
 	assert.match(why('Bash', { command: 'gh pr create --fill' }), /^Owner's yes needed: gh pr create is an outward act/);
 	assert.match(why('Bash', { command: 'git push origin main' }, { agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 });
+// why: guards rule:outward-acts
 test('a gate bypass is never allowed by a tool, even with the owner\'s pop-up yes', () => {
 	for (const act of ['git commit --no-verify -m x', 'git -c core.hooksPath=/dev/null commit -m x', 'git config core.hooksPath /dev/null']) {
 		popUp({ act });
@@ -575,6 +587,7 @@ test('each refusal names one act to quote, one kind, and a fix the hold lets thr
 	}
 });
 
+// why: guards rule:outward-acts
 test('a protected file and the owner\'s answers are refused in the never voice', () => {
 	assert.match(why('Write', { file_path: path.join(proj, '.claude', 'guard-outward.cjs'), content: 'x' }), /^Never by a tool: .*protected file/);
 	assert.match(why('Write', { file_path: TRANSCRIPT, content: 'x' }), /^Never by a tool: /);
@@ -583,6 +596,7 @@ test('a protected file and the owner\'s answers are refused in the never voice',
 // The 1.26.0 sweep: a gate bypass was refused only when it was the first reason the guard found, so a push or the
 // marker in front of it hid it, and the owner's pop-up yes then let it run. And a write to main that runs no pre-push
 // hook (send-pack, the API) passed on a yes, though main takes a PR.
+// why: guards rule:outward-acts
 test('a gate bypass anywhere in a command, and a hook-free write to main, are never a tool\'s act', () => {
 	const acts = [
 		'KIT_PUSH_APPROVED=1 git push --no-verify origin main',
