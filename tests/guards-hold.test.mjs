@@ -731,3 +731,14 @@ test('reading or naming a marker runs; every way of clearing one is still never 
 		assert.match(reason(tool, command), /^Never by a tool: clearing the AI shell's markers/, command);
 	}
 });
+// why: guards rule:outward-acts (the guards protect their files from writes; reads stay open). V1, the 1.25.0 verify:
+// plain reads of a guard file were refused in some shapes, five work-arounds in one verify. A print-only sed, and a
+// line of nothing but plain readers, now pass; anything that could redefine a reader still holds.
+test('plain reads of the guard files pass in the shapes V1 found, and lookalikes still hold', () => {
+	for (const command of ['sed -n 1,20p .claude/guard.cjs', 'sed -n 5p .claude/settings.json', 'cat .claude/settings.json | head -60; ls .claude/', 'grep -n ask .claude/guard-outward.cjs; ls .claude']) {
+		assert.equal(bash(command), 'allow', command);
+	}
+	for (const command of ["sed -n '1w .claude/guard.cjs' x", "sed -n '1,2p;w .claude/guard.cjs' x", 'sed -ni 1p .claude/guard.cjs', '. ./x.sh; cat .claude/guard.cjs', 'cat .claude/guard.cjs; cp x .claude/guard.cjs', 'PATH=./bin:$PATH; cat .claude/guard.cjs']) {
+		assert.notEqual(bash(command), 'allow', command);
+	}
+});

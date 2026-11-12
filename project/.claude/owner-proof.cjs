@@ -51,6 +51,15 @@ const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
 const SETTINGS_REASON = 'a write to a settings file, which wires the guards';
 
+// sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
+// script may hold w, W, e or an s///w that writes a file or runs a program (the plan check's P3).
+// The reader splits a word at a comma (PowerShell lists), so 1,20p reaches here as 1 and 20p.
+const printSed = (w) => {
+	if (w.length < 4 || path.basename(slash(w[0] || '')) !== 'sed' || w[1] !== '-n') return false;
+	const at = /^(\d+|\$)p$/.test(w[2]) ? 3 : /^(\d+|\$)$/.test(w[2]) && /^(\d+|\$)p$/.test(w[3] || '') ? 4 : 0;
+	return at > 0 && w.length > at && w.slice(at).every((x) => !x.startsWith('-'));
+};
+
 // The real path, through any junction, link or short name; a file not yet written resolves through its nearest
 // existing folder.
 // A link whose target is not there yet is followed to that target, a few links deep.
@@ -284,7 +293,10 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// (no ;, &, || or new line; a pipe's stages are separate shells), but plain variables set and a plain cd first
 	// (P=x; grep $P, cd dir && grep), and never beside a definition.
 	const bare = text.replace(/^(\s*([A-Za-z_]\w*=|cd\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)\s*(;|&&)\s*)+/, '');
-	const defines = /[;&\n]|\|\|/.test(bare) || /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i.test(text);
+	// V1 (the 1.25.0 verify): a line of nothing but plain readers, a print-only sed and a cd can redefine nothing, so
+	// its ; and && do not count as a place a definition could hide.
+	const onlyReads = !/[`]|\$\(|<\(/.test(text) && segments.every((g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return READERS.has(p) || PIPE_READERS.has(p) || CHANGERS.has(p) || printSed(w); });
+	const defines = (!onlyReads && /[;&\n]|\|\|/.test(bare)) || /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i.test(text);
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
@@ -323,7 +335,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 		}
 		if (hits.length === 0) continue;
 		if (segment.some((x) => x.redirect && names(x.value, cwd))) return true;
-		if (READERS.has(program) && !defines) {
+		if ((READERS.has(program) || printSed(all)) && !defines) {
 			// Piped on, the read must go to another reader.
 			if (segment.end === '|' && segments[s + 1] && !PIPE_READERS.has(path.basename(slash(segments[s + 1][0]?.value || '')).replace(/\.(exe|cmd|bat)$/, ''))) return true;
 			continue;
