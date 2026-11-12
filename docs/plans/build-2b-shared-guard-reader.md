@@ -65,6 +65,17 @@ Read in the code (1.27.0), a probe still owed:
 - K21 leads 2 (a host's own hooks path) and 3 (launcher record under a config folder not named `.claude`), K4, K14:
   need a throwaway install or CI; done in step 2 beside their fixes.
 
+### Read in step 2, not fixed
+
+- K18 NOT REAL as written: the call-cap hook held. The two reviewers over the cap (14 and 13 model turns on a cap
+  of 12) each got its refusal logged in its own transcript ("Call cap reached": 2 and 1 times); every turn past the
+  cap was a refused call, then the hand-back. The cap counts model turns; a turn may hold several tool calls (one
+  reviewer made 21 tool calls in 10 turns). The overspend (5.7M against 4.75M) is tokens per turn, not calls.
+- V5 left for the reader: a bounded push in `command` clears a reason found in another field, but Bash and PowerShell
+  run only `command` (no reach, as `results/v3-proof` found). The reader reads per field, which ends it there.
+- C13 not reproduced: it needs Claude Code's own rule for shortening a long project slug, which is not in this repo
+  and not verified; carried with the reader step.
+
 ## 3. The reader design (Max's lock)
 
 ### Option A: allow-list of programs (strict)
