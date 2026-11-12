@@ -457,6 +457,42 @@ test('a gate bypass is never allowed by a tool, even with the owner\'s pop-up ye
 		assert.match(why('Bash', { command: act }), /^Never by a tool: .*gate bypass/, act);
 	}
 });
+// why: guards rule:outward-acts (a refusal's opening and act are the order a session acts on; T16a, the owner
+// 2026-11-11). The 1.26.0 carry-overs C7, C14, C15, C16 and C18.
+test('each refusal names one act to quote, one kind, and a fix the hold lets through', () => {
+	// C7: a held push names one act to quote, in the shell that runs it; for main it says the act is for a new repo only.
+	const feat = why('Bash', { command: 'git push --force origin feat/x' });
+	assert.equal((feat.match(/`[^`]+`/g) || []).filter((s) => !s.startsWith('`<')).length, 1, `two acts to quote: ${feat}`);
+	assert.ok(feat.includes('`KIT_PUSH_APPROVED=1 git push --force origin feat/x`'), feat);
+	const ps = why('PowerShell', { command: 'git push --force origin feat/x' });
+	assert.ok(ps.includes("`$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x`"), `PowerShell got no marker act: ${ps}`);
+	popUp({ act: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" });
+	assert.equal(withYes('PowerShell', { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" }), 'allow', 'the PowerShell act the refusal names runs on that yes');
+	assert.match(why('Bash', { command: 'git push origin main' }), /new repo's first push/);
+	// C18: an option's value is not the remote; a redirect makes it more than one plain push, and says so.
+	assert.doesNotMatch(why('Bash', { command: 'git push -o ci.skip origin feat/x' }), /not a plain push to origin/);
+	assert.match(why('Bash', { command: 'git push origin feat/x 2>&1' }), /redirect or a second command/);
+	// C14: a command the guard cannot read is held, not called an outward act.
+	assert.match(why('Bash', { command: 'x'.repeat(100001) }), /^Held: /);
+	// C15: the task gate opens with its kind.
+	fs.mkdirSync(path.join(proj, '.claude', 'rules'), { recursive: true });
+	fs.writeFileSync(path.join(proj, '.claude', 'rules', 'git-and-release.md'), '# x\n');
+	try {
+		assert.match(why('Bash', { command: 'git commit -m x' }, { transcript_path: TRANSCRIPT }), /^Held: before git commit, read /);
+	} finally { fs.rmSync(path.join(proj, '.claude', 'rules'), { recursive: true, force: true }); }
+	// C16: a guard that cannot run says held once, and names no fix line the hold refuses.
+	const lone = kitTemp.makeTemp('lone-');
+	fs.copyFileSync(HOOKS[0], path.join(lone, 'guard.cjs'));
+	const r = spawnSync(process.execPath, [path.join(lone, 'guard.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+	const text = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+	// The one process merges each guard's refusal with " | ".
+	for (const one of text.split(' | ')) {
+		assert.match(one, /^Held: /);
+		assert.equal((one.match(/\bheld\b/gi) || []).length, 1, `held twice: ${one}`);
+		assert.doesNotMatch(one, /install project \./, one);
+	}
+});
+
 test('a protected file and the owner\'s answers are refused in the never voice', () => {
 	assert.match(why('Write', { file_path: path.join(proj, '.claude', 'guard-outward.cjs'), content: 'x' }), /^Never by a tool: .*protected file/);
 	assert.match(why('Write', { file_path: TRANSCRIPT, content: 'x' }), /^Never by a tool: /);

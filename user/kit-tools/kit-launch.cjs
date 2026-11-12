@@ -306,10 +306,10 @@ function clearsSettings(input, v) {
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Held: ' + reason } });
 
 /** Run the project's guard from the bytes verify() hashed: a file swapped after the check is never loaded. */
-function runGuard(real, files, input) {
+function runGuard(real, files, input, fix = 'the owner reinstalls the kit with install project') {
 	const dir = real;
 	const guard = path.join(real, '.claude', 'guard.cjs');
-	if (!files.has(WIN ? guard.toLowerCase() : guard)) return deny('The kit guard (.claude/guard.cjs) is not in the install record, so this call is held. Reinstall the kit: ' + 'kit.mjs install project.');
+	if (!files.has(WIN ? guard.toLowerCase() : guard)) return deny(`The kit guard (.claude/guard.cjs) is not in the install record. ${fix}.`);
 	const inside = (f, root) => path.resolve(f).toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep);
 	const key = (f) => (WIN ? path.resolve(f).toLowerCase() : path.resolve(f));
 	// The config folder's kit hooks, by the hash install user recorded for each (B23): any other file there, or one
@@ -369,7 +369,7 @@ function preToolUse(input) {
 	const v = verify(dir, rec, extra);
 	if (v.changed.length || v.hooksPath) return isFix(input, rec, dir) ? null : deny(describe(v, rec, dir));
 	if (v.settings.length && !clearsSettings(input, v)) return deny(describe(v, rec, dir));
-	return runGuard(v.real, v.files, input);
+	return runGuard(v.real, v.files, input, `Run, alone: ${fixLine(rec, dir)} (or ask the owner to)`);
 }
 
 // ---- The entries install user writes, and the strict check that they are still whole. ----
@@ -455,6 +455,15 @@ function gitHook(dir, name = '') {
 	const id = sha(all.map((k) => `${k}\0${sha(v.byKey.get(k))}`).join('\n')).slice(0, 16);
 	const runs = path.join(recordDir(dir), 'run');
 	const at = path.join(runs, id);
+	// A copy written earlier is used again only while every file in it is the checked bytes and nothing else is there
+	// (the review on cfd3813); otherwise it is written afresh.
+	const intact = () => {
+		const seen = [];
+		const walk = (d, rel) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const r = rel ? `${rel}/${e.name}` : e.name; if (e.isDirectory()) walk(path.join(d, e.name), r); else seen.push(r); } };
+		try { walk(at, ''); } catch { return false; }
+		return seen.length === all.length && seen.every((k) => v.byKey.has(k) && sha(fs.readFileSync(path.join(at, ...k.split('/')))) === sha(v.byKey.get(k)));
+	};
+	if (fs.existsSync(at) && !intact()) fs.rmSync(at, { recursive: true, force: true });
 	if (!fs.existsSync(at)) {
 		const tmp = `${at}.${process.pid}`;
 		for (const k of all) {
@@ -491,10 +500,10 @@ if (require.main === module) {
 	try {
 		if (mode === 'config-change') out = input ? configChange(input) : null;
 		// Input it cannot read: inside a kit project the call is held, anywhere else it stays out of the way.
-		else if (!input || typeof input !== 'object') out = inKit({}) ? deny('The kit guard launcher could not read this call, so it is held.') : null;
+		else if (!input || typeof input !== 'object') out = inKit({}) ? deny('The kit guard launcher could not read this call.') : null;
 		else out = preToolUse(input);
 	} catch (e) {
-		if (mode !== 'config-change' && inKit(input && typeof input === 'object' ? input : {})) out = deny(`The kit guard launcher could not run (${String(e && e.message).slice(0, 160)}), so this call is held.`);
+		if (mode !== 'config-change' && inKit(input && typeof input === 'object' ? input : {})) out = deny(`The kit guard launcher could not run (${String(e && e.message).slice(0, 160)}).`);
 	}
 	if (out) process.stdout.write(JSON.stringify(out));
 }

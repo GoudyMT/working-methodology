@@ -41,7 +41,7 @@ const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'hel
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
 const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
-const { ownerYes, askText, yesText, neverText } = require('./owner-yes.cjs');
+const { ownerYes, askText, yesText, neverText, heldText } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -375,9 +375,12 @@ function pushLimit(command) {
 	const words = String(command).trim().split(/\s+/);
 	const at = words.indexOf('push');
 	if (at < 0) return 'it is not a plain push to origin, so it is outside the push bound';
-	const rest = words.slice(at + 1);
+	// The words up to a redirect or a second command; an option's value (-o x, --repo x) is not a refspec (C18).
+	const all = words.slice(at + 1);
+	const cut = all.findIndex((w) => /^(\d?>|>|<|\||&|;|&&|\|\|)/.test(w) || /[;&|]$/.test(w));
+	const rest = cut < 0 ? all : all.slice(0, cut);
 	const flags = rest.filter((w) => w.startsWith('-'));
-	const specs = rest.filter((w) => !w.startsWith('-'));
+	const specs = rest.filter((w, i) => !w.startsWith('-') && !/^(-o|--push-option|--repo|--receive-pack|--exec)$/.test(rest[i - 1] || ''));
 	const dests = specs.slice(1).map((s) => s.replace(/^\+/, '').split(':').pop().replace(/^refs\/heads\//, ''));
 	if (flags.some((f) => /^(-d|--delete)$/.test(f)) || specs.slice(1).some((s) => s.startsWith(':'))) return 'a delete is outside the push bound';
 	if (flags.some((f) => /^(-f|--force|--force-with-lease|--force-if-includes)(=|$)/.test(f)) || specs.slice(1).some((s) => s.startsWith('+'))) return 'a force push is outside the push bound';
@@ -385,6 +388,7 @@ function pushLimit(command) {
 	const main = dests.find((d) => /^(main|master)$/i.test(d));
 	if (main) return `a push to ${main.toLowerCase()} is outside the push bound; ${main.toLowerCase()} takes a PR, and a tool pushes there only as a new repo's first push (the pre-push hook refuses any other)`;
 	if (specs[0] !== 'origin') return 'it is not a plain push to origin, so it is outside the push bound';
+	if (cut >= 0) return 'a redirect or a second command makes it more than one plain push, so it is outside the push bound; run the push on its own';
 	return 'it is not a plain push of one named feature branch, so it is outside the push bound';
 }
 
@@ -394,6 +398,9 @@ function pushLimit(command) {
 // shell for the owner's terminal, so it switches the hook's AI checks off.
 const MARKERS = 'a command that clears the AI shell\'s markers';
 const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS]);
+// A command the guard cannot read is held, not called an outward act, and no yes runs it: the yes could not be matched
+// to what would run (C14).
+const HELD = new Set(['a command too long to read', 'the guard could not read this command']);
 
 // A gate bypass anywhere in a command, not only as the first reason found (the 1.26.0 sweep: a push or the marker in
 // front of it hid it, and a pop-up yes then let it run). It fails closed: any spelling of git's --no-verify, any
@@ -507,7 +514,7 @@ function check(input) {
 		// Inside the owner's bounds a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
 		if (reason && boundedPush(input)) reason = '';
-		else if (reason && !BYPASS.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
+		else if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
 		// A guard that cannot read the command refuses rather than lets it through.
 		reason = 'the guard could not read this command';
@@ -516,16 +523,20 @@ function check(input) {
 	let command = '';
 	try { command = String((input.tool_input && input.tool_input.command) ?? ''); } catch { /* no command */ }
 	const what = reason === 'git push' ? pushLimit(command) : `${reason} is an outward act (rule:outward-acts)`;
-	const text = reason === 'a write to main that runs no pre-push hook'
+	// The pre-push hook lets an AI push outside the bound only with its marker set: the one act to quote names it, in
+	// the shell that runs it, so one pop-up covers it (C7). A push to main is for a new repo's first push only.
+	const plain = reason === 'git push' && /^git push [A-Za-z0-9 ._/:+=-]+$/.test(command.trim());
+	const act = !plain ? '' : input.tool_name === 'PowerShell' ? `$env:KIT_PUSH_APPROVED='1'; ${command.trim()}` : `KIT_PUSH_APPROVED=1 ${command.trim()}`;
+	const lead = /a push to (main|master) is outside/.test(what) ? "Only if this is a new repo's first push" : 'To run it';
+	const text = HELD.has(reason)
+		? heldText(`${reason === 'a command too long to read' ? 'the command is too long for the guard to read' : 'the guard could not read this command'}, so it does not run. Shorten or split it; anything else is the owner's own, in their own terminal`)
+		: reason === 'a write to main that runs no pre-push hook'
 		? neverText("a write to main, master or the default branch that runs no pre-push hook; main takes a PR, and a tool pushes there only as a new repo's first push, by git push. Open a PR instead")
 		: reason === MARKERS
 		? neverText("clearing the AI shell's markers is a gate bypass; the pre-push hook would take the shell for the owner's own terminal and switch its checks off. Run the command with the markers in place; anything else is the owner's own, in their own terminal")
 		: BYPASS.has(reason)
 		? neverText(`${reason === 'git with its hooks skipped' ? 'skipping the git hooks' : 'moving the git hooks path'} is a gate bypass; it switches off the checks the owner's yes relies on. Fix what the hook reports; a skip is the owner's own, in their own terminal`)
-		: verdict === 'allow' ? yesText(what) : askText(what, input)
-			// The pre-push hook lets an AI push outside the bound only with its marker set: name the act to quote, so one
-			// pop-up covers it rather than a second after the hook refuses the first push.
-			+ (reason === 'git push' && !input.agent_id && input.tool_name === 'Bash' && /^git push [A-Za-z0-9 ._/:+=-]+$/.test(command.trim()) ? ` Quote and run this act, not the plain push, since the pre-push hook needs its marker: \`KIT_PUSH_APPROVED=1 ${command.trim()}\`.` : '');
+		: verdict === 'allow' ? yesText(what) : askText(what, input, act, lead);
 	const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: verdict, permissionDecisionReason: text } };
 	// The reason is shown to the user; added context is what reaches Claude.
 	if (prNote) output.hookSpecificOutput.additionalContext = prNote;

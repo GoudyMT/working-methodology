@@ -1072,6 +1072,14 @@ test('C11 shims: a git hook runs from the copy the launcher checked, never from 
 	const copies = fs.readdirSync(runs);
 	assert.equal(copies.length, 1, 'the checked copy was not written');
 	assert.equal(fs.readFileSync(path.join(runs, copies[0], '.githooks', 'pre-commit'), 'utf8'), fs.readFileSync(path.join(proj, '.githooks', 'pre-commit'), 'utf8'));
+	// A copy changed after it was written is written afresh before it runs (the review on cfd3813).
+	fs.writeFileSync(path.join(runs, copies[0], '.githooks', 'pre-commit'), '#!/bin/sh\nexit 0\n');
+	fs.writeFileSync(path.join(runs, copies[0], 'extra'), 'x');
+	const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
+	const r = spawnSync(process.execPath, [launcher, 'git-hook', proj, 'pre-commit'], { encoding: 'utf8', env: { ...ENV, CLAUDE_CONFIG_DIR: home } });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(fs.readFileSync(r.stdout, 'utf8'), fs.readFileSync(path.join(proj, '.githooks', 'pre-commit'), 'utf8'), 'a changed copy ran');
+	assert.equal(fs.existsSync(path.join(runs, copies[0], 'extra')), false);
 });
 
 // why: catches a silent switch-off (the 1.26.0 carry-over C12): a kit hook the owner kept or merged by hand no longer

@@ -49,7 +49,7 @@ function answers(input) {
 		try {
 			out.push([file, require(path.join(__dirname, file)).check(input)]);
 		} catch (e) {
-			out.push([file, refuse(`Held: the kit guard ${file} could not run (${String(e && e.message).slice(0, 120)}), so this call is held. Reinstall the kit: node <kit>/scripts/kit.mjs install project .`)]);
+			out.push([file, refuse(`Held: the kit guard ${file} could not run (${String(e && e.message).slice(0, 120)}). The owner reinstalls the kit with install project.`)]);
 		}
 	}
 	// The kit hooks run only with the bytes install user recorded (B23, and the 1.26.0 sweep: one in the old shape ran

@@ -107,18 +107,24 @@ function ownerYes(input, now = Date.now()) {
 }
 
 // What Claude is told when an act is held: how to get the owner's yes, or, in a subagent, to hand it back.
-function howToAsk(input) {
+// With an act, the refusal names that one act to quote and run, so the session never has two to choose from (the
+// 1.26.0 sweep, C7); `lead` opens the instruction ("To run it", or a condition such as "Only for a new repo's first push").
+function howToAsk(input, act = '', lead = 'To run it') {
 	if (input && input.agent_id) return ' A subagent cannot get that yes: leave this out and name it in your report, so the lead asks.';
-	return ' To run it: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (`<the exact command>`, or for a file `Edit <file>: <old text> => <new text>`), one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run it again unchanged, once.';
+	if (act) return ` ${lead}: ask the owner with the AskUserQuestion pop-up, the question quoting this act exactly in one code span: \`${act}\`, one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run that act, once.`;
+	return ` ${lead}: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (\`<the exact command>\`, or for a file \`Edit <file>: <old text> => <new text>\`), one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run it again unchanged, once.`;
 }
 
 // One voice for every refusal (T16a, the owner 2026-11-11): each opens with its kind, then the limit it hit, then what
 // to do. The kinds: "Owner's yes needed" (the pop-up below), "Hand back" (a subagent cannot ask), "Never by a tool"
-// (no yes makes a tool do it) and "Held" (a guard could not run). The openings are the order a session acts on.
-function askText(what, input) {
+// (no yes makes a tool do it) and "Held" (the call cannot go on until something is put right: a guard that could not
+// run or read the call, guard files not as install left them, a step's rules not yet read). The openings are the
+// order a session acts on.
+function askText(what, input, act = '', lead = 'To run it') {
 	if (input && input.agent_id) return `Hand back: a subagent cannot get the owner's yes. Leave this out (${what}) and name it in your report, so the lead asks.`;
-	return `Owner's yes needed: ${what}.` + howToAsk(input);
+	return `Owner's yes needed: ${what}.` + howToAsk(input, act, lead);
 }
+const heldText = (what) => `Held: ${what}.`;
 const yesText = (what) => `Owner's yes given in the pop-up for this exact command: ${what}.`;
 const neverText = (what) => `Never by a tool: ${what}.`;
 
@@ -205,4 +211,4 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, pushGrant, sessionYes, FRESH_MS };
+module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, sessionYes, FRESH_MS };

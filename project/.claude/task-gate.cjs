@@ -109,7 +109,7 @@ function check(input) {
 	const missing = want.filter(([file]) => !seen.some((s) => same(s, path.resolve(root, file))));
 	if (missing.length === 0) return null;
 	const files = [...new Set(missing.map(([f]) => f))];
-	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Before ${missing[0][1]}: read ${files.join(' and ')} (the step's rules, kept out of the start load), then run this again.` } };
+	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Held: before ${missing[0][1]}, read ${files.join(' and ')} (the step's rules, kept out of the start load), then run this again.` } };
 }
 
 // A gate that cannot read the transcript passes: the output checks behind it still hold.
