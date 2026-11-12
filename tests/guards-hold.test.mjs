@@ -671,3 +671,24 @@ test('hooks moved another way, main written through the API another way, and the
 	// An API write to a feature branch is no bypass: it still waits for the owner's yes.
 	assert.match(why('Bash', { command: 'gh api -X PUT repos/o/r/contents/a.md -f branch=feat/x -f message=x -f content=eA==' }), /^Owner's yes needed: /);
 });
+
+// why: guards rule:security-standards (every pushed object is scanned for secrets). K3, the 1.27.0 sweep: a tag that
+// points at a blob or a tree went out with its contents unscanned.
+test('the push scan reads a tag that points at a blob or a tree', () => {
+	const dir = kitTemp.makeTemp('tagobj-');
+	const g = (args, input) => spawnSync('git', args, { cwd: dir, encoding: 'utf8', input });
+	g(['init', '-q', '-b', 'main']);
+	const key = ['AKIA', 'IOSFODNN7EXAMPLE'].join('');
+	const blob = g(['hash-object', '-w', '--stdin'], `aws_access_key_id = ${key}\n`).stdout.trim();
+	const tree = g(['mktree'], `100644 blob ${blob}\tkeys.txt\n`).stdout.trim();
+	const Z = '0'.repeat(40);
+	const scanOf = (sha) => spawnSync(process.execPath, [path.resolve('project/.claude/secret-shapes.mjs'), '--push'], { cwd: dir, encoding: 'utf8', input: `refs/tags/t ${sha} refs/tags/t ${Z}\n` });
+	for (const [what, sha] of [['a blob', blob], ['a tree', tree]]) {
+		const r = scanOf(sha);
+		assert.equal(r.status, 1, `a tag at ${what} passed the scan: ${r.stdout}`);
+		assert.match(r.stdout, /aws access key/);
+	}
+	// An annotated tag of a blob is read through to the blob.
+	const tag = g(['mktag'], `object ${blob}\ntype blob\ntag t\ntagger t <t@x> 0 +0000\n\nplain\n`).stdout.trim();
+	assert.equal(scanOf(tag).status, 1, 'an annotated tag of a blob passed the scan');
+});
