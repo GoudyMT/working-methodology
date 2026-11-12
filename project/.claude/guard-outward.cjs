@@ -93,6 +93,8 @@ function gitSubAt(words, start) {
 
 // The git commands that run a project hook (pre-commit, commit-msg, pre-push and the others the shims run).
 const HOOK_SUBS = new Set(['commit', 'push', 'merge', 'rebase', 'am', 'pull', 'cherry-pick', 'revert', 'checkout', 'switch']);
+// The reads that may name another git folder; anything else with one is held.
+const OTHER_DIR_READS = new Set(['log', 'show', 'status', 'diff', 'rev-parse', 'ls-files', 'ls-tree', 'cat-file', 'rev-list', 'describe', 'blame', 'shortlog']);
 
 // The git hooks are the last check before a commit or a push leaves: skipping them, or moving where git finds them,
 // holds the command (T1: on 1.24.0 both ran with no guard, and a push then landed on main). Reading the setting passes.
@@ -113,14 +115,14 @@ function gitHooksOff(words, start, at) {
 	}
 	// An included config file can set the hooks path out of sight (-c include.path=f, includeIf.<cond>.path; the 1.26.0
 	// security review, S2).
-	if (words.some((w) => w.includes('hookspath') || /^include(if\..*)?\.path(=|$)/.test(w))) {
+	if (words.some((w) => w.includes('hookspath') || /(^|=)include(if\..*)?\.path(=|$)/.test(w))) {
 		const reads = words[at] === 'config' && words.slice(at + 1).some((w) => /^(--get|--get-all|--get-regexp|--list|-l|get|list|--show-origin|--show-scope)$/.test(w));
 		if (!reads) return 'git with its hooks moved';
 	}
-	// Another git folder brings its own config and hooks: a commit or push from here then runs none of the project's
-	// (S2). A read of it is no bypass.
+	// Another git folder brings its own config, aliases and hooks: anything but a known read from here then runs none of
+	// the project's hooks (S2, and the review on a192e1f: an alias there can stand for commit).
 	const otherDir = words.slice(0, at).some((w) => /^(--git-dir(=|$)|git_dir=|git_common_dir=)/.test(w));
-	if (otherDir && HOOK_SUBS.has(words[at])) return 'git with its hooks moved';
+	if (otherDir && !OTHER_DIR_READS.has(words[at])) return 'git with its hooks moved';
 	// git config --edit opens the whole file, hooksPath included.
 	if (words[at] === 'config' && words.slice(at + 1).some((w) => w === '-e' || w === '--edit' || w === 'edit')) return 'git with its hooks moved';
 	return '';
@@ -408,7 +410,7 @@ function bypassIn(text, depth = 0) {
 	if (/GIT_CONFIG_(KEY_\d+=\s*core\.hookspath|PARAMETERS=[^;&|\n]*hookspath)/i.test(flat)) return 'git with its hooks moved';
 	// Another git folder set for the whole shell (export GIT_DIR=x; git commit), and an included config from the
 	// environment (S2).
-	if (/\bGIT_(DIR|COMMON_DIR)\s*=/i.test(flat) && new RegExp(`\\bgit\\b[^;&|\\n]*\\b(${[...HOOK_SUBS].join('|')})\\b`, 'i').test(flat)) return 'git with its hooks moved';
+	if (/\bGIT_(DIR|COMMON_DIR)\s*=/i.test(flat) && [...flat.toLowerCase().matchAll(/\bgit(?:\.exe)?\s+(?:-\S+\s+)*([^\s;&|]+)/g)].some((m) => !OTHER_DIR_READS.has(m[1]))) return 'git with its hooks moved';
 	if (/GIT_CONFIG_(KEY_\d+=\s*include|PARAMETERS=[^;&|\n]*include)/i.test(flat)) return 'git with its hooks moved';
 	if (markersCleared(flat)) return MARKERS;
 	for (const all of tokenize(joinContinuations(text))) {
@@ -430,13 +432,21 @@ function bypassIn(text, depth = 0) {
 // encoded, the merges endpoint into main, a file write through the contents endpoint to main or to the default branch
 // (no branch named), and the GraphQL mutations that move a branch.
 function hookFreeMainWrite(text) {
-	const flat = text.replace(/[\\'"]/g, '').toLowerCase().replace(/%2f/g, '/');
+	let flat = text.replace(/[\\'"]/g, '').toLowerCase();
 	const names = /(^|[\s:/+])(refs\/heads\/)?(main|master)(?=$|[\s;&|])/;
 	if (/\bsend-pack\b/.test(flat) && names.test(flat)) return true;
 	if (!/\bgh\b[^;&|\n]*\bapi\b/.test(flat)) return false;
 	// An API call writes when it names a method other than GET or sends a field (gh then posts).
 	const write = /\s(-x|--method)[\s=]*(post|patch|put|delete)\b/.test(flat) || /\s(-f|--field|--raw-field|--input)(\s|=)/.test(flat);
 	if (!write) return false;
+	// Every percent escape is undone, again and again (%252F), the way a server may read it (the review on a192e1f);
+	// text that will not decode is held.
+	for (let i = 0; i < 5 && /%[0-9a-f]{2}/.test(flat); i++) {
+		try { flat = decodeURIComponent(flat).toLowerCase(); } catch { return true; }
+	}
+	if (/%[0-9a-f]{2}/.test(flat)) return true;
+	// A GraphQL query read from a file or stdin cannot be read here: held.
+	if (/\bgraphql\b/.test(flat) && (/=@/.test(flat) || /\s--input(\s|=)/.test(flat))) return true;
 	const main = /(^|[=\s])(refs\/heads\/)?(main|master)(?=$|[\s;&|,}])/;
 	if (/refs\/heads\/(main|master)\b/.test(flat)) return true;
 	if (/\/merges\b/.test(flat) && (!/\bbase=/.test(flat) || /\bbase=(refs\/heads\/)?(main|master)\b/.test(flat))) return true;

@@ -504,6 +504,13 @@ test('hooks moved another way, main written through the API another way, and the
 		'unset AI_AGENT; node x.mjs',
 		'env -i node x.mjs',
 		'Remove-Item Env:CLAUDECODE; git status',
+		// The automated security review on a192e1f: the same holes spelled another way.
+		'git --config-env=include.path=CFG commit -m x',
+		'git --git-dir=/tmp/other.git c -m x',
+		'gh api -X PATCH repos/o/r/git/refs/heads/%6Dain -f sha=abc',
+		'gh api -X PATCH repos/o/r/git/refs/heads%252Fmain -f sha=abc',
+		'gh api graphql -F query=@q.graphql',
+		'gh api graphql --input q.json',
 	];
 	for (const act of acts) {
 		popUp({ act });
