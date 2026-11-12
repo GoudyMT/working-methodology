@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.28.0 - 2026-11-12
+
+The shared guard reader (T16b, first part): the push guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind, and a plain read, a commit message naming a marker, or a bash test run naming tests/* is no longer held. The 1.27.0 carry-overs close first, a project can list folders no tool writes, and closeout removes a thread's own scratch with no ask. The reader reaches the other guards in the next build.
+
+### Added
+- A project can list folders in `.claude/protected-folders.json` (`{"folders": ["<path>"]}`) that no tool writes into; the owner writes the list, and a malformed list holds every write and shell call.
+- `kit.mjs scratch new|keep|clean` records a thread's probe folders, and closeout removes the thread's own with no ask: to the Recycle Bin on Windows, to a .trash folder elsewhere, kept folders exempt, old strays listed.
+
+### Changed
+- Kit CI decides scope and the install lane by the base's own rules, runs the test check in four slices, and counts a why tag only when it names a rule the kit has.
+- The install check holds every planted bypass and each 1.27.0 spelling to its kind (never, or the owner's yes), from another repo and with no project named, and checks the false holds this build fixed run.
+
+### Fixed
+- A marker named only in a read, a print-only sed, or a commit or gh message is no longer held as a bypass; plain reads of a guard file pass in the shapes found.
+- In bash, a test run naming `tests/*` is no longer held: a wildcard at the start of a name never matches a dot name there. PowerShell, quoted or escaped wildcards, and dot globbing still hold.
+- A hook shim over a launcher older than 1.26.0 stops and names install user; a project at 1.28.0 needs the user layer reinstalled first.
+- The PR body audits count the squash suffix in the title (8 when no number is given) and take the PR number as an optional third argument, which CI passes.
+- A build record is checked for what the PR body audit would fail, so it never writes a body that fails.
+- The first push check's scanning call names github.com as its host.
+- The settings guard reads the user folder once per call; each guard call now takes about half a millisecond.
+- The install check test runs the working tree, and the install and status tests the 1.27.0 cut lost are back.
+
+### Security
+- Every spelling of a marker clear or a hook move the 1.27.0 sweep found is refused as a gate bypass, never asked: appends, setters, env and exec forms, `printf -v`, and a marker name built at run time.
+- A feature push from a repo whose git hooks are not the kit's (another repo, a nested repo, a submodule) needs the owner's yes, since no secret scan runs there.
+- A feature push the guard cannot place, with no project folder or no folder for the call named, asks the owner.
+- Moving the local origin/HEAD is held; pre-push takes the remote's own answer for its default branch, and a remote that names none holds the push.
+- The first push gate asks the remote what it already holds, so a local remote-tracking ref cannot end it.
+- The first push check reads only the repository it runs in.
+- The push scan reads every file and name in a tag that points at a blob or a tree.
+- A settings write that turns every hook off is refused, even with the owner's yes.
+- The recall job runs the candidate, the baseline and the scorer on three machines; the scorer reads only its desk and takes each job's runs by name and exact file.
+
 ## 1.27.0 - 2026-11-12
 
 Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first, three of them security holes; C17 moves to build 3 after its recall run fell under the bar.
