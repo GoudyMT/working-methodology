@@ -402,19 +402,29 @@ const FOLDERS_REASON = 'Never by a tool: this project lists that folder in .clau
 function listedFolders(cwd) {
 	const env = process.env.CLAUDE_PROJECT_DIR;
 	const fold = (p) => slash(path.resolve(p));
-	const root = env && (fold(cwd) === fold(env) || fold(cwd).startsWith(fold(env) + '/')) ? env : cwd;
+	// The project's own list wherever the shell stands (the commit-time security review): the shell's folder only when
+	// no project folder is named.
+	const root = env || cwd;
+	void fold;
 	let raw;
 	try { raw = fs.readFileSync(path.join(root, '.claude', 'protected-folders.json'), 'utf8'); } catch { return []; }
 	if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
 	try {
 		const list = JSON.parse(raw).folders;
-		if (Array.isArray(list) && list.every((x) => typeof x === 'string' && x.trim())) return list.map((x) => parts(real(path.resolve(root, x))));
+		// Both spellings of each folder: as written, and through any link or short name.
+		if (Array.isArray(list) && list.every((x) => typeof x === 'string' && x.trim())) return list.flatMap((x) => [parts(path.resolve(root, x)), parts(real(path.resolve(root, x)))]);
 	} catch { /* below */ }
 	return null;
 }
+// A word names a listed folder when it sits inside it or above it (a parent deleted or moved takes the folder with it),
+// and, after a cd the guard cannot follow, when any part of a relative word is a listed folder's own name.
 const inFolders = (folders) => (word, cwd) => {
+	if (cwd === 'unknown' && !rooted(word)) {
+		const ps = parts(word);
+		if (folders.some((f) => f.length > 0 && ps.some((x) => fits(x, f[f.length - 1])))) return true;
+	}
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
-	return folders.some((f) => f.length > 0 && p.length >= f.length && f.every((x, i) => fits(p[i], x)));
+	return folders.some((f) => f.length > 0 && p.length > 0 && p.every((x, i) => i >= f.length || fits(x, f[i])) && (p.length >= f.length || p.every((x, i) => fits(x, f[i]))));
 };
 
 function answer(input) {

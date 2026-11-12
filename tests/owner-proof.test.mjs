@@ -242,3 +242,26 @@ test('folders a project lists are never written by a tool, from the edit tools o
 	fs.writeFileSync(list, '{ not json');
 	assert.match(why('Bash', { command: 'git status' }), /protected-folders\.json.*cannot be read/);
 });
+// why: guards rule:security-standards (rule:project-adapter A2). The commit-time security review of E3: deleting or
+// moving a folder above a listed one wrote the listed one too; the list was read from the shell's folder, not the
+// project; and a relative word after a cd the guard cannot follow was not read at all.
+test('a listed folder is held through its parent, after an unknown cd, and from any folder of the project', () => {
+	const proj = kitTemp.makeTemp('e3b-');
+	const outer = kitTemp.makeTemp('e3b-outer-');
+	const kept = path.join(outer, 'kitsrc');
+	fs.mkdirSync(kept);
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.mkdirSync(path.join(proj, 'sub'));
+	fs.writeFileSync(path.join(proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: [kept] }));
+	const why = (command, cwd = proj) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const o = outer.split(path.sep).join('/');
+	assert.match(why(`rm -rf "${o}"`), /protected-folders\.json/, 'a parent deleted');
+	assert.match(why(`mv "${o}" /tmp/x`), /protected-folders\.json/, 'a parent moved');
+	assert.match(why(`cd "$X" && rm -rf kitsrc`), /protected-folders\.json/, 'after a cd the guard cannot follow');
+	assert.match(why(`echo x > "${o}/kitsrc/a.md"`, path.join(proj, 'sub')), /protected-folders\.json/, 'from a subfolder of the project');
+	assert.equal(why(`ls "${o}"`), '', 'a read of the parent');
+});
