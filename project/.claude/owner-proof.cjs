@@ -286,7 +286,9 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// K19 (pass bar 4): bash's * and ? at the start of a path part never match a name starting with a dot while dotglob
 	// is off, so tests/* cannot name .githooks or .claude. Only for an unquoted word with no escape, expansion, brace or
 	// ~, in a command that names no way to turn dot globbing on; PowerShell's wildcards match dot names, so not there.
-	const dotglob = tool !== 'Bash' || /dotglob|GLOBIGNORE|BASHOPTS|shopt|bash\s+-O|\+O/.test(source);
+	// zsh (the Bash tool's shell where it is the user's) has the same rule, turned off by setopt or a (D) qualifier; any
+	// text run as shell (eval, source, a substitution) could turn either on unseen (the review of this fix).
+	const dotglob = tool !== 'Bash' || [String(command || ''), source].some((t) => /dotglob|GLOBIGNORE|BASHOPTS|shopt|bash\s+-O|\+O|setopt|glob_?dots|\(D|\beval\b|\bsource\b|(^|[\s;&|(])\.\s|\$\(|`|\balias\b|BASH_ENV|ENV=/i.test(t));
 	const dotless = (word, quoted) => (dotglob || quoted || /[\\$`{}~'"]/.test(word) ? word : word.split('/').map((p) => (/^[*?]/.test(p) ? `\x01${p}` : p)).join('/'));
 	const hit = (x) => names(dotless(x.value, x.quoted), cwd);
 	// A variable set to a plain value earlier in the command (P=~/.claude/projects) is read as that value where it is

@@ -297,6 +297,6 @@ test('a bash wildcard that cannot match a dot name is no write to a guard', () =
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
 	};
 	for (const command of ['npm test -- tests/*', 'node --test tests/*.test.mjs', 'npm test -- tests/?ard*']) assert.equal(why(command), '', command);
-	for (const command of ["npm test -- 'tests/*'", 'shopt -s dotglob; npm test -- tests/*', 'GLOBIGNORE=x npm test -- tests/*', 'npm test -- tests/\\*', 'npm test -- tests/.*']) assert.match(why(command), /^Never by a tool/, command);
+	for (const command of ["npm test -- 'tests/*'", 'shopt -s dotglob; npm test -- tests/*', 'GLOBIGNORE=x npm test -- tests/*', 'npm test -- tests/\\*', 'npm test -- tests/.*', 'setopt globdots; npm test -- tests/*', 'npm test -- tests/*(D)', 'eval "sh"opt -s dotglob"; npm test -- tests/*', '$(printf shopt) -s dotglob; npm test -- tests/*']) assert.match(why(command), /^Never by a tool/, command);
 	assert.match(why('npm test -- tests/*', 'PowerShell'), /^Never by a tool/, 'PowerShell matches dot names');
 });
