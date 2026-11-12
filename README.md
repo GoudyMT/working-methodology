@@ -20,7 +20,7 @@ flowchart LR
     subgraph P["One project"]
         A["1. We find a better way<br/>saved to the project's standards"]
         B["2. Rule sort at pre-compact<br/>project only or every project"]
-        K["Backup of private files<br/>private repo, on owner's go"]
+        K["Backup of private files<br/>private repo, on owner's yes"]
     end
     subgraph R["Review"]
         C["3. Kit report<br/>hook before each compact"]
@@ -159,7 +159,7 @@ latest kit; an existing one catches up with one command.
    run's folder stays until the next run sweeps it.
 4. Merge and retire before the bump. A new rule goes in as a trial (`TRIALS.md`) unless the owner promotes it.
    `node scripts/kit.mjs bump minor "<what changed>"` raises `VERSION` and adds a `CHANGELOG.md` entry.
-5. Commit, then push on the owner's go. Other projects pull it with `install project`.
+5. Commit, then push on the owner's yes. Other projects pull it with `install project`.
 
 Run a fold-back at the end of any session that changed the standards, and at the end of every project.
 

@@ -61,7 +61,7 @@ inferred.
 
 ## 5. Adopt, one issue at a time
 
-Present the plan as A/B/C choices and stop. On the owner's go:
+Present the plan as A/B/C choices and stop. On the owner's yes:
 
 1. Run the install for real. New files land; existing ones stay. A project that keeps its own file where the kit ships
    a guard file (often its own `.githooks/pre-commit`) is held on every call until the owner checks that file and runs

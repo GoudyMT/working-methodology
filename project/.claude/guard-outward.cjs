@@ -346,7 +346,7 @@ function collectStrings(value, out, depth) {
 	}
 }
 
-// A push to a feature branch of origin, in the owner's bounds (T1, the owner 2026-11-10: "Tight bounds"): the whole
+// A push to a feature branch of origin, inside the push bound (T1, the owner 2026-11-10: "Tight bounds"): the whole
 // command is one `git push [-u|--set-upstream] [-q|-v] origin <branch>` (or HEAD:<branch>, <branch>:<branch>), the
 // branch written out, not main or master, with no force, delete, tag, mirror or skipped hooks. It goes without a yes:
 // main is protected on GitHub, and the pre-push hook scans every pushed commit for secrets and logs the push.
@@ -511,7 +511,7 @@ function check(input) {
 		// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
 		const command = String((input.tool_input && input.tool_input.command) ?? '');
 		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
-		// Inside the owner's bounds a feature-branch push goes without a yes; anything else held needs the owner's
+		// Inside the push bound a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
 		if (reason && boundedPush(input)) reason = '';
 		else if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';

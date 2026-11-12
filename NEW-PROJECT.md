@@ -34,7 +34,7 @@ tool, and `install project` writes a record of the project's guard files to `~/.
 every call the launcher checks the files against that record; one changed outside install holds every call until
 `install project` puts the kit's copy back. So run `install user` before `install project`.
 
-The same install turns on the git push guard, so a push by any AI tool waits for the owner's go (rule:outward-acts):
+The same install turns on the git push guard, so a push by any AI tool waits for the owner's yes (rule:outward-acts):
 it points `core.hooksPath` at the hook shims beside the record, which check the guard files and then run the
 project's `.githooks`. If the project already runs git hooks from another folder (husky, lefthook), install leaves
 it alone: add the check in `.githooks/pre-push` to that pre-push hook instead.
@@ -77,9 +77,9 @@ Pick a folder beside the project, for example `<project folder>-vault`, and writ
 ```
 
 `include` takes git pathspecs (`*.md`, `notes/`). Secret files (`.env*`, `.dev.vars`, keys, `secrets/`) are
-never copied, whatever the list says. On the owner's go, make the private remote once
+never copied, whatever the list says. On the owner's yes, make the private remote once
 (`gh repo create <owner>/<project>-vault --private --source <vault folder>`); after that the hook commits locally
-and each push waits for the owner's go.
+and each push waits for the owner's yes.
 
 ## 3c. Turn on the skill cases
 
