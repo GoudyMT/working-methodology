@@ -761,3 +761,14 @@ test('a feature push from another repo runs only where the kit\'s own hooks will
 	spawnSync('git', ['-C', other, 'config', 'core.hooksPath', path.join(cfg, 'kit-guard', 'other-123', 'hooks').split(path.sep).join('/')]);
 	assert.notEqual(ask(other), 'deny', 'a kit project\'s feature push was held');
 });
+// why: guards rule:outward-acts. The plan check's P8: a nested repo under the project path is another repo, read by its
+// git folder, not by its path.
+test('a feature push from a repo nested inside the project is read as another repo', () => {
+	const proj = kitTemp.makeTemp('k28n-');
+	spawnSync('git', ['init', '-q', '-b', 'main', proj]);
+	const nested = path.join(proj, 'vendor', 'lib');
+	fs.mkdirSync(nested, { recursive: true });
+	spawnSync('git', ['init', '-q', '-b', 'main', nested]);
+	const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git push origin feat/x' }, cwd: nested }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: path.join(proj, 'cfg') } });
+	assert.equal(r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'runs', 'deny');
+});

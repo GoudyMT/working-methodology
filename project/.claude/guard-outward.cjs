@@ -519,13 +519,16 @@ function uncheckedRepo(input) {
 	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
 	if (!root || !cwd) return false;
 	const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
-	if (fold(cwd) === fold(path.resolve(root)) || fold(cwd).startsWith(fold(path.resolve(root)) + path.sep)) return false;
-	const git =(dir, ...a) => require('node:child_process').spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 3000 });
+	const inside = fold(cwd) === fold(path.resolve(root)) || fold(cwd).startsWith(fold(path.resolve(root)) + path.sep);
+	const git = (dir, ...a) => require('node:child_process').spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 3000 });
 	const real = (p) => { try { return fs.realpathSync.native(p).toLowerCase(); } catch { return path.resolve(p).toLowerCase(); } };
 	const common = (dir) => { const r = git(dir, 'rev-parse', '--git-common-dir'); return r.status === 0 ? real(path.resolve(dir, r.stdout.trim())) : ''; };
+	// By its git folder, not its path: a nested repo or a submodule under the project is another repo (the plan
+	// check's P8); a folder that is no repo pushes nothing.
 	const here = common(cwd);
-	if (!here) return true;
-	if (here === common(path.resolve(root))) return false;
+	if (!here) return !inside;
+	const mine = common(path.resolve(root));
+	if (here === mine || (inside && !mine)) return false;
 	const hooks = git(cwd, 'config', '--get', 'core.hooksPath').stdout.trim();
 	const home = process.env.CLAUDE_CONFIG_DIR || path.join(require('node:os').homedir(), '.claude');
 	return !hooks || !real(path.resolve(cwd, hooks)).startsWith(real(path.join(home, 'kit-guard')) + path.sep);
