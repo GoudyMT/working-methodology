@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.27.0 - 2026-11-12
+
+Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first; three were security holes.
+
+### Added
+- The use check says whether the latest pop-up answer carries the field the guards read.
+- The first push check names a public GitHub repo whose secret scanning or push protection is off.
+- A test check holds each new or changed kit test to the bar (fails first, earns its place, right lane, owed at all), as a report in CI.
+- An install check in CI installs this build, upgrades from the previous release, and replays every command the push guard's proof holds through the installed launcher, on Linux and Windows.
+- One build record per release writes the changelog entry and the PR body, and CI checks it on every PR that moves VERSION.
+- The recall test can run in CI by the owner's hand from main, reaching the model through workload identity federation with no stored key; it reports only, and stays off until the owner sets it up.
+- Every kit workflow is linted in CI, the linter pinned by its checksum.
+
+### Changed
+- rule:outward-acts names the four refusal kinds and who acts next on each; Held means one thing: the call waits for the fix the refusal names.
+- Every kit test carries a why line: the rule it guards, or the break only it catches, written from a CI measurement of 2,326 code flips.
+- The kit's PR CI runs the tests its change reaches plus the security set, and the whole suite when it cannot be sure; every push to main runs the whole suite and keeps the map the next PR selects by. A body edit reruns only the PR body check.
+
+### Fixed
+- The pre-push hook asks the remote for its default branch and whether it is new, so a local ref cannot fake a first push.
+- A reinstall holds a guard file a later release adds until the owner accepts it, moves records from the old long names, and rewrites the hook shims of every recorded project; a changed or slow kit hook says why it did not run.
+- The task gate lets a command that only prints git commit through, and still holds a substitution inside a printed line.
+- Settings deny git log, diff and show with --output anywhere in the command.
+- The owner's yes is found at the end of a transcript too long to read whole.
+
+### Security
+- The guard holds a push whose hooks were moved by an included config file or another git folder, a write to main through the GitHub API in any encoding, and a push run outside the project's work tree. A release install refuses a release with no tree to check against, and checks the kit's config and version files too.
+- Clearing the AI shell markers (CLAUDECODE, AI_AGENT) before a command is a gate bypass, refused even with the owner's yes (the owner's lock).
+- An owner's yes answers one act in one shell: a shell act needs a held try before the pop-up, and an edit whose text holds a separator gets no yes.
+- The secret scan reads commit and tag messages as raw objects, every tag in a chain, and ref names.
+- Git hooks run from the copy the launcher checked against the install record, never from the project folder a tool could write.
+
+### Removed
+- 29 tests whose every caught flip another test also catches, after the owner's yes; every caught flip is still caught.
+
 ## 1.26.0 - 2026-11-11
 
 Guard wording (T16a): one name for each thing, one home for the push bound, one voice for every refusal, and gate
