@@ -446,3 +446,27 @@ Keys v5, brief v2, pass bar 12. Candidate: this branch, the project layer unrele
 
 control: 0
 gate: kit-1.26.0 median 13 baseline 12 brief v2 keys v5
+
+**Third measurement, on the final text, which decides:** a CI fix trimmed four rule lines back under their size caps (meaning unchanged), so three new candidates ran on that text and were scored blind with the same baselines and control by a fresh scorer.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 0, 1, 1 | 0, 0, 0 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 0, 1, 1 | 0, 1, 1 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 11, 13, 13 | 11, 12, 12 | 0 |
+
+- **Scored: median 13, baseline 12, control 0.** Q4 passes in 2 of 3 candidates and no baseline; no question fails more in the candidates.
+
+control: 0
+gate: kit-1.26.0 median 13 baseline 12 brief v2 keys v5
