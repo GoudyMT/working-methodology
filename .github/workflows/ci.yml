@@ -332,6 +332,15 @@ jobs:
           node scripts/kit.mjs build
           git diff --exit-code
 
+      # T15 D5: a PR that moves VERSION carries its build record, whole, and the changelog entry it writes.
+      - name: Build record
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE: origin/${{ github.base_ref }}
+        run: |
+          if git diff --quiet "$PR_BASE" HEAD -- VERSION; then echo "VERSION unchanged: no build record owed"; else node scripts/build-record.mjs check; fi
+
       # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
       # a replaced download fails here before it runs.
       - name: Workflow lint
