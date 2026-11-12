@@ -301,6 +301,30 @@ test('C5 C19 pre-push: the default branch and a new repo are asked of the remote
 	assert.match(m.stderr, /not new/);
 });
 
+// why: guards rule:outward-acts (the remote's default branch takes a PR). K29, the 1.27.0 install review: a remote
+// that answers with no symref line was read as having no default branch, so a push to it went out with no yes.
+test('K29 pre-push: a remote that names no default branch is not read as having none', () => {
+	const { proj, remote } = setup();
+	ok(git(proj, ['checkout', '-q', '-b', 'feat/base']));
+	ok(git(proj, ['push', '-q', 'origin', 'feat/base']));
+	// The remote's HEAD names a commit, not a branch: ls-remote then answers with no symref line.
+	fs.writeFileSync(path.join(remote, 'HEAD'), `${ok(git(remote, ['rev-parse', 'feat/base']))}\n`);
+	ok(git(proj, ['remote', 'set-head', 'origin', 'feat/base']));
+	fs.writeFileSync(path.join(proj, 'c.md'), 'c\n');
+	ok(git(proj, ['add', 'c.md']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: c']));
+	const r = aiPush(proj, 'feat/base');
+	assert.notEqual(r.status, 0, 'a push to the default branch went out when the remote named none');
+	assert.match(r.stderr, /default branch/);
+	// Neither the remote nor this repo names one: the push is held, not read as safe.
+	ok(git(proj, ['remote', 'set-head', 'origin', '-d']));
+	ok(git(proj, ['checkout', '-q', '-b', 'feat/other']));
+	const u = aiPush(proj, 'feat/other');
+	assert.notEqual(u.status, 0, 'a push went out to a remote whose default branch nothing names');
+	assert.match(u.stderr, /names no default branch/);
+	assert.equal(git(remote, ['rev-parse', '-q', '--verify', 'refs/heads/feat/other']).status, 1);
+});
+
 // why: guards rule:outward-acts
 test('V3 pre-push: an intact install still lets an AI push a feature branch', () => {
 	const { proj, remote } = setup();

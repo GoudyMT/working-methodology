@@ -7,14 +7,21 @@
 # Git gives the refs being pushed on stdin once; keep them for every check below.
 refs=$(cat)
 # The remote's own answer for its default branch, asked by URL so no remote setting of this repo changes it; the local
-# origin/HEAD, which a command can move or delete, only when the remote cannot be asked (the 1.26.0 sweep, C5 and V4).
+# origin/HEAD, which a command can move or delete, only when the remote cannot be asked or names none (the 1.26.0
+# sweep, C5 and V4). A remote that answers with no symref line (a HEAD that names a commit, a dumb server) was read as
+# having no default branch, so a push to it went out (K29): with branches there and nothing naming one, it prints ?.
 remote_default() {
+  d=""
   if out=$(git ls-remote --symref "$2" HEAD 2>/dev/null); then
-    printf '%s\n' "$out" | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p' | head -n 1
-  else
-    d=$(git symbolic-ref --short "refs/remotes/$1/HEAD" 2>/dev/null)
-    printf '%s\n' "${d#"$1"/}"
+    d=$(printf '%s\n' "$out" | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p' | head -n 1)
   fi
+  if [ -z "$d" ]; then
+    d=$(git symbolic-ref --short "refs/remotes/$1/HEAD" 2>/dev/null)
+    d=${d#"$1"/}
+  fi
+  # A new repo has no branch, so it has no default branch yet: its first push is judged below, as before.
+  if [ -z "$d" ] && [ -n "$(git ls-remote --heads "$2" 2>/dev/null)" ]; then d="?"; fi
+  printf '%s\n' "$d"
 }
 if [ -n "$AI_AGENT$CLAUDECODE" ]; then
   common=$(git rev-parse --git-common-dir)
@@ -30,6 +37,7 @@ if [ -n "$AI_AGENT$CLAUDECODE" ]; then
       branch=${rref#refs/heads/}
       case "$branch" in main|master) why="${why:-the main branch}" ;; esac
       if [ -n "$default" ] && [ "$branch" = "$default" ]; then why="${why:-the default branch}"; fi
+      if [ "$default" = "?" ]; then why="${why:-the remote names no default branch, so this may be it}"; fi
       case "$rsha" in *[!0]*)
         git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null || why="${why:-a force push}" ;;
       esac
