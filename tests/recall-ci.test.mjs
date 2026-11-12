@@ -19,6 +19,9 @@ test('the CI recall job runs only by hand from main, through federation with no 
 	assert.doesNotMatch(wf, /secrets\.|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN/, 'a stored key');
 	// Claude Code is pinned, and a branch's name reaches the shell only through env, never into the script text.
 	assert.match(wf, /@anthropic-ai\/claude-code@\d+\.\d+\.\d+\b/);
+	// With install scripts off, the package's bin is a stub that only errors (the 1.27.0 sweep, high): its own
+	// installer places the binary, and the job proves the CLI runs before any recall run.
+	assert.match(wf, /--ignore-scripts @anthropic-ai\/claude-code@[\d.]+\n\s+node "\$\(npm root -g\)\/@anthropic-ai\/claude-code\/install\.cjs"\n\s+claude --version/); // pin: 1
 	for (const run of wf.split(/\n\s+run: \|/).slice(1)) assert.doesNotMatch(run.split(/\n\s+- /)[0], /\$\{\{/, 'an expression inside a run script');
 	// Only a plain branch of this repo is measured, and the token folder is never uploaded nor in the scorer's reach.
 	assert.match(wf, /ref: refs\/heads\/\$\{\{ inputs\.ref \}\}/);
