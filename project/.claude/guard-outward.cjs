@@ -510,6 +510,27 @@ function pushOutsideProject(text, input) {
 	return ![...flat.matchAll(/\bpush\b([^;&|\n]*)/gi)].every((m) => plainFeature(m[1].trim().split(/\s+/).filter(Boolean)));
 }
 
+// K28 (the 1.27.0 install review; the owner, 2026-11-12: free "if everything checks out"): the push bound is free
+// because the kit's own pre-push hook scans and logs the push. A push run in another repo is free only when that repo
+// is this one (a worktree shares its git folder) or its hooks are the kit's shims in the Claude folder; otherwise the
+// kit cannot see the push, and it asks. With no project folder named, the guard cannot tell, as before.
+function uncheckedRepo(input) {
+	const root = process.env.CLAUDE_PROJECT_DIR;
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	if (!root || !cwd) return false;
+	const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+	if (fold(cwd) === fold(path.resolve(root)) || fold(cwd).startsWith(fold(path.resolve(root)) + path.sep)) return false;
+	const git =(dir, ...a) => require('node:child_process').spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 3000 });
+	const real = (p) => { try { return fs.realpathSync.native(p).toLowerCase(); } catch { return path.resolve(p).toLowerCase(); } };
+	const common = (dir) => { const r = git(dir, 'rev-parse', '--git-common-dir'); return r.status === 0 ? real(path.resolve(dir, r.stdout.trim())) : ''; };
+	const here = common(cwd);
+	if (!here) return true;
+	if (here === common(path.resolve(root))) return false;
+	const hooks = git(cwd, 'config', '--get', 'core.hooksPath').stdout.trim();
+	const home = process.env.CLAUDE_CONFIG_DIR || path.join(require('node:os').homedir(), '.claude');
+	return !hooks || !real(path.resolve(cwd, hooks)).startsWith(real(path.join(home, 'kit-guard')) + path.sep);
+}
+
 function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
@@ -543,7 +564,8 @@ function check(input) {
 		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
 		// Inside the push bound a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
-		if (reason && boundedPush(input)) reason = '';
+		if (reason && boundedPush(input) && !uncheckedRepo(input)) reason = '';
+		else if (reason && boundedPush(input)) reason = 'a push from a repo whose git hooks are not the kit\'s';
 		else if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
 		// A guard that cannot read the command refuses rather than lets it through.

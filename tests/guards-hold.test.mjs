@@ -742,3 +742,22 @@ test('plain reads of the guard files pass in the shapes V1 found, and lookalikes
 		assert.notEqual(bash(command), 'allow', command);
 	}
 });
+// why: guards rule:outward-acts (the push bound: a feature push goes without a yes because the kit's own pre-push
+// hook scans it). K28, the 1.27.0 install review, and the owner's answer (2026-11-12: a push from another repo stays
+// free "if everything checks out"): it is free only from a repo whose git hooks are the kit's; anywhere else it asks.
+test('a feature push from another repo runs only where the kit\'s own hooks will check it', () => {
+	const root = kitTemp.makeTemp('k28-');
+	const cfg = path.join(root, 'cfg');
+	const mk = (name) => { const d = path.join(root, name); fs.mkdirSync(d); spawnSync('git', ['init', '-q', '-b', 'main', d]); return d; };
+	const proj = mk('proj');
+	const other = mk('other');
+	const ask = (cwd) => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git push origin feat/x' }, cwd }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: cfg } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision || 'note' : 'runs';
+	};
+	assert.notEqual(ask(proj), 'deny', 'a feature push from the project itself');
+	assert.equal(ask(other), 'deny', 'a push from a repo the kit does not check went out with no yes');
+	// The other repo is a kit project: its hooks are the kit's shims in the Claude folder.
+	spawnSync('git', ['-C', other, 'config', 'core.hooksPath', path.join(cfg, 'kit-guard', 'other-123', 'hooks').split(path.sep).join('/')]);
+	assert.notEqual(ask(other), 'deny', 'a kit project\'s feature push was held');
+});
