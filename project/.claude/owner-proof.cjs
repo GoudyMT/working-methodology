@@ -353,6 +353,26 @@ function shellWrites(command, tool, start, names = proofNames) {
 	return [raw, text].some((t) => t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(w, start ? parts(start) : null)));
 }
 
+// Turning every hook off is a gate bypass, never a settings change a yes may approve (K21). JSON reads \u escapes as
+// the letters they name, so they are read that way here too; an edit is read as the file it leaves, so a key made
+// across the edit's edge is seen.
+const HOOKS_OFF = 'Never by a tool: disableAllHooks turns every guard off, a gate bypass no yes approves. Leave it out; switching hooks off is the owner\'s own, in their own terminal.';
+const hooksOff = (text) => /disableallhooks/i.test(String(text).replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16))));
+function writtenText(tool, t, file) {
+	if (tool === 'Write') return String(t.content ?? '');
+	const edits = tool === 'MultiEdit' ? (Array.isArray(t.edits) ? t.edits : []) : [t];
+	let text = '';
+	try { text = fs.readFileSync(file, 'utf8'); } catch { /* a new file: the new text alone */ }
+	const news = [];
+	for (const e of edits) {
+		const from = String((e && e.old_string) ?? '');
+		const to = String((e && e.new_string) ?? '');
+		news.push(to);
+		text = from && e.replace_all ? text.split(from).join(to) : from ? text.replace(from, () => to) : text + to;
+	}
+	return `${text}\n${news.join('\n')}`;
+}
+
 // The hook's answer for one tool call: a refusal, or null to let it go on. The dispatcher (guard.cjs) calls this.
 function check(input) {
 	const t = input.tool_input || {};
@@ -365,12 +385,14 @@ function check(input) {
 		if (insideProof(String(file), cwd)) return deny(REASON);
 		const p = parts(real(path.resolve(cwd, String(file))));
 		if (guardShape(p)) return deny(GUARD_REASON);
-		return settingsShape(p) ? settings() : null;
+		if (!settingsShape(p)) return null;
+		if (hooksOff(writtenText(input.tool_name, t, path.resolve(cwd, String(file))))) return deny(HOOKS_OFF);
+		return settings();
 	}
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name)) {
 		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);
-		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) return settings();
+		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) return hooksOff(t.command) ? deny(HOOKS_OFF) : settings();
 	}
 	return null;
 }

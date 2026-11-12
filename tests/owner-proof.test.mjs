@@ -185,3 +185,33 @@ test('the shipped project settings wire the owner-proof guard on every write too
 	const { routes } = require(path.resolve('project/.claude/guard.cjs'));
 	for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell']) assert.ok(routes(tool).includes('owner-proof.cjs'), tool);
 });
+
+// why: guards rule:outward-acts (a gate bypass is never a tool's act, even with a yes; the owner's lock 2026-11-11).
+// K21, from the 1.26.0 plan-check probe: a settings write that turns every hook off took one pop-up tap, like any
+// settings change, so one yes switched every guard off.
+test('a settings write that turns the hooks off is never by a tool, in any spelling', () => {
+	const proj = kitTemp.makeTemp('proj-');
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.claude', 'settings.json'), '{\n  "permissions": {}\n}\n');
+	const why = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const local = path.join(proj, '.claude', 'settings.local.json');
+	const shared = path.join(proj, '.claude', 'settings.json');
+	const edge = path.join(proj, '.claude', 'settings.local.json');
+	fs.writeFileSync(edge, '{"Hooks": true}\n');
+	const never = [
+		['Write', { file_path: local, content: '{"disableAllHooks": true}' }],
+		['Write', { file_path: local, content: '{"\\u0064isableAllHooks": true}' }],
+		['Edit', { file_path: shared, old_string: '"permissions"', new_string: '"disableAllHooks": true, "permissions"' }],
+		// The key made across the edit's edge: the result is read, not only the new text.
+		['Edit', { file_path: edge, old_string: '{"', new_string: '{"disableAll' }],
+		['MultiEdit', { file_path: shared, edits: [{ old_string: '"permissions"', new_string: '"disableAllHooks": true, "permissions"' }] }],
+		['Bash', { command: `echo '{"disableAllHooks": true}' > .claude/settings.local.json` }],
+	];
+	for (const [tool, input] of never) assert.match(why(tool, input), /^Never by a tool/, `${tool} ${JSON.stringify(input)}`);
+	// An ordinary settings change still takes the owner's yes, not a flat refusal.
+	assert.match(why('Write', { file_path: local, content: '{"permissions": {}}' }), /Owner's yes needed/);
+});
