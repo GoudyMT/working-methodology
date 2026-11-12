@@ -265,3 +265,24 @@ test('a listed folder is held through its parent, after an unknown cd, and from 
 	assert.match(why(`echo x > "${o}/kitsrc/a.md"`, path.join(proj, 'sub')), /protected-folders\.json/, 'from a subfolder of the project');
 	assert.equal(why(`ls "${o}"`), '', 'a read of the parent');
 });
+// why: guards rule:security-standards. The 1.28.0 sweep and the commit review: a sed script in a variable read as a
+// print, a listed folder spelled /c/..., $PWD/... or ~/..., the root, and env --unset or export -n with a built name.
+test('the sweep\'s spellings of a guard file read, a listed folder and a marker clear are held', () => {
+	const proj = kitTemp.makeTemp('e3c-');
+	const kept = path.join(proj, 'vault');
+	fs.mkdirSync(kept);
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: [kept] }));
+	const why = (command, tool_name = 'Bash') => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input: { command }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	assert.match(why('sed -n "$p" .claude/guard-outward.cjs'), /^Never by a tool/);
+	const unix = '/' + kept.split(path.sep).join('/').replace(/^([A-Za-z]):/, (m, d) => d.toLowerCase());
+	for (const command of ['echo x > "$PWD/vault/a.txt"', `echo x > "${unix}/a.txt"`, 'rm -rf /']) assert.match(why(command), /protected-folders\.json/, command);
+	const outward = (command) => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: process.cwd() }), encoding: 'utf8' });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
+	};
+	for (const command of ['env --unset="$M" git push origin feat/x', 'export -n "$M"; git push origin feat/x']) assert.match(outward(command), /^Never by a tool: clearing/, command);
+});

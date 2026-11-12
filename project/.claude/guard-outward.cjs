@@ -262,7 +262,7 @@ function ghOutward(words, start) {
 // Reading Env: or setting $env:X is not.
 function markersCleared(flat) {
 	// An unset or env -u whose name is built at run time may name a marker (the 1.28.0 sweep): held.
-	if (/\bunset\b[^;|&\n]*[$`]|\benv(\.exe)?\s+([^;|&\n]*\s)?-u\s*[^;|&\n\s]*[$`]/i.test(flat)) return true;
+	if (/\b(unset|export\s+-n|declare\s+\+x|typeset\s+\+x|local\s+\+x)\b[^;|&\n]*[$`]|--unset[= ][^;|&\n\s]*[$`]|\benv(\.exe)?\s+([^;|&\n]*\s)?-u\s*[^;|&\n\s]*[$`]/i.test(flat)) return true;
 	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
 	return /\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat);
 }

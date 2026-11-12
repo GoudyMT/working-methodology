@@ -56,7 +56,8 @@ const SETTINGS_REASON = 'a write to a settings file, which wires the guards';
 // The reader splits a word at a comma (PowerShell lists), so 1,20p reaches here as 1 and 20p.
 const printSed = (w) => {
 	if (w.length < 4 || path.basename(slash(w[0] || '')) !== 'sed' || w[1] !== '-n') return false;
-	const at = /^(\d+|\$)p$/.test(w[2]) ? 3 : /^(\d+|\$)$/.test(w[2]) && /^(\d+|\$)p$/.test(w[3] || '') ? 4 : 0;
+	// Digits only: $p may be a variable holding any script (the 1.28.0 sweep), and quotes are gone by here.
+	const at = /^\d+p$/.test(w[2]) ? 3 : /^\d+$/.test(w[2]) && /^\d+p$/.test(w[3] || '') ? 4 : 0;
 	return at > 0 && w.length > at && w.slice(at).every((x) => !x.startsWith('-'));
 };
 
@@ -418,7 +419,12 @@ function listedFolders(cwd) {
 }
 // A word names a listed folder when it sits inside it or above it (a parent deleted or moved takes the folder with it),
 // and, after a cd the guard cannot follow, when any part of a relative word is a listed folder's own name.
-const inFolders = (folders) => (word, cwd) => {
+const inFolders = (folders) => (raw, cwd) => {
+	// The spellings a shell resolves first: Git Bash's /c/..., $PWD and $HOME or ~ (the 1.28.0 sweep).
+	let word = String(raw).replace(/^\/([a-z])(?=\/|$)/i, '$1:').replace(/^~(?=\/|$)|^\$\{?HOME\}?(?=\/|$)|^\$env:USERPROFILE(?=[\\/]|$)/i, () => slash(os.homedir()));
+	if (/^\$\{?PWD\}?(?=[\\/]|$)|^\$pwd(?=[\\/]|$)/i.test(word)) { if (!Array.isArray(cwd)) return folders.length > 0; word = word.replace(/^\$\{?PWD\}?|^\$pwd/i, cwd.join('/')); }
+	// The root is a parent of every folder.
+	if (/^([a-z]:)?[\\/]*$/i.test(word) && word.length > 0) return folders.length > 0;
 	if (cwd === 'unknown' && !rooted(word)) {
 		const ps = parts(word);
 		if (folders.some((f) => f.length > 0 && ps.some((x) => fits(x, f[f.length - 1])))) return true;
