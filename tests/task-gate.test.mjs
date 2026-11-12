@@ -99,5 +99,5 @@ test('a command that only prints git commit does not wait; the commit itself doe
 	assert.equal(gate([], 'Bash', { command: 'echo x; git commit -m x' }).decision, 'deny');
 });
 test('a substitution inside a printed line still runs, so a commit there waits', () => {
-	assert.equal(gate([], 'Bash', { command: 'echo $(git commit -m x)' }).decision, 'deny');
+	for (const command of ['echo $(git commit -m x)', 'echo ' + String.fromCharCode(96) + 'git commit -m x' + String.fromCharCode(96)]) assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
 });

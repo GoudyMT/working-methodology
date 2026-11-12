@@ -35,9 +35,10 @@ function actText(input) {
 	const str = (v) => typeof v === 'string';
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(name)) return str(t.command) ? squash(t.command) : '';
 	if (name === 'Write' && str(t.file_path) && str(t.content)) return squash(`Write ${t.file_path}: ${t.content}`);
-	// An edit whose text holds the quote's own separators (" => ", " ; ") would read as another edit, so it has no
-	// act and no yes: the owner makes that edit (the 1.25.0 sweep, R1.5).
-	const sep = (s) => / => | ; /.test(squash(s));
+	// An edit whose text holds the quote's own separators would read as another edit, so it has no act and no yes: the
+	// owner makes that edit (the 1.25.0 sweep, R1.5). Any "=>" or ";" at all, so no split at an edge reads two ways
+	// (the review on ceecedd).
+	const sep = (s) => /=>|;/.test(s);
 	if (['Edit', 'MultiEdit'].includes(name) && [t.old_string, t.new_string, ...(Array.isArray(t.edits) ? t.edits.flatMap((e) => [e && e.old_string, e && e.new_string]) : [])].some((s) => str(s) && sep(s))) return '';
 	if (name === 'Edit' && str(t.file_path) && str(t.old_string) && str(t.new_string)) return squash(`Edit ${t.file_path}${t.replace_all ? ' (every match)' : ''}: ${t.old_string} => ${t.new_string}`);
 	if (name === 'MultiEdit' && str(t.file_path) && Array.isArray(t.edits) && t.edits.every((e) => e && str(e.old_string) && str(e.new_string))) {
@@ -97,7 +98,8 @@ function ownerYes(input, now = Date.now()) {
 	const yes = yeses(lines).filter((y) => y.acts.includes(act)).pop();
 	if (!yes || now - yes.at < 0 || now - yes.at > FRESH_MS) return null;
 	// The yes is for the shell the held call ran in: Bash and PowerShell read the same text differently (the 1.25.0
-	// sweep, R1.6). The last call of this act before the pop-up names it.
+	// sweep, R1.6). The last call of this act before the pop-up names it; a shell act asked with no held call before it
+	// has no shell, so no yes (the review on ceecedd): the refusal says to try, then ask.
 	let tried = '';
 	for (const raw of lines.slice(0, yes.asked)) {
 		let e;
@@ -107,7 +109,8 @@ function ownerYes(input, now = Date.now()) {
 			if (b && b.type === 'tool_use' && actText({ tool_name: b.name, tool_input: b.input }) === act) tried = String(b.name);
 		}
 	}
-	if (tried && tried !== String(input.tool_name)) return null;
+	const shell = ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(String(input.tool_name));
+	if ((shell && !tried) || (tried && tried !== String(input.tool_name))) return null;
 	// Spent by any run of the act after the pop-up was asked, the answer's own line or not: Claude Code writes every
 	// tool call of a message before their results, so an act sent beside the pop-up sits above the answer (the 1.25.0
 	// sweep: one tap ran it twice).
@@ -200,7 +203,10 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	// refuses, so a yes is never reused by hiding its use.
 	const log = path.join(common || path.join(repo, '.git'), 'kit-push.log');
 	let used = [];
-	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && p[2] === ref).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
+	// A push of either kind of ref with this name spends a yes, so one tap to a short name allows one push (the review
+	// on ceecedd).
+	const kinds = [ref, `refs/heads/${name}`, `refs/tags/${name}`];
+	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && kinds.includes(p[2])).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
 	for (const d of dirs) {
 		let lines;
 		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }

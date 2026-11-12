@@ -226,7 +226,7 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = null, file = TRANSCRIPT }) {
+function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
 	const question = `May I run \`${act}\`?`;
 	const input = { questions: [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }] };
@@ -434,6 +434,12 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 	popUp({ act, tried: { tool: 'Bash', input: { command: act } } });
 	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes after a Bash call ran in PowerShell');
 	assert.equal(withYes('Bash', { command: act }), 'allow');
+	// The review on ceecedd: a shell act asked with no held call before it has no shell to bind to; an edit with a
+	// semicolon (the MultiEdit separator) has no act.
+	popUp({ act, tried: null });
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes with no held call before it');
+	popUp({ act: `Edit ${file}: x; => y` });
+	assert.equal(withYes('Edit', { file_path: file, old_string: 'x;', new_string: 'y' }), 'deny', 'an edit holding a separator');
 	const { grantsRef } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));
 	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin refs/heads/v1', 'refs/tags/v1'), false, 'a branch yes pushed a tag');
 	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin refs/tags/v1', 'refs/tags/v1'), true);
@@ -530,7 +536,7 @@ test('each refusal names one act to quote, one kind, and a fix the hold lets thr
 	assert.ok(feat.includes('`KIT_PUSH_APPROVED=1 git push --force origin feat/x`'), feat);
 	const ps = why('PowerShell', { command: 'git push --force origin feat/x' });
 	assert.ok(ps.includes("`$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x`"), `PowerShell got no marker act: ${ps}`);
-	popUp({ act: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" });
+	popUp({ act: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x", tried: { tool: 'PowerShell', input: { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" } } });
 	assert.equal(withYes('PowerShell', { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" }), 'allow', 'the PowerShell act the refusal names runs on that yes');
 	assert.match(why('Bash', { command: 'git push origin main' }), /new repo's first push/);
 	// C18: an option's value is not the remote; a redirect makes it more than one plain push, and says so.
