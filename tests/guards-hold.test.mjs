@@ -466,6 +466,19 @@ test('the secret scan reads the message of every pushed commit and tag, in the p
 	g('tag', '-a', 'v1', '-m', `release\n\n${key}`);
 	const tag = g('rev-parse', 'v1').stdout.trim();
 	assert.equal(push(`refs/tags/v1 ${tag} refs/tags/v1 ${'0'.repeat(40)}`).status, 1, 'a key in a tag message went out');
+	// The review on 0827746: a key in an author header, or deep in a chain of tags, or in a ref name.
+	g('reset', '-q', '--hard', base);
+	fs.writeFileSync(path.join(dir, 'c.md'), 'c\n');
+	g('add', '.');
+	spawnSync('git', ['-c', 'user.name=t', '-c', `user.email=${key}@x`, '-c', 'commit.gpgsign=false', 'commit', '-qm', 'docs: c'], { cwd: dir, encoding: 'utf8' });
+	const authored = g('rev-parse', 'HEAD').stdout.trim();
+	assert.equal(push(`refs/heads/feat/y ${authored} refs/heads/feat/y ${base}`).status, 1, 'a key in an author header went out');
+	g('reset', '-q', '--hard', base);
+	let top = 'v1';
+	for (let i = 0; i < 7; i++) { g('tag', '-a', `t${i}`, top, '-m', i === 0 ? `deep ${key}` : 'x'); top = `t${i}`; }
+	g('tag', '-d', 'v1');
+	assert.equal(push(`refs/tags/t6 ${g('rev-parse', 't6').stdout.trim()} refs/tags/t6 ${'0'.repeat(40)}`).status, 1, 'a key seven tags down went out');
+	assert.equal(push(`refs/heads/${key} ${base} refs/heads/${key} ${'0'.repeat(40)}`).status, 1, 'a key in a ref name went out');
 });
 
 // T16a (the owner's locks, 2026-11-11): one voice for refusals. Each opens with its kind, names the limit it hit and
