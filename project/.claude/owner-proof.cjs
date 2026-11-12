@@ -21,7 +21,11 @@ const { ownerYes, askText } = require('./owner-yes.cjs');
 // install project fills this in, so a caller cannot move the protected folder with CLAUDE_CONFIG_DIR.
 // Double quotes: an installed path may hold an apostrophe (the 1.25.0 sweep).
 const INSTALLED_HOME = "{{CLAUDE_HOME}}";
-const home = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
+const findHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
+// Worked out once per call: it is asked for every word, and reading the environment cost a 98 KB command most of its
+// time (K14: 1.8 s of 1.9 s, near the 8 s bar on a busy CI machine).
+let homeNow = null;
+const home = () => homeNow ?? findHome();
 // The Claude folder's parts, worked out once per folder: a long command reads it for every word.
 let homeMemo = ['', []];
 function homeParts() {
@@ -375,6 +379,11 @@ function writtenText(tool, t, file) {
 
 // The hook's answer for one tool call: a refusal, or null to let it go on. The dispatcher (guard.cjs) calls this.
 function check(input) {
+	homeNow = findHome();
+	try { return answer(input); } finally { homeNow = null; }
+}
+
+function answer(input) {
 	const t = input.tool_input || {};
 	const cwd = input.cwd || process.cwd();
 	// The settings take the owner's pop-up yes for this exact act; a subagent never has one.
