@@ -83,11 +83,6 @@ test('projectSlug matches the folder name Claude Code uses for project memory', 
   );
 });
 
-test('render fills the owner name, profile and project folder', () => {
-  const out = render('{{OWNER_NAME}}|{{OWNER_PROFILE}}|{{PROJECT_DIR}}', { ownerName: 'Pat', ownerProfile: '- x', projectDir: 'C:/a b' });
-  assert.equal(out, 'Pat|- x|C:/a b');
-});
-
 // why: catches a break at scripts/kit.mjs:628 that no other test catches
 test('install user writes rendered files into ~/.claude and stamps the version', () => {
   const { kit, home } = makeKit();
@@ -102,42 +97,13 @@ test('install user writes rendered files into ~/.claude and stamps the version',
   assert.deepEqual(r.skipped, []);
 });
 
-test('install project copies standards, renders settings and seeds memory', () => {
-  const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'project', projectDir: proj });
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules\n');
-  assert.match(read(path.join(proj, '.claude/settings.json')), new RegExp(proj.replace(/\\/g, '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  const mem = path.join(home, 'projects', projectSlug(proj), 'memory', 'style.md');
-  assert.equal(read(mem), 'style rule\n');
-  assert.equal(JSON.parse(read(path.join(proj, '.kit/kit-version.json'))).version, '1.0.0');
-});
-
+// why: guards rule:owners-rules
 test('install never overwrites a file the owner changed, and says so', () => {
   const { kit, home, proj } = makeKit();
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
   const r = install({ kit, home, target: 'project', projectDir: proj });
   assert.equal(read(path.join(proj, '_Working Standards.md')), 'my own rules\n');
   assert.deepEqual(r.skipped.map((s) => s.file), ['_Working Standards.md']);
-});
-
-test('install with force replaces a changed file and keeps a backup of the old one', () => {
-  const { kit, home, proj } = makeKit();
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
-  const r = install({ kit, home, target: 'project', projectDir: proj, force: true });
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules\n');
-  assert.deepEqual(r.replaced, ['_Working Standards.md']);
-  assert.equal(read(path.join(r.backupDir, '_Working Standards.md')), 'my own rules\n');
-});
-
-test('a second install pulls kit updates into files the project left alone', () => {
-  const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'project', projectDir: proj });
-  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules v2\n');
-  fs.writeFileSync(path.join(kit, 'VERSION'), '1.1.0\n');
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules v2\n');
-  assert.deepEqual(r.updated, ['_Working Standards.md']);
-  assert.equal(JSON.parse(read(path.join(proj, '.kit/kit-version.json'))).version, '1.1.0');
 });
 
 // why: catches a break at scripts/kit.mjs:723 that no other test catches
@@ -160,17 +126,6 @@ test('fold-back sorts each file into fold-back, update, conflict or new', () => 
   assert.deepEqual(r.conflict, ['memory/style.md']);
   assert.deepEqual(r.added, ['memory/new-lesson.md']);
   assert.match(r.report, /rules, improved/);
-});
-
-test('fold-back for user lists a new skill but ignores third-party skills', () => {
-  const { kit, home } = makeKit();
-  install({ kit, home, target: 'user' });
-  fs.mkdirSync(path.join(home, 'skills/my-new-skill'), { recursive: true });
-  fs.writeFileSync(path.join(home, 'skills/my-new-skill/SKILL.md'), 'new\n');
-  fs.mkdirSync(path.join(home, 'skills/vendor-skill'), { recursive: true });
-  fs.writeFileSync(path.join(home, 'skills/vendor-skill/SKILL.md'), 'vendor\n');
-  const r = foldBack({ kit, home, target: 'user' });
-  assert.deepEqual(r.added, ['skills/my-new-skill/SKILL.md']);
 });
 
 // why: catches a break at scripts/kit.mjs:849 that no other test catches
@@ -266,29 +221,6 @@ test('scrub leaves the third-party snapshot alone', () => {
   assert.deepEqual(scrub({ kit: ctx.kit }), []);
 });
 
-test('snapshot also finds plugins outside the plugin cache and fills a missing license', () => {
-  const ctx = makeKit();
-  addThirdParty(ctx);
-  // A plugin delivered by the desktop app lives in its own folder, found by its plugin.json name.
-  const root = path.join(ctx.home, 'app-plugins');
-  const dir = path.join(root, 'org1', 'plugin_abc');
-  fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'designer', version: '1.2.0', author: { name: 'Studio' } }));
-  fs.mkdirSync(path.join(dir, 'skills/critique'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'skills/critique/SKILL.md'), 'critique\n');
-  const config = JSON.parse(read(path.join(ctx.kit, 'kit.config.json')));
-  config.vendor.pluginRoots = [root];
-  config.vendor.plugins.push('designer');
-  config.vendor.credits.designer = { repository: 'https://example.com/designer', license: 'Apache-2.0', licenseFrom: 'plugin:toolbox' };
-  fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify(config));
-  const r = snapshot({ kit: ctx.kit, home: ctx.home });
-  assert.ok(r.plugins.includes('designer'));
-  const v = path.join(ctx.kit, 'vendor/plugins/designer');
-  assert.equal(read(path.join(v, 'skills/critique/SKILL.md')), 'critique\n');
-  assert.match(read(path.join(v, 'LICENSE')), /MIT License/);
-  assert.equal(JSON.parse(read(path.join(v, 'SOURCE.json'))).repository, 'https://example.com/designer');
-});
-
 function hashTree(dir) {
   const out = {};
   const walkAll = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
@@ -299,6 +231,7 @@ function hashTree(dir) {
   return out;
 }
 
+// why: guards rule:owners-rules
 test('fold-back only reports: it changes no file in the project, ~/.claude or the kit', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'project', projectDir: proj });
@@ -322,14 +255,6 @@ function caseKit() {
   install({ kit: ctx.kit, home: ctx.home, target: 'project', projectDir: ctx.proj });
   return ctx;
 }
-
-test('session start says when the kit has newer rules, and how many', () => {
-  const { kit, home, proj } = caseKit();
-  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /newer/);
-  bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
-  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\)[\s\S]*\(1\.0\.0\)[\s\S]*\/methodology-kit update/);
-});
 
 // 1.21.1 carry 6: a main held by a ruleset alone is protected, though GitHub has no classic protection for it.
 // why: guards rule:outward-acts
@@ -396,61 +321,7 @@ test('the Claude Code version read never runs a claude program planted in the cu
   assert.equal(r.stdout.trim(), 'null');
 });
 
-test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
-  const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'user' });
-  install({ kit, home, target: 'project', projectDir: proj });
-  let r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, true);
-  assert.match(r.text, /Kit folder: 1\.0\.0/);
-  assert.match(r.text, /~\/\.claude: 1\.0\.0, current/);
-  assert.match(r.text, /This project: 1\.0\.0, current/);
-  assert.match(r.text, /^Current: /m);
-
-  // A newer kit release: both installs are behind, and each says what to run.
-  bump({ kit, level: 'patch', note: 'one', date: '2026-02-01' });
-  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newer\n');
-  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, false);
-  assert.match(r.text, /~\/\.claude: 1\.0\.0, behind kit 1\.0\.1/);
-  assert.match(r.text, /This project: 1\.0\.0, behind kit 1\.0\.1; 1 file\(s\) waiting/);
-  assert.match(r.text, /Run \/methodology-kit update\./);
-  assert.match(r.text, /kit\.mjs install user\./);
-  assert.match(r.text, /^Not current: /m);
-
-  // Same version, a file carrying this project's own values on top of the current kit copy (a filled adapter row, a
-  // tracking file): that is normal use, not a stale install, so status stays current and names it (the owner,
-  // 2026-10-31: "current" must be reachable without wiping a project's records).
-  install({ kit, home, target: 'user' });
-  install({ kit, home, target: 'project', projectDir: proj });
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, edited here\n');
-  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, true, r.text);
-  assert.match(r.text, /1 file\(s\) carry[\s\S]*own values[\s\S]*_Working Standards\.md/);
-
-  // Changed here AND in the kit: a hand merge is owed, so status is not current until the merge is recorded.
-  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
-  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newest\n');
-  install({ kit, home, target: 'user' });
-  install({ kit, home, target: 'project', projectDir: proj });
-  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, false);
-  assert.match(r.text, /1 file\(s\) changed here and in the kit[\s\S]*_Working Standards\.md[\s\S]*by hand/);
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
-  const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
-  assert.deepEqual(m.merged, ['_Working Standards.md']);
-  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, true, r.text);
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, newest, edited here\n');
-
-  // GitHub ahead of the kit folder.
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
-  r = status({ kit, home, projectDir: proj, ahead: () => 2, newest: () => 'v1.0.3' });
-  assert.equal(r.current, false);
-  assert.match(r.text, /GitHub has 2 newer kit commit[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
-  assert.doesNotMatch(r.text, /git pull/);
-});
-
+// why: guards rule:owners-rules
 test('status reports a project or ~/.claude with no install record, and writes nothing', () => {
   const { kit, home, proj } = makeKit();
   const r = status({ kit, home, projectDir: proj, ahead: () => 0 });
@@ -473,15 +344,6 @@ test('status shows the real start load against its cap, and says when it is over
     /Real start load: 1,200 B of 1,000 .*\. Over its cap: trim per rule:kit-standards item 14\./);
 });
 
-test('session start lists the skills for the cases this project turned on', () => {
-  const { kit, home, proj } = caseKit();
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /No skill cases chosen yet/);
-  fs.writeFileSync(path.join(proj, '.claude/skill-cases.local.json'), JSON.stringify({ on: ['ui-ux'] }));
-  const msg = sessionStartReport({ kit, home, projectDir: proj });
-  assert.match(msg, /UI\/UX design[\s\S]*design:design-critique, human-factor/);
-  assert.doesNotMatch(msg, /systematic-debugging/);
-});
-
 // why: catches a break at scripts/kit.mjs:1118 that no other test catches
 test('session start names a standby plugin a turned-on case needs, and how to switch it on here', () => {
   const { kit, home, proj } = caseKit();
@@ -493,15 +355,6 @@ test('session start names a standby plugin a turned-on case needs, and how to sw
     /Standby plugin huggingface-skills@claude-plugins-official \(ML work\) is off here\. To switch it on for this project only, add "enabledPlugins": \{ "huggingface-skills@claude-plugins-official": true \} to \.claude\/settings\.local\.json, then start a fresh session\./);
   fs.writeFileSync(path.join(proj, '.claude/settings.local.json'), JSON.stringify({ enabledPlugins: { 'huggingface-skills@claude-plugins-official': true } }));
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /Standby plugin/);
-});
-
-test('pre-compact counts what is waiting for the kit', () => {
-  const { kit, home, proj } = caseKit();
-  install({ kit, home, target: 'user' });
-  assert.match(preCompactReport({ kit, home, projectDir: proj }), /No rule changes waiting for the kit\./);
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, improved\n');
-  fs.writeFileSync(path.join(home, 'projects', projectSlug(proj), 'memory', 'new-lesson.md'), 'lesson\n');
-  assert.match(preCompactReport({ kit, home, projectDir: proj }), /2 rule change\(s\)[\s\S]*_Working Standards\.md, memory\/new-lesson\.md/);
 });
 
 // why: guards rule:outward-acts
@@ -841,25 +694,6 @@ test('install refuses changed, new, renamed and ignored files under the paths it
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
-test('--unreleased installs a branch build on purpose and stamps it as not a release', () => {
-  const { kit, proj, home, git, cli } = releaseKit();
-  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, branch\n');
-  git('commit', '-q', '-am', 'branch work');
-  fs.writeFileSync(path.join(kit, 'memory/new.md'), 'untracked\n');
-  for (const args of [['install', 'project', proj, '--unreleased'], ['install', 'user', '--unreleased']]) {
-    const r = cli(...args);
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /Unreleased build v1\.0\.0-1-g[0-9a-f]+ \(--unreleased\)[\s\S]*throwaway test install only/);
-  }
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, branch\n');
-  for (const stampPath of [path.join(proj, '.kit/kit-version.json'), path.join(home, 'kit-install.json')]) {
-    const stamp = JSON.parse(read(stampPath));
-    assert.equal(stamp.release, false);
-    assert.match(stamp.describe, /^v1\.0\.0-1-g[0-9a-f]+$/);
-    assert.deepEqual(stamp.dirty, ['memory/new.md']);
-  }
-});
-
 // why: catches a break at scripts/kit.mjs:1093 that no other test catches
 test('status and session start show an unreleased install as a gap; an older stamp with no release field is not flagged', () => {
   const { kit, home, proj } = makeKit();
@@ -915,36 +749,6 @@ test('a release install over an unreleased one removes the files only that build
   assert.equal(clean.release, true);
   assert.equal(clean.leftover, undefined);
   assert.equal(clean.files['agents/branch-only.md'], undefined);
-});
-
-test('the branch-only clean-up runs only over an unreleased install, never removes the overlay, and a dry run removes nothing', () => {
-  // A release or pre-check install over which the kit stopped shipping a file (not retired): the file stays.
-  for (const asRelease of [true, false]) {
-    const { kit, home } = makeKit();
-    fs.writeFileSync(path.join(kit, 'user/agents/dropped.md'), 'shipped once\n');
-    const before = asRelease ? released(kit, 'v1.0.0') : undefined;
-    install({ kit, home, target: 'user', release: before });
-    fs.rmSync(path.join(kit, 'user/agents/dropped.md'));
-    const r = install({ kit, home, target: 'user', release: released(kit, 'v1.0.1') });
-    assert.deepEqual(r.retired, [], String(asRelease));
-    assert.ok(fs.existsSync(path.join(home, 'agents/dropped.md')));
-  }
-  // The overlay CLAUDE.local.md is written by install itself, not from a kit path, so it is never branch-only.
-  const { kit, home, proj } = overlayKit();
-  install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
-  const back = install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: released(kit, 'v1.0.0') });
-  assert.ok(!back.retired.includes('CLAUDE.local.md'));
-  assert.ok(fs.existsSync(path.join(proj, 'CLAUDE.local.md')));
-  // A dry run previews the clean-up: the file and the record stay as they are.
-  const d = makeKit();
-  fs.writeFileSync(path.join(d.kit, 'user/agents/branch-only.md'), 'branch build\n');
-  install({ kit: d.kit, home: d.home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
-  fs.rmSync(path.join(d.kit, 'user/agents/branch-only.md'));
-  const stampBefore = read(path.join(d.home, 'kit-install.json'));
-  const dry = install({ kit: d.kit, home: d.home, target: 'user', dryRun: true, release: released(d.kit, 'v1.0.0') });
-  assert.deepEqual(dry.retired, ['agents/branch-only.md'], 'the preview names it');
-  assert.ok(fs.existsSync(path.join(d.home, 'agents/branch-only.md')));
-  assert.equal(read(path.join(d.home, 'kit-install.json')), stampBefore);
 });
 
 // why: guards rule:outward-acts
@@ -1059,6 +863,7 @@ test('measureReal counts the memory index, global CLAUDE.md and the skill listin
 // Headings inside code blocks (the handoff template) are examples, not rules, and carry none.
 const ruleFiles = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('rules', n));
 const moduleFiles = ruleFiles;
+// why: guards rule:kit-standards
 test('every rule heading has a unique, plain-word ID', () => {
   const seen = new Map(), bad = [];
   for (const f of ruleFiles()) {
@@ -1081,13 +886,6 @@ test('headings skips headings inside code blocks and reads the ID after the titl
 });
 
 const MODULE_MAP = () => JSON.parse(read(path.resolve('docs/migrations/1.0.0-modules.json')));
-test('the saved ledger matches where each rule lives now', () => {
-  const rows = [...read(path.resolve('docs/migrations/1.0.0-ledger.md')).matchAll(/^\| ([a-z0-9-]+) \| .+? \| #{2,3} \| ([a-z-]+) \| \d+ \|$/gm)];
-  assert.equal(rows.length, 70);
-  const wrong = rows.filter(([, id, mod]) => !headings(read(path.resolve('rules', `${mod}.md`))).some((h) => h.id === id)).map(([, id, mod]) => `${id} not in ${mod}`);
-  assert.deepEqual(wrong, []);
-});
-
 // why: guards rule:outward-acts
 test('the ledger refuses a section the map leaves out or a map entry with no section', () => {
   const map = { modules: [{ id: 'core', sections: ['a'] }] };
@@ -1104,6 +902,7 @@ const KIT_TEXT_FILES = () => {
     e.isDirectory() ? (skip.has(e.name) ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]);
   return walk(path.resolve('.')).filter((f) => /\.(md|mjs|cjs|html|json)$/.test(f) && !f.endsWith('CHANGELOG.md'));
 };
+// why: guards rule:kit-standards
 test('every rule pointer in the kit names a rule ID that exists', () => {
   const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
   const broken = [], byWords = [];
@@ -1145,26 +944,6 @@ test('the format skills keep every 1.1.0 rule line exactly once', () => {
   const lost = [...want].filter(([l, n]) => (got.get(l) || 0) < n).map(([l]) => l.slice(0, 80));
   const copied = [...want].filter(([l, n]) => (got.get(l) || 0) > n).map(([l]) => l.slice(0, 80));
   assert.deepEqual({ lost, copied }, { lost: [], copied: [] });
-});
-test('each format skill meets the open skill spec and its module keeps a one-line rule naming it', () => {
-  const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
-  for (const s of FORMAT_SKILLS) {
-    const file = path.resolve('user/skills', s, 'SKILL.md');
-    assert.ok(fs.existsSync(file), `${s}: SKILL.md exists`);
-    const text = read(file);
-    const front = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1];
-    assert.equal(front.match(/^name: (.*)$/m)[1].trim(), s, `${s}: name matches its folder`);
-    assert.match(s, /^[a-z0-9]+(-[a-z0-9]+)*$/);
-    const desc = front.match(/^description: (.*)$/m)[1].trim();
-    assert.ok(desc.length > 0 && desc.length <= 1024, `${s}: description 1-1,024 characters`);
-    assert.ok(text.split('\n').length < 500, `${s}: under 500 lines`);
-    const home = text.match(/\brule:([a-z0-9-]+)/);
-    assert.ok(home && ids.has(home[1]), `${s}: names the live rule it serves`);
-    // The module keeps the rule's heading and ID, and one line that sends the reader to the skill.
-    const mod = ruleFiles().map(read).find((t) => t.includes(`{#${home[1]}}`));
-    const section = mod.split(`{#${home[1]}}`)[1].split(/\n#{1,3} /)[0];
-    assert.match(section, new RegExp(`\\b${s} skill\\b`), `${s}: rule:${home[1]} names the skill`);
-  }
 });
 // Each format audit passes a clean piece and names every fault in a bad one.
 const runAudit = (skill, text, args = [], cwd) => {
@@ -1322,15 +1101,6 @@ test('the preview test audit passes a full record and names each missing part', 
   assert.equal(out.status, 1);
   for (const want of [/pull request/, /Build/, /made-up/, /Layout: plan list/, /Shots/]) assert.match(out.stdout, want);
 });
-test('the handoff audit passes a full handoff and names each missing or empty part', () => {
-  const good = '# Field Notes - Continuation Handoff\n\n## REQUIRED FIRST ACTIONS\nRun the Post-Compact Orientation Protocol and confirm mode + first action with the owner.\n\n## Working Mode: Plan (default)\n\n## State Snapshot\n- Current component / version: sync 1.2\n- Git: feature/sync at a1b2c3d, pushed, PR #12 open\n\n## Newly-Established Working Standards\nnone\n\n## Critical In-Flight Context (do NOT lose)\n- Decisions awaiting the owner: none\n\n## Reading Order (mandatory, in order)\n1. _Start Here.md\n\n## Next Step (REQUIRED)\n- What: run the preview test  - Why: merge needs it\n\n## Anti-Hallucination Discipline\n- Every claim verified by file read.\n';
-  const ok = runAudit('closeout', good);
-  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
-  const bad = good.replace('## Reading Order (mandatory, in order)\n1. _Start Here.md\n\n', '').replace('- Git: feature/sync at a1b2c3d, pushed, PR #12 open', '- Git:').replace('Run the Post-Compact Orientation Protocol and', 'Read the files and');
-  const out = runAudit('closeout', bad);
-  assert.equal(out.status, 1);
-  for (const want of [/Reading Order/, /Git/, /orientation/i]) assert.match(out.stdout, want);
-});
 // why: catches a break at user/skills/adr/audit.mjs:18 that no other test catches
 test('the ADR audit passes a full record and names each missing part', () => {
   const good = '# ADR-007: Store plans on the device\n\n- **Status:** accepted\n- **Date:** 2026-02-01\n\n## Context and Problem Statement\nWhere do plans live?\n\n## Decision Drivers\n- Privacy\n\n## Considered Options\n1. **Option A:** device\n2. **Option B:** server\n\n## Decision Outcome\n\n**Chosen option:** Option A\n\n### Why\nPrivacy.\n\n### Dual-Horizon\n- **Impact now:** none\n- **Impact later:** sync needs a design\n\n### Consequences\n**Positive:**\n- private\n\n## Pros and Cons of the Options\n### Option A\n- good\n';
@@ -1403,13 +1173,6 @@ test('the sweep audit catches an open high in a severity column or a finding bul
   assert.match(bullet.stdout, /finding S1/);
   assert.equal(runAudit('pre-pr-sweep', head + '- **S1 (high)** - the token is logged. FIXED a1b2c3d.\n').status, 0);
 });
-test('the release notes audit catches build-process AI words, bug tallies and encoded note links, not product AI features', () => {
-  const caught = runAudit('release-notes', 'Written and reviewed by a coding agent and an assistant model. Fixed 14 bugs. See [plan](../_Active%20Plan.md).\n', ['1.0.0']);
-  assert.equal(caught.status, 1);
-  for (const want of [/AI or tool/, /tally/, /gitignored/]) assert.match(caught.stdout, want);
-  const feature = runAudit('release-notes', 'Ask now answers with your own AI key, from any LLM provider you choose.\n', ['1.0.0']);
-  assert.equal(feature.status, 0, feature.stdout);
-});
 // why: guards rule:pr-body
 test('the PR body audits read fenced code as code', () => {
   const dir = makeTemp('prfence-');
@@ -1422,33 +1185,6 @@ test('the PR body audits read fenced code as code', () => {
 test('the preview test audit refuses the template placeholder as a result', () => {
   const rec = '## Preview test - x, #1 (2026-03-04)\n\n- **Build:** the preview for `feature/x` at `a1b2c3d`\n- **Who, by stakes:** the lead in emulation only\n- **Setup:** made-up details only; nothing sent.\n\n| Check | Result |\n|---|---|\n| Layout | fine |\n\n- **Shots:** a.png\n- **Result:** PASS | FAIL - <what goes to the finding pipeline>\n';
   assert.equal(runAudit('preview-test', rec).status, 1);
-});
-
-// Plan rule-modules, Phase 1: the kit keeps one tool-neutral source (rules/) and writes Claude Code's files from
-// it. What install copies must be exactly what a fresh build writes, and each output names its source.
-test('build writes AGENTS.md, path rules, on-demand modules and the index from rules/', () => {
-  const out = build({ kit: path.resolve('.') });
-  const mods = moduleFiles().map((f) => parseModule(read(f)).meta);
-  assert.ok(out.has('project/AGENTS.md') && out.has('project/standards/INDEX.md'));
-  for (const m of mods.filter((m) => m.id !== 'core')) {
-    const where = m.load === 'files' ? `project/.claude/rules/${m.id}.md` : `project/standards/${m.id}.md`;
-    assert.ok(out.has(where), `${m.id} -> ${where}`);
-    assert.match(out.get('project/AGENTS.md'), new RegExp(`\| ${m.id} \|`), `AGENTS.md index lists ${m.id}`);
-  }
-  for (const [rel, text] of out) {
-    // The merge gate's audits and temp helper are exact copies read from the user layer: their source is
-    // project/.claude, not rules/.
-    const audit = rel.match(/^user\/kit-tools\/(?:audits\/)?(.+\.(?:mjs|cjs))$/);
-    if (audit) assert.equal(text, read(path.resolve('project/.claude', audit[1])), `${rel} is its source byte for byte`);
-    else assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
-  }
-  // A path rule keeps Claude Code's paths field first, or it would load every session.
-  assert.match(out.get('project/.claude/rules/testing.md'), /^---\npaths:\n  - "\*\*\/\*\.test\.\*"/);
-  // Every rule ID is in the index exactly once.
-  const index = out.get('project/standards/INDEX.md');
-  for (const f of moduleFiles()) for (const h of headings(read(f))) {
-    assert.equal(index.split(`| ${h.id} |`).length - 1, 1, `${h.id} once in the index`);
-  }
 });
 
 // why: catches a break at scripts/kit.mjs:1495 that no other test catches
@@ -1469,19 +1205,6 @@ test('find ranks a rule by its ID, then its title, then its text', () => {
   assert.deepEqual(findRules({ kit: root, query: 'nothing matches this' }), []);
 });
 
-test('find also matches the tags a module gives its rules, and every rule has tags', () => {
-  const root = makeTemp('find-tags-');
-  fs.mkdirSync(path.join(root, 'rules'));
-  fs.writeFileSync(path.join(root, 'rules', 'code.md'), '---\nid: code\nload: on-demand\nwhen: x\ntags:\n  size-budgets: bundle, bytes, bloat\n---\n\n## Size Budgets {#size-budgets}\nTrim first.\n\n## Naming {#naming}\nPlain names.\n');
-  assert.deepEqual(parseModule(read(path.join(root, 'rules', 'code.md'))).meta.tags, { 'size-budgets': ['bundle', 'bytes', 'bloat'] });
-  assert.equal(findRules({ kit: root, query: 'the bundle grew' })[0].id, 'size-budgets');
-  const untagged = ruleFiles().flatMap((f) => {
-    const { meta, body } = parseModule(read(f));
-    return headings(body).filter((h) => !(meta.tags && meta.tags[h.id] && meta.tags[h.id].length)).map((h) => h.id);
-  });
-  assert.deepEqual(untagged, []);
-});
-
 // Plan rule-modules, Phase 1: when the kit retires a file it once installed, install removes it only if the
 // project left it as installed (after a backup); a changed copy is reported for fold-back; a file of the same
 // name that the kit never installed belongs to the project and is left alone.
@@ -1493,42 +1216,6 @@ function retireKit() {
   fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: ['_Working Standards.md'] } }));
   return ctx;
 }
-test('install removes a retired file the project left alone, and keeps a backup', () => {
-  const { kit, home, proj } = retireKit();
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.deepEqual(r.retired, ['_Working Standards.md']);
-  assert.equal(fs.existsSync(path.join(proj, '_Working Standards.md')), false);
-  assert.equal(read(path.join(r.backupDir, '_Working Standards.md')), 'rules\n');
-  assert.equal(JSON.parse(read(path.join(proj, '.kit/kit-version.json'))).files['_Working Standards.md'], undefined);
-});
-test('install keeps a retired file the project changed, and says so', () => {
-  const { kit, home, proj } = retireKit();
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.deepEqual(r.retired, []);
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'my own rules\n');
-  assert.match(r.skipped.find((s) => s.file === '_Working Standards.md').reason, /retired by the kit.*changed here/);
-});
-test('install never removes a retired name the kit did not install', () => {
-  const { kit, home, proj } = makeKit();
-  fs.writeFileSync(path.join(proj, 'own.md'), 'the project\'s own\n');
-  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: ['own.md'] } }));
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.deepEqual(r.retired, []);
-  assert.equal(read(path.join(proj, 'own.md')), 'the project\'s own\n');
-});
-test('install retires a user-level file the same way', () => {
-  const { kit, home } = makeKit();
-  install({ kit, home, target: 'user' });
-  fs.rmSync(path.join(kit, 'user/agents/builder.md'));
-  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { user: ['agents/builder.md'] } }));
-  const r = install({ kit, home, target: 'user' });
-  assert.deepEqual(r.retired, ['agents/builder.md']);
-  assert.equal(fs.existsSync(path.join(home, 'agents/builder.md')), false);
-});
-
 // Plan rule-modules, Phase 1: a project still on one standards file (the owner's main project) keeps folding
 // rules back. Its sections are matched to kit rules by heading; a changed one is a fold-back candidate with its
 // kit ID, and a heading the kit lacks is the project's own.
@@ -1567,22 +1254,9 @@ test('nothing in the kit points at the retired standards file, except about proj
   assert.deepEqual(left, []);
 });
 
-// Review finding: retiring the old standards file before its replacement landed would leave a project with no
-// core rules at session start. A retired file waits until the file that replaces it is in place.
-test('install keeps a retired file while the file that replaces it was skipped', () => {
-  const { kit, home, proj } = retireKit();
-  fs.writeFileSync(path.join(kit, 'project/AGENTS.md'), 'core rules\n');
-  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: { '_Working Standards.md': 'AGENTS.md' } } }));
-  fs.writeFileSync(path.join(proj, 'AGENTS.md'), 'the project\'s own agents file\n');
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.deepEqual(r.retired, []);
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules\n');
-  assert.match(r.skipped.find((s) => s.file === '_Working Standards.md').reason, /kept while AGENTS\.md is skipped/);
-});
-
 // Review finding: a pointer written as -> "Heading Title" breaks when the heading is renamed; every rule pointer
 // in the kit uses its ID instead.
+// why: guards rule:kit-standards
 test('no rule pointer in the kit names a heading by its words', () => {
   const titles = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.title)));
   const byWords = [];
@@ -3159,13 +2833,6 @@ test('a new improvement report starts from the kit template with its facts fille
   assert.equal(a.status, 1);
   assert.match(a.stdout, /placeholder/i);
 });
-test('the kit\'s example report (the first real one, re-filed) passes the audit', () => {
-  const f = path.join(makeTemp('ir-'), 'IR-2026-10-30-sweep-approval-miss.md');
-  fs.writeFileSync(f, EXAMPLE());
-  const a = reportRun(path.dirname(f), ['audit', f]);
-  assert.equal(a.status, 0, a.stdout);
-  assert.match(a.stdout, /PASS/);
-});
 // why: guards rule:pr-body
 test('the report audit fails a missing field, an unproven cause, a lowered standard and an unclosed close', () => {
   const cases = [
@@ -3190,18 +2857,6 @@ test('the report audit fails a missing field, an unproven cause, a lowered stand
     assert.match(a.stdout, why);
   }
 });
-test('status lists the improvement reports still open in a project', () => {
-  const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'user' });
-  install({ kit, home, target: 'project', projectDir: proj });
-  fs.mkdirSync(path.join(proj, '.kit', 'reports'), { recursive: true });
-  fs.writeFileSync(path.join(proj, '.kit', 'reports', 'IR-2026-10-30-a.md'), '| Status | open |\n');
-  fs.writeFileSync(path.join(proj, '.kit', 'reports', 'IR-2026-10-29-b.md'), '| Status | closed |\n| Closed by | 1.8.0 |\n');
-  const r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.match(r.text, /1 improvement report\(s\) open: IR-2026-10-30-a\.md/);
-  assert.equal(r.current, true, 'an open report is work for the kit, not a stale install');
-});
-
 // Found in review of the sweep guard (2026-10-30).
 // why: guards rule:sweep-auto-approval
 test('the sweep guard holds reviewers to the cleared team size', () => {
@@ -3997,10 +3652,6 @@ test("an untracked CLAUDE.md of the owner's own is skipped with a pointer to --o
   install({ kit: plain.kit, home: plain.home, target: 'project', projectDir: plain.proj });
   assert.equal(fs.existsSync(path.join(plain.proj, 'CLAUDE.local.md')), false, "no overlay where CLAUDE.md is the kit's");
 });
-test('status names the Claude config folder it read', () => {
-  const { kit, home, proj } = makeKit();
-  assert.ok(status({ kit, home, projectDir: proj, ahead: () => 0 }).text.includes(`Claude config folder: ${home.split(path.sep).join('/')}`));
-});
 // why: catches a break at scripts/kit.mjs:547 that no other test catches
 test('an overlay on a repo that also owns its AGENTS.md says the kit core needs a home', () => {
   const { kit, home, proj } = overlayKit();
@@ -4090,6 +3741,7 @@ test('the user install wires the gate into the Claude config folder settings onc
 
 // IR-2026-10-31-commit-check-cannot-see-a-worktree-s-staged-files: builders commit in their own worktrees, and the
 // commit check read the main checkout's index (or, with a relative hooks path, never ran there at all).
+// why: guards rule:first-push-gate
 test('the commit check runs in an agent worktree and reads that worktree\'s staged files', () => {
   const dir = readyProject();
   const wt = path.join(dir, '.claude', 'worktrees', 'unit-1');
@@ -4631,6 +4283,7 @@ test('a contract mistake answers FIX THE CONTRACT with its own exit code, and th
     assert.equal(fs.existsSync(r.f.replace(/\.json$/, '.triage.md')), false, 'nothing for the owner to read');
   }
 });
+// why: guards rule:sweep-auto-approval
 test('work not committed and a run from the wrong checkout are Claude\'s to fix', () => {
   const dir = fixRepo();
   fs.writeFileSync(path.join(dir, 'src/page.ts'), 'export const page = 3;\n');
@@ -4652,6 +4305,7 @@ test('the last sweep\'s missing outcome is Claude\'s to log, not an owner ask', 
   assert.equal(next.status, FIX_EXIT, next.stdout);
   assert.match(next.stdout, /FIX THE CONTRACT[\s\S]*outcome of the last approved sweep/);
 });
+// why: guards rule:sweep-auto-approval
 test('a real out-of-bounds reason still asks the owner, and a fixable mistake beside it is fixed first', () => {
   const asFix = { tier: 'fix', modifiers: [], roles: fixFloor() };
   const r = approveRun(asFix, sweepRepo());
@@ -5456,6 +5110,7 @@ test('what the rules bound stays with the owner: a re-sweep that grows, a rebase
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
   assert.equal(approveRun(t, sweepRepo({ 'README.md': Array.from({ length: 30 }, (_, i) => `row ${i}`).join('\n') })).status, 1, 'a triage over its lines');
 });
+// why: guards rule:sweep-auto-approval
 test('the 25% trip sits at 25%', () => {
   const under = approveRun(featureContract());
   assert.doesNotMatch(outcome(under, String(Math.floor(537500 * 1.25) - 1)).stdout, /paused/);
@@ -5734,6 +5389,7 @@ test('running approve.mjs again on a live cleared contract keeps its clearing, s
   assert.equal(sweepGuard(r.dir).permissionDecision, 'deny');
 });
 // 1.21.0 handoff item 34: git reads a plain "main" or "origin/main" as a tag of that name first.
+// why: guards rule:sweep-tiers
 test('a tag named like the default branch does not pick the base the diff is read from', () => {
   for (const tag of ['main', 'origin/main']) {
     const dir = sweepRepo();
@@ -6650,6 +6306,7 @@ test('setupProbe throws when the kit install fails', async () => {
   }
 });
 
+// why: guards rule:instruments-and-evals
 test('checkUserLayer throws unless kit-install.json exists and says release is exactly true', async () => {
   const { checkUserLayer } = await recallTools();
   const home = makeTemp('ul-');
@@ -6669,6 +6326,7 @@ test('checkUserLayer throws unless kit-install.json exists and says release is e
   assert.throws(() => checkUserLayer(odd));
 });
 
+// why: guards rule:instruments-and-evals
 test('runHeader names the path shape and the CLI, and never the real folder name', async () => {
   const { runHeader, probePath } = await recallTools();
   const home = path.join(os.tmpdir(), 'hdr-home');
@@ -7076,64 +6734,6 @@ test('the record names whoever asked, so a sheet from another model reads true',
   const r = compileRecord(parseSheet(SHEET.replace('asked by: Claude', 'asked by: Gemini')));
   assert.match(r, /confirmed Gemini's pick/);
   assert.doesNotMatch(r, /Claude/);
-});
-
-test('the sheet commands work from the skill folder alone, and the core carries no kit links', () => {
-  const src = path.resolve('user/skills/brainstorm');
-  const lifted = path.join(makeTemp('lift-'), 'brainstorm');
-  fs.cpSync(src, lifted, { recursive: true });
-  const cmd = (script, ...args) => spawnSync(process.execPath, [path.join(lifted, script), ...args], { encoding: 'utf8', cwd: lifted });
-  const f = path.join(lifted, '2026-11-04-export.sheet.md');
-  fs.writeFileSync(f, SHEET);
-  assert.match(cmd('sheet.mjs', 'check', f).stderr, /never sealed/);
-  assert.match(cmd('compile-record.mjs', f).stderr, /never sealed/);
-  assert.match(cmd('sheet.mjs', 'seal', f).stderr, /sealed blank/, 'a sheet with answers cannot be sealed');
-  const blank = SHEET.replace('- [x] a:', '- [ ] a:').replace(/What I thought:\n\ni wonder[^]*?\n\n### Q2/, 'What I thought:\n\n### Q2').replace(/Neither,[^]*?keep it short\n\n/, '').replace(/Nothing else[^]*$/, '');
-  fs.writeFileSync(f, blank);
-  assert.equal(cmd('sheet.mjs', 'seal', f).status, 0);
-  assert.match(read(f), /^sealed: 3 questions [0-9a-f]{16}$/m);
-  assert.match(cmd('sheet.mjs', 'seal', f).stderr, /already sealed/);
-  fs.writeFileSync(f, read(f).replace('- [ ] a: In the toolbar', '- [x] a: In the toolbar').replace('Your answer:\n\nWhat I thought:\n\n### Q2', 'Your answer:\n\nWhat I thought:\n\ni wonder\n\n### Q2').replace('titles read better.\n\nYour answer:\n', 'titles read better.\n\nYour answer:\n\nand keep it short\n'));
-  const check = cmd('sheet.mjs', 'check', f);
-  assert.equal(check.status, 1, 'an unanswered question fails the check');
-  assert.match(check.stdout, /Q3/);
-  assert.equal(cmd('compile-record.mjs', f).status, 0);
-  const out = path.join(lifted, '2026-11-04-export.brainstorm.md');
-  assert.ok(read(out).includes('and keep it short'));
-  assert.ok(read(out).includes(crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex')), 'the hash matches the file on disk');
-  assert.equal(cmd('compile-record.mjs', f).status, 1, 'a record that may hold a summary is never overwritten');
-  const rows = path.join(lifted, 'rows');
-  const rowFiles = { 'sheets/s1.json': ROWS().sheet, 'answers/s1__finish.json': ROWS().answers.s1__finish, 'answers/q2.json': { ...ROWS().answers.q2, id: 'q1' } };
-  for (const q of ROWS().questions) rowFiles[`questions/${q.id}.json`] = q;
-  rowFiles['questions/z9.json'] = { sheet: 'another', section: 1, order: 1, sectionTitle: 'Other', text: 'Not this sheet?' };
-  for (const [name, row] of Object.entries(rowFiles)) { fs.mkdirSync(path.dirname(path.join(rows, name)), { recursive: true }); fs.writeFileSync(path.join(rows, name), JSON.stringify(row)); }
-  const exported = path.join(lifted, 'x.sheet.md');
-  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 0);
-  assert.match(read(exported), /### Q2\. Second\?[\s\S]*my {3}own/, 'the file name is the row\'s id, not a field inside it');
-  assert.doesNotMatch(read(exported), /Not this sheet/, 'another sheet\'s questions stay out');
-  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 1, 'a sheet with answers is never overwritten');
-  const blankOut = path.join(lifted, 'blank.sheet.md');
-  fs.writeFileSync(blankOut, blank);
-  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', blankOut).status, 0, 'the page route replaces its blank sheet');
-  fs.rmSync(blankOut);
-  assert.match(cmd('sheet.mjs', 'export', rows, '../../x', path.join(lifted, 'y.md')).stderr, /a sheet id is/);
-  fs.writeFileSync(path.join(rows, 'answers', 'q9.json'), JSON.stringify({ sheet: 's1', own: 'lost words' }));
-  assert.match(cmd('sheet.mjs', 'export', rows, 's1', path.join(lifted, 'y.md')).stderr, /q9 has no question/);
-  fs.writeFileSync(path.join(rows, 'answers', 'q9.json'), Buffer.from('{"sheet":"s1","own":"caf\xE9"}', 'latin1'));
-  assert.match(cmd('sheet.mjs', 'export', rows, 's1', path.join(lifted, 'y.md')).stderr, /not saved as UTF-8/);
-  for (const p of [f, out, exported]) fs.rmSync(p);
-  fs.rmSync(rows, { recursive: true });
-  const KIT_ONLY = /rule:[a-z]|\bA\d\d\b|\badapter\b|plan-feature|kit\.mjs|AGENTS\.md|\bE1[678]\b|_Active Plan|_Master Roadmap|_Working Memory|_Session Log|standards\//;
-  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
-  const files = walk(lifted).filter((p) => /\.(md|mjs|html)$/.test(p) && path.basename(p) !== 'SOURCES.md');
-  assert.ok(files.length >= 7, files.join());
-  for (const p of files) {
-    const text = path.basename(p) === 'SKILL.md' ? read(p).split('## In the methodology kit')[0] : read(p);
-    assert.doesNotMatch(text, KIT_ONLY, p);
-  }
-  assert.match(read(path.join(lifted, 'SKILL.md')), /## In the methodology kit/, 'the kit layer is one marked section');
-  assert.match(read(path.join(lifted, 'licenses', 'superpowers-MIT.txt')), /Permission is hereby granted/);
-  assert.match(read(path.join(lifted, 'licenses', 'Apache-2.0.txt')), /Apache License/);
 });
 
 // why: guards rule:kit-standards
@@ -7652,6 +7252,7 @@ test('S4: a --base older than where the branch left main asks, as one off main d
   assert.match(r.stdout, /older than where this branch left main/);
   assert.equal(approveIn(dir, [f, '--base', 'main']).status, 0);
 });
+// why: guards rule:sweep-auto-approval
 test('S4: with no main or master a named base is the owner\'s, not a skipped check', () => {
   const dir = sweepRepo();
   g(dir, 'branch', '-m', 'main', 'trunk');

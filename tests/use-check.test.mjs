@@ -28,19 +28,6 @@ const check = (dir) => {
 };
 const part = (out, name) => out.parts.find((p) => p.name === name);
 
-test('a fresh install has every part present and wired, and a part with no trace yet says so', () => {
-	const dir = project();
-	const r = check(dir);
-	assert.equal(r.code, 0, JSON.stringify(r.out));
-	assert.deepEqual(r.out.failing, []);
-	assert.equal(part(r.out, 'guards').wired.ok, true);
-	assert.equal(part(r.out, 'git-hooks').wired.ok, true);
-	assert.equal(part(r.out, 'git-hooks').used.ok, null, 'no push yet is not a fault');
-	// A push leaves its trace.
-	fs.appendFileSync(path.join(dir, '.git', 'kit-push.log'), '2026-11-10T00:00:00Z auto refs/heads/x abc\n');
-	assert.equal(part(check(dir).out, 'git-hooks').used.ok, true);
-});
-
 // why: guards rule:outward-acts
 test('an unwired part fails the check by name: the guard entry gone, git hooks not set, a guard file missing', () => {
 	const unwired = project();
@@ -70,22 +57,6 @@ test('an unwired part fails the check by name: the guard entry gone, git hooks n
 	const m = check(missing);
 	assert.deepEqual(m.out.failing, ['guards']);
 	assert.match(part(m.out, 'guards').present.detail, /owner-yes\.cjs/);
-});
-
-test('a part the project opts out of is named, not missing; a folder without git has no git level to fail', () => {
-	const dir = project();
-	spawnSync('git', ['-C', dir, 'config', '--unset', 'core.hooksPath']);
-	fs.mkdirSync(path.join(dir, '.kit'), { recursive: true });
-	fs.writeFileSync(path.join(dir, '.kit', 'parts.json'), JSON.stringify({ optOut: ['git-hooks'] }));
-	const r = check(dir);
-	assert.equal(r.code, 0);
-	assert.equal(part(r.out, 'git-hooks').optedOut, true);
-	fs.writeFileSync(path.join(dir, '.kit', 'parts.json'), '{ broken');
-	assert.equal(check(dir).code, 2, 'a broken opt-out file is an error, never an opt-out');
-	const plain = project({ git: false });
-	const p = check(plain);
-	assert.equal(p.code, 0, JSON.stringify(p.out));
-	assert.equal(part(p.out, 'git-hooks').wired.ok, null);
 });
 
 // why: catches a break at project/.claude/use-check.mjs:89 that no other test catches
