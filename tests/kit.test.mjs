@@ -1135,6 +1135,25 @@ test('the PR body audits read a dash inside inline code as code, and still catch
   assert.match(dashes('pr-body-audit.mjs', std('Run `node --test` to check.'), 'Math: subtract'), /^PASS/);
   assert.match(dashes('pr-body-audit.mjs', std('It runs -- for now -- by hand.'), 'Math: subtract'), /^FAIL/);
 });
+// why: guards rule:pr-body (the squash subject on main is the title plus " (#n)", and it must fit 72). K16, the 1.27.0
+// build: a 73-character subject passed the audit locally and failed the kit's CI after the squash.
+test('both PR body audits count the squash suffix against the 72-character title limit', () => {
+  const dir = makeTemp('prtitle-');
+  const row = (script, title, n) => {
+    const f = path.join(dir, 'b.md');
+    fs.writeFileSync(f, '## Math: x\n\nx\n');
+    const args = [path.resolve('project/.claude', script), f, title, ...(n ? [n] : [])];
+    return spawnSync('node', args, { encoding: 'utf8' }).stdout.split('\n').find((l) => l.includes('title is type: subject'));
+  };
+  const at = (len) => `feat: ${'a'.repeat(len - 6)}`;
+  for (const script of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs']) {
+    assert.match(row(script, at(66), '31'), /^PASS/, `${script}: 66 + " (#31)" is 72`);
+    assert.match(row(script, at(67), '31'), /^FAIL/, `${script}: 67 + " (#31)" is 73`);
+    // With no number known yet, room is kept for a four-digit one.
+    assert.match(row(script, at(64)), /^PASS/, `${script}: 64 + " (#nnnn)"`);
+    assert.match(row(script, at(65)), /^FAIL/, `${script}: 65 + " (#nnnn)"`);
+  }
+});
 // why: guards rule:pr-body
 test('the push guard names the PR body skill', () => {
   const ask = (command) => {

@@ -34,12 +34,13 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/pr-body.md', process.env.PR_BODY || '')"
           # Every title is type: subject now (1.25.0), so the body says which format it is: a Standard body has a
           # "### Summary" section, a Lean one does not.
           if grep -q '^### Summary$' "$RUNNER_TEMP/pr-body.md"; then
-            node project/.claude/pr-body-audit.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
+            node project/.claude/pr-body-audit.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE" "$PR_NUMBER"
           else
-            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
+            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE" "$PR_NUMBER"
           fi
