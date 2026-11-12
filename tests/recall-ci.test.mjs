@@ -1,0 +1,26 @@
+// T15 D6 (the owner's locks, 2026-11-12): the recall test may run in CI only as the owner's act, from main, through
+// federation with no stored key, and only once the owner has set it up.
+import { test } from './harness.mjs';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// why: guards rule:outward-acts and rule:security-standards: a run spends model tokens, so only the owner starts it;
+// a branch cannot edit its way to a token; no key sits in the repo. pin: 1 (GitHub reads these lines)
+test('the CI recall job runs only by hand from main, through federation with no stored key', () => {
+	const wf = fs.readFileSync(path.resolve('.github/workflows/recall.yml'), 'utf8');
+	const on = wf.split('\non:')[1].split('\npermissions:')[0];
+	assert.match(on, /^\s+workflow_dispatch:/m);
+	assert.doesNotMatch(on, /pull_request|push:|schedule:|workflow_run/, 'a trigger the owner does not press');
+	assert.match(wf, /^ {4}if: github\.ref == 'refs\/heads\/main' && vars\.ANTHROPIC_FEDERATION_RULE_ID != ''$/m); // pin: 1
+	// The token permission sits on the job alone; the workflow default stays read-only.
+	assert.match(wf.split('\njobs:')[0], /permissions:\n {2}contents: read\n/);
+	assert.equal((wf.match(/id-token: write/g) || []).length, 1);
+	assert.doesNotMatch(wf, /secrets\.|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN/, 'a stored key');
+	// Claude Code is pinned, and a branch's name reaches the shell only through env, never into the script text.
+	assert.match(wf, /@anthropic-ai\/claude-code@\d+\.\d+\.\d+\b/);
+	for (const run of wf.split(/\n\s+run: \|/).slice(1)) assert.doesNotMatch(run.split(/\n\s+- /)[0], /\$\{\{/, 'an expression inside a run script');
+	// The harness, keys and brief that judge are main's; the candidate is only data.
+	assert.match(wf, /node base\/scripts\/recall\.mjs "cand-\$i" cand/);
+	assert.match(wf, /node base\/scripts\/recall-score\.mjs score/);
+});
