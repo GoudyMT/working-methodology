@@ -4311,7 +4311,8 @@ test('status names a memory index past 6,000 B, which loads in every session', (
 // approved words (Tier 0), is the failure this guards.
 // The owner, 2026-11-10 (pop-up): Rule 14 names the feature-branch push bound.
 test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing grant, and Rule 14 is the owner\'s text', () => {
-  const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s knowledge and go, except a plain push of a feature branch to origin (never main, a tag, a force or a delete) and a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
+  // The owner's text, re-locked 2026-11-11 (build 1b): the push bound points to rule:outward-acts.
+  const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s yes, except a push inside the push bound (rule:outward-acts) and a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
   assert.ok(read(path.resolve('project/CLAUDE.md')).split('\n').includes(rule14), 'CLAUDE.md Hard Rule 14 is the approved text');
   const six = read(path.resolve('rules/_parts/agents-head.md')).split('\n').find((l) => l.startsWith('6. '));
   assert.match(six, /standing grant/i);
