@@ -420,6 +420,34 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
 });
 
+// why: guards rule:security-standards (no secret leaves in a push). The 1.25.0 carry-over R2.10: the scan read each
+// pushed commit's lines and file names, never its message or a tag's message, which go out with it.
+test('the secret scan reads the message of every pushed commit and tag, in the push and in CI', () => {
+	const SCAN = path.resolve('project/.claude/secret-shapes.mjs');
+	const dir = kitTemp.makeTemp('msg-');
+	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...a], { cwd: dir, encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
+	g('add', '.');
+	g('commit', '-qm', 'base');
+	const base = g('rev-parse', 'HEAD').stdout.trim();
+	const key = 'gh' + 'p_' + 'Zx9Qk2Lm'.repeat(5);
+	fs.writeFileSync(path.join(dir, 'b.md'), 'b\n');
+	g('add', '.');
+	g('commit', '-qm', `docs: b\n\ntoken ${key}`);
+	const head = g('rev-parse', 'HEAD').stdout.trim();
+	const push = (line) => spawnSync(process.execPath, [SCAN, '--push', ''], { cwd: dir, encoding: 'utf8', input: line + '\n' });
+	const r = push(`refs/heads/feat/x ${head} refs/heads/feat/x ${base}`);
+	assert.equal(r.status, 1, `a key in a commit message went out: ${r.stdout}`);
+	assert.ok(!r.stdout.includes(key), 'the value is never printed');
+	assert.equal(spawnSync(process.execPath, [SCAN, base], { cwd: dir, encoding: 'utf8' }).status, 1, 'CI missed the message');
+	// An annotated tag carries its own message.
+	g('reset', '-q', '--hard', base);
+	g('tag', '-a', 'v1', '-m', `release\n\n${key}`);
+	const tag = g('rev-parse', 'v1').stdout.trim();
+	assert.equal(push(`refs/tags/v1 ${tag} refs/tags/v1 ${'0'.repeat(40)}`).status, 1, 'a key in a tag message went out');
+});
+
 // T16a (the owner's locks, 2026-11-11): one voice for refusals. Each opens with its kind, names the limit it hit and
 // what to do; a gate bypass is never allowed by a tool, even with a pop-up yes. Pinned here because the openings are
 // the order a session acts on.
