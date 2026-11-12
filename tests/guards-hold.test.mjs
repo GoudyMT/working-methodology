@@ -482,3 +482,36 @@ test('a gate bypass anywhere in a command, and a hook-free write to main, are ne
 	// The act to quote is offered only for a plain push on its own; a compound command gets none.
 	assert.ok(!why('Bash', { command: 'git add . && git push origin main' }).includes('KIT_PUSH_APPROVED=1 git add'), 'the marker offered in front of a compound command');
 });
+
+// why: guards rule:outward-acts (a gate bypass is never a tool's act; the owner's locks 2026-11-11 and, for the
+// markers, 2026-11-12). The 1.26.0 carry-overs S2, S3 and C6: hooks moved through an included config or another git
+// folder ran with no guard, a write to main through the API spelled another way waited only for a yes, and clearing
+// the AI shell's markers (which makes the pre-push hook take the shell for the owner's terminal) waited for a yes.
+test('hooks moved another way, main written through the API another way, and the AI markers cleared are never a tool\'s act', () => {
+	const acts = [
+		'git -c include.path=/tmp/evil.cfg commit -m x',
+		'git -c includeIf.gitdir:/x/.path=/tmp/evil.cfg commit -m x',
+		'git config include.path /tmp/evil.cfg',
+		'GIT_DIR=/tmp/other.git git commit -m x',
+		'git --git-dir=/tmp/other.git commit -m x',
+		'git --git-dir /tmp/other.git push origin feat/x',
+		'gh api repos/o/r/merges -f base=main -f head=feat/x',
+		'gh api -X PATCH repos/o/r/git/refs/heads%2Fmain -f sha=abc',
+		'gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha=abc',
+		'gh api -X PUT repos/o/r/contents/a.md -f message=x -f content=eA==',
+		'gh api graphql -f query="mutation { updateRef(input: {}) { clientMutationId } }"',
+		'env -u CLAUDECODE git status',
+		'unset AI_AGENT; node x.mjs',
+		'env -i node x.mjs',
+		'Remove-Item Env:CLAUDECODE; git status',
+	];
+	for (const act of acts) {
+		popUp({ act });
+		assert.equal(withYes('Bash', { command: act }), 'deny', `${act} ran on a pop-up yes`);
+		assert.match(why('Bash', { command: act }), /^Never by a tool: /, act);
+	}
+	// Reads of another git folder, and an API write to a feature branch, are not bypasses: the first passes, the second
+	// still waits for the owner's yes.
+	assert.equal(why('Bash', { command: 'git --git-dir=/tmp/other.git log -1' }), '');
+	assert.match(why('Bash', { command: 'gh api -X PUT repos/o/r/contents/a.md -f branch=feat/x -f message=x -f content=eA==' }), /^Owner's yes needed: /);
+});

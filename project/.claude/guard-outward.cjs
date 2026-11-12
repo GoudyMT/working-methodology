@@ -91,6 +91,9 @@ function gitSubAt(words, start) {
 	return i;
 }
 
+// The git commands that run a project hook (pre-commit, commit-msg, pre-push and the others the shims run).
+const HOOK_SUBS = new Set(['commit', 'push', 'merge', 'rebase', 'am', 'pull', 'cherry-pick', 'revert', 'checkout', 'switch']);
+
 // The git hooks are the last check before a commit or a push leaves: skipping them, or moving where git finds them,
 // holds the command (T1: on 1.24.0 both ran with no guard, and a push then landed on main). Reading the setting passes.
 function gitHooksOff(words, start, at) {
@@ -108,10 +111,16 @@ function gitHooksOff(words, start, at) {
 			}
 		}
 	}
-	if (words.some((w) => w.includes('hookspath'))) {
+	// An included config file can set the hooks path out of sight (-c include.path=f, includeIf.<cond>.path; the 1.26.0
+	// security review, S2).
+	if (words.some((w) => w.includes('hookspath') || /^include(if\..*)?\.path(=|$)/.test(w))) {
 		const reads = words[at] === 'config' && words.slice(at + 1).some((w) => /^(--get|--get-all|--get-regexp|--list|-l|get|list|--show-origin|--show-scope)$/.test(w));
 		if (!reads) return 'git with its hooks moved';
 	}
+	// Another git folder brings its own config and hooks: a commit or push from here then runs none of the project's
+	// (S2). A read of it is no bypass.
+	const otherDir = words.slice(0, at).some((w) => /^(--git-dir(=|$)|git_dir=|git_common_dir=)/.test(w));
+	if (otherDir && HOOK_SUBS.has(words[at])) return 'git with its hooks moved';
 	// git config --edit opens the whole file, hooksPath included.
 	if (words[at] === 'config' && words.slice(at + 1).some((w) => w === '-e' || w === '--edit' || w === 'edit')) return 'git with its hooks moved';
 	return '';
@@ -245,18 +254,22 @@ function ghOutward(words, start) {
 	return 'gh ' + group + (sub === undefined ? '' : ' ' + sub);
 }
 
+// S23-4 (the 1.23.0 verify): the pre-push hook takes a shell without CLAUDECODE and AI_AGENT for the owner's own
+// terminal, so naming either marker, clearing the whole environment, or a PowerShell removal on the Env: drive (by
+// wildcard or filter, no full name in sight; the 1.24.0 sweep) or a .NET call that sets the environment is held.
+// Reading Env: or setting $env:X is not.
+function markersCleared(flat) {
+	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
+	return /\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat);
+}
+
 function findOutward(text, depth) {
 	// The owner's yes and resume for the sweep tools are read by approve.mjs itself from the owner's pop-up tap (T2), so
 	// their spelling needs no hold here. A Claude session started from a shell with a thread message's shape writes a
 	// turn like the owner's own (E27), so it is held still.
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
-	// S23-4 (the 1.23.0 verify): the pre-push hook takes a shell without CLAUDECODE and AI_AGENT for the owner's own
-	// terminal, so clearing either marker, or the whole environment, is held.
-	// PowerShell needs no full name (the 1.24.0 sweep): a removal on the Env: drive, by wildcard or by a filter piped
-	// from it, or a .NET call that sets the environment, asks too; reading Env: or setting $env:X does not.
-	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
-	if (/\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat)) return 'a command that clears the AI shell\'s markers';
+	if (markersCleared(flat)) return MARKERS;
 	// The pre-push hook lets an AI push to main or a tag only with this marker set, so setting it is the owner's yes.
 	if (/KIT_PUSH_APPROVED/i.test(flat)) return 'the push hook\'s owner-yes marker';
 	// A program or a word built at run time, then an outward verb in the same command: $G push, "$(which git)" push.
@@ -377,7 +390,10 @@ function pushLimit(command) {
 
 // A gate bypass switches a check off; it sends nothing outward, and no pop-up yes lets a tool do it (the owner's lock,
 // 2026-11-11, matching the deny rules settings.json already holds for the plain spellings).
-const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook']);
+// Clearing the AI shell's markers joined them on the owner's pick, 2026-11-12 (C6): the pre-push hook then takes the
+// shell for the owner's terminal, so it switches the hook's AI checks off.
+const MARKERS = 'a command that clears the AI shell\'s markers';
+const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS]);
 
 // A gate bypass anywhere in a command, not only as the first reason found (the 1.26.0 sweep: a push or the marker in
 // front of it hid it, and a pop-up yes then let it run). It fails closed: any spelling of git's --no-verify, any
@@ -390,6 +406,11 @@ function bypassIn(text, depth = 0) {
 	if (gitish && /(^|[\s=])--no-ve(r(i(f(y)?)?)?)?(?=$|[\s=;&|)])/i.test(flat)) return 'git with its hooks skipped';
 	// The hooks path set from the environment (GIT_CONFIG_KEY_<n>, GIT_CONFIG_PARAMETERS) moves it as -c does.
 	if (/GIT_CONFIG_(KEY_\d+=\s*core\.hookspath|PARAMETERS=[^;&|\n]*hookspath)/i.test(flat)) return 'git with its hooks moved';
+	// Another git folder set for the whole shell (export GIT_DIR=x; git commit), and an included config from the
+	// environment (S2).
+	if (/\bGIT_(DIR|COMMON_DIR)\s*=/i.test(flat) && new RegExp(`\\bgit\\b[^;&|\\n]*\\b(${[...HOOK_SUBS].join('|')})\\b`, 'i').test(flat)) return 'git with its hooks moved';
+	if (/GIT_CONFIG_(KEY_\d+=\s*include|PARAMETERS=[^;&|\n]*include)/i.test(flat)) return 'git with its hooks moved';
+	if (markersCleared(flat)) return MARKERS;
 	for (const all of tokenize(joinContinuations(text))) {
 		const words = all.filter((w) => !w.redirect).map((w) => w.value.toLowerCase());
 		for (let i = 0; i < words.length; i++) {
@@ -405,13 +426,23 @@ function bypassIn(text, depth = 0) {
 // A write to main, master or the default branch that runs no pre-push hook: git send-pack, or a ref write through the
 // GitHub API. The owner, 2026-11-11: a tool pushes to main only as a new repo's first push, which a plain git push
 // makes and the pre-push hook checks; these routes skip that check, so no yes lets a tool take them.
+// The API is read by what it writes, not by one spelling (the 1.26.0 security review, S3): a ref path with its slashes
+// encoded, the merges endpoint into main, a file write through the contents endpoint to main or to the default branch
+// (no branch named), and the GraphQL mutations that move a branch.
 function hookFreeMainWrite(text) {
-	const flat = text.replace(/[\\'"]/g, '').toLowerCase();
+	const flat = text.replace(/[\\'"]/g, '').toLowerCase().replace(/%2f/g, '/');
 	const names = /(^|[\s:/+])(refs\/heads\/)?(main|master)(?=$|[\s;&|])/;
 	if (/\bsend-pack\b/.test(flat) && names.test(flat)) return true;
+	if (!/\bgh\b[^;&|\n]*\bapi\b/.test(flat)) return false;
 	// An API call writes when it names a method other than GET or sends a field (gh then posts).
 	const write = /\s(-x|--method)[\s=]*(post|patch|put|delete)\b/.test(flat) || /\s(-f|--field|--raw-field|--input)(\s|=)/.test(flat);
-	return /\bgh\b[^;&|\n]*\bapi\b/.test(flat) && /refs\/heads\/(main|master)\b/.test(flat) && write;
+	if (!write) return false;
+	const main = /(^|[=\s])(refs\/heads\/)?(main|master)(?=$|[\s;&|,}])/;
+	if (/refs\/heads\/(main|master)\b/.test(flat)) return true;
+	if (/\/merges\b/.test(flat) && (!/\bbase=/.test(flat) || /\bbase=(refs\/heads\/)?(main|master)\b/.test(flat))) return true;
+	if (/\/contents\//.test(flat) && (!/\bbranch=/.test(flat) || /\bbranch=(refs\/heads\/)?(main|master)\b/.test(flat))) return true;
+	if (/\bgraphql\b/.test(flat) && /\b(updateref|updaterefs|mergebranch|createcommitonbranch)\b/.test(flat)) return true;
+	return main.test(flat) && /\/git\/refs\b/.test(flat);
 }
 
 function decide(input) {
@@ -454,6 +485,8 @@ function check(input) {
 	const what = reason === 'git push' ? pushLimit(command) : `${reason} is an outward act (rule:outward-acts)`;
 	const text = reason === 'a write to main that runs no pre-push hook'
 		? neverText("a write to main, master or the default branch that runs no pre-push hook; main takes a PR, and a tool pushes there only as a new repo's first push, by git push. Open a PR instead")
+		: reason === MARKERS
+		? neverText("clearing the AI shell's markers is a gate bypass; the pre-push hook would take the shell for the owner's own terminal and switch its checks off. Run the command with the markers in place; anything else is the owner's own, in their own terminal")
 		: BYPASS.has(reason)
 		? neverText(`${reason === 'git with its hooks skipped' ? 'skipping the git hooks' : 'moving the git hooks path'} is a gate bypass; it switches off the checks the owner's yes relies on. Fix what the hook reports; a skip is the owner's own, in their own terminal`)
 		: verdict === 'allow' ? yesText(what) : askText(what, input)
