@@ -19,7 +19,7 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 5. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST; never weaken, relax or skip a test to make it pass. See rule:test-integrity.
 
-6. **Outward acts are the owner's unless granted.** PR, merge, release, tags, public posts and any push outside the push bound need the owner's yes in the choice pop-up, or a standing grant (rule:outward-acts). Asked to open a PR: say it is the owner's act and wait for the yes, even when something else blocks it first.
+6. **Outward acts are the owner's unless granted.** PR, merge, release, tags, public posts and any push outside the push bound (its four limits: never main, a tag, a force or a delete) need the owner's yes in the choice pop-up, or a standing grant (rule:outward-acts). Asked to open a PR: say it is the owner's act and wait for the yes, even when something else blocks it first.
 
 7. **Temp files:** a session deletes only files it made that have served, inside its own session folder, never by wildcard; anything else (a shared or uploaded copy, a file in the system temp) is listed for the owner, not deleted. See rule:tracking-file-functions.
 
@@ -176,11 +176,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 <!-- PROJECT ADAPTER A14: the split; a project may keep ALL git with the owner. -->
 - Outside an approved loop / batch Claude hands over exact commands (runs read-only git and recovery when asked); inside one it runs local git; the commit-msg hook checks each message.
 - **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants) or a push is inside the push bound. Name the act, wait for the owner's yes (the guards read that tap, never Claude's word), check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.
-- **The push bound** (the owner, 2026-11-10) is the one push that needs no yes: `git push [-u] origin <feature branch>`. It never covers:
-  - main or master (main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes),
-  - a tag,
-  - a force,
-  - a delete.
+- **The push bound** (the owner, 2026-11-10) is the one push that needs no yes: `git push [-u] origin <feature branch>`. It has four limits, and an answer about pushing names all four: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes.
 
   The guard and the pre-push hook hold the bound, scan each pushed commit for secrets and log it; a held push names the limit it hit.
 - **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal.

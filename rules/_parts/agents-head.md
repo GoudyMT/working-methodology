@@ -18,7 +18,7 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 5. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST; never weaken, relax or skip a test to make it pass. See rule:test-integrity.
 
-6. **Outward acts are the owner's unless granted.** PR, merge, release, tags, public posts and any push outside the push bound need the owner's yes in the choice pop-up, or a standing grant (rule:outward-acts). Asked to open a PR: say it is the owner's act and wait for the yes, even when something else blocks it first.
+6. **Outward acts are the owner's unless granted.** PR, merge, release, tags, public posts and any push outside the push bound (its four limits: never main, a tag, a force or a delete) need the owner's yes in the choice pop-up, or a standing grant (rule:outward-acts). Asked to open a PR: say it is the owner's act and wait for the yes, even when something else blocks it first.
 
 7. **Temp files:** a session deletes only files it made that have served, inside its own session folder, never by wildcard; anything else (a shared or uploaded copy, a file in the system temp) is listed for the owner, not deleted. See rule:tracking-file-functions.
 
