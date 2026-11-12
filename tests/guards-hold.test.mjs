@@ -511,14 +511,17 @@ test('hooks moved another way, main written through the API another way, and the
 		'gh api -X PATCH repos/o/r/git/refs/heads%252Fmain -f sha=abc',
 		'gh api graphql -F query=@q.graphql',
 		'gh api graphql --input q.json',
+		// The review on 46260d3: a read with another git folder runs the programs its config names; a field attached
+		// to its flag.
+		'git --git-dir=/tmp/other.git log -1',
+		'gh api -X PATCH repos/o/r/git/refs/heads/main -fsha=abc',
+		'gh api repos/o/r/merges -fbase=main -fhead=feat/x',
 	];
 	for (const act of acts) {
 		popUp({ act });
 		assert.equal(withYes('Bash', { command: act }), 'deny', `${act} ran on a pop-up yes`);
 		assert.match(why('Bash', { command: act }), /^Never by a tool: /, act);
 	}
-	// Reads of another git folder, and an API write to a feature branch, are not bypasses: the first passes, the second
-	// still waits for the owner's yes.
-	assert.equal(why('Bash', { command: 'git --git-dir=/tmp/other.git log -1' }), '');
+	// An API write to a feature branch is no bypass: it still waits for the owner's yes.
 	assert.match(why('Bash', { command: 'gh api -X PUT repos/o/r/contents/a.md -f branch=feat/x -f message=x -f content=eA==' }), /^Owner's yes needed: /);
 });
