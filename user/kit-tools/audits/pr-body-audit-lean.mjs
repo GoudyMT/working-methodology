@@ -3,7 +3,9 @@ import { carriesPhrase } from './canary-phrase.mjs';
 import { versionBumpCheck } from './version-bump-check.mjs';
 import { attributionFaults, entities } from './no-attribution.mjs';
 
-const [file, title] = process.argv.slice(2);
+const [file, title, number] = process.argv.slice(2);
+// The squash subject on main is the title plus " (#n)": with no number yet, room is kept for four digits (K16).
+const squash = title.length + (/^\d+$/.test(number || '') ? number.length + 4 : 8);
 // Read as the page shows it: an entity (&#65;I) is the character it stands for.
 const written = readFileSync(file, 'utf8');
 const body = entities(written);
@@ -14,7 +16,7 @@ const attribution = attributionFaults(written);
 row('no attribution block', attribution.length === 0, attribution.join(', ') || 'none');
 
 const subject = title.replace(/^[a-z]+(\([a-z0-9-]+\))?: /, '');
-row('title is type: subject (smaller PR)', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z0-9-]+\))?: [a-z0-9`]/.test(title), title);
+row('title is type: subject, at most 72 with the squash suffix (smaller PR)', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z0-9-]+\))?: [a-z0-9`]/.test(title) && squash <= 72, `${title} (${squash} with the suffix)`);
 row('H1 is <Area>: <line>, no type prefix', /^## [A-Z][A-Za-z ]+: [a-z]/.test(lines[0]) && !/^## (feat|fix|chore|security|docs)/.test(lines[0]), lines[0]);
 row('H1 line carries the title subject', lines[0].endsWith(subject), `subject: ${subject}`);
 
