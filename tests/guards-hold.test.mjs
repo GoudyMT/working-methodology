@@ -782,3 +782,14 @@ test('a feature push from a repo the kit does not check runs on the owner\'s yes
 	popUp({ act: command });
 	assert.equal(withYes('Bash', { command }, { cwd: other }), 'allow', 'the owner\'s yes did not let it run');
 });
+// why: guards rule:outward-acts. The 1.28.0 sweep: the marker exemption let printf -v clear a marker and let a reader
+// write a clearing line into a shell profile; an unset whose name is built at run time was never held.
+test('a marker cleared by printf -v, written into a file, or unset by a built name is never by a tool', () => {
+	const reason = (command) => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: process.cwd() }), encoding: 'utf8' });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
+	};
+	for (const command of ["printf -v CLAUDECODE ''", 'echo u"nset" CLAUDECODE >> ~/.bashrc', 'V=CODE; unset CLAUDE$V', 'unset $(compgen -e | grep -i claude)', 'env -u "$M" git push origin feat/x']) {
+		assert.match(reason(command), /^Never by a tool: clearing the AI shell's markers/, command);
+	}
+});

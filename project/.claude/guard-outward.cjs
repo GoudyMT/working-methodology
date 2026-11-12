@@ -261,6 +261,8 @@ function ghOutward(words, start) {
 // wildcard or filter, no full name in sight; the 1.24.0 sweep) or a .NET call that sets the environment is held.
 // Reading Env: or setting $env:X is not.
 function markersCleared(flat) {
+	// An unset or env -u whose name is built at run time may name a marker (the 1.28.0 sweep): held.
+	if (/\bunset\b[^;|&\n]*[$`]|\benv(\.exe)?\s+([^;|&\n]*\s)?-u\s*[^;|&\n\s]*[$`]/i.test(flat)) return true;
 	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
 	return /\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat);
 }
@@ -271,6 +273,9 @@ function markersCleared(flat) {
 const MARKER = /\b(CLAUDECODE|AI_AGENT)\b/i;
 const MARKER_READERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls', 'echo', 'printf', 'cat', 'type', 'get-content', 'gc', 'head', 'tail', 'git']);
 function markerOnlyNamed(text) {
+	// Read as the shell reads it too (u"nset" is unset), and never with -v (printf -v sets a variable) or a redirect
+	// (a reader writing the marker's name into a file, a profile among them): the 1.28.0 sweep.
+	if (/(^|\s)-v\b|[<>]/.test(text) || markerOnlyNamed.strict(plainText(text, 'Bash').replace(/["']/g, ''))) return false;
 	if (/\b(CLAUDECODE|AI_AGENT)\s*\+?=|\b(unset|export|declare|typeset|local|readonly|set|setx|env|exec|eval|source|iex|invoke-expression|xargs|sh|bash|zsh|dash|ksh|pwsh|powershell|cmd|start-process|saps|remove-item|ri|clear-item|cli|new-item|ni|set-item|si|set-content|sc|rv|remove-variable)(\.exe)?\b|env:|setenvironmentvariable|(^|[\s;|&(])\.\s|[`]|\$\(/i.test(text)) return false;
 	for (const segment of tokenize(joinContinuations(text))) {
 		const words = segment.filter((w) => !w.redirect);
@@ -282,6 +287,8 @@ function markerOnlyNamed(text) {
 	}
 	return true;
 }
+
+markerOnlyNamed.strict = (s) => /\b(unset|export|declare|typeset|local|readonly|set|setx|env|exec|eval|source|iex|invoke-expression|xargs|sh|bash|zsh|dash|ksh|pwsh|powershell|cmd|remove-item|clear-item|set-item|set-content|new-item|remove-variable)\b|env:|setenvironmentvariable/i.test(s);
 
 function findOutward(text, depth) {
 	// The owner's yes and resume for the sweep tools are read by approve.mjs itself from the owner's pop-up tap (T2), so
