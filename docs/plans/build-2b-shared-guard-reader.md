@@ -51,6 +51,20 @@ Read in the code (1.27.0), a probe still owed:
 - K29 real by quote: `pre-push` lines 11 to 13 take an empty default when ls-remote succeeds with no symref line; main
   and master are still held by name, so the hole is a default branch with another name (trunk, develop).
 
+### Step 1 results (2026-11-12, on 1.27.0 from the release copy)
+
+- K29 REAL: a bare remote whose HEAD is detached answers ls-remote with no symref; the pre-push hook then let a push
+  to its default branch `trunk` through the default-branch hold (only the branch-name check stopped it, by chance of
+  the name). With the symref back, the same push is held as "the default branch".
+- K3 REAL: `secret-shapes.mjs --push` on a tag pointing at a blob holding an AWS key shape: "NO SECRET SHAPES",
+  exit 0. The same blob in a commit: 2 hits, exit 1. The push itself still needs the owner's yes.
+- K5 REAL by quote: `github-scanning.mjs` runs `gh api repos/<owner>/<name>` with no `--hostname`, so GH_HOST
+  sends the private repo's name to whatever host it names.
+- K21 lead 1 REAL: a Write or Edit putting `disableAllHooks` into `.claude/settings.local.json` or `settings.json`
+  answers "Owner's yes needed", so one tap switches every guard off. Under the gate-bypass lock it is Never.
+- K21 leads 2 (a host's own hooks path) and 3 (launcher record under a config folder not named `.claude`), K4, K14:
+  need a throwaway install or CI; done in step 2 beside their fixes.
+
 ## 3. The reader design (Max's lock)
 
 ### Option A: allow-list of programs (strict)
