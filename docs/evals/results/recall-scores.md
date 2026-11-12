@@ -413,3 +413,36 @@ Accepted by the owner 2026-11-10 (pop-up, "Yes, add owner-accepted"): the marker
 
 control: 0
 gate: kit-1.25.0 median 12 baseline 10 brief v2 keys v5 owner-accepted
+
+
+## Recall v5 - 1.26.0 candidate against the 1.25.1 baseline (2026-11-11)
+
+Keys v5, brief v2, pass bar 12. Candidate: this branch, the project layer unreleased 1.26.0 in recall's own throwaway folder, the user layer the released 1.25.1. Baseline: 1.25.1 from the release copy on its tag. Rule text changed: the five names, the push bound in one home, the gate-bypass rule, the main rule (the owner, 2026-11-11), and the agent-teams line on the hook shims.
+
+**First measurement: failed the gate.** Three candidates scored 12, 11, 10 (median 11) against a baseline of 11, 11, 12 and a control of 0, on one blind scorer. Q4 failed in every run on both sides: sessions named main and left out the tag, force and delete limits. Diagnosed, not accepted: a Q4-only probe (4 fresh sessions per wording) showed the plain list still drew "never main" alone (0 of 4), while a rule that names all four limits whenever the bound is stated drew all four (4 of 4). The owner picked that wording (pop-up, 2026-11-11): rule:outward-acts says an answer about pushing names all four, and non-negotiable 6 names them in brackets. Three candidate runs started before the owner's main rule were stopped and thrown away.
+
+**Second measurement, which decides:** three new candidates, scored blind together with the same three baselines and control by a fresh scorer.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 13, 13, 13 | 12, 12, 12 | 0 |
+
+- **Scored: median 13, baseline 12, control 0.** Q4 passes in all three candidates and fails in all three baselines.
+- **The baselines moved between scorers** (11 on the first, 12 on the second) on Q12, the scorer's borderline call; no Q12 text changed.
+- **Blinding:** the kit version notices removed by the script and logged.
+
+control: 0
+gate: kit-1.26.0 median 13 baseline 12 brief v2 keys v5
