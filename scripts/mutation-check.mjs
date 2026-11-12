@@ -5,6 +5,8 @@
 //   node scripts/mutation-check.mjs --base <ref> [...]  only the lines changed since <ref>
 //   --also "<command>"  a check that also runs on each flip (a guard's proof); a non-zero exit catches it
 //   --timeout <ms>      per flip (default 120000); a flip that hangs its tests counts as caught
+//   --json <file>       also write every flip, the tests that reach it and the tests that caught it (T15 Part B)
+//   --slice <i>/<n>     only every n-th flip from the i-th, so CI can split the run over n jobs
 // Needs tests/.map.json made at HEAD (node scripts/test-run.mjs --map, on a clean tree). Exit 0 none survived,
 // 1 some survived, 2 it could not run. The repo itself is never changed: every flip is made in the copy.
 import fs from 'node:fs';
@@ -32,9 +34,14 @@ function flip(line) {
 }
 
 function parseArgs(argv) {
-	const o = { files: [], base: null, also: [], timeout: 120000 };
+	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null };
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--base') o.base = argv[++i];
+		else if (argv[i] === '--json') o.json = argv[++i];
+		else if (argv[i] === '--slice') {
+			const m = /^(\d+)\/(\d+)$/.exec(argv[++i] || '');
+			o.slice = m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : 'bad';
+		}
 		else if (argv[i] === '--also') o.also.push(argv[++i]);
 		else if (argv[i] === '--timeout') o.timeout = Number(argv[++i]) || o.timeout;
 		else o.files.push(posix(argv[i]));
@@ -68,7 +75,12 @@ function runTests(copy, keys, timeout, home) {
 			clearTimeout(kill);
 			const fail = Number((/^# fail (\d+)/m.exec(out) || [])[1] || 0);
 			const pass = Number((/^# pass (\d+)/m.exec(out) || [])[1] || 0);
-			resolve({ caught: code !== 0 || fail > 0, ran: pass + fail, timedOut: code === null });
+			// Which tests went red, by name (TAP's "not ok <n> - <name>", top level only); a run that died or timed out
+			// cannot say, so every test it ran is named.
+			const red = new Set([...out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
+			const named = keys.filter((k) => red.has(k.slice(k.indexOf('::') + 2)));
+			const caught = code !== 0 || fail > 0;
+			resolve({ caught, ran: pass + fail, timedOut: code === null, caughtBy: caught ? (named.length ? named : keys) : [] });
 		});
 	});
 }
@@ -112,8 +124,13 @@ export async function main(argv) {
 	const home = { KIT_CLAUDE_HOME: claudeDir, CLAUDE_CONFIG_DIR: claudeDir };
 	let caught = 0;
 	const survived = [];
+	const record = [];
+	if (o.slice === 'bad') { removeTemp(copy); removeTemp(claudeDir); process.stderr.write('mutation-check: --slice takes i/n with i below n\n'); return 2; }
 	try {
-		const spots = [...byLine.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+		// Only lines that flip are counted, so the slices split the real work: slice i takes every n-th flip from i.
+		const spots = [...byLine.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
+			.filter((s) => flip((fs.readFileSync(path.join(copy, s.file), 'utf8').split('\n')[s.line - 1]) ?? ''))
+			.filter((s, k) => !o.slice || k % o.slice[1] === o.slice[0]);
 		for (const s of spots) {
 			const file = path.join(copy, s.file);
 			const original = fs.readFileSync(file, 'utf8');
@@ -124,7 +141,8 @@ export async function main(argv) {
 			fs.writeFileSync(file, lines.join('\n'));
 			try {
 				let r = await runTests(copy, s.tests, o.timeout, home);
-				for (const cmd of o.also) if (!r.caught) r = { caught: spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout, env: { ...process.env, ...home } }).status !== 0 };
+				for (const cmd of o.also) if (!r.caught) r = { caught: spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout, env: { ...process.env, ...home } }).status !== 0, caughtBy: [] };
+				record.push({ file: s.file, line: s.line, op: f.op, tests: s.tests, caughtBy: r.caughtBy || [], caught: r.caught });
 				if (r.caught) { caught++; process.stdout.write(`caught ${s.file}:${s.line} ${f.op}${r.timedOut ? ' (timed out)' : ''}\n`); }
 				else { survived.push(s); process.stdout.write(`SURVIVED ${s.file}:${s.line} ${f.op}: ${lines[s.line - 1].trim()} was ${original.split('\n')[s.line - 1].trim()} (tests: ${s.tests.join(', ')})\n`); }
 			} finally {
@@ -135,6 +153,7 @@ export async function main(argv) {
 		removeTemp(copy);
 		removeTemp(claudeDir);
 	}
+	if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, flips: record }, null, 1) + '\n');
 	process.stdout.write(`mutation check: ${caught + survived.length} flips, ${caught} caught, ${survived.length} survived\n`);
 	return survived.length ? 1 : 0;
 }

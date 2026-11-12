@@ -32,6 +32,7 @@ function gate(lines, tool_name, tool_input, extra = {}, modules = true) {
 }
 const RELEASE = '.claude/rules/git-and-release.md';
 
+// why: guards rule:context-engineering
 test('a PR, commit, tag or release waits until the session has read its rules, in any spelling', () => {
 	for (const command of ['gh pr create --title x --body-file b.md', 'gh -R o/r pr edit 3 --body x', 'git commit -m "feat: x"', 'git -C . commit -qm x', 'git tag v1.2.0', 'gh release create v1.2.0', 'cd sub && git commit -m x']) {
 		const held = gate([], 'Bash', { command });
@@ -61,6 +62,7 @@ test('a PR, commit, tag or release waits until the session has read its rules, i
 	assert.equal(gate([], 'PowerShell', { command: 'git commit -m x' }).decision, 'deny');
 });
 
+// why: guards rule:context-engineering
 test('a read before the last compact does not count, a shell read does, and other commands never wait', () => {
 	assert.equal(gate([read(RELEASE), compact], 'Bash', { command: 'git commit -m x' }).decision, 'deny', 'read before the compact');
 	// A transcript line with no message (a summary, a snapshot) is read past: the gate still holds (the mutation check).
@@ -73,6 +75,7 @@ test('a read before the last compact does not count, a shell read does, and othe
 	for (const command of ['git status', 'git log --oneline -3', 'gh pr view 3', 'echo "git commit" > notes.md', 'npm test']) assert.equal(gate([], 'Bash', { command }).decision, 'pass', command);
 });
 
+// why: guards rule:context-engineering
 test('an agent fan-out waits for the agent-teams rules', () => {
 	const fan = gate([], 'Agent', { subagent_type: 'builder', prompt: 'build unit 1' });
 	assert.equal(fan.decision, 'deny');
@@ -84,10 +87,22 @@ test('an agent fan-out waits for the agent-teams rules', () => {
 	assert.equal(gate([], 'Bash', { command: 'git commit -m x' }, {}, false).decision, 'pass');
 });
 
+// why: guards rule:context-engineering
 test('the gate passes when it cannot read the transcript, and the shipped settings wire it', () => {
 	const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git commit -m x' }, transcript_path: path.join(kitTemp.makeTemp('none-'), 'missing.jsonl') }), encoding: 'utf8' });
 	assert.equal(r.status, 0);
 	assert.equal(r.stdout, '', 'a gate that cannot read never blocks a commit');
 	const { routes } = require(path.resolve('project/.claude/guard.cjs'));
 	for (const tool of ['Bash', 'PowerShell', 'Agent', 'Task']) assert.ok(routes(tool).includes('task-gate.cjs'), tool);
+});
+
+// why: catches an over-hold (the 1.25.0 carry-over R3.6): echo git commit prints words and makes no commit, yet the
+// gate held it until the release rules were read; the commit itself still waits.
+test('a command that only prints git commit does not wait; the commit itself does', () => {
+	for (const command of ['echo git commit', 'printf "%s" git commit', 'Write-Output git commit']) assert.equal(gate([], 'Bash', { command }).decision, 'pass', command);
+	assert.equal(gate([], 'Bash', { command: 'echo x; git commit -m x' }).decision, 'deny');
+});
+// why: guards rule:context-engineering
+test('a substitution inside a printed line still runs, so a commit there waits', () => {
+	for (const command of ['echo $(git commit -m x)', 'echo ' + String.fromCharCode(96) + 'git commit -m x' + String.fromCharCode(96)]) assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
 });

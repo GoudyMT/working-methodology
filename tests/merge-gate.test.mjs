@@ -145,6 +145,7 @@ const mainMoves = (s) => {
 	sh(s.work, 'add', 'other-pr.txt'); sh(s.work, 'commit', '-qm', 'another PR lands'); sh(s.work, 'push', '-q', 'origin', 'main');
 	sh(s.work, 'checkout', '-q', 'feat/subtract');
 };
+// why: guards rule:standing-grants
 test('merge gate: a branch brought up to date with main after its sweep still arms, unless the merge edits something', () => {
 	const s = setup();
 	mainMoves(s);
@@ -162,6 +163,7 @@ test('merge gate: a branch brought up to date with main after its sweep still ar
 	assert.equal(n.go, false);
 	assert.match(n.faults.join('\n'), /changed after the sweep covered .* other-pr\.txt/);
 });
+// why: guards rule:standing-grants
 test('merge gate: a PR that passes every check is armed, pinned to the checked head, read back and logged', () => {
 	const s = setup();
 	const r = arm(s.opts);
@@ -173,6 +175,7 @@ test('merge gate: a PR that passes every check is armed, pinned to the checked h
 
 // The second pass on 1.25.1 (role 4): with V3 the hooks folder holds the kit's shims, which check the guards from outside
 // and then exec the project's .githooks/pre-push. The hold is read through the shim, so the gate still arms.
+// why: guards rule:standing-grants
 test('merge gate: under the kit\'s hook shims the push hold is read in the hook the shim runs', () => {
 	const s = setup();
 	const own = path.join(s.root, 'own-hooks');
@@ -194,6 +197,7 @@ test('merge gate: under the kit\'s hook shims the push hold is read in the hook 
 // M30: the canned gh above can answer in shapes the real gh never gives. The field names are checked live below;
 // this holds each canned answer's types, and the api answers' shapes, to what the real gh said (recorded by
 // scripts/record-gh-contracts.mjs; re-record after a gh upgrade).
+// why: guards rule:standing-grants
 test('merge gate: the canned gh answers with the types and shapes the real gh gave for every read the gate makes', () => {
 	const rec = JSON.parse(fs.readFileSync(path.join(KIT, 'tests/contracts/gh.json'), 'utf8'));
 	const src = fs.readFileSync(path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'utf8');
@@ -232,6 +236,7 @@ test('merge gate: the canned gh answers with the types and shapes the real gh ga
 	assert.match(api('/branches/main').commit.sha, /^[0-9a-f]{40}$/);
 });
 
+// why: guards rule:standing-grants
 test('merge gate: check never arms, even on GO', () => {
 	const s = setup();
 	assert.equal(check(s.opts).go, true);
@@ -333,6 +338,7 @@ const CASES = [
 ];
 // S22-G6 (the 1.22.0 sweep): GIT_CONFIG_COUNT and GIT_CONFIG_PARAMETERS set config for every git this session runs,
 // pushes included, and git names their origin "command line:", which the hold check skips as its own override.
+// why: guards rule:standing-grants
 test('merge gate: a hooks folder set through the environment is NO GO, as a push would use it', () => {
 	for (const env of [
 		{ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/nowhere' },
@@ -363,6 +369,7 @@ for (const [name, breakIt, want] of CASES) {
 	});
 }
 
+// why: guards rule:standing-grants
 test('merge gate: a report may name the branch on its Scope line, as the fix example does', () => {
 	const s = setup();
 	fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.sha).replace('**Branch:**', '**Scope:**'));
@@ -371,6 +378,7 @@ test('merge gate: a report may name the branch on its Scope line, as the fix exa
 	assert.ok(check(s.opts).faults.some((f) => /names the branch feat\/subtract/.test(f)));
 });
 
+// why: guards rule:standing-grants
 test('merge gate: a ruleset alone counts as the required check', () => {
 	const s = setup();
 	s.state.protection = null;
@@ -378,6 +386,7 @@ test('merge gate: a ruleset alone counts as the required check', () => {
 	assert.equal(check(s.opts).go, true);
 });
 
+// why: guards rule:standing-grants
 test('merge gate: only the release bump may follow the swept commit', () => {
 	const s = setup();
 	commitOnBranch(s, 'VERSION', '1.2.0\n');
@@ -386,6 +395,7 @@ test('merge gate: only the release bump may follow the swept commit', () => {
 	assert.equal(r.go, true, r.faults.join('\n'));
 });
 
+// why: guards rule:standing-grants
 test('merge gate: the nearest covered commit counts, so a later re-sweep report clears earlier fixes', () => {
 	const s = setup();
 	const first = s.sha;
@@ -397,6 +407,7 @@ test('merge gate: the nearest covered commit counts, so a later re-sweep report 
 	assert.notEqual(first, s.state.pr.headRefOid);
 });
 
+// why: guards rule:standing-grants
 test('merge gate: a branch cannot weaken the PR-body audit it is read by', () => {
 	const s = setup();
 	commitOnBranch(s, '.claude/pr-body-audit-lean.mjs', 'process.exit(0);\n');
@@ -406,6 +417,7 @@ test('merge gate: a branch cannot weaken the PR-body audit it is read by', () =>
 	assert.ok(r.faults.some((f) => /live PR body fails/.test(f)), r.faults.join('\n'));
 });
 
+// why: guards rule:standing-grants
 test('merge gate: a merge gh refuses, or one it does not show armed, is reported, not logged', () => {
 	const s = setup();
 	s.state.mergeStatus = 1;
@@ -415,6 +427,7 @@ test('merge gate: a merge gh refuses, or one it does not show armed, is reported
 	assert.equal(fs.existsSync(path.join(s.work, '.git', 'kit-merge-gate.log')), false);
 });
 
+// why: guards rule:standing-grants
 test('merge gate: the protected paths cover workflows, the installed kit, project settings, hooks and loaded rules', () => {
 	for (const p of ['.github/workflows/ci.yml', '.claude/settings.json', '.kit/autonomy.json', '.githooks/pre-push', 'AGENTS.md', 'CLAUDE.md', 'CLAUDE.local.md']) {
 		assert.ok(PROTECTED.some((re) => re.test(p)), p);
@@ -422,6 +435,7 @@ test('merge gate: the protected paths cover workflows, the installed kit, projec
 	for (const p of ['src/app.js', 'docs/AGENTS.md', 'rules/core.md']) assert.ok(!PROTECTED.some((re) => re.test(p)), p);
 });
 
+// why: guards rule:standing-grants
 test('live body audit (I21): a published PR body is read back and audited by the base branch audit', () => {
 	const s = setup();
 	assert.equal(live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run }).ok, true);
@@ -430,6 +444,7 @@ test('live body audit (I21): a published PR body is read back and audited by the
 	assert.equal(r.ok, false);
 });
 
+// why: guards rule:standing-grants
 test('live body audit (I21): a published release body is read back and audited', () => {
 	const s = setup();
 	assert.equal(live({ kind: 'release', id: 'v1.2.0', cwd: s.work, config: s.config, run: s.run }).ok, true);
@@ -440,6 +455,7 @@ test('live body audit (I21): a published release body is read back and audited',
 });
 
 // A bare program name on Windows is looked up in the working folder before PATH, so a branch could ship its own (G1).
+// why: guards rule:standing-grants
 test('merge gate: git and gh are found on PATH, never in the repo folder', () => {
 	const s = setup();
 	const name = process.platform === 'win32' ? 'gh.exe' : 'gh';
@@ -452,6 +468,7 @@ test('merge gate: git and gh are found on PATH, never in the repo folder', () =>
 	assert.equal(toolPath('gh', s.work, { PATH: [s.work, '.', '', bin].join(path.delimiter) }), path.join(bin, name));
 	assert.equal(toolPath('gh', s.work, { PATH: [s.work, '.'].join(path.delimiter) }), null);
 });
+// why: guards rule:standing-grants
 test('merge gate: a program named like git, gh or node at the repo root stops the gate before it runs anything there', () => {
 	for (const name of ['git.exe', 'GH.EXE', 'gh.cmd', 'git.com', 'node.exe', 'git.bat']) {
 		const s = setup();
@@ -464,6 +481,7 @@ test('merge gate: a program named like git, gh or node at the repo root stops th
 });
 
 // A hook on the branch would run inside the gate's own fetch, and could move the base the gate reads (G2).
+// why: guards rule:standing-grants
 test('merge gate: no hook from the branch runs inside the gate', () => {
 	const s = setup();
 	const marker = path.join(s.root, 'hook-ran');
@@ -498,6 +516,7 @@ const moveOnBranch = (s, from, to) => {
 	s.state.pr.headRefOid = sh(s.work, 'rev-parse', 'HEAD');
 	fs.writeFileSync(path.join(s.work, 'reports/sweeps/sub.md'), report('feat/subtract', s.state.pr.headRefOid));
 };
+// why: guards rule:standing-grants
 test('merge gate: a protected path moved out, quoted by git or spelled in another case is still protected', () => {
 	const accent = String.fromCharCode(0xe9);
 	for (const file of [`.github/workflows/caf${accent}.yml`, `.claude/rules/${accent}.md`, '.GitHooks/post-checkout', '.GitHub/workflows/x.yml', '.CLAUDE/new.json', '.KIT/x.json']) {
@@ -517,6 +536,7 @@ test('merge gate: a protected path moved out, quoted by git or spelled in anothe
 	const r = check(s.opts);
 	assert.match(r.faults.join('\n'), /gate or rule paths[^\n]*\.githooks\/pre-push/);
 });
+// why: guards rule:standing-grants
 test('merge gate: a rename onto the release bump files after the sweep is not the release bump', () => {
 	const s = setup();
 	commitOnBranch(s, 'math2.txt', 'x\n');
@@ -526,6 +546,7 @@ test('merge gate: a rename onto the release bump files after the sweep is not th
 	assert.match(check(s.opts).faults.join('\n'), /never reviewed: math2\.txt/);
 });
 // The kit's own source holds the gate, audits and guards under other paths, and installs them to every project (G5).
+// why: guards rule:standing-grants
 test('merge gate: in the kit source a change to what the gate rests on is the owner\'s merge', () => {
 	for (const file of ['user/kit-tools/merge-gate.mjs', 'user/skills/pre-pr-sweep/audit.mjs', 'project/.claude/guard-outward.cjs', 'project/AGENTS.md', 'rules/core.md', 'scripts/kit.mjs', 'tests/kit.test.mjs', 'kit.config.json']) {
 		const s = setup();
@@ -575,6 +596,7 @@ for (const [name, breakIt, want] of NO_GO) {
 		assert.ok(r.faults.some((f) => want.test(f)), r.faults.join('\n'));
 	});
 }
+// why: guards rule:standing-grants
 test('merge gate: an owner yes clears a sweep as an approval does, on the tier of the decision it answered', () => {
 	const s = setup();
 	freshLog(s);
@@ -585,11 +607,13 @@ test('merge gate: an owner yes clears a sweep as an approval does, on the tier o
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));
 });
+// why: guards rule:standing-grants
 test('merge gate: a passing check, a skipped one or a pending required one does not stop it', () => {
 	const s = setup();
 	s.state.pr.statusCheckRollup = [{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'kit-tests', status: 'IN_PROGRESS', conclusion: '' }, { name: 'c', status: 'COMPLETED', conclusion: 'SKIPPED' }, { context: 'd', state: 'SUCCESS' }];
 	assert.equal(check(s.opts).go, true);
 });
+// why: guards rule:standing-grants
 test('merge gate: the sweep folder comes from the cleared contract, as adapter A22 sets it', () => {
 	const s = setup();
 	fs.mkdirSync(path.join(s.work, 'docs/sweeps'), { recursive: true });
@@ -603,6 +627,7 @@ test('merge gate: the sweep folder comes from the cleared contract, as adapter A
 // 1.21.1 carry 1: kept out of git by this clone's own exclude file, a setting is anyone's to write; by the base's
 // .gitignore it is the project's. (Install excludes .kit/ in info/exclude, so a project that wants its own audit
 // settings tracks them, or lists them in .gitignore.)
+// why: guards rule:standing-grants
 test('merge gate: an audit setting ignored by the base\'s .gitignore is the project\'s own; by this clone\'s exclude it is not', () => {
 	const s = setup();
 	fs.mkdirSync(path.join(s.work, '.kit'));
@@ -629,6 +654,7 @@ function baseWithoutAudits(s) {
 	cleared(s.work, s.state.pr.headRefOid);
 	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
 }
+// why: guards rule:standing-grants
 test('merge gate: with no audit on the base it reads the installed user layer, and never the project folder', () => {
 	const s = setup();
 	baseWithoutAudits(s);
@@ -645,6 +671,7 @@ test('merge gate: with no audit on the base it reads the installed user layer, a
 	assert.match(check(s.opts).faults.join('\n'), /live PR body fails/, 'the installed audit really ran');
 	assert.equal(live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run }).ok, false);
 });
+// why: guards rule:standing-grants
 test('merge gate: an audit copy that fails part way leaves no temp folder behind', () => {
 	const s = setup();
 	baseWithoutAudits(s);
@@ -658,6 +685,7 @@ test('merge gate: an audit copy that fails part way leaves no temp folder behind
 	assert.throws(() => check(s.opts));
 	assert.equal(leftovers().length, before, 'the half-filled copy was removed');
 });
+// why: guards rule:standing-grants
 test('merge gate: the audit is read from the kit\'s own layout on the base', () => {
 	const s = setup();
 	sh(s.work, 'checkout', '-q', 'main');
@@ -670,11 +698,13 @@ test('merge gate: the audit is read from the kit\'s own layout on the base', () 
 	s.state.pr.body = BODY.replace('- [x] The test', '- [ ] The test');
 	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit-lean/);
 });
+// why: guards rule:standing-grants
 test('merge gate: a squash-style title is read by the full audit, not the lean one', () => {
 	const s = setup();
 	s.state.pr.title = 'Add a subtract function';
 	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit\.mjs/);
 });
+// why: guards rule:standing-grants
 test('merge gate: the base is fetched, so a stricter audit landed on the remote is the one that judges', () => {
 	const s = setup();
 	const other = path.join(s.root, 'other');
@@ -683,6 +713,7 @@ test('merge gate: the base is fetched, so a stricter audit landed on the remote 
 	sh(other, 'add', '-A'); sh(other, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'stricter'); sh(other, 'push', '-q', 'origin', 'main');
 	assert.match(check(s.opts).faults.join('\n'), /FAIL stricter/);
 });
+// why: guards rule:standing-grants
 test('merge gate: a merge gh accepts but the PR does not show armed is not reported armed', () => {
 	const s = setup();
 	s.state.armOnMerge = false;
@@ -691,6 +722,7 @@ test('merge gate: a merge gh accepts but the PR does not show armed is not repor
 	assert.match(r.faults[0], /not shown on the PR/);
 	assert.equal(fs.existsSync(path.join(s.work, '.git', 'kit-merge-gate.log')), false);
 });
+// why: guards rule:standing-grants
 test('merge gate: the nearest report wins whatever its file name', () => {
 	const s = setup();
 	commitOnBranch(s, 'math.txt', 'add\nsub\nfixed\n');
@@ -698,6 +730,7 @@ test('merge gate: the nearest report wins whatever its file name', () => {
 	const r = check(s.opts);
 	assert.equal(r.go, true, r.faults.join('\n'));
 });
+// why: guards rule:standing-grants
 test('merge gate: a Covers commit off the branch does not count, even with the same tree', () => {
 	const s = setup();
 	sh(s.work, 'checkout', '-q', '--detach', 'HEAD~1');
@@ -710,6 +743,7 @@ test('merge gate: a Covers commit off the branch does not count, even with the s
 	assert.match(check(s.opts).faults.join('\n'), /Covers commit at or before the head/);
 });
 // Disarming is the one way to stop an armed PR, so it needs no prompt and works with the kill switch down (N2).
+// why: guards rule:standing-grants
 test('merge gate: disarm turns auto-merge off, reads it back and logs it, kill switch or not', () => {
 	const s = setup();
 	assert.equal(arm(s.opts).armed, true);
@@ -719,6 +753,7 @@ test('merge gate: disarm turns auto-merge off, reads it back and logs it, kill s
 	assert.ok(s.state.calls.includes('pr merge 7 --disable-auto'));
 	assert.match(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'), /DISARMED 7/);
 });
+// why: guards rule:standing-grants
 test('merge gate: a disarm that does not take is reported, not logged', () => {
 	const s = setup();
 	arm(s.opts);
@@ -729,6 +764,7 @@ test('merge gate: a disarm that does not take is reported, not logged', () => {
 	assert.doesNotMatch(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'), /DISARMED/);
 	assert.equal(disarm({ ...s.opts, pr: 'x' }).disarmed, false);
 });
+// why: guards rule:standing-grants
 test('merge gate: the CLI exits 1 on NO GO and 2 on a bad call', () => {
 	const cli = (...a) => spawnSync(process.execPath, [path.join(KIT, 'user/kit-tools/merge-gate.mjs'), ...a], { encoding: 'utf8' });
 	assert.equal(cli('check', 'x').status, 1);
@@ -743,6 +779,7 @@ const fixCommit = (s) => {
 	return sh(s.work, 'rev-parse', 'HEAD');
 };
 const originHead = (s) => sh(s.work, 'ls-remote', 'origin', 'refs/heads/feat/subtract').split(/\s/)[0];
+// why: guards rule:standing-grants
 test('merge gate: autofix disarms an armed PR, pushes the branch and logs the commit that went out', () => {
 	const s = setup();
 	assert.equal(arm(s.opts).armed, true);
@@ -755,6 +792,7 @@ test('merge gate: autofix disarms an armed PR, pushes the branch and logs the co
 	assert.match(log, new RegExp(`DISARMED 7\\n.* AUTOFIX 7 ${fixed}\\n$`));
 });
 // Handoff item 16: a session can read at any time whether the kill switch is set and what is still armed.
+// why: guards rule:standing-grants
 test('merge gate: status reads the kill switch and each PR still armed, an unread arming included', () => {
 	const s = setup();
 	assert.deepEqual(status(s.opts), { killSwitch: false, armed: [] });
@@ -772,6 +810,7 @@ test('merge gate: status reads the kill switch and each PR still armed, an unrea
 	assert.doesNotMatch(cli.stdout, /PR 7/);
 });
 // 1.21.1 carry 8: a base named with a slash, and a PR address in another case, still pass.
+// why: guards rule:standing-grants
 test('merge gate: a base with a slash in its name and a PR address in mixed case arm as any other', () => {
 	const s = setup();
 	sh(s.work, 'push', '-q', 'origin', 'main:refs/heads/release/1.0');
@@ -782,6 +821,7 @@ test('merge gate: a base with a slash in its name and a PR address in mixed case
 	assert.ok(s.state.calls.includes('api repos/o/r/branches/release%2F1.0'), 'the base is read by its encoded name');
 });
 // 1.21.1 carry 2: gh may read the PR through another remote, while the push goes to origin.
+// why: guards rule:standing-grants
 test('merge gate: autofix pushes only when origin is the PR\'s repo', () => {
 	const s = setup();
 	fixCommit(s);
@@ -794,6 +834,7 @@ test('merge gate: autofix pushes only when origin is the PR\'s repo', () => {
 	assert.equal(sh(other, 'rev-parse', 'refs/heads/feat/subtract'), before, 'nor to the other repo');
 });
 // The 1.22.0 sweep (G3, G4): git pushes to every push URL, and a URL that only ends in the repo's path is another host.
+// why: guards rule:standing-grants
 test('merge gate: autofix pushes only to one push URL that is exactly the PR\'s host and repo', () => {
 	const s = setup();
 	fixCommit(s);
@@ -816,6 +857,7 @@ test('merge gate: autofix pushes only to one push URL that is exactly the PR\'s 
 	assert.match(autofix({ ...u.opts, localOrigin: false }).faults[0], /not the repo of PR 7/);
 });
 // Handoff item 7: a merge call that went through and a read-back that did not must not read as nothing armed.
+// why: guards rule:standing-grants
 test('merge gate: a merge that went through with no read-back is logged as armed and named as such', () => {
 	const s = setup();
 	s.state.readBackFails = true;
@@ -826,6 +868,7 @@ test('merge gate: a merge that went through with no read-back is logged as armed
 	assert.match(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate-triage.md'), 'utf8'), /arming unconfirmed/);
 });
 // Handoff item 12.
+// why: guards rule:standing-grants
 test('merge gate: live stops on a program planted at the repo root, as check does', () => {
 	const s = setup();
 	fs.writeFileSync(path.join(s.work, 'git.exe'), '');
@@ -834,6 +877,7 @@ test('merge gate: live stops on a program planted at the repo root, as check doe
 	assert.match(r.faults.join('\n'), /named like a tool/);
 });
 // Handoff item 14 and 1.21.1 carry 10: the version check diffs against the pinned base, not a short name.
+// why: guards rule:standing-grants
 test('merge gate: the PR-body audit runs with PR_BASE at the pinned base commit', () => {
 	const s = setup();
 	sh(s.work, 'checkout', '-q', 'main');
@@ -846,6 +890,7 @@ test('merge gate: the PR-body audit runs with PR_BASE at the pinned base commit'
 	rewrite(s, report('feat/subtract', s.state.pr.headRefOid));
 	assert.match(check(s.opts).faults.join('\n'), new RegExp(`PR_BASE=${tip}`));
 });
+// why: guards rule:standing-grants
 test('merge gate: autofix runs no branch hook on its push', () => {
 	const s = setup();
 	const hooks = path.join(s.work, 'hooks');
@@ -855,6 +900,7 @@ test('merge gate: autofix runs no branch hook on its push', () => {
 	fixCommit(s);
 	assert.equal(autofix(s.opts).pushed, true);
 });
+// why: guards rule:standing-grants
 test('merge gate: autofix stops on the kill switch, nothing to push, another branch, a rewrite and a stop set outside', () => {
 	const s = setup();
 	const before = originHead(s);
@@ -875,11 +921,13 @@ test('merge gate: autofix stops on the kill switch, nothing to push, another bra
 	assert.ok(fixed);
 	assert.equal(autofix({ ...s.opts, pr: 'x' }).pushed, false);
 });
+// why: guards rule:standing-grants
 test('merge gate: a disarm reads back rather than trusting gh, on a PR with nothing to turn off', () => {
 	const s = setup();
 	const run = (cmd, args, cwd) => (args[1] === 'merge' ? { status: 1, stdout: '', stderr: 'not enabled' } : s.opts.run(cmd, args, cwd));
 	assert.equal(disarm({ ...s.opts, run }).disarmed, true);
 });
+// why: guards rule:standing-grants
 test('merge gate: a stop on GitHub holds: changes requested, a hold label, and auto-merge turned off outside the gate', () => {
 	const s = setup();
 	s.state.pr.reviewDecision = 'CHANGES_REQUESTED';
@@ -897,6 +945,7 @@ test('merge gate: a stop on GitHub holds: changes requested, a hold label, and a
 	assert.equal(disarm(s.opts).disarmed, true);
 	assert.equal(check(s.opts).go, true, 'a logged disarm is the gate\'s own, so the gate may run again');
 });
+// why: guards rule:standing-grants
 test('merge gate: a running optional check stops arming, since it could fail after the merge', () => {
 	const s = setup();
 	s.state.pr.statusCheckRollup = [{ name: 'lint', status: 'IN_PROGRESS', conclusion: '' }];
@@ -904,6 +953,7 @@ test('merge gate: a running optional check stops arming, since it could fail aft
 	s.state.pr.statusCheckRollup = [{ context: 'lint', state: 'PENDING' }];
 	assert.equal(check(s.opts).go, false);
 });
+// why: guards rule:standing-grants
 test('merge gate: a high closes only by a real commit in the branch, in its own cell, in every report', () => {
 	const s = setup();
 	const f = path.join(s.work, 'reports/sweeps/sub.md');
@@ -925,15 +975,18 @@ test('merge gate: a high closes only by a real commit in the branch, in its own 
 	s.state.pr.headRefOid = near;
 	assert.match(check(s.opts).faults.join('\n'), /sub\.md:[^\n]*finding is not closed/);
 });
+// why: guards rule:standing-grants
 test('merge gate: a report that gives the version goal as NO stops it', () => {
 	const s = setup();
 	const f = path.join(s.work, 'reports/sweeps/sub.md');
 	fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/(version.goal[^\n]*?)\bYES\b/i, '$1NO'));
 	assert.match(check(s.opts).faults.join('\n'), /version goal as NO/);
 });
+// why: guards rule:standing-grants
 test('merge gate: project/.claude is protected everywhere, so a branch cannot land an audit there', () => {
 	assert.ok(PROTECTED.some((re) => re.test('project/.claude/pr-body-audit-lean.mjs')));
 });
+// why: guards rule:standing-grants
 test('merge gate: a linked worktree logs where the pre-push hook reads, the common git folder', { windows: true }, () => {
 	const s = setup();
 	const tree = path.join(makeTemp('wt-'), 'linked');
@@ -945,6 +998,7 @@ test('merge gate: a linked worktree logs where the pre-push hook reads, the comm
 
 // The fake gh above answers any field, so only the real gh can say a field exists: 1.21.0 shipped a gate that could
 // never arm because `gh repo view` has no autoMergeAllowed. `gh <cmd> view --json` lists its fields with no login.
+// why: guards rule:standing-grants
 test('merge gate: every --json field it asks for exists in the real gh', (t) => {
 	const source = fs.readFileSync(path.join(KIT, 'user/kit-tools/merge-gate.mjs'), 'utf8');
 	const asked = [...source.matchAll(/'(pr|repo|release)', 'view',[^\n]*?'--json', '([^']+)'/g)].map((m) => ({ cmd: m[1], fields: m[2].split(',') }));
@@ -962,6 +1016,7 @@ test('merge gate: every --json field it asks for exists in the real gh', (t) => 
 	}
 });
 
+// why: guards rule:standing-grants
 test('merge gate: a base that does not match GitHub stops before any audit runs', () => {
 	const s = setup();
 	const ran = [];
@@ -976,6 +1031,7 @@ test('merge gate: a base that does not match GitHub stops before any audit runs'
 	assert.ok(!ran.includes(process.execPath), 'an audit ran from a base GitHub does not hold');
 });
 
+// why: guards rule:standing-grants
 test('merge gate: live pr holds to the base GitHub has', () => {
 	const s = setup();
 	assert.equal(live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run }).ok, true);

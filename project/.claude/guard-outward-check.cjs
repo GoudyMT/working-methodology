@@ -331,6 +331,13 @@ const PASS = [
 	'$env:PATH = "C:\\tools;" + $env:PATH; node x.mjs',
 ];
 
+// Required by the install check (T15 D2), which sends these same commands through the installed launcher: the lists
+// only. Run as a script, the proof runs.
+if (require.main !== module) {
+	module.exports = { ASK, PASS };
+	return;
+}
+
 let wrong = 0;
 const check = (label, input, wantAsk) => {
 	const reason = decide(input);

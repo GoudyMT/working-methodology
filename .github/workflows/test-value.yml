@@ -1,0 +1,113 @@
+# T15 Part B: measure what every kit test catches. It makes the coverage map, flips each covered condition in eight
+# slices, and sorts every test by what it guards or catches (scripts/test-value.mjs). It only reports: the cut list
+# goes to the owner before any test is removed. It never runs on a PR, so no PR pays for it: run it by hand, or push
+# a branch named test/measure-<name>.
+# Actions are pinned to full commit SHAs, so a moved tag cannot change what runs here.
+name: Test value
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['test/measure-*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-value-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Prepare git identity
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+      - name: Coverage map
+        run: node scripts/test-run.mjs --map --shards 4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: map
+          path: tests/.map.json
+          include-hidden-files: true
+          retention-days: 14
+
+  flips:
+    needs: [map]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Prepare git identity
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: map
+          path: tests
+      # Exit 1 only says some flip survived, which is what this measures; exit 2 (could not run) fails the job.
+      - name: Flip every covered condition, this slice
+        shell: bash
+        run: |
+          set +e
+          node scripts/mutation-check.mjs --slice ${{ matrix.slice }}/8 --json "flips-${{ matrix.slice }}.json" --timeout 60000 > "flips-${{ matrix.slice }}.log"
+          code=$?
+          tail -n 1 "flips-${{ matrix.slice }}.log"
+          [ "$code" -le 1 ]
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flips-${{ matrix.slice }}
+          path: flips-${{ matrix.slice }}.*
+          retention-days: 14
+
+  value:
+    needs: [flips]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: in
+      - name: Sort every test
+        shell: bash
+        run: |
+          node scripts/test-value.mjs in/map/.map.json in/flips-*/flips-*.json --out value.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: value
+          path: value.json
+          retention-days: 30

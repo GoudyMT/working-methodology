@@ -40,6 +40,9 @@ function needs(command, tool, depth = 0) {
 		for (let at = 0; at < w.length; at++) {
 			const name = String(w[at] || '').split(/[\\/]/).pop().replace(/\.exe$/i, '').toLowerCase();
 			if (name !== 'git' && name !== 'gh') continue;
+			// A word printed by echo and its kind is text, not a command (the 1.25.0 sweep, R3.6).
+			// A substitution inside it ($( ), a backtick) still runs, so then it is read as a command.
+			if (/^(echo|printf|write-output|write-host|print)$/i.test(String(w[0] || '')) && !/\$\(|`/.test(String(command || ''))) break;
 			const after = w.slice(at + 1);
 			const rest = (values) => { const a = []; for (let i = 0; i < after.length; i++) { if (values.has(after[i])) { i++; continue; } if (!after[i].startsWith('-')) a.push(after[i]); } return a; };
 			// Help reads a manual (F13), but only as the first word after the subcommand: anywhere else it may be another
@@ -109,7 +112,7 @@ function check(input) {
 	const missing = want.filter(([file]) => !seen.some((s) => same(s, path.resolve(root, file))));
 	if (missing.length === 0) return null;
 	const files = [...new Set(missing.map(([f]) => f))];
-	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Before ${missing[0][1]}: read ${files.join(' and ')} (the step's rules, kept out of the start load), then run this again.` } };
+	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Held: before ${missing[0][1]}, read ${files.join(' and ')} (the step's rules, kept out of the start load), then run this again.` } };
 }
 
 // A gate that cannot read the transcript passes: the output checks behind it still hold.

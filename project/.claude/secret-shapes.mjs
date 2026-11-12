@@ -45,6 +45,12 @@ function scan(patch, names, hits, where) {
 	return added;
 }
 
+// The hits in a commit or tag object, read raw (headers and message), or a ref name: each goes out with the push as
+// surely as the lines do (the 1.25.0 sweep, R2.10).
+function scanMessage(text, hits, where) {
+	for (const line of String(text).split('\n')) for (const [name, re] of SECRET_VALUE) if (re.test(line)) hits.push(`${name} in the object${where}`);
+}
+
 function report(hits, added) {
 	console.log(`added lines scanned: ${added}`);
 	const counts = new Map();
@@ -72,6 +78,19 @@ if (process.argv[2] === '--push') {
 		if (!lsha || ZERO.test(lsha)) continue;
 		// A sha git did not give in its own shape is refused, never passed to git as an option.
 		if (!SHA.test(lsha) || (rsha && !SHA.test(rsha))) { console.log('secret scan: a ref line is not in git\'s shape'); process.exit(2); }
+		// The ref names go out too.
+		for (const ref of line.trim().split(/\s+/).filter((_, k) => k === 0 || k === 2)) scanMessage(ref, hits, ' (a ref name)');
+		// An annotated tag (and a tag of a tag, all the way down) goes out whole, headers and message, read raw (the
+		// review on 0827746). A chain that loops or names no object is refused.
+		const tags = new Set();
+		for (let obj = lsha; git('cat-file', '-t', obj).trim() === 'tag';) {
+			if (tags.has(obj)) { console.log('secret scan: a tag chain loops'); process.exit(2); }
+			tags.add(obj);
+			const body = git('cat-file', 'tag', obj);
+			scanMessage(body, hits, ` (tag ${obj.slice(0, 9)})`);
+			obj = (/^object ([0-9a-f]{40,64})$/m.exec(body) || [])[1] || '';
+			if (!obj) { console.log('secret scan: a tag names no object'); process.exit(2); }
+		}
 		const range = rsha && !ZERO.test(rsha) ? [`${rsha}..${lsha}`] : [lsha, ...(known && known.length ? ['--not', ...known] : [])];
 		for (const c of git('rev-list', ...range).split('\n').filter(Boolean)) {
 			if (seen.has(c)) continue;
@@ -80,6 +99,7 @@ if (process.argv[2] === '--push') {
 			const patch = git('diff-tree', '-p', '-U0', '--no-color', '--root', '-m', '--first-parent', c);
 			const names = git('diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-m', '--first-parent', '--diff-filter=ACR', c).split('\n').filter(Boolean);
 			added += scan(patch, names, hits, ` (commit ${c.slice(0, 9)})`);
+			scanMessage(git('cat-file', 'commit', c), hits, ` (commit ${c.slice(0, 9)})`);
 		}
 	}
 	report(hits, added);
@@ -95,5 +115,7 @@ if (process.argv[2] === '--push') {
 	// Added, copied and renamed: a file renamed to a secret name adds no line, so only the name check sees it.
 	const names = git('diff', '--name-only', '--diff-filter=ACR', `${base}...HEAD`).split('\n').filter(Boolean);
 	const hits = [];
-	report(hits, scan(git('diff', `${base}...HEAD`, '-U0', '--no-color'), names, hits, ''));
+	const added = scan(git('diff', `${base}...HEAD`, '-U0', '--no-color'), names, hits, '');
+	for (const c of git('rev-list', `${base}..HEAD`).split('\n').filter(Boolean)) scanMessage(git('cat-file', 'commit', c), hits, ` (commit ${c.slice(0, 9)})`);
+	report(hits, added);
 }

@@ -20,6 +20,7 @@ const run = (tool_name, tool_input, cwd = process.cwd()) => {
 };
 const T = path.join(cfg, 'projects', 'C--repo', 's.jsonl');
 
+// why: guards rule:outward-acts
 test('the owner-proof guard refuses every tool write to the session transcripts and kit-owner.json', { windows: 'also' }, () => {
 	const deny = [
 		['Write', { file_path: T, content: 'x' }],
@@ -106,6 +107,7 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 	assert.equal(run('Write', { file_path: path.join(dangling, 's.jsonl'), content: 'x' }), 'deny', 'through a link whose target is not there yet');
 });
 
+// why: guards rule:outward-acts
 test('the owner-proof guard lets reads of the transcripts through, and every other write', () => {
 	const allow = [
 		['Write', { file_path: path.resolve('notes.txt'), content: 'x' }],
@@ -145,6 +147,7 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 
 // S23-2 (the 1.23.0 verify): reads through a variable or after a cd into the transcripts, and a file whose text only
 // names kit-owner.json, were refused. S23-1: the mutation check found writes no test covered.
+// why: guards rule:outward-acts
 test('the owner-proof guard follows a variable and a cd into the transcripts, and reads a quoted heredoc as data', () => {
 	const deny = [
 		['Bash', { command: 'P=~/.claude/projects; echo x >> $P/p/s.jsonl' }],
@@ -175,6 +178,7 @@ test('the owner-proof guard follows a variable and a cd into the transcripts, an
 	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
 });
 
+// why: guards rule:outward-acts
 test('the shipped project settings wire the owner-proof guard on every write tool and shell', () => {
 	// It ships in the project layer, run by the one guard process (T2) beside the guards whose reader it uses: a project
 	// whose user layer is older would otherwise block every call on a missing file (the 1.23.0 sweep).

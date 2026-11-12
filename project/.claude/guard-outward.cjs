@@ -7,6 +7,7 @@
 // match for a command built at run time (a variable holding "push", $'..' escapes,
 // Invoke-Expression on joined strings).
 const fs = require('node:fs');
+const path = require('node:path');
 
 const BACKSLASH = String.fromCharCode(92);
 const BACKTICK = String.fromCharCode(96);
@@ -40,7 +41,7 @@ const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'hel
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
 const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
-const { ownerYes, askText, yesText, neverText } = require('./owner-yes.cjs');
+const { ownerYes, askText, yesText, neverText, heldText } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -91,6 +92,9 @@ function gitSubAt(words, start) {
 	return i;
 }
 
+// The git commands that run a project hook (pre-commit, commit-msg, pre-push and the others the shims run).
+const HOOK_SUBS = new Set(['commit', 'push', 'merge', 'rebase', 'am', 'pull', 'cherry-pick', 'revert', 'checkout', 'switch']);
+
 // The git hooks are the last check before a commit or a push leaves: skipping them, or moving where git finds them,
 // holds the command (T1: on 1.24.0 both ran with no guard, and a push then landed on main). Reading the setting passes.
 function gitHooksOff(words, start, at) {
@@ -108,10 +112,15 @@ function gitHooksOff(words, start, at) {
 			}
 		}
 	}
-	if (words.some((w) => w.includes('hookspath'))) {
+	// An included config file can set the hooks path out of sight (-c include.path=f, includeIf.<cond>.path; the 1.26.0
+	// security review, S2).
+	if (words.some((w) => w.includes('hookspath') || /(^|=)include(if\..*)?\.path(=|$)/.test(w))) {
 		const reads = words[at] === 'config' && words.slice(at + 1).some((w) => /^(--get|--get-all|--get-regexp|--list|-l|get|list|--show-origin|--show-scope)$/.test(w));
 		if (!reads) return 'git with its hooks moved';
 	}
+	// Another git folder brings its own config, aliases, hooks and the programs its config names (a pager, fsmonitor):
+	// any git command that names one is held, reads too (S2, and the reviews on a192e1f and 46260d3).
+	if (words.slice(0, at).some((w) => /^(--git-dir(=|$)|git_dir=|git_common_dir=)/.test(w))) return 'git with its hooks moved';
 	// git config --edit opens the whole file, hooksPath included.
 	if (words[at] === 'config' && words.slice(at + 1).some((w) => w === '-e' || w === '--edit' || w === 'edit')) return 'git with its hooks moved';
 	return '';
@@ -245,18 +254,22 @@ function ghOutward(words, start) {
 	return 'gh ' + group + (sub === undefined ? '' : ' ' + sub);
 }
 
+// S23-4 (the 1.23.0 verify): the pre-push hook takes a shell without CLAUDECODE and AI_AGENT for the owner's own
+// terminal, so naming either marker, clearing the whole environment, or a PowerShell removal on the Env: drive (by
+// wildcard or filter, no full name in sight; the 1.24.0 sweep) or a .NET call that sets the environment is held.
+// Reading Env: or setting $env:X is not.
+function markersCleared(flat) {
+	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
+	return /\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat);
+}
+
 function findOutward(text, depth) {
 	// The owner's yes and resume for the sweep tools are read by approve.mjs itself from the owner's pop-up tap (T2), so
 	// their spelling needs no hold here. A Claude session started from a shell with a thread message's shape writes a
 	// turn like the owner's own (E27), so it is held still.
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
-	// S23-4 (the 1.23.0 verify): the pre-push hook takes a shell without CLAUDECODE and AI_AGENT for the owner's own
-	// terminal, so clearing either marker, or the whole environment, is held.
-	// PowerShell needs no full name (the 1.24.0 sweep): a removal on the Env: drive, by wildcard or by a filter piped
-	// from it, or a .NET call that sets the environment, asks too; reading Env: or setting $env:X does not.
-	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
-	if (/\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat)) return 'a command that clears the AI shell\'s markers';
+	if (markersCleared(flat)) return MARKERS;
 	// The pre-push hook lets an AI push to main or a tag only with this marker set, so setting it is the owner's yes.
 	if (/KIT_PUSH_APPROVED/i.test(flat)) return 'the push hook\'s owner-yes marker';
 	// A program or a word built at run time, then an outward verb in the same command: $G push, "$(which git)" push.
@@ -333,7 +346,7 @@ function collectStrings(value, out, depth) {
 	}
 }
 
-// A push to a feature branch of origin, in the owner's bounds (T1, the owner 2026-11-10: "Tight bounds"): the whole
+// A push to a feature branch of origin, inside the push bound (T1, the owner 2026-11-10: "Tight bounds"): the whole
 // command is one `git push [-u|--set-upstream] [-q|-v] origin <branch>` (or HEAD:<branch>, <branch>:<branch>), the
 // branch written out, not main or master, with no force, delete, tag, mirror or skipped hooks. It goes without a yes:
 // main is protected on GitHub, and the pre-push hook scans every pushed commit for secrets and logs the push.
@@ -362,9 +375,12 @@ function pushLimit(command) {
 	const words = String(command).trim().split(/\s+/);
 	const at = words.indexOf('push');
 	if (at < 0) return 'it is not a plain push to origin, so it is outside the push bound';
-	const rest = words.slice(at + 1);
+	// The words up to a redirect or a second command; an option's value (-o x, --repo x) is not a refspec (C18).
+	const all = words.slice(at + 1);
+	const cut = all.findIndex((w) => /^(\d?>|>|<|\||&|;|&&|\|\|)/.test(w) || /[;&|]$/.test(w));
+	const rest = cut < 0 ? all : all.slice(0, cut);
 	const flags = rest.filter((w) => w.startsWith('-'));
-	const specs = rest.filter((w) => !w.startsWith('-'));
+	const specs = rest.filter((w, i) => !w.startsWith('-') && !/^(-o|--push-option|--repo|--receive-pack|--exec)$/.test(rest[i - 1] || ''));
 	const dests = specs.slice(1).map((s) => s.replace(/^\+/, '').split(':').pop().replace(/^refs\/heads\//, ''));
 	if (flags.some((f) => /^(-d|--delete)$/.test(f)) || specs.slice(1).some((s) => s.startsWith(':'))) return 'a delete is outside the push bound';
 	if (flags.some((f) => /^(-f|--force|--force-with-lease|--force-if-includes)(=|$)/.test(f)) || specs.slice(1).some((s) => s.startsWith('+'))) return 'a force push is outside the push bound';
@@ -372,12 +388,19 @@ function pushLimit(command) {
 	const main = dests.find((d) => /^(main|master)$/i.test(d));
 	if (main) return `a push to ${main.toLowerCase()} is outside the push bound; ${main.toLowerCase()} takes a PR, and a tool pushes there only as a new repo's first push (the pre-push hook refuses any other)`;
 	if (specs[0] !== 'origin') return 'it is not a plain push to origin, so it is outside the push bound';
+	if (cut >= 0) return 'a redirect or a second command makes it more than one plain push, so it is outside the push bound; run the push on its own';
 	return 'it is not a plain push of one named feature branch, so it is outside the push bound';
 }
 
 // A gate bypass switches a check off; it sends nothing outward, and no pop-up yes lets a tool do it (the owner's lock,
 // 2026-11-11, matching the deny rules settings.json already holds for the plain spellings).
-const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook']);
+// Clearing the AI shell's markers joined them on the owner's pick, 2026-11-12 (C6): the pre-push hook then takes the
+// shell for the owner's terminal, so it switches the hook's AI checks off.
+const MARKERS = 'a command that clears the AI shell\'s markers';
+const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS]);
+// A command the guard cannot read is held, not called an outward act, and no yes runs it: the yes could not be matched
+// to what would run (C14).
+const HELD = new Set(['a command too long to read', 'the guard could not read this command']);
 
 // A gate bypass anywhere in a command, not only as the first reason found (the 1.26.0 sweep: a push or the marker in
 // front of it hid it, and a pop-up yes then let it run). It fails closed: any spelling of git's --no-verify, any
@@ -390,6 +413,11 @@ function bypassIn(text, depth = 0) {
 	if (gitish && /(^|[\s=])--no-ve(r(i(f(y)?)?)?)?(?=$|[\s=;&|)])/i.test(flat)) return 'git with its hooks skipped';
 	// The hooks path set from the environment (GIT_CONFIG_KEY_<n>, GIT_CONFIG_PARAMETERS) moves it as -c does.
 	if (/GIT_CONFIG_(KEY_\d+=\s*core\.hookspath|PARAMETERS=[^;&|\n]*hookspath)/i.test(flat)) return 'git with its hooks moved';
+	// Another git folder set for the whole shell (export GIT_DIR=x; git commit), and an included config from the
+	// environment (S2).
+	if (/\bGIT_(DIR|COMMON_DIR)\s*=/i.test(flat) && /\bgit\b/i.test(flat)) return 'git with its hooks moved';
+	if (/GIT_CONFIG_(KEY_\d+=\s*include|PARAMETERS=[^;&|\n]*include)/i.test(flat)) return 'git with its hooks moved';
+	if (markersCleared(flat)) return MARKERS;
 	for (const all of tokenize(joinContinuations(text))) {
 		const words = all.filter((w) => !w.redirect).map((w) => w.value.toLowerCase());
 		for (let i = 0; i < words.length; i++) {
@@ -405,13 +433,56 @@ function bypassIn(text, depth = 0) {
 // A write to main, master or the default branch that runs no pre-push hook: git send-pack, or a ref write through the
 // GitHub API. The owner, 2026-11-11: a tool pushes to main only as a new repo's first push, which a plain git push
 // makes and the pre-push hook checks; these routes skip that check, so no yes lets a tool take them.
+// The API is read by what it writes, not by one spelling (the 1.26.0 security review, S3): a ref path with its slashes
+// encoded, the merges endpoint into main, a file write through the contents endpoint to main or to the default branch
+// (no branch named), and the GraphQL mutations that move a branch.
 function hookFreeMainWrite(text) {
-	const flat = text.replace(/[\\'"]/g, '').toLowerCase();
+	let flat = text.replace(/[\\'"]/g, '').toLowerCase();
 	const names = /(^|[\s:/+])(refs\/heads\/)?(main|master)(?=$|[\s;&|])/;
 	if (/\bsend-pack\b/.test(flat) && names.test(flat)) return true;
-	// An API call writes when it names a method other than GET or sends a field (gh then posts).
-	const write = /\s(-x|--method)[\s=]*(post|patch|put|delete)\b/.test(flat) || /\s(-f|--field|--raw-field|--input)(\s|=)/.test(flat);
-	return /\bgh\b[^;&|\n]*\bapi\b/.test(flat) && /refs\/heads\/(main|master)\b/.test(flat) && write;
+	if (!/\bgh\b[^;&|\n]*\bapi\b/.test(flat)) return false;
+	// A GraphQL query read from a file or stdin cannot be read here: held, whatever else the call says.
+	if (/\bgraphql\b/.test(flat) && (/=@/.test(flat) || /\s--input(\s|=)/.test(flat))) return true;
+	// An API call writes when it names a method other than GET or sends a field (gh then posts), the value attached
+	// to the flag too (-fsha=x; the review on 46260d3).
+	const write = /\s(-x|--method)[\s=]*(post|patch|put|delete)\b/.test(flat) || /\s(-f|--field|--raw-field|--input)(\s|=)|\s-f\S/.test(flat);
+	if (!write) return false;
+	// Every percent escape is undone, again and again (%252F), the way a server may read it (the review on a192e1f);
+	// text that will not decode is held.
+	for (let i = 0; i < 5 && /%[0-9a-f]{2}/.test(flat); i++) {
+		try { flat = decodeURIComponent(flat).toLowerCase(); } catch { return true; }
+	}
+	if (/%[0-9a-f]{2}/.test(flat)) return true;
+	const main = /(^|[=\s])(refs\/heads\/)?(main|master)(?=$|[\s;&|,}])/;
+	if (/refs\/heads\/(main|master)\b/.test(flat)) return true;
+	if (/\/merges\b/.test(flat) && (!/\bbase=/.test(flat) || /\bbase=(refs\/heads\/)?(main|master)\b/.test(flat))) return true;
+	if (/\/contents\//.test(flat) && (!/\bbranch=/.test(flat) || /\bbranch=(refs\/heads\/)?(main|master)\b/.test(flat))) return true;
+	if (/\bgraphql\b/.test(flat) && /\b(updateref|updaterefs|mergebranch|createcommitonbranch)\b/.test(flat)) return true;
+	return main.test(flat) && /\/git\/refs\b/.test(flat);
+}
+
+// A push to main, master, or to wherever a bare push goes, run outside this project's work tree (git -C, --work-tree, a
+// cd first, or a shell whose folder is outside the project) runs none of this project's hooks, so the pre-push hook's
+// refusal of an existing main never happens (the review on 09f88b1). It fails closed: out there, only a push that
+// names one plain feature branch on one remote still asks; any other push is held (the review on aee6f28).
+function pushOutsideProject(text, input) {
+	const flat = text.replace(/[\\'"`]/g, '');
+	if (!/\bgit(\.exe)?\b[\s\S]*\bpush\b/i.test(flat)) return false;
+	const root = process.env.CLAUDE_PROJECT_DIR;
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+	const outside = Boolean(root && cwd) && fold(cwd) !== fold(path.resolve(root)) && !fold(cwd).startsWith(fold(path.resolve(root)) + path.sep);
+	const elsewhere = outside || /\bgit(\.exe)?(\s[^;&|\n]*)?\s(-C|--work-tree)(\s|=|$)/.test(flat) || /(^|[;&|({\n]\s*)(cd|pushd|popd|chdir|set-location|sl|push-location)(\s|;|$)/im.test(flat);
+	if (!elsewhere) return false;
+	const plainFeature = (args) => {
+		if (args.some((a) => a.startsWith('-') && !PUSH_FLAGS.has(a))) return false;
+		const specs = args.filter((a) => !a.startsWith('-'));
+		if (specs.length !== 2 || !/^[A-Za-z0-9._-]+$/.test(specs[0])) return false;
+		const parts = specs[1].split(':');
+		const dest = parts[parts.length - 1].replace(/^refs\/heads\//, '');
+		return parts.length <= 2 && BRANCH.test(specs[1].replace(':', '/')) && BRANCH.test(dest) && !dest.startsWith('refs/') && !/^(main|master|head|@)$/i.test(dest);
+	};
+	return ![...flat.matchAll(/\bpush\b([^;&|\n]*)/gi)].every((m) => plainFeature(m[1].trim().split(/\s+/).filter(Boolean)));
 }
 
 function decide(input) {
@@ -436,14 +507,14 @@ function check(input) {
 		collectStrings(input.tool_input, all, 0);
 		const bypass = bypassIn(all.join(LF));
 		if (bypass) reason = bypass;
-		else if (reason && hookFreeMainWrite(all.join(LF))) reason = 'a write to main that runs no pre-push hook';
+		else if (reason && (hookFreeMainWrite(all.join(LF)) || pushOutsideProject(all.join(LF), input))) reason = 'a write to main that runs no pre-push hook';
 		// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
 		const command = String((input.tool_input && input.tool_input.command) ?? '');
 		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
-		// Inside the owner's bounds a feature-branch push goes without a yes; anything else held needs the owner's
+		// Inside the push bound a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
 		if (reason && boundedPush(input)) reason = '';
-		else if (reason && !BYPASS.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
+		else if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
 		// A guard that cannot read the command refuses rather than lets it through.
 		reason = 'the guard could not read this command';
@@ -452,14 +523,20 @@ function check(input) {
 	let command = '';
 	try { command = String((input.tool_input && input.tool_input.command) ?? ''); } catch { /* no command */ }
 	const what = reason === 'git push' ? pushLimit(command) : `${reason} is an outward act (rule:outward-acts)`;
-	const text = reason === 'a write to main that runs no pre-push hook'
+	// The pre-push hook lets an AI push outside the bound only with its marker set: the one act to quote names it, in
+	// the shell that runs it, so one pop-up covers it (C7). A push to main is for a new repo's first push only.
+	const plain = reason === 'git push' && /^git push [A-Za-z0-9 ._/:+=-]+$/.test(command.trim());
+	const act = !plain ? '' : input.tool_name === 'PowerShell' ? `$env:KIT_PUSH_APPROVED='1'; ${command.trim()}` : `KIT_PUSH_APPROVED=1 ${command.trim()}`;
+	const lead = /a push to (main|master) is outside/.test(what) ? "Only if this is a new repo's first push" : 'To run it';
+	const text = HELD.has(reason)
+		? heldText(`${reason === 'a command too long to read' ? 'the command is too long for the guard to read' : 'the guard could not read this command'}, so it does not run. Shorten or split it; anything else is the owner's own, in their own terminal`)
+		: reason === 'a write to main that runs no pre-push hook'
 		? neverText("a write to main, master or the default branch that runs no pre-push hook; main takes a PR, and a tool pushes there only as a new repo's first push, by git push. Open a PR instead")
+		: reason === MARKERS
+		? neverText("clearing the AI shell's markers is a gate bypass; the pre-push hook would take the shell for the owner's own terminal and switch its checks off. Run the command with the markers in place; anything else is the owner's own, in their own terminal")
 		: BYPASS.has(reason)
 		? neverText(`${reason === 'git with its hooks skipped' ? 'skipping the git hooks' : 'moving the git hooks path'} is a gate bypass; it switches off the checks the owner's yes relies on. Fix what the hook reports; a skip is the owner's own, in their own terminal`)
-		: verdict === 'allow' ? yesText(what) : askText(what, input)
-			// The pre-push hook lets an AI push outside the bound only with its marker set: name the act to quote, so one
-			// pop-up covers it rather than a second after the hook refuses the first push.
-			+ (reason === 'git push' && !input.agent_id && input.tool_name === 'Bash' && /^git push [A-Za-z0-9 ._/:+=-]+$/.test(command.trim()) ? ` Quote and run this act, not the plain push, since the pre-push hook needs its marker: \`KIT_PUSH_APPROVED=1 ${command.trim()}\`.` : '');
+		: verdict === 'allow' ? yesText(what) : askText(what, input, act, lead);
 	const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: verdict, permissionDecisionReason: text } };
 	// The reason is shown to the user; added context is what reaches Claude.
 	if (prNote) output.hookSpecificOutput.additionalContext = prNote;

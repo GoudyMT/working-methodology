@@ -1,0 +1,240 @@
+{
+ "version": "1.27.0",
+ "date": "2026-11-12",
+ "level": "minor",
+ "area": "Tests and CI",
+ "title": "feat: tests say why they are kept; a PR runs only what it reaches",
+ "headline": "Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first, three of them security holes; C17 moves to build 3 after its recall run fell under the bar.",
+ "items": [
+  {
+   "id": "S2-S4",
+   "kind": "security",
+   "text": "The guard holds a push whose hooks were moved by an included config file or another git folder, a write to main through the GitHub API in any encoding, and a push run outside the project's work tree. A release install refuses a release with no tree to check against, and checks the kit's config and version files too.",
+   "evidence": "tests/guards-hold.test.mjs, tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "C6",
+   "kind": "security",
+   "text": "Clearing the AI shell markers (CLAUDECODE, AI_AGENT) before a command is a gate bypass, refused even with the owner's yes (the owner's lock).",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "R1.5-R1.6",
+   "kind": "security",
+   "text": "An owner's yes answers one act in one shell: a shell act needs a held try before the pop-up, and an edit whose text holds a separator gets no yes.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "R2.10",
+   "kind": "security",
+   "text": "The secret scan reads commit and tag messages as raw objects, every tag in a chain, and ref names.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "C11",
+   "kind": "security",
+   "text": "Git hooks run from the copy the launcher checked against the install record, never from the project folder a tool could write.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "C19",
+   "kind": "fixed",
+   "text": "The pre-push hook asks the remote for its default branch and whether it is new, so a local ref cannot fake a first push.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "C1-C12",
+   "kind": "fixed",
+   "text": "A reinstall holds a guard file a later release adds until the owner accepts it, moves records from the old long names, and rewrites the hook shims of every recorded project, except one still on an older kit, which it names until that project runs install project; a changed or slow kit hook says why it did not run.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "R3.6",
+   "kind": "fixed",
+   "text": "The task gate lets a command that only prints git commit through, and still holds a substitution inside a printed line.",
+   "evidence": "tests/task-gate.test.mjs"
+  },
+  {
+   "id": "R4.5",
+   "kind": "fixed",
+   "text": "Settings deny git log, diff and show with --output anywhere in the command.",
+   "evidence": "project/.claude/settings.json"
+  },
+  {
+   "id": "R7.3",
+   "kind": "fixed",
+   "text": "The owner's yes is found at the end of a transcript too long to read whole.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "R7.1",
+   "kind": "added",
+   "text": "The use check says whether the latest pop-up answer carries the field the guards read.",
+   "evidence": "tests/use-check.test.mjs"
+  },
+  {
+   "id": "N9",
+   "kind": "added",
+   "text": "The first push check names a public GitHub repo whose secret scanning or push protection is off.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "T15-C",
+   "kind": "changed",
+   "text": "Every kit test carries a why line: the rule it guards, or the break only it catches, written from a CI measurement of 2,326 code flips.",
+   "evidence": "CI run 43169062013",
+   "where": "Kit tests",
+   "before": "No reason on 685 of 707 tests",
+   "after": "A why line on every kept test; 29 repeats cut"
+  },
+  {
+   "id": "T15-B",
+   "kind": "removed",
+   "text": "29 tests whose every caught flip another test also catches, after the owner's yes; every caught flip is still caught.",
+   "evidence": "CI run 43169062013"
+  },
+  {
+   "id": "T15-A",
+   "kind": "added",
+   "text": "A test check holds each new or changed kit test to the bar (fails first, earns its place, right lane, owed at all), as a report in CI.",
+   "evidence": "tests/test-check.test.mjs",
+   "where": "New tests",
+   "before": "One line of rule text",
+   "after": "A script checks all four, reported on every PR"
+  },
+  {
+   "id": "T15-D",
+   "kind": "changed",
+   "text": "The kit's PR CI runs the tests its change reaches plus the security set, and the whole suite when it cannot be sure; every push to main runs the whole suite and keeps the map the next PR selects by. A body edit reruns only the PR body check.",
+   "evidence": "tests/pr-scope.test.mjs, tests/kit.test.mjs",
+   "where": "Kit PR CI",
+   "before": "Every test on every PR and body edit",
+   "after": "The reached tests and the security set; all on main"
+  },
+  {
+   "id": "D1-D2",
+   "kind": "added",
+   "text": "An install check in CI installs this build, upgrades from the previous release, and replays every command the push guard's proof holds through the installed launcher, on Linux and Windows.",
+   "evidence": "tests/ci-install-check.test.mjs",
+   "where": "Install and guards",
+   "before": "Checked by hand on the owner's PC",
+   "after": "Checked in CI on every install or guard change"
+  },
+  {
+   "id": "D5",
+   "kind": "added",
+   "text": "One build record per release writes the changelog entry and the PR body, and CI checks it on every PR that moves VERSION.",
+   "evidence": "tests/build-record.test.mjs"
+  },
+  {
+   "id": "D6",
+   "kind": "added",
+   "text": "The recall test can run in CI by the owner's hand from main, reaching the model through workload identity federation with no stored key; it reports only, and stays off until the owner sets it up.",
+   "evidence": "tests/recall-ci.test.mjs"
+  },
+  {
+   "id": "N11",
+   "kind": "added",
+   "text": "Every kit workflow is linted in CI, the linter pinned by its checksum.",
+   "evidence": ".github/workflows/ci.yml"
+  }
+ ],
+ "decisions": [
+  {
+   "decision": "Tag first, then cut",
+   "why": "257 tests were repeats by flips alone, but 202 of them guard owner or security rules; the cut took only untagged repeats, on the owner's yes."
+  },
+  {
+   "decision": "Only what it touches",
+   "why": "A PR runs the reached tests and the security set; the whole suite runs on main, so no gate is lowered and PR time drops."
+  },
+  {
+   "decision": "No stored model key",
+   "why": "Federation swaps GitHub's short-lived token for an Anthropic one bound to this repo's main; the kit could later teach the same to projects."
+  }
+ ],
+ "verification": [
+  "CI run 43169062013 at d990d12 measured 2,326 code flips across 707 tests; the why tags and the cut were written from it.",
+  "Each fix of the sweep shipped with a test that fails on the code before it: the older-project shim test (13eb916, ede5e1e) and the recall job test (7fb389c).",
+  "The C17 rule text was measured by five recall runs (candidate median 11, baseline 11, bar 12) and reverted on the owner's call; it moves to build 3.",
+  "The sweep guard refused a probe reviewer before the sweep, and the sweep report passes its audit."
+ ],
+ "tests": {
+  "before": 707,
+  "after": 678,
+  "flips": "707 to 678 is the cut at d990d12; the tests this build added after it (build record, recall job, the sweep fix) come on top, and the PR run gives the final count. 1,810 of 2,326 code flips caught before and after the cut"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive, new dependency)",
+  "commit": "e570f83",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "One medium (the first push gh call names no host), two low; deferred"
+   },
+   {
+    "name": "Supply chain",
+    "result": "One high (Claude Code installed without its binary), fixed; one low"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Security swarm",
+    "result": "Mediums only (guard spellings, the recall job token reach, the install lane); deferred"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Mediums (cut tests that held unique owner-facing checks, tag accuracy); deferred"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES; one high on upgrade order, fixed"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 2,
+   "medium": 19,
+   "low": 16
+  },
+  "fixed": [
+   "H1, caught by the sweep: install user rewrote the hook shims of a project still on 1.26.0, which then could not commit. Fixed in 13eb916, hardened in ede5e1e after the security review of the fix.",
+   "H2, caught by the sweep: the recall job installed Claude Code without its binary. Fixed in 7fb389c."
+  ],
+  "deferred": [
+   "C17 (the four refusal kinds wording): recall under the bar, to build 3",
+   "Guard spellings that reach the owner's yes instead of a flat refusal, and the marker and cd false holds",
+   "A tag pointing at a blob or tree is pushed unscanned",
+   "Install project 1.27.0 over a 1.26.0 user layer fails commits with no fix named",
+   "The first push gh call names no host",
+   "The recall job token reach and install-lane gaps in kit CI",
+   "Tests the cut lost (dry-run, --merged, update line, status lines), the install check reading HEAD, pr-scope coverage, wrong why tags"
+  ],
+  "accepted": [],
+  "caughtBy": {
+   "sweep": 2,
+   "plan": 0,
+   "ci": 0,
+   "securityReview": 1,
+   "escaped": 0
+  },
+  "spend": {
+   "budget": 4752000,
+   "spent": 5701345,
+   "roles": {
+    "1": 704323,
+    "2": 690499,
+    "3": 554498,
+    "4": 807682,
+    "5": 586341,
+    "6": 781754,
+    "7": 665780,
+    "8": 314378,
+    "9": 596090
+   }
+  },
+  "findingsNote": "Counted from the role reports of roles 1-3 and 5-9. Role 4 (what the cut lost) handed in at its call cap with every finding plausible and no list by severity; its findings are in the outcome log total (56 raised, 50 real, 4 repeated) and in the deferred test gaps."
+ }
+}

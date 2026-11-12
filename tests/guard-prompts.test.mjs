@@ -18,6 +18,7 @@ const hook = (file, command, extra = {}) => {
 	return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'pass';
 };
 
+// why: guards rule:outward-acts
 test('a guard in a subagent refuses instead of asking, so the agent hands the act back and never waits on a prompt', () => {
 	const sub = { agent_id: 'a1b2c3', agent_type: 'builder' };
 	assert.equal(hook('guard-outward.cjs', 'git push origin main', sub), 'deny');
@@ -30,6 +31,7 @@ test('a guard in a subagent refuses instead of asking, so the agent hands the ac
 });
 
 // N10: off a terminal, npm assumes yes, so `npx <name>` in an agent's shell fetched and ran any registry package.
+// why: guards rule:outward-acts
 test('the shipped project settings turn off npm and npx installing a missing package without a prompt', () => {
 	const settings = JSON.parse(fs.readFileSync(path.resolve('project/.claude/settings.json'), 'utf8'));
 	assert.equal(settings.env && settings.env.npm_config_yes, 'false');
@@ -37,6 +39,7 @@ test('the shipped project settings turn off npm and npx installing a missing pac
 
 // The 1.24.0 sweep: install skips a guard-read.cjs the owner changed, so an updated guard can sit beside an older
 // reader; it must still hold the command, never crash and let it through.
+// why: guards rule:outward-acts
 test('a guard beside an older shared reader still holds the command, and owner-proof still refuses', () => {
 	const dir = kitTemp.makeTemp('stale-');
 	for (const f of ['guard-delete.cjs', 'guard-outward.cjs', 'owner-proof.cjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, f));
@@ -55,6 +58,7 @@ test('a guard beside an older shared reader still holds the command, and owner-p
 // The 1.24.0 sweep: reading a here-document body as data was spelled around six ways (an end mark bash reads
 // otherwise, a cat function, continued lines, nested quotes, a second mark, a process substitution), and it saved about
 // 10 of 518 prompts. Every body is read as commands again; each spelling the sweep found stays here as a case.
+// why: guards rule:outward-acts
 test('the delete guard reads every here-document body as commands, in every spelling that runs one', () => {
 	assert.equal(hook('guard-delete.cjs', "cat <<'EOF' > notes.md\nrm -rf " + OUT + "\nEOF"), 'deny');
 	assert.equal(hook('guard-delete.cjs', "cat <<E\"OF\" > notes.md\nhi\nEOF\nrm -rf " + OUT), 'deny');

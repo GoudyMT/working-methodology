@@ -35,11 +35,29 @@ function actText(input) {
 	const str = (v) => typeof v === 'string';
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(name)) return str(t.command) ? squash(t.command) : '';
 	if (name === 'Write' && str(t.file_path) && str(t.content)) return squash(`Write ${t.file_path}: ${t.content}`);
+	// An edit whose text holds the quote's own separators would read as another edit, so it has no act and no yes: the
+	// owner makes that edit (the 1.25.0 sweep, R1.5). Any "=>" or ";" at all, so no split at an edge reads two ways
+	// (the review on ceecedd).
+	const sep = (s) => /=>|;/.test(s);
+	if (['Edit', 'MultiEdit'].includes(name) && [t.old_string, t.new_string, ...(Array.isArray(t.edits) ? t.edits.flatMap((e) => [e && e.old_string, e && e.new_string]) : [])].some((s) => str(s) && sep(s))) return '';
 	if (name === 'Edit' && str(t.file_path) && str(t.old_string) && str(t.new_string)) return squash(`Edit ${t.file_path}${t.replace_all ? ' (every match)' : ''}: ${t.old_string} => ${t.new_string}`);
 	if (name === 'MultiEdit' && str(t.file_path) && Array.isArray(t.edits) && t.edits.every((e) => e && str(e.old_string) && str(e.new_string))) {
 		return squash(`MultiEdit ${t.file_path}: ${t.edits.map((e) => `${e.old_string} => ${e.new_string}${e.replace_all ? ' (every match)' : ''}`).join(' ; ')}`);
 	}
 	return '';
+}
+
+// A transcript's lines, read from its end: a yes counts only while fresh, so only the recent part can hold one, and a
+// transcript past V8's string limit could otherwise never be read at all (the 1.25.0 sweep, R7.3). The first line of
+// a cut read is a partial one and is dropped.
+const TAIL_BYTES = 64 * 1024 * 1024;
+function tailLines(file, cap = TAIL_BYTES) {
+	const size = fs.statSync(file).size;
+	if (size <= cap) return fs.readFileSync(file, 'utf8').split('\n');
+	const buf = Buffer.alloc(cap);
+	const fd = fs.openSync(file, 'r');
+	try { fs.readSync(fd, buf, 0, cap, size - cap); } finally { fs.closeSync(fd); }
+	return buf.toString('utf8').split('\n').slice(1);
 }
 
 // The code spans of a question: the acts it quotes, each read whole.
@@ -89,9 +107,23 @@ function ownerYes(input, now = Date.now()) {
 	const act = actText(input);
 	if (!act || !ownTranscript(input)) return null;
 	let lines;
-	try { lines = fs.readFileSync(String(input.transcript_path), 'utf8').split('\n'); } catch { return null; }
+	try { lines = tailLines(String(input.transcript_path)); } catch { return null; }
 	const yes = yeses(lines).filter((y) => y.acts.includes(act)).pop();
 	if (!yes || now - yes.at < 0 || now - yes.at > FRESH_MS) return null;
+	// The yes is for the shell the held call ran in: Bash and PowerShell read the same text differently (the 1.25.0
+	// sweep, R1.6). The last call of this act before the pop-up names it; a shell act asked with no held call before it
+	// has no shell, so no yes (the review on ceecedd): the refusal says to try, then ask.
+	let tried = '';
+	for (const raw of lines.slice(0, yes.asked)) {
+		let e;
+		try { e = JSON.parse(raw); } catch { continue; }
+		if (e.isSidechain || e.type !== 'assistant') continue;
+		for (const b of (e.message && Array.isArray(e.message.content) ? e.message.content : [])) {
+			if (b && b.type === 'tool_use' && actText({ tool_name: b.name, tool_input: b.input }) === act) tried = String(b.name);
+		}
+	}
+	const shell = ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(String(input.tool_name));
+	if ((shell && !tried) || (tried && tried !== String(input.tool_name))) return null;
 	// Spent by any run of the act after the pop-up was asked, the answer's own line or not: Claude Code writes every
 	// tool call of a message before their results, so an act sent beside the pop-up sits above the answer (the 1.25.0
 	// sweep: one tap ran it twice).
@@ -107,18 +139,24 @@ function ownerYes(input, now = Date.now()) {
 }
 
 // What Claude is told when an act is held: how to get the owner's yes, or, in a subagent, to hand it back.
-function howToAsk(input) {
+// With an act, the refusal names that one act to quote and run, so the session never has two to choose from (the
+// 1.26.0 sweep, C7); `lead` opens the instruction ("To run it", or a condition such as "Only for a new repo's first push").
+function howToAsk(input, act = '', lead = 'To run it') {
 	if (input && input.agent_id) return ' A subagent cannot get that yes: leave this out and name it in your report, so the lead asks.';
-	return ' To run it: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (`<the exact command>`, or for a file `Edit <file>: <old text> => <new text>`), one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run it again unchanged, once.';
+	if (act) return ` ${lead}: ask the owner with the AskUserQuestion pop-up, the question quoting this act exactly in one code span: \`${act}\`, one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run that act, once.`;
+	return ` ${lead}: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (\`<the exact command>\`, or for a file \`Edit <file>: <old text> => <new text>\`), one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run it again unchanged, once.`;
 }
 
 // One voice for every refusal (T16a, the owner 2026-11-11): each opens with its kind, then the limit it hit, then what
 // to do. The kinds: "Owner's yes needed" (the pop-up below), "Hand back" (a subagent cannot ask), "Never by a tool"
-// (no yes makes a tool do it) and "Held" (a guard could not run). The openings are the order a session acts on.
-function askText(what, input) {
+// (no yes makes a tool do it) and "Held" (the call cannot go on until something is put right: a guard that could not
+// run or read the call, guard files not as install left them, a step's rules not yet read). The openings are the
+// order a session acts on.
+function askText(what, input, act = '', lead = 'To run it') {
 	if (input && input.agent_id) return `Hand back: a subagent cannot get the owner's yes. Leave this out (${what}) and name it in your report, so the lead asks.`;
-	return `Owner's yes needed: ${what}.` + howToAsk(input);
+	return `Owner's yes needed: ${what}.` + howToAsk(input, act, lead);
 }
+const heldText = (what) => `Held: ${what}.`;
 const yesText = (what) => `Owner's yes given in the pop-up for this exact command: ${what}.`;
 const neverText = (what) => `Never by a tool: ${what}.`;
 
@@ -141,10 +179,21 @@ function pushAct(act) {
 	const flags = rest.filter((x) => x.startsWith('-'));
 	const specs = rest.filter((x) => !x.startsWith('-')).slice(1);
 	return {
-		dests: specs.map((s) => s.replace(/^\+/, '').split(':').pop().replace(/^refs\/(heads|tags)\//, '')),
+		dests: specs.map((s) => s.replace(/^\+/, '').split(':').pop()),
 		force: flags.some((f) => /^(-f|--force|--force-with-lease)/.test(f)) || specs.some((s) => s.startsWith('+')),
 		del: flags.includes('-d') || flags.includes('--delete') || specs.some((s) => s.startsWith(':')),
 	};
+}
+
+// Whether a yes to this act covers a push of this ref: a destination written in full (refs/heads/x, refs/tags/x) names
+// only that kind of ref; a short name covers either, as git itself resolves it (the 1.25.0 sweep, R2.9: a yes to push
+// a branch let a tag of the same name go).
+function grantsRef(act, ref, kind = '') {
+	const p = pushAct(act);
+	if (!p) return false;
+	const short = String(ref).replace(/^refs\/(heads|tags)\//, '');
+	const named = p.dests.some((d) => (/^refs\//.test(d) ? d === ref : d === short));
+	return named && (kind !== 'force' || p.force) && (kind !== 'delete' || p.del);
 }
 
 // The pre-push hook's check behind the marker: this session's own transcript (Claude Code names the session in the
@@ -167,16 +216,16 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	// refuses, so a yes is never reused by hiding its use.
 	const log = path.join(common || path.join(repo, '.git'), 'kit-push.log');
 	let used = [];
-	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && p[2] === ref).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
+	// A push of either kind of ref with this name spends a yes, so one tap to a short name allows one push (the review
+	// on ceecedd).
+	const kinds = [ref, `refs/heads/${name}`, `refs/tags/${name}`];
+	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && kinds.includes(p[2])).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
 	for (const d of dirs) {
 		let lines;
-		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
+		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
 		for (const y of yeses(lines)) {
 			if (now - y.at < 0 || now - y.at > FRESH_MS || used.some((t) => !Number.isFinite(t) || t >= y.at)) continue;
-			for (const a of y.acts) {
-				const p = pushAct(a);
-				if (p && p.dests.includes(name) && (kind !== 'force' || p.force) && (kind !== 'delete' || p.del)) return true;
-			}
+			for (const a of y.acts) if (grantsRef(a, ref, kind)) return true;
 		}
 	}
 	return false;
@@ -197,7 +246,7 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 	let best = null;
 	for (const d of dirs) {
 		let lines;
-		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
+		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
 		for (const y of yeses(lines)) if (y.at > since && y.acts.includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at, tap: `${sessionId}:${y.id}` };
 	}
 	return best;
@@ -205,4 +254,4 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, pushGrant, sessionYes, FRESH_MS };
+module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, tailLines, FRESH_MS };

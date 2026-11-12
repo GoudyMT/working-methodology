@@ -150,12 +150,14 @@ const held = (s, why) => {
 	assert.match(bash(s, 'git status').reason, /changed outside install/i, 'the refusal names the cause');
 };
 
+// why: guards rule:outward-acts
 test('V3 setup: on a clean install the outside launcher passes git status and still holds a main push', () => {
 	const { session: s } = setup();
 	assert.equal(bash(s, 'git status').decision, 'allow');
 	assert.equal(bash(s, 'git push origin main').decision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 git apply: a patch that replaces guard.cjs holds every later call', () => {
 	const { proj, session: s } = setup();
 	const patch = path.join(proj, '..', 'p.patch');
@@ -165,6 +167,7 @@ test('V3 git apply: a patch that replaces guard.cjs holds every later call', () 
 	held(s, 'git apply');
 });
 
+// why: guards rule:outward-acts
 test('V3 git checkout: a branch that carries guard.cjs holds every later call', () => {
 	const { proj, session: s } = setup();
 	const evil = commitWith(proj, '.claude/guard.cjs', EVIL_GUARD, ['HEAD']);
@@ -174,6 +177,7 @@ test('V3 git checkout: a branch that carries guard.cjs holds every later call', 
 	held(s, 'git checkout');
 });
 
+// why: guards rule:outward-acts
 test('V3 git stash pop: a stash that carries guard.cjs holds every later call', () => {
 	const { proj, session: s } = setup();
 	const head = ok(git(proj, ['rev-parse', 'HEAD']));
@@ -187,6 +191,7 @@ test('V3 git stash pop: a stash that carries guard.cjs holds every later call', 
 	held(s, 'git stash pop');
 });
 
+// why: guards rule:outward-acts
 test('V3 script: a script that rewrites a guard module the guard loads holds every later call', () => {
 	const { proj, session: s } = setup();
 	// What tools/fix.mjs did in the proof: a module that exits 0 on load disarms the one guard process.
@@ -195,6 +200,7 @@ test('V3 script: a script that rewrites a guard module the guard loads holds eve
 });
 
 // 1.25.0 already failed closed here; what this adds is a refusal that names the deleted file (the 1.25.1 sweep).
+// why: guards rule:outward-acts
 test('V3 script: a refusal after a script deletes a guard file names the file', () => {
 	const { proj, session: s } = setup();
 	fs.rmSync(path.join(proj, '.claude', 'guard-outward.cjs'));
@@ -202,6 +208,7 @@ test('V3 script: a refusal after a script deletes a guard file names the file', 
 	assert.match(bash(s, 'git status').reason, /guard-outward\.cjs/, 'the refusal does not name the deleted file');
 });
 
+// why: guards rule:outward-acts
 test('V3 settings: disableAllHooks written mid-session is refused, and every call is held while it is there', () => {
 	const { proj, session: s } = setup();
 	const local = path.join(proj, '.claude', 'settings.local.json');
@@ -213,6 +220,7 @@ test('V3 settings: disableAllHooks written mid-session is refused, and every cal
 	assert.match(bash(s, 'git status').reason, /disableAllHooks/);
 });
 
+// why: guards rule:outward-acts
 test('V3 settings: a branch that carries a settings.json turning hooks off is refused the same way', () => {
 	const { proj, session: s } = setup();
 	const file = path.join(proj, '.claude', 'settings.json');
@@ -222,6 +230,7 @@ test('V3 settings: a branch that carries a settings.json turning hooks off is re
 	assert.equal(bash(s, 'git push origin main').decision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 settings: an ordinary settings change still applies', () => {
 	const { proj, session: s } = setup();
 	const local = path.join(proj, '.claude', 'settings.local.json');
@@ -230,6 +239,7 @@ test('V3 settings: an ordinary settings change still applies', () => {
 	assert.equal(bash(s, 'git status').decision, 'allow');
 });
 
+// why: guards rule:outward-acts
 test('V3 user settings: removing the launcher from the user settings mid-session is refused', () => {
 	const { home, session: s } = setup();
 	const file = path.join(home, 'settings.json');
@@ -243,6 +253,7 @@ test('V3 user settings: removing the launcher from the user settings mid-session
 // The pre-push hook as git runs it for an AI shell: a real push to the local bare remote.
 const aiPush = (proj, ...ref) => git(proj, ['push', 'origin', ...ref], { CLAUDECODE: '1' });
 
+// why: guards rule:outward-acts
 test('V3 pre-push: a hook swapped by a branch cannot let a main push out in the same command', () => {
 	const { proj, remote } = setup();
 	const before = ok(git(remote, ['rev-parse', 'main']));
@@ -255,6 +266,7 @@ test('V3 pre-push: a hook swapped by a branch cannot let a main push out in the 
 	assert.match(r.stderr, /changed outside install/i);
 });
 
+// why: guards rule:outward-acts
 test('V3 pre-push: with hooks turned off in the project settings, even a feature push is refused', () => {
 	const { proj, remote } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'settings.local.json'), JSON.stringify({ disableAllHooks: true }));
@@ -265,6 +277,31 @@ test('V3 pre-push: with hooks turned off in the project settings, even a feature
 	assert.equal(git(remote, ['rev-parse', '-q', '--verify', 'refs/heads/feature/x']).status, 1);
 });
 
+// why: guards rule:outward-acts (the remote's default branch and an existing main take a PR; the owner 2026-11-11).
+// The 1.26.0 carry-overs C5 (V4) and C19: the default branch was read from the local origin/HEAD, which a command can
+// move, and "a new repo's first push" was judged by that one branch, so main went out new beside an existing master.
+test('C5 C19 pre-push: the default branch and a new repo are asked of the remote itself', () => {
+	const { proj, remote } = setup();
+	ok(git(proj, ['checkout', '-q', '-b', 'feat/base']));
+	ok(git(proj, ['push', '-q', 'origin', 'feat/base']));
+	ok(git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/feat/base']));
+	ok(git(proj, ['remote', 'set-head', 'origin', 'main']));
+	fs.writeFileSync(path.join(proj, 'b.md'), 'b\n');
+	ok(git(proj, ['add', 'b.md']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: b']));
+	const r = aiPush(proj, 'feat/base');
+	assert.notEqual(r.status, 0, 'a push to the remote\'s default branch went out with no yes');
+	assert.match(r.stderr, /default branch/);
+	// A remote with master only is no new repo: main is no first push there.
+	const other = path.join(path.dirname(remote), 'other.git');
+	ok(git(path.dirname(remote), ['init', '-q', '--bare', '-b', 'master', other]));
+	ok(git(proj, ['push', '-q', other, 'HEAD:refs/heads/master']));
+	const m = git(proj, ['push', other, 'HEAD:refs/heads/main'], { CLAUDECODE: '1', KIT_PUSH_APPROVED: '1' });
+	assert.notEqual(m.status, 0);
+	assert.match(m.stderr, /not new/);
+});
+
+// why: guards rule:outward-acts
 test('V3 pre-push: an intact install still lets an AI push a feature branch', () => {
 	const { proj, remote } = setup();
 	ok(git(proj, ['checkout', '-q', '-b', 'feature/ok']));
@@ -275,6 +312,7 @@ test('V3 pre-push: an intact install still lets an AI push a feature branch', ()
 
 const status = (home, proj) => kitStatus({ kit: KIT, home, projectDir: proj, ahead: () => 0, protection: () => null, newest: () => null, inodes: () => ({ level: 'ok', text: '' }), claudeVersion: () => '2.1.302 (Claude Code)' });
 
+// why: guards rule:outward-acts
 test('V3 status: a guard file changed outside install is a gap, never the project\'s own values', () => {
 	const { home, proj } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
@@ -287,6 +325,7 @@ test('V3 status: a guard file changed outside install is a gap, never the projec
 
 // B22 (the 1.25.1 sweep, a low): status hashed the guard files but not the shims, and did not list a hook added to
 // .githooks, while the launcher holds every call for both. Status reads the same check the launcher runs.
+// why: guards rule:outward-acts
 test('B22 status: a swapped hook shim and a hook added to .githooks are gaps, as the launcher holds them', () => {
 	const { home, proj } = setup();
 	fs.appendFileSync(path.join(guardDir(home, proj), 'hooks', 'pre-push'), '\nexit 0\n');
@@ -301,6 +340,7 @@ test('B22 status: a swapped hook shim and a hook added to .githooks are gaps, as
 	assert.match(r.text, /hooks\/push-to-checkout/);
 });
 
+// why: guards rule:outward-acts
 test('V3 status: hooks turned off in the project settings is a gap', () => {
 	const { home, proj } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'settings.local.json'), JSON.stringify({ disableAllHooks: true }));
@@ -309,6 +349,7 @@ test('V3 status: hooks turned off in the project settings is a gap', () => {
 	assert.match(r.text, /disableAllHooks/);
 });
 
+// why: guards rule:outward-acts
 test('V3 install: a plain install project restores a swapped guard file and keeps a backup', () => {
 	const { home, proj, session: s } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
@@ -320,6 +361,7 @@ test('V3 install: a plain install project restores a swapped guard file and keep
 	assert.equal(bash(s, 'git push origin main').decision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 fix line: while held, the install that restores the guards may run, alone', () => {
 	const { proj, session: s } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
@@ -334,6 +376,7 @@ test('V3 fix line: while held, the install that restores the guards may run, alo
 
 // The second pass on 0772397 (role 1): the fix line was matched by path.resolve on a loose regex, so a preload flag or a
 // path that climbs out and back in passed as the fix line.
+// why: guards rule:outward-acts
 test('V3 fix line: only the exact command passes, with the kit script and the project as full paths', () => {
 	const { proj, session: s } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
@@ -364,6 +407,7 @@ test('V3 fix line: only the exact command passes, with the kit script and the pr
 
 // The second pass on 0772397 (role 1): the fix line runs the install from the kit folder, which nothing checked; a branch
 // checked out there, or one changed file, made the held install record a swapped guard as good.
+// why: guards rule:outward-acts
 test('V3 fix line: a kit folder changed since the install no longer offers the fix line', () => {
 	const tmp = kitTemp.makeTemp('v3kit-');
 	const kit = path.join(tmp, 'kit');
@@ -390,6 +434,7 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 
 // W2 (the 1.25.1 verify): the kit pin refused a kit folder that is a git worktree (a .git file), so the held install's
 // fix line was never offered there. A worktree is pinned by its own git folder and the shared one it names.
+// why: guards rule:outward-acts
 test('W2 fix line: a kit folder that is a git worktree is pinned, and a change to its git config unpins it', () => {
 	const launch = createRequire(import.meta.url)('../user/kit-tools/kit-launch.cjs');
 	const tmp = kitTemp.makeTemp('w2kit-');
@@ -415,6 +460,7 @@ test('W2 fix line: a kit folder that is a git worktree is pinned, and a change t
 // B20 (the security review on 1.25.1): the release check and the fix line's fingerprint are read before install reads
 // the kit's files, so a process left running could swap a kit file in between and install would copy it. A release
 // install now copies only bytes that match the release tag's own tree.
+// why: guards rule:outward-acts
 test('B20 release install: a kit file changed after the release check is refused, never copied', () => {
 	const tmp = kitTemp.makeTemp('b20kit-');
 	const kit = path.join(tmp, 'kit');
@@ -431,9 +477,34 @@ test('B20 release install: a kit file changed after the release check is refused
 	assert.doesNotMatch(fs.readFileSync(path.join(proj, '.claude', 'guard.cjs'), 'utf8'), /swapped after the check/);
 });
 
+// why: guards rule:security-standards (a release install copies only the release's bytes). The 1.26.0 carry-overs: a
+// release check that found no tree id fell back to reading the folder (S4), and the config, the owner profile and
+// VERSION, which install renders into every file, were read from the folder unchecked (C4).
+test('B20 release install: no tree id is a refusal, and the config, profile and VERSION are checked too', () => {
+	const tmp = kitTemp.makeTemp('b20cfg-');
+	const kit = path.join(tmp, 'kit');
+	fs.cpSync(KIT, kit, { recursive: true, filter: (src) => !/[\\/](\.git|reports|node_modules|tests|vendor)$/.test(src) });
+	ok(git(kit, ['init', '-q', '-b', 'main']));
+	ok(git(kit, ['add', '-A']));
+	ok(git(kit, ['commit', '-q', '--no-verify', '-m', 'release']));
+	const tree = ok(git(kit, ['rev-parse', 'HEAD^{tree}']));
+	const { home, proj } = setup();
+	assert.throws(() => install({ kit, home, target: 'project', projectDir: proj, release: { release: true, tree: null } }), /Install refused/);
+	const profile = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')).ownerProfileFile || 'owner-profile.md';
+	for (const file of ['kit.config.json', profile, 'VERSION']) {
+		const at = path.join(kit, file);
+		const was = fs.readFileSync(at);
+		fs.writeFileSync(at, file === 'kit.config.json' ? JSON.stringify({ ...JSON.parse(was), ownerName: 'Swapped' }) : file === 'VERSION' ? '9.9.9\n' : `${was}\n- swapped after the check\n`);
+		try {
+			assert.throws(() => install({ kit, home: kitTemp.makeTemp('b20home-'), target: 'user', release: { release: true, tree } }), /changed since the release check/, file);
+		} finally { fs.writeFileSync(at, was); }
+	}
+});
+
 // The security review on c453ec1: core.fsmonitor names a program git runs on git status and git ls-files (proven on
 // Git for Windows, 2026-11-11). The held fix line runs install, which runs git in the kit folder and in the project; a
 // program named in the project's git config or the user's global one would run inside the one call a hold lets through.
+// why: guards rule:outward-acts
 test('V3 fix line: the install it runs starts no program a git config names', () => {
 	const { root, home, proj } = setup();
 	const ran = posix(path.join(root, 'RAN'));
@@ -456,6 +527,7 @@ test('V3 fix line: the install it runs starts no program a git config names', ()
 // The security review on e4b3203: on Windows a program is looked for in the current folder before PATH, and the fix line
 // runs from the project, so a git.exe the agent left there would run inside the held install. A copy of node named
 // git.exe stands in for it here; NODE_OPTIONS makes it leave a mark if it ever starts (the real git ignores it).
+// why: guards rule:outward-acts
 test('V3 fix line: the install it runs never starts a git found in the current folder', { skip: process.platform !== 'win32' }, () => {
 	const { root, home, proj } = setup();
 	const mark = path.join(root, 'PLANTED');
@@ -475,6 +547,7 @@ test('V3 fix line: the install it runs never starts a git found in the current f
 	assert.equal(fs.existsSync(mark), false, 'a git.exe in the current folder ran during install');
 });
 
+// why: guards rule:outward-acts
 test('V3 wiring: install user wires the launcher on every tool and the settings check, once', () => {
 	const { root } = setup();
 	// Named as the real one is, so the guards that read a path by its .claude folder see it as the owner's.
@@ -490,6 +563,7 @@ test('V3 wiring: install user wires the launcher on every tool and the settings 
 	assert.equal(named(user.hooks.UserPromptSubmit, 'kit-gate.cjs').length, 1, 'the kit gate stays');
 });
 
+// why: guards rule:outward-acts
 test('V3 wiring: in a folder with no kit install the launcher says nothing and lets every call through', () => {
 	const { root, home } = setup();
 	const other = path.join(root, 'other');
@@ -500,6 +574,7 @@ test('V3 wiring: in a folder with no kit install the launcher says nothing and l
 	assert.equal(r.stdout.trim(), '');
 });
 
+// why: guards rule:outward-acts
 test('V3 worktree: a session in a worktree under the project is guarded by the project record', () => {
 	const { proj, home } = setup();
 	const wt = path.join(proj, '.claude', 'worktrees', 'w1');
@@ -513,6 +588,7 @@ test('V3 worktree: a session in a worktree under the project is guarded by the p
 
 // The 1.25.1 security review: the record and the shims are what the launcher trusts, so a tool may not write them, a
 // shim swapped there holds every call, and a kit project whose record is gone runs no call until install writes it.
+// why: guards rule:outward-acts
 test('V3 record: a tool that writes the guard record or a shim is held, and a swapped shim holds every call', () => {
 	const { home, proj, session: s } = setup();
 	const dir = path.join(home, 'kit-guard', fs.readdirSync(path.join(home, 'kit-guard'))[0]);
@@ -524,6 +600,7 @@ test('V3 record: a tool that writes the guard record or a shim is held, and a sw
 	assert.match(d.reason, /kit-guard hooks\/pre-push/);
 });
 
+// why: guards rule:outward-acts
 test('V3 record: a kit project whose record is gone holds every call but the install line', () => {
 	const { home, proj, session: s } = setup();
 	fs.rmSync(path.join(home, 'kit-guard'), { recursive: true });
@@ -540,6 +617,7 @@ const ALLOW_ALL = (dir) => {
 	return posix(f);
 };
 
+// why: guards rule:outward-acts
 test('V3 env: a settings env key that changes how node, git or the guards start is refused mid-session and holds every call', () => {
 	for (const [key, value] of [['NODE_OPTIONS', '--require x.cjs'], ['PATH', '/tmp/evil'], ['GIT_CONFIG_PARAMETERS', "'core.hookspath'='/tmp'"], ['NODE_PATH', '/tmp'], ['SHELLOPTS', 'xtrace'], ['PS4', '$(id)'], ['BASH_FUNC_node%%', '() { :; }']]) {
 		const { proj, session: s } = setup();
@@ -552,6 +630,7 @@ test('V3 env: a settings env key that changes how node, git or the guards start 
 	}
 });
 
+// why: guards rule:outward-acts
 test('V3 env: NODE_OPTIONS planted before the session starts cannot load code into the launcher', () => {
 	const { root, home, proj } = setup();
 	fs.writeFileSync(path.join(proj, '.claude', 'settings.json'), JSON.stringify({ env: { NODE_OPTIONS: `--require ${ALLOW_ALL(root)}` } }));
@@ -561,6 +640,7 @@ test('V3 env: NODE_OPTIONS planted before the session starts cannot load code in
 	assert.match(d.reason, /NODE_OPTIONS/);
 });
 
+// why: guards rule:outward-acts
 test('V3 settings: a settings file with a byte-order mark is read, not skipped', () => {
 	const { proj, session: s } = setup();
 	const local = path.join(proj, '.claude', 'settings.local.json');
@@ -569,6 +649,7 @@ test('V3 settings: a settings file with a byte-order mark is read, not skipped',
 	assert.match(bash(s, 'git status').reason, /disableAllHooks/);
 });
 
+// why: guards rule:outward-acts
 test('V3 hooksPath: every way git can take another hooks path is held, not just the first line of .git/config', () => {
 	const evil = (proj) => posix(path.join(proj, '..', 'evil-hooks'));
 	const NL = String.fromCharCode(10), TAB = String.fromCharCode(9);
@@ -595,6 +676,7 @@ test('V3 hooksPath: every way git can take another hooks path is held, not just 
 	assert.equal(s.decide('Write', { file_path: path.join(proj, '.git', 'config.worktree'), content: '[core]' }).decision, 'deny', 'a tool writes .git/config.worktree');
 });
 
+// why: guards rule:outward-acts
 test('V3 host hooks: a host that keeps its own hooks in .githooks still runs every one of them after install', () => {
 	const { proj } = setup({
 		before: (p) => {
@@ -610,6 +692,7 @@ test('V3 host hooks: a host that keeps its own hooks in .githooks still runs eve
 
 // B19 (the security review on 1.25.1): the shims for git's other hooks ran the project's hook with no check, so a
 // branch that carries a new .githooks/post-checkout ran it inside the very checkout that wrote it.
+// why: guards rule:outward-acts
 test('B19 shims: a hook a branch carries never runs in the checkout that brings it', () => {
 	const { proj } = setup();
 	ok(git(proj, ['checkout', '-q', '-b', 'feature/evil']));
@@ -626,6 +709,7 @@ test('B19 shims: a hook a branch carries never runs in the checkout that brings 
 
 // The second pass on 0772397 (role 1): the shims run any hook in .githooks, and one added after install was in no record,
 // so it ran with no hold. A host's own hooks there at the first install are recorded as they stand.
+// why: guards rule:outward-acts
 test('V3 host hooks: a hook added to .githooks after install holds every call until the owner accepts it', () => {
 	const HOOK = ['#!/bin/sh', 'echo ran', ''].join(String.fromCharCode(10));
 	const { home, proj, session: s } = setup({
@@ -648,6 +732,7 @@ test('V3 host hooks: a hook added to .githooks after install holds every call un
 // loaded them again from their real place, so a swap between the two ran unverified code (6 of 40 tries passed).
 // The security review on 330dbbf: a link swapped after the check can send a require outside the project, where the
 // loader read the file from disk. The guard process loads only the bytes it checked, and the config folder's own hooks.
+// why: guards rule:outward-acts
 test('V3 links: the guard process never loads a file from outside the record and the config folder', () => {
 	const { root, home, proj } = setup();
 	const mark = posix(path.join(root, 'LOADED'));
@@ -668,6 +753,7 @@ test('V3 links: the guard process never loads a file from outside the record and
 // B23 (the security review on the 1.25.1 push): the loader still took any file under the config folder, so a file a
 // tool wrote there (or one of the kit's hooks changed since install user) loaded into the guard process. Only the
 // kit's own hook files, with the bytes install user recorded, load from there.
+// why: guards rule:outward-acts
 test('B23 loader: from the config folder only the kit hook files install user recorded load', () => {
 	const { root, home, proj } = setup();
 	const mark = posix(path.join(root, 'LOADED'));
@@ -693,6 +779,7 @@ test('B23 loader: from the config folder only the kit hook files install user re
 });
 
 // The 1.26.0 sweep: a kit hook with no "exports.check" ran as its own node process, past B23's hash check.
+// why: guards rule:outward-acts
 test('B23 loader: a changed kit hook in the old one-process shape never runs either', () => {
 	const { root, home, proj } = setup();
 	const mark = posix(path.join(root, 'RAN'));
@@ -701,6 +788,7 @@ test('B23 loader: a changed kit hook in the old one-process shape never runs eit
 	assert.equal(fs.existsSync(mark), false, 'a changed kit hook ran as its own process');
 });
 
+// why: guards rule:outward-acts
 test('V3 links: a guard file reached through a junction or link holds every call', () => {
 	const { root, proj, session: s } = setup();
 	const real = path.join(root, 'real-claude');
@@ -710,6 +798,7 @@ test('V3 links: a guard file reached through a junction or link holds every call
 	assert.match(bash(s, 'git status').reason, /link/i);
 });
 
+// why: guards rule:outward-acts
 test('V3 host hooks: install never overwrites a git hook the host tracks, and still guards it', () => {
 	const HOST = ['#!/bin/sh', 'echo host-pre-commit', ''].join(String.fromCharCode(10));
 	const { home, proj, session: s } = setup({
@@ -731,6 +820,7 @@ test('V3 host hooks: install never overwrites a git hook the host tracks, and st
 	assert.equal(bash(s, 'git status').decision, 'allow');
 });
 
+// why: guards rule:outward-acts
 test('V3 upgrade: install takes the old guard entry out of a settings.json the owner changed, and keeps the rest', () => {
 	const { home, proj } = setup();
 	const file = path.join(proj, '.claude', 'settings.json');
@@ -751,6 +841,7 @@ test('V3 upgrade: install takes the old guard entry out of a settings.json the o
 
 // The second pass on 0772397 (role 2): the cleanup read settings.json without taking off a byte-order mark, so the parse
 // failed and the old entry stayed; and the use check names settings.local.json, which the cleanup never read.
+// why: guards rule:outward-acts
 test('V3 upgrade: the old guard entry comes out of a settings file with a byte-order mark, and out of settings.local.json', () => {
 	const { home, proj } = setup();
 	const entry = [{ matcher: '.*', hooks: [{ type: 'command', command: 'node', args: [`${posix(proj)}/.claude/guard.cjs`], timeout: 10, onFailure: 'block' }] }];
@@ -768,6 +859,7 @@ test('V3 upgrade: the old guard entry comes out of a settings file with a byte-o
 	assert.equal(use.parts.find((p) => p.name === 'guards').wired.ok, true);
 });
 
+// why: guards rule:outward-acts
 test('V3 user settings: a launcher entry kept by name but made harmless is refused mid-session, and status calls it a fault', () => {
 	const launch = (list) => list.find((e) => JSON.stringify(e).includes('kit-launch'));
 	const breakers = {
@@ -795,6 +887,7 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 	}
 });
 
+// why: guards rule:outward-acts
 test('V3 config folder inside a project: the user slip-catchers still run', () => {
 	const { home, proj } = setup({ homeAt: path.join('app', 'u', '.claude') });
 	const cap = "exports.check = () => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'cap reached' } });\n";
@@ -812,11 +905,13 @@ test('V3 config folder inside a project: the user slip-catchers still run', () =
 // B17 (the 1.25.1 sweep): the emulator ran a shell-form hook with the bash PATH finds first. From PowerShell on Windows
 // that is WSL's bash, which cannot run the launcher line, so the suite failed at its baseline and a deny-only test
 // passed for the wrong reason. Claude Code runs these lines with Git Bash, so the emulator does too.
+// why: guards rule:outward-acts
 test('B17 emulator: a shell-form hook runs in Git Bash on Windows, whatever bash PATH finds first', { skip: process.platform !== 'win32' }, () => {
 	const r = spawnSync(BASH, ['-c', 'uname -s'], { encoding: 'utf8', env: { ...ENV, PATH: path.dirname(process.execPath) } });
 	assert.match(r.stdout, /MINGW|MSYS/, `the emulator's shell is ${BASH}: ${r.stdout}${r.stderr}`);
 });
 
+// why: guards rule:outward-acts
 test('V3 record names: two projects whose names differ only in punctuation keep separate records', () => {
 	assert.notEqual(guardDir('/h', '/w/app-x'), guardDir('/h', '/w/app_x'));
 	assert.notEqual(guardDir('/h', '/w/app.x'), guardDir('/h', '/w/app-x'));
@@ -824,6 +919,7 @@ test('V3 record names: two projects whose names differ only in punctuation keep 
 
 // B13 (the 1.25.1 sweep): the shims sit at <config>/kit-guard/<the whole project path, then a hash>/hooks/<name>. A long
 // project path took that past Windows' 260 characters, git found no hook there, and the kit hooks stopped silently.
+// why: guards rule:outward-acts
 test('B13 record names: a long project path still gives a shim path git can open on Windows', () => {
 	const deep = (tail) => '/w/' + 'a-very-long-folder-name/'.repeat(12) + tail;
 	const shim = path.join(guardDir('D:/a-home-folder/.claude', deep('app')), 'hooks', 'p4-prepare-changelist');
@@ -835,18 +931,21 @@ test('B13 record names: a long project path still gives a shim path git can open
 	assert.equal(path.basename(guardDir('/h', '/w/app')), was, 'a short path lost the record name 1.25.1 gave it');
 });
 
+// why: guards rule:outward-acts
 test('V3 launcher: input it cannot read inside a kit project holds the call', () => {
 	const { home, proj } = setup();
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: 'not json', encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj } });
 	assert.equal(JSON.parse(r.stdout || '{}').hookSpecificOutput?.permissionDecision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 record: the install record and a config folder with another name are guarded too', () => {
 	const { home, proj, session: s } = setup({ homeAt: 'cfg' });
 	assert.equal(s.decide('Write', { file_path: path.join(home, 'kit-install.json'), content: '{"kitDir":"/tmp/evil"}' }).decision, 'deny');
 	assert.equal(s.decide('Write', { file_path: path.join(guardDir(home, proj), 'record.json'), content: '{}' }).decision, 'deny');
 });
 
+// why: guards rule:outward-acts
 test('V3 shims: a project folder with a dollar sign in its name still commits through the shims', () => {
 	const { proj } = setup({ projName: 'app$x' });
 	fs.writeFileSync(path.join(proj, 'README.md'), 'two\n');
@@ -856,6 +955,7 @@ test('V3 shims: a project folder with a dollar sign in its name still commits th
 
 // ---- The automatic review of 670b3a2 (fix all). ----
 
+// why: guards rule:outward-acts
 test('V3 hooksPath: a git config the launcher cannot read holds every call', () => {
 	const { proj, session: s } = setup();
 	const cfg = path.join(proj, '.git', 'config');
@@ -866,6 +966,7 @@ test('V3 hooksPath: a git config the launcher cannot read holds every call', () 
 	assert.match(d.reason, /hooksPath/);
 });
 
+// why: guards rule:outward-acts
 test('V3 install: a kit guard file is put back even when the project stamp was edited to forget it', () => {
 	const { home, proj } = setup();
 	const stamp = path.join(proj, '.kit', 'kit-version.json');
@@ -879,6 +980,7 @@ test('V3 install: a kit guard file is put back even when the project stamp was e
 	assert.ok(r.replaced.includes('.githooks/pre-push'));
 });
 
+// why: guards rule:outward-acts
 test('V3 host hooks: a swapped host hook stays held through a reinstall until the owner accepts it', () => {
 	const HOST = ['#!/bin/sh', 'echo host-pre-commit', ''].join(String.fromCharCode(10));
 	const { home, proj, session: s } = setup({
@@ -905,6 +1007,7 @@ test('V3 host hooks: a swapped host hook stays held through a reinstall until th
 // B16 (the 1.25.1 sweep): in tracked mode the project stamp is in git, so a branch can edit it. On the first install
 // with no outside record, install read "the kit never wrote this file" from that stamp and recorded a swapped
 // guard.cjs as the host's own. Now such a file holds every call until the owner accepts it.
+// why: guards rule:outward-acts
 test('B16 first record: a tracked stamp that forgets a swapped kit guard file does not make it the host\'s', () => {
 	const { home, proj, session: s } = setup();
 	fs.rmSync(guardDir(home, proj), { recursive: true, force: true });
@@ -921,6 +1024,7 @@ test('B16 first record: a tracked stamp that forgets a swapped kit guard file do
 
 // The 1.26.0 sweep: the first-install hold named install project --force as a way out, but --force wrote the kit's copy
 // and the hold stayed. Either way out the refusal names must lift it.
+// why: guards rule:outward-acts
 test('B16 first record: the --force way out puts the kit\'s copy back and lifts the hold', () => {
 	const { home, proj, session: s } = setup({
 		before: (p) => {
@@ -937,6 +1041,7 @@ test('B16 first record: the --force way out puts the kit\'s copy back and lifts 
 
 // B15 (the 1.25.1 sweep): a host hook that differs between branches held after a plain checkout, and accepting it on
 // one branch held the other. Each version the owner accepts stays accepted; a version never accepted still holds.
+// why: guards rule:outward-acts
 test('B15 host hooks: a host hook accepted on each branch no longer holds a plain checkout', () => {
 	const NL = String.fromCharCode(10);
 	const { home, proj, session: s } = setup({
@@ -963,8 +1068,168 @@ test('B15 host hooks: a host hook accepted on each branch no longer holds a plai
 	assert.equal(bash(s, 'git status').decision, 'deny', 'a third version, never accepted, passed');
 });
 
+// why: guards rule:security-standards (a guard file is the kit's unless the owner accepts the project's own). The
+// 1.26.0 carry-overs: on a reinstall a guard file a later release adds, already tracked by a branch, was taken as the
+// host's and recorded as good (C1); a host entry for a kit file from a record written before the owner had to accept
+// one stayed accepted (C10).
+const hostHook = (p) => {
+	fs.mkdirSync(path.join(p, '.githooks'));
+	fs.writeFileSync(path.join(p, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo host', ''].join(String.fromCharCode(10)));
+	ok(git(p, ['add', '.githooks/pre-commit']));
+	ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
+};
+// why: guards rule:outward-acts
+test('C1 reinstall: a guard file a later release adds, already tracked by a branch, holds until the owner accepts it', () => {
+	const { home, proj, session: s } = setup();
+	const kit = path.join(kitTemp.makeTemp('c1kit-'), 'kit');
+	fs.cpSync(KIT, kit, { recursive: true, filter: (src) => !/[\\/](\.git|reports|node_modules|tests|vendor)$/.test(src) });
+	fs.writeFileSync(path.join(kit, 'project', '.claude', 'later-guard.cjs'), "'use strict';\nmodule.exports = {};\n");
+	fs.writeFileSync(path.join(proj, '.claude', 'later-guard.cjs'), EVIL_GUARD);
+	ok(git(proj, ['add', '-f', '.claude/later-guard.cjs']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'chore: plant']));
+	const r = install({ kit, home, target: 'project', projectDir: proj });
+	assert.ok(r.skipped.some((x) => x.file === '.claude/later-guard.cjs'), 'the planted file was recorded as the host\'s');
+	assert.equal(bash(s, 'git status').decision, 'deny');
+	install({ kit, home, target: 'project', projectDir: proj, acceptHost: ['.claude/later-guard.cjs'] });
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the owner\'s accept is the way out');
+});
+// why: guards rule:outward-acts
+test('C10 reinstall: a kit file a record took as the host\'s before the owner had to accept it holds until accepted', () => {
+	const { home, proj, session: s } = setup({ before: hostHook });
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
+	// A record from before the owner's accept was kept: the host entry is there, the accept is not.
+	const file = path.join(guardDir(home, proj), 'record.json');
+	const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+	delete rec.ownerAccepted;
+	rec.version = '1.25.1';
+	fs.writeFileSync(file, JSON.stringify(rec, null, 2));
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a host entry the owner never accepted stayed accepted');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
+});
+
+// why: catches a lost record on upgrade (the 1.26.0 carry-over C2): B13 cut long record names, and a record 1.25.1 wrote
+// under the whole name was no longer found, so the owner's host accepts were lost.
+test('C2 record names: install finds a long-named record 1.25.1 wrote, keeps its accepts and moves it', () => {
+	const { home, proj, session: s } = setup({ projName: 'app-with-a-long-name-' + 'x'.repeat(40), before: hostHook });
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	const now = guardDir(home, proj);
+	const full = process.platform === 'win32' ? path.resolve(proj).toLowerCase() : path.resolve(proj);
+	const legacy = path.join(home, 'kit-guard', `${full.replace(/[^A-Za-z0-9]/g, '-')}-${crypto.createHash('sha256').update(full).digest('hex').slice(0, 10)}`);
+	assert.notEqual(now, legacy, 'the test path is not long enough to be cut');
+	fs.renameSync(now, legacy);
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.equal(fs.existsSync(legacy), false, 'the old record was left behind');
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the owner\'s accept was lost with the old record');
+});
+
+// why: guards rule:security-standards (every shim checks the guard files before a project hook runs). The 1.26.0
+// carry-over C9: a project installed before the shims checked every hook kept its old shims until install project ran.
+test('C9 install user: every recorded project gets the current shims, and the launcher still passes', () => {
+	const { home, proj, session: s } = setup();
+	const hooks = path.join(guardDir(home, proj), 'hooks');
+	const file = path.join(guardDir(home, proj), 'record.json');
+	const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+	// An old shim: it runs the project hook with no check first.
+	const old = ['#!/bin/sh', `[ -x '${posix(proj)}/.githooks/post-checkout' ] || exit 0`, `exec '${posix(proj)}/.githooks/post-checkout' "$@"`, ''].join(String.fromCharCode(10));
+	fs.writeFileSync(path.join(hooks, 'post-checkout'), old);
+	rec.shims['post-checkout'] = crypto.createHash('sha256').update(old).digest('hex');
+	fs.writeFileSync(file, JSON.stringify(rec, null, 2));
+	install({ kit: KIT, home, target: 'user' });
+	assert.match(fs.readFileSync(path.join(hooks, 'post-checkout'), 'utf8'), /git-hook/, 'the old shim was kept');
+	assert.equal(bash(s, 'git status').decision, 'allow');
+});
+
+// why: guards rule:first-push-gate (the 1.27.0 sweep, high): the new shims run a project's hooks from the launcher's
+// copy, which only a 1.27.0 first-push-check can place; a project still on an older kit could no longer commit, so
+// install user leaves its shims and names the project.
+test('install user leaves the shims of a project still on an older kit, and says so', () => {
+	const { home, proj } = setup();
+	const hooks = path.join(guardDir(home, proj), 'hooks');
+	const file = path.join(guardDir(home, proj), 'record.json');
+	const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+	const shim = (name) => fs.readFileSync(path.join(hooks, name), 'utf8');
+	const before = shim('pre-commit');
+	// A 1.26.0 first-push-check finds its project from its own folder only.
+	const fpc = path.join(proj, '.claude', 'first-push-check.mjs');
+	fs.writeFileSync(fpc, fs.readFileSync(fpc, 'utf8').replace(/process\.env\.KIT_HOOK_PROJECT \? path\.resolve\(process\.env\.KIT_HOOK_PROJECT\) : /, '').split('\n').filter((l) => !/^\/\/.*KIT_HOOK_PROJECT/.test(l)).join('\n'));
+	assert.doesNotMatch(fs.readFileSync(fpc, 'utf8'), /KIT_HOOK_PROJECT/, 'the old script was not made');
+	fs.writeFileSync(path.join(hooks, 'pre-commit'), before + '# old\n');
+	rec.shims['pre-commit'] = crypto.createHash('sha256').update(before + '# old\n').digest('hex');
+	// The record accepted this older file, as an install project of the older kit would have.
+	const older = crypto.createHash('sha256').update(fs.readFileSync(fpc)).digest('hex');
+	rec.files['.claude/first-push-check.mjs'] = older;
+	fs.writeFileSync(file, JSON.stringify(rec, null, 2));
+	const r = install({ kit: KIT, home, target: 'user' });
+	assert.equal(shim('pre-commit'), before + '# old\n', 'an older project got shims its hooks cannot run under');
+	assert.ok(r.skipped.some((x) => x.reason.includes(posix(proj)) && /install project/.test(x.reason)), JSON.stringify(r.skipped));
+	// An old-looking file the record never accepted is not an older kit: the project gets this release's shims (the
+	// security review of the fix: the project's live file alone must not keep the old shims).
+	fs.appendFileSync(fpc, '// edited\n');
+	const r2 = install({ kit: KIT, home, target: 'user' });
+	assert.notEqual(shim('pre-commit'), before + '# old\n', 'an unrecorded file kept the old shims');
+	assert.ok(!r2.skipped.some((x) => x.reason.includes('runs an older kit')), JSON.stringify(r2.skipped));
+});
+
+// why: guards rule:security-standards (the hook that runs is the one the launcher checked). The 1.26.0 carry-over C11:
+// a shim checked the hook's hash, then ran the project's file by its path, so a swap in between ran.
+test('C11 shims: a git hook runs from the copy the launcher checked, never from the project file read again', () => {
+	const { home, proj } = setup();
+	const hooks = path.join(guardDir(home, proj), 'hooks');
+	for (const name of ['pre-commit', 'post-checkout']) assert.doesNotMatch(fs.readFileSync(path.join(hooks, name), 'utf8'), /exec '[^']*\.githooks\//, `${name} runs the project's file`);
+	fs.writeFileSync(path.join(proj, 'a.md'), 'a\n');
+	ok(git(proj, ['add', 'a.md']));
+	ok(git(proj, ['commit', '-q', '-m', 'docs: a']));
+	const runs = path.join(guardDir(home, proj), 'run');
+	const copies = fs.readdirSync(runs);
+	assert.equal(copies.length, 1, 'the checked copy was not written');
+	assert.equal(fs.readFileSync(path.join(runs, copies[0], '.githooks', 'pre-commit'), 'utf8'), fs.readFileSync(path.join(proj, '.githooks', 'pre-commit'), 'utf8'));
+	// A copy changed after it was written is written afresh before it runs (the review on cfd3813).
+	fs.writeFileSync(path.join(runs, copies[0], '.githooks', 'pre-commit'), '#!/bin/sh\nexit 0\n');
+	fs.writeFileSync(path.join(runs, copies[0], 'extra'), 'x');
+	const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
+	const r = spawnSync(process.execPath, [launcher, 'git-hook', proj, 'pre-commit'], { encoding: 'utf8', env: { ...ENV, CLAUDE_CONFIG_DIR: home } });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(fs.readFileSync(r.stdout, 'utf8'), fs.readFileSync(path.join(proj, '.githooks', 'pre-commit'), 'utf8'), 'a changed copy ran');
+	assert.equal(fs.existsSync(path.join(runs, copies[0], 'extra')), false);
+});
+
+// why: catches a blocked call (the 1.25.0 carry-over R4.2): old-shape user hooks ran up to 5 s each inside the guard's
+// 10 s, so two slow ones timed the guard out and the call was blocked.
+test('R4.2 slow old-shape kit hooks are cut short, and the call is answered well inside the guard time limit', () => {
+	const { home, proj } = setup();
+	const stampFile = path.join(home, 'kit-install.json');
+	const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+	const slow = 'setTimeout(() => {}, 60000);\n';
+	for (const f of ['canary.cjs', 'sweep-guard.cjs']) {
+		fs.writeFileSync(path.join(home, 'kit-hooks', f), slow);
+		stamp.files[`kit-hooks/${f}`] = crypto.createHash('sha256').update(slow).digest('hex');
+	}
+	fs.writeFileSync(stampFile, JSON.stringify(stamp, null, 2));
+	const input = { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: 'x' }, cwd: proj, session_id: 's1' };
+	const t0 = Date.now();
+	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify(input), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home }, timeout: 20000 });
+	assert.equal(r.status, 0, r.stderr);
+	assert.ok(Date.now() - t0 < 8000, `the guard took ${Date.now() - t0} ms`);
+	// A hook cut short says so, as a changed one does (C12).
+	assert.match(r.stdout, /canary.cjs ran out of its time/);
+});
+
+// why: catches a silent switch-off (the 1.26.0 carry-over C12): a kit hook the owner kept or merged by hand no longer
+// matches its recorded bytes, so the one guard process skips it; the session must hear that, not lose it in silence.
+test('C12 kit hooks: a changed kit hook that is skipped says so', () => {
+	const { home, proj } = setup();
+	fs.appendFileSync(path.join(home, 'kit-hooks', 'canary.cjs'), '\n// merged by hand\n');
+	const input = { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: 'x', subagent_type: 'reviewer' }, cwd: proj, session_id: 's1' };
+	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify(input), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home } });
+	assert.match(r.stdout, /canary\.cjs[^"]*install user/, `a skipped kit hook went unmentioned: ${r.stdout}`);
+});
+
 // The owner's pick A (2026-11-11): a broken launcher keeps blocking every tool, and the kit gate tells the owner why and what
 // to run, on every prompt, in any folder.
+// why: guards rule:outward-acts
 test('V3 broken launcher: the kit gate names it and the one command that repairs it', () => {
 	const { root, home } = setup();
 	const other = path.join(root, 'plain');
@@ -983,6 +1248,7 @@ test('V3 broken launcher: the kit gate names it and the one command that repairs
 
 // B14 (the 1.25.1 sweep): the launcher entry names node by the path install user recorded. A node moved or upgraded
 // blocks every call with "No such file", and the gate named only a missing launcher, so the owner saw no reason.
+// why: guards rule:outward-acts
 test('B14 moved node: the kit gate names the missing recorded node and the command that repairs it', () => {
 	const { root, home } = setup();
 	const other = path.join(root, 'plain');

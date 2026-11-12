@@ -23,6 +23,7 @@ const childRoot = (dir, tail = '') => node(`const t = require(${JSON.stringify(H
 // A pid no live process holds: a child that has already exited.
 const deadPid = () => spawnSync(process.execPath, ['-e', 'console.log(process.pid)'], { encoding: 'utf8' }).stdout.trim();
 
+// why: guards rule:probe-scope
 test('the run root sits in the real temp folder, names its owner pid, and every later temp folder lands inside it', () => {
 	assert.match(path.basename(tmpRoot), new RegExp(`^${ROOT_PREFIX}${process.pid}-`));
 	assert.equal(os.tmpdir(), tmpRoot);
@@ -31,6 +32,7 @@ test('the run root sits in the real temp folder, names its owner pid, and every 
 	assert.ok(fs.statSync(d).isDirectory());
 });
 
+// why: guards rule:probe-scope
 test('a root is removed on a normal exit and on SIGINT or SIGTERM, with the signal exit code', () => {
 	for (const [tail, code] of [['', 0], ["process.emit('SIGINT')", 130], ["process.emit('SIGTERM')", 143]]) {
 		const dir = base();
@@ -44,6 +46,7 @@ test('a root is removed on a normal exit and on SIGINT or SIGTERM, with the sign
 	}
 });
 
+// why: guards rule:probe-scope
 test('a killed run leaves its root, and the next run sweeps it because its owner pid is dead', () => {
 	const dir = base();
 	const r = childRoot(dir, "process.kill(process.pid, 'SIGKILL');");
@@ -54,6 +57,7 @@ test('a killed run leaves its root, and the next run sweeps it because its owner
 	assert.deepEqual(fs.readdirSync(dir), [], 'the next run swept the killed root and removed its own');
 });
 
+// why: guards rule:probe-scope
 test('the sweep keeps a live owner\'s root, so parallel shards never delete each other', () => {
 	const dir = base();
 	const live = path.join(dir, `${ROOT_PREFIX}${process.pid}-abc123`);
@@ -65,6 +69,7 @@ test('the sweep keeps a live owner\'s root, so parallel shards never delete each
 });
 
 // S22-K3: a test run inside a run makes its own root inside the outer one; the outer runner can die first.
+// why: guards rule:probe-scope
 test('the sweep keeps a dead runner\'s root while a run nested in it is still alive, and clears it after', () => {
 	const dir = base();
 	const outer = path.join(dir, `${ROOT_PREFIX}${deadPid()}-out123`);
@@ -76,6 +81,7 @@ test('the sweep keeps a dead runner\'s root while a run nested in it is still al
 	assert.deepEqual(sweepStale(dir), [outer], 'every run in it is over');
 });
 
+// why: guards rule:probe-scope
 test('the sweep clears a live pid\'s root only past a day (pid reuse), and an old-style root only past an hour', () => {
 	const dir = base();
 	const hours = (h) => new Date(Date.now() - h * 3600e3);
@@ -90,6 +96,7 @@ test('the sweep clears a live pid\'s root only past a day (pid reuse), and an ol
 	assert.ok(fs.existsSync(fresh) && fs.existsSync(legacyNew));
 });
 
+// why: guards rule:probe-scope
 test('the sweep touches only kit run roots: other names, files and look-alikes stay', () => {
 	const dir = base();
 	// A folder a person named like an old root (all lower-case letters) stays; mkdtemp's six random characters carry a
@@ -103,6 +110,7 @@ test('the sweep touches only kit run roots: other names, files and look-alikes s
 	assert.equal(fs.readdirSync(dir).length, keep.length + 1);
 });
 
+// why: guards rule:probe-scope
 test('withTemp removes its folder when the work throws, and passes the result through when it returns', () => {
 	let seen;
 	assert.throws(() => withTemp('wt-', (d) => { seen = d; fs.writeFileSync(path.join(d, 'f'), 'x'); throw new Error('boom'); }), /boom/);
@@ -111,6 +119,7 @@ test('withTemp removes its folder when the work throws, and passes the result th
 	assert.equal(fs.existsSync(seen), false);
 });
 
+// why: guards rule:probe-scope
 test('a removal that fails says so on stderr instead of passing silently', () => {
 	const r = node(`const t = require(${JSON.stringify(HELPER)}); require('fs').rmSync = () => { throw new Error('EBUSY: locked'); }; console.log(t.removeTemp(${JSON.stringify(path.join(tmpRoot, 'nope'))}));`);
 	assert.equal(r.status, 0, r.stderr);
@@ -119,6 +128,7 @@ test('a removal that fails says so on stderr instead of passing silently', () =>
 	assert.equal(removeTemp(makeTemp('ok-')), true);
 });
 
+// why: guards rule:probe-scope
 test('the inode level warns above half used and refuses above 80%, and reads unknown when the disk gives no count', () => {
 	assert.equal(inodeLevel({ files: 100, ffree: 60 }).level, 'ok');
 	assert.equal(inodeLevel({ files: 100, ffree: 50 }).level, 'ok');
@@ -131,6 +141,7 @@ test('the inode level warns above half used and refuses above 80%, and reads unk
 	assert.ok(['ok', 'warn', 'refuse', 'unknown'].includes(inodeUse(os.tmpdir()).level));
 });
 
+// why: guards rule:probe-scope
 test('a run refuses to start on a disk above 80% inodes used, and makes no root', () => {
 	const dir = base();
 	const r = node(`const t = require(${JSON.stringify(HELPER)}); const fs = require('fs'); fs.statfsSync = () => ({ files: 100, ffree: 10 }); try { t.sessionRoot(); } catch (e) { console.log(e.message); process.exit(3); }`, { TMPDIR: dir, TEMP: dir, TMP: dir });
@@ -149,6 +160,7 @@ function runner(files) {
 const helperUrl = JSON.stringify(pathToFileURL(HELPER).href);
 const head = `import { test } from 'node:test'; import t from ${helperUrl}; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; t.sessionRoot();`;
 
+// why: guards rule:probe-scope
 test('the runner passes a clean suite and leaves the temp folder as it found it', () => {
 	const r = runner({ 'a.test.mjs': `${head} test('ok', () => { t.makeTemp('a-'); });` });
 	assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -156,12 +168,14 @@ test('the runner passes a clean suite and leaves the temp folder as it found it'
 	assert.deepEqual(fs.readdirSync(r.dir), []);
 });
 
+// why: guards rule:probe-scope
 test('the runner fails a suite that leaves a folder in the real temp folder, and names it', () => {
 	const r = runner({ 'leak.test.mjs': `import { test } from 'node:test'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; test('leaks', () => { fs.mkdirSync(path.join(os.tmpdir(), 'leaked-by-test')); });` });
 	assert.notEqual(r.status, 0);
 	assert.match(r.stderr, /temp growth: 1.*leaked-by-test/s);
 });
 
+// why: guards rule:probe-scope
 test('the runner clears the root of a test file that was killed, so a killed run adds nothing', () => {
 	const r = runner({ 'killed.test.mjs': `${head} t.makeTemp('k-'); process.kill(process.pid, 'SIGKILL');` });
 	assert.notEqual(r.status, 0, 'the killed file still fails the run');
@@ -169,6 +183,7 @@ test('the runner clears the root of a test file that was killed, so a killed run
 	assert.deepEqual(fs.readdirSync(r.dir), []);
 });
 
+// why: guards rule:probe-scope
 test('another program\'s file in the system temp folder during a run is not counted as growth', () => {
 	const r = runner({ 'other.test.mjs': `${head} test('other', () => { fs.writeFileSync(path.join(process.env.KIT_REAL_TMP, 'someone-else.tmp'), ''); });` });
 	assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -176,6 +191,7 @@ test('another program\'s file in the system temp folder during a run is not coun
 	assert.ok(fs.existsSync(path.join(r.dir, 'someone-else.tmp')));
 });
 
+// why: guards rule:probe-scope
 test('the runner refuses to start when the temp disk is above 80% inodes used', () => {
 	const code = `require('fs').statfsSync = () => ({ files: 100, ffree: 15 }); import(${JSON.stringify(pathToFileURL(RUNNER).href)}).then((m) => m.main(['none.test.mjs'])).then((c) => process.exit(c));`;
 	const r = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8' });
@@ -184,6 +200,7 @@ test('the runner refuses to start when the temp disk is above 80% inodes used', 
 });
 
 // One helper: no other kit code calls mkdtemp itself, so no temp folder escapes the run root and its sweep.
+// why: guards rule:probe-scope
 test('no kit file calls mkdtemp except the temp helper', () => {
 	const roots = ['scripts', 'tests', 'user', 'project'];
 	// The helper, its built copy beside the merge gate, and this file (its pattern names the call).

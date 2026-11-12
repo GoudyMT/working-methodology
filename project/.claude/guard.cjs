@@ -33,6 +33,8 @@ const USER = [
 	['sweep-guard.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 ];
 
+const STARTED = Date.now();
+const USER_BUDGET_MS = 4000;
 const refuse = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 
 function userHooks() {
@@ -49,7 +51,7 @@ function answers(input) {
 		try {
 			out.push([file, require(path.join(__dirname, file)).check(input)]);
 		} catch (e) {
-			out.push([file, refuse(`Held: the kit guard ${file} could not run (${String(e && e.message).slice(0, 120)}), so this call is held. Reinstall the kit: node <kit>/scripts/kit.mjs install project .`)]);
+			out.push([file, refuse(`Held: the kit guard ${file} could not run (${String(e && e.message).slice(0, 120)}). The owner reinstalls the kit with install project.`)]);
 		}
 	}
 	// The kit hooks run only with the bytes install user recorded (B23, and the 1.26.0 sweep: one in the old shape ran
@@ -62,13 +64,24 @@ function answers(input) {
 		if (!fs.existsSync(where)) continue;
 		try {
 			const bytes = fs.readFileSync(where);
-			if (require('crypto').createHash('sha256').update(bytes).digest('hex') !== stamp[`kit-hooks/${file}`]) continue;
+			// A kit hook kept or merged by hand no longer matches what install user recorded: it is skipped, and the session
+			// is told so, never left to lose it in silence (the 1.26.0 sweep, C12).
+			if (require('crypto').createHash('sha256').update(bytes).digest('hex') !== stamp[`kit-hooks/${file}`]) {
+				out.push([file, { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `Kit: the kit hook ${file} differs from what install user recorded, so it did not run; the owner runs install user to put it back.` } }]);
+				continue;
+			}
 			const text = bytes.toString('utf8');
 			// A user layer from before the one process (1.24.0) has hooks that read stdin and export no check: loading one
 			// would run it here with no input, so it runs as its own process, from the checked bytes (the 1.25.0 sweep).
 			if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(text)) out.push([file, require(where).check(input)]);
 			else {
-				const r = require('child_process').spawnSync(process.execPath, ['-e', text], { input: JSON.stringify(input), encoding: 'utf8', timeout: 5000 });
+				// The old-shape hooks share one budget well inside the launcher's 10 s, so a slow one is skipped rather than
+				// timing out the whole guard, which blocks the call (the 1.25.0 sweep, R4.2).
+				const left = USER_BUDGET_MS - (Date.now() - STARTED);
+				const skipped = { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `Kit: the kit hook ${file} ran out of its time and did not finish; the owner runs install user to bring it up to date.` } };
+				if (left < 100) { out.push([file, skipped]); continue; }
+				const r = require('child_process').spawnSync(process.execPath, ['-e', text], { input: JSON.stringify(input), encoding: 'utf8', timeout: Math.min(2000, left) });
+				if (r.error || r.signal) { out.push([file, skipped]); continue; }
 				out.push([file, r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : null]);
 			}
 		} catch { /* a slip-catcher that fails lets the call through */ }

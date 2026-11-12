@@ -12,7 +12,9 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// The project this script was installed into. Run by a git hook, it is a copy the launcher checked, kept outside the
+// project (C11), and the hook shim names the project in KIT_HOOK_PROJECT.
+const PROJECT = process.env.KIT_HOOK_PROJECT ? path.resolve(process.env.KIT_HOOK_PROJECT) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...a) => spawnSync('git', ['-C', PROJECT, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 // The commit being checked may be in an agent worktree: git runs the hook at that worktree's top, so its index is
 // read there. The settings (.kit/) stay in the main checkout, where this script lives.
@@ -20,6 +22,7 @@ const gitHere = (...a) => spawnSync('git', ['-C', process.cwd(), '-c', 'core.quo
 // Secret-shaped file names and values (one home, shared with the branch scan). A value is never printed: only its
 // kind, file and commit.
 import { SECRET_FILE, SECRET_VALUE } from './secret-patterns.mjs';
+import { scanningNotes } from './github-scanning.mjs';
 
 // A glob from tracking.json, relative to the project folder: ** crosses folders, * and ? stay inside one. Like a
 // .gitignore line, a name also covers everything under it, so "school", "school/" and "school/**" agree.
@@ -128,6 +131,7 @@ function main(staged) {
 		for (const p of loose) console.log(`    ${p}`);
 	}
 	console.log(`Tracked files in ${head.slice(0, 7)}: ${inTree.length}. Review the list with: git ls-files`);
+	for (const n of scanningNotes(git('remote', '-v').stdout)) console.log(n);
 	if (checks.some((c) => c.bad.length)) {
 		console.log('First push NOT cleared. A path in history needs the history rewritten (or a fresh repo) before the first push.');
 		return 1;

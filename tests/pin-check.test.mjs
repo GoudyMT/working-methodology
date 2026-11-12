@@ -50,6 +50,7 @@ export function unmarked(text) {
 	return out;
 }
 
+// why: guards rule:word-pins
 test('a test pins a whole sentence only with the case that makes the words the behaviour', () => {
 	const dir = path.resolve('tests');
 	const bad = [];
@@ -59,6 +60,7 @@ test('a test pins a whole sentence only with the case that makes the words the b
 	assert.deepEqual(bad, [], 'pin the stable tokens (an ID, a verdict, a path, a number, the command), or name the case: pin: 1 a machine reads it, 2 a stop\'s order, 3 frozen text, 4 owner-locked words');
 });
 
+// why: guards rule:word-pins
 test('the pin check sees a whole-sentence regex, string or includes, and passes a short token or a named case', () => {
 	const sentence = 'the quick brown fox jumps over the lazy dog again';
 	assert.deepEqual(unmarked(`assert.match(out, /${sentence}/);`), [1]);

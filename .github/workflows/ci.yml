@@ -1,13 +1,14 @@
-# The kit's merge gate: the unit tests, the scrub, a fresh build and (on a PR) the PR-body audit.
-# The suite on Linux; the Windows-only tests and the guard proofs on Windows (E31).
+# The kit's merge gate: the tests a change reaches, the scrub and a fresh build. The PR body has its own workflow
+# (pr-body.yml), so a body edit reruns only that. The suite on Linux; the Windows-only tests and the guard proofs on
+# Windows (E31). T15 (the owner's pick 2026-11-12, "Only what it touches"): a PR runs the tests its change reaches and
+# the security set; every push to main runs the whole suite and saves the coverage map the next PR selects by.
 # Actions are pinned to full commit SHAs, so a moved tag cannot change what runs here.
 name: CI
 
 on:
   pull_request:
     branches: [main]
-    # "edited" re-runs the PR-body audit when only the body changes.
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
@@ -24,6 +25,10 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # actions: read finds main's run and its coverage map for a PR.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,9 +49,90 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
-      # Through the guarded runner: every tests/*.test.mjs, and the run fails if it leaves anything in the temp folder.
-      - name: Unit tests
+      # Push to main: every test, through the guarded runner, recording the coverage map, kept with this run.
+      - name: Every test, with the coverage map
+        if: github.event_name != 'pull_request'
+        run: node scripts/test-run.mjs --map --shards 4
+
+      - name: Keep the coverage map
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-map
+          path: tests/.map.json
+          include-hidden-files: true
+          retention-days: 30
+
+      # A PR: the map from main's own push run of the PR's base commit, found through the API. Not the Actions cache:
+      # a PR's earlier run can write a cache entry under any key, and the PR's own entries are read first. No such
+      # run, or no map in it, and the PR runs every test.
+      - name: Load the coverage map for the base commit
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          rm -f tests/.map.json
+          run_id="$(gh run list --repo "$REPO" --workflow ci.yml --branch main --event push --commit "$BASE_SHA" --json databaseId,headSha,event,headBranch --jq "[.[] | select(.headSha == \"$BASE_SHA\" and .event == \"push\" and .headBranch == \"main\")][0].databaseId // empty")" || run_id=""
+          if [ -n "$run_id" ]; then gh run download "$run_id" --repo "$REPO" --name test-map --dir tests || rm -f tests/.map.json; fi
+          echo "map from main's run: ${run_id:-none}"
+
+      # Changed, or the whole suite when the selection has nothing sound to stand on (no map for the base, a deleted
+      # file, a change to a workflow, the runner, the harness or the map tracer).
+      - name: What this PR runs
+        id: scope
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node scripts/pr-scope.mjs "$BASE_SHA" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Every test
+        if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
         run: node scripts/test-run.mjs --shards 4
+
+      - name: The tests the change reaches
+        if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
+        run: node scripts/test-run.mjs --changed --shards 4
+
+      # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
+      - name: The security set
+        if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
+        run: node scripts/test-run.mjs --shards 4 tests/guards-hold.test.mjs tests/guards-outside.test.mjs tests/owner-proof.test.mjs tests/task-gate.test.mjs tests/guard-dispatch.test.mjs tests/guard-prompts.test.mjs
+
+  # T15 Part A: each test the PR adds or changes, held to the bar for a new test. It reports to the run's summary and
+  # is not required until the owner locks it.
+  test-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Prepare git identity
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+
+      - name: Test check (report)
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node scripts/test-check.mjs "$BASE_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.
@@ -99,15 +185,68 @@ jobs:
     timeout-minutes: 5
     outputs:
       slow: ${{ steps.find.outputs.slow }}
+      install: ${{ steps.install.outputs.install }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - id: find
         shell: bash
         run: |
           if [ -n "$(find tests/slow -type f -name '*.test.mjs' 2>/dev/null | head -n 1)" ]; then echo "slow=true" >> "$GITHUB_OUTPUT"; else echo "slow=false" >> "$GITHUB_OUTPUT"; fi
+
+      # T15 D1 and D2 run on every push to main, and on a PR only when it touches install or the guards (the owner's
+      # pick 2026-11-12: no added time on the rest). A diff that cannot be read runs them.
+      - id: install
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then echo "install=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! changed="$(git diff --name-only "$BASE_SHA...HEAD")"; then echo "install=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if printf '%s\n' "$changed" | grep -qE '^(scripts/kit\.mjs|scripts/ci-install-check\.mjs|user/|project/\.claude/|project/\.githooks/|\.github/)'; then echo "install=true" >> "$GITHUB_OUTPUT"; else echo "install=false" >> "$GITHUB_OUTPUT"; fi
+
+  # T15 D1 and D2: install, upgrade and the guards, on both systems the kit runs on.
+  install-check:
+    needs: [lanes]
+    if: needs.lanes.outputs.install == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # The hooks the launcher runs are sh scripts; Git for Windows ships sh in its bin folder.
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install check
+        shell: bash
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+          node scripts/ci-install-check.mjs
 
   slow-tests:
     needs: [lanes]
@@ -137,18 +276,25 @@ jobs:
         shell: bash
         env:
           KIT_TEST_LIMIT_MS: '900000'
-        run: node scripts/test-run.mjs $(find tests/slow -type f -name '*.test.mjs')
+        run: |
+          mapfile -t slow < <(find tests/slow -type f -name '*.test.mjs')
+          node scripts/test-run.mjs "${slow[@]}"
 
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
   # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
   kit-tests:
-    needs: [unit-tests, windows-tests, lanes, slow-tests]
+    needs: [unit-tests, windows-tests, lanes, slow-tests, install-check]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Every test job passed
         if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')
+        run: exit 1
+
+      # Skipped only when the lanes job found no install or guard change; one that ran must pass.
+      - name: The install check passed or was not owed
+        if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')
         run: exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -187,6 +333,25 @@ jobs:
         run: |
           node scripts/kit.mjs build
           git diff --exit-code
+
+      # T15 D5: a PR that moves VERSION carries its build record, whole, and the changelog entry it writes.
+      - name: Build record
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE: origin/${{ github.base_ref }}
+        run: |
+          if git diff --quiet "$PR_BASE" HEAD -- VERSION; then echo "VERSION unchanged: no build record owed"; else node scripts/build-record.mjs check; fi
+
+      # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
+      # a replaced download fails here before it runs.
+      - name: Workflow lint
+        shell: bash
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
 
       # The local hooks check names at commit and push; a commit made elsewhere (the web, a cloud session) skips
       # them, so the PR's branch and every commit on it are checked here too.
@@ -230,21 +395,3 @@ jobs:
         run: |
           git show "$PR_BASE:scripts/recall.mjs" > scripts/recall-gate-base.mjs
           node scripts/recall-gate-base.mjs gate "$PR_BASE" "$PR_HEAD"
-
-      # The body and title come in through env, never into the script text, so a PR cannot inject commands.
-      - name: PR body audit
-        if: github.event_name == 'pull_request'
-        shell: bash
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BASE: origin/${{ github.base_ref }}
-        run: |
-          node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/pr-body.md', process.env.PR_BODY || '')"
-          # Every title is type: subject now (1.25.0), so the body says which format it is: a Standard body has a
-          # "### Summary" section, a Lean one does not.
-          if grep -q '^### Summary$' "$RUNNER_TEMP/pr-body.md"; then
-            node project/.claude/pr-body-audit.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
-          else
-            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
-          fi

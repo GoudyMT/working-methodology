@@ -29,6 +29,7 @@ function decide(tool_name, tool_input, extra = {}) {
 }
 const bash = (command) => decide('Bash', { command });
 
+// why: guards rule:outward-acts
 test('the six commands that passed every guard in 1.24.0 are held (P1)', () => {
 	const held = [
 		'KIT_PUSH_APPROVED=1 git $(echo push) origin HEAD:main',
@@ -41,6 +42,7 @@ test('the six commands that passed every guard in 1.24.0 are held (P1)', () => {
 	for (const c of held) assert.equal(bash(c), 'deny', c);
 });
 
+// why: guards rule:outward-acts
 test('the same holes in the spellings beside them are held', () => {
 	const held = [
 		// S23-1, the mutation check: each row below turned a surviving flip red. The user's git config, the kit folders
@@ -147,6 +149,7 @@ test('the same holes in the spellings beside them are held', () => {
 	for (const c of held) assert.equal(bash(c), 'deny', c);
 });
 
+// why: guards rule:outward-acts
 test('a write tool aimed at a guard, its settings or a git hook is held', () => {
 	const files = ['.claude/guard-outward.cjs', '.claude/guard-read.cjs', '.claude/settings.json', '.claude/settings.local.json', '.githooks/pre-push', '.git/hooks/pre-commit'];
 	for (const f of files) {
@@ -155,6 +158,7 @@ test('a write tool aimed at a guard, its settings or a git hook is held', () => 
 	}
 });
 
+// why: guards rule:outward-acts
 test('reads of the guards and ordinary commands still pass', () => {
 	const pass = [
 		'cat .claude/settings.json',
@@ -174,6 +178,7 @@ test('reads of the guards and ordinary commands still pass', () => {
 	assert.equal(decide('Write', { file_path: path.join(proj, 'src', 'a.js'), content: 'x' }), 'allow', 'Write src/a.js');
 });
 
+// why: guards rule:outward-acts
 test('a subagent is refused, not asked, for each held command', () => {
 	for (const c of ['git commit --no-verify -m x', 'echo x > .claude/guard-outward.cjs', 'git config core.hooksPath /dev/null']) {
 		assert.equal(decide('Bash', { command: c }, { agent_id: 'a1' }), 'deny', c);
@@ -181,6 +186,7 @@ test('a subagent is refused, not asked, for each held command', () => {
 });
 
 // The secret scan: every shape below is a real key format; each value is built here so this file holds none.
+// why: guards rule:outward-acts
 test('the secret patterns catch the 11 shapes the 1.24.0 scan missed', async () => {
 	const { SECRET_FILE, SECRET_VALUE } = await import('../project/.claude/secret-patterns.mjs');
 	const hex = (n) => 'a3f9'.repeat(n).slice(0, n);
@@ -226,12 +232,14 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], file = TRANSCRIPT }) {
+function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
 	const question = `May I run \`${act}\`?`;
 	const input = { questions: [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }] };
 	if (filled) input.answers = { [question]: answer };
 	const lines = [
+		// The call the guard held before the pop-up, in the tool that ran it.
+		...(tried ? [{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_tried', name: tried.tool, input: tried.input }] } }] : []),
 		// An act sent in the same message as the pop-up is written before the answer, as Claude Code writes it.
 		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_ask1', name: 'AskUserQuestion', input }, ...beside.map((command, k) => ({ type: 'tool_use', id: `toolu_beside${k}`, name: 'Bash', input: { command } }))] } },
 		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask1', content: 'answered' }] } },
@@ -242,6 +250,7 @@ function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_tem
 }
 const withYes = (tool_name, tool_input, extra = {}) => decide(tool_name, tool_input, { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now', ...extra });
 
+// why: guards rule:outward-acts
 test('a held command runs once on the owner\'s own pop-up yes for that exact command', () => {
 	const act = 'git push origin main';
 	popUp({ act });
@@ -281,6 +290,7 @@ test('a held command runs once on the owner\'s own pop-up yes for that exact com
 	assert.equal(decide('Bash', { command: act }, { transcript_path: outside, session_id: SID, tool_use_id: 'toolu_now' }), 'deny', 'a transcript outside the Claude folder');
 });
 
+// why: guards rule:outward-acts
 test('the settings take the owner\'s yes for the exact edit; the guards and hooks never do', () => {
 	const settings = path.join(proj, '.claude', 'settings.json');
 	popUp({ act: `Edit ${settings}: "deny": [] => "deny": ["Bash(x)"]` });
@@ -308,6 +318,7 @@ test('the settings take the owner\'s yes for the exact edit; the guards and hook
 	assert.equal(withYes('Write', { file_path: guard, content: 'x' }), 'deny', 'a guard file, even with a yes');
 });
 
+// why: guards rule:outward-acts
 test('a feature-branch push goes without a yes only inside the owner\'s bounds', () => {
 	for (const c of ['git push -u origin feat/x', 'git push origin HEAD:fix/guards-that-hold', 'git push --set-upstream origin feat/x:feat/x']) assert.equal(bash(c), 'allow', c);
 	const held = ['git push origin main', 'git push origin HEAD:refs/heads/main', 'git push origin master', 'git push origin HEAD', 'git push --force origin feat/x',
@@ -317,6 +328,7 @@ test('a feature-branch push goes without a yes only inside the owner\'s bounds',
 });
 
 // The pre-push hook, run as git runs it: the other half of the owner's bounds.
+// why: guards rule:outward-acts
 test('the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest', { windows: true }, () => {
 	const dir = kitTemp.makeTemp('push-');
 	const g = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
@@ -334,7 +346,10 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	// The first push gate is done: this test is about the AI bounds.
 	fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
 	const Z = '0'.repeat(40);
-	const push = (line, env = {}) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', 'x'], { cwd: dir, encoding: 'utf8', input: line + '\n', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: '', KIT_PUSH_APPROVED: '', ...env } });
+	// An empty remote the hook can ask (C19): with no branch there, a push of main is a new repo's first push.
+	const bare = kitTemp.makeTemp('push-remote-');
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { encoding: 'utf8' });
+	const push = (line, env = {}) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: line + '\n', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: '', KIT_PUSH_APPROVED: '', ...env } });
 	assert.equal(push(`refs/heads/feat/x ${main} refs/heads/feat/x ${Z}`).status, 0, 'a new feature branch');
 	for (const [why, line] of [['main', `refs/heads/main ${main} refs/heads/main ${Z}`], ['a tag', `refs/tags/v1 ${main} refs/tags/v1 ${Z}`], ['a delete', `(delete) ${Z} refs/heads/feat/x ${main}`]]) {
 		assert.notEqual(push(line).status, 0, why);
@@ -417,6 +432,83 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
 });
 
+// why: guards rule:outward-acts (a yes answers the one act the owner read). The 1.25.0 carry-overs: an edit whose text
+// holds the quote's own separators reads as another edit (R1.5); a yes given after a held call in one shell let the
+// same text run in another, which reads it differently (R1.6); a yes to push a branch let a tag of that name go
+// (R2.9).
+test('a yes answers one act: no ambiguous edit quote, the same shell, a branch not a tag', async () => {
+	const file = path.join(proj, '.claude', 'settings.json');
+	popUp({ act: `Edit ${file}: x => y => z` });
+	assert.equal(withYes('Edit', { file_path: file, old_string: 'x => y', new_string: 'z' }), 'deny', 'an edit quote with its own separator in it');
+	const act = 'gh pr create --fill';
+	popUp({ act, tried: { tool: 'Bash', input: { command: act } } });
+	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes after a Bash call ran in PowerShell');
+	assert.equal(withYes('Bash', { command: act }), 'allow');
+	// The review on ceecedd: a shell act asked with no held call before it has no shell to bind to; an edit with a
+	// semicolon (the MultiEdit separator) has no act.
+	popUp({ act, tried: null });
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes with no held call before it');
+	popUp({ act: `Edit ${file}: x; => y` });
+	assert.equal(withYes('Edit', { file_path: file, old_string: 'x;', new_string: 'y' }), 'deny', 'an edit holding a separator');
+	const { grantsRef } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));
+	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin refs/heads/v1', 'refs/tags/v1'), false, 'a branch yes pushed a tag');
+	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin refs/tags/v1', 'refs/tags/v1'), true);
+	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin v1', 'refs/tags/v1'), true, 'git itself resolves a short name');
+});
+
+// why: catches a yes that can never be read (the 1.25.0 carry-over R7.3): a transcript past V8's string limit threw on
+// a whole read, so no yes in it was ever found. Only its recent end is read; the cap is made small here.
+test('a transcript is read from its end, so the newest yes is found in one too long to read whole', async () => {
+	const { tailLines } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));
+	const file = path.join(kitTemp.makeTemp('tail-'), 't.jsonl');
+	fs.writeFileSync(file, `${'{"old":1}\n'.repeat(500)}{"newest":1}\n`);
+	const lines = tailLines(file, 200);
+	assert.ok(lines.includes('{"newest":1}'), 'the newest line was lost');
+	assert.ok(lines.every((l) => l === '' || l === '{"newest":1}' || l === '{"old":1}'), `a partial line was kept: ${lines.find((l) => !/^(|\{"(old|newest)":1\})$/.test(l))}`);
+	assert.ok(lines.length < 30, 'the whole file was read');
+});
+
+// why: guards rule:security-standards (no secret leaves in a push). The 1.25.0 carry-over R2.10: the scan read each
+// pushed commit's lines and file names, never its message or a tag's message, which go out with it.
+test('the secret scan reads the message of every pushed commit and tag, in the push and in CI', () => {
+	const SCAN = path.resolve('project/.claude/secret-shapes.mjs');
+	const dir = kitTemp.makeTemp('msg-');
+	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...a], { cwd: dir, encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
+	g('add', '.');
+	g('commit', '-qm', 'base');
+	const base = g('rev-parse', 'HEAD').stdout.trim();
+	const key = 'gh' + 'p_' + 'Zx9Qk2Lm'.repeat(5);
+	fs.writeFileSync(path.join(dir, 'b.md'), 'b\n');
+	g('add', '.');
+	g('commit', '-qm', `docs: b\n\ntoken ${key}`);
+	const head = g('rev-parse', 'HEAD').stdout.trim();
+	const push = (line) => spawnSync(process.execPath, [SCAN, '--push', ''], { cwd: dir, encoding: 'utf8', input: line + '\n' });
+	const r = push(`refs/heads/feat/x ${head} refs/heads/feat/x ${base}`);
+	assert.equal(r.status, 1, `a key in a commit message went out: ${r.stdout}`);
+	assert.ok(!r.stdout.includes(key), 'the value is never printed');
+	assert.equal(spawnSync(process.execPath, [SCAN, base], { cwd: dir, encoding: 'utf8' }).status, 1, 'CI missed the message');
+	// An annotated tag carries its own message.
+	g('reset', '-q', '--hard', base);
+	g('tag', '-a', 'v1', '-m', `release\n\n${key}`);
+	const tag = g('rev-parse', 'v1').stdout.trim();
+	assert.equal(push(`refs/tags/v1 ${tag} refs/tags/v1 ${'0'.repeat(40)}`).status, 1, 'a key in a tag message went out');
+	// The review on 0827746: a key in an author header, or deep in a chain of tags, or in a ref name.
+	g('reset', '-q', '--hard', base);
+	fs.writeFileSync(path.join(dir, 'c.md'), 'c\n');
+	g('add', '.');
+	spawnSync('git', ['-c', 'user.name=t', '-c', `user.email=${key}@x`, '-c', 'commit.gpgsign=false', 'commit', '-qm', 'docs: c'], { cwd: dir, encoding: 'utf8' });
+	const authored = g('rev-parse', 'HEAD').stdout.trim();
+	assert.equal(push(`refs/heads/feat/y ${authored} refs/heads/feat/y ${base}`).status, 1, 'a key in an author header went out');
+	g('reset', '-q', '--hard', base);
+	let top = 'v1';
+	for (let i = 0; i < 7; i++) { g('tag', '-a', `t${i}`, top, '-m', i === 0 ? `deep ${key}` : 'x'); top = `t${i}`; }
+	g('tag', '-d', 'v1');
+	assert.equal(push(`refs/tags/t6 ${g('rev-parse', 't6').stdout.trim()} refs/tags/t6 ${'0'.repeat(40)}`).status, 1, 'a key seven tags down went out');
+	assert.equal(push(`refs/heads/${key} ${base} refs/heads/${key} ${'0'.repeat(40)}`).status, 1, 'a key in a ref name went out');
+});
+
 // T16a (the owner's locks, 2026-11-11): one voice for refusals. Each opens with its kind, names the limit it hit and
 // what to do; a gate bypass is never allowed by a tool, even with a pop-up yes. Pinned here because the openings are
 // the order a session acts on.
@@ -424,6 +516,7 @@ const why = (tool_name, tool_input, extra = {}) => {
 	const r = spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
 	return (r.stdout && JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason) || '';
 };
+// why: guards rule:outward-acts
 test('a held push names the limit of the push bound it hit', () => {
 	const limits = [
 		['git push origin main', /a push to main is outside the push bound; main takes a PR, and a tool pushes there only as a new repo's first push/],
@@ -450,6 +543,7 @@ test('a held push names the limit of the push bound it hit', () => {
 	assert.match(why('Bash', { command: 'gh pr create --fill' }), /^Owner's yes needed: gh pr create is an outward act/);
 	assert.match(why('Bash', { command: 'git push origin main' }, { agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 });
+// why: guards rule:outward-acts
 test('a gate bypass is never allowed by a tool, even with the owner\'s pop-up yes', () => {
 	for (const act of ['git commit --no-verify -m x', 'git -c core.hooksPath=/dev/null commit -m x', 'git config core.hooksPath /dev/null']) {
 		popUp({ act });
@@ -457,6 +551,43 @@ test('a gate bypass is never allowed by a tool, even with the owner\'s pop-up ye
 		assert.match(why('Bash', { command: act }), /^Never by a tool: .*gate bypass/, act);
 	}
 });
+// why: guards rule:outward-acts (a refusal's opening and act are the order a session acts on; T16a, the owner
+// 2026-11-11). The 1.26.0 carry-overs C7, C14, C15, C16 and C18.
+test('each refusal names one act to quote, one kind, and a fix the hold lets through', () => {
+	// C7: a held push names one act to quote, in the shell that runs it; for main it says the act is for a new repo only.
+	const feat = why('Bash', { command: 'git push --force origin feat/x' });
+	assert.equal((feat.match(/`[^`]+`/g) || []).filter((s) => !s.startsWith('`<')).length, 1, `two acts to quote: ${feat}`);
+	assert.ok(feat.includes('`KIT_PUSH_APPROVED=1 git push --force origin feat/x`'), feat); // pin: 1 the owner-yes matcher reads this act back
+	const ps = why('PowerShell', { command: 'git push --force origin feat/x' });
+	assert.ok(ps.includes("`$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x`"), `PowerShell got no marker act: ${ps}`); // pin: 1
+	popUp({ act: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x", tried: { tool: 'PowerShell', input: { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" } } });
+	assert.equal(withYes('PowerShell', { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" }), 'allow', 'the PowerShell act the refusal names runs on that yes');
+	assert.match(why('Bash', { command: 'git push origin main' }), /new repo's first push/);
+	// C18: an option's value is not the remote; a redirect makes it more than one plain push, and says so.
+	assert.doesNotMatch(why('Bash', { command: 'git push -o ci.skip origin feat/x' }), /not a plain push to origin/);
+	assert.match(why('Bash', { command: 'git push origin feat/x 2>&1' }), /redirect or a second command/);
+	// C14: a command the guard cannot read is held, not called an outward act.
+	assert.match(why('Bash', { command: 'x'.repeat(100001) }), /^Held: /);
+	// C15: the task gate opens with its kind.
+	fs.mkdirSync(path.join(proj, '.claude', 'rules'), { recursive: true });
+	fs.writeFileSync(path.join(proj, '.claude', 'rules', 'git-and-release.md'), '# x\n');
+	try {
+		assert.match(why('Bash', { command: 'git commit -m x' }, { transcript_path: TRANSCRIPT }), /^Held: before git commit, read /);
+	} finally { fs.rmSync(path.join(proj, '.claude', 'rules'), { recursive: true, force: true }); }
+	// C16: a guard that cannot run says held once, and names no fix line the hold refuses.
+	const lone = kitTemp.makeTemp('lone-');
+	fs.copyFileSync(HOOKS[0], path.join(lone, 'guard.cjs'));
+	const r = spawnSync(process.execPath, [path.join(lone, 'guard.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+	const text = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+	// The one process merges each guard's refusal with " | ".
+	for (const one of text.split(' | ')) {
+		assert.match(one, /^Held: /);
+		assert.equal((one.match(/\bheld\b/gi) || []).length, 1, `held twice: ${one}`);
+		assert.doesNotMatch(one, /install project \./, one);
+	}
+});
+
+// why: guards rule:outward-acts
 test('a protected file and the owner\'s answers are refused in the never voice', () => {
 	assert.match(why('Write', { file_path: path.join(proj, '.claude', 'guard-outward.cjs'), content: 'x' }), /^Never by a tool: .*protected file/);
 	assert.match(why('Write', { file_path: TRANSCRIPT, content: 'x' }), /^Never by a tool: /);
@@ -465,6 +596,7 @@ test('a protected file and the owner\'s answers are refused in the never voice',
 // The 1.26.0 sweep: a gate bypass was refused only when it was the first reason the guard found, so a push or the
 // marker in front of it hid it, and the owner's pop-up yes then let it run. And a write to main that runs no pre-push
 // hook (send-pack, the API) passed on a yes, though main takes a PR.
+// why: guards rule:outward-acts
 test('a gate bypass anywhere in a command, and a hook-free write to main, are never a tool\'s act', () => {
 	const acts = [
 		'KIT_PUSH_APPROVED=1 git push --no-verify origin main',
@@ -481,4 +613,57 @@ test('a gate bypass anywhere in a command, and a hook-free write to main, are ne
 	}
 	// The act to quote is offered only for a plain push on its own; a compound command gets none.
 	assert.ok(!why('Bash', { command: 'git add . && git push origin main' }).includes('KIT_PUSH_APPROVED=1 git add'), 'the marker offered in front of a compound command');
+});
+
+// why: guards rule:outward-acts (a gate bypass is never a tool's act; the owner's locks 2026-11-11 and, for the
+// markers, 2026-11-12). The 1.26.0 carry-overs S2, S3 and C6: hooks moved through an included config or another git
+// folder ran with no guard, a write to main through the API spelled another way waited only for a yes, and clearing
+// the AI shell's markers (which makes the pre-push hook take the shell for the owner's terminal) waited for a yes.
+test('hooks moved another way, main written through the API another way, and the AI markers cleared are never a tool\'s act', () => {
+	const acts = [
+		'git -c include.path=/tmp/evil.cfg commit -m x',
+		'git -c includeIf.gitdir:/x/.path=/tmp/evil.cfg commit -m x',
+		'git config include.path /tmp/evil.cfg',
+		'GIT_DIR=/tmp/other.git git commit -m x',
+		'git --git-dir=/tmp/other.git commit -m x',
+		'git --git-dir /tmp/other.git push origin feat/x',
+		'gh api repos/o/r/merges -f base=main -f head=feat/x',
+		'gh api -X PATCH repos/o/r/git/refs/heads%2Fmain -f sha=abc',
+		'gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha=abc',
+		'gh api -X PUT repos/o/r/contents/a.md -f message=x -f content=eA==',
+		'gh api graphql -f query="mutation { updateRef(input: {}) { clientMutationId } }"',
+		'env -u CLAUDECODE git status',
+		'unset AI_AGENT; node x.mjs',
+		'env -i node x.mjs',
+		'Remove-Item Env:CLAUDECODE; git status',
+		// The automated security review on a192e1f: the same holes spelled another way.
+		'git --config-env=include.path=CFG commit -m x',
+		'git --git-dir=/tmp/other.git c -m x',
+		'gh api -X PATCH repos/o/r/git/refs/heads/%6Dain -f sha=abc',
+		'gh api -X PATCH repos/o/r/git/refs/heads%252Fmain -f sha=abc',
+		'gh api graphql -F query=@q.graphql',
+		'gh api graphql --input q.json',
+		// The review on 46260d3: a read with another git folder runs the programs its config names; a field attached
+		// to its flag.
+		'git --git-dir=/tmp/other.git log -1',
+		'gh api -X PATCH repos/o/r/git/refs/heads/main -fsha=abc',
+		'gh api repos/o/r/merges -fbase=main -fhead=feat/x',
+	];
+	for (const act of acts) {
+		popUp({ act });
+		assert.equal(withYes('Bash', { command: act }), 'deny', `${act} ran on a pop-up yes`);
+		assert.match(why('Bash', { command: act }), /^Never by a tool: /, act);
+	}
+	// The review on 09f88b1: a push to main run in another clone (git -C, --work-tree, a cd, or a shell whose folder is
+	// outside the project) runs none of this project's hooks, so the pre-push hook's refusal never happens.
+	for (const [act, extra] of [['git -C /tmp/clone push origin main', {}], ['cd /tmp/clone && git push origin main', {}], ['git --work-tree=/tmp/x push origin master', {}], ['git push origin main', { cwd: path.join(path.dirname(proj), 'elsewhere') }], ['git -C /tmp/clone push', {}],
+		// The review on aee6f28: quotes, a line break before the cd, and a push to @ or a variable, out there.
+		['"cd" /tmp/clone && git push origin main', {}], ['echo x\ncd /tmp/clone\ngit push origin main', {}], ['git -C /tmp/clone push origin @', {}], ['git -C /tmp/clone push origin $B', {}], ['git -C /tmp/clone push --all origin', {}]]) {
+		popUp({ act });
+		assert.equal(withYes('Bash', { command: act }, extra), 'deny', `${act} ran on a pop-up yes`);
+		assert.match(why('Bash', { command: act }, extra), /^Never by a tool: /, act);
+	}
+	assert.match(why('Bash', { command: 'git -C /tmp/clone push origin feat/x' }), /^Owner's yes needed: /);
+	// An API write to a feature branch is no bypass: it still waits for the owner's yes.
+	assert.match(why('Bash', { command: 'gh api -X PUT repos/o/r/contents/a.md -f branch=feat/x -f message=x -f content=eA==' }), /^Owner's yes needed: /);
 });

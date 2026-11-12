@@ -1,0 +1,45 @@
+# The PR body audit, on its own (T15 D3): a body or title edit reruns only this, not the whole test run. The owner
+# makes "pr-body" a required check beside "kit-tests".
+name: PR body
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-body-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # The body and title come in through env, never into the script text, so a PR cannot inject commands.
+      - name: PR body audit
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/pr-body.md', process.env.PR_BODY || '')"
+          # Every title is type: subject now (1.25.0), so the body says which format it is: a Standard body has a
+          # "### Summary" section, a Lean one does not.
+          if grep -q '^### Summary$' "$RUNNER_TEMP/pr-body.md"; then
+            node project/.claude/pr-body-audit.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
+          else
+            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
+          fi

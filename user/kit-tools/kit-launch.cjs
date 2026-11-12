@@ -40,6 +40,11 @@ function recordName(dir) {
 	// paths apart; a name that fits is the one 1.25.1 gave, so an installed project keeps its record.
 	return `${full.replace(/[^A-Za-z0-9]/g, '-').slice(0, 100)}-${sha(full).slice(0, 10)}`;
 }
+/** The name 1.25.1 gave a record, before B13 cut it: install finds an old record by it and moves it (C2). */
+function legacyRecordName(dir) {
+	const full = WIN ? path.resolve(dir).toLowerCase() : path.resolve(dir);
+	return `${full.replace(/[^A-Za-z0-9]/g, '-')}-${sha(full).slice(0, 10)}`;
+}
 const recordDir = (dir) => path.join(RECORDS, recordName(dir));
 
 function readRecord(dir) {
@@ -141,6 +146,7 @@ function hooksPathNow(dir) {
 function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'hooks')) {
 	const changed = [];
 	const files = new Map();
+	const byKey = new Map();
 	// Each guard file is read at its real place, and only when that is where the project says it is: through a junction
 	// or link, require would load it again from the link's target, which can change between the two (the second pass on
 	// 0772397). The loader is keyed by that real place, found the way require finds it (fs.realpathSync).
@@ -156,7 +162,7 @@ function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'h
 		// A host's own file passes at any version the owner accepted (B15); only the host's, never a kit file.
 		const ok = bytes && (sha(bytes) === want || ((rec.host || []).includes(key) && ((rec.accepted || {})[key] || []).includes(sha(bytes))));
 		if (!ok) changed.push(key);
-		else files.set(WIN ? at.toLowerCase() : at, bytes.toString('utf8'));
+		else { files.set(WIN ? at.toLowerCase() : at, bytes.toString('utf8')); byKey.set(key, bytes); }
 	}
 	// A hook in .githooks that no record holds would run through the shims with no check (the second pass on 0772397).
 	let hookNames = [];
@@ -187,7 +193,7 @@ function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'h
 		const now = hooksPathNow(dir);
 		if (now !== null && now !== normPath(rec.hooksPath)) hooksPath = now || 'unset';
 	}
-	return { changed, settings, hooksPath, files, real: real || path.resolve(dir) };
+	return { changed, settings, hooksPath, files, byKey, real: real || path.resolve(dir) };
 }
 
 const fixLine = (rec, dir) => `"${posix(installedNode() || 'node')}" "${posix(rec.kitDir || '<kit folder>')}/scripts/kit.mjs" install project "${posix(dir)}"`;
@@ -300,10 +306,10 @@ function clearsSettings(input, v) {
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Held: ' + reason } });
 
 /** Run the project's guard from the bytes verify() hashed: a file swapped after the check is never loaded. */
-function runGuard(real, files, input) {
+function runGuard(real, files, input, fix = 'the owner reinstalls the kit with install project') {
 	const dir = real;
 	const guard = path.join(real, '.claude', 'guard.cjs');
-	if (!files.has(WIN ? guard.toLowerCase() : guard)) return deny('The kit guard (.claude/guard.cjs) is not in the install record, so this call is held. Reinstall the kit: ' + 'kit.mjs install project.');
+	if (!files.has(WIN ? guard.toLowerCase() : guard)) return deny(`The kit guard (.claude/guard.cjs) is not in the install record. ${fix}.`);
 	const inside = (f, root) => path.resolve(f).toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep);
 	const key = (f) => (WIN ? path.resolve(f).toLowerCase() : path.resolve(f));
 	// The config folder's kit hooks, by the hash install user recorded for each (B23): any other file there, or one
@@ -363,7 +369,7 @@ function preToolUse(input) {
 	const v = verify(dir, rec, extra);
 	if (v.changed.length || v.hooksPath) return isFix(input, rec, dir) ? null : deny(describe(v, rec, dir));
 	if (v.settings.length && !clearsSettings(input, v)) return deny(describe(v, rec, dir));
-	return runGuard(v.real, v.files, input);
+	return runGuard(v.real, v.files, input, `Run, alone: ${fixLine(rec, dir)} (or ask the owner to)`);
 }
 
 // ---- The entries install user writes, and the strict check that they are still whole. ----
@@ -428,20 +434,63 @@ function configChange(input) {
 	return { decision: 'block', reason: msg, systemMessage: msg };
 }
 
-function gitHook(dir) {
+/**
+ * The git hook check a shim runs. With a hook name, the guard files it checked are written, from the very bytes it
+ * hashed, to a folder beside the record, and the copy of the hook is what the shim runs: a file swapped in the project
+ * between the check and the run is never the one that runs (the 1.26.0 sweep, C11). The hooks find their helpers
+ * beside them ($(dirname "$0")/../.claude), so the helpers run from the checked copies too.
+ *
+ * Returns:
+ *     { why } when held, or { run } the path of the checked copy of the hook ('' with no hook name)
+ */
+function gitHook(dir, name = '') {
 	const rec = readRecord(dir);
-	if (!rec) return `Kit: no guard record for ${posix(dir)} in ${posix(RECORDS)}. Run kit.mjs install project.`;
+	if (!rec) return { why: `Kit: no guard record for ${posix(dir)} in ${posix(RECORDS)}. Run kit.mjs install project.` };
 	const v = verify(path.resolve(rec.projectDir || dir), rec);
-	if (!v.changed.length && !v.hooksPath && !v.settings.length) return '';
-	return `Kit: git hook held. ${describe(v, rec, path.resolve(rec.projectDir || dir))}`;
+	if (v.changed.length || v.hooksPath || v.settings.length) return { why: `Kit: git hook held. ${describe(v, rec, path.resolve(rec.projectDir || dir))}` };
+	if (!name) return { run: '' };
+	const key = `.githooks/${name}`;
+	if (!/^[A-Za-z0-9._-]+$/.test(name) || !v.byKey.has(key)) return { why: `Kit: .githooks/${name} is not in the install record; run kit.mjs install project.` };
+	const all = [...v.byKey.keys()].sort();
+	const id = sha(all.map((k) => `${k}\0${sha(v.byKey.get(k))}`).join('\n')).slice(0, 16);
+	const runs = path.join(recordDir(dir), 'run');
+	const at = path.join(runs, id);
+	// A copy written earlier is used again only while every file in it is the checked bytes and nothing else is there
+	// (the review on cfd3813); otherwise it is written afresh.
+	const intact = () => {
+		const seen = [];
+		const walk = (d, rel) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const r = rel ? `${rel}/${e.name}` : e.name; if (e.isDirectory()) walk(path.join(d, e.name), r); else seen.push(r); } };
+		try { walk(at, ''); } catch { return false; }
+		return seen.length === all.length && seen.every((k) => v.byKey.has(k) && sha(fs.readFileSync(path.join(at, ...k.split('/')))) === sha(v.byKey.get(k)));
+	};
+	if (fs.existsSync(at) && !intact()) fs.rmSync(at, { recursive: true, force: true });
+	if (!fs.existsSync(at)) {
+		const tmp = `${at}.${process.pid}`;
+		for (const k of all) {
+			const f = path.join(tmp, ...k.split('/'));
+			fs.mkdirSync(path.dirname(f), { recursive: true });
+			fs.writeFileSync(f, v.byKey.get(k));
+			if (k.startsWith('.githooks/')) fs.chmodSync(f, 0o755);
+		}
+		try { fs.renameSync(tmp, at); } catch { fs.rmSync(tmp, { recursive: true, force: true }); }
+	}
+	// Copies from an earlier install go once they are an hour old (a hook still running from one keeps its files).
+	try {
+		for (const e of fs.readdirSync(runs)) {
+			const p = path.join(runs, e);
+			if (e !== id && Date.now() - fs.statSync(p).mtimeMs > 3600000) fs.rmSync(p, { recursive: true, force: true });
+		}
+	} catch { /* nothing to tidy */ }
+	return { run: posix(path.join(at, '.githooks', name)) };
 }
 
 if (require.main === module) {
 	const mode = process.argv[2] || '';
 	if (mode === 'git-hook') {
-		let why = '';
-		try { why = gitHook(process.argv[3] || process.cwd()); } catch (e) { why = `Kit: the guard check could not run (${String(e && e.message).slice(0, 160)}).`; }
-		if (why) { process.stderr.write(why + '\n'); process.exit(1); }
+		let r = {};
+		try { r = gitHook(process.argv[3] || process.cwd(), process.argv[4] || ''); } catch (e) { r = { why: `Kit: the guard check could not run (${String(e && e.message).slice(0, 160)}).` }; }
+		if (r.why) { process.stderr.write(r.why + '\n'); process.exit(1); }
+		if (r.run) process.stdout.write(r.run);
 		process.exit(0);
 	}
 	let input = null;
@@ -451,12 +500,12 @@ if (require.main === module) {
 	try {
 		if (mode === 'config-change') out = input ? configChange(input) : null;
 		// Input it cannot read: inside a kit project the call is held, anywhere else it stays out of the way.
-		else if (!input || typeof input !== 'object') out = inKit({}) ? deny('The kit guard launcher could not read this call, so it is held.') : null;
+		else if (!input || typeof input !== 'object') out = inKit({}) ? deny('The kit guard launcher could not read this call.') : null;
 		else out = preToolUse(input);
 	} catch (e) {
-		if (mode !== 'config-change' && inKit(input && typeof input === 'object' ? input : {})) out = deny(`The kit guard launcher could not run (${String(e && e.message).slice(0, 160)}), so this call is held.`);
+		if (mode !== 'config-change' && inKit(input && typeof input === 'object' ? input : {})) out = deny(`The kit guard launcher could not run (${String(e && e.message).slice(0, 160)}).`);
 	}
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { kitFingerprint, runGuard, verify, settingsProblem, recordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { kitFingerprint, runGuard, verify, settingsProblem, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };

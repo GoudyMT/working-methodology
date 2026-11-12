@@ -40,6 +40,7 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	};
 }
 
+// why: guards rule:outward-acts
 test('a missing or broken project guard holds every call it would read, with the fix', () => {
 	const run = setup({ drop: 'guard-delete.cjs' });
 	const out = run('Bash', { command: 'git status' });
@@ -51,6 +52,7 @@ test('a missing or broken project guard holds every call it would read, with the
 	assert.equal(bad('Bash', { command: 'git status' }).permissionDecision, undefined, 'the copy works whole');
 });
 
+// why: guards rule:outward-acts
 test('a Claude folder with no agent-team hooks never stops a call; with them, an agent is held to its checks', () => {
 	const bare = setup();
 	assert.equal(bare('Agent', { subagent_type: 'reviewer', prompt: 'review' }, { agent_id: 'a1', agent_type: 'reviewer' }).permissionDecision, undefined);
@@ -66,6 +68,7 @@ test('a Claude folder with no agent-team hooks never stops a call; with them, an
 
 // The 1.25.0 sweep: a user layer still on 1.24.0 has hooks that read stdin and export no check, so the one process
 // skipped them and an agent ran with no sweep guard until the user layer was reinstalled.
+// why: guards rule:outward-acts
 test('a user-layer hook from before the one process still holds its call', () => {
 	const old = [
 		'const fs = require("fs");',
@@ -79,6 +82,7 @@ test('a user-layer hook from before the one process still holds its call', () =>
 	assert.equal(run('Bash', { command: 'git status' }).permissionDecision, undefined, 'a tool it does not read goes on');
 });
 
+// why: guards rule:outward-acts
 test('the strictest answer wins and every reason and note is kept', () => {
 	const { merge } = require(path.join(SRC, 'guard.cjs'));
 	const o = (permissionDecision, permissionDecisionReason, additionalContext) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision, permissionDecisionReason, additionalContext } });
@@ -95,6 +99,7 @@ test('the strictest answer wins and every reason and note is kept', () => {
 
 // The teardown (T2): a 98 KB command took 21 s in owner-proof and 7 s in the delete guard, past the hook's 10 s
 // timeout, because each command re-read the whole text. Read once, the whole guard process stays well inside it.
+// why: guards rule:outward-acts
 test('a long command is read in time: the whole guard process answers a 98 KB command inside the hook timeout', () => {
 	const run = setup();
 	const started = Date.now();

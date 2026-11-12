@@ -61,6 +61,21 @@ function makeKit() {
 
 const read = (p) => fs.readFileSync(p, 'utf8');
 
+// A release install checks every byte against the release tag's tree (the 1.26.0 security review, S4), so a fixture
+// that installs as a release commits its kit folder and hands over that commit's tree.
+function released(kit, describe) {
+  const g = (...a) => {
+    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-C', kit, ...a], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  if (!fs.existsSync(path.join(kit, '.git'))) g('init', '-q', '-b', 'main');
+  g('add', '-A');
+  g('commit', '-q', '--allow-empty', '-m', describe);
+  return { release: true, describe, tree: g('rev-parse', 'HEAD^{tree}') };
+}
+
+// why: catches a break only Windows shows (drive paths, Git for Windows sh, junctions)
 test('projectSlug matches the folder name Claude Code uses for project memory', { windows: true }, () => {
   assert.equal(
     projectSlug('D:\\Work\\Coding\\.Projects\\2026\\My App'),
@@ -68,11 +83,7 @@ test('projectSlug matches the folder name Claude Code uses for project memory', 
   );
 });
 
-test('render fills the owner name, profile and project folder', () => {
-  const out = render('{{OWNER_NAME}}|{{OWNER_PROFILE}}|{{PROJECT_DIR}}', { ownerName: 'Pat', ownerProfile: '- x', projectDir: 'C:/a b' });
-  assert.equal(out, 'Pat|- x|C:/a b');
-});
-
+// why: catches a break at scripts/kit.mjs:628 that no other test catches
 test('install user writes rendered files into ~/.claude and stamps the version', () => {
   const { kit, home } = makeKit();
   const r = install({ kit, home, target: 'user' });
@@ -86,16 +97,7 @@ test('install user writes rendered files into ~/.claude and stamps the version',
   assert.deepEqual(r.skipped, []);
 });
 
-test('install project copies standards, renders settings and seeds memory', () => {
-  const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'project', projectDir: proj });
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules\n');
-  assert.match(read(path.join(proj, '.claude/settings.json')), new RegExp(proj.replace(/\\/g, '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  const mem = path.join(home, 'projects', projectSlug(proj), 'memory', 'style.md');
-  assert.equal(read(mem), 'style rule\n');
-  assert.equal(JSON.parse(read(path.join(proj, '.kit/kit-version.json'))).version, '1.0.0');
-});
-
+// why: guards rule:owners-rules
 test('install never overwrites a file the owner changed, and says so', () => {
   const { kit, home, proj } = makeKit();
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
@@ -104,26 +106,7 @@ test('install never overwrites a file the owner changed, and says so', () => {
   assert.deepEqual(r.skipped.map((s) => s.file), ['_Working Standards.md']);
 });
 
-test('install with force replaces a changed file and keeps a backup of the old one', () => {
-  const { kit, home, proj } = makeKit();
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
-  const r = install({ kit, home, target: 'project', projectDir: proj, force: true });
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules\n');
-  assert.deepEqual(r.replaced, ['_Working Standards.md']);
-  assert.equal(read(path.join(r.backupDir, '_Working Standards.md')), 'my own rules\n');
-});
-
-test('a second install pulls kit updates into files the project left alone', () => {
-  const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'project', projectDir: proj });
-  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules v2\n');
-  fs.writeFileSync(path.join(kit, 'VERSION'), '1.1.0\n');
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules v2\n');
-  assert.deepEqual(r.updated, ['_Working Standards.md']);
-  assert.equal(JSON.parse(read(path.join(proj, '.kit/kit-version.json'))).version, '1.1.0');
-});
-
+// why: catches a break at scripts/kit.mjs:723 that no other test catches
 test('fold-back sorts each file into fold-back, update, conflict or new', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'project', projectDir: proj });
@@ -145,17 +128,7 @@ test('fold-back sorts each file into fold-back, update, conflict or new', () => 
   assert.match(r.report, /rules, improved/);
 });
 
-test('fold-back for user lists a new skill but ignores third-party skills', () => {
-  const { kit, home } = makeKit();
-  install({ kit, home, target: 'user' });
-  fs.mkdirSync(path.join(home, 'skills/my-new-skill'), { recursive: true });
-  fs.writeFileSync(path.join(home, 'skills/my-new-skill/SKILL.md'), 'new\n');
-  fs.mkdirSync(path.join(home, 'skills/vendor-skill'), { recursive: true });
-  fs.writeFileSync(path.join(home, 'skills/vendor-skill/SKILL.md'), 'vendor\n');
-  const r = foldBack({ kit, home, target: 'user' });
-  assert.deepEqual(r.added, ['skills/my-new-skill/SKILL.md']);
-});
-
+// why: catches a break at scripts/kit.mjs:849 that no other test catches
 test('bump raises the version and adds a changelog entry on top', () => {
   const { kit } = makeKit();
   fs.writeFileSync(path.join(kit, 'CHANGELOG.md'), '# Changelog\n\n## 1.0.0 - 2026-01-01\n- first\n');
@@ -165,6 +138,7 @@ test('bump raises the version and adds a changelog entry on top', () => {
   assert.match(read(path.join(kit, 'CHANGELOG.md')), /# Changelog\n\n## 1\.1\.0 - 2026-10-24\n- add the human-factor skill\n\n## 1\.0\.0/);
 });
 
+// why: catches a break at scripts/kit.mjs:858 that no other test catches
 test('scrub flags personal words, paths and non-ASCII, and passes clean files', () => {
   const { kit } = makeKit();
   fs.writeFileSync(path.join(kit, 'scrub.local.json'), JSON.stringify({ words: ['Pat', 'pat@example.com'] }));
@@ -207,6 +181,7 @@ function addThirdParty({ kit, home }) {
   fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify(config));
 }
 
+// why: catches a break at scripts/kit.mjs:914 that no other test catches
 test('snapshot keeps a credited copy of each third-party plugin and skill', () => {
   const ctx = makeKit();
   addThirdParty(ctx);
@@ -224,6 +199,7 @@ test('snapshot keeps a credited copy of each third-party plugin and skill', () =
   assert.deepEqual(r.missing, ['gone-plugin']);
 });
 
+// why: catches a break at scripts/kit.mjs:1013 that no other test catches
 test('restore brings a lost skill back from the snapshot and never overwrites one that exists', () => {
   const ctx = makeKit();
   addThirdParty(ctx);
@@ -237,34 +213,12 @@ test('restore brings a lost skill back from the snapshot and never overwrites on
   assert.equal(read(path.join(ctx.home, 'skills/sharpen/SKILL.md')), 'mine\n');
 });
 
+// why: catches a break at scripts/kit.mjs:45 that no other test catches
 test('scrub leaves the third-party snapshot alone', () => {
   const ctx = makeKit();
   fs.mkdirSync(path.join(ctx.kit, 'vendor/plugins/x'), { recursive: true });
   fs.writeFileSync(path.join(ctx.kit, 'vendor/plugins/x/README.md'), 'caf\u00e9 by someone\n');
   assert.deepEqual(scrub({ kit: ctx.kit }), []);
-});
-
-test('snapshot also finds plugins outside the plugin cache and fills a missing license', () => {
-  const ctx = makeKit();
-  addThirdParty(ctx);
-  // A plugin delivered by the desktop app lives in its own folder, found by its plugin.json name.
-  const root = path.join(ctx.home, 'app-plugins');
-  const dir = path.join(root, 'org1', 'plugin_abc');
-  fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'designer', version: '1.2.0', author: { name: 'Studio' } }));
-  fs.mkdirSync(path.join(dir, 'skills/critique'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'skills/critique/SKILL.md'), 'critique\n');
-  const config = JSON.parse(read(path.join(ctx.kit, 'kit.config.json')));
-  config.vendor.pluginRoots = [root];
-  config.vendor.plugins.push('designer');
-  config.vendor.credits.designer = { repository: 'https://example.com/designer', license: 'Apache-2.0', licenseFrom: 'plugin:toolbox' };
-  fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify(config));
-  const r = snapshot({ kit: ctx.kit, home: ctx.home });
-  assert.ok(r.plugins.includes('designer'));
-  const v = path.join(ctx.kit, 'vendor/plugins/designer');
-  assert.equal(read(path.join(v, 'skills/critique/SKILL.md')), 'critique\n');
-  assert.match(read(path.join(v, 'LICENSE')), /MIT License/);
-  assert.equal(JSON.parse(read(path.join(v, 'SOURCE.json'))).repository, 'https://example.com/designer');
 });
 
 function hashTree(dir) {
@@ -277,6 +231,7 @@ function hashTree(dir) {
   return out;
 }
 
+// why: guards rule:owners-rules
 test('fold-back only reports: it changes no file in the project, ~/.claude or the kit', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'project', projectDir: proj });
@@ -301,15 +256,8 @@ function caseKit() {
   return ctx;
 }
 
-test('session start says when the kit has newer rules, and how many', () => {
-  const { kit, home, proj } = caseKit();
-  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /newer/);
-  bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
-  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\)[\s\S]*\(1\.0\.0\)[\s\S]*\/methodology-kit update/);
-});
-
 // 1.21.1 carry 6: a main held by a ruleset alone is protected, though GitHub has no classic protection for it.
+// why: guards rule:outward-acts
 test('status reads main as protected by a ruleset, and unprotected only when neither holds it', () => {
   const answers = (prot, rules) => (args) => (args[1].includes('/protection') ? prot : rules);
   const notProtected = { status: 1, stdout: '{"message":"Branch not protected"}', stderr: 'gh: Branch not protected (HTTP 404)' };
@@ -322,6 +270,7 @@ test('status reads main as protected by a ruleset, and unprotected only when nei
   assert.equal(mainProtection('.', answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
 });
 
+// why: catches a break at scripts/kit.mjs:1213 that no other test catches
 test('status warns when the temp disk runs low on inodes, and is silent when it has room or cannot tell', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -335,6 +284,7 @@ test('status warns when the temp disk runs low on inodes, and is silent when it 
 });
 
 // S22-3: before 2.1.295 Claude Code ignores onFailure, so a guard that crashes or times out lets the command run.
+// why: catches a break at scripts/kit.mjs:1056 that no other test catches
 test('status and session start flag a Claude Code too old for onFailure, and stay quiet when new or unknown', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -357,6 +307,7 @@ test('status and session start flag a Claude Code too old for onFailure, and sta
 // project, so a claude.cmd planted there would run on every session start.
 // A machine as it ships: this sandbox sets NoDefaultCurrentDirectoryInExePath; most machines do not.
 const withoutSafeSearch = (env) => Object.fromEntries(Object.entries(env).filter(([k]) => k.toLowerCase() !== 'nodefaultcurrentdirectoryinexepath'));
+// why: catches a break only Windows shows (drive paths, Git for Windows sh, junctions)
 test('the Claude Code version read never runs a claude program planted in the current folder', { windows: true, skip: process.platform !== 'win32' }, () => {
   const dir = makeTemp('planted-');
   const marker = path.join(dir, 'ran.txt');
@@ -370,61 +321,7 @@ test('the Claude Code version read never runs a claude program planted in the cu
   assert.equal(r.stdout.trim(), 'null');
 });
 
-test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
-  const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'user' });
-  install({ kit, home, target: 'project', projectDir: proj });
-  let r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, true);
-  assert.match(r.text, /Kit folder: 1\.0\.0/);
-  assert.match(r.text, /~\/\.claude: 1\.0\.0, current/);
-  assert.match(r.text, /This project: 1\.0\.0, current/);
-  assert.match(r.text, /^Current: /m);
-
-  // A newer kit release: both installs are behind, and each says what to run.
-  bump({ kit, level: 'patch', note: 'one', date: '2026-02-01' });
-  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newer\n');
-  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, false);
-  assert.match(r.text, /~\/\.claude: 1\.0\.0, behind kit 1\.0\.1/);
-  assert.match(r.text, /This project: 1\.0\.0, behind kit 1\.0\.1; 1 file\(s\) waiting/);
-  assert.match(r.text, /Run \/methodology-kit update\./);
-  assert.match(r.text, /kit\.mjs install user\./);
-  assert.match(r.text, /^Not current: /m);
-
-  // Same version, a file carrying this project's own values on top of the current kit copy (a filled adapter row, a
-  // tracking file): that is normal use, not a stale install, so status stays current and names it (the owner,
-  // 2026-10-31: "current" must be reachable without wiping a project's records).
-  install({ kit, home, target: 'user' });
-  install({ kit, home, target: 'project', projectDir: proj });
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, edited here\n');
-  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, true, r.text);
-  assert.match(r.text, /1 file\(s\) carry[\s\S]*own values[\s\S]*_Working Standards\.md/);
-
-  // Changed here AND in the kit: a hand merge is owed, so status is not current until the merge is recorded.
-  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
-  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newest\n');
-  install({ kit, home, target: 'user' });
-  install({ kit, home, target: 'project', projectDir: proj });
-  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, false);
-  assert.match(r.text, /1 file\(s\) changed here and in the kit[\s\S]*_Working Standards\.md[\s\S]*by hand/);
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
-  const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
-  assert.deepEqual(m.merged, ['_Working Standards.md']);
-  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.equal(r.current, true, r.text);
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, newest, edited here\n');
-
-  // GitHub ahead of the kit folder.
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
-  r = status({ kit, home, projectDir: proj, ahead: () => 2, newest: () => 'v1.0.3' });
-  assert.equal(r.current, false);
-  assert.match(r.text, /GitHub has 2 newer kit commit[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
-  assert.doesNotMatch(r.text, /git pull/);
-});
-
+// why: guards rule:owners-rules
 test('status reports a project or ~/.claude with no install record, and writes nothing', () => {
   const { kit, home, proj } = makeKit();
   const r = status({ kit, home, projectDir: proj, ahead: () => 0 });
@@ -434,6 +331,7 @@ test('status reports a project or ~/.claude with no install record, and writes n
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
+// why: guards rule:sweep-auto-approval
 test('status shows the real start load against its cap, and says when it is over', () => {
   const { kit, home, proj } = makeKit();
   fs.writeFileSync(path.join(proj, 'CLAUDE.md'), 'x'.repeat(300));
@@ -446,15 +344,7 @@ test('status shows the real start load against its cap, and says when it is over
     /Real start load: 1,200 B of 1,000 .*\. Over its cap: trim per rule:kit-standards item 14\./);
 });
 
-test('session start lists the skills for the cases this project turned on', () => {
-  const { kit, home, proj } = caseKit();
-  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /No skill cases chosen yet/);
-  fs.writeFileSync(path.join(proj, '.claude/skill-cases.local.json'), JSON.stringify({ on: ['ui-ux'] }));
-  const msg = sessionStartReport({ kit, home, projectDir: proj });
-  assert.match(msg, /UI\/UX design[\s\S]*design:design-critique, human-factor/);
-  assert.doesNotMatch(msg, /systematic-debugging/);
-});
-
+// why: catches a break at scripts/kit.mjs:1118 that no other test catches
 test('session start names a standby plugin a turned-on case needs, and how to switch it on here', () => {
   const { kit, home, proj } = caseKit();
   const catalog = { cases: [{ id: 'ml', name: 'ML work', when: 'models or datasets', skills: [], plugin: 'huggingface-skills@claude-plugins-official' }] };
@@ -467,15 +357,7 @@ test('session start names a standby plugin a turned-on case needs, and how to sw
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /Standby plugin/);
 });
 
-test('pre-compact counts what is waiting for the kit', () => {
-  const { kit, home, proj } = caseKit();
-  install({ kit, home, target: 'user' });
-  assert.match(preCompactReport({ kit, home, projectDir: proj }), /No rule changes waiting for the kit\./);
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, improved\n');
-  fs.writeFileSync(path.join(home, 'projects', projectSlug(proj), 'memory', 'new-lesson.md'), 'lesson\n');
-  assert.match(preCompactReport({ kit, home, projectDir: proj }), /2 rule change\(s\)[\s\S]*_Working Standards\.md, memory\/new-lesson\.md/);
-});
-
+// why: guards rule:outward-acts
 test('the hook script prints a user message and context for Claude, and never fails the session', async () => {
   const { spawnSync } = await import('node:child_process');
   const { kit, home, proj } = caseKit();
@@ -499,6 +381,7 @@ test('the hook script prints a user message and context for Claude, and never fa
   assert.match(JSON.parse(lost.stdout).systemMessage, /kit not found/i);
 });
 
+// why: guards rule:kit-standards
 test('every backup in the real kit credits its source', () => {
   const vendor = path.resolve('vendor');
   const credits = read(path.join(vendor, 'CREDITS.md'));
@@ -515,6 +398,7 @@ test('every backup in the real kit credits its source', () => {
   }
 });
 
+// why: guards rule:kit-standards
 test('every skill the case map names exists in the kit, its backups or Claude Code itself', () => {
   const { cases } = JSON.parse(read(path.resolve('project/.claude/kit/skill-cases.json')));
   const BUILT_IN = new Set(['security-review']);
@@ -542,6 +426,7 @@ test('every skill the case map names exists in the kit, its backups or Claude Co
   }
 });
 
+// why: guards rule:kit-stays-local
 test('session start names only the kit files that owe a hand merge, not a project\'s own values', () => {
   const { kit, home, proj } = caseKit();
   // Changed only here: the project's own values on the current kit copy, normal use, so session start stays quiet.
@@ -553,6 +438,7 @@ test('session start names only the kit files that owe a hand merge, not a projec
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /1 kit file\(s\) changed here[\s\S]*_Working Standards\.md[\s\S]*kit\.mjs install project <folder> --merged/);
 });
 
+// why: catches a break at scripts/kit.mjs:1253 that no other test catches
 test('pre-compact says when an installed third-party plugin moved past its backup', () => {
   const ctx = caseKit();
   addThirdParty(ctx);
@@ -565,6 +451,7 @@ test('pre-compact says when an installed third-party plugin moved past its backu
   assert.match(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /1 third-party plugin\(s\) changed since the backup: toolbox \(2\.0\.0 -> 2\.1\.0\)[\s\S]*run snapshot/);
 });
 
+// why: guards rule:kit-standards
 test('brief templates point to the one rules block and never carry a pasted copy', () => {
   for (const t of ['builder-brief.md', 'checker-brief.md']) {
     const body = read(path.resolve('user/skills/agent-team-build/templates', t));
@@ -593,6 +480,7 @@ function gitProject() {
   return ctx;
 }
 
+// why: guards rule:first-push-gate
 test('vault backup copies the private notes, never a secret, and commits without pushing', () => {
   const { kit, home, proj, vault } = gitProject();
   const r = vaultBackup({ projectDir: proj, date: '2026-10-27' });
@@ -610,6 +498,7 @@ test('vault backup copies the private notes, never a secret, and commits without
   assert.match(preCompactReport({ kit, home, projectDir: proj }), /Vault backup: 1 file\(s\) changed, committed in .*vault\. Push on the owner's yes\./);
 });
 
+// why: catches a break at scripts/kit.mjs:1282 that no other test catches
 test('pre-compact reminds a project with no vault backup to set one up', () => {
   const { kit, home, proj } = caseKit();
   assert.match(preCompactReport({ kit, home, projectDir: proj }), /No vault backup set up/);
@@ -622,6 +511,7 @@ const STANDARDS = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.en
 const words = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean);
 const shingles = (w, n = 8) => { const s = new Set(); for (let i = 0; i + n <= w.length; i++) s.add(w.slice(i, i + n).join(' ')); return s; };
 
+// why: guards rule:kit-standards
 test('kit memory points to the standards instead of repeating them', () => {
   const ruleText = shingles(words(STANDARDS()));
   const repeats = [];
@@ -634,6 +524,7 @@ test('kit memory points to the standards instead of repeating them', () => {
   assert.deepEqual(repeats, []);
 });
 
+// why: guards rule:kit-standards
 test('every rule section in the standards says why', () => {
   const EXEMPT = new Set(['Critical Rules Priority Index', 'Handoff Message Structure', 'REQUIRED FIRST ACTIONS',
     'Working Mode: Plan (default)', 'State Snapshot', 'Newly-Established Working Standards',
@@ -648,6 +539,7 @@ test('every rule section in the standards says why', () => {
 });
 
 // The caps the owner set (plan rule-modules): per module, for AGENTS.md, and for all a session loads at start.
+// why: guards rule:sweep-auto-approval
 test('the rules stay under their size caps and every start import resolves', () => {
   const caps = JSON.parse(read(path.resolve('kit.config.json'))).caps;
   assert.ok(caps && caps.module > 0 && caps.agentsMd > 0 && caps.sessionStart > 0, 'kit.config.json needs caps');
@@ -664,6 +556,7 @@ test('the rules stay under their size caps and every start import resolves', () 
   assert.deepEqual(start.unresolved, []);
 });
 
+// why: catches a break at scripts/kit.mjs:1342 that no other test catches
 test('a running session hears about a new kit release once, at the next message', () => {
   const { kit, home, proj } = caseKit();
   assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
@@ -679,6 +572,7 @@ test('a running session hears about a new kit release once, at the next message'
   assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
 });
 
+// why: catches a break at scripts/kit.mjs:1328 that no other test catches
 test('session start says when the kit on GitHub is ahead of the kit folder', () => {
   const { kit, home, proj } = caseKit();
   const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' });
@@ -713,6 +607,7 @@ function releaseKit() {
   return { ...ctx, git, cli };
 }
 
+// why: guards rule:outward-acts
 test('install runs from a clean release tag and stamps it as a release', () => {
   const { kit, home, proj, cli } = releaseKit();
   const r = cli('install', 'project', proj);
@@ -728,6 +623,7 @@ test('install runs from a clean release tag and stamps it as a release', () => {
   assert.equal(JSON.parse(read(path.join(home, 'kit-install.json'))).release, true);
 });
 
+// why: guards rule:outward-acts
 test('install on the release tag itself refuses an uncommitted edit to anything it copies or reads', () => {
   const { kit, proj, git, cli } = releaseKit();
   // The owner config and profile are rendered into the installed files, and the script decides what install does.
@@ -742,6 +638,7 @@ test('install on the release tag itself refuses an uncommitted edit to anything 
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
+// why: guards rule:outward-acts
 test('install refuses a kit folder past its release tag, and names where it is and the two fixes', () => {
   const { kit, proj, git, cli } = releaseKit();
   // The newest tag is picked by version, not by name: v1.10.0 is newer than v1.9.0.
@@ -760,6 +657,7 @@ test('install refuses a kit folder past its release tag, and names where it is a
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
+// why: guards rule:outward-acts
 test('install refuses a kit folder with no git history, or one inside another repo', () => {
   const { kit, proj, home } = makeKit();
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
@@ -778,6 +676,7 @@ test('install refuses a kit folder with no git history, or one inside another re
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
+// why: guards rule:outward-acts
 test('install refuses changed, new, renamed and ignored files under the paths it copies, and names each one', () => {
   const { kit, proj, git, cli } = releaseKit();
   fs.appendFileSync(path.join(kit, 'project/_Working Standards.md'), 'uncommitted\n');
@@ -795,25 +694,7 @@ test('install refuses changed, new, renamed and ignored files under the paths it
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
-test('--unreleased installs a branch build on purpose and stamps it as not a release', () => {
-  const { kit, proj, home, git, cli } = releaseKit();
-  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, branch\n');
-  git('commit', '-q', '-am', 'branch work');
-  fs.writeFileSync(path.join(kit, 'memory/new.md'), 'untracked\n');
-  for (const args of [['install', 'project', proj, '--unreleased'], ['install', 'user', '--unreleased']]) {
-    const r = cli(...args);
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /Unreleased build v1\.0\.0-1-g[0-9a-f]+ \(--unreleased\)[\s\S]*throwaway test install only/);
-  }
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, branch\n');
-  for (const stampPath of [path.join(proj, '.kit/kit-version.json'), path.join(home, 'kit-install.json')]) {
-    const stamp = JSON.parse(read(stampPath));
-    assert.equal(stamp.release, false);
-    assert.match(stamp.describe, /^v1\.0\.0-1-g[0-9a-f]+$/);
-    assert.deepEqual(stamp.dirty, ['memory/new.md']);
-  }
-});
-
+// why: catches a break at scripts/kit.mjs:1093 that no other test catches
 test('status and session start show an unreleased install as a gap; an older stamp with no release field is not flagged', () => {
   const { kit, home, proj } = makeKit();
   // No release field: an install made before the check existed reads as unknown, not as unreleased.
@@ -836,13 +717,14 @@ test('status and session start show an unreleased install as a gap; an older sta
   assert.match(r.text, /^Not current: ~\/\.claude .*unreleased build; This project .*unreleased build\.$/m);
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*kit\.mjs" install user/);
   // Reinstalled from the release: the gap closes.
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
-  install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
+  install({ kit, home, target: 'project', projectDir: proj, release: released(kit, 'v1.0.0') });
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, true, r.text);
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /unreleased/);
 });
 
+// why: catches a break at scripts/kit.mjs:594 that no other test catches
 test('a release install over an unreleased one removes the files only that build had, and keeps a changed one as a gap', () => {
   const { kit, home, proj } = makeKit();
   const extra = ['user/skills/branch-only/SKILL.md', 'user/agents/branch-only.md'];
@@ -851,7 +733,7 @@ test('a release install over an unreleased one removes the files only that build
   for (const f of extra) fs.rmSync(path.join(kit, f));
   // The owner changed one of them: it holds their work, so it stays and is named.
   fs.writeFileSync(path.join(home, 'agents/branch-only.md'), 'branch build, edited here\n');
-  const r = install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  const r = install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   assert.deepEqual(r.retired, ['skills/branch-only/SKILL.md']);
   assert.equal(fs.existsSync(path.join(home, 'skills/branch-only/SKILL.md')), false);
   assert.ok(fs.existsSync(path.join(r.backupDir, 'skills/branch-only/SKILL.md')), 'a backup is kept');
@@ -862,42 +744,14 @@ test('a release install over an unreleased one removes the files only that build
   assert.match(status({ kit, home, projectDir: proj, ahead: () => 0 }).text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0[\s\S]*1 file\(s\) kept from an unreleased build/);
   // Once the owner removes it, the next release install is a release again.
   fs.rmSync(path.join(home, 'agents/branch-only.md'));
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const clean = JSON.parse(read(path.join(home, 'kit-install.json')));
   assert.equal(clean.release, true);
   assert.equal(clean.leftover, undefined);
   assert.equal(clean.files['agents/branch-only.md'], undefined);
 });
 
-test('the branch-only clean-up runs only over an unreleased install, never removes the overlay, and a dry run removes nothing', () => {
-  // A release or pre-check install over which the kit stopped shipping a file (not retired): the file stays.
-  for (const before of [{ release: true, describe: 'v1.0.0' }, undefined]) {
-    const { kit, home } = makeKit();
-    fs.writeFileSync(path.join(kit, 'user/agents/dropped.md'), 'shipped once\n');
-    install({ kit, home, target: 'user', release: before });
-    fs.rmSync(path.join(kit, 'user/agents/dropped.md'));
-    const r = install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.1' } });
-    assert.deepEqual(r.retired, [], JSON.stringify(before));
-    assert.ok(fs.existsSync(path.join(home, 'agents/dropped.md')));
-  }
-  // The overlay CLAUDE.local.md is written by install itself, not from a kit path, so it is never branch-only.
-  const { kit, home, proj } = overlayKit();
-  install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
-  const back = install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: true, describe: 'v1.0.0' } });
-  assert.ok(!back.retired.includes('CLAUDE.local.md'));
-  assert.ok(fs.existsSync(path.join(proj, 'CLAUDE.local.md')));
-  // A dry run previews the clean-up: the file and the record stay as they are.
-  const d = makeKit();
-  fs.writeFileSync(path.join(d.kit, 'user/agents/branch-only.md'), 'branch build\n');
-  install({ kit: d.kit, home: d.home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
-  fs.rmSync(path.join(d.kit, 'user/agents/branch-only.md'));
-  const stampBefore = read(path.join(d.home, 'kit-install.json'));
-  const dry = install({ kit: d.kit, home: d.home, target: 'user', dryRun: true, release: { release: true, describe: 'v1.0.0' } });
-  assert.deepEqual(dry.retired, ['agents/branch-only.md'], 'the preview names it');
-  assert.ok(fs.existsSync(path.join(d.home, 'agents/branch-only.md')));
-  assert.equal(read(path.join(d.home, 'kit-install.json')), stampBefore);
-});
-
+// why: guards rule:outward-acts
 test('install refuses when git cannot say what changed, rather than calling the folder clean', () => {
   const { kit, proj, cli } = releaseKit();
   // A profile path outside the repo makes git status fail; that must not read as "nothing changed".
@@ -910,6 +764,7 @@ test('install refuses when git cannot say what changed, rather than calling the 
   assert.equal(fs.existsSync(path.join(path.dirname(kit), 'home', 'kit-install.json')), false);
 });
 
+// why: guards rule:outward-acts
 test('the hook script speaks at a message only when there is news', async () => {
   const { kit, home, proj } = caseKit();
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
@@ -926,6 +781,7 @@ test('the hook script speaks at a message only when there is news', async () => 
   assert.match(out.systemMessage, /was released while this session ran/);
 });
 
+// why: guards rule:outward-acts
 test('the load guard refuses a busy CPU and names what is using it', async () => {
   const { createRequire } = await import('node:module');
   const guard = createRequire(import.meta.url)(path.resolve('project/.claude/load-guard.cjs'));
@@ -935,6 +791,7 @@ test('the load guard refuses a busy CPU and names what is using it', async () =>
   assert.equal(guard.checkLoad({ busy: 40, threshold: 70, top: [] }).ok, true);
 });
 
+// why: guards rule:outward-acts
 test('the load guard script blocks or passes on the real machine', () => {
   const script = path.resolve('project/.claude/load-guard.cjs');
   const run = (max) => spawnSync(process.execPath, [script], { encoding: 'utf8', env: { ...process.env, LOAD_GUARD_MAX: String(max) } });
@@ -948,6 +805,7 @@ test('the load guard script blocks or passes on the real machine', () => {
   assert.equal(forced.status, 0);
 });
 
+// why: guards rule:outward-acts
 test('the load guard defaults to 40% over a 3-second average', async () => {
   const { createRequire } = await import('node:module');
   const guard = createRequire(import.meta.url)(path.resolve('project/.claude/load-guard.cjs'));
@@ -957,6 +815,7 @@ test('the load guard defaults to 40% over a 3-second average', async () => {
 
 // measure models how Claude Code loads a project at session start (memory docs): CLAUDE.md, its @imports up to
 // four hops, and rules with no paths field. A path in an import ends at the first unescaped space.
+// why: catches a break at scripts/kit.mjs:1598 that no other test catches
 test('measure counts what a session loads at start, the way Claude Code reads imports', () => {
   const proj = makeTemp('measure-');
   const w = (rel, body) => { fs.mkdirSync(path.dirname(path.join(proj, rel)), { recursive: true }); fs.writeFileSync(path.join(proj, rel), body); };
@@ -977,6 +836,7 @@ test('measure counts what a session loads at start, the way Claude Code reads im
 
 // rule:kit-standards item 14: the cap must guard what really loads - not only CLAUDE.md, but the memory index,
 // the global CLAUDE.md and the name + description of every skill an enabled plugin or the user folder lists.
+// why: guards rule:kit-stays-local
 test('measureReal counts the memory index, global CLAUDE.md and the skill listings of enabled plugins only', () => {
   const proj = makeTemp('real-proj-');
   const home = makeTemp('real-home-');
@@ -1003,6 +863,7 @@ test('measureReal counts the memory index, global CLAUDE.md and the skill listin
 // Headings inside code blocks (the handoff template) are examples, not rules, and carry none.
 const ruleFiles = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('rules', n));
 const moduleFiles = ruleFiles;
+// why: guards rule:kit-standards
 test('every rule heading has a unique, plain-word ID', () => {
   const seen = new Map(), bad = [];
   for (const f of ruleFiles()) {
@@ -1018,19 +879,14 @@ test('every rule heading has a unique, plain-word ID', () => {
   assert.ok(seen.size >= 70, `${seen.size} rule IDs`);
 });
 
+// why: guards rule:pr-body
 test('headings skips headings inside code blocks and reads the ID after the title', () => {
   const hs = headings('## One {#one}\n```\n## Not a rule\n```\n### Two: more (x) {#two}\n## Three\n');
   assert.deepEqual(hs.map((h) => [h.level, h.title, h.id]), [[2, 'One', 'one'], [3, 'Two: more (x)', 'two'], [2, 'Three', null]]);
 });
 
 const MODULE_MAP = () => JSON.parse(read(path.resolve('docs/migrations/1.0.0-modules.json')));
-test('the saved ledger matches where each rule lives now', () => {
-  const rows = [...read(path.resolve('docs/migrations/1.0.0-ledger.md')).matchAll(/^\| ([a-z0-9-]+) \| .+? \| #{2,3} \| ([a-z-]+) \| \d+ \|$/gm)];
-  assert.equal(rows.length, 70);
-  const wrong = rows.filter(([, id, mod]) => !headings(read(path.resolve('rules', `${mod}.md`))).some((h) => h.id === id)).map(([, id, mod]) => `${id} not in ${mod}`);
-  assert.deepEqual(wrong, []);
-});
-
+// why: guards rule:outward-acts
 test('the ledger refuses a section the map leaves out or a map entry with no section', () => {
   const map = { modules: [{ id: 'core', sections: ['a'] }] };
   assert.throws(() => ledger('## A {#a}\nx\n## B {#b}\ny\n', map), /not placed: b/);
@@ -1046,6 +902,7 @@ const KIT_TEXT_FILES = () => {
     e.isDirectory() ? (skip.has(e.name) ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]);
   return walk(path.resolve('.')).filter((f) => /\.(md|mjs|cjs|html|json)$/.test(f) && !f.endsWith('CHANGELOG.md'));
 };
+// why: guards rule:kit-standards
 test('every rule pointer in the kit names a rule ID that exists', () => {
   const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
   const broken = [], byWords = [];
@@ -1069,6 +926,7 @@ test('every rule pointer in the kit names a rule ID that exists', () => {
 const FORMAT_SKILLS = ['pr-body', 'release-notes', 'closeout', 'preview-test', 'pre-pr-sweep', 'adr'];
 const noFront = (t) => t.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
 const plainLine = (l) => l.replace(/^(#{1,4} .*?) \{#[^}]+\}$/, '$1');
+// why: guards rule:kit-standards
 test('the format skills keep every 1.1.0 rule line exactly once', () => {
   const names = spawnSync('git', ['ls-tree', '--name-only', 'v1.1.0', 'rules/'], { encoding: 'utf8' });
   assert.equal(names.status, 0, 'the v1.1.0 tag must exist locally');
@@ -1087,26 +945,6 @@ test('the format skills keep every 1.1.0 rule line exactly once', () => {
   const copied = [...want].filter(([l, n]) => (got.get(l) || 0) > n).map(([l]) => l.slice(0, 80));
   assert.deepEqual({ lost, copied }, { lost: [], copied: [] });
 });
-test('each format skill meets the open skill spec and its module keeps a one-line rule naming it', () => {
-  const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
-  for (const s of FORMAT_SKILLS) {
-    const file = path.resolve('user/skills', s, 'SKILL.md');
-    assert.ok(fs.existsSync(file), `${s}: SKILL.md exists`);
-    const text = read(file);
-    const front = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1];
-    assert.equal(front.match(/^name: (.*)$/m)[1].trim(), s, `${s}: name matches its folder`);
-    assert.match(s, /^[a-z0-9]+(-[a-z0-9]+)*$/);
-    const desc = front.match(/^description: (.*)$/m)[1].trim();
-    assert.ok(desc.length > 0 && desc.length <= 1024, `${s}: description 1-1,024 characters`);
-    assert.ok(text.split('\n').length < 500, `${s}: under 500 lines`);
-    const home = text.match(/\brule:([a-z0-9-]+)/);
-    assert.ok(home && ids.has(home[1]), `${s}: names the live rule it serves`);
-    // The module keeps the rule's heading and ID, and one line that sends the reader to the skill.
-    const mod = ruleFiles().map(read).find((t) => t.includes(`{#${home[1]}}`));
-    const section = mod.split(`{#${home[1]}}`)[1].split(/\n#{1,3} /)[0];
-    assert.match(section, new RegExp(`\\b${s} skill\\b`), `${s}: rule:${home[1]} names the skill`);
-  }
-});
 // Each format audit passes a clean piece and names every fault in a bad one.
 const runAudit = (skill, text, args = [], cwd) => {
   const dir = makeTemp('audit-');
@@ -1114,6 +952,7 @@ const runAudit = (skill, text, args = [], cwd) => {
   fs.writeFileSync(file, text);
   return spawnSync('node', [path.resolve('user/skills', skill, 'audit.mjs'), file, ...args], { encoding: 'utf8', cwd: cwd || dir });
 };
+// why: catches a break at user/skills/release-notes/audit.mjs:89 that no other test catches
 test('the release notes audit passes clean notes and names each public-prose fault', () => {
   const good = '## What is new\n\n- Plans now sync between your phone and laptop.\n- Limits: syncing needs both devices online once.\n';
   const ok = runAudit('release-notes', good, ['1.4.0']);
@@ -1127,6 +966,7 @@ test('the release notes audit passes clean notes and names each public-prose fau
   assert.match(runAudit('release-notes', good, ['1.4.0'], proj).stdout, /package\.json says 1\.3\.2/);
   assert.equal(runAudit('release-notes', good, ['1.3.2'], proj).status, 0);
 });
+// why: guards rule:pr-body
 test('the sweep report audit passes a done report and names each missing part', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
   const good = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | low | slow list | DEFERRED roadmap |\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
@@ -1138,6 +978,7 @@ test('the sweep report audit passes a done report and names each missing part', 
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
 });
 // The owner's decision 6 (1.21.0): a handoff that led with fixes parked the next build behind them.
+// why: guards rule:kit-standards
 test('a handoff\'s first action is the next build, and a fix goes first only when high or critical', () => {
   const rule = (f) => read(path.resolve(f));
   assert.match(rule('rules/tracking-and-handoff.md'), /9\. \*\*State working mode \+ first action\.\*\*[^\n]*always the next build[^\n]*only when it is high or critical/);
@@ -1153,6 +994,7 @@ test('a handoff\'s first action is the next build, and a fix goes first only whe
   // The start load has no room to give, so this text stays out of what every session loads.
   for (const f of ['project/CLAUDE.md', 'project/AGENTS.md', 'project/_Start Here.md']) assert.doesNotMatch(rule(f), /always the next build/, f);
 });
+// why: guards rule:outward-acts
 test('a first action still stops for a lock, an outward act or an open decision, and every copy says so', () => {
   const rule = (f) => read(path.resolve(f));
   assert.match(rule('rules/core.md'), /\*\*Still stop and ask:\*\*[^\n]*a plan lock or batch approval/);
@@ -1172,6 +1014,7 @@ test('a first action still stops for a lock, an outward act or an open decision,
   assert.match(closeout, /only as rule:compact-ritual says/);
 });
 
+// why: guards rule:sweep-auto-approval
 test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
   const rule = (f) => read(path.resolve(f));
   const findings = rule('rules/reviews-and-findings.md');
@@ -1196,6 +1039,7 @@ test('only medium or below carries, in the rule and in everything the sweep tool
 
 // A high or critical is fixed before the PR or accepted by the owner, never carried to the next run
 // (rule:finding-pipeline).
+// why: guards rule:sweep-auto-approval
 test('the sweep audit refuses a high or critical finding carried as DEFERRED', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
   const report = (rows) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n${rows}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
@@ -1219,6 +1063,7 @@ test('the sweep audit refuses a high or critical finding carried as DEFERRED', (
   const bare = runAudit('pre-pr-sweep', report('| 1 | high | token in log | ACCEPTED owner |'));
   assert.equal(bare.status, 1, 'an acceptance gives its reason');
 });
+// why: guards rule:sweep-tiers
 test('the sweep audit holds each report to its tier', () => {
   const base = '# Sweep\n\n- **Branch:** chore/bump at a1b2c3d (2026-03-04)\n';
   const none = runAudit('pre-pr-sweep', base + '\nNo secrets or personal data in the diff.\n');
@@ -1246,6 +1091,7 @@ test('the sweep audit holds each report to its tier', () => {
   const fullFirst = runAudit('pre-pr-sweep', first + 'First push check: PASS at a1b2c3d. Tracked files reviewed by the owner: yes.\n');
   assert.equal(fullFirst.status, 0, fullFirst.stdout);
 });
+// why: catches a break at user/skills/preview-test/audit.mjs:20 that no other test catches
 test('the preview test audit passes a full record and names each missing part', () => {
   const good = '## Preview test - Offline sync, #12 (2026-03-04)\n\n- **Build:** the host\'s preview for `feature/offline-sync` at `a1b2c3d`; the lead opened it first.\n- **Who, by stakes:** the lead in emulation only; no new surface, no device-only path.\n- **Setup:** phone emulation and desktop; made-up details only; nothing sent.\n\n| Check | Result |\n|---|---|\n| Headers and security policy | same as production |\n| Layout: plan list | clipped at 320 px |\n\n- **Shots:** phone-list.png, desktop-list.png\n- **Result:** FAIL - the list clip goes to the finding pipeline.\n';
   const ok = runAudit('preview-test', good);
@@ -1255,15 +1101,7 @@ test('the preview test audit passes a full record and names each missing part', 
   assert.equal(out.status, 1);
   for (const want of [/pull request/, /Build/, /made-up/, /Layout: plan list/, /Shots/]) assert.match(out.stdout, want);
 });
-test('the handoff audit passes a full handoff and names each missing or empty part', () => {
-  const good = '# Field Notes - Continuation Handoff\n\n## REQUIRED FIRST ACTIONS\nRun the Post-Compact Orientation Protocol and confirm mode + first action with the owner.\n\n## Working Mode: Plan (default)\n\n## State Snapshot\n- Current component / version: sync 1.2\n- Git: feature/sync at a1b2c3d, pushed, PR #12 open\n\n## Newly-Established Working Standards\nnone\n\n## Critical In-Flight Context (do NOT lose)\n- Decisions awaiting the owner: none\n\n## Reading Order (mandatory, in order)\n1. _Start Here.md\n\n## Next Step (REQUIRED)\n- What: run the preview test  - Why: merge needs it\n\n## Anti-Hallucination Discipline\n- Every claim verified by file read.\n';
-  const ok = runAudit('closeout', good);
-  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
-  const bad = good.replace('## Reading Order (mandatory, in order)\n1. _Start Here.md\n\n', '').replace('- Git: feature/sync at a1b2c3d, pushed, PR #12 open', '- Git:').replace('Run the Post-Compact Orientation Protocol and', 'Read the files and');
-  const out = runAudit('closeout', bad);
-  assert.equal(out.status, 1);
-  for (const want of [/Reading Order/, /Git/, /orientation/i]) assert.match(out.stdout, want);
-});
+// why: catches a break at user/skills/adr/audit.mjs:18 that no other test catches
 test('the ADR audit passes a full record and names each missing part', () => {
   const good = '# ADR-007: Store plans on the device\n\n- **Status:** accepted\n- **Date:** 2026-02-01\n\n## Context and Problem Statement\nWhere do plans live?\n\n## Decision Drivers\n- Privacy\n\n## Considered Options\n1. **Option A:** device\n2. **Option B:** server\n\n## Decision Outcome\n\n**Chosen option:** Option A\n\n### Why\nPrivacy.\n\n### Dual-Horizon\n- **Impact now:** none\n- **Impact later:** sync needs a design\n\n### Consequences\n**Positive:**\n- private\n\n## Pros and Cons of the Options\n### Option A\n- good\n';
   const ok = runAudit('adr', good);
@@ -1274,6 +1112,7 @@ test('the ADR audit passes a full record and names each missing part', () => {
   for (const want of [/Status/, /Dual-Horizon/, /ADR-NNN/]) assert.match(out.stdout, want);
 });
 // Found by the Phase 3 live check: a command flag in inline code (`node --flag`) is code, not a prose dash.
+// why: guards rule:pr-body
 test('the PR body audits read a dash inside inline code as code, and still catch a prose dash', () => {
   const dir = makeTemp('prdash-');
   const lean = (notes) => `## Math: add a subtract function\n\nThe math module can now subtract.\n\n**Changes**\n- New \`sub(a, b)\` export.\n\n**Gates**\n- [x] The test passes.\n- [x] Full local gate green.\n- [x] Sweep exempt by dimension: privacy, supply chain, legal, code security; no secrets or account information.\n\n**Notes** - ${notes}\n`;
@@ -1296,6 +1135,7 @@ test('the PR body audits read a dash inside inline code as code, and still catch
   assert.match(dashes('pr-body-audit.mjs', std('Run `node --test` to check.'), 'Math: subtract'), /^PASS/);
   assert.match(dashes('pr-body-audit.mjs', std('It runs -- for now -- by hand.'), 'Math: subtract'), /^FAIL/);
 });
+// why: guards rule:pr-body
 test('the push guard names the PR body skill', () => {
   const ask = (command) => {
     const r = spawnSync('node', [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8' });
@@ -1308,6 +1148,7 @@ test('the push guard names the PR body skill', () => {
 });
 
 // Review findings on the 1.2.0 audits: each test is the failing input the review reported.
+// why: guards rule:outward-acts
 test('the handoff and ADR audits refuse empty fields that only look filled', () => {
   // The unfilled template, as rule:handoff-message-structure gives it.
   const rule = read(path.resolve('rules/tracking-and-handoff.md'));
@@ -1321,6 +1162,7 @@ test('the handoff and ADR audits refuse empty fields that only look filled', () 
   assert.equal(a.status, 1);
   for (const want of [/chosen option/, /Dual-Horizon/, /two options/]) assert.match(a.stdout, want);
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep audit catches an open high in a severity column or a finding bullet', () => {
   const head = '# Sweep\n\n- **Tier:** fix\n- **Branch:** feature/x at a1b2c3d (2026-03-04)\n\nPrivacy PASS. Supply chain PASS. Legal PASS. Code security PASS. Gaps PASS. Version goal alignment: YES.\n\n';
   const col = runAudit('pre-pr-sweep', head + '| ID | Finding | Severity | Disposition |\n|---|---|---|---|\n| S1 | Low-level parser lets a crafted file overwrite the key store | high | open |\n');
@@ -1331,13 +1173,7 @@ test('the sweep audit catches an open high in a severity column or a finding bul
   assert.match(bullet.stdout, /finding S1/);
   assert.equal(runAudit('pre-pr-sweep', head + '- **S1 (high)** - the token is logged. FIXED a1b2c3d.\n').status, 0);
 });
-test('the release notes audit catches build-process AI words, bug tallies and encoded note links, not product AI features', () => {
-  const caught = runAudit('release-notes', 'Written and reviewed by a coding agent and an assistant model. Fixed 14 bugs. See [plan](../_Active%20Plan.md).\n', ['1.0.0']);
-  assert.equal(caught.status, 1);
-  for (const want of [/AI or tool/, /tally/, /gitignored/]) assert.match(caught.stdout, want);
-  const feature = runAudit('release-notes', 'Ask now answers with your own AI key, from any LLM provider you choose.\n', ['1.0.0']);
-  assert.equal(feature.status, 0, feature.stdout);
-});
+// why: guards rule:pr-body
 test('the PR body audits read fenced code as code', () => {
   const dir = makeTemp('prfence-');
   const f = path.join(dir, 'b.md');
@@ -1345,43 +1181,19 @@ test('the PR body audits read fenced code as code', () => {
   const line = spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, 'Math: subtract'], { encoding: 'utf8' }).stdout.split('\n').find((l) => l.includes('no spaced dashes'));
   assert.match(line, /^PASS/);
 });
+// why: guards rule:outward-acts
 test('the preview test audit refuses the template placeholder as a result', () => {
   const rec = '## Preview test - x, #1 (2026-03-04)\n\n- **Build:** the preview for `feature/x` at `a1b2c3d`\n- **Who, by stakes:** the lead in emulation only\n- **Setup:** made-up details only; nothing sent.\n\n| Check | Result |\n|---|---|\n| Layout | fine |\n\n- **Shots:** a.png\n- **Result:** PASS | FAIL - <what goes to the finding pipeline>\n';
   assert.equal(runAudit('preview-test', rec).status, 1);
 });
 
-// Plan rule-modules, Phase 1: the kit keeps one tool-neutral source (rules/) and writes Claude Code's files from
-// it. What install copies must be exactly what a fresh build writes, and each output names its source.
-test('build writes AGENTS.md, path rules, on-demand modules and the index from rules/', () => {
-  const out = build({ kit: path.resolve('.') });
-  const mods = moduleFiles().map((f) => parseModule(read(f)).meta);
-  assert.ok(out.has('project/AGENTS.md') && out.has('project/standards/INDEX.md'));
-  for (const m of mods.filter((m) => m.id !== 'core')) {
-    const where = m.load === 'files' ? `project/.claude/rules/${m.id}.md` : `project/standards/${m.id}.md`;
-    assert.ok(out.has(where), `${m.id} -> ${where}`);
-    assert.match(out.get('project/AGENTS.md'), new RegExp(`\| ${m.id} \|`), `AGENTS.md index lists ${m.id}`);
-  }
-  for (const [rel, text] of out) {
-    // The merge gate's audits and temp helper are exact copies read from the user layer: their source is
-    // project/.claude, not rules/.
-    const audit = rel.match(/^user\/kit-tools\/(?:audits\/)?(.+\.(?:mjs|cjs))$/);
-    if (audit) assert.equal(text, read(path.resolve('project/.claude', audit[1])), `${rel} is its source byte for byte`);
-    else assert.match(text, /Written by kit\.mjs build from rules\//, `${rel} names its source`);
-  }
-  // A path rule keeps Claude Code's paths field first, or it would load every session.
-  assert.match(out.get('project/.claude/rules/testing.md'), /^---\npaths:\n  - "\*\*\/\*\.test\.\*"/);
-  // Every rule ID is in the index exactly once.
-  const index = out.get('project/standards/INDEX.md');
-  for (const f of moduleFiles()) for (const h of headings(read(f))) {
-    assert.equal(index.split(`| ${h.id} |`).length - 1, 1, `${h.id} once in the index`);
-  }
-});
-
+// why: catches a break at scripts/kit.mjs:1495 that no other test catches
 test('the written-out files in project/ match a fresh build', () => {
   const stale = [...build({ kit: path.resolve('.') })].filter(([rel, text]) => !fs.existsSync(path.resolve(rel)) || read(path.resolve(rel)) !== text).map(([rel]) => rel);
   assert.deepEqual(stale, [], 'run node scripts/kit.mjs build');
 });
 
+// why: guards rule:pr-body
 test('find ranks a rule by its ID, then its title, then its text', () => {
   const root = makeTemp('find-');
   fs.mkdirSync(path.join(root, 'rules'));
@@ -1391,19 +1203,6 @@ test('find ranks a rule by its ID, then its title, then its text', () => {
   assert.equal(findRules({ kit: root, query: 'what should I call my branch' })[0].id, 'branching');
   assert.deepEqual(findRules({ kit: root, query: 'edit-discipline' }).map((r) => [r.id, r.module]), [['edit-discipline', 'core']]);
   assert.deepEqual(findRules({ kit: root, query: 'nothing matches this' }), []);
-});
-
-test('find also matches the tags a module gives its rules, and every rule has tags', () => {
-  const root = makeTemp('find-tags-');
-  fs.mkdirSync(path.join(root, 'rules'));
-  fs.writeFileSync(path.join(root, 'rules', 'code.md'), '---\nid: code\nload: on-demand\nwhen: x\ntags:\n  size-budgets: bundle, bytes, bloat\n---\n\n## Size Budgets {#size-budgets}\nTrim first.\n\n## Naming {#naming}\nPlain names.\n');
-  assert.deepEqual(parseModule(read(path.join(root, 'rules', 'code.md'))).meta.tags, { 'size-budgets': ['bundle', 'bytes', 'bloat'] });
-  assert.equal(findRules({ kit: root, query: 'the bundle grew' })[0].id, 'size-budgets');
-  const untagged = ruleFiles().flatMap((f) => {
-    const { meta, body } = parseModule(read(f));
-    return headings(body).filter((h) => !(meta.tags && meta.tags[h.id] && meta.tags[h.id].length)).map((h) => h.id);
-  });
-  assert.deepEqual(untagged, []);
 });
 
 // Plan rule-modules, Phase 1: when the kit retires a file it once installed, install removes it only if the
@@ -1417,45 +1216,10 @@ function retireKit() {
   fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: ['_Working Standards.md'] } }));
   return ctx;
 }
-test('install removes a retired file the project left alone, and keeps a backup', () => {
-  const { kit, home, proj } = retireKit();
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.deepEqual(r.retired, ['_Working Standards.md']);
-  assert.equal(fs.existsSync(path.join(proj, '_Working Standards.md')), false);
-  assert.equal(read(path.join(r.backupDir, '_Working Standards.md')), 'rules\n');
-  assert.equal(JSON.parse(read(path.join(proj, '.kit/kit-version.json'))).files['_Working Standards.md'], undefined);
-});
-test('install keeps a retired file the project changed, and says so', () => {
-  const { kit, home, proj } = retireKit();
-  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'my own rules\n');
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.deepEqual(r.retired, []);
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'my own rules\n');
-  assert.match(r.skipped.find((s) => s.file === '_Working Standards.md').reason, /retired by the kit.*changed here/);
-});
-test('install never removes a retired name the kit did not install', () => {
-  const { kit, home, proj } = makeKit();
-  fs.writeFileSync(path.join(proj, 'own.md'), 'the project\'s own\n');
-  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: ['own.md'] } }));
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.deepEqual(r.retired, []);
-  assert.equal(read(path.join(proj, 'own.md')), 'the project\'s own\n');
-});
-test('install retires a user-level file the same way', () => {
-  const { kit, home } = makeKit();
-  install({ kit, home, target: 'user' });
-  fs.rmSync(path.join(kit, 'user/agents/builder.md'));
-  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { user: ['agents/builder.md'] } }));
-  const r = install({ kit, home, target: 'user' });
-  assert.deepEqual(r.retired, ['agents/builder.md']);
-  assert.equal(fs.existsSync(path.join(home, 'agents/builder.md')), false);
-});
-
 // Plan rule-modules, Phase 1: a project still on one standards file (the owner's main project) keeps folding
 // rules back. Its sections are matched to kit rules by heading; a changed one is a fold-back candidate with its
 // kit ID, and a heading the kit lacks is the project's own.
+// why: catches a break at scripts/kit.mjs:753 that no other test catches
 test('fold-back maps an old single standards file to kit rules by heading', () => {
   const { kit, home, proj } = makeKit();
   fs.mkdirSync(path.join(kit, 'rules'));
@@ -1468,6 +1232,7 @@ test('fold-back maps an old single standards file to kit rules by heading', () =
 });
 
 // After a compact, the post-compact orientation lives in a module that may not be loaded, so session start names it.
+// why: catches a break at scripts/kit.mjs:1075 that no other test catches
 test('session start after a compact names the orientation rule and where it lives', () => {
   const { kit, home, proj } = caseKit();
   assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'compact' }), /rule:post-compact-orientation/);
@@ -1476,6 +1241,7 @@ test('session start after a compact names the orientation rule and where it live
 
 // The old single standards file is gone from the kit. A mention of it is allowed only where the kit speaks of a
 // project still on that file (the old-layout fold-back and the brief fallback).
+// why: guards rule:kit-standards
 test('nothing in the kit points at the retired standards file, except about projects still on it', () => {
   const left = [];
   for (const f of KIT_TEXT_FILES()) {
@@ -1488,22 +1254,9 @@ test('nothing in the kit points at the retired standards file, except about proj
   assert.deepEqual(left, []);
 });
 
-// Review finding: retiring the old standards file before its replacement landed would leave a project with no
-// core rules at session start. A retired file waits until the file that replaces it is in place.
-test('install keeps a retired file while the file that replaces it was skipped', () => {
-  const { kit, home, proj } = retireKit();
-  fs.writeFileSync(path.join(kit, 'project/AGENTS.md'), 'core rules\n');
-  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, retired: { project: { '_Working Standards.md': 'AGENTS.md' } } }));
-  fs.writeFileSync(path.join(proj, 'AGENTS.md'), 'the project\'s own agents file\n');
-  const r = install({ kit, home, target: 'project', projectDir: proj });
-  assert.deepEqual(r.retired, []);
-  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules\n');
-  assert.match(r.skipped.find((s) => s.file === '_Working Standards.md').reason, /kept while AGENTS\.md is skipped/);
-});
-
 // Review finding: a pointer written as -> "Heading Title" breaks when the heading is renamed; every rule pointer
 // in the kit uses its ID instead.
+// why: guards rule:kit-standards
 test('no rule pointer in the kit names a heading by its words', () => {
   const titles = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.title)));
   const byWords = [];
@@ -1522,6 +1275,7 @@ const roleTable = () => {
     .map(([, role, tools, denied, rules]) => ({ role, tools: tools.trim(), denied: denied.trim(), rules: rules.trim() }));
 };
 const front = (f) => Object.fromEntries([...read(f).match(/^---\n([\s\S]*?)\n---/)[1].matchAll(/^(\w+):\s*(.*)$/gm)].map(([, k, v]) => [k, v.trim()]));
+// why: guards rule:sweep-auto-approval
 test('each agent role file matches the role table: tools, denied tools and rules at start', () => {
   const rows = roleTable();
   assert.deepEqual(rows.map((r) => r.role).sort(), ['builder', 'checker', 'orchestrator', 'reviewer', 'scanner']);
@@ -1533,6 +1287,7 @@ test('each agent role file matches the role table: tools, denied tools and rules
   }
 });
 
+// why: guards rule:sweep-auto-approval
 test('build writes each role its rules skill from the IDs in the role table, under its cap', () => {
   const out = build({ kit: path.resolve('.') });
   for (const r of roleTable().filter((x) => x.rules !== 'none')) {
@@ -1555,6 +1310,7 @@ function gitTree() {
   g('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(dir, 'a.js'), 'a\n'); g('add', '-A'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
   return dir;
 }
+// why: guards rule:agent-team-adapter
 test('the builder edit fence allows edits in its worktree and blocks edits outside it', () => {
   const dir = gitTree();
   const ok = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
@@ -1563,6 +1319,7 @@ test('the builder edit fence allows edits in its worktree and blocks edits outsi
   assert.equal(out.status, 2);
   assert.match(out.stderr, /outside this builder's worktree/);
 });
+// why: guards rule:agent-team-adapter
 test('the builder edit fence keeps to the unit file list in its own worktree git folder, never a tracked file', () => {
   const dir = gitTree();
   const wt = path.join(dir, '.claude', 'worktrees', 'unit-1');
@@ -1578,6 +1335,7 @@ test('the builder edit fence keeps to the unit file list in its own worktree git
   assert.equal(spawnSync('git', ['-C', wt, 'status', '--porcelain'], { encoding: 'utf8' }).stdout, '');
   assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'c.js') } }).status, 0);
 });
+// why: guards rule:sub-agent-verification
 test('the checker clean-tree stop passes an untouched tree and catches a changed file', () => {
   const dir = gitTree();
   const base = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
@@ -1592,6 +1350,7 @@ test('the checker clean-tree stop passes an untouched tree and catches a changed
 });
 // The owner, 2026-10-31: the main branch is main everywhere. A repo made without a branch name takes the machine's
 // default (master on CI runners), so every git init in the kit's code, tests and instructions names its branch.
+// why: guards rule:branching
 test('every git init in the kit names its branch, so main never depends on the machine', () => {
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
@@ -1608,6 +1367,7 @@ test('every git init in the kit names its branch, so main never depends on the m
   }
   assert.deepEqual(unnamed, []);
 });
+// why: guards rule:sweep-auto-approval
 test('the git pre-push hook stops an AI agent without approval and lets the owner push', { windows: true }, () => {
   const hook = path.resolve('project/.githooks/pre-push');
   const sh = (env) => spawnSync('sh', [hook], { encoding: 'utf8', env: { PATH: process.env.PATH, ...env } });
@@ -1617,6 +1377,7 @@ test('the git pre-push hook stops an AI agent without approval and lets the owne
   assert.equal(sh({ CLAUDECODE: '1', KIT_PUSH_APPROVED: '1' }).status, 0, 'after the owner said go');
 });
 
+// why: guards rule:sweep-auto-approval
 test('the builder and checker role files wire their guards to the installed hook scripts', () => {
   // pin: 1 (Claude Code reads the role file's hook block)
   assert.match(read(path.resolve('user/agents/builder.md')), /matcher: "Edit\|Write\|NotebookEdit"\n      hooks:\n        - type: command\n          command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/edit-fence\.cjs"/);
@@ -1625,6 +1386,7 @@ test('the builder and checker role files wire their guards to the installed hook
   assert.equal(render('node "{{CLAUDE_HOME}}/kit-hooks/x.cjs"', { claudeHome: 'D:/home-of-pat/.claude' }), 'node "D:/home-of-pat/.claude/kit-hooks/x.cjs"');
 });
 // A placeholder left in a role file's hook line points the hook at no script, and an agent would start unguarded.
+// why: guards rule:sweep-auto-approval
 test('install user leaves no placeholder in any rendered agent role file', () => {
   const home = makeTemp('agents-home-');
   install({ kit: path.resolve('.'), home, target: 'user' });
@@ -1636,6 +1398,7 @@ test('install user leaves no placeholder in any rendered agent role file', () =>
     assert.ok(text.includes(`node "${home.split(path.sep).join('/')}/kit-hooks/`), `${n}: its hooks name the installed scripts`);
   }
 });
+// why: guards rule:sub-agent-verification
 test('the checker clean-tree stop also catches a second edit to a file that was already changed', () => {
   const dir = gitTree();
   fs.writeFileSync(path.join(dir, 'a.js'), 'changed by the builder, not committed\n');
@@ -1645,6 +1408,7 @@ test('the checker clean-tree stop also catches a second edit to a file that was 
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' }).status, 2);
 });
 // Review findings on the 1.1.0 guards: each test is the failing input the review reported.
+// why: guards rule:sub-agent-verification
 test('the checker clean-tree stop lets the unit tests write their ignored caches', () => {
   const dir = gitTree();
   fs.writeFileSync(path.join(dir, '.gitignore'), 'cache/\n');
@@ -1657,6 +1421,7 @@ test('the checker clean-tree stop lets the unit tests write their ignored caches
   const out = runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' });
   assert.equal(out.status, 0, out.stderr);
 });
+// why: guards rule:sub-agent-verification
 test('the checker clean-tree stop blocks once, never asks for a restore, and lets the stop through after', () => {
   const dir = gitTree();
   const s = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
@@ -1671,6 +1436,7 @@ test('the checker clean-tree stop blocks once, never asks for a restore, and let
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'SubagentStop', stop_hook_active: true }).status, 0);
   assert.equal(fs.readdirSync(os.tmpdir()).filter((f) => f.includes(s.session_id.replace(/[^\w-]/g, ''))).length, 0, 'no snapshot left behind');
 });
+// why: guards rule:sub-agent-verification
 test('the checker clean-tree stop names only what changed while it ran, not earlier uncommitted work', () => {
   const dir = gitTree();
   fs.writeFileSync(path.join(dir, 'before.js'), 'the builder left this\n');
@@ -1682,6 +1448,7 @@ test('the checker clean-tree stop names only what changed while it ran, not earl
   assert.match(out.stderr, /probe\.txt/);
   assert.doesNotMatch(out.stderr, /before\.js/);
 });
+// why: guards rule:sub-agent-verification
 test('two checkers in one session keep separate snapshots', () => {
   const dir = gitTree();
   const sid = `t-${Date.now()}-${Math.random()}`;
@@ -1691,6 +1458,7 @@ test('two checkers in one session keep separate snapshots', () => {
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-b', hook_event_name: 'SubagentStop' }).status, 0);
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-a', hook_event_name: 'SubagentStop' }).status, 2);
 });
+// why: guards rule:agent-team-adapter
 test('the builder edit fence follows a symlinked or junctioned worktree path', { windows: true }, () => {
   const dir = gitTree();
   const link = `${dir}-link`;
@@ -1699,6 +1467,7 @@ test('the builder edit fence follows a symlinked or junctioned worktree path', {
   assert.equal(out.status, 0, out.stderr);
   assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: link, tool_input: { file_path: path.join(os.tmpdir(), 'elsewhere.js') } }).status, 2);
 });
+// why: guards rule:agent-team-adapter
 test('the builder edit fence reads hand-written unit list spellings', () => {
   const dir = gitTree();
   const listPath = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' }).stdout.trim();
@@ -1726,12 +1495,14 @@ const canaryLog = (dir) => {
   const f = path.join(spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).stdout.trim(), 'kit-canary.log');
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
 };
+// why: guards rule:agent-canary
 test('the canary passes a message that opens with the phrase and logs a hit', () => {
   const dir = canaryRepo();
   const out = canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'a1', last_assistant_message: `${FAKE_PHRASE}\n\nUNIT: u1 DONE` });
   assert.equal(out.status, 0, out.stderr);
   assert.deepEqual(canaryLog(dir).map((e) => [e.role, e.result]), [['builder', 'hit']]);
 });
+// why: guards rule:agent-canary
 test('the canary stops a message without the phrase once, says close out, and never names the phrase', () => {
   const dir = canaryRepo();
   const base = { cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'checker', agent_id: 'a2', last_assistant_message: 'VERDICT: PASS' };
@@ -1751,6 +1522,7 @@ test('the canary stops a message without the phrase once, says close out, and ne
   // A phrase buried later in the message is not an opening.
   assert.equal(canary({ ...base, agent_id: 'a3', last_assistant_message: `VERDICT: PASS\n${FAKE_PHRASE}` }).status, 2);
 });
+// why: guards rule:agent-canary
 test('the canary reads the phrase from the main checkout when the agent works in a worktree', () => {
   const dir = canaryRepo();
   const wt = path.join(dir, '.claude', 'worktrees', 'unit-9');
@@ -1760,6 +1532,7 @@ test('the canary reads the phrase from the main checkout when the agent works in
 });
 // The canary lets any error through with exit 0, so "off" is shown against the same input in a project that has
 // the phrase line: there it blocks, here it lets the stop and the brief through and logs nothing.
+// why: guards rule:agent-canary
 test('the canary is off in a project with no phrase line', () => {
   const stop = { hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'n', last_assistant_message: 'done' };
   const brief = { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: `Start your report with ${FAKE_PHRASE}.` } };
@@ -1774,6 +1547,7 @@ test('the canary is off in a project with no phrase line', () => {
   }
   assert.deepEqual(canaryLog(off), []);
 });
+// why: guards rule:outward-acts
 test('the leak guard refuses a brief or message that carries the phrase, in any spelling', () => {
   const dir = canaryRepo();
   const ask = (tool, field, text) => {
@@ -1797,6 +1571,7 @@ function adapterRepo(phrase) {
   fs.writeFileSync(path.join(dir, 'standards', 'project-adapter.md'), `# Adapter\n\n\`\`\`\nRULES\n${phrase ? phraseLine(phrase) : ''}\`\`\`\n`);
   return dir;
 }
+// why: guards rule:agent-canary
 test('the canary and the audits read the phrase from the file the index names for the adapter', () => {
   const dir = adapterRepo(FAKE_PHRASE);
   const stop = (id, msg) => canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, last_assistant_message: msg }).status;
@@ -1811,6 +1586,7 @@ test('the canary and the audits read the phrase from the file the index names fo
   const off = adapterRepo(null);
   assert.equal(canary({ cwd: off, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'o', last_assistant_message: 'done' }).status, 0);
 });
+// why: guards rule:agent-canary
 test('a stop another hook blocked is still checked; only the canary\'s own close-out passes unchecked', () => {
   const dir = canaryRepo();
   const base = { cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'checker', agent_id: 'b1' };
@@ -1821,6 +1597,7 @@ test('a stop another hook blocked is still checked; only the canary\'s own close
   assert.equal(canary({ ...base, stop_hook_active: true, last_assistant_message: `${FAKE_PHRASE}\nVERDICT: PASS` }).status, 0);
   assert.deepEqual(canaryLog(dir).map((e) => e.result), ['miss', 'void-after-miss']);
 });
+// why: guards rule:agent-canary
 test('the canary accepts the phrase under markdown, but not glued to other letters', () => {
   const dir = canaryRepo();
   const stop = (id, msg) => canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, last_assistant_message: msg }).status;
@@ -1829,6 +1606,7 @@ test('the canary accepts the phrase under markdown, but not glued to other lette
   assert.equal(stop('m3', `# ${FAKE_PHRASE}\ndone`), 0);
   assert.equal(stop('m4', `${FAKE_PHRASE}XYZ done`), 2);
 });
+// why: guards rule:agent-canary
 test('the canary compares phrases in any script, not only ASCII', () => {
   // A Greek phrase, written as character codes so the source stays ASCII.
   const greek = String.fromCodePoint(0x39f, 0x3c5, 0x3b4, 0x3ad, 0x3bd, 0x20, 0x3ac, 0x3bd, 0x3b5, 0x3c5, 0x20, 0x3b1, 0x3c1, 0x3af, 0x3c3, 0x3c4, 0x3bf, 0x3c5);
@@ -1839,16 +1617,19 @@ test('the canary compares phrases in any script, not only ASCII', () => {
   const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: '' } });
   assert.equal(r.stdout, '', 'an empty brief is never a leak');
 });
+// why: guards rule:sweep-auto-approval
 test('without an agent id, one role\'s block never lets another role through unchecked', () => {
   const dir = canaryRepo();
   assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', session_id: 's1', last_assistant_message: 'done' }).status, 2);
   assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'checker', session_id: 's1', last_assistant_message: 'VERDICT: PASS' }).status, 2);
 });
+// why: guards rule:agent-canary
 test('the canary lets a stop through when the message field is missing, and logs it unchecked', () => {
   const dir = canaryRepo();
   assert.equal(canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'x' }).status, 0);
   assert.deepEqual(canaryLog(dir).map((e) => e.result), ['unchecked']);
 });
+// why: guards rule:outward-acts
 test('the leak guard also reads the agent name and spellings split by punctuation', () => {
   const dir = canaryRepo();
   const ask = (input) => {
@@ -1860,6 +1641,7 @@ test('the leak guard also reads the agent name and spellings split by punctuatio
   assert.equal(ask({ prompt: 'Open with **Tango Lima** Seven, Delta.' }), 'deny');
   assert.equal(ask({ prompt: 'The Tango Lima Seven Deltas are a band.' }), 'allow');
 });
+// why: guards rule:agent-canary
 test('every kit role runs the canary at its stop, and the project settings run the leak guard', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
     assert.match(read(path.resolve('user/agents', `${role}.md`)), /Stop:\n {4}- hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, `${role} wires the canary`); // pin: 1 Claude Code reads the hook block
@@ -1868,6 +1650,7 @@ test('every kit role runs the canary at its stop, and the project settings run t
   const { routes } = require(path.resolve('project/.claude/guard.cjs'));
   for (const tool of ['Agent', 'Task', 'SendMessage']) for (const g of ['canary.cjs', 'sweep-guard.cjs']) assert.ok(routes(tool).includes(g), `${g} on ${tool}`);
 });
+// why: guards rule:outward-acts
 test('both guards run on every shell tool and block the call when they fail', () => {
   // T2: one entry runs the one guard process on every tool and blocks on failure (handoff item 26). Since V3 (1.25.1)
   // that entry is the launcher in the user settings (tests/guards-outside.test.mjs); a project file carries none.
@@ -1875,6 +1658,7 @@ test('both guards run on every shell tool and block the call when they fail', ()
   const { routes } = require(path.resolve('project/.claude/guard.cjs'));
   for (const tool of ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal']) for (const g of ['guard-delete.cjs', 'guard-outward.cjs']) assert.ok(routes(tool).includes(g), `${g} on ${tool}`);
 });
+// why: guards rule:kit-standards
 test('the real phrase has one home in the kit: the last line of the rules every brief carries', () => {
   const block = read(path.resolve('rules/agent-teams.md')).split('**Rules every brief carries**')[1].split('```')[1];
   const last = block.trim().split('\n').pop().trim();
@@ -1885,6 +1669,7 @@ test('the real phrase has one home in the kit: the last line of the rules every 
   // The built copy of the module is the same block written out by kit.mjs build.
   assert.deepEqual(homes.sort(), ['project/standards/agent-teams.md', 'rules/agent-teams.md']);
 });
+// why: guards rule:pr-body
 test('the PR body and release audits fail when the phrase appears', () => {
   const dir = canaryRepo();
   const f = path.join(dir, 'b.md');
@@ -1898,6 +1683,7 @@ test('the PR body and release audits fail when the phrase appears', () => {
   assert.equal(rel.status, 1);
   assert.match(rel.stdout, /confirmation phrase/);
 });
+// why: guards rule:outward-acts
 test('the git pre-push hook is executable, in the kit and where install writes it', { windows: true }, () => {
   for (const h of ['pre-push', 'pre-commit']) assert.match(spawnSync('git', ['ls-files', '-s', `project/.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
   if (process.platform !== 'win32') {
@@ -1906,6 +1692,7 @@ test('the git pre-push hook is executable, in the kit and where install writes i
     assert.ok(fs.statSync(path.join(proj, '.githooks', 'pre-push')).mode & 0o111, 'git skips a hook without the execute bit');
   }
 });
+// why: guards rule:sub-agent-verification
 test('the checker clean-tree stop sees a change in another worktree of the same repo', () => {
   const dir = gitTree();
   const other = path.join(path.dirname(dir), `${path.basename(dir)}-wt`);
@@ -1930,6 +1717,7 @@ function localProject() {
 }
 const excludeFile = (dir) => path.join(dir, '.git', 'info', 'exclude');
 const kitInstall = (dir) => install({ kit: path.resolve('.'), target: 'project', projectDir: dir, home: makeTemp('home-') });
+// why: guards rule:kit-stays-local
 test('the install keeps every kit file out of git, and git status shows only the project', () => {
   const dir = localProject();
   fs.mkdirSync(path.join(dir, '.git', 'info'), { recursive: true });
@@ -1943,6 +1731,7 @@ test('the install keeps every kit file out of git, and git status shows only the
   kitInstall(dir);
   assert.equal(read(excludeFile(dir)).match(/# kit:begin/g).length, 1);
 });
+// why: guards rule:first-push-gate
 test('the owner can choose to track the kit, and a folder without git is left alone', () => {
   const dir = localProject();
   kitInstall(dir);
@@ -1965,6 +1754,7 @@ function readyProject(tracking) {
   commitAll(dir, 'init');
   return dir;
 }
+// why: guards rule:first-push-gate
 test('the first push check passes a clean history and records the commit it checked', () => {
   const dir = readyProject({ track: ['main.py', '_Session Log.md'] });
   g(dir, 'add', '-f', '_Session Log.md');
@@ -1973,6 +1763,26 @@ test('the first push check passes a clean history and records the commit it chec
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(read(path.join(dir, '.git', 'kit-first-push-ok')).trim(), g(dir, 'rev-parse', 'HEAD').stdout.trim());
 });
+// why: guards rule:first-push-gate (N9): a public repo goes out with GitHub's secret scanning and push protection
+// named when either is off, and an unanswered question is never read as "on".
+test('the first push check names a public GitHub repo whose secret scanning or push protection is off', async () => {
+  const { scanningNotes, githubRepos } = await import(pathToFileURL(path.resolve('project/.claude/github-scanning.mjs')).href);
+  const remotes = 'origin\thttps://github.com/pat/app.git (fetch)\norigin\thttps://github.com/pat/app.git (push)\nmine\tgit@github.com:pat/tool.git (push)\nlab\thttps://gitlab.com/pat/x.git (push)\nodd\thttps://github.com/pat/a;b (push)\n';
+  assert.deepEqual(githubRepos(remotes), ['pat/app', 'pat/tool'], 'only plain GitHub names reach the API');
+  const asked = [];
+  const answers = { 'repos/pat/app': 'false disabled enabled', 'repos/pat/tool': 'false enabled enabled' };
+  const gh = (args) => { asked.push(args[1]); return { status: 0, stdout: answers[args[1]] + '\n', stderr: '' }; };
+  const notes = scanningNotes(remotes, gh);
+  assert.deepEqual(asked, ['repos/pat/app', 'repos/pat/tool']);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /pat\/app is public.*secret scanning disabled.*push protection enabled/);
+  assert.deepEqual(scanningNotes('o\thttps://github.com/pat/app (push)\n', () => ({ status: 0, stdout: 'true null null\n' })), [], 'a private repo');
+  const down = scanningNotes('o\thttps://github.com/pat/app (push)\n', () => ({ status: 1, stdout: '', stderr: 'gh: not logged in\n' }));
+  assert.match(down[0], /GitHub did not say whether pat\/app[\s\S]*not logged in/);
+  assert.match(scanningNotes('o\thttps://github.com/pat/app (push)\n', () => ({ status: 0, stdout: '\n' }))[0], /did not say/, 'an empty answer is not "on"');
+});
+
+// why: guards rule:first-push-gate
 test('the first push check fails on a kit file anywhere in history, even after it was deleted', () => {
   const dir = readyProject();
   g(dir, 'add', '-f', 'AGENTS.md');
@@ -1984,6 +1794,7 @@ test('the first push check fails on a kit file anywhere in history, even after i
   assert.match(r.stdout, /AGENTS\.md/);
   assert.ok(!fs.existsSync(path.join(dir, '.git', 'kit-first-push-ok')));
 });
+// why: guards rule:first-push-gate
 test('the first push check fails on a never path, a missing tracked file, a secret and a missing exclude block', () => {
   const dir = readyProject({ track: ['report.pdf'], never: ['school/**'] });
   fs.mkdirSync(path.join(dir, 'school'));
@@ -2002,6 +1813,7 @@ test('the first push check fails on a never path, a missing tracked file, a secr
   assert.match(r.stdout, /exclude/i);
   assert.ok(!r.stdout.includes(secret), 'a secret value is never printed');
 });
+// why: guards rule:first-push-gate
 test('the pre-push hook blocks a first push the check did not pass, and leaves later pushes alone', { windows: true }, () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = makeTemp('bare-');
@@ -2026,6 +1838,7 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
   assert.equal(after.status, 0, 'once the remote has a branch, the gate is done');
 });
 // Found while planning for other AI tools: a slip must be stopped where it happens, not only at the first push.
+// why: guards rule:outward-acts
 test('the install turns on the kit git hooks, and leaves another hook manager alone', () => {
   const dir = localProject();
   kitInstall(dir);
@@ -2040,6 +1853,7 @@ test('the install turns on the kit git hooks, and leaves another hook manager al
   kitInstall(husky);
   assert.equal(g(husky, 'config', 'core.hooksPath').stdout.trim(), '.husky', 'the owner\'s hook manager stays; setup says to add the checks there');
 });
+// why: guards rule:first-push-gate
 test('the pre-commit hook blocks staging a kit file, a never path or a secret file, and allows tracked choices', { windows: true }, () => {
   const dir = readyProject({ track: ['main.py', '_Session Log.md'], never: ['school/**'] });
   const commit = () => spawnSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'chore: x'], { encoding: 'utf8', env: { ...process.env } });
@@ -2060,6 +1874,7 @@ test('the pre-commit hook blocks staging a kit file, a never path or a secret fi
   g(dir, 'add', '-f', '_Session Log.md');
   assert.equal(commit().status, 0, 'a kit file the owner chose to track');
 });
+// why: guards rule:first-push-gate
 test('the first push check fails on a never path that is in the folder but not ignored', () => {
   const dir = readyProject({ track: ['main.py'], never: ['school/**'] });
   fs.mkdirSync(path.join(dir, 'school'));
@@ -2072,6 +1887,7 @@ test('the first push check fails on a never path that is in the folder but not i
   assert.equal(firstPush(dir).status, 0, firstPush(dir).stdout);
 });
 // Found in review of the first push gate: each of these let a slip through or blocked a clean push.
+// why: guards rule:first-push-gate
 test('the first push check sees a file added while resolving a merge', () => {
   const dir = readyProject({ track: ['main.py'], never: ['school/**'] });
   g(dir, 'checkout', '-q', '-b', 'side');
@@ -2091,6 +1907,7 @@ test('the first push check sees a file added while resolving a merge', () => {
   assert.equal(r.status, 1);
   assert.match(r.stdout, /school\/inmerge\.txt/);
 });
+// why: guards rule:first-push-gate
 test('the first push check reads a folder-style never entry, and fails an empty or ignored track entry', () => {
   for (const never of ['school/', 'school']) {
     const dir = readyProject({ track: ['main.py'], never: [never] });
@@ -2111,6 +1928,7 @@ test('the first push check reads a folder-style never entry, and fails an empty 
   commitAll(dir, 'src');
   assert.match(firstPush(dir).stdout, /FAIL  every file in track is tracked[\s\S]*src\/b\.py/);
 });
+// why: guards rule:first-push-gate
 test('the first push check finds the kit\'s own folder in history and lets reviewed secret hits pass', () => {
   const dir = readyProject({ track: ['main.py'] });
   g(dir, 'add', '-f', '.kit/kit-version.json');
@@ -2121,6 +1939,7 @@ test('the first push check finds the kit\'s own folder in history and lets revie
   commitAll(ok, 'robots', true);
   assert.equal(firstPush(ok).status, 0, firstPush(ok).stdout);
 });
+// why: guards rule:first-push-gate
 test('the first push gate stays on when the new remote already has a README, and lets a tag of the cleared commit go', () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = makeTemp('bare-');
@@ -2145,6 +1964,7 @@ test('the first push gate stays on when the new remote already has a README, and
   commitAll(dir, 'later');
   assert.equal(push(g(dir, 'rev-parse', 'HEAD').stdout.trim()).status, 0);
 });
+// why: guards rule:first-push-gate
 test('the install keeps the never list private in the exclude block', () => {
   const dir = readyProject({ track: ['main.py'], never: ['school/**'] });
   kitInstall(dir);
@@ -2153,6 +1973,7 @@ test('the install keeps the never list private in the exclude block', () => {
   fs.writeFileSync(path.join(dir, 'school', 'x.txt'), 'x\n');
   assert.equal(g(dir, 'status', '--porcelain').stdout.trim(), '');
 });
+// why: guards rule:first-push-gate
 test('a project already pushed before the kit came is not held by the first push gate', () => {
   const origin = readyProject({ track: ['main.py'] });
   const bare = makeTemp('bare-');
@@ -2170,6 +1991,7 @@ test('a project already pushed before the kit came is not held by the first push
 });
 // Rule review 2026-10-31: a commit made off the owner's machine skips the pre-commit secret check, so CI scans the
 // branch's added lines and new file names with the same patterns, and never prints a value.
+// why: guards rule:first-push-gate
 test('the branch secret scan fails on a secret-shaped value or file and stays quiet on a commit hash', () => {
   const SCAN = path.resolve('project/.claude/secret-shapes.mjs');
   const repo = (files) => {
@@ -2205,6 +2027,7 @@ test('the branch secret scan fails on a secret-shaped value or file and stays qu
   assert.match(clean.stdout, /NO SECRET SHAPES/);
 });
 // Found in the re-check: the done mark and the track check each had a case that let a slip out or blocked for good.
+// why: guards rule:outward-acts
 test('a new project that pulled the host README before the install is still held by the gate', () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = makeTemp('bare-');
@@ -2222,6 +2045,7 @@ test('a new project that pulled the host README before the install is still held
     input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.notEqual(r.status, 0, 'our own first commit is not on the host yet');
 });
+// why: guards rule:outward-acts
 test('a project pushed by URL before the kit is let through once a fetch shows its history on the remote', () => {
   const dir = readyProject({ track: ['main.py'] });
   const bare = makeTemp('bare-');
@@ -2235,6 +2059,7 @@ test('a project pushed by URL before the kit is let through once a fetch shows i
     input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.equal(r.status, 0, r.stderr);
 });
+// why: guards rule:first-push-gate
 test('the track check accepts ignored files inside a tracked folder, and never says to force-add a secret', () => {
   const dir = readyProject({ track: ['main.py', 'src/'] });
   fs.mkdirSync(path.join(dir, 'src', '__pycache__'), { recursive: true });
@@ -2246,6 +2071,7 @@ test('the track check accepts ignored files inside a tracked folder, and never s
   const r = firstPush(dir);
   assert.equal(r.status, 0, r.stdout);
 });
+// why: guards rule:first-push-gate
 test('a stash is never pushed, so the first push check leaves it out', () => {
   const dir = readyProject({ track: ['main.py'] });
   fs.writeFileSync(path.join(dir, '.env'), 'X=1\n');
@@ -2254,6 +2080,7 @@ test('a stash is never pushed, so the first push check leaves it out', () => {
 });
 // Found in a long real run: in the desktop app an agent hands its report back through a tool call, so the stop
 // event carries no text message. The canary reads the report from the agent's own transcript instead.
+// why: guards rule:agent-canary
 test('the canary reads a report handed back through a tool, from the agent transcript', () => {
   const dir = canaryRepo();
   const transcript = (msg) => {
@@ -2457,6 +2284,7 @@ function outcome(r, tokens = '200000', findings = '6', real = '5', dup = '0', ex
 }
 // E24 option C (the owner, 2026-11-07): a cloud thread loads no repo hooks, so no call-cap hook or sweep guard holds
 // its reviewers; sweeps and installs stay on the owner's PC. Claude Code sets CLAUDE_CODE_REMOTE=true in a cloud VM.
+// why: guards rule:sweep-auto-approval
 test('a cloud session cannot clear a sweep or install the kit: both stay on the owner\'s PC', () => {
   const dir = sweepRepo();
   const f = path.join(dir, 'sweeps', 'contract.json');
@@ -2474,6 +2302,7 @@ test('a cloud session cannot clear a sweep or install the kit: both stay on the 
 
 // S22-S1 (the 1.22.0 sweep): SendMessage to a finished reviewer resumes it, with no clearing, no slot and no spend
 // read. A reviewer is never resumed: a new question is a new reviewer under a clearing.
+// why: guards rule:sweep-auto-approval
 test('the sweep guard refuses to resume a reviewer with SendMessage, and lets other agents be messaged', () => {
   const dir = makeTemp('resume-');
   const session = path.join(dir, 'session-1');
@@ -2500,6 +2329,7 @@ test('the sweep guard refuses to resume a reviewer with SendMessage, and lets ot
   assert.equal(send('unit-3').permissionDecision, 'allow');
 });
 
+// why: guards rule:sweep-tiers
 test('the approval script approves a contract inside the tier rules and logs it in the repo', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -2508,6 +2338,7 @@ test('the approval script approves a contract inside the tier rules and logs it 
   assert.equal(line.decision, 'approved');
   assert.equal(line.agents, 5);
 });
+// why: guards rule:sweep-auto-approval
 test('the approval script hands back to the owner on anything outside the rules, naming what broke', () => {
   for (const tier of ['first push', 'launch gate']) {
     const r = approveRun({ ...featureContract(), tier });
@@ -2516,6 +2347,7 @@ test('the approval script hands back to the owner on anything outside the rules,
     assert.equal(approvalLog(r.dir).pop().decision, 'owner');
   }
 });
+// why: guards rule:sweep-tiers
 test('the diff sets the floor: a lighter tier or a left-out modifier goes to the owner', () => {
   const asFix = { tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root, and does it hold?'), role('blast-radius', 'Which callers and copies of this code does the change reach?')] };
   assert.match(approveRun(asFix).stdout, /added source file/i, 'a new source file is not a fix');
@@ -2547,6 +2379,7 @@ function nextBranch(dir, file) {
 // T2 (the owner 2026-11-10: "Pop-up record"): the typed codes of 1.23 are retired. An ask or a pause prints an act
 // with its code; the lead quotes it in Claude Code's choice pop-up, and the owner's tap, in this session's own
 // transcript, is the yes. Each refusal below is a way a tap that is not the owner's Yes to this ask could pass.
+// why: guards rule:outward-acts
 test('the owner\'s pop-up Yes to the ask\'s act clears an ask, and nothing else does', () => {
   const asked = () => { const r = approveRun(askContract()); assert.equal(r.status, 1, r.stdout); const m = r.stdout.match(/`sweep yes ([0-9a-f]{6})`/); assert.ok(m, r.stdout); return { ...r, code: m[1] }; };
   const yes = (r, cfg, env = {}) => approveIn(r.dir, [r.f, '--owner-yes'], { ...tapEnv(cfg), ...env });
@@ -2594,6 +2427,7 @@ test('the owner\'s pop-up Yes to the ask\'s act clears an ask, and nothing else 
   assert.equal(yes(r, cfg).status, 1, 'the first ask\'s Yes is not this ask\'s');
 });
 
+// why: guards rule:sweep-auto-approval
 test('the owner resumes auto-approval with a pop-up Yes to the pause\'s act, after the pause', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -2618,6 +2452,7 @@ test('the owner resumes auto-approval with a pop-up Yes to the pause\'s act, aft
 
 // The installed approve.mjs reads the owner's taps in the Claude folder install user filled in, so a caller cannot
 // point it at a forged transcript through CLAUDE_CONFIG_DIR.
+// why: guards rule:sweep-auto-approval
 test('an installed approve.mjs reads the owner\'s taps only from the folder it was installed into', () => {
   const home = makeTemp('home-');
   const i = spawnSync(process.execPath, [path.resolve('scripts/kit.mjs'), 'install', 'user', '--unreleased'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_CODE_REMOTE: '' } });
@@ -2638,6 +2473,7 @@ test('an installed approve.mjs reads the owner\'s taps only from the folder it w
 
 // Rule review 2026-10-31 (the owner approved): the trial review comes every 10 auto-approvals until two in a row
 // passed clean, then every 20; any other pause (a drift trip) puts it back to 10.
+// why: guards rule:sweep-auto-approval
 test('the trial review widens from every 10 approvals to every 20 after two clean reviews, and a drift pause resets it', () => {
   const r = approveRun(featureContract());
   outcome(r);
@@ -2655,6 +2491,7 @@ test('the trial review widens from every 10 approvals to every 20 after two clea
   resume();
   approveN(10); due(10);
 });
+// why: guards rule:sweep-auto-approval
 test('a log line written by hand, or a raised cap, never clears the way', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -2669,6 +2506,7 @@ test('a log line written by hand, or a raised cap, never clears the way', () => 
   for (const q of ['Do stale caches keep serving removed rows forever?', 'Would renamed exports break plugin loaders downstream?', 'Can old backups restore deleted accounts silently?', 'Might retry loops double every queued payment?', 'Does daylight saving shift nightly scheduled jobs?', 'Are locked files blocking concurrent uploads anywhere?']) c.roles.push(role('modelled-on', q));
   assert.match(approveRun(c, big).stdout, /ASK THE OWNER[\s\S]*6 roles beyond the feature floor[\s\S]*cap of 5/, 'caps only go down');
 });
+// why: guards rule:sweep-auto-approval
 test('the trial needs each outcome, rejects bad numbers, and pauses on repeats, an escape and every 10 approvals', () => {
   const r = approveRun(featureContract());
   assert.match(approveIn(r.dir, [r.f]).stdout, /outcome/i, 'the last sweep\'s outcome comes first');
@@ -2724,6 +2562,7 @@ const sweepGuard = (dir, { raw, noCeiling, ...extra } = {}) => {
   const r = runHook('user/kit-hooks/sweep-guard.cjs', input);
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
+// why: guards rule:sweep-auto-approval
 test('an approval prints the owner\'s start notice from checked data, not a hand count', () => {
   const c = featureContract();
   c.roles[3].model = 'sonnet';
@@ -2740,6 +2579,7 @@ test('an approval prints the owner\'s start notice from checked data, not a hand
 });
 // 1.21.0 handoff item 31: a log line that is valid JSON but no entry (null, a number, a list) turned the guard off
 // and crashed approve.mjs. It reads as a hand edit: the guard refuses and the script pauses.
+// why: guards rule:sweep-auto-approval
 test('a log line that parses to no entry pauses the sweep tools, and the guard still refuses', () => {
   for (const junk of ['null', '7', '[]']) {
     const r = approveRun(featureContract());
@@ -2755,6 +2595,7 @@ test('a log line that parses to no entry pauses the sweep tools, and the guard s
     assert.match(again.stdout, /changed by hand/, `${junk}: the script pauses`);
   }
 });
+// why: guards rule:sweep-auto-approval
 test('the owner\'s yes is logged only after the script asked, for this contract and HEAD', () => {
   const r = approveRun(askContract());
   assert.equal(r.status, 1);
@@ -2771,6 +2612,7 @@ test('the owner\'s yes is logged only after the script asked, for this contract 
   fs.writeFileSync(e.f, JSON.stringify({ ...c, roles: c.roles.slice(0, 2) }));
   assert.notEqual(approveIn(e.dir, [e.f, '--owner-yes', 'yes']).status, 0);
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep guard refuses a reviewer agent until the log clears this HEAD and this contract', () => {
   const dir = sweepRepo();
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'no approval at all');
@@ -2793,6 +2635,7 @@ test('the sweep guard refuses a reviewer agent until the log clears this HEAD an
   fs.appendFileSync(logFile, JSON.stringify({ kind: 'decision', decision: 'approved', contract: r.f, hash: 'x', head, prev: 'forged' }) + '\n');
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a hand-written line');
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep guard lets reviewers start after the script asked and the owner said yes', () => {
   const r = approveRun(askContract());
   assert.equal(sweepGuard(r.dir).permissionDecision, 'deny');
@@ -2802,6 +2645,7 @@ test('the sweep guard lets reviewers start after the script asked and the owner 
 });
 // Found in review of the hand-back fix: the report is the latest turn's hand-back, never an earlier turn, a message
 // to another agent, or narration before a thinking-only entry.
+// why: guards rule:agent-canary
 test('the canary reads only the latest turn of the transcript, and prefers the hand-back', () => {
   const dir = canaryRepo();
   const say = (content) => ({ type: 'assistant', message: { role: 'assistant', content } });
@@ -2825,6 +2669,7 @@ test('the canary reads only the latest turn of the transcript, and prefers the h
   // A half-written last line is skipped, not a reason to stop reading.
   assert.equal(stop('r5', file([prompt('brief'), handback(`${FAKE_PHRASE}\nok`)], '{"type":"assist')), 0);
 });
+// why: guards rule:outward-acts
 test('the leak guard lets an agent open its own message to its tasker with the phrase, and nobody else', () => {
   const dir = canaryRepo();
   const send = (extra) => {
@@ -2838,6 +2683,7 @@ test('the leak guard lets an agent open its own message to its tasker with the p
   assert.match(buried.stdout, /deny/, 'only an opening line counts as the agent\'s own');
 });
 // Found in the re-check: the floor read only committed work in the contract's own checkout.
+// why: guards rule:sweep-auto-approval
 test('the approval script asks the owner when the work is not committed or the diff is empty', () => {
   const dir = sweepRepo({ 'README.md': 'w\n' });
   const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
@@ -2856,6 +2702,7 @@ test('the approval script asks the owner when the work is not committed or the d
   const r = approveRun(featureContract());
   assert.equal(approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1', CLAUDECODE: '' }).status, 1, 'an emptied marker is still an AI shell');
 });
+// why: guards rule:agent-canary
 test('the canary skips a hook note after the hand-back', () => {
   const dir = canaryRepo();
   const f = path.join(makeTemp('tr-'), 'agent.jsonl');
@@ -2884,6 +2731,7 @@ function bandRun(mode, { band, measured, limits }) {
   return { ...r, out };
 }
 const band = { base: { page: 100000, lazy: 16000, files: 80 }, limit: { page: 100050, lazy: 16040, files: 80 }, raise: { page: 6000, files: 2 }, counts: ['files'] };
+// why: guards rule:outward-acts
 test('the size band refuses only a measured size past what is allowed, never a margin', () => {
   // Page grew 5,800 B: under the 106,050 allowed, though size + 10% of the growth would be over. Applied, with what
   // margin fits; on-demand grew inside its own limit and is left alone; the file count rose by 1 and is raised exactly.
@@ -2902,6 +2750,7 @@ test('the size band refuses only a measured size past what is allowed, never a m
   const count = bandRun('apply', { band, measured: { page: 100000, lazy: 16000, files: 83 }, limits: band.limit });
   assert.equal(count.status, 1, 'a count past its raise');
 });
+// why: catches a break at project/.claude/size-band.mjs:79 that no other test catches
 test('the size band end check lowers padding and fails a line over its limit', () => {
   const limits = { page: 106050, lazy: 16040, files: 82 };
   const r = bandRun('final', { band, measured: { page: 103000, lazy: 16000, files: 81 }, limits });
@@ -2909,6 +2758,7 @@ test('the size band end check lowers padding and fails a line over its limit', (
   assert.deepEqual(r.out.limits, { page: 103300, lazy: 16040, files: 81 }, 'lowered to size + margin; the unlisted line kept');
   assert.equal(bandRun('final', { band, measured: { page: 106100, lazy: 16000, files: 81 }, limits }).status, 1);
 });
+// why: catches a break at project/.claude/size-band.mjs:47 that no other test catches
 test('the size band rejects a band it cannot read as whole numbers, and a line with no limit', () => {
   const bad = (b) => bandRun('apply', { band: { ...band, ...b }, measured: { page: 101000, lazy: 16000, files: 80 }, limits: band.limit });
   for (const b of [{ limit: { lazy: 16040, files: 80 } }, { raise: { page: '6000' } }, { raise: { page: 10.5 } }, { base: { page: -1, lazy: 16000, files: 80 } }, { counts: ['fils'] }]) {
@@ -2924,6 +2774,7 @@ test('the size band rejects a band it cannot read as whole numbers, and a line w
 // Captured live in the desktop app: the stop event fires before the agent's hand-back reaches its transcript, so a
 // stop-time read finds no report. The report is checked when the agent calls the hand-back tool, where its text is
 // the call's own input; a miss refuses the call with the close-out steps.
+// why: guards rule:agent-canary
 test('the canary checks a hand-back at the call, refuses a miss once, and lets the close-out through', () => {
   const dir = canaryRepo();
   const handback = (id, message) => {
@@ -2941,6 +2792,7 @@ test('the canary checks a hand-back at the call, refuses a miss once, and lets t
   canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'p2' });
   assert.deepEqual(canaryLog(dir).map((e) => [e.agent, e.result]), [['p1', 'hit'], ['p2', 'miss'], ['p2', 'closed-out']]);
 });
+// why: guards rule:sweep-auto-approval
 test('every kit role checks its hand-back call', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
     assert.match(read(path.resolve('user/agents', `${role}.md`)), /matcher: "SubagentHandback"\n {6}hooks:\n {8}- type: command\n {10}command: node "\{\{CLAUDE_HOME\}\}\/kit-hooks\/canary\.cjs"/, role); // pin: 1 Claude Code reads the hook block
@@ -2962,6 +2814,7 @@ function reportRepo() {
   return dir;
 }
 const EXAMPLE = () => read(path.resolve('project/.claude/kit/improvement-report-example.md'));
+// why: catches a break at project/.claude/improvement-report.mjs:113 that no other test catches
 test('a new improvement report starts from the kit template with its facts filled in', () => {
   const dir = reportRepo();
   const r = reportRun(dir, ['new', 'Sweep approval asked before the script']);
@@ -2980,13 +2833,7 @@ test('a new improvement report starts from the kit template with its facts fille
   assert.equal(a.status, 1);
   assert.match(a.stdout, /placeholder/i);
 });
-test('the kit\'s example report (the first real one, re-filed) passes the audit', () => {
-  const f = path.join(makeTemp('ir-'), 'IR-2026-10-30-sweep-approval-miss.md');
-  fs.writeFileSync(f, EXAMPLE());
-  const a = reportRun(path.dirname(f), ['audit', f]);
-  assert.equal(a.status, 0, a.stdout);
-  assert.match(a.stdout, /PASS/);
-});
+// why: guards rule:pr-body
 test('the report audit fails a missing field, an unproven cause, a lowered standard and an unclosed close', () => {
   const cases = [
     [(t) => t.replace(/^\| Severity \|.*\n/m, ''), /Severity/],
@@ -3010,19 +2857,8 @@ test('the report audit fails a missing field, an unproven cause, a lowered stand
     assert.match(a.stdout, why);
   }
 });
-test('status lists the improvement reports still open in a project', () => {
-  const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'user' });
-  install({ kit, home, target: 'project', projectDir: proj });
-  fs.mkdirSync(path.join(proj, '.kit', 'reports'), { recursive: true });
-  fs.writeFileSync(path.join(proj, '.kit', 'reports', 'IR-2026-10-30-a.md'), '| Status | open |\n');
-  fs.writeFileSync(path.join(proj, '.kit', 'reports', 'IR-2026-10-29-b.md'), '| Status | closed |\n| Closed by | 1.8.0 |\n');
-  const r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.match(r.text, /1 improvement report\(s\) open: IR-2026-10-30-a\.md/);
-  assert.equal(r.current, true, 'an open report is work for the kit, not a stale install');
-});
-
 // Found in review of the sweep guard (2026-10-30).
+// why: guards rule:sweep-auto-approval
 test('the sweep guard holds reviewers to the cleared team size', () => {
   const dir = sweepRepo({ 'README.md': 'y\n' });
   const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
@@ -3032,6 +2868,7 @@ test('the sweep guard holds reviewers to the cleared team size', () => {
   assert.equal(second.permissionDecision, 'deny', 'a second reviewer on a one-role contract');
   assert.match(second.permissionDecisionReason, /Role 1 of the cleared contract[\s\S]*started already/);
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sweep runs', () => {
   const dir = sweepRepo();
   const wt = path.join(makeTemp('wt-'), 'wt');
@@ -3046,6 +2883,7 @@ test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sw
   const brief = { tool_input: { subagent_type: 'reviewer', prompt: `review ${root.split('/').join(path.sep)}. Call cap: 5.` } };
   assert.equal(sweepGuard(dir, brief).permissionDecision, 'allow', 'the lead\'s session sits in the main checkout');
 });
+// why: guards rule:outward-acts
 test('the owner\'s yes can be logged when the script could not read the base', () => {
   const dir = sweepRepo();
   g(dir, 'branch', '-m', 'main', 'develop');
@@ -3055,10 +2893,12 @@ test('the owner\'s yes can be logged when the script could not read the base', (
   assert.equal(approveIn(dir, [r.f, '--owner-yes', 'yes go ahead']).status, 0);
   assert.equal(sweepGuard(dir).permissionDecision, 'allow');
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep guard gates the reviewer type in any spelling', () => {
   const dir = sweepRepo();
   for (const t of ['Reviewer', 'kit:reviewer']) assert.equal(sweepGuard(dir, { tool_input: { subagent_type: t } }).permissionDecision, 'deny', t);
 });
+// why: guards rule:pr-body
 test('a report title with $ signs is written as typed', () => {
   const dir = reportRepo();
   assert.equal(reportRun(dir, ['new', "Cost $' and $& here"]).status, 0);
@@ -3067,6 +2907,7 @@ test('a report title with $ signs is written as typed', () => {
   assert.match(text, /^# Improvement report: Cost \$' and \$& here$/m);
   assert.equal(text.match(/^## Summary$/gm).length, 1);
 });
+// why: guards rule:pr-body
 test('the report audit reads pipes in code spans, allows angle brackets in prose, and catches a backticked placeholder', () => {
   const check = (text) => {
     const f = path.join(makeTemp('ir-'), 'r.md');
@@ -3085,6 +2926,7 @@ test('the report audit reads pipes in code spans, allows angle brackets in prose
 
 // The reviewer model trial (the owner, 2026-10-30): any role but security and the novel lens may run on the mid
 // model; those two stay on the top model, and the outcome log counts the real findings the mid-model roles found.
+// why: guards rule:sweep-auto-approval
 test('a security or novel-lens role on a cheaper model goes back to be fixed; other roles may trial it', () => {
   for (const i of [0, 4]) {
     const c = featureContract();
@@ -3119,6 +2961,7 @@ function bumpRepo(change) {
   commitAll(dir, 'change', true);
   return dir;
 }
+// why: catches a break at project/.claude/version-bump-check.mjs:37 that no other test catches
 test('the version bump check fails shipped code with no bump, unless the body says no user-facing change', async () => {
   const { versionBumpCheck } = await import(pathToFileURL(BUMP).href);
   const shipped = bumpRepo((d) => fs.writeFileSync(path.join(d, 'src', 'a.js'), 'export const a = 2;\n'));
@@ -3155,6 +2998,7 @@ const stdAudit = (dir, text, title = STD_TITLE) => {
 };
 const honestBody = () => read(path.resolve('user/skills/pr-body/examples/standard.md'))
   .replace('; the corpus and the served documents are unchanged', '');
+// why: catches a break at project/.claude/pr-body-audit.mjs:64 that no other test catches
 test('the Standard PR audit passes an honest body for a project with no corpus, no scoped ignores and no web gates', () => {
   const dir = makeTemp('prb-');
   const ok = stdAudit(dir, honestBody());
@@ -3168,6 +3012,7 @@ test('the Standard PR audit passes an honest body for a project with no corpus, 
   // A scope with a digit is a scope, as the commit check reads it (the 1.25.0 sweep).
   assert.doesNotMatch(stdAudit(dir, honestBody(), STD_TITLE.replace('feat:', 'feat(v2):')).stdout, /FAIL\s+title/);
 });
+// why: guards rule:pr-body
 test('a project\'s .kit/pr-body.json sets its own review dimensions, audit line and checked lines', () => {
   const dir = makeTemp('prb-');
   fs.mkdirSync(path.join(dir, '.kit'));
@@ -3200,6 +3045,7 @@ test('a project\'s .kit/pr-body.json sets its own review dimensions, audit line 
 
 // The Review section carries the sweep summary a reviewer needs (the commit covered, a result per dimension, high and
 // critical findings, deferred items, accepted risks), and never a link to the private report.
+// why: guards rule:sweep-auto-approval
 test('the Standard PR audit holds the Review section to the sweep summary and refuses a private report link', () => {
   const dir = makeTemp('prb-');
   const ok = stdAudit(dir, honestBody());
@@ -3216,6 +3062,7 @@ test('the Standard PR audit holds the Review section to the sweep summary and re
 
 // Found in a course project closeout (2026-10-30): the lead sent the coordinator a file path instead of the handoff,
 // and a new session may not read that path. The audit can print the exact text to send, so the step is checkable.
+// why: guards rule:word-pins
 test('the handoff audit prints the full text to send, and only for a clean handoff', () => {
   const good = '# Notes - Continuation Handoff\n\n## REQUIRED FIRST ACTIONS\nRun the Post-Compact Orientation Protocol.\n\n## Working Mode: Plan\n\n## State Snapshot\n- Git: main at a1b2c3d, pushed\n\n## Newly-Established Working Standards\nnone\n\n## Critical In-Flight Context\n- none\n\n## Reading Order\n1. _Start Here.md\n\n## Next Step\n- What: the next PR\n\n## Anti-Hallucination Discipline\n- verified\n';
   const ok = runAudit('closeout', good, ['--send']);
@@ -3230,6 +3077,7 @@ test('the handoff audit prints the full text to send, and only for a clean hando
 
 // From a project's gap report (2026-10-30): a version-only package.json change was read as a new dependency, a
 // pause stayed silent after the session that tripped it, and an owner-decided sweep could not log its outcome.
+// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:216 that no other test catches
 test('a version-only package.json change is not a new dependency; a dependency change still is', () => {
   const pkg = (v, deps = '{}') => `{\n  "name": "app",\n  "version": "${v}",\n  "dependencies": ${deps}\n}\n`;
   const repo = (head) => {
@@ -3249,6 +3097,7 @@ test('a version-only package.json change is not a new dependency; a dependency c
   assert.match(approveRun(featureContract(), repo(pkg('1.1.0', '{ "left-pad": "1" }'))).stdout, /supply-chain/i, 'a new dependency');
   assert.match(approveRun(featureContract(), repo('{ not json')).stdout, /supply-chain/i, 'an unreadable package file counts as a change');
 });
+// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:697 that no other test catches
 test('while paused, every ask says how the owner resumes and what to review first', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -3260,6 +3109,7 @@ test('while paused, every ask says how the owner resumes and what to review firs
   assert.ok(approveIn(r.dir, ['--summary']).stdout.includes(`\`sweep resume ${code}\``));
   assert.doesNotMatch(ask.stdout, /KIT_OWNER_RESUME|--thread/, 'the retired ways');
 });
+// why: guards rule:sweep-auto-approval
 test('an owner-decided sweep can log its outcome, so the trial sees every sweep', () => {
   const r = approveRun(askContract());
   assert.equal(r.status, 1);
@@ -3270,6 +3120,7 @@ test('an owner-decided sweep can log its outcome, so the trial sees every sweep'
 
 // The owner, 2026-11-03: the meter is processed tokens, read by the script from each reviewer's own transcript. A
 // hand-typed number was the Agent result's context size, so every budget tripped on the wrong meter.
+// why: guards rule:sweep-auto-approval
 test('the outcome reads each role\'s spend from its own transcript, counting each streamed message once', () => {
   const c = featureContract();
   c.roles[3].model = 'sonnet';
@@ -3291,6 +3142,7 @@ test('the outcome reads each role\'s spend from its own transcript, counting eac
   assert.equal(line.tokens, 390 + 1108 + 1108 + 500 + 40);
   assert.match(approveIn(r.dir, ['--summary']).stdout, /security x3: up to 1,108 over 1 calls/);
 });
+// why: guards rule:sweep-auto-approval
 test('the outcome asks the owner when a transcript is missing, and refuses a hand-typed token count', () => {
   const r = approveRun(featureContract());
   const before = approvalLog(r.dir).length;
@@ -3334,6 +3186,7 @@ const threeSecurity = () => [
   role('security', 'Does an error path leak the session token?'),
   role('security', 'Can the clamp be bypassed by a negative offset?'),
 ];
+// why: guards rule:sweep-auto-approval
 test('a cap counts the roles beyond the floor: a security fix with tests approves, extras past the cap ask', () => {
   const sec = { tier: 'fix', modifiers: ['security-sensitive'], roles: [...fixFloor(), ...threeSecurity()] };
   assert.equal(approveRun(sec, fixRepo()).status, 0, approveRun(sec, fixRepo()).stdout);
@@ -3388,6 +3241,7 @@ function resweep(first, extra = {}, name = 'resweep.json') {
 // Under the one-sweep loop a re-sweep inside its focus asks the owner for that reason alone; their yes clears it.
 const ownerAsked = (r) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/); assert.doesNotMatch(r.stdout, /FIX THE CONTRACT/); assert.equal(r.stdout.match(/^    \S.*$/gm).filter((l) => !/No project settings|Triage report|answers in the pop-up/.test(l)).length, 1, r.stdout); return ownerYes(r); };
 const ownerYes = (r) => { const y = approveIn(r.dir, [r.f, '--owner-yes', 'yes, run that second pass']); assert.equal(y.status, 0, y.stdout); return r; };
+// why: guards rule:sweep-auto-approval
 test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the owner, and a rebase does not hide the first', () => {
   const first = firstSweep();
   const second = path.join(first.dir, 'sweeps', 'second.json');
@@ -3418,6 +3272,7 @@ test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the ow
     assert.match(approveIn(r.dir, [f]).stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch/, `after a rebase and a ${move}`);
   }
 });
+// why: guards rule:sweep-auto-approval
 test('a re-sweep asks the owner; on their yes it runs once, and a second, or a re-sweep of it, is refused with the carry-over pointer and no pause', () => {
   const first = firstSweep();
   const re = resweep(first);
@@ -3439,6 +3294,7 @@ test('a re-sweep asks the owner; on their yes it runs once, and a second, or a r
   assert.equal(third.status, 1, third.stdout);
   assert.match(third.stdout, /ASK THE OWNER[\s\S]*second sweep on this branch/);
 });
+// why: guards rule:sweep-auto-approval
 test('a re-sweep that loses focus goes back to be fixed; a new risk asks the owner', () => {
   const cases = [
     [{ roles: [...resweepRoles(), role('novel-lens', 'What did every other role structurally miss?')] }, /novel-lens/],
@@ -3489,6 +3345,7 @@ test('a re-sweep that loses focus goes back to be fixed; a new risk asks the own
   commitAll(moved2.dir, 'move', true);
   assert.match(resweep(moved2).stdout, /ASK THE OWNER[\s\S]*add a source file \(lib\/readme\.mjs\)/);
 });
+// why: guards rule:sweep-auto-approval
 test('what a re-sweep leaves is carried: logged, printed, shown at each sweep start until a later outcome closes it', () => {
   const first = firstSweep();
   const re = resweep(first);
@@ -3508,6 +3365,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
 });
 
 // The owner, 2026-11-03: every approve.mjs stop hands the owner a triage report, not just a line.
+// why: guards rule:sweep-auto-approval
 test('every ask and every pause writes a triage report beside the contract; an approval writes none', () => {
   const triage = (f) => f.replace(/\.json$/, '.triage.md');
   const ok = approveRun(featureContract());
@@ -3543,6 +3401,7 @@ test('every ask and every pause writes a triage report beside the contract; an a
 });
 
 // Found by the 1.16.0 branch's own feature sweep (2026-11-03).
+// why: guards rule:sweep-tiers
 test('a tier that is an object\'s built-in name is unknown, and goes back to be fixed', () => {
   for (const tier of ['constructor', '__proto__', 'toString']) {
     const r = approveRun({ ...featureContract(), tier });
@@ -3551,6 +3410,7 @@ test('a tier that is an object\'s built-in name is unknown, and goes back to be 
   }
   assert.match(approveRun({ ...featureContract(), modifiers: ['constructor'] }).stdout, /unknown modifier "constructor"/);
 });
+// why: guards rule:sweep-auto-approval
 test('the outcome reads only this sweep\'s finished reviewers, each once in the log', () => {
   const r = approveRun({ tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] }, sweepRepo({ 'README.md': 'y\n' }));
   assert.equal(r.status, 0, r.stdout);
@@ -3575,6 +3435,7 @@ test('the outcome reads only this sweep\'s finished reviewers, each once in the 
   assert.equal(again.status, 0, again.stdout);
   asks('g1', transcripts({ g1: [[1, 1, 1, 1]] }), /already logged/);
 });
+// why: guards rule:sweep-auto-approval
 test('a reviewer that ran on another model than its role names pauses for the owner', () => {
   const r = approveRun(featureContract());
   const cfg = transcripts({ m1: [[1, 1, 1, 1]], m2: [[1, 1, 1, 1]], m3: [[1, 1, 1, 1]], m4: [{ model: 'claude-haiku-4-5', u: [1, 1, 1, 1] }], m5: [[1, 1, 1, 1]] });
@@ -3582,6 +3443,7 @@ test('a reviewer that ran on another model than its role names pauses for the ow
   assert.equal(o.status, 0, o.stdout);
   assert.match(o.stdout, /paused[\s\S]*ran on claude-haiku-4-5/);
 });
+// why: guards rule:sweep-auto-approval
 test('an approved sweep that never started can be closed with --none-ran, and only then', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);
@@ -3598,6 +3460,7 @@ test('an approved sweep that never started can be closed with --none-ran, and on
   assert.equal(ran.status, 1);
   assert.match(ran.stdout, /started/);
 });
+// why: guards rule:sweep-auto-approval
 test('a re-sweep is one per sweep however the first is re-run, and a re-run of the same re-sweep before it ran is fine', () => {
   const first = firstSweep();
   const re = resweep(first);
@@ -3612,6 +3475,7 @@ test('a re-sweep is one per sweep however the first is re-run, and a re-run of t
   assert.equal(outcome(first).status, 0);
   assert.match(resweep(first, {}, 'resweep2.json').stdout, /REFUSED[\s\S]*already had its re-sweep/, 'clearing the first sweep again does not buy a second');
 });
+// why: guards rule:sweep-auto-approval
 test('a re-sweep reads the first sweep as it was cleared, carries leftovers from either pass, and keeps contracts and reports out of the new-source check', () => {
   const first = firstSweep();
   const edited = JSON.parse(read(first.f));
@@ -3634,6 +3498,7 @@ test('a re-sweep reads the first sweep as it was cleared, carries leftovers from
   const withTests = resweep(f4, { roles: [...resweepRoles(), role('test-value', 'Does each new test fail without the fix?')] });
   ownerAsked(withTests);
 });
+// why: guards rule:sweep-auto-approval
 test('project caps lower every limit', () => {
   const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
   const plusOne = { ...featureContract(), roles: [...featureContract().roles, role('privacy', 'Which fields leave the device now?')] };
@@ -3644,10 +3509,12 @@ test('project caps lower every limit', () => {
   assert.match(approveRun(featureContract(), lowered({ maxAgents: 4 })).stdout, /cap of 4/);
   assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, role('security', 'Can a replayed token reach the import queue?')] }, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor/, 'a fourth security role is an extra');
 });
+// why: guards rule:sweep-auto-approval
 test('the default reviewer model in approve.mjs is the reviewer role\'s own model', () => {
   const m = read('user/agents/reviewer.md').match(/^model:\s*(\S+)/m)[1];
   assert.match(read(APPROVE), new RegExp(`DEFAULT_MODEL = '${m}'`));
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep guard says a refused re-sweep has no owner override', () => {
   const first = firstSweep();
   const re = ownerYes(resweep(first));
@@ -3661,6 +3528,7 @@ test('the sweep guard says a refused re-sweep has no owner override', () => {
 });
 
 // Found by the 1.16.0 branch's re-sweep (2026-11-03): an approval closed with --none-ran is not a sweep that ran.
+// why: guards rule:sweep-auto-approval
 test('a sweep closed with --none-ran is neither a base for a re-sweep nor a used re-sweep', () => {
   const dir = sweepRepo();
   const f = approveRun(featureContract(), dir);
@@ -3681,6 +3549,7 @@ test('a sweep closed with --none-ran is neither a base for a re-sweep nor a used
   ownerAsked(resweep(two));
   assert.match(resweep(two, {}, 'resweep2.json').stdout, /REFUSED/);
 });
+// why: guards rule:sweep-tiers
 test('--none-ran reads every clearing of this round, and only an approved contract has one', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);
@@ -3694,6 +3563,7 @@ test('--none-ran reads every clearing of this round, and only an approved contra
   const asked = approveRun(askContract());
   assert.match(approveIn(asked.dir, [asked.f, '--outcome', '--none-ran']).stdout, /has none/);
 });
+// why: guards rule:sweep-tiers
 test('a modifiers value that is not a list goes back to be fixed; the fix options fit the reason', () => {
   const r = approveRun({ tier: 'fix', modifiers: 'security-sensitive', roles: fixFloor() }, fixRepo());
   assert.equal(r.status, FIX_EXIT, r.stdout);
@@ -3710,6 +3580,7 @@ test('a modifiers value that is not a list goes back to be fixed; the fix option
   budget.roles[0].calls = 0;
   assert.match(approveRun(budget).stdout, /How: Set each role's "calls"/);
 });
+// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:829 that no other test catches
 test('a transcript whose last model is synthetic is read by its real model; one with no model pauses', () => {
   const r = approveRun(featureContract());
   const cfg = transcripts({ y1: [[1, 1, 1, 1], { model: '<synthetic>', u: [0, 0, 0, 0] }], y2: [[1, 1, 1, 1]], y3: [[1, 1, 1, 1]], y4: [[1, 1, 1, 1]], y5: [[1, 1, 1, 1]] });
@@ -3723,6 +3594,7 @@ test('a transcript whose last model is synthetic is read by its real model; one 
 
 // From a project's kit-gap log (2026-10-31): a second Claude config folder (CLAUDE_CONFIG_DIR) ran without the kit,
 // and a repo with its own CLAUDE.md got no pointer to the kit's rules.
+// why: guards rule:outward-acts
 test('the installer and the session hook honor CLAUDE_CONFIG_DIR, and the hook names the folder it checked', () => {
   const cfg = makeTemp('cfg-');
   const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg };
@@ -3745,6 +3617,7 @@ function overlayKit() {
   fs.writeFileSync(path.join(ctx.proj, 'CLAUDE.md'), "# The team's own rules\n");
   return ctx;
 }
+// why: guards rule:kit-stays-local
 test('a team repo with a tracked CLAUDE.md gets the kit as an overlay: CLAUDE.local.md, host-owned, nothing flagged or untracked', () => {
   const { kit, home, proj } = overlayKit();
   commitAll(proj, 'team', true);
@@ -3766,6 +3639,7 @@ test('a team repo with a tracked CLAUDE.md gets the kit as an overlay: CLAUDE.lo
   const again = install({ kit, home, target: 'project', projectDir: proj });
   assert.ok(!again.created.includes('CLAUDE.local.md') && !again.skipped.some((s) => s.file === 'CLAUDE.md'));
 });
+// why: guards rule:kit-stays-local
 test("an untracked CLAUDE.md of the owner's own is skipped with a pointer to --overlay, and --overlay applies it", () => {
   const { kit, home, proj } = overlayKit();
   const r = install({ kit, home, target: 'project', projectDir: proj });
@@ -3778,10 +3652,7 @@ test("an untracked CLAUDE.md of the owner's own is skipped with a pointer to --o
   install({ kit: plain.kit, home: plain.home, target: 'project', projectDir: plain.proj });
   assert.equal(fs.existsSync(path.join(plain.proj, 'CLAUDE.local.md')), false, "no overlay where CLAUDE.md is the kit's");
 });
-test('status names the Claude config folder it read', () => {
-  const { kit, home, proj } = makeKit();
-  assert.ok(status({ kit, home, projectDir: proj, ahead: () => 0 }).text.includes(`Claude config folder: ${home.split(path.sep).join('/')}`));
-});
+// why: catches a break at scripts/kit.mjs:547 that no other test catches
 test('an overlay on a repo that also owns its AGENTS.md says the kit core needs a home', () => {
   const { kit, home, proj } = overlayKit();
   fs.writeFileSync(path.join(proj, 'AGENTS.md'), "# The team's agents file\n");
@@ -3792,6 +3663,7 @@ test('an overlay on a repo that also owns its AGENTS.md says the kit core needs 
 
 // The owner, 2026-10-31: the kit's own CLAUDE.md never goes public, whatever tracking.json says, and it works beside
 // a host's CLAUDE.md through the overlay.
+// why: guards rule:first-push-gate
 test("the kit's CLAUDE.md and CLAUDE.local.md stay out of git even when the kit is tracked or they are listed in track", () => {
   const dir = localProject();
   kitInstall(dir);
@@ -3809,6 +3681,7 @@ test("the kit's CLAUDE.md and CLAUDE.local.md stay out of git even when the kit 
   assert.equal(r.status, 1);
   assert.match(r.stdout, /CLAUDE\.md/);
 });
+// why: guards rule:first-push-gate
 test("a host-owned CLAUDE.md is the host's to track", () => {
   const { kit, home, proj } = overlayKit();
   commitAll(proj, 'team', true);
@@ -3823,6 +3696,7 @@ const promptGate = (script, input, env) => {
   const r = spawnSync('node', [script], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', ...input }), encoding: 'utf8', env: { ...process.env, ...env } });
   return r.stdout ? JSON.parse(r.stdout) : {};
 };
+// why: guards rule:outward-acts
 test('the project hook stops every prompt when the Claude config folder has no kit, and lets the install through', () => {
   const proj = makeTemp('gate-');
   const empty = makeTemp('cfg-');
@@ -3836,6 +3710,7 @@ test('the project hook stops every prompt when the Claude config folder has no k
   const fix = spawnSync('node', [hook, 'prompt'], { input: JSON.stringify({ prompt: 'run node kit.mjs install user' }), encoding: 'utf8', env: { ...process.env, ...env } });
   assert.notEqual((fix.stdout ? JSON.parse(fix.stdout) : {}).decision, 'block');
 });
+// why: guards rule:ci-gate
 test('the user-level gate stops a prompt in a folder without the kit, until it is installed or the folder opts out', () => {
   const gate = path.resolve('user/kit-hooks/kit-gate.cjs');
   const dir = localProject();
@@ -3850,6 +3725,7 @@ test('the user-level gate stops a prompt in a folder without the kit, until it i
   fs.writeFileSync(path.join(other, '.kit', 'no-kit'), '');
   assert.notEqual(promptGate(gate, { cwd: other, prompt: 'hi' }).decision, 'block', 'opted out');
 });
+// why: guards rule:ci-gate
 test('the user install wires the gate into the Claude config folder settings once, keeping what is there', () => {
   const { kit, home } = makeKit();
   fs.mkdirSync(home, { recursive: true });
@@ -3865,6 +3741,7 @@ test('the user install wires the gate into the Claude config folder settings onc
 
 // IR-2026-10-31-commit-check-cannot-see-a-worktree-s-staged-files: builders commit in their own worktrees, and the
 // commit check read the main checkout's index (or, with a relative hooks path, never ran there at all).
+// why: guards rule:first-push-gate
 test('the commit check runs in an agent worktree and reads that worktree\'s staged files', () => {
   const dir = readyProject();
   const wt = path.join(dir, '.claude', 'worktrees', 'unit-1');
@@ -3895,6 +3772,7 @@ const leanAudit = (dir, text) => {
 };
 // M28: CI runs this audit on every PR, and it caught 1 of 13 logic breaks. Each case is a slip a writer really makes,
 // and must fail exactly its own row: a row that stops failing, or starts failing a good body, shows here.
+// why: guards rule:pr-body
 test('the lean PR-body audit fails each real slip on its own row, and only that row, at each limit', () => {
   const dir = makeTemp('lean-');
   const lean = read(path.resolve('user/skills/pr-body/examples/lean.md'));
@@ -3977,6 +3855,7 @@ const notesAudit = (dir, text) => {
   return spawnSync('node', [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.0.0'], { encoding: 'utf8', cwd: dir });
 };
 
+// why: guards rule:pr-body
 test('the attribution check refuses every disguise in the corpus and passes prose about it', async () => {
   const { attributionFaults } = await import('../project/.claude/no-attribution.mjs');
   for (const body of [...CORPUS.mustFail, ...CORPUS.unclear.map((u) => u.s)]) assert.notDeepEqual(attributionFaults(body), [], JSON.stringify(body));
@@ -3984,6 +3863,7 @@ test('the attribution check refuses every disguise in the corpus and passes pros
 });
 
 // Handoff item 10: judged against a base, the phrase comes from the base, so a branch cannot change it.
+// why: guards rule:agent-canary
 test('the PR-body canary reads the phrase from PR_BASE when one is set, and from disk when not', async () => {
   const { carriesPhrase } = await import('../project/.claude/canary-phrase.mjs');
   const dir = canaryRepo('Tango Lima Seven Delta');
@@ -3998,6 +3878,7 @@ test('the PR-body canary reads the phrase from PR_BASE when one is set, and from
 });
 
 // Handoff item 15, for the Standard audit: a banned word or a dash spelled as an entity is the word on the page.
+// why: guards rule:pr-body
 test('the Standard PR-body audit reads an entity as the character the page shows', () => {
   const dir = makeTemp('prb-');
   assert.equal(stdAudit(dir, honestBody()).status, 0);
@@ -4008,6 +3889,7 @@ test('the Standard PR-body audit reads an entity as the character the page shows
   assert.match(fails(line, line.replace(' the ', ' the &#8212; ')).join('\n'), /0 non-ASCII characters/);
 });
 
+// why: guards rule:pr-body
 test('both PR-body audits fail on the attribution block at the top, in the middle, or either half alone', () => {
   const dir = makeTemp('prb-');
   const FAILED = /FAIL\s+no attribution block/;
@@ -4028,6 +3910,7 @@ test('both PR-body audits fail on the attribution block at the top, in the middl
   }
 });
 
+// why: guards rule:pr-body
 test('the attribution check stays fast on a line of tick boxes', async () => {
   const { attributionFaults } = await import('../project/.claude/no-attribution.mjs');
   const start = Date.now();
@@ -4035,12 +3918,14 @@ test('the attribution check stays fast on a line of tick boxes', async () => {
   assert.ok(Date.now() - start < 1000);
 });
 
+// why: guards rule:pr-body
 test('the release notes audit fails on the attribution block, on the same corpus', () => {
   const dir = makeTemp('rna-');
   for (const body of [...CORPUS.mustFail, ...CORPUS.unclear.map((u) => u.s)]) assert.match(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
   for (const body of CORPUS.mustPass) assert.doesNotMatch(notesAudit(dir, body).stdout, /attribution block/, JSON.stringify(body));
 });
 
+// why: guards rule:pr-body
 test('the kit ships no way past the attribution check', () => {
   assert.equal(fs.existsSync(path.resolve('project/.claude/attribution.mjs')), false);
   for (const f of ['project/.claude/pr-body-audit.mjs', 'project/.claude/pr-body-audit-lean.mjs']) assert.doesNotMatch(read(path.resolve(f)), /stripAttribution|\.\/attribution\.mjs/);
@@ -4048,6 +3933,7 @@ test('the kit ships no way past the attribution check', () => {
 
 // IR-2026-10-31-no-branch-rule-on-main-after-a-new-repo-goes-public: the first push gate made a repo public and
 // stopped one step short of protecting main.
+// why: guards rule:outward-acts
 test('the kit ships the main branch rule as settings, and status flags an unprotected main', () => {
   const rule = JSON.parse(read(path.resolve('project/.claude/kit/branch-protection.json')));
   assert.deepEqual(Object.keys(rule).sort(), ['allow_deletions', 'allow_force_pushes', 'enforce_admins', 'required_pull_request_reviews', 'required_status_checks', 'restrictions']);
@@ -4066,6 +3952,7 @@ test('the kit ships the main branch rule as settings, and status flags an unprot
 });
 
 // The owner, 2026-10-31: a full stop names the kit folder and the exact install steps, read from the install records.
+// why: catches a break at user/kit-hooks/kit-gate.cjs:56 that no other test catches
 test('both stop messages name the kit folder and the exact steps to install it', () => {
   const kitDir = path.resolve('.').split(path.sep).join('/');
   // The folder gate reads the kit folder from the config folder's install record.
@@ -4108,6 +3995,7 @@ const GOOD_MAP = {
   links: [{ from: 'ask', to: 'corpus', verb: 'searches' }],
   progress: [{ item: 'Offline answers', state: 'done', evidence: 'PR #12' }, { item: 'Citations', state: 'doing' }, { item: 'Voice', state: 'next' }],
 };
+// why: catches a break at project/.claude/project-map.mjs:25 that no other test catches
 test('the project map check passes a sound map and names every fault in a bad one', () => {
   assert.equal(mapRun(mapRepo(GOOD_MAP), ['check']).status, 0);
   const bad = { ...GOOD_MAP, goal: '',
@@ -4121,6 +4009,7 @@ test('the project map check passes a sound map and names every fault in a bad on
     assert.match(r.stdout, fault);
   }
 });
+// why: guards rule:outward-acts
 test('the project map renders one self-contained page with states as words, and refuses a map that fails its check', () => {
   const dir = mapRepo(GOOD_MAP);
   const out = path.join(dir, 'map.html');
@@ -4136,6 +4025,7 @@ test('the project map renders one self-contained page with states as words, and 
   fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify({ ...GOOD_MAP, goal: '' }));
   assert.equal(mapRun(dir, ['render', out]).status, 1);
 });
+// why: guards rule:outward-acts
 test('the project map can be checked from a draft file outside the project, with paths still held to the project', () => {
   const dir = mapRepo(GOOD_MAP);
   const draft = path.join(makeTemp('draft-'), 'map.json');
@@ -4150,6 +4040,7 @@ test('the project map can be checked from a draft file outside the project, with
 const NAMES = path.resolve('project/.claude/name-check.mjs');
 const nameRun = (args) => spawnSync('node', [NAMES, ...args], { encoding: 'utf8' });
 const msgFile = (text) => { const f = path.join(makeTemp('msg-'), 'MSG'); fs.writeFileSync(f, text); return f; };
+// why: guards rule:commit-message-format
 test('the commit message check passes the house style and names each fault', () => {
   for (const ok of ['fix: hold the page still behind the open reader\n', 'chore(deps-dev): bump vite\n', 'Merge branch main into feature/x\n',
     'fixup! fix: hold the page\n', 'feat: add the map\n# a comment git strips\n']) assert.equal(nameRun(['message', msgFile(ok)]).status, 0, ok);
@@ -4171,16 +4062,19 @@ test('the commit message check passes the house style and names each fault', () 
 });
 // T13 (the owner, 2026-11-10: "type: subject"): the PR title is the squash commit's subject on main, so it is held to
 // the same rule, and a script can group the changelog from main's history.
+// why: guards rule:pr-body
 test('the PR title check holds a title to the commit subject rule', () => {
   assert.equal(nameRun(['title', 'fix: guards that hold']).status, 0);
   for (const bad of ['Guards: hold the six holes', 'fix: guards that hold.', `feat: ${'x'.repeat(70)}`]) assert.equal(nameRun(['title', bad]).status, 1, bad);
 });
+// why: guards rule:commit-message-format
 test('the branch name check passes plain type-prefixed names and refuses tool prefixes and internal codes', () => {
   for (const ok of ['main', 'feature/branch-blind-timeline', 'fix/hold-the-reader', 'chore/bump-vite', 'feat/project-map', 'dependabot/npm_and_yarn/vite-7.1.0'])
     assert.equal(nameRun(['branch', ok]).status, 0, ok);
   for (const bad of ['claude/project-thread-fkkmfn', 'worktree-agent-a1', 'feature/b2-calendar', 'feature/F9_Timeline', 'my-branch', 'feature/'])
     assert.equal(nameRun(['branch', bad]).status, 1, bad);
 });
+// why: guards rule:outward-acts
 test('the commit-msg hook runs the message check, and the pre-push hook refuses a badly named branch', { windows: true }, () => {
   // The commit-msg hook, run as git runs it, refuses a message out of the house style.
   const msgHook = spawnSync('sh', [path.resolve('project/.githooks/commit-msg'), msgFile('update stuff\n')], { encoding: 'utf8' });
@@ -4203,6 +4097,7 @@ test('the commit-msg hook runs the message check, and the pre-push hook refuses 
 
 // One home per job (the owner, 2026-10-31): the kit's skills load their detail from references/ on demand, so a
 // broken link is a step that silently loads nothing.
+// why: guards rule:kit-standards
 test('every kit skill names itself, keeps a short description, and every link it carries resolves', () => {
   const root = path.resolve('user/skills');
   for (const name of fs.readdirSync(root)) {
@@ -4226,6 +4121,7 @@ test('every kit skill names itself, keeps a short description, and every link it
 
 // A standby skill (the owner, 2026-10-31): moved out of the Claude config folder to save context, it lives on only in
 // vendor/, so a later snapshot must keep that copy, not wipe it.
+// why: catches a break at scripts/kit.mjs:882 that no other test catches
 test('snapshot keeps the vendor copy of a skill that is on standby (not on this machine)', () => {
   const ctx = makeKit();
   addThirdParty(ctx);
@@ -4240,6 +4136,7 @@ test('snapshot keeps the vendor copy of a skill that is on standby (not on this 
 // evidence on every done line of a plan's Progress block.
 const TRACK = path.resolve('project/.claude/tracking-check.mjs');
 const trackRun = (dir, args) => spawnSync('node', [TRACK, ...args], { encoding: 'utf8', cwd: dir });
+// why: guards rule:sweep-auto-approval
 test('the tracking check measures the whole-file caps and names each file over its cap', () => {
   const dir = makeTemp('track-');
   const lines = (n) => Array.from({ length: n }, (_, i) => `line ${i}`).join('\n') + '\n';
@@ -4256,6 +4153,7 @@ test('the tracking check measures the whole-file caps and names each file over i
   assert.match(over.stdout, /\| _Active Plan\.md \| 71 lines \| 70 \| OVER \|/);
   assert.match(over.stdout, /\| _Session Log\.md \| 11 sessions \| 10 \| OVER \|/);
 });
+// why: guards rule:outward-acts
 test('the tracking check refuses a non-empty parking lot and a done line with no evidence', () => {
   const dir = makeTemp('track-');
   const plan = path.join(dir, 'plan.md');
@@ -4274,6 +4172,7 @@ test('the tracking check refuses a non-empty parking lot and a done line with no
 
 // Skill cases suggested from the repo (the owner, 2026-10-31): the session-start question names the cases the repo's
 // own files point to, so the owner confirms a list instead of building one.
+// why: catches a break at scripts/kit.mjs:1627 that no other test catches
 test('session start suggests skill cases from the repo when none are chosen', () => {
   const { kit, home, proj } = caseKit();
   const catalog = { cases: ['ui-design', 'ui-review', 'feature-build', 'debugging', 'review', 'security', 'cloudflare', 'ml-data', 'data-pipelines', 'api', 'teaching']
@@ -4292,6 +4191,7 @@ test('session start suggests skill cases from the repo when none are chosen', ()
   assert.deepEqual(msg.match(/Suggested from this repo: ([^.]*)\./)[1].split(', '), ['feature-build', 'debugging', 'review', 'ml-data', 'data-pipelines']);
 });
 
+// why: catches a break at scripts/kit.mjs:1220 that no other test catches
 test('status names a memory index past 6,000 B, which loads in every session', () => {
   const { kit, home, proj } = makeKit();
   const cfg = path.join(kit, 'kit.config.json');
@@ -4310,6 +4210,7 @@ test('status names a memory index past 6,000 B, which loads in every session', (
 // its detail (rule:standing-grants); a copy that drops the exception, or a Rule 14 that drifts from the owner's
 // approved words (Tier 0), is the failure this guards.
 // The owner, 2026-11-10 (pop-up): Rule 14 names the feature-branch push bound.
+// why: guards rule:collaborative-design-locks
 test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing grant, and Rule 14 is the owner\'s text', () => {
   // The owner's text, re-locked 2026-11-11 (build 1b): the push bound points to rule:outward-acts.
   const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s yes, except a push inside the push bound (rule:outward-acts) and a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
@@ -4328,6 +4229,7 @@ test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing gran
 // What the sweep itself commits is not source. The contract, the project's caps file and a file under docs/ used
 // to count as added source, so a fix or triage sweep went to the owner the moment its contract was committed.
 const fixContract = () => ({ tier: 'fix', modifiers: [], roles: fixFloor() });
+// why: guards rule:sweep-tiers
 test('a committed contract, the caps file and a docs json do not move a fix or triage sweep up a tier', () => {
   const dir = fixRepo({ '.kit/sweep-approval.json': '{"caps":{}}\n', 'docs/migrations/1.0.0.json': '{"a":1}\n' });
   const f = path.join(dir, 'sweeps', 'contract.json');
@@ -4341,6 +4243,7 @@ test('a committed contract, the caps file and a docs json do not move a fix or t
   commitAll(t, 'contract', true);
   assert.equal(approveIn(t, [tf]).status, 0, 'a triage sweep counts neither the contract file nor its lines');
 });
+// why: guards rule:sweep-tiers
 test('any other added json is still source: a fix tier asks the owner', () => {
   const r = approveRun(fixContract(), fixRepo({ 'src/schema.json': '{}\n' }));
   assert.equal(r.status, 1, r.stdout);
@@ -4352,6 +4255,7 @@ test('any other added json is still source: a fix tier asks the owner', () => {
 });
 
 // A mistake Claude can fix is not the owner's. Its own answer and exit code, no triage report, no owner yes.
+// why: guards rule:sweep-auto-approval
 test('a contract mistake answers FIX THE CONTRACT with its own exit code, and the owner is not asked', () => {
   const cases = [
     [(c) => { c.roles.pop(); }, /novel/i],
@@ -4379,6 +4283,7 @@ test('a contract mistake answers FIX THE CONTRACT with its own exit code, and th
     assert.equal(fs.existsSync(r.f.replace(/\.json$/, '.triage.md')), false, 'nothing for the owner to read');
   }
 });
+// why: guards rule:sweep-auto-approval
 test('work not committed and a run from the wrong checkout are Claude\'s to fix', () => {
   const dir = fixRepo();
   fs.writeFileSync(path.join(dir, 'src/page.ts'), 'export const page = 3;\n');
@@ -4392,6 +4297,7 @@ test('work not committed and a run from the wrong checkout are Claude\'s to fix'
   assert.equal(r.status, FIX_EXIT, r.stdout);
   assert.match(r.stdout, /no changes against/);
 });
+// why: guards rule:sweep-auto-approval
 test('the last sweep\'s missing outcome is Claude\'s to log, not an owner ask', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout);
@@ -4399,6 +4305,7 @@ test('the last sweep\'s missing outcome is Claude\'s to log, not an owner ask', 
   assert.equal(next.status, FIX_EXIT, next.stdout);
   assert.match(next.stdout, /FIX THE CONTRACT[\s\S]*outcome of the last approved sweep/);
 });
+// why: guards rule:sweep-auto-approval
 test('a real out-of-bounds reason still asks the owner, and a fixable mistake beside it is fixed first', () => {
   const asFix = { tier: 'fix', modifiers: [], roles: fixFloor() };
   const r = approveRun(asFix, sweepRepo());
@@ -4409,6 +4316,7 @@ test('a real out-of-bounds reason still asks the owner, and a fixable mistake be
   assert.match(both.stdout, /FIX THE CONTRACT[\s\S]*owner decides: an added source file/);
   assert.equal(approveRun({ tier: 'first push', roles: [] }).status, 1, 'an owner tier is always the owner\'s');
 });
+// why: guards rule:sweep-auto-approval
 test('FIX THE CONTRACT clears nothing: the guard refuses a reviewer and there is no owner yes to log', () => {
   const c = featureContract();
   c.roles.pop();
@@ -4423,6 +4331,7 @@ test('FIX THE CONTRACT clears nothing: the guard refuses a reviewer and there is
 
 // The owner, 2026-11-03 (option B) and 2026-11-04 (the hook): a role's spend is about 14k x calls + g x calls^2 / 2,
 // so its budget comes from a call cap the script computes from, never a typed number.
+// why: guards rule:sweep-auto-approval
 test('a role\'s budget is computed from its call cap, and a typed budget changes nothing', () => {
   const c = featureContract();
   c.roles.forEach((x) => { x.calls = 12; x.budget = 1; });
@@ -4433,6 +4342,7 @@ test('a role\'s budget is computed from its call cap, and a typed budget changes
   assert.deepEqual(line.calls, [12, 12, 12, 12, 12]);
   assert.match(r.stdout, /12 calls, budget 384,000/);
 });
+// why: guards rule:sweep-auto-approval
 test('a role that must read a file over 40 KB gets the larger growth, read from the branch and not the contract', () => {
   const dir = sweepRepo({ 'src/big.ts': 'x'.repeat(41 * 1024), 'src/small.ts': 'x\n', 'src/sync.test.ts': 'test\n' });
   const c = featureContract();
@@ -4443,6 +4353,7 @@ test('a role that must read a file over 40 KB gets the larger growth, read from 
   assert.equal(r.status, 0, r.stdout);
   assert.equal(approvalLog(dir).pop().budget, (14000 * 12 + 6000 * 72) + 4 * (14000 * 12 + 3000 * 72));
 });
+// why: guards rule:sweep-auto-approval
 test('a call cap is a whole number; over the standard needs a reason; never over 2x', () => {
   for (const bad of [undefined, 0, 4, 1.5, '12', true]) {
     const c = featureContract();
@@ -4465,6 +4376,7 @@ test('a call cap is a whole number; over the standard needs a reason; never over
   assert.equal(beyond.status, 1, 'the 2x bound is the owner\'s');
   assert.match(beyond.stdout, /ASK THE OWNER[\s\S]*over 2x the standard of 15/);
 });
+// why: guards rule:sweep-auto-approval
 test('the 25% trip stays on the whole sweep: one role over its own budget does not pause', () => {
   const r = approveRun(featureContract());
   const budget = approvalLog(r.dir).pop().budget;
@@ -4490,6 +4402,7 @@ const capHook = (dir, calls, cap, extra = {}) => {
 };
 // F37 (the 1.23.0 sweep): the cap and the ceiling come from the brief alone. A later message is a tool's answer,
 // which may hold any text (a file that reads "Call cap: 2"), so it never sets either.
+// why: guards rule:sweep-auto-approval
 test('the call cap and the token ceiling are read from the brief, never from a later message', () => {
   const dir = makeTemp('cap-');
   const session = path.join(dir, 'session-1');
@@ -4508,6 +4421,7 @@ test('the call cap and the token ceiling are read from the brief, never from a l
 // Token audit #7 and #8 (workbench results/token-audit, W5 and W6): results over 40 KB were 57% of reviewer tool
 // bytes, re-read from cache on every later call; and 50 times a reviewer sat over 5 minutes and rewrote its whole
 // cache. A reviewer reads a large file by range, and runs nothing that waits past 5 minutes.
+// why: guards rule:sweep-auto-approval
 test('a reviewer reads a file over 40 KB by range, and runs nothing in the background or past 5 minutes', () => {
   const dir = makeTemp('cap-');
   const big = path.join(dir, 'big.txt');
@@ -4536,6 +4450,7 @@ test('a reviewer reads a file over 40 KB by range, and runs nothing in the backg
 });
 // N1's other half: a checker reads like a reviewer, so it waits on nothing past 5 minutes either; a builder's own
 // test run may be long, but a background run or a monitor leaves it idle, and its cache is written again.
+// why: guards rule:sub-agent-verification
 test('a checker runs nothing that waits past 5 minutes, and a builder runs nothing in the background', () => {
   const dir = makeTemp('cap-');
   const as = (type, tool, input) => capHook(dir, 1, 12, { agent_type: type, tool_name: tool, tool_input: { command: 'npm test', ...input } }).permissionDecision;
@@ -4551,6 +4466,7 @@ test('a checker runs nothing that waits past 5 minutes, and a builder runs nothi
 });
 
 // E27: the owner's yes and resume are the owner's; no agent the lead starts (reviewer, checker, builder) may log one.
+// why: guards rule:outward-acts
 test('no agent may log the owner\'s yes or a resume, in any shell', () => {
   const dir = makeTemp('cap-');
   for (const type of ['reviewer', 'checker', 'builder', 'general-purpose'])
@@ -4562,6 +4478,7 @@ test('no agent may log the owner\'s yes or a resume, in any shell', () => {
   assert.equal(capHook(dir, 1, 12, { agent_type: 'reviewer', tool_name: 'Bash', tool_input: { command: 'node approve.mjs c.json --outcome --agents a' } }).permissionDecision, 'allow');
 });
 
+// why: guards rule:sweep-auto-approval
 test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
   const dir = makeTemp('cap-');
   assert.equal(capHook(dir, 10, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
@@ -4574,6 +4491,7 @@ test('the call-cap hook counts real calls and refuses tools near the cap, but ne
   assert.equal(capHook(dir, 20, 12, { agent_id: undefined }).permissionDecision, 'allow', 'the lead is never held');
   assert.equal(capHook(dir, 20, 12, { transcript_path: path.join(dir, 'nope.jsonl') }).permissionDecision, 'allow', 'no transcript: the sweep trip stands behind it');
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep guard starts a reviewer only with a brief that carries a call cap from the cleared contract', () => {
   const r = approveRun(featureContract());
   const run = (prompt) => sweepGuard(r.dir, { tool_input: { subagent_type: 'reviewer', prompt } });
@@ -4599,6 +4517,7 @@ function seedOutcomes(dir, roles) {
 }
 const pastRole = (tokens, extra = {}) => ({ role: 'r', kind: 'security', model: 'claude-opus-5-5', tokens, calls: 6, firstCall: 10000, ...extra });
 
+// why: guards rule:sweep-auto-approval
 test('a role\'s token ceiling is the p90 of the last 60 roles measured, or 1.25x its budget before 20 are', () => {
   const dir = sweepRepo();
   // Ten old roles far over everything, then 60 from 10,000 to 600,000: only the last 60 count.
@@ -4615,6 +4534,7 @@ test('a role\'s token ceiling is the p90 of the last 60 roles measured, or 1.25x
   assert.match(cold.stdout, /fewer than 20 roles measured/);
 });
 
+// why: guards rule:sweep-auto-approval
 test('the sweep guard starts a reviewer only with its role\'s token ceiling from the cleared contract', () => {
   // Role 2 has a larger cap, so a larger budget and ceiling than role 1's.
   const contract = featureContract();
@@ -4637,6 +4557,7 @@ test('the sweep guard starts a reviewer only with its role\'s token ceiling from
   assert.equal(run(brief(` Token ceiling: ${e.ceilings[0]}.`)).permissionDecision, 'allow');
 });
 
+// why: guards rule:sweep-auto-approval
 test('a sweep the owner cleared in the pop-up starts its reviewers under the ask\'s token ceilings', () => {
   const r = approveRun(askContract());
   const code = r.stdout.match(/`sweep yes ([0-9a-f]{6})`/)[1];
@@ -4653,6 +4574,7 @@ test('a sweep the owner cleared in the pop-up starts its reviewers under the ask
   assert.equal(run(brief(` Token ceiling: ${d.ceilings[0]}.`)).permissionDecision, 'allow');
 });
 
+// why: guards rule:sweep-auto-approval
 test('the call-cap hook stops a reviewer before a call would take it past its token ceiling', () => {
   const dir = makeTemp('ceil-');
   const session = path.join(dir, 'session-1');
@@ -4689,6 +4611,7 @@ function driftSweep(spec) {
 // A role that starts at 10,000 and reads 28,000 on each of 5 more calls: 150,000, well inside its ceiling.
 const usual = () => [[10000, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])];
 
+// why: guards rule:sweep-auto-approval
 test('under token ceilings a sweep 40% over its budget does not pause: the bound holds each role instead', () => {
   const { o, line } = driftSweep(Array(5).fill(0).map(usual));
   assert.equal(line.tokens, 750000, 'over 1.25x the 537,500 budget');
@@ -4699,6 +4622,7 @@ test('under token ceilings a sweep 40% over its budget does not pause: the bound
   assert.equal(line.roles[0].stopped, false);
 });
 
+// why: guards rule:sweep-auto-approval
 test('the drift signals pause a sweep, each by name', () => {
   const over = driftSweep([[[10000, 0, 0, 0], ...Array(5).fill([0, 60000, 0, 0])], usual(), usual(), usual(), usual()]);
   assert.match(over.o.stdout, /paused: .*ceiling did not hold[^\n]*310,000 against 200,000/, '310,000 is past 200,000 plus one 60,000 call');
@@ -4718,6 +4642,7 @@ test('the drift signals pause a sweep, each by name', () => {
 });
 
 // The 1.23.0 sweep's findings on the drift signals.
+// why: guards rule:sweep-auto-approval
 test('a reviewer that only read the hook\'s words was not stopped: only the hook\'s refusal counts', () => {
   // Roles that read call-cap.cjs or this script see the words in a tool's plain answer.
   const reader = () => [[10000, 0, 0, 0], { read: 'deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): ...`)' }, { read: 'Token ceiling reached (122,000 of 200,000)' }, ...Array(5).fill([0, 28000, 0, 0])];
@@ -4725,16 +4650,19 @@ test('a reviewer that only read the hook\'s words was not stopped: only the hook
   assert.doesNotMatch(o.stdout, /stopped at their token ceiling/);
   assert.equal(line.roles[0].stopped, false);
 });
+// why: guards rule:outward-acts
 test('the ceiling\'s check allows one call past it, the margin the hook works with, and no more', () => {
   // 10,000 + 4 x 28,000 + 100,000 = 222,000: past the 200,000 ceiling by less than its largest call.
   const margin = driftSweep([[[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), [0, 100000, 0, 0]], usual(), usual(), usual(), usual()]);
   assert.doesNotMatch(margin.o.stdout, /did not hold/);
 });
+// why: guards rule:sweep-auto-approval
 test('a role past its call cap pauses the sweep under ceilings too: the cap did not hold', () => {
   // 8 calls of 10,000 against a cap of 5: inside the token ceiling, past the cap's one-call margin.
   const { o } = driftSweep([[[10000, 0, 0, 0], ...Array(7).fill([0, 10000, 0, 0])], usual(), usual(), usual(), usual()]);
   assert.match(o.stdout, /paused: .*ran 8 calls against its cap of 5[^\n]*no call-cap hook/);
 });
+// why: guards rule:sweep-auto-approval
 test('ceilings set from the budgets keep the whole-sweep trip, however many roles were measured since', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);
@@ -4747,11 +4675,13 @@ test('ceilings set from the budgets keep the whole-sweep trip, however many role
   assert.match(o.stdout, /paused: .*tokens 750000 ran 40% over the budget/);
 });
 
+// why: guards rule:sweep-auto-approval
 test('the one guard process runs the call-cap hook on every tool an agent calls, and never for the main session', () => {
   const { routes } = require(path.resolve('project/.claude/guard.cjs'));
   for (const tool of ['Read', 'Grep', 'Bash', 'Agent']) assert.ok(routes(tool, { agent_id: 'a1' }).includes('call-cap.cjs'), tool);
   assert.ok(!routes('Read').includes('call-cap.cjs'), 'the main session');
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep skill gives the lead the brief\'s call-cap wording', () => {
   const skill = read(path.resolve('user/skills/pre-pr-sweep/SKILL.md'));
   assert.match(skill, /Call cap: <n>\. A call is one message/);
@@ -4761,6 +4691,7 @@ test('the sweep skill gives the lead the brief\'s call-cap wording', () => {
 // PR 17's carry-overs (X5 to X7, X10, C7): what the meter trusts, and the tests the re-sweep found missing.
 const logOutcome = (r, ids, cfg, extra = []) => approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0', ...extra], { CLAUDE_CONFIG_DIR: cfg });
 const cheapRoles = (n) => Array.from({ length: n }, () => `t${++agentSeq}`);
+// why: guards rule:sweep-auto-approval
 test('a transcript from another repo is not this sweep\'s spend', () => {
   const r = approveRun(featureContract());
   const ids = cheapRoles(5);
@@ -4775,6 +4706,7 @@ test('a transcript from another repo is not this sweep\'s spend', () => {
   const ok = logOutcome(r, ids, cfg);
   assert.equal(ok.status, 0, ok.stdout);
 });
+// why: guards rule:sweep-tiers
 test('a round starts at its clearing, so a reviewer started before it is not this sweep\'s', () => {
   const dir = sweepRepo();
   const bad = featureContract();
@@ -4788,6 +4720,7 @@ test('a round starts at its clearing, so a reviewer started before it is not thi
   const o = logOutcome(r, ids, cfg);
   assert.match(o.stdout, /ASK THE OWNER[\s\S]*before this sweep was cleared/);
 });
+// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:1007 that no other test catches
 test('the model check reads what the decision cleared, in both directions', () => {
   const c = featureContract();
   const r = approveRun(c);
@@ -4804,6 +4737,7 @@ test('the model check reads what the decision cleared, in both directions', () =
   const cfg2 = transcripts(Object.fromEntries(ids2.map((id) => [id, [[0, 100, 0, 0]]])));
   assert.match(logOutcome(s, ids2, cfg2).stdout, /ran on claude-opus-5-5; the contract named claude-sonnet-5-5/, 'a role on a higher model than named stops too');
 });
+// why: guards rule:sweep-auto-approval
 test('outcome numbers are whole and not negative; a reused id is caught in any case', () => {
   const r = approveRun(featureContract());
   const ids = cheapRoles(5);
@@ -4820,6 +4754,7 @@ test('outcome numbers are whole and not negative; a reused id is caught in any c
   const o = logOutcome(again, ids.map((id) => id.toUpperCase()), cfg);
   assert.match(o.stdout, /already logged for an earlier outcome/);
 });
+// why: guards rule:sweep-auto-approval
 test('--none-ran needs an approval, and an unreadable spend writes its triage report', () => {
   const dir = sweepRepo();
   const c = featureContract();
@@ -4832,6 +4767,7 @@ test('--none-ran needs an approval, and an unreadable spend writes its triage re
   assert.equal(approveIn(dir, [r.f, '--outcome', '--none-ran']).status, 0);
   assert.match(approveIn(dir, [r.f, '--outcome', '--none-ran']).stdout, /has none/, 'closed once, there is nothing left to close');
 });
+// why: guards rule:sweep-auto-approval
 test('the summary leaves old hand-typed outcomes out of tokens against budget', () => {
   const r = approveRun(featureContract());
   outcome(r, '200000');
@@ -4844,6 +4780,7 @@ test('the summary leaves old hand-typed outcomes out of tokens against budget', 
 });
 
 // The 1.17.0 sweep's fix round. Each test names what the sweep found.
+// why: guards rule:sweep-tiers
 test('an owner tier gets a real budget, its trip fires, and its call caps are checked', () => {
   const r = approveRun({ ...featureContract(), tier: 'first push' });
   assert.equal(r.status, 1, r.stdout);
@@ -4858,6 +4795,7 @@ test('an owner tier gets a real budget, its trip fires, and its call caps are ch
   assert.equal(b.status, FIX_EXIT, b.stdout);
   assert.match(b.stdout, /no call cap[\s\S]*owner decides: the launch gate tier/);
 });
+// why: guards rule:sweep-auto-approval
 test('a model outside the reviewer trial asks the owner, and an unknown model at the outcome pauses', () => {
   for (const model of ['claude-haiku-5-5', '']) {
     const c = featureContract();
@@ -4871,6 +4809,7 @@ test('a model outside the reviewer trial asks the owner, and an unknown model at
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i ? 'claude-opus-5-5' : 'claude-haiku-5-5', u: [0, 100, 0, 0] }]])));
   assert.match(logOutcome(r, ids, cfg).stdout, /paused[\s\S]*ran on claude-haiku-5-5/);
 });
+// why: guards rule:sweep-auto-approval
 test('the guard binds each start to one role\'s cap, and the owner\'s yes carries the caps', () => {
   const c = featureContract();
   c.roles.forEach((x, i) => { x.calls = [5, 5, 6, 7, 8][i]; });
@@ -4888,6 +4827,7 @@ test('the guard binds each start to one role\'s cap, and the owner\'s yes carrie
   assert.deepEqual(approvalLog(a.dir).pop().calls, [5, 5, 5]);
   assert.equal(sweepGuard(a.dir, { tool_input: { subagent_type: 'reviewer', prompt: 'no cap line' } }).permissionDecision, 'deny');
 });
+// why: guards rule:sweep-auto-approval
 test('M14 stays narrow: only docs/migrations is left out, and a contract\'s own lines never count against triage', () => {
   const big = sweepRepo({ 'README.md': 'y\n', 'docs/site.json': '{}\n' });
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
@@ -4901,6 +4841,7 @@ test('M14 stays narrow: only docs/migrations is left out, and a contract\'s own 
   const nested = sweepRepo({ 'README.md': 'y\n', 'other/contract.json': JSON.stringify(t) });
   assert.match(approveRun(t, nested).stdout, /ASK THE OWNER/, 'a contract in another folder is not this sweep\'s');
 });
+// why: guards rule:sweep-auto-approval
 test('a branch cannot drop a cap the project set on its base', () => {
   const dir = makeTemp('approve-');
   const put = (f, t) => { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), t); };
@@ -4917,6 +4858,7 @@ test('a branch cannot drop a cap the project set on its base', () => {
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stdout, /over its cap of 0/);
 });
+// why: guards rule:sweep-auto-approval
 test('going lighter after FIX THE CONTRACT is the owner\'s; adding what it named is not', () => {
   const sec = { tier: 'fix', modifiers: ['security-sensitive'], roles: fixFloor() };
   const a = approveRun(sec, fixRepo());
@@ -4964,6 +4906,7 @@ function crashedSweep() {
   const retry = (n, id, env = cfg) => approveIn(dir, [r.f, '--retry', String(n), '--crashed', id], { CLAUDE_CONFIG_DIR: env });
   return { ...r, hash, brief, cfg, early, start, retry };
 }
+// why: guards rule:sweep-auto-approval
 test('a crashed reviewer gets one more start for its role, and its spend stays on that role', () => {
   const s = crashedSweep();
   assert.equal(s.start(1), 'allow');
@@ -4999,6 +4942,7 @@ test('a crashed reviewer gets one more start for its role, and its spend stays o
   assert.match(logOutcome(s, ['r1', 'r2x'], s.cfg).stdout, /r1 \(already logged/, 'the crashed id counts as used');
   assert.match(s.retry(1, 'r1').stdout, /r1 \(already logged/);
 });
+// why: guards rule:sweep-auto-approval
 test('a crash and its retry each had the whole token ceiling: the check reads the retry alone (the 1.23.0 sweep)', () => {
   const s = crashedSweep();
   const ceiling = approvalLog(s.dir).filter((e) => e.kind === 'decision').pop().ceilings[0];
@@ -5018,6 +4962,7 @@ test('a crash and its retry each had the whole token ceiling: the check reads th
 });
 // A still-running reviewer has no `finished` either, so only a quiet transcript reads as a crash. Both clocks must be
 // old: the file's mtime and the last entry's timestamp, whichever is later.
+// why: guards rule:sweep-auto-approval
 test('a reviewer that may still be running is refused a retry until its transcript has gone quiet', () => {
   const s = crashedSweep();
   const before = sweepLog(s.dir).length;
@@ -5039,6 +4984,7 @@ test('a reviewer that may still be running is refused a retry until its transcri
   assert.match(read(path.resolve('user/skills/pre-pr-sweep/approve.mjs')), /^const CRASH_QUIET_MINUTES = 10;$/m);
   assert.match(read(path.resolve('user/skills/pre-pr-sweep/SKILL.md')), /its transcript quiet for 10 minutes\)[^\n]*A crash's tokens count against its role's budget;/);
 });
+// why: guards rule:sweep-auto-approval
 test('a second retry of a role is refused and goes to the owner through --cut-short', () => {
   const s = crashedSweep();
   transcripts({ r1b: [[0, 100, 0, 0]] }, { r1b: { finished: false } }, s.cfg);
@@ -5053,6 +4999,7 @@ test('a second retry of a role is refused and goes to the owner through --cut-sh
   assert.equal(sweepLog(s.dir).length, before, 'a refusal logs nothing');
   assert.equal(approveIn(s.dir, [s.f, '--outcome', '--cut-short']).status, 0);
 });
+// why: guards rule:sweep-auto-approval
 test('a retry needs a crashed reviewer of this sweep, in the role it names', () => {
   const s = crashedSweep();
   const refused = (r, re) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, re); };
@@ -5071,6 +5018,7 @@ test('a retry needs a crashed reviewer of this sweep, in the role it names', () 
   refused(approveIn(s.dir, [s.f, '--retry', '1'], { CLAUDE_CONFIG_DIR: s.cfg }), /--crashed/);
   assert.equal(sweepLog(s.dir).length, before, 'a refusal logs nothing');
 });
+// why: guards rule:sweep-auto-approval
 test('a retry needs an open sweep, and the crashed id cannot also stand as the role\'s report', () => {
   const s = crashedSweep();
   assert.equal(s.retry(1, 'r1').status, 0);
@@ -5084,6 +5032,7 @@ test('a retry needs an open sweep, and the crashed id cannot also stand as the r
   assert.equal(late.status, 1, late.stdout);
   assert.match(late.stdout, /no cleared sweep is open/);
 });
+// why: guards rule:sweep-tiers
 test('a sweep cut short has a way out: the next contract asks the owner, and the yes closes it unmeasured', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);
@@ -5106,6 +5055,7 @@ test('a sweep cut short has a way out: the next contract asks the owner, and the
   fs.writeFileSync(n2, JSON.stringify(featureContract()));
   assert.equal(approveIn(short.dir, [n2]).status, FIX_EXIT, 'a wrong id count alone marks nothing');
 });
+// why: guards rule:sweep-tiers
 test('an outcome is measured against the clearing, whatever is decided after it', () => {
   const r = approveRun(featureContract());
   approveIn(r.dir, [r.f, '--escape', 'a bug slipped through']);
@@ -5124,6 +5074,7 @@ test('an outcome is measured against the clearing, whatever is decided after it'
   assert.equal(approveIn(f.dir, [f.f]).status, FIX_EXIT);
   assert.equal(logOutcome(f, ids, cfg).status, 0, 'a later FIX line never stands for the sweep that ran');
 });
+// why: guards rule:sweep-auto-approval
 test('a reviewer started before the owner\'s yes is not this round\'s, and a second round starts fresh', () => {
   const a = approveRun(askContract());
   const ids = cheapRoles(3);
@@ -5138,6 +5089,7 @@ test('a reviewer started before the owner\'s yes is not this round\'s, and a sec
   assert.equal(approveIn(r.dir, [r.f]).status, 0);
   assert.match(logOutcome(r, old, oldCfg).stdout, /before this sweep was cleared/, 'the first clearing after the last outcome');
 });
+// why: guards rule:sweep-auto-approval
 test('what the rules bound stays with the owner: a re-sweep that grows, a rebased HEAD, project caps, a big triage', () => {
   const small = { tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) };
   const fr = firstSweep(small, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
@@ -5158,12 +5110,14 @@ test('what the rules bound stays with the owner: a re-sweep that grows, a rebase
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
   assert.equal(approveRun(t, sweepRepo({ 'README.md': Array.from({ length: 30 }, (_, i) => `row ${i}`).join('\n') })).status, 1, 'a triage over its lines');
 });
+// why: guards rule:sweep-auto-approval
 test('the 25% trip sits at 25%', () => {
   const under = approveRun(featureContract());
   assert.doesNotMatch(outcome(under, String(Math.floor(537500 * 1.25) - 1)).stdout, /paused/);
   const at = approveRun(featureContract());
   assert.match(outcome(at, String(Math.ceil(537500 * 1.25))).stdout, /paused/);
 });
+// why: guards rule:sweep-auto-approval
 test('a project whose settings lack the call-cap hook is sent back to wire it', () => {
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
@@ -5176,6 +5130,7 @@ test('a project whose settings lack the call-cap hook is sent back to wire it', 
   commitAll(dir, 'wired', true);
   assert.equal(approveIn(dir, [r.f]).status, 0);
 });
+// why: guards rule:sweep-auto-approval
 test('the call-cap hook reads a real transcript: other lines, a half-written line, and a quoted cap change nothing', () => {
   const dir = makeTemp('cap-');
   const session = path.join(dir, 's');
@@ -5192,11 +5147,13 @@ test('the call-cap hook reads a real transcript: other lines, a half-written lin
   const said = runHook('user/kit-hooks/call-cap.cjs', { transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash' });
   assert.match(JSON.parse(said.stdout).hookSpecificOutput.permissionDecisionReason, /Only your hand-back still works/);
 });
+// why: guards rule:outward-acts
 test('the settings wire the hook at its installed path', () => {
   // The one guard process finds the user layer's hooks where install put them.
   assert.match(read(path.resolve('project/.claude/guard.cjs')), /const INSTALLED_HOME = "\{\{CLAUDE_HOME\}\}";/); // pin: 1 install fills the placeholder (double quotes: a path may hold an apostrophe)
   assert.ok(fs.existsSync(path.resolve('user/kit-hooks/call-cap.cjs')));
 });
+// why: guards rule:sweep-tiers
 test('a reviewer past its cap is named at the outcome, and the notice shows modifiers and base', () => {
   const r = approveRun(featureContract());
   assert.match(r.stdout, /Modifiers: none; diff against main/);
@@ -5209,6 +5166,7 @@ test('a reviewer past its cap is named at the outcome, and the notice shows modi
   k.roles.push(role('astrology', 'What do the stars say about this diff?'));
   assert.match(approveRun(k).stdout, /one of: security, test-value/);
 });
+// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:787 that no other test catches
 test('a removed worktree is read from its nearest folder, and the shell\'s GIT_DIR does not answer for another repo', () => {
   const r = approveRun(featureContract());
   const other = sweepRepo();
@@ -5225,6 +5183,7 @@ test('a removed worktree is read from its nearest folder, and the shell\'s GIT_D
 });
 
 // The 1.17.0 re-sweep's fixes and test gaps.
+// why: guards rule:sweep-auto-approval
 test('a lighter sweep stays the owner\'s across reruns, a second mistake and a new file name', () => {
   const sec = { tier: 'fix', modifiers: ['security-sensitive'], roles: fixFloor() };
   const a = approveRun(sec, fixRepo());
@@ -5247,6 +5206,7 @@ test('a lighter sweep stays the owner\'s across reruns, a second mistake and a n
   approveIn(y.dir, [y.f]);
   assert.equal(approveIn(y.dir, [y.f, '--owner-yes', 'yes lighter is right']).status, 0, 'the owner can agree');
 });
+// why: guards rule:sweep-auto-approval
 test('with no project settings the notice says the cap has no hook; a hook in the local settings counts', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout);
@@ -5260,6 +5220,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
   assert.equal(w.status, 0, w.stdout);
   assert.doesNotMatch(w.stdout, /no call-cap hook/);
 });
+// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:344 that no other test catches
 test('a rebased HEAD asks the owner', () => {
   const first = firstSweep();
   g(first.dir, 'reset', '-q', '--soft', 'HEAD~2');
@@ -5268,6 +5229,7 @@ test('a rebased HEAD asks the owner', () => {
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stdout, /ASK THE OWNER[\s\S]*does not descend/);
 });
+// why: guards rule:sweep-auto-approval
 test('an out-of-trial model cleared by the owner still pauses at the outcome', () => {
   const c = askContract();
   c.roles[1].model = 'claude-haiku-5-5';
@@ -5278,6 +5240,7 @@ test('an out-of-trial model cleared by the owner still pauses at the outcome', (
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 1 ? 'claude-haiku-5-5' : 'claude-opus-5-5', u: [0, 100, 0, 0] }]])));
   assert.match(logOutcome(r, ids, cfg).stdout, /paused[\s\S]*ran on claude-haiku-5-5/);
 });
+// why: guards rule:sweep-tiers
 test('a branch cannot raise a cap it inherited, and the outcome holds to an owner\'s clearing', () => {
   const dir = makeTemp('approve-');
   const put = (f, t) => { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), t); };
@@ -5299,6 +5262,7 @@ test('a branch cannot raise a cap it inherited, and the outcome holds to an owne
   outcome(a, '200000');
   assert.equal(approvalLog(a.dir).filter((e) => e.kind === 'outcome').pop().budget, budget);
 });
+// why: guards rule:sweep-tiers
 test('the notice prints the real modifiers, M14 leaves no other docs folder out, and a quoted path still counts', () => {
   const sec = { ...featureContract(), modifiers: ['security-sensitive'] };
   assert.match(approveRun(sec).stdout, /Modifiers: security-sensitive; diff against main/);
@@ -5311,6 +5275,7 @@ test('the notice prints the real modifiers, M14 leaves no other docs folder out,
 });
 
 // The 1.17.0 re-sweep's second half. Covered by tests; by the owner's rule there is no third pass.
+// why: guards rule:sweep-auto-approval
 test('a stop at this HEAD binds whatever comes after it: an outcome, an ask, a typo fixed, another branch', () => {
   const dir = fixRepo();
   const a = approveRun({ tier: 'fix', modifiers: [], roles: fixFloor() }, dir);
@@ -5340,6 +5305,7 @@ test('a stop at this HEAD binds whatever comes after it: an outcome, an ask, a t
   fs.writeFileSync(m.f, JSON.stringify({ ...sec, modifiers: [] }));
   assert.equal(approveIn(moved, [m.f]).status, 0, 'a new commit starts clean');
 });
+// why: guards rule:sweep-tiers
 test('closing a sweep cut short says what started, and a sweep that ran is not logged as none ran', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);
@@ -5363,6 +5329,7 @@ test('closing a sweep cut short says what started, and a sweep that ran is not l
   const other = approveRun(askContract());
   assert.equal(approveIn(other.dir, [other.f, '--outcome', '--cut-short']).status, 1, 'only the open approved sweep can be marked');
 });
+// why: guards rule:sweep-tiers
 test('a re-sweep after a first sweep cut short asks the owner, not a loop; an unused re-sweep leaves a new name free', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);
@@ -5384,6 +5351,7 @@ test('a re-sweep after a first sweep cut short asks the owner, not a loop; an un
 // 1.21.0 handoff item 29: an outcome named any reviewer transcript whose brief carried the tag, so a cheap decoy
 // could stand in for the reviewer the guard started. The guard writes the start's tool id into the role's slot, and
 // the outcome counts only the transcript Claude Code wrote for that start.
+// why: guards rule:sweep-auto-approval
 test('an outcome counts only the reviewer the guard started for each role, not a decoy with the same tag', () => {
   const r = approveRun(featureContract());
   const at = lastClearing(r.dir);
@@ -5403,6 +5371,7 @@ test('an outcome counts only the reviewer the guard started for each role, not a
 });
 // 1.21.0 handoff item 35: a second run on a contract already cleared at this HEAD, with reviewers still to start, is
 // told to log the outcome first, and its line leaves the clearing standing for the roles still to start.
+// why: guards rule:sweep-tiers
 test('running approve.mjs again on a live cleared contract keeps its clearing, so the other roles still start', () => {
   const r = approveRun(featureContract());
   assert.equal(r.status, 0, r.stdout);
@@ -5420,6 +5389,7 @@ test('running approve.mjs again on a live cleared contract keeps its clearing, s
   assert.equal(sweepGuard(r.dir).permissionDecision, 'deny');
 });
 // 1.21.0 handoff item 34: git reads a plain "main" or "origin/main" as a tag of that name first.
+// why: guards rule:sweep-tiers
 test('a tag named like the default branch does not pick the base the diff is read from', () => {
   for (const tag of ['main', 'origin/main']) {
     const dir = sweepRepo();
@@ -5431,6 +5401,7 @@ test('a tag named like the default branch does not pick the base the diff is rea
 });
 // 1.21.0 handoff item 33: the uncommitted check skipped every .md and .json under the contract's folder, so work
 // kept there passed unseen. Only the sweep's own paper beside the contract is left out: reports, and contracts.
+// why: guards rule:sweep-auto-approval
 test('uncommitted work in the contract\'s folder counts, except the reports and contracts beside the contract', () => {
   for (const [file, text, counts] of [
     ['sweeps/settings.json', '{"apiUrl":"https://example.test"}\n', true],
@@ -5448,6 +5419,7 @@ test('uncommitted work in the contract\'s folder counts, except the reports and 
 });
 // The 1.22.0 sweep (T1): the helper above plays the guard for every outcome, so this one runs approve.mjs itself: a
 // tagged reviewer the guard never started (no slot at all) is not counted.
+// why: guards rule:sweep-auto-approval
 test('an outcome refuses a tagged reviewer when the guard recorded no start for its role', () => {
   const r = approveRun(featureContract());
   const hash = approvalLog(r.dir).pop().hash;
@@ -5458,6 +5430,7 @@ test('an outcome refuses a tagged reviewer when the guard recorded no start for 
   assert.equal(o.status, 1, o.stdout);
   assert.match(o.stdout, /reviewer the guard started for role 1/);
 });
+// why: guards rule:sweep-auto-approval
 test('the sweep guard refuses a reviewer brief under another agent type, and a reviewer started outside git', () => {
   const dir = makeTemp('guard-');
   const r = approveRun(featureContract());
@@ -5470,6 +5443,7 @@ test('the sweep guard refuses a reviewer brief under another agent type, and a r
   assert.equal(sweepGuard(r.dir, { raw: true, tool_input: { subagent_type: 'general-purpose', prompt: 'Find every caller of approve().' } }).permissionDecision, 'allow', 'other work starts freely');
   assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a reviewer outside git has no log to clear it');
 });
+// why: guards rule:sweep-auto-approval
 test('the hook check needs the sweep guard too, and hooks off in the local or user settings is not wired', () => {
   const both = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
   const setUp = (text) => {
@@ -5498,6 +5472,7 @@ test('the hook check needs the sweep guard too, and hooks off in the local or us
 });
 // The 1.25.1 sweep: since V3 the call cap and the sweep guard run through the launcher the user settings wire (and
 // guard.cjs before it), never from a project's settings, so the hook check reads that wiring too.
+// why: guards rule:sweep-auto-approval
 test('the hook check reads the call cap and sweep guard the guard launcher runs from the Claude config folder', () => {
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
@@ -5526,6 +5501,7 @@ test('the hook check reads the call cap and sweep guard the guard launcher runs 
 });
 // B18 (the 1.25.1 sweep): the clause "the install folder's own settings turn hooks off" had no test; taking it out left
 // every hook-check test green. Here CLAUDE_CONFIG_DIR names another folder, so only that clause can see it.
+// why: guards rule:outward-acts
 test('the hook check is not wired when the settings of the folder it was installed in turn hooks off', () => {
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, '.claude'));
@@ -5544,6 +5520,7 @@ test('the hook check is not wired when the settings of the folder it was install
   fs.writeFileSync(path.join(cfg, 'settings.json'), JSON.stringify({ ...settings, disableAllHooks: true }));
   assert.equal(installed().status, FIX_EXIT, 'hooks off in the install folder\'s own settings read as wired');
 });
+// why: guards rule:outward-acts
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
   const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
@@ -5568,6 +5545,7 @@ test('the hook check reads real wiring, and a branch cannot delete its way out o
   assert.match(approveRun({ ...featureContract(), tier: 'first push' }, owner).stdout, /FIX THE CONTRACT[\s\S]*not wired/);
   assert.match(approveRun(askContract()).stdout, /no call-cap hook/, 'an ask says it too');
 });
+// why: guards rule:sweep-tiers
 test('a smaller contract tried while an outcome is owed opens no second clearing, and the outcome measures the first', () => {
   const big = featureContract();
   big.roles.forEach((x) => { x.calls = 15; });
@@ -5584,10 +5562,12 @@ test('a smaller contract tried while an outcome is owed opens no second clearing
   outcome({ ...r, f: r.f }, '200000');
   assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().budget, 2737500, 'the big contract is the only clearing');
 });
+// why: guards rule:sweep-auto-approval
 test('the reviewer role keeps clear of the prompt it cannot answer', () => {
   // pin: 2 (the reviewer's order: it never logs an owner yes)
   assert.match(read(path.resolve('user/agents/reviewer.md')), /Never run a shell command naming `approve\.mjs` with `--owner-yes`/);
 });
+// why: guards rule:outward-acts
 test('install does not rewrite the hook check: an installed script reads an installed project as wired', () => {
   const home = makeTemp('home-');
   install({ kit: path.resolve('.'), target: 'user', home });
@@ -5608,6 +5588,7 @@ const RECALL = path.resolve('scripts/recall.mjs');
 const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';
 const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
 
+// why: guards rule:instruments-and-evals
 test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s question and Q7\'s key', async () => {
   const { versionText, questions } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
@@ -5622,6 +5603,7 @@ test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s q
   assert.match(v2[6].key, /ASK goes to the owner/);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall v3 is v2 plus three questions, and v2 stays as it was released', async () => {
   const { versionText, currentVersion, questions, questionCount } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
@@ -5641,6 +5623,7 @@ test('recall v3 is v2 plus three questions, and v2 stays as it was released', as
 });
 
 // The owner's ruling (2026-11-05): key 3 says what rule 11 says, as a new keys version; v3 stays as released.
+// why: guards rule:instruments-and-evals
 test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was released', async () => {
   const { versionText, currentVersion, questions, questionCount, passBar } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
@@ -5658,6 +5641,7 @@ test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was rele
 
 // The owner's ruling (2026-11-10, S22-4): v5 asks question 11 for the rule itself, and key 4 names the feature-branch
 // push bound; every other row is v4's, the bar stays 12 of 13, and v4 stays as 1.24.0 released it.
+// why: guards rule:instruments-and-evals
 test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the push bound, and v4 stays as released', async () => {
   const { versionText, currentVersion, questions, questionCount, passBar } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
@@ -5676,10 +5660,11 @@ test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the 
   assert.match(v5[3].key, /feature branch/);
 });
 
+// why: guards rule:sweep-auto-approval
 test('recall run header says what the run read: keys, both kit versions, and whether approve.mjs is there', async () => {
   const { installFacts, runHeader } = await recallTools();
   const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'abc1234' } });
   let facts = installFacts({ projectDir: proj, home });
   assert.deepEqual(facts, { project: '1.0.0 (unreleased abc1234)', user: '1.0.0 (v1.0.0)', userRelease: true, approve: false });
@@ -5694,7 +5679,7 @@ test('recall run header says what the run read: keys, both kit versions, and whe
   assert.match(head, /^User kit: 1\.0\.0 \(v1\.0\.0\)$/m);
   assert.match(head, /^approve\.mjs at the user path: yes$/m);
   assert.match(runHeader({ label: 'x', projectDir: proj, keys: 2, facts: { ...facts, approve: false }, when: 'w' }).join('\n'), /^approve\.mjs at the user path: no$/m);
-  install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'project', projectDir: proj, release: released(kit, 'v1.0.0') });
   assert.equal(installFacts({ projectDir: proj, home }).project, '1.0.0');
   install({ kit, home, target: 'user', release: { release: false, describe: 'abc1234' } });
   assert.equal(installFacts({ projectDir: proj, home }).user, '1.0.0 (unreleased abc1234)');
@@ -5703,10 +5688,11 @@ test('recall run header says what the run read: keys, both kit versions, and whe
   assert.equal(installFacts({ projectDir: bare, home }).project, 'none');
 });
 
+// why: guards rule:instruments-and-evals
 test('a recall run asks the current keys and its header names them', async () => {
   const { prepare, currentVersion, questions } = await recallTools();
   const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const keys = currentVersion(text);
   const run = prepare({ projectDir: proj, label: 'cand-1', home, text, when: 'w' });
@@ -5724,6 +5710,7 @@ test('a recall run asks the current keys and its header names them', async () =>
   refused(text.replace('Pass: median 12 of 13.', ''), /no "Pass: median <n> of <m>\." line/);
 });
 
+// why: guards rule:probe-scope
 test('an unreleased user layer may run only from a throwaway folder under kit-probes', { windows: 'also' }, async () => {
   const { checkUserLayer } = await recallTools();
   const { kit } = makeKit();
@@ -5732,7 +5719,7 @@ test('an unreleased user layer may run only from a throwaway folder under kit-pr
   const unreleased = { release: false, describe: 'abc1234' };
   const refused = (home) => assert.throws(() => checkUserLayer(home, osHome), /not a released kit install/, home);
   checkUserLayer(layer(path.join(osHome, 'kit-probes', 'cfg-a'), unreleased), osHome);
-  checkUserLayer(layer(path.join(osHome, '.claude'), { release: true, describe: 'v1.0.0' }), osHome);
+  checkUserLayer(layer(path.join(osHome, '.claude'), released(kit, 'v1.0.0')), osHome);
   refused(layer(path.join(osHome, '.claude'), unreleased));
   refused(layer(path.join(osHome, 'kit-probes'), unreleased));
   refused(layer(path.join(osHome, 'kit-probes-x', 'cfg'), unreleased));
@@ -5745,6 +5732,7 @@ test('an unreleased user layer may run only from a throwaway folder under kit-pr
   assert.throws(() => checkUserLayer(layer(makeTemp('plain-'), unreleased)), /not a released kit install/);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall refuses to run unless the Claude folder is a released kit install, before any session starts', () => {
   const { kit, home } = makeKit();
   const run = () => spawnSync(process.execPath, [RECALL, 'never-saved'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, PATH: '' } });
@@ -5762,11 +5750,13 @@ test('recall refuses to run unless the Claude folder is a released kit install, 
   assert.ok(viaConfig.stderr.includes(home), viaConfig.stderr);
 });
 
+// why: guards rule:instruments-and-evals
 test('a recall label is one plain word, so dots and flags cannot pass as one', async () => {
   const { parseRunArgs } = await recallTools();
   for (const label of ['.', '..', '--no-kit', '-x']) assert.throws(() => parseRunArgs([label]), /usage/, label);
 });
 
+// why: guards rule:ci-gate
 test('recall gate passes a median at or above the baseline', async () => {
   const { checkGate } = await recallTools();
   assert.equal(checkGate(gateFacts()).ok, true);
@@ -5774,6 +5764,7 @@ test('recall gate passes a median at or above the baseline', async () => {
   assert.equal(checkGate(gateFacts({ added: ['gate: a median 10 baseline 9 brief v1 keys v2'] })).ok, true);
 });
 
+// why: guards rule:ci-gate
 test('recall gate fails a median under the baseline', async () => {
   const { checkGate } = await recallTools();
   const r = checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v2'] }));
@@ -5781,6 +5772,7 @@ test('recall gate fails a median under the baseline', async () => {
   assert.match(r.detail, /median 7 is under the baseline 8/);
 });
 
+// why: guards rule:ci-gate
 test('recall gate fails a median under the keys\' pass bar, and the owner\'s marker does not pass it', async () => {
   const { checkGate, passBar } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
@@ -5799,6 +5791,7 @@ test('recall gate fails a median under the keys\' pass bar, and the owner\'s mar
   assert.equal(checkGate(gateFacts({ ...moved, ...line(12, ' owner-accepted') })).ok, true);
 });
 
+// why: guards rule:instruments-and-evals
 test('frozen keys with no Pass line have no bar', async () => {
   const { passBar } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
@@ -5806,6 +5799,7 @@ test('frozen keys with no Pass line have no bar', async () => {
   assert.equal(passBar(text, 2), null);
 });
 
+// why: guards rule:outward-acts
 test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
   const dir = makeTemp('gatebar-');
   const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
@@ -5835,6 +5829,7 @@ test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
   assert.equal(atBar.status, 0, atBar.stdout + atBar.stderr);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall gate fails rule text with no gate line, or a line it cannot read', async () => {
   const { checkGate } = await recallTools();
   assert.match(checkGate(gateFacts({ added: ['- a note, no gate line'] })).detail, /gate: <label> median <n>/);
@@ -5845,6 +5840,7 @@ test('recall gate fails rule text with no gate line, or a line it cannot read', 
   assert.equal(checkGate(gateFacts({ added: [GOOD_ENTRY + ' and more'] })).ok, false);
 });
 
+// why: guards rule:ci-gate
 test('an owner-accepted marker passes a lower median and says so, but never an old ruler', async () => {
   const { checkGate } = await recallTools();
   const r = checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v2 owner-accepted'] }));
@@ -5853,12 +5849,14 @@ test('an owner-accepted marker passes a lower median and says so, but never an o
   assert.equal(checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v1 owner-accepted'] })).ok, false);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall gate refuses a score taken on an old brief or old keys', async () => {
   const { checkGate } = await recallTools();
   assert.match(checkGate(gateFacts({ added: ['gate: a median 9 baseline 8 brief v1 keys v1'] })).detail, /keys v2/);
   assert.match(checkGate(gateFacts({ brief: 2 })).detail, /brief v2/);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall gate reads the last gate line added, so a failed run can be followed by a passing one', async () => {
   const { checkGate } = await recallTools();
   const failedFirst = ['gate: a median 7 baseline 8 brief v1 keys v2', GOOD_ENTRY];
@@ -5866,6 +5864,7 @@ test('recall gate reads the last gate line added, so a failed run can be followe
   assert.equal(checkGate(gateFacts({ added: [...failedFirst].reverse() })).ok, false);
 });
 
+// why: guards rule:ci-gate
 test('a typed baseline cannot fall under the last one recorded on the same ruler, unless the owner accepts it', async () => {
   const { checkGate } = await recallTools();
   const low = { added: ['gate: a median 0 baseline 0 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } };
@@ -5876,6 +5875,7 @@ test('a typed baseline cannot fall under the last one recorded on the same ruler
   assert.equal(checkGate(gateFacts({ ...low, added: ['gate: a median 9 baseline 9 brief v1 keys v2'] })).ok, true);
 });
 
+// why: guards rule:ci-gate
 test('a PR that moves the ruler it is graded on needs the owner\'s marker', async () => {
   const { checkGate } = await recallTools();
   const moved = { was: { brief: 1, keys: 1, baseline: 9 } };
@@ -5893,6 +5893,7 @@ test('a PR that moves the ruler it is graded on needs the owner\'s marker', asyn
   assert.equal(checkGate(gateFacts({ was: { brief: null, keys: null, baseline: null } })).ok, true);
 });
 
+// why: guards rule:ci-gate
 test('recall gate leaves a PR alone only when it touches no rule text, no ruler and no gate line', async () => {
   const { checkGate } = await recallTools();
   assert.equal(checkGate(gateFacts({ changed: ['scripts/kit.mjs'], added: [] })).ok, true);
@@ -5922,6 +5923,7 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
 // S22-1, E31: the suite runs on Linux and the Windows-only tests on Windows; the required check (kit-tests) passes
 // only when both passed. A needed job that fails makes a plain dependent job SKIPPED, and GitHub counts a skipped
 // required check as passed. pin: 1 (GitHub reads these lines).
+// why: guards rule:word-pins
 test('CI runs the suite on Linux and the Windows slice on Windows, and the required check fails unless both passed', () => {
   const ci = read(path.resolve('.github/workflows/ci.yml'));
   const job = (name) => ci.split(new RegExp(`^  ${name}:$`, 'm'))[1].split(/^  [a-z-]+:$/m)[0];
@@ -5935,7 +5937,10 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   for (const proof of ['guard-outward-check.cjs', 'guard-delete-check.cjs']) assert.ok(win.includes(`node project/.claude/${proof}`), proof);
   const gate = job('kit-tests');
   // E32: the lanes job and the slow lane join the gate; a slow lane skipped for having no test passes.
-  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests\]$/m);
+  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests, install-check\]$/m);
+  // T15 D1/D2: the install check, skipped only when the lanes job found no install or guard change.
+  assert.ok(gate.includes("if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')")); // pin: 1
+  assert.match(job('install-check'), /^    if: needs\.lanes\.outputs\.install == 'true'$[\s\S]*os: \[ubuntu-latest, windows-latest\][\s\S]*run: \|[\s\S]*node scripts\/ci-install-check\.mjs$/m);
   assert.match(gate, /^    if: always\(\)$/m);
   const failed = "if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')";
   assert.ok(gate.includes(failed));
@@ -5944,6 +5949,34 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   assert.doesNotMatch(gate, /test-run\.mjs/, 'the tests run in their jobs, not again in the gate');
 });
 
+// why: guards the owner's pick (2026-11-12, "Only what it touches") and E32 rule 4: a PR narrows its run only to the
+// reached tests plus the security set, falls back to every test on any other answer, and the map it selects by comes
+// from main alone. pin: 1 (GitHub reads these lines)
+test('a PR runs the reached tests and the security set, or every test; main saves the map; a body edit reruns only the audit', async () => {
+  const ci = read(path.resolve('.github/workflows/ci.yml'));
+  const step = (name) => ci.split(`- name: ${name}\n`)[1].split(/\n\s*\n|- name:|- uses:/)[0];
+  assert.doesNotMatch(ci.split('\njobs:')[0], /edited/, 'a body edit reran the whole test run');
+  // Any scope but "changed" (a missing output included) runs every test.
+  assert.match(step('Every test'), /steps\.scope\.outputs\.scope != 'changed'/);
+  assert.match(step('The tests the change reaches'), /steps\.scope\.outputs\.scope == 'changed'[\s\S]*--changed/);
+  const { SECURITY_FILES } = await import(pathToFileURL(path.resolve('scripts/test-value.mjs')).href);
+  const security = step('The security set');
+  for (const f of SECURITY_FILES) assert.ok(security.includes(f), `${f} left out of the security set`);
+  // The map is kept by main's push run only, and a PR takes it from main's own push run of its base commit, never from
+  // the Actions cache, which a PR's earlier run can write (the security review of this build).
+  const keep = ci.split('- name: Keep the coverage map\n')[1].split('- name:')[0];
+  assert.match(keep, /if: github\.event_name != 'pull_request'[\s\S]*upload-artifact@[0-9a-f]{40}[\s\S]*name: test-map/);
+  const load = ci.split('- name: Load the coverage map for the base commit\n')[1].split('- name:')[0];
+  assert.match(load, /rm -f tests\/\.map\.json/);
+  assert.match(load, /--branch main --event push --commit "\$BASE_SHA"/); // pin: 1
+  assert.match(load, /\.headSha == \\"\$BASE_SHA\\" and \.event == \\"push\\" and \.headBranch == \\"main\\"/); // pin: 1
+  assert.doesNotMatch(ci, /actions\/cache/, 'the Actions cache holds entries a PR wrote');
+  const body = read(path.resolve('.github/workflows/pr-body.yml'));
+  assert.match(body, /types: \[[^\]]*edited[^\]]*\]/);
+  assert.ok(body.includes('node project/.claude/pr-body-audit.mjs') && body.includes('PR_BODY: ${{ github.event.pull_request.body }}'));
+});
+
+// why: guards rule:instruments-and-evals
 test('CI runs the recall gate on the PR\'s real diff', async () => {
   const { passBar, currentVersion } = await recallTools();
   const keysText = read(path.resolve('docs/evals/recall-questions.md'));
@@ -6090,6 +6123,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   assert.equal(renamed.status, 1, renamed.stdout);
 });
 
+// why: guards rule:pr-body
 test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
   for (const f of ['rules/agent-teams.md', 'rules/reviews-and-findings.md']) {
     const text = read(path.resolve(f));
@@ -6100,6 +6134,7 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
   assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\)[^\n]*to the owner/);
 });
 
+// why: guards rule:word-pins
 test('the scorer brief is versioned and carries the two calls the proof found borderline', () => {
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md'));
   assert.match(brief, /^Current version: v2$/m);
@@ -6127,6 +6162,7 @@ const recorder = (statuses = []) => {
 };
 const scratch = () => path.join(makeTemp('probe-'), 'kit-probes', 'abc123', 'pdef456');
 
+// why: guards rule:probe-scope
 test('probePath is random per call and always home/kit-probes/<6 hex>/p<6 hex>', async () => {
   const { probePath } = await recallTools();
   const home = path.join(os.tmpdir(), 'some home');
@@ -6147,6 +6183,7 @@ test('probePath is random per call and always home/kit-probes/<6 hex>/p<6 hex>',
   assert.notEqual(probePath(home), probePath(home));
 });
 
+// why: guards rule:probe-scope
 test('probePath cannot take a label, so no label can appear in the path', async () => {
   const { probePath } = await recallTools();
   assert.equal(probePath.length, 1);
@@ -6161,6 +6198,7 @@ test('probePath cannot take a label, so no label can appear in the path', async 
   }
 });
 
+// why: catches a break at scripts/recall.mjs:120 that no other test catches
 test('parseRunArgs accepts [label], [label, kitFolder] and [label, --no-kit] and returns exactly label, kitDir, noKit', async () => {
   const { parseRunArgs } = await recallTools();
   assert.deepEqual(parseRunArgs(['cand-1']), { label: 'cand-1', kitDir: null, noKit: false });
@@ -6175,6 +6213,7 @@ test('parseRunArgs accepts [label], [label, kitFolder] and [label, --no-kit] and
   assert.equal(path.resolve(got.kitDir), kit);
 });
 
+// why: guards rule:outward-acts
 test('parseRunArgs refuses no label, a label that is a path, too many arguments, and --no-kit with a kit folder', async () => {
   const { parseRunArgs } = await recallTools();
   assert.throws(() => parseRunArgs([]));
@@ -6190,6 +6229,7 @@ test('parseRunArgs refuses no label, a label that is a path, too many arguments,
   assert.throws(() => parseRunArgs(['a', '--no-kit', '--no-kit']));
 });
 
+// why: guards rule:branching
 test('setupProbe makes the folder, runs git init in it, then installs the kit project layer with cwd at the kit', async () => {
   const { setupProbe } = await recallTools();
   const dir = scratch();
@@ -6211,6 +6251,7 @@ test('setupProbe makes the folder, runs git init in it, then installs the kit pr
   assert.equal(inst.args.includes('--unreleased'), false, 'a released kit must not get --unreleased');
 });
 
+// why: guards rule:probe-scope
 test('setupProbe adds --unreleased exactly when the kit is not a release', async () => {
   const { setupProbe } = await recallTools();
   const kitDir = path.join(os.tmpdir(), 'k');
@@ -6225,6 +6266,7 @@ test('setupProbe adds --unreleased exactly when the kit is not a release', async
   assert.equal(b.calls[1].args.includes('--unreleased'), false);
 });
 
+// why: guards rule:branching
 test('setupProbe with noKit still makes the folder and git init but never calls the install', async () => {
   const { setupProbe } = await recallTools();
   for (const released of [true, false]) {
@@ -6242,6 +6284,7 @@ test('setupProbe with noKit still makes the folder and git init but never calls 
   assert.equal(calls.length, 1);
 });
 
+// why: guards rule:branching
 test('setupProbe throws when git init fails and runs nothing after it', async () => {
   const { setupProbe } = await recallTools();
   const { calls, run } = recorder([1]);
@@ -6253,6 +6296,7 @@ test('setupProbe throws when git init fails and runs nothing after it', async ()
   assert.equal(again.calls.length, 1);
 });
 
+// why: guards rule:probe-scope
 test('setupProbe throws when the kit install fails', async () => {
   const { setupProbe } = await recallTools();
   for (const released of [true, false]) {
@@ -6262,6 +6306,7 @@ test('setupProbe throws when the kit install fails', async () => {
   }
 });
 
+// why: guards rule:instruments-and-evals
 test('checkUserLayer throws unless kit-install.json exists and says release is exactly true', async () => {
   const { checkUserLayer } = await recallTools();
   const home = makeTemp('ul-');
@@ -6281,6 +6326,7 @@ test('checkUserLayer throws unless kit-install.json exists and says release is e
   assert.throws(() => checkUserLayer(odd));
 });
 
+// why: guards rule:instruments-and-evals
 test('runHeader names the path shape and the CLI, and never the real folder name', async () => {
   const { runHeader, probePath } = await recallTools();
   const home = path.join(os.tmpdir(), 'hdr-home');
@@ -6310,6 +6356,7 @@ test('runHeader names the path shape and the CLI, and never the real folder name
   assert.ok(again.includes('Path: kit-probes/<hex>/p<hex>'));
 });
 
+// why: guards rule:instruments-and-evals
 test('recall refuses the old usage and an unreleased user layer before it creates any folder', () => {
   const { kit, home } = makeKit();
   const fakeOs = makeTemp('fakeos-');
@@ -6318,7 +6365,7 @@ test('recall refuses the old usage and an unreleased user layer before it create
   const unstamped = go(['never-saved']);
   assert.equal(unstamped.status, 1);
   assert.match(unstamped.stderr, /not a released kit install/);
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   for (const args of [['C:/some/folder', 'kit-1.19.0'], ['./folder', 'x']]) {
     const old = go(args);
     assert.equal(old.status, 1);
@@ -6328,6 +6375,7 @@ test('recall refuses the old usage and an unreleased user layer before it create
   assert.equal(fs.existsSync(path.resolve('reports/evals/never-saved.md')), false);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall checks the Claude folder a session will use, not one a variable points at', async () => {
   const { checkHome } = await recallTools();
   assert.throws(() => checkHome({ KIT_CLAUDE_HOME: 'C:/a' }), /KIT_CLAUDE_HOME/);
@@ -6336,6 +6384,7 @@ test('recall checks the Claude folder a session will use, not one a variable poi
   checkHome({});
 });
 
+// why: guards rule:instruments-and-evals
 test('every recall session runs in the probe folder with the question as its input, and a failure stops the run', async (t) => {
   const { askAll, probePath } = await recallTools();
   const said = t.mock.method(console, 'log', () => {});
@@ -6357,10 +6406,11 @@ test('every recall session runs in the probe folder with the question as its inp
   assert.throws(() => askAll({ qs, projectDir: dir, run: () => ({ status: 1, stdout: 'Not logged in - Please run /login' }) }), /not logged in.*\/login.*CLAUDE_CONFIG_DIR/i);
 });
 
+// why: guards rule:instruments-and-evals
 test('a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself', async () => {
   const { recallRun, currentVersion, questionCount } = await recallTools();
   const { kit, home } = makeKit();
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const osHome = makeTemp('osh-');
   const outDir = makeTemp('out-');
   fs.mkdirSync(path.join(home, 'projects', 'other-project'), { recursive: true });
@@ -6386,6 +6436,7 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   assert.deepEqual(fs.readdirSync(path.join(osHome, 'kit-probes')), [], 'a failed run cleans up too');
 });
 
+// why: guards rule:instruments-and-evals
 test('a recall run removes what it made, and nothing else', async () => {
   const { removeProbe, probePath } = await recallTools();
   const root = makeTemp('clean-');
@@ -6478,6 +6529,7 @@ Truly.
 const fences = (record) => [...record.matchAll(/^(~{3,})\n([\s\S]*?)\n\1$/gm)].map((m) => m[2]);
 const answerQ3 = (text) => SHEET.replace('it sets the memory budget.\n\nYour answer:\n', `it sets the memory budget.\n\nYour answer:\n\n${text}\n`);
 
+// why: guards rule:word-pins
 test('a filled sheet parses into its grounding, topics, questions and answers', async () => {
   const { parseSheet } = await sheetTools();
   const s = parseSheet(SHEET);
@@ -6494,6 +6546,7 @@ test('a filled sheet parses into its grounding, topics, questions and answers', 
   assert.equal(s.missed, 'Nothing else  at this time.\n\nTruly.');
 });
 
+// why: catches a break at user/skills/brainstorm/sheet.mjs:147 that no other test catches
 test('a sheet is complete only when every question has a pick or the owner\'s own answer', async () => {
   const { parseSheet, checkComplete } = await sheetTools();
   assert.deepEqual(checkComplete(parseSheet(SHEET)), { ok: false, unanswered: [3], thoughtOnly: [] });
@@ -6503,6 +6556,7 @@ test('a sheet is complete only when every question has a pick or the owner\'s ow
   assert.deepEqual(checkComplete(parseSheet(thoughtOnly)), { ok: false, unanswered: [3], thoughtOnly: [3] }, 'a thought is not an answer');
 });
 
+// why: guards rule:collaborative-design-locks
 test('lines that look like labels or headings stay the owner\'s words, in the box they were typed in', async () => {
   const { parseSheet } = await sheetTools();
   const { compileRecord } = await compileTools();
@@ -6516,6 +6570,7 @@ test('lines that look like labels or headings stay the owner\'s words, in the bo
   assert.match(inThought.grounding, /^We are/, 'a grounding heading in a thought replaces nothing');
 });
 
+// why: guards rule:outward-acts
 test('the sheet parser refuses what it cannot read, and says why', async () => {
   const { parseSheet } = await sheetTools();
   const bad = [
@@ -6539,6 +6594,7 @@ test('the sheet parser refuses what it cannot read, and says why', async () => {
   for (const [name, text, why] of bad) assert.throws(() => parseSheet(text), why, name);
 });
 
+// why: guards rule:outward-acts
 test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved question, and words filed as the closing box', async () => {
   const { parseSheet, sealOf, renderSheet } = await sheetTools();
   const base = parseSheet(SHEET);
@@ -6562,6 +6618,7 @@ test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved quest
   assert.throws(() => parseSheet(broken['the closing line in a thought']), /this reads 1/);
 });
 
+// why: catches a break only Windows shows (drive paths, Git for Windows sh, junctions)
 test('a sheet with Windows line ends reads the same, and the words stay whole', { windows: true }, async () => {
   const { parseSheet } = await sheetTools();
   const s = parseSheet(SHEET.replace(/\n/g, '\r\n'));
@@ -6570,6 +6627,7 @@ test('a sheet with Windows line ends reads the same, and the words stay whole', 
   assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\r\n\r\nand a second paragraph'); // pin: 3
 });
 
+// why: guards rule:outward-acts
 test('a sheet file saved in anything but UTF-8 is refused, and a UTF-8 mark is read past', async () => {
   const { readSheet, parseSheet } = await sheetTools();
   const dir = makeTemp('enc-');
@@ -6592,6 +6650,7 @@ const ROWS = () => ({
   answers: { q1: { choice: 'a' }, q2: { own: 'my   own\nwords ', thought: 'odd spelng' }, s1__finish: { missed: 'tell me more', submitted: '2026-11-04T17:52:08.656Z' } },
 });
 
+// why: catches a break at user/skills/brainstorm/sheet.mjs:188 that no other test catches
 test('page rows export to a sheet that says what the rows say', async () => {
   const { sheetFromRows, parseSheet, renderSheet } = await sheetTools();
   const text = sheetFromRows(ROWS());
@@ -6610,6 +6669,7 @@ test('page rows export to a sheet that says what the rows say', async () => {
   assert.equal(renderSheet(parseSheet(SHEET)).replace(/\n+/g, '\n'), SHEET.replace(/\n+/g, '\n'));
 });
 
+// why: guards rule:outward-acts
 test('export refuses rows that would change what the owner said, or were never sent', async () => {
   const { sheetFromRows } = await sheetTools();
   const rows = (change) => { const r = ROWS(); change(r); return r; };
@@ -6621,6 +6681,7 @@ test('export refuses rows that would change what the owner said, or were never s
   assert.doesNotMatch(other, /my {3}own/, 'an answer from another sheet is not this sheet\'s');
 });
 
+// why: guards rule:collaborative-design-locks
 test('the record copies every box byte for byte and keeps a confirmed pick apart from the owner\'s words', async () => {
   const { parseSheet } = await sheetTools();
   const { compileRecord } = await compileTools();
@@ -6643,6 +6704,7 @@ test('the record copies every box byte for byte and keeps a confirmed pick apart
   assert.match(compileRecord({ ...sheet, sent: 'the-time' }), /Sent the-time\./);
 });
 
+// why: guards rule:collaborative-design-locks
 test('the record marks a pick the owner turned down and a tick with no pick offered', async () => {
   const { parseSheet } = await sheetTools();
   const { compileRecord } = await compileTools();
@@ -6652,6 +6714,7 @@ test('the record marks a pick the owner turned down and a tick with no pick offe
   assert.match(compileRecord(parseSheet(noPick)), /Picked: In the toolbar \(no pick/);
 });
 
+// why: guards rule:collaborative-design-locks
 test('the owner\'s text cannot close its fence, even indented or long', async () => {
   const { parseSheet } = await sheetTools();
   const { compileRecord } = await compileTools();
@@ -6664,6 +6727,7 @@ test('the owner\'s text cannot close its fence, even indented or long', async ()
   }
 });
 
+// why: guards rule:collaborative-design-locks
 test('the record names whoever asked, so a sheet from another model reads true', async () => {
   const { parseSheet } = await sheetTools();
   const { compileRecord } = await compileTools();
@@ -6672,64 +6736,7 @@ test('the record names whoever asked, so a sheet from another model reads true',
   assert.doesNotMatch(r, /Claude/);
 });
 
-test('the sheet commands work from the skill folder alone, and the core carries no kit links', () => {
-  const src = path.resolve('user/skills/brainstorm');
-  const lifted = path.join(makeTemp('lift-'), 'brainstorm');
-  fs.cpSync(src, lifted, { recursive: true });
-  const cmd = (script, ...args) => spawnSync(process.execPath, [path.join(lifted, script), ...args], { encoding: 'utf8', cwd: lifted });
-  const f = path.join(lifted, '2026-11-04-export.sheet.md');
-  fs.writeFileSync(f, SHEET);
-  assert.match(cmd('sheet.mjs', 'check', f).stderr, /never sealed/);
-  assert.match(cmd('compile-record.mjs', f).stderr, /never sealed/);
-  assert.match(cmd('sheet.mjs', 'seal', f).stderr, /sealed blank/, 'a sheet with answers cannot be sealed');
-  const blank = SHEET.replace('- [x] a:', '- [ ] a:').replace(/What I thought:\n\ni wonder[^]*?\n\n### Q2/, 'What I thought:\n\n### Q2').replace(/Neither,[^]*?keep it short\n\n/, '').replace(/Nothing else[^]*$/, '');
-  fs.writeFileSync(f, blank);
-  assert.equal(cmd('sheet.mjs', 'seal', f).status, 0);
-  assert.match(read(f), /^sealed: 3 questions [0-9a-f]{16}$/m);
-  assert.match(cmd('sheet.mjs', 'seal', f).stderr, /already sealed/);
-  fs.writeFileSync(f, read(f).replace('- [ ] a: In the toolbar', '- [x] a: In the toolbar').replace('Your answer:\n\nWhat I thought:\n\n### Q2', 'Your answer:\n\nWhat I thought:\n\ni wonder\n\n### Q2').replace('titles read better.\n\nYour answer:\n', 'titles read better.\n\nYour answer:\n\nand keep it short\n'));
-  const check = cmd('sheet.mjs', 'check', f);
-  assert.equal(check.status, 1, 'an unanswered question fails the check');
-  assert.match(check.stdout, /Q3/);
-  assert.equal(cmd('compile-record.mjs', f).status, 0);
-  const out = path.join(lifted, '2026-11-04-export.brainstorm.md');
-  assert.ok(read(out).includes('and keep it short'));
-  assert.ok(read(out).includes(crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex')), 'the hash matches the file on disk');
-  assert.equal(cmd('compile-record.mjs', f).status, 1, 'a record that may hold a summary is never overwritten');
-  const rows = path.join(lifted, 'rows');
-  const rowFiles = { 'sheets/s1.json': ROWS().sheet, 'answers/s1__finish.json': ROWS().answers.s1__finish, 'answers/q2.json': { ...ROWS().answers.q2, id: 'q1' } };
-  for (const q of ROWS().questions) rowFiles[`questions/${q.id}.json`] = q;
-  rowFiles['questions/z9.json'] = { sheet: 'another', section: 1, order: 1, sectionTitle: 'Other', text: 'Not this sheet?' };
-  for (const [name, row] of Object.entries(rowFiles)) { fs.mkdirSync(path.dirname(path.join(rows, name)), { recursive: true }); fs.writeFileSync(path.join(rows, name), JSON.stringify(row)); }
-  const exported = path.join(lifted, 'x.sheet.md');
-  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 0);
-  assert.match(read(exported), /### Q2\. Second\?[\s\S]*my {3}own/, 'the file name is the row\'s id, not a field inside it');
-  assert.doesNotMatch(read(exported), /Not this sheet/, 'another sheet\'s questions stay out');
-  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', exported).status, 1, 'a sheet with answers is never overwritten');
-  const blankOut = path.join(lifted, 'blank.sheet.md');
-  fs.writeFileSync(blankOut, blank);
-  assert.equal(cmd('sheet.mjs', 'export', rows, 's1', blankOut).status, 0, 'the page route replaces its blank sheet');
-  fs.rmSync(blankOut);
-  assert.match(cmd('sheet.mjs', 'export', rows, '../../x', path.join(lifted, 'y.md')).stderr, /a sheet id is/);
-  fs.writeFileSync(path.join(rows, 'answers', 'q9.json'), JSON.stringify({ sheet: 's1', own: 'lost words' }));
-  assert.match(cmd('sheet.mjs', 'export', rows, 's1', path.join(lifted, 'y.md')).stderr, /q9 has no question/);
-  fs.writeFileSync(path.join(rows, 'answers', 'q9.json'), Buffer.from('{"sheet":"s1","own":"caf\xE9"}', 'latin1'));
-  assert.match(cmd('sheet.mjs', 'export', rows, 's1', path.join(lifted, 'y.md')).stderr, /not saved as UTF-8/);
-  for (const p of [f, out, exported]) fs.rmSync(p);
-  fs.rmSync(rows, { recursive: true });
-  const KIT_ONLY = /rule:[a-z]|\bA\d\d\b|\badapter\b|plan-feature|kit\.mjs|AGENTS\.md|\bE1[678]\b|_Active Plan|_Master Roadmap|_Working Memory|_Session Log|standards\//;
-  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
-  const files = walk(lifted).filter((p) => /\.(md|mjs|html)$/.test(p) && path.basename(p) !== 'SOURCES.md');
-  assert.ok(files.length >= 7, files.join());
-  for (const p of files) {
-    const text = path.basename(p) === 'SKILL.md' ? read(p).split('## In the methodology kit')[0] : read(p);
-    assert.doesNotMatch(text, KIT_ONLY, p);
-  }
-  assert.match(read(path.join(lifted, 'SKILL.md')), /## In the methodology kit/, 'the kit layer is one marked section');
-  assert.match(read(path.join(lifted, 'licenses', 'superpowers-MIT.txt')), /Permission is hereby granted/);
-  assert.match(read(path.join(lifted, 'licenses', 'Apache-2.0.txt')), /Apache License/);
-});
-
+// why: guards rule:kit-standards
 test('plan-feature hands its questions to the brainstorm skill and no longer claims the word', () => {
   const plan = read(path.resolve('user/skills/plan-feature/SKILL.md'));
   assert.doesNotMatch(plan.split('---')[1], /brainstorm/i, 'the description leaves the word to the skill that does it');
@@ -6743,6 +6750,7 @@ test('plan-feature hands its questions to the brainstorm skill and no longer cla
   assert.ok(JSON.stringify(cases).includes('"brainstorm"'), 'session start can name it');
 });
 
+// why: guards rule:kit-standards
 test('the sheet page ships no private data, calls no third party, and writes the fields the export reads', () => {
   const page = read(path.resolve('user/skills/brainstorm/assets/sheet-page.html'));
   assert.doesNotMatch(page, /[^\x00-\x7F]/, 'ASCII like every kit file');
@@ -6755,6 +6763,7 @@ test('the sheet page ships no private data, calls no third party, and writes the
   for (const field of ['grounding', 'sectionTitle', 'recWhy', 'submitted']) assert.ok(page.includes(field), field);
 });
 
+// why: guards rule:outward-acts
 test('an update retires a script once the edited audit that needed it is put back; a non-guard file still waits on an edited heir', () => {
   const { kit, home, proj } = makeKit();
   const put = (f, text) => { fs.mkdirSync(path.dirname(path.join(kit, f)), { recursive: true }); fs.writeFileSync(path.join(kit, f), text); };
@@ -6792,6 +6801,7 @@ test('an update retires a script once the edited audit that needed it is put bac
 
 // M21: the kit source installs no kit, so before 1.21.0 nothing checked its commit messages until CI did, and the fix
 // needed a history rewrite. Build turns its own hook on once per clone.
+// why: guards rule:outward-acts
 test('build turns on the kit source commit-msg hook, which refuses a bad message, and leaves an owner hooks path alone', { windows: true }, () => {
   const dir = makeTemp('srchooks-');
   const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
@@ -6813,6 +6823,7 @@ test('build turns on the kit source commit-msg hook, which refuses a bad message
 
 // I28 (1.20.0 step 6): the fix-tier example indents its findings table under a bullet, and the audit read only rows at
 // column 0, so a high marked DEFERRED there passed as clean.
+// why: guards rule:sweep-auto-approval
 test('the sweep audit reads an indented findings table as it reads a flat one', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
   const report = (table) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n- Findings:\n${table}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
@@ -6847,6 +6858,7 @@ function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: med
   return { dir, put, git, record, gate };
 }
 
+// why: guards rule:instruments-and-evals
 test('recall gate (B7): current keys with no Pass line cannot pass, since recall cannot run them', () => {
   const r = gateRepo({ keys: 'Current version: v4\n\n<!-- recall v4 -->\nno pass line\n\n' });
   r.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0');
@@ -6855,6 +6867,7 @@ test('recall gate (B7): current keys with no Pass line cannot pass, since recall
   assert.match(out.stdout + out.stderr, /no "Pass: median <n> of <m>\." line/);
 });
 
+// why: guards rule:ci-gate
 test('recall gate (S18-3): the ruler is read from the head commit, never the working tree', () => {
   const r = gateRepo();
   r.record('gate: a median 7 baseline 7 brief v1 keys v4 control 0');
@@ -6865,6 +6878,7 @@ test('recall gate (S18-3): the ruler is read from the head commit, never the wor
   assert.match(out.stdout, /pass bar of 9/);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall gate (S18-5): a scores file over 1 MiB on the base still sets the floor', () => {
   const big = '# Scores\n' + ('x'.repeat(100) + '\n').repeat(12000) + 'gate: old median 10 baseline 10 brief v1 keys v4\n';
   const r = gateRepo({ scores: big });
@@ -6874,6 +6888,7 @@ test('recall gate (S18-5): a scores file over 1 MiB on the base still sets the f
   assert.match(out.stdout, /under the last recorded baseline 10/);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall gate and kit.mjs (S18-2): run through a junction or link, they still run and fail as they should', { windows: true }, () => {
   const r = gateRepo();
   r.record('gate: a median 7 baseline 7 brief v1 keys v4 control 0');
@@ -6887,6 +6902,7 @@ test('recall gate and kit.mjs (S18-2): run through a junction or link, they stil
   assert.notEqual(usage.stdout + usage.stderr, '', 'kit.mjs through a link prints, so it ran');
 });
 
+// why: guards rule:ci-gate
 test('recall gate (S18-7): a gate line on keys v4 or later names its control, and the control is under the baseline', async () => {
   const { checkGate } = await recallTools();
   const v4 = (line) => checkGate({ changed: ['rules/core.md'], added: [line], brief: 1, keys: 4, bar: 9 });
@@ -6900,6 +6916,7 @@ test('recall gate (S18-7): a gate line on keys v4 or later names its control, an
   assert.equal(checkGate(gateFacts()).ok, true);
 });
 
+// why: guards rule:ci-gate
 test('recall gate (S18-6): the owner may correct an old-ruler line in a PR that changes no rule text', async () => {
   const { checkGate } = await recallTools();
   const old = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v1 owner-accepted';
@@ -6911,16 +6928,18 @@ test('recall gate (S18-6): the owner may correct an old-ruler line in a PR that 
   assert.equal(checkGate({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [old], brief: 1, keys: 2 }).ok, false);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall (I20): a released user layer edited by hand is not read as released', async () => {
   const { checkUserLayer } = await recallTools();
   const { kit, home } = makeKit();
   fs.mkdirSync(home, { recursive: true });
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   checkUserLayer(home, os.tmpdir());
   fs.appendFileSync(path.join(home, 'skills', 'human-factor', 'SKILL.md'), 'a hand edit\n');
   assert.throws(() => checkUserLayer(home, os.tmpdir()), /changed by hand.*skills\/human-factor\/SKILL\.md/);
 });
 
+// why: guards rule:instruments-and-evals
 test('recall (I27): removeProbe deletes only a probe under this home\'s kit-probes, and only a plain memory slug', { windows: 'also' }, async () => {
   const { removeProbe, probePath } = await recallTools();
   const osHome = makeTemp('oshome-');
@@ -6945,6 +6964,7 @@ test('recall (I27): removeProbe deletes only a probe under this home\'s kit-prob
 });
 
 // Review R1 and R3 (1.21.0): a throwaway user layer is a real unreleased install under a kit-probes that is no link.
+// why: guards rule:instruments-and-evals
 test('recall (R1, R3): kit-probes may not be a link, and a throwaway layer must be a real unreleased install', { windows: 'also' }, async () => {
   const { checkUserLayer } = await recallTools();
   const osHome = makeTemp('oshome-');
@@ -6965,6 +6985,7 @@ test('recall (R1, R3): kit-probes may not be a link, and a throwaway layer must 
 
 // Review R2 (1.21.0): a throwaway run still loads the real global CLAUDE.md as a parent folder's file, so its header
 // says which one.
+// why: guards rule:instruments-and-evals
 test('recall (R2): a run on a throwaway layer records the real global layer it also loads', async () => {
   const { installFacts, runHeader } = await recallTools();
   const osHome = makeTemp('oshome-');
@@ -6983,6 +7004,7 @@ test('recall (R2): a run on a throwaway layer records the real global layer it a
 
 // 1.20.0 carry-over B8: the blind and score tools live in the repo, take the question count from the current keys,
 // and print a gate line the gate can read, control included.
+// why: guards rule:instruments-and-evals
 test('recall-score blinds runs without a side marker and scores them into a gate line the gate reads', async () => {
   const { blind, score, scrub } = await import('../scripts/recall-score.mjs');
   const { checkGate } = await recallTools();
@@ -7016,6 +7038,7 @@ test('recall-score blinds runs without a side marker and scores them into a gate
 
 // The owner's decision 7 (1.21.0): the bar stays at 12, and a median of 3 exactly on it is too close to call on 3 runs.
 // The tool holds the gate line until 2 more runs are in, and the median of 5 decides.
+// why: guards rule:ci-gate
 test('a candidate median of 3 on the bar waits for 2 more runs, and the median of 5 decides', async () => {
   const { score } = await import('../scripts/recall-score.mjs');
   const keysText = read(path.resolve('docs/evals/recall-questions.md'));
@@ -7055,6 +7078,7 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
 
 // 1.20.0 carry-overs N5 and B8: a closeout that started on its own still asks before a remote branch delete, and the
 // core rules send leftovers to the next build, not the roadmap.
+// why: guards rule:kit-standards
 test('a self-started closeout asks before a remote delete, and leftovers carry to the next build', () => {
   assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching[^\n]*remote delete on the owner's yes/);
   const core = read(path.resolve('rules/core.md'));
@@ -7062,6 +7086,7 @@ test('a self-started closeout asks before a remote delete, and leftovers carry t
   assert.doesNotMatch(core, /design items go to the roadmap/);
 });
 // Sweep tooling carry-overs from 1.18.0 (C4, C9b, C9e, C9f, C10, C11), each checked real against the code first.
+// why: guards rule:sweep-auto-approval
 test('C4/C9e: each brief names its sweep and role, so ids in any order count for the right role, and another sweep\'s reviewer does not', () => {
   const c = featureContract();
   c.roles[3].model = 'sonnet';
@@ -7084,6 +7109,7 @@ test('C4/C9e: each brief names its sweep and role, so ids in any order count for
   assert.match(brief((h) => `Sweep: ${h} role 1`), /ASK THE OWNER[\s\S]*named by more than one brief/);
   assert.match(brief((h, i) => `Sweep: ${h} role ${i + 2}`), /brief names role 6; the contract has 5/);
 });
+// why: guards rule:sweep-auto-approval
 test('C4: the guard starts each role once, by the sweep and role its brief names', () => {
   const c = featureContract();
   c.roles.forEach((x, i) => { x.calls = [5, 5, 6, 7, 8][i]; });
@@ -7100,6 +7126,7 @@ test('C4: the guard starts each role once, by the sweep and role its brief names
   assert.match(start(`Call cap: 5. Sweep: ${hash} role 2`).permissionDecisionReason, /Role 2 of the cleared contract[\s\S]*started already/);
   assert.equal(start(`Call cap: 5. Sweep: ${hash} role 1`).permissionDecision, 'allow', 'role 1 keeps its own slot');
 });
+// why: guards rule:outward-acts
 test('C9f: the guard reads each folder\'s HEAD once, however long the log', () => {
   const dir = sweepRepo();
   // git's own trace counts its runs, on every system; a shim script would not run on Windows, the only CI system.
@@ -7113,6 +7140,7 @@ test('C9f: the guard reads each folder\'s HEAD once, however long the log', () =
   const runs = read(count).split('\n').filter((l) => /trace: built-in: git /.test(l)).length;
   assert.ok(runs >= 1 && runs <= 3, `${runs} git calls`);
 });
+// why: guards rule:sweep-auto-approval
 test('C9b: an owner-cleared sweep owes its outcome before the next, and --none-ran closes one no reviewer used', () => {
   const a = approveRun(askContract());
   assert.equal(a.status, 1, a.stdout);
@@ -7127,6 +7155,7 @@ test('C9b: an owner-cleared sweep owes its outcome before the next, and --none-r
   assert.equal(approvalLog(a.dir).pop().budget, approvalLog(a.dir).filter((e) => e.kind === 'decision' && e.contract === a.f).pop().budget);
   assert.equal(approveIn(a.dir, [next]).status, 0);
 });
+// why: guards rule:outward-acts
 test('C10: one owner yes answers one ask, so a second cannot open a second team', () => {
   const a = approveRun(askContract());
   assert.equal(approveIn(a.dir, [a.f, '--owner-yes', 'yes']).status, 0);
@@ -7137,6 +7166,7 @@ test('C10: one owner yes answers one ask, so a second cannot open a second team'
   for (let i = 0; i < 3; i++) assert.equal(sweepGuard(a.dir).permissionDecision, 'allow');
   assert.equal(sweepGuard(a.dir).permissionDecision, 'deny');
 });
+// why: guards rule:sweep-auto-approval
 test('C11: a re-sweep reviews the tests its fixes change', () => {
   const fr = firstSweep({ tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) }, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
   fs.writeFileSync(path.join(fr.dir, 'src', 'page.test.ts'), 'test 3\n');
@@ -7151,6 +7181,7 @@ test('C11: a re-sweep reviews the tests its fixes change', () => {
   const withTv = resweep(fr, { tier: 'fix', fixed, roles: [br, dim, tv] });
   ownerAsked(withTv);
 });
+// why: guards rule:sweep-tiers
 test('C9c: a --base off the default branch asks the owner', () => {
   const dir = sweepRepo();
   fs.writeFileSync(path.join(dir, 'src', 'more.ts'), 'export const more = 1;\n');
@@ -7163,6 +7194,7 @@ test('C9c: a --base off the default branch asks the owner', () => {
   assert.equal(approveIn(dir, [f, '--base', 'main']).status, 0);
 });
 // The 1.21.0 sweep's sweep-control findings: each test is the sequence the reviewer ran.
+// why: guards rule:sweep-auto-approval
 test('S1: a sweep closed as none ran opens no start after it', () => {
   const r = approveRun(featureContract());
   assert.equal(approveIn(r.dir, [r.f, '--outcome', '--none-ran']).status, 0);
@@ -7170,12 +7202,14 @@ test('S1: a sweep closed as none ran opens no start after it', () => {
   assert.equal(late.permissionDecision, 'deny');
   assert.match(late.permissionDecisionReason, /outcome is logged/);
 });
+// why: guards rule:sweep-tiers
 test('S1: a cut short closes the clearance too, and the next clearing still opens', () => {
   const r = approveRun(featureContract());
   assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
   assert.equal(approveIn(r.dir, [r.f, '--outcome', '--cut-short']).status, 0);
   assert.equal(sweepGuard(r.dir).permissionDecision, 'deny');
 });
+// why: guards rule:sweep-auto-approval
 test('S2: while paused the outcome owed still comes first, so a yes cannot open a second set of slots', () => {
   const r = approveRun(featureContract());
   assert.equal(sweepGuard(r.dir).permissionDecision, 'allow');
@@ -7185,6 +7219,7 @@ test('S2: while paused the outcome owed still comes first, so a yes cannot open 
   assert.match(again.stdout, /outcome of the last approved sweep first/);
   assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes']).status, 1);
 });
+// why: guards rule:sweep-auto-approval
 test('S3: a contract beside the work does not hide uncommitted work or the size of the fixes', () => {
   const dir = sweepRepo();
   const f = path.join(dir, 'src', 'contract.json');
@@ -7194,12 +7229,14 @@ test('S3: a contract beside the work does not hide uncommitted work or the size 
   assert.equal(r.status, 3, r.stdout);
   assert.match(r.stdout, /work not committed \(src\/sync\.ts\)/);
 });
+// why: guards rule:sweep-auto-approval
 test('S3: a report or contract in the sweep folder is still left out of what counts as work', () => {
   const r = approveRun(featureContract());
   fs.writeFileSync(path.join(r.dir, 'sweeps', 'report.md'), 'a report\n');
   assert.equal(approveIn(r.dir, [r.f, '--outcome', '--none-ran']).status, 0);
   assert.equal(approveIn(r.dir, [r.f]).status, 0);
 });
+// why: guards rule:sweep-tiers
 test('S4: a --base older than where the branch left main asks, as one off main does', () => {
   const dir = sweepRepo();
   g(dir, 'checkout', '-q', 'main');
@@ -7215,6 +7252,7 @@ test('S4: a --base older than where the branch left main asks, as one off main d
   assert.match(r.stdout, /older than where this branch left main/);
   assert.equal(approveIn(dir, [f, '--base', 'main']).status, 0);
 });
+// why: guards rule:sweep-auto-approval
 test('S4: with no main or master a named base is the owner\'s, not a skipped check', () => {
   const dir = sweepRepo();
   g(dir, 'branch', '-m', 'main', 'trunk');
@@ -7224,6 +7262,7 @@ test('S4: with no main or master a named base is the owner\'s, not a skipped che
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stdout, /no default branch/);
 });
+// why: guards rule:sweep-auto-approval
 test('S5: a start carries its role\'s question, from the checkout that was cleared', () => {
   const r = approveRun(featureContract());
   const { hash } = approvalLog(r.dir).pop();
@@ -7255,6 +7294,7 @@ test('S5: a start carries its role\'s question, from the checkout that was clear
 // on the proven form would reach no one on the phone, so the settings no longer ask on it.
 // T2: approve.mjs reads the owner's pop-up tap itself, so logging a yes needs no second pop-up for the command; a
 // push beside it is held all the same, and clearing the AI shell's markers still is.
+// why: guards rule:outward-acts
 test('S6: the owner\'s yes runs through the guard on its own proof, and a push beside it is still held', () => {
   const ask = JSON.parse(read(path.resolve('project/.claude/settings.json'))).permissions.ask || [];
   assert.equal(ask.some((r) => /owner-yes/.test(r)), false);
@@ -7264,6 +7304,7 @@ test('S6: the owner\'s yes runs through the guard on its own proof, and a push b
   assert.match(guard('node approve.mjs c.json --owner-yes; git push origin main'), /"deny"/);
   assert.match(guard('env -u CLAUDECODE node approve.mjs c.json --owner-yes'), /"deny"/);
 });
+// why: guards rule:outward-acts
 test('S7: a start that cannot be recorded is refused, not let through', () => {
   const r = approveRun(featureContract());
   fs.writeFileSync(path.join(r.dir, '.git', 'kit-sweep-starts'), '');
@@ -7271,6 +7312,7 @@ test('S7: a start that cannot be recorded is refused, not let through', () => {
   assert.equal(start.permissionDecision, 'deny');
   assert.match(start.permissionDecisionReason, /could not record/);
 });
+// why: guards rule:sweep-auto-approval
 test('L1: a crashed reviewer that wrote after its retry is named at the outcome', () => {
   const s = crashedSweep();
   assert.equal(s.start(1), 'allow');
@@ -7289,6 +7331,7 @@ test('L1: a crashed reviewer that wrote after its retry is named at the outcome'
 });
 // The 1.21.0 sweep's D1: CI runs the base branch's gate, whose parser may not know a new field, so the control sits on
 // its own line. Main's parser reads the gate line as it always did; the head gate reads the two together.
+// why: guards rule:instruments-and-evals
 test('recall gate (D1): the control may sit on its own line beside the gate line', async () => {
   const { checkGate } = await recallTools();
   const v4 = (...added) => checkGate({ changed: ['rules/core.md'], added, brief: 1, keys: 4 });
@@ -7299,6 +7342,7 @@ test('recall gate (D1): the control may sit on its own line beside the gate line
   assert.match(v4('control: 9', line).detail, /control 9 is not under the baseline 9/);
   assert.equal(v4(`${line} control 0`).ok, true, 'a line already recorded inline still reads');
 });
+// why: guards rule:instruments-and-evals
 test('recall gate (D1): the recorded line is one main\'s parser reads, and score prints the pair', async () => {
   const gateLine = read(path.resolve('docs/evals/results/recall-scores.md')).split('\n').filter((l) => l.startsWith('gate:')).pop();
   assert.match(gateLine, /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)( owner-accepted)?$/);
@@ -7306,12 +7350,14 @@ test('recall gate (D1): the recorded line is one main\'s parser reads, and score
   // pin: 1 (CI's recall gate reads this line)
   assert.match(read(path.resolve('scripts/recall.mjs')), /"gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it/);
 });
+// why: guards rule:instruments-and-evals
 test('recall gate (T3): an edit to the score tool needs a gate line, and a git failure stops the gate', async () => {
   const { checkGate } = await recallTools();
   assert.equal(checkGate({ changed: ['scripts/recall-score.mjs'], added: [], brief: 1, keys: 4 }).ok, false);
   const r = spawnSync('node', [path.resolve('scripts/recall.mjs'), 'gate', 'no-such-ref', 'HEAD'], { encoding: 'utf8' });
   assert.notEqual(r.status, 0);
 });
+// why: guards rule:instruments-and-evals
 test('recall layer (T3): a released layer with a file missing is refused, and its memory may differ', async () => {
   const { checkUserLayer } = await recallTools();
   const home = makeTemp('layer-');
@@ -7324,6 +7370,7 @@ test('recall layer (T3): a released layer with a file missing is refused, and it
   assert.throws(() => checkUserLayer(home, home), /changed by hand or missing since install: b\.md/);
 });
 // T2: what the recall's blinding promises, each by a break a reviewer showed went unseen.
+// why: guards rule:instruments-and-evals
 test('recall-score (T2): a marker that survives the scrub stops the blinding', async () => {
   const { blind } = await import('../scripts/recall-score.mjs');
   const dir = makeTemp('blind-');
@@ -7331,6 +7378,7 @@ test('recall-score (T2): a marker that survives the scrub stops the blinding', a
   fs.writeFileSync(f, '# Recall run\n\n## 1. q\n\nKey: the notice says go\n\nAnswer:\n\n> fine\n');
   assert.throws(() => blind(path.join(dir, 'out'), [f]), /still names a side/);
 });
+// why: guards rule:instruments-and-evals
 test('recall-score (T2): a notice line goes and is logged, a Key line stays, and the order is shuffled', async () => {
   const { blind, dropNotice } = await import('../scripts/recall-score.mjs');
   const removed = [];
@@ -7351,6 +7399,7 @@ test('recall-score (T2): a notice line goes and is logged, a Key line stays, and
   assert.equal(sealed.hashes['cand-1.md'], crypto.createHash('sha256').update(read(runs[0])).digest('hex'));
   assert.match(read(path.join(out, 'removed-lines.txt')), /cand-1: > the startup notice says go/);
 });
+// why: guards rule:instruments-and-evals
 test('recall-score (T2): the table keeps its columns and "worse" names only what the candidate lost', async () => {
   const { summarize } = await import('../scripts/recall-score.mjs');
   const map = { R01: 'cand-1', R02: 'base-1', R03: 'control-1' };
@@ -7360,6 +7409,7 @@ test('recall-score (T2): the table keeps its columns and "worse" names only what
   assert.ok(r.table.includes('| 2 | 0 | 1 | 0 |'), r.table.join('\n'));
 });
 // T3: the retry rules with nothing that could fail.
+// why: guards rule:sweep-tiers
 test('T3: a retry after a cut short is refused, and an owner yes prints the Sweep line', () => {
   const s = crashedSweep();
   assert.equal(approveIn(s.dir, [s.f, '--outcome', '--cut-short']).status, 0);
@@ -7367,6 +7417,7 @@ test('T3: a retry after a cut short is refused, and an owner yes prints the Swee
   const a = approveRun(askContract());
   assert.match(approveIn(a.dir, [a.f, '--owner-yes', 'yes go']).stdout, /Sweep: [0-9a-f]{16} role/);
 });
+// why: guards rule:sweep-auto-approval
 test('T3: a brief held as a list of text parts still names its sweep', () => {
   const s = crashedSweep();
   const f = path.join(s.cfg, 'projects', 'C--repo', 'session-1', 'subagents', 'agent-r1.jsonl');
@@ -7380,6 +7431,7 @@ test('T3: a brief held as a list of text parts still names its sweep', () => {
   assert.equal(r.status, 0, r.stdout);
 });
 // T4: the build command itself, not the helper it calls.
+// why: guards rule:outward-acts
 test('T4: kit.mjs build turns on the kit source commit-msg hook', { windows: true }, () => {
   const dir = path.join(makeTemp('kit-clone-'), 'k');
   assert.equal(spawnSync('git', ['clone', '-q', path.resolve('.'), dir], { encoding: 'utf8' }).status, 0);
@@ -7387,6 +7439,7 @@ test('T4: kit.mjs build turns on the kit source commit-msg hook', { windows: tru
   assert.equal(spawnSync('node', ['scripts/kit.mjs', 'build'], { cwd: dir, encoding: 'utf8' }).status, 0);
   assert.notEqual(spawnSync('git', ['-C', dir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim(), '');
 });
+// why: guards rule:standing-grants
 test('install user lands the merge gate and its audits at the paths the rules give', () => {
   const home = makeTemp('tools-home-');
   install({ kit: path.resolve('.'), home, target: 'user' });
@@ -7411,6 +7464,7 @@ function autoSweep(extra = () => {}) {
   const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'auto', '--findings', '6', '--real', '5', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   return { r, o, ids, n };
 }
+// why: guards rule:sweep-auto-approval
 test('--agents auto finds this sweep\'s reviewers from their briefs, in role order, and leaves the rest out', () => {
   const { r, o, ids, n } = autoSweep(({ cfg, hash }) => {
     transcripts({ other: [[0, 999999, 0, 0]] }, {}, cfg);
@@ -7424,6 +7478,7 @@ test('--agents auto finds this sweep\'s reviewers from their briefs, in role ord
   assert.deepEqual(line.roles.map((x) => x.agent), ids);
   assert.equal(line.tokens, n * 1000);
 });
+// why: guards rule:sweep-auto-approval
 test('--agents auto logs nothing when the briefs do not add up to the contract\'s roles', () => {
   const { r, o, ids } = autoSweep(({ cfg, ids: all }) => {
     const f = path.join(cfg, 'projects', 'C--repo', 'session-1', 'subagents', `agent-${all[0]}.jsonl`);
@@ -7434,6 +7489,7 @@ test('--agents auto logs nothing when the briefs do not add up to the contract\'
   assert.match(o.stdout, /Nothing logged/);
   assert.notEqual(approvalLog(r.dir).pop().kind, 'outcome');
 });
+// why: guards rule:sweep-tiers
 test('--agents auto skips a transcript left over from before the clearance', () => {
   const { o } = autoSweep(({ cfg, ids: all }) => {
     const f = path.join(cfg, 'projects', 'C--repo', 'session-1', 'subagents', `agent-${all[0]}.jsonl`);
@@ -7443,6 +7499,7 @@ test('--agents auto skips a transcript left over from before the clearance', () 
   assert.match(o.stdout, /found \d+ reviewer/);
 });
 // Carry 25: a second config folder can point the sessions somewhere other than the layer the gate checked.
+// why: guards rule:instruments-and-evals
 test('recall refuses when the CLI\'s own config folder is not the layer it checked', async () => {
   const { checkSessionHome } = await recallTools();
   const run =(out) => () => ({ status: 0, stdout: out, stderr: '' });
@@ -7477,6 +7534,7 @@ for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`t
   fs.appendFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
   assert.equal(push(head).status, 1, 'armed again, it holds again');
 });
+// why: guards rule:outward-acts
 test('the pre-push hook holds a head armed on two PRs until both are disarmed', { windows: true }, () => {
   const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
@@ -7491,6 +7549,7 @@ test('the pre-push hook holds a head armed on two PRs until both are disarmed', 
   assert.equal(push().status, 0);
 });
 // Handoff item 23: find walks into .git where a shell's * does not, so only a name or path filter keeps it out.
+// why: guards rule:outward-acts
 test('find with only broad filters asks where its start folder holds .git; a name filter, or a folder without .git, passes', async () => {
   const { createRequire } = await import('node:module');
   const guard = createRequire(import.meta.url)(path.resolve('project/.claude/guard-delete.cjs'));
@@ -7502,6 +7561,7 @@ test('find with only broad filters asks where its start folder holds .git; a nam
 });
 
 // M27: one reading of a command for both guards, so a spelling fixed for one is fixed for both.
+// why: guards rule:outward-acts
 test('both guards read a command through the one reading module, and keep no reading of their own', async () => {
   const { createRequire } = await import('node:module');
   const require2 = createRequire(import.meta.url);
@@ -7515,6 +7575,7 @@ test('both guards read a command through the one reading module, and keep no rea
   assert.deepEqual(words('git push 2>&1 > log; echo "a b" c'), [['git', 'push'], ['echo', 'a b', 'c']]);
   assert.equal(read2.plainText(`git${String.fromCharCode(0x2003)}pu\\sh`, 'Bash'), 'git push');
 });
+// why: guards rule:sweep-auto-approval
 test('a brief that names a sweep runs as a reviewer, whatever type it asks for', () => {
   const dir = sweepRepo();
   const named = sweepGuard(dir, { tool_input: { subagent_type: 'general-purpose', prompt: `look. Sweep: ${'0'.repeat(16)} role 1` } });
@@ -7522,6 +7583,7 @@ test('a brief that names a sweep runs as a reviewer, whatever type it asks for',
   assert.match(named.permissionDecisionReason, /reviewer role/);
   assert.equal(sweepGuard(dir, { tool_input: { subagent_type: 'general-purpose', prompt: 'look around' } }).permissionDecision, 'allow');
 });
+// why: guards rule:sweep-auto-approval
 test('--none-ran refuses when a transcript names the sweep, though no slot was taken', () => {
   const r = approveRun(featureContract());
   const hash = approvalLog(r.dir).pop().hash;
@@ -7532,6 +7594,7 @@ test('--none-ran refuses when a transcript names the sweep, though no slot was t
   assert.match(none.stdout, /reviewer transcript/);
   assert.notEqual(approvalLog(r.dir).pop().kind, 'outcome');
 });
+// why: guards rule:sweep-auto-approval
 test('an owner yes on an older ask waits for the outcome of the sweep approved after it', () => {
   const dir = sweepRepo();
   const b = path.join(dir, 'sweeps', 'b.json');

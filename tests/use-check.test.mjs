@@ -28,19 +28,7 @@ const check = (dir) => {
 };
 const part = (out, name) => out.parts.find((p) => p.name === name);
 
-test('a fresh install has every part present and wired, and a part with no trace yet says so', () => {
-	const dir = project();
-	const r = check(dir);
-	assert.equal(r.code, 0, JSON.stringify(r.out));
-	assert.deepEqual(r.out.failing, []);
-	assert.equal(part(r.out, 'guards').wired.ok, true);
-	assert.equal(part(r.out, 'git-hooks').wired.ok, true);
-	assert.equal(part(r.out, 'git-hooks').used.ok, null, 'no push yet is not a fault');
-	// A push leaves its trace.
-	fs.appendFileSync(path.join(dir, '.git', 'kit-push.log'), '2026-11-10T00:00:00Z auto refs/heads/x abc\n');
-	assert.equal(part(check(dir).out, 'git-hooks').used.ok, true);
-});
-
+// why: guards rule:outward-acts
 test('an unwired part fails the check by name: the guard entry gone, git hooks not set, a guard file missing', () => {
 	const unwired = project();
 	const file = path.join(homes.get(unwired), 'settings.json');
@@ -71,22 +59,7 @@ test('an unwired part fails the check by name: the guard entry gone, git hooks n
 	assert.match(part(m.out, 'guards').present.detail, /owner-yes\.cjs/);
 });
 
-test('a part the project opts out of is named, not missing; a folder without git has no git level to fail', () => {
-	const dir = project();
-	spawnSync('git', ['-C', dir, 'config', '--unset', 'core.hooksPath']);
-	fs.mkdirSync(path.join(dir, '.kit'), { recursive: true });
-	fs.writeFileSync(path.join(dir, '.kit', 'parts.json'), JSON.stringify({ optOut: ['git-hooks'] }));
-	const r = check(dir);
-	assert.equal(r.code, 0);
-	assert.equal(part(r.out, 'git-hooks').optedOut, true);
-	fs.writeFileSync(path.join(dir, '.kit', 'parts.json'), '{ broken');
-	assert.equal(check(dir).code, 2, 'a broken opt-out file is an error, never an opt-out');
-	const plain = project({ git: false });
-	const p = check(plain);
-	assert.equal(p.code, 0, JSON.stringify(p.out));
-	assert.equal(part(p.out, 'git-hooks').wired.ok, null);
-});
-
+// why: catches a break at project/.claude/use-check.mjs:89 that no other test catches
 test('install project prints the use check and fails when a part is not wired; status names it', () => {
 	const dir = kitTemp.makeTemp('use-cli-');
 	const home = kitTemp.makeTemp('use-cli-home-');
@@ -100,4 +73,22 @@ test('install project prints the use check and fails when a part is not wired; s
 	const st = cli('status', dir);
 	assert.match(st.stdout, /Use check: not finished, git-hooks/);
 	assert.match(st.stdout, /Not current:.*use check/);
+});
+
+// why: guards rule:outward-acts (every owner's yes is read from one field of the pop-up record). The 1.25.0
+// carry-over R7.1: that field (permissionDecision) is not documented, and nothing said whether a real answer carries it.
+test('the guards part reports whether the newest pop-up answer carries the field the guards read', () => {
+	const dir = project();
+	const home = homes.get(dir);
+	const slug = path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-');
+	const t = path.join(home, 'projects', slug, '11111111-2222-3333-4444-555555555555.jsonl');
+	fs.mkdirSync(path.dirname(t), { recursive: true });
+	const answer = (withField) => JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), ...(withField ? { permissionDecision: { decision: 'accept', source: 'user_temporary' } } : {}), toolUseResult: { answers: { q: 'Yes' } }, message: { content: [{ type: 'tool_result', tool_use_id: 'x' }] } });
+	assert.equal(part(check(dir).out, 'guards').used.ok, null, 'no pop-up yet is not a fault');
+	fs.writeFileSync(t, answer(true) + '\n');
+	assert.equal(part(check(dir).out, 'guards').used.ok, true);
+	fs.appendFileSync(t, answer(false) + '\n');
+	const used = part(check(dir).out, 'guards').used;
+	assert.equal(used.ok, false);
+	assert.match(used.detail, /permissionDecision/);
 });

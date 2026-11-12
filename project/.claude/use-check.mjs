@@ -52,7 +52,27 @@ const PARTS = [
 			if (!fs.existsSync(path.join(guardDir(), 'record.json'))) return [false, 'no guard record for this project in the Claude config folder: run kit.mjs install project'];
 			return [true, 'the Claude config folder runs kit-launch.cjs on every tool, against the record of this project'];
 		},
-		used: () => [null, 'no trace yet: the guards keep no log (a later step adds one)'],
+		// Every owner's yes is read from one field of the pop-up's record in the session transcript (permissionDecision),
+		// which Claude Code does not document. The newest answered pop-up for this project says whether it is there (the
+		// 1.25.0 sweep, R7.1); a phone answer shows here after the owner taps one.
+		used: () => {
+			const folder = path.join(HOME, 'projects', path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-'));
+			let files = [];
+			try { files = fs.readdirSync(folder).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(folder, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs); } catch { /* no session yet */ }
+			for (const f of files) {
+				let lines = [];
+				try { lines = fs.readFileSync(f, 'utf8').split('\n'); } catch { continue; }
+				for (let i = lines.length - 1; i >= 0; i--) {
+					let e = null;
+					try { e = JSON.parse(lines[i]); } catch { continue; }
+					if (!e || e.type !== 'user' || !e.toolUseResult || !e.toolUseResult.answers) continue;
+					return e.permissionDecision && e.permissionDecision.decision
+						? [true, 'the newest pop-up answer carries permissionDecision, the field the guards read the owner\'s yes from']
+						: [false, 'the newest pop-up answer has no permissionDecision, so the guards cannot read the owner\'s yes from it: report this to the kit'];
+				}
+			}
+			return [null, 'no pop-up answer in this project\'s sessions yet'];
+		},
 	},
 	{
 		name: 'git-hooks',
