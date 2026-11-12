@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { scope } from '../scripts/pr-scope.mjs';
+import { scope, installLane } from '../scripts/pr-scope.mjs';
 
 kitTemp.sessionRoot();
 const sh = (cwd, ...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8' }).stdout.trim();
@@ -36,4 +36,28 @@ test('a PR runs the reached tests only with a map for its base and no risky chan
 	assert.equal(change(() => fs.writeFileSync(path.join(dir, 'scripts', 'a.mjs'), 'z\n')).scope, 'full', 'a map for another commit');
 	fs.rmSync(path.join(dir, 'tests', '.map.json'));
 	assert.equal(scope(dir, base).scope, 'full', 'no map');
+	assert.equal(scope(dir, 'not-a-ref').scope, 'full', 'a base that is not a commit');
+	// K9, the 1.27.0 sweep: every file the selection rests on, one row each, not three of ten.
+	map(base);
+	for (const f of ['scripts/test-run.mjs', 'scripts/pr-scope.mjs', 'tests/map-trace.cjs', 'package.json', 'package-lock.json', 'kit.config.json', '.gitattributes', 'project/.claude/kit-temp.cjs']) {
+		assert.equal(change(() => { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), 'r\n'); }).scope, 'full', f);
+	}
+});
+
+// why: guards the owner's rule never to lower a gate. K8, the 1.27.0 sweep: the install lane matched a list of paths,
+// so a rename out of them, a name git quotes (non-ASCII) or an input outside the list skipped the install check.
+test('the install check is skipped only when every changed file is one install never reads', () => {
+	const dir = kitTemp.makeTemp('lane-');
+	sh(dir, 'init', '-q', '-b', 'main');
+	for (const f of ['user/a.md', 'tests/a.test.mjs', 'project/x.md']) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), 'x\n'); }
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'base');
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	const lane = (fn) => { sh(dir, 'checkout', '-q', base); sh(dir, 'checkout', '-q', '-B', 'pr'); fn(); sh(dir, 'add', '-A'); sh(dir, 'commit', '-qm', 'c'); return installLane(dir, base); };
+	assert.equal(lane(() => fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), 'y\n')), false, 'a test only');
+	assert.equal(lane(() => fs.renameSync(path.join(dir, 'user', 'a.md'), path.join(dir, 'tests', 'moved.md'))), true, 'a rename out of user/');
+	const name = 'project/' + String.fromCharCode(0xe9) + '.md';
+	assert.equal(lane(() => fs.writeFileSync(path.join(dir, name), 'n\n')), true, 'a non-ASCII name');
+	assert.equal(lane(() => fs.writeFileSync(path.join(dir, 'VERSION'), '1.0.0\n')), true, 'an input outside any list');
+	assert.equal(installLane(dir, 'not-a-ref'), true, 'a base that is not a commit');
 });
