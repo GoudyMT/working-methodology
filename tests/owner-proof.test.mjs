@@ -215,3 +215,30 @@ test('a settings write that turns the hooks off is never by a tool, in any spell
 	// An ordinary settings change still takes the owner's yes, not a flat refusal.
 	assert.match(why('Write', { file_path: local, content: '{"permissions": {}}' }), /Owner's yes needed/);
 });
+
+// why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the
+// workbench's deny rules stopped the edit tools but not a shell write into the kit source or the release copy. A
+// project lists such folders in .claude/protected-folders.json; that list is a settings file, and a bad one fails closed.
+test('folders a project lists are never written by a tool, from the edit tools or a shell', () => {
+	const proj = kitTemp.makeTemp('e3-');
+	const kept = kitTemp.makeTemp('e3-kept-');
+	fs.mkdirSync(path.join(proj, '.claude'));
+	const list = path.join(proj, '.claude', 'protected-folders.json');
+	fs.writeFileSync(list, JSON.stringify({ folders: [kept] }));
+	const why = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const k = kept.split(path.sep).join('/');
+	for (const [tool, input] of [['Write', { file_path: path.join(kept, 'a.md'), content: 'x' }], ['Edit', { file_path: path.join(kept, 'b.md'), old_string: 'a', new_string: 'b' }], ['Bash', { command: `echo x > "${k}/a.md"` }], ['Bash', { command: `rm -rf "${k}/scripts"` }], ['PowerShell', { command: `Set-Content -Path "${kept}\\a.md" -Value x` }]]) {
+		assert.match(why(tool, input), /^Never by a tool: .*protected-folders\.json/, `${tool} ${JSON.stringify(input)}`);
+	}
+	// Reads stay open.
+	assert.equal(why('Bash', { command: `cat "${k}/README.md"` }), '');
+	// The list itself is a settings file: the owner's yes.
+	assert.match(why('Write', { file_path: list, content: '{"folders": []}' }), /Owner's yes needed/);
+	// A list that cannot be read holds every shell call and names the fix.
+	fs.writeFileSync(list, '{ not json');
+	assert.match(why('Bash', { command: 'git status' }), /protected-folders\.json.*cannot be read/);
+});

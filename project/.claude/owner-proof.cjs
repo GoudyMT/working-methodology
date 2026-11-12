@@ -160,7 +160,7 @@ function guardShape(p) {
 // The settings that wire the hooks: a .claude folder's settings.json or settings.local.json.
 function settingsShape(p) {
 	for (let i = 0; i + 1 < p.length; i++) {
-		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json'))) return true;
+		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json') || fits(p[i + 1], 'protected-folders.json'))) return true;
 	}
 	return false;
 }
@@ -395,15 +395,40 @@ function check(input) {
 	try { return answer(input); } finally { homeNow = null; }
 }
 
+// E3 (rule:project-adapter A2): folders the project lists in .claude/protected-folders.json ({ "folders": [...] }) are
+// never written by a tool, by an edit tool or a shell; reads stay open. The list is a settings file (the owner's
+// yes), and one that cannot be read holds every write tool and shell call until the owner fixes it.
+const FOLDERS_REASON = 'Never by a tool: this project lists that folder in .claude/protected-folders.json, so no tool writes there. Read it; a change there is made where that folder is worked on.';
+function listedFolders(cwd) {
+	const env = process.env.CLAUDE_PROJECT_DIR;
+	const fold = (p) => slash(path.resolve(p));
+	const root = env && (fold(cwd) === fold(env) || fold(cwd).startsWith(fold(env) + '/')) ? env : cwd;
+	let raw;
+	try { raw = fs.readFileSync(path.join(root, '.claude', 'protected-folders.json'), 'utf8'); } catch { return []; }
+	if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+	try {
+		const list = JSON.parse(raw).folders;
+		if (Array.isArray(list) && list.every((x) => typeof x === 'string' && x.trim())) return list.map((x) => parts(real(path.resolve(root, x))));
+	} catch { /* below */ }
+	return null;
+}
+const inFolders = (folders) => (word, cwd) => {
+	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
+	return folders.some((f) => f.length > 0 && p.length >= f.length && f.every((x, i) => fits(p[i], x)));
+};
+
 function answer(input) {
 	const t = input.tool_input || {};
 	const cwd = input.cwd || process.cwd();
+	const folders = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name) ? listedFolders(cwd) : [];
+	if (folders === null) return deny('Held: .claude/protected-folders.json cannot be read, so no write tool or shell call runs. The owner fixes it in their own editor.');
 	// The settings take the owner's pop-up yes for this exact act; a subagent never has one.
 	const settings = () => (!input.agent_id && ownerYes(input) ? null : deny(askText(SETTINGS_REASON, input)));
 	if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name)) {
 		const file = t.file_path || t.notebook_path;
 		if (!file) return null;
 		if (insideProof(String(file), cwd)) return deny(REASON);
+		if (folders.length && inFolders(folders)(slash(real(path.resolve(cwd, String(file)))), null)) return deny(FOLDERS_REASON);
 		const p = parts(real(path.resolve(cwd, String(file))));
 		if (guardShape(p)) return deny(GUARD_REASON);
 		if (!settingsShape(p)) return null;
@@ -412,6 +437,7 @@ function answer(input) {
 	}
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name)) {
 		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
+		if (folders.length && shellWrites(t.command, input.tool_name, cwd, inFolders(folders))) return deny(FOLDERS_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) return hooksOff(t.command) ? deny(HOOKS_OFF) : settings();
 	}
