@@ -1123,6 +1123,8 @@ test('R4.2 slow old-shape kit hooks are cut short, and the call is answered well
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify(input), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home }, timeout: 20000 });
 	assert.equal(r.status, 0, r.stderr);
 	assert.ok(Date.now() - t0 < 8000, `the guard took ${Date.now() - t0} ms`);
+	// A hook cut short says so, as a changed one does (C12).
+	assert.match(r.stdout, /canary.cjs ran out of its time/);
 });
 
 // why: catches a silent switch-off (the 1.26.0 carry-over C12): a kit hook the owner kept or merged by hand no longer

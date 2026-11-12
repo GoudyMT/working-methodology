@@ -78,8 +78,10 @@ function answers(input) {
 				// The old-shape hooks share one budget well inside the launcher's 10 s, so a slow one is skipped rather than
 				// timing out the whole guard, which blocks the call (the 1.25.0 sweep, R4.2).
 				const left = USER_BUDGET_MS - (Date.now() - STARTED);
-				if (left < 100) continue;
+				const skipped = { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `Kit: the kit hook ${file} ran out of its time and did not finish; the owner runs install user to bring it up to date.` } };
+				if (left < 100) { out.push([file, skipped]); continue; }
 				const r = require('child_process').spawnSync(process.execPath, ['-e', text], { input: JSON.stringify(input), encoding: 'utf8', timeout: Math.min(2000, left) });
+				if (r.error || r.signal) { out.push([file, skipped]); continue; }
 				out.push([file, r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : null]);
 			}
 		} catch { /* a slip-catcher that fails lets the call through */ }
