@@ -12,7 +12,9 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// The project this script was installed into. Run by a git hook, it is a copy the launcher checked, kept outside the
+// project (C11), and the hook shim names the project in KIT_HOOK_PROJECT.
+const PROJECT = process.env.KIT_HOOK_PROJECT ? path.resolve(process.env.KIT_HOOK_PROJECT) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...a) => spawnSync('git', ['-C', PROJECT, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 // The commit being checked may be in an agent worktree: git runs the hook at that worktree's top, so its index is
 // read there. The settings (.kit/) stay in the main checkout, where this script lives.

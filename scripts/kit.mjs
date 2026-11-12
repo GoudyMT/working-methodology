@@ -269,14 +269,16 @@ function writeShims(home, hooks, proj) {
     'NODE_OPTIONS=; export NODE_OPTIONS', `PATH=${q(launch.shellDir(path.dirname(process.execPath)))}:"$PATH"; export PATH`];
   for (const name of [...GIT_HOOKS, ...OTHER_HOOKS]) {
     const own = `${proj}/.githooks/${name}`;
-    const checkFirst = `${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} </dev/null || exit 1`;
     // Every shim that runs a project hook checks the guard files first (B19): a branch that carries a new hook would
-    // otherwise run it in the same checkout that wrote it. A shim with no project hook to run exits at once.
+    // otherwise run it in the same checkout that wrote it. The launcher then hands back a copy of the hook written from
+    // the bytes it checked, and that copy runs, never the project's file read again (C11). A shim with no project hook
+    // to run exits at once.
+    const checkFirst = `run=$(${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} ${name} </dev/null) || exit 1`;
     const body = GIT_HOOKS.includes(name) ? [
-      checkFirst,
       `[ -f ${q(own)} ] || { echo "Kit: .githooks/${name} is missing; run kit.mjs install project." >&2; exit 1; }`,
+      checkFirst,
     ] : [`[ -x ${q(own)} ] || exit 0`, checkFirst];
-    fs.writeFileSync(path.join(hooks, name), [...head, ...body, `exec ${q(own)} "$@"`, ''].join('\n'));
+    fs.writeFileSync(path.join(hooks, name), [...head, ...body, `KIT_HOOK_PROJECT=${q(proj)}; export KIT_HOOK_PROJECT`, 'exec "$run" "$@"', ''].join('\n'));
     fs.chmodSync(path.join(hooks, name), 0o755);
   }
   // A shim the kit no longer writes (push-to-checkout and proc-receive, dropped in 1.26.0) would still run its project

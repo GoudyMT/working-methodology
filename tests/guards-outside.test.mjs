@@ -1059,6 +1059,21 @@ test('C9 install user: every recorded project gets the current shims, and the la
 	assert.equal(bash(s, 'git status').decision, 'allow');
 });
 
+// why: guards rule:security-standards (the hook that runs is the one the launcher checked). The 1.26.0 carry-over C11:
+// a shim checked the hook's hash, then ran the project's file by its path, so a swap in between ran.
+test('C11 shims: a git hook runs from the copy the launcher checked, never from the project file read again', () => {
+	const { home, proj } = setup();
+	const hooks = path.join(guardDir(home, proj), 'hooks');
+	for (const name of ['pre-commit', 'post-checkout']) assert.doesNotMatch(fs.readFileSync(path.join(hooks, name), 'utf8'), /exec '[^']*\.githooks\//, `${name} runs the project's file`);
+	fs.writeFileSync(path.join(proj, 'a.md'), 'a\n');
+	ok(git(proj, ['add', 'a.md']));
+	ok(git(proj, ['commit', '-q', '-m', 'docs: a']));
+	const runs = path.join(guardDir(home, proj), 'run');
+	const copies = fs.readdirSync(runs);
+	assert.equal(copies.length, 1, 'the checked copy was not written');
+	assert.equal(fs.readFileSync(path.join(runs, copies[0], '.githooks', 'pre-commit'), 'utf8'), fs.readFileSync(path.join(proj, '.githooks', 'pre-commit'), 'utf8'));
+});
+
 // why: catches a silent switch-off (the 1.26.0 carry-over C12): a kit hook the owner kept or merged by hand no longer
 // matches its recorded bytes, so the one guard process skips it; the session must hear that, not lose it in silence.
 test('C12 kit hooks: a changed kit hook that is skipped says so', () => {

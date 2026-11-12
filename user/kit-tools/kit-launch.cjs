@@ -146,6 +146,7 @@ function hooksPathNow(dir) {
 function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'hooks')) {
 	const changed = [];
 	const files = new Map();
+	const byKey = new Map();
 	// Each guard file is read at its real place, and only when that is where the project says it is: through a junction
 	// or link, require would load it again from the link's target, which can change between the two (the second pass on
 	// 0772397). The loader is keyed by that real place, found the way require finds it (fs.realpathSync).
@@ -161,7 +162,7 @@ function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'h
 		// A host's own file passes at any version the owner accepted (B15); only the host's, never a kit file.
 		const ok = bytes && (sha(bytes) === want || ((rec.host || []).includes(key) && ((rec.accepted || {})[key] || []).includes(sha(bytes))));
 		if (!ok) changed.push(key);
-		else files.set(WIN ? at.toLowerCase() : at, bytes.toString('utf8'));
+		else { files.set(WIN ? at.toLowerCase() : at, bytes.toString('utf8')); byKey.set(key, bytes); }
 	}
 	// A hook in .githooks that no record holds would run through the shims with no check (the second pass on 0772397).
 	let hookNames = [];
@@ -192,7 +193,7 @@ function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'h
 		const now = hooksPathNow(dir);
 		if (now !== null && now !== normPath(rec.hooksPath)) hooksPath = now || 'unset';
 	}
-	return { changed, settings, hooksPath, files, real: real || path.resolve(dir) };
+	return { changed, settings, hooksPath, files, byKey, real: real || path.resolve(dir) };
 }
 
 const fixLine = (rec, dir) => `"${posix(installedNode() || 'node')}" "${posix(rec.kitDir || '<kit folder>')}/scripts/kit.mjs" install project "${posix(dir)}"`;
@@ -433,20 +434,54 @@ function configChange(input) {
 	return { decision: 'block', reason: msg, systemMessage: msg };
 }
 
-function gitHook(dir) {
+/**
+ * The git hook check a shim runs. With a hook name, the guard files it checked are written, from the very bytes it
+ * hashed, to a folder beside the record, and the copy of the hook is what the shim runs: a file swapped in the project
+ * between the check and the run is never the one that runs (the 1.26.0 sweep, C11). The hooks find their helpers
+ * beside them ($(dirname "$0")/../.claude), so the helpers run from the checked copies too.
+ *
+ * Returns:
+ *     { why } when held, or { run } the path of the checked copy of the hook ('' with no hook name)
+ */
+function gitHook(dir, name = '') {
 	const rec = readRecord(dir);
-	if (!rec) return `Kit: no guard record for ${posix(dir)} in ${posix(RECORDS)}. Run kit.mjs install project.`;
+	if (!rec) return { why: `Kit: no guard record for ${posix(dir)} in ${posix(RECORDS)}. Run kit.mjs install project.` };
 	const v = verify(path.resolve(rec.projectDir || dir), rec);
-	if (!v.changed.length && !v.hooksPath && !v.settings.length) return '';
-	return `Kit: git hook held. ${describe(v, rec, path.resolve(rec.projectDir || dir))}`;
+	if (v.changed.length || v.hooksPath || v.settings.length) return { why: `Kit: git hook held. ${describe(v, rec, path.resolve(rec.projectDir || dir))}` };
+	if (!name) return { run: '' };
+	const key = `.githooks/${name}`;
+	if (!/^[A-Za-z0-9._-]+$/.test(name) || !v.byKey.has(key)) return { why: `Kit: .githooks/${name} is not in the install record; run kit.mjs install project.` };
+	const all = [...v.byKey.keys()].sort();
+	const id = sha(all.map((k) => `${k}\0${sha(v.byKey.get(k))}`).join('\n')).slice(0, 16);
+	const runs = path.join(recordDir(dir), 'run');
+	const at = path.join(runs, id);
+	if (!fs.existsSync(at)) {
+		const tmp = `${at}.${process.pid}`;
+		for (const k of all) {
+			const f = path.join(tmp, ...k.split('/'));
+			fs.mkdirSync(path.dirname(f), { recursive: true });
+			fs.writeFileSync(f, v.byKey.get(k));
+			if (k.startsWith('.githooks/')) fs.chmodSync(f, 0o755);
+		}
+		try { fs.renameSync(tmp, at); } catch { fs.rmSync(tmp, { recursive: true, force: true }); }
+	}
+	// Copies from an earlier install go once they are an hour old (a hook still running from one keeps its files).
+	try {
+		for (const e of fs.readdirSync(runs)) {
+			const p = path.join(runs, e);
+			if (e !== id && Date.now() - fs.statSync(p).mtimeMs > 3600000) fs.rmSync(p, { recursive: true, force: true });
+		}
+	} catch { /* nothing to tidy */ }
+	return { run: posix(path.join(at, '.githooks', name)) };
 }
 
 if (require.main === module) {
 	const mode = process.argv[2] || '';
 	if (mode === 'git-hook') {
-		let why = '';
-		try { why = gitHook(process.argv[3] || process.cwd()); } catch (e) { why = `Kit: the guard check could not run (${String(e && e.message).slice(0, 160)}).`; }
-		if (why) { process.stderr.write(why + '\n'); process.exit(1); }
+		let r = {};
+		try { r = gitHook(process.argv[3] || process.cwd(), process.argv[4] || ''); } catch (e) { r = { why: `Kit: the guard check could not run (${String(e && e.message).slice(0, 160)}).` }; }
+		if (r.why) { process.stderr.write(r.why + '\n'); process.exit(1); }
+		if (r.run) process.stdout.write(r.run);
 		process.exit(0);
 	}
 	let input = null;
