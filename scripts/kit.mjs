@@ -274,10 +274,12 @@ function writeShims(home, hooks, proj) {
     // the bytes it checked, and that copy runs, never the project's file read again (C11). A shim with no project hook
     // to run exits at once.
     const checkFirst = `run=$(${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} ${name} </dev/null) || exit 1`;
+    // A launcher from before C11 (1.26.0) checks and prints no copy: the shim names the fix, never runs exec "" (K4).
+    const older = `[ -n "$run" ] || { echo "Kit: the kit in the Claude folder is older than this project's; run kit.mjs install user from the release copy, then try again." >&2; exit 1; }`;
     const body = GIT_HOOKS.includes(name) ? [
       `[ -f ${q(own)} ] || { echo "Kit: .githooks/${name} is missing; run kit.mjs install project." >&2; exit 1; }`,
-      checkFirst,
-    ] : [`[ -x ${q(own)} ] || exit 0`, checkFirst];
+      checkFirst, older,
+    ] : [`[ -x ${q(own)} ] || exit 0`, checkFirst, older];
     fs.writeFileSync(path.join(hooks, name), [...head, ...body, `KIT_HOOK_PROJECT=${q(proj)}; export KIT_HOOK_PROJECT`, 'exec "$run" "$@"', ''].join('\n'));
     fs.chmodSync(path.join(hooks, name), 0o755);
   }

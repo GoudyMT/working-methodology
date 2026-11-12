@@ -1178,7 +1178,7 @@ test('install user leaves the shims of a project still on an older kit, and says
 	const before = shim('pre-commit');
 	// A 1.26.0 first-push-check finds its project from its own folder only.
 	const fpc = path.join(proj, '.claude', 'first-push-check.mjs');
-	fs.writeFileSync(fpc, fs.readFileSync(fpc, 'utf8').replace(/process\.env\.KIT_HOOK_PROJECT \? path\.resolve\(process\.env\.KIT_HOOK_PROJECT\) : /, '').split('\n').filter((l) => !/^\/\/.*KIT_HOOK_PROJECT/.test(l)).join('\n'));
+	fs.writeFileSync(fpc, "// The 1.26.0 first push gate: its project is the folder above its own.\nconsole.log('first push check: old');\n");
 	assert.doesNotMatch(fs.readFileSync(fpc, 'utf8'), /KIT_HOOK_PROJECT/, 'the old script was not made');
 	fs.writeFileSync(path.join(hooks, 'pre-commit'), before + '# old\n');
 	rec.shims['pre-commit'] = crypto.createHash('sha256').update(before + '# old\n').digest('hex');
@@ -1287,4 +1287,18 @@ test('B14 moved node: the kit gate names the missing recorded node and the comma
 	assert.equal(out.decision, 'block', 'a moved node blocked every call and the gate said nothing');
 	assert.match(out.reason, /gone\/node\.exe/);
 	assert.match(out.reason, /install user/);
+});
+
+// why: catches a project that cannot commit with no fix named (K4, the 1.27.0 sweep): install project over an older
+// user layer wrote shims that ask the launcher for a checked copy the old launcher does not give, so git ran exec "".
+test('K4 shims: an older launcher that gives no checked hook names the fix instead of running nothing', () => {
+	const { home, proj } = setup();
+	// The 1.26.0 launcher checks and exits 0, printing no copy.
+	fs.writeFileSync(path.join(home, 'kit-tools', 'kit-launch.cjs'), "'use strict';\nprocess.exit(0);\n");
+	fs.writeFileSync(path.join(proj, 'k.md'), 'k\n');
+	ok(git(proj, ['add', 'k.md']));
+	const r = git(proj, ['commit', '-q', '-m', 'docs: k']);
+	assert.notEqual(r.status, 0, 'the commit went through with no hook run');
+	assert.match(r.stderr, /install user/);
+	assert.doesNotMatch(r.stderr, /exec: : not found|cannot execute|Permission denied/);
 });
