@@ -101,3 +101,21 @@ test('install project prints the use check and fails when a part is not wired; s
 	assert.match(st.stdout, /Use check: not finished, git-hooks/);
 	assert.match(st.stdout, /Not current:.*use check/);
 });
+
+// why: guards rule:outward-acts (every owner's yes is read from one field of the pop-up record). The 1.25.0
+// carry-over R7.1: that field (permissionDecision) is not documented, and nothing said whether a real answer carries it.
+test('the guards part reports whether the newest pop-up answer carries the field the guards read', () => {
+	const dir = project();
+	const home = homes.get(dir);
+	const slug = path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-');
+	const t = path.join(home, 'projects', slug, '11111111-2222-3333-4444-555555555555.jsonl');
+	fs.mkdirSync(path.dirname(t), { recursive: true });
+	const answer = (withField) => JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), ...(withField ? { permissionDecision: { decision: 'accept', source: 'user_temporary' } } : {}), toolUseResult: { answers: { q: 'Yes' } }, message: { content: [{ type: 'tool_result', tool_use_id: 'x' }] } });
+	assert.equal(part(check(dir).out, 'guards').used.ok, null, 'no pop-up yet is not a fault');
+	fs.writeFileSync(t, answer(true) + '\n');
+	assert.equal(part(check(dir).out, 'guards').used.ok, true);
+	fs.appendFileSync(t, answer(false) + '\n');
+	const used = part(check(dir).out, 'guards').used;
+	assert.equal(used.ok, false);
+	assert.match(used.detail, /permissionDecision/);
+});
