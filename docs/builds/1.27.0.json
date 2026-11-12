@@ -3,7 +3,7 @@
  "date": "2026-11-12",
  "level": "minor",
  "area": "Tests and CI",
- "title": "feat: every test says why it is kept; a PR runs only what it reaches",
+ "title": "feat: tests say why they are kept; a PR runs only what it reaches",
  "headline": "Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first, three of them security holes; C17 moves to build 3 after its recall run fell under the bar.",
  "items": [
   {
