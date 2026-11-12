@@ -1777,7 +1777,9 @@ export function scratch({ root, home, cmd, thread, label, path: target, reason, 
 function toBin(p, root) {
   if (process.platform === 'win32') {
     const ps = "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($env:KIT_BIN_PATH, 'OnlyErrorDialogs', 'SendToRecycleBin')";
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', env: { ...process.env, KIT_BIN_PATH: p } });
+    // By its full path: a bare name is looked for in the current folder first on Windows (the 1.28.0 sweep).
+    const shell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const r = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', env: { ...process.env, KIT_BIN_PATH: p } });
     if (r.status !== 0) throw new Error(`scratch: could not move ${p} to the Recycle Bin`);
     return;
   }

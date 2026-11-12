@@ -7796,3 +7796,17 @@ test('scratch: closeout removes a thread\'s own probe folders and guard records,
   const after = JSON.parse(read(ledger)).entries.map((e) => e.path);
   assert.ok(!after.includes(a) && after.includes(b) && after.includes(c), 'the ledger lost the wrong entry');
 });
+
+// why: guards rule:security-standards. The 1.28.0 sweep: on Windows a program started by bare name is looked for in
+// the current folder first, so a powershell.exe planted where closeout runs would have run in place of the real one.
+test('scratch clean starts the system PowerShell, never one in the current folder', { skip: process.platform !== 'win32' }, () => {
+  const here = makeTemp('plant-');
+  fs.copyFileSync(process.execPath, path.join(here, 'powershell.exe'));
+  const root = makeTemp('probes-');
+  const home = makeTemp('home-');
+  const p = kitScratch({ root, home, cmd: 'new', thread: 'feat/x', label: 'repro' }).path;
+  const url = pathToFileURL(path.resolve('scripts/kit.mjs')).href;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', `import { scratch } from ${JSON.stringify(url)}; scratch({ root: ${JSON.stringify(root)}, home: ${JSON.stringify(home)}, cmd: 'clean', thread: 'feat/x' });`], { cwd: here, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(p), 'the probe folder was not moved to the Recycle Bin');
+});
