@@ -7658,3 +7658,108 @@ test('the first push check reads only the repository it runs in, whatever KIT_HO
   const w = check(path.join(root, 'wt'), app);
   assert.doesNotMatch(w.stdout + w.stderr, /names another repository/);
 });
+// why: guards rule:kit-standards (a project hears of newer kit rules at session start). K11, the 1.27.0 cut took the
+// only test of the session-start update line.
+test('session start says when the kit has newer rules, and how many', () => {
+  const { kit, home, proj } = caseKit();
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /newer/);
+  bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
+  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\)[\s\S]*\(1\.0\.0\)[\s\S]*\/methodology-kit update/);
+});
+
+// why: guards rule:failure-response (kit status is what the owner reads to trust an install; the --merged record is
+// the way out of a hand merge). K11, the 1.27.0 cut took it.
+test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  let r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true);
+  assert.match(r.text, /Kit folder: 1\.0\.0/);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, current/);
+  assert.match(r.text, /This project: 1\.0\.0, current/);
+  assert.match(r.text, /^Current: /m);
+
+  // A newer kit release: both installs are behind, and each says what to run.
+  bump({ kit, level: 'patch', note: 'one', date: '2026-02-01' });
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newer\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, behind kit 1\.0\.1/);
+  assert.match(r.text, /This project: 1\.0\.0, behind kit 1\.0\.1; 1 file\(s\) waiting/);
+  assert.match(r.text, /Run \/methodology-kit update\./);
+  assert.match(r.text, /kit\.mjs install user\./);
+  assert.match(r.text, /^Not current: /m);
+
+  // Same version, a file carrying this project's own values on top of the current kit copy (a filled adapter row, a
+  // tracking file): that is normal use, not a stale install, so status stays current and names it (the owner,
+  // 2026-10-31: "current" must be reachable without wiping a project's records).
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, edited here\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true, r.text);
+  assert.match(r.text, /1 file\(s\) carry[\s\S]*own values[\s\S]*_Working Standards\.md/);
+
+  // Changed here AND in the kit: a hand merge is owed, so status is not current until the merge is recorded.
+  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newest\n');
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /1 file\(s\) changed here and in the kit[\s\S]*_Working Standards\.md[\s\S]*by hand/);
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
+  const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
+  assert.deepEqual(m.merged, ['_Working Standards.md']);
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true, r.text);
+  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, newest, edited here\n');
+
+  // GitHub ahead of the kit folder.
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 2, newest: () => 'v1.0.3' });
+  assert.equal(r.current, false);
+  assert.match(r.text, /GitHub has 2 newer kit commit[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
+  assert.doesNotMatch(r.text, /git pull/);
+});
+
+// why: guards rule:kit-standards (an install never removes what it should not, and a dry run removes nothing). K11,
+// the 1.27.0 cut took the only dry-run install test.
+test('the branch-only clean-up runs only over an unreleased install, never removes the overlay, and a dry run removes nothing', () => {
+  // A release or pre-check install over which the kit stopped shipping a file (not retired): the file stays.
+  for (const tagged of [true, false]) {
+    const { kit, home } = makeKit();
+    fs.writeFileSync(path.join(kit, 'user/agents/dropped.md'), 'shipped once\n');
+    const before = tagged ? released(kit, 'v1.0.0') : undefined;
+    install({ kit, home, target: 'user', release: before });
+    fs.rmSync(path.join(kit, 'user/agents/dropped.md'));
+    const r = install({ kit, home, target: 'user', release: released(kit, 'v1.0.1') });
+    assert.deepEqual(r.retired, [], JSON.stringify(before));
+    assert.ok(fs.existsSync(path.join(home, 'agents/dropped.md')));
+  }
+  // The overlay CLAUDE.local.md is written by install itself, not from a kit path, so it is never branch-only.
+  const { kit, home, proj } = overlayKit();
+  install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const back = install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: released(kit, 'v1.0.0') });
+  assert.ok(!back.retired.includes('CLAUDE.local.md'));
+  assert.ok(fs.existsSync(path.join(proj, 'CLAUDE.local.md')));
+  // A dry run previews the clean-up: the file and the record stay as they are.
+  const d = makeKit();
+  fs.writeFileSync(path.join(d.kit, 'user/agents/branch-only.md'), 'branch build\n');
+  install({ kit: d.kit, home: d.home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  fs.rmSync(path.join(d.kit, 'user/agents/branch-only.md'));
+  const stampBefore = read(path.join(d.home, 'kit-install.json'));
+  const dry = install({ kit: d.kit, home: d.home, target: 'user', dryRun: true, release: released(d.kit, 'v1.0.0') });
+  assert.deepEqual(dry.retired, ['agents/branch-only.md'], 'the preview names it');
+  assert.ok(fs.existsSync(path.join(d.home, 'agents/branch-only.md')));
+  assert.equal(read(path.join(d.home, 'kit-install.json')), stampBefore);
+});
+
+// why: guards rule:failure-response (status names which Claude folder it read, the first question when a kit looks
+// stale). K11, the 1.27.0 cut took it.
+test('status names the Claude config folder it read', () => {
+  const { kit, home, proj } = makeKit();
+  assert.ok(status({ kit, home, projectDir: proj, ahead: () => 0 }).text.includes(`Claude config folder: ${home.split(path.sep).join('/')}`));
+});
