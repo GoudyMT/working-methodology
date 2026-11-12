@@ -91,3 +91,10 @@ test('the gate passes when it cannot read the transcript, and the shipped settin
 	const { routes } = require(path.resolve('project/.claude/guard.cjs'));
 	for (const tool of ['Bash', 'PowerShell', 'Agent', 'Task']) assert.ok(routes(tool).includes('task-gate.cjs'), tool);
 });
+
+// why: catches an over-hold (the 1.25.0 carry-over R3.6): echo git commit prints words and makes no commit, yet the
+// gate held it until the release rules were read; the commit itself still waits.
+test('a command that only prints git commit does not wait; the commit itself does', () => {
+	for (const command of ['echo git commit', 'printf "%s" git commit', 'Write-Output git commit']) assert.equal(gate([], 'Bash', { command }).decision, 'pass', command);
+	assert.equal(gate([], 'Bash', { command: 'echo x; git commit -m x' }).decision, 'deny');
+});
