@@ -7,6 +7,7 @@
 // match for a command built at run time (a variable holding "push", $'..' escapes,
 // Invoke-Expression on joined strings).
 const fs = require('node:fs');
+const path = require('node:path');
 
 const BACKSLASH = String.fromCharCode(92);
 const BACKTICK = String.fromCharCode(96);
@@ -453,6 +454,21 @@ function hookFreeMainWrite(text) {
 	return main.test(flat) && /\/git\/refs\b/.test(flat);
 }
 
+// A push to main, master, or to wherever a bare push goes, run outside this project's work tree (git -C, --work-tree, a
+// cd first, or a shell whose folder is outside the project) runs none of this project's hooks, so the pre-push hook's
+// refusal of an existing main never happens (the review on 09f88b1). A feature-branch push there still asks.
+function pushOutsideProject(text, input) {
+	if (!/\bgit(\.exe)?\b[^\n]*\bpush\b/i.test(text)) return false;
+	const root = process.env.CLAUDE_PROJECT_DIR;
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+	const outside = Boolean(root && cwd) && fold(cwd) !== fold(path.resolve(root)) && !fold(cwd).startsWith(fold(path.resolve(root)) + path.sep);
+	const elsewhere = outside || /\bgit(\.exe)?(\s[^;&|\n]*)?\s(-C|--work-tree)(\s|=|$)/.test(text) || /(^|[;&|({]\s*)(cd|pushd|popd|chdir|set-location|sl|push-location)(\s|;|$)/i.test(text);
+	if (!elsewhere) return false;
+	const flat = text.toLowerCase();
+	return /\bpush\b[^;&|\n]*\b(main|master|head)\b/.test(flat) || /\bpush((\s+-\S+)*)\s*($|[;&|\n])/.test(flat);
+}
+
 function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
@@ -475,7 +491,7 @@ function check(input) {
 		collectStrings(input.tool_input, all, 0);
 		const bypass = bypassIn(all.join(LF));
 		if (bypass) reason = bypass;
-		else if (reason && hookFreeMainWrite(all.join(LF))) reason = 'a write to main that runs no pre-push hook';
+		else if (reason && (hookFreeMainWrite(all.join(LF)) || pushOutsideProject(all.join(LF), input))) reason = 'a write to main that runs no pre-push hook';
 		// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
 		const command = String((input.tool_input && input.tool_input.command) ?? '');
 		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
