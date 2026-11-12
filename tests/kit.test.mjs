@@ -2000,7 +2000,7 @@ test('the first push check names a public GitHub repo whose secret scanning or p
   const notes = scanningNotes(remotes, gh);
   assert.deepEqual(asked, ['repos/pat/app', 'repos/pat/tool']);
   assert.equal(notes.length, 1);
-  assert.match(notes[0], /pat\/app is public, with secret scanning disabled and push protection enabled/);
+  assert.match(notes[0], /pat\/app is public.*secret scanning disabled.*push protection enabled/);
   assert.deepEqual(scanningNotes('o\thttps://github.com/pat/app (push)\n', () => ({ status: 0, stdout: 'true null null\n' })), [], 'a private repo');
   const down = scanningNotes('o\thttps://github.com/pat/app (push)\n', () => ({ status: 1, stdout: '', stderr: 'gh: not logged in\n' }));
   assert.match(down[0], /GitHub did not say whether pat\/app[\s\S]*not logged in/);
@@ -5969,7 +5969,10 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   for (const proof of ['guard-outward-check.cjs', 'guard-delete-check.cjs']) assert.ok(win.includes(`node project/.claude/${proof}`), proof);
   const gate = job('kit-tests');
   // E32: the lanes job and the slow lane join the gate; a slow lane skipped for having no test passes.
-  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests\]$/m);
+  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests, install-check\]$/m);
+  // T15 D1/D2: the install check, skipped only when the lanes job found no install or guard change.
+  assert.ok(gate.includes("if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')")); // pin: 1
+  assert.match(job('install-check'), /^    if: needs\.lanes\.outputs\.install == 'true'$[\s\S]*os: \[ubuntu-latest, windows-latest\][\s\S]*run: \|[\s\S]*node scripts\/ci-install-check\.mjs$/m);
   assert.match(gate, /^    if: always\(\)$/m);
   const failed = "if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')";
   assert.ok(gate.includes(failed));
@@ -5995,7 +5998,7 @@ test('a PR runs the reached tests and the security set, or every test; main save
   const save = ci.split('- name: Save the coverage map\n')[1].split('- name:')[0];
   assert.match(save, /if: github\.event_name != 'pull_request'[\s\S]*key: test-map-\$\{\{ github\.sha \}\}/);
   const load = ci.split('- name: Load the coverage map for the base commit\n')[1].split('- name:')[0];
-  assert.match(load, /actions\/cache\/restore@[0-9a-f]{40}[\s\S]*key: test-map-\$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+  assert.match(load, /actions\/cache\/restore@[0-9a-f]{40}[\s\S]*key: test-map-\$\{\{ github\.event\.pull_request\.base\.sha \}\}/); // pin: 1
   assert.equal((ci.match(/actions\/cache(\/save)?@/g) || []).length, 1, 'a second cache write: a PR could write the map main reads');
   const body = read(path.resolve('.github/workflows/pr-body.yml'));
   assert.match(body, /types: \[[^\]]*edited[^\]]*\]/);

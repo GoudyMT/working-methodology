@@ -173,15 +173,68 @@ jobs:
     timeout-minutes: 5
     outputs:
       slow: ${{ steps.find.outputs.slow }}
+      install: ${{ steps.install.outputs.install }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - id: find
         shell: bash
         run: |
           if [ -n "$(find tests/slow -type f -name '*.test.mjs' 2>/dev/null | head -n 1)" ]; then echo "slow=true" >> "$GITHUB_OUTPUT"; else echo "slow=false" >> "$GITHUB_OUTPUT"; fi
+
+      # T15 D1 and D2 run on every push to main, and on a PR only when it touches install or the guards (the owner's
+      # pick 2026-11-12: no added time on the rest). A diff that cannot be read runs them.
+      - id: install
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then echo "install=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! changed="$(git diff --name-only "$BASE_SHA...HEAD")"; then echo "install=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if printf '%s\n' "$changed" | grep -qE '^(scripts/kit\.mjs|scripts/ci-install-check\.mjs|user/|project/\.claude/|project/\.githooks/|\.github/)'; then echo "install=true" >> "$GITHUB_OUTPUT"; else echo "install=false" >> "$GITHUB_OUTPUT"; fi
+
+  # T15 D1 and D2: install, upgrade and the guards, on both systems the kit runs on.
+  install-check:
+    needs: [lanes]
+    if: needs.lanes.outputs.install == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # The hooks the launcher runs are sh scripts; Git for Windows ships sh in its bin folder.
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install check
+        shell: bash
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+          node scripts/ci-install-check.mjs
 
   slow-tests:
     needs: [lanes]
@@ -216,13 +269,18 @@ jobs:
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
   # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
   kit-tests:
-    needs: [unit-tests, windows-tests, lanes, slow-tests]
+    needs: [unit-tests, windows-tests, lanes, slow-tests, install-check]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Every test job passed
         if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')
+        run: exit 1
+
+      # Skipped only when the lanes job found no install or guard change; one that ran must pass.
+      - name: The install check passed or was not owed
+        if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')
         run: exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

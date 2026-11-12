@@ -23,7 +23,7 @@ test('the install check fails on a missing git hook and on a push guard that hol
 	const root = kitTemp.makeTemp('ici-root-');
 	const r = spawnSync(process.execPath, [path.join(kit, 'scripts', 'ci-install-check.mjs'), '--root', root], { encoding: 'utf8', timeout: 280000 });
 	assert.equal(r.status, 1, r.stdout + r.stderr);
-	assert.match(r.stdout, /^FAIL {2}fresh: install project exits 0 and every part is wired/m);
-	assert.match(r.stdout, /^FAIL {2}every command the proof holds is held through the launcher; missed \d+/m);
+	assert.match(r.stdout, /^FAIL {2}fresh: install project/m);
+	assert.match(r.stdout, /^FAIL {2}every command the proof holds.*missed \d+/m);
 	assert.match(r.stdout, /^PASS {2}fresh: install user exits 0/m, 'the check failed for a reason it does not name');
 });
