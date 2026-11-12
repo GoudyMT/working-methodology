@@ -11,16 +11,16 @@ refs=$(cat)
 # sweep, C5 and V4). A remote that answers with no symref line (a HEAD that names a commit, a dumb server) was read as
 # having no default branch, so a push to it went out (K29): with branches there and nothing naming one, it prints ?.
 remote_default() {
-  d=""
   if out=$(git ls-remote --symref "$2" HEAD 2>/dev/null); then
     d=$(printf '%s\n' "$out" | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p' | head -n 1)
-  fi
-  if [ -z "$d" ]; then
+    # The remote answered and named none: the local origin/HEAD is not asked, since a tool can move it with any
+    # write to .git (the review of this fix). A new repo has no branch, so no default yet: its first push is judged
+    # below, as before.
+    if [ -z "$d" ] && [ -n "$(git ls-remote --heads "$2" 2>/dev/null)" ]; then d="?"; fi
+  else
     d=$(git symbolic-ref --short "refs/remotes/$1/HEAD" 2>/dev/null)
     d=${d#"$1"/}
   fi
-  # A new repo has no branch, so it has no default branch yet: its first push is judged below, as before.
-  if [ -z "$d" ] && [ -n "$(git ls-remote --heads "$2" 2>/dev/null)" ]; then d="?"; fi
   printf '%s\n' "$d"
 }
 if [ -n "$AI_AGENT$CLAUDECODE" ]; then

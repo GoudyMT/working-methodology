@@ -315,9 +315,9 @@ test('K29 pre-push: a remote that names no default branch is not read as having 
 	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: c']));
 	const r = aiPush(proj, 'feat/base');
 	assert.notEqual(r.status, 0, 'a push to the default branch went out when the remote named none');
-	assert.match(r.stderr, /default branch/);
-	// Neither the remote nor this repo names one: the push is held, not read as safe.
-	ok(git(proj, ['remote', 'set-head', 'origin', '-d']));
+	assert.match(r.stderr, /names no default branch/);
+	// The local origin/HEAD is any tool's to move, so it never stands in for the remote's answer.
+	ok(git(proj, ['remote', 'set-head', 'origin', 'main']));
 	ok(git(proj, ['checkout', '-q', '-b', 'feat/other']));
 	const u = aiPush(proj, 'feat/other');
 	assert.notEqual(u.status, 0, 'a push went out to a remote whose default branch nothing names');
