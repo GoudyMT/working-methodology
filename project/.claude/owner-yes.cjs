@@ -47,6 +47,19 @@ function actText(input) {
 	return '';
 }
 
+// A transcript's lines, read from its end: a yes counts only while fresh, so only the recent part can hold one, and a
+// transcript past V8's string limit could otherwise never be read at all (the 1.25.0 sweep, R7.3). The first line of
+// a cut read is a partial one and is dropped.
+const TAIL_BYTES = 64 * 1024 * 1024;
+function tailLines(file, cap = TAIL_BYTES) {
+	const size = fs.statSync(file).size;
+	if (size <= cap) return fs.readFileSync(file, 'utf8').split('\n');
+	const buf = Buffer.alloc(cap);
+	const fd = fs.openSync(file, 'r');
+	try { fs.readSync(fd, buf, 0, cap, size - cap); } finally { fs.closeSync(fd); }
+	return buf.toString('utf8').split('\n').slice(1);
+}
+
 // The code spans of a question: the acts it quotes, each read whole.
 const spans = (question) => [...String(question).matchAll(/`([^`]+)`/g)].map((m) => squash(m[1]));
 
@@ -94,7 +107,7 @@ function ownerYes(input, now = Date.now()) {
 	const act = actText(input);
 	if (!act || !ownTranscript(input)) return null;
 	let lines;
-	try { lines = fs.readFileSync(String(input.transcript_path), 'utf8').split('\n'); } catch { return null; }
+	try { lines = tailLines(String(input.transcript_path)); } catch { return null; }
 	const yes = yeses(lines).filter((y) => y.acts.includes(act)).pop();
 	if (!yes || now - yes.at < 0 || now - yes.at > FRESH_MS) return null;
 	// The yes is for the shell the held call ran in: Bash and PowerShell read the same text differently (the 1.25.0
@@ -209,7 +222,7 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && kinds.includes(p[2])).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
 	for (const d of dirs) {
 		let lines;
-		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
+		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
 		for (const y of yeses(lines)) {
 			if (now - y.at < 0 || now - y.at > FRESH_MS || used.some((t) => !Number.isFinite(t) || t >= y.at)) continue;
 			for (const a of y.acts) if (grantsRef(a, ref, kind)) return true;
@@ -233,7 +246,7 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 	let best = null;
 	for (const d of dirs) {
 		let lines;
-		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
+		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
 		for (const y of yeses(lines)) if (y.at > since && y.acts.includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at, tap: `${sessionId}:${y.id}` };
 	}
 	return best;
@@ -241,4 +254,4 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, FRESH_MS };
+module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, tailLines, FRESH_MS };

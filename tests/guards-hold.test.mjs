@@ -446,6 +446,18 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin v1', 'refs/tags/v1'), true, 'git itself resolves a short name');
 });
 
+// why: catches a yes that can never be read (the 1.25.0 carry-over R7.3): a transcript past V8's string limit threw on
+// a whole read, so no yes in it was ever found. Only its recent end is read; the cap is made small here.
+test('a transcript is read from its end, so the newest yes is found in one too long to read whole', async () => {
+	const { tailLines } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));
+	const file = path.join(kitTemp.makeTemp('tail-'), 't.jsonl');
+	fs.writeFileSync(file, `${'{"old":1}\n'.repeat(500)}{"newest":1}\n`);
+	const lines = tailLines(file, 200);
+	assert.ok(lines.includes('{"newest":1}'), 'the newest line was lost');
+	assert.ok(lines.every((l) => l === '' || l === '{"newest":1}' || l === '{"old":1}'), `a partial line was kept: ${lines.find((l) => !/^(|\{"(old|newest)":1\})$/.test(l))}`);
+	assert.ok(lines.length < 30, 'the whole file was read');
+});
+
 // why: guards rule:security-standards (no secret leaves in a push). The 1.25.0 carry-over R2.10: the scan read each
 // pushed commit's lines and file names, never its message or a tag's message, which go out with it.
 test('the secret scan reads the message of every pushed commit and tag, in the push and in CI', () => {
