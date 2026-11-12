@@ -1,13 +1,14 @@
-# The kit's merge gate: the unit tests, the scrub, a fresh build and (on a PR) the PR-body audit.
-# The suite on Linux; the Windows-only tests and the guard proofs on Windows (E31).
+# The kit's merge gate: the tests a change reaches, the scrub and a fresh build. The PR body has its own workflow
+# (pr-body.yml), so a body edit reruns only that. The suite on Linux; the Windows-only tests and the guard proofs on
+# Windows (E31). T15 (the owner's pick 2026-11-12, "Only what it touches"): a PR runs the tests its change reaches and
+# the security set; every push to main runs the whole suite and saves the coverage map the next PR selects by.
 # Actions are pinned to full commit SHAs, so a moved tag cannot change what runs here.
 name: CI
 
 on:
   pull_request:
     branches: [main]
-    # "edited" re-runs the PR-body audit when only the body changes.
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
@@ -44,9 +45,82 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
-      # Through the guarded runner: every tests/*.test.mjs, and the run fails if it leaves anything in the temp folder.
-      - name: Unit tests
+      # Push to main: every test, through the guarded runner, recording the coverage map; the map is saved under this
+      # commit, where the next PR on it finds it. Actions saves a cache from main where every PR into main can read it,
+      # and no PR can write there.
+      - name: Every test, with the coverage map
+        if: github.event_name != 'pull_request'
+        run: node scripts/test-run.mjs --map --shards 4
+
+      - name: Save the coverage map
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tests/.map.json
+          key: test-map-${{ github.sha }}
+
+      # A PR: the map main's push saved for the PR's base commit.
+      - name: Load the coverage map for the base commit
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tests/.map.json
+          key: test-map-${{ github.event.pull_request.base.sha }}
+
+      # Changed, or the whole suite when the selection has nothing sound to stand on (no map for the base, a deleted
+      # file, a change to a workflow, the runner, the harness or the map tracer).
+      - name: What this PR runs
+        id: scope
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node scripts/pr-scope.mjs "$BASE_SHA" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Every test
+        if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
         run: node scripts/test-run.mjs --shards 4
+
+      - name: The tests the change reaches
+        if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
+        run: node scripts/test-run.mjs --changed --shards 4
+
+      # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
+      - name: The security set
+        if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
+        run: node scripts/test-run.mjs --shards 4 tests/guards-hold.test.mjs tests/guards-outside.test.mjs tests/owner-proof.test.mjs tests/task-gate.test.mjs tests/guard-dispatch.test.mjs tests/guard-prompts.test.mjs
+
+  # T15 Part A: each test the PR adds or changes, held to the bar for a new test. It reports to the run's summary and
+  # is not required until the owner locks it.
+  test-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Prepare git identity
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+
+      - name: Test check (report)
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node scripts/test-check.mjs "$BASE_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.
@@ -188,6 +262,16 @@ jobs:
           node scripts/kit.mjs build
           git diff --exit-code
 
+      # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
+      # a replaced download fails here before it runs.
+      - name: Workflow lint
+        shell: bash
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
+
       # The local hooks check names at commit and push; a commit made elsewhere (the web, a cloud session) skips
       # them, so the PR's branch and every commit on it are checked here too.
       - name: Branch and commit names
@@ -230,21 +314,3 @@ jobs:
         run: |
           git show "$PR_BASE:scripts/recall.mjs" > scripts/recall-gate-base.mjs
           node scripts/recall-gate-base.mjs gate "$PR_BASE" "$PR_HEAD"
-
-      # The body and title come in through env, never into the script text, so a PR cannot inject commands.
-      - name: PR body audit
-        if: github.event_name == 'pull_request'
-        shell: bash
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BASE: origin/${{ github.base_ref }}
-        run: |
-          node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/pr-body.md', process.env.PR_BODY || '')"
-          # Every title is type: subject now (1.25.0), so the body says which format it is: a Standard body has a
-          # "### Summary" section, a Lean one does not.
-          if grep -q '^### Summary$' "$RUNNER_TEMP/pr-body.md"; then
-            node project/.claude/pr-body-audit.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
-          else
-            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE"
-          fi

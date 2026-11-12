@@ -61,6 +61,20 @@ function makeKit() {
 
 const read = (p) => fs.readFileSync(p, 'utf8');
 
+// A release install checks every byte against the release tag's tree (the 1.26.0 security review, S4), so a fixture
+// that installs as a release commits its kit folder and hands over that commit's tree.
+function released(kit, describe) {
+  const g = (...a) => {
+    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-C', kit, ...a], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  if (!fs.existsSync(path.join(kit, '.git'))) g('init', '-q', '-b', 'main');
+  g('add', '-A');
+  g('commit', '-q', '--allow-empty', '-m', describe);
+  return { release: true, describe, tree: g('rev-parse', 'HEAD^{tree}') };
+}
+
 test('projectSlug matches the folder name Claude Code uses for project memory', { windows: true }, () => {
   assert.equal(
     projectSlug('D:\\Work\\Coding\\.Projects\\2026\\My App'),
@@ -836,8 +850,8 @@ test('status and session start show an unreleased install as a gap; an older sta
   assert.match(r.text, /^Not current: ~\/\.claude .*unreleased build; This project .*unreleased build\.$/m);
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*kit\.mjs" install user/);
   // Reinstalled from the release: the gap closes.
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
-  install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
+  install({ kit, home, target: 'project', projectDir: proj, release: released(kit, 'v1.0.0') });
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, true, r.text);
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /unreleased/);
@@ -851,7 +865,7 @@ test('a release install over an unreleased one removes the files only that build
   for (const f of extra) fs.rmSync(path.join(kit, f));
   // The owner changed one of them: it holds their work, so it stays and is named.
   fs.writeFileSync(path.join(home, 'agents/branch-only.md'), 'branch build, edited here\n');
-  const r = install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  const r = install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   assert.deepEqual(r.retired, ['skills/branch-only/SKILL.md']);
   assert.equal(fs.existsSync(path.join(home, 'skills/branch-only/SKILL.md')), false);
   assert.ok(fs.existsSync(path.join(r.backupDir, 'skills/branch-only/SKILL.md')), 'a backup is kept');
@@ -862,7 +876,7 @@ test('a release install over an unreleased one removes the files only that build
   assert.match(status({ kit, home, projectDir: proj, ahead: () => 0 }).text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0[\s\S]*1 file\(s\) kept from an unreleased build/);
   // Once the owner removes it, the next release install is a release again.
   fs.rmSync(path.join(home, 'agents/branch-only.md'));
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const clean = JSON.parse(read(path.join(home, 'kit-install.json')));
   assert.equal(clean.release, true);
   assert.equal(clean.leftover, undefined);
@@ -871,19 +885,20 @@ test('a release install over an unreleased one removes the files only that build
 
 test('the branch-only clean-up runs only over an unreleased install, never removes the overlay, and a dry run removes nothing', () => {
   // A release or pre-check install over which the kit stopped shipping a file (not retired): the file stays.
-  for (const before of [{ release: true, describe: 'v1.0.0' }, undefined]) {
+  for (const asRelease of [true, false]) {
     const { kit, home } = makeKit();
     fs.writeFileSync(path.join(kit, 'user/agents/dropped.md'), 'shipped once\n');
+    const before = asRelease ? released(kit, 'v1.0.0') : undefined;
     install({ kit, home, target: 'user', release: before });
     fs.rmSync(path.join(kit, 'user/agents/dropped.md'));
-    const r = install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.1' } });
-    assert.deepEqual(r.retired, [], JSON.stringify(before));
+    const r = install({ kit, home, target: 'user', release: released(kit, 'v1.0.1') });
+    assert.deepEqual(r.retired, [], String(asRelease));
     assert.ok(fs.existsSync(path.join(home, 'agents/dropped.md')));
   }
   // The overlay CLAUDE.local.md is written by install itself, not from a kit path, so it is never branch-only.
   const { kit, home, proj } = overlayKit();
   install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
-  const back = install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: true, describe: 'v1.0.0' } });
+  const back = install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: released(kit, 'v1.0.0') });
   assert.ok(!back.retired.includes('CLAUDE.local.md'));
   assert.ok(fs.existsSync(path.join(proj, 'CLAUDE.local.md')));
   // A dry run previews the clean-up: the file and the record stay as they are.
@@ -892,7 +907,7 @@ test('the branch-only clean-up runs only over an unreleased install, never remov
   install({ kit: d.kit, home: d.home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
   fs.rmSync(path.join(d.kit, 'user/agents/branch-only.md'));
   const stampBefore = read(path.join(d.home, 'kit-install.json'));
-  const dry = install({ kit: d.kit, home: d.home, target: 'user', dryRun: true, release: { release: true, describe: 'v1.0.0' } });
+  const dry = install({ kit: d.kit, home: d.home, target: 'user', dryRun: true, release: released(d.kit, 'v1.0.0') });
   assert.deepEqual(dry.retired, ['agents/branch-only.md'], 'the preview names it');
   assert.ok(fs.existsSync(path.join(d.home, 'agents/branch-only.md')));
   assert.equal(read(path.join(d.home, 'kit-install.json')), stampBefore);
@@ -1973,6 +1988,25 @@ test('the first push check passes a clean history and records the commit it chec
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(read(path.join(dir, '.git', 'kit-first-push-ok')).trim(), g(dir, 'rev-parse', 'HEAD').stdout.trim());
 });
+// why: guards rule:first-push-gate (N9): a public repo goes out with GitHub's secret scanning and push protection
+// named when either is off, and an unanswered question is never read as "on".
+test('the first push check names a public GitHub repo whose secret scanning or push protection is off', async () => {
+  const { scanningNotes, githubRepos } = await import(pathToFileURL(path.resolve('project/.claude/github-scanning.mjs')).href);
+  const remotes = 'origin\thttps://github.com/pat/app.git (fetch)\norigin\thttps://github.com/pat/app.git (push)\nmine\tgit@github.com:pat/tool.git (push)\nlab\thttps://gitlab.com/pat/x.git (push)\nodd\thttps://github.com/pat/a;b (push)\n';
+  assert.deepEqual(githubRepos(remotes), ['pat/app', 'pat/tool'], 'only plain GitHub names reach the API');
+  const asked = [];
+  const answers = { 'repos/pat/app': 'false disabled enabled', 'repos/pat/tool': 'false enabled enabled' };
+  const gh = (args) => { asked.push(args[1]); return { status: 0, stdout: answers[args[1]] + '\n', stderr: '' }; };
+  const notes = scanningNotes(remotes, gh);
+  assert.deepEqual(asked, ['repos/pat/app', 'repos/pat/tool']);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /pat\/app is public, with secret scanning disabled and push protection enabled/);
+  assert.deepEqual(scanningNotes('o\thttps://github.com/pat/app (push)\n', () => ({ status: 0, stdout: 'true null null\n' })), [], 'a private repo');
+  const down = scanningNotes('o\thttps://github.com/pat/app (push)\n', () => ({ status: 1, stdout: '', stderr: 'gh: not logged in\n' }));
+  assert.match(down[0], /GitHub did not say whether pat\/app[\s\S]*not logged in/);
+  assert.match(scanningNotes('o\thttps://github.com/pat/app (push)\n', () => ({ status: 0, stdout: '\n' }))[0], /did not say/, 'an empty answer is not "on"');
+});
+
 test('the first push check fails on a kit file anywhere in history, even after it was deleted', () => {
   const dir = readyProject();
   g(dir, 'add', '-f', 'AGENTS.md');
@@ -5679,7 +5713,7 @@ test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the 
 test('recall run header says what the run read: keys, both kit versions, and whether approve.mjs is there', async () => {
   const { installFacts, runHeader } = await recallTools();
   const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'abc1234' } });
   let facts = installFacts({ projectDir: proj, home });
   assert.deepEqual(facts, { project: '1.0.0 (unreleased abc1234)', user: '1.0.0 (v1.0.0)', userRelease: true, approve: false });
@@ -5694,7 +5728,7 @@ test('recall run header says what the run read: keys, both kit versions, and whe
   assert.match(head, /^User kit: 1\.0\.0 \(v1\.0\.0\)$/m);
   assert.match(head, /^approve\.mjs at the user path: yes$/m);
   assert.match(runHeader({ label: 'x', projectDir: proj, keys: 2, facts: { ...facts, approve: false }, when: 'w' }).join('\n'), /^approve\.mjs at the user path: no$/m);
-  install({ kit, home, target: 'project', projectDir: proj, release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'project', projectDir: proj, release: released(kit, 'v1.0.0') });
   assert.equal(installFacts({ projectDir: proj, home }).project, '1.0.0');
   install({ kit, home, target: 'user', release: { release: false, describe: 'abc1234' } });
   assert.equal(installFacts({ projectDir: proj, home }).user, '1.0.0 (unreleased abc1234)');
@@ -5706,7 +5740,7 @@ test('recall run header says what the run read: keys, both kit versions, and whe
 test('a recall run asks the current keys and its header names them', async () => {
   const { prepare, currentVersion, questions } = await recallTools();
   const { kit, home, proj } = makeKit();
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const keys = currentVersion(text);
   const run = prepare({ projectDir: proj, label: 'cand-1', home, text, when: 'w' });
@@ -5942,6 +5976,30 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   assert.match(gate.split(failed)[1], /^\s+run: exit 1$/m);
   assert.doesNotMatch(ci, /continue-on-error/);
   assert.doesNotMatch(gate, /test-run\.mjs/, 'the tests run in their jobs, not again in the gate');
+});
+
+// why: guards the owner's pick (2026-11-12, "Only what it touches") and E32 rule 4: a PR narrows its run only to the
+// reached tests plus the security set, falls back to every test on any other answer, and the map it selects by comes
+// from main alone. pin: 1 (GitHub reads these lines)
+test('a PR runs the reached tests and the security set, or every test; main saves the map; a body edit reruns only the audit', async () => {
+  const ci = read(path.resolve('.github/workflows/ci.yml'));
+  const step = (name) => ci.split(`- name: ${name}\n`)[1].split(/\n\s*\n|- name:|- uses:/)[0];
+  assert.doesNotMatch(ci.split('\njobs:')[0], /edited/, 'a body edit reran the whole test run');
+  // Any scope but "changed" (a missing output included) runs every test.
+  assert.match(step('Every test'), /steps\.scope\.outputs\.scope != 'changed'/);
+  assert.match(step('The tests the change reaches'), /steps\.scope\.outputs\.scope == 'changed'[\s\S]*--changed/);
+  const { SECURITY_FILES } = await import(pathToFileURL(path.resolve('scripts/test-value.mjs')).href);
+  const security = step('The security set');
+  for (const f of SECURITY_FILES) assert.ok(security.includes(f), `${f} left out of the security set`);
+  // The map is written on main's push only, and a PR reads the one saved under its base commit.
+  const save = ci.split('- name: Save the coverage map\n')[1].split('- name:')[0];
+  assert.match(save, /if: github\.event_name != 'pull_request'[\s\S]*key: test-map-\$\{\{ github\.sha \}\}/);
+  const load = ci.split('- name: Load the coverage map for the base commit\n')[1].split('- name:')[0];
+  assert.match(load, /actions\/cache\/restore@[0-9a-f]{40}[\s\S]*key: test-map-\$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+  assert.equal((ci.match(/actions\/cache(\/save)?@/g) || []).length, 1, 'a second cache write: a PR could write the map main reads');
+  const body = read(path.resolve('.github/workflows/pr-body.yml'));
+  assert.match(body, /types: \[[^\]]*edited[^\]]*\]/);
+  assert.ok(body.includes('node project/.claude/pr-body-audit.mjs') && body.includes('PR_BODY: ${{ github.event.pull_request.body }}'));
 });
 
 test('CI runs the recall gate on the PR\'s real diff', async () => {
@@ -6318,7 +6376,7 @@ test('recall refuses the old usage and an unreleased user layer before it create
   const unstamped = go(['never-saved']);
   assert.equal(unstamped.status, 1);
   assert.match(unstamped.stderr, /not a released kit install/);
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   for (const args of [['C:/some/folder', 'kit-1.19.0'], ['./folder', 'x']]) {
     const old = go(args);
     assert.equal(old.status, 1);
@@ -6360,7 +6418,7 @@ test('every recall session runs in the probe folder with the question as its inp
 test('a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself', async () => {
   const { recallRun, currentVersion, questionCount } = await recallTools();
   const { kit, home } = makeKit();
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const osHome = makeTemp('osh-');
   const outDir = makeTemp('out-');
   fs.mkdirSync(path.join(home, 'projects', 'other-project'), { recursive: true });
@@ -6915,7 +6973,7 @@ test('recall (I20): a released user layer edited by hand is not read as released
   const { checkUserLayer } = await recallTools();
   const { kit, home } = makeKit();
   fs.mkdirSync(home, { recursive: true });
-  install({ kit, home, target: 'user', release: { release: true, describe: 'v1.0.0' } });
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   checkUserLayer(home, os.tmpdir());
   fs.appendFileSync(path.join(home, 'skills', 'human-factor', 'SKILL.md'), 'a hand edit\n');
   assert.throws(() => checkUserLayer(home, os.tmpdir()), /changed by hand.*skills\/human-factor\/SKILL\.md/);

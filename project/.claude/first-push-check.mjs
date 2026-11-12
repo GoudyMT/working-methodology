@@ -22,6 +22,7 @@ const gitHere = (...a) => spawnSync('git', ['-C', process.cwd(), '-c', 'core.quo
 // Secret-shaped file names and values (one home, shared with the branch scan). A value is never printed: only its
 // kind, file and commit.
 import { SECRET_FILE, SECRET_VALUE } from './secret-patterns.mjs';
+import { scanningNotes } from './github-scanning.mjs';
 
 // A glob from tracking.json, relative to the project folder: ** crosses folders, * and ? stay inside one. Like a
 // .gitignore line, a name also covers everything under it, so "school", "school/" and "school/**" agree.
@@ -130,6 +131,7 @@ function main(staged) {
 		for (const p of loose) console.log(`    ${p}`);
 	}
 	console.log(`Tracked files in ${head.slice(0, 7)}: ${inTree.length}. Review the list with: git ls-files`);
+	for (const n of scanningNotes(git('remote', '-v').stdout)) console.log(n);
 	if (checks.some((c) => c.bad.length)) {
 		console.log('First push NOT cleared. A path in history needs the history rewritten (or a fresh repo) before the first push.');
 		return 1;
