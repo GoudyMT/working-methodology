@@ -14,7 +14,6 @@ Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing 
 - Every kit workflow is linted in CI, the linter pinned by its checksum.
 
 ### Changed
-- rule:outward-acts names the four refusal kinds and who acts next on each; Held means one thing: the call waits for the fix the refusal names.
 - Every kit test carries a why line: the rule it guards, or the break only it catches, written from a CI measurement of 2,326 code flips.
 - The kit's PR CI runs the tests its change reaches plus the security set, and the whole suite when it cannot be sure; every push to main runs the whole suite and keeps the map the next PR selects by. A body edit reruns only the PR body check.
 

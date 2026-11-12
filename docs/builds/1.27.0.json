@@ -6,33 +6,157 @@
  "title": "feat: every test says why it is kept; a PR runs only what it reaches",
  "headline": "Tests and CI (T15): every kit test says why it is kept, 29 that guarded nothing new are gone, a script holds new tests to the same bar, and a PR runs only the tests its change reaches. The 1.26.0 carry-overs and guard rows close first; three were security holes.",
  "items": [
-  { "id": "S2-S4", "kind": "security", "text": "The guard holds a push whose hooks were moved by an included config file or another git folder, a write to main through the GitHub API in any encoding, and a push run outside the project's work tree. A release install refuses a release with no tree to check against, and checks the kit's config and version files too.", "evidence": "tests/guards-hold.test.mjs, tests/guards-outside.test.mjs" },
-  { "id": "C6", "kind": "security", "text": "Clearing the AI shell markers (CLAUDECODE, AI_AGENT) before a command is a gate bypass, refused even with the owner's yes (the owner's lock).", "evidence": "tests/guards-hold.test.mjs" },
-  { "id": "R1.5-R1.6", "kind": "security", "text": "An owner's yes answers one act in one shell: a shell act needs a held try before the pop-up, and an edit whose text holds a separator gets no yes.", "evidence": "tests/guards-hold.test.mjs" },
-  { "id": "R2.10", "kind": "security", "text": "The secret scan reads commit and tag messages as raw objects, every tag in a chain, and ref names.", "evidence": "tests/guards-hold.test.mjs" },
-  { "id": "C11", "kind": "security", "text": "Git hooks run from the copy the launcher checked against the install record, never from the project folder a tool could write.", "evidence": "tests/guards-outside.test.mjs" },
-  { "id": "C19", "kind": "fixed", "text": "The pre-push hook asks the remote for its default branch and whether it is new, so a local ref cannot fake a first push.", "evidence": "tests/guards-hold.test.mjs" },
-  { "id": "C1-C12", "kind": "fixed", "text": "A reinstall holds a guard file a later release adds until the owner accepts it, moves records from the old long names, and rewrites the hook shims of every recorded project; a changed or slow kit hook says why it did not run.", "evidence": "tests/guards-outside.test.mjs" },
-  { "id": "R3.6", "kind": "fixed", "text": "The task gate lets a command that only prints git commit through, and still holds a substitution inside a printed line.", "evidence": "tests/task-gate.test.mjs" },
-  { "id": "R4.5", "kind": "fixed", "text": "Settings deny git log, diff and show with --output anywhere in the command.", "evidence": "project/.claude/settings.json" },
-  { "id": "R7.3", "kind": "fixed", "text": "The owner's yes is found at the end of a transcript too long to read whole.", "evidence": "tests/guards-hold.test.mjs" },
-  { "id": "R7.1", "kind": "added", "text": "The use check says whether the latest pop-up answer carries the field the guards read.", "evidence": "tests/use-check.test.mjs" },
-  { "id": "N9", "kind": "added", "text": "The first push check names a public GitHub repo whose secret scanning or push protection is off.", "evidence": "tests/kit.test.mjs" },
-  { "id": "C17", "kind": "changed", "text": "rule:outward-acts names the four refusal kinds and who acts next on each; Held means one thing: the call waits for the fix the refusal names.", "evidence": "rules/core.md; recall run", "where": "Refusal kinds", "before": "No rule named them; Held meant two things", "after": "rule:outward-acts names all four and who acts next" },
-  { "id": "T15-C", "kind": "changed", "text": "Every kit test carries a why line: the rule it guards, or the break only it catches, written from a CI measurement of 2,326 code flips.", "evidence": "CI run 43169062013", "where": "Kit tests", "before": "No reason on 685 of 707 tests", "after": "A why line on every kept test; 29 repeats cut" },
-  { "id": "T15-B", "kind": "removed", "text": "29 tests whose every caught flip another test also catches, after the owner's yes; every caught flip is still caught.", "evidence": "CI run 43169062013" },
-  { "id": "T15-A", "kind": "added", "text": "A test check holds each new or changed kit test to the bar (fails first, earns its place, right lane, owed at all), as a report in CI.", "evidence": "tests/test-check.test.mjs", "where": "New tests", "before": "One line of rule text", "after": "A script checks all four, reported on every PR" },
-  { "id": "T15-D", "kind": "changed", "text": "The kit's PR CI runs the tests its change reaches plus the security set, and the whole suite when it cannot be sure; every push to main runs the whole suite and keeps the map the next PR selects by. A body edit reruns only the PR body check.", "evidence": "tests/pr-scope.test.mjs, tests/kit.test.mjs", "where": "Kit PR CI", "before": "Every test on every PR and body edit", "after": "The reached tests and the security set; all on main" },
-  { "id": "D1-D2", "kind": "added", "text": "An install check in CI installs this build, upgrades from the previous release, and replays every command the push guard's proof holds through the installed launcher, on Linux and Windows.", "evidence": "tests/ci-install-check.test.mjs", "where": "Install and guards", "before": "Checked by hand on the owner's PC", "after": "Checked in CI on every install or guard change" },
-  { "id": "D5", "kind": "added", "text": "One build record per release writes the changelog entry and the PR body, and CI checks it on every PR that moves VERSION.", "evidence": "tests/build-record.test.mjs" },
-  { "id": "D6", "kind": "added", "text": "The recall test can run in CI by the owner's hand from main, reaching the model through workload identity federation with no stored key; it reports only, and stays off until the owner sets it up.", "evidence": "tests/recall-ci.test.mjs" },
-  { "id": "N11", "kind": "added", "text": "Every kit workflow is linted in CI, the linter pinned by its checksum.", "evidence": ".github/workflows/ci.yml" }
+  {
+   "id": "S2-S4",
+   "kind": "security",
+   "text": "The guard holds a push whose hooks were moved by an included config file or another git folder, a write to main through the GitHub API in any encoding, and a push run outside the project's work tree. A release install refuses a release with no tree to check against, and checks the kit's config and version files too.",
+   "evidence": "tests/guards-hold.test.mjs, tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "C6",
+   "kind": "security",
+   "text": "Clearing the AI shell markers (CLAUDECODE, AI_AGENT) before a command is a gate bypass, refused even with the owner's yes (the owner's lock).",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "R1.5-R1.6",
+   "kind": "security",
+   "text": "An owner's yes answers one act in one shell: a shell act needs a held try before the pop-up, and an edit whose text holds a separator gets no yes.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "R2.10",
+   "kind": "security",
+   "text": "The secret scan reads commit and tag messages as raw objects, every tag in a chain, and ref names.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "C11",
+   "kind": "security",
+   "text": "Git hooks run from the copy the launcher checked against the install record, never from the project folder a tool could write.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "C19",
+   "kind": "fixed",
+   "text": "The pre-push hook asks the remote for its default branch and whether it is new, so a local ref cannot fake a first push.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "C1-C12",
+   "kind": "fixed",
+   "text": "A reinstall holds a guard file a later release adds until the owner accepts it, moves records from the old long names, and rewrites the hook shims of every recorded project; a changed or slow kit hook says why it did not run.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "R3.6",
+   "kind": "fixed",
+   "text": "The task gate lets a command that only prints git commit through, and still holds a substitution inside a printed line.",
+   "evidence": "tests/task-gate.test.mjs"
+  },
+  {
+   "id": "R4.5",
+   "kind": "fixed",
+   "text": "Settings deny git log, diff and show with --output anywhere in the command.",
+   "evidence": "project/.claude/settings.json"
+  },
+  {
+   "id": "R7.3",
+   "kind": "fixed",
+   "text": "The owner's yes is found at the end of a transcript too long to read whole.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "R7.1",
+   "kind": "added",
+   "text": "The use check says whether the latest pop-up answer carries the field the guards read.",
+   "evidence": "tests/use-check.test.mjs"
+  },
+  {
+   "id": "N9",
+   "kind": "added",
+   "text": "The first push check names a public GitHub repo whose secret scanning or push protection is off.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "T15-C",
+   "kind": "changed",
+   "text": "Every kit test carries a why line: the rule it guards, or the break only it catches, written from a CI measurement of 2,326 code flips.",
+   "evidence": "CI run 43169062013",
+   "where": "Kit tests",
+   "before": "No reason on 685 of 707 tests",
+   "after": "A why line on every kept test; 29 repeats cut"
+  },
+  {
+   "id": "T15-B",
+   "kind": "removed",
+   "text": "29 tests whose every caught flip another test also catches, after the owner's yes; every caught flip is still caught.",
+   "evidence": "CI run 43169062013"
+  },
+  {
+   "id": "T15-A",
+   "kind": "added",
+   "text": "A test check holds each new or changed kit test to the bar (fails first, earns its place, right lane, owed at all), as a report in CI.",
+   "evidence": "tests/test-check.test.mjs",
+   "where": "New tests",
+   "before": "One line of rule text",
+   "after": "A script checks all four, reported on every PR"
+  },
+  {
+   "id": "T15-D",
+   "kind": "changed",
+   "text": "The kit's PR CI runs the tests its change reaches plus the security set, and the whole suite when it cannot be sure; every push to main runs the whole suite and keeps the map the next PR selects by. A body edit reruns only the PR body check.",
+   "evidence": "tests/pr-scope.test.mjs, tests/kit.test.mjs",
+   "where": "Kit PR CI",
+   "before": "Every test on every PR and body edit",
+   "after": "The reached tests and the security set; all on main"
+  },
+  {
+   "id": "D1-D2",
+   "kind": "added",
+   "text": "An install check in CI installs this build, upgrades from the previous release, and replays every command the push guard's proof holds through the installed launcher, on Linux and Windows.",
+   "evidence": "tests/ci-install-check.test.mjs",
+   "where": "Install and guards",
+   "before": "Checked by hand on the owner's PC",
+   "after": "Checked in CI on every install or guard change"
+  },
+  {
+   "id": "D5",
+   "kind": "added",
+   "text": "One build record per release writes the changelog entry and the PR body, and CI checks it on every PR that moves VERSION.",
+   "evidence": "tests/build-record.test.mjs"
+  },
+  {
+   "id": "D6",
+   "kind": "added",
+   "text": "The recall test can run in CI by the owner's hand from main, reaching the model through workload identity federation with no stored key; it reports only, and stays off until the owner sets it up.",
+   "evidence": "tests/recall-ci.test.mjs"
+  },
+  {
+   "id": "N11",
+   "kind": "added",
+   "text": "Every kit workflow is linted in CI, the linter pinned by its checksum.",
+   "evidence": ".github/workflows/ci.yml"
+  }
  ],
  "decisions": [
-  { "decision": "Tag first, then cut", "why": "257 tests were repeats by flips alone, but 202 of them guard owner or security rules; the cut took only untagged repeats, on the owner's yes." },
-  { "decision": "Only what it touches", "why": "A PR runs the reached tests and the security set; the whole suite runs on main, so no gate is lowered and PR time drops." },
-  { "decision": "No stored model key", "why": "Federation swaps GitHub's short-lived token for an Anthropic one bound to this repo's main; the kit could later teach the same to projects." }
+  {
+   "decision": "Tag first, then cut",
+   "why": "257 tests were repeats by flips alone, but 202 of them guard owner or security rules; the cut took only untagged repeats, on the owner's yes."
+  },
+  {
+   "decision": "Only what it touches",
+   "why": "A PR runs the reached tests and the security set; the whole suite runs on main, so no gate is lowered and PR time drops."
+  },
+  {
+   "decision": "No stored model key",
+   "why": "Federation swaps GitHub's short-lived token for an Anthropic one bound to this repo's main; the kit could later teach the same to projects."
+  }
  ],
  "verification": [],
- "tests": { "before": 707, "after": 678, "flips": "1,810 of 2,326 code flips caught before and after the cut" }
+ "tests": {
+  "before": 707,
+  "after": 678,
+  "flips": "1,810 of 2,326 code flips caught before and after the cut"
+ }
 }
