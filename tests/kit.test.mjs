@@ -5766,7 +5766,7 @@ test('an unreleased user layer may run only from a throwaway folder under kit-pr
   const unreleased = { release: false, describe: 'abc1234' };
   const refused = (home) => assert.throws(() => checkUserLayer(home, osHome), /not a released kit install/, home);
   checkUserLayer(layer(path.join(osHome, 'kit-probes', 'cfg-a'), unreleased), osHome);
-  checkUserLayer(layer(path.join(osHome, '.claude'), { release: true, describe: 'v1.0.0' }), osHome);
+  checkUserLayer(layer(path.join(osHome, '.claude'), released(kit, 'v1.0.0')), osHome);
   refused(layer(path.join(osHome, '.claude'), unreleased));
   refused(layer(path.join(osHome, 'kit-probes'), unreleased));
   refused(layer(path.join(osHome, 'kit-probes-x', 'cfg'), unreleased));
