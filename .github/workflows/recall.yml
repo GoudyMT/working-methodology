@@ -247,11 +247,25 @@ jobs:
           fetch
           ( while sleep 240; do fetch || true; done ) > /dev/null 2>&1 &
           echo "ANTHROPIC_IDENTITY_TOKEN_FILE=$token_file" >> "$GITHUB_ENV"
+      # Each job's runs by that job's artifact name, and only the files that job is meant to make: an artifact or a file
+      # the candidate's code added on its own machine never reaches the scorer (the 1.28.0 sweep).
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: recall-*
-          path: base/reports/evals
-          merge-multiple: true
+          name: recall-candidate
+          path: ${{ runner.temp }}/in/candidate
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recall-baseline
+          path: ${{ runner.temp }}/in/baseline
+
+      - name: Take only the runs each job makes
+        shell: bash
+        run: |
+          in="$RUNNER_TEMP/in"
+          for f in cand-1 cand-2 cand-3; do cp "$in/candidate/$f.md" base/reports/evals/ || exit 1; done
+          for f in base-1 base-2 base-3 control-1; do cp "$in/baseline/$f.md" base/reports/evals/ || exit 1; done
+          [ "$(ls "$in/candidate" | wc -l)" -eq 3 ] && [ "$(ls "$in/baseline" | wc -l)" -eq 4 ] || { echo "An artifact holds files no job should make."; exit 1; }
 
       # One fresh blind scorer under main's brief, then the gate line from the sealed map: no number is typed.
       - name: Blind score

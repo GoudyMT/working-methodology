@@ -49,4 +49,7 @@ test('the CI recall job runs the candidate, the baseline and the scorer on three
 	assert.doesNotMatch(score, /path: cand|recall\.mjs "/, 'the scorer runs a session of the candidate');
 	assert.match(score, /needs: \[candidate, baseline\]/);
 	assert.match(score, /recall-score\.mjs blind/);
+	// The 1.28.0 sweep: by artifact name and exact file, never a pattern the candidate could add to.
+	assert.doesNotMatch(score, /pattern: recall-\*|merge-multiple/);
+	assert.match(score, /name: recall-candidate[\s\S]*name: recall-baseline[\s\S]*for f in cand-1 cand-2 cand-3/);
 });
