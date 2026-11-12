@@ -276,7 +276,9 @@ jobs:
         shell: bash
         env:
           KIT_TEST_LIMIT_MS: '900000'
-        run: node scripts/test-run.mjs $(find tests/slow -type f -name '*.test.mjs')
+        run: |
+          mapfile -t slow < <(find tests/slow -type f -name '*.test.mjs')
+          node scripts/test-run.mjs "${slow[@]}"
 
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
   # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
