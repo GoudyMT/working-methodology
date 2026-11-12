@@ -95,3 +95,24 @@ test('the mutation check refuses a map from another commit or no map, and says h
 	assert.equal(none.status, 2);
 	assert.match(none.stderr, /no coverage map/);
 });
+
+// why: catches a cut list built on guesses (T15 Part B): to sort tests by value the check must say which tests caught
+// each flip, and it must split over CI jobs without losing or repeating a flip.
+test('the mutation check records which tests caught each flip, and its slices cover every flip once', () => {
+	const { dir } = repo();
+	const out = path.join(dir, 'flips.json');
+	const r = check(dir, ['src/a.cjs', '--json', out]);
+	assert.equal(r.status, 1, r.stdout + r.stderr);
+	const flips = JSON.parse(fs.readFileSync(out, 'utf8')).flips;
+	const at = (line) => flips.find((f) => f.file === 'src/a.cjs' && f.line === line);
+	assert.deepEqual(at(1).caughtBy, ['tests/a.test.mjs::pos']);
+	assert.deepEqual(at(2).caughtBy, []);
+	assert.deepEqual(at(2).tests, ['tests/a.test.mjs::big']);
+	const seen = [];
+	for (const s of ['0/2', '1/2']) {
+		const part = path.join(dir, `part-${s[0]}.json`);
+		check(dir, ['src/a.cjs', '--slice', s, '--json', part]);
+		seen.push(...JSON.parse(fs.readFileSync(part, 'utf8')).flips.map((f) => `${f.file}:${f.line}`));
+	}
+	assert.deepEqual(seen.sort(), ['src/a.cjs:1', 'src/a.cjs:2']);
+});
