@@ -67,11 +67,19 @@ const thirdPartySkills = (config) => [
   ...((config.vendor && config.vendor.skillGroups) || []).flatMap((g) => g.skills),
 ];
 
-function loadKit(kit) {
+// The kit's own inputs that install renders into every file it writes: a release install reads them from the bytes
+// checked against the release tag, like the files it copies (the 1.26.0 sweep, C4).
+const kitInputs = (kit) => {
   const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
+  return ['kit.config.json', config.ownerProfileFile || 'owner-profile.md', 'VERSION'].map((f) => ({ src: path.join(kit, f) })).filter((e) => fs.existsSync(e.src));
+};
+
+function loadKit(kit, checked = null) {
+  const read = (p) => (checked && checked.has(p) ? checked.get(p) : fs.readFileSync(p, 'utf8'));
+  const config = JSON.parse(read(path.join(kit, 'kit.config.json')));
   const profilePath = path.join(kit, config.ownerProfileFile || 'owner-profile.md');
-  const ownerProfile = fs.existsSync(profilePath) ? fs.readFileSync(profilePath, 'utf8').trimEnd() : '';
-  const version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
+  const ownerProfile = (checked && checked.has(profilePath)) || fs.existsSync(profilePath) ? read(profilePath).trimEnd() : '';
+  const version = read(path.join(kit, 'VERSION')).trim();
   const git = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8', cwd: SAFE_CWD });
   const commit = git.status === 0 ? git.stdout.trim() : null;
   return { config, ownerProfile, version, commit };
@@ -103,7 +111,10 @@ export function releaseState(kit) {
   if (prefix.stdout.trim()) return { describe: null, dirty: [], problems: [`Not on release tag ${tag}: this kit folder sits inside another git repo, not its own.`] };
   const describe = git('describe', '--tags', '--always').stdout.trim() || null;
   const problems = [];
-  if (!git('tag', '--points-at', 'HEAD').stdout.split(/\r?\n/).includes(tag)) problems.push(`Not on release tag ${tag}: HEAD is at ${describe}.`);
+  // HEAD is read once, as a commit id: the tag check and the tree below both name that commit, so a tag or HEAD moved
+  // in between changes nothing install trusts (the 1.26.0 sweep, C3). A file moved after it no longer matches the tree.
+  const head = git('rev-parse', '-q', '--verify', 'HEAD^{commit}').stdout.trim();
+  if (!head || !git('tag', '--points-at', head).stdout.split(/\r?\n/).includes(tag)) problems.push(`Not on release tag ${tag}: HEAD is at ${describe}.`);
   // -z keeps names with spaces whole; a rename entry carries its old name as a second field, skipped here.
   const st = git('status', '--porcelain', '-z', '--ignored', '--untracked-files=all', '--', ...paths);
   // A failed status prints nothing, which must not read as a clean folder.
@@ -116,9 +127,8 @@ export function releaseState(kit) {
     if (/^[RC]/.test(fields[i])) i++;
   }
   if (dirty.length) problems.push(`Changed or new files install would copy: ${dirty.slice(0, 10).join(', ')}${dirty.length > 10 ? `, and ${dirty.length - 10} more` : ''}.`);
-  // The tag's tree, read here once: install checks every file it copies against this id, so a tag moved after the
-  // check changes nothing (the 1.26.0 sweep).
-  const tree = git('rev-parse', '--verify', '-q', `refs/tags/${tag}^{tree}`).stdout.trim() || null;
+  // The checked commit's tree, read here once: install checks every file it copies against this id.
+  const tree = head ? git('rev-parse', '--verify', '-q', `${head}^{tree}`).stdout.trim() || null : null;
   return { describe, dirty, problems, tree };
 }
 
@@ -430,8 +440,14 @@ function wireGate(home, dryRun) {
  *     { created, updated, replaced, skipped: [{ file, reason }], backupDir, version }
  */
 export function install(ctx) {
-  const kitInfo = loadKit(ctx.kit);
   const { entries, stampPath } = plan(ctx);
+  // A release install copies only bytes that match the release tag (B20), and refuses when the release check found no
+  // tree to match against (the 1.26.0 security review, S4): reading the folder then would trust whatever is there. A
+  // fixture or --unreleased install has no release and reads the folder.
+  const releaseRun = Boolean(ctx.release && ctx.release.release);
+  if (releaseRun && !ctx.release.tree) throw new Error('Install refused: the release check found no tree for the release tag, so no kit file can be checked against it. Check out the release tag again, then rerun install.');
+  const checked = releaseRun ? releaseBytes(ctx.kit, ctx.release.tree, [...entries, ...kitInputs(ctx.kit)]) : null;
+  const kitInfo = loadKit(ctx.kit, checked);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
   // Which guard files are a host's own (the review of 670b3a2): read from the record outside the project, never from
@@ -443,9 +459,6 @@ export function install(ctx) {
   const created = [], updated = [], replaced = [], skipped = [], merged = [];
   const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
-  // A release install copies only bytes that match the release tag (B20); a fixture or --unreleased install reads the folder.
-  // The CLI's release check gives the tag's tree; a fixture or --unreleased install has none and reads the folder.
-  const checked = ctx.release && ctx.release.release && ctx.release.tree ? releaseBytes(ctx.kit, ctx.release.tree, entries) : null;
   for (const entry of entries) {
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, checked);
     const wantHash = sha(want);
