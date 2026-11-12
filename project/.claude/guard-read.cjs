@@ -182,4 +182,28 @@ function tokenize(text) {
 	return segments;
 }
 
-module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize };
+// The shared reader's second reading (T16b, design B2, the owner's lock 2026-11-12): the same command with each
+// spelling of a fact the guards rule on written one way, so the kind of a hold comes from the fact and not from the
+// spelling (K1, the 1.27.0 sweep). Each guard reads this beside the text as written and keeps the stricter answer, so
+// this reading can only add a hold, never lift one (the plan check's P1 and P5).
+//   - a path to git or gh, quoted or not, with any Windows suffix or trailing dot: the bare name
+//   - a variable added to (GIT_DIR+=x), or set through PowerShell's Env: drive, $env:, New-Item or the .NET setter:
+//     a plain NAME=value
+//   - every way of starting a program with the environment cleared or the markers unset: env -i
+function canonical(text) {
+	let s = String(text);
+	s = s.replace(/(["'])([^"'\n]*[\\/])(git|gh)(\.(exe|cmd|bat|com))?[. ]*\1/gi, '$3');
+	s = s.replace(/(^|[\s;|&(])(?:[A-Za-z]:)?[^\s"';|&()]*[\\/](git|gh)(\.(exe|cmd|bat|com))?\.*(?=\s|$)/gi, '$1$2');
+	s = s.replace(/\b([A-Za-z_]\w*)\+=/g, '$1=');
+	s = s.replace(/\b(set-item|si|new-item|ni|set-content|sc)\s+(-path\s+)?['"]?env:\\?([A-Za-z_]\w*)['"]?\s+(-value\s+)?/gi, '$3=');
+	s = s.replace(/\$\{?env:([A-Za-z_]\w*)\}?\s*=/gi, '$1=');
+	s = s.replace(/\[(system\.)?environment\]::setenvironmentvariable\(\s*['"]([A-Za-z_]\w*)['"]\s*,/gi, '$2=');
+	s = s.replace(/\benv(\.exe)?\s+(-[A-Za-z]*i[A-Za-z]*|--ignore-env\w*)(?=\s)/gi, 'env -i');
+	s = s.replace(/\bexec\s+-[A-Za-z]*c[A-Za-z]*(?=\s)/gi, 'env -i');
+	s = s.replace(/-usenewenvironment\b/gi, ' env -i ');
+	s = s.replace(/\bunset\s+(-[vf]\s+)?["']?\$\{!(CLAUDE|AI_)[^}]*\}["']?/gi, 'env -i ');
+	s = s.replace(/\b(export\s+-n|declare\s+\+x|typeset\s+\+x)\s+/gi, 'unset ');
+	return s;
+}
+
+module.exports = { BACKSLASH, BACKTICK, LF, CR, normalize, plainText, withoutComments, joinContinuations, tokenize, canonical };

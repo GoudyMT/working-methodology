@@ -692,3 +692,27 @@ test('the push scan reads a tag that points at a blob or a tree', () => {
 	const tag = g(['mktag'], `object ${blob}\ntype blob\ntag t\ntagger t <t@x> 0 +0000\n\nplain\n`).stdout.trim();
 	assert.equal(scanOf(tag).status, 1, 'an annotated tag of a blob passed the scan');
 });
+// why: guards rule:outward-acts (a gate bypass is never a tool's act, and no pop-up yes approves it). K1, the 1.27.0
+// sweep: these spellings were held, but as an owner's-yes ask, so one tap could approve a bypass the rule says no yes
+// approves. The shared reader writes each fact one way, so the kind follows the fact (T16b, design B2).
+test('every spelling of a gate bypass is never by a tool, not an ask', () => {
+	const reason = (tool_name, command) => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name, tool_input: { command }, cwd: process.cwd() }), encoding: 'utf8' });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
+	};
+	const never = [
+		['Bash', '"C:\\Program Files\\GitHub CLI\\gh.exe" api -X PUT repos/o/r/contents/a.txt -f branch=main -f message=x -f content=eA=='],
+		['Bash', 'C:/Tools/gh.exe api -X PUT repos/o/r/contents/a.txt -f branch=main -f message=x -f content=eA=='],
+		['Bash', 'GIT_DIR+=/x git push origin feat/x'],
+		['PowerShell', 'Set-Item Env:GIT_DIR C:\\x; git push origin feat/x'],
+		['PowerShell', '$env:GIT_DIR = "C:\\x"; git push origin feat/x'],
+		['Bash', 'env -vi git push origin feat/x'],
+		['Bash', 'env --ignore-env git push origin feat/x'],
+		['Bash', 'unset ${!CLAUDE*}; git push origin feat/x'],
+		['Bash', 'exec -c git push origin feat/x'],
+		['PowerShell', 'Start-Process git -ArgumentList "push","origin","feat/x" -UseNewEnvironment'],
+	];
+	for (const [tool, command] of never) assert.match(reason(tool, command), /^Never by a tool/, `${tool}: ${command}`);
+	// A plain push to main stays the owner's yes, not a flat refusal: the reader adds holds of the right kind only.
+	assert.match(reason('Bash', 'git push origin main'), /^Owner's yes needed/);
+});

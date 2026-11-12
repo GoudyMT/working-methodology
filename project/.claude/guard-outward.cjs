@@ -40,7 +40,7 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { plainText, joinContinuations, tokenize, canonical } = require('./guard-read.cjs');
 const { ownerYes, askText, yesText, neverText, heldText } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
@@ -507,9 +507,14 @@ function check(input) {
 		reason = decide(input);
 		const all = [];
 		collectStrings(input.tool_input, all, 0);
-		const bypass = bypassIn(all.join(LF));
+		// The shared reader's second reading (K1, T16b): each fact written one way. It can only add a hold or make one
+		// stricter; the text as written is still read first, so nothing it misses is lost.
+		const text = all.join(LF);
+		const canon = canonical(text);
+		if (!reason && canon !== text) reason = findOutward(canon, 0) || findOutward(plainText(canon, input.tool_name), 0);
+		const bypass = bypassIn(text) || (canon !== text && bypassIn(canon)) || (canon !== text && markersCleared(canon.replace(/[\\`^'"]/g, '')) ? MARKERS : '');
 		if (bypass) reason = bypass;
-		else if (reason && (hookFreeMainWrite(all.join(LF)) || pushOutsideProject(all.join(LF), input))) reason = 'a write to main that runs no pre-push hook';
+		else if (reason && (hookFreeMainWrite(text) || hookFreeMainWrite(canon) || pushOutsideProject(text, input))) reason = 'a write to main that runs no pre-push hook';
 		// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
 		const command = String((input.tool_input && input.tool_input.command) ?? '');
 		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
