@@ -772,3 +772,13 @@ test('a feature push from a repo nested inside the project is read as another re
 	const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git push origin feat/x' }, cwd: nested }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: path.join(proj, 'cfg') } });
 	assert.equal(r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'runs', 'deny');
 });
+// why: guards rule:outward-acts (an act outside the push bound is the owner's, on the pop-up yes). The 1.28.0 sweep:
+// a feature push from another repo was held, yet no yes could ever let it run, so the pop-up it asked for did nothing.
+test('a feature push from a repo the kit does not check runs on the owner\'s yes', () => {
+	const other = kitTemp.makeTemp('k28yes-');
+	spawnSync('git', ['init', '-q', '-b', 'main', other]);
+	const command = 'git push origin feat/x';
+	assert.equal(decide('Bash', { command }, { cwd: other }), 'deny', 'it ran with no yes');
+	popUp({ act: command });
+	assert.equal(withYes('Bash', { command }, { cwd: other }), 'allow', 'the owner\'s yes did not let it run');
+});
