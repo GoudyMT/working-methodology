@@ -123,10 +123,14 @@ if [ ! -f "$common/kit-first-push-done" ]; then
   if [ -n "$checked" ] && [ -n "$(git branch -r --contains "$checked" 2>/dev/null)" ]; then
     : > "$common/kit-first-push-done"
   else
+    # What the remote already holds, asked of the remote itself: a local remote-tracking ref is any command's to write,
+    # and a fake one ended this gate (the 1.28.0 sweep). Only the commits it names that exist here count.
+    have=$(git ls-remote "$2" 2>/dev/null | while read -r sha ref; do git cat-file -e "$sha^{commit}" 2>/dev/null && printf '%s\n' "$sha"; done)
     while read -r lref lsha rref rsha; do
       case "$lsha" in *[!0]*) ;; *) continue ;; esac
       commit=$(git rev-parse -q --verify "$lsha^{commit}")
-      if [ -n "$commit" ] && [ -n "$(git for-each-ref --count=1 refs/remotes/)" ] && [ -z "$(git rev-list --max-parents=0 "$commit" --not --remotes)" ]; then
+      # shellcheck disable=SC2086
+      if [ -n "$commit" ] && [ -n "$have" ] && [ -z "$(git rev-list --max-parents=0 "$commit" --not $have)" ]; then
         : > "$common/kit-first-push-done"
         continue
       fi

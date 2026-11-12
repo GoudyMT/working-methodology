@@ -793,3 +793,24 @@ test('a marker cleared by printf -v, written into a file, or unset by a built na
 		assert.match(reason(command), /^Never by a tool: clearing the AI shell's markers/, command);
 	}
 });
+// why: guards rule:first-push-gate. The 1.28.0 sweep: the gate took "the remote already has our history" from local
+// remote-tracking refs, which any command can write, so one fake ref ended the gate and the first push carried a
+// never-list file out. The remote is asked instead.
+test('a fake remote-tracking ref does not end the first push gate', { windows: true }, () => {
+	const dir = kitTemp.makeTemp('fpdecoy-');
+	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', ...a], { cwd: dir, encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(dir, '.githooks'));
+	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
+	g('add', '.');
+	g('commit', '-qm', 'one');
+	const bare = kitTemp.makeTemp('fpdecoy-remote-');
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+	g('update-ref', 'refs/remotes/origin/decoy', 'HEAD');
+	const head = g('rev-parse', 'HEAD').stdout.trim();
+	const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: `refs/heads/feat/x ${head} refs/heads/feat/x ${'0'.repeat(40)}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '' } });
+	assert.notEqual(r.status, 0, 'the first push went out past a fake remote ref');
+	assert.match(r.stderr, /First push blocked/);
+	assert.equal(fs.existsSync(path.join(dir, '.git', 'kit-first-push-done')), false);
+});
