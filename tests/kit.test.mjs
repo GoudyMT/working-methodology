@@ -331,7 +331,7 @@ test('status reports a project or ~/.claude with no install record, and writes n
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
-// why: guards rule:sweep-auto-approval
+// why: guards rule:size-budgets
 test('status shows the real start load against its cap, and says when it is over', () => {
   const { kit, home, proj } = makeKit();
   fs.writeFileSync(path.join(proj, 'CLAUDE.md'), 'x'.repeat(300));
@@ -886,7 +886,7 @@ test('headings skips headings inside code blocks and reads the ID after the titl
 });
 
 const MODULE_MAP = () => JSON.parse(read(path.resolve('docs/migrations/1.0.0-modules.json')));
-// why: guards rule:outward-acts
+// why: guards rule:kit-standards
 test('the ledger refuses a section the map leaves out or a map entry with no section', () => {
   const map = { modules: [{ id: 'core', sections: ['a'] }] };
   assert.throws(() => ledger('## A {#a}\nx\n## B {#b}\ny\n', map), /not placed: b/);
@@ -4035,7 +4035,7 @@ test('the project map check passes a sound map and names every fault in a bad on
     assert.match(r.stdout, fault);
   }
 });
-// why: guards rule:outward-acts
+// why: guards rule:visible-tracking
 test('the project map renders one self-contained page with states as words, and refuses a map that fails its check', () => {
   const dir = mapRepo(GOOD_MAP);
   const out = path.join(dir, 'map.html');
@@ -4051,7 +4051,7 @@ test('the project map renders one self-contained page with states as words, and 
   fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify({ ...GOOD_MAP, goal: '' }));
   assert.equal(mapRun(dir, ['render', out]).status, 1);
 });
-// why: guards rule:outward-acts
+// why: guards rule:visible-tracking
 test('the project map can be checked from a draft file outside the project, with paths still held to the project', () => {
   const dir = mapRepo(GOOD_MAP);
   const draft = path.join(makeTemp('draft-'), 'map.json');
@@ -6596,7 +6596,7 @@ test('lines that look like labels or headings stay the owner\'s words, in the bo
   assert.match(inThought.grounding, /^We are/, 'a grounding heading in a thought replaces nothing');
 });
 
-// why: guards rule:outward-acts
+// why: guards rule:collaborative-design-locks
 test('the sheet parser refuses what it cannot read, and says why', async () => {
   const { parseSheet } = await sheetTools();
   const bad = [
@@ -6620,7 +6620,7 @@ test('the sheet parser refuses what it cannot read, and says why', async () => {
   for (const [name, text, why] of bad) assert.throws(() => parseSheet(text), why, name);
 });
 
-// why: guards rule:outward-acts
+// why: guards rule:collaborative-design-locks
 test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved question, and words filed as the closing box', async () => {
   const { parseSheet, sealOf, renderSheet } = await sheetTools();
   const base = parseSheet(SHEET);
@@ -6653,7 +6653,7 @@ test('a sheet with Windows line ends reads the same, and the words stay whole', 
   assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\r\n\r\nand a second paragraph'); // pin: 3
 });
 
-// why: guards rule:outward-acts
+// why: guards rule:collaborative-design-locks
 test('a sheet file saved in anything but UTF-8 is refused, and a UTF-8 mark is read past', async () => {
   const { readSheet, parseSheet } = await sheetTools();
   const dir = makeTemp('enc-');

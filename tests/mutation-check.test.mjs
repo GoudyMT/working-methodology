@@ -84,7 +84,7 @@ test('the mutation check names a flip no test catches, passes one a test catches
 	}
 });
 
-// why: guards rule:outward-acts
+// why: guards rule:test-value
 test('the mutation check refuses a map from another commit or no map, and says how to make one', () => {
 	const { dir } = repo();
 	fs.appendFileSync(path.join(dir, 'src', 'a.cjs'), '// later\n');

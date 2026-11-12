@@ -107,8 +107,19 @@ export function check(root, base, { strict = false, slice = null } = {}) {
 			removeTemp(copy);
 			removeTemp(home);
 		}
-		// A2: a reason tag, or a flip it catches in the lines the change made.
-		const untagged = newOrChanged.filter((t) => !/\/\/ why: guards\b/.test(t.body));
+		// A2: a reason tag, or a flip it catches in the lines the change made. A tag counts only when the rule it names is
+		// in the rule index, or it names the owner (K12, the 1.27.0 sweep: any "why: guards" text passed, so a tag naming
+		// no real rule kept a test in the never-cut group); a tag naming no known rule is named, and read as no tag.
+		let index = '';
+		try { index = fs.readFileSync(path.join(root, 'project', 'standards', 'INDEX.md'), 'utf8'); } catch { /* none: no rule counts */ }
+		const known = new Set([...index.matchAll(/^\| ([a-z0-9-]+) \|/gm)].map((m) => m[1]));
+		const tagged = (t) => {
+			const rules = [...t.body.matchAll(/\/\/ why: guards\b.*?\brule:([a-z0-9-]+)/g)].map((m) => m[1]);
+			const unknown = rules.filter((r) => !known.has(r));
+			if (unknown.length) note(t.key, 'A2', `names rule:${unknown.join(', rule:')}, which is not in the rule index`);
+			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(t.body);
+		};
+		const untagged = newOrChanged.filter((t) => !tagged(t));
 		if (untagged.length) {
 			const mapped = spawnSync(process.execPath, [path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))], { cwd: root, encoding: 'utf8' });
 			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');

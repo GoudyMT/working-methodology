@@ -19,7 +19,7 @@ const sh = (cwd, ...a) => {
 // A repo with the kit's runner and harness, a bug at the base, and a fix with four new tests.
 function repo() {
 	const dir = kitTemp.makeTemp('checkrepo-');
-	for (const f of ['scripts/test-run.mjs', 'scripts/mutation-check.mjs', 'tests/harness.mjs', 'tests/map-trace.cjs', 'project/.claude/kit-temp.cjs']) {
+	for (const f of ['scripts/test-run.mjs', 'scripts/mutation-check.mjs', 'tests/harness.mjs', 'tests/map-trace.cjs', 'project/.claude/kit-temp.cjs', 'project/standards/INDEX.md']) {
 		fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
 		fs.copyFileSync(path.resolve(f), path.join(dir, f));
 	}
@@ -82,4 +82,14 @@ test('the test check splits the changed tests into slices that cover each once',
 	assert.ok(one > 0 && two > 0, `a slice got nothing: ${one} and ${two}`);
 	assert.equal(one + two, files([base]), 'the slices do not add up to the whole');
 	assert.equal(spawnSync(process.execPath, [CHECK, base, '--slice', '2/2'], { cwd: dir, encoding: 'utf8' }).status, 2, 'a slice past the count');
+});
+// why: guards rule:test-value. K12, the 1.27.0 sweep: the check took any "why: guards" text, so a tag naming a rule
+// that does not exist, or a made-up one, kept a test in the never-cut group unread.
+test('the test check takes a why tag only when it names a rule in the rule index or the owner', () => {
+	const dir = repo();
+	const file = path.join(dir, 'tests', 'a.test.mjs');
+	fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('// why: guards rule:outward-acts', '// why: guards rule:no-such-rule'));
+	sh(dir, 'commit', '-qam', 'retag');
+	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
+	assert.match(r.stdout, /A2 tests\/a\.test\.mjs::a guarded one: .*rule:no-such-rule.*not in the rule index/);
 });
