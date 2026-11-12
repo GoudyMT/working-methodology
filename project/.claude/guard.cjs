@@ -33,6 +33,8 @@ const USER = [
 	['sweep-guard.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 ];
 
+const STARTED = Date.now();
+const USER_BUDGET_MS = 4000;
 const refuse = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 
 function userHooks() {
@@ -73,7 +75,11 @@ function answers(input) {
 			// would run it here with no input, so it runs as its own process, from the checked bytes (the 1.25.0 sweep).
 			if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(text)) out.push([file, require(where).check(input)]);
 			else {
-				const r = require('child_process').spawnSync(process.execPath, ['-e', text], { input: JSON.stringify(input), encoding: 'utf8', timeout: 5000 });
+				// The old-shape hooks share one budget well inside the launcher's 10 s, so a slow one is skipped rather than
+				// timing out the whole guard, which blocks the call (the 1.25.0 sweep, R4.2).
+				const left = USER_BUDGET_MS - (Date.now() - STARTED);
+				if (left < 100) continue;
+				const r = require('child_process').spawnSync(process.execPath, ['-e', text], { input: JSON.stringify(input), encoding: 'utf8', timeout: Math.min(2000, left) });
 				out.push([file, r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : null]);
 			}
 		} catch { /* a slip-catcher that fails lets the call through */ }

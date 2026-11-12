@@ -1106,6 +1106,25 @@ test('C11 shims: a git hook runs from the copy the launcher checked, never from 
 	assert.equal(fs.existsSync(path.join(runs, copies[0], 'extra')), false);
 });
 
+// why: catches a blocked call (the 1.25.0 carry-over R4.2): old-shape user hooks ran up to 5 s each inside the guard's
+// 10 s, so two slow ones timed the guard out and the call was blocked.
+test('R4.2 slow old-shape kit hooks are cut short, and the call is answered well inside the guard time limit', () => {
+	const { home, proj } = setup();
+	const stampFile = path.join(home, 'kit-install.json');
+	const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+	const slow = 'setTimeout(() => {}, 60000);\n';
+	for (const f of ['canary.cjs', 'sweep-guard.cjs']) {
+		fs.writeFileSync(path.join(home, 'kit-hooks', f), slow);
+		stamp.files[`kit-hooks/${f}`] = crypto.createHash('sha256').update(slow).digest('hex');
+	}
+	fs.writeFileSync(stampFile, JSON.stringify(stamp, null, 2));
+	const input = { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: 'x' }, cwd: proj, session_id: 's1' };
+	const t0 = Date.now();
+	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify(input), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home }, timeout: 20000 });
+	assert.equal(r.status, 0, r.stderr);
+	assert.ok(Date.now() - t0 < 8000, `the guard took ${Date.now() - t0} ms`);
+});
+
 // why: catches a silent switch-off (the 1.26.0 carry-over C12): a kit hook the owner kept or merged by hand no longer
 // matches its recorded bytes, so the one guard process skips it; the session must hear that, not lose it in silence.
 test('C12 kit hooks: a changed kit hook that is skipped says so', () => {
