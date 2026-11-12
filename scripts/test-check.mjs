@@ -20,7 +20,8 @@ const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z
 const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 const TEST_FILE = /^tests\/.*\.test\.mjs$/;
 // What a large test needs (rule:test-lanes): another host, a browser, a live model.
-const LARGE = /https?:\/\/(?!127\.0\.0\.1|localhost|\[::1\])[a-z0-9.-]+\.[a-z]{2,}|\b(playwright|puppeteer|chromium\.launch)\b|ANTHROPIC_API_KEY|\bclaude(\.exe)?['"]?\s*,\s*\[\s*['"]-p['"]/i;
+// A URL only counts where a call reaches it: a test of a pattern names hosts in strings it never visits.
+const LARGE = /\b(fetch|https?\.(get|request)|goto)\(\s*['"`]https?:\/\/(?!127\.0\.0\.1|localhost|\[::1\])[a-z0-9.-]+\.[a-z]{2,}|\b(playwright|puppeteer|chromium\.launch)\b|ANTHROPIC_API_KEY|\bclaude(\.exe)?['"]?\s*,\s*\[\s*['"]-p['"]/i;
 
 // The top-level tests of a file's text: name, its comment lines and body.
 function tests(text) {
@@ -50,6 +51,12 @@ function run(dir, keys, env = {}) {
 	const red = new Map();
 	// Each top-level "not ok <n> - <name>" with its YAML block up to the next result line.
 	for (const m of out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?\n([\s\S]*?)(?=^(?:ok|not ok) \d+ - |^1\.\.|(?![\s\S]))/gm)) red.set(m[1], /ERR_ASSERTION|AssertionError/.test(m[2]));
+	// A file that could not load (an import the base lacks) fails as a whole, under its own path: each of its tests
+	// went red, and not on an assertion.
+	// TAP writes a Windows path with each backslash doubled.
+	const slash = (s) => s.replace(/\\\\/g, '\\').replace(/\\/g, '/');
+	const failedFiles = new Set([...red.keys()].map(slash));
+	for (const f of files) if (failedFiles.has(slash(f))) red.set(`file:${path.relative(dir, f).replace(/\\/g, '/')}`, false);
 	return red;
 }
 
@@ -89,7 +96,8 @@ export function check(root, base, { strict = false } = {}) {
 			}
 			const red = run(copy, newOrChanged.map((t) => t.key), { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home });
 			for (const t of newOrChanged) {
-				if (!red.has(t.name)) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
+				if (!red.has(t.name) && red.has(`file:${t.file}`)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)');
+				else if (!red.has(t.name)) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
 				else if (!red.get(t.name)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (a crash or a missing file)');
 			}
 		} finally {

@@ -38,8 +38,11 @@ function repo() {
 		"test('a hollow one', () => { assert.equal(typeof a.isPos(5), 'boolean'); });",
 		'// why: guards rule:outward-acts',
 		"test('a guarded one', () => { assert.equal(a.isPos(0), false); });",
-		"test('a browser one', () => { const url = 'https://example.com/x'; assert.equal(a.isPos(0), false, url); });",
+		"test('a browser one', () => { const go = () => fetch('https://example.com/x'); assert.equal(a.isPos(0), false, typeof go); });",
+		"test('a pattern one', () => { assert.equal(a.isPos(0), false, 'a host in a string: https://hooks.example.com/x'); });",
 		''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'src', 'b.cjs'), 'exports.two = () => 2;\n');
+	fs.writeFileSync(path.join(dir, 'tests', 'b.test.mjs'), [head[0], head[1], head[2], "const b = createRequire(import.meta.url)('../src/b.cjs');", "test('two is two', () => { assert.equal(b.two(), 2); });", ''].join('\n'));
 	sh(dir, 'add', '.');
 	sh(dir, 'commit', '-qm', 'fix');
 	return dir;
@@ -57,6 +60,8 @@ test('the test check names a test that does not fail first, catches nothing or s
 	assert.match(r.stdout, new RegExp(`A3 ${k('a browser one')}: `));
 	assert.doesNotMatch(r.stdout, new RegExp(`A[12] ${k('zero is not positive')}`), 'the real new test was named');
 	assert.doesNotMatch(r.stdout, new RegExp(`A2 ${k('a guarded one')}`), 'a guard test was asked to catch a flip');
+	assert.doesNotMatch(r.stdout, new RegExp(`A3 ${k('a pattern one')}`), 'a host named in a string is not a call to it');
+	assert.match(r.stdout, /A1 tests\/b\.test\.mjs::two is two: .*could not load/);
 	assert.doesNotMatch(r.stdout, /one is positive/, 'an unchanged test was checked');
 	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--strict'], { cwd: dir, encoding: 'utf8' }).status, 1, 'strict fails on a finding');
 });

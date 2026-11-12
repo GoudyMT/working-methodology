@@ -338,7 +338,7 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	const Z = '0'.repeat(40);
 	// An empty remote the hook can ask (C19): with no branch there, a push of main is a new repo's first push.
 	const bare = kitTemp.makeTemp('push-remote-');
-	spawnSync('git', ['init', '-q', '--bare', bare], { encoding: 'utf8' });
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { encoding: 'utf8' });
 	const push = (line, env = {}) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: line + '\n', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: '', KIT_PUSH_APPROVED: '', ...env } });
 	assert.equal(push(`refs/heads/feat/x ${main} refs/heads/feat/x ${Z}`).status, 0, 'a new feature branch');
 	for (const [why, line] of [['main', `refs/heads/main ${main} refs/heads/main ${Z}`], ['a tag', `refs/tags/v1 ${main} refs/tags/v1 ${Z}`], ['a delete', `(delete) ${Z} refs/heads/feat/x ${main}`]]) {
@@ -545,9 +545,9 @@ test('each refusal names one act to quote, one kind, and a fix the hold lets thr
 	// C7: a held push names one act to quote, in the shell that runs it; for main it says the act is for a new repo only.
 	const feat = why('Bash', { command: 'git push --force origin feat/x' });
 	assert.equal((feat.match(/`[^`]+`/g) || []).filter((s) => !s.startsWith('`<')).length, 1, `two acts to quote: ${feat}`);
-	assert.ok(feat.includes('`KIT_PUSH_APPROVED=1 git push --force origin feat/x`'), feat);
+	assert.ok(feat.includes('`KIT_PUSH_APPROVED=1 git push --force origin feat/x`'), feat); // pin: 1 the owner-yes matcher reads this act back
 	const ps = why('PowerShell', { command: 'git push --force origin feat/x' });
-	assert.ok(ps.includes("`$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x`"), `PowerShell got no marker act: ${ps}`);
+	assert.ok(ps.includes("`$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x`"), `PowerShell got no marker act: ${ps}`); // pin: 1
 	popUp({ act: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x", tried: { tool: 'PowerShell', input: { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" } } });
 	assert.equal(withYes('PowerShell', { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" }), 'allow', 'the PowerShell act the refusal names runs on that yes');
 	assert.match(why('Bash', { command: 'git push origin main' }), /new repo's first push/);
