@@ -35,6 +35,10 @@ function actText(input) {
 	const str = (v) => typeof v === 'string';
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(name)) return str(t.command) ? squash(t.command) : '';
 	if (name === 'Write' && str(t.file_path) && str(t.content)) return squash(`Write ${t.file_path}: ${t.content}`);
+	// An edit whose text holds the quote's own separators (" => ", " ; ") would read as another edit, so it has no
+	// act and no yes: the owner makes that edit (the 1.25.0 sweep, R1.5).
+	const sep = (s) => / => | ; /.test(squash(s));
+	if (['Edit', 'MultiEdit'].includes(name) && [t.old_string, t.new_string, ...(Array.isArray(t.edits) ? t.edits.flatMap((e) => [e && e.old_string, e && e.new_string]) : [])].some((s) => str(s) && sep(s))) return '';
 	if (name === 'Edit' && str(t.file_path) && str(t.old_string) && str(t.new_string)) return squash(`Edit ${t.file_path}${t.replace_all ? ' (every match)' : ''}: ${t.old_string} => ${t.new_string}`);
 	if (name === 'MultiEdit' && str(t.file_path) && Array.isArray(t.edits) && t.edits.every((e) => e && str(e.old_string) && str(e.new_string))) {
 		return squash(`MultiEdit ${t.file_path}: ${t.edits.map((e) => `${e.old_string} => ${e.new_string}${e.replace_all ? ' (every match)' : ''}`).join(' ; ')}`);
@@ -92,6 +96,18 @@ function ownerYes(input, now = Date.now()) {
 	try { lines = fs.readFileSync(String(input.transcript_path), 'utf8').split('\n'); } catch { return null; }
 	const yes = yeses(lines).filter((y) => y.acts.includes(act)).pop();
 	if (!yes || now - yes.at < 0 || now - yes.at > FRESH_MS) return null;
+	// The yes is for the shell the held call ran in: Bash and PowerShell read the same text differently (the 1.25.0
+	// sweep, R1.6). The last call of this act before the pop-up names it.
+	let tried = '';
+	for (const raw of lines.slice(0, yes.asked)) {
+		let e;
+		try { e = JSON.parse(raw); } catch { continue; }
+		if (e.isSidechain || e.type !== 'assistant') continue;
+		for (const b of (e.message && Array.isArray(e.message.content) ? e.message.content : [])) {
+			if (b && b.type === 'tool_use' && actText({ tool_name: b.name, tool_input: b.input }) === act) tried = String(b.name);
+		}
+	}
+	if (tried && tried !== String(input.tool_name)) return null;
 	// Spent by any run of the act after the pop-up was asked, the answer's own line or not: Claude Code writes every
 	// tool call of a message before their results, so an act sent beside the pop-up sits above the answer (the 1.25.0
 	// sweep: one tap ran it twice).
@@ -147,10 +163,21 @@ function pushAct(act) {
 	const flags = rest.filter((x) => x.startsWith('-'));
 	const specs = rest.filter((x) => !x.startsWith('-')).slice(1);
 	return {
-		dests: specs.map((s) => s.replace(/^\+/, '').split(':').pop().replace(/^refs\/(heads|tags)\//, '')),
+		dests: specs.map((s) => s.replace(/^\+/, '').split(':').pop()),
 		force: flags.some((f) => /^(-f|--force|--force-with-lease)/.test(f)) || specs.some((s) => s.startsWith('+')),
 		del: flags.includes('-d') || flags.includes('--delete') || specs.some((s) => s.startsWith(':')),
 	};
+}
+
+// Whether a yes to this act covers a push of this ref: a destination written in full (refs/heads/x, refs/tags/x) names
+// only that kind of ref; a short name covers either, as git itself resolves it (the 1.25.0 sweep, R2.9: a yes to push
+// a branch let a tag of the same name go).
+function grantsRef(act, ref, kind = '') {
+	const p = pushAct(act);
+	if (!p) return false;
+	const short = String(ref).replace(/^refs\/(heads|tags)\//, '');
+	const named = p.dests.some((d) => (/^refs\//.test(d) ? d === ref : d === short));
+	return named && (kind !== 'force' || p.force) && (kind !== 'delete' || p.del);
 }
 
 // The pre-push hook's check behind the marker: this session's own transcript (Claude Code names the session in the
@@ -179,10 +206,7 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 		try { lines = fs.readFileSync(path.join(root, d, `${sessionId}.jsonl`), 'utf8').split('\n'); } catch { continue; }
 		for (const y of yeses(lines)) {
 			if (now - y.at < 0 || now - y.at > FRESH_MS || used.some((t) => !Number.isFinite(t) || t >= y.at)) continue;
-			for (const a of y.acts) {
-				const p = pushAct(a);
-				if (p && p.dests.includes(name) && (kind !== 'force' || p.force) && (kind !== 'delete' || p.del)) return true;
-			}
+			for (const a of y.acts) if (grantsRef(a, ref, kind)) return true;
 		}
 	}
 	return false;
@@ -211,4 +235,4 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, sessionYes, FRESH_MS };
+module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, FRESH_MS };

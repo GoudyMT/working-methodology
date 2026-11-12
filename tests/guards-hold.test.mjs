@@ -226,12 +226,14 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], file = TRANSCRIPT }) {
+function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = null, file = TRANSCRIPT }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
 	const question = `May I run \`${act}\`?`;
 	const input = { questions: [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }] };
 	if (filled) input.answers = { [question]: answer };
 	const lines = [
+		// The call the guard held before the pop-up, in the tool that ran it.
+		...(tried ? [{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_tried', name: tried.tool, input: tried.input }] } }] : []),
 		// An act sent in the same message as the pop-up is written before the answer, as Claude Code writes it.
 		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_ask1', name: 'AskUserQuestion', input }, ...beside.map((command, k) => ({ type: 'tool_use', id: `toolu_beside${k}`, name: 'Bash', input: { command } }))] } },
 		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask1', content: 'answered' }] } },
@@ -418,6 +420,24 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	fs.writeFileSync(logFile, `2026-11-10T00:00:00.3NZ owner refs/heads/main ${main}\n`);
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a log line whose time cannot be read');
 	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
+});
+
+// why: guards rule:outward-acts (a yes answers the one act the owner read). The 1.25.0 carry-overs: an edit whose text
+// holds the quote's own separators reads as another edit (R1.5); a yes given after a held call in one shell let the
+// same text run in another, which reads it differently (R1.6); a yes to push a branch let a tag of that name go
+// (R2.9).
+test('a yes answers one act: no ambiguous edit quote, the same shell, a branch not a tag', async () => {
+	const file = path.join(proj, '.claude', 'settings.json');
+	popUp({ act: `Edit ${file}: x => y => z` });
+	assert.equal(withYes('Edit', { file_path: file, old_string: 'x => y', new_string: 'z' }), 'deny', 'an edit quote with its own separator in it');
+	const act = 'gh pr create --fill';
+	popUp({ act, tried: { tool: 'Bash', input: { command: act } } });
+	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes after a Bash call ran in PowerShell');
+	assert.equal(withYes('Bash', { command: act }), 'allow');
+	const { grantsRef } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));
+	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin refs/heads/v1', 'refs/tags/v1'), false, 'a branch yes pushed a tag');
+	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin refs/tags/v1', 'refs/tags/v1'), true);
+	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin v1', 'refs/tags/v1'), true, 'git itself resolves a short name');
 });
 
 // why: guards rule:security-standards (no secret leaves in a push). The 1.25.0 carry-over R2.10: the scan read each
