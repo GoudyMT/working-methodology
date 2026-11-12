@@ -32,6 +32,6 @@
   switcher, was not met); the PIN field's fallback design was not needed (the owner: "No to both.").
 - **Shots:** the lead's 320 px and desktop shots of each flow, light and dark, posted in the thread; none from the
   owner's phone (journal text stays on the device).
-- **Result:** PASS. Merge on the owner's go.
+- **Result:** PASS. Merge on the owner's yes.
 - **Not verified:** iOS Safari (no Apple device in the test set); recorded NOT VERIFIED in the PR body.
 - **Plan:** `docs/plans/2026-05-02-journal-lock-pin.md` (Progress, "Preview test" record).

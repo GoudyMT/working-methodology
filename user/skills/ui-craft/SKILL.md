@@ -45,7 +45,7 @@ already locked, name the lock and do not mock it again.
 
 - Reference: [direction-and-tells.md](references/direction-and-tells.md); values from
   [typography.md](references/typography.md) and [color-and-surfaces.md](references/color-and-surfaces.md).
-- **Done when:** a locatable lock exists (mockup, spec section or the owner's explicit yes) for every visual
+- **Done when:** a locatable lock exists (mockup, spec section or the owner's yes) for every visual
   the change touches.
 
 Why: a visual decided in code is drift; a visual locked from prose hides what a picture shows.

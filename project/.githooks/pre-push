@@ -1,7 +1,7 @@
 #!/bin/sh
 # Pushes are the owner's (rule:outward-acts), with one bound the owner set (T1, 2026-11-10): an AI tool (its shell
 # marked AI_AGENT, or CLAUDECODE for Claude Code) may push a feature branch without a yes. Anything else from an AI
-# tool - main, master, the remote's default branch, a tag, a delete, a force push - needs the owner's go, after which
+# tool - main, master, the remote's default branch, a tag, a delete, a force push - needs the owner's yes, after which
 # the agent runs the push with KIT_PUSH_APPROVED=1 (Claude Code's guard lets that through only on the owner's pop-up
 # yes). Every AI push is scanned for secrets, commit by commit, and logged. The owner's own terminal is left alone.
 # Git gives the refs being pushed on stdin once; keep them for every check below.
@@ -25,22 +25,38 @@ if [ -n "$AI_AGENT$CLAUDECODE" ]; then
         git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null || why="${why:-a force push}" ;;
       esac
       if [ -n "$why" ]; then
-        echo "Push blocked: an AI agent may push only a feature branch without the owner's go ($rref: $why). Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
+        echo "Push blocked: an AI agent may push only a feature branch without the owner's yes ($rref: $why). Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
         exit 1
       fi
     done <<EOF
 $refs
 EOF
     if [ "$sent" = 0 ]; then
-      echo "Push blocked: an AI agent is pushing without the owner's go. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
+      echo "Push blocked: an AI agent is pushing without the owner's yes. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
       exit 1
     fi
   else
     # The marker is a variable any script can set, so it counts only beside the owner's own pop-up yes, in this
     # session's transcript, to a push that names each ref (T1).
     yes="$(dirname "$0")/../.claude/owner-yes.cjs"
+    default=$(git symbolic-ref --short "refs/remotes/$1/HEAD" 2>/dev/null)
+    default=${default#"$1"/}
     while read -r lref lsha rref rsha; do
       [ -n "$rref" ] || continue
+      # The owner, 2026-11-11: an AI pushes to main only as a new repo's first push. Git fills rsha from the remote's
+      # own answer during the push, so all zeros means the remote has no such branch yet; no local ref can fake it.
+      # Once main exists there, it takes a PR, whatever the yes.
+      branch=${rref#refs/heads/}
+      case "$rsha" in *[!0]*)
+        case "$branch" in main|master)
+          echo "Push blocked: $branch takes a PR. An AI agent pushes to main only as a new repo's first push, and this remote already has $branch; open a PR instead." >&2
+          exit 1 ;;
+        esac
+        if [ -n "$default" ] && [ "$branch" = "$default" ]; then
+          echo "Push blocked: $branch is the remote's default branch and takes a PR; open a PR instead." >&2
+          exit 1
+        fi ;;
+      esac
       kind=""
       case "$lsha" in *[!0]*) ;; *) kind=delete ;; esac
       case "$rsha" in *[!0]*)

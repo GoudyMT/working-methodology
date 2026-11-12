@@ -607,7 +607,7 @@ test('vault backup copies the private notes, never a secret, and commits without
   // A second backup with nothing new makes no commit.
   assert.equal(vaultBackup({ projectDir: proj, date: '2026-10-27' }).committed, false);
   fs.writeFileSync(path.join(proj, 'notes.md'), 'my notes, more\n');
-  assert.match(preCompactReport({ kit, home, projectDir: proj }), /Vault backup: 1 file\(s\) changed, committed in .*vault\. Push on the owner's go\./);
+  assert.match(preCompactReport({ kit, home, projectDir: proj }), /Vault backup: 1 file\(s\) changed, committed in .*vault\. Push on the owner's yes\./);
 });
 
 test('pre-compact reminds a project with no vault backup to set one up', () => {
@@ -4311,7 +4311,8 @@ test('status names a memory index past 6,000 B, which loads in every session', (
 // approved words (Tier 0), is the failure this guards.
 // The owner, 2026-11-10 (pop-up): Rule 14 names the feature-branch push bound.
 test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing grant, and Rule 14 is the owner\'s text', () => {
-  const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s knowledge and go, except a plain push of a feature branch to origin (never main, a tag, a force or a delete) and a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
+  // The owner's text, re-locked 2026-11-11 (build 1b): the push bound points to rule:outward-acts.
+  const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s yes, except a push inside the push bound (rule:outward-acts) and a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
   assert.ok(read(path.resolve('project/CLAUDE.md')).split('\n').includes(rule14), 'CLAUDE.md Hard Rule 14 is the approved text');
   const six = read(path.resolve('rules/_parts/agents-head.md')).split('\n').find((l) => l.startsWith('6. '));
   assert.match(six, /standing grant/i);
@@ -5523,6 +5524,26 @@ test('the hook check reads the call cap and sweep guard the guard launcher runs 
   assert.equal(installed({ CLAUDE_CONFIG_DIR: fake }).status, FIX_EXIT, 'a fake launcher named by CLAUDE_CONFIG_DIR');
   assert.equal(installed().status, FIX_EXIT, 'the launcher wired but the call cap gone');
 });
+// B18 (the 1.25.1 sweep): the clause "the install folder's own settings turn hooks off" had no test; taking it out left
+// every hook-check test green. Here CLAUDE_CONFIG_DIR names another folder, so only that clause can see it.
+test('the hook check is not wired when the settings of the folder it was installed in turn hooks off', () => {
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), read(path.resolve('project/.claude/settings.json')));
+  commitAll(dir, 'settings', true);
+  const cfg = path.join(makeTemp('approve-home-'), '.claude');
+  install({ kit: path.resolve('.'), home: cfg, target: 'user' });
+  const other = makeTemp('approve-other-');
+  const f = path.join(dir, 'sweeps', 'contract.json');
+  fs.writeFileSync(f, JSON.stringify(featureContract()));
+  const installed = () => spawnSync('node', [path.join(cfg, 'skills', 'pre-pr-sweep', 'approve.mjs'), f], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: other } });
+  const r = installed();
+  assert.equal(r.status, 0, r.stdout);
+  spawnSync('node', [path.join(cfg, 'skills', 'pre-pr-sweep', 'approve.mjs'), f, '--outcome', '--none-ran'], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: other } });
+  const settings = JSON.parse(read(path.join(cfg, 'settings.json')));
+  fs.writeFileSync(path.join(cfg, 'settings.json'), JSON.stringify({ ...settings, disableAllHooks: true }));
+  assert.equal(installed().status, FIX_EXIT, 'hooks off in the install folder\'s own settings read as wired');
+});
 test('the hook check reads real wiring, and a branch cannot delete its way out of it', () => {
   const put = (dir, text) => { fs.mkdirSync(path.join(dir, '.claude'), { recursive: true }); fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), text); commitAll(dir, 'settings', true); };
   const wiredText = '{"hooks":{"PreToolUse":[{"args":["/opt/kit/kit-hooks/call-cap.cjs"]},{"args":["/opt/kit/kit-hooks/sweep-guard.cjs"]}]}}\n';
@@ -6074,7 +6095,7 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
     const text = read(path.resolve(f));
     assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*`\$HOME` in PowerShell/, f);
     // pin: 2 (the lead's order when the tool is missing)
-  assert.match(text, /not there, the kit's user layer is not installed: say so, and the owner approves/, f);
+  assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }
   assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\)[^\n]*to the owner/);
 });

@@ -598,7 +598,7 @@ export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOStr
 /**
  * One auto-fix push, inside the owner's grant: the kill switch stops it, an armed PR is disarmed first, it only moves
  * the PR's own branch forward, and the commit that went out is logged. Git runs with no hooks: the pre-push hook asks
- * for the owner's go, this grant is that go, and a branch must not ship code that runs inside it.
+ * for the owner's yes, this grant is that yes, and a branch must not ship code that runs inside it.
  *
  * Returns:
  *     { pushed, sha, faults }

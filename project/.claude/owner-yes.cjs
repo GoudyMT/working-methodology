@@ -112,6 +112,16 @@ function howToAsk(input) {
 	return ' To run it: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (`<the exact command>`, or for a file `Edit <file>: <old text> => <new text>`), one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run it again unchanged, once.';
 }
 
+// One voice for every refusal (T16a, the owner 2026-11-11): each opens with its kind, then the limit it hit, then what
+// to do. The kinds: "Owner's yes needed" (the pop-up below), "Hand back" (a subagent cannot ask), "Never by a tool"
+// (no yes makes a tool do it) and "Held" (a guard could not run). The openings are the order a session acts on.
+function askText(what, input) {
+	if (input && input.agent_id) return `Hand back: a subagent cannot get the owner's yes. Leave this out (${what}) and name it in your report, so the lead asks.`;
+	return `Owner's yes needed: ${what}.` + howToAsk(input);
+}
+const yesText = (what) => `Owner's yes given in the pop-up for this exact command: ${what}.`;
+const neverText = (what) => `Never by a tool: ${what}.`;
+
 // The destination refs of a push command the owner said yes to, and whether it forces or deletes:
 // `KIT_PUSH_APPROVED=1 git push origin main` -> { dests: ['main'], force: false, del: false }.
 // This folder and every folder above it: the folders a session may have run in for this repo. A sibling folder whose
@@ -195,4 +205,4 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { ownerYes, actText, howToAsk, pushGrant, sessionYes, FRESH_MS };
+module.exports = { ownerYes, actText, howToAsk, askText, yesText, neverText, pushGrant, sessionYes, FRESH_MS };

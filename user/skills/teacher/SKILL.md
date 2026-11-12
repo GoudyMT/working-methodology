@@ -76,7 +76,7 @@ check-question, with options.
 ## The question path to the main session (path B)
 
 - Open questions go under "Gaps for the overseer" in your notes, each with an ID (G1, G2 ...).
-- Proposals carry IDs (P1, P2 ...). The Teacher never marks a proposal approved; the owner approves in the main session's
+- Proposals carry IDs (P1, P2 ...). The Teacher never marks a proposal approved; the owner says yes in the main session's
   chat.
 - The main session answers in the decision log and records every status in its "Markers for the Teacher" block
   (the forms: templates/main-session-side.md - answered, approved, declined, deferred).

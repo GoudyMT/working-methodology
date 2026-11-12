@@ -301,7 +301,8 @@ test('the settings take the owner\'s yes for the exact edit; the guards and hook
 	// What a held write tells Claude: the main session asks in the pop-up; a subagent hands it back.
 	const reason = (extra) => JSON.parse(spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: settings, content: '{"x":1}' }, cwd: proj, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } }).stdout).hookSpecificOutput.permissionDecisionReason;
 	assert.match(reason({}), /AskUserQuestion pop-up/);
-	assert.match(reason({ agent_id: 'a1' }), /subagent cannot get that yes/);
+	// pin: 2 (the kind a session acts on: hand back, or ask the owner)
+	assert.match(reason({ agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 	const guard = path.join(proj, '.claude', 'guard-outward.cjs');
 	popUp({ act: `Write ${guard}: x` });
 	assert.equal(withYes('Write', { file_path: guard, content: 'x' }), 'deny', 'a guard file, even with a yes');
@@ -351,6 +352,14 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.notEqual(push(`refs/heads/mainline ${main} refs/heads/mainline ${Z}`, go).status, 0, 'nor for a branch whose name starts the same');
 	assert.equal(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'main after the owner\'s pop-up go');
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the yes is spent once the push went');
+	// The owner, 2026-11-11: an AI pushes to main only as a new repo's first push; once the remote has main, main takes
+	// a PR, whatever the yes. Git fills the remote's value from the remote itself, so no local ref can fake "new".
+	for (const ref of ['main', 'master']) {
+		popUp({ act: `KIT_PUSH_APPROVED=1 git push origin ${ref}`, file });
+		const r = push(`refs/heads/${ref} ${main} refs/heads/${ref} ${main}`, go);
+		assert.notEqual(r.status, 0, `a push to an existing ${ref} ran on a yes`);
+		assert.match(r.stderr, /takes a PR/);
+	}
 	// A key added in one commit and removed in the next still goes out with the push.
 	fs.writeFileSync(path.join(dir, 'b.md'), 'token: ' + 'gh' + 'p_' + 'Zx9Qk2Lm'.repeat(5) + '\n');
 	g('add', '.');
@@ -406,4 +415,70 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	fs.writeFileSync(logFile, `2026-11-10T00:00:00.3NZ owner refs/heads/main ${main}\n`);
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a log line whose time cannot be read');
 	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
+});
+
+// T16a (the owner's locks, 2026-11-11): one voice for refusals. Each opens with its kind, names the limit it hit and
+// what to do; a gate bypass is never allowed by a tool, even with a pop-up yes. Pinned here because the openings are
+// the order a session acts on.
+const why = (tool_name, tool_input, extra = {}) => {
+	const r = spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+	return (r.stdout && JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason) || '';
+};
+test('a held push names the limit of the push bound it hit', () => {
+	const limits = [
+		['git push origin main', /a push to main is outside the push bound; main takes a PR, and a tool pushes there only as a new repo's first push/],
+		['git push origin master', /a push to master is outside the push bound/],
+		['git push --force origin feat/x', /a force push is outside the push bound/],
+		['git push origin +feat/x', /a force push is outside the push bound/],
+		['git push origin --delete feat/x', /a delete is outside the push bound/],
+		['git push origin :feat/x', /a delete is outside the push bound/],
+		['git push --tags origin feat/x', /a tag push is outside the push bound/],
+		['git push upstream feat/x', /not a plain push to origin, so it is outside the push bound/],
+	];
+	for (const [c, re] of limits) {
+		const text = why('Bash', { command: c });
+		assert.match(text, /^Owner's yes needed: /, c);
+		assert.match(text, re, c);
+		assert.match(text, /AskUserQuestion pop-up/, `${c}: the pop-up shape the guard reads`);
+	}
+	// The pre-push hook lets an AI push outside the bound only with its marker set, so the act to quote names it: one
+	// pop-up, not a second one after the hook refuses the first push.
+	assert.ok(why('Bash', { command: 'git push origin main' }).includes('`KIT_PUSH_APPROVED=1 git push origin main`'), 'the push act to quote');
+	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main' });
+	assert.equal(withYes('Bash', { command: 'KIT_PUSH_APPROVED=1 git push origin main' }), 'allow', 'the act the refusal names runs on that yes');
+	// pin: 2 (the kind a session acts on: hand back, or ask the owner)
+	assert.match(why('Bash', { command: 'gh pr create --fill' }), /^Owner's yes needed: gh pr create is an outward act/);
+	assert.match(why('Bash', { command: 'git push origin main' }, { agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
+});
+test('a gate bypass is never allowed by a tool, even with the owner\'s pop-up yes', () => {
+	for (const act of ['git commit --no-verify -m x', 'git -c core.hooksPath=/dev/null commit -m x', 'git config core.hooksPath /dev/null']) {
+		popUp({ act });
+		assert.equal(withYes('Bash', { command: act }), 'deny', `${act} ran on a pop-up yes`);
+		assert.match(why('Bash', { command: act }), /^Never by a tool: .*gate bypass/, act);
+	}
+});
+test('a protected file and the owner\'s answers are refused in the never voice', () => {
+	assert.match(why('Write', { file_path: path.join(proj, '.claude', 'guard-outward.cjs'), content: 'x' }), /^Never by a tool: .*protected file/);
+	assert.match(why('Write', { file_path: TRANSCRIPT, content: 'x' }), /^Never by a tool: /);
+});
+
+// The 1.26.0 sweep: a gate bypass was refused only when it was the first reason the guard found, so a push or the
+// marker in front of it hid it, and the owner's pop-up yes then let it run. And a write to main that runs no pre-push
+// hook (send-pack, the API) passed on a yes, though main takes a PR.
+test('a gate bypass anywhere in a command, and a hook-free write to main, are never a tool\'s act', () => {
+	const acts = [
+		'KIT_PUSH_APPROVED=1 git push --no-verify origin main',
+		'KIT_PUSH_APPROVED=1 git -c core.hooksPath=/dev/null push origin main',
+		'git push origin main && git commit -n -m x',
+		'git config alias.c "commit --no-verify"',
+		'git send-pack https://github.com/o/r main',
+		'gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc',
+	];
+	for (const act of acts) {
+		popUp({ act });
+		assert.equal(withYes('Bash', { command: act }), 'deny', `${act} ran on a pop-up yes`);
+		assert.match(why('Bash', { command: act }), /^Never by a tool: /, act);
+	}
+	// The act to quote is offered only for a plain push on its own; a compound command gets none.
+	assert.ok(!why('Bash', { command: 'git add . && git push origin main' }).includes('KIT_PUSH_APPROVED=1 git add'), 'the marker offered in front of a compound command');
 });

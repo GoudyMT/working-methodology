@@ -35,7 +35,10 @@ const same = (a, b) => (WIN ? path.resolve(a).toLowerCase() === path.resolve(b).
  */
 function recordName(dir) {
 	const full = WIN ? path.resolve(dir).toLowerCase() : path.resolve(dir);
-	return `${full.replace(/[^A-Za-z0-9]/g, '-')}-${sha(full).slice(0, 10)}`;
+	// The name is cut to its first 100 characters (B13): the shims sit in it, and a long project path took them past
+	// Windows' 260, where git finds no hook and the kit hooks stop silently. The hash of the full path keeps two long
+	// paths apart; a name that fits is the one 1.25.1 gave, so an installed project keeps its record.
+	return `${full.replace(/[^A-Za-z0-9]/g, '-').slice(0, 100)}-${sha(full).slice(0, 10)}`;
 }
 const recordDir = (dir) => path.join(RECORDS, recordName(dir));
 
@@ -58,7 +61,7 @@ function findProject(input) {
 		const slug = path.basename(path.dirname(String(input.transcript_path)));
 		let names = [];
 		try { names = fs.readdirSync(RECORDS); } catch { /* none */ }
-		for (const n of names.filter((x) => x.toLowerCase().startsWith(slug.toLowerCase() + '-'))) {
+		for (const n of names.filter((x) => x.toLowerCase().startsWith(slug.toLowerCase().slice(0, 100) + '-'))) {
 			try {
 				const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, n, 'record.json'), 'utf8'));
 				if (rec && rec.projectDir && path.resolve(rec.projectDir).replace(/[^A-Za-z0-9]/g, '-').toLowerCase() === slug.toLowerCase()) return { dir: path.resolve(rec.projectDir), rec };
@@ -82,7 +85,7 @@ function settingsProblem(text) {
 	if (!s || typeof s !== 'object') {
 		// A file JSON.parse cannot read may still be one another reader takes (a comment, a stray comma): the safe side.
 		if (/"disableAllHooks"\s*:\s*true/.test(body)) return '"disableAllHooks": true turns off every hook, the kit guards with them';
-		const named = [...body.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]).filter((k) => ENV_KEYS.test(k));
+		const named = [...body.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]).filter((k) => k !== 'env' && ENV_KEYS.test(k));
 		return named.length ? `its env may set ${[...new Set(named)].join(', ')}, which changes how the guards start` : '';
 	}
 	if (s.disableAllHooks === true) return '"disableAllHooks": true turns off every hook, the kit guards with them';
@@ -135,7 +138,7 @@ function hooksPathNow(dir) {
 }
 
 /** Everything that differs from the record: guard files, the hook shims, the git hooks setting, settings that take hooks off. */
-function verify(dir, rec, extraDirs = []) {
+function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'hooks')) {
 	const changed = [];
 	const files = new Map();
 	// Each guard file is read at its real place, and only when that is where the project says it is: through a junction
@@ -150,7 +153,9 @@ function verify(dir, rec, extraDirs = []) {
 		if (at && real && !same2(at, path.join(real, key))) { changed.push(`${key} (reached through a link)`); continue; }
 		let bytes = null;
 		try { bytes = at && fs.readFileSync(at); } catch { /* missing */ }
-		if (!bytes || sha(bytes) !== want) changed.push(key);
+		// A host's own file passes at any version the owner accepted (B15); only the host's, never a kit file.
+		const ok = bytes && (sha(bytes) === want || ((rec.host || []).includes(key) && ((rec.accepted || {})[key] || []).includes(sha(bytes))));
+		if (!ok) changed.push(key);
 		else files.set(WIN ? at.toLowerCase() : at, bytes.toString('utf8'));
 	}
 	// A hook in .githooks that no record holds would run through the shims with no check (the second pass on 0772397).
@@ -160,9 +165,13 @@ function verify(dir, rec, extraDirs = []) {
 	// The git hook shims beside the record: one swapped there would skip this check at the next commit or push.
 	for (const [name, want] of Object.entries(rec.shims || {})) {
 		let bytes = null;
-		try { bytes = fs.readFileSync(path.join(recordDir(dir), 'hooks', name)); } catch { /* missing */ }
+		try { bytes = fs.readFileSync(path.join(shimsAt, name)); } catch { /* missing */ }
 		if (!bytes || sha(bytes) !== want) changed.push(`kit-guard hooks/${name}`);
 	}
+	// A file in the shims folder that install did not write is a hook git would run with no check.
+	let inShims = [];
+	try { inShims = fs.readdirSync(shimsAt); } catch { /* none */ }
+	for (const name of inShims) if (rec.shims && !Object.prototype.hasOwnProperty.call(rec.shims, name)) changed.push(`kit-guard hooks/${name} (not in the install record)`);
 	const settings = [];
 	for (const d of [dir, ...extraDirs]) {
 		for (const name of ['settings.json', 'settings.local.json']) {
@@ -203,18 +212,35 @@ const KIT_SKIP = new Set(['reports', 'node_modules', 'tests', 'scrub.local.json'
 const GIT_KEEP = new Set(['config', 'config.worktree', 'commondir', 'info', 'hooks']);
 function kitFingerprint(kitDir) {
 	const h = crypto.createHash('sha256');
+	// A git folder counts only its parts that name programs git runs or what it reads.
+	const gitTop = (rel) => ['.git/', '@gitdir/', '@common/'].includes(rel);
 	const walk = (abs, rel) => {
 		for (const e of fs.readdirSync(abs, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
 			if (!rel && KIT_SKIP.has(e.name)) continue;
-			if (rel === '.git/' && !GIT_KEEP.has(e.name)) continue;
-			if (!rel && e.name === '.git' && !e.isDirectory()) throw new Error('a .git file');
+			if (gitTop(rel) && !GIT_KEEP.has(e.name)) continue;
 			const r = rel + e.name;
 			if (e.isSymbolicLink()) throw new Error('link');
 			if (e.isDirectory()) walk(path.join(abs, e.name), r + '/');
 			else if (e.isFile()) h.update(`${r}\0${sha(fs.readFileSync(path.join(abs, e.name)))}\n`);
 		}
 	};
-	try { walk(path.resolve(kitDir), ''); } catch { return null; }
+	try {
+		const top = path.resolve(kitDir);
+		walk(top, '');
+		// A worktree (W2): its .git file names its own git folder, and that names the shared one; both are pinned the way
+		// a plain clone's .git folder is.
+		const dotGit = path.join(top, '.git');
+		if (fs.existsSync(dotGit) && fs.lstatSync(dotGit).isFile()) {
+			const m = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+			if (!m) throw new Error('a .git file that names no git folder');
+			const own = path.resolve(top, m[1]);
+			h.update(`@gitdir\0${posix(own)}\n`);
+			walk(own, '@gitdir/');
+			let common = null;
+			try { common = path.resolve(own, fs.readFileSync(path.join(own, 'commondir'), 'utf8').trim()); } catch { /* none */ }
+			if (common) { h.update(`@common\0${posix(common)}\n`); walk(common, '@common/'); }
+		}
+	} catch { return null; }
 	return h.digest('hex');
 }
 const kitUnchanged = (rec) => !!rec.kitFingerprint && kitFingerprint(rec.kitDir) === rec.kitFingerprint;
@@ -270,7 +296,8 @@ function clearsSettings(input, v) {
 	return next !== null && !settingsProblem(next);
 }
 
-const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
+// Every launcher refusal is a hold (T16a's "Held" kind): the guard files or settings are not as install left them.
+const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Held: ' + reason } });
 
 /** Run the project's guard from the bytes verify() hashed: a file swapped after the check is never loaded. */
 function runGuard(real, files, input) {
@@ -279,16 +306,25 @@ function runGuard(real, files, input) {
 	if (!files.has(WIN ? guard.toLowerCase() : guard)) return deny('The kit guard (.claude/guard.cjs) is not in the install record, so this call is held. Reinstall the kit: ' + 'kit.mjs install project.');
 	const inside = (f, root) => path.resolve(f).toLowerCase().startsWith(path.resolve(root).toLowerCase() + path.sep);
 	const key = (f) => (WIN ? path.resolve(f).toLowerCase() : path.resolve(f));
+	// The config folder's kit hooks, by the hash install user recorded for each (B23): any other file there, or one
+	// changed since install user, is refused like a file outside the record.
+	let userFiles = {};
+	try { userFiles = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')).files || {}; } catch { /* none */ }
 	for (const ext of ['.js', '.cjs']) {
-		const disk = Module._extensions[ext] || Module._extensions['.js'];
 		Module._extensions[ext] = function load(mod, filename) {
 			const text = files.get(key(filename));
 			if (text !== undefined) return mod._compile(text, filename);
-			// Only the bytes verify() checked load here, and the Claude config folder's own hooks (even when that folder
-			// sits inside the project: a home folder project, a dotfiles repo). Anything else is refused, wherever it is:
-			// a link swapped after the check can send a require outside the project (the security review on 330dbbf).
-			if (!inside(filename, HOME)) throw new Error(`${posix(inside(filename, dir) ? path.relative(dir, filename) : filename)} is not in the install record`);
-			return disk(mod, filename);
+			// Only the bytes verify() checked load here, and the Claude config folder's own kit hooks with the bytes install
+			// user recorded (even when that folder sits inside the project: a home folder project, a dotfiles repo).
+			// Anything else is refused, wherever it is: a link swapped after the check can send a require outside the
+			// project (the security review on 330dbbf).
+			const rel = inside(filename, HOME) ? posix(path.relative(HOME, filename)) : '';
+			const named = /^kit-hooks\/[^/]+\.cjs$/i.test(rel) && Object.keys(userFiles).find((k) => (WIN ? k.toLowerCase() === rel.toLowerCase() : k === rel));
+			const want = named ? userFiles[named] : null;
+			let bytes = null;
+			try { bytes = want && fs.readFileSync(filename); } catch { /* missing */ }
+			if (!bytes || sha(bytes) !== want) throw new Error(`${posix(inside(filename, dir) ? path.relative(dir, filename) : filename)} is not in the install record`);
+			return mod._compile(bytes.toString('utf8'), filename);
 		};
 	}
 	// The guard itself is compiled from the checked bytes under its checked name, never found again by require.

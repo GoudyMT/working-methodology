@@ -7,9 +7,11 @@
 // installed settings wire, the way Claude Code runs them.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, guardDir, releaseState, status as kitStatus } from '../scripts/kit.mjs';
 
@@ -46,6 +48,18 @@ function setup({ homeAt = '.claude', projName = 'app', before = () => {}, kit = 
 	return { root, home, proj, remote, session: session(home, proj) };
 }
 
+// The shell Claude Code runs a hook's command line in: Git Bash on Windows, found beside git itself (never the bash PATH
+// finds first, which from PowerShell is WSL's: B17); bash elsewhere.
+function gitBash() {
+	if (process.platform !== 'win32') return 'bash';
+	let d = spawnSync('git', ['--exec-path'], { encoding: 'utf8' }).stdout.trim();
+	for (let i = 0; i < 5 && d && path.dirname(d) !== d; i++, d = path.dirname(d)) {
+		for (const b of [path.join(d, 'bin', 'bash.exe'), path.join(d, 'usr', 'bin', 'bash.exe')]) if (fs.existsSync(b)) return b;
+	}
+	return 'bash';
+}
+const BASH = gitBash();
+
 // Claude Code, as far as these tests need it: the hooks of the user and project settings files, read at session
 // start. disableAllHooks in any of them turns off every hook (managed hooks aside, which the kit has none of). A
 // settings file that changes mid-session runs the ConfigChange hooks first; a block keeps the old settings in force.
@@ -70,7 +84,7 @@ function session(home, proj) {
 	};
 	const run = (h, input) => {
 		// A command with no args runs through the shell, as Claude Code runs it (Git Bash on Windows).
-		const [cmd, args] = h.args ? [h.command === 'node' ? process.execPath : h.command, h.args] : ['bash', ['-c', h.command]];
+		const [cmd, args] = h.args ? [h.command === 'node' ? process.execPath : h.command, h.args] : [BASH, ['-c', h.command]];
 		const r = spawnSync(cmd, args, { input: JSON.stringify(input), encoding: 'utf8', env: env(), cwd: proj, timeout: 20000 });
 		let out = null;
 		try { out = r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : null; } catch { /* not JSON */ }
@@ -185,6 +199,7 @@ test('V3 script: a refusal after a script deletes a guard file names the file', 
 	const { proj, session: s } = setup();
 	fs.rmSync(path.join(proj, '.claude', 'guard-outward.cjs'));
 	held(s, 'a script deleted guard-outward.cjs');
+	assert.match(bash(s, 'git status').reason, /guard-outward\.cjs/, 'the refusal does not name the deleted file');
 });
 
 test('V3 settings: disableAllHooks written mid-session is refused, and every call is held while it is there', () => {
@@ -268,6 +283,22 @@ test('V3 status: a guard file changed outside install is a gap, never the projec
 	assert.match(r.text, /changed outside install[^\n]*\.claude\/guard\.cjs/i);
 	assert.doesNotMatch(r.text, /own values[^\n]*guard\.cjs/);
 	assert.ok(!foldBack({ kit: KIT, home, target: 'project', projectDir: proj }).foldBack.includes('.claude/guard.cjs'), 'fold-back offers a swapped guard to the kit');
+});
+
+// B22 (the 1.25.1 sweep, a low): status hashed the guard files but not the shims, and did not list a hook added to
+// .githooks, while the launcher holds every call for both. Status reads the same check the launcher runs.
+test('B22 status: a swapped hook shim and a hook added to .githooks are gaps, as the launcher holds them', () => {
+	const { home, proj } = setup();
+	fs.appendFileSync(path.join(guardDir(home, proj), 'hooks', 'pre-push'), '\nexit 0\n');
+	// A hook name the kit writes no shim for, planted beside the shims, would run with no check.
+	fs.writeFileSync(path.join(guardDir(home, proj), 'hooks', 'push-to-checkout'), '#!/bin/sh\n');
+	fs.mkdirSync(path.join(proj, '.githooks'), { recursive: true });
+	fs.writeFileSync(path.join(proj, '.githooks', 'post-merge'), '#!/bin/sh\n');
+	const r = status(home, proj);
+	assert.equal(r.current, false, r.text);
+	assert.match(r.text, /hooks\/pre-push/);
+	assert.match(r.text, /\.githooks\/post-merge/);
+	assert.match(r.text, /hooks\/push-to-checkout/);
 });
 
 test('V3 status: hooks turned off in the project settings is a gap', () => {
@@ -355,6 +386,49 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 	// The kit folder's git config names programs git runs (core.fsmonitor runs on git status), and install runs git there.
 	fs.appendFileSync(path.join(kit, '.git', 'config'), '[core]\n\tfsmonitor = ./evil.sh\n');
 	assert.equal(bash(s, fix).decision, 'deny', 'the kit folder git config changed after the install');
+});
+
+// W2 (the 1.25.1 verify): the kit pin refused a kit folder that is a git worktree (a .git file), so the held install's
+// fix line was never offered there. A worktree is pinned by its own git folder and the shared one it names.
+test('W2 fix line: a kit folder that is a git worktree is pinned, and a change to its git config unpins it', () => {
+	const launch = createRequire(import.meta.url)('../user/kit-tools/kit-launch.cjs');
+	const tmp = kitTemp.makeTemp('w2kit-');
+	const main = path.join(tmp, 'main');
+	fs.mkdirSync(main);
+	ok(git(main, ['init', '-q', '-b', 'main']));
+	fs.writeFileSync(path.join(main, 'VERSION'), '1.0.0\n');
+	ok(git(main, ['add', '-A']));
+	ok(git(main, ['commit', '-q', '-m', 'init']));
+	const wt = path.join(tmp, 'kit');
+	ok(git(main, ['worktree', 'add', '-q', '--detach', wt]));
+	const pin = launch.kitFingerprint(wt);
+	assert.ok(pin, 'a worktree kit folder has no pin, so no fix line is offered');
+	ok(git(main, ['config', 'core.fsmonitor', './evil.sh']));
+	assert.notEqual(launch.kitFingerprint(wt), pin, 'the shared git config named a program and the pin did not change');
+	// A kit folder with no git at all is pinned as before (the 1.26.0 sweep: the worktree read threw there).
+	const plain = path.join(tmp, 'plain');
+	fs.mkdirSync(plain);
+	fs.writeFileSync(path.join(plain, 'VERSION'), '1.0.0\n');
+	assert.ok(launch.kitFingerprint(plain), 'a kit folder with no .git lost its pin');
+});
+
+// B20 (the security review on 1.25.1): the release check and the fix line's fingerprint are read before install reads
+// the kit's files, so a process left running could swap a kit file in between and install would copy it. A release
+// install now copies only bytes that match the release tag's own tree.
+test('B20 release install: a kit file changed after the release check is refused, never copied', () => {
+	const tmp = kitTemp.makeTemp('b20kit-');
+	const kit = path.join(tmp, 'kit');
+	fs.cpSync(KIT, kit, { recursive: true, filter: (src) => !/[\\/](\.git|reports|node_modules|tests|vendor)$/.test(src) });
+	ok(git(kit, ['init', '-q', '-b', 'main']));
+	ok(git(kit, ['add', '-A']));
+	ok(git(kit, ['commit', '-q', '--no-verify', '-m', 'release']));
+	ok(git(kit, ['tag', 'v' + fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim()]));
+	const { home, proj } = setup();
+	fs.appendFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), '\n// swapped after the check\n');
+	// The tree id the CLI's release check read before the swap.
+	const tree = ok(git(kit, ['rev-parse', 'HEAD^{tree}']));
+	assert.throws(() => install({ kit, home, target: 'project', projectDir: proj, release: { release: true, tree } }), /changed since the release/);
+	assert.doesNotMatch(fs.readFileSync(path.join(proj, '.claude', 'guard.cjs'), 'utf8'), /swapped after the check/);
 });
 
 // The security review on c453ec1: core.fsmonitor names a program git runs on git status and git ls-files (proven on
@@ -534,6 +608,22 @@ test('V3 host hooks: a host that keeps its own hooks in .githooks still runs eve
 	assert.ok(fs.existsSync(path.join(proj, '.git', 'host-post-checkout')), 'the host post-checkout hook did not run');
 });
 
+// B19 (the security review on 1.25.1): the shims for git's other hooks ran the project's hook with no check, so a
+// branch that carries a new .githooks/post-checkout ran it inside the very checkout that wrote it.
+test('B19 shims: a hook a branch carries never runs in the checkout that brings it', () => {
+	const { proj } = setup();
+	ok(git(proj, ['checkout', '-q', '-b', 'feature/evil']));
+	fs.mkdirSync(path.join(proj, '.githooks'), { recursive: true });
+	fs.writeFileSync(path.join(proj, '.githooks', 'post-checkout'), ['#!/bin/sh', 'echo ran > "$(git rev-parse --git-dir)/evil-post-checkout"', ''].join(String.fromCharCode(10)));
+	fs.chmodSync(path.join(proj, '.githooks', 'post-checkout'), 0o755);
+	ok(git(proj, ['add', '.githooks/post-checkout']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'chore: hook']));
+	ok(git(proj, ['checkout', '-q', 'main']));
+	fs.rmSync(path.join(proj, '.git', 'evil-post-checkout'), { force: true });
+	git(proj, ['checkout', '-q', 'feature/evil']);
+	assert.equal(fs.existsSync(path.join(proj, '.git', 'evil-post-checkout')), false, 'the carried hook ran unchecked');
+});
+
 // The second pass on 0772397 (role 1): the shims run any hook in .githooks, and one added after install was in no record,
 // so it ran with no hold. A host's own hooks there at the first install are recorded as they stand.
 test('V3 host hooks: a hook added to .githooks after install holds every call until the owner accepts it', () => {
@@ -575,6 +665,42 @@ test('V3 links: the guard process never loads a file from outside the record and
 	assert.match(r.stdout, /refused: .*not in the install record/);
 });
 
+// B23 (the security review on the 1.25.1 push): the loader still took any file under the config folder, so a file a
+// tool wrote there (or one of the kit's hooks changed since install user) loaded into the guard process. Only the
+// kit's own hook files, with the bytes install user recorded, load from there.
+test('B23 loader: from the config folder only the kit hook files install user recorded load', () => {
+	const { root, home, proj } = setup();
+	const mark = posix(path.join(root, 'LOADED'));
+	const planted = path.join(home, 'projects', 'planted.cjs');
+	fs.mkdirSync(path.dirname(planted), { recursive: true });
+	const body = `require('fs').writeFileSync(${JSON.stringify(mark)}, 'x'); exports.check = () => null;\n`;
+	fs.writeFileSync(planted, body);
+	const guard = path.join(fs.realpathSync(proj), '.claude', 'guard.cjs');
+	const tryLoad = (target) => spawnSync(process.execPath, ['-e', [
+		`const L = require(${JSON.stringify(path.join(home, 'kit-tools', 'kit-launch.cjs'))});`,
+		`const g = ${JSON.stringify(guard)};`,
+		`const files = new Map([[process.platform === 'win32' ? g.toLowerCase() : g, 'exports.check = () => require(' + JSON.stringify(${JSON.stringify(target)}) + ').check();']]);`,
+		`try { L.runGuard(${JSON.stringify(fs.realpathSync(proj))}, files, {}); console.log('loaded'); } catch (e) { console.log('refused: ' + e.message); }`,
+	].join('\n')], { encoding: 'utf8' });
+	let r = tryLoad(planted);
+	assert.equal(fs.existsSync(mark), false, `a planted file in the config folder loaded: ${r.stdout}${r.stderr}`);
+	const hook = path.join(home, 'kit-hooks', 'canary.cjs');
+	r = tryLoad(hook);
+	assert.match(r.stdout, /^loaded/, `the kit's own hook no longer loads: ${r.stdout}${r.stderr}`);
+	fs.writeFileSync(hook, body);
+	r = tryLoad(hook);
+	assert.equal(fs.existsSync(mark), false, `a kit hook changed since install user loaded: ${r.stdout}${r.stderr}`);
+});
+
+// The 1.26.0 sweep: a kit hook with no "exports.check" ran as its own node process, past B23's hash check.
+test('B23 loader: a changed kit hook in the old one-process shape never runs either', () => {
+	const { root, home, proj } = setup();
+	const mark = posix(path.join(root, 'RAN'));
+	fs.writeFileSync(path.join(home, 'kit-hooks', 'canary.cjs'), `require('fs').writeFileSync(${JSON.stringify(mark)}, 'ran');\n`);
+	spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SendMessage', tool_input: { to: 'x', message: 'y' }, cwd: proj }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj } });
+	assert.equal(fs.existsSync(mark), false, 'a changed kit hook ran as its own process');
+});
+
 test('V3 links: a guard file reached through a junction or link holds every call', () => {
 	const { root, proj, session: s } = setup();
 	const real = path.join(root, 'real-claude');
@@ -596,11 +722,13 @@ test('V3 host hooks: install never overwrites a git hook the host tracks, and st
 	});
 	assert.equal(fs.readFileSync(path.join(proj, '.githooks', 'pre-commit'), 'utf8'), HOST);
 	assert.equal(ok(git(proj, ['status', '--porcelain', '--', '.githooks'])), '');
+	// B16, widened by the owner (2026-11-11): a first install takes a file the kit ships as the host's only once the
+	// owner accepts it, whatever git tracks; until then every call is held.
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a first install took a kit-named hook as the host\'s on its own');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
 	const again = install({ kit: KIT, home, target: 'project', projectDir: proj });
 	assert.ok(again.skipped.some((x) => x.file === '.githooks/pre-commit'));
 	assert.equal(bash(s, 'git status').decision, 'allow');
-	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 0', ''].join(String.fromCharCode(10)));
-	assert.equal(bash(s, 'git status').decision, 'deny', 'a swapped host hook is still a guard file');
 });
 
 test('V3 upgrade: install takes the old guard entry out of a settings.json the owner changed, and keeps the rest', () => {
@@ -669,15 +797,42 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 
 test('V3 config folder inside a project: the user slip-catchers still run', () => {
 	const { home, proj } = setup({ homeAt: path.join('app', 'u', '.claude') });
-	fs.writeFileSync(path.join(home, 'kit-hooks', 'call-cap.cjs'), "exports.check = () => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'cap reached' } });\n");
+	const cap = "exports.check = () => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'cap reached' } });\n";
+	fs.writeFileSync(path.join(home, 'kit-hooks', 'call-cap.cjs'), cap);
+	// Recorded as install user would record it: since B23 a kit hook loads only with the bytes the stamp names.
+	const stampFile = path.join(home, 'kit-install.json');
+	const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+	stamp.files['kit-hooks/call-cap.cjs'] = crypto.createHash('sha256').update(cap).digest('hex');
+	fs.writeFileSync(stampFile, JSON.stringify(stamp));
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: 'README.md' }, agent_id: 'r1', cwd: proj }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj } });
 	assert.notEqual(r.stdout.trim(), '', r.stderr);
 	assert.match(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, /cap reached/);
 });
 
+// B17 (the 1.25.1 sweep): the emulator ran a shell-form hook with the bash PATH finds first. From PowerShell on Windows
+// that is WSL's bash, which cannot run the launcher line, so the suite failed at its baseline and a deny-only test
+// passed for the wrong reason. Claude Code runs these lines with Git Bash, so the emulator does too.
+test('B17 emulator: a shell-form hook runs in Git Bash on Windows, whatever bash PATH finds first', { skip: process.platform !== 'win32' }, () => {
+	const r = spawnSync(BASH, ['-c', 'uname -s'], { encoding: 'utf8', env: { ...ENV, PATH: path.dirname(process.execPath) } });
+	assert.match(r.stdout, /MINGW|MSYS/, `the emulator's shell is ${BASH}: ${r.stdout}${r.stderr}`);
+});
+
 test('V3 record names: two projects whose names differ only in punctuation keep separate records', () => {
 	assert.notEqual(guardDir('/h', '/w/app-x'), guardDir('/h', '/w/app_x'));
 	assert.notEqual(guardDir('/h', '/w/app.x'), guardDir('/h', '/w/app-x'));
+});
+
+// B13 (the 1.25.1 sweep): the shims sit at <config>/kit-guard/<the whole project path, then a hash>/hooks/<name>. A long
+// project path took that past Windows' 260 characters, git found no hook there, and the kit hooks stopped silently.
+test('B13 record names: a long project path still gives a shim path git can open on Windows', () => {
+	const deep = (tail) => '/w/' + 'a-very-long-folder-name/'.repeat(12) + tail;
+	const shim = path.join(guardDir('D:/a-home-folder/.claude', deep('app')), 'hooks', 'p4-prepare-changelist');
+	assert.ok(shim.length < 260, `the shim path is ${shim.length} characters`);
+	assert.notEqual(guardDir('/h', deep('app-1')), guardDir('/h', deep('app-2')), 'two long paths that share a start share a record');
+	// An installed project keeps its record across the upgrade: a short path's name is the one 1.25.1 gave it.
+	const full = process.platform === 'win32' ? path.resolve('/w/app').toLowerCase() : path.resolve('/w/app');
+	const was = `${full.replace(/[^A-Za-z0-9]/g, '-')}-${crypto.createHash('sha256').update(full).digest('hex').slice(0, 10)}`;
+	assert.equal(path.basename(guardDir('/h', '/w/app')), was, 'a short path lost the record name 1.25.1 gave it');
 });
 
 test('V3 launcher: input it cannot read inside a kit project holds the call', () => {
@@ -734,14 +889,78 @@ test('V3 host hooks: a swapped host hook stays held through a reinstall until th
 			ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
 		},
 	});
+	// Accepted first, so the hold below comes from the swap, not from the first-install hold (the 1.26.0 sweep).
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
 	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 0', ''].join(String.fromCharCode(10)));
 	install({ kit: KIT, home, target: 'project', projectDir: proj });
 	assert.equal(bash(s, 'git status').decision, 'deny', 'a reinstall took the swapped host hook as the new normal');
 	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
 	assert.equal(bash(s, 'git status').decision, 'allow');
 	const fix = fixOf(KIT, proj, ' --accept-host .githooks/pre-commit');
-	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), HOST);
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 3', ''].join(String.fromCharCode(10)));
 	assert.equal(bash(s, fix).decision, 'deny', 'accepting a host hook is the owner\'s act, not the held fix line');
+});
+
+// B16 (the 1.25.1 sweep): in tracked mode the project stamp is in git, so a branch can edit it. On the first install
+// with no outside record, install read "the kit never wrote this file" from that stamp and recorded a swapped
+// guard.cjs as the host's own. Now such a file holds every call until the owner accepts it.
+test('B16 first record: a tracked stamp that forgets a swapped kit guard file does not make it the host\'s', () => {
+	const { home, proj, session: s } = setup();
+	fs.rmSync(guardDir(home, proj), { recursive: true, force: true });
+	const stampFile = path.join(proj, '.kit', 'kit-version.json');
+	const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+	delete stamp.files['.claude/guard.cjs'];
+	fs.writeFileSync(stampFile, JSON.stringify(stamp, null, 2));
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), EVIL_GUARD);
+	ok(git(proj, ['add', '-f', '.kit/kit-version.json', '.claude/guard.cjs']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'chore: tracked kit']));
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.equal(bash(s, 'git push origin main').decision, 'deny', 'the swapped guard was recorded as the host\'s and ran');
+});
+
+// The 1.26.0 sweep: the first-install hold named install project --force as a way out, but --force wrote the kit's copy
+// and the hold stayed. Either way out the refusal names must lift it.
+test('B16 first record: the --force way out puts the kit\'s copy back and lifts the hold', () => {
+	const { home, proj, session: s } = setup({
+		before: (p) => {
+			fs.mkdirSync(path.join(p, '.githooks'));
+			fs.writeFileSync(path.join(p, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo team', ''].join(String.fromCharCode(10)));
+			ok(git(p, ['add', '.githooks/pre-commit']));
+			ok(git(p, ['commit', '-q', '-m', 'chore: team hook']));
+		},
+	});
+	assert.equal(bash(s, 'git status').decision, 'deny');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, force: true });
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the --force way out left the hold in place');
+});
+
+// B15 (the 1.25.1 sweep): a host hook that differs between branches held after a plain checkout, and accepting it on
+// one branch held the other. Each version the owner accepts stays accepted; a version never accepted still holds.
+test('B15 host hooks: a host hook accepted on each branch no longer holds a plain checkout', () => {
+	const NL = String.fromCharCode(10);
+	const { home, proj, session: s } = setup({
+		before: (p) => {
+			fs.mkdirSync(path.join(p, '.githooks'));
+			fs.writeFileSync(path.join(p, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo main', ''].join(NL));
+			ok(git(p, ['add', '.githooks/pre-commit']));
+			ok(git(p, ['commit', '-q', '-m', 'chore: host hook']));
+		},
+	});
+	// The first install holds a kit-named host hook until the owner accepts it (B16).
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	ok(git(proj, ['checkout', '-q', '-b', 'feature/b']));
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'echo branch', ''].join(NL));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-am', 'chore: branch hook']));
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a host hook never accepted must hold');
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.githooks/pre-commit'] });
+	assert.equal(bash(s, 'git status').decision, 'allow');
+	ok(git(proj, ['checkout', '-q', 'main']));
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the version on main, accepted at the first install, held again');
+	ok(git(proj, ['checkout', '-q', 'feature/b']));
+	assert.equal(bash(s, 'git status').decision, 'allow', 'the accepted branch version held again');
+	fs.writeFileSync(path.join(proj, '.githooks', 'pre-commit'), ['#!/bin/sh', 'exit 0', ''].join(NL));
+	assert.equal(bash(s, 'git status').decision, 'deny', 'a third version, never accepted, passed');
 });
 
 // The owner's pick A (2026-11-11): a broken launcher keeps blocking every tool, and the kit gate tells the owner why and what
@@ -760,4 +979,22 @@ test('V3 broken launcher: the kit gate names it and the one command that repairs
 	assert.match(out.reason, /install user/);
 	fs.rmSync(path.join(home, 'kit-tools', 'kit-launch.cjs'));
 	assert.equal(JSON.parse(gate().stdout || '{}').decision, 'block', 'a missing launcher too');
+});
+
+// B14 (the 1.25.1 sweep): the launcher entry names node by the path install user recorded. A node moved or upgraded
+// blocks every call with "No such file", and the gate named only a missing launcher, so the owner saw no reason.
+test('B14 moved node: the kit gate names the missing recorded node and the command that repairs it', () => {
+	const { root, home } = setup();
+	const other = path.join(root, 'plain');
+	fs.mkdirSync(path.join(other, '.kit'), { recursive: true });
+	fs.writeFileSync(path.join(other, '.kit', 'no-kit'), '');
+	const gate = () => spawnSync(process.execPath, [path.join(home, 'kit-hooks', 'kit-gate.cjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'hi', cwd: other }), encoding: 'utf8', env: { ...ENV, KIT_CLAUDE_HOME: home } });
+	const stampFile = path.join(home, 'kit-install.json');
+	const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+	stamp.node = posix(path.join(root, 'gone', 'node.exe'));
+	fs.writeFileSync(stampFile, JSON.stringify(stamp));
+	const out = JSON.parse(gate().stdout || '{}');
+	assert.equal(out.decision, 'block', 'a moved node blocked every call and the gate said nothing');
+	assert.match(out.reason, /gone\/node\.exe/);
+	assert.match(out.reason, /install user/);
 });

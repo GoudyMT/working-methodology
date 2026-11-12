@@ -116,7 +116,10 @@ export function releaseState(kit) {
     if (/^[RC]/.test(fields[i])) i++;
   }
   if (dirty.length) problems.push(`Changed or new files install would copy: ${dirty.slice(0, 10).join(', ')}${dirty.length > 10 ? `, and ${dirty.length - 10} more` : ''}.`);
-  return { describe, dirty, problems };
+  // The tag's tree, read here once: install checks every file it copies against this id, so a tag moved after the
+  // check changes nothing (the 1.26.0 sweep).
+  const tree = git('rev-parse', '--verify', '-q', `refs/tags/${tag}^{tree}`).stdout.trim() || null;
+  return { describe, dirty, problems, tree };
 }
 
 /** The newest release tag the kit folder knows, or null. */
@@ -166,8 +169,37 @@ function plan({ kit, home, target, projectDir }) {
   return { entries, stampPath: path.join(projectDir, STAMP_PROJECT), memoryDir };
 }
 
-function renderEntry(kitInfo, entry, projectDir, home) {
-  const text = fs.readFileSync(entry.src, 'utf8');
+/**
+ * Read every file a release install copies, once, and check each against the release tag's own tree (B20). The
+ * release check and the fix line's fingerprint run before install reads the files, so a process left running could
+ * swap one in between; the bytes install renders are the ones checked here, never read again.
+ *
+ * Returns:
+ *     Map of source path to text
+ */
+function releaseBytes(kit, tree, entries) {
+  const r = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'ls-tree', '-r', '-z', '--full-tree', tree], { encoding: 'utf8', cwd: SAFE_CWD, maxBuffer: 64 * 1024 * 1024 });
+  if (!/^[0-9a-f]{40,64}$/.test(String(tree)) || r.status !== 0) throw new Error('Install refused: the release tag\'s files could not be read in the kit folder.');
+  const blobs = new Map();
+  for (const line of r.stdout.split('\0')) {
+    const m = /^\d+ blob ([0-9a-f]{40})\t(.+)$/s.exec(line);
+    if (m) blobs.set(m[2], m[1]);
+  }
+  const out = new Map();
+  const changed = [];
+  for (const e of entries) {
+    const rel = toPosix(path.relative(kit, e.src));
+    const bytes = fs.readFileSync(e.src);
+    const blob = crypto.createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+    if (blobs.get(rel) !== blob) changed.push(rel);
+    out.set(e.src, bytes.toString('utf8'));
+  }
+  if (changed.length) throw new Error(`Install refused: kit file(s) changed since the release check, so nothing was installed: ${changed.slice(0, 10).join(', ')}. Check out the release tag again, then rerun install.`);
+  return out;
+}
+
+function renderEntry(kitInfo, entry, projectDir, home, checked = null) {
+  const text = checked && checked.has(entry.src) ? checked.get(entry.src) : fs.readFileSync(entry.src, 'utf8');
   return render(text, {
     ownerName: kitInfo.config.ownerName,
     ownerProfile: kitInfo.ownerProfile,
@@ -186,8 +218,8 @@ export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^
 // runs the project's own hook of that name, so a host that keeps its hooks in .githooks keeps every one (1.25.1 sweep).
 const GIT_HOOKS = ['pre-commit', 'commit-msg', 'pre-push'];
 const OTHER_HOOKS = ['applypatch-msg', 'pre-applypatch', 'post-applypatch', 'pre-merge-commit', 'prepare-commit-msg', 'post-commit',
-  'pre-rebase', 'post-checkout', 'post-merge', 'pre-receive', 'update', 'proc-receive', 'post-receive', 'post-update',
-  'reference-transaction', 'push-to-checkout', 'pre-auto-gc', 'post-rewrite', 'sendemail-validate', 'fsmonitor-watchman',
+  'pre-rebase', 'post-checkout', 'post-merge', 'pre-receive', 'update', 'post-receive', 'post-update',
+  'reference-transaction', 'pre-auto-gc', 'post-rewrite', 'sendemail-validate', 'fsmonitor-watchman',
   'p4-changelist', 'p4-prepare-changelist', 'p4-post-changelist', 'p4-pre-submit', 'post-index-change'];
 
 /** Where the outside record and git hook shims of a project live (the launcher names them the same way). */
@@ -217,19 +249,30 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     'NODE_OPTIONS=; export NODE_OPTIONS', `PATH=${q(launch.shellDir(path.dirname(process.execPath)))}:"$PATH"; export PATH`];
   for (const name of [...GIT_HOOKS, ...OTHER_HOOKS]) {
     const own = `${proj}/.githooks/${name}`;
+    const checkFirst = `${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} </dev/null || exit 1`;
+    // Every shim that runs a project hook checks the guard files first (B19): a branch that carries a new hook would
+    // otherwise run it in the same checkout that wrote it. A shim with no project hook to run exits at once.
     const body = GIT_HOOKS.includes(name) ? [
-      `${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} </dev/null || exit 1`,
+      checkFirst,
       `[ -f ${q(own)} ] || { echo "Kit: .githooks/${name} is missing; run kit.mjs install project." >&2; exit 1; }`,
-    ] : [`[ -x ${q(own)} ] || exit 0`];
+    ] : [`[ -x ${q(own)} ] || exit 0`, checkFirst];
     fs.writeFileSync(path.join(hooks, name), [...head, ...body, `exec ${q(own)} "$@"`, ''].join('\n'));
     fs.chmodSync(path.join(hooks, name), 0o755);
   }
+  // A shim the kit no longer writes (push-to-checkout and proc-receive, dropped in 1.26.0) would still run its project
+  // hook unchecked, so it goes.
+  for (const e of fs.readdirSync(hooks)) if (![...GIT_HOOKS, ...OTHER_HOOKS].includes(e)) fs.rmSync(path.join(hooks, e), { force: true });
   // A guard file the kit did not write (a host's own tracked hook it skipped) is recorded as it is, so a swap of it
   // still holds every call.
   // A host's own guard file is recorded as it stands the first time; after that a change to it stays held, even through
   // a reinstall, until the owner accepts it with --accept-host (which the held fix line may not carry).
   const guarded = {};
   const host = [];
+  // Every version of a host file the owner has accepted (B15): a host hook that differs between branches would
+  // otherwise hold after each plain checkout, and accepting it on one branch held the other. A version never
+  // accepted still holds every call.
+  const accepted = {};
+  const acceptedOf = (key) => [...new Set([...((prev && prev.accepted && prev.accepted[key]) || []), ...(prev && prev.files && prev.files[key] ? [prev.files[key]] : [])])].filter((h) => /^[0-9a-f]{64}$/.test(h));
   // Every other hook in .githooks is the host's: the shims run it, so it is recorded too. One that appears after the
   // first record holds every call until the owner accepts it (the second pass on 0772397).
   let extras = [];
@@ -243,15 +286,36 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     if (!extras.includes(key) && !isHost(key)) { if (files[key]) guarded[key] = files[key]; continue; }
     if (!fs.existsSync(file)) continue;
     host.push(key);
+    // The first record (B16): with no record, "the kit never wrote this" came from the project stamp, which a branch
+    // can edit in tracked mode and a script can edit in any. A file the kit ships, taken as the host's on that word
+    // alone, holds every call until the owner accepts it (widened by the owner, 2026-11-11: whatever git tracks).
+    // A file held this way stays in that state on later installs until one of its two ways out is taken (the 1.26.0
+    // sweep: --force wrote the kit's copy and the hold stayed).
+    const firstHold = !prev || (prev.files && prev.files[key] === 'not yet accepted');
+    if (firstHold && keys.includes(key) && !(ctx.acceptHost || []).includes(key)) {
+      const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+      if (files[key] && now === files[key]) {
+        // The kit's own copy is there (install project --force put it back): it is the kit's file, not the host's.
+        host.pop();
+        guarded[key] = files[key];
+        continue;
+      }
+      guarded[key] = 'not yet accepted';
+      accepted[key] = [];
+      skipped.push({ file: key, reason: `the kit ships this file and the project keeps its own, so every call stays held until the owner checks it: the owner accepts the project's file with install project --accept-host ${key}, or puts the kit's copy in its place with install project --force (that overwrites the project's file)` });
+      continue;
+    }
     const now = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     const was = prev && prev.files && prev.files[key];
-    if (was && was !== now && !(ctx.acceptHost || []).includes(key)) {
+    const known = acceptedOf(key);
+    if (was && !known.includes(now) && !(ctx.acceptHost || []).includes(key)) {
       guarded[key] = was;
       skipped.push({ file: key, reason: `the host's own hook changed since it was recorded, so every call stays held: restore it from git, or the owner accepts it with install project --accept-host ${key}` });
     } else guarded[key] = now;
+    accepted[key] = [...new Set([...known, guarded[key]])];
   }
   const shims = Object.fromEntries([...GIT_HOOKS, ...OTHER_HOOKS].map((name) => [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(hooks, name))).digest('hex')]));
-  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), version: kitInfo.version, files: guarded, host, shims, hooksPath: null };
+  const record = { projectDir: proj, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), version: kitInfo.version, files: guarded, host, accepted, shims, hooksPath: null };
   fs.writeFileSync(path.join(dir, 'record.json'), JSON.stringify(record, null, 2) + '\n');
   return toPosix(hooks);
 }
@@ -292,11 +356,12 @@ function guardFaults(home, projectDir) {
   const rec = readRecord(home, projectDir);
   const faults = [];
   if (!rec) return [`no outside guard record in ${toPosix(path.join(home, 'kit-guard'))}`];
-  const changed = Object.entries(rec.files || {}).filter(([k, want]) => {
-    const f = path.join(projectDir, k);
-    return !fs.existsSync(f) || crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex') !== want;
-  }).map(([k]) => k);
+  // The same check the launcher runs before every call (B22): guard files, the shims, .githooks extras, links and the
+  // hooks path, so status never calls current what the launcher holds.
+  const v = launch.verify(path.resolve(projectDir), rec, [], path.join(guardDir(home, projectDir), 'hooks'));
+  const changed = v.changed;
   if (changed.length) faults.push(`${changed.length} kit guard file(s) changed outside install: ${changed.join(', ')}`);
+  if (v.hooksPath) faults.push(`core.hooksPath changed outside install (now ${v.hooksPath})`);
   for (const name of ['settings.json', 'settings.local.json']) {
     let text = null;
     try { text = fs.readFileSync(path.join(projectDir, '.claude', name), 'utf8'); } catch { continue; }
@@ -378,8 +443,11 @@ export function install(ctx) {
   const created = [], updated = [], replaced = [], skipped = [], merged = [];
   const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
+  // A release install copies only bytes that match the release tag (B20); a fixture or --unreleased install reads the folder.
+  // The CLI's release check gives the tag's tree; a fixture or --unreleased install has none and reads the folder.
+  const checked = ctx.release && ctx.release.release && ctx.release.tree ? releaseBytes(ctx.kit, ctx.release.tree, entries) : null;
   for (const entry of entries) {
-    const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home);
+    const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, checked);
     const wantHash = sha(want);
     const write = () => {
       if (ctx.dryRun) return;
@@ -430,7 +498,7 @@ export function install(ctx) {
     const agents = skipped.find((s) => s.file === 'AGENTS.md' && !stamp.files['AGENTS.md']);
     if (agents) agents.reason += "; CLAUDE.local.md imports it, so the kit's core rules are not loaded here - give them a home by hand";
     const local = path.join(ctx.projectDir, 'CLAUDE.local.md');
-    const kitClaude = renderEntry(kitInfo, entries.find((e) => e.key === 'CLAUDE.md'), ctx.projectDir, ctx.home);
+    const kitClaude = renderEntry(kitInfo, entries.find((e) => e.key === 'CLAUDE.md'), ctx.projectDir, ctx.home, checked);
     const text = [
       '<!-- The methodology kit\'s overlay (install --overlay); kept out of git. -->',
       '> **Kit overlay.** The CLAUDE.md here is owned by the host repo, and it wins any conflict with the kit rules',
@@ -1237,7 +1305,7 @@ export function preCompactReport({ kit, home, projectDir }) {
     : 'No rule changes waiting for the kit.'];
   const vault = vaultBackup({ projectDir });
   if (!vault.configured) lines.push('No vault backup set up for this project. Set one up (NEW-PROJECT.md step 3b) so the private notes are never lost.');
-  else if (vault.committed) lines.push(`Vault backup: ${vault.changed.length} file(s) changed, committed in ${vault.dir}. Push on the owner's go.`);
+  else if (vault.committed) lines.push(`Vault backup: ${vault.changed.length} file(s) changed, committed in ${vault.dir}. Push on the owner's yes.`);
   const drift = vendorDrift({ kit, home });
   if (drift.length) lines.push(`${drift.length} third-party plugin(s) changed since the backup: ${drift.map((d) => `${d.name} (${d.backup} -> ${d.installed})`).join(', ')}. Review, then run snapshot.`);
   return lines.join('\n');
@@ -1597,7 +1665,7 @@ function main(argv) {
       process.exitCode = 1;
       return;
     }
-    const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty };
+    const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty, tree: rel.tree };
     const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release, acceptHost });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);

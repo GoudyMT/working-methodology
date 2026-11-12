@@ -63,14 +63,16 @@ inferred.
 
 Present the plan as A/B/C choices and stop. On the owner's go:
 
-1. Run the install for real. New files land; existing ones stay.
+1. Run the install for real. New files land; existing ones stay. A project that keeps its own file where the kit ships
+   a guard file (often its own `.githooks/pre-commit`) is held on every call until the owner checks that file and runs
+   `install project <folder> --accept-host <file>` in a terminal; a session cannot accept it.
 2. Merge each listed file by hand (never a host-owned file in a shared repo; see step 1): keep the project's specifics, add the kit's rules, and fill the adapters
    (see NEW-PROJECT.md step 4). The pre-compact closeout must carry the rule sort for the kit
    (rule:pre-compact-scan, step 5b), even when the project keeps its own standards.
 3. Seed the tracking files from the state map. Set up the vault backup and the skill cases (NEW-PROJECT.md steps
    3b and 3c). If the project keeps its own `.claude/settings.json`, add the kit hook's SessionStart, UserPromptSubmit and
-   PreCompact entries to it by hand (copy them from the kit's `project/.claude/settings.json`), so the kit check
-   cannot be missed. The guards need no entry there: `install user` runs them from `~/.claude` (1.25.1). Turn on the git push guard (NEW-PROJECT.md step 2) and
+   PreCompact entries to it by hand (copy them from the kit's `project/.claude/settings.json`, putting the project's
+   full path, with forward slashes, where they say `{{PROJECT_DIR}}`), so the kit check cannot be missed. The guards need no entry there: `install user` runs them from `~/.claude` (1.25.1). Turn on the git push guard (NEW-PROJECT.md step 2) and
    keep the kit local (NEW-PROJECT.md step 3; a project already pushed runs the first push check once anyway, to
    find kit or private files already in its history).
 4. Run the gate again and show it green.

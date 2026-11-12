@@ -79,7 +79,7 @@ stands (S8.1 was re-graded to medium by the refute re-check and is C1).
 - **Fix check** (one Opus checker, 22 mutants): 15 of 16 PASS; one FIX (low): W3's new mount guard
   (`PinUnlock.svelte:124`) had no test (its mutant survived 176 rows) -> `9a1d6e20` adds the row, red on that mutant.
 
-## Re-sweep (the short one, 3 roles, the owner's go 2026-05-14 21:05 UTC; head `9a1d6e20`)
+## Re-sweep (the short one, 3 roles, the owner's yes 2026-05-14 21:05 UTC; head `9a1d6e20`)
 
 | Role | Question | Calls | Findings |
 |---|---|---|---|

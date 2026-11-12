@@ -14,7 +14,7 @@
   | Dimension | Result |
   |---|---|
   | 1 Privacy | PASS (S2): no new request, no new storage |
-  | 2 Supply chain + bundle | PASS (S2): no dependency change; size limits by the owner's go (below) |
+  | 2 Supply chain + bundle | PASS (S2): no dependency change; size limits by the owner's yes (below) |
   | 3 Legal | PASS (S2): no content change |
   | 4 Code security | S1 and S2 below |
   | 5 Gaps, scaling, test value | S3 below |
@@ -27,7 +27,7 @@
   | High | The body was timed while nobody read it (S1-1 = S2-1) | FIXED 3e8a0f1 - timed only while read |
   | Medium | The photo viewer's older-copy look was unbounded | FIXED b94d2c7 - bounded |
   | Medium | The early page could be another release's | FIXED 1d07e5a - frame-only early page + cache-error fallback |
-  | Medium | Network-first files on a connection that is up but silent | FIXED f62b8c3 (the owner's go) |
+  | Medium | Network-first files on a connection that is up but silent | FIXED f62b8c3 (the owner's yes) |
   | Low | A cache read error after the wait, a dead line, test gaps, a weak E2E, comments | FIXED 1d07e5a, a5c3e90, 6e1f7b2, c08d4a9 |
 
 - **Fix check** (the fix tier's re-sweep): each root closed; its lows fixed (the version file never served early; unread bodies
