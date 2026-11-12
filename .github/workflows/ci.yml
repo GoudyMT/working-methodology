@@ -25,6 +25,10 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # actions: read finds main's run and its coverage map for a PR.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,27 +49,35 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
-      # Push to main: every test, through the guarded runner, recording the coverage map; the map is saved under this
-      # commit, where the next PR on it finds it. Actions saves a cache from main where every PR into main can read it,
-      # and no PR can write there.
+      # Push to main: every test, through the guarded runner, recording the coverage map, kept with this run.
       - name: Every test, with the coverage map
         if: github.event_name != 'pull_request'
         run: node scripts/test-run.mjs --map --shards 4
 
-      - name: Save the coverage map
+      - name: Keep the coverage map
         if: github.event_name != 'pull_request'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
+          name: test-map
           path: tests/.map.json
-          key: test-map-${{ github.sha }}
+          include-hidden-files: true
+          retention-days: 30
 
-      # A PR: the map main's push saved for the PR's base commit.
+      # A PR: the map from main's own push run of the PR's base commit, found through the API. Not the Actions cache:
+      # a PR's earlier run can write a cache entry under any key, and the PR's own entries are read first. No such
+      # run, or no map in it, and the PR runs every test.
       - name: Load the coverage map for the base commit
         if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: tests/.map.json
-          key: test-map-${{ github.event.pull_request.base.sha }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          rm -f tests/.map.json
+          run_id="$(gh run list --repo "$REPO" --workflow ci.yml --branch main --event push --commit "$BASE_SHA" --json databaseId,headSha,event,headBranch --jq "[.[] | select(.headSha == \"$BASE_SHA\" and .event == \"push\" and .headBranch == \"main\")][0].databaseId // empty")" || run_id=""
+          if [ -n "$run_id" ]; then gh run download "$run_id" --repo "$REPO" --name test-map --dir tests || rm -f tests/.map.json; fi
+          echo "map from main's run: ${run_id:-none}"
 
       # Changed, or the whole suite when the selection has nothing sound to stand on (no map for the base, a deleted
       # file, a change to a workflow, the runner, the harness or the map tracer).

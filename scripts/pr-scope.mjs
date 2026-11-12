@@ -12,7 +12,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-export const RISKY = /^(\.github\/|scripts\/test-run\.mjs$|scripts\/pr-scope\.mjs$|tests\/harness\.mjs$|tests\/map-trace\.cjs$|package(-lock)?\.json$|kit\.config\.json$|\.gitattributes$|project\/\.claude\/kit-temp\.cjs$)/;
+// The map itself too: one a PR commits would choose what that PR runs (the security review of this build).
+export const RISKY = /^(\.github\/|tests\/\.map\.json$|scripts\/test-run\.mjs$|scripts\/pr-scope\.mjs$|tests\/harness\.mjs$|tests\/map-trace\.cjs$|package(-lock)?\.json$|kit\.config\.json$|\.gitattributes$|project\/\.claude\/kit-temp\.cjs$)/;
 
 export function scope(root, base) {
 	const git = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8' });

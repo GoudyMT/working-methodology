@@ -30,6 +30,8 @@ test('a PR runs the reached tests only with a map for its base and no risky chan
 	assert.equal(change(() => fs.rmSync(path.join(dir, 'scripts', 'b.mjs'))).scope, 'full', 'a deletion');
 	assert.equal(change(() => fs.writeFileSync(path.join(dir, 'tests', 'harness.mjs'), 'h\n')).scope, 'full', 'the harness');
 	assert.equal(change(() => { fs.mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true }); fs.writeFileSync(path.join(dir, '.github', 'workflows', 'ci.yml'), 'x\n'); }).scope, 'full', 'a workflow');
+	// A map the PR commits would choose what the PR runs.
+	assert.equal(change(() => { map(base); sh(dir, 'add', '-f', 'tests/.map.json'); }).scope, 'full', 'a committed map');
 	map('0'.repeat(40));
 	assert.equal(change(() => fs.writeFileSync(path.join(dir, 'scripts', 'a.mjs'), 'z\n')).scope, 'full', 'a map for another commit');
 	fs.rmSync(path.join(dir, 'tests', '.map.json'));

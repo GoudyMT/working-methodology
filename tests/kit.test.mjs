@@ -5994,12 +5994,15 @@ test('a PR runs the reached tests and the security set, or every test; main save
   const { SECURITY_FILES } = await import(pathToFileURL(path.resolve('scripts/test-value.mjs')).href);
   const security = step('The security set');
   for (const f of SECURITY_FILES) assert.ok(security.includes(f), `${f} left out of the security set`);
-  // The map is written on main's push only, and a PR reads the one saved under its base commit.
-  const save = ci.split('- name: Save the coverage map\n')[1].split('- name:')[0];
-  assert.match(save, /if: github\.event_name != 'pull_request'[\s\S]*key: test-map-\$\{\{ github\.sha \}\}/);
+  // The map is kept by main's push run only, and a PR takes it from main's own push run of its base commit, never from
+  // the Actions cache, which a PR's earlier run can write (the security review of this build).
+  const keep = ci.split('- name: Keep the coverage map\n')[1].split('- name:')[0];
+  assert.match(keep, /if: github\.event_name != 'pull_request'[\s\S]*upload-artifact@[0-9a-f]{40}[\s\S]*name: test-map/);
   const load = ci.split('- name: Load the coverage map for the base commit\n')[1].split('- name:')[0];
-  assert.match(load, /actions\/cache\/restore@[0-9a-f]{40}[\s\S]*key: test-map-\$\{\{ github\.event\.pull_request\.base\.sha \}\}/); // pin: 1
-  assert.equal((ci.match(/actions\/cache(\/save)?@/g) || []).length, 1, 'a second cache write: a PR could write the map main reads');
+  assert.match(load, /rm -f tests\/\.map\.json/);
+  assert.match(load, /--branch main --event push --commit "\$BASE_SHA"/); // pin: 1
+  assert.match(load, /\.headSha == \\"\$BASE_SHA\\" and \.event == \\"push\\" and \.headBranch == \\"main\\"/); // pin: 1
+  assert.doesNotMatch(ci, /actions\/cache/, 'the Actions cache holds entries a PR wrote');
   const body = read(path.resolve('.github/workflows/pr-body.yml'));
   assert.match(body, /types: \[[^\]]*edited[^\]]*\]/);
   assert.ok(body.includes('node project/.claude/pr-body-audit.mjs') && body.includes('PR_BODY: ${{ github.event.pull_request.body }}'));
