@@ -7765,7 +7765,7 @@ test('status names the Claude config folder it read', () => {
 });
 
 // why: guards rule:tracking-file-functions (a session removes what it made once it has served, and lists the rest for
-// the owner). Max, 2026-11-12: the closeout cleans a thread's own probe folders as part of the process, not by a
+// the owner). The owner, 2026-11-12: the closeout cleans a thread's own probe folders as part of the process, not by a
 // string of delete asks; 56 probe folders, 37 guard records and a throwaway had built up over eight releases.
 test('scratch: closeout removes a thread\'s own probe folders and guard records, names the kept, lists strays', () => {
   const root = makeTemp('probes-');

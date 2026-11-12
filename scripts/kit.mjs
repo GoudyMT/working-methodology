@@ -1712,7 +1712,7 @@ export function measureReal({ projectDir, home }) {
 }
 
 /**
- * A thread's probe folders, kept in one ledger so its closeout removes them with no ask (Max, 2026-11-12: "folded in
+ * A thread's probe folders, kept in one ledger so its closeout removes them with no ask (the owner, 2026-11-12: "folded in
  * and a part of the cleanup process"). A session deletes what it made (AGENTS non-negotiable 7); the ledger is how it
  * knows what it made. A folder kept for later use carries its reason; one not in the ledger is a stray, listed.
  *

@@ -1,6 +1,6 @@
 # Build 2b (1.28.0): the shared guard reader and the 1.27.0 carry-overs
 
-Status: LOCKED by Max's pop-up, 2026-11-12: reader design B2 (section 7); K28 stays free as intended, but only after
+Status: LOCKED by the owner's pop-up, 2026-11-12: reader design B2 (section 7); K28 stays free as intended, but only after
 the kit's own checks (secret scan, bound) have run on it, else it asks; K24 test-check stays report-only until K13 is
 fixed; E3 is in; AI Essentials is left to its own next session; build it. Branch `feat/shared-guard-reader` from main 349bb09 (v1.27.0).
 Source of truth for the rows: workbench `_Kit Improvement List.md` at 38f10a3 (51 rows tagged build 2b; F27 is K1 to K26).
@@ -15,13 +15,13 @@ Plan: workbench `results/kit-teardown/PLAN.md` section 7 (build 2b) and `GUARD-W
 - **Why now:** build 2 put the planted-case job and the mutation check in CI, so a reader that fails open shows up red.
 - **What it fixes:** wrong kinds (a gate bypass offered a yes, K1), false holds on plain reads (V1, K2, K19), and the
   spelling arms race itself (M27, S23-1, I6's rest).
-- **Before it:** the 1.27.0 carry-overs, first, by Max's rule.
+- **Before it:** the 1.27.0 carry-overs, first, by the owner's rule.
 - **Reach:** the guards ship into every project's `.claude`, so the reader reaches **every project that installs 1.28.0**.
 
 ## 2. Reproduced on the released kit (1.27.0), 2026-11-12
 
 Probe: each command piped through the release copy's `project/.claude/guard.cjs`, cwd a throwaway git repo
-`C:\Users\Max\kit-probes\b2b-repro`. Script and cases: this thread's scratchpad (`probe.cjs`, `cases-k.json`).
+`<home>\kit-probes\b2b-repro`. Script and cases: this thread's scratchpad (`probe.cjs`, `cases-k.json`).
 
 | Row | Command | 1.27.0 answer | Right answer |
 |---|---|---|---|
@@ -47,7 +47,7 @@ Read in the code (1.27.0), a probe still owed:
 - K28 real, and it is what ffcbee7 meant ("hold any push from another work tree but one named feature branch"):
   `pushOutsideProject` returns false for a plain feature push, then `boundedPush` clears the reason. So a feature push
   from any other repo on the PC runs with no yes, and that repo's own pre-push hook (maybe not the kit's, so no secret
-  scan) is the only check. Whether the bound covers other repos is Max's call.
+  scan) is the only check. Whether the bound covers other repos is the owner's call.
 - K29 real by quote: `pre-push` lines 11 to 13 take an empty default when ls-remote succeeds with no symref line; main
   and master are still held by name, so the hole is a default branch with another name (trunk, develop).
 
@@ -76,7 +76,7 @@ Read in the code (1.27.0), a probe still owed:
 - C13 not reproduced: it needs Claude Code's own rule for shortening a long project slug, which is not in this repo
   and not verified; carried with the reader step.
 
-## 3. The reader design (Max's lock)
+## 3. The reader design (the owner's lock)
 
 ### Option A: allow-list of programs (strict)
 Only listed programs run without a yes; anything else asks. Pro: smallest surface. Con: every `npm`, `python`,
@@ -125,7 +125,7 @@ Shown for contrast; not recommended.
 ## 4. Order of work (one branch, one sweep, one PR)
 
 1. **Reproduce the rest** (K27, K28, K29, K3, K5, K21 x3, K1's cd half, K4, K14) on 1.27.0 in throwaway folders; each not real is closed.
-2. **Carry-overs first** (Max's rule), test-first, each with its row id in the commit:
+2. **Carry-overs first** (the owner's rule), test-first, each with its row id in the commit:
    - PR text: K16 (title checked with " (#n)", every project), K15 (build-record body passes the audit).
    - Push (security first among these): K29 (no default branch named: fall back to local origin/HEAD, hold when
      both are empty), K28 (a push outside the project is never inside the bound; read against ffcbee7's intent),
@@ -134,15 +134,15 @@ Shown for contrast; not recommended.
    - Install: K4 (install project over an older user layer names the fix), K6 (named, no code change expected).
    - CI: K7 (recall job: candidate code cannot mint tokens or reach the scorer), K8 (install lane paths), K9
      (pr-scope covers the risky paths; a PR cannot pick its own fallback), K10 (install-check reads the working tree),
-     K13 (test-check fits its time), K14 (timing test: find the cause, never raise the 8 s), K17 (measure; to Max).
+     K13 (test-check fits its time), K14 (timing test: find the cause, never raise the 8 s), K17 (measure; to the owner).
    - Tests: K11 (bring back the tests the cut lost where they guard real use), K12 (why tags checked against the
      rule they name), R6.2, R6.4 to R6.6, C13.
    - Sweep: K18 (call-cap holds reviewers).
    - V5 (boundedPush judged on the field it clears).
-   - Housekeeping at closeout (Max, 2026-11-12 19:33, every project): the closeout lists the thread's own working
+   - Housekeeping at closeout (the owner, 2026-11-12 19:33, every project): the closeout lists the thread's own working
      files and folders (probe folders, their guard records, scratch copies) and removes each one nothing still uses,
      with no pop-up; a file kept for later use is named with its reason. Today 56 probe folders, 37 guard records
-     and C:\tv had built up over eight releases. Design (Max, 19:37: "folded in and a part of the cleanup process",
+     and C:\tv had built up over eight releases. Design (the owner, 19:37: "folded in and a part of the cleanup process",
      not a string of delete asks): (a) every probe folder is made through one kit command (beside `kit-temp.cjs`) that
      records it in a ledger with the thread and time; (b) closeout sends every ledger entry, and the guard record of
      its folder, to the Recycle Bin with no ask (a session's own files, AGENTS non-negotiable 7); (c) a "keep" mark
@@ -152,17 +152,17 @@ Shown for contrast; not recommended.
 3. **The reader (T16b)**, test-first: the planted K1 cases and the false-hold set red first, then the reader, then each
    guard moved onto it one at a time with the full guard suite green between moves. Absorbs K1, K2, K19, V1, M27,
    S23-1, I6's rest. E3 (shell writes into the kit source or release copy) becomes a list of folders in the adapter
-   read by owner-proof, if Max keeps it in.
+   read by owner-proof, if the owner keeps it in.
 4. **Guard texts** follow the record's kind (C of the wording pass is shipped; only the kind changes).
-5. VERSION 1.28.0 and CHANGELOG, build record, one sweep (Max's yes with a token budget), PR, CI, merge, tag,
+5. VERSION 1.28.0 and CHANGELOG, build record, one sweep (the owner's yes with a token budget), PR, CI, merge, tag,
    release copy, install user then install project in the workbench, verify, list closeout.
 
-## 5. Held out of 1.28.0 unless Max sets up federation during it
+## 5. Held out of 1.28.0 unless the owner sets up federation during it
 
 C17 and the recall rows (M4, I17, I18, I19, I27, S18-1 to S18-7, S22-A5, J2) need recall runs. The bar is 12 and
 the 1.26.0 baseline scores 11 under the current scorer, so no candidate can pass until that drop is diagnosed: a
 gate regression, never a reason to lower the bar. Step: diagnose the baseline drop here (read the scorer change and
-the missed questions Q4, Q8, Q10; no paid runs). The runs themselves wait for K23 (federation) or Max's yes on local
+the missed questions Q4, Q8, Q10; no paid runs). The runs themselves wait for K23 (federation) or the owner's yes on local
 paid runs.
 
 First read (docs/evals/results/recall-scores.md, last entry): the 1.26.0 text scored a median of 13 in its own build
@@ -170,9 +170,9 @@ First read (docs/evals/results/recall-scores.md, last entry): the 1.26.0 text sc
 text moved two points between runs and scorers, and Q4, Q10 and Q12 are the questions that swing. So the likely cause
 is run-to-run noise as big as the margin over the bar, not a worse text. Not proven: it needs the C17 run's own
 records, which are not in the repo. The fix is on the measuring side (more runs per arm, or a steadier scorer), never
-a lower bar; that is a change to the recall method, so it is Max's.
+a lower bar; that is a change to the recall method, so it is the owner's.
 
-## 6. The plan gap check (K20, Max's option B, trial 1 of 3)
+## 6. The plan gap check (K20, the owner's option B, trial 1 of 3)
 
 Run once on this plan before building, with the fixed brief `results/sweep-vs-planning/probe/brief-premortem.md`
 (design = this file plus the rows it names; code = v1.27.0). Findings folded in below. The build record keeps, for
