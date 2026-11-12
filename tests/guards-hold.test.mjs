@@ -782,6 +782,20 @@ test('a feature push from a repo the kit does not check runs on the owner\'s yes
 	popUp({ act: command });
 	assert.equal(withYes('Bash', { command }, { cwd: other }), 'allow', 'the owner\'s yes did not let it run');
 });
+// why: guards rule:outward-acts. The plan check's P8 and the 1.28.0 sweep: with no project folder named, or no folder for
+// the call, a feature push from a repo whose hooks are not the kit's ran free; the guard cannot place it, so it asks.
+test('a feature push the guard cannot place, with no project or no folder named, asks', () => {
+	const other = kitTemp.makeTemp('k28p8-');
+	spawnSync('git', ['init', '-q', '-b', 'main', other]);
+	const env = { ...process.env };
+	delete env.CLAUDE_PROJECT_DIR;
+	const decision = (input) => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git push origin feat/x' }, ...input }), encoding: 'utf8', env });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision || 'note' : 'runs';
+	};
+	assert.equal(decision({ cwd: other }), 'deny', 'no project named: a push from a repo the kit does not check ran');
+	assert.equal(decision({}), 'deny', 'no folder for the call: the push ran');
+});
 // why: guards rule:outward-acts. The 1.28.0 sweep: the marker exemption let printf -v clear a marker and let a reader
 // write a clearing line into a shell profile; an unset whose name is built at run time was never held.
 test('a marker cleared by printf -v, written into a file, or unset by a built name is never by a tool', () => {

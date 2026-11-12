@@ -520,13 +520,14 @@ function pushOutsideProject(text, input) {
 // K28 (the 1.27.0 install review; the owner, 2026-11-12: free "if everything checks out"): the push bound is free
 // because the kit's own pre-push hook scans and logs the push. A push run in another repo is free only when that repo
 // is this one (a worktree shares its git folder) or its hooks are the kit's shims in the Claude folder; otherwise the
-// kit cannot see the push, and it asks. With no project folder named, the guard cannot tell, as before.
+// kit cannot see the push, and it asks. With no folder for the call it cannot be placed, so it asks; with no project
+// folder named, only the repo's own hooks can free it (the plan check's P8, the 1.28.0 sweep).
 function uncheckedRepo(input) {
 	const root = process.env.CLAUDE_PROJECT_DIR;
 	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
-	if (!root || !cwd) return false;
+	if (!cwd) return true;
 	const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
-	const inside = fold(cwd) === fold(path.resolve(root)) || fold(cwd).startsWith(fold(path.resolve(root)) + path.sep);
+	const inside = Boolean(root) && (fold(cwd) === fold(path.resolve(root)) || fold(cwd).startsWith(fold(path.resolve(root)) + path.sep));
 	const git = (dir, ...a) => require('node:child_process').spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 3000 });
 	const real = (p) => { try { return fs.realpathSync.native(p).toLowerCase(); } catch { return path.resolve(p).toLowerCase(); } };
 	const common = (dir) => { const r = git(dir, 'rev-parse', '--git-common-dir'); return r.status === 0 ? real(path.resolve(dir, r.stdout.trim())) : ''; };
@@ -534,8 +535,8 @@ function uncheckedRepo(input) {
 	// check's P8); a folder that is no repo pushes nothing.
 	const here = common(cwd);
 	if (!here) return !inside;
-	const mine = common(path.resolve(root));
-	if (here === mine || (inside && !mine)) return false;
+	const mine = root ? common(path.resolve(root)) : '';
+	if ((mine && here === mine) || (inside && !mine)) return false;
 	const hooks = git(cwd, 'config', '--get', 'core.hooksPath').stdout.trim();
 	const home = process.env.CLAUDE_CONFIG_DIR || path.join(require('node:os').homedir(), '.claude');
 	return !hooks || !real(path.resolve(cwd, hooks)).startsWith(real(path.join(home, 'kit-guard')) + path.sep);
