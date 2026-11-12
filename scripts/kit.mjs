@@ -116,7 +116,10 @@ export function releaseState(kit) {
     if (/^[RC]/.test(fields[i])) i++;
   }
   if (dirty.length) problems.push(`Changed or new files install would copy: ${dirty.slice(0, 10).join(', ')}${dirty.length > 10 ? `, and ${dirty.length - 10} more` : ''}.`);
-  return { describe, dirty, problems };
+  // The tag's tree, read here once: install checks every file it copies against this id, so a tag moved after the
+  // check changes nothing (the 1.26.0 sweep).
+  const tree = git('rev-parse', '--verify', '-q', `refs/tags/${tag}^{tree}`).stdout.trim() || null;
+  return { describe, dirty, problems, tree };
 }
 
 /** The newest release tag the kit folder knows, or null. */
@@ -174,9 +177,9 @@ function plan({ kit, home, target, projectDir }) {
  * Returns:
  *     Map of source path to text
  */
-function releaseBytes(kit, version, entries) {
-  const r = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'ls-tree', '-r', '-z', '--full-tree', `refs/tags/v${version}`], { encoding: 'utf8', cwd: SAFE_CWD, maxBuffer: 64 * 1024 * 1024 });
-  if (r.status !== 0) throw new Error(`Install refused: the release tag v${version} could not be read in the kit folder.`);
+function releaseBytes(kit, tree, entries) {
+  const r = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'ls-tree', '-r', '-z', '--full-tree', tree], { encoding: 'utf8', cwd: SAFE_CWD, maxBuffer: 64 * 1024 * 1024 });
+  if (!/^[0-9a-f]{40,64}$/.test(String(tree)) || r.status !== 0) throw new Error('Install refused: the release tag\'s files could not be read in the kit folder.');
   const blobs = new Map();
   for (const line of r.stdout.split('\0')) {
     const m = /^\d+ blob ([0-9a-f]{40})\t(.+)$/s.exec(line);
@@ -441,7 +444,8 @@ export function install(ctx) {
   const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
   // A release install copies only bytes that match the release tag (B20); a fixture or --unreleased install reads the folder.
-  const checked = ctx.release && ctx.release.release ? releaseBytes(ctx.kit, kitInfo.version, entries) : null;
+  // The CLI's release check gives the tag's tree; a fixture or --unreleased install has none and reads the folder.
+  const checked = ctx.release && ctx.release.release && ctx.release.tree ? releaseBytes(ctx.kit, ctx.release.tree, entries) : null;
   for (const entry of entries) {
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, checked);
     const wantHash = sha(want);
@@ -1661,7 +1665,7 @@ function main(argv) {
       process.exitCode = 1;
       return;
     }
-    const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty };
+    const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty, tree: rel.tree };
     const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release, acceptHost });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);

@@ -301,6 +301,7 @@ test('the settings take the owner\'s yes for the exact edit; the guards and hook
 	// What a held write tells Claude: the main session asks in the pop-up; a subagent hands it back.
 	const reason = (extra) => JSON.parse(spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: settings, content: '{"x":1}' }, cwd: proj, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } }).stdout).hookSpecificOutput.permissionDecisionReason;
 	assert.match(reason({}), /AskUserQuestion pop-up/);
+	// pin: 2 (the kind a session acts on: hand back, or ask the owner)
 	assert.match(reason({ agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 	const guard = path.join(proj, '.claude', 'guard-outward.cjs');
 	popUp({ act: `Write ${guard}: x` });
@@ -445,6 +446,7 @@ test('a held push names the limit of the push bound it hit', () => {
 	assert.ok(why('Bash', { command: 'git push origin main' }).includes('`KIT_PUSH_APPROVED=1 git push origin main`'), 'the push act to quote');
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main' });
 	assert.equal(withYes('Bash', { command: 'KIT_PUSH_APPROVED=1 git push origin main' }), 'allow', 'the act the refusal names runs on that yes');
+	// pin: 2 (the kind a session acts on: hand back, or ask the owner)
 	assert.match(why('Bash', { command: 'gh pr create --fill' }), /^Owner's yes needed: gh pr create is an outward act/);
 	assert.match(why('Bash', { command: 'git push origin main' }, { agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 });

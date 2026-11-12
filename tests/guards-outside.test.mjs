@@ -425,7 +425,9 @@ test('B20 release install: a kit file changed after the release check is refused
 	ok(git(kit, ['tag', 'v' + fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim()]));
 	const { home, proj } = setup();
 	fs.appendFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), '\n// swapped after the check\n');
-	assert.throws(() => install({ kit, home, target: 'project', projectDir: proj, release: { release: true } }), /changed since the release/);
+	// The tree id the CLI's release check read before the swap.
+	const tree = ok(git(kit, ['rev-parse', 'HEAD^{tree}']));
+	assert.throws(() => install({ kit, home, target: 'project', projectDir: proj, release: { release: true, tree } }), /changed since the release/);
 	assert.doesNotMatch(fs.readFileSync(path.join(proj, '.claude', 'guard.cjs'), 'utf8'), /swapped after the check/);
 });
 

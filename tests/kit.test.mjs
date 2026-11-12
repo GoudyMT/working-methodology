@@ -6094,7 +6094,7 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
     const text = read(path.resolve(f));
     assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*`\$HOME` in PowerShell/, f);
     // pin: 2 (the lead's order when the tool is missing)
-  assert.match(text, /not there, the kit's user layer is not installed: say so, and the owner approves/, f);
+  assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }
   assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\)[^\n]*to the owner/);
 });
