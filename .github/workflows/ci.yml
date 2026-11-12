@@ -111,6 +111,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Four machines, each a quarter of the changed tests (K13): one ran past 15 minutes on a PR with 616.
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,8 +138,9 @@ jobs:
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SLICE: ${{ matrix.slice }}
         run: |
-          node scripts/test-check.mjs "$BASE_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          node scripts/test-check.mjs "$BASE_SHA" --slice "$SLICE/4" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.

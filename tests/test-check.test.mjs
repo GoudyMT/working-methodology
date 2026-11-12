@@ -65,3 +65,21 @@ test('the test check names a test that does not fail first, catches nothing or s
 	assert.doesNotMatch(r.stdout, /one is positive/, 'an unchanged test was checked');
 	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--strict'], { cwd: dir, encoding: 'utf8' }).status, 1, 'strict fails on a finding');
 });
+
+// why: guards the owner's rule never to lower a gate. K13, the 1.27.0 build: on a PR that changed 616 tests the check
+// ran past its 15 minutes and checked nothing; split into slices, each changed test is checked once.
+test('the test check splits the changed tests into slices that cover each once', () => {
+	const dir = repo();
+	const files = (args) => {
+		const r = spawnSync(process.execPath, [CHECK, ...args], { cwd: dir, encoding: 'utf8' });
+		assert.equal(r.status, 0, r.stdout + r.stderr);
+		return [...r.stdout.matchAll(/^Test check: (\d+) new or changed/gm)].map((m) => Number(m[1]))[0];
+	};
+	const base = sh(dir, 'rev-parse', 'HEAD~1');
+	// The count each run names: the slices split the changed tests, none twice, none left out.
+	const one = files([base, '--slice', '0/2']);
+	const two = files(['--slice', '1/2', base]);
+	assert.ok(one > 0 && two > 0, `a slice got nothing: ${one} and ${two}`);
+	assert.equal(one + two, files([base]), 'the slices do not add up to the whole');
+	assert.equal(spawnSync(process.execPath, [CHECK, base, '--slice', '2/2'], { cwd: dir, encoding: 'utf8' }).status, 2, 'a slice past the count');
+});

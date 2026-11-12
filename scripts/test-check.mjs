@@ -60,14 +60,14 @@ function run(dir, keys, env = {}) {
 	return red;
 }
 
-export function check(root, base, { strict = false } = {}) {
+export function check(root, base, { strict = false, slice = null } = {}) {
 	const findings = [];
 	const note = (key, rule, text) => findings.push({ key, rule, text });
 	const baseSha = git(root, 'rev-parse', '--verify', '--end-of-options', `${base}^{commit}`).stdout.trim();
 	if (!/^[0-9a-f]{40,64}$/.test(baseSha)) return { code: 2, text: `test check: base "${base}" is not a commit` };
 	const changed = git(root, 'diff', '--name-status', '--no-renames', `${baseSha}...HEAD`).stdout.split('\n').filter(Boolean).map((l) => l.split('\t'));
 	const testFiles = changed.filter(([s, f]) => s !== 'D' && TEST_FILE.test(f)).map(([, f]) => f);
-	const newOrChanged = [];
+	let newOrChanged = [];
 	for (const f of testFiles) {
 		const now = tests(fs.readFileSync(path.join(root, f), 'utf8'));
 		const was = tests(git(root, 'show', `${baseSha}:${f}`).stdout || '');
@@ -76,6 +76,9 @@ export function check(root, base, { strict = false } = {}) {
 			newOrChanged.push({ key: `${f}::${name}`, file: f, name, body, isNew: !was.has(name) });
 		}
 	}
+	// A slice (i/n) takes every n-th changed test, in key order, so a PR that changes many tests is checked on several
+	// machines at once instead of timing out on one (K13, the 1.27.0 build: 616 changed tests ran past 15 minutes).
+	if (slice) newOrChanged = newOrChanged.sort((a, b) => (a.key < b.key ? -1 : 1)).filter((_, k) => k % slice.n === slice.i);
 	// A4: a change with no code in it, that still adds a test.
 	const code = changed.filter(([s, f]) => s !== 'D' && !TEST_FILE.test(f) && /\.(c?js|mjs|sh)$|^project\/\.githooks\//.test(f));
 	if (!code.length) for (const t of newOrChanged.filter((x) => x.isNew)) note(t.key, 'A4', 'a test added by a change of prose, wiring or removals only: is it owed?');
@@ -124,11 +127,14 @@ export function check(root, base, { strict = false } = {}) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 	const args = process.argv.slice(2);
-	const base = args.find((a) => !a.startsWith('--'));
+	const base = args.find((a, k) => !a.startsWith('--') && args[k - 1] !== '--slice');
 	if (!base) { process.stderr.write('usage: node scripts/test-check.mjs <base> [--strict]\n'); process.exitCode = 2; }
 	else {
 		const top = git(process.cwd(), 'rev-parse', '--show-toplevel').stdout.trim();
-		const r = check(path.resolve(top || '.'), base, { strict: args.includes('--strict') });
+		const at = args.indexOf('--slice');
+		const m = at >= 0 ? /^(\d+)\/(\d+)$/.exec(args[at + 1] || '') : null;
+		const slice = m && Number(m[1]) < Number(m[2]) ? { i: Number(m[1]), n: Number(m[2]) } : null;
+		const r = at >= 0 && !slice ? { code: 2, text: 'test check: --slice takes i/n, with i under n' } : check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice });
 		process.stdout.write(r.text + '\n');
 		process.exitCode = r.code;
 	}
