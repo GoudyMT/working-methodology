@@ -524,7 +524,9 @@ test('hooks moved another way, main written through the API another way, and the
 	}
 	// The review on 09f88b1: a push to main run in another clone (git -C, --work-tree, a cd, or a shell whose folder is
 	// outside the project) runs none of this project's hooks, so the pre-push hook's refusal never happens.
-	for (const [act, extra] of [['git -C /tmp/clone push origin main', {}], ['cd /tmp/clone && git push origin main', {}], ['git --work-tree=/tmp/x push origin master', {}], ['git push origin main', { cwd: path.join(path.dirname(proj), 'elsewhere') }], ['git -C /tmp/clone push', {}]]) {
+	for (const [act, extra] of [['git -C /tmp/clone push origin main', {}], ['cd /tmp/clone && git push origin main', {}], ['git --work-tree=/tmp/x push origin master', {}], ['git push origin main', { cwd: path.join(path.dirname(proj), 'elsewhere') }], ['git -C /tmp/clone push', {}],
+		// The review on aee6f28: quotes, a line break before the cd, and a push to @ or a variable, out there.
+		['"cd" /tmp/clone && git push origin main', {}], ['echo x\ncd /tmp/clone\ngit push origin main', {}], ['git -C /tmp/clone push origin @', {}], ['git -C /tmp/clone push origin $B', {}], ['git -C /tmp/clone push --all origin', {}]]) {
 		popUp({ act });
 		assert.equal(withYes('Bash', { command: act }, extra), 'deny', `${act} ran on a pop-up yes`);
 		assert.match(why('Bash', { command: act }, extra), /^Never by a tool: /, act);

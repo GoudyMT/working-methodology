@@ -456,17 +456,26 @@ function hookFreeMainWrite(text) {
 
 // A push to main, master, or to wherever a bare push goes, run outside this project's work tree (git -C, --work-tree, a
 // cd first, or a shell whose folder is outside the project) runs none of this project's hooks, so the pre-push hook's
-// refusal of an existing main never happens (the review on 09f88b1). A feature-branch push there still asks.
+// refusal of an existing main never happens (the review on 09f88b1). It fails closed: out there, only a push that
+// names one plain feature branch on one remote still asks; any other push is held (the review on aee6f28).
 function pushOutsideProject(text, input) {
-	if (!/\bgit(\.exe)?\b[^\n]*\bpush\b/i.test(text)) return false;
+	const flat = text.replace(/[\\'"`]/g, '');
+	if (!/\bgit(\.exe)?\b[\s\S]*\bpush\b/i.test(flat)) return false;
 	const root = process.env.CLAUDE_PROJECT_DIR;
 	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
 	const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
 	const outside = Boolean(root && cwd) && fold(cwd) !== fold(path.resolve(root)) && !fold(cwd).startsWith(fold(path.resolve(root)) + path.sep);
-	const elsewhere = outside || /\bgit(\.exe)?(\s[^;&|\n]*)?\s(-C|--work-tree)(\s|=|$)/.test(text) || /(^|[;&|({]\s*)(cd|pushd|popd|chdir|set-location|sl|push-location)(\s|;|$)/i.test(text);
+	const elsewhere = outside || /\bgit(\.exe)?(\s[^;&|\n]*)?\s(-C|--work-tree)(\s|=|$)/.test(flat) || /(^|[;&|({\n]\s*)(cd|pushd|popd|chdir|set-location|sl|push-location)(\s|;|$)/im.test(flat);
 	if (!elsewhere) return false;
-	const flat = text.toLowerCase();
-	return /\bpush\b[^;&|\n]*\b(main|master|head)\b/.test(flat) || /\bpush((\s+-\S+)*)\s*($|[;&|\n])/.test(flat);
+	const plainFeature = (args) => {
+		if (args.some((a) => a.startsWith('-') && !PUSH_FLAGS.has(a))) return false;
+		const specs = args.filter((a) => !a.startsWith('-'));
+		if (specs.length !== 2 || !/^[A-Za-z0-9._-]+$/.test(specs[0])) return false;
+		const parts = specs[1].split(':');
+		const dest = parts[parts.length - 1].replace(/^refs\/heads\//, '');
+		return parts.length <= 2 && BRANCH.test(specs[1].replace(':', '/')) && BRANCH.test(dest) && !dest.startsWith('refs/') && !/^(main|master|head|@)$/i.test(dest);
+	};
+	return ![...flat.matchAll(/\bpush\b([^;&|\n]*)/gi)].every((m) => plainFeature(m[1].trim().split(/\s+/).filter(Boolean)));
 }
 
 function decide(input) {
