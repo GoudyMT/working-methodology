@@ -286,3 +286,17 @@ test('the sweep\'s spellings of a guard file read, a listed folder and a marker 
 	};
 	for (const command of ['env --unset="$M" git push origin feat/x', 'export -n "$M"; git push origin feat/x']) assert.match(outward(command), /^Never by a tool: clearing/, command);
 });
+// why: guards rule:security-standards (pass bar 4, K19). In bash a wildcard at the start of a path part never matches a
+// name that starts with a dot, so tests/* cannot name .githooks or .claude and a test run naming it is no write to a
+// guard. Quoted, escaped, or with dot globbing turned on, the wildcard may still name one: held.
+test('a bash wildcard that cannot match a dot name is no write to a guard', () => {
+	const proj = kitTemp.makeTemp('k19-');
+	fs.mkdirSync(path.join(proj, 'tests'));
+	const why = (command, tool_name = 'Bash') => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input: { command }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	for (const command of ['npm test -- tests/*', 'node --test tests/*.test.mjs', 'npm test -- tests/?ard*']) assert.equal(why(command), '', command);
+	for (const command of ["npm test -- 'tests/*'", 'shopt -s dotglob; npm test -- tests/*', 'GLOBIGNORE=x npm test -- tests/*', 'npm test -- tests/\\*', 'npm test -- tests/.*']) assert.match(why(command), /^Never by a tool/, command);
+	assert.match(why('npm test -- tests/*', 'PowerShell'), /^Never by a tool/, 'PowerShell matches dot names');
+});

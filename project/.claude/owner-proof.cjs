@@ -86,6 +86,11 @@ function insideProof(file, cwd) {
 
 // Whether one part of a path, which may hold a wildcard (* ? [...]), can be the name given.
 function fits(part, name) {
+	// A part marked by dotless() is a bash wildcard that never matches a name starting with a dot (K19).
+	if (part.charCodeAt(0) === 1) {
+		if (name.startsWith('.')) return false;
+		part = part.slice(1);
+	}
 	if (!/[*?[]/.test(part)) return part === name;
 	const rx = part.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\[[^\]]*\]?/g, '.').replace(/\*/g, '.*').replace(/\?/g, '.');
 	try { return new RegExp(`^${rx}$`).test(name); } catch { return true; }
@@ -278,6 +283,12 @@ function shellWrites(command, tool, start, names = proofNames) {
 	const segments = tokenize(text);
 	let cwd = start ? parts(start) : null;
 	let named = false;
+	// K19 (pass bar 4): bash's * and ? at the start of a path part never match a name starting with a dot while dotglob
+	// is off, so tests/* cannot name .githooks or .claude. Only for an unquoted word with no escape, expansion, brace or
+	// ~, in a command that names no way to turn dot globbing on; PowerShell's wildcards match dot names, so not there.
+	const dotglob = tool !== 'Bash' || /dotglob|GLOBIGNORE|BASHOPTS|shopt|bash\s+-O|\+O/.test(source);
+	const dotless = (word, quoted) => (dotglob || quoted || /[\\$`{}~'"]/.test(word) ? word : word.split('/').map((p) => (/^[*?]/.test(p) ? `\x01${p}` : p)).join('/'));
+	const hit = (x) => names(dotless(x.value, x.quoted), cwd);
 	// A variable set to a plain value earlier in the command (P=~/.claude/projects) is read as that value where it is
 	// used, so a read through it passes and a write through it is refused (S23-2). One the guard did not see set stays
 	// unread, as before.
@@ -311,7 +322,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 		const assigns = segment.filter((x) => !x.redirect);
 		const lead = /^(export|declare|local|readonly)$/.test(assigns[0]?.value || '') ? 1 : 0;
 		if (assigns.length > lead && assigns.slice(lead).every((x) => /^[A-Za-z_]\w*=/.test(x.value) && !x.value.startsWith('-'))) {
-			if (segment.some((x) => x.redirect && names(x.value, cwd))) return true;
+			if (segment.some((x) => x.redirect && hit(x))) return true;
 			for (const x of assigns.slice(lead)) vars.set(x.value.slice(0, x.value.indexOf('=')), x.value.slice(x.value.indexOf('=') + 1));
 			if (tool === 'Bash' || tool === 'Monitor' || tool === 'mcp__terminal__run_in_terminal') continue;
 		}
@@ -320,11 +331,11 @@ function shellWrites(command, tool, start, names = proofNames) {
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
 		const message = (x, k) => MESSAGES.has(program) && !x.redirect && k > 0 && (MESSAGE_FLAGS.test(all[k - 1]) || false);
 		const inline = (x) => MESSAGES.has(program) && !x.redirect && /^(--message|--body|--title|--notes)=/i.test(x.value);
-		if (segment.some((x) => names(x.value, cwd) || x.value.split(/\s+/).some((w) => names(w, cwd)))) named = true;
+		if (segment.some((x) => hit(x) || x.value.split(/\s+/).some((w) => names(dotless(w, x.quoted), cwd)))) named = true;
 		// A quoted word is read in pieces too: inline code (node -e "...writeFileSync('.claude/settings.json')") names a
 		// file inside it.
 		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && names(w, cwd));
-		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && (names(x.value, cwd) || inside(x)));
+		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && (hit(x) || inside(x)));
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
@@ -335,7 +346,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 			continue;
 		}
 		if (hits.length === 0) continue;
-		if (segment.some((x) => x.redirect && names(x.value, cwd))) return true;
+		if (segment.some((x) => x.redirect && hit(x))) return true;
 		if ((READERS.has(program) || printSed(all)) && !defines) {
 			// Piped on, the read must go to another reader.
 			if (segment.end === '|' && segments[s + 1] && !PIPE_READERS.has(path.basename(slash(segments[s + 1][0]?.value || '')).replace(/\.(exe|cmd|bat)$/, ''))) return true;
@@ -352,7 +363,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 			const plain = segment.slice(1).filter((x) => !x.value.startsWith('-'));
 			const risky = options.some((x) => (pwsh ? !/^-(recurse|force)$/i.test(x.value) : !COPY_OPTIONS.test(x.value)));
 			const dest = plain[plain.length - 1];
-			if (!risky && (pwsh ? plain.length === 2 : plain.length >= 2) && !names(dest.value, cwd)) continue;
+			if (!risky && (pwsh ? plain.length === 2 : plain.length >= 2) && !hit(dest)) continue;
 		}
 		// For the guards and settings (T1): running a script is no write to it (node <file>, the file the only word named,
 		// no inline code), and git reading or staging a file writes none (git diff --output does, so it is refused). The
@@ -360,14 +371,17 @@ function shellWrites(command, tool, start, names = proofNames) {
 		if (names !== proofNames && !defines && program === 'node' && hits.length === 1 && hits[0] === segment[1]) continue;
 		// Only the subcommand right after git (no global option, which can move git or run a program), no option that runs
 		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
-		if (names !== proofNames && !defines && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => names(h.value, cwd)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
+		if (names !== proofNames && !defines && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.
 	if (named) return false;
 	const raw = source;
 	// Read from the folder the shell starts in, as the words above are: a bare kit-owner.json there is placed.
-	return [raw, text].some((t) => t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(w, start ? parts(start) : null)));
+	return [raw, text].some((t) => {
+		const quoted = /["'`\\]/.test(t);
+		return t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
+	});
 }
 
 // Turning every hook off is a gate bypass, never a settings change a yes may approve (K21). JSON reads \u escapes as
