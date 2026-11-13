@@ -715,6 +715,9 @@ test('every spelling of a gate bypass is never by a tool, not an ask', () => {
 	for (const [tool, command] of never) assert.match(reason(tool, command), /^Never by a tool/, `${tool}: ${command}`);
 	// A plain push to main stays the owner's yes, not a flat refusal: the reader adds holds of the right kind only.
 	assert.match(reason('Bash', 'git push origin main'), /^Owner's yes needed/);
+	// The 1.28.0 sweep (P17): a PowerShell script wrapper named gh.ps1 or git.ps1, with a path or bare, is gh or git.
+	assert.match(reason('PowerShell', 'C:/Tools/gh.ps1 api -X PUT repos/o/r/contents/a.txt -f branch=main -f message=x -f content=eA=='), /^Never by a tool/);
+	for (const command of ['gh.ps1 pr merge 1 --admin', 'C:/Tools/gh.ps1 pr merge 1 --admin', 'C:/Tools/git.ps1 push origin main', 'git.ps1 push origin main']) assert.match(reason('PowerShell', command), /^Owner's yes needed/, command);
 });
 // why: guards rule:outward-acts (only clearing the AI shell's markers is a bypass). K2, the 1.27.0 sweep: naming a
 // marker at all was read as clearing it, so a grep, an echo or a commit message that named one was refused.

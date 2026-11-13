@@ -192,8 +192,10 @@ function tokenize(text) {
 //   - every way of starting a program with the environment cleared or the markers unset: env -i
 function canonical(text) {
 	let s = String(text);
-	s = s.replace(/(["'])([^"'\n]*[\\/])(git|gh)(\.(exe|cmd|bat|com))?[. ]*\1/gi, '$3');
-	s = s.replace(/(^|[\s;|&(])(?:[A-Za-z]:)?[^\s"';|&()]*[\\/](git|gh)(\.(exe|cmd|bat|com))?\.*(?=\s|$)/gi, '$1$2');
+	// A PowerShell script wrapper (gh.ps1) is the program too, with a path or bare (the 1.28.0 sweep, P17).
+	s = s.replace(/(["'])([^"'\n]*[\\/])?(git|gh)(\.(exe|cmd|bat|com|ps1))?[. ]*\1/gi, (m, q, dir, name, suffix) => (dir || suffix ? name : m));
+	s = s.replace(/(^|[\s;|&(])(?:[A-Za-z]:)?[^\s"';|&()]*[\\/](git|gh)(\.(exe|cmd|bat|com|ps1))?\.*(?=\s|$)/gi, '$1$2');
+	s = s.replace(/(^|[\s;|&(])(git|gh)\.(exe|cmd|bat|com|ps1)\.*(?=\s|$)/gi, '$1$2');
 	s = s.replace(/\b([A-Za-z_]\w*)\+=/g, '$1=');
 	s = s.replace(/\b(set-item|si|new-item|ni|set-content|sc)\s+(-path\s+)?['"]?env:\\?([A-Za-z_]\w*)['"]?\s+(-value\s+)?/gi, '$3=');
 	s = s.replace(/\$\{?env:([A-Za-z_]\w*)\}?\s*=/gi, '$1=');
