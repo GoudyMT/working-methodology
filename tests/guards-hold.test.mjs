@@ -730,6 +730,8 @@ test('reading or naming a marker runs; every way of clearing one is still never 
 	assert.match(reason('Bash', 'echo CLAUDECODE | python -c "import os,sys; os.environ.pop(sys.stdin.read().strip()); os.execvp(\'git\',[\'git\',\'push\',\'origin\',\'HEAD:main\'])"'), /^Never by a tool: clearing/);
 	assert.match(reason('PowerShell', "echo CLAUDECODE | % { $s=[Diagnostics.ProcessStartInfo]::new('git','push origin HEAD:main'); $s.EnvironmentVariables.Remove($_); [Diagnostics.Process]::Start($s) }"), /^Never by a tool: clearing/);
 	assert.doesNotMatch(reason('Bash', 'grep -n CLAUDECODE notes.txt | head -5'), /markers/, 'a reader piped to a reader');
+	// A program that is no reader, handed the name (the 1.28.0 mutation run's survivor).
+	assert.match(reason('Bash', 'runner -u CLAUDECODE git push origin feat/x'), /^Never by a tool: clearing/);
 	assert.doesNotMatch(reason('Bash', '"C:/Program Files/Git/cmd/git.exe" commit -m "note CLAUDECODE"'), /markers/, 'a path to git in a commit naming a marker');
 	for (const command of ['grep -n CLAUDECODE notes.txt', 'echo $CLAUDECODE', 'git commit -m "docs: name the CLAUDECODE marker"', 'rg AI_AGENT -n project/.githooks']) {
 		assert.doesNotMatch(reason('Bash', command), /markers/, command);
@@ -803,6 +805,15 @@ test('a feature push the guard cannot place, with no project or no folder named,
 	};
 	assert.equal(decision({ cwd: other }), 'deny', 'no project named: a push from a repo the kit does not check ran');
 	assert.equal(decision({}), 'deny', 'no folder for the call: the push ran');
+	// The 1.28.0 mutation run's survivors: a folder that is no repo, outside the project; a repo whose hooks path is set,
+	// but not to the kit's shims.
+	const named = (input) => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git push origin feat/x' }, ...input }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: process.cwd() } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision || 'note' : 'runs';
+	};
+	assert.equal(named({ cwd: kitTemp.makeTemp('p8-plain-') }), 'deny', 'a folder outside the project that is no repo');
+	spawnSync('git', ['-C', other, 'config', 'core.hooksPath', '.husky']);
+	assert.equal(named({ cwd: other }), 'deny', 'a repo whose hooks are its own, not the kit\'s');
 });
 // why: guards rule:outward-acts. The plan check's P9 and the 1.28.0 sweep: a shell fed a script on its input runs a body
 // the text does not show (base64 -d | sh pushed main unseen); a body written out in the command is read as before.

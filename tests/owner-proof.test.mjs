@@ -284,7 +284,7 @@ test('the sweep\'s spellings of a guard file read, a listed folder and a marker 
 	};
 	assert.match(why('sed -n "$p" .claude/guard-outward.cjs'), /^Never by a tool/);
 	const unix = '/' + kept.split(path.sep).join('/').replace(/^([A-Za-z]):/, (m, d) => d.toLowerCase());
-	for (const command of ['echo x > "$PWD/vault/a.txt"', `echo x > "${unix}/a.txt"`, 'rm -rf /']) assert.match(why(command), /protected-folders\.json/, command);
+	for (const command of ['echo x > "$PWD/vault/a.txt"', `echo x > "${unix}/a.txt"`, 'rm -rf /', `sed -n 1w${unix}/a.txt notes.txt`]) assert.match(why(command), /protected-folders\.json/, command);
 	const outward = (command) => {
 		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: process.cwd() }), encoding: 'utf8' });
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
@@ -317,5 +317,5 @@ test('a reader named by a path gets no read exemption for a guard or settings fi
 	for (const command of ['sed -n 1p .claude/settings.json', 'cat .claude/guard.cjs']) assert.equal(why(command), '', command);
 	// A sed script that is not a line print gets no exemption: e runs each line as a command (the 1.28.0 mutation run's
 	// survivor). A w command glued to its file (1w.claude/guard.cjs) writes it, so the path inside the word is read.
-	for (const command of ['sed -n e .claude/settings.json', 'sed -n 1w.claude/guard.cjs notes.txt', 'sed -n s/a/b/w.claude/guard.cjs notes.txt', 'sed -n 1w.git/hooks/pre-push notes.txt']) assert.notEqual(why(command), '', command);
+	for (const command of ['sed -n e .claude/settings.json', 'sed -n 1w.claude/guard.cjs notes.txt', 'sed -n s/a/b/w.claude/guard.cjs notes.txt', 'sed -n 1w.git/hooks/pre-push notes.txt', 'sed -n /x/w.claude/settings.json notes.txt', 'sed -n s/a/b/gw.claude/guard.cjs notes.txt']) assert.notEqual(why(command), '', command);
 });
