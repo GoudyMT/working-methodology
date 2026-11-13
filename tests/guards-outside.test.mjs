@@ -1327,3 +1327,13 @@ test('K4 shims: an older launcher that gives no checked hook names the fix inste
 	assert.match(r.stderr, /install user/);
 	assert.doesNotMatch(r.stderr, /exec: : not found|cannot execute|Permission denied/);
 });
+// why: guards rule:outward-acts. R6.4 (the 1.25.0 sweep): a pin read the placeholder in the kit's source, and no test
+// read what install makes of it. The installed guard holds no placeholder and names this install's Claude folder,
+// which is where it looks for the user layer's checks.
+test('R6.4 install fills in where the user layer sits: the installed guard names the Claude folder, no placeholder', () => {
+	const { home, proj } = setup();
+	const text = fs.readFileSync(path.join(proj, '.claude', 'guard.cjs'), 'utf8');
+	assert.doesNotMatch(text, /\{\{/);
+	const named = JSON.parse(/const INSTALLED_HOME = ("(?:[^"\\]|\\.)*");/.exec(text)[1]);
+	assert.equal(path.resolve(named), path.resolve(home));
+});

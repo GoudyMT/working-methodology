@@ -55,7 +55,7 @@ test('every guard reads the shared second reading, and a missing reader holds ev
 });
 
 // why: guards rule:outward-acts
-test('a missing or broken project guard holds every call it would read, with the fix', () => {
+test('a missing project guard holds every call it would read, with the fix', () => {
 	const run = setup({ drop: 'guard-delete.cjs' });
 	const out = run('Bash', { command: 'git status' });
 	assert.equal(out.permissionDecision, 'deny');
