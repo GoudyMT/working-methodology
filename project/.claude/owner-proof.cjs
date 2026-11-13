@@ -298,7 +298,8 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// took 9 s under CI coverage).
 	const seen = new Map();
 	const hit = (x) => {
-		const key = `${x.quoted ? 1 : 0}${Array.isArray(cwd) ? cwd.join('/') : String(cwd)}\0${x.value}`;
+		const where = Array.isArray(cwd) ? `A${JSON.stringify(cwd)}` : cwd === null ? 'N' : 'U';
+		const key = `${x.quoted ? 1 : 0}${where}\0${x.value}`;
 		if (!seen.has(key)) seen.set(key, tails(dotless(x.value, x.quoted)).some((w) => names(w, cwd)));
 		return seen.get(key);
 	};

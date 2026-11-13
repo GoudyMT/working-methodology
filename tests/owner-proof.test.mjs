@@ -315,6 +315,9 @@ test('a reader named by a path gets no read exemption for a guard or settings fi
 	};
 	for (const command of ['./sed -n 1p .claude/settings.json', './cat .claude/guard.cjs', 'bin/sed -n 5p .claude/guard-outward.cjs']) assert.notEqual(why(command), '', command.slice(0, 80));
 	for (const command of ['sed -n 1p .claude/settings.json', 'cat .claude/guard.cjs']) assert.equal(why(command), '', command);
+	// A folder named unknown is not the guard's unknown folder (the review of the per-word memo).
+	fs.mkdirSync(path.join(proj, 'unknown', '.claude'), { recursive: true });
+	assert.notEqual(why('cd unknown && cat .claude/settings.json; popd && echo x > .claude/settings.json'), '', 'a write after a move the guard cannot follow');
 	// A sed script that is not a line print gets no exemption: e runs each line as a command (the 1.28.0 mutation run's
 	// survivor). A w command glued to its file (1w.claude/guard.cjs) writes it, so the path inside the word is read.
 	for (const command of ['sed -n e .claude/settings.json', 'sed -n 1w.claude/guard.cjs notes.txt', 'sed -n s/a/b/w.claude/guard.cjs notes.txt', 'sed -n 1w.git/hooks/pre-push notes.txt', 'sed -n /x/w.claude/settings.json notes.txt', 'sed -n s/a/b/gw.claude/guard.cjs notes.txt', 'sed -n -e1w.claude/guard.cjs notes.txt', 'sed -n 1!w.claude/guard.cjs notes.txt', 'sed -n 1{w.claude/guard.cjs notes.txt', "sed -n '1w .claude/guard.cjs' notes.txt", "sed -n -e 'p;w .claude/settings.json' notes.txt", 'env sed -n 1w.claude/guard.cjs notes.txt', 'gsed -n 1w.claude/guard.cjs notes.txt', 'busybox sed -n 1w.claude/guard.cjs notes.txt', 'sh -c "sed -n 1w.claude/guard.cjs notes.txt"', 'toybox sed -n 1w.claude/guard.cjs notes.txt', '/usr/bin/sed -n 1w.claude/guard.cjs notes.txt', `sed -n s/a/`+'b'.repeat(5000)+`/w notes.txt`]) assert.notEqual(why(command), '', command.slice(0, 80));
