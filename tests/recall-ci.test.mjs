@@ -30,6 +30,8 @@ test('the CI recall job runs only by hand from main, through federation with no 
 	// The scorer's desk is readable; the sealed map, the raw runs and the token are not (a blanket deny beat the allow).
 	assert.doesNotMatch(wf, /Read\(\/\/\*\*\)/);
 	assert.ok(wf.includes('"$desk" "$out" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/oidc"'), 'the scorer may read the map, the runs or the token');
+	// The 1.28.0 sweep: nor the job's environment through /proc, nor the CLI's own sign-in under ~/.claude.
+	assert.ok(wf.includes('"$RUNNER_TEMP/oidc" /proc "$HOME/.claude"'), 'the scorer may read /proc or the CLI sign-in');
 	// The harness, keys and brief that judge are main's; the candidate is only data.
 	assert.match(wf, /node base\/scripts\/recall\.mjs "cand-\$i" cand/);
 	assert.match(wf, /node base\/scripts\/recall-score\.mjs score/);
