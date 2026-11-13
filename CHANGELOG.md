@@ -28,7 +28,7 @@ Every guard reads each command a second time, written one way, so every spelling
 - Every guard (settings, delete, task and push) reads the second reading beside the text; a git or gh script wrapper such as git.ps1 is read as git, so a delete or commit spelled that way is held as git is.
 - A push typed in the owner's terminal tab is outside the push bound, and a shell fed a script on its input (base64 -d | sh, sh -s, sh < file) is held unless the script is written out in the command.
 - Pre-push holds a push to a remote it cannot ask for its default branch, and the first push check reads only a checkout git lists, so a folder pointing at the repo cannot clear it.
-- A marker name piped into a program that is not a reader is a marker clear; a reader named by a path gets no read exemption for a guard or settings file.
+- A marker name piped into a program that is not a reader is a marker clear; a reader named by a path gets no read exemption; a sed w command glued to a guard, settings or listed path is held.
 - Closeout and the load check start the system PowerShell by its full path, never one in the current folder; the recall scorer cannot read /proc or the command line tool's sign-in.
 - A feature push from a repo whose git hooks are not the kit's (another repo, a nested repo, a submodule) needs the owner's yes, since no secret scan runs there.
 - A feature push the guard cannot place, with no project folder or no folder for the call named, asks the owner.

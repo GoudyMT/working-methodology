@@ -37,7 +37,7 @@
   {
    "id": "R1",
    "kind": "security",
-   "text": "A marker name piped into a program that is not a reader is a marker clear; a reader named by a path gets no read exemption for a guard or settings file.",
+   "text": "A marker name piped into a program that is not a reader is a marker clear; a reader named by a path gets no read exemption; a sed w command glued to a guard, settings or listed path is held.",
    "evidence": "tests/guards-hold.test.mjs, tests/owner-proof.test.mjs"
   },
   {
