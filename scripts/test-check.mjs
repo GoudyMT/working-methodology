@@ -112,11 +112,17 @@ export function check(root, base, { strict = false, slice = null } = {}) {
 		// no real rule kept a test in the never-cut group); a tag naming no known rule is named, and read as no tag.
 		let index = '';
 		try { index = fs.readFileSync(path.join(root, 'project', 'standards', 'INDEX.md'), 'utf8'); } catch { /* none: no rule counts */ }
-		const known = new Set([...index.matchAll(/^\| ([a-z0-9-]+) \|/gm)].map((m) => m[1]));
+		const ids = (text) => new Set([...text.matchAll(/^\| ([a-z0-9-]+) \|/gm)].map((m) => m[1]));
+		const known = ids(index);
+		// The index read is the change's own copy, so a change could add a row and tag a test with it (K36). Such a rule
+		// counts, and is named so the owner reads the new rule beside the test it keeps.
+		const before = ids(git(root, 'show', `${baseSha}:project/standards/INDEX.md`).stdout || '');
 		const tagged = (t) => {
 			const rules = [...t.body.matchAll(/\/\/ why: guards\b.*?\brule:([a-z0-9-]+)/g)].map((m) => m[1]);
 			const unknown = rules.filter((r) => !known.has(r));
 			if (unknown.length) note(t.key, 'A2', `names rule:${unknown.join(', rule:')}, which is not in the rule index`);
+			const added = rules.filter((r) => known.has(r) && !before.has(r));
+			if (added.length) note(t.key, 'A2', `names rule:${added.join(', rule:')}, a rule this change itself adds to the rule index`);
 			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(t.body);
 		};
 		const untagged = newOrChanged.filter((t) => !tagged(t));
