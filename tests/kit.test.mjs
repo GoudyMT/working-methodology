@@ -7810,6 +7810,14 @@ test('scratch: closeout removes a thread\'s own probe folders and guard records,
   assert.match(r.text, /stray.*old-stray/);
   const after = JSON.parse(read(ledger)).entries.map((e) => e.path);
   assert.ok(!after.includes(a) && after.includes(b) && after.includes(c), 'the ledger lost the wrong entry');
+  // The 1.28.0 sweep: a move that fails keeps that folder's ledger line and the report of what did move.
+  const d = made('feat/z', 'one');
+  const e = made('feat/z', 'two');
+  const r2 = kitScratch({ root, home, cmd: 'clean', thread: 'feat/z', trash: (p) => { if (p === d) throw new Error('EXDEV: cross-device'); } });
+  assert.match(r2.text, /not removed: .*one.*EXDEV/);
+  assert.match(r2.text, /removed: .*two/);
+  const kept = JSON.parse(read(ledger)).entries.map((x) => x.path);
+  assert.ok(kept.includes(d) && !kept.includes(e), 'the failed move lost its ledger line');
 });
 
 // why: guards rule:security-standards. The 1.28.0 sweep: on Windows a program started by bare name is looked for in

@@ -1760,7 +1760,13 @@ export function scratch({ root, home, cmd, thread, label, path: target, reason, 
     if (e.thread !== thread) { left.push(e); continue; }
     if (e.keep) { lines.push(`kept: ${e.label} at ${e.path} (${e.keep})`); left.push(e); continue; }
     if (!inRoot(e.path)) { lines.push(`refused: ${e.path} is outside the probe folder, so it is left as it is`); continue; }
-    for (const p of [e.path, guardDir(home, e.path)]) if (fs.existsSync(p)) { trash(p, root); lines.push(`removed: ${p}`); }
+    // A move that fails (another drive, a locked file) keeps the folder's ledger line and says so; the rest go on.
+    let failed = false;
+    for (const p of [e.path, guardDir(home, e.path)]) {
+      if (!fs.existsSync(p)) continue;
+      try { trash(p, root); lines.push(`removed: ${p}`); } catch (err) { failed = true; lines.push(`not removed: ${p} (${String(err && err.message).split('\n')[0]})`); }
+    }
+    if (failed) left.push(e);
   }
   ledgerData.entries = left;
   save();
