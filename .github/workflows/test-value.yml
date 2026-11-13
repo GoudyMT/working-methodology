@@ -2,16 +2,34 @@
 # slices, and sorts every test by what it guards or catches (scripts/test-value.mjs). It only reports: the cut list
 # goes to the owner before any test is removed. It never runs on a PR, so no PR pays for it: run it by hand, or push
 # a branch named test/measure-<name>.
+# K41 (the owner, 2026-11-13): it measures only the lines the branch changed since the base, and says how many flips
+# that is, with a rough count of runner minutes, before any slice starts. The whole kit (about 2,500 flips, about 600
+# runner minutes on 2026-11-12) runs only when started by hand with scope set to all. The test sort needs every flip,
+# so it runs only then.
 # Actions are pinned to full commit SHAs, so a moved tag cannot change what runs here.
 name: Test value
 
 on:
   workflow_dispatch:
+    inputs:
+      base:
+        description: 'Measure the lines changed since this branch or commit'
+        default: 'origin/main'
+      scope:
+        description: 'changed: only those lines. all: every flip in the kit (about 600 runner minutes)'
+        type: choice
+        options: ['changed', 'all']
+        default: 'changed'
   push:
     branches: ['test/measure-*']
 
 permissions:
   contents: read
+
+# The inputs reach the steps only as environment values, never as text in a command.
+env:
+  MEASURE_BASE: ${{ inputs.base || 'origin/main' }}
+  MEASURE_SCOPE: ${{ inputs.scope || 'changed' }}
 
 concurrency:
   group: test-value-${{ github.ref }}
@@ -38,6 +56,12 @@ jobs:
           git config --global init.defaultBranch main
       - name: Coverage map
         run: node scripts/test-run.mjs --map --shards 4
+      - name: Say what the run will cost before any slice starts
+        shell: bash
+        run: |
+          if [ "$MEASURE_SCOPE" = all ]; then out=$(node scripts/mutation-check.mjs --count); else out=$(node scripts/mutation-check.mjs --base "$MEASURE_BASE" --count); fi
+          n=${out#flips: }
+          echo "Scope: $MEASURE_SCOPE (base $MEASURE_BASE). Flips: $n. About $(( (n + 3) / 4 )) runner minutes at four flips a minute." | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: map
@@ -77,7 +101,8 @@ jobs:
         shell: bash
         run: |
           set +e
-          node scripts/mutation-check.mjs --slice ${{ matrix.slice }}/8 --json "flips-${{ matrix.slice }}.json" --timeout 60000 > "flips-${{ matrix.slice }}.log"
+          if [ "$MEASURE_SCOPE" = all ]; then scope=(); else scope=(--base "$MEASURE_BASE"); fi
+          node scripts/mutation-check.mjs "${scope[@]}" --slice ${{ matrix.slice }}/8 --json "flips-${{ matrix.slice }}.json" --timeout 60000 > "flips-${{ matrix.slice }}.log"
           code=$?
           tail -n 1 "flips-${{ matrix.slice }}.log"
           [ "$code" -le 1 ]
@@ -87,8 +112,10 @@ jobs:
           path: flips-${{ matrix.slice }}.*
           retention-days: 14
 
+  # The sort puts a test that reaches no measured flip on the cut list, so it runs only on a whole-kit measure.
   value:
     needs: [flips]
+    if: ${{ inputs.scope == 'all' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

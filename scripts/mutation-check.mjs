@@ -7,6 +7,7 @@
 //   --timeout <ms>      per flip (default 120000); a flip that hangs its tests counts as caught
 //   --json <file>       also write every flip, the tests that reach it and the tests that caught it (T15 Part B)
 //   --slice <i>/<n>     only every n-th flip from the i-th, so CI can split the run over n jobs
+//   --count             only say how many flips the run would make ("flips: <n>"), and run nothing (K41)
 // Needs tests/.map.json made at HEAD (node scripts/test-run.mjs --map, on a clean tree). Exit 0 none survived,
 // 1 some survived, 2 it could not run. The repo itself is never changed: every flip is made in the copy.
 import fs from 'node:fs';
@@ -34,7 +35,7 @@ function flip(line) {
 }
 
 function parseArgs(argv) {
-	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null };
+	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false };
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--base') o.base = argv[++i];
 		else if (argv[i] === '--json') o.json = argv[++i];
@@ -42,6 +43,7 @@ function parseArgs(argv) {
 			const m = /^(\d+)\/(\d+)$/.exec(argv[++i] || '');
 			o.slice = m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : 'bad';
 		}
+		else if (argv[i] === '--count') o.count = true;
 		else if (argv[i] === '--also') o.also.push(argv[++i]);
 		else if (argv[i] === '--timeout') o.timeout = Number(argv[++i]) || o.timeout;
 		else o.files.push(posix(argv[i]));
@@ -50,10 +52,16 @@ function parseArgs(argv) {
 }
 
 // The new-side line numbers each file changed since base: a flip outside them is not this change's.
+// The base is resolved to a commit first, so a word that starts with a dash is never read as a git option, and a
+// diff that fails stops the run: an empty scope from a typo would pass green having measured nothing (K41).
 function changedLines(root, base) {
+	const sha = git(root, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${base}^{commit}`).stdout.trim();
+	if (!/^[0-9a-f]{40,64}$/.test(sha)) return null;
+	const diff = git(root, 'diff', '-U0', `${sha}...HEAD`);
+	if (diff.status !== 0) return null;
 	const out = {};
 	let file = null;
-	for (const l of git(root, 'diff', '-U0', `${base}...HEAD`).stdout.split('\n')) {
+	for (const l of diff.stdout.split('\n')) {
 		if (l.startsWith('+++ ')) file = l === '+++ /dev/null' ? null : l.slice(6);
 		const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(l);
 		if (m && file) for (let k = 0; k < Number(m[2] ?? 1); k++) (out[file] ||= new Set()).add(Number(m[1]) + k);
@@ -98,6 +106,7 @@ export async function main(argv) {
 	// The map's line numbers are its commit's, so a flip is placed only on that commit's lines.
 	if (map.sha !== head) { process.stderr.write(`mutation-check: the map is for ${String(map.sha).slice(0, 12)}, not HEAD ${head.slice(0, 12)}: ${make}\n`); return 2; }
 	const scope = o.base ? changedLines(root, o.base) : null;
+	if (o.base && !scope) { process.stderr.write(`mutation-check: base "${o.base}" is not a commit this repo can diff against HEAD\n`); return 2; }
 	const byLine = new Map();
 	for (const [key, t] of Object.entries(map.tests || {})) {
 		for (const [file, lines] of Object.entries(t.lines || {})) {
@@ -131,6 +140,13 @@ export async function main(argv) {
 		const spots = [...byLine.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
 			.filter((s) => flip((fs.readFileSync(path.join(copy, s.file), 'utf8').split('\n')[s.line - 1]) ?? ''))
 			.filter((s, k) => !o.slice || k % o.slice[1] === o.slice[0]);
+		if (o.count) { process.stdout.write(`flips: ${spots.length}\n`); return 0; }
+		// A scoped run with no flip measured nothing: said as that, never as a clean pass.
+		if (o.base && spots.length === 0) {
+			if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, base: o.base, flips: [] }, null, 1) + '\n');
+			process.stdout.write(`mutation check: nothing measured: no line changed since ${o.base} has a flip a test reaches\n`);
+			return 0;
+		}
 		for (const s of spots) {
 			const file = path.join(copy, s.file);
 			const original = fs.readFileSync(file, 'utf8');
@@ -153,7 +169,7 @@ export async function main(argv) {
 		removeTemp(copy);
 		removeTemp(claudeDir);
 	}
-	if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, flips: record }, null, 1) + '\n');
+	if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, ...(o.base ? { base: o.base } : {}), flips: record }, null, 1) + '\n');
 	process.stdout.write(`mutation check: ${caught + survived.length} flips, ${caught} caught, ${survived.length} survived\n`);
 	return survived.length ? 1 : 0;
 }
