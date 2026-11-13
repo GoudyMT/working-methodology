@@ -174,6 +174,9 @@ function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'h
 	let hookNames = [];
 	try { hookNames = fs.readdirSync(path.join(dir, '.githooks'), { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => e.name); } catch { /* none */ }
 	for (const name of hookNames) if (!(rec.files || {})[`.githooks/${name}`]) changed.push(`.githooks/${name} (not in the install record)`);
+	// A folder list the record does not hold yet (written after the install, or by a kit from before 1.29.0) could be
+	// dropped again with nothing to show it was there: it is held until install records it, which the fix line does.
+	if (!(rec.files || {})['.claude/protected-folders.json'] && fs.existsSync(path.join(dir, '.claude', 'protected-folders.json'))) changed.push('.claude/protected-folders.json (a folder list not in the install record yet)');
 	// The git hook shims beside the record: one swapped there would skip this check at the next commit or push.
 	for (const [name, want] of Object.entries(rec.shims || {})) {
 		let bytes = null;

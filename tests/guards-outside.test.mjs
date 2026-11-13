@@ -1399,4 +1399,21 @@ test('a folder list gone or changed since install holds every call until the own
 	fs.writeFileSync(list, JSON.stringify({ folders: ['vault', 'more'] }));
 	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.claude/protected-folders.json'] });
 	assert.equal(call('git status'), '', 'the owner accepted the new list');
+	// The flag is refused by install itself in a shell an AI tool started, however the command was spelled.
+	fs.writeFileSync(list, JSON.stringify({ folders: [] }));
+	const byTool = spawnSync(process.execPath, [path.join(KIT, 'scripts', 'kit.mjs'), 'install', 'project', proj, '--accept-host', '.claude/protected-folders.json'], { encoding: 'utf8', env: { ...ENV, CLAUDECODE: '1', KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home } });
+	assert.equal(byTool.status, 1, byTool.stdout + byTool.stderr);
+	assert.match(call('git status'), /protected-folders\.json/, 'still held');
+	// The version accepted before is not accepted again by itself.
+	fs.writeFileSync(list, kept);
+	assert.match(call('git status'), /protected-folders\.json/, 'an older accepted list');
+	// A list the record does not hold yet is held until install records it.
+	const fresh = setup();
+	fs.mkdirSync(path.join(fresh.proj, '.claude'), { recursive: true });
+	fs.writeFileSync(path.join(fresh.proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: ['vault'] }));
+	const held = spawnSync(process.execPath, [path.join(fresh.home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: fresh.proj, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: fresh.proj, CLAUDE_CONFIG_DIR: fresh.home } });
+	assert.match(held.stdout, /a folder list not in the install record yet/);
+	install({ kit: KIT, home: fresh.home, target: 'project', projectDir: fresh.proj });
+	const after = spawnSync(process.execPath, [path.join(fresh.home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: fresh.proj, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: fresh.proj, CLAUDE_CONFIG_DIR: fresh.home } });
+	assert.equal(after.stdout, '', 'recorded by a plain install');
 });

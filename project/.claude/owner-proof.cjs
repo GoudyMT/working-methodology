@@ -91,6 +91,30 @@ function insideProof(file, cwd) {
 	return p === `${h}/kit-owner.json` || p === `${h}/projects` || p.startsWith(`${h}/projects/`);
 }
 
+// Windows reaches a local file by other spellings too (the 1.29.0 sweep: \\?\C:\..., \\.\C:\..., \\?\UNC\host\C$\...
+// and \\localhost\C$\... wrote inside a listed folder with no hold). Slashes are forward by here. The device prefix
+// goes, and a drive's own share (C$) on any host is read as that drive: read so, a path only ever gains a hold.
+const localForm = (w) => w.replace(/^\/\/[?.]\/(unc\/)?/i, (m, u) => (u ? '//' : '')).replace(/^\/\/[^/]+\/([a-z])\$(?=\/|$)/i, '$1:');
+// What is still a network path after that is a share by another name, which may be any local folder.
+const shareForm = (w) => /^\/\/[^/]/.test(localForm(slash(String(w)).replace(/["']/g, '')));
+
+// Where a word leads when a part of it is a link or a junction (the 1.29.0 sweep: a shell word through an existing
+// junction to .claude was read by its own name, while the write tools followed it): the real path, or null when
+// the word has no link in it, holds a wildcard or a variable, or cannot be placed.
+const linkSeen = new Map();
+function throughLink(word, cwd) {
+	const w = String(word);
+	if (!w || w.charCodeAt(0) === 1 || /[*?[\]$`~%\x01]/.test(w)) return null;
+	if (!rooted(w) && !Array.isArray(cwd)) return null;
+	const abs = path.resolve(rooted(w) ? w.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : `${(/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/')}/${w}`);
+	if (linkSeen.has(abs)) return linkSeen.get(abs);
+	if (linkSeen.size > 5000) linkSeen.clear();
+	let out = null;
+	try { const r = real(abs); if (slash(r) !== slash(abs)) out = r; } catch { /* not placed */ }
+	linkSeen.set(abs, out);
+	return out;
+}
+
 // Whether one part of a path, which may hold a wildcard (* ? [...]), can be the name given.
 function fits(part, name) {
 	// A part marked by dotless() is a bash wildcard that never matches a name starting with a dot (K19).
@@ -116,7 +140,7 @@ function parts(word) {
 	return out.slice();
 }
 function partsOf(word) {
-	const w = path.posix.normalize(slash(word).replace(/["']/g, '')).replace(/(^|\/)claude~\d+(?=\/|$)/g, '$1.claude');
+	const w = path.posix.normalize(localForm(slash(word).replace(/["']/g, ''))).replace(/(^|\/)claude~\d+(?=\/|$)/g, '$1.claude');
 	// Any other short name (SETTIN~1.JSO, GITHOO~1) is read as the wildcard of the long names it may stand for
 	// (*settin*.jso*, *githoo*: the leading dot is dropped in a short name), so it is held where it can name a
 	// protected file and nowhere else (the 1.25.0 sweep; CI's RUNNER~1 temp folder names none).
@@ -145,6 +169,10 @@ function guardShape(p) {
 	for (let i = 0; i < p.length; i++) {
 		if (fits(p[i], '.githooks')) return true;
 		// config.worktree too: with extensions.worktreeConfig on, git reads hooksPath there (the 1.25.1 sweep).
+		// A move or a copy into .git itself, or into a worktree's folder under it, lands a file named config or hooks there
+		// (the 1.29.0 sweep: Move-Item pay/* .git): the folder named as the place written to is held as its files are.
+		if (fits(p[i], '.git') && (i === p.length - 1 || fits(p[i + 1], 'worktrees') || fits(p[i + 1], 'modules'))) return true;
+		if (fits(p[i], '.ssh')) return true;
 		if (fits(p[i], '.git') && i + 1 < p.length && (fits(p[i + 1], 'hooks') || fits(p[i + 1], 'config') || fits(p[i + 1], 'config.worktree') || fits(p[p.length - 1], 'config.worktree'))) return true;
 		// The push log and the sweep log spend the owner's yes; emptied or made read-only, a yes is used again (the
 		// 1.25.0 sweep).
@@ -157,6 +185,8 @@ function guardShape(p) {
 		const h = homeParts();
 		const trusted = (r) => r.length > 0 && (fits(r[0], 'kit-guard') || fits(r[0], 'kit-install.json') || fits(r[0], 'kit-tools') || fits(r[0], 'kit-hooks'));
 		if (h.length && p[i] === h[h.length - 1] && trusted(p.slice(i + 1))) return true;
+		// The Claude folder under a name of its own (CLAUDE_CONFIG_DIR), named as the place written to.
+		if (h.length && !fits(h[h.length - 1], '.claude') && i === p.length - 1 && p.length >= h.length && h.every((x, k) => p[p.length - h.length + k] === x)) return true;
 		if (!fits(p[i], '.claude')) continue;
 		const rest = p.slice(i + 1);
 		if (rest.length === 0) return true;
@@ -175,6 +205,9 @@ function settingsShape(p) {
 	for (let i = 0; i + 1 < p.length; i++) {
 		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json'))) return true;
 	}
+	// The user's own settings when the Claude folder has another name (the 1.29.0 sweep).
+	const h = homeParts();
+	if (h.length && p.length === h.length + 1 && h.every((x, k) => p[k] === x) && (fits(p[p.length - 1], 'settings.json') || fits(p[p.length - 1], 'settings.local.json'))) return true;
 	return false;
 }
 // The folder list (E3) is the owner's to write, in their own editor: as a settings file one yes could delete it, and
@@ -190,7 +223,9 @@ function listShape(p) {
 const shapeNames = (shape) => (word, cwd) => {
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
 	if (shape(p)) return true;
-	return cwd === 'unknown' && !rooted(word) && shape(['.claude', ...p.filter((x) => x !== '..')]);
+	if (cwd === 'unknown' && !rooted(word) && shape(['.claude', ...p.filter((x) => x !== '..')])) return true;
+	const led = throughLink(word, cwd);
+	return led !== null && shape(parts(led));
 };
 
 // Whether a word is written from the root, a home or a variable, so no cd before it moves where it points.
@@ -199,6 +234,11 @@ const rooted = (word) => /^([/~$%]|[a-z]:)/.test(slash(word));
 // Whether a shell word names the protected places, in any of the spellings a command uses for the Claude folder.
 // cwd: where a cd before it moved the shell (its parts), 'unknown' when that cannot be read, null when none did.
 function proofNames(word, cwd) {
+	if (proofNamesAsWritten(word, cwd)) return true;
+	const led = throughLink(word, cwd);
+	return led !== null && proofNamesAsWritten(led, null);
+}
+function proofNamesAsWritten(word, cwd) {
 	const p = !rooted(word) && Array.isArray(cwd) ? parts([...cwd, word].join('/')) : parts(word);
 	const h = homeParts();
 	for (let i = 0; i < p.length; i++) {
@@ -262,7 +302,7 @@ function plainFolder(word, cwd) {
 			for (const e of fs.readdirSync(d, { withFileTypes: true })) {
 				if (++seen > PLAIN_CAP || e.name.startsWith('.') || /^kit-/i.test(e.name) || /~\d/.test(e.name)) return false;
 				const st = fs.lstatSync(path.join(d, e.name));
-				if (st.isSymbolicLink()) return false;
+				if (st.isSymbolicLink() || (!st.isDirectory() && st.nlink > 1)) return false;
 				if (st.isDirectory()) stack.push(path.join(d, e.name));
 			}
 		}
@@ -350,7 +390,8 @@ function shellWrites(command, tool, start, names = proofNames) {
 	};
 	// A path glued to the end of a word (sed's 1w.claude/guard.cjs writes that file, the 1.28.0 mutation run) is read
 	// too: each tail of the word from a .claude, .git or .githooks part.
-	const tails = (word) => [word, ...[...String(word).matchAll(/(?<=[^\\/.])(?=\.(claude|git|githooks|gitconfig)(?:[\\/]|$))/gi)].map((m) => String(word).slice(m.index))];
+	// An option that names what a program leaves out (--exclude=.git, --exclude-dir=.git) writes nothing there.
+	const tails = (word) => (/^--?[\w-]*exclude[\w-]*=/i.test(String(word)) ? [word] : [word, ...[...String(word).matchAll(/(?<=[^\\/.])(?=\.(claude|git|githooks|gitconfig)(?:[\\/]|$))/gi)].map((m) => String(word).slice(m.index))]);
 	// Read once per word and folder: a long command asks of each word several times (the 1.28.0 measure run: 98 KB
 	// took 9 s under CI coverage).
 	const seen = new Map();
@@ -513,6 +554,13 @@ function listedFolders(cwd) {
 // A word names a listed folder when it sits inside it or above it (a parent deleted or moved takes the folder with it),
 // and, after a cd the guard cannot follow, when any part of a relative word is a listed folder's own name.
 const inFolders = (folders) => (raw, cwd) => {
+	// A share by a name of its own may be any local folder: with a list, a write through one is held.
+	if (shareForm(raw)) return folders.length > 0;
+	if (inFoldersAsWritten(folders)(raw, cwd)) return true;
+	const led = throughLink(raw, cwd);
+	return led !== null && inFoldersAsWritten(folders)(led, null);
+};
+const inFoldersAsWritten = (folders) => (raw, cwd) => {
 	// The spellings a shell resolves first: Git Bash's /c/..., $PWD and $HOME or ~ (the 1.28.0 sweep).
 	let word = String(raw).replace(/^\/([a-z])(?=\/|$)/i, '$1:').replace(/^~(?=\/|$)|^\$\{?HOME\}?(?=\/|$)|^\$env:USERPROFILE(?=[\\/]|$)/i, () => slash(os.homedir()));
 	if (/^\$\{?PWD\}?(?=[\\/]|$)|^\$pwd(?=[\\/]|$)/i.test(word)) { if (!Array.isArray(cwd)) return folders.length > 0; word = word.replace(/^\$\{?PWD\}?|^\$pwd/i, () => (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/')); }

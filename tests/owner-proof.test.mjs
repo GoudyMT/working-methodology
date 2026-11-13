@@ -423,3 +423,40 @@ test('a protected file named with a trailing dot, a trailing space or a stream s
 	// A drive letter keeps its colon, and a name that only looks alike is not the file.
 	for (const [tool, input] of [['Bash', { command: 'echo x > C:/work/notes.txt' }], ['Bash', { command: 'echo x > docs/settings.json.md' }], ['PowerShell', { command: 'Set-Content docs\\guard.cjs.txt x' }]]) assert.equal(run(tool, input), 'allow', JSON.stringify(input));
 });
+
+// why: guards rule:security-standards. The 1.29.0 sweep, each reproduced by its reviewer: a move or copy into .git lands
+// a config or a hooks folder there; a device or network spelling of a local path wrote inside a listed folder; a shell
+// word through a junction that was already there reached the list and the guards; a hard link passed as a plain file.
+test('a write into .git, a device or share path, a word through a junction and a hard link are each read as what they reach', { windows: 'also' }, () => {
+	const proj = kitTemp.makeTemp('sweep29-');
+	for (const d of ['pay/hooks', '.claude', 'vault', 'plain']) fs.mkdirSync(path.join(proj, ...d.split('/')), { recursive: true });
+	fs.writeFileSync(path.join(proj, 'pay', 'config'), 'x');
+	fs.writeFileSync(path.join(proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: ['vault'] }));
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x');
+	fs.symlinkSync(path.join(proj, '.claude'), path.join(proj, 'lnk'), 'junction');
+	fs.symlinkSync(path.join(proj, 'vault'), path.join(proj, 'vlnk'), 'junction');
+	fs.linkSync(path.join(proj, '.claude', 'guard.cjs'), path.join(proj, 'plain', 'h.txt'));
+	const ask = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? 'deny' : 'allow';
+	};
+	const p = proj.split(path.sep).join('/');
+	const held = [
+		['PowerShell', 'Move-Item pay/* .git -Force'], ['PowerShell', 'Copy-Item pay/* -Destination .git -Recurse'], ['PowerShell', 'Move-Item pay/config .git'],
+		['Bash', 'mv pay/* .git'], ['Bash', 'tar -xf x.tar -C .git'], ['PowerShell', 'Copy-Item pay/* .git/worktrees/w -Recurse'], ['Bash', 'echo x >> ~/.ssh/config'],
+		['PowerShell', 'Remove-Item lnk/protected-folders.json'], ['Bash', 'rm lnk/protected-folders.json'], ['Bash', 'rm lnk/guard.cjs'], ['PowerShell', 'Remove-Item vlnk/x.txt'],
+		['PowerShell', 'Set-Content plain/* evil'],
+	];
+	for (const [tool, command] of held) assert.equal(ask(tool, { command }), 'deny', `${tool} ${command}`);
+	if (process.platform === 'win32') {
+		const drive = p.slice(0, 1);
+		const rest = p.slice(2).split('/').join('\\');
+		for (const spelled of [`\\\\?\\${drive}:${rest}\\vault\\x.txt`, `\\\\localhost\\${drive}$${rest}\\vault\\x.txt`, `\\\\?\\UNC\\localhost\\${drive}$${rest}\\vault\\x.txt`, '\\\\server\\share\\vault\\x.txt']) {
+			assert.equal(ask('PowerShell', { command: `Set-Content -LiteralPath ${spelled} y` }), 'deny', spelled);
+			assert.equal(ask('Write', { file_path: spelled, content: 'y' }), 'deny', `Write ${spelled}`);
+		}
+	}
+	// What reaches none of them still runs.
+	for (const [tool, command] of [['Bash', 'mv pay/config pay/config.bak'], ['Bash', 'tar --exclude=.git -cf x.tar pay'], ['PowerShell', 'Get-ChildItem .git'], ['Bash', 'git status']]) assert.equal(ask(tool, { command }), 'allow', `${tool} ${command}`);
+});

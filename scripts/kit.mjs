@@ -325,7 +325,8 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
     const file = path.join(ctx.projectDir, key);
     if (key === LIST) {
       const was = prev && prev.files && prev.files[key];
-      const known = acceptedOf(key);
+      // One accepted version at a time: an older list the owner once accepted is not accepted again by itself.
+      const known = was && /^[0-9a-f]{64}$/.test(was) ? [was] : [];
       const ok = (ctx.acceptHost || []).includes(key);
       const now = fs.existsSync(file) ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : null;
       if (!now && (!was || ok)) continue;
@@ -334,7 +335,7 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
         guarded[key] = was;
         skipped.push({ file: key, reason: `the folder list ${now ? 'changed' : 'is gone'} since it was recorded, so every call stays held: put it back as it was, or the owner accepts the change in their own terminal with install project --accept-host ${key}` });
       } else guarded[key] = now;
-      accepted[key] = [...new Set([...known, guarded[key]])];
+      accepted[key] = [guarded[key]];
       continue;
     }
     if (extras.includes(key) && prev && !(prev.files && prev.files[key]) && !(ctx.acceptHost || []).includes(key)) {
@@ -1827,6 +1828,14 @@ function main(argv) {
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const acceptAt = argv.indexOf('--accept-host');
   const acceptHost = acceptAt >= 0 ? String(argv[acceptAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  // Accepting a changed host file or folder list lifts a hold the kit set on it, so it is the owner's own act, in
+  // their own terminal: a shell an AI tool started carries its marker, and is refused here whatever the command's
+  // spelling was (the review of the recorded folder list: a guard that matches the flag's text can be spelled round).
+  if (acceptAt >= 0 && (process.env.AI_AGENT || process.env.CLAUDECODE)) {
+    console.error('install: --accept-host is the owner\'s, in their own terminal: this shell was started by an AI tool, so nothing was accepted or installed.');
+    process.exitCode = 1;
+    return;
+  }
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
     // E24 C: the kit installs only from the release copy on the owner's PC; a cloud VM has neither.
