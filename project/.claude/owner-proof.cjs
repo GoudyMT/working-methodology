@@ -337,7 +337,9 @@ function shellWrites(command, tool, start, names = proofNames) {
 		// sed writes a file wherever its script holds a w or W command (1w.claude/x, s/a/b/gwx, -e '1!w x'), and the forms
 		// have no end, so every place a w or W sits is read as naming the rest of its word, gaps trimmed; a script word past
 		// the cap that holds one is held (the review of this fix: fail closed, read too much rather than too little).
-		if (program === 'sed' && !printSed(all) && segment.some((x) => !x.redirect && /[wW]/.test(x.value) && (x.value.length > 4096 || [...x.value.matchAll(/[wW]/g)].some((m) => { const t = x.value.slice(m.index + 1).trimStart(); return t && tails(t).some((w) => names(w, cwd)); })))) return true;
+		// Any sed in the command words, run through a wrapper (env, nice, busybox, xargs) or by another name (gsed, a path).
+		const sedHere = all.some((w) => /^(g?sed|busybox)(\.exe)?$/i.test(path.basename(slash(w))));
+		if (sedHere && !printSed(all) && segment.some((x) => !x.redirect && /[wW]/.test(x.value) && (x.value.length > 4096 || [...x.value.matchAll(/[wW]/g)].some((m) => { const t = x.value.slice(m.index + 1).trimStart(); return t && tails(t).some((w) => names(w, cwd)); })))) return true;
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
 		const message = (x, k) => MESSAGES.has(program) && !x.redirect && k > 0 && (MESSAGE_FLAGS.test(all[k - 1]) || false);
 		const inline = (x) => MESSAGES.has(program) && !x.redirect && /^(--message|--body|--title|--notes)=/i.test(x.value);
