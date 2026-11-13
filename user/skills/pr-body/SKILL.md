@@ -20,7 +20,7 @@ template and audit scripts win over anything here.
    its report: the commit it covered, the result per dimension, each high or critical finding and how it was
    handled, deferred items with where they are tracked, accepted risks, and the verdict. Never link the report
    or any private file; an unfixed security finding gets its severity and tracker, never its detail.
-4. **Audit:** `node .claude/pr-body-audit.mjs <body.md> "<title>"` (Lean: `.claude/pr-body-audit-lean.mjs`).
+4. **Audit:** `node .claude/pr-body-audit.mjs <body.md> "<title>" [<PR number>]` (Lean: `.claude/pr-body-audit-lean.mjs`); with no number it keeps 8 characters for the " (#n)" suffix.
    Fix every failure; then reread for flow.
 5. **Hand off** the rendered body and the audit result to the owner, naming the sources you read. Nothing is
    pushed and no PR is opened until the owner says go (rule:outward-acts).
