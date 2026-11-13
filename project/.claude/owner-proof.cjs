@@ -167,8 +167,16 @@ function guardShape(p) {
 // The settings that wire the hooks: a .claude folder's settings.json or settings.local.json.
 function settingsShape(p) {
 	for (let i = 0; i + 1 < p.length; i++) {
-		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json') || fits(p[i + 1], 'protected-folders.json'))) return true;
+		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json'))) return true;
 	}
+	return false;
+}
+// The folder list (E3) is the owner's to write, in their own editor: as a settings file one yes could delete it, and
+// every folder on it lost its hold (K34; the plan check showed a record of it outside the project had the same one-tap
+// way round, through install).
+const LIST_REASON = 'Never by a tool: the folder list (.claude/protected-folders.json) names the folders no tool writes, so no tool writes, moves or deletes the list. Read it; the owner changes it in their own editor.';
+function listShape(p) {
+	for (let i = 0; i + 1 < p.length; i++) if (fits(p[i], '.claude') && p.length === i + 2 && fits(p[i + 1], 'protected-folders.json')) return true;
 	return false;
 }
 // A shell word named by its shape, read from the folder a cd moved to. After a cd the guard cannot follow, a relative
@@ -432,8 +440,8 @@ function check(input) {
 }
 
 // E3 (rule:project-adapter A2): folders the project lists in .claude/protected-folders.json ({ "folders": [...] }) are
-// never written by a tool, by an edit tool or a shell; reads stay open. The list is a settings file (the owner's
-// yes), and one that cannot be read holds every write tool and shell call until the owner fixes it.
+// never written by a tool, by an edit tool or a shell; reads stay open. The list is the owner's to write (never by
+// a tool, K34), and one that cannot be read holds every write tool and shell call until the owner fixes it.
 const FOLDERS_REASON = 'Never by a tool: this project lists that folder in .claude/protected-folders.json, so no tool writes there. Read it; a change there is made where that folder is worked on.';
 function listedFolders(cwd) {
 	const env = process.env.CLAUDE_PROJECT_DIR;
@@ -482,6 +490,7 @@ function answer(input) {
 		if (folders.length && inFolders(folders)(slash(real(path.resolve(cwd, String(file)))), null)) return deny(FOLDERS_REASON);
 		const p = parts(real(path.resolve(cwd, String(file))));
 		if (guardShape(p)) return deny(GUARD_REASON);
+		if (listShape(p)) return deny(LIST_REASON);
 		if (!settingsShape(p)) return null;
 		if (hooksOff(writtenText(input.tool_name, t, path.resolve(cwd, String(file))))) return deny(HOOKS_OFF);
 		return settings();
@@ -490,6 +499,7 @@ function answer(input) {
 		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
 		if (folders.length && shellWrites(t.command, input.tool_name, cwd, inFolders(folders))) return deny(FOLDERS_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);
+		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(listShape))) return deny(LIST_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) return hooksOff(t.command) ? deny(HOOKS_OFF) : settings();
 	}
 	return null;

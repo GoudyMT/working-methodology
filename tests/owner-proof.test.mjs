@@ -223,7 +223,7 @@ test('a settings write that turns the hooks off is never by a tool, in any spell
 
 // why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the
 // workbench's deny rules stopped the edit tools but not a shell write into the kit source or the release copy. A
-// project lists such folders in .claude/protected-folders.json; that list is a settings file, and a bad one fails closed.
+// project lists such folders in .claude/protected-folders.json; that list is the owner's to write, and a bad one fails closed.
 test('folders a project lists are never written by a tool, from the edit tools or a shell', () => {
 	const proj = kitTemp.makeTemp('e3-');
 	const kept = kitTemp.makeTemp('e3-kept-');
@@ -241,8 +241,13 @@ test('folders a project lists are never written by a tool, from the edit tools o
 	}
 	// Reads stay open.
 	assert.equal(why('Bash', { command: `cat "${k}/README.md"` }), '');
-	// The list itself is a settings file: the owner's yes.
-	assert.match(why('Write', { file_path: list, content: '{"folders": []}' }), /Owner's yes needed/);
+	// K34 (the 1.28.0 sweep, P14): the list was a settings file, so one yes could delete it and every folder on it lost
+	// its hold. It is the owner's to write: no tool writes, moves or deletes it, with a yes or without; a read runs.
+	const l = list.split(path.sep).join('/');
+	for (const [tool, input] of [['Write', { file_path: list, content: '{"folders": []}' }], ['Edit', { file_path: list, old_string: 'a', new_string: 'b' }], ['Bash', { command: 'rm .claude/protected-folders.json' }], ['Bash', { command: `mv "${l}" /tmp/x` }], ['Bash', { command: 'echo {} > .claude/protected-folders.json' }], ['PowerShell', { command: 'Remove-Item .claude\\protected-folders.json' }]]) {
+		assert.match(why(tool, input), /^Never by a tool: the folder list/, `${tool} ${JSON.stringify(input)}`);
+	}
+	assert.equal(why('Bash', { command: 'cat .claude/protected-folders.json' }), '');
 	// A list that cannot be read holds every shell call and names the fix.
 	fs.writeFileSync(list, '{ not json');
 	assert.match(why('Bash', { command: 'git status' }), /protected-folders\.json.*cannot be read/);
