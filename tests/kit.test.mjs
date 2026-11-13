@@ -3016,7 +3016,7 @@ test('the version bump check fails shipped code with no bump, unless the body sa
 // fail or lie. Those checks now come from the project's .kit/pr-body.json; the secrets line stays fixed for all.
 // T13 (the owner, 2026-11-10): the title is the squash subject (`type: subject`), the review rows are the project's
 // own, and what GitHub shows (files, gates) is not repeated.
-const STD_TITLE = 'feat: an automatic alarm for online search and a data date on About';
+const STD_TITLE = 'feat: an alarm for online search and a data date on About';
 const stdAudit = (dir, text, title = STD_TITLE) => {
   const f = path.join(dir, 'body.md');
   fs.writeFileSync(f, text);
@@ -3033,7 +3033,7 @@ test('the Standard PR audit passes an honest body for a project with no corpus, 
   assert.equal(noSecrets.status, 1, 'the secrets line is required in every project');
   assert.match(noSecrets.stdout, /FAIL.*secrets/);
   // The title is the squash commit's subject: an area title, or one over 72, fails; the H1 carries its subject.
-  for (const title of ['Live check: an automatic alarm for online search and a data date on About', `feat: ${'x'.repeat(70)}`]) assert.match(stdAudit(dir, honestBody(), title).stdout, /FAIL\s+title is type: subject/, title);
+  for (const title of ['Live check: an alarm for online search and a data date on About', `feat: ${'x'.repeat(70)}`]) assert.match(stdAudit(dir, honestBody(), title).stdout, /FAIL\s+title is type: subject/, title);
   assert.match(stdAudit(dir, honestBody(), 'feat: something else').stdout, /FAIL\s+H1 line carries the title subject/);
   // A scope with a digit is a scope, as the commit check reads it (the 1.25.0 sweep).
   assert.doesNotMatch(stdAudit(dir, honestBody(), STD_TITLE.replace('feat:', 'feat(v2):')).stdout, /FAIL\s+title/);
@@ -3816,7 +3816,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     last = r.stdout;
     return rows;
   };
-  const ROWS = ['no attribution block', 'title is type: subject (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
+  const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
     'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
     'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'no spaced dashes in prose',
     'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
@@ -3827,7 +3827,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   const cases = [
     ['the example', lean, title, []],
     ['an attribution line', `${lean}\n_Requested by **Pat**_\n`, title, ['no attribution block']],
-    ['a type outside the list', lean, title.replace('feat:', 'feature:'), ['title is type: subject (smaller PR)']],
+    ['a type outside the list', lean, title.replace('feat:', 'feature:'), ['title is type: subject, at most 72 with the squash suffix (smaller PR)']],
     ['a scoped type', lean, title.replace('feat:', 'feat(hooks):'), []],
     ['a type prefix in the H1', sub('## Commit hook:', '## feat:'), title, ['H1 is <Area>: <line>, no type prefix']],
     ['an H1 that drops the title subject', lean, title.replace(' on commit', ''), ['H1 line carries the title subject']],

@@ -1739,7 +1739,9 @@ export function scratch({ root, home, cmd, thread, label, path: target, reason, 
   if (cmd === 'new') {
     if (!/^[A-Za-z0-9._/-]{1,80}$/.test(String(thread || '')) || !/^[a-z0-9-]{1,40}$/.test(String(label || ''))) throw new Error('scratch new: a plain thread name and a lower-case label');
     fs.mkdirSync(root, { recursive: true });
-    const made = fs.mkdtempSync(path.join(root, `${label}-`));
+    // A probe folder is recorded in the ledger, not a run's temp folder, so it is made here, never by mkdtemp.
+    const made = path.join(root, `${label}-${crypto.randomBytes(4).toString('hex')}`);
+    fs.mkdirSync(made);
     ledgerData.entries.push({ path: made, thread, label, created: new Date().toISOString() });
     save();
     return { path: made };

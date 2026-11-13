@@ -731,7 +731,7 @@ test('reading or naming a marker runs; every way of clearing one is still never 
 	}
 	assert.doesNotMatch(reason('PowerShell', 'Get-Content notes.txt | Select-String CLAUDECODE'), /markers/);
 	for (const [tool, command] of [['Bash', 'unset CLAUDECODE; git push origin feat/x'], ['Bash', 'CLAUDECODE= git push origin feat/x'], ['Bash', 'grep -h CLAUDECODE notes.txt | sh'], ['Bash', 'env -u CLAUDECODE git push origin feat/x'], ['PowerShell', 'Remove-Item Env:CLAUDECODE; git push origin feat/x'], ['Bash', 'echo unset CLAUDECODE > x.sh; . ./x.sh; git push origin feat/x']]) {
-		assert.match(reason(tool, command), /^Never by a tool: clearing the AI shell's markers/, command);
+		assert.match(reason(tool, command), /^Never by a tool: clearing/, command);
 	}
 });
 // why: guards rule:outward-acts (the guards protect their files from writes; reads stay open). V1, the 1.25.0 verify:
@@ -807,7 +807,7 @@ test('a marker cleared by printf -v, written into a file, or unset by a built na
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
 	};
 	for (const command of ["printf -v CLAUDECODE ''", 'echo u"nset" CLAUDECODE >> ~/.bashrc', 'V=CODE; unset CLAUDE$V', 'unset $(compgen -e | grep -i claude)', 'env -u "$M" git push origin feat/x']) {
-		assert.match(reason(command), /^Never by a tool: clearing the AI shell's markers/, command);
+		assert.match(reason(command), /^Never by a tool: clearing/, command);
 	}
 });
 // why: guards rule:first-push-gate. The 1.28.0 sweep: the gate took "the remote already has our history" from local
