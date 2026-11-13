@@ -55,7 +55,8 @@ const SETTINGS_REASON = 'a write to a settings file, which wires the guards';
 // script may hold w, W, e or an s///w that writes a file or runs a program (the plan check's P3).
 // The reader splits a word at a comma (PowerShell lists), so 1,20p reaches here as 1 and 20p.
 const printSed = (w) => {
-	if (w.length < 4 || path.basename(slash(w[0] || '')) !== 'sed' || w[1] !== '-n') return false;
+	// The bare name, looked up on PATH: a path to a sed is any program a tool wrote there (the plan check's P4).
+	if (w.length < 4 || !/^sed(\.exe)?$/i.test(w[0] || '') || w[1] !== '-n') return false;
 	// Digits only: $p may be a variable holding any script (the 1.28.0 sweep), and quotes are gone by here.
 	const at = /^\d+p$/.test(w[2]) ? 3 : /^\d+$/.test(w[2]) && /^\d+p$/.test(w[3] || '') ? 4 : 0;
 	return at > 0 && w.length > at && w.slice(at).every((x) => !x.startsWith('-'));
@@ -309,7 +310,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 	const bare = text.replace(/^(\s*([A-Za-z_]\w*=|cd\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)\s*(;|&&)\s*)+/, '');
 	// V1 (the 1.25.0 verify): a line of nothing but plain readers, a print-only sed and a cd can redefine nothing, so
 	// its ; and && do not count as a place a definition could hide.
-	const onlyReads = !/[`]|\$\(|<\(/.test(text) && segments.every((g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return READERS.has(p) || PIPE_READERS.has(p) || CHANGERS.has(p) || printSed(w); });
+	const onlyReads = !/[`]|\$\(|<\(/.test(text) && segments.every((g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); const onPath = !/[\\/]/.test(w[0] || ''); return (onPath && (READERS.has(p) || PIPE_READERS.has(p))) || CHANGERS.has(p) || printSed(w); });
 	const defines = (!onlyReads && /[;&\n]|\|\|/.test(bare)) || /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i.test(text);
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
@@ -349,7 +350,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 		}
 		if (hits.length === 0) continue;
 		if (segment.some((x) => x.redirect && hit(x))) return true;
-		if ((READERS.has(program) || printSed(all)) && !defines) {
+		if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || printSed(all)) && !defines) {
 			// Piped on, the read must go to another reader.
 			if (segment.end === '|' && segments[s + 1] && !PIPE_READERS.has(path.basename(slash(segments[s + 1][0]?.value || '')).replace(/\.(exe|cmd|bat)$/, ''))) return true;
 			continue;
