@@ -446,13 +446,14 @@ test('a write into .git, a device or share path, a word through a junction and a
 		['PowerShell', 'Move-Item pay/* .git -Force'], ['PowerShell', 'Copy-Item pay/* -Destination .git -Recurse'], ['PowerShell', 'Move-Item pay/config .git'],
 		['Bash', 'mv pay/* .git'], ['Bash', 'tar -xf x.tar -C .git'], ['PowerShell', 'Copy-Item pay/* .git/worktrees/w -Recurse'], ['Bash', 'echo x >> ~/.ssh/config'],
 		['PowerShell', 'Remove-Item lnk/protected-folders.json'], ['Bash', 'rm lnk/protected-folders.json'], ['Bash', 'rm lnk/guard.cjs'], ['PowerShell', 'Remove-Item vlnk/x.txt'],
-		['PowerShell', 'Set-Content plain/* evil'],
+		['PowerShell', 'Set-Content plain/* evil'], ['PowerShell', 'Set-Content plain/h.txt evil'], ['Bash', 'echo x > plain/h.txt'],
+		['Bash', 'cd "$X" && rm lnk/guard.cjs'],
 	];
 	for (const [tool, command] of held) assert.equal(ask(tool, { command }), 'deny', `${tool} ${command}`);
 	if (process.platform === 'win32') {
 		const drive = p.slice(0, 1);
 		const rest = p.slice(2).split('/').join('\\');
-		for (const spelled of [`\\\\?\\${drive}:${rest}\\vault\\x.txt`, `\\\\localhost\\${drive}$${rest}\\vault\\x.txt`, `\\\\?\\UNC\\localhost\\${drive}$${rest}\\vault\\x.txt`, '\\\\server\\share\\vault\\x.txt']) {
+		for (const spelled of [`\\\\?\\${drive}:${rest}\\vault\\x.txt`, `\\\\localhost\\${drive}$${rest}\\vault\\x.txt`, `\\\\?\\UNC\\localhost\\${drive}$${rest}\\vault\\x.txt`, '\\\\server\\share\\vault\\x.txt', '\\\\?\\Volume{00000000-0000-0000-0000-000000000000}\\vault\\x.txt', '\\\\?\\GLOBALROOT\\Device\\HarddiskVolume3\\vault\\x.txt']) {
 			assert.equal(ask('PowerShell', { command: `Set-Content -LiteralPath ${spelled} y` }), 'deny', spelled);
 			assert.equal(ask('Write', { file_path: spelled, content: 'y' }), 'deny', `Write ${spelled}`);
 		}

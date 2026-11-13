@@ -96,21 +96,43 @@ function insideProof(file, cwd) {
 // goes, and a drive's own share (C$) on any host is read as that drive: read so, a path only ever gains a hold.
 const localForm = (w) => w.replace(/^\/\/[?.]\/(unc\/)?/i, (m, u) => (u ? '//' : '')).replace(/^\/\/[^/]+\/([a-z])\$(?=\/|$)/i, '$1:');
 // What is still a network path after that is a share by another name, which may be any local folder.
-const shareForm = (w) => /^\/\/[^/]/.test(localForm(slash(String(w)).replace(/["']/g, '')));
+// So may a device path that names no drive (a volume by its id, GLOBALROOT): neither can be placed.
+const shareForm = (w) => { const s = slash(String(w)).replace(/["']/g, ''); return /^\/\/[?.]\/(?![a-z]:(\/|$)|unc\/)/i.test(s) || /^\/\/[^/]/.test(localForm(s)); };
 
 // Where a word leads when a part of it is a link or a junction (the 1.29.0 sweep: a shell word through an existing
 // junction to .claude was read by its own name, while the write tools followed it): the real path, or null when
 // the word has no link in it, holds a wildcard or a variable, or cannot be placed.
 const linkSeen = new Map();
+// A file with a second name (a hard link) is the same file under both: one that is a protected file of this project
+// by its other name is read as that file (the review of the sweep's hard-link fix). The project's guard files, git
+// hooks and git config are few, so each is asked for its file id.
+function twinOf(abs) {
+	try {
+		const st = fs.statSync(abs, { bigint: true });
+		if (!st.isFile() || st.nlink < 2n) return null;
+		const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+		const files = [path.join(root, '.git', 'config')];
+		for (const d of ['.claude', '.githooks', path.join('.git', 'hooks')]) {
+			try { for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true }).slice(0, 400)) if (e.isFile()) files.push(path.join(root, d, e.name)); } catch { /* none */ }
+		}
+		for (const p of files) {
+			try { const o = fs.statSync(p, { bigint: true }); if (o.ino === st.ino && o.dev === st.dev && slash(p) !== slash(abs)) return p; } catch { /* missing */ }
+		}
+	} catch { /* not there */ }
+	return null;
+}
 function throughLink(word, cwd) {
 	const w = String(word);
 	if (!w || w.charCodeAt(0) === 1 || /[*?[\]$`~%\x01]/.test(w)) return null;
-	if (!rooted(w) && !Array.isArray(cwd)) return null;
-	const abs = path.resolve(rooted(w) ? w.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : `${(/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/')}/${w}`);
+	// After a cd the guard could not follow, the word is placed from the project folder: the likeliest place, and the
+	// only one known.
+	const from = Array.isArray(cwd) ? (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/') : process.env.CLAUDE_PROJECT_DIR || process.cwd();
+	const abs = path.resolve(rooted(w) ? w.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : `${from}/${w}`);
 	if (linkSeen.has(abs)) return linkSeen.get(abs);
 	if (linkSeen.size > 5000) linkSeen.clear();
 	let out = null;
 	try { const r = real(abs); if (slash(r) !== slash(abs)) out = r; } catch { /* not placed */ }
+	if (out === null) out = twinOf(abs);
 	linkSeen.set(abs, out);
 	return out;
 }

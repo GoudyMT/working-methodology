@@ -142,12 +142,14 @@ function gitOutward(words, start) {
 	if (words.slice(at + 1).some((w) => /^(--output(=|$)|--open-files-in-pager|--ext-diff$|--textconv$)/.test(w) || (sub === 'grep' && /^-o/.test(w)))) return 'git that writes a file or runs a program';
 	// Where origin points decides where a feature-branch push goes without a yes, so moving it is held (T1).
 	const after = words.slice(at + 1).filter((w) => !w.startsWith('-'));
-	if (sub === 'remote' && ['add', 'set-url', 'rename', 'set-head'].includes(after[0])) return 'git with its remote changed';
+	if (sub === 'remote' && ['add', 'set-url', 'rename', 'set-head', 'remove', 'rm'].includes(after[0])) return 'git with its remote changed';
 	// The local origin/HEAD names the default branch the pre-push hook holds when the remote names none (K29).
 	if ((sub === 'symbolic-ref' || sub === 'update-ref') && after.some((w) => /^refs\/remotes\/[^/]+\/head$/i.test(w))) return 'git with its remote changed';
 	// A remote's push refspec decides which branch a bare git push lands on (remote.origin.push HEAD:main), so it is
 	// held with the url (the 1.25.0 sweep).
-	const remoteKey = (w) => /^(remote\.[^=]*\.(url|pushurl|push)|url\.[^=]*\.(insteadof|pushinsteadof))(=|$)/.test(w);
+	// What carries the push decides where it lands too (the 1.29.0 sweep: core.sshCommand sent a push to another
+	// host with origin's URL untouched): the ssh command, a proxy, the certificate check, the credential helper.
+	const remoteKey = (w) => /^(remote\.[^=]*\.(url|pushurl|push|proxy|vcs)|url\.[^=]*\.(insteadof|pushinsteadof)|core\.(sshcommand|gitproxy|askpass)|ssh\.variant|https?\.([^=]*\.)?(proxy|sslverify|sslcainfo|sslcapath|sslcert|sslkey|extraheader|cookiefile)|credential\.([^=]*\.)?helper|protocol\.[^=]*\.allow)(=|$)/.test(w);
 	if (words.slice(start, at).some(remoteKey)) return 'git with its remote changed';
 	if (sub === 'config' && words.slice(at + 1).some(remoteKey) && !words.slice(at + 1).some((w) => /^(--get|--get-all|--get-regexp|--list|-l|get|list)$/.test(w))) return 'git with its remote changed';
 	if (GIT_OUTWARD.has(sub)) return 'git ' + sub;
@@ -581,11 +583,17 @@ function originMoved(input) {
 	if (!cwd) return true;
 	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8', timeout: 3000 });
 	const fetch = git('remote', 'get-url', 'origin');
-	if (fetch.status !== 0) return !/not a git repository|No such remote/i.test(String(fetch.stderr));
+	// No repo here pushes nothing. A repo with no origin still takes the word as a URL and rewrites it (the 1.29.0
+	// sweep), so that asks, as any other failure does.
+	if (fetch.status !== 0) return !/not a git repository/i.test(String(fetch.stderr));
 	const push = git('remote', 'get-url', '--push', '--all', 'origin');
-	if (push.status !== 0) return true;
-	const from = fetch.stdout.trim();
-	return push.stdout.split(/\r?\n/).filter(Boolean).some((to) => to !== from);
+	const raw = git('config', '--get', 'remote.origin.url');
+	if (push.status !== 0 || raw.status !== 0) return true;
+	// By host and path, from the URL as origin was given it: https to fetch and ssh to push are one repo, while a
+	// rewrite of both sides to another host (insteadOf) is another one, though fetch and push then agree.
+	const where = (url) => String(url).trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^[^@/]*@/, '').replace(/^([^/:]+):(?!\d+\/)/, '$1/').replace(/^([^/:]+):\d+\//, '$1/').replace(/\.git\/?$/, '').replace(/\/+$/, '');
+	const from = where(raw.stdout);
+	return !from || [fetch.stdout, ...push.stdout.split(/\r?\n/)].filter((u) => u.trim()).some((to) => where(to) !== from);
 }
 
 function decide(input) {

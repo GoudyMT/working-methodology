@@ -68,6 +68,7 @@ function findProject(input) {
 		const slug = path.basename(path.dirname(String(input.transcript_path)));
 		let names = [];
 		try { names = fs.readdirSync(RECORDS); } catch { /* none */ }
+		const cuts = [];
 		for (const n of names.filter((x) => x.toLowerCase().startsWith(slug.toLowerCase().slice(0, 100) + '-'))) {
 			try {
 				const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, n, 'record.json'), 'utf8'));
@@ -75,9 +76,14 @@ function findProject(input) {
 				// Past 200 characters Claude Code keeps the first 200, then a dash and a short hash of its own (C13, seen on
 				// 2026-11-13): such a folder is matched by those 200 characters, a shorter one by its whole name.
 				const cut = full && full.length > SLUG_MAX && new RegExp(`^.{${SLUG_MAX}}-[a-z0-9]{1,16}$`, 'i').test(slug) && full.slice(0, SLUG_MAX) === slug.slice(0, SLUG_MAX).toLowerCase();
-				if (full && (full === slug.toLowerCase() || cut)) return { dir: path.resolve(rec.projectDir), rec };
+				if (full && full === slug.toLowerCase()) return { dir: path.resolve(rec.projectDir), rec };
+				if (cut) cuts.push({ dir: path.resolve(rec.projectDir), rec });
 			} catch { /* not a record */ }
 		}
+		// Claude Code's own hash is not ours to work out, so two long paths alike in their first 200 characters cannot
+		// be told apart here (the 1.29.0 sweep): neither is taken, and the call is held with the way out.
+		if (cuts.length === 1) return cuts[0];
+		if (cuts.length > 1) return { ambiguous: true };
 	}
 	return null;
 }
@@ -86,7 +92,7 @@ function findProject(input) {
 // every hook and every command Claude Code runs, so one of these in a project file is a hold.
 // The shell's own start-up variables are here too (the review of 670b3a2): an exported function, SHELLOPTS with PS4,
 // or BASH_ENV runs code in the shell line before node starts.
-const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_CONFIG\w*|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*)$/i;
+const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_CONFIG\w*|GIT_SSH\w*|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|HTTPS?_PROXY|ALL_PROXY|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*)$/i;
 
 /** Why a settings file's text would take the guards off, or ''. */
 function settingsProblem(text) {
@@ -364,6 +370,7 @@ function unrecorded(input) {
 
 function preToolUse(input) {
 	const found = findProject(input);
+	if (found && found.ambiguous) return deny('Held: this session\'s folder name fits more than one installed kit project with a long path, so the kit cannot tell which guards to run. Start the session inside the project folder, or shorten the path.');
 	if (!found) {
 		// Fails closed: a kit project the launcher has no record for runs no guard until install writes one.
 		const dir = unrecorded(input);

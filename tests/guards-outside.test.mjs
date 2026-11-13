@@ -1368,6 +1368,10 @@ test('C13 a project with a long path is found by its transcript folder, the name
 		// Another long path that shares no 200 characters, and a short name with a tail, are not it.
 		assert.equal(from(`${slugOf(path.join(home, 'other', 'a'.repeat(240))).slice(0, 200)}-s157ju`), null);
 		assert.equal(from(`${slugOf(short)}-s157ju`), null);
+		// Two long paths alike in their first 200 characters cannot be told apart by this name: neither is taken.
+		const twin = path.join(home, 'work', 'a'.repeat(80), 'b'.repeat(80), 'c'.repeat(80) + '-two');
+		record(twin);
+		assert.deepEqual(from(`${slugOf(long).slice(0, 200)}-s157ju`), { ambiguous: true });
 	} finally {
 		if (before !== undefined) process.env.CLAUDE_PROJECT_DIR = before;
 	}

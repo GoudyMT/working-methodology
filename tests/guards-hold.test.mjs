@@ -88,6 +88,14 @@ test('the same holes in the spellings beside them are held', () => {
 		'git remote add backup https://example.com/other.git',
 		'git config remote.origin.pushurl https://example.com/other.git',
 		'git config --global url.https://example.com/.insteadOf https://github.com/',
+		// The 1.29.0 sweep: what carries the push decides where it lands as surely as the URL does.
+		'git config core.sshCommand "ssh -o HostName=example.invalid"',
+		'git config --global core.sshCommand ssh-elsewhere',
+		'git config http.proxy http://example.invalid:8080',
+		'git config http.sslVerify false',
+		'git config --global credential.helper store',
+		'git -c core.sshCommand=ssh-elsewhere fetch',
+		'git remote remove origin',
 		'git -c remote.origin.url=https://example.com/x.git push origin feat/x',
 		'echo "[url]" >> ~/.gitconfig',
 		// The local origin/HEAD names the default branch when the remote names none (K29): moving it is held too.
@@ -780,7 +788,8 @@ test('plain reads of the guard files pass in the shapes V1 found, and lookalikes
 test('a feature push from another repo runs only where the kit\'s own hooks will check it', () => {
 	const root = kitTemp.makeTemp('k28-');
 	const cfg = path.join(root, 'cfg');
-	const mk = (name) => { const d = path.join(root, name); fs.mkdirSync(d); spawnSync('git', ['init', '-q', '-b', 'main', d]); return d; };
+	// Each has an origin: a repo with none asks (the 1.29.0 sweep), which is not what this test is about.
+	const mk = (name) => { const d = path.join(root, name); fs.mkdirSync(d); spawnSync('git', ['init', '-q', '-b', 'main', d]); spawnSync('git', ['-C', d, 'remote', 'add', 'origin', `https://example.invalid/owner/${name}.git`]); return d; };
 	const proj = mk('proj');
 	const other = mk('other');
 	const ask = (cwd) => {
@@ -918,4 +927,14 @@ test('a feature push is inside the bound only while origin pushes to where it fe
 		git('config', '--unset-all', key);
 	}
 	assert.equal(push(), '', 'back as it was');
+	// The 1.29.0 sweep: the same repo spelled another way is not moved (https to fetch, ssh to push); a rewrite of
+	// both sides to another host is; and with no origin at all the word may be rewritten too, so it asks.
+	git('config', 'remote.origin.pushurl', 'git@example.invalid:owner/app.git');
+	assert.equal(push(), '', 'the same repo over ssh');
+	git('config', '--unset-all', 'remote.origin.pushurl');
+	git('config', 'url.https://elsewhere.invalid/.insteadOf', 'https://example.invalid/');
+	assert.match(push(), /somewhere other than it fetches from/, 'both sides rewritten');
+	git('config', '--unset-all', 'url.https://elsewhere.invalid/.insteadOf');
+	git('remote', 'remove', 'origin');
+	assert.match(push(), /somewhere other than it fetches from/, 'no origin');
 });
