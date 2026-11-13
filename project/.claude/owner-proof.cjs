@@ -295,9 +295,14 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// too: each tail of the word from a .claude, .git or .githooks part.
 	// A sed w command's file, glued to an address or an s command's flags (1wfile, /x/wfile, s/a/b/gwfile), is read
 	// whatever it names, a listed folder or an absolute path among them (the review of this fix).
+	// Every place a w or W may start a command (after an address, !, a brace, a ;, s flags, or -e) is read as naming the
+	// rest of the word: reading too much only adds holds (the review of this fix).
 	const sedFile = (word) => {
-		const m = /^(?:[0-9$,~+]+|\/(?:[^/\\]|\\.)*\/)*[wW](?=\S)/.exec(word) || /^s(.)(?:(?!\1)[^\\]|\\.)*\1(?:(?!\1)[^\\]|\\.)*\1[gpiImMeE0-9]*w(?=\S)/.exec(word);
-		return m ? [word.slice(m[0].length)] : [];
+		// Capped, so no word can make the match slow; a longer one is read only up to the cap.
+		const body = word.slice(0, 4096).replace(/^(?:-e|--expression=)/, '');
+		const out = [...body.matchAll(/(?:^|[;{}!0-9$,~+/gpiImMeE])[wW](?=\S)/g)].map((m) => body.slice(m.index + m[0].length));
+		const s = /^s(.)(?:(?!\1)[^\\]|\\.)*\1(?:(?!\1)[^\\]|\\.)*\1[gpiImMeE0-9]*w(?=\S)/.exec(body);
+		return s ? [...out, body.slice(s[0].length)] : out;
 	};
 	const tails = (word) => [word, ...sedFile(String(word)), ...[...String(word).matchAll(/(?<=[^\\/.])(?=\.(claude|git|githooks|gitconfig)(?:[\\/]|$))/gi)].map((m) => String(word).slice(m.index))];
 	const hit = (x) => tails(dotless(x.value, x.quoted)).some((w) => names(w, cwd));
