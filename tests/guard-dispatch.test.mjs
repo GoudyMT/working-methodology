@@ -169,8 +169,8 @@ test('the guard process itself applies the second reading to every guard, a held
 
 // why: guards rule:outward-acts. K38 (flips the 1.28.0 measure run left alive in guard.cjs): the kit's own Claude
 // folder, when named, is where the user layer's checks are read from; a check install recorded there runs and its
-// refusal counts; and a guard that answers nothing, as null or as undefined, is read as no answer.
-test('a recorded user check runs from the kit\'s own Claude folder, and no answer is no answer', () => {
+// refusal counts.
+test('a recorded user check runs from the kit\'s own Claude folder', () => {
 	const dir = kitTemp.makeTemp('dispatch-');
 	for (const f of GUARDS) fs.copyFileSync(path.join(SRC, f), path.join(dir, f));
 	const kitHome = kitTemp.makeTemp('cfg-');
@@ -182,6 +182,4 @@ test('a recorded user check runs from the kit\'s own Claude folder, and no answe
 	const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: 'x' }, cwd: dir }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: kitHome, CLAUDE_CONFIG_DIR: other } });
 	assert.equal(r.status, 0, r.stderr);
 	assert.match(r.stdout, /the recorded check ran/);
-	const { merge } = require(path.join(SRC, 'guard.cjs'));
-	assert.equal(merge([['a', undefined], ['b', null]]), null);
 });

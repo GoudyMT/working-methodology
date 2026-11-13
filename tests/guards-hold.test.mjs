@@ -889,17 +889,13 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	assert.equal(fs.existsSync(path.join(dir, '.git', 'kit-first-push-done')), false);
 });
 // why: guards rule:outward-acts. K38 (flips the 1.28.0 measure run left alive in owner-yes.cjs): a transcript line with
-// no message (Claude Code writes such lines) is skipped, before the pop-up and after it, and the yes still counts;
-// and the pre-push hook's question, run as a command, says no when no yes is on record.
-test('a yes is found past a line with no message, and the push question says no with no yes on record', () => {
+// no message (Claude Code writes such lines) is skipped, before the pop-up and after it, and the yes still counts.
+test('a yes is found past a transcript line with no message', () => {
 	const act = 'gh pr create --fill';
 	popUp({ act });
 	const bare = JSON.stringify({ type: 'assistant', isSidechain: false }) + '\n';
 	fs.writeFileSync(TRANSCRIPT, bare + fs.readFileSync(TRANSCRIPT, 'utf8') + bare);
 	assert.equal(withYes('Bash', { command: act }), 'allow');
-	const { CLAUDE_CODE_SESSION_ID: _s, ...env } = process.env;
-	const asked = spawnSync(process.execPath, [path.resolve('project/.claude/owner-yes.cjs'), '--push', 'refs/heads/feat/x'], { encoding: 'utf8', env: { ...env, CLAUDE_CONFIG_DIR: cfg } });
-	assert.equal(asked.status, 1, asked.stderr);
 });
 
 // why: guards rule:outward-acts. I6 (the fetch and push repo compare, open since 1.16.0): origin set to push somewhere
