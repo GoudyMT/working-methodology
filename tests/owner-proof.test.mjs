@@ -343,3 +343,16 @@ test('owner-proof places a word by the folder it is in, and holds only what it n
 	assert.equal(why('export P=.claude/settings.json'), '', 'an export only sets a name');
 	for (const command of ['echo x > .claude/kit-install.json', 'echo x > .claude/kit-guard/record.json']) assert.match(why(command), /^Never by a tool/, command);
 });
+
+// why: guards rule:security-standards. K38, the 25 flips the 1.28.0 measure run left alive: each case below was built
+// and run against its flipped line (graduated lesson: a surviving mutation is dead only after its case was run). A sed
+// that prints is a reader only in its exact shape; a cd is followed by its -path word; a default value is read as the
+// text it gives; a break that is not plain makes every cd unsure.
+test('owner-proof: a dressed-up sed, a cd by -path, a default value and an unsure cd are each read right', () => {
+	const held = ['sed -n e 5p .claude/guard.cjs', 'sed -n 5p -i .claude/guard.cjs', 'cd stuff -path .claude && rm guard.cjs', 'echo x > .claude/${U:-guard.cjs}', 'true | cd docs && rm guard.cjs', 'false || cd docs && echo x > projects/p/s.jsonl'];
+	for (const command of held) assert.equal(run('Bash', { command }), 'deny', command);
+	assert.equal(run('PowerShell', { command: 'Set-Location stuff -Path .claude && Remove-Item guard.cjs' }), 'deny');
+	// A name set twice and never used is read once, not for ever; a quoted word that only holds a guard's name beside
+	// other text is a reader's argument, not a write.
+	for (const command of ['P=a; P=b; echo hi', 'grep x ".claude/guard.cjs y"']) assert.equal(run('Bash', { command }), 'allow', command);
+});

@@ -211,6 +211,28 @@ code only. 17 findings before any code: 1 critical, 6 high, 8 medium, 2 low. Tok
 | P16 | low | Upgrade window for K34's record | Gone with the redesign |
 | P17 | low | Section 8 was short | Four lines added |
 
+## 10. Build notes
+
+### K38: the 25 surviving flips, each built and run (2026-11-13)
+
+Lines are 7d7fdd0's. Tools: this thread's scratch `flipcheck.mjs` (flip a line, run the test files, restore) and
+`diffcorpus.cjs` (every string in the six guard test files read as a Bash and a PowerShell command from two folders,
+through the original and the flipped file).
+
+- **14 killed by a test that fails with the flip in place.** owner-proof 61, 62 (a sed that is not a plain print),
+  218 (a cd by -path), 241 (a default value), 269 (a name set twice ran for ever), 328, 331 (a cd after a break that
+  is not plain), 355 (a quoted word); task-gate 98 (letter case by platform); owner-yes 121, 134 (a transcript line
+  with no message), 255 (the push question as a command); guard 41 (the kit's own Claude folder), 81.
+- **Two of those were already caught by tests the measure did not tie to the line:** owner-yes 255 and guard 81 go
+  red in tests that existed at 7d7fdd0. The coverage map missed them (the line runs in a child process the test
+  starts), so the measure overcounts survivors on such lines. A fact about the measure, noted for K41.
+- **5 equal by a run:** owner-proof 97 (a pattern that cannot fail to build), 107 (a cache bound), 240 (array
+  elements: every case is held by another rule), 301 (a cache key's label), 460 (a leading slash the path reader
+  drops). 13,048 readings each, 1,877 of them holds, 0 differ; the control (line 61) differs in 8.
+- **6 equal by their consumer:** the `return null` to `return undefined` flips (owner-proof 480, 485, 495;
+  owner-yes 47, 110; task-gate 102). The dispatcher reads null and undefined alike, which a test now pins (a merge
+  of one undefined and one null answer is null); owner-yes's callers test truth only.
+
 ## Progress
 
 - [ ] Step 1 probes
