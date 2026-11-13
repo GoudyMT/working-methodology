@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, guardDir, releaseState, status as kitStatus } from '../scripts/kit.mjs';
@@ -1336,4 +1337,38 @@ test('R6.4 install fills in where the user layer sits: the installed guard names
 	assert.doesNotMatch(text, /\{\{/);
 	const named = JSON.parse(/const INSTALLED_HOME = ("(?:[^"\\]|\\.)*");/.exec(text)[1]);
 	assert.equal(path.resolve(named), path.resolve(home));
+});
+
+// why: guards rule:outward-acts. C13 (reproduced 2026-11-13: Claude Code names a project folder by the first 200
+// characters of the path's slug, a dash and a short hash once the slug is longer). A session whose shell stands
+// outside its project is found by its transcript's folder; for a long path that name never equalled the full slug,
+// so the project was not found and its guards did not run.
+test('C13 a project with a long path is found by its transcript folder, the name Claude Code shortens', () => {
+	const home = kitTemp.makeTemp('c13-');
+	fs.mkdirSync(path.join(home, 'kit-tools'));
+	fs.copyFileSync(path.join(KIT, 'user', 'kit-tools', 'kit-launch.cjs'), path.join(home, 'kit-tools', 'kit-launch.cjs'));
+	const launch = createRequire(import.meta.url)(path.join(home, 'kit-tools', 'kit-launch.cjs'));
+	const slugOf = (dir) => path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-');
+	const record = (dir) => {
+		const at = path.join(home, 'kit-guard', launch.recordName(dir));
+		fs.mkdirSync(at, { recursive: true });
+		fs.writeFileSync(path.join(at, 'record.json'), JSON.stringify({ projectDir: dir, files: {} }));
+	};
+	const long = path.join(home, 'work', 'a'.repeat(80), 'b'.repeat(80), 'c'.repeat(80));
+	const short = path.join(home, 'work', 'app');
+	record(long);
+	record(short);
+	const from = (folder) => launch.findProject({ cwd: os.tmpdir(), transcript_path: path.join(home, 'projects', folder, 's.jsonl') });
+	const before = process.env.CLAUDE_PROJECT_DIR;
+	delete process.env.CLAUDE_PROJECT_DIR;
+	try {
+		assert.ok(slugOf(long).length > 200);
+		assert.equal(from(`${slugOf(long).slice(0, 200)}-s157ju`).dir, path.resolve(long));
+		assert.equal(from(slugOf(short)).dir, path.resolve(short), 'a short path, by its whole name');
+		// Another long path that shares no 200 characters, and a short name with a tail, are not it.
+		assert.equal(from(`${slugOf(path.join(home, 'other', 'a'.repeat(240))).slice(0, 200)}-s157ju`), null);
+		assert.equal(from(`${slugOf(short)}-s157ju`), null);
+	} finally {
+		if (before !== undefined) process.env.CLAUDE_PROJECT_DIR = before;
+	}
 });

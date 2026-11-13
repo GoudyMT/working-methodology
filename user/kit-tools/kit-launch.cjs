@@ -23,6 +23,8 @@ const { spawnSync } = require('child_process');
 
 const HOME = path.dirname(__dirname);
 const RECORDS = path.join(HOME, 'kit-guard');
+// The longest project folder name Claude Code writes whole.
+const SLUG_MAX = 200;
 const SHELLS = ['Bash', 'PowerShell'];
 const WIN = process.platform === 'win32';
 const posix = (p) => String(p).split(path.sep).join('/');
@@ -69,7 +71,11 @@ function findProject(input) {
 		for (const n of names.filter((x) => x.toLowerCase().startsWith(slug.toLowerCase().slice(0, 100) + '-'))) {
 			try {
 				const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, n, 'record.json'), 'utf8'));
-				if (rec && rec.projectDir && path.resolve(rec.projectDir).replace(/[^A-Za-z0-9]/g, '-').toLowerCase() === slug.toLowerCase()) return { dir: path.resolve(rec.projectDir), rec };
+				const full = rec && rec.projectDir ? path.resolve(rec.projectDir).replace(/[^A-Za-z0-9]/g, '-').toLowerCase() : null;
+				// Past 200 characters Claude Code keeps the first 200, then a dash and a short hash of its own (C13, seen on
+				// 2026-11-13): such a folder is matched by those 200 characters, a shorter one by its whole name.
+				const cut = full && full.length > SLUG_MAX && new RegExp(`^.{${SLUG_MAX}}-[a-z0-9]{1,16}$`, 'i').test(slug) && full.slice(0, SLUG_MAX) === slug.slice(0, SLUG_MAX).toLowerCase();
+				if (full && (full === slug.toLowerCase() || cut)) return { dir: path.resolve(rec.projectDir), rec };
 			} catch { /* not a record */ }
 		}
 	}
