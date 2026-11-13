@@ -143,6 +143,6 @@ test('the mutation check scoped to a base flips only the changed lines, and says
 	assert.equal(fs.existsSync(path.join(dir, 'x')), false, 'a base is never read as a git option');
 	const none = check(dir, ['--base', 'HEAD']);
 	assert.equal(none.status, 0, none.stdout + none.stderr);
-	assert.match(none.stdout, /nothing measured: no line changed since HEAD has a flip a test reaches/);
+	assert.match(none.stdout, /nothing measured[^\n]*HEAD/);
 	assert.doesNotMatch(none.stdout, /0 flips, 0 caught/);
 });

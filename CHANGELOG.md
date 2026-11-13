@@ -2,7 +2,7 @@
 
 ## 1.29.0 - 2026-11-13
 
-The 1.28.0 carry-overs close here, with the guard holes the build and its review found on the way: a protected file under another Windows name, a write into `.git` by move or copy, and a push carried to another host. The rule text planned for this build was measured three times, did not pass the recall bar and is not in it.
+The 1.28.0 carry-overs close here, with the guard holes found on the way: a protected file under another Windows name, a write into `.git` by move or copy, and a push carried to another host. The rule text planned for this build did not pass the recall bar and is not in it.
 
 ### Changed
 - The mutation measure flips only the lines a branch changed and prints the flip count and a rough minute count first. The whole kit runs only when started by hand with scope set to all. A bad base stops the run.

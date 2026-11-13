@@ -1831,8 +1831,10 @@ function main(argv) {
   // Accepting a changed host file or folder list lifts a hold the kit set on it, so it is the owner's own act, in
   // their own terminal: a shell an AI tool started carries its marker, and is refused here whatever the command's
   // spelling was (the review of the recorded folder list: a guard that matches the flag's text can be spelled round).
-  if (acceptAt >= 0 && (process.env.AI_AGENT || process.env.CLAUDECODE)) {
-    console.error('install: --accept-host is the owner\'s, in their own terminal: this shell was started by an AI tool, so nothing was accepted or installed.');
+  // A marker is an environment value a program can clear before it starts this one, so a terminal is asked for too:
+  // a tool's shell gives its commands a pipe, never a terminal (the review of this check).
+  if (acceptAt >= 0 && (process.env.AI_AGENT || process.env.CLAUDECODE || !process.stdin.isTTY)) {
+    console.error('install: --accept-host is the owner\'s, typed in their own terminal: this is a tool\'s shell or has no terminal, so nothing was accepted or installed.');
     process.exitCode = 1;
     return;
   }

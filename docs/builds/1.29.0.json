@@ -4,7 +4,7 @@
  "level": "minor",
  "area": "Guards",
  "title": "fix: close the 1.28.0 carry-overs and the guard holes found",
- "headline": "The 1.28.0 carry-overs close here, with the guard holes the build and its review found on the way: a protected file under another Windows name, a write into `.git` by move or copy, and a push carried to another host. The rule text planned for this build was measured three times, did not pass the recall bar and is not in it.",
+ "headline": "The 1.28.0 carry-overs close here, with the guard holes found on the way: a protected file under another Windows name, a write into `.git` by move or copy, and a push carried to another host. The rule text planned for this build did not pass the recall bar and is not in it.",
  "alignment": "v1.29.0 is the minor release build 3 plans, less its rule text: the recall gate refused it and the gate was not lowered.",
  "items": [
   {
@@ -92,15 +92,15 @@
  "decisions": [
   {
    "decision": "The rule text is not in this release",
-   "why": "Three recall rounds scored the candidate at 11 against a bar of 12. A probe showed the push question passes under half the time on the released kit too, so the text was pulled and the bar left alone."
+   "why": "Three recall rounds scored it 11 against a bar of 12, and a probe showed the push question passes under half the time on the released kit too. The text was pulled, the bar kept."
   },
   {
-   "decision": "The folder list is recorded by install, not looked up in git",
-   "why": "The review showed a git lookup missed a branch whose last commit did not touch the list and froze a project that removed its list on purpose. A record outside the project is one rule for every way the list can go."
+   "decision": "The folder list is recorded by install",
+   "why": "A git lookup missed a branch whose last commit did not touch the list and froze a project that removed its list on purpose. A record outside the project covers every way the list can go."
   },
   {
    "decision": "A program that clears its own markers is a named limit",
-   "why": "A check of the push's parent processes was probed: it takes about half a second and finds nothing for a child started apart from its parent. The guard's header says what the guards cannot see."
+   "why": "A check of the push's parent processes was probed: half a second a push, and nothing found for a child started apart from its parent."
   }
  ],
  "verification": [

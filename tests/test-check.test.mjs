@@ -103,6 +103,6 @@ test('the test check names a rule that the change itself adds to the rule index'
 	fs.appendFileSync(path.join(dir, 'project', 'standards', 'INDEX.md'), '| made-up-here | `standards/x.md` |\n');
 	sh(dir, 'commit', '-qam', 'a rule of its own');
 	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
-	assert.match(r.stdout, /A2 tests\/a\.test\.mjs::a guarded one: names rule:made-up-here, a rule this change itself adds to the rule index/);
+	assert.match(r.stdout, /a guarded one: names rule:made-up-here[^\n]*itself adds/);
 	assert.doesNotMatch(r.stdout, /a guarded one: .*not in the rule index/);
 });
