@@ -491,16 +491,19 @@ function shellWrites(command, tool, start, names = proofNames) {
 		// files the guards live in; the command is a write unless it and every stage it pipes into only read.
 		// PowerShell takes any clear start of a parameter's name, a value after a colon, and a filter by position; a
 		// recursive listing with no filter, or with -Exclude, reaches every file (the review of this rule).
-		const lister = tool !== 'Bash' && /^(gci|ls|dir|get-childitem|remove-item|ri|rm|del|erase|rd|rmdir|copy-item|cpi|cp|copy|move-item|mi|mv|move|get-item|gi)$/.test(program);
+		// Any program in a shell that is not bash: a list of the commands that take these parameters has no end (a call
+		// operator, a wrapper, another cmdlet), so none is kept.
+		const lister = tool !== 'Bash';
 		const option = (w) => /^-[a-z]/i.test(w);
-		const recursive = all.some((w) => /^-(r(e(c(u(r(s(e)?)?)?)?)?)?|s)(:|$)/i.test(w));
+		// -Depth recurses too, with no -Recurse beside it.
+		const recursive = all.some((w) => /^-(r(e(c(u(r(s(e)?)?)?)?)?)?|s|de\w*)(:|$)/i.test(w));
 		const filtered = all.some((w) => /^-(fi\w*|inc\w*|ex\w*)(:|$)/i.test(w));
 		const reaches = lister && (
 			all.some((w) => /^-ex\w*(:|$)/i.test(w))
 			|| all.some((w, k) => { const m = /^-(fi\w*|inc\w*)(?::(.*))?$/i.exec(w); return m && filterFits(m[2] !== undefined ? m[2] : all[k + 1] || '*', cwd); })
 			|| (recursive && all.slice(1).some((w, k) => !option(w) && !option(all[k] || '') && filterFits(w, cwd, true)))
 			// With no folder named, a recursive listing starts where the shell stands and reaches everything under it.
-			|| (recursive && !filtered && !all.slice(1).some((w) => !option(w))));
+			|| (recursive && !filtered && !all.slice(1).some((w, k) => !option(w) && !/^-de\w*$/i.test(all[k] || ''))));
 		if (reaches) {
 			const reads = (g) => { const w = (g || []).filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p)); };
 			let k = s;

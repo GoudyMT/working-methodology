@@ -464,6 +464,6 @@ test('a write into .git, a device or share path, a word through a junction and a
 test('a PowerShell filter piped into a writer is read as naming the files of the guards', () => {
 	for (const command of ['Get-ChildItem -Recurse -Filter *folders.json | Remove-Item', 'Get-ChildItem -Recurse -Include *.j* | Remove-Item -Force', 'Remove-Item -Recurse -Include settings*.json', 'Get-ChildItem -Recurse -Filter *.json | ForEach-Object { Remove-Item $_ }',
 		'Get-ChildItem -Recurse -Fi *folders.json | Remove-Item', 'Get-ChildItem -Recurse -Filter:*folders.json | Remove-Item', 'Get-ChildItem . *folders.json -Recurse | Remove-Item', 'Get-ChildItem -Recurse | Remove-Item',
-		'Get-ChildItem -Recurse -Exclude *.md | Remove-Item', 'Get-ChildItem -Recurse -Filter PROTEC~1.JSO | Remove-Item', 'Remove-Item -Recurse -Include *.j"s"on']) assert.equal(run('PowerShell', { command }), 'deny', command);
+		'Get-ChildItem -Recurse -Exclude *.md | Remove-Item', 'Get-ChildItem -Depth 5 | Remove-Item', '& Get-ChildItem -Recurse -Filter *folders.json | Remove-Item', 'Get-ChildItem -Recurse -Filter PROTEC~1.JSO | Remove-Item', 'Remove-Item -Recurse -Include *.j"s"on']) assert.equal(run('PowerShell', { command }), 'deny', command);
 	for (const command of ['Get-ChildItem -Recurse -Filter *.json', 'Get-ChildItem -Recurse -Filter *.cjs | Select-Object Name', 'Get-ChildItem -Recurse -Filter *.txt | Remove-Item']) assert.equal(run('PowerShell', { command }), 'allow', command);
 });
