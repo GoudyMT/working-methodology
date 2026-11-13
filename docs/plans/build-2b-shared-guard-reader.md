@@ -234,9 +234,9 @@ reviewer: guard-delete past line 40, owner-yes, the launcher, the non-guard carr
 - [x] Step 2: carry-overs closed, each test-first: K29 8b66fc8 ca7e767 d2c1f60, K21 79a0633, K3 16e790f, K5 28d8888,
   K27 bbad50d, K16 bb516db, K15 61ed0a3, K4 540ec36, K7 cdd57b1 a62da48, K8 K9 05d630f, K10 2e867b2, K13 bb26774,
   K14 6c2d359, K11 d910cb6, K12 aaa3dd6, housekeeping e367964.
-- [x] Step 3, narrowed (the owner's call pending): the second reading in guard-outward, K1 kinds 12c32ec, K2 e469c9f,
-  V1 76f7fa5, K28 dc249fd a16c8d7, E3 69e7131, K19 4eb8700. Moving owner-proof, guard-delete and task-gate onto it,
-  and P7, P9, P15, P16, P19, carry to the next build.
+- [x] Step 3: the second reading, K1 kinds 12c32ec, K2 e469c9f, V1 76f7fa5, K28 dc249fd a16c8d7, E3 69e7131, K19 4eb8700;
+  every guard reads it 432749e (the owner, 2026-11-12: fold everything in); P7 820f2bf, P9 e8f67c1, P15 432749e,
+  P17 4efde7c. P16 needed no move (guard-read keeps its exports); P19 is not built.
 - [x] Sweep at 69e7131: 8 highs, 7 fixed (6084128, b17094c, 37208bd, 9428cf8, 4db3514, 0b06df8, 4eb8700), P8 7712af5;
   report reports/sweeps/2026-11-12-1.28.0.md.
 - [x] Pass bar 1: the install check holds 21 planted cases with their kind, from another repo and with no project

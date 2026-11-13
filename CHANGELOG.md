@@ -2,7 +2,7 @@
 
 ## 1.28.0 - 2026-11-12
 
-The shared guard reader (T16b, first part): the push guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind, and a plain read, a commit message naming a marker, or a bash test run naming tests/* is no longer held. The 1.27.0 carry-overs close first, a project can list folders no tool writes, and closeout removes a thread's own scratch with no ask. The reader reaches the other guards in the next build.
+The shared guard reader (T16b): every guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind, and a plain read, a commit message naming a marker, or a bash test run naming tests/* is no longer held. The 1.27.0 carry-overs close first, the review's security findings are fixed, a project can list folders no tool writes, and closeout removes a thread's own scratch with no ask.
 
 ### Added
 - A project can list folders in `.claude/protected-folders.json` (`{"folders": ["<path>"]}`) that no tool writes into; the owner writes the list, and a malformed list holds every write and shell call.
@@ -21,9 +21,15 @@ The shared guard reader (T16b, first part): the push guard reads each command a 
 - The first push check's scanning call names github.com as its host.
 - The settings guard reads the user folder once per call; each guard call now takes about half a millisecond.
 - The install check test runs the working tree, and the install and status tests the 1.27.0 cut lost are back.
+- The merge gate counts the PR title with the PR's own number, as CI does; a scratch folder that cannot be moved keeps its ledger line and the report of what did.
 
 ### Security
 - Every spelling of a marker clear or a hook move the 1.27.0 sweep found is refused as a gate bypass, never asked: appends, setters, env and exec forms, `printf -v`, and a marker name built at run time.
+- Every guard (settings, delete, task and push) reads the second reading beside the text; a git or gh script wrapper such as git.ps1 is read as git, so a delete or commit spelled that way is held as git is.
+- A push typed in the owner's terminal tab is outside the push bound, and a shell fed a script on its input (base64 -d | sh, sh -s, sh < file) is held unless the script is written out in the command.
+- Pre-push holds a push to a remote it cannot ask for its default branch, and the first push check reads only a checkout git lists, so a folder pointing at the repo cannot clear it.
+- A marker name piped into a program that is not a reader is a marker clear; a reader named by a path gets no read exemption for a guard or settings file.
+- Closeout and the load check start the system PowerShell by its full path, never one in the current folder; the recall scorer cannot read /proc or the command line tool's sign-in.
 - A feature push from a repo whose git hooks are not the kit's (another repo, a nested repo, a submodule) needs the owner's yes, since no secret scan runs there.
 - A feature push the guard cannot place, with no project folder or no folder for the call named, asks the owner.
 - Moving the local origin/HEAD is held; pre-push takes the remote's own answer for its default branch, and a remote that names none holds the push.

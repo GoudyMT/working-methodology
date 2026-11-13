@@ -4,8 +4,8 @@
  "level": "minor",
  "area": "Guards",
  "title": "feat: one reading for every spelling of a gate bypass",
- "headline": "The shared guard reader (T16b, first part): the push guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind, and a plain read, a commit message naming a marker, or a bash test run naming tests/* is no longer held. The 1.27.0 carry-overs close first, a project can list folders no tool writes, and closeout removes a thread's own scratch with no ask. The reader reaches the other guards in the next build.",
- "alignment": "v1.28.0 is the minor release build 2b plans; the reader's move into the other guards carries to the next build on the owner's call.",
+ "headline": "The shared guard reader (T16b): every guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind, and a plain read, a commit message naming a marker, or a bash test run naming tests/* is no longer held. The 1.27.0 carry-overs close first, the review's security findings are fixed, a project can list folders no tool writes, and closeout removes a thread's own scratch with no ask.",
+ "alignment": "v1.28.0 is the minor release build 2b plans, with the review's findings folded in on the owner's call.",
  "items": [
   {
    "id": "T16b-K1",
@@ -15,6 +15,36 @@
    "where": "Gate bypass spellings",
    "before": "Some reached the owner's yes",
    "after": "Each is refused, even with a yes"
+  },
+  {
+   "id": "T16b",
+   "kind": "security",
+   "text": "Every guard (settings, delete, task and push) reads the second reading beside the text; a git or gh script wrapper such as git.ps1 is read as git, so a delete or commit spelled that way is held as git is.",
+   "evidence": "tests/guard-dispatch.test.mjs, tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "P7-P9",
+   "kind": "security",
+   "text": "A push typed in the owner's terminal tab is outside the push bound, and a shell fed a script on its input (base64 -d | sh, sh -s, sh < file) is held unless the script is written out in the command.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "R2",
+   "kind": "security",
+   "text": "Pre-push holds a push to a remote it cannot ask for its default branch, and the first push check reads only a checkout git lists, so a folder pointing at the repo cannot clear it.",
+   "evidence": "tests/guards-outside.test.mjs, tests/kit.test.mjs"
+  },
+  {
+   "id": "R1",
+   "kind": "security",
+   "text": "A marker name piped into a program that is not a reader is a marker clear; a reader named by a path gets no read exemption for a guard or settings file.",
+   "evidence": "tests/guards-hold.test.mjs, tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "R8",
+   "kind": "security",
+   "text": "Closeout and the load check start the system PowerShell by its full path, never one in the current folder; the recall scorer cannot read /proc or the command line tool's sign-in.",
+   "evidence": "tests/kit.test.mjs, tests/recall-ci.test.mjs"
   },
   {
    "id": "K28",
@@ -144,6 +174,12 @@
    "kind": "changed",
    "text": "The install check holds every planted bypass and each 1.27.0 spelling to its kind (never, or the owner's yes), from another repo and with no project named, and checks the false holds this build fixed run.",
    "evidence": "tests/ci-install-check.test.mjs"
+  },
+  {
+   "id": "R5",
+   "kind": "fixed",
+   "text": "The merge gate counts the PR title with the PR's own number, as CI does; a scratch folder that cannot be moved keeps its ledger line and the report of what did.",
+   "evidence": "tests/merge-gate.test.mjs, tests/kit.test.mjs"
   }
  ],
  "decisions": [
@@ -152,8 +188,8 @@
    "why": "The second reading only adds holds and picks the kind, so nothing the old check held can pass (the owner's lock, design B2)."
   },
   {
-   "decision": "Push guard first",
-   "why": "The second reading ships in the push guard, where the bypass spellings were; moving the other guards onto it carries to the next build on the owner's call."
+   "decision": "One reading for every guard",
+   "why": "The second reading is applied once, in the guard process, for every guard; a hold it adds that is not a bypass gives way to the owner's yes for the command as written."
   },
   {
    "decision": "Feature push from another repo asks",
@@ -162,7 +198,7 @@
  ],
  "verification": [
   "Each fix shipped with a test that fails on the code before it, the review's fixes too (6084128, 37208bd, 9428cf8, 4db3514, 4eb8700, 7712af5).",
-  "The install check passes on this build: 21 planted cases held with their kind, 5 former false holds run, an upgrade from v1.27.0 clean.",
+  "The install check passes on this build: 21 planted cases held with their kind, 5 former false holds run, 300 push proof cases right, an upgrade from v1.27.0 clean.",
   "Guard time per call measured at 0.4 to 0.5 ms against the 1.27.0 baseline of 0.71 to 0.75 ms; the review report passes its audit."
  ],
  "tests": {
@@ -188,7 +224,7 @@
    },
    {
     "name": "Code security",
-    "result": "Four highs (bypass spellings, the first push gate), fixed; mediums deferred and named to the owner"
+    "result": "Four highs fixed; the security mediums named to the owner fixed after the review but two (run-time marker names, a PR editing CI)"
    },
    {
     "name": "Gaps, scaling, test value",
@@ -196,7 +232,7 @@
    },
    {
     "name": "Alignment",
-    "result": "YES with the narrowed reader and K19 carried on the owner's call"
+    "result": "YES; the narrowed reader was finished here on the owner's call"
    }
   ],
   "findings": {
@@ -211,16 +247,16 @@
    "H4: a feature push from another repo could never run, even on the owner's yes. Fixed in 9428cf8.",
    "H5: the recall scorer took any run the job held. Fixed in 4db3514.",
    "H6: the owner's name and home path in four tracked lines. Fixed in 0b06df8.",
-   "H7: K19 was still held, a missed pass bar. Fixed in 4eb8700; pass bar 1 (planted kinds) in 1ea8156."
+   "H7: K19 was still held, a missed pass bar. Fixed in 4eb8700; pass bar 1 (planted kinds) in 1ea8156.",
+   "H8: the second reading reached the push guard only. Every guard now reads it (432749e), with P7, P9 and the named security findings fixed after the review."
   ],
   "deferred": [
-   "The reader's move into the settings, delete and task guards, and the run_in_terminal, piped shell, reader failure and install path items",
-   "Security mediums named to the owner: the scratch clean shell lookup, persisted remote config with origin/HEAD deleted, a .git file decoy, gh.ps1, a PR editing its own CI scope",
-   "Docs for protected-folders.json and the squash suffix; the merge gate passing the PR number; pass bar evidence in the plan"
+   "A marker name built at run time inside a script (node -e) clears it unseen; the pre-push hook cannot tell that shell from the owner's",
+   "A PR that edits ci.yml can undo its own scope rule; only a ruleset on the repository closes it",
+   "Dot globbing turned on in the owner's own shell profile; PowerShell tests/* still held (P18); install path check for the reader (P19)",
+   "The test check reads the rule index from the PR's own copy (report only)"
   ],
-  "accepted": [
-   "H8: the reader ships in the push guard only; the other guards keep their text checks and move in the next build."
-  ],
+  "accepted": [],
   "caughtBy": {
    "sweep": 8,
    "plan": 10,

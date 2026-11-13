@@ -331,7 +331,7 @@ test('status reports a project or ~/.claude with no install record, and writes n
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
-// why: guards rule:size-budgets
+// why: guards rule:kit-standards (item 14, the start load cap)
 test('status shows the real start load against its cap, and says when it is over', () => {
   const { kit, home, proj } = makeKit();
   fs.writeFileSync(path.join(proj, 'CLAUDE.md'), 'x'.repeat(300));

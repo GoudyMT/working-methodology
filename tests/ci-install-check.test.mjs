@@ -16,7 +16,8 @@ test('the install check fails on a missing git hook, a push guard that holds not
 	const clone = spawnSync('git', ['clone', '--quiet', '--no-hardlinks', path.resolve('.'), kit], { encoding: 'utf8' });
 	assert.equal(clone.status, 0, clone.stderr);
 	spawnSync('git', ['-C', kit, 'checkout', '--quiet', '--detach', spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()], { encoding: 'utf8' });
-	// The working tree's own changes too, so a run before a commit checks the code as it is, not as last committed (K10).
+	// The working tree's changes to tracked files too, so a run before a commit checks them as they are (K10); a new file
+	// not yet added to git is not in the diff.
 	const diff = spawnSync('git', ['diff', '--binary', 'HEAD'], { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 }).stdout;
 	if (diff.length) assert.equal(spawnSync('git', ['-C', kit, 'apply', '--whitespace=nowarn', '-'], { input: diff }).status, 0, 'the working tree did not apply');
 	// Planted faults: the pre-push hook is gone, and the push guard's decision always lets the call go.
