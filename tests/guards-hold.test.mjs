@@ -458,6 +458,29 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin refs/heads/v1', 'refs/tags/v1'), false, 'a branch yes pushed a tag');
 	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin refs/tags/v1', 'refs/tags/v1'), true);
 	assert.equal(grantsRef('KIT_PUSH_APPROVED=1 git push origin v1', 'refs/tags/v1'), true, 'git itself resolves a short name');
+	// The 1.28.0 measure run's survivors: a yes to a force or a delete counts only for a push written that way, in each
+	// spelling git takes; a yes to no git push grants none.
+	for (const act of ['git push -f origin feat/x', 'git push origin +feat/x', 'git push --force-with-lease origin feat/x']) assert.equal(grantsRef(act, 'refs/heads/feat/x', 'force'), true, act);
+	assert.equal(grantsRef('git push origin feat/x', 'refs/heads/feat/x', 'force'), false, 'a plain yes forced a push');
+	for (const act of ['git push -d origin feat/x', 'git push --delete origin feat/x', 'git push origin :feat/x']) assert.equal(grantsRef(act, 'refs/heads/feat/x', 'delete'), true, act);
+	assert.equal(grantsRef('git push origin feat/x', 'refs/heads/feat/x', 'delete'), false, 'a plain yes deleted a branch');
+	for (const act of ['echo push origin feat/x', 'ls', 'push origin feat/x']) assert.equal(grantsRef(act, 'refs/heads/feat/x'), false, act);
+	// And the yes itself: a subagent's transcript holds no owner's yes, and a yes dated after now is no yes.
+	const { ownerYes } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));
+	const plain = 'git push origin refs/heads/main';
+	popUp({ act: plain });
+	const call = { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: plain }, cwd: proj, transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now' };
+	// In this process, as the hooks are run: the Claude folder the transcript sits in.
+	const before = process.env.CLAUDE_CONFIG_DIR;
+	process.env.CLAUDE_CONFIG_DIR = cfg;
+	try {
+	assert.ok(ownerYes(call), "the owner's own yes");
+	assert.equal(ownerYes({ ...call, agent_id: 'a1' }), null, "a subagent took the owner's yes");
+	popUp({ act: plain, minutesAgo: -5 });
+		assert.equal(ownerYes(call), null, 'a yes dated after now');
+	} finally {
+		if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before;
+	}
 });
 
 // why: catches a yes that can never be read (the 1.25.0 carry-over R7.3): a transcript past V8's string limit threw on

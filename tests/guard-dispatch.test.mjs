@@ -140,3 +140,16 @@ test('a long command is read in time: the whole guard process answers a 98 KB co
 	}
 	assert.ok(took < 8000, `${took} ms${each ? `; ${each}` : ''}${hot ? `; owner-proof hot: ${hot}` : ''}`);
 });
+
+// why: guards rule:outward-acts. The 1.28.0 measure run: the test above runs a copy of the guards, so the coverage map
+// never tied it to guard.cjs and five flips of the second reading survived there. The same holds, on the file itself.
+test('the guard process itself applies the second reading to every guard, a held one kept unless the owner said yes', () => {
+	const { check } = require(path.join(SRC, 'guard.cjs'));
+	const ask = (command, tool_name = 'PowerShell') => (check({ hook_event_name: 'PreToolUse', tool_name, tool_input: { command }, cwd: process.cwd() }) || {}).hookSpecificOutput || {};
+	for (const command of ['git.ps1 clean -fdx', 'C:/Tools/git.ps1 clean -fdx']) {
+		const out = ask(command);
+		assert.equal(out.permissionDecision, 'deny', command);
+		assert.match(out.permissionDecisionReason, /delete/, command);
+	}
+	assert.equal(ask('git.ps1 status').permissionDecision, undefined, 'a read through the wrapper runs');
+});
