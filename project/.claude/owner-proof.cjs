@@ -493,6 +493,23 @@ function check(input) {
 // never written by a tool, by an edit tool or a shell; reads stay open. The list is the owner's to write (never by
 // a tool, K34), and one that cannot be read holds every write tool and shell call until the owner fixes it.
 const FOLDERS_REASON = 'Never by a tool: this project lists that folder in .claude/protected-folders.json, so no tool writes there. Read it; a change there is made where that folder is worked on.';
+// A list that is not here may be on another branch: a switch to a branch without it would drop every hold (the review
+// of K34; the owner, 2026-11-13: fix it). One git call asks every branch, remote branch and stash tip for the file,
+// reading no history. Found there: { missing: <a ref that holds it> }, and the caller holds every write and shell
+// call. No repo, no git, or no tip holding it: no list, as before.
+function listElsewhere(root) {
+	const env = { ...process.env };
+	for (const k of Object.keys(env)) if (/^GIT_/i.test(k)) delete env[k];
+	const git = (...a) => require('child_process').spawnSync('git', ['-C', root, ...a], { encoding: 'utf8', timeout: 3000, env });
+	const r = git('rev-list', '--no-walk', '--objects', '--all', '--', '.claude/protected-folders.json');
+	// Git that cannot answer (no repo, no git, a repo it refuses to read) is no list, as before this check: holding
+	// every call whenever git is unwell would stop all work in a project that never had a list.
+	if (r.error || r.status !== 0) return [];
+	if (!/ \.claude\/protected-folders\.json$/m.test(r.stdout)) return [];
+	const tip = (/^([0-9a-f]{40,64})$/m.exec(r.stdout) || [])[1];
+	const named = tip ? git('name-rev', '--name-only', '--refs=refs/heads/*', '--refs=refs/remotes/*', tip).stdout.trim() : '';
+	return { missing: named && named !== 'undefined' ? named : 'another branch or a stash' };
+}
 function listedFolders(cwd) {
 	const env = process.env.CLAUDE_PROJECT_DIR;
 	const fold = (p) => slash(path.resolve(p));
@@ -501,7 +518,7 @@ function listedFolders(cwd) {
 	const root = env || cwd;
 	void fold;
 	let raw;
-	try { raw = fs.readFileSync(path.join(root, '.claude', 'protected-folders.json'), 'utf8'); } catch { return []; }
+	try { raw = fs.readFileSync(path.join(root, '.claude', 'protected-folders.json'), 'utf8'); } catch { return listElsewhere(root); }
 	if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
 	try {
 		const list = JSON.parse(raw).folders;
@@ -531,6 +548,7 @@ function answer(input) {
 	const cwd = input.cwd || process.cwd();
 	const folders = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name) ? listedFolders(cwd) : [];
 	if (folders === null) return deny('Held: .claude/protected-folders.json cannot be read, so no write tool or shell call runs. The owner fixes it in their own editor.');
+	if (!Array.isArray(folders)) return deny(`Held: .claude/protected-folders.json is missing here, but ${folders.missing} of this repo holds one, so no write tool or shell call runs: the folders it lists would lose their hold. The owner restores it in their own terminal (git checkout <that branch> -- .claude/protected-folders.json), or removes it from that branch.`);
 	// The settings take the owner's pop-up yes for this exact act; a subagent never has one.
 	const settings = () => (!input.agent_id && ownerYes(input) ? null : deny(askText(SETTINGS_REASON, input)));
 	if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name)) {
