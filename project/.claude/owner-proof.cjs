@@ -449,7 +449,7 @@ function listedFolders(cwd) {
 const inFolders = (folders) => (raw, cwd) => {
 	// The spellings a shell resolves first: Git Bash's /c/..., $PWD and $HOME or ~ (the 1.28.0 sweep).
 	let word = String(raw).replace(/^\/([a-z])(?=\/|$)/i, '$1:').replace(/^~(?=\/|$)|^\$\{?HOME\}?(?=\/|$)|^\$env:USERPROFILE(?=[\\/]|$)/i, () => slash(os.homedir()));
-	if (/^\$\{?PWD\}?(?=[\\/]|$)|^\$pwd(?=[\\/]|$)/i.test(word)) { if (!Array.isArray(cwd)) return folders.length > 0; word = word.replace(/^\$\{?PWD\}?|^\$pwd/i, cwd.join('/')); }
+	if (/^\$\{?PWD\}?(?=[\\/]|$)|^\$pwd(?=[\\/]|$)/i.test(word)) { if (!Array.isArray(cwd)) return folders.length > 0; word = word.replace(/^\$\{?PWD\}?|^\$pwd/i, () => (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/')); }
 	// The root is a parent of every folder.
 	if (/^([a-z]:)?[\\/]*$/i.test(word) && word.length > 0) return folders.length > 0;
 	if (cwd === 'unknown' && !rooted(word)) {

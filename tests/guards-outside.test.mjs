@@ -340,7 +340,8 @@ test('pre-push: a remote the hook cannot ask may have any branch as its default'
 	git(proj, ['branch', '-rd', 'origin/HEAD']);
 	const r = aiPush(proj, 'develop');
 	assert.notEqual(r.status, 0, 'a push went out to the remote\'s default branch');
-	assert.match(r.stderr, /names no default branch/);
+	// Held as the default branch, whether the key broke the hook's ask (Windows paths) or git refused the key (Linux).
+	assert.match(r.stderr, /default branch/);
 	assert.notEqual(ok(git(remote, ['rev-parse', 'develop'])), ok(git(proj, ['rev-parse', 'HEAD'])));
 });
 
