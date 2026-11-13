@@ -726,6 +726,10 @@ test('reading or naming a marker runs; every way of clearing one is still never 
 		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name, tool_input: { command }, cwd: process.cwd() }), encoding: 'utf8' });
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
 	};
+	// The 1.28.0 sweep: a marker's name piped from a reader into another program is data that program may act on.
+	assert.match(reason('Bash', 'echo CLAUDECODE | python -c "import os,sys; os.environ.pop(sys.stdin.read().strip()); os.execvp(\'git\',[\'git\',\'push\',\'origin\',\'HEAD:main\'])"'), /^Never by a tool: clearing/);
+	assert.match(reason('PowerShell', "echo CLAUDECODE | % { $s=[Diagnostics.ProcessStartInfo]::new('git','push origin HEAD:main'); $s.EnvironmentVariables.Remove($_); [Diagnostics.Process]::Start($s) }"), /^Never by a tool: clearing/);
+	assert.doesNotMatch(reason('Bash', 'grep -n CLAUDECODE notes.txt | head -5'), /markers/, 'a reader piped to a reader');
 	for (const command of ['grep -n CLAUDECODE notes.txt', 'echo $CLAUDECODE', 'git commit -m "docs: name the CLAUDECODE marker"', 'rg AI_AGENT -n project/.githooks']) {
 		assert.doesNotMatch(reason('Bash', command), /markers/, command);
 	}

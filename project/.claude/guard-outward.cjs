@@ -277,11 +277,18 @@ function markerOnlyNamed(text) {
 	// (a reader writing the marker's name into a file, a profile among them): the 1.28.0 sweep.
 	if (/(^|\s)-v\b|[<>]/.test(text) || markerOnlyNamed.strict(plainText(text, 'Bash').replace(/["']/g, ''))) return false;
 	if (/\b(CLAUDECODE|AI_AGENT)\s*\+?=|\b(unset|export|declare|typeset|local|readonly|set|setx|env|exec|eval|source|iex|invoke-expression|xargs|sh|bash|zsh|dash|ksh|pwsh|powershell|cmd|start-process|saps|remove-item|ri|clear-item|cli|new-item|ni|set-item|si|set-content|sc|rv|remove-variable)(\.exe)?\b|env:|setenvironmentvariable|(^|[\s;|&(])\.\s|[`]|\$\(/i.test(text)) return false;
-	for (const segment of tokenize(joinContinuations(text))) {
+	const segments = tokenize(joinContinuations(text));
+	for (let s = 0; s < segments.length; s++) {
+		const segment = segments[s];
 		const words = segment.filter((w) => !w.redirect);
 		if (!words.some((w) => MARKER.test(w.value))) continue;
 		const name = programName(words[0]?.value || '');
 		if (!MARKER_READERS.has(name)) return false;
+		// Piped on, the name reaches the next program as data it may act on (python popping it from its environment): only
+		// another reader may take it (the 1.28.0 sweep).
+		for (let k = s; /^\|/.test(segments[k].end || '') && segments[k + 1]; k++) {
+			if (!MARKER_READERS.has(programName(segments[k + 1].filter((w) => !w.redirect)[0]?.value || ''))) return false;
+		}
 		// In git, only inside the message given to -m or --message.
 		if (name === 'git' && words.some((w, k) => MARKER.test(w.value) && !(k > 0 && /^(-m|--message)$/.test(words[k - 1].value)))) return false;
 	}
