@@ -89,7 +89,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           # The base's own selection rule, never the PR's copy, which could drop itself from the risky list (K9).
-          git show "$BASE_SHA:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || echo 'process.stdout.write("scope=full\nwhy=the base has no pr-scope\n")' > "$RUNNER_TEMP/pr-scope.mjs"
+          git show "$BASE_SHA:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || printf '%s\n' 'process.stdout.write("scope=full\nwhy=the base has no pr-scope\n")' > "$RUNNER_TEMP/pr-scope.mjs"
           node "$RUNNER_TEMP/pr-scope.mjs" "$BASE_SHA" | tee -a "$GITHUB_OUTPUT"
 
       - name: Every test

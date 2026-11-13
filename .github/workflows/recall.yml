@@ -265,7 +265,7 @@ jobs:
           in="$RUNNER_TEMP/in"
           for f in cand-1 cand-2 cand-3; do cp "$in/candidate/$f.md" base/reports/evals/ || exit 1; done
           for f in base-1 base-2 base-3 control-1; do cp "$in/baseline/$f.md" base/reports/evals/ || exit 1; done
-          [ "$(ls "$in/candidate" | wc -l)" -eq 3 ] && [ "$(ls "$in/baseline" | wc -l)" -eq 4 ] || { echo "An artifact holds files no job should make."; exit 1; }
+          [ "$(find "$in/candidate" -mindepth 1 | wc -l)" -eq 3 ] && [ "$(find "$in/baseline" -mindepth 1 | wc -l)" -eq 4 ] || { echo "An artifact holds files no job should make."; exit 1; }
 
       # One fresh blind scorer under main's brief, then the gate line from the sealed map: no number is typed.
       - name: Blind score
