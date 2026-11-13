@@ -317,6 +317,20 @@ function findOutward(text, depth) {
 	const client = /(^|[^\w.-])(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)(\.exe)?($|[^\w.-])/i.test(text);
 	if (client && (/\$|`|<\(|\bxargs\b|\bread\b/.test(text))) return 'an HTTP request built at run time';
 	if (/[._]curlrc|CURL_HOME|[._]wgetrc|WGETRC/i.test(text)) return 'an HTTP client\'s config';
+	// A shell fed its script on its input (a pipe, -s, a < file) runs a body the text does not show unless that body is
+	// written out in the command (echo or printf of plain text, read as a nested command): base64 -d | sh pushed main
+	// unseen (the plan check's P9, the 1.28.0 sweep). Such a body is held.
+	const fed = tokenize(joinContinuations(text));
+	for (let s = 0; s < fed.length; s++) {
+		const words = fed[s].filter((w) => !w.redirect).map((w) => w.value);
+		const shell = /^(sh|bash|zsh|dash|ksh|pwsh|powershell|cmd|iex|invoke-expression)$/i.test(base(programName(words[0] || '')));
+		if (!shell || words.some((w) => /^(-c|-command|\/c|-encodedcommand|-file)$/i.test(w))) continue;
+		const prev = s > 0 && /^\|/.test(fed[s - 1].end || '') ? fed[s - 1] : null;
+		const literal = prev && /^(echo|printf|write-output)$/i.test(base(programName(prev[0]?.value || ''))) && !prev.some((w) => w.redirect || /[$`(]/.test(w.value));
+		if ((prev && !literal) || (!prev && words.slice(1).includes('-s'))) return 'a shell fed a script the guard cannot read';
+	}
+	// Its input from a file (sh < push.txt); a here-document or here-string is written out in the text, so read.
+	if (/(^|[\s;&|(])(sh|bash|zsh|dash|ksh|pwsh|powershell)(\.exe)?(\s[^;|&\n]*?)?(^|[^<\d])<(?![<(&])/im.test(text)) return 'a shell fed a script the guard cannot read';
 	for (const all of tokenize(joinContinuations(text))) {
 		const segment = all.filter((word) => !word.redirect);
 		const words = segment.map((word) => word.value.toLowerCase());
