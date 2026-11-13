@@ -4,7 +4,7 @@
  "level": "minor",
  "area": "Guards",
  "title": "feat: one reading for every spelling of a gate bypass",
- "headline": "The shared guard reader (T16b): every guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind, and a plain read, a commit message naming a marker, or a bash test run naming tests/* is no longer held. The 1.27.0 carry-overs close first, the review's security findings are fixed, a project can list folders no tool writes, and closeout removes a thread's own scratch with no ask.",
+ "headline": "Every guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind and plain reads stop being held (T16b). The 1.27.0 carry-overs and the review's security findings close here.",
  "alignment": "v1.28.0 is the minor release build 2b plans, with the review's findings folded in on the owner's call.",
  "items": [
   {

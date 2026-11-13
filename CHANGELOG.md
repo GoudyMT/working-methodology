@@ -2,7 +2,7 @@
 
 ## 1.28.0 - 2026-11-12
 
-The shared guard reader (T16b): every guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind, and a plain read, a commit message naming a marker, or a bash test run naming tests/* is no longer held. The 1.27.0 carry-overs close first, the review's security findings are fixed, a project can list folders no tool writes, and closeout removes a thread's own scratch with no ask.
+Every guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind and plain reads stop being held (T16b). The 1.27.0 carry-overs and the review's security findings close here.
 
 ### Added
 - A project can list folders in `.claude/protected-folders.json` (`{"folders": ["<path>"]}`) that no tool writes into; the owner writes the list, and a malformed list holds every write and shell call.
