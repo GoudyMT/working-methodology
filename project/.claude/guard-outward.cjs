@@ -383,6 +383,9 @@ function collectStrings(value, out, depth) {
 const PUSH_FLAGS = new Set(['-u', '--set-upstream', '-q', '--quiet', '-v', '--verbose']);
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*@\{)[A-Za-z0-9._/-]+$/;
 function boundedPush(input) {
+	// A push typed into the owner's terminal tab runs in a folder its own cwd field names, which the bound never reads
+	// (the plan check's P7, the 1.28.0 sweep): never inside the bound.
+	if (input && input.tool_name === 'mcp__terminal__run_in_terminal') return false;
 	const command = String((input && input.tool_input && input.tool_input.command) ?? '');
 	// Plain characters only: no quote, escape, variable, glob, redirect or second command can hide in it.
 	if (!/^[A-Za-z0-9 ._/:+=-]+$/.test(command)) return false;

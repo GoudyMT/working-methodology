@@ -799,6 +799,13 @@ test('a feature push the guard cannot place, with no project or no folder named,
 	assert.equal(decision({ cwd: other }), 'deny', 'no project named: a push from a repo the kit does not check ran');
 	assert.equal(decision({}), 'deny', 'no folder for the call: the push ran');
 });
+// why: guards rule:outward-acts. The plan check's P7 and the 1.28.0 sweep: a push typed into the owner's terminal tab
+// runs in a folder of its own choosing (its cwd field), which the push bound never read, so it is never inside it.
+test('a push run in the owner\'s terminal tab is never inside the push bound', () => {
+	const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'mcp__terminal__run_in_terminal', tool_input: { command: 'git push origin feat/x', cwd: kitTemp.makeTemp('p7-') }, cwd: process.cwd() }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: process.cwd() } });
+	assert.equal(r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'runs', 'deny');
+	assert.notEqual(decide('Bash', { command: 'git push origin feat/x' }), 'deny', 'the same push from the session\'s own shell is inside the bound');
+});
 // why: guards rule:outward-acts. The 1.28.0 sweep: the marker exemption let printf -v clear a marker and let a reader
 // write a clearing line into a shell profile; an unset whose name is built at run time was never held.
 test('a marker cleared by printf -v, written into a file, or unset by a built name is never by a tool', () => {
