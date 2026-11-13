@@ -293,18 +293,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 	const dotless = (word, quoted) => (dotglob || quoted || /[\\$`{}~'"]/.test(word) ? word : word.split('/').map((p) => (/^[*?]/.test(p) ? `\x01${p}` : p)).join('/'));
 	// A path glued to the end of a word (sed's 1w.claude/guard.cjs writes that file, the 1.28.0 mutation run) is read
 	// too: each tail of the word from a .claude, .git or .githooks part.
-	// A sed w command's file, glued to an address or an s command's flags (1wfile, /x/wfile, s/a/b/gwfile), is read
-	// whatever it names, a listed folder or an absolute path among them (the review of this fix).
-	// Every place a w or W may start a command (after an address, !, a brace, a ;, s flags, or -e) is read as naming the
-	// rest of the word: reading too much only adds holds (the review of this fix).
-	const sedFile = (word) => {
-		// Capped, so no word can make the match slow; a longer one is read only up to the cap.
-		const body = word.slice(0, 4096).replace(/^(?:-e|--expression=)/, '');
-		const out = [...body.matchAll(/(?:^|[;{}!0-9$,~+/gpiImMeE])[wW](?=\S)/g)].map((m) => body.slice(m.index + m[0].length));
-		const s = /^s(.)(?:(?!\1)[^\\]|\\.)*\1(?:(?!\1)[^\\]|\\.)*\1[gpiImMeE0-9]*w(?=\S)/.exec(body);
-		return s ? [...out, body.slice(s[0].length)] : out;
-	};
-	const tails = (word) => [word, ...sedFile(String(word)), ...[...String(word).matchAll(/(?<=[^\\/.])(?=\.(claude|git|githooks|gitconfig)(?:[\\/]|$))/gi)].map((m) => String(word).slice(m.index))];
+	const tails = (word) => [word, ...[...String(word).matchAll(/(?<=[^\\/.])(?=\.(claude|git|githooks|gitconfig)(?:[\\/]|$))/gi)].map((m) => String(word).slice(m.index))];
 	const hit = (x) => tails(dotless(x.value, x.quoted)).some((w) => names(w, cwd));
 	// A variable set to a plain value earlier in the command (P=~/.claude/projects) is read as that value where it is
 	// used, so a read through it passes and a write through it is refused (S23-2). One the guard did not see set stays
@@ -345,6 +334,10 @@ function shellWrites(command, tool, start, names = proofNames) {
 		}
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
+		// sed writes a file wherever its script holds a w or W command (1w.claude/x, s/a/b/gwx, -e '1!w x'), and the forms
+		// have no end, so every place a w or W sits is read as naming the rest of its word, gaps trimmed; a script word past
+		// the cap that holds one is held (the review of this fix: fail closed, read too much rather than too little).
+		if (program === 'sed' && !printSed(all) && segment.some((x) => !x.redirect && /[wW]/.test(x.value) && (x.value.length > 4096 || [...x.value.matchAll(/[wW]/g)].some((m) => { const t = x.value.slice(m.index + 1).trimStart(); return t && tails(t).some((w) => names(w, cwd)); })))) return true;
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
 		const message = (x, k) => MESSAGES.has(program) && !x.redirect && k > 0 && (MESSAGE_FLAGS.test(all[k - 1]) || false);
 		const inline = (x) => MESSAGES.has(program) && !x.redirect && /^(--message|--body|--title|--notes)=/i.test(x.value);
