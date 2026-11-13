@@ -452,4 +452,15 @@ test('a folder list missing from this branch while another branch holds one stop
 	}
 	// A read tool is never held by it.
 	assert.equal(why('Read', { file_path: path.join(proj, 'README.md') }), '');
+	// A project that is a subfolder of its repo: git names the file from the repo's top, and it is still found.
+	const sub = path.join(proj, 'apps', 'web');
+	git('checkout', '-q', 'main');
+	fs.mkdirSync(path.join(sub, '.claude'), { recursive: true });
+	fs.writeFileSync(path.join(sub, '.claude', 'protected-folders.json'), JSON.stringify({ folders: ['vault'] }));
+	git('add', 'apps/web/.claude/protected-folders.json');
+	git('commit', '-q', '-m', 'a list for the app');
+	git('checkout', '-q', 'before-the-list');
+	fs.mkdirSync(sub, { recursive: true });
+	const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: sub }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: sub } });
+	assert.match(r.stdout, /protected-folders\.json is missing here/);
 });

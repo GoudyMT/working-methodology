@@ -505,7 +505,9 @@ function listElsewhere(root) {
 	// Git that cannot answer (no repo, no git, a repo it refuses to read) is no list, as before this check: holding
 	// every call whenever git is unwell would stop all work in a project that never had a list.
 	if (r.error || r.status !== 0) return [];
-	if (!/ \.claude\/protected-folders\.json$/m.test(r.stdout)) return [];
+	// Git prints the path from the repo's top, so a project in a subfolder of its repo shows a longer one: the path
+	// asked for limits the answer to this project's file, and any line that ends in it is a tip that holds it.
+	if (!/\.claude\/protected-folders\.json$/m.test(r.stdout)) return [];
 	const tip = (/^([0-9a-f]{40,64})$/m.exec(r.stdout) || [])[1];
 	const named = tip ? git('name-rev', '--name-only', '--refs=refs/heads/*', '--refs=refs/remotes/*', tip).stdout.trim() : '';
 	return { missing: named && named !== 'undefined' ? named : 'another branch or a stash' };
