@@ -322,3 +322,24 @@ test('a reader named by a path gets no read exemption for a guard or settings fi
 	// survivor). A w command glued to its file (1w.claude/guard.cjs) writes it, so the path inside the word is read.
 	for (const command of ['sed -n e .claude/settings.json', 'sed -n 1w.claude/guard.cjs notes.txt', 'sed -n s/a/b/w.claude/guard.cjs notes.txt', 'sed -n 1w.git/hooks/pre-push notes.txt', 'sed -n /x/w.claude/settings.json notes.txt', 'sed -n s/a/b/gw.claude/guard.cjs notes.txt', 'sed -n -e1w.claude/guard.cjs notes.txt', 'sed -n 1!w.claude/guard.cjs notes.txt', 'sed -n 1{w.claude/guard.cjs notes.txt', "sed -n '1w .claude/guard.cjs' notes.txt", "sed -n -e 'p;w .claude/settings.json' notes.txt", 'env sed -n 1w.claude/guard.cjs notes.txt', 'gsed -n 1w.claude/guard.cjs notes.txt', 'busybox sed -n 1w.claude/guard.cjs notes.txt', 'sh -c "sed -n 1w.claude/guard.cjs notes.txt"', 'toybox sed -n 1w.claude/guard.cjs notes.txt', '/usr/bin/sed -n 1w.claude/guard.cjs notes.txt', `sed -n s/a/`+'b'.repeat(5000)+`/w notes.txt`]) assert.notEqual(why(command), '', command.slice(0, 80));
 });
+// why: guards rule:security-standards. The 1.28.0 measure run's survivors: what the guard follows and what it does not.
+// A folder named like a listed one elsewhere is not it; after a cd the guard cannot follow, only a word naming the
+// listed folder is held; a cd it follows carries a write into the settings; an export only sets a name.
+test('owner-proof places a word by the folder it is in, and holds only what it names', () => {
+	const proj = kitTemp.makeTemp('surv-');
+	fs.mkdirSync(path.join(proj, 'vault'));
+	fs.mkdirSync(path.join(proj, 'other', 'vault'), { recursive: true });
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: ['vault'] }));
+	const why = (command) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	assert.equal(why('echo x > other/vault/a.txt'), '', 'a folder that only shares the listed one\'s name');
+	assert.match(why('echo x > vault/a.txt'), /protected-folders\.json/);
+	assert.equal(why('cd "$X" && echo x > notes.txt'), '', 'after a cd the guard cannot follow, a word naming no listed folder');
+	assert.match(why('cd "$X" && echo x > vault/a.txt'), /protected-folders\.json/);
+	assert.match(why('cd .claude && echo x > settings.json'), /^Owner's yes needed/, 'a cd the guard follows');
+	assert.equal(why('export P=.claude/settings.json'), '', 'an export only sets a name');
+	for (const command of ['echo x > .claude/kit-install.json', 'echo x > .claude/kit-guard/record.json']) assert.match(why(command), /^Never by a tool/, command);
+});
