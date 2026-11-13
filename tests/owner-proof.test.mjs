@@ -214,6 +214,11 @@ test('a settings write that turns the hooks off is never by a tool, in any spell
 	for (const [tool, input] of never) assert.match(why(tool, input), /^Never by a tool/, `${tool} ${JSON.stringify(input)}`);
 	// An ordinary settings change still takes the owner's yes, not a flat refusal.
 	assert.match(why('Write', { file_path: local, content: '{"permissions": {}}' }), /Owner's yes needed/);
+	// An edit without replace_all changes only the first match, as Claude Code applies it: replacing every match would
+	// make the key here, the first alone does not (the mutation check's survivor in the 1.28.0 run).
+	fs.writeFileSync(edge, '{"note": "QQ", "disableAllQQ": true}\n');
+	assert.match(why('Edit', { file_path: edge, old_string: 'QQ', new_string: 'Hooks' }), /^Owner's yes needed/);
+	assert.match(why('Edit', { file_path: edge, old_string: 'QQ', new_string: 'Hooks', replace_all: true }), /^Never by a tool/);
 });
 
 // why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the
@@ -310,4 +315,7 @@ test('a reader named by a path gets no read exemption for a guard or settings fi
 	};
 	for (const command of ['./sed -n 1p .claude/settings.json', './cat .claude/guard.cjs', 'bin/sed -n 5p .claude/guard-outward.cjs']) assert.notEqual(why(command), '', command);
 	for (const command of ['sed -n 1p .claude/settings.json', 'cat .claude/guard.cjs']) assert.equal(why(command), '', command);
+	// A sed script that is not a line print gets no exemption: e runs each line as a command (the 1.28.0 mutation run's
+	// survivor). A w command glued to its file (1w.claude/guard.cjs) writes it, so the path inside the word is read.
+	for (const command of ['sed -n e .claude/settings.json', 'sed -n 1w.claude/guard.cjs notes.txt', 'sed -n s/a/b/w.claude/guard.cjs notes.txt', 'sed -n 1w.git/hooks/pre-push notes.txt']) assert.notEqual(why(command), '', command);
 });
