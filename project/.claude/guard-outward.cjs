@@ -454,7 +454,10 @@ function pushLimit(command) {
 // Clearing the AI shell's markers joined them on the owner's pick, 2026-11-12 (C6): the pre-push hook then takes the
 // shell for the owner's terminal, so it switches the hook's AI checks off.
 const MARKERS = 'a command that clears the AI shell\'s markers';
-const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS]);
+// Accepting a changed host file or folder list is how the owner lifts a hold the kit set on it: a tool that ran the
+// install with that flag would lift its own hold (the plan check's P1, the 1.29.0 sweep).
+const ACCEPTS = 'a kit install that accepts a changed file, which only the owner does';
+const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS, ACCEPTS]);
 // A command the guard cannot read is held, not called an outward act, and no yes runs it: the yes could not be matched
 // to what would run (C14).
 const HELD = new Set(['a command too long to read', 'the guard could not read this command']);
@@ -475,6 +478,7 @@ function bypassIn(text, depth = 0) {
 	if (/\bGIT_(DIR|COMMON_DIR)\s*=/i.test(flat) && /\bgit\b/i.test(flat)) return 'git with its hooks moved';
 	if (/GIT_CONFIG_(KEY_\d+=\s*include|PARAMETERS=[^;&|\n]*include)/i.test(flat)) return 'git with its hooks moved';
 	if (markersCleared(flat) && !markerOnlyNamed(text)) return MARKERS;
+	if (/(^|[\s=])--accept-host(?=$|[\s=;&|)])/i.test(flat) && /\binstall\b/i.test(flat)) return ACCEPTS;
 	for (const all of tokenize(joinContinuations(text))) {
 		const words = all.filter((w) => !w.redirect).map((w) => w.value.toLowerCase());
 		for (let i = 0; i < words.length; i++) {

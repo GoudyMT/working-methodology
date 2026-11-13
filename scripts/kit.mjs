@@ -316,8 +316,27 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
   // first record holds every call until the owner accepts it (the second pass on 0772397).
   let extras = [];
   try { extras = fs.readdirSync(path.join(ctx.projectDir, '.githooks'), { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => `.githooks/${e.name}`).filter((k) => !keys.includes(k)); } catch { /* none */ }
-  for (const key of [...keys.filter(isGuarded), ...extras].sort()) {
+  // The folder list (E3) is the owner's file, recorded as it stands like a host's own hook: read only from the
+  // project, a branch switch, a reset, a stash or a clean dropped it and every folder on it lost its hold (the
+  // 1.29.0 sweep). Gone or changed since it was recorded, every call stays held until the owner accepts that.
+  const LIST = '.claude/protected-folders.json';
+  const listed = fs.existsSync(path.join(ctx.projectDir, LIST)) || Boolean(prev && prev.files && prev.files[LIST]);
+  for (const key of [...keys.filter(isGuarded), ...extras, ...(listed ? [LIST] : [])].sort()) {
     const file = path.join(ctx.projectDir, key);
+    if (key === LIST) {
+      const was = prev && prev.files && prev.files[key];
+      const known = acceptedOf(key);
+      const ok = (ctx.acceptHost || []).includes(key);
+      const now = fs.existsSync(file) ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : null;
+      if (!now && (!was || ok)) continue;
+      host.push(key);
+      if (was && !ok && (!now || !known.includes(now))) {
+        guarded[key] = was;
+        skipped.push({ file: key, reason: `the folder list ${now ? 'changed' : 'is gone'} since it was recorded, so every call stays held: put it back as it was, or the owner accepts the change in their own terminal with install project --accept-host ${key}` });
+      } else guarded[key] = now;
+      accepted[key] = [...new Set([...known, guarded[key]])];
+      continue;
+    }
     if (extras.includes(key) && prev && !(prev.files && prev.files[key]) && !(ctx.acceptHost || []).includes(key)) {
       skipped.push({ file: key, reason: `a hook added to .githooks since the last install, so every call stays held: remove it, or the owner accepts it with install project --accept-host ${key}` });
       continue;

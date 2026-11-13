@@ -1372,3 +1372,31 @@ test('C13 a project with a long path is found by its transcript folder, the name
 		if (before !== undefined) process.env.CLAUDE_PROJECT_DIR = before;
 	}
 });
+
+// why: guards rule:security-standards. The 1.29.0 sweep (two reviewers, the same hole): a folder list that was only read
+// from the project could be dropped by a branch switch, a reset, a stash or a clean, and every folder on it lost
+// its hold. Install records the list outside the project, as it records a host's own hook: gone or changed, every
+// call is held until the owner accepts it in their own terminal, and no tool call may carry that flag.
+test('a folder list gone or changed since install holds every call until the owner accepts it', () => {
+	const { home, proj } = setup({ before: (p) => { fs.mkdirSync(path.join(p, '.claude'), { recursive: true }); fs.writeFileSync(path.join(p, '.claude', 'protected-folders.json'), JSON.stringify({ folders: ['vault'] })); } });
+	const list = path.join(proj, '.claude', 'protected-folders.json');
+	const call = (command) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: proj, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
+	};
+	assert.equal(call('git status'), '', 'as installed');
+	const kept = fs.readFileSync(list);
+	fs.rmSync(list);
+	assert.match(call('git status'), /protected-folders\.json/, 'gone, as after a switch to a branch without it');
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.match(call('git status'), /protected-folders\.json/, 'a plain install does not accept its removal');
+	fs.writeFileSync(list, JSON.stringify({ folders: [] }));
+	assert.match(call('git status'), /protected-folders\.json/, 'emptied');
+	fs.writeFileSync(list, kept);
+	assert.equal(call('git status'), '', 'back as recorded');
+	// The flag that accepts a change is the owner's, in their own terminal: never in a tool call.
+	assert.match(call(`node "${KIT.split(path.sep).join('/')}/scripts/kit.mjs" install project . --accept-host .claude/protected-folders.json`), /^Never by a tool/);
+	fs.writeFileSync(list, JSON.stringify({ folders: ['vault', 'more'] }));
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.claude/protected-folders.json'] });
+	assert.equal(call('git status'), '', 'the owner accepted the new list');
+});
