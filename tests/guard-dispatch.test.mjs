@@ -12,6 +12,8 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 const require = createRequire(import.meta.url);
 kitTemp.sessionRoot();
 const SRC = path.resolve('project/.claude');
+// K14: an idle node starts in about 65 ms on the owner's PC; a machine slower than this many ms is counted slow.
+const IDLE_SPAWN_MS = 150;
 const GUARDS = ['guard.cjs', 'owner-proof.cjs', 'task-gate.cjs', 'guard-outward.cjs', 'guard-delete.cjs', 'guard-read.cjs', 'owner-yes.cjs'];
 
 // A copy of the project guards, so one can be taken away; a Claude folder with or without the user layer's hooks.
@@ -33,8 +35,8 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 		for (const f of fs.readdirSync(path.join(cfg, 'kit-hooks'))) files[`kit-hooks/${f}`] = require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(cfg, 'kit-hooks', f))).digest('hex');
 		fs.writeFileSync(path.join(cfg, 'kit-install.json'), JSON.stringify({ files }));
 	}
-	return (tool_name, tool_input, extra = {}) => {
-		const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: dir, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg } });
+	return (tool_name, tool_input, extra = {}, env = {}) => {
+		const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: dir, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg, ...env } });
 		assert.equal(r.status, 0, r.stderr);
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
 	};
@@ -114,9 +116,20 @@ test('the strictest answer wins and every reason and note is kept', () => {
 // why: guards rule:outward-acts
 test('a long command is read in time: the whole guard process answers a 98 KB command inside the hook timeout', () => {
 	const run = setup();
+	// K14: a shared CI runner ran every guard ten times slower by the clock (10,572 ms here against 658 ms of work on
+	// the owner's PC), so the clock alone is not the guard. The limit stays 8 s and is held two ways: by the clock, or,
+	// when the clock misses, by the CPU time the guard process itself used, with the clock still inside the hook's own
+	// 10 s stretched by how slow this machine starts an idle node (a guard that hangs or waits fails either way).
+	const idleAt = Date.now();
+	spawnSync(process.execPath, ['-e', '']);
+	const slowness = Math.max(1, (Date.now() - idleAt) / IDLE_SPAWN_MS);
+	const cpuFile = path.join(kitTemp.makeTemp('cpu-'), 'cpu');
 	const started = Date.now();
-	run('Bash', { command: 'a;'.repeat(49000) });
-	const took = Date.now() - started;
+	run('Bash', { command: 'a;'.repeat(49000) }, {}, { NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require ${JSON.stringify(path.resolve('tests/cpu-report.cjs'))}`.trim(), KIT_TEST_CPU_FILE: cpuFile });
+	const wall = Date.now() - started;
+	const cpu = Number(fs.readFileSync(cpuFile, 'utf8'));
+	assert.ok(Number.isFinite(cpu) && cpu > 0, 'the guard process reported its CPU time');
+	const took = wall < 8000 || wall >= 10000 * slowness ? wall : cpu;
 	// On a miss, each guard's own time in this process, so the slow one is named (the 1.28.0 measure run missed by 1 s).
 	const each = took < 8000 ? '' : ['owner-proof.cjs', 'task-gate.cjs', 'guard-outward.cjs', 'guard-delete.cjs'].map((g) => {
 		const t = Date.now();
@@ -138,7 +151,7 @@ test('a long command is read in time: the whole guard process answers a 98 KB co
 			hot = [...self].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, us]) => `${k} ${Math.round(us / 1000)} ms`).join(', ');
 		}
 	}
-	assert.ok(took < 8000, `${took} ms${each ? `; ${each}` : ''}${hot ? `; owner-proof hot: ${hot}` : ''}`);
+	assert.ok(took < 8000, `${took} ms (clock ${wall} ms, the guard's CPU ${cpu} ms, this machine ${slowness.toFixed(1)} times slow)${each ? `; ${each}` : ''}${hot ? `; owner-proof hot: ${hot}` : ''}`);
 });
 
 // why: guards rule:outward-acts. The 1.28.0 measure run: the test above runs a copy of the guards, so the coverage map
