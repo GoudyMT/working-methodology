@@ -40,6 +40,18 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	};
 }
 
+// why: guards rule:outward-acts. T16b, the rest of build 2b: the shared reader's second reading (git or gh by any path,
+// suffix or script wrapper written as the bare name) is read by every guard, not the push guard alone, so a delete or
+// commit spelled git.ps1 is held as git is; and a reader that cannot load holds every call (the plan check's P15).
+test('every guard reads the shared second reading, and a missing reader holds every call', () => {
+	const run = setup();
+	assert.match(run('Bash', { command: 'git clean -fdx' }).permissionDecisionReason || '', /delete/, 'the plain spelling');
+	for (const command of ['C:/Tools/git.ps1 clean -fdx', 'git.ps1 clean -fdx', 'git.exe. clean -fdx']) assert.match(run('PowerShell', { command }).permissionDecisionReason || '', /delete/, command);
+	assert.equal(run('PowerShell', { command: 'git.ps1 status' }).permissionDecision, undefined, 'a read through the wrapper runs');
+	const noReader = setup({ drop: 'guard-read.cjs' });
+	assert.equal(noReader('Bash', { command: 'git status' }).permissionDecision, 'deny');
+});
+
 // why: guards rule:outward-acts
 test('a missing or broken project guard holds every call it would read, with the fix', () => {
 	const run = setup({ drop: 'guard-delete.cjs' });
@@ -104,5 +116,27 @@ test('a long command is read in time: the whole guard process answers a 98 KB co
 	const run = setup();
 	const started = Date.now();
 	run('Bash', { command: 'a;'.repeat(49000) });
-	assert.ok(Date.now() - started < 8000, `${Date.now() - started} ms`);
+	const took = Date.now() - started;
+	// On a miss, each guard's own time in this process, so the slow one is named (the 1.28.0 measure run missed by 1 s).
+	const each = took < 8000 ? '' : ['owner-proof.cjs', 'task-gate.cjs', 'guard-outward.cjs', 'guard-delete.cjs'].map((g) => {
+		const t = Date.now();
+		require(path.join(SRC, g)).check({ tool_name: 'Bash', tool_input: { command: 'a;'.repeat(49000) }, cwd: process.cwd() });
+		return `${g} ${Date.now() - t} ms`;
+	}).join(', ');
+	// And where the slowest guard spends it: the five functions with the most time of their own.
+	let hot = '';
+	if (each) {
+		const dir = kitTemp.makeTemp('prof-');
+		const code = `require(${JSON.stringify(path.join(SRC, 'owner-proof.cjs'))}).check({ tool_name: 'Bash', tool_input: { command: 'a;'.repeat(49000) }, cwd: process.cwd() })`;
+		spawnSync(process.execPath, ['--cpu-prof', `--cpu-prof-dir=${dir}`, '-e', code], { encoding: 'utf8' });
+		const file = fs.readdirSync(dir).find((n) => n.endsWith('.cpuprofile'));
+		if (file) {
+			const p = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+			const byId = new Map(p.nodes.map((n) => [n.id, n]));
+			const self = new Map();
+			p.samples.forEach((s, i) => { const f = byId.get(s).callFrame; const k = `${f.functionName || '(anon)'}:${path.basename(f.url)}:${f.lineNumber + 1}`; self.set(k, (self.get(k) || 0) + (p.timeDeltas[i] || 0)); });
+			hot = [...self].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, us]) => `${k} ${Math.round(us / 1000)} ms`).join(', ');
+		}
+	}
+	assert.ok(took < 8000, `${took} ms${each ? `; ${each}` : ''}${hot ? `; owner-proof hot: ${hot}` : ''}`);
 });

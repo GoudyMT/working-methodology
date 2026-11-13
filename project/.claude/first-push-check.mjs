@@ -7,14 +7,35 @@
 // stopped where it happens.
 //
 // Usage: node .claude/first-push-check.mjs [--staged]
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The project this script was installed into. Run by a git hook, it is a copy the launcher checked, kept outside the
 // project (C11), and the hook shim names the project in KIT_HOOK_PROJECT.
+// The name is taken only when it is the repository the hook runs in (an agent worktree shares its main checkout's):
+// any tool can set it, and it once pointed the gate at another folder (K27, the 1.27.0 install review).
+const commonDir = (dir) => {
+	const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { encoding: 'utf8' });
+	if (r.status !== 0) return '';
+	try { return realpathSync.native(path.resolve(dir, r.stdout.trim())).toLowerCase(); } catch { return ''; }
+};
+// A folder whose .git file points at the repository shares its git folder but is no checkout of it, and its own
+// settings would clear the gate (the 1.28.0 sweep): the project must be a checkout git lists, the main one or a worktree.
+const realLower = (p) => { try { return realpathSync.native(p).toLowerCase(); } catch { return ''; } };
+const checkouts = (dir) => {
+	const r = spawnSync('git', ['-C', dir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
+	return r.status === 0 ? r.stdout.split(/\r?\n/).filter((l) => l.startsWith('worktree ')).map((l) => realLower(l.slice(9))) : [];
+};
 const PROJECT = process.env.KIT_HOOK_PROJECT ? path.resolve(process.env.KIT_HOOK_PROJECT) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+{
+	const named = commonDir(PROJECT);
+	if (!named || named !== commonDir(process.cwd()) || !checkouts(process.cwd()).includes(realLower(PROJECT))) {
+		console.log(`first push check: ${process.env.KIT_HOOK_PROJECT ? 'KIT_HOOK_PROJECT names' : 'this script sits in'} another repository than the one this runs in; held.`);
+		process.exit(1);
+	}
+}
 const git = (...a) => spawnSync('git', ['-C', PROJECT, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 // The commit being checked may be in an agent worktree: git runs the hook at that worktree's top, so its index is
 // read there. The settings (.kit/) stay in the main checkout, where this script lives.

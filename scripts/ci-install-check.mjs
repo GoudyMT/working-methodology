@@ -7,7 +7,8 @@
 //       over it, the same checks, and status names no gap but the unreleased build.
 //   D2  every command the push guard's proof must hold goes through the installed launcher, the way Claude Code
 //       calls it (the hook command install wrote, run by sh, the call as JSON on stdin), and is held; every command
-//       the proof must pass, passes. The planted forms of the 1.26.0 review (S2, S3, C6) are held too.
+//       the proof must pass, passes. The planted forms of the 1.26.0 review (S2, S3, C6) and every K1 spelling are held,
+//       each with its kind (never, or the owner's yes), and the false holds 1.28.0 fixed run (build 2b pass bars 1, 4).
 //   node scripts/ci-install-check.mjs [--root <empty folder>]     exit 0 every check passed, 1 a check failed
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,12 +53,17 @@ function launcher(home, proj, transcript) {
 	const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
 	const entry = (settings.hooks.PreToolUse || []).flatMap((h) => h.hooks || []).find((h) => /kit-launch\.cjs['"]?\s*$/.test(h.command));
 	if (!entry) return null;
-	return (tool, command) => {
-		const input = { session_id: 'ci-install-check', transcript_path: transcript, cwd: proj, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command } };
-		const r = spawnSync('sh', ['-c', entry.command], { cwd: proj, input: JSON.stringify(input), encoding: 'utf8', timeout: 30000, env: { ...process.env, CLAUDE_PROJECT_DIR: proj, KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home } });
+	// at: the folder the call runs in (the project unless named); bare: no CLAUDE_PROJECT_DIR, as a hook may be called.
+	return (tool, command, { at = proj, bare = false } = {}) => {
+		const input = { session_id: 'ci-install-check', transcript_path: transcript, cwd: at, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command } };
+		const env = { ...process.env, CLAUDE_PROJECT_DIR: proj, KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home };
+		if (bare) delete env.CLAUDE_PROJECT_DIR;
+		const r = spawnSync('sh', ['-c', entry.command], { cwd: at, input: JSON.stringify(input), encoding: 'utf8', timeout: 30000, env });
 		let decision = '';
 		try { decision = JSON.parse(r.stdout).hookSpecificOutput.permissionDecision; } catch { /* no decision: the call goes on */ }
-		return { held: r.status === 2 || decision === 'deny' || decision === 'ask', out: `${r.stdout}${r.stderr}`.trim() };
+		const out = `${r.stdout}${r.stderr}`.trim();
+		const held = r.status === 2 || decision === 'deny' || decision === 'ask';
+		return { held, out, kind: !held ? 'runs' : /Never by a tool/.test(out) ? 'never' : /Owner's yes needed/.test(out) ? 'ask' : 'held' };
 	};
 }
 
@@ -112,6 +118,38 @@ function main(argv) {
 		for (const command of ASK) if (!call('Bash', command).held) missed.push(command);
 		for (const [tool, command] of planted) if (!call(tool, command).held) missed.push(`[planted] ${command}`);
 		say(missed.length === 0, `every command the proof holds is held through the launcher${missed.length ? `; missed ${missed.length}:\n    ${missed.join('\n    ')}` : ''}`);
+		// Pass bar 1 of build 2b (never lowered): each planted case, and each spelling of a gate bypass the 1.27.0 sweep
+		// found (K1), is held with its kind: a bypass is never by a tool, an act outside the push bound is the owner's yes.
+		// Also from another repo, and with no project folder named (the plan check's P13).
+		const other = newRepo(path.join(root, 'other'));
+		const kinds = [
+			...planted.map(([tool, command]) => [tool, command, 'never']),
+			['Bash', '"C:\\Program Files\\GitHub CLI\\gh.exe" api -X PUT repos/o/r/contents/a.txt -f branch=main -f message=x -f content=eA==', 'never'],
+			['Bash', 'GIT_DIR+=/x git push origin feat/x', 'never'],
+			['PowerShell', 'Set-Item Env:GIT_DIR C:\\x; git push origin feat/x', 'never'],
+			['PowerShell', '$env:GIT_DIR = "C:\\x"; git push origin feat/x', 'never'],
+			['Bash', 'env -vi git push origin feat/x', 'never'],
+			['Bash', 'env --ignore-env git push origin feat/x', 'never'],
+			['Bash', 'unset ${!CLAUDE*}; git push origin feat/x', 'never'],
+			['Bash', 'exec -c git push origin feat/x', 'never'],
+			['PowerShell', 'Start-Process git -ArgumentList "push","origin","feat/x" -UseNewEnvironment', 'never'],
+			['Bash', "printf -v CLAUDECODE ''; git push origin feat/x", 'never'],
+			['Bash', 'V=CODE; unset CLAUDE$V; git push origin feat/x', 'never'],
+			['Bash', 'echo x > .claude/guard.cjs', 'never'],
+			['Bash', 'git push origin main', 'ask'],
+			['Bash', 'git push origin feat/x', 'ask', { at: other }],
+			['Bash', 'git -c core.hooksPath=/dev/null push origin feat/x', 'never', { bare: true }],
+		];
+		const wrong = [];
+		for (const [tool, command, want, opts] of kinds) {
+			const got = call(tool, command, opts).kind;
+			if (got !== want) wrong.push(`${command}${opts ? ` ${JSON.stringify(opts).replace(root, '<root>')}` : ''}: ${got}, not ${want}`);
+		}
+		say(wrong.length === 0, `every planted case is held with its kind (${kinds.length} cases)${wrong.length ? `; wrong ${wrong.length}:\n    ${wrong.join('\n    ')}` : ''}`);
+		// Pass bar 4: the false holds V1, K2 and K19 run.
+		const reads = ['npm test -- tests/*', 'sed -n 1,20p .claude/guard.cjs', 'cat .claude/settings.json | head -60; ls .claude/', 'grep -n CLAUDECODE notes.txt', 'echo $CLAUDECODE'];
+		const heldReads = reads.filter((command) => call('Bash', command).held);
+		say(heldReads.length === 0, `the false holds the build fixed run (${reads.length} reads)${heldReads.length ? `; held:\n    ${heldReads.join('\n    ')}` : ''}`);
 		// The push proof's safe commands are safe for the push guard; another guard may hold one by its own rule. Each
 		// such hold is named here with its reason, and printed, never dropped.
 		const OTHER_GUARD = [

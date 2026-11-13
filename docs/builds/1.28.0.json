@@ -1,0 +1,282 @@
+{
+ "version": "1.28.0",
+ "date": "2026-11-12",
+ "level": "minor",
+ "area": "Guards",
+ "title": "feat: one reading for every spelling of a gate bypass",
+ "headline": "Every guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind and plain reads stop being held (T16b). The 1.27.0 carry-overs and the review's security findings close here.",
+ "alignment": "v1.28.0 is the minor release build 2b plans, with the review's findings folded in on the owner's call.",
+ "items": [
+  {
+   "id": "T16b-K1",
+   "kind": "security",
+   "text": "Every spelling of a marker clear or a hook move the 1.27.0 sweep found is refused as a gate bypass, never asked: appends, setters, env and exec forms, `printf -v`, and a marker name built at run time.",
+   "evidence": "tests/guards-hold.test.mjs",
+   "where": "Gate bypass spellings",
+   "before": "Some reached the owner's yes",
+   "after": "Each is refused, even with a yes"
+  },
+  {
+   "id": "T16b",
+   "kind": "security",
+   "text": "Every guard (settings, delete, task and push) reads the second reading beside the text; a git or gh script wrapper such as git.ps1 is read as git, so a delete or commit spelled that way is held as git is.",
+   "evidence": "tests/guard-dispatch.test.mjs, tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "P7-P9",
+   "kind": "security",
+   "text": "A push typed in the owner's terminal tab is outside the push bound, and a shell fed a script on its input (base64 -d | sh, sh -s, sh < file) is held unless the script is written out in the command.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "R2",
+   "kind": "security",
+   "text": "Pre-push holds a push to a remote it cannot ask for its default branch, and the first push check reads only a checkout git lists, so a folder pointing at the repo cannot clear it.",
+   "evidence": "tests/guards-outside.test.mjs, tests/kit.test.mjs"
+  },
+  {
+   "id": "R1",
+   "kind": "security",
+   "text": "A marker name piped into a program that is not a reader is a marker clear; a reader named by a path gets no read exemption; a sed w command glued to a guard, settings or listed path is held.",
+   "evidence": "tests/guards-hold.test.mjs, tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "R8",
+   "kind": "security",
+   "text": "Closeout and the load check start the system PowerShell by its full path, never one in the current folder; the recall scorer cannot read /proc or the command line tool's sign-in.",
+   "evidence": "tests/kit.test.mjs, tests/recall-ci.test.mjs"
+  },
+  {
+   "id": "K28",
+   "kind": "security",
+   "text": "A feature push from a repo whose git hooks are not the kit's (another repo, a nested repo, a submodule) needs the owner's yes, since no secret scan runs there.",
+   "evidence": "tests/guards-hold.test.mjs",
+   "where": "Push from another repo",
+   "before": "Free, with no secret scan",
+   "after": "Runs on the owner's yes"
+  },
+  {
+   "id": "P8",
+   "kind": "security",
+   "text": "A feature push the guard cannot place, with no project folder or no folder for the call named, asks the owner.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "K29",
+   "kind": "security",
+   "text": "Moving the local origin/HEAD is held; pre-push takes the remote's own answer for its default branch, and a remote that names none holds the push.",
+   "evidence": "tests/guards-hold.test.mjs, tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "H3",
+   "kind": "security",
+   "text": "The first push gate asks the remote what it already holds, so a local remote-tracking ref cannot end it.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "K27",
+   "kind": "security",
+   "text": "The first push check reads only the repository it runs in.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K3",
+   "kind": "security",
+   "text": "The push scan reads every file and name in a tag that points at a blob or a tree.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "K21",
+   "kind": "security",
+   "text": "A settings write that turns every hook off is refused, even with the owner's yes.",
+   "evidence": "tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "K7",
+   "kind": "security",
+   "text": "The recall job runs the candidate, the baseline and the scorer on three machines; the scorer reads only its desk and takes each job's runs by name and exact file.",
+   "evidence": "tests/recall-ci.test.mjs"
+  },
+  {
+   "id": "E3",
+   "kind": "added",
+   "text": "A project can list folders in `.claude/protected-folders.json` (`{\"folders\": [\"<path>\"]}`) that no tool writes into; the owner writes the list, and a malformed list holds every write and shell call.",
+   "evidence": "tests/owner-proof.test.mjs",
+   "where": "Listed folders",
+   "before": "No way to protect a folder",
+   "after": "Never written by a tool"
+  },
+  {
+   "id": "HK",
+   "kind": "added",
+   "text": "`kit.mjs scratch new|keep|clean` records a thread's probe folders, and closeout removes the thread's own with no ask: to the Recycle Bin on Windows, to a .trash folder elsewhere, kept folders exempt, old strays listed.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "Closeout housekeeping",
+   "before": "Probe folders piled up",
+   "after": "Removed at closeout, no ask"
+  },
+  {
+   "id": "K2-V1",
+   "kind": "fixed",
+   "text": "A marker named only in a read, a print-only sed, or a commit or gh message is no longer held as a bypass; plain reads of a guard file pass in the shapes found.",
+   "evidence": "tests/guards-hold.test.mjs, tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "K19",
+   "kind": "fixed",
+   "text": "In bash, a test run naming `tests/*` is no longer held: a wildcard at the start of a name never matches a dot name there. PowerShell, quoted or escaped wildcards, and dot globbing still hold.",
+   "evidence": "tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "K4",
+   "kind": "fixed",
+   "text": "A hook shim over a launcher older than 1.26.0 stops and names install user; a project at 1.28.0 needs the user layer reinstalled first.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "K16",
+   "kind": "fixed",
+   "text": "The PR body audits count the squash suffix in the title (8 when no number is given) and take the PR number as an optional third argument, which CI passes.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K15",
+   "kind": "fixed",
+   "text": "A build record is checked for what the PR body audit would fail, so it never writes a body that fails.",
+   "evidence": "tests/build-record.test.mjs"
+  },
+  {
+   "id": "K5",
+   "kind": "fixed",
+   "text": "The first push check's scanning call names github.com as its host.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K14",
+   "kind": "fixed",
+   "text": "The settings guard reads the user folder once per call; each guard call now takes about half a millisecond.",
+   "evidence": "tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "K8-K13",
+   "kind": "changed",
+   "text": "Kit CI decides scope and the install lane by the base's own rules, runs the test check in four slices, and counts a why tag only when it names a rule the kit has.",
+   "evidence": "tests/pr-scope.test.mjs, tests/test-check.test.mjs"
+  },
+  {
+   "id": "K10-K11",
+   "kind": "fixed",
+   "text": "The install check test runs the working tree, and the install and status tests the 1.27.0 cut lost are back.",
+   "evidence": "tests/ci-install-check.test.mjs, tests/kit.test.mjs"
+  },
+  {
+   "id": "Bar1",
+   "kind": "changed",
+   "text": "The install check holds every planted bypass and each 1.27.0 spelling to its kind (never, or the owner's yes), from another repo and with no project named, and checks the false holds this build fixed run.",
+   "evidence": "tests/ci-install-check.test.mjs"
+  },
+  {
+   "id": "R5",
+   "kind": "fixed",
+   "text": "The merge gate counts the PR title with the PR's own number, as CI does; a scratch folder that cannot be moved keeps its ledger line and the report of what did.",
+   "evidence": "tests/merge-gate.test.mjs, tests/kit.test.mjs"
+  }
+ ],
+ "decisions": [
+  {
+   "decision": "Keep the text check as the floor",
+   "why": "The second reading only adds holds and picks the kind, so nothing the old check held can pass (the owner's lock, design B2)."
+  },
+  {
+   "decision": "One reading for every guard",
+   "why": "The second reading is applied once, in the guard process, for every guard; a hold it adds that is not a bypass gives way to the owner's yes for the command as written."
+  },
+  {
+   "decision": "Feature push from another repo asks",
+   "why": "Free only where the kit's own checks run there; elsewhere it asks the owner (the owner's lock on K28)."
+  }
+ ],
+ "verification": [
+  "Each fix shipped with a test that fails on the code before it, the review's fixes too (6084128, 37208bd, 9428cf8, 4db3514, 4eb8700, 7712af5).",
+  "The install check passes on this build: 21 planted cases held with their kind, 5 former false holds run, 300 push proof cases right, an upgrade from v1.27.0 clean.",
+  "Guard time per call measured at 0.4 to 0.5 ms against the 1.27.0 baseline of 0.71 to 0.75 ms; the review report passes its audit."
+ ],
+ "tests": {
+  "before": 635,
+  "after": 662,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "69e7131",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "The owner's name and home path in four tracked lines, fixed; one low deferred"
+   },
+   {
+    "name": "Supply chain",
+    "result": "One high (the scorer took any run the job held), fixed; one medium deferred"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Four highs fixed; the security mediums named to the owner fixed after the review but two (run-time marker names, a PR editing CI)"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "One high (a push from another repo could never run), fixed; test tags sound"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES; the narrowed reader was finished here on the owner's call"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 8,
+   "medium": 19,
+   "low": 11
+  },
+  "fixed": [
+   "H1 and H2: `printf -v` and a marker name built at run time cleared a marker unheld. Fixed in 6084128 and b17094c.",
+   "H3: a fake remote-tracking ref ended the first push gate. Fixed in 37208bd.",
+   "H4: a feature push from another repo could never run, even on the owner's yes. Fixed in 9428cf8.",
+   "H5: the recall scorer took any run the job held. Fixed in 4db3514.",
+   "H6: the owner's name and home path in four tracked lines. Fixed in 0b06df8.",
+   "H7: K19 was still held, a missed pass bar. Fixed in 4eb8700; pass bar 1 (planted kinds) in 1ea8156.",
+   "H8: the second reading reached the push guard only. Every guard now reads it (432749e), with P7, P9 and the named security findings fixed after the review."
+  ],
+  "deferred": [
+   "A marker name built at run time inside a script (node -e) clears it unseen; the pre-push hook cannot tell that shell from the owner's",
+   "A PR that edits ci.yml can undo its own scope rule; only a ruleset on the repository closes it",
+   "Dot globbing turned on in the owner's own shell profile; PowerShell tests/* still held (P18); install path check for the reader (P19)",
+   "The test check reads the rule index from the PR's own copy (report only)"
+  ],
+  "accepted": [],
+  "caughtBy": {
+   "sweep": 8,
+   "plan": 10,
+   "ci": 0,
+   "escaped": 0
+  },
+  "spend": {
+   "budget": 5184000,
+   "spent": 5612980,
+   "roles": {
+    "1": 652172,
+    "2": 795299,
+    "3": 506977,
+    "4": 470975,
+    "5": 695354,
+    "6": 798300,
+    "7": 636374,
+    "8": 472015,
+    "9": 585514
+   }
+  }
+ }
+}

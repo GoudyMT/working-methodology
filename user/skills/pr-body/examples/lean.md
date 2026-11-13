@@ -1,4 +1,4 @@
-## Commit hook: run the whole server suite and only related browser tests on commit
+## Commit hook: run server and related browser tests on commit
 
 Every commit ran the whole unit suite. Now the quick server project runs whole and the slow browser project
 runs only the tests related to the staged code; the full gate and CI still run everything.

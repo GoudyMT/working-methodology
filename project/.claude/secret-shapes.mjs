@@ -83,13 +83,30 @@ if (process.argv[2] === '--push') {
 		// An annotated tag (and a tag of a tag, all the way down) goes out whole, headers and message, read raw (the
 		// review on 0827746). A chain that loops or names no object is refused.
 		const tags = new Set();
-		for (let obj = lsha; git('cat-file', '-t', obj).trim() === 'tag';) {
+		let obj = lsha;
+		while (git('cat-file', '-t', obj).trim() === 'tag') {
 			if (tags.has(obj)) { console.log('secret scan: a tag chain loops'); process.exit(2); }
 			tags.add(obj);
 			const body = git('cat-file', 'tag', obj);
 			scanMessage(body, hits, ` (tag ${obj.slice(0, 9)})`);
 			obj = (/^object ([0-9a-f]{40,64})$/m.exec(body) || [])[1] || '';
 			if (!obj) { console.log('secret scan: a tag names no object'); process.exit(2); }
+		}
+		// A tag may point at a blob or a tree, which go out whole: every line and every file name in them is read as
+		// added (K3, the 1.27.0 sweep). Only a commit has a history to walk.
+		const kind = git('cat-file', '-t', obj).trim();
+		if (kind === 'blob' || kind === 'tree') {
+			const blobs = kind === 'blob' ? [[obj, '(tagged blob)']] : git('ls-tree', '-r', '-z', obj).split('\0').filter(Boolean)
+				.map((l) => /^\d+ (\w+) ([0-9a-f]{40,64})\t(.*)$/s.exec(l)).filter((m) => m && m[1] === 'blob').map((m) => [m[2], m[3]]);
+			for (const [sha, name] of blobs) {
+				const where = ` (tag ${lsha.slice(0, 9)})`;
+				if (SECRET_FILE.test(name)) hits.push(`secret file name: ${name}${where}`);
+				for (const line of git('cat-file', 'blob', sha).split('\n')) {
+					added++;
+					for (const [label, re] of SECRET_VALUE) if (re.test(line)) hits.push(`${label} in ${name}${where}`);
+				}
+			}
+			continue;
 		}
 		const range = rsha && !ZERO.test(rsha) ? [`${rsha}..${lsha}`] : [lsha, ...(known && known.length ? ['--not', ...known] : [])];
 		for (const c of git('rev-list', ...range).split('\n').filter(Boolean)) {

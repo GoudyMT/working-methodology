@@ -301,6 +301,50 @@ test('C5 C19 pre-push: the default branch and a new repo are asked of the remote
 	assert.match(m.stderr, /not new/);
 });
 
+// why: guards rule:outward-acts (the remote's default branch takes a PR). K29, the 1.27.0 install review: a remote
+// that answers with no symref line was read as having no default branch, so a push to it went out with no yes.
+test('K29 pre-push: a remote that names no default branch is not read as having none', () => {
+	const { proj, remote } = setup();
+	ok(git(proj, ['checkout', '-q', '-b', 'feat/base']));
+	ok(git(proj, ['push', '-q', 'origin', 'feat/base']));
+	// The remote's HEAD names a commit, not a branch: ls-remote then answers with no symref line.
+	fs.writeFileSync(path.join(remote, 'HEAD'), `${ok(git(remote, ['rev-parse', 'feat/base']))}\n`);
+	ok(git(proj, ['remote', 'set-head', 'origin', 'feat/base']));
+	fs.writeFileSync(path.join(proj, 'c.md'), 'c\n');
+	ok(git(proj, ['add', 'c.md']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: c']));
+	const r = aiPush(proj, 'feat/base');
+	assert.notEqual(r.status, 0, 'a push to the default branch went out when the remote named none');
+	assert.match(r.stderr, /names no default branch/);
+	// The local origin/HEAD is any tool's to move, so it never stands in for the remote's answer.
+	ok(git(proj, ['remote', 'set-head', 'origin', 'main']));
+	ok(git(proj, ['checkout', '-q', '-b', 'feat/other']));
+	const u = aiPush(proj, 'feat/other');
+	assert.notEqual(u.status, 0, 'a push went out to a remote whose default branch nothing names');
+	assert.match(u.stderr, /names no default branch/);
+	assert.equal(git(remote, ['rev-parse', '-q', '--verify', 'refs/heads/feat/other']).status, 1);
+});
+
+// why: guards rule:outward-acts. The 1.28.0 sweep: a config key that breaks only the hook's own ask of the remote,
+// with the local origin/HEAD deleted, let a plain push land on a default branch not named main.
+test('pre-push: a remote the hook cannot ask may have any branch as its default', () => {
+	const { proj, remote } = setup();
+	ok(git(proj, ['checkout', '-q', '-b', 'develop']));
+	ok(git(proj, ['push', '-q', '--no-verify', 'origin', 'develop']));
+	ok(git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']));
+	fs.writeFileSync(path.join(proj, 'd.md'), 'd\n');
+	ok(git(proj, ['add', 'd.md']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: d']));
+	const url = ok(git(proj, ['remote', 'get-url', 'origin']));
+	ok(git(proj, ['config', `remote.${url}.vcs`, 'bogus']));
+	git(proj, ['branch', '-rd', 'origin/HEAD']);
+	const r = aiPush(proj, 'develop');
+	assert.notEqual(r.status, 0, 'a push went out to the remote\'s default branch');
+	// Held as the default branch, whether the key broke the hook's ask (Windows paths) or git refused the key (Linux).
+	assert.match(r.stderr, /default branch/);
+	assert.notEqual(ok(git(remote, ['rev-parse', 'develop'])), ok(git(proj, ['rev-parse', 'HEAD'])));
+});
+
 // why: guards rule:outward-acts
 test('V3 pre-push: an intact install still lets an AI push a feature branch', () => {
 	const { proj, remote } = setup();
@@ -1154,7 +1198,7 @@ test('install user leaves the shims of a project still on an older kit, and says
 	const before = shim('pre-commit');
 	// A 1.26.0 first-push-check finds its project from its own folder only.
 	const fpc = path.join(proj, '.claude', 'first-push-check.mjs');
-	fs.writeFileSync(fpc, fs.readFileSync(fpc, 'utf8').replace(/process\.env\.KIT_HOOK_PROJECT \? path\.resolve\(process\.env\.KIT_HOOK_PROJECT\) : /, '').split('\n').filter((l) => !/^\/\/.*KIT_HOOK_PROJECT/.test(l)).join('\n'));
+	fs.writeFileSync(fpc, "// The 1.26.0 first push gate: its project is the folder above its own.\nconsole.log('first push check: old');\n");
 	assert.doesNotMatch(fs.readFileSync(fpc, 'utf8'), /KIT_HOOK_PROJECT/, 'the old script was not made');
 	fs.writeFileSync(path.join(hooks, 'pre-commit'), before + '# old\n');
 	rec.shims['pre-commit'] = crypto.createHash('sha256').update(before + '# old\n').digest('hex');
@@ -1263,4 +1307,18 @@ test('B14 moved node: the kit gate names the missing recorded node and the comma
 	assert.equal(out.decision, 'block', 'a moved node blocked every call and the gate said nothing');
 	assert.match(out.reason, /gone\/node\.exe/);
 	assert.match(out.reason, /install user/);
+});
+
+// why: catches a project that cannot commit with no fix named (K4, the 1.27.0 sweep): install project over an older
+// user layer wrote shims that ask the launcher for a checked copy the old launcher does not give, so git ran exec "".
+test('K4 shims: an older launcher that gives no checked hook names the fix instead of running nothing', () => {
+	const { home, proj } = setup();
+	// The 1.26.0 launcher checks and exits 0, printing no copy.
+	fs.writeFileSync(path.join(home, 'kit-tools', 'kit-launch.cjs'), "'use strict';\nprocess.exit(0);\n");
+	fs.writeFileSync(path.join(proj, 'k.md'), 'k\n');
+	ok(git(proj, ['add', 'k.md']));
+	const r = git(proj, ['commit', '-q', '-m', 'docs: k']);
+	assert.notEqual(r.status, 0, 'the commit went through with no hook run');
+	assert.match(r.stderr, /install user/);
+	assert.doesNotMatch(r.stderr, /exec: : not found|cannot execute|Permission denied/);
 });

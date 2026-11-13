@@ -40,7 +40,7 @@ const GH_VALUE_OPTIONS = new Set(['-r', '--repo', '--hostname']);
 const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'help', 'version']);
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
-const { plainText, joinContinuations, tokenize } = require('./guard-read.cjs');
+const { plainText, joinContinuations, tokenize, canonical } = require('./guard-read.cjs');
 const { ownerYes, askText, yesText, neverText, heldText } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
@@ -142,7 +142,9 @@ function gitOutward(words, start) {
 	if (words.slice(at + 1).some((w) => /^(--output(=|$)|--open-files-in-pager|--ext-diff$|--textconv$)/.test(w) || (sub === 'grep' && /^-o/.test(w)))) return 'git that writes a file or runs a program';
 	// Where origin points decides where a feature-branch push goes without a yes, so moving it is held (T1).
 	const after = words.slice(at + 1).filter((w) => !w.startsWith('-'));
-	if (sub === 'remote' && ['add', 'set-url', 'rename'].includes(after[0])) return 'git with its remote changed';
+	if (sub === 'remote' && ['add', 'set-url', 'rename', 'set-head'].includes(after[0])) return 'git with its remote changed';
+	// The local origin/HEAD names the default branch the pre-push hook holds when the remote names none (K29).
+	if ((sub === 'symbolic-ref' || sub === 'update-ref') && after.some((w) => /^refs\/remotes\/[^/]+\/head$/i.test(w))) return 'git with its remote changed';
 	// A remote's push refspec decides which branch a bare git push lands on (remote.origin.push HEAD:main), so it is
 	// held with the url (the 1.25.0 sweep).
 	const remoteKey = (w) => /^(remote\.[^=]*\.(url|pushurl|push)|url\.[^=]*\.(insteadof|pushinsteadof))(=|$)/.test(w);
@@ -259,9 +261,44 @@ function ghOutward(words, start) {
 // wildcard or filter, no full name in sight; the 1.24.0 sweep) or a .NET call that sets the environment is held.
 // Reading Env: or setting $env:X is not.
 function markersCleared(flat) {
+	// An unset or env -u whose name is built at run time may name a marker (the 1.28.0 sweep): held.
+	if (/\b(unset|export\s+-n|declare\s+\+x|typeset\s+\+x|local\s+\+x)\b[^;|&\n]*[$`]|--unset[= ][^;|&\n\s]*[$`]|\benv(\.exe)?\s+([^;|&\n]*\s)?-u\s*[^;|&\n\s]*[$`]/i.test(flat)) return true;
 	const psClear = /(^|[^$\w])env:/i.test(flat) && /(^|[\s;|&(])(remove-item|ri|rm|del|erase|rd|rmdir|clear-item|cli)(\s|;|$)/i.test(flat);
 	return /\b(CLAUDECODE|AI_AGENT)\b/i.test(flat) || /\benv(\.exe)?\s+([^;|&\n]*\s)?(-i|--ignore-environment|-)(\s|$)/i.test(flat) || psClear || /\[(system\.)?environment\]::setenvironmentvariable/i.test(flat);
 }
+
+// K2 (the 1.27.0 sweep): a marker named only as a word a plain reader prints or searches for, or inside a commit
+// message, clears nothing. The exemption holds only for a command with no way to clear or run anything: no setting,
+// unsetting or env, no shell, eval or source, no Env: drive, and every command that names a marker a reader of it.
+const MARKER = /\b(CLAUDECODE|AI_AGENT)\b/i;
+const MARKER_READERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls', 'echo', 'printf', 'cat', 'type', 'get-content', 'gc', 'head', 'tail', 'git']);
+function markerOnlyNamed(text, again = true) {
+	// Read with git or gh written by its bare name, so a folder on its path (Git/cmd/git.exe) is not read as a shell.
+	const canon = canonical(text);
+	if (again && canon !== text) return markerOnlyNamed(canon, false);
+	// Read as the shell reads it too (u"nset" is unset), and never with -v (printf -v sets a variable) or a redirect
+	// (a reader writing the marker's name into a file, a profile among them): the 1.28.0 sweep.
+	if (/(^|\s)-v\b|[<>]/.test(text) || markerOnlyNamed.strict(plainText(text, 'Bash').replace(/["']/g, ''))) return false;
+	if (/\b(CLAUDECODE|AI_AGENT)\s*\+?=|\b(unset|export|declare|typeset|local|readonly|set|setx|env|exec|eval|source|iex|invoke-expression|xargs|sh|bash|zsh|dash|ksh|pwsh|powershell|cmd|start-process|saps|remove-item|ri|clear-item|cli|new-item|ni|set-item|si|set-content|sc|rv|remove-variable)(\.exe)?\b|env:|setenvironmentvariable|(^|[\s;|&(])\.\s|[`]|\$\(/i.test(text)) return false;
+	const segments = tokenize(joinContinuations(text));
+	for (let s = 0; s < segments.length; s++) {
+		const segment = segments[s];
+		const words = segment.filter((w) => !w.redirect);
+		if (!words.some((w) => MARKER.test(w.value))) continue;
+		const name = programName(words[0]?.value || '');
+		if (!MARKER_READERS.has(name)) return false;
+		// Piped on, the name reaches the next program as data it may act on (python popping it from its environment): only
+		// another reader may take it (the 1.28.0 sweep).
+		for (let k = s; /^\|/.test(segments[k].end || '') && segments[k + 1]; k++) {
+			if (!MARKER_READERS.has(programName(segments[k + 1].filter((w) => !w.redirect)[0]?.value || ''))) return false;
+		}
+		// In git, only inside the message given to -m or --message.
+		if (name === 'git' && words.some((w, k) => MARKER.test(w.value) && !(k > 0 && /^(-m|--message)$/.test(words[k - 1].value)))) return false;
+	}
+	return true;
+}
+
+markerOnlyNamed.strict = (s) => /\b(unset|export|declare|typeset|local|readonly|set|setx|env|exec|eval|source|iex|invoke-expression|xargs|sh|bash|zsh|dash|ksh|pwsh|powershell|cmd|remove-item|clear-item|set-item|set-content|new-item|remove-variable)\b|env:|setenvironmentvariable/i.test(s);
 
 function findOutward(text, depth) {
 	// The owner's yes and resume for the sweep tools are read by approve.mjs itself from the owner's pop-up tap (T2), so
@@ -269,7 +306,7 @@ function findOutward(text, depth) {
 	// turn like the owner's own (E27), so it is held still.
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
-	if (markersCleared(flat)) return MARKERS;
+	if (markersCleared(flat) && !markerOnlyNamed(text)) return MARKERS;
 	// The pre-push hook lets an AI push to main or a tag only with this marker set, so setting it is the owner's yes.
 	if (/KIT_PUSH_APPROVED/i.test(flat)) return 'the push hook\'s owner-yes marker';
 	// A program or a word built at run time, then an outward verb in the same command: $G push, "$(which git)" push.
@@ -290,6 +327,20 @@ function findOutward(text, depth) {
 	const client = /(^|[^\w.-])(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)(\.exe)?($|[^\w.-])/i.test(text);
 	if (client && (/\$|`|<\(|\bxargs\b|\bread\b/.test(text))) return 'an HTTP request built at run time';
 	if (/[._]curlrc|CURL_HOME|[._]wgetrc|WGETRC/i.test(text)) return 'an HTTP client\'s config';
+	// A shell fed its script on its input (a pipe, -s, a < file) runs a body the text does not show unless that body is
+	// written out in the command (echo or printf of plain text, read as a nested command): base64 -d | sh pushed main
+	// unseen (the plan check's P9, the 1.28.0 sweep). Such a body is held.
+	const fed = tokenize(joinContinuations(text));
+	for (let s = 0; s < fed.length; s++) {
+		const words = fed[s].filter((w) => !w.redirect).map((w) => w.value);
+		const shell = /^(sh|bash|zsh|dash|ksh|pwsh|powershell|cmd|iex|invoke-expression)$/i.test(base(programName(words[0] || '')));
+		if (!shell || words.some((w) => /^(-c|-command|\/c|-encodedcommand|-file)$/i.test(w))) continue;
+		const prev = s > 0 && /^\|/.test(fed[s - 1].end || '') ? fed[s - 1] : null;
+		const literal = prev && /^(echo|printf|write-output)$/i.test(base(programName(prev[0]?.value || ''))) && !prev.some((w) => w.redirect || /[$`(]/.test(w.value));
+		if ((prev && !literal) || (!prev && words.slice(1).includes('-s'))) return 'a shell fed a script the guard cannot read';
+	}
+	// Its input from a file (sh < push.txt); a here-document or here-string is written out in the text, so read.
+	if (/(^|[\s;&|(])(sh|bash|zsh|dash|ksh|pwsh|powershell)(\.exe)?(\s[^;|&\n]*?)?(^|[^<\d])<(?![<(&])/im.test(text)) return 'a shell fed a script the guard cannot read';
 	for (const all of tokenize(joinContinuations(text))) {
 		const segment = all.filter((word) => !word.redirect);
 		const words = segment.map((word) => word.value.toLowerCase());
@@ -326,7 +377,10 @@ function findOutward(text, depth) {
 		// as the delete guard reads it: a here-string feeds a shell (bash <<< "git push"), and $( ) or backticks in a
 		// target run before the redirect does (the 1.22.0 sweep).
 		if (depth < MAX_DEPTH) {
-			for (const word of all) {
+			// A message git or gh is handed (-m, --body ...) is text it stores, never a command it runs (K2).
+			const tool = programName(all[0]?.value || '');
+			for (const [k, word] of all.entries()) {
+				if (/^(git|gh)(\.(exe|cmd|bat|com|ps1))?$/i.test(base(tool)) && k > 0 && !word.redirect && /^(-m|--message|--body|--title|--notes)$/.test(all[k - 1].value) && !/\$\(|`/.test(word.value)) continue;
 				const run = word.quoted || (word.redirect && /\$\(|`/.test(word.value));
 				const hit = run ? findOutward(word.value.replace(/^`|`$/g, ''), depth + 1) : '';
 				if (hit) return hit;
@@ -353,6 +407,9 @@ function collectStrings(value, out, depth) {
 const PUSH_FLAGS = new Set(['-u', '--set-upstream', '-q', '--quiet', '-v', '--verbose']);
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*@\{)[A-Za-z0-9._/-]+$/;
 function boundedPush(input) {
+	// A push typed into the owner's terminal tab runs in a folder its own cwd field names, which the bound never reads
+	// (the plan check's P7, the 1.28.0 sweep): never inside the bound.
+	if (input && input.tool_name === 'mcp__terminal__run_in_terminal') return false;
 	const command = String((input && input.tool_input && input.tool_input.command) ?? '');
 	// Plain characters only: no quote, escape, variable, glob, redirect or second command can hide in it.
 	if (!/^[A-Za-z0-9 ._/:+=-]+$/.test(command)) return false;
@@ -417,7 +474,7 @@ function bypassIn(text, depth = 0) {
 	// environment (S2).
 	if (/\bGIT_(DIR|COMMON_DIR)\s*=/i.test(flat) && /\bgit\b/i.test(flat)) return 'git with its hooks moved';
 	if (/GIT_CONFIG_(KEY_\d+=\s*include|PARAMETERS=[^;&|\n]*include)/i.test(flat)) return 'git with its hooks moved';
-	if (markersCleared(flat)) return MARKERS;
+	if (markersCleared(flat) && !markerOnlyNamed(text)) return MARKERS;
 	for (const all of tokenize(joinContinuations(text))) {
 		const words = all.filter((w) => !w.redirect).map((w) => w.value.toLowerCase());
 		for (let i = 0; i < words.length; i++) {
@@ -425,7 +482,9 @@ function bypassIn(text, depth = 0) {
 			const hit = gitHooksOff(words, i + 1, gitSubAt(words, i + 1));
 			if (hit) return hit;
 		}
-		if (depth < MAX_DEPTH) for (const w of all) if (w.quoted) { const hit = bypassIn(w.value, depth + 1); if (hit) return hit; }
+		// A message git or gh stores (-m, --body ...) is never run (K2); one with $( ) or a backtick in it is still read.
+		const msg = (k) => /^(git|gh)(\.(exe|cmd|bat|com|ps1))?$/i.test(base(programName(words[0] || ''))) && k > 0 && /^(-m|--message|--body|--title|--notes)$/.test(all[k - 1].value) && !/\$\(|`/.test(all[k].value);
+		if (depth < MAX_DEPTH) for (const [k, w] of all.entries()) if (w.quoted && !msg(k)) { const hit = bypassIn(w.value, depth + 1); if (hit) return hit; }
 	}
 	return '';
 }
@@ -485,6 +544,31 @@ function pushOutsideProject(text, input) {
 	return ![...flat.matchAll(/\bpush\b([^;&|\n]*)/gi)].every((m) => plainFeature(m[1].trim().split(/\s+/).filter(Boolean)));
 }
 
+// K28 (the 1.27.0 install review; the owner, 2026-11-12: free "if everything checks out"): the push bound is free
+// because the kit's own pre-push hook scans and logs the push. A push run in another repo is free only when that repo
+// is this one (a worktree shares its git folder) or its hooks are the kit's shims in the Claude folder; otherwise the
+// kit cannot see the push, and it asks. With no folder for the call it cannot be placed, so it asks; with no project
+// folder named, only the repo's own hooks can free it (the plan check's P8, the 1.28.0 sweep).
+function uncheckedRepo(input) {
+	const root = process.env.CLAUDE_PROJECT_DIR;
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	if (!cwd) return true;
+	const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+	const inside = Boolean(root) && (fold(cwd) === fold(path.resolve(root)) || fold(cwd).startsWith(fold(path.resolve(root)) + path.sep));
+	const git = (dir, ...a) => require('node:child_process').spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 3000 });
+	const real = (p) => { try { return fs.realpathSync.native(p).toLowerCase(); } catch { return path.resolve(p).toLowerCase(); } };
+	const common = (dir) => { const r = git(dir, 'rev-parse', '--git-common-dir'); return r.status === 0 ? real(path.resolve(dir, r.stdout.trim())) : ''; };
+	// By its git folder, not its path: a nested repo or a submodule under the project is another repo (the plan
+	// check's P8); a folder that is no repo pushes nothing.
+	const here = common(cwd);
+	if (!here) return !inside;
+	const mine = root ? common(path.resolve(root)) : '';
+	if ((mine && here === mine) || (inside && !mine)) return false;
+	const hooks = git(cwd, 'config', '--get', 'core.hooksPath').stdout.trim();
+	const home = process.env.CLAUDE_CONFIG_DIR || path.join(require('node:os').homedir(), '.claude');
+	return !hooks || !real(path.resolve(cwd, hooks)).startsWith(real(path.join(home, 'kit-guard')) + path.sep);
+}
+
 function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
@@ -505,16 +589,21 @@ function check(input) {
 		reason = decide(input);
 		const all = [];
 		collectStrings(input.tool_input, all, 0);
-		const bypass = bypassIn(all.join(LF));
+		// The shared reader's second reading (K1, T16b): each fact written one way. It can only add a hold or make one
+		// stricter; the text as written is still read first, so nothing it misses is lost.
+		const text = all.join(LF);
+		const canon = canonical(text);
+		if (!reason && canon !== text) reason = findOutward(canon, 0) || findOutward(plainText(canon, input.tool_name), 0);
+		const bypass = bypassIn(text) || (canon !== text && bypassIn(canon)) || (canon !== text && markersCleared(canon.replace(/[\\`^'"]/g, '')) && !markerOnlyNamed(canon) ? MARKERS : '');
 		if (bypass) reason = bypass;
-		else if (reason && (hookFreeMainWrite(all.join(LF)) || pushOutsideProject(all.join(LF), input))) reason = 'a write to main that runs no pre-push hook';
+		else if (reason && (hookFreeMainWrite(text) || hookFreeMainWrite(canon) || pushOutsideProject(text, input))) reason = 'a write to main that runs no pre-push hook';
 		// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
 		const command = String((input.tool_input && input.tool_input.command) ?? '');
 		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
 		// Inside the push bound a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
-		if (reason && boundedPush(input)) reason = '';
-		else if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
+		if (reason && boundedPush(input)) reason = uncheckedRepo(input) ? 'a push from a repo whose git hooks are not the kit\'s' : '';
+		if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
 		// A guard that cannot read the command refuses rather than lets it through.
 		reason = 'the guard could not read this command';

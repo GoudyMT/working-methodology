@@ -1,4 +1,4 @@
-## Live check: an automatic alarm for online search and a data date on About
+## Live check: an alarm for online search and a data date on About
 
 Three changes that keep the app honest with no one running it, and cooking class links. Releases as v2.4.0.
 

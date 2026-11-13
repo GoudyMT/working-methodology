@@ -704,6 +704,15 @@ test('merge gate: a squash-style title is read by the full audit, not the lean o
 	s.state.pr.title = 'Add a subtract function';
 	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit\.mjs/);
 });
+// why: guards rule:standing-grants. The 1.28.0 sweep: CI counts the squash suffix at the PR number's length and the gate
+// kept 8 for it, so a title CI passed (65 here: 70 with " (#7)") failed the gate and held the merge.
+test('merge gate: the title is counted with its own PR number, as CI counts it', () => {
+	const s = setup();
+	const sub = 'add a subtract function that checks each input and names it';
+	s.state.pr.title = `feat: ${sub}`;
+	s.state.pr.body = BODY.replace('add a subtract function', sub);
+	assert.doesNotMatch(check(s.opts).faults.join('\n'), /live PR body fails/);
+});
 // why: guards rule:standing-grants
 test('merge gate: the base is fetched, so a stricter audit landed on the remote is the one that judges', () => {
 	const s = setup();

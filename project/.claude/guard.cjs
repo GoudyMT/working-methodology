@@ -46,10 +46,31 @@ function userHooks() {
 function answers(input) {
 	const tool = String(input.tool_name || '');
 	const out = [];
+	// The shared reader's second reading (T16b, design B2): the command with each spelling written one way. Every guard
+	// reads it beside the text as written (the push guard does so itself); it only adds a hold, and one that is not a
+	// bypass gives way to the owner's yes for the command as written, which is what the owner was shown.
+	let second = null;
+	if (SHELLS.includes(tool) && input.tool_input && typeof input.tool_input.command === 'string') {
+		try {
+			const canon = require(path.join(__dirname, 'guard-read.cjs')).canonical(input.tool_input.command);
+			if (canon !== input.tool_input.command) second = { ...input, tool_input: { ...input.tool_input, command: canon } };
+		} catch (e) {
+			return [['guard-read.cjs', refuse(`Held: the kit guard guard-read.cjs could not run (${String(e && e.message).slice(0, 120)}). The owner reinstalls the kit with install project.`)]];
+		}
+	}
 	for (const [file, reads] of PROJECT) {
 		if (!reads(tool, input)) continue;
 		try {
-			out.push([file, require(path.join(__dirname, file)).check(input)]);
+			const guard = require(path.join(__dirname, file));
+			const first = guard.check(input);
+			out.push([file, first]);
+			if (second && file !== 'guard-outward.cjs') {
+				const h = (guard.check(second) || {}).hookSpecificOutput;
+				const firstDecision = first && first.hookSpecificOutput && first.hookSpecificOutput.permissionDecision;
+				const never = h && /^Never by a tool/.test(h.permissionDecisionReason || '');
+				const held = h && (h.permissionDecision === 'deny' || h.permissionDecision === 'ask');
+				if (held && (never || (firstDecision !== 'allow' && !require(path.join(__dirname, 'owner-yes.cjs')).ownerYes(input)))) out.push([file, { hookSpecificOutput: h }]);
+			}
 		} catch (e) {
 			out.push([file, refuse(`Held: the kit guard ${file} could not run (${String(e && e.message).slice(0, 120)}). The owner reinstalls the kit with install project.`)]);
 		}

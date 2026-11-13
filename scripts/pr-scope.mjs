@@ -31,8 +31,27 @@ export function scope(root, base) {
 	return { scope: 'changed', why: 'the tests the change reaches, by the map' };
 }
 
+// The only files install never reads: a PR that changes nothing else skips the install check (the owner's pick
+// 2026-11-12). Every other file runs it, so a rename out of a list, a quoted name or a new input fails closed (K8).
+export const INSTALL_SAFE = /^(tests\/|reports\/|docs\/plans\/|README\.md$|TRIALS\.md$)/;
+
+/** Whether a PR owes the install check: true unless every changed file is in INSTALL_SAFE, or the diff is unreadable. */
+export function installLane(root, base) {
+	const git = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8' });
+	const sha = git('rev-parse', '--verify', '--end-of-options', `${base}^{commit}`).stdout.trim();
+	if (!/^[0-9a-f]{40,64}$/.test(sha)) return true;
+	// -z: names come out raw, never quoted; --no-renames: a rename is both its old and its new name.
+	const diff = git('diff', '-z', '--name-only', '--no-renames', `${sha}...HEAD`);
+	if (diff.status !== 0) return true;
+	return diff.stdout.split('\0').filter(Boolean).some((f) => !INSTALL_SAFE.test(f));
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-	const base = process.argv[2];
-	const r = base ? scope(process.cwd(), base) : { scope: 'full', why: 'no base given' };
-	process.stdout.write(`scope=${r.scope}\nwhy=${r.why}\n`);
+	if (process.argv[2] === '--install') {
+		process.stdout.write(`install=${process.argv[3] ? installLane(process.cwd(), process.argv[3]) : true}\n`);
+	} else {
+		const base = process.argv[2];
+		const r = base ? scope(process.cwd(), base) : { scope: 'full', why: 'no base given' };
+		process.stdout.write(`scope=${r.scope}\nwhy=${r.why}\n`);
+	}
 }

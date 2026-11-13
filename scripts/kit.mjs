@@ -274,10 +274,12 @@ function writeShims(home, hooks, proj) {
     // the bytes it checked, and that copy runs, never the project's file read again (C11). A shim with no project hook
     // to run exits at once.
     const checkFirst = `run=$(${q(launch.shellDir(process.execPath))} ${q(launcher)} git-hook ${q(proj)} ${name} </dev/null) || exit 1`;
+    // A launcher from before C11 (1.26.0) checks and prints no copy: the shim names the fix, never runs exec "" (K4).
+    const older = `[ -n "$run" ] || { echo "Kit: the kit in the Claude folder is older than this project's; run kit.mjs install user from the release copy, then try again." >&2; exit 1; }`;
     const body = GIT_HOOKS.includes(name) ? [
       `[ -f ${q(own)} ] || { echo "Kit: .githooks/${name} is missing; run kit.mjs install project." >&2; exit 1; }`,
-      checkFirst,
-    ] : [`[ -x ${q(own)} ] || exit 0`, checkFirst];
+      checkFirst, older,
+    ] : [`[ -x ${q(own)} ] || exit 0`, checkFirst, older];
     fs.writeFileSync(path.join(hooks, name), [...head, ...body, `KIT_HOOK_PROJECT=${q(proj)}; export KIT_HOOK_PROJECT`, 'exec "$run" "$@"', ''].join('\n'));
     fs.chmodSync(path.join(hooks, name), 0o755);
   }
@@ -1709,6 +1711,91 @@ export function measureReal({ projectDir, home }) {
   return { parts, total: Object.values(parts).reduce((a, b) => a + b, 0) };
 }
 
+/**
+ * A thread's probe folders, kept in one ledger so its closeout removes them with no ask (the owner, 2026-11-12: "folded in
+ * and a part of the cleanup process"). A session deletes what it made (AGENTS non-negotiable 7); the ledger is how it
+ * knows what it made. A folder kept for later use carries its reason; one not in the ledger is a stray, listed.
+ *
+ * Args:
+ *     root: the probe folder (KIT_PROBE_ROOT, else <home folder>/kit-probes)
+ *     home: the Claude config folder, whose guard records go with their folder
+ *     cmd: new | keep | clean
+ *     thread, label: who makes a folder, and a short name for it (new); whose folders go (clean)
+ *     path, reason: the folder kept and why (keep)
+ *     trash: moves one path to the bin (the Recycle Bin on Windows, else <root>/.trash)
+ *
+ * Returns:
+ *     { path } for new; { text } for keep and clean
+ */
+export function scratch({ root, home, cmd, thread, label, path: target, reason, trash = toBin }) {
+  const file = path.join(root, '.ledger.json');
+  let ledgerData = { entries: [] };
+  try { ledgerData = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* a first folder */ }
+  if (!Array.isArray(ledgerData.entries)) ledgerData.entries = [];
+  const save = () => { fs.mkdirSync(root, { recursive: true }); fs.writeFileSync(file, JSON.stringify(ledgerData, null, 2) + '\n'); };
+  const real = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+  // Only a folder directly in the probe folder, by its real path: a ledger line is data a tool could write.
+  const inRoot = (p) => path.dirname(real(p)).toLowerCase() === real(root).toLowerCase();
+  if (cmd === 'new') {
+    if (!/^[A-Za-z0-9._/-]{1,80}$/.test(String(thread || '')) || !/^[a-z0-9-]{1,40}$/.test(String(label || ''))) throw new Error('scratch new: a plain thread name and a lower-case label');
+    fs.mkdirSync(root, { recursive: true });
+    // A probe folder is recorded in the ledger, not a run's temp folder, so it is made here, never by mkdtemp.
+    const made = path.join(root, `${label}-${crypto.randomBytes(4).toString('hex')}`);
+    fs.mkdirSync(made);
+    ledgerData.entries.push({ path: made, thread, label, created: new Date().toISOString() });
+    save();
+    return { path: made };
+  }
+  if (cmd === 'keep') {
+    const e = ledgerData.entries.find((x) => real(x.path) === real(String(target)));
+    if (!e || !String(reason || '').trim()) throw new Error('scratch keep: a folder in the ledger, and why it is kept');
+    e.keep = String(reason).trim();
+    save();
+    return { text: `kept: ${e.path} (${e.keep})` };
+  }
+  if (cmd !== 'clean') throw new Error('scratch: new, keep or clean');
+  const lines = [];
+  const left = [];
+  for (const e of ledgerData.entries) {
+    if (e.thread !== thread) { left.push(e); continue; }
+    if (e.keep) { lines.push(`kept: ${e.label} at ${e.path} (${e.keep})`); left.push(e); continue; }
+    if (!inRoot(e.path)) { lines.push(`refused: ${e.path} is outside the probe folder, so it is left as it is`); continue; }
+    // A move that fails (another drive, a locked file) keeps the folder's ledger line and says so; the rest go on.
+    let failed = false;
+    for (const p of [e.path, guardDir(home, e.path)]) {
+      if (!fs.existsSync(p)) continue;
+      try { trash(p, root); lines.push(`removed: ${p}`); } catch (err) { failed = true; lines.push(`not removed: ${p} (${String(err && err.message).split('\n')[0]})`); }
+    }
+    if (failed) left.push(e);
+  }
+  ledgerData.entries = left;
+  save();
+  // Strays: folders in the probe folder no ledger line names, a few days old, listed for the owner's one tap.
+  const named = new Set(ledgerData.entries.map((e) => real(e.path).toLowerCase()));
+  for (const d of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!d.isDirectory() || d.name.startsWith('.')) continue;
+    const p = path.join(root, d.name);
+    if (!named.has(real(p).toLowerCase()) && Date.now() - fs.statSync(p).mtimeMs > 3 * 86400e3) lines.push(`stray (no ledger line, over 3 days old): ${p}`);
+  }
+  return { text: lines.join('\n') || 'nothing to clean' };
+}
+
+// The bin: on Windows the Recycle Bin, so the owner can take a folder back until it is emptied; elsewhere a .trash
+// folder inside the probe folder.
+function toBin(p, root) {
+  if (process.platform === 'win32') {
+    const ps = "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($env:KIT_BIN_PATH, 'OnlyErrorDialogs', 'SendToRecycleBin')";
+    // By its full path: a bare name is looked for in the current folder first on Windows (the 1.28.0 sweep).
+    const shell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const r = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', env: { ...process.env, KIT_BIN_PATH: p } });
+    if (r.status !== 0) throw new Error(`scratch: could not move ${p} to the Recycle Bin`);
+    return;
+  }
+  const bin = path.join(root, '.trash', new Date().toISOString().slice(0, 10));
+  fs.mkdirSync(bin, { recursive: true });
+  fs.renameSync(p, path.join(bin, `${path.basename(p)}-${Date.now()}`));
+}
+
 function main(argv) {
   const kit = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   // The Claude config folder: CLAUDE_CONFIG_DIR when a second one is in use, else ~/.claude.
@@ -1796,6 +1883,18 @@ function main(argv) {
     const r = status({ kit, home, projectDir: target || process.cwd() });
     console.log(r.text);
     process.exitCode = r.current ? 0 : 1;
+  } else if (cmd === 'scratch') {
+    // node scripts/kit.mjs scratch new <thread> <label> | keep <folder> "<why>" | clean <thread>
+    const root = process.env.KIT_PROBE_ROOT || path.join(os.homedir(), 'kit-probes');
+    try {
+      const r = target === 'new' ? scratch({ root, home, cmd: 'new', thread: arg, label: argv[3] })
+        : target === 'keep' ? scratch({ root, home, cmd: 'keep', path: arg, reason: argv[3] })
+        : scratch({ root, home, cmd: target, thread: arg });
+      console.log(r.path || r.text);
+    } catch (e) {
+      console.error(String(e.message));
+      process.exitCode = 1;
+    }
   } else if (cmd === 'scrub') {
     const hits = scrub({ kit });
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.kind}`);
@@ -1809,6 +1908,7 @@ function main(argv) {
     console.log('       node scripts/kit.mjs build | measure [project folder] [--real] | find <words or rule ID>');
     console.log('       node scripts/kit.mjs status [project folder]');
     console.log('       node scripts/kit.mjs scrub');
+    console.log('       node scripts/kit.mjs scratch new <thread> <label> | keep <folder> "<why>" | clean <thread>');
     process.exitCode = cmd ? 1 : 0;
   }
 }

@@ -12,7 +12,9 @@ import { attributionFaults, entities } from './no-attribution.mjs';
 // Small PRs (docs, chore, test, bump, a quality-of-life fix) keep their own short form: pr-body-audit-lean.mjs.
 // // Usage: node .claude/pr-body-audit.mjs <body.md> "<title>"
 
-const [file, title] = process.argv.slice(2);
+const [file, title, number] = process.argv.slice(2);
+// The squash subject on main is the title plus " (#n)": with no number yet, room is kept for four digits (K16).
+const squash = title.length + (/^\d+$/.test(number || '') ? number.length + 4 : 8);
 
 // The checks that are project facts - the review dimensions that apply to it, the wording its dependency audit must
 // keep, the extra lines the review must name - come from .kit/pr-body.json (rule:pr-body; adapter A16):
@@ -61,7 +63,7 @@ const wordCount = (s) => s.split(/\s+/).filter(Boolean).length;
 
 // The title is the squash commit's subject on main (T13, the owner: "type: subject"); the H1 leads with the area.
 const subject = title.replace(/^[a-z]+(\([a-z0-9-]+\))?: /, '');
-row('title is type: subject, at most 72', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z0-9-]+\))?: [a-z0-9`]/.test(title) && title.length <= 72, title);
+row('title is type: subject, at most 72 with the squash suffix', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z0-9-]+\))?: [a-z0-9`]/.test(title) && squash <= 72, `${title} (${squash} with the suffix)`);
 row('H1 is <Area>: <line>, no type prefix', /^## [A-Z][A-Za-z ]+: [a-z]/.test(lines[0]) && !/^## (feat|fix|chore|security|docs)/.test(lines[0]), lines[0]);
 row('H1 line carries the title subject', lines[0].endsWith(subject), `subject: ${subject}`);
 

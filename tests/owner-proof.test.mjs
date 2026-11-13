@@ -185,3 +185,140 @@ test('the shipped project settings wire the owner-proof guard on every write too
 	const { routes } = require(path.resolve('project/.claude/guard.cjs'));
 	for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell']) assert.ok(routes(tool).includes('owner-proof.cjs'), tool);
 });
+
+// why: guards rule:outward-acts (a gate bypass is never a tool's act, even with a yes; the owner's lock 2026-11-11).
+// K21, from the 1.26.0 plan-check probe: a settings write that turns every hook off took one pop-up tap, like any
+// settings change, so one yes switched every guard off.
+test('a settings write that turns the hooks off is never by a tool, in any spelling', () => {
+	const proj = kitTemp.makeTemp('proj-');
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.claude', 'settings.json'), '{\n  "permissions": {}\n}\n');
+	const why = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const local = path.join(proj, '.claude', 'settings.local.json');
+	const shared = path.join(proj, '.claude', 'settings.json');
+	const edge = path.join(proj, '.claude', 'settings.local.json');
+	fs.writeFileSync(edge, '{"Hooks": true}\n');
+	const never = [
+		['Write', { file_path: local, content: '{"disableAllHooks": true}' }],
+		['Write', { file_path: local, content: '{"\\u0064isableAllHooks": true}' }],
+		['Edit', { file_path: shared, old_string: '"permissions"', new_string: '"disableAllHooks": true, "permissions"' }],
+		// The key made across the edit's edge: the result is read, not only the new text.
+		['Edit', { file_path: edge, old_string: '{"', new_string: '{"disableAll' }],
+		['MultiEdit', { file_path: shared, edits: [{ old_string: '"permissions"', new_string: '"disableAllHooks": true, "permissions"' }] }],
+		['Bash', { command: `echo '{"disableAllHooks": true}' > .claude/settings.local.json` }],
+	];
+	for (const [tool, input] of never) assert.match(why(tool, input), /^Never by a tool/, `${tool} ${JSON.stringify(input)}`);
+	// An ordinary settings change still takes the owner's yes, not a flat refusal.
+	assert.match(why('Write', { file_path: local, content: '{"permissions": {}}' }), /Owner's yes needed/);
+	// An edit without replace_all changes only the first match, as Claude Code applies it: replacing every match would
+	// make the key here, the first alone does not (the mutation check's survivor in the 1.28.0 run).
+	fs.writeFileSync(edge, '{"note": "QQ", "disableAllQQ": true}\n');
+	assert.match(why('Edit', { file_path: edge, old_string: 'QQ', new_string: 'Hooks' }), /^Owner's yes needed/);
+	assert.match(why('Edit', { file_path: edge, old_string: 'QQ', new_string: 'Hooks', replace_all: true }), /^Never by a tool/);
+});
+
+// why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the
+// workbench's deny rules stopped the edit tools but not a shell write into the kit source or the release copy. A
+// project lists such folders in .claude/protected-folders.json; that list is a settings file, and a bad one fails closed.
+test('folders a project lists are never written by a tool, from the edit tools or a shell', () => {
+	const proj = kitTemp.makeTemp('e3-');
+	const kept = kitTemp.makeTemp('e3-kept-');
+	fs.mkdirSync(path.join(proj, '.claude'));
+	const list = path.join(proj, '.claude', 'protected-folders.json');
+	fs.writeFileSync(list, JSON.stringify({ folders: [kept] }));
+	const why = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const k = kept.split(path.sep).join('/');
+	for (const [tool, input] of [['Write', { file_path: path.join(kept, 'a.md'), content: 'x' }], ['Edit', { file_path: path.join(kept, 'b.md'), old_string: 'a', new_string: 'b' }], ['Bash', { command: `echo x > "${k}/a.md"` }], ['Bash', { command: `rm -rf "${k}/scripts"` }], ['PowerShell', { command: `Set-Content -Path "${kept}\\a.md" -Value x` }]]) {
+		assert.match(why(tool, input), /^Never by a tool: .*protected-folders\.json/, `${tool} ${JSON.stringify(input)}`);
+	}
+	// Reads stay open.
+	assert.equal(why('Bash', { command: `cat "${k}/README.md"` }), '');
+	// The list itself is a settings file: the owner's yes.
+	assert.match(why('Write', { file_path: list, content: '{"folders": []}' }), /Owner's yes needed/);
+	// A list that cannot be read holds every shell call and names the fix.
+	fs.writeFileSync(list, '{ not json');
+	assert.match(why('Bash', { command: 'git status' }), /protected-folders\.json.*cannot be read/);
+});
+// why: guards rule:security-standards (rule:project-adapter A2). The commit-time security review of E3: deleting or
+// moving a folder above a listed one wrote the listed one too; the list was read from the shell's folder, not the
+// project; and a relative word after a cd the guard cannot follow was not read at all.
+test('a listed folder is held through its parent, after an unknown cd, and from any folder of the project', () => {
+	const proj = kitTemp.makeTemp('e3b-');
+	const outer = kitTemp.makeTemp('e3b-outer-');
+	const kept = path.join(outer, 'kitsrc');
+	fs.mkdirSync(kept);
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.mkdirSync(path.join(proj, 'sub'));
+	fs.writeFileSync(path.join(proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: [kept] }));
+	const why = (command, cwd = proj) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const o = outer.split(path.sep).join('/');
+	assert.match(why(`rm -rf "${o}"`), /protected-folders\.json/, 'a parent deleted');
+	assert.match(why(`mv "${o}" /tmp/x`), /protected-folders\.json/, 'a parent moved');
+	assert.match(why(`cd "$X" && rm -rf kitsrc`), /protected-folders\.json/, 'after a cd the guard cannot follow');
+	assert.match(why(`echo x > "${o}/kitsrc/a.md"`, path.join(proj, 'sub')), /protected-folders\.json/, 'from a subfolder of the project');
+	assert.equal(why(`ls "${o}"`), '', 'a read of the parent');
+});
+// why: guards rule:security-standards. The 1.28.0 sweep and the commit review: a sed script in a variable read as a
+// print, a listed folder spelled /c/..., $PWD/... or ~/..., the root, and env --unset or export -n with a built name.
+test('the sweep\'s spellings of a guard file read, a listed folder and a marker clear are held', () => {
+	const proj = kitTemp.makeTemp('e3c-');
+	const kept = path.join(proj, 'vault');
+	fs.mkdirSync(kept);
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: [kept] }));
+	const why = (command, tool_name = 'Bash') => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input: { command }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	assert.match(why('sed -n "$p" .claude/guard-outward.cjs'), /^Never by a tool/);
+	const unix = '/' + kept.split(path.sep).join('/').replace(/^([A-Za-z]):/, (m, d) => d.toLowerCase());
+	for (const command of ['echo x > "$PWD/vault/a.txt"', `echo x > "${unix}/a.txt"`, 'rm -rf /', `sed -n 1w${unix}/a.txt notes.txt`, `env gsed -n 1w${unix}/a.txt notes.txt`]) assert.match(why(command), /protected-folders\.json/, command);
+	const outward = (command) => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: process.cwd() }), encoding: 'utf8' });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
+	};
+	for (const command of ['env --unset="$M" git push origin feat/x', 'export -n "$M"; git push origin feat/x']) assert.match(outward(command), /^Never by a tool: clearing/, command);
+});
+// why: guards rule:security-standards (pass bar 4, K19). In bash a wildcard at the start of a path part never matches a
+// name that starts with a dot, so tests/* cannot name .githooks or .claude and a test run naming it is no write to a
+// guard. Quoted, escaped, or with dot globbing turned on, the wildcard may still name one: held.
+test('a bash wildcard that cannot match a dot name is no write to a guard', () => {
+	const proj = kitTemp.makeTemp('k19-');
+	fs.mkdirSync(path.join(proj, 'tests'));
+	const why = (command, tool_name = 'Bash') => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input: { command }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	for (const command of ['npm test -- tests/*', 'node --test tests/*.test.mjs', 'npm test -- tests/?ard*']) assert.equal(why(command), '', command);
+	for (const command of ["npm test -- 'tests/*'", 'shopt -s dotglob; npm test -- tests/*', 'GLOBIGNORE=x npm test -- tests/*', 'npm test -- tests/\\*', 'npm test -- tests/.*', 'setopt globdots; npm test -- tests/*', 'npm test -- tests/*(D)', 'eval "sh"opt -s dotglob"; npm test -- tests/*', '$(printf shopt) -s dotglob; npm test -- tests/*']) assert.match(why(command), /^Never by a tool/, command);
+	assert.match(why('npm test -- tests/*', 'PowerShell'), /^Never by a tool/, 'PowerShell matches dot names');
+});
+// why: guards rule:security-standards. The plan check's P4 and the 1.28.0 sweep: a reader's exemption holds only for
+// the bare name looked up on PATH; ./sed or ./cat is any program a tool wrote there.
+test('a reader named by a path gets no read exemption for a guard or settings file', () => {
+	const proj = kitTemp.makeTemp('p4-');
+	const why = (command) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	for (const command of ['./sed -n 1p .claude/settings.json', './cat .claude/guard.cjs', 'bin/sed -n 5p .claude/guard-outward.cjs']) assert.notEqual(why(command), '', command.slice(0, 80));
+	for (const command of ['sed -n 1p .claude/settings.json', 'cat .claude/guard.cjs']) assert.equal(why(command), '', command);
+	// A folder named unknown is not the guard's unknown folder (the review of the per-word memo).
+	fs.mkdirSync(path.join(proj, 'unknown', '.claude'), { recursive: true });
+	assert.notEqual(why('cd unknown && cat .claude/settings.json; popd && echo x > .claude/settings.json'), '', 'a write after a move the guard cannot follow');
+	// A sed script that is not a line print gets no exemption: e runs each line as a command (the 1.28.0 mutation run's
+	// survivor). A w command glued to its file (1w.claude/guard.cjs) writes it, so the path inside the word is read.
+	for (const command of ['sed -n e .claude/settings.json', 'sed -n 1w.claude/guard.cjs notes.txt', 'sed -n s/a/b/w.claude/guard.cjs notes.txt', 'sed -n 1w.git/hooks/pre-push notes.txt', 'sed -n /x/w.claude/settings.json notes.txt', 'sed -n s/a/b/gw.claude/guard.cjs notes.txt', 'sed -n -e1w.claude/guard.cjs notes.txt', 'sed -n 1!w.claude/guard.cjs notes.txt', 'sed -n 1{w.claude/guard.cjs notes.txt', "sed -n '1w .claude/guard.cjs' notes.txt", "sed -n -e 'p;w .claude/settings.json' notes.txt", 'env sed -n 1w.claude/guard.cjs notes.txt', 'gsed -n 1w.claude/guard.cjs notes.txt', 'busybox sed -n 1w.claude/guard.cjs notes.txt', 'sh -c "sed -n 1w.claude/guard.cjs notes.txt"', 'toybox sed -n 1w.claude/guard.cjs notes.txt', '/usr/bin/sed -n 1w.claude/guard.cjs notes.txt', `sed -n s/a/`+'b'.repeat(5000)+`/w notes.txt`]) assert.notEqual(why(command), '', command.slice(0, 80));
+});

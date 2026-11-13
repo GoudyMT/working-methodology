@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 // The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
 // suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
 const status = (o) => kitStatus({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
@@ -331,7 +331,7 @@ test('status reports a project or ~/.claude with no install record, and writes n
   assert.equal(fs.existsSync(path.join(proj, '.kit')), false);
 });
 
-// why: guards rule:sweep-auto-approval
+// why: guards rule:kit-standards (item 14, the start load cap)
 test('status shows the real start load against its cap, and says when it is over', () => {
   const { kit, home, proj } = makeKit();
   fs.writeFileSync(path.join(proj, 'CLAUDE.md'), 'x'.repeat(300));
@@ -886,7 +886,7 @@ test('headings skips headings inside code blocks and reads the ID after the titl
 });
 
 const MODULE_MAP = () => JSON.parse(read(path.resolve('docs/migrations/1.0.0-modules.json')));
-// why: guards rule:outward-acts
+// why: guards rule:kit-standards
 test('the ledger refuses a section the map leaves out or a map entry with no section', () => {
   const map = { modules: [{ id: 'core', sections: ['a'] }] };
   assert.throws(() => ledger('## A {#a}\nx\n## B {#b}\ny\n', map), /not placed: b/);
@@ -1134,6 +1134,25 @@ test('the PR body audits read a dash inside inline code as code, and still catch
   const std =(line) => `## Math: subtract\n\nFraming.\n\n### Summary\n\n${line}\n`;
   assert.match(dashes('pr-body-audit.mjs', std('Run `node --test` to check.'), 'Math: subtract'), /^PASS/);
   assert.match(dashes('pr-body-audit.mjs', std('It runs -- for now -- by hand.'), 'Math: subtract'), /^FAIL/);
+});
+// why: guards rule:pr-body (the squash subject on main is the title plus " (#n)", and it must fit 72). K16, the 1.27.0
+// build: a 73-character subject passed the audit locally and failed the kit's CI after the squash.
+test('both PR body audits count the squash suffix against the 72-character title limit', () => {
+  const dir = makeTemp('prtitle-');
+  const row = (script, title, n) => {
+    const f = path.join(dir, 'b.md');
+    fs.writeFileSync(f, '## Math: x\n\nx\n');
+    const args = [path.resolve('project/.claude', script), f, title, ...(n ? [n] : [])];
+    return spawnSync('node', args, { encoding: 'utf8' }).stdout.split('\n').find((l) => l.includes('title is type: subject'));
+  };
+  const at = (len) => `feat: ${'a'.repeat(len - 6)}`;
+  for (const script of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs']) {
+    assert.match(row(script, at(66), '31'), /^PASS/, `${script}: 66 + " (#31)" is 72`);
+    assert.match(row(script, at(67), '31'), /^FAIL/, `${script}: 67 + " (#31)" is 73`);
+    // With no number known yet, room is kept for a four-digit one.
+    assert.match(row(script, at(64)), /^PASS/, `${script}: 64 + " (#nnnn)"`);
+    assert.match(row(script, at(65)), /^FAIL/, `${script}: 65 + " (#nnnn)"`);
+  }
 });
 // why: guards rule:pr-body
 test('the push guard names the PR body skill', () => {
@@ -1771,7 +1790,14 @@ test('the first push check names a public GitHub repo whose secret scanning or p
   assert.deepEqual(githubRepos(remotes), ['pat/app', 'pat/tool'], 'only plain GitHub names reach the API');
   const asked = [];
   const answers = { 'repos/pat/app': 'false disabled enabled', 'repos/pat/tool': 'false enabled enabled' };
-  const gh = (args) => { asked.push(args[1]); return { status: 0, stdout: answers[args[1]] + '\n', stderr: '' }; };
+  // K5, the 1.27.0 sweep: the call names github.com, so a GH_HOST or an enterprise-only login never gets the repo name.
+  const gh = (args) => {
+    const at = args.indexOf('--hostname');
+    assert.equal(args[at + 1], 'github.com', 'the gh call names no host');
+    const repo = args.find((a) => a.startsWith('repos/'));
+    asked.push(repo);
+    return { status: 0, stdout: answers[repo] + '\n', stderr: '' };
+  };
   const notes = scanningNotes(remotes, gh);
   assert.deepEqual(asked, ['repos/pat/app', 'repos/pat/tool']);
   assert.equal(notes.length, 1);
@@ -2990,7 +3016,7 @@ test('the version bump check fails shipped code with no bump, unless the body sa
 // fail or lie. Those checks now come from the project's .kit/pr-body.json; the secrets line stays fixed for all.
 // T13 (the owner, 2026-11-10): the title is the squash subject (`type: subject`), the review rows are the project's
 // own, and what GitHub shows (files, gates) is not repeated.
-const STD_TITLE = 'feat: an automatic alarm for online search and a data date on About';
+const STD_TITLE = 'feat: an alarm for online search and a data date on About';
 const stdAudit = (dir, text, title = STD_TITLE) => {
   const f = path.join(dir, 'body.md');
   fs.writeFileSync(f, text);
@@ -3007,7 +3033,7 @@ test('the Standard PR audit passes an honest body for a project with no corpus, 
   assert.equal(noSecrets.status, 1, 'the secrets line is required in every project');
   assert.match(noSecrets.stdout, /FAIL.*secrets/);
   // The title is the squash commit's subject: an area title, or one over 72, fails; the H1 carries its subject.
-  for (const title of ['Live check: an automatic alarm for online search and a data date on About', `feat: ${'x'.repeat(70)}`]) assert.match(stdAudit(dir, honestBody(), title).stdout, /FAIL\s+title is type: subject/, title);
+  for (const title of ['Live check: an alarm for online search and a data date on About', `feat: ${'x'.repeat(70)}`]) assert.match(stdAudit(dir, honestBody(), title).stdout, /FAIL\s+title is type: subject/, title);
   assert.match(stdAudit(dir, honestBody(), 'feat: something else').stdout, /FAIL\s+H1 line carries the title subject/);
   // A scope with a digit is a scope, as the commit check reads it (the 1.25.0 sweep).
   assert.doesNotMatch(stdAudit(dir, honestBody(), STD_TITLE.replace('feat:', 'feat(v2):')).stdout, /FAIL\s+title/);
@@ -3790,7 +3816,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     last = r.stdout;
     return rows;
   };
-  const ROWS = ['no attribution block', 'title is type: subject (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
+  const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
     'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
     'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'no spaced dashes in prose',
     'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
@@ -3801,7 +3827,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   const cases = [
     ['the example', lean, title, []],
     ['an attribution line', `${lean}\n_Requested by **Pat**_\n`, title, ['no attribution block']],
-    ['a type outside the list', lean, title.replace('feat:', 'feature:'), ['title is type: subject (smaller PR)']],
+    ['a type outside the list', lean, title.replace('feat:', 'feature:'), ['title is type: subject, at most 72 with the squash suffix (smaller PR)']],
     ['a scoped type', lean, title.replace('feat:', 'feat(hooks):'), []],
     ['a type prefix in the H1', sub('## Commit hook:', '## feat:'), title, ['H1 is <Area>: <line>, no type prefix']],
     ['an H1 that drops the title subject', lean, title.replace(' on commit', ''), ['H1 line carries the title subject']],
@@ -4009,7 +4035,7 @@ test('the project map check passes a sound map and names every fault in a bad on
     assert.match(r.stdout, fault);
   }
 });
-// why: guards rule:outward-acts
+// why: guards rule:visible-tracking
 test('the project map renders one self-contained page with states as words, and refuses a map that fails its check', () => {
   const dir = mapRepo(GOOD_MAP);
   const out = path.join(dir, 'map.html');
@@ -4025,7 +4051,7 @@ test('the project map renders one self-contained page with states as words, and 
   fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify({ ...GOOD_MAP, goal: '' }));
   assert.equal(mapRun(dir, ['render', out]).status, 1);
 });
-// why: guards rule:outward-acts
+// why: guards rule:visible-tracking
 test('the project map can be checked from a draft file outside the project, with paths still held to the project', () => {
   const dir = mapRepo(GOOD_MAP);
   const draft = path.join(makeTemp('draft-'), 'map.json');
@@ -6570,7 +6596,7 @@ test('lines that look like labels or headings stay the owner\'s words, in the bo
   assert.match(inThought.grounding, /^We are/, 'a grounding heading in a thought replaces nothing');
 });
 
-// why: guards rule:outward-acts
+// why: guards rule:collaborative-design-locks
 test('the sheet parser refuses what it cannot read, and says why', async () => {
   const { parseSheet } = await sheetTools();
   const bad = [
@@ -6594,7 +6620,7 @@ test('the sheet parser refuses what it cannot read, and says why', async () => {
   for (const [name, text, why] of bad) assert.throws(() => parseSheet(text), why, name);
 });
 
-// why: guards rule:outward-acts
+// why: guards rule:collaborative-design-locks
 test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved question, and words filed as the closing box', async () => {
   const { parseSheet, sealOf, renderSheet } = await sheetTools();
   const base = parseSheet(SHEET);
@@ -6627,7 +6653,7 @@ test('a sheet with Windows line ends reads the same, and the words stay whole', 
   assert.equal(s.questions[0].thought, 'i wonder abuot tablets  \twith two spaces\r\n\r\nand a second paragraph'); // pin: 3
 });
 
-// why: guards rule:outward-acts
+// why: guards rule:collaborative-design-locks
 test('a sheet file saved in anything but UTF-8 is refused, and a UTF-8 mark is read past', async () => {
   const { readSheet, parseSheet } = await sheetTools();
   const dir = makeTemp('enc-');
@@ -7607,4 +7633,203 @@ test('an owner yes on an older ask waits for the outcome of the sweep approved a
   const yes = approveIn(dir, [b, '--owner-yes', 'yes go']);
   assert.equal(yes.status, 1, yes.stdout);
   assert.match(yes.stdout, /outcome of the last approved sweep first/);
+});
+
+// why: guards rule:first-push-gate. K27, the 1.27.0 install review: the check took its project from KIT_HOOK_PROJECT
+// whenever it was set, so a tool that set it before a git command pointed the gate at another folder.
+test('the first push check reads only the repository it runs in, whatever KIT_HOOK_PROJECT names', () => {
+  const run = (...a) => spawnSync(...a);
+  const root = kitTemp.makeTemp('k27-');
+  const mk = (name) => {
+    const d = path.join(root, name);
+    fs.mkdirSync(d);
+    run('git', ['init', '-q', '-b', 'main', d]);
+    run('git', ['-C', d, '-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-q', '--allow-empty', '-m', 'one']);
+    return d;
+  };
+  const app = mk('app');
+  const other = mk('other');
+  const check = (cwd, project) => run(process.execPath, [path.resolve('project/.claude/first-push-check.mjs'), '--staged'], { cwd, encoding: 'utf8', env: { ...process.env, KIT_HOOK_PROJECT: project } });
+  const r = check(app, other);
+  assert.notEqual(r.status, 0, 'the gate read another repository');
+  assert.match(r.stdout + r.stderr, /KIT_HOOK_PROJECT names another repository/);
+  // An agent worktree of the project shares its repository: the shim's name for the main checkout stands.
+  run('git', ['-C', app, 'worktree', 'add', '-q', path.join(root, 'wt'), '-b', 'feat/wt']);
+  const w = check(path.join(root, 'wt'), app);
+  assert.doesNotMatch(w.stdout + w.stderr, /names another repository/);
+  // The 1.28.0 sweep: a folder whose .git file points at the repository shares its git folder but is no checkout of it,
+  // and its own settings would clear the gate. Only a checkout git lists (the main one or a worktree) is the project.
+  const decoy = path.join(root, 'decoy');
+  fs.mkdirSync(decoy);
+  fs.writeFileSync(path.join(decoy, '.git'), `gitdir: ${path.join(app, '.git').split(path.sep).join('/')}\n`);
+  const d = check(app, decoy);
+  assert.notEqual(d.status, 0, 'a decoy folder was taken for the project');
+  assert.match(d.stdout + d.stderr, /KIT_HOOK_PROJECT names another repository/);
+  // A copy of the script placed in the decoy and run from there is held the same way.
+  fs.mkdirSync(path.join(decoy, '.claude'));
+  for (const f of ['first-push-check.mjs', 'secret-patterns.mjs', 'github-scanning.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(decoy, '.claude', f));
+  const env = { ...process.env };
+  delete env.KIT_HOOK_PROJECT;
+  const c = run(process.execPath, [path.join(decoy, '.claude', 'first-push-check.mjs'), '--staged'], { cwd: app, encoding: 'utf8', env });
+  assert.notEqual(c.status, 0, 'a copy of the script in a decoy folder read that folder\'s settings');
+});
+// why: guards rule:kit-standards (a project hears of newer kit rules at session start). K11, the 1.27.0 cut took the
+// only test of the session-start update line.
+test('session start says when the kit has newer rules, and how many', () => {
+  const { kit, home, proj } = caseKit();
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /newer/);
+  bump({ kit, level: 'minor', note: 'one', date: '2026-02-01' });
+  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /Kit 1\.1\.1 has 2 newer change\(s\)[\s\S]*\(1\.0\.0\)[\s\S]*\/methodology-kit update/);
+});
+
+// why: guards rule:failure-response (kit status is what the owner reads to trust an install; the --merged record is
+// the way out of a hand merge). K11, the 1.27.0 cut took it.
+test('status says current only when the kit folder, ~/.claude and the project all match, file by file', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  let r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true);
+  assert.match(r.text, /Kit folder: 1\.0\.0/);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, current/);
+  assert.match(r.text, /This project: 1\.0\.0, current/);
+  assert.match(r.text, /^Current: /m);
+
+  // A newer kit release: both installs are behind, and each says what to run.
+  bump({ kit, level: 'patch', note: 'one', date: '2026-02-01' });
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newer\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, behind kit 1\.0\.1/);
+  assert.match(r.text, /This project: 1\.0\.0, behind kit 1\.0\.1; 1 file\(s\) waiting/);
+  assert.match(r.text, /Run \/methodology-kit update\./);
+  assert.match(r.text, /kit\.mjs install user\./);
+  assert.match(r.text, /^Not current: /m);
+
+  // Same version, a file carrying this project's own values on top of the current kit copy (a filled adapter row, a
+  // tracking file): that is normal use, not a stale install, so status stays current and names it (the owner,
+  // 2026-10-31: "current" must be reachable without wiping a project's records).
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, edited here\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true, r.text);
+  assert.match(r.text, /1 file\(s\) carry[\s\S]*own values[\s\S]*_Working Standards\.md/);
+
+  // Changed here AND in the kit: a hand merge is owed, so status is not current until the merge is recorded.
+  bump({ kit, level: 'patch', note: 'two', date: '2026-02-02' });
+  fs.writeFileSync(path.join(kit, 'project/_Working Standards.md'), 'rules, newest\n');
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, false);
+  assert.match(r.text, /1 file\(s\) changed here and in the kit[\s\S]*_Working Standards\.md[\s\S]*by hand/);
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
+  const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
+  assert.deepEqual(m.merged, ['_Working Standards.md']);
+  r = status({ kit, home, projectDir: proj, ahead: () => 0 });
+  assert.equal(r.current, true, r.text);
+  assert.equal(read(path.join(proj, '_Working Standards.md')), 'rules, newest, edited here\n');
+
+  // GitHub ahead of the kit folder.
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
+  r = status({ kit, home, projectDir: proj, ahead: () => 2, newest: () => 'v1.0.3' });
+  assert.equal(r.current, false);
+  assert.match(r.text, /GitHub has 2 newer kit commit[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
+  assert.doesNotMatch(r.text, /git pull/);
+});
+
+// why: guards rule:kit-standards (an install never removes what it should not, and a dry run removes nothing). K11,
+// the 1.27.0 cut took the only dry-run install test.
+test('the branch-only clean-up runs only over an unreleased install, never removes the overlay, and a dry run removes nothing', () => {
+  // A release or pre-check install over which the kit stopped shipping a file (not retired): the file stays.
+  for (const tagged of [true, false]) {
+    const { kit, home } = makeKit();
+    fs.writeFileSync(path.join(kit, 'user/agents/dropped.md'), 'shipped once\n');
+    const before = tagged ? released(kit, 'v1.0.0') : undefined;
+    install({ kit, home, target: 'user', release: before });
+    fs.rmSync(path.join(kit, 'user/agents/dropped.md'));
+    const r = install({ kit, home, target: 'user', release: released(kit, 'v1.0.1') });
+    assert.deepEqual(r.retired, [], JSON.stringify(before));
+    assert.ok(fs.existsSync(path.join(home, 'agents/dropped.md')));
+  }
+  // The overlay CLAUDE.local.md is written by install itself, not from a kit path, so it is never branch-only.
+  const { kit, home, proj } = overlayKit();
+  install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const back = install({ kit, home, target: 'project', projectDir: proj, overlay: true, release: released(kit, 'v1.0.0') });
+  assert.ok(!back.retired.includes('CLAUDE.local.md'));
+  assert.ok(fs.existsSync(path.join(proj, 'CLAUDE.local.md')));
+  // A dry run previews the clean-up: the file and the record stay as they are.
+  const d = makeKit();
+  fs.writeFileSync(path.join(d.kit, 'user/agents/branch-only.md'), 'branch build\n');
+  install({ kit: d.kit, home: d.home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  fs.rmSync(path.join(d.kit, 'user/agents/branch-only.md'));
+  const stampBefore = read(path.join(d.home, 'kit-install.json'));
+  const dry = install({ kit: d.kit, home: d.home, target: 'user', dryRun: true, release: released(d.kit, 'v1.0.0') });
+  assert.deepEqual(dry.retired, ['agents/branch-only.md'], 'the preview names it');
+  assert.ok(fs.existsSync(path.join(d.home, 'agents/branch-only.md')));
+  assert.equal(read(path.join(d.home, 'kit-install.json')), stampBefore);
+});
+
+// why: guards rule:failure-response (status names which Claude folder it read, the first question when a kit looks
+// stale). K11, the 1.27.0 cut took it.
+test('status names the Claude config folder it read', () => {
+  const { kit, home, proj } = makeKit();
+  assert.ok(status({ kit, home, projectDir: proj, ahead: () => 0 }).text.includes(`Claude config folder: ${home.split(path.sep).join('/')}`));
+});
+
+// why: guards rule:tracking-file-functions (a session removes what it made once it has served, and lists the rest for
+// the owner). The owner, 2026-11-12: the closeout cleans a thread's own probe folders as part of the process, not by a
+// string of delete asks; 56 probe folders, 37 guard records and a throwaway had built up over eight releases.
+test('scratch: closeout removes a thread\'s own probe folders and guard records, names the kept, lists strays', () => {
+  const root = makeTemp('probes-');
+  const home = makeTemp('home-');
+  const made = (thread, label) => kitScratch({ root, home, cmd: 'new', thread, label }).path;
+  const a = made('feat/x', 'repro');
+  const b = made('feat/x', 'mutation');
+  const c = made('feat/y', 'other');
+  assert.ok(fs.statSync(a).isDirectory() && a.startsWith(root));
+  kitScratch({ root, home, cmd: 'keep', path: b, reason: 'the next build reads its survivors' });
+  fs.mkdirSync(guardDir(home, a), { recursive: true });
+  fs.writeFileSync(path.join(guardDir(home, a), 'record.json'), '{}');
+  const stray = path.join(root, 'old-stray');
+  fs.mkdirSync(stray);
+  const old = new Date(Date.now() - 5 * 86400e3);
+  fs.utimesSync(stray, old, old);
+  // A ledger line pointing outside the probe folder is never followed.
+  const ledger = path.join(root, '.ledger.json');
+  const l = JSON.parse(read(ledger));
+  l.entries.push({ path: home, thread: 'feat/x', label: 'evil', created: new Date().toISOString() });
+  fs.writeFileSync(ledger, JSON.stringify(l));
+  const gone = [];
+  const r = kitScratch({ root, home, cmd: 'clean', thread: 'feat/x', trash: (p) => gone.push(p) });
+  assert.deepEqual(gone.sort(), [a, guardDir(home, a)].sort());
+  assert.match(r.text, /kept: .*mutation.*the next build reads its survivors/);
+  assert.match(r.text, /refused: .*outside the probe folder/);
+  assert.match(r.text, /stray.*old-stray/);
+  const after = JSON.parse(read(ledger)).entries.map((e) => e.path);
+  assert.ok(!after.includes(a) && after.includes(b) && after.includes(c), 'the ledger lost the wrong entry');
+  // The 1.28.0 sweep: a move that fails keeps that folder's ledger line and the report of what did move.
+  const d = made('feat/z', 'one');
+  const e = made('feat/z', 'two');
+  const r2 = kitScratch({ root, home, cmd: 'clean', thread: 'feat/z', trash: (p) => { if (p === d) throw new Error('EXDEV: cross-device'); } });
+  assert.match(r2.text, /not removed: .*one.*EXDEV/);
+  assert.match(r2.text, /removed: .*two/);
+  const kept = JSON.parse(read(ledger)).entries.map((x) => x.path);
+  assert.ok(kept.includes(d) && !kept.includes(e), 'the failed move lost its ledger line');
+});
+
+// why: guards rule:security-standards. The 1.28.0 sweep: on Windows a program started by bare name is looked for in
+// the current folder first, so a powershell.exe planted where closeout runs would have run in place of the real one.
+test('scratch clean starts the system PowerShell, never one in the current folder', { skip: process.platform !== 'win32' }, () => {
+  const here = makeTemp('plant-');
+  fs.copyFileSync(process.execPath, path.join(here, 'powershell.exe'));
+  const root = makeTemp('probes-');
+  const home = makeTemp('home-');
+  const p = kitScratch({ root, home, cmd: 'new', thread: 'feat/x', label: 'repro' }).path;
+  const url = pathToFileURL(path.resolve('scripts/kit.mjs')).href;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', `import { scratch } from ${JSON.stringify(url)}; scratch({ root: ${JSON.stringify(root)}, home: ${JSON.stringify(home)}, cmd: 'clean', thread: 'feat/x' });`], { cwd: here, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(p), 'the probe folder was not moved to the Recycle Bin');
 });

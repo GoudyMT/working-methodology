@@ -88,7 +88,9 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          node scripts/pr-scope.mjs "$BASE_SHA" | tee -a "$GITHUB_OUTPUT"
+          # The base's own selection rule, never the PR's copy, which could drop itself from the risky list (K9).
+          git show "$BASE_SHA:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || printf '%s\n' 'process.stdout.write("scope=full\nwhy=the base has no pr-scope\n")' > "$RUNNER_TEMP/pr-scope.mjs"
+          node "$RUNNER_TEMP/pr-scope.mjs" "$BASE_SHA" | tee -a "$GITHUB_OUTPUT"
 
       - name: Every test
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
@@ -109,6 +111,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Four machines, each a quarter of the changed tests (K13): one ran past 15 minutes on a PR with 616.
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -131,8 +138,9 @@ jobs:
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SLICE: ${{ matrix.slice }}
         run: |
-          node scripts/test-check.mjs "$BASE_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          node scripts/test-check.mjs "$BASE_SHA" --slice "$SLICE/4" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.
@@ -206,8 +214,11 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT" != "pull_request" ]; then echo "install=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          if ! changed="$(git diff --name-only "$BASE_SHA...HEAD")"; then echo "install=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          if printf '%s\n' "$changed" | grep -qE '^(scripts/kit\.mjs|scripts/ci-install-check\.mjs|user/|project/\.claude/|project/\.githooks/|\.github/)'; then echo "install=true" >> "$GITHUB_OUTPUT"; else echo "install=false" >> "$GITHUB_OUTPUT"; fi
+          # The base's own rule decides, never the PR's copy of it (K9): only files install never reads skip it (K8).
+          # A base whose script has no install rule yet prints none, and the check runs.
+          git show "$BASE_SHA:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || true
+          lane="$(node "$RUNNER_TEMP/pr-scope.mjs" --install "$BASE_SHA" 2>/dev/null | grep -E '^install=(true|false)$' || true)"
+          echo "${lane:-install=true}" >> "$GITHUB_OUTPUT"
 
   # T15 D1 and D2: install, upgrade and the guards, on both systems the kit runs on.
   install-check:

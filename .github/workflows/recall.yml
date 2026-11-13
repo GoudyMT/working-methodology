@@ -12,6 +12,9 @@
 # that branch's hooks, so the branch's own code runs where the short-lived credentials are. It is bounded by the
 # owner pressing Run for a branch of this private repo, the rule admitting main only, the workspace spend limit, and
 # tokens that last minutes; it is the same code a recall run on the owner's PC runs under the owner's own login.
+# The candidate's runs, the baseline's runs and the scorer are three jobs on three machines (K7, the 1.27.0 sweep):
+# the candidate's code can reach its own job's token and files only, never the baseline runs, the sealed map or the
+# scorer. Each job swaps its own GitHub token, and only the run files pass between jobs.
 name: Recall
 
 on:
@@ -29,7 +32,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  recall:
+  # Three candidate runs, on a machine of their own.
+  candidate:
     if: github.ref == 'refs/heads/main' && vars.ANTHROPIC_FEDERATION_RULE_ID != ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -64,6 +68,80 @@ jobs:
           path: cand
           ref: refs/heads/${{ inputs.ref }}
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Prepare git identity and Claude Code
+        shell: bash
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+          npm install --global --ignore-scripts @anthropic-ai/claude-code@2.1.302
+          node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs"
+          claude --version
+
+      # The released kit at its newest tag: the baseline side, and the user layer every session loads.
+      - name: Released kit and user layer
+        shell: bash
+        run: |
+          tag="$(git -C base tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)"
+          git clone --quiet --no-hardlinks --branch "$tag" base released
+          node released/scripts/kit.mjs install user
+          echo "Baseline and user layer: $tag"
+      # GitHub's token lives minutes; it is written again every 4 minutes while the run lasts, and never printed.
+      - name: Federation token
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/oidc" && chmod 700 "$RUNNER_TEMP/oidc"
+          token_file="$RUNNER_TEMP/oidc/token"
+          fetch() { curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$OIDC_AUDIENCE" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).value))" > "$token_file.new" && mv "$token_file.new" "$token_file"; }
+          fetch
+          ( while sleep 240; do fetch || true; done ) > /dev/null 2>&1 &
+          echo "ANTHROPIC_IDENTITY_TOKEN_FILE=$token_file" >> "$GITHUB_ENV"
+      - name: Candidate runs
+        shell: bash
+        run: |
+          for i in 1 2 3; do node base/scripts/recall.mjs "cand-$i" cand; done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: recall-candidate
+          path: base/reports/evals/cand-*.md
+          retention-days: 1
+
+  # Three baseline runs and one control, apart from the candidate's code.
+  baseline:
+    if: github.ref == 'refs/heads/main' && vars.ANTHROPIC_FEDERATION_RULE_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      # The GitHub token that federation swaps for a short-lived Anthropic one; nothing else is granted.
+      id-token: write
+    env:
+      ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+      ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+      ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+      ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+      OIDC_AUDIENCE: ${{ vars.ANTHROPIC_OIDC_AUDIENCE }}
+      MEASURE_REF: ${{ inputs.ref }}
+    steps:
+      # The candidate is a branch of this repo, named plainly: never a PR merge ref or a fork's.
+      - name: The branch to measure is a plain branch name
+        shell: bash
+        run: |
+          [[ "$MEASURE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$MEASURE_REF" != *..* ]] || { echo "Not a plain branch name: $MEASURE_REF"; exit 1; }
+
+      # The harness, keys and brief are main's (the base judges, as the typed gate does); the candidate is data.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -88,6 +166,76 @@ jobs:
           git clone --quiet --no-hardlinks --branch "$tag" base released
           node released/scripts/kit.mjs install user
           echo "Baseline and user layer: $tag"
+      # GitHub's token lives minutes; it is written again every 4 minutes while the run lasts, and never printed.
+      - name: Federation token
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/oidc" && chmod 700 "$RUNNER_TEMP/oidc"
+          token_file="$RUNNER_TEMP/oidc/token"
+          fetch() { curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$OIDC_AUDIENCE" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).value))" > "$token_file.new" && mv "$token_file.new" "$token_file"; }
+          fetch
+          ( while sleep 240; do fetch || true; done ) > /dev/null 2>&1 &
+          echo "ANTHROPIC_IDENTITY_TOKEN_FILE=$token_file" >> "$GITHUB_ENV"
+      - name: Baseline and control runs
+        shell: bash
+        run: |
+          for i in 1 2 3; do node base/scripts/recall.mjs "base-$i" released; done
+          node base/scripts/recall.mjs control-1 --no-kit
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: recall-baseline
+          path: |
+            base/reports/evals/base-*.md
+            base/reports/evals/control-*.md
+          retention-days: 1
+
+  # The blinding and the scorer, on a third machine no candidate code ran on.
+  score:
+    needs: [candidate, baseline]
+    if: github.ref == 'refs/heads/main' && vars.ANTHROPIC_FEDERATION_RULE_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      # The GitHub token that federation swaps for a short-lived Anthropic one; nothing else is granted.
+      id-token: write
+    env:
+      ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+      ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+      ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+      ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+      OIDC_AUDIENCE: ${{ vars.ANTHROPIC_OIDC_AUDIENCE }}
+      MEASURE_REF: ${{ inputs.ref }}
+    steps:
+      # The candidate is a branch of this repo, named plainly: never a PR merge ref or a fork's.
+      - name: The branch to measure is a plain branch name
+        shell: bash
+        run: |
+          [[ "$MEASURE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$MEASURE_REF" != *..* ]] || { echo "Not a plain branch name: $MEASURE_REF"; exit 1; }
+
+      # The harness, keys and brief are main's (the base judges, as the typed gate does); the candidate is data.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Prepare git identity and Claude Code
+        shell: bash
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+          npm install --global --ignore-scripts @anthropic-ai/claude-code@2.1.302
+          node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs"
+          claude --version
 
       # GitHub's token lives minutes; it is written again every 4 minutes while the run lasts, and never printed.
       - name: Federation token
@@ -99,14 +247,25 @@ jobs:
           fetch
           ( while sleep 240; do fetch || true; done ) > /dev/null 2>&1 &
           echo "ANTHROPIC_IDENTITY_TOKEN_FILE=$token_file" >> "$GITHUB_ENV"
+      # Each job's runs by that job's artifact name, and only the files that job is meant to make: an artifact or a file
+      # the candidate's code added on its own machine never reaches the scorer (the 1.28.0 sweep).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recall-candidate
+          path: ${{ runner.temp }}/in/candidate
 
-      # Three candidate runs, three baseline runs and one control, through main's harness.
-      - name: Recall runs
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recall-baseline
+          path: ${{ runner.temp }}/in/baseline
+
+      - name: Take only the runs each job makes
         shell: bash
         run: |
-          for i in 1 2 3; do node base/scripts/recall.mjs "cand-$i" cand; done
-          for i in 1 2 3; do node base/scripts/recall.mjs "base-$i" released; done
-          node base/scripts/recall.mjs control-1 --no-kit
+          in="$RUNNER_TEMP/in"
+          for f in cand-1 cand-2 cand-3; do cp "$in/candidate/$f.md" base/reports/evals/ || exit 1; done
+          for f in base-1 base-2 base-3 control-1; do cp "$in/baseline/$f.md" base/reports/evals/ || exit 1; done
+          [ "$(find "$in/candidate" -mindepth 1 | wc -l)" -eq 3 ] && [ "$(find "$in/baseline" -mindepth 1 | wc -l)" -eq 4 ] || { echo "An artifact holds files no job should make."; exit 1; }
 
       # One fresh blind scorer under main's brief, then the gate line from the sealed map: no number is typed.
       - name: Blind score
@@ -117,7 +276,9 @@ jobs:
           # The scorer reads only its own folder: a copy of the blinded runs, apart from the sealed map, the raw runs
           # and the token, with Read denied everywhere else (the security review of this build).
           desk="$RUNNER_TEMP/desk" && mkdir -p "$desk" && cp "$out"/scorer/R*.md "$desk"/
-          deny="$(node -e "const d=process.argv[1];console.log(JSON.stringify({permissions:{allow:['Read('+d+'/**)','Glob('+d+'/**)'],deny:['Read(//**)','Glob(//**)']}}))" "$desk")"
+          # A deny rule wins over an allow, so "deny everything" left the scorer unable to read its own desk (the 1.27.0
+          # sweep, role 3): only the places that would unblind it are denied, by absolute path (// in a rule).
+          deny="$(node -e "const a=(p)=>'/'+p+'/**';const [d,...no]=process.argv.slice(1);console.log(JSON.stringify({permissions:{allow:['Read('+a(d)+')','Glob('+a(d)+')'],deny:no.flatMap((p)=>['Read('+a(p)+')','Glob('+a(p)+')'])}}))" "$desk" "$out" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/oidc" /proc "$HOME/.claude")"
           brief="$(cat base/docs/evals/recall-scorer-brief.md)"
           keys="$(cat base/docs/evals/recall-questions.md)"
           ( cd "$desk" && claude -p "$(printf '%s\n\n%s\n\n%s\n' "$brief" "$keys" 'Score every run file R*.md in this folder under the current brief and keys above.')" \

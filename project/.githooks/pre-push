@@ -7,14 +7,22 @@
 # Git gives the refs being pushed on stdin once; keep them for every check below.
 refs=$(cat)
 # The remote's own answer for its default branch, asked by URL so no remote setting of this repo changes it; the local
-# origin/HEAD, which a command can move or delete, only when the remote cannot be asked (the 1.26.0 sweep, C5 and V4).
+# origin/HEAD, which a command can move or delete, only when the remote cannot be asked or names none (the 1.26.0
+# sweep, C5 and V4). A remote that answers with no symref line (a HEAD that names a commit, a dumb server) was read as
+# having no default branch, so a push to it went out (K29): with branches there and nothing naming one, it prints ?.
 remote_default() {
   if out=$(git ls-remote --symref "$2" HEAD 2>/dev/null); then
-    printf '%s\n' "$out" | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p' | head -n 1
+    d=$(printf '%s\n' "$out" | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p' | head -n 1)
+    # The remote answered and named none: the local origin/HEAD is not asked, since a tool can move it with any
+    # write to .git (the review of this fix). A new repo has no branch, so no default yet: its first push is judged
+    # below, as before.
+    if [ -z "$d" ] && [ -n "$(git ls-remote --heads "$2" 2>/dev/null)" ]; then d="?"; fi
   else
-    d=$(git symbolic-ref --short "refs/remotes/$1/HEAD" 2>/dev/null)
-    printf '%s\n' "${d#"$1"/}"
+    # A remote that cannot be asked: the local origin/HEAD is any command's to delete, and a config key can break this
+    # one call while the push itself goes through (the 1.28.0 sweep), so it may be the default branch: ?.
+    d="?"
   fi
+  printf '%s\n' "$d"
 }
 if [ -n "$AI_AGENT$CLAUDECODE" ]; then
   common=$(git rev-parse --git-common-dir)
@@ -30,6 +38,7 @@ if [ -n "$AI_AGENT$CLAUDECODE" ]; then
       branch=${rref#refs/heads/}
       case "$branch" in main|master) why="${why:-the main branch}" ;; esac
       if [ -n "$default" ] && [ "$branch" = "$default" ]; then why="${why:-the default branch}"; fi
+      if [ "$default" = "?" ]; then why="${why:-the remote names no default branch, so this may be it}"; fi
       case "$rsha" in *[!0]*)
         git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null || why="${why:-a force push}" ;;
       esac
@@ -115,10 +124,14 @@ if [ ! -f "$common/kit-first-push-done" ]; then
   if [ -n "$checked" ] && [ -n "$(git branch -r --contains "$checked" 2>/dev/null)" ]; then
     : > "$common/kit-first-push-done"
   else
+    # What the remote already holds, asked of the remote itself: a local remote-tracking ref is any command's to write,
+    # and a fake one ended this gate (the 1.28.0 sweep). Only the commits it names that exist here count.
+    have=$(git ls-remote "$2" 2>/dev/null | while read -r sha ref; do git cat-file -e "$sha^{commit}" 2>/dev/null && printf '%s\n' "$sha"; done)
     while read -r lref lsha rref rsha; do
       case "$lsha" in *[!0]*) ;; *) continue ;; esac
       commit=$(git rev-parse -q --verify "$lsha^{commit}")
-      if [ -n "$commit" ] && [ -n "$(git for-each-ref --count=1 refs/remotes/)" ] && [ -z "$(git rev-list --max-parents=0 "$commit" --not --remotes)" ]; then
+      # shellcheck disable=SC2086
+      if [ -n "$commit" ] && [ -n "$have" ] && [ -z "$(git rev-list --max-parents=0 "$commit" --not $have)" ]; then
         : > "$common/kit-first-push-done"
         continue
       fi

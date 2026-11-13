@@ -2,7 +2,7 @@
 
 > Two standard PR-description formats. **Pick by stakes** (the SAME split as the Pre-PR Deep Sweep): **Standard** for a feature / sub-project / arc or any PR carrying design decisions or new behaviour; **Lean** for a chore / docs / config / dependency bump / one-line non-behavioural change. When unsure -> Standard. Never inflate a small PR to the large shape.
 >
-> **Always** (the PR body is outward-facing): ASCII only (`->`, straight quotes, ` - `; no unicode arrows or em dashes); **NO** AI / agent / tool references (describe any review BY DIMENSION, never by mechanism); **NO** links to gitignored vault docs (summarize the review inline; never link sweep reports, specs, ADRs or plans that are not in the public repo); reference only shipped public paths. Title: `type: subject`, at most 72 characters (the squash commit's subject on main); the H1 is `<Area>: <line>` ending in that subject. Show the rendered body + its audit to the owner BEFORE any push or PR command. Full rule: rule:pr-body.
+> **Always** (the PR body is outward-facing): ASCII only (`->`, straight quotes, ` - `; no unicode arrows or em dashes); **NO** AI / agent / tool references (describe any review BY DIMENSION, never by mechanism); **NO** links to gitignored vault docs (summarize the review inline; never link sweep reports, specs, ADRs or plans that are not in the public repo); reference only shipped public paths. Title: `type: subject`, at most 72 characters with the " (#n)" GitHub adds (the squash commit's subject on main); the H1 is `<Area>: <line>` ending in that subject. Show the rendered body + its audit to the owner BEFORE any push or PR command. Full rule: rule:pr-body.
 >
 > Before drafting, read this template and the two latest merged PR bodies of the same size.
 

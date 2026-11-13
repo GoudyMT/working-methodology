@@ -25,7 +25,7 @@ async function busyPercent(ms = SAMPLE_MS) {
 /** The processes with the most CPU time, by name - a hint for the owner, not an exact live reading. */
 function topProcesses(n = 3) {
 	const r = process.platform === 'win32'
-		? spawnSync('powershell', ['-NoProfile', '-Command',
+		? spawnSync(require('node:path').join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-Command',
 			`Get-Process | Sort-Object CPU -Descending | Select-Object -First ${n} -ExpandProperty ProcessName`], { encoding: 'utf8', timeout: 10000 })
 		: spawnSync('ps', ['-eo', 'comm', '--sort=-pcpu', '--no-headers'], { encoding: 'utf8', timeout: 10000 });
 	return (r.stdout || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean).slice(0, n);

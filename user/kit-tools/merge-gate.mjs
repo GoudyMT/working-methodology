@@ -226,7 +226,7 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 
 	// 7. The live body, by the base branch's own audit.
 	faults.push(...settingFaults({ cwd, baseRef, git }));
-	faults.push(...bodyFaults({ cwd, config, body: p.body || '', title: p.title || '', baseRef, git, run }));
+	faults.push(...bodyFaults({ cwd, config, body: p.body || '', title: p.title || '', number: String(pr), baseRef, git, run }));
 
 	return { go: faults.length === 0, faults, facts };
 }
@@ -452,7 +452,7 @@ function pinBase({ git, gh, repo, base, cwd }) {
 	return { tip };
 }
 
-function bodyFaults({ cwd, config, body, title, baseRef, git, run }) {
+function bodyFaults({ cwd, config, body, title, number = '', baseRef, git, run }) {
 	const name = CONVENTIONAL.test(title) ? 'pr-body-audit-lean.mjs' : 'pr-body-audit.mjs';
 	const found = baseAudit(git, baseRef, name, config);
 	if (!found) return [`${baseRef} has no ${name}, and no installed copy in ${path.join(config, 'kit-tools', 'audits')}: install the kit's user layer`];
@@ -460,7 +460,8 @@ function bodyFaults({ cwd, config, body, title, baseRef, git, run }) {
 		const file = path.join(found.tmp, 'pr-body.md');
 		fs.writeFileSync(file, body);
 		// The version check reads the diff against PR_BASE: the pinned commit, never a short name a clone can move.
-		const r = run(process.execPath, [found.script, file, title], cwd, { PR_BASE: baseRef });
+		// The PR's number, as CI passes it, so the squash suffix is counted at its real length (the 1.28.0 sweep).
+		const r = run(process.execPath, [found.script, file, title, ...(/^\d+$/.test(number) ? [number] : [])], cwd, { PR_BASE: baseRef });
 		return r.status === 0 ? [] : [`the live PR body fails ${name}: ${(r.stdout + r.stderr).trim().split('\n').filter((l) => /FAIL|fault|must|no /i.test(l)).slice(0, 8).join('; ') || 'see the audit'}`];
 	} finally {
 		kitTemp.removeTemp(found.tmp);
@@ -486,7 +487,7 @@ export function live({ kind, id, cwd, config = configDir(), run = realRun }) {
 		if (!repo || !isPrRepo(repo, p.url)) return { ok: false, faults: [`the repo read is not the repo of PR ${id} (${p.url})`] };
 		const pinned = pinBase({ git, gh, repo: repo.full_name, base: p.baseRefName, cwd });
 		if (pinned.fault) return { ok: false, faults: [pinned.fault] };
-		const faults = bodyFaults({ cwd, config, body: p.body || '', title: p.title || '', baseRef: pinned.tip, git, run });
+		const faults = bodyFaults({ cwd, config, body: p.body || '', title: p.title || '', number: String(id), baseRef: pinned.tip, git, run });
 		return { ok: !faults.length, faults };
 	}
 	if (kind === 'release') {
