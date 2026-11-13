@@ -15,7 +15,7 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | # | Field | Read by | Value |
 |---|---|---|---|
 | A1 | Project name + one line | Start Here, handoff | `<PROJECT NAME>` - `<line>` |
-| A2 | **Domain hard boundaries** (legal, licensing, product lines; content sourcing rules). Folders no tool may write: `.claude/protected-folders.json`, `{"folders": ["<path>"]}` from the project root; only the owner writes it, and a malformed file holds every write and shell call | Tier 0, delegated decisions, sweep dim 3, brief block | `<fill in>` |
+| A2 | **Domain hard boundaries** (legal, licensing, product lines; content sourcing rules) | Tier 0, delegated decisions, sweep dim 3, brief block | `<fill in>` |
 | A3 | **Security baseline** + platform controls (e.g. CSP, integrity pinning, third-party code policy) | Security | `<fill in>` |
 | A4 | **Data boundary** (where personal data may live / never go) | Tier 0, red-team, sweep dim 1 | `<fill in>` |
 | A5 | Product red lines (e.g. no ads, no trackers, no telemetry) | Tier 0 | `<fill in>` |

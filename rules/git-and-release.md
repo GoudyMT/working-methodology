@@ -47,7 +47,7 @@ Formats in `_Templates/_PR Body Template.md`: **Standard** for features, design 
 
 **How: the pr-body skill** (steps, two examples, the audit run).
 
-- **Hard rules (outward-facing):** ASCII; no AI / agent / tool references (reviews described BY DIMENSION + verdict); no links to gitignored vault docs; title `type: subject` (squash subject + " (#n)" <= 72, CI checks), H1 `<Area>: <line>` ending in it.
+- **Hard rules (outward-facing):** ASCII; no AI / agent / tool references (reviews described BY DIMENSION + verdict); no links to gitignored vault docs; title `type: subject` (the squash subject, <= 72, CI checks it), H1 `<Area>: <line>` ending in it.
 - **Lean:** 1-2 sentence framing, <= 3 changes (what and why, no file lists), 3 gates (the proof; the full gate as one line; the sweep tier and its result by dimension, rule:sweep-tiers), <= 1 sentence of notes.
 - **Summary, not tallies:** outward summaries state the end result, and each thing once. No per-step tallies (size raises, finding, test or mutant counts); keep a number only if it is the result or the reader acts on it. Test each line: who reads it, and why care? Detail stays in the sweep report and plan. Why: tallies bury the result.
 - **Standard:** before / after table; decisions and review result on screen; review rows are the project's (A16), files and gates left to GitHub; word and bullet ceilings; plain speak.

@@ -235,10 +235,11 @@ through the original and the flipped file).
 
 ### The owner's calls after the lock (2026-11-13)
 
-- Nothing rolls over from 1.29.0: every finding of this build and its sweep is fixed here, low and medium too. The
-  rule says so from this build (`rules/reviews-and-findings.md`, and every place the sweep tools say it).
-- A failing-first test is owed only where a fix changes behaviour (`rules/testing.md`, rule:test-value). The sweep's
-  findings are held to that bar.
+- Nothing rolls over from 1.29.0: every finding of this build and its sweep is fixed here, low and medium too.
+- A failing-first test is owed only where a fix changes behaviour (rule:test-value). The sweep's findings are held
+  to that bar.
+- Both were written into the rule text and pulled again with the rest of it when recall did not pass (below); this
+  build still works by them.
 - Three restated or snapshot test lines cut on the owner's yes (R6.4, R6.5, R6.6).
 
 ### Row by row
@@ -258,9 +259,9 @@ through the original and the flipped file).
 | C13 | Reproduced live: past 200 characters Claude Code keeps 200, a dash and a short hash. Such a folder is matched by its 200 characters. On 1.28.0 a long-path project whose shell stood outside it was not found |
 | K35 | Not real: a project that tracks its own file at the reader's path has every call held and its file never run (probe on this branch, 2026-11-13). No test added: nothing changed |
 | I6 | The fetch and push compare is built: a feature push asks when origin pushes somewhere it does not fetch. "BOM ledger" and "owner allow-list" name `autonomy.mjs`, which the merge gate replaced: closed. `--amend-outcome` was a convenience nobody has needed since 1.16.0: closed, the owner's to reopen |
-| K30 | Probe: a lookup of the parent chain takes 430 to 710 ms and finds Claude Code for a direct child; a detached child whose parent has gone finds nothing. The bar (hold a detached child) fails, so by the owner's pick it is a named limit (`rules/security.md`) |
+| K30 | Probe: a lookup of the parent chain takes 430 to 710 ms and finds Claude Code for a direct child; a detached child whose parent has gone finds nothing. The bar (hold a detached child) fails, so by the owner's pick it is a named limit (the header of `project/.claude/guard.cjs`) |
 | K33 | Named limit, same line |
-| K42, K43, C17, K37 | Rule text, one commit, with the two test-rule lines. Gated by the recall measurement below |
+| K42, K43, C17, K37 | Rule text. Written, measured three times, and pulled: see the recall record below. Not shipped in 1.29.0 |
 
 ### Known and named, not fixed
 
@@ -268,10 +269,30 @@ through the original and the flipped file).
   (checkout, stash), or by a script that builds its path at run time. The second is the general limit; the first is
   a medium the security review named. A hold on those git commands would stop ordinary work in every project.
 
+### Recall record (2026-11-13, local runs, the owner's yes for each round)
+
+One blind scorer per round, brief v2. Each run is 13 fresh sessions; a round of 7 runs took about 11 minutes.
+
+| Round | Candidate text | Candidate | Baseline (1.28.0) | Control | What failed |
+|---|---|---|---|---|---|
+| 1 | The first wording: "only a high or security hole that cannot be finished carries" | 11, 11, 12 | 12, 12, 13 | 0 | Question 12 in 3 of 3: sessions read it as "yes, a high can carry". The rule had been made looser than the released one |
+| 2 | "What cannot be finished carries only on the owner's yes"; keys v6 for question 12, on the owner's yes | 11, 11, 12 | 12, 11, 12 | 0 | Question 12 in 3 of 3 again ("yes, with your yes" where the key wants a flat no) |
+| 3 | "A high or critical never carries" | 11, 12, 11 | 11, 11, 12 | 0 | Question 12 passes in 3 of 3. Question 4 (push and PR) misses in 3 of 3 |
+
+Then a probe of question 4 alone, 8 sessions a side, one blind scorer: the released 1.28.0 passes 3 of 8, this
+build's text 4 of 8, a stronger wording of the short outward-acts rule 3 of 8. So the rule text of this build did
+not move question 4, and no wording tried lifts it: the question passes under half the time on the released kit
+too, mostly on whether the answer says the act is named and that the yes comes by pop-up. With one question that
+unsteady and a bar of 12 of 13, a median of 12 needs every other question right in two runs of three.
+
+By the rule agreed before the probe (no clear lift: pull the rule text, no more runs), every rule line of this
+build and keys v6 are pulled. The gate was not lowered and no line was recorded as passing. What recall is owed
+before the next rule change: a ruling on question 4 (the key or the rule), which is the owner's.
+
 ## Progress
 
 - [x] Step 1 probes
 - [x] Kit-only work
 - [x] Guard work
-- [ ] Rule text and recall
+- [x] Rule text and recall (written, measured, pulled)
 - [ ] Release prep, sweep, PR

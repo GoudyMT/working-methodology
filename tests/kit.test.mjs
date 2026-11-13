@@ -1015,24 +1015,24 @@ test('a first action still stops for a lock, an outward act or an open decision,
 });
 
 // why: guards rule:sweep-auto-approval
-test('findings are fixed in their build and only what the owner accepts carries, in the rule and in everything the sweep tools tell the lead', () => {
+test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
   const rule = (f) => read(path.resolve(f));
   const findings = rule('rules/reviews-and-findings.md');
-  assert.match(findings, /Findings are fixed in the build that finds them\. A low or medium that cannot be finished carries only on the owner's yes, first next build\. A high or critical never carries: it is fixed before the PR[^\n]*or the owner accepts it/);
-  assert.match(findings, /the small ones too; what carries \(the rule above\) goes to the handoff's carry-overs/);
+  assert.match(findings, /only at medium or below[^\n]*critical is fixed before the PR[^\n]*the owner accepts it/);
+  assert.match(findings, /post-PR findings at medium or below[^\n]*carry-overs/);
   assert.match(findings, /in a known area \(one component, one flow\)/);
   // pin: 1 (the sweep report audit reads these dispositions)
   assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
   // Comments off: what counts is the text the lead is shown.
   const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left unfixed is fixed in this build; only what cannot be finished and the owner accepts goes to the handoff\\'s carry-overs/);
+  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left at medium or below goes to the handoff\\'s carry-overs for the next feature build, and a high or critical is fixed or the owner accepts it/);
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left is fixed in this build; only what cannot be finished and the owner accepts is logged with `--carried <n>` and goes to the handoff/);
+  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it/);
   const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(approve, /What the re-sweep left unfixed is fixed in this build; only what cannot be finished and the owner accepts goes to \$\{CARRY_HOME\}/);
-  assert.match(approve, /findings left unfixed after it[^\n]*each one that cannot be finished and the owner accepted/);
+  assert.match(approve, /What the re-sweep left at medium or below goes to \$\{CARRY_HOME\}; a high or critical is fixed or the owner accepts it/);
+  assert.match(approve, /findings left unfixed after it[^\n]*each medium or below/);
   assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
   assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
 });
@@ -5673,18 +5673,7 @@ test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the 
   const released = spawnSync('git', ['show', 'v1.24.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(released.status, 0, 'the v1.24.0 tag must exist locally');
   assert.equal(versionText(text, 4), versionText(released.stdout, 4));
-  // v6 (the owner's ruling, 2026-11-13): key 12 follows the rule that nothing carries without the owner's yes; the
-  // question, the other twelve rows and the bar are v5's, and v5 stays as 1.28.0 released it.
-  const at128 = spawnSync('git', ['show', 'v1.28.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
-  assert.equal(at128.status, 0, 'the v1.28.0 tag must exist locally');
-  assert.equal(versionText(text, 5).trim(), versionText(at128.stdout, 5).trim());
-  assert.equal(currentVersion(text), 6);
-  assert.equal(questionCount(text, 6), 13);
-  assert.equal(passBar(text, 6), 12);
-  const [was, now] = [questions(text, 5), questions(text, 6)];
-  assert.deepEqual(now.filter((r) => r.n !== 12), was.filter((r) => r.n !== 12));
-  assert.equal(now[11].q, was[11].q);
-  assert.match(now[11].key, /^No; a high or critical finding is fixed before the PR or the owner accepts it; nothing carries without the owner's yes/);
+  assert.equal(currentVersion(text), 5);
   assert.equal(questionCount(text, 5), 13);
   assert.equal(passBar(text, 5), 12);
   const [v4, v5] = [questions(text, 4), questions(text, 5)];

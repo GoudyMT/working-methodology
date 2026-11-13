@@ -9,7 +9,6 @@ tags:
   probe-scope: probe, experiment, investigation scope
   snag-response: stuck, blocker, workaround, snag
   blocked-prompts: permission prompt, permission block, waiting on a prompt, owner command, hung
-  cost-first: cost, money, CI minutes, quota, paid run, budget, heavy run, API spend
   fact-check: fact check, verify a document, claims, report, explainer, diagram accuracy
 ---
 
@@ -49,15 +48,11 @@ After triage and diagnosis: (1) recommend the LEAST-INVASIVE path (no change -> 
 
 ## Blocked on a Prompt or a Permission {#blocked-prompts}
 
-- **Never hand the owner a command an agent may run;** run it. On a permission block, ask with the choice pop-up, the question quoting the exact act: the owner's tap clears it. Typed words only where the tool or model has no pop-up.
+- **Never hand the owner a command an agent may run;** run it. On a permission block, ask in the thread for one typed sentence: a card tap does not clear the permission system, typed words do.
 - **Never point the owner at a prompt you cannot see.** Before saying a prompt waits, read the agent's transcript and the live processes.
 - **Read the full tool output before saying what it will ask.** A prediction from part of it is a guess.
 
 Why: each was a real stall (1.21.0): the owner waited on a step an agent could run, or on a prompt that was not there.
-
-## Cost Before a Heavy Run {#cost-first}
-
-Before a run that spends the owner's money or a shared quota (CI minutes, paid API calls, a long agent run), and before proposing a direction that adds such spend: state what it costs (minutes, dollars, tokens), how much of the quota is already used, and the free option first. A paid option is never the default, and never the recommendation without its cost beside it; spend that was not planned is the owner's call. Why: money the owner did not see coming is taken from somewhere else.
 
 ## Fact-Check Before Handing Over {#fact-check}
 
