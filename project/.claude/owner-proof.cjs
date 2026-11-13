@@ -294,7 +294,14 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// A path glued to the end of a word (sed's 1w.claude/guard.cjs writes that file, the 1.28.0 mutation run) is read
 	// too: each tail of the word from a .claude, .git or .githooks part.
 	const tails = (word) => [word, ...[...String(word).matchAll(/(?<=[^\\/.])(?=\.(claude|git|githooks|gitconfig)(?:[\\/]|$))/gi)].map((m) => String(word).slice(m.index))];
-	const hit = (x) => tails(dotless(x.value, x.quoted)).some((w) => names(w, cwd));
+	// Read once per word and folder: a long command asks of each word several times (the 1.28.0 measure run: 98 KB
+	// took 9 s under CI coverage).
+	const seen = new Map();
+	const hit = (x) => {
+		const key = `${x.quoted ? 1 : 0}${Array.isArray(cwd) ? cwd.join('/') : String(cwd)}\0${x.value}`;
+		if (!seen.has(key)) seen.set(key, tails(dotless(x.value, x.quoted)).some((w) => names(w, cwd)));
+		return seen.get(key);
+	};
 	// A variable set to a plain value earlier in the command (P=~/.claude/projects) is read as that value where it is
 	// used, so a read through it passes and a write through it is refused (S23-2). One the guard did not see set stays
 	// unread, as before.
