@@ -901,3 +901,25 @@ test('a yes is found past a line with no message, and the push question says no 
 	const asked = spawnSync(process.execPath, [path.resolve('project/.claude/owner-yes.cjs'), '--push', 'refs/heads/feat/x'], { encoding: 'utf8', env: { ...env, CLAUDE_CONFIG_DIR: cfg } });
 	assert.equal(asked.status, 1, asked.stderr);
 });
+
+// why: guards rule:outward-acts. I6 (the fetch and push repo compare, open since 1.16.0): origin set to push somewhere
+// other than it fetches from, by a push URL of its own or a rewrite for pushes only, sends a feature branch to another
+// repo. That is not the push the bound frees, so it asks.
+test('a feature push is inside the bound only while origin pushes to where it fetches from', () => {
+	const repo = kitTemp.makeTemp('i6-');
+	const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+	git('init', '-q', '-b', 'main');
+	git('remote', 'add', 'origin', 'https://example.invalid/owner/app.git');
+	const push = () => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git push origin feat/x' }, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: repo } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout && JSON.parse(r.stdout).hookSpecificOutput.permissionDecision ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	assert.equal(push(), '');
+	for (const [key, value] of [['remote.origin.pushurl', 'https://example.invalid/other/repo.git'], ['url.https://example.invalid/other/.pushInsteadOf', 'https://example.invalid/owner/']]) {
+		git('config', key, value);
+		assert.match(push(), /somewhere other than it fetches from/, key);
+		git('config', '--unset-all', key);
+	}
+	assert.equal(push(), '', 'back as it was');
+});
