@@ -233,10 +233,45 @@ through the original and the flipped file).
   owner-yes 47, 110; task-gate 102). The dispatcher reads null and undefined alike, which a test now pins (a merge
   of one undefined and one null answer is null); owner-yes's callers test truth only.
 
+### The owner's calls after the lock (2026-11-13)
+
+- Nothing rolls over from 1.29.0: every finding of this build and its sweep is fixed here, low and medium too. The
+  rule says so from this build (`rules/reviews-and-findings.md`, and every place the sweep tools say it).
+- A failing-first test is owed only where a fix changes behaviour (`rules/testing.md`, rule:test-value). The sweep's
+  findings are held to that bar.
+- Three restated or snapshot test lines cut on the owner's yes (R6.4, R6.5, R6.6).
+
+### Row by row
+
+| Row | Result |
+|---|---|
+| K14 | Built. The 98 KB test passes by the clock under 8 s, or by the guard's own CPU under 8 s with the clock inside 10 s times the machine's slowness (an idle node start against 150 ms). Proof: 9 s of work fails, a 12 s wait fails, an 8.5 s wait passes. No guard file changed |
+| K41 | Built. `mutation-check --base` resolves the base first (a bad one exits 2), says "nothing measured" on no flip, and `--count` prints the flips without running one; the workflow measures the change by default, prints flips and minutes first, runs the whole kit only by hand, and sorts tests only then. Found on the way: `test-value.mjs` dropped its first file when run with no `--out`; fixed |
+| K36 | Real the other way round: the index read is the change's own copy. A rule the change itself adds is counted and named in the report |
+| R6.2 | Real. No test reached the refusal of a used tap; one does now, and it kills both flips on that path |
+| R6.4, R6.5, R6.6 | One behaviour test added (the installed guard names its Claude folder), one test renamed to what it proves, three lines cut |
+| J8 | Each CI gate mapped to a test of its bad case. One gap: the link scan had none; it has one now. The workflow lint is a pinned outside tool and has no planted case of its own |
+| S18-4 | Not real now: every mention of `approve.mjs` in the rules and role files carries its folder |
+| K34 | Built as redesigned: the folder list is never written by a tool |
+| Found in build (high) | A protected file named with a trailing dot or space, or a stream suffix, was not read as the file. Reproduced on disk and on the released 1.28.0 (PowerShell wrote the settings with no hold). Each path part is read as the file Windows opens. Older than this build; every project on Windows |
+| K32 | Built. A PowerShell wildcard under plain folders is no hit when the folder, read from the disk, holds no dot name, no kit- name and no link at any depth; only in a command of one statement, of plain printable text. A backslash in PowerShell is no longer read as a quote |
+| C13 | Reproduced live: past 200 characters Claude Code keeps 200, a dash and a short hash. Such a folder is matched by its 200 characters. On 1.28.0 a long-path project whose shell stood outside it was not found |
+| K35 | Not real: a project that tracks its own file at the reader's path has every call held and its file never run (probe on this branch, 2026-11-13). No test added: nothing changed |
+| I6 | The fetch and push compare is built: a feature push asks when origin pushes somewhere it does not fetch. "BOM ledger" and "owner allow-list" name `autonomy.mjs`, which the merge gate replaced: closed. `--amend-outcome` was a convenience nobody has needed since 1.16.0: closed, the owner's to reopen |
+| K30 | Probe: a lookup of the parent chain takes 430 to 710 ms and finds Claude Code for a direct child; a detached child whose parent has gone finds nothing. The bar (hold a detached child) fails, so by the owner's pick it is a named limit (`rules/security.md`) |
+| K33 | Named limit, same line |
+| K42, K43, C17, K37 | Rule text, one commit, with the two test-rule lines. Gated by the recall measurement below |
+
+### Known and named, not fixed
+
+- The folder list can still be removed by a git command that changes the working tree when the project tracks it
+  (checkout, stash), or by a script that builds its path at run time. The second is the general limit; the first is
+  a medium the security review named. A hold on those git commands would stop ordinary work in every project.
+
 ## Progress
 
-- [ ] Step 1 probes
-- [ ] Kit-only work
-- [ ] Guard work
+- [x] Step 1 probes
+- [x] Kit-only work
+- [x] Guard work
 - [ ] Rule text and recall
 - [ ] Release prep, sweep, PR
