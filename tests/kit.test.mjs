@@ -7657,6 +7657,21 @@ test('the first push check reads only the repository it runs in, whatever KIT_HO
   run('git', ['-C', app, 'worktree', 'add', '-q', path.join(root, 'wt'), '-b', 'feat/wt']);
   const w = check(path.join(root, 'wt'), app);
   assert.doesNotMatch(w.stdout + w.stderr, /names another repository/);
+  // The 1.28.0 sweep: a folder whose .git file points at the repository shares its git folder but is no checkout of it,
+  // and its own settings would clear the gate. Only a checkout git lists (the main one or a worktree) is the project.
+  const decoy = path.join(root, 'decoy');
+  fs.mkdirSync(decoy);
+  fs.writeFileSync(path.join(decoy, '.git'), `gitdir: ${path.join(app, '.git').split(path.sep).join('/')}\n`);
+  const d = check(app, decoy);
+  assert.notEqual(d.status, 0, 'a decoy folder was taken for the project');
+  assert.match(d.stdout + d.stderr, /KIT_HOOK_PROJECT names another repository/);
+  // A copy of the script placed in the decoy and run from there is held the same way.
+  fs.mkdirSync(path.join(decoy, '.claude'));
+  for (const f of ['first-push-check.mjs', 'secret-patterns.mjs', 'github-scanning.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(decoy, '.claude', f));
+  const env = { ...process.env };
+  delete env.KIT_HOOK_PROJECT;
+  const c = run(process.execPath, [path.join(decoy, '.claude', 'first-push-check.mjs'), '--staged'], { cwd: app, encoding: 'utf8', env });
+  assert.notEqual(c.status, 0, 'a copy of the script in a decoy folder read that folder\'s settings');
 });
 // why: guards rule:kit-standards (a project hears of newer kit rules at session start). K11, the 1.27.0 cut took the
 // only test of the session-start update line.

@@ -21,14 +21,21 @@ const commonDir = (dir) => {
 	if (r.status !== 0) return '';
 	try { return realpathSync.native(path.resolve(dir, r.stdout.trim())).toLowerCase(); } catch { return ''; }
 };
-if (process.env.KIT_HOOK_PROJECT) {
-	const named = commonDir(path.resolve(process.env.KIT_HOOK_PROJECT));
-	if (!named || named !== commonDir(process.cwd())) {
-		console.log('first push check: KIT_HOOK_PROJECT names another repository than the one this runs in; held.');
+// A folder whose .git file points at the repository shares its git folder but is no checkout of it, and its own
+// settings would clear the gate (the 1.28.0 sweep): the project must be a checkout git lists, the main one or a worktree.
+const realLower = (p) => { try { return realpathSync.native(p).toLowerCase(); } catch { return ''; } };
+const checkouts = (dir) => {
+	const r = spawnSync('git', ['-C', dir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
+	return r.status === 0 ? r.stdout.split(/\r?\n/).filter((l) => l.startsWith('worktree ')).map((l) => realLower(l.slice(9))) : [];
+};
+const PROJECT = process.env.KIT_HOOK_PROJECT ? path.resolve(process.env.KIT_HOOK_PROJECT) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+{
+	const named = commonDir(PROJECT);
+	if (!named || named !== commonDir(process.cwd()) || !checkouts(process.cwd()).includes(realLower(PROJECT))) {
+		console.log(`first push check: ${process.env.KIT_HOOK_PROJECT ? 'KIT_HOOK_PROJECT names' : 'this script sits in'} another repository than the one this runs in; held.`);
 		process.exit(1);
 	}
 }
-const PROJECT = process.env.KIT_HOOK_PROJECT ? path.resolve(process.env.KIT_HOOK_PROJECT) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...a) => spawnSync('git', ['-C', PROJECT, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 // The commit being checked may be in an agent worktree: git runs the hook at that worktree's top, so its index is
 // read there. The settings (.kit/) stay in the main checkout, where this script lives.
