@@ -116,5 +116,12 @@ test('a long command is read in time: the whole guard process answers a 98 KB co
 	const run = setup();
 	const started = Date.now();
 	run('Bash', { command: 'a;'.repeat(49000) });
-	assert.ok(Date.now() - started < 8000, `${Date.now() - started} ms`);
+	const took = Date.now() - started;
+	// On a miss, each guard's own time in this process, so the slow one is named (the 1.28.0 measure run missed by 1 s).
+	const each = took < 8000 ? '' : ['owner-proof.cjs', 'task-gate.cjs', 'guard-outward.cjs', 'guard-delete.cjs'].map((g) => {
+		const t = Date.now();
+		require(path.join(SRC, g)).check({ tool_name: 'Bash', tool_input: { command: 'a;'.repeat(49000) }, cwd: process.cwd() });
+		return `${g} ${Date.now() - t} ms`;
+	}).join(', ');
+	assert.ok(took < 8000, `${took} ms${each ? `; ${each}` : ''}`);
 });
