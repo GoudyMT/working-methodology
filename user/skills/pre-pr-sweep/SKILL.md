@@ -62,7 +62,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    full suite with auto-fix on red. Log the sweep's outcome (step 6) once its reviewers hand back. A second pass is
    the owner's call: `approve.mjs` asks for any contract after a sweep that ran on this branch (a rebase or a new file
    name does not hide it), and for a re-sweep contract (`"resweepOf"`, `"fixed"`; its roles are one blast-radius, one per
-   fixed kind and one `dimension`). After a re-sweep, what is left is fixed in this build; only a high or security hole that cannot be finished, or what the owner accepts, is logged with `--carried <n>` and goes to the handoff. The report's Covers line stays the
+   fixed kind and one `dimension`). After a re-sweep, what is left is fixed in this build; only what cannot be finished and the owner accepts is logged with `--carried <n>` and goes to the handoff. The report's Covers line stays the
    commit the sweep read, and each fix is listed by its commit. Summarize the result in the PR body by dimension and verdict, never by agent
    (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
