@@ -272,7 +272,10 @@ function markersCleared(flat) {
 // unsetting or env, no shell, eval or source, no Env: drive, and every command that names a marker a reader of it.
 const MARKER = /\b(CLAUDECODE|AI_AGENT)\b/i;
 const MARKER_READERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'findstr', 'select-string', 'sls', 'echo', 'printf', 'cat', 'type', 'get-content', 'gc', 'head', 'tail', 'git']);
-function markerOnlyNamed(text) {
+function markerOnlyNamed(text, again = true) {
+	// Read with git or gh written by its bare name, so a folder on its path (Git/cmd/git.exe) is not read as a shell.
+	const canon = canonical(text);
+	if (again && canon !== text) return markerOnlyNamed(canon, false);
 	// Read as the shell reads it too (u"nset" is unset), and never with -v (printf -v sets a variable) or a redirect
 	// (a reader writing the marker's name into a file, a profile among them): the 1.28.0 sweep.
 	if (/(^|\s)-v\b|[<>]/.test(text) || markerOnlyNamed.strict(plainText(text, 'Bash').replace(/["']/g, ''))) return false;
@@ -377,7 +380,7 @@ function findOutward(text, depth) {
 			// A message git or gh is handed (-m, --body ...) is text it stores, never a command it runs (K2).
 			const tool = programName(all[0]?.value || '');
 			for (const [k, word] of all.entries()) {
-				if ((tool === 'git' || tool === 'gh') && k > 0 && !word.redirect && /^(-m|--message|--body|--title|--notes)$/.test(all[k - 1].value) && !/\$\(|`/.test(word.value)) continue;
+				if (/^(git|gh)(\.(exe|cmd|bat|com|ps1))?$/i.test(base(tool)) && k > 0 && !word.redirect && /^(-m|--message|--body|--title|--notes)$/.test(all[k - 1].value) && !/\$\(|`/.test(word.value)) continue;
 				const run = word.quoted || (word.redirect && /\$\(|`/.test(word.value));
 				const hit = run ? findOutward(word.value.replace(/^`|`$/g, ''), depth + 1) : '';
 				if (hit) return hit;
@@ -480,7 +483,7 @@ function bypassIn(text, depth = 0) {
 			if (hit) return hit;
 		}
 		// A message git or gh stores (-m, --body ...) is never run (K2); one with $( ) or a backtick in it is still read.
-		const msg = (k) => (words[0] === 'git' || words[0] === 'gh') && k > 0 && /^(-m|--message|--body|--title|--notes)$/.test(all[k - 1].value) && !/\$\(|`/.test(all[k].value);
+		const msg = (k) => /^(git|gh)(\.(exe|cmd|bat|com|ps1))?$/i.test(base(programName(words[0] || ''))) && k > 0 && /^(-m|--message|--body|--title|--notes)$/.test(all[k - 1].value) && !/\$\(|`/.test(all[k].value);
 		if (depth < MAX_DEPTH) for (const [k, w] of all.entries()) if (w.quoted && !msg(k)) { const hit = bypassIn(w.value, depth + 1); if (hit) return hit; }
 	}
 	return '';
@@ -591,7 +594,7 @@ function check(input) {
 		const text = all.join(LF);
 		const canon = canonical(text);
 		if (!reason && canon !== text) reason = findOutward(canon, 0) || findOutward(plainText(canon, input.tool_name), 0);
-		const bypass = bypassIn(text) || (canon !== text && bypassIn(canon)) || (canon !== text && markersCleared(canon.replace(/[\\`^'"]/g, '')) ? MARKERS : '');
+		const bypass = bypassIn(text) || (canon !== text && bypassIn(canon)) || (canon !== text && markersCleared(canon.replace(/[\\`^'"]/g, '')) && !markerOnlyNamed(canon) ? MARKERS : '');
 		if (bypass) reason = bypass;
 		else if (reason && (hookFreeMainWrite(text) || hookFreeMainWrite(canon) || pushOutsideProject(text, input))) reason = 'a write to main that runs no pre-push hook';
 		// A push or a PR is where a PR body goes out: name the skill that writes and audits it.

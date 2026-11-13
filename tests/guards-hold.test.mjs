@@ -730,6 +730,7 @@ test('reading or naming a marker runs; every way of clearing one is still never 
 	assert.match(reason('Bash', 'echo CLAUDECODE | python -c "import os,sys; os.environ.pop(sys.stdin.read().strip()); os.execvp(\'git\',[\'git\',\'push\',\'origin\',\'HEAD:main\'])"'), /^Never by a tool: clearing/);
 	assert.match(reason('PowerShell', "echo CLAUDECODE | % { $s=[Diagnostics.ProcessStartInfo]::new('git','push origin HEAD:main'); $s.EnvironmentVariables.Remove($_); [Diagnostics.Process]::Start($s) }"), /^Never by a tool: clearing/);
 	assert.doesNotMatch(reason('Bash', 'grep -n CLAUDECODE notes.txt | head -5'), /markers/, 'a reader piped to a reader');
+	assert.doesNotMatch(reason('Bash', '"C:/Program Files/Git/cmd/git.exe" commit -m "note CLAUDECODE"'), /markers/, 'a path to git in a commit naming a marker');
 	for (const command of ['grep -n CLAUDECODE notes.txt', 'echo $CLAUDECODE', 'git commit -m "docs: name the CLAUDECODE marker"', 'rg AI_AGENT -n project/.githooks']) {
 		assert.doesNotMatch(reason('Bash', command), /markers/, command);
 	}
