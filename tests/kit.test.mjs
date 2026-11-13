@@ -7831,7 +7831,8 @@ test('scratch clean starts the system PowerShell, never one in the current folde
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', `import { scratch } from ${JSON.stringify(url)}; scratch({ root: ${JSON.stringify(root)}, home: ${JSON.stringify(home)}, cmd: 'clean', thread: 'feat/x' });`], { cwd: here, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(!fs.existsSync(p), 'the probe folder was not moved to the Recycle Bin');
-});// why: guards rule:outward-acts. R6.2 (the 1.25.0 sweep): no test reached the refusal of a tap that already answered
+});
+// why: guards rule:outward-acts. R6.2 (the 1.25.0 sweep): no test reached the refusal of a tap that already answered
 // an ask (the C10 test stops at "already logged", one check earlier). One pop-up answer is for one ask: when the
 // branch moves on and the same contract is asked again, the old tap, still newer than that ask, does not clear it.
 test('R6.2: a pop-up Yes that answered one ask does not answer the next ask of the same contract', () => {

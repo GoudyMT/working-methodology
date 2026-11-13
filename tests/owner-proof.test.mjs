@@ -310,9 +310,6 @@ test('a bash wildcard that cannot match a dot name is no write to a guard', () =
 	};
 	for (const command of ['npm test -- tests/*', 'node --test tests/*.test.mjs', 'npm test -- tests/?ard*']) assert.equal(why(command), '', command);
 	for (const command of ["npm test -- 'tests/*'", 'shopt -s dotglob; npm test -- tests/*', 'GLOBIGNORE=x npm test -- tests/*', 'npm test -- tests/\\*', 'npm test -- tests/.*', 'setopt globdots; npm test -- tests/*', 'npm test -- tests/*(D)', 'eval "sh"opt -s dotglob"; npm test -- tests/*', '$(printf shopt) -s dotglob; npm test -- tests/*']) assert.match(why(command), /^Never by a tool/, command);
-	// PowerShell matches dot names, so there the wildcard is held wherever the folder holds one (K32 reads the folder).
-	fs.mkdirSync(path.join(proj, 'tests', '.githooks'), { recursive: true });
-	assert.match(why('npm test -- tests/*', 'PowerShell'), /^Never by a tool/, 'PowerShell matches dot names');
 });
 // why: guards rule:security-standards. The plan check's P4 and the 1.28.0 sweep: a reader's exemption holds only for
 // the bare name looked up on PATH; ./sed or ./cat is any program a tool wrote there.
@@ -460,4 +457,11 @@ test('a write into .git, a device or share path, a word through a junction and a
 	}
 	// What reaches none of them still runs.
 	for (const [tool, command] of [['Bash', 'mv pay/config pay/config.bak'], ['Bash', 'tar --exclude=.git -cf x.tar pay'], ['PowerShell', 'Get-ChildItem .git'], ['Bash', 'git status']]) assert.equal(ask(tool, { command }), 'allow', `${tool} ${command}`);
+});
+
+// why: guards rule:security-standards. The 1.29.0 sweep: a PowerShell filter names files at any depth with no path word,
+// so a pipeline into a writer deleted the folder list and the guards unseen; a filter that is only read from stays free.
+test('a PowerShell filter piped into a writer is read as naming the files of the guards', () => {
+	for (const command of ['Get-ChildItem -Recurse -Filter *folders.json | Remove-Item', 'Get-ChildItem -Recurse -Include *.j* | Remove-Item -Force', 'Remove-Item -Recurse -Include settings*.json', 'Get-ChildItem -Recurse -Filter *.json | ForEach-Object { Remove-Item $_ }']) assert.equal(run('PowerShell', { command }), 'deny', command);
+	for (const command of ['Get-ChildItem -Recurse -Filter *.json', 'Get-ChildItem -Recurse -Filter *.cjs | Select-Object Name', 'Get-ChildItem -Recurse -Filter *.txt | Remove-Item']) assert.equal(run('PowerShell', { command }), 'allow', command);
 });

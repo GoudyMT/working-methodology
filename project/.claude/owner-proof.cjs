@@ -332,6 +332,16 @@ function plainFolder(word, cwd) {
 	} catch { return false; }
 }
 
+// Whether a filter's pattern can be the name of a file the guards live in: the files really in the project's
+// .claude and .githooks folders, and the settings, the folder list and git's config and hooks by name.
+function filterFits(pattern, cwd) {
+	const root = process.env.CLAUDE_PROJECT_DIR || (Array.isArray(cwd) ? (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/') : process.cwd());
+	const named = ['settings.json', 'settings.local.json', 'protected-folders.json', 'config', 'hooks', '.claude', '.githooks', '.git', 'kit-owner.json'];
+	for (const d of ['.claude', '.githooks']) { try { named.push(...fs.readdirSync(path.join(root, d)).slice(0, 400).map((n) => n.toLowerCase())); } catch { /* none */ } }
+	const p = slash(String(pattern)).replace(/["']/g, '');
+	return /[\/$`]/.test(p) || named.some((n) => fits(p, n));
+}
+
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
 function shellWrites(command, tool, start, names = proofNames) {
 	// Every line is read, here-document bodies too: reading a body as data was spelled around five ways in the 1.24.0
@@ -473,6 +483,16 @@ function shellWrites(command, tool, start, names = proofNames) {
 		const message = (x, k) => MESSAGES.has(program) && !x.redirect && k > 0 && (MESSAGE_FLAGS.test(all[k - 1]) || false);
 		const inline = (x) => MESSAGES.has(program) && !x.redirect && /^(--message|--body|--title|--notes)=/i.test(x.value);
 		if (segment.some((x) => hit(x) || x.value.split(/\s+/).some((w) => names(dotless(w, x.quoted), cwd)))) named = true;
+		// A PowerShell -Filter or -Include names files at any depth, with no path word (the 1.29.0 sweep: Get-ChildItem
+		// -Recurse -Filter *folders.json | Remove-Item deleted the list). Its value is held against the names of the
+		// files the guards live in; the command is a write unless it and every stage it pipes into only read.
+		if (tool !== 'Bash' && segment.some((x, k) => k > 0 && /^-(filter|include)$/i.test(all[k - 1]) && filterFits(x.value, cwd))) {
+			const reads = (g) => { const w = (g || []).filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p)); };
+			let k = s;
+			let onlyReads = reads(segments[k]) && !segment.some((x) => x.redirect);
+			while (onlyReads && segments[k].end === '|') { k++; onlyReads = k < segments.length && reads(segments[k]) && !segments[k].some((x) => x.redirect); }
+			if (!onlyReads) return true;
+		}
 		// A quoted word is read in pieces too: inline code (node -e "...writeFileSync('.claude/settings.json')") names a
 		// file inside it.
 		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && tails(w).some((t) => names(t, cwd)));

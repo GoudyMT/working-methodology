@@ -1262,7 +1262,7 @@ test('R4.2 slow old-shape kit hooks are cut short, and the call is answered well
 	const t0 = Date.now();
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify(input), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home }, timeout: 20000 });
 	assert.equal(r.status, 0, r.stderr);
-	assert.ok(Date.now() - t0 < 8000 * slowness, `the guard took ${Date.now() - t0} ms on a machine ${slowness.toFixed(1)} times slow`);
+	assert.ok(Date.now() - t0 < Math.min(8000 * slowness, 19000), `the guard took ${Date.now() - t0} ms on a machine ${slowness.toFixed(1)} times slow`);
 	// A hook cut short says so, as a changed one does (C12).
 	assert.match(r.stdout, /canary.cjs ran out of its time/);
 });

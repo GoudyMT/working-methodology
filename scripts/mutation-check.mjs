@@ -137,14 +137,14 @@ export async function main(argv) {
 	if (o.slice === 'bad') { removeTemp(copy); removeTemp(claudeDir); process.stderr.write('mutation-check: --slice takes i/n with i below n\n'); return 2; }
 	try {
 		// Only lines that flip are counted, so the slices split the real work: slice i takes every n-th flip from i.
-		const spots = [...byLine.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
-			.filter((s) => flip((fs.readFileSync(path.join(copy, s.file), 'utf8').split('\n')[s.line - 1]) ?? ''))
-			.filter((s, k) => !o.slice || k % o.slice[1] === o.slice[0]);
+		const every = [...byLine.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
+			.filter((s) => flip((fs.readFileSync(path.join(copy, s.file), 'utf8').split('\n')[s.line - 1]) ?? ''));
+		const spots = every.filter((s, k) => !o.slice || k % o.slice[1] === o.slice[0]);
 		if (o.count) { process.stdout.write(`flips: ${spots.length}\n`); return 0; }
 		// A scoped run with no flip measured nothing: said as that, never as a clean pass.
 		if (o.base && spots.length === 0) {
 			if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, base: o.base, flips: [] }, null, 1) + '\n');
-			process.stdout.write(`mutation check: nothing measured: no line changed since ${o.base} has a flip a test reaches\n`);
+			process.stdout.write(every.length ? `mutation check: no flip in this slice (${every.length} in the whole run)\n` : `mutation check: nothing measured: no line changed since ${o.base} has a flip a test reaches\n`);
 			return 0;
 		}
 		for (const s of spots) {

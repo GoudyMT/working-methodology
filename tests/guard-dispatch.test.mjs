@@ -117,9 +117,10 @@ test('the strictest answer wins and every reason and note is kept', () => {
 test('a long command is read in time: the whole guard process answers a 98 KB command inside the hook timeout', () => {
 	const run = setup();
 	// K14: a shared CI runner ran every guard ten times slower by the clock (10,572 ms here against 658 ms of work on
-	// the owner's PC), so the clock alone is not the guard. The limit stays 8 s and is held two ways: by the clock, or,
-	// when the clock misses, by the CPU time the guard process itself used, with the clock still inside the hook's own
-	// 10 s stretched by how slow this machine starts an idle node (a guard that hangs or waits fails either way).
+	// the owner's PC), so on a slow machine the clock alone is not the guard. The limit stays 8 s. On a machine of
+	// normal speed the clock decides, as it always did (the 1.29.0 sweep: a fallback there let a guard that waits take
+	// 10 s). Only on a machine measured slow does the guard's own CPU time decide, with the clock still inside the
+	// hook's 10 s stretched by that slowness, so a guard that hangs or waits fails either way.
 	const idleAt = Date.now();
 	spawnSync(process.execPath, ['-e', '']);
 	const slowness = Math.max(1, (Date.now() - idleAt) / IDLE_SPAWN_MS);
@@ -129,7 +130,7 @@ test('a long command is read in time: the whole guard process answers a 98 KB co
 	const wall = Date.now() - started;
 	const cpu = Number(fs.readFileSync(cpuFile, 'utf8'));
 	assert.ok(Number.isFinite(cpu) && cpu > 0, 'the guard process reported its CPU time');
-	const took = wall < 8000 || wall >= 10000 * slowness ? wall : cpu;
+	const took = slowness > 1 && wall < 10000 * slowness ? Math.min(wall, cpu) : wall;
 	// On a miss, each guard's own time in this process, so the slow one is named (the 1.28.0 measure run missed by 1 s).
 	const each = took < 8000 ? '' : ['owner-proof.cjs', 'task-gate.cjs', 'guard-outward.cjs', 'guard-delete.cjs'].map((g) => {
 		const t = Date.now();
