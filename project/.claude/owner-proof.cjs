@@ -343,7 +343,9 @@ function shellWrites(command, tool, start, names = proofNames) {
 		if (!dotglob) return mark(w);
 		// Only in a command of one statement: a statement before it could make a link or a dot name in the folder after
 		// the guard read it and before the wildcard is expanded (the review of this fix).
-		const alone = segments.length === 1 && !/[;&|(){}`\n]/.test(text);
+		// And only plain printable text: a carriage return or another sign PowerShell ends a line at is no break to the
+		// reader, so anything but ASCII letters, signs, a space or a tab keeps the strict reading.
+		const alone = segments.length === 1 && !/[;&|(){}`\n]/.test(text) && !/[^\x20-\x7e\t]/.test(String(command || ''));
 		return tool !== 'Bash' && alone && plainFolder(w, cwd) ? mark(w) : word;
 	};
 	// A path glued to the end of a word (sed's 1w.claude/guard.cjs writes that file, the 1.28.0 mutation run) is read

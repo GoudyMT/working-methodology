@@ -386,7 +386,7 @@ test('a PowerShell wildcard under a folder that holds no dot name is no write to
 		'Remove-Item .claude/*', 'Remove-Item $HOME/*', 'Remove-Item ~/*', 'Remove-Item $d/*', 'Remove-Item missing/*', 'Remove-Item "tests/*"', 'Remove-Item tests/../*'];
 	for (const command of held) assert.equal(ps(command), 'deny', command);
 	// Only a command of one statement: one before it could change the folder after the guard read it.
-	for (const command of ['New-Item -ItemType Junction tests/l -Target $t; Remove-Item -Recurse tests/*', 'Get-Date | Out-Null; Remove-Item tests/*']) assert.equal(ps(command), 'deny', command);
+	for (const command of ['New-Item -ItemType Junction tests/l -Target $t; Remove-Item -Recurse tests/*', 'Get-Date | Out-Null; Remove-Item tests/*', 'New-Item -ItemType Junction tests/l -Target $t\rRemove-Item tests/*', 'Remove-Item tests/*\u0085New-Item x']) assert.equal(ps(command), 'deny', JSON.stringify(command));
 	// After a cd the guard cannot follow, the folder is not known, so nothing is read from the disk.
 	assert.equal(ps('Set-Location $x; Remove-Item tests/*'), 'deny');
 	// A dot name that arrives later is seen: the folder is read each time.
