@@ -217,6 +217,8 @@ function describe(v, rec, dir) {
 	const parts = [];
 	if (v.changed.length) parts.push(`Kit guard files changed outside install: ${v.changed.join(', ')}.`);
 	if (v.hooksPath) parts.push(`core.hooksPath changed outside install (now ${v.hooksPath}).`);
+	// The folder list has its own way back: the install below does not accept a list that is gone or changed.
+	if (v.changed.includes('.claude/protected-folders.json')) parts.push('The folder list (.claude/protected-folders.json) is gone or changed since install recorded it: put it back as it was, or the owner accepts the change in their own terminal with install project --accept-host .claude/protected-folders.json.');
 	if (parts.length && kitUnchanged(rec)) parts.push(`Every call is held until the kit's copies are back. Run, alone: ${fixLine(rec, dir)} (or ask the owner to).`);
 	else if (parts.length) parts.push(`Every call is held until the kit's copies are back. The kit folder (${posix(rec.kitDir || '<kit folder>')}) has changed since this install, so no install may run from this session: the owner runs ${fixLine(rec, dir)} in a terminal, from the release copy on its tag.`);
 	for (const s of v.settings) parts.push(`${posix(s.file)}: ${s.why}. Every call is held until the owner takes that out of the file.`);

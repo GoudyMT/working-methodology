@@ -1,4 +1,9 @@
-# Build 3 (1.29.0): the 1.28.0 carry-overs, the cost rule and the pop-up yes
+# Build 3 (1.29.0): the 1.28.0 carry-overs and the sweep's guard fixes
+
+**Outcome, 2026-11-13 (read this first).** Sections 1 to 9 are the plan as the owner locked it and are kept as
+written. What was built is section 10. Two things differ from the plan: the rule text (K42, K43, C17, K37 and the
+two test-rule lines) was written, measured three times and pulled, so 1.29.0 changes no rule text; and K34 was
+redone twice, ending as a list the tools never write and that install records outside the project.
 
 Status: LOCKED by the owner's pop-ups, 2026-11-13: this scope, with the resume packet (T3) in build 4; K30 option B's probe, else A; K33 closed as a named limit; one local recall measurement. Branch `feature/carry-overs-and-cost-rule` from
 main 7d7fdd0 (v1.28.0), local only.
@@ -17,7 +22,8 @@ re-tagged at closeout, not built. This is plan-check trial 2 of 3 (K20).
   fits beside 23 rows under one sweep. T3 (the resume packet) is the proposed build 4.
 - **Reach:** K14, K38, K41, K17, K36, the R6 rows and the closes reach ONLY THE KIT (its own tests and CI). K32, K34,
   K35, K30, C13 and I6 change guard files, and K42, K43, C17 and K37 change rule text: those reach EVERY PROJECT
-  that installs 1.29.0.
+  that installs 1.29.0. (As built: K35 changed nothing, K30 is a comment in the guard's header, and the rule text
+  did not ship.)
 - **Money:** hosted CI on the public kit repo is free. No full mutation measure is planned (the old one cost about
   600 minutes; K41 makes the scoped one the default). The paid or metered parts are one recall measurement (section
   5), the plan check (about 180,000 tokens last time) and the one sweep (5.6M tokens last time). Each is the owner's
@@ -46,6 +52,8 @@ Probe: tool calls through the release copy's `project/.claude/guard.cjs` in proc
 ### 2b. Already fixed in the released code: close, no build
 
 Each is quoted from `scripts/recall.mjs` at v1.28.0. Step 1 confirms a test covers each before the row is closed.
+Confirmed 2026-11-13 in `tests/kit.test.mjs`: the tests named "recall gate (S18-2)", "(S18-3)", "(S18-5)",
+"(S18-6)", "(S18-7)", "recall (I27)", and the `checkSessionHome` test for S18-1; J2 rests on the gate's own lines.
 
 | Row | Where it is fixed |
 |---|---|
@@ -151,9 +159,9 @@ All four texts are written and settled before the first run (the 1.18.0 lesson: 
 - **K37** the title rule's words in the rule modules and the A2 row, as the pr-body skill already has them.
 
 **The measurement:** 3 candidate runs, 3 baseline runs (the release copy at v1.28.0) and 1 control, 13 questions
-each, then a blind scorer. About 91 headless sessions. Checked 2026-11-13 on the owner's PC: `claude auth status`
-says the sign-in is the claude.ai subscription and no API key is set, so a local measurement is $0 on a card and is
-paid in subscription use (the list's "about $25" is the API-priced figure, for the CI recall job, which stays off).
+each, then a blind scorer. About 91 headless sessions. Checked 2026-11-13: a local measurement runs on the
+owner's own sign-in, so it is $0 on a card and is paid in subscription use (the list's "about $25" is the
+API-priced figure, for the CI recall job, which stays off).
 
 **The risk, said up front:** the baseline has scored 11 and 12 on a bar of 12. If the candidate lands at 11, the
 gate refuses it and the four rule rows are reverted and carried, as C17 was. One measurement is the plan; a second
@@ -197,12 +205,12 @@ code only. 17 findings before any code: 1 critical, 6 high, 8 medium, 2 low. Tok
 | P2 | high | K32's exemption let a PowerShell `*` reach dot names other than `.claude` | The exemption applies only when no protected name (.claude, .git, .githooks, .gitconfig, .config) exists at any depth the pattern reaches, links followed, and never for `.`, `..`, `~`, `$HOME`, `$PWD`, a variable or an unknown folder. Tests: `Remove-Item sub/*` with `sub/.githooks`, `sub/*/config` with `sub/.git`, a junction, `../*`: each Never |
 | P3 | high | K30 option B does not hold a detached child | B's probe passes only if a detached child, an orphaned child and a WMI or scheduled start are all held on Windows; else A |
 | P4 | high | `rules/git-and-release.md` is 13,996 of 14,000 bytes; K42 and K37 do not fit | K42's home is `rules/evidence-and-failures.md` (to check its room in step 4); K37's words replace the old title words, byte count stated before the recall run; no cap is raised |
-| P5 | high | The scoped measure passes green on zero flips | A base that is not a commit or a diff that fails exits 2; zero flips reads "nothing measured"; tests for both and for a deletion-only change |
+| P5 | high | The scoped measure passes green on zero flips | A base that is not a commit or a diff that fails exits 2; zero flips reads "nothing measured"; tests for both. A change that only deletes lines takes the same zero-flip path, so under the owner's test bar it gets no test of its own |
 | P6 | high | The value job turns a scoped run into a false cut list | The value job does not run on a scoped run; test |
 | P7 | high | K34 collided with the owner-yes path for the list | Gone with the redesign |
 | P8 | medium | K43 has no proof a pop-up clears a Claude Code permission block (the old line says the opposite) | The proof is the 1.28.0 thread's (a pop-up yes cleared the release-copy move and the installs); step 1 repeats it once here on a real block. If it fails, typed words stay for that case. Every copy of the old sentence changes in one pass |
 | P9 | medium | K34 false holds in worktrees and on branch switches | Gone with the redesign |
-| P10 | medium | CPU time misses a guard that waits on a child | K14 keeps a wall bound too: wall under 8 s OR (CPU of the guard and its children under 8 s AND wall under 10 s times the runner's measured slowness, from an idle spawn timed in the same test) |
+| P10 | medium | CPU time misses a guard that waits on a child | As built after the sweep: on a machine of normal speed the clock alone decides, at 8 s, so a wait or a slow child fails as before; only on a machine measured slow does the guard's own CPU decide (children not counted), with the clock inside 10 s times that slowness |
 | P11 | medium | The design left one of the two wall-clock sites alone | Step 1 names which site missed (the list says the 98 KB test, `guard-dispatch`); R4.2 gets the same runner-slowness factor |
 | P12 | medium | The CPU report could put a test hook in the shipped guard | K14 changes no file under `project/.claude` or `user/kit-tools`: the report comes from a test-side `--require` preload |
 | P13 | medium | The `base` input reaches git unguarded | Through `env:`, resolved with `rev-parse --verify --end-of-options`; a base starting with `-` exits 2 |
@@ -246,14 +254,14 @@ through the original and the flipped file).
 
 | Row | Result |
 |---|---|
-| K14 | Built. The 98 KB test passes by the clock under 8 s, or by the guard's own CPU under 8 s with the clock inside 10 s times the machine's slowness (an idle node start against 150 ms). Proof: 9 s of work fails, a 12 s wait fails, an 8.5 s wait passes. No guard file changed |
+| K14 | Built, then tightened by the sweep. On a machine of normal speed the 98 KB test fails past 8 s by the clock, as before; only on a machine measured slow (an idle node start against 150 ms) does the guard's own CPU under 8 s decide, with the clock inside 10 s times that slowness. Proof on the owner's PC: 9 s of work, a 12 s wait and an 8.5 s wait each fail. No guard file changed |
 | K41 | Built. `mutation-check --base` resolves the base first (a bad one exits 2), says "nothing measured" on no flip, and `--count` prints the flips without running one; the workflow measures the change by default, prints flips and minutes first, runs the whole kit only by hand, and sorts tests only then. Found on the way: `test-value.mjs` dropped its first file when run with no `--out`; fixed |
 | K36 | Real the other way round: the index read is the change's own copy. A rule the change itself adds is counted and named in the report |
 | R6.2 | Real. No test reached the refusal of a used tap; one does now, and it kills both flips on that path |
 | R6.4, R6.5, R6.6 | One behaviour test added (the installed guard names its Claude folder), one test renamed to what it proves, three lines cut |
 | J8 | Each CI gate mapped to a test of its bad case. One gap: the link scan had none; it has one now. The workflow lint is a pinned outside tool and has no planted case of its own |
 | S18-4 | Not real now: every mention of `approve.mjs` in the rules and role files carries its folder |
-| K34 | Built as redesigned: the folder list is never written by a tool |
+| K34 | Built as redesigned: the folder list is never written by a tool. After the sweep, install also records it outside the project, as it records a host's own hook: gone, changed or not yet recorded, every call is held; the owner accepts a change in their own terminal, and install refuses that flag in a shell an AI tool started |
 | Found in build (high) | A protected file named with a trailing dot or space, or a stream suffix, was not read as the file. Reproduced on disk and on the released 1.28.0 (PowerShell wrote the settings with no hold). Each path part is read as the file Windows opens. Older than this build; every project on Windows |
 | K32 | Built. A PowerShell wildcard under plain folders is no hit when the folder, read from the disk, holds no dot name, no kit- name and no link at any depth; only in a command of one statement, of plain printable text. A backslash in PowerShell is no longer read as a quote |
 | C13 | Reproduced live: past 200 characters Claude Code keeps 200, a dash and a short hash. Such a folder is matched by its 200 characters. On 1.28.0 a long-path project whose shell stood outside it was not found |
@@ -261,13 +269,32 @@ through the original and the flipped file).
 | I6 | The fetch and push compare is built: a feature push asks when origin pushes somewhere it does not fetch. "BOM ledger" and "owner allow-list" name `autonomy.mjs`, which the merge gate replaced: closed. `--amend-outcome` was a convenience nobody has needed since 1.16.0: closed, the owner's to reopen |
 | K30 | Probe: a lookup of the parent chain takes 430 to 710 ms and finds Claude Code for a direct child; a detached child whose parent has gone finds nothing. The bar (hold a detached child) fails, so by the owner's pick it is a named limit (the header of `project/.claude/guard.cjs`) |
 | K33 | Named limit, same line |
-| K42, K43, C17, K37 | Rule text. Written, measured three times, and pulled: see the recall record below. Not shipped in 1.29.0 |
+| K42, K43, C17, K37 | Rule text. Written, measured three times, and pulled: see the recall record below. Not shipped in 1.29.0. They stay open on the list for the build that follows the owner's ruling on recall question 4; the wording is kept as three patches for that build |
+| K17, M27 | Measured, not built: K17 on this build's PR run, M27 from this sweep's count of new spellings (section below) |
+| K39, I19 | The owner's calls 4 and 5 of section 6: K39 closed as unnamed (this sweep ran the same two roles); I19 left as it is until recall is reworked |
 
-### Known and named, not fixed
+### The sweep (2026-11-13, one sweep, seven reviewers, the owner's yes)
 
-- The folder list can still be removed by a git command that changes the working tree when the project tracks it
-  (checkout, stash), or by a script that builds its path at run time. The second is the general limit; the first is
-  a medium the security review named. A hold on those git commands would stop ordinary work in every project.
+Report: `reports/sweeps/2026-11-13-1.29.0.md` (local). Every finding was fixed in this build or put to the owner;
+a test was added only where a fix changed behaviour. The highs, each reproduced by its reviewer before the fix:
+
+- The folder list read only from the project could be dropped by a branch switch, a reset, a stash or a clean
+  (two reviewers; the git check written for it missed a branch whose last commit did not touch the list, and
+  froze a project that had removed its list on purpose). Now recorded by install.
+- A move or a copy into `.git` (`Move-Item pay/* .git`) landed a config or a hooks folder there. `.git` named as
+  the place written to, its worktrees and `.ssh` are held.
+- A device or share spelling of a local path (`\\?\C:\...`, `\\localhost\C$\...`) wrote inside a listed folder.
+  Read as the local path; a share or device path that cannot be placed is held while a list exists.
+- A setting that carries the push (`core.sshCommand`, a proxy, the certificate check, the credential helper)
+  sent a feature push to another host with origin's URL untouched. Changing one now asks, as changing the URL does.
+
+The spelling race (M27): this sweep found 4 new spellings of a write the guards missed, against 8 at 1.28.0 and
+11 at 1.21.0. Slower, not ended.
+
+Named limits, each put to the owner: a PowerShell shell that keeps its own folder between calls; a race between
+two calls; a name with a full stop after it in prose (an echo or a heredoc line ending in a protected file's name
+is now held, as the same line without the stop always was); the Windows name rule on macOS and Linux (a file
+really named `settings.json:x` there asks).
 
 ### Recall record (2026-11-13, local runs, the owner's yes for each round)
 

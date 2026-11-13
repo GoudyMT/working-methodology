@@ -1,7 +1,8 @@
 # T15 Part B: measure what every kit test catches. It makes the coverage map, flips each covered condition in eight
 # slices, and sorts every test by what it guards or catches (scripts/test-value.mjs). It only reports: the cut list
 # goes to the owner before any test is removed. It never runs on a PR, so no PR pays for it: run it by hand, or push
-# a branch named test/measure-<name>.
+# a branch named test/measure-<name> (since K41 that push measures only what the branch changed; the whole kit
+# runs only by hand, with scope set to all).
 # K41 (the owner, 2026-11-13): it measures only the lines the branch changed since the base, and says how many flips
 # that is, with a rough count of runner minutes, before any slice starts. The whole kit (about 2,500 flips, about 600
 # runner minutes on 2026-11-12) runs only when started by hand with scope set to all. The test sort needs every flip,
