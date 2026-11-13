@@ -40,6 +40,18 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	};
 }
 
+// why: guards rule:outward-acts. T16b, the rest of build 2b: the shared reader's second reading (git or gh by any path,
+// suffix or script wrapper written as the bare name) is read by every guard, not the push guard alone, so a delete or
+// commit spelled git.ps1 is held as git is; and a reader that cannot load holds every call (the plan check's P15).
+test('every guard reads the shared second reading, and a missing reader holds every call', () => {
+	const run = setup();
+	assert.match(run('Bash', { command: 'git clean -fdx' }).permissionDecisionReason || '', /delete/, 'the plain spelling');
+	for (const command of ['C:/Tools/git.ps1 clean -fdx', 'git.ps1 clean -fdx', 'git.exe. clean -fdx']) assert.match(run('PowerShell', { command }).permissionDecisionReason || '', /delete/, command);
+	assert.equal(run('PowerShell', { command: 'git.ps1 status' }).permissionDecision, undefined, 'a read through the wrapper runs');
+	const noReader = setup({ drop: 'guard-read.cjs' });
+	assert.equal(noReader('Bash', { command: 'git status' }).permissionDecision, 'deny');
+});
+
 // why: guards rule:outward-acts
 test('a missing or broken project guard holds every call it would read, with the fix', () => {
 	const run = setup({ drop: 'guard-delete.cjs' });
