@@ -338,7 +338,8 @@ function shellWrites(command, tool, start, names = proofNames) {
 		// have no end, so every place a w or W sits is read as naming the rest of its word, gaps trimmed; a script word past
 		// the cap that holds one is held (the review of this fix: fail closed, read too much rather than too little).
 		// Any sed in the command words, run through a wrapper (env, nice, busybox, xargs) or by another name (gsed, a path).
-		const sedHere = all.some((w) => /^(g?sed|busybox)(\.exe)?$/i.test(path.basename(slash(w))));
+		// Fail closed on the name: any word holding sed, busybox or toybox, quoted text handed to a shell among them.
+		const sedHere = all.some((w) => /sed|busybox|toybox/i.test(w));
 		if (sedHere && !printSed(all) && segment.some((x) => !x.redirect && /[wW]/.test(x.value) && (x.value.length > 4096 || [...x.value.matchAll(/[wW]/g)].some((m) => { const t = x.value.slice(m.index + 1).trimStart(); return t && tails(t).some((w) => names(w, cwd)); })))) return true;
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
 		const message = (x, k) => MESSAGES.has(program) && !x.redirect && k > 0 && (MESSAGE_FLAGS.test(all[k - 1]) || false);
@@ -346,7 +347,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 		if (segment.some((x) => hit(x) || x.value.split(/\s+/).some((w) => names(dotless(w, x.quoted), cwd)))) named = true;
 		// A quoted word is read in pieces too: inline code (node -e "...writeFileSync('.claude/settings.json')") names a
 		// file inside it.
-		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && names(w, cwd));
+		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && tails(w).some((t) => names(t, cwd)));
 		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && (hit(x) || inside(x)));
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
