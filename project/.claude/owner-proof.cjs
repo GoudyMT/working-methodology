@@ -77,8 +77,14 @@ function real(p, depth = 8) {
 	try { return path.join(fs.realpathSync.native(p), ...rest); } catch { return path.join(p, ...rest); }
 }
 
+// Windows opens a file under other names too: dots and spaces on the end of a name are dropped (settings.json. is
+// settings.json), and a colon starts a stream of the same file (guard.cjs::$DATA is guard.cjs itself). Each part of a
+// path is read as the file it opens, on every platform: read so, a name only ever gains a hold (the review of K34,
+// reproduced on 1.28.0: PowerShell wrote the settings through settings.json. with no hold). A drive keeps its colon.
+const opened = (x) => (/^[a-z]:$/i.test(x) ? x : x.replace(/:.*$/, '').replace(/[. ]+$/, '') || x);
+
 function insideProof(file, cwd) {
-	const p = slash(real(path.resolve(cwd, file)));
+	const p = slash(real(path.resolve(cwd, file))).split('/').map(opened).join('/');
 	const h = slash(real(path.resolve(home())));
 	// The auto memory sits beside the transcripts (projects/<project>/memory/), and sessions write it.
 	if (/\/projects\/[^/]+\/memory(\/|$)/.test(p)) return false;
@@ -116,7 +122,7 @@ function partsOf(word) {
 	// protected file and nowhere else (the 1.25.0 sweep; CI's RUNNER~1 temp folder names none).
 	// Past a few names alike, Windows makes the short name from the first two letters and a 4-digit hex hash
 	// (SE1A2B~1.JSO), so a name of that shape is read by its two letters only.
-	return w.split('/').filter(Boolean).map((x) => {
+	return w.split('/').filter(Boolean).map(opened).map((x) => {
 		const m = /^([^~*?[]{1,6})~\d{1,6}(?:\.([^.~*?[]{1,3}))?$/.exec(x);
 		if (!m) return x;
 		const stem = m[1].length === 6 && /^[0-9a-f]{4}$/.test(m[1].slice(2)) ? m[1].slice(0, 2) : m[1];
@@ -235,6 +241,35 @@ const MESSAGE_FLAGS = /^(-m|--message|-b|--body|-t|--title|-n|--notes)$/i;
 // Programs a reader may pipe a transcript into: they read their input and write only their output.
 const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-object', 'select', 'convertfrom-json', 'measure-object', 'measure', 'out-string']);
 
+// K32 (the plan check's P2): whether a word is <plain folders>/<a wildcard part>, under a folder the guard knows, and
+// that folder, read from the disk, holds nothing a guard shape could name: no name that starts with a dot or kit-,
+// and no link, at any depth (a delete may recurse). A folder it cannot read whole, reaches through a link, or that
+// holds more than the cap answers no: the wildcard is then read the strict way.
+const PLAIN_CAP = 5000;
+function plainFolder(word, cwd) {
+	if (!Array.isArray(cwd) || rooted(word)) return false;
+	const ps = String(word).split('/');
+	if (ps.length < 2 || !/[*?[]/.test(ps[ps.length - 1]) || ps.slice(0, -1).some((p) => !/^[A-Za-z0-9_-][A-Za-z0-9_. -]*$/.test(p) || /[. ]$/.test(p) || /^kit-/i.test(p))) return false;
+	const base = (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/');
+	const dir = path.join(base, ...ps.slice(0, -1));
+	try {
+		const same = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+		if (!same(fs.realpathSync(dir), path.join(fs.realpathSync(base), ...ps.slice(0, -1)))) return false;
+		let seen = 0;
+		const stack = [dir];
+		while (stack.length) {
+			const d = stack.pop();
+			for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+				if (++seen > PLAIN_CAP || e.name.startsWith('.') || /^kit-/i.test(e.name) || /~\d/.test(e.name)) return false;
+				const st = fs.lstatSync(path.join(d, e.name));
+				if (st.isSymbolicLink()) return false;
+				if (st.isDirectory()) stack.push(path.join(d, e.name));
+			}
+		}
+		return true;
+	} catch { return false; }
+}
+
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
 function shellWrites(command, tool, start, names = proofNames) {
 	// Every line is read, here-document bodies too: reading a body as data was spelled around five ways in the 1.24.0
@@ -298,7 +333,16 @@ function shellWrites(command, tool, start, names = proofNames) {
 	// zsh (the Bash tool's shell where it is the user's) has the same rule, turned off by setopt or a (D) qualifier; any
 	// text run as shell (eval, source, a substitution) could turn either on unseen (the review of this fix).
 	const dotglob = tool !== 'Bash' || [String(command || ''), source].some((t) => /dotglob|GLOBIGNORE|BASHOPTS|shopt|bash\s+-O|\+O|setopt|glob_?dots|\(D|\beval\b|\bsource\b|(^|[\s;&|(])\.\s|\$\(|`|\balias\b|BASH_ENV|ENV=/i.test(t));
-	const dotless = (word, quoted) => (dotglob || quoted || /[\\$`{}~'"]/.test(word) ? word : word.split('/').map((p) => (/^[*?]/.test(p) ? `\x01${p}` : p)).join('/'));
+	const mark = (word) => word.split('/').map((p) => (/^[*?]/.test(p) ? `\x01${p}` : p)).join('/');
+	// K32: where dot globbing is on (PowerShell always), a wildcard still cannot name a guard when the folder it sits
+	// in holds none: plainFolder reads that folder from the disk. PowerShell's own path separator is read as one.
+	const dotless = (word, quoted) => {
+		if (quoted) return word;
+		const w = tool === 'PowerShell' ? word.replace(/\\/g, '/') : word;
+		if (/[\\$`{}~'"]/.test(w)) return word;
+		if (!dotglob) return mark(w);
+		return tool !== 'Bash' && plainFolder(w, cwd) ? mark(w) : word;
+	};
 	// A path glued to the end of a word (sed's 1w.claude/guard.cjs writes that file, the 1.28.0 mutation run) is read
 	// too: each tail of the word from a .claude, .git or .githooks part.
 	const tails = (word) => [word, ...[...String(word).matchAll(/(?<=[^\\/.])(?=\.(claude|git|githooks|gitconfig)(?:[\\/]|$))/gi)].map((m) => String(word).slice(m.index))];
@@ -408,7 +452,8 @@ function shellWrites(command, tool, start, names = proofNames) {
 	const raw = source;
 	// Read from the folder the shell starts in, as the words above are: a bare kit-owner.json there is placed.
 	return [raw, text].some((t) => {
-		const quoted = /["'`\\]/.test(t);
+		// In PowerShell a backslash is the path separator, not a quote (K32).
+		const quoted = (tool === 'PowerShell' ? /["'`]/ : /["'`\\]/).test(t);
 		return t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
 	});
 }

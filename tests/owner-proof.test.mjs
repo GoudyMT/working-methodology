@@ -148,7 +148,7 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 // S23-2 (the 1.23.0 verify): reads through a variable or after a cd into the transcripts, and a file whose text only
 // names kit-owner.json, were refused. S23-1: the mutation check found writes no test covered.
 // why: guards rule:outward-acts
-test('the owner-proof guard follows a variable and a cd into the transcripts, and reads a quoted heredoc as data', () => {
+test('the owner-proof guard follows a variable and a cd into the transcripts, and holds a heredoc that names the file of the owner', () => {
 	const deny = [
 		['Bash', { command: 'P=~/.claude/projects; echo x >> $P/p/s.jsonl' }],
 		['Bash', { command: 'P=~/.claude/projects/p; cp x.jsonl ${P}/s.jsonl' }],
@@ -167,12 +167,14 @@ test('the owner-proof guard follows a variable and a cd into the transcripts, an
 		['Bash', { command: 'P=~/.claude/; echo x > ${P}kit-owner.json' }],
 		['Bash', { command: 'echo x > ${Q}kit-owner.json' }],
 		['Bash', { command: 'export CDPATH=~/.claude; cd projects && echo x > p/s.jsonl' }],
+		// A heredoc's lines are read like any other (the 1.24.0 sweep), and a name with a full stop after it is the same
+		// file to Windows: this passed until 1.29.0 only because of that full stop.
+		['Bash', { command: "cat > notes.md <<'EOF'\nThe owner file is ~/.claude/kit-owner.json.\nEOF" }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
 	const allow = [
 		['Bash', { command: 'P=~/.claude/projects; grep -c x $P/p/s.jsonl' }],
 		['Bash', { command: 'cd ~/.claude/projects/p && grep -c x s.jsonl' }],
-		['Bash', { command: "cat > notes.md <<'EOF'\nThe owner file is ~/.claude/kit-owner.json.\nEOF" }],
 		['Bash', { command: "sed -i 's/old/kit-owner.json/' notes.md" }],
 	];
 	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
@@ -308,6 +310,8 @@ test('a bash wildcard that cannot match a dot name is no write to a guard', () =
 	};
 	for (const command of ['npm test -- tests/*', 'node --test tests/*.test.mjs', 'npm test -- tests/?ard*']) assert.equal(why(command), '', command);
 	for (const command of ["npm test -- 'tests/*'", 'shopt -s dotglob; npm test -- tests/*', 'GLOBIGNORE=x npm test -- tests/*', 'npm test -- tests/\\*', 'npm test -- tests/.*', 'setopt globdots; npm test -- tests/*', 'npm test -- tests/*(D)', 'eval "sh"opt -s dotglob"; npm test -- tests/*', '$(printf shopt) -s dotglob; npm test -- tests/*']) assert.match(why(command), /^Never by a tool/, command);
+	// PowerShell matches dot names, so there the wildcard is held wherever the folder holds one (K32 reads the folder).
+	fs.mkdirSync(path.join(proj, 'tests', '.githooks'), { recursive: true });
 	assert.match(why('npm test -- tests/*', 'PowerShell'), /^Never by a tool/, 'PowerShell matches dot names');
 });
 // why: guards rule:security-standards. The plan check's P4 and the 1.28.0 sweep: a reader's exemption holds only for
@@ -360,4 +364,60 @@ test('owner-proof: a dressed-up sed, a cd by -path, a default value and an unsur
 	// A name set twice and never used is read once, not for ever; a quoted word that only holds a guard's name beside
 	// other text is a reader's argument, not a write.
 	for (const command of ['P=a; P=b; echo hi', 'grep x ".claude/guard.cjs y"']) assert.equal(run('Bash', { command }), 'allow', command);
+});
+
+// why: guards rule:security-standards. K32 (the 1.28.0 sweep, P18; the plan check's P2): PowerShell's wildcards match dot
+// names, so tests/* was held as a write to a guard whatever tests held. It runs when the folder it names holds
+// no dot name, no kit- name and no link at any depth; anything the guard cannot see that plainly stays held.
+test('a PowerShell wildcard under a folder that holds no dot name is no write to a guard', { windows: 'also' }, () => {
+	const proj = kitTemp.makeTemp('k32-');
+	for (const d of ['tests/unit', 'sub/.git', 'hooked/.githooks', 'deep/a/b/.claude', 'other', '.claude']) fs.mkdirSync(path.join(proj, ...d.split('/')), { recursive: true });
+	fs.writeFileSync(path.join(proj, 'tests', 'a.test.mjs'), 'x');
+	fs.symlinkSync(path.join(proj, 'other'), path.join(proj, 'linked'), 'junction');
+	fs.mkdirSync(path.join(proj, 'holds-link'));
+	fs.symlinkSync(path.join(proj, '.claude'), path.join(proj, 'holds-link', 'l'), 'junction');
+	const ps = (command, cwd = proj) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'PowerShell', tool_input: { command }, cwd }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+	};
+	for (const command of ['node --test tests/*', 'Remove-Item tests/*', 'Remove-Item tests\\*', 'Get-ChildItem tests/*.mjs', 'Remove-Item -Recurse other/*']) assert.equal(ps(command), 'allow', command);
+	const held = ['Remove-Item sub/*', 'Remove-Item sub/*/config', 'Remove-Item hooked/*', 'Remove-Item -Recurse deep/*', 'Remove-Item linked/*', 'Remove-Item holds-link/*', 'Remove-Item ../*', 'Remove-Item ./*', 'Remove-Item *',
+		'Remove-Item .claude/*', 'Remove-Item $HOME/*', 'Remove-Item ~/*', 'Remove-Item $d/*', 'Remove-Item missing/*', 'Remove-Item "tests/*"', 'Remove-Item tests/../*'];
+	for (const command of held) assert.equal(ps(command), 'deny', command);
+	// After a cd the guard cannot follow, the folder is not known, so nothing is read from the disk.
+	assert.equal(ps('Set-Location $x; Remove-Item tests/*'), 'deny');
+	// A dot name that arrives later is seen: the folder is read each time.
+	fs.mkdirSync(path.join(proj, 'tests', 'unit', '.githooks'));
+	assert.equal(ps('Remove-Item tests/*'), 'deny');
+});
+
+// why: guards rule:security-standards. Found by the security review of this build and reproduced on the released
+// 1.28.0: Windows opens the same file under a name with dots or spaces on its end (settings.json.) or a stream
+// suffix (guard.cjs::$DATA), and neither was read as the file, so PowerShell could write the settings, a guard,
+// .git/config or the owner's yes file with no hold. Each such name is read as the file it opens.
+test('a protected file named with a trailing dot, a trailing space or a stream suffix is still that file', () => {
+	const cases = [
+		['PowerShell', { command: 'Set-Content .claude\\settings.json. x' }],
+		['PowerShell', { command: 'Set-Content .claude\\settings.local.json.. x' }],
+		['PowerShell', { command: 'Set-Content .claude\\guard.cjs. x' }],
+		['PowerShell', { command: 'Set-Content .claude.\\guard.cjs x' }],
+		['PowerShell', { command: 'Set-Content .git\\config. x' }],
+		['PowerShell', { command: 'Set-Content .githooks.\\pre-push x' }],
+		['PowerShell', { command: 'Add-Content $HOME\\.claude\\kit-owner.json. x' }],
+		['PowerShell', { command: 'Remove-Item .claude\\protected-folders.json.' }],
+		['Bash', { command: 'echo x > .claude/guard.cjs::$DATA' }],
+		['Bash', { command: 'echo x > .claude/settings.json:s' }],
+		['Bash', { command: 'echo x > .claude/settings.json::$DATA' }],
+		['Bash', { command: 'echo x > ".claude/guard.cjs. "' }],
+		['Bash', { command: 'echo x >> ~/.claude/kit-owner.json::$DATA' }],
+		['Bash', { command: 'echo x > .git/config::$DATA' }],
+		['Write', { file_path: '.claude/guard.cjs::$DATA', content: 'x' }],
+		['Write', { file_path: '.claude/settings.json.', content: 'x' }],
+		['Edit', { file_path: '.claude/settings.local.json::$DATA', old_string: 'a', new_string: 'b' }],
+		['Write', { file_path: path.join(cfg, 'kit-owner.json::$DATA'), content: '{}' }],
+	];
+	for (const [tool, input] of cases) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
+	// A drive letter keeps its colon, and a name that only looks alike is not the file.
+	for (const [tool, input] of [['Bash', { command: 'echo x > C:/work/notes.txt' }], ['Bash', { command: 'echo x > docs/settings.json.md' }], ['PowerShell', { command: 'Set-Content docs\\guard.cjs.txt x' }]]) assert.equal(run(tool, input), 'allow', JSON.stringify(input));
 });
