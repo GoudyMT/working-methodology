@@ -341,7 +341,10 @@ function shellWrites(command, tool, start, names = proofNames) {
 		const w = tool === 'PowerShell' ? word.replace(/\\/g, '/') : word;
 		if (/[\\$`{}~'"]/.test(w)) return word;
 		if (!dotglob) return mark(w);
-		return tool !== 'Bash' && plainFolder(w, cwd) ? mark(w) : word;
+		// Only in a command of one statement: a statement before it could make a link or a dot name in the folder after
+		// the guard read it and before the wildcard is expanded (the review of this fix).
+		const alone = segments.length === 1 && !/[;&|(){}`\n]/.test(text);
+		return tool !== 'Bash' && alone && plainFolder(w, cwd) ? mark(w) : word;
 	};
 	// A path glued to the end of a word (sed's 1w.claude/guard.cjs writes that file, the 1.28.0 mutation run) is read
 	// too: each tail of the word from a .claude, .git or .githooks part.
