@@ -241,6 +241,9 @@ reviewer: guard-delete past line 40, owner-yes, the launcher, the non-guard carr
   report reports/sweeps/2026-11-12-1.28.0.md.
 - [x] Pass bar 1: the install check holds 21 planted cases with their kind, from another repo and with no project
   named (1ea8156); local run on Windows passed 2026-11-12.
-- [ ] Pass bar 2: mutation survivors on the guard files against v1.27.0, running.
+- [ ] Pass bar 2: local run 2026-11-12, 7 guard files. v1.27.0: 209 of 576 survive; 69e7131: 218 of 622. On the
+  four files of the 1.25.0 bar: 28 then 33. Of the new survivors, 7 are killed by cases built and run (04b907f,
+  4efde7c), 2 lines were rewritten, 3 survive the cases built for them (equivalent: sed's -n word, void null). Open
+  until the measure run at the PR head confirms the count.
 - [x] Pass bar 3: guard time 0.4 to 0.5 ms per one-command call against 0.71 to 0.75 ms (same machine).
 - [x] Pass bar 4: V1, K2 and K19 run, in the unit tests and through the installed launcher (1ea8156).
