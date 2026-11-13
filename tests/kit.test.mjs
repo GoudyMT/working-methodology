@@ -7832,4 +7832,21 @@ test('scratch clean starts the system PowerShell, never one in the current folde
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', `import { scratch } from ${JSON.stringify(url)}; scratch({ root: ${JSON.stringify(root)}, home: ${JSON.stringify(home)}, cmd: 'clean', thread: 'feat/x' });`], { cwd: here, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(!fs.existsSync(p), 'the probe folder was not moved to the Recycle Bin');
+});// why: guards rule:outward-acts. R6.2 (the 1.25.0 sweep): no test reached the refusal of a tap that already answered
+// an ask (the C10 test stops at "already logged", one check earlier). One pop-up answer is for one ask: when the
+// branch moves on and the same contract is asked again, the old tap, still newer than that ask, does not clear it.
+test('R6.2: a pop-up Yes that answered one ask does not answer the next ask of the same contract', () => {
+  const r = approveRun(askContract());
+  const code = r.stdout.match(/`sweep yes ([0-9a-f]{6})`/)[1];
+  const cfg = makeTemp('cfg-');
+  ownerTaps(cfg, r.dir, `sweep yes ${code}`, { at: new Date(Date.now() + 20000).toISOString() });
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes'], tapEnv(cfg)).status, 0);
+  fs.writeFileSync(path.join(r.dir, 'later.md'), 'later\n');
+  commitAll(r.dir, 'later on the branch', true);
+  assert.equal(approveIn(r.dir, [r.f, '--outcome', '--none-ran']).status, 0, 'the first sweep is closed');
+  const again = approveIn(r.dir, [r.f]);
+  const second = approveIn(r.dir, [r.f, '--owner-yes'], tapEnv(cfg));
+  assert.equal(second.status, 1, again.stdout + second.stdout);
+  assert.match(second.stdout, /that Yes already answered an ask/, again.stdout);
+  assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'owner-yes').length, 1);
 });
