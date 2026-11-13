@@ -334,12 +334,15 @@ function plainFolder(word, cwd) {
 
 // Whether a filter's pattern can be the name of a file the guards live in: the files really in the project's
 // .claude and .githooks folders, and the settings, the folder list and git's config and hooks by name.
-function filterFits(pattern, cwd) {
+function filterFits(pattern, cwd, pathWord = false) {
 	const root = process.env.CLAUDE_PROJECT_DIR || (Array.isArray(cwd) ? (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/') : process.cwd());
 	const named = ['settings.json', 'settings.local.json', 'protected-folders.json', 'config', 'hooks', '.claude', '.githooks', '.git', 'kit-owner.json'];
 	for (const d of ['.claude', '.githooks']) { try { named.push(...fs.readdirSync(path.join(root, d)).slice(0, 400).map((n) => n.toLowerCase())); } catch { /* none */ } }
-	const p = slash(String(pattern)).replace(/["']/g, '');
-	return /[\/$`]/.test(p) || named.some((n) => fits(p, n));
+	const p = slash(String(pattern)).replace(/^(["'])(.*)\1$/, '$2');
+	// A word by position may be the path, not the filter: only its last part is held against the names.
+	if (pathWord) return /[*?[]/.test(p) && named.some((n) => fits(p.split('/').pop(), n));
+	// Any sign the guard does not read in a filter (a quote inside it, a variable, a short name's ~) is held.
+	return /[^a-z0-9._*?-]/.test(p) || named.some((n) => fits(p, n));
 }
 
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
@@ -486,7 +489,19 @@ function shellWrites(command, tool, start, names = proofNames) {
 		// A PowerShell -Filter or -Include names files at any depth, with no path word (the 1.29.0 sweep: Get-ChildItem
 		// -Recurse -Filter *folders.json | Remove-Item deleted the list). Its value is held against the names of the
 		// files the guards live in; the command is a write unless it and every stage it pipes into only read.
-		if (tool !== 'Bash' && segment.some((x, k) => k > 0 && /^-(filter|include)$/i.test(all[k - 1]) && filterFits(x.value, cwd))) {
+		// PowerShell takes any clear start of a parameter's name, a value after a colon, and a filter by position; a
+		// recursive listing with no filter, or with -Exclude, reaches every file (the review of this rule).
+		const lister = tool !== 'Bash' && /^(gci|ls|dir|get-childitem|remove-item|ri|rm|del|erase|rd|rmdir|copy-item|cpi|cp|copy|move-item|mi|mv|move|get-item|gi)$/.test(program);
+		const option = (w) => /^-[a-z]/i.test(w);
+		const recursive = all.some((w) => /^-(r(e(c(u(r(s(e)?)?)?)?)?)?|s)(:|$)/i.test(w));
+		const filtered = all.some((w) => /^-(fi\w*|inc\w*|ex\w*)(:|$)/i.test(w));
+		const reaches = lister && (
+			all.some((w) => /^-ex\w*(:|$)/i.test(w))
+			|| all.some((w, k) => { const m = /^-(fi\w*|inc\w*)(?::(.*))?$/i.exec(w); return m && filterFits(m[2] !== undefined ? m[2] : all[k + 1] || '*', cwd); })
+			|| (recursive && all.slice(1).some((w, k) => !option(w) && !option(all[k] || '') && filterFits(w, cwd, true)))
+			// With no folder named, a recursive listing starts where the shell stands and reaches everything under it.
+			|| (recursive && !filtered && !all.slice(1).some((w) => !option(w))));
+		if (reaches) {
 			const reads = (g) => { const w = (g || []).filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p)); };
 			let k = s;
 			let onlyReads = reads(segments[k]) && !segment.some((x) => x.redirect);
