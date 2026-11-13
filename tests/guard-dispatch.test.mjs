@@ -123,5 +123,20 @@ test('a long command is read in time: the whole guard process answers a 98 KB co
 		require(path.join(SRC, g)).check({ tool_name: 'Bash', tool_input: { command: 'a;'.repeat(49000) }, cwd: process.cwd() });
 		return `${g} ${Date.now() - t} ms`;
 	}).join(', ');
-	assert.ok(took < 8000, `${took} ms${each ? `; ${each}` : ''}`);
+	// And where the slowest guard spends it: the five functions with the most time of their own.
+	let hot = '';
+	if (each) {
+		const dir = kitTemp.makeTemp('prof-');
+		const code = `require(${JSON.stringify(path.join(SRC, 'owner-proof.cjs'))}).check({ tool_name: 'Bash', tool_input: { command: 'a;'.repeat(49000) }, cwd: process.cwd() })`;
+		spawnSync(process.execPath, ['--cpu-prof', `--cpu-prof-dir=${dir}`, '-e', code], { encoding: 'utf8' });
+		const file = fs.readdirSync(dir).find((n) => n.endsWith('.cpuprofile'));
+		if (file) {
+			const p = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+			const byId = new Map(p.nodes.map((n) => [n.id, n]));
+			const self = new Map();
+			p.samples.forEach((s, i) => { const f = byId.get(s).callFrame; const k = `${f.functionName || '(anon)'}:${path.basename(f.url)}:${f.lineNumber + 1}`; self.set(k, (self.get(k) || 0) + (p.timeDeltas[i] || 0)); });
+			hot = [...self].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, us]) => `${k} ${Math.round(us / 1000)} ms`).join(', ');
+		}
+	}
+	assert.ok(took < 8000, `${took} ms${each ? `; ${each}` : ''}${hot ? `; owner-proof hot: ${hot}` : ''}`);
 });
