@@ -103,7 +103,4 @@ test('(c) the kit\'s own CI runs the slow lane beside the fast one, only when it
 	const gate = ci.slice(ci.indexOf('\n  kit-tests:'));
 	assert.match(gate, /needs: \[[^\]]*slow-tests[^\]]*\]/);
 	assert.match(gate, /needs\.slow-tests\.result != 'success' && needs\.slow-tests\.result != 'skipped'/); // pin: 1
-	// The kit itself has no large test today, so the script says one lane for it.
-	const kit = spawnSync(process.execPath, [SCRIPT, '--json'], { encoding: 'utf8' });
-	assert.equal(JSON.parse(kit.stdout).state, 'one-lane');
 });

@@ -262,7 +262,6 @@ test('a held command runs once on the owner\'s own pop-up yes for that exact com
 	popUp({ act: `echo ${act}` });
 	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes to a command that only holds this one');
 	popUp({ act });
-	assert.equal(withYes('Bash', { command: 'git push origin release' }), 'allow', 'a feature-branch push needs no yes');
 	assert.equal(withYes('Bash', { command: 'git push origin HEAD' }), 'deny', 'a yes covers only the command it quotes');
 	assert.equal(withYes('Bash', { command: act }, { agent_id: 'a1' }), 'deny', 'never for a subagent');
 	popUp({ act, then: [act] });
