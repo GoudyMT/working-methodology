@@ -45,6 +45,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | probe-scope | Probe Scope | `standards/evidence-and-failures.md` | probe, experiment, investigation scope |
 | snag-response | Snag Response: Least-Invasive Path, No Padding | `standards/evidence-and-failures.md` | stuck, blocker, workaround, snag |
 | blocked-prompts | Blocked on a Prompt or a Permission | `standards/evidence-and-failures.md` | permission prompt, permission block, waiting on a prompt, owner command, hung |
+| cost-first | Cost Before a Heavy Run | `standards/evidence-and-failures.md` | cost, money, CI minutes, quota, paid run, budget, heavy run, API spend |
 | fact-check | Fact-Check Before Handing Over | `standards/evidence-and-failures.md` | fact check, verify a document, claims, report, explainer, diagram accuracy |
 | pre-commit | Pre-Commit Discipline | `.claude/rules/git-and-release.md` | before commit, commit checks, staged |
 | commit-message-format | Commit Message Format | `.claude/rules/git-and-release.md` | commit message, subject line, type |

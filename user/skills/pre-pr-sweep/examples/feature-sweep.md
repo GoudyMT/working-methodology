@@ -102,7 +102,7 @@ All three inside the 60-call ceiling. Findings (each re-read in the code by the 
   closed).
 
 Per the cadence (two passes only), the re-sweep's findings are fixed in this PR (three small roots, then the gate; no third
-sweep); anything left at medium or below goes to the handoff's carry-overs.
+sweep); anything left is fixed in this build, and only a high or security hole that cannot be finished carries.
 
 ## Post-run yield check
 

@@ -113,7 +113,7 @@ still holds. Acceptance: the four probe lines of section 2a, plus `Remove-Item .
 the plan check showed its fix path was the same one tap (`rm` then the launcher's own `install project` line) and
 that it false-held worktrees and branch switches. Replaced by the simpler rule: `.claude/protected-folders.json`
 moves from the settings shape (owner's yes) to the guard shape (Never by a tool). The owner writes the list in their
-own editor, as the 1.28.0 note already says ("the list is Max's to write"). No record, no new state, no upgrade
+own editor, as the 1.28.0 note already says ("the list is the owner's to write"). No record, no new state, no upgrade
 window. Tests: `rm`, `mv`, an Edit and a Write of the list are each Never, with and without a yes on record; a read
 runs. Reach: every project; a tool can no longer edit the list even with a yes.
 
