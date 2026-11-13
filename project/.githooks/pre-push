@@ -18,8 +18,9 @@ remote_default() {
     # below, as before.
     if [ -z "$d" ] && [ -n "$(git ls-remote --heads "$2" 2>/dev/null)" ]; then d="?"; fi
   else
-    d=$(git symbolic-ref --short "refs/remotes/$1/HEAD" 2>/dev/null)
-    d=${d#"$1"/}
+    # A remote that cannot be asked: the local origin/HEAD is any command's to delete, and a config key can break this
+    # one call while the push itself goes through (the 1.28.0 sweep), so it may be the default branch: ?.
+    d="?"
   fi
   printf '%s\n' "$d"
 }

@@ -325,6 +325,25 @@ test('K29 pre-push: a remote that names no default branch is not read as having 
 	assert.equal(git(remote, ['rev-parse', '-q', '--verify', 'refs/heads/feat/other']).status, 1);
 });
 
+// why: guards rule:outward-acts. The 1.28.0 sweep: a config key that breaks only the hook's own ask of the remote,
+// with the local origin/HEAD deleted, let a plain push land on a default branch not named main.
+test('pre-push: a remote the hook cannot ask may have any branch as its default', () => {
+	const { proj, remote } = setup();
+	ok(git(proj, ['checkout', '-q', '-b', 'develop']));
+	ok(git(proj, ['push', '-q', '--no-verify', 'origin', 'develop']));
+	ok(git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']));
+	fs.writeFileSync(path.join(proj, 'd.md'), 'd\n');
+	ok(git(proj, ['add', 'd.md']));
+	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: d']));
+	const url = ok(git(proj, ['remote', 'get-url', 'origin']));
+	ok(git(proj, ['config', `remote.${url}.vcs`, 'bogus']));
+	git(proj, ['branch', '-rd', 'origin/HEAD']);
+	const r = aiPush(proj, 'develop');
+	assert.notEqual(r.status, 0, 'a push went out to the remote\'s default branch');
+	assert.match(r.stderr, /names no default branch/);
+	assert.notEqual(ok(git(remote, ['rev-parse', 'develop'])), ok(git(proj, ['rev-parse', 'HEAD'])));
+});
+
 // why: guards rule:outward-acts
 test('V3 pre-push: an intact install still lets an AI push a feature branch', () => {
 	const { proj, remote } = setup();
