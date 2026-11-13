@@ -284,7 +284,7 @@ test('the sweep\'s spellings of a guard file read, a listed folder and a marker 
 	};
 	assert.match(why('sed -n "$p" .claude/guard-outward.cjs'), /^Never by a tool/);
 	const unix = '/' + kept.split(path.sep).join('/').replace(/^([A-Za-z]):/, (m, d) => d.toLowerCase());
-	for (const command of ['echo x > "$PWD/vault/a.txt"', `echo x > "${unix}/a.txt"`, 'rm -rf /', `sed -n 1w${unix}/a.txt notes.txt`]) assert.match(why(command), /protected-folders\.json/, command);
+	for (const command of ['echo x > "$PWD/vault/a.txt"', `echo x > "${unix}/a.txt"`, 'rm -rf /', `sed -n 1w${unix}/a.txt notes.txt`, `env gsed -n 1w${unix}/a.txt notes.txt`]) assert.match(why(command), /protected-folders\.json/, command);
 	const outward = (command) => {
 		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: process.cwd() }), encoding: 'utf8' });
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
