@@ -7121,10 +7121,12 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
   const keys = currentVersion(keysText);
   const n = questionCount(keysText, keys);
   const bar = passBar(keysText, keys);
-  assert.equal(bar, 12, 'the bar stays at 12');
+  // The owner raised the bar with the question count (keys v6: 13 of 14); it never falls under that.
+  assert.equal(bar, 13, 'the bar stays at 13');
+  const b = bar;
   const files = (cand) => {
     const dir = makeTemp('rtie-');
-    const totals = { ...Object.fromEntries(cand.map((t, i) => [`cand-${i + 1}`, t])), 'base-1': 12, 'control-1': 5 };
+    const totals = { ...Object.fromEntries(cand.map((t, i) => [`cand-${i + 1}`, t])), 'base-1': b, 'control-1': 5 };
     const map = Object.fromEntries(Object.keys(totals).map((run, i) => [`R${String(i + 1).padStart(2, '0')}`, run]));
     const lines = Object.entries(map).flatMap(([id, run]) => Array.from({ length: n }, (_, q) => `${id} Q${q + 1}: ${q < totals[run] ? 1 : 0}`));
     fs.writeFileSync(path.join(dir, 'scores.txt'), lines.join('\n'));
@@ -7132,22 +7134,22 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
     return [path.join(dir, 'scores.txt'), path.join(dir, 'map.json')];
   };
   const run = (cand) => score(...files(cand), 'kit-x');
-  assert.match(run([13, 12, 13]).line, /median 13 /, 'over the bar: 3 runs are enough');
-  assert.match(run([11, 11, 12]).line, /median 11 /, 'under the bar: 3 runs fail it, and more runs are not a second chance');
-  for (const tie of [[12, 12, 13], [11, 12, 12], [12, 12, 12]]) {
+  assert.match(run([b + 1, b, b + 1]).line, new RegExp(`median ${b + 1} `), 'over the bar: 3 runs are enough');
+  assert.match(run([b - 1, b - 1, b]).line, new RegExp(`median ${b - 1} `), 'under the bar: 3 runs fail it, and more runs are not a second chance');
+  for (const tie of [[b, b, b + 1], [b - 1, b, b], [b, b, b]]) {
     const r = run(tie);
     assert.equal(r.line, null, `no gate line on ${tie}`);
     assert.equal(r.more, 2);
   }
-  assert.match(run([12, 12, 13, 11, 12]).line, /median 12 /, 'the median of 5 holds the bar');
-  assert.match(run([12, 12, 11, 11, 11]).line, /median 11 /, 'the median of 5 can fail it');
-  assert.throws(() => run([11, 11, 12, 13, 13]), /first 3 runs reached the bar/, 'runs added to a miss do not count');
-  assert.throws(() => run([13, 13, 13, 13]), /3 runs, or 5/);
-  assert.throws(() => run([13]), /3 runs, or 5/);
-  const held = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([12, 12, 13]), 'kit-x'], { encoding: 'utf8' });
+  assert.match(run([b, b, b + 1, b - 1, b]).line, new RegExp(`median ${b} `), 'the median of 5 holds the bar');
+  assert.match(run([b, b, b - 1, b - 1, b - 1]).line, new RegExp(`median ${b - 1} `), 'the median of 5 can fail it');
+  assert.throws(() => run([b - 1, b - 1, b, b + 1, b + 1]), /first 3 runs reached the bar/, 'runs added to a miss do not count');
+  assert.throws(() => run([b + 1, b + 1, b + 1, b + 1]), /3 runs, or 5/);
+  assert.throws(() => run([b + 1]), /3 runs, or 5/);
+  const held = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([b, b, b + 1]), 'kit-x'], { encoding: 'utf8' });
   assert.equal(held.status, 1, held.stdout + held.stderr);
   assert.doesNotMatch(held.stdout, /^gate:/m);
-  assert.match(held.stdout, /on the bar of 12[\s\S]*cand-4 and cand-5/);
+  assert.match(held.stdout, new RegExp(`on the bar of ${b}[\\s\\S]*cand-4 and cand-5`));
   assert.match(keysText.split('<!-- recall v')[0], /A median of 3 exactly on the bar runs 2 more, and the median of those 5 decides/); // pin: 3 (released recall keys)
 });
 
