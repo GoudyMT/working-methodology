@@ -100,7 +100,7 @@ the questions it would have to guess at). Sort its questions into answered-by-th
 as your call) and the owner's (asked the brainstorm skill's way: one message for one or two, its sheet from three up).
 
 **The plan gap check, before the owner's yes:** for any change bigger than one sentence, one fresh read-only
-reviewer reads the design and the code it changes, with the fixed brief in
+agent reads the design and the code it changes (a general read-only agent, never the sweep's `reviewer` role, which the sweep guard holds to a cleared contract), with the fixed brief in
 [references/plan-check-brief.md](references/plan-check-brief.md), copied unchanged. Each high or critical it names
 goes into the design as one of three: an acceptance test that fails first, a named limit, or the owner's call. Keep
 its list in the design with how each was taken; the sweep report later counts which highs the plan check named

@@ -1019,6 +1019,14 @@ test('a feature report counts the layer that caught each high', () => {
     assert.match(out.stdout, /Layers:\*\* plan <n>, CI <n>, sweep <n>, escaped <n>/);
   }
   assert.equal(runAudit('pre-pr-sweep', report('\n', 'fix')).status, 0, 'a fix report owes no layer count');
+  // A report from before 1.31.0 says it kept no count, and makes none up.
+  assert.equal(runAudit('pre-pr-sweep', report('- **Layers:** not counted (swept before 1.31.0)\n\n')).status, 0);
+  // The sweep and escaped counts cover every high the report lists, so the line cannot hide them (the 1.31.0 sweep).
+  const rows = '| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | critical | key in repo | FIXED 9f8e7d6 |\n\n';
+  const hidden = runAudit('pre-pr-sweep', report(`- **Layers:** plan 0, CI 0, sweep 1, escaped 0\n\n${rows}`));
+  assert.equal(hidden.status, 1);
+  assert.match(hidden.stdout, /lists 2 high or critical/);
+  assert.equal(runAudit('pre-pr-sweep', report(`- **Layers:** plan 0, CI 0, sweep 1, escaped 1\n\n${rows}`)).status, 0);
 });
 // The owner's decision 6 (1.21.0): a handoff that led with fixes parked the next build behind them.
 // why: guards rule:kit-standards
