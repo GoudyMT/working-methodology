@@ -557,3 +557,29 @@ Brief v2. The text that ships: the three stages plus the sweep's fixes (the carr
 
 control: 0
 gate: kit-1.30.0 median 14 baseline 12 brief v2 keys v9 owner-accepted
+## Recall v10 - 1.31.0 against the 1.30.1 baseline (2026-11-14)
+
+Brief v2, keys v10 (key 3 names the Active Plan, as rule 11 now does). Every session pinned to Opus 5.5 at medium (MC2). Candidate: this branch's rule text, 3 runs; baseline: 1.30.1 from the release copy, 3 runs; control: no kit. All seven run fresh, in parallel, then scored by one blind scorer.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 1, 0 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 0, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 0 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 13, 14, 14 | 13, 13, 11 | 0 |
+
+- **Scored: median 14 of 14, baseline 13, control 0.** The baseline misses question 3 every time, as expected: its rule 11 does not name the Active Plan. One candidate run misses question 12 (it says lows and mediums may carry, not that they carry only on the owner's yes), a rule this build did not change. Borderline calls on question 13 ("no keyword" not said outright) were scored 1 on both sides, as in v9.
+
+control: 0
+gate: kit-1.31.0 median 14 baseline 13 brief v2 keys v10

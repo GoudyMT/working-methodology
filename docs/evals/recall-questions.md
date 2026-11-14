@@ -7,7 +7,7 @@ Each version's questions and keys are frozen once the owner approves them. A cha
 <!-- recall v10 -->
 ## v10 (the owner's yes, 2026-11-14: key 3 names the Active Plan)
 
-Run as v9 describes. One change. Rule 11 now names the Active Plan beside the files the Resume Point names (the owner's ruling after the 1.30.1 sweep: the check always names `_Active Plan.md` for a read), so key 3 names it too. The question and the other thirteen rows are v9's. v9 stays as written; one run measures the released baseline and the candidate both on v10, and the baseline is expected to miss question 3. Pass: median 13 of 14.
+Run as v9 describes, with every session pinned to `--model claude-opus-5-5 --effort medium` (MC2: before v10 a session took the saved default, which the session records show was the same model at medium; the pin is named so no one reads v10 against v9 as a change of key alone). One change to the keys. Rule 11 now names the Active Plan beside the files the Resume Point names (the owner's ruling after the 1.30.1 sweep: the check always names `_Active Plan.md` for a read), so key 3 names it too. The question and the other thirteen rows are v9's. v9 stays as written; one run measures the released baseline and the candidate both on v10, and the baseline is expected to miss question 3. Pass: median 13 of 14.
 
 | # | Question (asked as written) | Key: the answer must name |
 |---|---|---|

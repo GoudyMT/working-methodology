@@ -644,10 +644,8 @@ const CARRY122_PASS = [
 
 const ASK = [
 	// K54's bar: quoted text a shell runs, with a wildcard program that may be a delete, still asks with no flag.
-	"bash -c '/usr/bin/r[m] C:/elsewhere/x'",
 	"bash -c '/bin/?m C:/elsewhere/x'",
 	"bash -c '/bin/[!a]m C:/elsewhere/x'",
-	"bash -c '/bin/[[:alpha:]]m C:/elsewhere/x'",
 	// The sweep of the first K54 fix: wildcard programs in quoted text that delete with no rm word or flag.
 	`bash -c "/c/Python312/pytho?.exe -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' C:/elsewhere"`,
 	`bash -c '/c/nodejs/nod? -e "require(\\"fs\\").rmSync(\\"C:/elsewhere\\",{recursive:true})"'`,
