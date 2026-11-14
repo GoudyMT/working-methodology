@@ -143,7 +143,10 @@ function throughLink(word, cwd) {
 	if (linkSeen.size > 5000) linkSeen.clear();
 	let out = null;
 	try { const r = real(abs); if (slash(r) !== slash(abs)) out = r; } catch { /* not placed */ }
-	if (out === null) out = twinOf(abs);
+	// A second name counts whatever the path's own spelling: under a short name the real path always differs (CI on
+	// Windows), and the twin was then never asked for.
+	const twin = twinOf(abs);
+	if (twin !== null) out = twin;
 	linkSeen.set(abs, out);
 	return out;
 }
