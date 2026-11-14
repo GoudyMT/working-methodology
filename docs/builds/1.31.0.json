@@ -19,7 +19,7 @@
   {
    "id": "LAYERS",
    "kind": "added",
-   "text": "A feature or launch-gate sweep report counts its highs by the layer that caught them (plan, CI, sweep, escaped), and the report audit holds it to that.",
+   "text": "A feature or launch-gate sweep report counts its highs by the layer that caught them (plan, CI, sweep, escaped), and the report audit holds the counts to the highs the report lists; a report from before 1.31.0 says it kept no count.",
    "evidence": "tests/kit.test.mjs",
    "where": "Which layer caught each high",
    "before": "Recounted by hand from old reports",
@@ -28,7 +28,7 @@
   {
    "id": "K48",
    "kind": "fixed",
-   "text": "The sweep guard counts a reviewer start once, however often it is checked, and never for a call another guard refused, so a held start no longer spends its role's one slot.",
+   "text": "The sweep guard counts a reviewer start once, however often it is checked, and never for a call another guard refused first, so a held start no longer spends its role's one slot.",
    "evidence": "tests/kit.test.mjs, tests/guard-dispatch.test.mjs",
    "where": "A sweep in a project with old guard entries",
    "before": "Every reviewer refused as started already",
@@ -37,19 +37,19 @@
   {
    "id": "K49",
    "kind": "fixed",
-   "text": "Install takes out every settings entry that runs a kit guard itself, with a backup, as it already did for 1.25.0's entry; status and the session-start notice name any that remain.",
+   "text": "Install takes out every settings entry that runs a kit guard from its kit place, with a backup; a project's own hooks of the same name stay. Status and the session-start notice name any left.",
    "evidence": "tests/kit.test.mjs"
   },
   {
    "id": "K50",
    "kind": "fixed",
-   "text": "A sweep round whose recorded starts never ran can be closed as none ran; a start counts as run only when a reviewer transcript names it.",
+   "text": "A sweep round whose recorded starts were refused can be closed as none ran; a start counts as refused only when its session's record shows the refusal.",
    "evidence": "tests/kit.test.mjs"
   },
   {
    "id": "K54",
    "kind": "fixed",
-   "text": "Two plain reads are no longer refused: a cd followed by a piped read, and a quoted pattern read as a command. Every planted write and delete is still held.",
+   "text": "Two plain reads are no longer refused: a cd followed by piped plain reads, and a match pattern read as a command. Every planted write and delete is still held.",
    "evidence": "tests/owner-proof.test.mjs, project/.claude/guard-delete-check.cjs"
   },
   {
@@ -75,11 +75,17 @@
    "kind": "changed",
    "text": "Rule 11 and the orientation protocol name the Active Plan beside the files the Resume Point names, as the check prints them; recall keys v10 follow.",
    "evidence": "docs/evals/recall-questions.md, docs/evals/results/recall-scores.md"
+  },
+  {
+   "id": "SPEED",
+   "kind": "fixed",
+   "text": "The protected-file guard reads a very long command about a quarter faster, so it stays inside the hook's time on a slow runner.",
+   "evidence": "tests/guard-dispatch.test.mjs"
   }
  ],
  "verification": [
-  "Each guard and sweep fix has a test that fails on the code before it; K48 to K50 and K54 were first reproduced on the released 1.30.1 in a throwaway install.",
-  "The delete guard's planted cases: 765 of 765, the new read cases and the bracket and question-mark names among them.",
+  "Each guard and sweep fix has a test that fails on the code before it; K48 to K50 and K54 were first reproduced on the released 1.30.1, and the sweep's commands against the first fixes are planted cases.",
+  "The delete guard's planted cases: 770 of 770; recall on keys v10: candidate median 14, baseline 13, control 0.",
   "The coverage map, timed on a small PR: unit tests 1m03s against 2m46s for a full run."
  ],
  "decisions": [
@@ -98,17 +104,45 @@
  ],
  "sweep": {
   "tier": "Feature (security-sensitive)",
-  "commit": "pending",
+  "commit": "4796b3e",
   "dimensions": [
-   { "name": "Privacy", "result": "pending" },
-   { "name": "Supply chain", "result": "pending" },
-   { "name": "Legal", "result": "pending" },
-   { "name": "Code security", "result": "pending" },
-   { "name": "Gaps, scaling, test value", "result": "pending" },
-   { "name": "Alignment", "result": "pending" }
+   {
+    "name": "Privacy",
+    "result": "A home path and two project names in tracked lines, removed"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Clean: no dependency added"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Four highs, three in this build's own first fixes and one in the way back, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "The layer count, install's odd shapes and five tests, all fixed; a slow guard on main fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
   ],
-  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
-  "fixed": [],
+  "findings": {
+   "critical": 0,
+   "high": 4,
+   "medium": 7,
+   "low": 6
+  },
+  "fixed": [
+   "Install removed a project's own hooks that shared a guard's file name. Fixed in b9bdd0d.",
+   "A moved or emptied settings folder closed a round whose reviewers ran. Fixed in 2f2f3fb.",
+   "A cd and a pipe into a writer overwrote the guards. Fixed in 0f72f8f.",
+   "Wildcard programs in quoted text deleted with no delete word. Fixed in cca50bb and 07e10f8."
+  ],
   "deferred": [],
   "accepted": []
  },

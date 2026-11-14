@@ -6,19 +6,20 @@ Every review role stays, the plan gap check becomes a step of the plan skill, an
 
 ### Added
 - The plan gap check is a step of the plan skill: one fresh reviewer reads the design and the code it changes with a fixed brief, before the owner's yes, and each high it names goes into the design.
-- A feature or launch-gate sweep report counts its highs by the layer that caught them (plan, CI, sweep, escaped), and the report audit holds it to that.
+- A feature or launch-gate sweep report counts its highs by the layer that caught them (plan, CI, sweep, escaped), and the report audit holds the counts to the highs the report lists; a report from before 1.31.0 says it kept no count.
 
 ### Changed
 - The recall test names its model and effort, pinned to what the owner's sessions really run, and a test holds every team role file to a named model.
 - Rule 11 and the orientation protocol name the Active Plan beside the files the Resume Point names, as the check prints them; recall keys v10 follow.
 
 ### Fixed
-- The sweep guard counts a reviewer start once, however often it is checked, and never for a call another guard refused, so a held start no longer spends its role's one slot.
-- Install takes out every settings entry that runs a kit guard itself, with a backup, as it already did for 1.25.0's entry; status and the session-start notice name any that remain.
-- A sweep round whose recorded starts never ran can be closed as none ran; a start counts as run only when a reviewer transcript names it.
-- Two plain reads are no longer refused: a cd followed by a piped read, and a quoted pattern read as a command. Every planted write and delete is still held.
+- The sweep guard counts a reviewer start once, however often it is checked, and never for a call another guard refused first, so a held start no longer spends its role's one slot.
+- Install takes out every settings entry that runs a kit guard from its kit place, with a backup; a project's own hooks of the same name stay. Status and the session-start notice name any left.
+- A sweep round whose recorded starts were refused can be closed as none ran; a start counts as refused only when its session's record shows the refusal.
+- Two plain reads are no longer refused: a cd followed by piped plain reads, and a match pattern read as a command. Every planted write and delete is still held.
 - The team build skill gives the scanner model's real price against the top model on both sides of a 100K-token prompt, and scanners keep their prompts under it.
 - The packet writer names a preview cut apart from a missing label, so a closeout no longer looks for a label that is there.
+- The protected-file guard reads a very long command about a quarter faster, so it stays inside the hook's time on a slow runner.
 
 ## 1.30.1 - 2026-11-14
 
