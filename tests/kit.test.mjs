@@ -1015,24 +1015,24 @@ test('a first action still stops for a lock, an outward act or an open decision,
 });
 
 // why: guards rule:sweep-auto-approval
-test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
+test('findings are fixed in their build and only what the owner accepts carries, in the rule and in everything the sweep tools tell the lead', () => {
   const rule = (f) => read(path.resolve(f));
   const findings = rule('rules/reviews-and-findings.md');
-  assert.match(findings, /only at medium or below[^\n]*critical is fixed before the PR[^\n]*the owner accepts it/);
-  assert.match(findings, /post-PR findings at medium or below[^\n]*carry-overs/);
+  assert.match(findings, /Findings are fixed in the build that finds them\. A low or medium that cannot be finished carries only on the owner's yes, first next build\. A high or critical never carries: it is fixed before the PR[^\n]*or the owner accepts it/);
+  assert.match(findings, /the small ones too; what carries \(the rule above\) goes to the handoff's carry-overs/);
   assert.match(findings, /in a known area \(one component, one flow\)/);
   // pin: 1 (the sweep report audit reads these dispositions)
   assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
   // Comments off: what counts is the text the lead is shown.
   const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left at medium or below goes to the handoff\\'s carry-overs for the next feature build, and a high or critical is fixed or the owner accepts it/);
+  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) goes to the handoff\\'s carry-overs/);
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it/);
+  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) is logged with `--carried <n>` and goes to the handoff/);
   const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(approve, /What the re-sweep left at medium or below goes to \$\{CARRY_HOME\}; a high or critical is fixed or the owner accepts it/);
-  assert.match(approve, /findings left unfixed after it[^\n]*each medium or below/);
+  assert.match(approve, /What the re-sweep left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) goes to \$\{CARRY_HOME\}/);
+  assert.match(approve, /findings left unfixed after it[^\n]*each a low or medium the owner said yes to/);
   assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
   assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
 });
@@ -3379,7 +3379,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
   const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*medium or below only[\s\S]*Carry-overs from the last PR/);
+  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner said yes to; never a high or critical[\s\S]*Carry-overs from the last PR/);
   assert.equal(approvalLog(first.dir).pop().carried, 2);
   const next = approveIn(first.dir, [first.f]);
   assert.equal(next.status, 1, `a third pass on this branch asks the owner: ${next.stdout}`);
@@ -5661,7 +5661,6 @@ test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was rele
   assert.deepEqual(v4.filter((r) => r.n !== 3), v3.filter((r) => r.n !== 3));
   assert.equal(v4[2].q, v3[2].q);
   assert.match(v4[2].key, /before any source-of-truth edit or agent dispatch/);
-  assert.match(read(path.resolve('project/CLAUDE.md')), /BEFORE any source-of-truth edits or agent dispatch/);
 });
 
 // The owner's ruling (2026-11-10, S22-4): v5 asks question 11 for the rule itself, and key 4 names the feature-branch
@@ -5673,7 +5672,6 @@ test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the 
   const released = spawnSync('git', ['show', 'v1.24.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(released.status, 0, 'the v1.24.0 tag must exist locally');
   assert.equal(versionText(text, 4), versionText(released.stdout, 4));
-  assert.equal(currentVersion(text), 5);
   assert.equal(questionCount(text, 5), 13);
   assert.equal(passBar(text, 5), 12);
   const [v4, v5] = [questions(text, 4), questions(text, 5)];
@@ -5683,6 +5681,56 @@ test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the 
   assert.notEqual(v5[10].q, v4[10].q);
   assert.match(v5[10].q, /^Without looking in any folder/);
   assert.match(v5[3].key, /feature branch/);
+});
+
+// why: guards rule:instruments-and-evals
+test('recall v6 is v5 with key 4 the decision only and question 14 on how a yes is asked, and v5 stays as released', async () => {
+  const { versionText, currentVersion, questions, questionCount, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const released = spawnSync('git', ['show', 'v1.29.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
+  assert.equal(released.status, 0, 'the v1.29.0 tag must exist locally');
+  assert.equal(versionText(text, 5), versionText(released.stdout, 5));
+  assert.equal(questionCount(text, 6), 14);
+  assert.equal(passBar(text, 6), 13);
+  const [v5, v6] = [questions(text, 5), questions(text, 6)];
+  assert.deepEqual(v6.slice(0, 13).filter((r) => r.n !== 4), v5.filter((r) => r.n !== 4));
+  assert.equal(v6[3].q, v5[3].q);
+  assert.doesNotMatch(v6[3].key, /pop-up|name it/);
+  assert.match(v6[3].key, /feature branch/);
+  assert.match(v6[13].key, /choice pop-up/);
+});
+
+// why: guards rule:instruments-and-evals
+test('recall v7 is v6 with key 12 following the no-carry rule, and v6 stays as written', async () => {
+  const { currentVersion, questions, questionCount, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  assert.equal(questionCount(text, 7), 14);
+  assert.equal(passBar(text, 7), 13);
+  const [v6, v7] = [questions(text, 6), questions(text, 7)];
+  assert.deepEqual(v7.filter((r) => r.n !== 12 && r.n !== 14), v6.filter((r) => r.n !== 12 && r.n !== 14));
+  assert.equal(v7[11].q, v6[11].q);
+  assert.equal(v7[13].q, v6[13].q);
+  assert.match(v7[13].key, /never typed words where a pop-up exists$/);
+  assert.match(v7[11].key, /nothing carries without the owner's yes/);
+  assert.match(v6[11].key, /only medium or lower may carry/);
+});
+
+// why: guards rule:post-compact-orientation
+test('recall v8 and v9 move key 3 to the resume packet rule, and v7 stays as written', async () => {
+  const { currentVersion, questions, questionCount, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  assert.equal(questionCount(text, 8), 14);
+  assert.equal(passBar(text, 8), 13);
+  const [v7, v8] = [questions(text, 7), questions(text, 8)];
+  assert.deepEqual(v8.filter((r) => r.n !== 3), v7.filter((r) => r.n !== 3));
+  assert.equal(v8[2].q, v7[2].q);
+  assert.match(v8[2].key, /^Run the resume packet check first/);
+  assert.equal(currentVersion(text), 9);
+  assert.equal(passBar(text, 9), 13);
+  const v9 = questions(text, 9);
+  assert.deepEqual(v9.filter((r) => r.n !== 3), v8.filter((r) => r.n !== 3));
+  assert.match(v9[2].key, /changed or missing \(no verdict line means the full reading\)/);
+  assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 
 // why: guards rule:sweep-auto-approval
@@ -5715,24 +5763,26 @@ test('recall run header says what the run read: keys, both kit versions, and whe
 
 // why: guards rule:instruments-and-evals
 test('a recall run asks the current keys and its header names them', async () => {
-  const { prepare, currentVersion, questions } = await recallTools();
+  const { prepare, currentVersion, questions, questionCount, passBar } = await recallTools();
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const keys = currentVersion(text);
   const run = prepare({ projectDir: proj, label: 'cand-1', home, text, when: 'w' });
   assert.deepEqual(run.qs, questions(text, keys));
-  assert.equal(run.qs.length, 13);
   assert.ok(run.lines.includes(`Keys: v${keys}`));
   assert.ok(run.lines.includes('# Recall run: cand-1'));
   const refused = (bad, why) => assert.throws(() => prepare({ projectDir: proj, label: 'x', home, text: bad, when: 'w' }), why);
   const rows = /^\| \d+ \|.*\n/gm;
-  refused(text.replace(/^\| 13 \|.*\n/gm, ''), /expected 13 questions, found 12/);
-  refused(text.replace(/^(\| 13 \|.*\n)/m, '$1| 14 | One more? | A key |\n'), /expected 13 questions, found 14/);
-  refused(text.replace(rows, ''), /expected 13 questions, found 0/);
-  refused(text.replace(rows, '').replace('Pass: median 12 of 13.', 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
-  refused(text.replace('| 13 | My PR', '| 12 | My PR'), /numbered 1 to 13/);
-  refused(text.replace('Pass: median 12 of 13.', ''), /no "Pass: median <n> of <m>\." line/);
+  const n = questionCount(text, keys);
+  const pass = `Pass: median ${passBar(text, keys)} of ${n}.`;
+  const last = new RegExp(`^\\| ${n} \\|.*\\n`, 'm');
+  refused(text.replace(new RegExp(last.source, 'gm'), ''), new RegExp(`expected ${n} questions, found ${n - 1}`));
+  refused(text.replace(last, (row) => `${row}| ${n + 1} | One more? | A key |\n`), new RegExp(`expected ${n} questions, found ${n + 1}`));
+  refused(text.replace(rows, ''), new RegExp(`expected ${n} questions, found 0`));
+  refused(text.replace(rows, '').replace(pass, 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
+  refused(text.replace(last, (row) => row.replace(`| ${n} |`, `| ${n - 1} |`)), new RegExp(`numbered 1 to ${n}`));
+  refused(text.replace(pass, ''), /no "Pass: median <n> of <m>\." line/);
 });
 
 // why: guards rule:probe-scope
@@ -7071,10 +7121,12 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
   const keys = currentVersion(keysText);
   const n = questionCount(keysText, keys);
   const bar = passBar(keysText, keys);
-  assert.equal(bar, 12, 'the bar stays at 12');
+  // The owner raised the bar with the question count (keys v6: 13 of 14); it never falls under that.
+  assert.equal(bar, 13, 'the bar stays at 13');
+  const b = bar;
   const files = (cand) => {
     const dir = makeTemp('rtie-');
-    const totals = { ...Object.fromEntries(cand.map((t, i) => [`cand-${i + 1}`, t])), 'base-1': 12, 'control-1': 5 };
+    const totals = { ...Object.fromEntries(cand.map((t, i) => [`cand-${i + 1}`, t])), 'base-1': b, 'control-1': 5 };
     const map = Object.fromEntries(Object.keys(totals).map((run, i) => [`R${String(i + 1).padStart(2, '0')}`, run]));
     const lines = Object.entries(map).flatMap(([id, run]) => Array.from({ length: n }, (_, q) => `${id} Q${q + 1}: ${q < totals[run] ? 1 : 0}`));
     fs.writeFileSync(path.join(dir, 'scores.txt'), lines.join('\n'));
@@ -7082,32 +7134,32 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
     return [path.join(dir, 'scores.txt'), path.join(dir, 'map.json')];
   };
   const run = (cand) => score(...files(cand), 'kit-x');
-  assert.match(run([13, 12, 13]).line, /median 13 /, 'over the bar: 3 runs are enough');
-  assert.match(run([11, 11, 12]).line, /median 11 /, 'under the bar: 3 runs fail it, and more runs are not a second chance');
-  for (const tie of [[12, 12, 13], [11, 12, 12], [12, 12, 12]]) {
+  assert.match(run([b + 1, b, b + 1]).line, new RegExp(`median ${b + 1} `), 'over the bar: 3 runs are enough');
+  assert.match(run([b - 1, b - 1, b]).line, new RegExp(`median ${b - 1} `), 'under the bar: 3 runs fail it, and more runs are not a second chance');
+  for (const tie of [[b, b, b + 1], [b - 1, b, b], [b, b, b]]) {
     const r = run(tie);
     assert.equal(r.line, null, `no gate line on ${tie}`);
     assert.equal(r.more, 2);
   }
-  assert.match(run([12, 12, 13, 11, 12]).line, /median 12 /, 'the median of 5 holds the bar');
-  assert.match(run([12, 12, 11, 11, 11]).line, /median 11 /, 'the median of 5 can fail it');
-  assert.throws(() => run([11, 11, 12, 13, 13]), /first 3 runs reached the bar/, 'runs added to a miss do not count');
-  assert.throws(() => run([13, 13, 13, 13]), /3 runs, or 5/);
-  assert.throws(() => run([13]), /3 runs, or 5/);
-  const held = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([12, 12, 13]), 'kit-x'], { encoding: 'utf8' });
+  assert.match(run([b, b, b + 1, b - 1, b]).line, new RegExp(`median ${b} `), 'the median of 5 holds the bar');
+  assert.match(run([b, b, b - 1, b - 1, b - 1]).line, new RegExp(`median ${b - 1} `), 'the median of 5 can fail it');
+  assert.throws(() => run([b - 1, b - 1, b, b + 1, b + 1]), /first 3 runs reached the bar/, 'runs added to a miss do not count');
+  assert.throws(() => run([b + 1, b + 1, b + 1, b + 1]), /3 runs, or 5/);
+  assert.throws(() => run([b + 1]), /3 runs, or 5/);
+  const held = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([b, b, b + 1]), 'kit-x'], { encoding: 'utf8' });
   assert.equal(held.status, 1, held.stdout + held.stderr);
   assert.doesNotMatch(held.stdout, /^gate:/m);
-  assert.match(held.stdout, /on the bar of 12[\s\S]*cand-4 and cand-5/);
+  assert.match(held.stdout, new RegExp(`on the bar of ${b}[\\s\\S]*cand-4 and cand-5`));
   assert.match(keysText.split('<!-- recall v')[0], /A median of 3 exactly on the bar runs 2 more, and the median of those 5 decides/); // pin: 3 (released recall keys)
 });
 
 // 1.20.0 carry-overs N5 and B8: a closeout that started on its own still asks before a remote branch delete, and the
 // core rules send leftovers to the next build, not the roadmap.
 // why: guards rule:kit-standards
-test('a self-started closeout asks before a remote delete, and leftovers carry to the next build', () => {
+test('a self-started closeout asks before a remote delete, and leftovers carry only on the owner yes', () => {
   assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching[^\n]*remote delete on the owner's yes/);
   const core = read(path.resolve('rules/core.md'));
-  assert.match(core, /design items carry to the next build/);
+  assert.match(core, /a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never/);
   assert.doesNotMatch(core, /design items go to the roadmap/);
 });
 // Sweep tooling carry-overs from 1.18.0 (C4, C9b, C9e, C9f, C10, C11), each checked real against the code first.

@@ -2,8 +2,8 @@
 # Recipe Planner - Continuation Handoff
 
 ## REQUIRED FIRST ACTIONS
-Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
-visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
+Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; the resume packet check, fresh reads
+of what its verdict names, visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
 
 ## Working Mode: Plan (default)
 
@@ -31,8 +31,7 @@ visible checklist, scans), then state mode + first action (always the next build
   with what changed for the user; process goes in the folds.
 
 ## Reading Order (mandatory, in order)
-1. _Start Here.md  2. AGENTS.md  3. _Loop Learnings.md  4. _Working Memory.md
-5. _Active Plan.md  6. Last Session Log entry  7. _Master Roadmap.md "Known issues"
+1. `node .claude/resume-packet.mjs check`  2. the files its verdict names, and _Master Roadmap.md "Known issues"
 
 ## Next Step (REQUIRED)
 - What: finish focus item 2 - sort the last 26 polish boxes into "Known issues" (member-facing, device-only,

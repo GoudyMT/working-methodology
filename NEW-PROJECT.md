@@ -116,7 +116,7 @@ Every `<PROJECT ...>` placeholder and every `PROJECT ADAPTER` block gets a real 
 ## 6. Start working
 
 Every session after this one starts with the Post-Compact Orientation Protocol (rule:post-compact-orientation):
-fresh reads of the reading order, a visible checklist, then the first action confirmed with the owner. Every
+the resume packet check, fresh reads of what it names, a visible checklist, then the first action confirmed with the owner. Every
 session ends with the pre-compact closeout, whose rule sort (scan step 5b) sends portable rule changes back to
 the kit.
 

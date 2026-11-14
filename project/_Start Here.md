@@ -24,6 +24,7 @@
 
 | Order | File | What You Learn |
 |---|---|---|
+| **0** | `node .claude/resume-packet.mjs check` | **START HERE IN CLAUDE CODE.** Checks the files below against the resume packet; read what its verdict names. With no packet, read in this order. |
 | **1** | This file (`_Start Here.md`) | Orientation, reading order, working mode |
 | **2** | [`AGENTS.md`](AGENTS.md) + [`standards/INDEX.md`](standards/INDEX.md) | **HOW we work.** Methodology, code / security / test standards, design locks, compact hygiene. **Non-negotiable.** |
 | **3** | [`_Loop Learnings.md`](_Loop Learnings.md) | **OPEN LESSONS.** Lessons that must not recur (a repeat = regression). Small; read every session. |

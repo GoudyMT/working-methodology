@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.30.0 - 2026-11-14
+
+A new or compacted session starts from one checked resume packet instead of re-reading every tracking file, and the rule text held back from 1.29.0 lands now that the recall test measures it fairly.
+
+### Added
+- The resume packet: each closeout and compact saves the resume point, open lessons, git state and file hashes in about 2 KB. A session starts with one check that names only what changed; any doubt means the full reading.
+- The cost rule: before a run that spends money or a shared quota, say what it costs and offer the free option first.
+
+### Changed
+- Rule 11: first the packet check, then fresh reads of what it names. The tracking files no longer load at start, so nothing loads twice: 44,288 to 32,963 bytes. Status names old start lines a filled-in project keeps.
+- The owner's yes is a tap in the choice pop-up quoting the act; typed words only where the tool or model has no pop-up.
+- Nothing carries to the next build by default: a low or medium finding carries only on the owner's yes, a high or critical never. The rules, the Active Plan template and the sweep guard say it one way.
+- A test is owed for a change in behaviour; wording, docs and removals owe none.
+- "Held" has one meaning in the guard texts, and the PR title rule counts the squash suffix.
+- The recall test is version 9: question 4 asks the push and PR decision only, a new question 14 asks how a yes is asked, and keys 3, 12 and 14 follow the rules above.
+
 ## 1.29.0 - 2026-11-13
 
 The 1.28.0 carry-overs close here, with the guard holes found on the way: a protected file under another Windows name, a write into `.git` by move or copy, and a push carried to another host. The rule text planned for this build did not pass the recall bar and is not in it.

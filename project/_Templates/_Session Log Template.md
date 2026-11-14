@@ -21,7 +21,7 @@ Use this format for every new session entry in [`_Session Log.md`](../_Session L
 
 ### Flagged for Next Session
 - **Resume Point:** [1 line + link]
-- **Read first:** [`_Start Here.md`](../_Start Here.md) -> [`AGENTS.md`](../AGENTS.md) -> [`_Loop Learnings.md`](../_Loop Learnings.md) -> [`_Working Memory.md`](../_Working Memory.md) -> [`_Active Plan.md`](../_Active Plan.md) -> [this entry] -> [other files]
+- **Read first:** `node .claude/resume-packet.mjs check`, then the files its verdict names -> [other files]
 - **Open items / blockers:** [if any]
 ```
 

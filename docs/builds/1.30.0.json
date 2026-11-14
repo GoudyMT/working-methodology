@@ -1,0 +1,109 @@
+{
+ "version": "1.30.0",
+ "date": "2026-11-14",
+ "level": "minor",
+ "area": "Start reading",
+ "title": "feat: a session starts from a checked resume packet",
+ "headline": "A new or compacted session starts from one checked resume packet instead of re-reading every tracking file, and the rule text held back from 1.29.0 lands now that the recall test measures it fairly.",
+ "alignment": "v1.30.0 is build 4 as planned: the push question steadied, the waiting rule text landed, and the resume packet built, each measured on its own recall run.",
+ "items": [
+  {
+   "id": "T3",
+   "kind": "added",
+   "text": "The resume packet: each closeout and compact saves the resume point, open lessons, git state and file hashes in about 2 KB. A session starts with one check that names only what changed; any doubt means the full reading.",
+   "evidence": "tests/resume-packet.test.mjs",
+   "where": "What a session reads before its first edit",
+   "before": "Every tracking file, twice: inlined at start, then read again",
+   "after": "One check, then only the plan and what changed"
+  },
+  {
+   "id": "K42",
+   "kind": "added",
+   "text": "The cost rule: before a run that spends money or a shared quota, say what it costs and offer the free option first.",
+   "evidence": "rules/evidence-and-failures.md"
+  },
+  {
+   "id": "RULE-11",
+   "kind": "changed",
+   "text": "Rule 11: first the packet check, then fresh reads of what it names. The tracking files no longer load at start, so nothing loads twice: 44,288 to 32,963 bytes. Status names old start lines a filled-in project keeps.",
+   "evidence": "tests/resume-packet.test.mjs, docs/evals/results/recall-scores.md"
+  },
+  {
+   "id": "K43",
+   "kind": "changed",
+   "text": "The owner's yes is a tap in the choice pop-up quoting the act; typed words only where the tool or model has no pop-up.",
+   "evidence": "rules/evidence-and-failures.md"
+  },
+  {
+   "id": "NO-CARRY",
+   "kind": "changed",
+   "text": "Nothing carries to the next build by default: a low or medium finding carries only on the owner's yes, a high or critical never. The rules, the Active Plan template and the sweep guard say it one way.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "TEST-BAR",
+   "kind": "changed",
+   "text": "A test is owed for a change in behaviour; wording, docs and removals owe none.",
+   "evidence": "rules/testing.md, rules/reviews-and-findings.md"
+  },
+  {
+   "id": "C17-K37",
+   "kind": "changed",
+   "text": "\"Held\" has one meaning in the guard texts, and the PR title rule counts the squash suffix.",
+   "evidence": "rules/core.md, rules/git-and-release.md"
+  },
+  {
+   "id": "RECALL",
+   "kind": "changed",
+   "text": "The recall test is version 9: question 4 asks the push and PR decision only, a new question 14 asks how a yes is asked, and keys 3, 12 and 14 follow the rules above.",
+   "evidence": "docs/evals/recall-questions.md, tests/kit.test.mjs"
+  }
+ ],
+ "verification": [
+  "Each stage had its own recall run against the released 1.29.0, control 0 each time: stage 1 probe 7 of 8 and 8 of 8; stage 2 median 14 to 13; stage 3 and the final text median 14 to 12.",
+  "Every fix that changes behaviour shipped with a test that fails on the code before it: 8 of the 14 packet tests fail on the swept code.",
+  "The start load was measured on the kit's templates before and after: 44,288 to 32,963 bytes."
+ ],
+ "decisions": [
+  {
+   "decision": "Question 4 is split, and a new question asks how a yes is asked",
+   "why": "Sessions gave the push and PR decision in 12 of 12 saved answers; the key hid two items scorers read two ways. The owner picked the split over dropping them."
+  },
+  {
+   "decision": "The check shows only what it rebuilds from the files",
+   "why": "The review showed a saved packet could carry text, or a second verdict line, to the session. Rebuilding from the files leaves the packet only its hashes and its git line."
+  },
+  {
+   "decision": "Rule 11's words are the owner's",
+   "why": "Rule 11 exists for a real drift; the owner locked the new words by pop-up before the build."
+  }
+ ],
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "4890efc",
+  "dimensions": [
+   { "name": "Privacy", "result": "Clean" },
+   { "name": "Supply chain", "result": "Clean: built-ins only, git with fsmonitor and transports off" },
+   { "name": "Legal", "result": "Not touched" },
+   { "name": "Code security", "result": "Two highs and nine mediums in the packet check, all fixed" },
+   { "name": "Gaps, scaling, test value", "result": "One test that could not fail, fixed; status and use-check gaps fixed" },
+   { "name": "Alignment", "result": "YES; four doc claims corrected" }
+  ],
+  "findings": { "critical": 0, "high": 3, "medium": 11, "low": 23 },
+  "fixed": [
+   "H1: a forged verdict line reached the session. Fixed in f86dfa8.",
+   "H2: an edited or padded packet passed the check. Fixed in f86dfa8.",
+   "H3: the outside-path test could not fail. Fixed in f86dfa8."
+  ],
+  "accepted": [
+   "A tracking file hard-linked to a file outside the project is read as the project's own.",
+   "The session that wrote the packet is recorded, not compared.",
+   "The allow rule matches the command text, not the file it runs."
+  ]
+ },
+ "tests": {
+  "before": 688,
+  "after": 705,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}

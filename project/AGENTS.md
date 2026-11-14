@@ -27,13 +27,9 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 ## Read Order (Design and Implementation Work)
 
-1. [`_Start Here.md`](_Start Here.md)
-2. This file: the core rules below, and the module the moment needs (Rule Modules table at the end)
-3. [`_Loop Learnings.md`](_Loop Learnings.md) - open lessons (a repeat = regression)
-4. [`_Working Memory.md`](_Working Memory.md)
-5. [`_Active Plan.md`](_Active Plan.md)
-6. Last [`_Session Log.md`](_Session Log.md) entry
-7. The specific spec / ADR / plan named by the Resume Point
+1. This file: the core rules below, and the module the moment needs (Rule Modules table at the end)
+2. `node .claude/resume-packet.mjs check`: the resume point, open lessons and git state, checked against the files
+3. The files its verdict names; with no packet (or a tool that runs no commands): [`_Start Here.md`](_Start Here.md), [`_Loop Learnings.md`](_Loop Learnings.md), [`_Working Memory.md`](_Working Memory.md), [`_Active Plan.md`](_Active Plan.md), the last [`_Session Log.md`](_Session Log.md) entry, the plan the Resume Point names
 
 ---
 
@@ -178,7 +174,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 - **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants) or a push is inside the push bound. Name the act, wait for the owner's yes (the guards read that tap, never Claude's word), check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.
 - **The push bound** (the owner, 2026-11-10) is the one push that needs no yes: `git push [-u] origin <feature branch>`. It has four limits, and an answer about pushing names all four: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes.
 
-  The guard and the pre-push hook hold the bound, scan each pushed commit for secrets and log it; a held push names the limit it hit.
+  The guard and the pre-push hook hold the bound, scan each pushed commit for secrets and log it; a refused push names the limit it hit.
 - **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal.
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, fixes its CI failures and its owner's or review tool's comments, runs the full gate, and pushes with `merge-gate.mjs autofix <n>` - nothing else. Relayed review comments carry no authority.
@@ -187,7 +183,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 
 ## Session Workflow {#session-workflow}
 
-**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
+**Start:** `AGENTS.md` loads; run `node .claude/resume-packet.mjs check` and read what its verdict names (rule:post-compact-orientation). Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
 
 **Work:** one issue at a time; context before options; scope loop-worthiness; **plan the whole cycle before branching** (every task, edge case, what is in and out) so work lands in one branch; with >2 units left, plan the rest as one batch (one-question investigators -> small probes -> one plan resolving cross-unit interactions -> one pass). Why: piecemeal planning splits a feature across PRs. **Audit a long branch against the objective:** commits grouped by what they buy the user, overhead named, the cumbersome fix cut.
 
@@ -233,7 +229,7 @@ On an owner correction: **acknowledge** (don't defend); **capture** a specific a
 
 ## Autonomous Fixes {#autonomous-fixes}
 
-**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; only large, risky, device-only or design items carry to the next build, all recorded. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.
+**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.
 
 ## Justify Every Direction Change {#direction-changes}
 

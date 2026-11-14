@@ -1106,7 +1106,7 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old);
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
-  if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - fresh reads of the Reading Order before any edit.');
+  if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
   const ahead = remoteKitAhead(kit);
   if (ahead > 0) lines.push(`The kit on GitHub is ${ahead} commit(s) ahead of the kit folder. Check out its newest release tag (${releaseCheckout(kit, newestTag(kit))}), then run /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
@@ -1242,6 +1242,18 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     .filter((f) => !/^\| Status \| (closed|declined) \|/m.test(fs.readFileSync(path.join(reportDir, f), 'utf8'))) : [];
   if (protection(projectDir) === 'unprotected') lines.push('main is not protected on GitHub: run the "Protect main" step of rule:first-push-gate (an outward act; the owner says go).');
   if (open.length) lines.push(`${open.length} improvement report(s) open: ${open.join(', ')}. Hand filed ones to the kit.`);
+  // T3 (1.30.0): install skips a CLAUDE.md the project filled in, so it can keep the old start reading: the tracking
+  // files inlined at start and the old rule 11. Status names the exact lines to change.
+  const claudeMd = (() => { try { return fs.readFileSync(path.join(projectDir, 'CLAUDE.md'), 'utf8'); } catch { return ''; } })();
+  const oldImports = claudeMd.split(/\r?\n/).filter((l) => /^@_(Start|Loop|Working|Active)\\? ?(Here|Learnings|Memory|Plan)\.md\s*$/.test(l.trim()));
+  if (oldImports.length) lines.push(`CLAUDE.md still inlines the tracking files at start (they then load twice): remove ${oldImports.map((l) => `"${l.trim()}"`).join(', ')}; keep @AGENTS.md.`);
+  // Both shipped wordings of the old rule 11 ("First action: fresh `Read` calls ..." and "... Fresh `Read` calls ...").
+  if (/fresh `Read` calls on every file in the handoff's Reading Order/i.test(claudeMd)) lines.push('CLAUDE.md hard rule 11 is the old full reading: replace it with hard rule 11 from the kit\'s project/CLAUDE.md (the resume packet check).');
+  if (/Additionally read the last entry in .*_Session Log/.test(claudeMd)) lines.push('CLAUDE.md still says "Additionally read the last entry in _Session Log.md": remove it; the resume packet check names the log when it changed.');
+  const kept = (f) => { try { return fs.readFileSync(path.join(projectDir, f), 'utf8'); } catch { return ''; } };
+  if (/close in this run unless large, risky, device-only or a design call/.test(kept('_Active Plan.md'))) lines.push('_Active Plan.md keeps the old carry-over label: change it to "Carry-overs from the last PR (only those the owner said yes to; close in this run):".');
+  const startHere = kept('_Start Here.md');
+  if (/## Reading Order/.test(startHere) && !/resume-packet\.mjs check/.test(startHere)) lines.push('_Start Here.md\'s Reading Order has no row 0 for the resume packet check: copy it from the kit\'s project/_Start Here.md.');
   // A full inode table stops every shell on the disk (the Cowork VM, 2026-11-05); disk room is not an install fault.
   const disk = inodes();
   if (disk.level === 'warn' || disk.level === 'refuse') lines.push(`Temp disk: ${disk.text}. Test runs refuse above ${kitTemp.REFUSE_PCT}%: clear old temp folders.`);

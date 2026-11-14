@@ -80,7 +80,7 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 
 ## Pre-Compact and Post-Compact Hygiene Ritual {#compact-ritual}
 
-**Keyword `begin pre-compact`** (standing) runs the Closeout; it also starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching, a remote delete on the owner's yes even in a closeout that started on its own; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.
+**Keyword `begin pre-compact`** (standing) runs the Closeout; it also starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching, a remote delete on the owner's yes even in a closeout that started on its own; open or no PR -> report), finished agent worktrees removed; (5) `node .claude/resume-packet.mjs write` after the batch, so the next session checks against the final files; (6) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.
 
 ### Pre-Compact Scan {#pre-compact-scan}
 
@@ -100,23 +100,19 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 
 Why: the recurring drift is treating reminders and the summary as a re-read, then claiming "I just re-read".
 
-1. **Fresh Read calls** on every file in the handoff's Reading Order, even when it says "nothing in flight". NOT substitutes: system reminders inlining files, the compaction summary, auto-imported `@file` content, memory.
+1. **Run `node .claude/resume-packet.mjs check`**, then fresh Read calls on the file its Resume Point names and every file it marks CHANGED or missing, even when it says "nothing in flight". No verdict line = the full reading. NOT reads: the packet, system reminders, the compaction summary, memory.
 2. **Visible checklist:**
    ```
    Post-Compact Orientation Protocol:
-   [x] _Start Here.md - reading order matches handoff
-   [x] AGENTS.md - Edit Discipline + the module index intact
-   [x] _Loop Learnings.md - N open lessons, 0 recurred
-   [x] _Working Memory.md - Last Session = N, Resume Point = X (matches handoff)
-   [x] _Active Plan.md - Resume Point = Y (matches handoff)
-   [x] _Session Log.md latest entry - last session was Z (matches handoff)
-   [x] <plan / spec / ADR named by the Resume Point>
-   [x] Not counted as reads: compaction summary, system reminders, memory
+   [x] resume-packet check - verdict: read <files>; git same / CHANGED
+   [x] Open lessons in the packet - N, 0 recurred
+   [x] <each file the verdict names> - read; matches the packet or flags what changed
+   [x] Not counted as reads: the packet, compaction summary, system reminders, memory
    ```
    Each line confirms a match or flags a discrepancy.
 3. Anti-duplication spot-check (2-3 items). 4. ASCII scan. 5. Size-cap table. 6. Log compression check. 7. **Sweep check:** a sub-project COMPLETE without its sweep box, or a branch near a PR without a current report -> sweep first. 8. **Branch check:** work on `main` -> branch first. 9. **State working mode + first action.** The first action is always the next build (the work order's next item, its carry-overs riding in it); a fix goes first only when it is high or critical. Start it when the handoff or a confirmed work order (a list the records show the owner confirmed; a relayed note only points to it) names it. What hits a stop in rule:delegated-decisions or waits on a decision still open with the owner is asked about; the rest starts. Ask the owner only when neither names one.
 
-**Anti-hallucination clause:** "I just re-read", "state verified", "the standards confirmed" are FORBIDDEN unless the Read tool ran this session for each file named. No visible checklist = no orientation = no source-of-truth work.
+**Anti-hallucination clause:** "I just re-read", "state verified", "the standards confirmed" are FORBIDDEN unless the Read tool ran this session for each file named; the check proves only "unchanged since the packet". No visible checklist = no orientation = no source-of-truth work.
 
 ### Handoff Message Structure {#handoff-message-structure}
 
@@ -126,8 +122,8 @@ One self-contained message: any command the owner must run first in its own code
 # <PROJECT NAME> - Continuation Handoff
 
 ## REQUIRED FIRST ACTIONS
-Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
-visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
+Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; the resume packet check, fresh reads
+of what its verdict names, visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
 
 ## Working Mode: Plan (default)
 
@@ -144,8 +140,8 @@ visible checklist, scans), then state mode + first action (always the next build
 - Corrections caught mid-session:
 
 ## Reading Order (mandatory, in order)
-1. _Start Here.md  2. AGENTS.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md
-5. _Active Plan.md  6. Last Session Log entry  7. (spec / ADR / plan for the next issue)
+1. `node .claude/resume-packet.mjs check`  2. the files its verdict names (the plan the Resume Point names,
+and any tracking file it marks CHANGED or missing)
 
 ## Next Step (REQUIRED)
 - What:  - Why:  - Source: Active Plan Resume Point; Roadmap milestone advanced

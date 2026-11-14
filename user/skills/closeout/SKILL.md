@@ -28,7 +28,9 @@ It starts on its own only as rule:compact-ritual says.
    into the handoff's State Snapshot as "auto-approval: paused since <date>, <reason>; the owner resumes with
    <command>", in every handoff until the owner resumes it. A "carried open" above 0 means findings still sit in the
    handoff's "Carry-overs from the last PR": list each there.
-5. **Write the handoff** in the shape below, run `node <this skill's folder>/audit.mjs <handoff.md> --send`, and fix
+5. **Write the resume packet:** `node .claude/resume-packet.mjs write` after the batch, so its hashes are of the final
+   files; the next session starts from `check`.
+6. **Write the handoff** in the shape below, run `node <this skill's folder>/audit.mjs <handoff.md> --send`, and fix
    every fault. In a project with several sessions, send the full text it prints as ONE message to the coordinating
    session, never a file path (the next session may not be able to read it). The channel by host: in a Claude
    project thread, `send_message` to `@parent`; elsewhere, the one the project names. The closeout is done only

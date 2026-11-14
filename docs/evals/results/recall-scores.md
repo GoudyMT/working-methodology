@@ -470,3 +470,90 @@ gate: kit-1.26.0 median 13 baseline 12 brief v2 keys v5
 
 control: 0
 gate: kit-1.26.0 median 13 baseline 12 brief v2 keys v5
+
+## Recall v6 and v7 - 1.30.0 stages 1 and 2 against the 1.29.0 baseline (2026-11-14)
+
+Brief v2. Candidate: this branch, the project layer unreleased 1.30.0 in recall's own throwaway folder, the user layer the released 1.29.0. Baseline: 1.29.0 from the release copy on its tag. One blind scorer per round.
+
+**Stage 1, keys v6 (the owner's ruling, option B):** no rule text changed. Question 4's key keeps the push and PR decision, and question 14 asks how a yes is asked. Probe on 1.29.0, 8 sessions per question: question 4 7 of 8, question 14 8 of 8. The 12 saved question 4 answers from the 1.29.0 build: 10 of 12 on the v6 key. The owner accepted v6 by pop-up.
+
+**Stage 2, keys v7:** the rule text pulled from 1.29.0 (pop-up yes, cost first, the two test-rule lines, the no-carry wording, C17, K37) and the owner's no-carry wording in the guards and templates. Key 12 follows the no-carry rule; key 14 follows the pop-up rule's own fallback (typed words only where no pop-up exists), both the owner's by pop-up.
+
+- First round, before the owner's no-carry wording: candidates 12, 14, 13 (median 13 on the bar), so two more ran: 14, 13, 13, 13, 14, median 13; baseline 13, 12, 13; control 0.
+- Final round, on the final text: three new candidates, scored blind with the same baselines and control. Question 14 re-scored blind on the v7 key for those six answers (6 of 6).
+- v7 was a draft on this branch until the owner accepted it. The first round scored question 14 on the draft key ("never typed words"); the owner set key 14 to the pop-up rule's fallback in the same pop-up that accepted v7, so only the final round counts for the gate.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 0, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 0, 1 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 13, 14 | 13, 12, 13 | 0 |
+
+- **Scored: median 14, baseline 13, control 0.** Question 12 fails on every baseline, as expected: the released rule still lets a medium carry. The ruler moved (v5 to v7), so the line carries the owner's marker (pop-ups, 2026-11-14).
+
+control: 0
+gate: kit-1.30.0-s2 median 14 baseline 13 brief v2 keys v7 owner-accepted
+## Recall v8 - 1.30.0 stage 3 against the 1.29.0 baseline (2026-11-14)
+
+Brief v2. Candidate: this branch with the resume packet (rule 11 as the owner locked it, the tracking files no longer inlined at start), the project layer unreleased 1.30.0 in recall's own throwaway folder, the user layer the released 1.29.0. Baseline: 1.29.0 from the release copy on its tag, run fresh on v8. Key 3 follows the new rule 11 (the owner's ruling, 2026-11-14). One blind scorer.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 1, 0 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 14, 14 | 12, 12, 11 | 0 |
+
+- **Scored: median 14, baseline 12, control 0.** Questions 3 and 12 fail on every baseline, as expected: the released rules still order the full reading and let a medium carry. No question fails more in the candidates. Question 13 was borderline in six runs on both sides ("starts on its own" without "no keyword needed"), scored 1 throughout. The ruler moved (v5 to v8), so the line carries the owner's marker (pop-up, 2026-11-14).
+
+control: 0
+gate: kit-1.30.0 median 14 baseline 12 brief v2 keys v8 owner-accepted
+## Recall v9 - 1.30.0 final text against the 1.29.0 baseline (2026-11-14)
+
+Brief v2. The text that ships: the three stages plus the sweep's fixes (the carry rule in core.md names a high or critical; the packet check reworked). Key 3 names all of rule 11 (the owner's ruling by pop-up after the sweep). Candidate as before; baseline 1.29.0 from the release copy, run fresh on v9. The first three candidates scored 13, 13, 14 (median on the bar), so two more ran and all nine runs were scored blind together by a fresh scorer.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 0, 0, 0 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 0, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 0, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 0, 0, 0 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 0 | 0 |
+| Total | 13, 14, 14, 13, 14 | 12, 12, 11 | 0 |
+
+- **Scored: median 14 of 5, baseline 12, control 0.** Questions 5 and 7 miss once each in the candidates, both borderline and in rules this build did not change. Question 13 is borderline in every kit run on both sides, scored 1 throughout. The owner accepted v9 by pop-up, 2026-11-14.
+
+control: 0
+gate: kit-1.30.0 median 14 baseline 12 brief v2 keys v9 owner-accepted

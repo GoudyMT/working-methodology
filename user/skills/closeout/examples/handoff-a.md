@@ -8,8 +8,8 @@ Remove-Item -Recurse -Force C:\sw1, C:\sw2, C:\sw3, C:\sw4, C:\sw5; if ($?) { gi
 # Field Notes - Continuation Handoff
 
 ## REQUIRED FIRST ACTIONS
-Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,
-visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
+Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; the resume packet check, fresh reads
+of what its verdict names, visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.
 
 ## Working Mode: Plan (default)
 
@@ -37,8 +37,8 @@ visible checklist, scans), then state mode + first action (always the next build
   the worker keeps - the impact test's "lose value"); a timed-out photo viewer load stays in the loader's memo.
 
 ## Reading Order (mandatory, in order)
-1. _Start Here.md  2. AGENTS.md (esp. the two new rules above)  3. _Loop Learnings.md  4. _Working Memory.md
-5. _Active Plan.md  6. Last Session Log entry  7. docs/plans/2026-06-09-download-stall-guards.md (Progress)
+1. `node .claude/resume-packet.mjs check`  2. the files its verdict names (here docs/plans/2026-06-09-download-stall-guards.md,
+the Progress block), and AGENTS.md for the two new rules above
 
 ## Next Step (REQUIRED)
 - What: explore automating size increases (options with effort and rule fit, then stop for the owner's pick).
