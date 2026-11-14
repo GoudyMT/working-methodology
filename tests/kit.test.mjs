@@ -5716,16 +5716,20 @@ test('recall v7 is v6 with key 12 following the no-carry rule, and v6 stays as w
 });
 
 // why: guards rule:post-compact-orientation
-test('recall v8 is v7 with key 3 following the resume packet, and v7 stays as written', async () => {
+test('recall v8 and v9 move key 3 to the resume packet rule, and v7 stays as written', async () => {
   const { currentVersion, questions, questionCount, passBar } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
-  assert.equal(currentVersion(text), 8);
   assert.equal(questionCount(text, 8), 14);
   assert.equal(passBar(text, 8), 13);
   const [v7, v8] = [questions(text, 7), questions(text, 8)];
   assert.deepEqual(v8.filter((r) => r.n !== 3), v7.filter((r) => r.n !== 3));
   assert.equal(v8[2].q, v7[2].q);
   assert.match(v8[2].key, /^Run the resume packet check first/);
+  assert.equal(currentVersion(text), 9);
+  assert.equal(passBar(text, 9), 13);
+  const v9 = questions(text, 9);
+  assert.deepEqual(v9.filter((r) => r.n !== 3), v8.filter((r) => r.n !== 3));
+  assert.match(v9[2].key, /changed or missing \(no verdict line means the full reading\)/);
   assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 
