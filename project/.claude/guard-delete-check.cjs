@@ -646,6 +646,8 @@ const ASK = [
 	// K54's bar: quoted text a shell runs, with a wildcard program that may be a delete, still asks with no flag.
 	"bash -c '/usr/bin/r[m] C:/elsewhere/x'",
 	"bash -c '/bin/?m C:/elsewhere/x'",
+	"bash -c '/bin/[!a]m C:/elsewhere/x'",
+	"bash -c '/bin/[[:alpha:]]m C:/elsewhere/x'",
 	...CARRY122_ASK,
 	...SWEEP_ASK,
 	...RESWEEP_ASK,

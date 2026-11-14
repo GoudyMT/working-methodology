@@ -526,12 +526,14 @@ function shellWritesFrom(command, tool, start, names) {
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
-	// A break that is not plain at or before a cd (a pipe stage, the background, a || that runs on a failure) makes that
-	// cd unsure; one after it cannot undo it (K54: a later pipe made cd .claude && cat guard.cjs | head a write). The
-	// first such break is found once, before the loop: read per command it made a long command quadratic (98 KB took
-	// 21 s, past the hook's 10 s).
-	const firstApart = segments.findIndex((g) => !plainBreak(g.end));
-	const apartAt = (s) => grouped || (firstApart >= 0 && firstApart <= s);
+	// A pipe at or before a cd makes it unsure (cd as a pipe stage runs apart); a pipe after it cannot undo it (K54: a
+	// later pipe made cd .claude && cat guard.cjs | head a write). Any other break that is not plain, anywhere, still
+	// makes every cd unsure: a || runs its right side after a cd that failed, and a & puts the cd in the background
+	// (the review of this fix). Read once, before the loop: read per command it made a long command quadratic (98 KB
+	// took 21 s, past the hook's 10 s).
+	const firstPipe = segments.findIndex((g) => g.end === '|');
+	const otherBreak = segments.some((g) => !plainBreak(g.end) && g.end !== '|');
+	const apartAt = (s) => grouped || otherBreak || (firstPipe >= 0 && firstPipe <= s);
 	for (let s = 0; s < segments.length; s++) {
 		if (linkMade) return true;
 		const segment = segments[s].map((x) => ({ ...x, value: sub(x.value) }));

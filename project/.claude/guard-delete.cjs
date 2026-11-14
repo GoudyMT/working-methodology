@@ -49,9 +49,11 @@ const FOLDER_OPTION = /^-{1,2}(dir|cd|cwd|prefix|chdir|working-?dir(ectory)?|wor
 const C_MOVES = new Set(['npm', 'pnpm', 'yarn', 'bun', 'make', 'ninja']);
 const INLINE_DELETE = /\b(rmSync|rmdirSync|unlinkSync|rmtree|rm_rf|rm_r|remove_tree|removeSync|removedirs)\s*\(|\b(fs|fsp|promises|fse|os|shutil|FileUtils|Deno|File)\s*\.\s*(rm|rmdir|unlink|remove|delete)\w*\s*\(|\)\s*\.\s*(rm|rmdir|unlink|rmSync|rmdirSync|unlinkSync)\s*\(|\bunlink\b/;
 // Whether a program name with a wildcard could name a delete program: its last part, read as a pattern, matches one.
-// A pattern this cannot read could match anything.
+// A pattern this cannot read could match anything, and so could a bracket class ([!a]m, [[:alpha:]]m: the review of
+// this fix): only a star or a question mark is read.
 function mayDelete(opener) {
 	const base = String(opener).split(/[\\/]/).pop();
+	if (base.includes('[')) return true;
 	let re;
 	try { re = new RegExp('^' + base.replace(/[.+^$(){}|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i'); } catch { return true; }
 	return [...DELETERS].some((d) => re.test(d) || re.test(`${d}.exe`));

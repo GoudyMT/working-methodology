@@ -482,7 +482,12 @@ test('a pipe after a cd leaves the cd followed, so a read there passes and a wri
 	for (const c of ['cd .claude && cat guard.cjs | head -5', 'cd .claude && grep -n check guard.cjs | wc -l', 'cd .claude && grep x guard.cjs | sort | uniq']) {
 		assert.equal(bash(c), 'allow', c);
 	}
-	for (const c of ['cd .claude && cat x | tee guard.cjs', 'cd .claude && echo x > guard.cjs | cat', 'cd .claude && cat guard.cjs | head -5 > guard.cjs', 'cd .claude || true; cat x | tee guard.cjs', 'echo | cd .claude; cat x | tee guard.cjs']) {
+	for (const c of ['cd .claude && cat x | tee guard.cjs', 'cd .claude && echo x > guard.cjs | cat', 'cd .claude && cat guard.cjs | head -5 > guard.cjs', 'cd .claude || true; cat x | tee guard.cjs', 'echo | cd .claude; cat x | tee guard.cjs', 'cd .claude && true || tee .claude/guard.cjs', 'cd sub && true & tee .claude/guard.cjs', 'cd sub && cat a | head || tee .claude/guard.cjs']) {
 		assert.notEqual(bash(c), 'allow', c);
+	}
+	// From inside .claude: a || or a & after the cd means the write may run where the shell still stands (the review of
+	// the first fix).
+	for (const c of ['cd .. && true || tee guard.cjs', 'cd .. && true & tee guard.cjs', 'cd .. && cat a | head || tee guard.cjs']) {
+		assert.notEqual(run('Bash', { command: c }, path.join(proj, '.claude')), 'allow', c);
 	}
 });
