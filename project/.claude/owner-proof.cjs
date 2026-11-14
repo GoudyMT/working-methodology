@@ -28,13 +28,12 @@ let homeNow = null;
 // The folder the shell starts in, as the hook was given it, and its parts: the parts are kept in lower case (and a
 // short name as a pattern), so they name no real folder where letter case counts or under a short name (CI, both
 // runners). A read of the disk from where the shell started uses the folder as given.
+// It moves with each cd the guard follows, and is used only while its own parts are the parts in hand, so a stale
+// or mistaken one is never read from: the lower-case parts are then all there is.
 let startNow = null;
-// Whether a cd was read in this call: after one, the lower-case parts are all there is (the review of this change:
-// two folders alike but for letter case would both read as the start folder).
-let movedNow = false;
 function diskBase(cwd) {
 	if (!Array.isArray(cwd)) return null;
-	if (startNow && !movedNow && JSON.stringify(cwd) === startNow.key) return startNow.dir;
+	if (startNow && startNow.dir && JSON.stringify(cwd) === JSON.stringify(parts(startNow.dir))) return startNow.dir;
 	return (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/');
 }
 const home = () => homeNow ?? findHome();
@@ -289,6 +288,21 @@ function proofNamesAsWritten(word, cwd) {
 	return false;
 }
 
+// The same move as a real path, from the real folder before it; null when it cannot be worked out. Read only where
+// moved() below followed the cd, and checked against its parts before any use.
+function movedDir(segment, from) {
+	if (!from) return null;
+	const args = segment.slice(1).map((x) => x.value);
+	const at = args.findIndex((a) => /^-(path|literalpath|lp)$/i.test(a));
+	const arg = at >= 0 ? args[at + 1] : args.find((a) => !a.startsWith('-'));
+	if (arg === undefined) return args.length ? null : os.homedir();
+	const home = /^(~|\$home|\$env:userprofile|\$\{?home\}?)(?=[/\\]|$)/i;
+	if (home.test(arg)) return path.join(os.homedir(), arg.replace(home, ''));
+	if (/[$`(]/.test(arg)) return null;
+	const a = arg.replace(/^\/([a-z])(?=\/|$)/i, '$1:/');
+	return path.isAbsolute(a) || /^[a-z]:/i.test(a) ? path.resolve(a) : path.resolve(from, a);
+}
+
 // Where a cd, pushd or Set-Location moves the shell: its folder's parts, or 'unknown'.
 function moved(segment, cwd) {
 	// popd and Pop-Location go back to a folder the stack holds, which the guard does not follow.
@@ -359,7 +373,7 @@ function filterFits(pattern, cwd, pathWord = false) {
 
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
 function shellWrites(command, tool, start, names = proofNames) {
-	startNow = start ? { dir: String(start), key: JSON.stringify(parts(start)) } : null;
+	startNow = start ? { dir: String(start) } : null;
 	// Every line is read, here-document bodies too: reading a body as data was spelled around five ways in the 1.24.0
 	// sweep (an end mark bash reads otherwise, a cat function, continued lines, nested quotes), so it fails closed.
 	// A variable set in the command (P=~/.claude) is read as its value where it is used, before the reader splits ${P} at
@@ -532,7 +546,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
 			cwd = apart || !sure ? 'unknown' : moved(segment, cwd);
-			movedNow = true;
+			if (startNow) startNow.dir = Array.isArray(cwd) ? movedDir(segment, startNow.dir) : null;
 			// Into the transcripts only where the guard follows the folder: every later word is then read from there, so
 			// only plain reads pass (S23-2). A move it cannot follow, into them, is refused as before.
 			if (hits.length && cwd === 'unknown') return true;
@@ -601,7 +615,6 @@ function writtenText(tool, t, file) {
 // The hook's answer for one tool call: a refusal, or null to let it go on. The dispatcher (guard.cjs) calls this.
 function check(input) {
 	homeNow = findHome();
-	movedNow = false;
 	try { return answer(input); } finally { homeNow = null; }
 }
 
