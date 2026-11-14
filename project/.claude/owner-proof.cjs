@@ -29,9 +29,12 @@ let homeNow = null;
 // short name as a pattern), so they name no real folder where letter case counts or under a short name (CI, both
 // runners). A read of the disk from where the shell started uses the folder as given.
 let startNow = null;
+// Whether a cd was read in this call: after one, the lower-case parts are all there is (the review of this change:
+// two folders alike but for letter case would both read as the start folder).
+let movedNow = false;
 function diskBase(cwd) {
 	if (!Array.isArray(cwd)) return null;
-	if (startNow && JSON.stringify(cwd) === startNow.key) return startNow.dir;
+	if (startNow && !movedNow && JSON.stringify(cwd) === startNow.key) return startNow.dir;
 	return (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/');
 }
 const home = () => homeNow ?? findHome();
@@ -529,6 +532,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
 			cwd = apart || !sure ? 'unknown' : moved(segment, cwd);
+			movedNow = true;
 			// Into the transcripts only where the guard follows the folder: every later word is then read from there, so
 			// only plain reads pass (S23-2). A move it cannot follow, into them, is refused as before.
 			if (hits.length && cwd === 'unknown') return true;
@@ -597,6 +601,7 @@ function writtenText(tool, t, file) {
 // The hook's answer for one tool call: a refusal, or null to let it go on. The dispatcher (guard.cjs) calls this.
 function check(input) {
 	homeNow = findHome();
+	movedNow = false;
 	try { return answer(input); } finally { homeNow = null; }
 }
 
