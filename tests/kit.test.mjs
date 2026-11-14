@@ -5673,7 +5673,6 @@ test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the 
   const released = spawnSync('git', ['show', 'v1.24.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(released.status, 0, 'the v1.24.0 tag must exist locally');
   assert.equal(versionText(text, 4), versionText(released.stdout, 4));
-  assert.equal(currentVersion(text), 5);
   assert.equal(questionCount(text, 5), 13);
   assert.equal(passBar(text, 5), 12);
   const [v4, v5] = [questions(text, 4), questions(text, 5)];
@@ -5683,6 +5682,24 @@ test('recall v5 is v4 with question 11 asking for the rule and key 4 naming the 
   assert.notEqual(v5[10].q, v4[10].q);
   assert.match(v5[10].q, /^Without looking in any folder/);
   assert.match(v5[3].key, /feature branch/);
+});
+
+// why: guards rule:instruments-and-evals
+test('recall v6 is v5 with key 4 the decision only and question 14 on how a yes is asked, and v5 stays as released', async () => {
+  const { versionText, currentVersion, questions, questionCount, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const released = spawnSync('git', ['show', 'v1.29.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
+  assert.equal(released.status, 0, 'the v1.29.0 tag must exist locally');
+  assert.equal(versionText(text, 5), versionText(released.stdout, 5));
+  assert.equal(currentVersion(text), 6);
+  assert.equal(questionCount(text, 6), 14);
+  assert.equal(passBar(text, 6), 13);
+  const [v5, v6] = [questions(text, 5), questions(text, 6)];
+  assert.deepEqual(v6.slice(0, 13).filter((r) => r.n !== 4), v5.filter((r) => r.n !== 4));
+  assert.equal(v6[3].q, v5[3].q);
+  assert.doesNotMatch(v6[3].key, /pop-up|name it/);
+  assert.match(v6[3].key, /feature branch/);
+  assert.match(v6[13].key, /choice pop-up/);
 });
 
 // why: guards rule:sweep-auto-approval
@@ -5715,24 +5732,24 @@ test('recall run header says what the run read: keys, both kit versions, and whe
 
 // why: guards rule:instruments-and-evals
 test('a recall run asks the current keys and its header names them', async () => {
-  const { prepare, currentVersion, questions } = await recallTools();
+  const { prepare, currentVersion, questions, questionCount } = await recallTools();
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const keys = currentVersion(text);
   const run = prepare({ projectDir: proj, label: 'cand-1', home, text, when: 'w' });
   assert.deepEqual(run.qs, questions(text, keys));
-  assert.equal(run.qs.length, 13);
+  assert.equal(run.qs.length, questionCount(text, keys));
   assert.ok(run.lines.includes(`Keys: v${keys}`));
   assert.ok(run.lines.includes('# Recall run: cand-1'));
   const refused = (bad, why) => assert.throws(() => prepare({ projectDir: proj, label: 'x', home, text: bad, when: 'w' }), why);
   const rows = /^\| \d+ \|.*\n/gm;
-  refused(text.replace(/^\| 13 \|.*\n/gm, ''), /expected 13 questions, found 12/);
-  refused(text.replace(/^(\| 13 \|.*\n)/m, '$1| 14 | One more? | A key |\n'), /expected 13 questions, found 14/);
-  refused(text.replace(rows, ''), /expected 13 questions, found 0/);
-  refused(text.replace(rows, '').replace('Pass: median 12 of 13.', 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
-  refused(text.replace('| 13 | My PR', '| 12 | My PR'), /numbered 1 to 13/);
-  refused(text.replace('Pass: median 12 of 13.', ''), /no "Pass: median <n> of <m>\." line/);
+  refused(text.replace(/^\| 14 \|.*\n/gm, ''), /expected 14 questions, found 13/);
+  refused(text.replace(/^(\| 14 \|.*\n)/m, '$1| 15 | One more? | A key |\n'), /expected 14 questions, found 15/);
+  refused(text.replace(rows, ''), /expected 14 questions, found 0/);
+  refused(text.replace(rows, '').replace('Pass: median 13 of 14.', 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
+  refused(text.replace('| 14 | How does', '| 13 | How does'), /numbered 1 to 14/);
+  refused(text.replace('Pass: median 13 of 14.', ''), /no "Pass: median <n> of <m>\." line/);
 });
 
 // why: guards rule:probe-scope
