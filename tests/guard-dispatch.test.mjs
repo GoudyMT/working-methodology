@@ -185,6 +185,29 @@ test('a recorded user check runs from the kit\'s own Claude folder', () => {
 	assert.match(r.stdout, /the recorded check ran/);
 });
 
+// why: guards rule:sweep-auto-approval. The 1.31.0 sweep: the K48 skip read only the project guards, so a start the
+// canary refused (an earlier user hook) still spent its slot. Any refusal before the sweep guard counts.
+test('a start a user hook refuses before the sweep guard spends no slot either', () => {
+	const marker = path.join(kitTemp.makeTemp('slot-'), 'claimed');
+	const cfg = kitTemp.makeTemp('cfg-');
+	fs.mkdirSync(path.join(cfg, 'kit-hooks'));
+	fs.writeFileSync(path.join(cfg, 'kit-hooks', 'canary.cjs'), 'const i = JSON.parse(require("fs").readFileSync(0, "utf8")); if (/PHRASE/.test(i.tool_input.prompt)) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "canary leak" } }));');
+	fs.writeFileSync(path.join(cfg, 'kit-hooks', 'sweep-guard.cjs'), `require("fs").writeFileSync(${JSON.stringify(marker)}, "x");`);
+	const files = {};
+	for (const f of fs.readdirSync(path.join(cfg, 'kit-hooks'))) files[`kit-hooks/${f}`] = require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(cfg, 'kit-hooks', f))).digest('hex');
+	fs.writeFileSync(path.join(cfg, 'kit-install.json'), JSON.stringify({ files }));
+	const dir = kitTemp.makeTemp('dispatch-');
+	for (const f of GUARDS) fs.copyFileSync(path.join(SRC, f), path.join(dir, f));
+	const start = (prompt) => {
+		const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt }, cwd: dir }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg, CLAUDE_PROJECT_DIR: dir } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
+	};
+	assert.equal(start('brief PHRASE').permissionDecision, 'deny');
+	assert.equal(fs.existsSync(marker), false, 'the refused start reached the sweep guard');
+	start('brief');
+	assert.equal(fs.existsSync(marker), true, 'the sweep guard never ran, so the test proves nothing');
+});
+
 // why: guards rule:sweep-auto-approval. K48 (the Ask 214 project, 2026-11-14): a reviewer start that the task gate held
 // still claimed its role's one slot, so the start that ran after the lead read the module was refused as "started
 // already". The sweep guard claims only for a call no project guard has refused.
