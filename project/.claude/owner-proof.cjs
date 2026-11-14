@@ -25,6 +25,15 @@ const findHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUD
 // Worked out once per call: it is asked for every word, and reading the environment cost a 98 KB command most of its
 // time (K14: 1.8 s of 1.9 s, near the 8 s bar on a busy CI machine).
 let homeNow = null;
+// The folder the shell starts in, as the hook was given it, and its parts: the parts are kept in lower case (and a
+// short name as a pattern), so they name no real folder where letter case counts or under a short name (CI, both
+// runners). A read of the disk from where the shell started uses the folder as given.
+let startNow = null;
+function diskBase(cwd) {
+	if (!Array.isArray(cwd)) return null;
+	if (startNow && JSON.stringify(cwd) === startNow.key) return startNow.dir;
+	return (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/');
+}
 const home = () => homeNow ?? findHome();
 // The Claude folder's parts, worked out once per folder: a long command reads it for every word.
 let homeMemo = ['', []];
@@ -126,7 +135,7 @@ function throughLink(word, cwd) {
 	if (!w || w.charCodeAt(0) === 1 || /[*?[\]$`~%\x01]/.test(w)) return null;
 	// After a cd the guard could not follow, the word is placed from the project folder: the likeliest place, and the
 	// only one known.
-	const from = Array.isArray(cwd) ? (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/') : process.env.CLAUDE_PROJECT_DIR || process.cwd();
+	const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR || process.cwd();
 	const abs = path.resolve(rooted(w) ? w.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : `${from}/${w}`);
 	if (linkSeen.has(abs)) return linkSeen.get(abs);
 	if (linkSeen.size > 5000) linkSeen.clear();
@@ -312,7 +321,7 @@ function plainFolder(word, cwd) {
 	if (!Array.isArray(cwd) || rooted(word)) return false;
 	const ps = String(word).split('/');
 	if (ps.length < 2 || !/[*?[]/.test(ps[ps.length - 1]) || ps.slice(0, -1).some((p) => !/^[A-Za-z0-9_-][A-Za-z0-9_. -]*$/.test(p) || /[. ]$/.test(p) || /^kit-/i.test(p))) return false;
-	const base = (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/');
+	const base = diskBase(cwd);
 	const dir = path.join(base, ...ps.slice(0, -1));
 	try {
 		const same = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
@@ -347,6 +356,7 @@ function filterFits(pattern, cwd, pathWord = false) {
 
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
 function shellWrites(command, tool, start, names = proofNames) {
+	startNow = start ? { dir: String(start), key: JSON.stringify(parts(start)) } : null;
 	// Every line is read, here-document bodies too: reading a body as data was spelled around five ways in the 1.24.0
 	// sweep (an end mark bash reads otherwise, a cat function, continued lines, nested quotes), so it fails closed.
 	// A variable set in the command (P=~/.claude) is read as its value where it is used, before the reader splits ${P} at
