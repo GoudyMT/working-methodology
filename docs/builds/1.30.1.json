@@ -73,9 +73,10 @@
    "An old or later plan link was picked over the real one. Fixed in d3d749e.",
    "A blank line or a numbered item emptied the pending list. Fixed in d3d749e."
   ],
-  "accepted": [
-   "Rule 11 still names the Resume Point's file and the changed files; the verdict also names the Active Plan."
-  ]
+  "deferred": [
+   "Rule 11's words name the Resume Point's file and the changed files; the verdict also names the Active Plan. Reworded in build 5 with its recall run, on the owner's yes."
+  ],
+  "accepted": []
  },
  "tests": {
   "before": 705,
