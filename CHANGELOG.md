@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.30.1 - 2026-11-14
+
+The resume packet check keeps a section written on its label line and names the plan the Resume Point marks, so a new session no longer loses what waits on the owner.
+
+### Changed
+- Write names any section a check would not find, and an empty label counts as not found.
+
+### Fixed
+- A section is the text on its label line and every line under it, up to a blank line, the next label or a heading. A pending list written on the label line came out empty, and the check then skipped the Active Plan.
+- When the Resume Point names several files, the plan is the one its link text or a Plan: label marks; none marked means the full reading. The first link was taken before.
+
 ## 1.30.0 - 2026-11-14
 
 A new or compacted session starts from one checked resume packet instead of re-reading every tracking file, and the rule text held back from 1.29.0 lands now that the recall test measures it fairly.

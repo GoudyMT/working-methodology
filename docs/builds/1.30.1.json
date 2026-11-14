@@ -1,0 +1,66 @@
+{
+ "version": "1.30.1",
+ "date": "2026-11-14",
+ "level": "patch",
+ "area": "Start reading",
+ "title": "fix: the packet check reads inline sections and the marked plan",
+ "headline": "The resume packet check keeps a section written on its label line and names the plan the Resume Point marks, so a new session no longer loses what waits on the owner.",
+ "alignment": "v1.30.1 fixes the two gaps the 1.30.0 workbench verify found in the packet check; nothing else changes.",
+ "items": [
+  {
+   "id": "K51",
+   "kind": "fixed",
+   "text": "A section is the text on its label line and every line under it, up to a blank line, the next label or a heading. A pending list written on the label line came out empty, and the check then skipped the Active Plan.",
+   "evidence": "tests/resume-packet.test.mjs",
+   "where": "What a new session sees waiting on the owner",
+   "before": "Nothing, when the list sat on the label line",
+   "after": "The whole list"
+  },
+  {
+   "id": "K52",
+   "kind": "fixed",
+   "text": "When the Resume Point names several files, the plan is the one its link text or a Plan: label marks; none marked means the full reading. The first link was taken before.",
+   "evidence": "tests/resume-packet.test.mjs"
+  },
+  {
+   "id": "K51-WRITE",
+   "kind": "changed",
+   "text": "Write names any section a check would not find, and an empty label counts as not found.",
+   "evidence": "tests/resume-packet.test.mjs"
+  }
+ ],
+ "verification": [
+  "The new test fails on the 1.30.0 code at its first assertion: the pending list is empty.",
+  "A copy of the workbench's own tracking files, checked with the fixed script, shows the whole pending list and names the marked plan."
+ ],
+ "decisions": [
+  {
+   "decision": "Fixed now as 1.30.1, not in build 5",
+   "why": "The gap is high: a session never saw what waits on the owner. A high never carries; the owner picked the fix now by pop-up."
+  },
+  {
+   "decision": "Several unmarked files mean the full reading",
+   "why": "The check fails closed when it cannot tell; the Resume Point text still shows every link."
+  }
+ ],
+ "sweep": {
+  "tier": "Fix (security-sensitive)",
+  "commit": "0fbd76c",
+  "dimensions": [
+   { "name": "Privacy", "result": "Filled after the sweep" },
+   { "name": "Supply chain", "result": "Filled after the sweep" },
+   { "name": "Legal", "result": "Filled after the sweep" },
+   { "name": "Code security", "result": "Filled after the sweep" },
+   { "name": "Gaps, scaling, test value", "result": "Filled after the sweep" },
+   { "name": "Alignment", "result": "Filled after the sweep" }
+  ],
+  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "fixed": [],
+  "accepted": []
+ },
+ "tests": {
+  "before": 705,
+  "after": 706,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}
