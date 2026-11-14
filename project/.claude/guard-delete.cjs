@@ -444,7 +444,7 @@ function findDelete(text, ctx, state, depth) {
 		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && after.length > 0 && !NOT_RUN_AFTER.test(after[0]) && deleteSign) return 'a program held in a variable';
 		if (opener === '$' && words.length === 1 && segment.end === '{') return 'a program held in a variable';
 		// A shell expands a wildcard in a program's path: /usr/bin/r[m].
-		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1) return 'a program named by a wildcard';
+		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1 && !(ctx.pattern && depth > 0)) return 'a program named by a wildcard';
 		const skip = new Set();
 		for (let i = 0; i < words.length; i++) {
 			const lower = words[i].toLowerCase();
@@ -587,10 +587,10 @@ function findDelete(text, ctx, state, depth) {
 			for (let k = 0; k < segment.length; k++) {
 				const word = segment[k];
 				if (!word.quoted) continue;
-				// A pattern after PowerShell's match, like, replace or split operator (or -Pattern) is matched, never run, so
-				// it is not read as a command (K54: '^\s*- \[x\]' read as a program named by a wildcard). One that names a
-				// delete word is still read.
-				if (k > 0 && /^-[ic]?(not)?(match|like|replace|split)$|^-pattern$/i.test(String(segment[k - 1].value)) && !segment[k - 1].quoted && !DELETE_WORD.test(word.value) && !INLINE_DELETE.test(word.value)) continue;
+				// A pattern after PowerShell's match, like, replace or split operator (or -Pattern) is matched, never run: read as
+				// a command it is held to every check but the wildcard program name (K54: '^\s*- \[x\]' read as a program named
+				// by a wildcard). Every other check still reads it (the review of the first fix: git clean, rsync, robocopy).
+				const pattern = k > 0 && /^-[ic]?(not)?(match|like|replace|split)$|^-pattern$/i.test(String(segment[k - 1].value)) && !segment[k - 1].quoted;
 				// A quoted name=value (git -c core.pager='...') may hold a command in its value.
 				const assigned = /^[\w.-]+=/.test(word.value) ? word.value.slice(word.value.indexOf('=') + 1) : '';
 				// An echo prints its text, but the text may be run: piped on, written to a file, or inside $( ), a group or iex.
@@ -599,7 +599,10 @@ function findDelete(text, ctx, state, depth) {
 				const printed = depth === 0 && PRINTERS.has(first) && !FEEDS_ON.test(text) && !DELETE_WORD.test(word.value) && !/\bclean\b/.test(word.value);
 				const said = printed ? [] : [word.value, assigned];
 				for (const inner of said.filter(Boolean)) {
-					const hit = readNested(inner, ctx, state, depth);
+					const was = ctx.pattern;
+					ctx.pattern = pattern;
+					let hit;
+					try { hit = readNested(inner, ctx, state, depth); } finally { ctx.pattern = was; }
 					if (hit) return hit;
 				}
 			}
