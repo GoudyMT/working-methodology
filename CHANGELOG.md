@@ -2,14 +2,16 @@
 
 ## 1.30.1 - 2026-11-14
 
-The resume packet check keeps a section written on its label line and names the plan the Resume Point marks, so a new session no longer loses what waits on the owner.
+The resume packet check now always names the Active Plan and every file the Resume Point names for a read, so a new session can no longer miss what waits on the owner or the real plan.
 
 ### Changed
-- Write names any section a check would not find, and an empty label counts as not found.
+- Write names any label or file name a check could not read, and the closeout fixes it before the next session. A label not found names its file for a read instead of the full reading.
 
 ### Fixed
-- A section is the text on its label line and every line under it, up to a blank line, the next label or a heading. A pending list written on the label line came out empty, and the check then skipped the Active Plan.
-- When the Resume Point names several files, the plan is the one its link text or a Plan: label marks; none marked means the full reading. The first link was taken before.
+- The check always names the Active Plan for a read. A pending list written on its label line, after a blank line or as numbered items came out empty, and the check then skipped the file.
+- Every file the Resume Point names, up to three, is hashed and read; a file name the check cannot read means the full reading. It used to pick one link as the plan, and some wordings picked the wrong one.
+- A huge tracking file can no longer stall the check: a Resume Point over 4,000 characters is the full reading, and each preview stops at 40 lines.
+- The tracking check finds a Progress or Parking Lot heading with a suffix or at level three, any list marker, and a Parking Lot label; other shapes passed as empty.
 
 ## 1.30.0 - 2026-11-14
 
