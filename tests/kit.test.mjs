@@ -1331,6 +1331,13 @@ test('each agent role file matches the role table: tools, denied tools and rules
     assert.equal(fm.skills || 'none', r.rules === 'none' ? 'none' : `${r.role}-rules`, `${r.role} preloaded rules`);
   }
 });
+// why: guards rule:multi-agent-discipline. MC2: a role file with no model runs on whatever the session runs, so its cost and its
+// recall move with the owner's saved pick. Every role file the kit ships names a full model id.
+test('every agent role file the kit ships names its model', () => {
+  const files = fs.readdirSync(path.resolve('user/agents')).filter((f) => f.endsWith('.md'));
+  assert.ok(files.length >= 5);
+  for (const f of files) assert.match(front(path.resolve('user/agents', f)).model || '', /^claude-[a-z]+-\d+(-\d+)?$/, `${f} names no model`);
+});
 
 // why: guards rule:sweep-auto-approval
 test('build writes each role its rules skill from the IDs in the role table, under its cap', () => {
@@ -6551,6 +6558,10 @@ test('every recall session runs in the probe folder with the question as its inp
   assert.match(calls[0].opts.cwd.replace(/\\/g, '/'), /kit-probes\/[0-9a-f]{6}\/p[0-9a-f]{6}$/);
   assert.deepEqual(calls.map((c) => c.opts.input), ['First?', 'Second?']);
   assert.equal(calls[0].args[calls[0].args.indexOf('--setting-sources') + 1], 'project');
+  // MC2: recall names its model and effort, pinned to what the main session really runs (workbench MEASURE.md), so a
+  // saved default or a new release never moves the ruler.
+  assert.equal(calls[0].args[calls[0].args.indexOf('--model') + 1], 'claude-opus-5-5');
+  assert.equal(calls[0].args[calls[0].args.indexOf('--effort') + 1], 'medium');
   assert.match(calls[0].args[calls[0].args.indexOf('--disallowedTools') + 1], /Bash/);
   assert.ok(lines.includes('> answer'));
   assert.deepEqual(said.mock.calls.map((c) => c.arguments[0]), ['[1/2] answered (6 chars)', '[2/2] answered (6 chars)']);
