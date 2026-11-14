@@ -1015,24 +1015,24 @@ test('a first action still stops for a lock, an outward act or an open decision,
 });
 
 // why: guards rule:sweep-auto-approval
-test('only medium or below carries, in the rule and in everything the sweep tools tell the lead', () => {
+test('findings are fixed in their build and only what the owner accepts carries, in the rule and in everything the sweep tools tell the lead', () => {
   const rule = (f) => read(path.resolve(f));
   const findings = rule('rules/reviews-and-findings.md');
-  assert.match(findings, /only at medium or below[^\n]*critical is fixed before the PR[^\n]*the owner accepts it/);
-  assert.match(findings, /post-PR findings at medium or below[^\n]*carry-overs/);
+  assert.match(findings, /Findings are fixed in the build that finds them\. A low or medium that cannot be finished carries only on the owner's yes, first next build\. A high or critical never carries: it is fixed before the PR[^\n]*or the owner accepts it/);
+  assert.match(findings, /the small ones too; what carries \(the rule above\) goes to the handoff's carry-overs/);
   assert.match(findings, /in a known area \(one component, one flow\)/);
   // pin: 1 (the sweep report audit reads these dispositions)
   assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
   // Comments off: what counts is the text the lead is shown.
   const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left at medium or below goes to the handoff\\'s carry-overs for the next feature build, and a high or critical is fixed or the owner accepts it/);
+  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left unfixed is fixed in this build; only what cannot be finished and the owner accepts goes to the handoff\\'s carry-overs/);
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left at medium or below is logged with `--carried <n>` and goes to the handoff; a high or critical is fixed or the owner accepts it/);
+  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left is fixed in this build; only what cannot be finished and the owner accepts is logged with `--carried <n>` and goes to the handoff/);
   const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(approve, /What the re-sweep left at medium or below goes to \$\{CARRY_HOME\}; a high or critical is fixed or the owner accepts it/);
-  assert.match(approve, /findings left unfixed after it[^\n]*each medium or below/);
+  assert.match(approve, /What the re-sweep left unfixed is fixed in this build; only what cannot be finished and the owner accepts goes to \$\{CARRY_HOME\}/);
+  assert.match(approve, /findings left unfixed after it[^\n]*each one that cannot be finished and the owner accepted/);
   assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
   assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
 });
@@ -3379,7 +3379,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
   const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*medium or below only[\s\S]*Carry-overs from the last PR/);
+  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner accepts[\s\S]*Carry-overs from the last PR/);
   assert.equal(approvalLog(first.dir).pop().carried, 2);
   const next = approveIn(first.dir, [first.f]);
   assert.equal(next.status, 1, `a third pass on this branch asks the owner: ${next.stdout}`);
@@ -5691,7 +5691,6 @@ test('recall v6 is v5 with key 4 the decision only and question 14 on how a yes 
   const released = spawnSync('git', ['show', 'v1.29.0:docs/evals/recall-questions.md'], { encoding: 'utf8' });
   assert.equal(released.status, 0, 'the v1.29.0 tag must exist locally');
   assert.equal(versionText(text, 5), versionText(released.stdout, 5));
-  assert.equal(currentVersion(text), 6);
   assert.equal(questionCount(text, 6), 14);
   assert.equal(passBar(text, 6), 13);
   const [v5, v6] = [questions(text, 5), questions(text, 6)];
@@ -5700,6 +5699,20 @@ test('recall v6 is v5 with key 4 the decision only and question 14 on how a yes 
   assert.doesNotMatch(v6[3].key, /pop-up|name it/);
   assert.match(v6[3].key, /feature branch/);
   assert.match(v6[13].key, /choice pop-up/);
+});
+
+// why: guards rule:instruments-and-evals
+test('recall v7 is v6 with key 12 following the no-carry rule, and v6 stays as written', async () => {
+  const { currentVersion, questions, questionCount, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  assert.equal(currentVersion(text), 7);
+  assert.equal(questionCount(text, 7), 14);
+  assert.equal(passBar(text, 7), 13);
+  const [v6, v7] = [questions(text, 6), questions(text, 7)];
+  assert.deepEqual(v7.filter((r) => r.n !== 12), v6.filter((r) => r.n !== 12));
+  assert.equal(v7[11].q, v6[11].q);
+  assert.match(v7[11].key, /nothing carries without the owner's yes/);
+  assert.match(v6[11].key, /only medium or lower may carry/);
 });
 
 // why: guards rule:sweep-auto-approval

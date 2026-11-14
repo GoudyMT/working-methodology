@@ -22,7 +22,7 @@ tags:
 
 ## Test-Driven Development (TDD) {#tdd}
 
-**Mandatory for every feature and bugfix,** presentational, config and route-shell code included: RED (a failing test for the smallest behaviour, failing for the right reason - a compiling stub, not a 404 or type error) -> GREEN (minimum code) -> REFACTOR. Never defer the testable slice; a plan note deferring a test covers only parts needing unbuilt pieces - else surface the fork to the owner. Why: a test written after the code tests the code, not the requirement.
+**Mandatory for every change in behaviour** (a feature, a bugfix), presentational, config and route-shell code included; a change with no behaviour in it (wording, docs, a removal) owes no new test (rule:test-value): RED (a failing test for the smallest behaviour, failing for the right reason - a compiling stub, not a 404 or type error) -> GREEN (minimum code) -> REFACTOR. Never defer the testable slice; a plan note deferring a test covers only parts needing unbuilt pieces - else surface the fork to the owner. Why: a test written after the code tests the code, not the requirement.
 
 - **Coverage targets:** pure logic - every branch a caller or bad input can reach; UI - render + interaction + state; boundaries - contract + mocked integration; critical paths - E2E.
 - **Exercise failure paths:** force failure / recovery branches and assert the restore (byte-compare), not just an error printed. A feature failing at its first gate has no coverage after it - go look downstream.
