@@ -27,13 +27,9 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 ## Read Order (Design and Implementation Work)
 
-1. [`_Start Here.md`](_Start Here.md)
-2. This file: the core rules below, and the module the moment needs (Rule Modules table at the end)
-3. [`_Loop Learnings.md`](_Loop Learnings.md) - open lessons (a repeat = regression)
-4. [`_Working Memory.md`](_Working Memory.md)
-5. [`_Active Plan.md`](_Active Plan.md)
-6. Last [`_Session Log.md`](_Session Log.md) entry
-7. The specific spec / ADR / plan named by the Resume Point
+1. This file: the core rules below, and the module the moment needs (Rule Modules table at the end)
+2. `node .claude/resume-packet.mjs check`: the resume point, open lessons and git state, checked against the files
+3. The files its verdict names; with no packet (or a tool that runs no commands): [`_Start Here.md`](_Start Here.md), [`_Loop Learnings.md`](_Loop Learnings.md), [`_Working Memory.md`](_Working Memory.md), [`_Active Plan.md`](_Active Plan.md), the last [`_Session Log.md`](_Session Log.md) entry, the plan the Resume Point names
 
 ---
 
@@ -187,7 +183,7 @@ Any step fails -> stop and surface the gap. **Visible** = the cell justification
 
 ## Session Workflow {#session-workflow}
 
-**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
+**Start:** `AGENTS.md` loads; run `node .claude/resume-packet.mjs check` and read what its verdict names (rule:post-compact-orientation). Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
 
 **Work:** one issue at a time; context before options; scope loop-worthiness; **plan the whole cycle before branching** (every task, edge case, what is in and out) so work lands in one branch; with >2 units left, plan the rest as one batch (one-question investigators -> small probes -> one plan resolving cross-unit interactions -> one pass). Why: piecemeal planning splits a feature across PRs. **Audit a long branch against the objective:** commits grouped by what they buy the user, overhead named, the cumbersome fix cut.
 

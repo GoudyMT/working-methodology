@@ -5661,7 +5661,7 @@ test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was rele
   assert.deepEqual(v4.filter((r) => r.n !== 3), v3.filter((r) => r.n !== 3));
   assert.equal(v4[2].q, v3[2].q);
   assert.match(v4[2].key, /before any source-of-truth edit or agent dispatch/);
-  assert.match(read(path.resolve('project/CLAUDE.md')), /BEFORE any source-of-truth edits or agent dispatch/);
+  assert.match(read(path.resolve('project/CLAUDE.md')), /before any source-of-truth edit or agent dispatch/);
 });
 
 // The owner's ruling (2026-11-10, S22-4): v5 asks question 11 for the rule itself, and key 4 names the feature-branch
@@ -5705,7 +5705,6 @@ test('recall v6 is v5 with key 4 the decision only and question 14 on how a yes 
 test('recall v7 is v6 with key 12 following the no-carry rule, and v6 stays as written', async () => {
   const { currentVersion, questions, questionCount, passBar } = await recallTools();
   const text = read(path.resolve('docs/evals/recall-questions.md'));
-  assert.equal(currentVersion(text), 7);
   assert.equal(questionCount(text, 7), 14);
   assert.equal(passBar(text, 7), 13);
   const [v6, v7] = [questions(text, 6), questions(text, 7)];
@@ -5715,6 +5714,19 @@ test('recall v7 is v6 with key 12 following the no-carry rule, and v6 stays as w
   assert.match(v7[13].key, /never typed words where a pop-up exists$/);
   assert.match(v7[11].key, /nothing carries without the owner's yes/);
   assert.match(v6[11].key, /only medium or lower may carry/);
+});
+
+// why: guards rule:post-compact-orientation
+test('recall v8 is v7 with key 3 following the resume packet, and v7 stays as written', async () => {
+  const { currentVersion, questions, questionCount, passBar } = await recallTools();
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  assert.equal(currentVersion(text), 8);
+  assert.equal(questionCount(text, 8), 14);
+  assert.equal(passBar(text, 8), 13);
+  const [v7, v8] = [questions(text, 7), questions(text, 8)];
+  assert.deepEqual(v8.filter((r) => r.n !== 3), v7.filter((r) => r.n !== 3));
+  assert.equal(v8[2].q, v7[2].q);
+  assert.match(v8[2].key, /^Run the resume packet check first/);
 });
 
 // why: guards rule:sweep-auto-approval

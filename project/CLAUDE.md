@@ -20,7 +20,7 @@
 8. **Edit Discipline gates all code writes.** Four-step checklist (think -> minimize -> confirm requirements -> confirm method) passes visibly before Edit / Write fires. Agents 1-3 only when genuine uncertainty exists. The owner can override with "type it yourself" any time.
 9. **Tracking files = pointers, not restatements.** Each tracking file (Session Log / Working Memory / Master Roadmap / Active Plan) has ONE unique function. Content in a source-of-truth file (spec / ADR / plan / git log / code) is referenced via pointer, never restated.
 10. **No proactive tracking-file updates after every small step.** Tracking files update at a real-value milestone, session end (the owner declares it, or the closeout starts on its own: rule:compact-ritual), or the owner's explicit request. Source-of-truth files update immediately on real work.
-11. **Post-compact / new session = Post-Compact Orientation Protocol first.** First action: fresh `Read` calls on every file in the handoff's Reading Order BEFORE any source-of-truth edits or agent dispatch. Visible `[x]` checklist with a one-line confirmation per file. System reminders, compaction summaries and memory are NOT substitutes. "I just re-read" is forbidden unless the Read tool was actually called this session.
+11. **Post-compact / new session: orientation first.** First action: run `node .claude/resume-packet.mjs check`, then a fresh Read of the file its Resume Point names and of every file it marks CHANGED or missing, before any source-of-truth edit or agent dispatch; no verdict line from the check means the full reading. Visible `[x]` checklist with one line per file the check lists. The packet, system reminders, compaction summaries and memory are not reads. "I just re-read" a file is forbidden unless the Read tool ran on it this session.
 12. **Tests never yield to implementation.** When a test fails, scrutinize the implementation FIRST and leave the test as is - dump what the code actually produces, compare to spec, then decide. NEVER weaken an assertion, relax a regex, accept "close enough", catch exceptions silently, or `.skip()` a test to make it pass. Moving a test's LOOKUP location is allowed only after verifying the implementation's output at the new location. **Test value:** every test guards a real use or a real failure, the way a person, caller or agent uses the code - no fluff to raise counts.
 13. **Pre-PR Deep Sweep before any substantive PR.** No feature / sub-project PR opens or merges to `main` without a deep multi-agent sweep - an adversarial vulnerability swarm + the 6 Milestone-Sweep dimensions (incl. version-goal alignment) - under an approved Swarm Contract, with its report recorded and summarized in the PR. Scale to stakes by tier (rule:sweep-tiers): a feature gets the deep sweep, a fix the fix tier, a chore / docs / one-line PR the triage tier. Satisfied ONLY by the agents actually running this session + the report existing - NEVER by a self-review, a recalled prior sweep, or "it looks fine".
 14. **Outward acts are the owner's unless granted.** Nothing is pushed, merged, released or published without the owner's yes, except a push inside the push bound (rule:outward-acts) and a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.
@@ -30,14 +30,8 @@
 ## Mandatory Reading on Session Start
 
 @AGENTS.md
-@_Start\ Here.md
-@_Loop\ Learnings.md
-@_Working\ Memory.md
-@_Active\ Plan.md
 
-(`@file` inlines a file at session start; a space in its name needs a backslash, or the file never loads.)
-
-Additionally read the last entry in [`_Session Log.md`](_Session Log.md) for the most recent state and resume point.
+(`@file` inlines a file at session start.) The tracking files are not inlined: rule 11's check reads them from disk against the resume packet the last closeout or compact wrote (`.kit/resume-packet.md`), and names the ones to read.
 
 ---
 

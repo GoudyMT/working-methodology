@@ -44,6 +44,81 @@
       "before": "4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, CI, one PR. The Resume Point names the feature pick first.",
       "after": "4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and the carry-overs the owner said yes to ride on its branch; ONE large sweep after both, CI, one PR. The Resume Point names the feature pick first.",
       "why": "Owner, 2026-11-14: nothing carries to the next build by default; a low or medium carries only on the owner's yes, a high never"
+    },
+    {
+      "before": "**Start:** read `_Start Here.md` -> `AGENTS.md` (the core rules and the module index) -> `_Loop Learnings.md` -> `_Working Memory.md` -> `_Active Plan.md` -> last `_Session Log.md` entry -> the Resume Point's files. Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.",
+      "after": "**Start:** `AGENTS.md` loads; run `node .claude/resume-packet.mjs check` and read what its verdict names (rule:post-compact-orientation). Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "**Keyword `begin pre-compact`** (standing) runs the Closeout; it also starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching, a remote delete on the owner's yes even in a closeout that started on its own; open or no PR -> report), finished agent worktrees removed; (5) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.",
+      "after": "**Keyword `begin pre-compact`** (standing) runs the Closeout; it also starts on its own once the thread's PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open: (1) capture every style / format / workflow correction durably; (2) the scan below; (3) the session-end batch; (4) git verify - branch, HEAD, clean, ahead / behind, local and REMOTE branches (merged -> retire per rule:branching, a remote delete on the owner's yes even in a closeout that started on its own; open or no PR -> report), finished agent worktrees removed; (5) `node .claude/resume-packet.mjs write` after the batch, so the next session checks against the final files; (6) the handoff - in a multi-session project, its full text sent as ONE message to the coordinating session (a Claude project thread: `send_message` to `@parent`), never a file path; done only when the coordinator confirms it received the text, then the thread is closed. Why: the next session starts from what the closeout wrote down, so it must be true.",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "1. **Fresh Read calls** on every file in the handoff's Reading Order, even when it says \"nothing in flight\". NOT substitutes: system reminders inlining files, the compaction summary, auto-imported `@file` content, memory.",
+      "after": "1. **Run `node .claude/resume-packet.mjs check`**, then fresh Read calls on the file its Resume Point names and every file it marks CHANGED or missing, even when it says \"nothing in flight\". No verdict line = the full reading. NOT reads: the packet, system reminders, the compaction summary, memory.",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "   [x] _Start Here.md - reading order matches handoff",
+      "after": "   [x] resume-packet check - verdict: read <files>; git same / CHANGED",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "   [x] AGENTS.md - Edit Discipline + the module index intact",
+      "after": "",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "   [x] _Loop Learnings.md - N open lessons, 0 recurred",
+      "after": "   [x] Open lessons in the packet - N, 0 recurred",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "   [x] _Working Memory.md - Last Session = N, Resume Point = X (matches handoff)",
+      "after": "",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "   [x] _Active Plan.md - Resume Point = Y (matches handoff)",
+      "after": "",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "   [x] _Session Log.md latest entry - last session was Z (matches handoff)",
+      "after": "",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "   [x] <plan / spec / ADR named by the Resume Point>",
+      "after": "   [x] <each file the verdict names> - read; matches the packet or flags what changed",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "**Anti-hallucination clause:** \"I just re-read\", \"state verified\", \"the standards confirmed\" are FORBIDDEN unless the Read tool ran this session for each file named. No visible checklist = no orientation = no source-of-truth work.",
+      "after": "**Anti-hallucination clause:** \"I just re-read\", \"state verified\", \"the standards confirmed\" are FORBIDDEN unless the Read tool ran this session for each file named; the check proves only \"unchanged since the packet\". No visible checklist = no orientation = no source-of-truth work.",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; fresh reads of the Reading Order,",
+      "after": "Run the Post-Compact Orientation Protocol (rule:post-compact-orientation; the resume packet check, fresh reads",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.",
+      "after": "of what its verdict names, visible checklist, scans), then state mode + first action (always the next build: the work order's next item, its carry-overs riding in it; a fix first only when high or critical) and start it; what hits a stop in rule:delegated-decisions or waits on an open owner decision is asked about, the rest starts. Ask the owner only if this handoff and a confirmed work order name none. This handoff is a CACHE.",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "1. _Start Here.md  2. AGENTS.md (esp. new rules)  3. _Loop Learnings.md  4. _Working Memory.md",
+      "after": "1. `node .claude/resume-packet.mjs check`  2. the files its verdict names (the plan the Resume Point names,",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
+    },
+    {
+      "before": "5. _Active Plan.md  6. Last Session Log entry  7. (spec / ADR / plan for the next issue)",
+      "after": "and any tracking file it marks CHANGED or missing)",
+      "why": "T3 (1.30.0): rule 11 starts from the resume packet check, the owner's lock 2026-11-14"
     }
   ]
 }

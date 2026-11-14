@@ -7,6 +7,8 @@
   },
   "permissions": {
     "allow": [
+      "Bash(node .claude/resume-packet.mjs check)",
+      "PowerShell(node .claude/resume-packet.mjs check)",
       "Bash(git status)",
       "Bash(git status *)",
       "Bash(git diff)",

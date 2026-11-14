@@ -103,6 +103,19 @@ const PARTS = [
 		wired: () => [null, 'nothing to wire: a test in the slow-lane folder turns the slow lane on'],
 		used: () => [null, 'the project CI reads it (a later step traces it)'],
 	},
+	{
+		name: 'resume-packet',
+		what: 'the resume packet a compact writes and a new session checks (T3)',
+		present: () => [has('.claude/resume-packet.mjs'), has('.claude/resume-packet.mjs') ? 'resume-packet.mjs' : 'missing resume-packet.mjs'],
+		// A host repo that keeps its own settings never runs the kit's pre-compact hook, so it never gets a packet.
+		wired: () => {
+			let s = null;
+			try { s = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8').replace(/^﻿/, '')); } catch { /* none */ }
+			const ok = JSON.stringify(s?.hooks?.PreCompact || '').includes('kit-hook.cjs') && JSON.stringify(s?.hooks?.PreCompact || '').includes('pre-compact');
+			return [ok, ok ? 'the PreCompact hook writes it' : '.claude/settings.json has no PreCompact kit-hook.cjs entry: a compact writes no packet (run kit.mjs install project)'];
+		},
+		used: () => (has('.kit/resume-packet.md') ? [true, '.kit/resume-packet.md written'] : [null, 'no packet yet: written at the first closeout or compact']),
+	},
 ];
 
 function run() {

@@ -25,7 +25,21 @@ function emit(text) {
 	process.stdout.write(JSON.stringify(out));
 }
 
+// The resume packet is written first, in its own try and before the kit is looked up: a compact must leave a packet
+// that matches the files even when the kit is missing or a later step throws (T3).
+function writePacket() {
+	try {
+		let session = '';
+		try { session = String(JSON.parse(fs.readFileSync(0, 'utf8') || '{}').session_id || ''); } catch { /* none */ }
+		const script = path.join(PROJECT, '.claude', 'resume-packet.mjs');
+		if (!fs.existsSync(script)) return 'resume packet: .claude/resume-packet.mjs is missing (install project).';
+		const r = require('child_process').spawnSync(process.execPath, [script, 'write', '--session', session], { cwd: PROJECT, encoding: 'utf8', timeout: 15000 });
+		return (r.stdout || '').trim() || `resume packet not written (exit ${r.status})`;
+	} catch (e) { return `resume packet not written: ${e.message}`; }
+}
+
 async function main() {
+	const packet = MODE === 'pre-compact' ? writePacket() : '';
 	const stampPath = path.join(HOME, 'kit-install.json');
 	const kit = fs.existsSync(stampPath) ? JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir : null;
 	if (!kit || !fs.existsSync(path.join(kit, 'scripts', 'kit.mjs'))) {
@@ -45,7 +59,7 @@ async function main() {
 			process.stdout.write(JSON.stringify({ decision: 'block', reason: `Full stop: the methodology kit is not installed in the Claude config folder ${where}. Install the latest in a terminal: ${steps}. Then start a fresh session.` }));
 			return;
 		}
-		emit(`Methodology kit not found in the Claude config folder ${HOME.split(path.sep).join('/')} (no kitDir in its kit-install.json). Run "node <kit>/scripts/kit.mjs install user" with CLAUDE_CONFIG_DIR set to that folder.`);
+		emit(`${packet ? `${packet}\n` : ''}Methodology kit not found in the Claude config folder ${HOME.split(path.sep).join('/')} (no kitDir in its kit-install.json). Run "node <kit>/scripts/kit.mjs install user" with CLAUDE_CONFIG_DIR set to that folder.`);
 		return;
 	}
 	const lib = await import(pathToFileURL(path.join(kit, 'scripts', 'kit.mjs')).href);
@@ -60,7 +74,7 @@ async function main() {
 		const text = lib.promptCheckReport(ctx);
 		if (text) emit(text);
 	} else if (MODE === 'pre-compact') {
-		emit(lib.preCompactReport(ctx));
+		emit(`${packet}\n${lib.preCompactReport(ctx)}`);
 	}
 }
 
