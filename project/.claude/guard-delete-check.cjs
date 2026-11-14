@@ -648,6 +648,15 @@ const ASK = [
 	"bash -c '/bin/?m C:/elsewhere/x'",
 	"bash -c '/bin/[!a]m C:/elsewhere/x'",
 	"bash -c '/bin/[[:alpha:]]m C:/elsewhere/x'",
+	// The sweep of the first K54 fix: wildcard programs in quoted text that delete with no rm word or flag.
+	`bash -c "/c/Python312/pytho?.exe -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' C:/elsewhere"`,
+	`bash -c '/c/nodejs/nod? -e "require(\\"fs\\").rmSync(\\"C:/elsewhere\\",{recursive:true})"'`,
+	"bash -c '/c/Windows/System32/robocop? e C:/elsewhere //MIR'",
+	"bash -c '/usr/bin/rsyn? -a --del e/ C:/elsewhere/'",
+	"eval '/usr/bin/rsyn? -a --del e/ C:/elsewhere/'",
+	"bash -c '/mingw64/bin/gi? -C C:/elsewhere clean -dfx'",
+	// A match pattern is not run, but one that names a delete is still read.
+	"$r -match 'x'; bash -c 'rm -rf C:/elsewhere'",
 	...CARRY122_ASK,
 	...SWEEP_ASK,
 	...RESWEEP_ASK,
