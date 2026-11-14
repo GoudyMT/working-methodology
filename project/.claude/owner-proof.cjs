@@ -492,28 +492,11 @@ function shellWritesFrom(command, tool, start, names) {
 	// Read once per word and folder: a long command asks of each word several times (the 1.28.0 measure run: 98 KB
 	// took 9 s under CI coverage).
 	const seen = new Map();
-	// A link made by this command is not on disk when the guard reads it, so nothing past it is placed for sure (the
-	// review of the link fix: ln -s .claude/sub d && rm d/../guard.cjs, ln -s .claude d && rm d/guard.cjs). After one,
-	// every cd is unknown, and a later relative word is held when it steps back with "..", goes through a folder that is
-	// not on disk (the link may be it), or follows a cd that could not be read.
+	// A link made by this command is not on disk when the guard reads it, so nothing past it is placed for sure. Three
+	// reviews of 1.29.0 each found a word the reading of it missed (d/../x, a rooted word, the last part, a folder
+	// replaced), so after a command that can make a link nothing that takes an argument runs in the same command: it is
+	// held, and runs as a command of its own, where the link is on disk and followed.
 	let linkMade = false;
-	const pastLink = (w) => {
-		const v = slash(String(w));
-		if (!v || v.startsWith('-')) return false;
-		// From the root it goes through the link only where a folder on its way is not there yet; from a variable or a
-		// home, where it lands is not read at all.
-		if (rooted(v)) {
-			if (/^[$%~]/.test(v) || /(^|\/)\.\.(\/|$)/.test(v)) return true;
-			for (let p = path.dirname(path.resolve(v.replace(/^\/([a-z])(?=\/|$)/i, '$1:'))); path.dirname(p) !== p; p = path.dirname(p)) {
-				try { fs.lstatSync(p); } catch { return true; }
-			}
-			return false;
-		}
-		if (!Array.isArray(cwd)) return true;
-		if (/(^|\/)\.\.(\/|$)/.test(v)) return true;
-		if (!v.includes('/')) return false;
-		try { fs.lstatSync(path.resolve(diskBase(cwd), v.split('/')[0])); return false; } catch { return true; }
-	};
 	const hit = (x) => {
 		const where = Array.isArray(cwd) ? `A${JSON.stringify(cwd)}` : cwd === null ? 'N' : 'U';
 		const key = `${x.quoted ? 1 : 0}${where}\0${x.value}`;
@@ -559,7 +542,7 @@ function shellWritesFrom(command, tool, start, names) {
 		}
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
-		if (linkMade && segment.slice(1).some((x) => pastLink(x.value))) return true;
+		if (linkMade && segment.length > 1) return true;
 		if (/symlink|symbolic|junction|hardlink|mklink/i.test(all.join(' ')) || all.some((w) => /^(ln|mklink|link|fsutil|tar|bsdtar|unzip|7z|7za|cpio|rsync|expand-archive)$/i.test(path.basename(slash(w)).replace(/\.(exe|cmd|bat)$/i, ''))) || all.some((w) => /^--(symbolic|link|recursive|archive|no-dereference|preserve)|^-[a-z]*[slrRaPd][a-z]*$/.test(w)) && /^(cp|gcp)$/.test(program)) linkMade = true;
 		// sed writes a file wherever its script holds a w or W command (1w.claude/x, s/a/b/gwx, -e '1!w x'), and the forms
 		// have no end, so every place a w or W sits is read as naming the rest of its word, gaps trimmed; a script word past
