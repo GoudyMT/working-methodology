@@ -64,17 +64,26 @@ function open(rel, { single = false } = {}) {
 	} catch { return null; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ } }
 }
 const read = (rel) => open(rel)?.text ?? null;
-const line = (text, label) => (text?.match(new RegExp(`^\\*\\*${label}:\\*\\* *(.*)$`, 'm')) || [])[1]?.trim() ?? null;
-
-/** The "- " lines right under a bold label, up to the first blank line. */
-function list(text, label) {
+/**
+ * A bold label's text: what follows it on its own line, then every line under it up to a blank line, the next bold
+ * label or a heading. Projects write a section either way, and text the check skipped would be lost without a word
+ * (the 1.30.0 verify: a pending list on the label line came out empty). Null when the label is not there.
+ */
+function block(text, label) {
 	const lines = (text || '').split(/\r?\n/);
-	const at = lines.findIndex((l) => l.startsWith(`**${label}`));
+	const at = lines.findIndex((l) => l.startsWith(`**${label}`) && /^[:( ]/.test(l.slice(label.length + 2)));
 	if (at < 0) return null;
+	const close = lines[at].indexOf('**', label.length + 2);
 	const out = [];
-	for (const l of lines.slice(at + 1)) { if (!l.trim()) break; if (l.startsWith('- ')) out.push(l); }
+	const rest = close < 0 ? '' : lines[at].slice(close + 2).trim();
+	if (rest) out.push(rest);
+	for (const l of lines.slice(at + 1)) { if (!l.trim() || l.startsWith('**') || l.startsWith('#')) break; out.push(l.trimEnd()); }
 	return out;
 }
+// One line of text; a label with nothing after it is not found, so the check falls back to the full reading.
+const line = (text, label) => { const b = block(text, label); return b && b.length ? b.join(' ') : null; };
+// A list section may be empty: nothing pending is a real state.
+const list = block;
 
 /** Each open lesson: its title and its never / always line. Never trimmed. */
 function lessons(text) {
@@ -92,9 +101,17 @@ function lessons(text) {
 /** The plan file the Resume Point names: a project-relative path, forward slashes, inside the project, or refused. */
 function planPath(next) {
 	const text = next || '';
-	const raw = text.match(/\]\(<([^>]+\.md)(?:#[^>]*)?>\)|\]\(([^)\s#]+\.md)(?:#[^)\s]*)?\)|`([^`]+\.md)`|(?:^|\s)([\w./%-]+\.md)(?=[\s,.;:)]|$)/);
-	if (!raw) return /\.md\b/i.test(text) ? { refused: '(a .md file the check cannot read as a path)' } : { plan: null };
-	const shown = raw[1] || raw[2] || raw[3] || raw[4];
+	// A link [text](<path>) or [text](path), with or without an anchor, a `path` in backticks, or a bare path.
+	const found = [...text.matchAll(/\[([^\]]*)\]\(<([^>]+\.md)(?:#[^>]*)?>\)|\[([^\]]*)\]\(([^)\s#<]+\.md)(?:#[^)\s]*)?\)|`([^`]+\.md)`|(?:^|\s)([\w./%-]+\.md)(?=[\s,.;:)]|$)/g)];
+	if (!found.length) return /\.md\b/i.test(text) ? { refused: '(a .md file the check cannot read as a path)' } : { plan: null };
+	// Several files named: the plan is the one marked so (its link text says plan, or a "Plan:" label comes right
+	// before it). The first link is not the plan by default (the 1.30.0 verify: a measure link came first).
+	const pathOf = (m) => m[2] || m[4] || m[5] || m[6];
+	const marked = (m) => /\bplan\b/i.test(m[1] || m[3] || '') || /\bplan:?\s*$/i.test(text.slice(Math.max(0, m.index - 12), m.index));
+	const distinct = [...new Set(found.map(pathOf))];
+	const raw = distinct.length === 1 ? found[0] : found.find(marked);
+	if (!raw) return { refused: `(${distinct.length} files named and none marked as the plan)` };
+	const shown = pathOf(raw);
 	let p = shown;
 	try { p = decodeURIComponent(p); } catch { return { refused: shown }; }
 	if (/\\|^[A-Za-z]:|^\/|(^|\/)\.\.(\/|$)/.test(p) || /[\0-\x1f\x7f-\x9f]/.test(p)) return { refused: shown };
@@ -192,13 +209,15 @@ function save(file, text) {
 function write(session) {
 	const g = gitState();
 	const head = ['# Resume packet', 'Start a session with: node .claude/resume-packet.mjs check', `written: ${new Date().toISOString()}`, `session: ${session || '-'}`, gitLine(g), '', ''].join('\n');
-	const { s, files } = sections();
+	const { s, files, missing } = sections();
 	fit(s, MAX - Buffer.byteLength(head) - files.length * 40);
 	const hashes = files.map((f) => `${open(f)?.hash ?? 'missing'} ${f}`);
 	const text = `${head}${render(s)}\n## Files\n${hashes.join('\n')}\n`;
 	save(PACKET, text);
 	const size = Buffer.byteLength(text);
 	console.log(`resume packet written: .kit/resume-packet.md (${size} bytes${size > MAX ? `, over ${MAX}: the Resume Point, lessons and hashes are never cut` : ''})`);
+	// Said at write time, so the closeout fixes the file instead of every later session paying the full reading.
+	if (missing.length) console.log(`a check now is the full reading: it cannot find ${missing.join('; ')}`);
 }
 
 const ORIENT = 'Then, before source-of-truth work (rule:post-compact-orientation): anti-duplication spot-check; ASCII scan; size-cap table (node .claude/tracking-check.mjs caps); log compression check; Sweep check (a branch near a PR without a current report: sweep first); Branch check (work on main: branch first); state the working mode and the first action.';

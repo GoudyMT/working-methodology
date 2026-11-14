@@ -171,6 +171,41 @@ test('a plan named by an anchor, an angle-bracket link or a bare path is found a
 });
 
 // why: guards rule:post-compact-orientation
+// A real project (the kit's workbench, 1.30.0 verify) wrote its pending list on the label line: the check showed it
+// empty and told the session to skip the Active Plan, so what waited on the owner was never seen.
+test('a section keeps its text on the label line and the lines under it, and the link marked plan is the plan', () => {
+	const dir = project();
+	fs.writeFileSync(path.join(dir, 'docs', 'measure.md'), '# M\n');
+	fs.writeFileSync(path.join(dir, 'docs', 'notes.md'), '# N\n');
+	const plan = path.join(dir, '_Active Plan.md');
+	const memory = path.join(dir, '_Working Memory.md');
+	const orig = fs.readFileSync(plan, 'utf8');
+	fs.writeFileSync(plan, orig
+		.replace(/\*\*Pending the owner:\*\*\n- .*/, '**Pending the owner:** the ruling on the push question; the list rows')
+		// No blank line between two labels: each keeps only its own text.
+		.replace(/\n\n(\*\*Pending the owner:\*\*)/, '\n$1')
+		.replace(/\*\*NEXT:\*\* .*/, '**NEXT:** build 5. Measure: [MEASURE](docs/measure.md). Plan: [PLAN](docs/plans/export%20step.md) sections 0 and 7.'));
+	fs.writeFileSync(memory, fs.readFileSync(memory, 'utf8').replace(/\*\*Last Session:\*\* .*/, '**Last Session:**\n7 (2026-11-14 - import done).'));
+	run(dir, 'write');
+	const c = run(dir, 'check');
+	const section = (name) => (c.stdout.match(new RegExp(`^## ${name}\\n([\\s\\S]*?)(?=\\n\\n)`, 'm')) || [])[1] || '';
+	assert.match(section('Pending the owner'), /the ruling on the push question; the list rows/, c.stdout);
+	assert.doesNotMatch(section('Carry-overs'), /push question/, c.stdout);
+	assert.match(section('Last session'), /import done/, c.stdout);
+	assert.equal(verdict(c.stdout), 'VERDICT: read docs/plans/export step.md');
+	// Two files named and neither marked as the plan: the check cannot tell which, so the full reading.
+	setNext(dir, 'see [a](docs/measure.md) and [b](docs/notes.md).');
+	run(dir, 'write');
+	assert.match(verdict(run(dir, 'check').stdout), /^VERDICT: full reading/);
+	// A label with nothing after it is a section not found, and write says so before any session relies on it.
+	fs.writeFileSync(plan, orig.replace(/\*\*NEXT:\*\* .*/, '**NEXT:**'));
+	fs.writeFileSync(memory, fs.readFileSync(memory, 'utf8').replace(/\*\*Resume Point:\*\* .*/, '**Resume Point:**'));
+	const w = run(dir, 'write');
+	assert.match(w.stdout, /a check now is the full reading: .*the Resume Point/, w.stdout);
+	assert.match(verdict(run(dir, 'check').stdout), /^VERDICT: full reading/);
+});
+
+// why: guards rule:post-compact-orientation
 test('a long Pending list is trimmed, the file it came from is named for a read, and the Resume Point, hashes and lessons stay', () => {
 	const dir = project();
 	const plan = path.join(dir, '_Active Plan.md');
