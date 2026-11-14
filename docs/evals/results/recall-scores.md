@@ -481,6 +481,7 @@ Brief v2. Candidate: this branch, the project layer unreleased 1.30.0 in recall'
 
 - First round, before the owner's no-carry wording: candidates 12, 14, 13 (median 13 on the bar), so two more ran: 14, 13, 13, 13, 14, median 13; baseline 13, 12, 13; control 0.
 - Final round, on the final text: three new candidates, scored blind with the same baselines and control. Question 14 re-scored blind on the v7 key for those six answers (6 of 6).
+- v7 was a draft on this branch until the owner accepted it. The first round scored question 14 on the draft key ("never typed words"); the owner set key 14 to the pop-up rule's fallback in the same pop-up that accepted v7, so only the final round counts for the gate.
 
 | Q | Candidate | Baseline | Control |
 |---|---|---|---|

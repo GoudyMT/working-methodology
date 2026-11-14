@@ -37,7 +37,7 @@
     },
     {
       "before": "**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; only large, risky, device-only or design items carry to the next build, all recorded. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.",
-      "after": "**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; what cannot be finished carries only on the owner's yes, recorded. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.",
+      "after": "**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.",
       "why": "Owner, 2026-11-14: nothing carries to the next build by default; a low or medium carries only on the owner's yes, a high never"
     },
     {

@@ -111,10 +111,15 @@ const PARTS = [
 		wired: () => {
 			let s = null;
 			try { s = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8').replace(/^﻿/, '')); } catch { /* none */ }
-			const ok = JSON.stringify(s?.hooks?.PreCompact || '').includes('kit-hook.cjs') && JSON.stringify(s?.hooks?.PreCompact || '').includes('pre-compact');
-			return [ok, ok ? 'the PreCompact hook writes it' : '.claude/settings.json has no PreCompact kit-hook.cjs entry: a compact writes no packet (run kit.mjs install project)'];
+			const hook = JSON.stringify(s?.hooks?.PreCompact || '').includes('kit-hook.cjs') && JSON.stringify(s?.hooks?.PreCompact || '').includes('pre-compact');
+			if (!hook) return [false, '.claude/settings.json has no PreCompact kit-hook.cjs entry: a compact writes no packet (run kit.mjs install project)'];
+			// Without the allow rule the session's first action stops on a permission prompt.
+			const allow = s?.permissions?.allow || [];
+			const missing = ['Bash', 'PowerShell'].filter((t) => !allow.includes(`${t}(node .claude/resume-packet.mjs check)`));
+			return missing.length ? [false, `.claude/settings.json does not allow ${missing.map((t) => `${t}(node .claude/resume-packet.mjs check)`).join(' or ')}: the first action of a session asks for permission`] : [true, 'the PreCompact hook writes it and the check runs with no prompt'];
 		},
-		used: () => (has('.kit/resume-packet.md') ? [true, '.kit/resume-packet.md written'] : [null, 'no packet yet: written at the first closeout or compact']),
+		// A packet written proves the hook ran; the check's stamp proves a session read it.
+		used: () => (has('.kit/resume-check.json') ? [true, 'a session ran the check'] : has('.kit/resume-packet.md') ? [null, 'a packet is written; no session has run the check yet'] : [null, 'no packet yet: written at the first closeout or compact']),
 	},
 ];
 

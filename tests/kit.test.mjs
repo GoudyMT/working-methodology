@@ -1026,12 +1026,12 @@ test('findings are fixed in their build and only what the owner accepts carries,
   // Comments off: what counts is the text the lead is shown.
   const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high\) goes to the handoff\\'s carry-overs/);
+  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) goes to the handoff\\'s carry-overs/);
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left is fixed in this build; only a low or medium the owner says yes to \(never a high\) is logged with `--carried <n>` and goes to the handoff/);
+  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) is logged with `--carried <n>` and goes to the handoff/);
   const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(approve, /What the re-sweep left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high\) goes to \$\{CARRY_HOME\}/);
+  assert.match(approve, /What the re-sweep left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) goes to \$\{CARRY_HOME\}/);
   assert.match(approve, /findings left unfixed after it[^\n]*each a low or medium the owner said yes to/);
   assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
   assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
@@ -3379,7 +3379,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
   const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner said yes to; never a high[\s\S]*Carry-overs from the last PR/);
+  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner said yes to; never a high or critical[\s\S]*Carry-overs from the last PR/);
   assert.equal(approvalLog(first.dir).pop().carried, 2);
   const next = approveIn(first.dir, [first.f]);
   assert.equal(next.status, 1, `a third pass on this branch asks the owner: ${next.stdout}`);
@@ -5661,7 +5661,6 @@ test('recall v4 is v3 with key 3 aligned to rule 11, and v3 stays as it was rele
   assert.deepEqual(v4.filter((r) => r.n !== 3), v3.filter((r) => r.n !== 3));
   assert.equal(v4[2].q, v3[2].q);
   assert.match(v4[2].key, /before any source-of-truth edit or agent dispatch/);
-  assert.match(read(path.resolve('project/CLAUDE.md')), /before any source-of-truth edit or agent dispatch/);
 });
 
 // The owner's ruling (2026-11-10, S22-4): v5 asks question 11 for the rule itself, and key 4 names the feature-branch
@@ -5727,6 +5726,7 @@ test('recall v8 is v7 with key 3 following the resume packet, and v7 stays as wr
   assert.deepEqual(v8.filter((r) => r.n !== 3), v7.filter((r) => r.n !== 3));
   assert.equal(v8[2].q, v7[2].q);
   assert.match(v8[2].key, /^Run the resume packet check first/);
+  assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 
 // why: guards rule:sweep-auto-approval
@@ -5759,24 +5759,26 @@ test('recall run header says what the run read: keys, both kit versions, and whe
 
 // why: guards rule:instruments-and-evals
 test('a recall run asks the current keys and its header names them', async () => {
-  const { prepare, currentVersion, questions, questionCount } = await recallTools();
+  const { prepare, currentVersion, questions, questionCount, passBar } = await recallTools();
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const keys = currentVersion(text);
   const run = prepare({ projectDir: proj, label: 'cand-1', home, text, when: 'w' });
   assert.deepEqual(run.qs, questions(text, keys));
-  assert.equal(run.qs.length, questionCount(text, keys));
   assert.ok(run.lines.includes(`Keys: v${keys}`));
   assert.ok(run.lines.includes('# Recall run: cand-1'));
   const refused = (bad, why) => assert.throws(() => prepare({ projectDir: proj, label: 'x', home, text: bad, when: 'w' }), why);
   const rows = /^\| \d+ \|.*\n/gm;
-  refused(text.replace(/^\| 14 \|.*\n/gm, ''), /expected 14 questions, found 13/);
-  refused(text.replace(/^(\| 14 \|.*\n)/m, '$1| 15 | One more? | A key |\n'), /expected 14 questions, found 15/);
-  refused(text.replace(rows, ''), /expected 14 questions, found 0/);
-  refused(text.replace(rows, '').replace('Pass: median 13 of 14.', 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
-  refused(text.replace('| 14 | How does', '| 13 | How does'), /numbered 1 to 14/);
-  refused(text.replace('Pass: median 13 of 14.', ''), /no "Pass: median <n> of <m>\." line/);
+  const n = questionCount(text, keys);
+  const pass = `Pass: median ${passBar(text, keys)} of ${n}.`;
+  const last = new RegExp(`^\\| ${n} \\|.*\\n`, 'm');
+  refused(text.replace(new RegExp(last.source, 'gm'), ''), new RegExp(`expected ${n} questions, found ${n - 1}`));
+  refused(text.replace(last, (row) => `${row}| ${n + 1} | One more? | A key |\n`), new RegExp(`expected ${n} questions, found ${n + 1}`));
+  refused(text.replace(rows, ''), new RegExp(`expected ${n} questions, found 0`));
+  refused(text.replace(rows, '').replace(pass, 'Pass: median 0 of 0.'), /expected 0 questions, found 0/);
+  refused(text.replace(last, (row) => row.replace(`| ${n} |`, `| ${n - 1} |`)), new RegExp(`numbered 1 to ${n}`));
+  refused(text.replace(pass, ''), /no "Pass: median <n> of <m>\." line/);
 });
 
 // why: guards rule:probe-scope
@@ -7151,7 +7153,7 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
 test('a self-started closeout asks before a remote delete, and leftovers carry only on the owner yes', () => {
   assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching[^\n]*remote delete on the owner's yes/);
   const core = read(path.resolve('rules/core.md'));
-  assert.match(core, /what cannot be finished carries only on the owner's yes/);
+  assert.match(core, /a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never/);
   assert.doesNotMatch(core, /design items go to the roadmap/);
 });
 // Sweep tooling carry-overs from 1.18.0 (C4, C9b, C9e, C9f, C10, C11), each checked real against the code first.

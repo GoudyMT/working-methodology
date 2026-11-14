@@ -427,7 +427,7 @@ function boundedPush(input) {
 	return from === 'HEAD' || (BRANCH.test(from) && !from.startsWith('refs/'));
 }
 
-// Which limit of the push bound a held push hit, for the refusal's words only: the decision above never reads this.
+// Which limit of the push bound a refused push hit, for the refusal's words only: the decision above never reads this.
 // rule:outward-acts holds the bound: a plain `git push [-u] origin <feature branch>`, never main or master, a tag, a
 // force or a delete.
 function pushLimit(command) {

@@ -1,10 +1,10 @@
 # Build 4, stage 3: the resume packet (T3)
 
-Status: design, for the plan check and the owner's lock on rule 11. Nothing here is built.
+Status: built in 14a233f and reworked after the sweep (see the Sweep section at the end). Rule 11's words were locked by the owner by pop-up on 2026-11-14.
 
 ## 60-second overview
 
-- Today a new or compacted session loads five files by `@import` at start, then rule 11 makes it read the same files again with the Read tool, plus the Session Log entry and the plan. About 42 KB loads twice, and the forced reading is about 40,000 tokens before any work.
+- Today a new or compacted session loads five files by `@import` at start, then rule 11 makes it read the same files again with the Read tool, plus the Session Log entry and the plan. On the kit's own templates 38,208 bytes load twice (the five files rule 11 re-read; the plan's 42,291 was measured in the workbench, with filled files), and the forced reading is about 40,000 tokens before any work.
 - Rule 11 exists for a real drift: sessions said "I just re-read" when they had only seen a summary. The fix keeps that guard and moves it into a script: the proof of a fresh read becomes one tool call whose output the session could not have made up.
 - A script writes a resume packet of at most 2,048 bytes at closeout and before a compact. It holds the resume point, the next step, git state, open decisions and a hash of every tracking file it was built from.
 - At start the session runs one command. It re-reads every file the packet names from disk, checks each hash, and prints the packet plus any file that changed since. Then the session reads only the plan or spec the resume point names, and whatever file the check flags.
@@ -16,9 +16,9 @@ Status: design, for the plan check and the owner's lock on rule 11. Nothing here
 1. **Expectations.** A session starting from a handoff knows where work stands as well as today, and reads far less to get there. A stale or missing packet is caught, never trusted.
 2. **Success criteria** (plan section 6, unchanged):
    - Tokens the rules make a session read before work starts: under 5,000 (bytes / 4), measured in a throwaway install with a filled-in project. Today about 40,200 (estimate).
-   - Bytes loaded twice at start: 0 (today 42,291).
+   - Bytes loaded twice at start: 0 (today 38,208 on the templates; 42,291 in the workbench).
    - Recall: median no lower than the released 1.29.0 baseline on the same keys, bar untouched.
-   - Use check (T14): the packet is present, wired (closeout and pre-compact write it, the start command reads it) and used (the first tool call of a session is the check).
+   - Use check (T14): the packet is present, wired (the pre-compact hook writes it and the check runs with no prompt) and used (a session ran the check: its stamp in .kit/resume-check.json). Whether it was the first tool call is not traced.
 3. **Options** for the core problem (proving a fresh read without reading everything):
    - A. Packet plus a check command that hashes the files (recommended): one tool call, the drift is caught by the hash, the reading is what changed.
    - B. Packet injected by the session-start hook as context: cheapest, but an injected text is exactly the "reminder" rule 11 says is no read. Rejected.
@@ -80,3 +80,9 @@ What "tokens read before work starts" counts, to be confirmed with the owner: wh
 
 - Lock rule 11's words (item 4).
 - Accept key 3's move (item 6) as a new keys version.
+
+## Sweep (db93ec, 7 reviewers, 2026-11-14)
+
+The sweep found what the plan check did not: the check printed the saved packet as it stood, so a padded packet or a planted VERDICT line reached the session (high). The check was reworked: it shows only the sections it rebuilds from the files now, every line from a file is printed after "| ", the saved packet gives only its hashes and its git line, and anything it cannot tell (a section or the plan not found, a refusal) is the full reading. Files are opened once inside the project (a link out or a hard-linked plan is refused), `.kit` must be a real folder, temp names are random and opened exclusively, `git status` is no longer called (a clean filter runs under it), and git never reads a parent repo.
+
+Plan deviations, named: the packet carries no Progress section (the verdict always names the plan, where the Progress block lives; P2, P14); the session that wrote the packet is recorded, not compared, since a command cannot learn its own session (P15; the branch is compared live); a tracking file hard-linked to a file outside the project is read as the project's own (owners link vault files on purpose); the allow rule matches the command text, so a `.claude/resume-packet.mjs` under another folder the shell sits in would run with no prompt (writes to `.claude/*.mjs` are denied, which keeps one from being planted).

@@ -5,7 +5,7 @@
 A new or compacted session starts from one checked resume packet instead of re-reading every tracking file, and the rule text held back from 1.29.0 lands now that the recall test measures it fairly.
 
 ### Added
-- The resume packet: the closeout and every compact write `.kit/resume-packet.md` (at most 2,048 bytes: the resume point, what waits on the owner, open lessons, git state and a hash of each tracking file). A session starts with `node .claude/resume-packet.mjs check`, which re-reads the files from disk, rebuilds the packet to catch a hand edit, reads git live, and names only the files to read; any doubt means the full reading.
+- The resume packet: the closeout and every compact write `.kit/resume-packet.md` (about 2,048 bytes: the resume point, what waits on the owner, open lessons, git state and a hash of each tracking file). A session starts with `node .claude/resume-packet.mjs check`, which re-reads the files from disk, shows only what it rebuilds from them, checks each against its hash, reads git live, and names only the files to read; any doubt means the full reading.
 - The cost rule: before a run that spends money or a shared quota, say what it costs and offer the free option first.
 
 ### Changed

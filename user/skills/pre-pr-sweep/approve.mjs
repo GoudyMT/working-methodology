@@ -12,7 +12,7 @@
 // role that found each fixed finding). Under the one-sweep loop (the owner, 2026-11-07) any pass after a sweep that
 // ran on the branch asks the owner, a re-sweep included; on their yes it gets one: a second re-sweep, or a re-sweep
 // of one, is refused, and what is left is fixed in the build (the owner, 2026-11-13): only what cannot be finished and
-// the owner says yes to (never a high) goes to the handoff's carry-overs.
+// the owner says yes to (never a high or critical) goes to the handoff's carry-overs.
 //
 // Budgets are processed tokens (input + cache read + cache write + output), which the script reads itself from each
 // reviewer's own transcript at --outcome. A role sets its call cap; the script computes its budget from that. More
@@ -563,7 +563,7 @@ function decide() {
 	if (refused) {
 		write({ kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: 0, decision: 'refused', reasons: [refused], resweepOf: first, head });
 		console.log(`REFUSED - one re-sweep per sweep (rule:sweep-tiers): ${refused}. No reviewer runs on this contract.`);
-		console.log(`    What the re-sweep left unfixed is fixed in this build; only a low or medium the owner says yes to (never a high) goes to ${CARRY_HOME}. Log the re-sweep's outcome with --carried <n> if you have not.`);
+		console.log(`    What the re-sweep left unfixed is fixed in this build; only a low or medium the owner says yes to (never a high or critical) goes to ${CARRY_HOME}. Log the re-sweep's outcome with --carried <n> if you have not.`);
 		return 1;
 	}
 	const { open, reported, stuck } = openSweep(s.log);
@@ -1018,7 +1018,7 @@ function outcome() {
 		]);
 		console.log(`    Triage report for the owner: ${f}`);
 	}
-	if (nums.carried > 0) console.log(`CARRY-OVER - ${nums.carried} finding(s) left unfixed after the re-sweep (only a low or medium the owner said yes to; never a high) go to ${CARRY_HOME}. List each there; every sweep start shows them open until that sweep's outcome closes them with --closed-carries <n>.`);
+	if (nums.carried > 0) console.log(`CARRY-OVER - ${nums.carried} finding(s) left unfixed after the re-sweep (only a low or medium the owner said yes to; never a high or critical) go to ${CARRY_HOME}. List each there; every sweep start shows them open until that sweep's outcome closes them with --closed-carries <n>.`);
 	return 0;
 }
 
