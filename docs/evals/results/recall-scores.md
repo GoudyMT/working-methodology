@@ -531,3 +531,29 @@ Brief v2. Candidate: this branch with the resume packet (rule 11 as the owner lo
 
 control: 0
 gate: kit-1.30.0 median 14 baseline 12 brief v2 keys v8 owner-accepted
+## Recall v9 - 1.30.0 final text against the 1.29.0 baseline (2026-11-14)
+
+Brief v2. The text that ships: the three stages plus the sweep's fixes (the carry rule in core.md names a high or critical; the packet check reworked). Key 3 names all of rule 11 (the owner's ruling by pop-up after the sweep). Candidate as before; baseline 1.29.0 from the release copy, run fresh on v9. The first three candidates scored 13, 13, 14 (median on the bar), so two more ran and all nine runs were scored blind together by a fresh scorer.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 0, 0, 0 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 0, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 0, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 0, 0, 0 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 0 | 0 |
+| Total | 13, 14, 14, 13, 14 | 12, 12, 11 | 0 |
+
+- **Scored: median 14 of 5, baseline 12, control 0.** Questions 5 and 7 miss once each in the candidates, both borderline and in rules this build did not change. Question 13 is borderline in every kit run on both sides, scored 1 throughout. The owner accepted v9 by pop-up, 2026-11-14.
+
+control: 0
+gate: kit-1.30.0 median 14 baseline 12 brief v2 keys v9 owner-accepted
