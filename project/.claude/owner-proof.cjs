@@ -114,6 +114,21 @@ const shareForm = (w) => { const s = slash(String(w)).replace(/["']/g, ''); retu
 // junction to .claude was read by its own name, while the write tools followed it): the real path, or null when
 // the word has no link in it, holds a wildcard or a variable, or cannot be placed.
 const linkSeen = new Map();
+// A path walked the way the system walks it: each part in turn, and ".." taken from where the parts before it
+// really lead, so deep/../x through a link named deep is the x beside the link's target (the review of the
+// link fix: resolved as text, the ".." took the link back out before it was ever followed).
+function walked(written) {
+	const s = String(written).split('\\').join('/');
+	const root = path.parse(path.resolve(s)).root;
+	let cur = /^([a-z]:)?\//i.test(s) ? root : process.cwd();
+	for (const part of s.replace(/^([a-z]:)?\/+/i, '').split('/')) {
+		if (!part || part === '.') continue;
+		if (part === '..') { cur = path.dirname(cur); continue; }
+		cur = path.join(cur, part);
+		try { cur = fs.realpathSync.native(cur); } catch { /* not there yet: the name as written */ }
+	}
+	return cur;
+}
 // A file with a second name (a hard link) is the same file under both: one that is a protected file of this project
 // by its other name is read as that file (the review of the sweep's hard-link fix). The project's guard files, git
 // hooks and git config are few, so each is asked for its file id.
@@ -138,11 +153,12 @@ function throughLink(word, cwd) {
 	// After a cd the guard could not follow, the word is placed from the project folder: the likeliest place, and the
 	// only one known.
 	const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR || process.cwd();
-	const abs = path.resolve(rooted(w) ? w.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : `${from}/${w}`);
+	const written = rooted(w) ? w.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : `${from}/${w}`;
+	const abs = path.resolve(written);
 	if (linkSeen.has(abs)) return linkSeen.get(abs);
 	if (linkSeen.size > 5000) linkSeen.clear();
 	let out = null;
-	try { const r = real(abs); if (slash(r) !== slash(abs)) out = r; } catch { /* not placed */ }
+	try { const r = walked(written); if (slash(r) !== slash(abs)) out = r; } catch { /* not placed */ }
 	// A second name counts whatever the path's own spelling: under a short name the real path always differs (CI on
 	// Windows), and the twin was then never asked for.
 	const twin = twinOf(abs);
@@ -287,7 +303,7 @@ function proofNamesAsWritten(word, cwd) {
 	const last = p[p.length - 1];
 	if (last && fits(last, 'kit-owner.json') && (/[$%]/.test(word) || (!rooted(word) && !Array.isArray(cwd)))) return true;
 	// After a cd that cannot be read, a relative word may start inside the Claude folder: the safe side.
-	if (cwd === 'unknown' && !rooted(word)) return protectedFrom(p, p.findIndex((x) => x !== '..'));
+	if (cwd === 'unknown' && !rooted(word)) { const k = p.findIndex((x) => x !== '..'); return k >= 0 && protectedFrom(p, k); }
 	return false;
 }
 
@@ -312,7 +328,7 @@ function linkOnTheWay(dir, origin) {
 	const stop = origin ? path.resolve(origin) : null;
 	for (let p = path.resolve(dir); path.dirname(p) !== p; p = path.dirname(p)) {
 		if (stop && (process.platform === 'win32' ? p.toLowerCase() === stop.toLowerCase() : p === stop)) return false;
-		try { if (fs.lstatSync(p).isSymbolicLink()) return true; } catch { /* not there: nothing to follow */ }
+		try { if (fs.lstatSync(p).isSymbolicLink()) return true; } catch { /* not there: a link made by the command is held where it is made */ }
 	}
 	return false;
 }
@@ -476,6 +492,19 @@ function shellWritesFrom(command, tool, start, names) {
 	// Read once per word and folder: a long command asks of each word several times (the 1.28.0 measure run: 98 KB
 	// took 9 s under CI coverage).
 	const seen = new Map();
+	// A link made by this command is not on disk when the guard reads it, so nothing past it is placed for sure (the
+	// review of the link fix: ln -s .claude/sub d && rm d/../guard.cjs, ln -s .claude d && rm d/guard.cjs). After one,
+	// every cd is unknown, and a later relative word is held when it steps back with "..", goes through a folder that is
+	// not on disk (the link may be it), or follows a cd that could not be read.
+	let linkMade = false;
+	const pastLink = (w) => {
+		const v = slash(String(w));
+		if (!v || v.startsWith('-') || rooted(v)) return false;
+		if (!Array.isArray(cwd)) return true;
+		if (/(^|\/)\.\.(\/|$)/.test(v)) return true;
+		if (!v.includes('/')) return false;
+		try { fs.lstatSync(path.resolve(diskBase(cwd), v.split('/')[0])); return false; } catch { return true; }
+	};
 	const hit = (x) => {
 		const where = Array.isArray(cwd) ? `A${JSON.stringify(cwd)}` : cwd === null ? 'N' : 'U';
 		const key = `${x.quoted ? 1 : 0}${where}\0${x.value}`;
@@ -521,6 +550,8 @@ function shellWritesFrom(command, tool, start, names) {
 		}
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
+		if (linkMade && segment.slice(1).some((x) => pastLink(x.value))) return true;
+		if (/symlink|junction|hardlink|mklink|createsymboliclink/i.test(all.join(' ')) || all.some((w) => /^(ln|mklink|link|fsutil)$/i.test(path.basename(slash(w)).replace(/\.(exe|cmd|bat)$/i, ''))) || all.some((w) => /^(-s|-l|--symbolic|--link)$|^-[a-z]*[sl][a-z]*$/.test(w)) && /^(cp|gcp)$/.test(program)) linkMade = true;
 		// sed writes a file wherever its script holds a w or W command (1w.claude/x, s/a/b/gwx, -e '1!w x'), and the forms
 		// have no end, so every place a w or W sits is read as naming the rest of its word, gaps trimmed; a script word past
 		// the cap that holds one is held (the review of this fix: fail closed, read too much rather than too little).
@@ -564,7 +595,7 @@ function shellWritesFrom(command, tool, start, names) {
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
-			cwd = apart || !sure ? 'unknown' : moved(segment, cwd);
+			cwd = apart || !sure || linkMade ? 'unknown' : moved(segment, cwd);
 			if (startNow) startNow.dir = Array.isArray(cwd) ? movedDir(segment, startNow.dir) : null;
 			// Through a link, the shell's ".." is the parent of the link's target, not of the folder the words show: the
 			// folder is then not known, and every later relative word is read the strict way.

@@ -446,7 +446,7 @@ test('a write into .git, a device or share path, a word through a junction and a
 		['Bash', 'mv pay/* .git'], ['Bash', 'tar -xf x.tar -C .git'], ['PowerShell', 'Copy-Item pay/* .git/worktrees/w -Recurse'], ['Bash', 'echo x >> ~/.ssh/config'],
 		['PowerShell', 'Remove-Item lnk/protected-folders.json'], ['Bash', 'rm lnk/protected-folders.json'], ['Bash', 'rm lnk/guard.cjs'], ['PowerShell', 'Remove-Item vlnk/x.txt'],
 		['PowerShell', 'Set-Content plain/* evil'], ['PowerShell', 'Set-Content plain/h.txt evil'], ['Bash', 'echo x > plain/h.txt'],
-		['Bash', 'cd "$X" && rm lnk/guard.cjs'], ['Bash', 'cd . && rm lnk/guard.cjs'], ['Bash', 'cd pay && rm ../lnk/guard.cjs'], ['Bash', 'cd deep && rm ../guard.cjs'],
+		['Bash', 'cd "$X" && rm lnk/guard.cjs'], ['Bash', 'cd . && rm lnk/guard.cjs'], ['Bash', 'cd pay && rm ../lnk/guard.cjs'], ['Bash', 'cd deep && rm ../guard.cjs'], ['Bash', 'rm deep/../guard.cjs'], ['PowerShell', 'Remove-Item deep/../guard.cjs'], ['Bash', 'ln -s .claude/sub d2 && cd d2 && rm ../guard.cjs'], ['Bash', 'ln -s .claude/sub d2 && rm d2/../guard.cjs'], ['Bash', `python -c "import os; os.symlink('.cl'+'aude', 'd3')" && rm d3/guard.cjs`], ['PowerShell', 'New-Item -ItemType Junction d2 -Target .claude/sub; Remove-Item d2/../guard.cjs'],
 	];
 	for (const [tool, command] of held) assert.equal(ask(tool, { command }), 'deny', `${tool} ${command}`);
 	if (process.platform === 'win32') {
