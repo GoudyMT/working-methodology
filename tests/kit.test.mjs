@@ -1018,6 +1018,7 @@ test('a first action still stops for a lock, an outward act or an open decision,
 test('findings are fixed in their build and only what the owner accepts carries, in the rule and in everything the sweep tools tell the lead', () => {
   const rule = (f) => read(path.resolve(f));
   const findings = rule('rules/reviews-and-findings.md');
+  // pin: 4 the owner's carry wording (2026-11-14), both lines
   assert.match(findings, /Findings are fixed in the build that finds them\. A low or medium that cannot be finished carries only on the owner's yes, first next build\. A high or critical never carries: it is fixed before the PR[^\n]*or the owner accepts it/);
   assert.match(findings, /the small ones too; what carries \(the rule above\) goes to the handoff's carry-overs/);
   assert.match(findings, /in a known area \(one component, one flow\)/);
@@ -3379,7 +3380,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
   const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner said yes to; never a high or critical[\s\S]*Carry-overs from the last PR/);
+  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner said yes to; never a high or critical[\s\S]*Carry-overs from the last PR/); // pin: 4 the owner's carry wording
   assert.equal(approvalLog(first.dir).pop().carried, 2);
   const next = approveIn(first.dir, [first.f]);
   assert.equal(next.status, 1, `a third pass on this branch asks the owner: ${next.stdout}`);
@@ -5738,7 +5739,7 @@ test('recall v8 and v9 move key 3 to the resume packet rule, and v7 stays as wri
   assert.equal(passBar(text, 9), 13);
   const v9 = questions(text, 9);
   assert.deepEqual(v9.filter((r) => r.n !== 3), v8.filter((r) => r.n !== 3));
-  assert.match(v9[2].key, /changed or missing \(no verdict line means the full reading\)/);
+  assert.match(v9[2].key, /changed or missing \(no verdict line means the full reading\)/); // pin: 3 recall key v9, frozen
   assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 
@@ -7168,7 +7169,7 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
 test('a self-started closeout asks before a remote delete, and leftovers carry only on the owner yes', () => {
   assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching[^\n]*remote delete on the owner's yes/);
   const core = read(path.resolve('rules/core.md'));
-  assert.match(core, /a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never/);
+  assert.match(core, /a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never/); // pin: 4 the owner's carry wording
   assert.doesNotMatch(core, /design items go to the roadmap/);
 });
 // Sweep tooling carry-overs from 1.18.0 (C4, C9b, C9e, C9f, C10, C11), each checked real against the code first.
