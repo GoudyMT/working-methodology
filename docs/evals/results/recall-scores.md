@@ -504,3 +504,29 @@ Brief v2. Candidate: this branch, the project layer unreleased 1.30.0 in recall'
 
 control: 0
 gate: kit-1.30.0-s2 median 14 baseline 13 brief v2 keys v7 owner-accepted
+## Recall v8 - 1.30.0 stage 3 against the 1.29.0 baseline (2026-11-14)
+
+Brief v2. Candidate: this branch with the resume packet (rule 11 as the owner locked it, the tracking files no longer inlined at start), the project layer unreleased 1.30.0 in recall's own throwaway folder, the user layer the released 1.29.0. Baseline: 1.29.0 from the release copy on its tag, run fresh on v8. Key 3 follows the new rule 11 (the owner's ruling, 2026-11-14). One blind scorer.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 1, 0 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 14, 14 | 12, 12, 11 | 0 |
+
+- **Scored: median 14, baseline 12, control 0.** Questions 3 and 12 fail on every baseline, as expected: the released rules still order the full reading and let a medium carry. No question fails more in the candidates. Question 13 was borderline in six runs on both sides ("starts on its own" without "no keyword needed"), scored 1 throughout. The ruler moved (v5 to v8), so the line carries the owner's marker (pop-up, 2026-11-14).
+
+control: 0
+gate: kit-1.30.0 median 14 baseline 12 brief v2 keys v8 owner-accepted
