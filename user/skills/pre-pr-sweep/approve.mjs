@@ -639,6 +639,29 @@ function starts(log, contract) {
 	return { clearings, started: clearings.reduce((t, i) => { try { return t + fs.readdirSync(path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]))).filter((f) => !f.endsWith('.retry')).length; } catch { return t; } }, 0) };
 }
 
+// The starts of this round that ran: a slot whose tool id an agent's meta file names, or one with no id to look up.
+function ranStarts(log, contract) {
+	const lines = rawLines();
+	const ids = new Set();
+	for (const project of folders(transcriptRoot())) for (const session of folders(project)) {
+		let names = [];
+		try { names = fs.readdirSync(path.join(session, 'subagents')).filter((n) => n.endsWith('.meta.json')); } catch { continue; }
+		for (const n of names) { try { const id = JSON.parse(fs.readFileSync(path.join(session, 'subagents', n), 'utf8')).toolUseId; if (id) ids.add(String(id)); } catch { /* unreadable: not a start this can match */ } }
+	}
+	let ran = 0;
+	for (const i of starts(log, contract).clearings) {
+		const dir = path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]));
+		let slots = [];
+		try { slots = fs.readdirSync(dir); } catch { continue; }
+		for (const name of slots) {
+			let id = '';
+			try { id = fs.readFileSync(path.join(dir, name), 'utf8'); } catch { /* unreadable: counts as ran */ }
+			if (!id || ids.has(id)) ran++;
+		}
+	}
+	return ran;
+}
+
 // An owner's yes clears a sweep as an approval does, so its outcome is owed too; it stands for the decision it answered.
 const clears = (e) => (e.kind === 'decision' && e.decision === 'approved') || e.kind === 'owner-yes';
 const answered = (log, i) => (log[i].kind === 'owner-yes' ? log.slice(0, i).filter((e) => e.kind === 'decision' && e.contract === log[i].contract && e.hash === log[i].hash).pop() || log[i] : log[i]);
@@ -894,7 +917,10 @@ function outcome() {
 	if (has('--none-ran')) {
 		// Every clearing of this round (an approval or the owner's yes since the contract's last outcome) has its own
 		// start slots in the guard's folder; any one taken means a reviewer ran.
-		const { clearings, started } = starts(s.log, contractFile);
+		const { clearings } = starts(s.log, contractFile);
+		// A recorded start ran only if a transcript holds its tool id (K50): a start another guard or the owner refused
+		// left none. A slot with no id cannot be looked up, so it counts as one that ran.
+		const started = ranStarts(s.log, contractFile);
 		const at = s.log.map((e, i) => (e.contract === contractFile && clears(e) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
 		if (!clearings.length || at < 0) { console.log('--none-ran closes a cleared sweep; this contract has none. Nothing logged.'); return 1; }
 		if (started) { console.log(`${started} reviewer(s) started under this round's clearances, so its spend is measured: log the outcome with --agents. Nothing logged.`); return 1; }

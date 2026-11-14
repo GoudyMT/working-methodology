@@ -3501,6 +3501,37 @@ test('an approved sweep that never started can be closed with --none-ran, and on
   assert.equal(ran.status, 1);
   assert.match(ran.stdout, /started/);
 });
+// why: guards rule:sweep-auto-approval. K50 (the Ask 214 project, 2026-11-14): starts the guard recorded but that never
+// ran (another guard or the owner refused them) left the owner no way to close the round. A slot whose start has no
+// reviewer transcript counts as never ran; one with a transcript, or with no tool id to look up, still counts as ran.
+test('--none-ran closes a round whose recorded starts left no reviewer transcript', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0);
+  const cfg = makeTemp('cfg-');
+  assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_never' }).permissionDecision, 'allow');
+  const none = approveIn(dir, [r.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(none.status, 0, none.stdout);
+  assert.match(none.stdout, /no reviewer ran/);
+  // A start whose reviewer wrote a transcript ran, so the round is measured.
+  const r2 = approveRun(featureContract(), dir);
+  assert.equal(r2.status, 0, r2.stdout);
+  assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_lead_seen' }).permissionDecision, 'allow');
+  transcripts({ seen: [[1, 1, 1, 1]] }, {}, cfg);
+  const measured = approveIn(dir, [r2.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(measured.status, 1);
+  assert.match(measured.stdout, /started/);
+});
+// why: guards rule:sweep-auto-approval. K50's strict half: a slot with no tool id cannot be looked up, so it ran.
+test('--none-ran counts a recorded start with no tool id as one that ran', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0);
+  assert.equal(sweepGuard(dir).permissionDecision, 'allow');
+  const ran = approveIn(dir, [r.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: makeTemp('cfg-') });
+  assert.equal(ran.status, 1);
+  assert.match(ran.stdout, /started/);
+});
 // why: guards rule:sweep-auto-approval
 test('a re-sweep is one per sweep however the first is re-run, and a re-run of the same re-sweep before it ran is fine', () => {
   const first = firstSweep();
