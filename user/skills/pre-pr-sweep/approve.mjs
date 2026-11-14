@@ -12,7 +12,7 @@
 // role that found each fixed finding). Under the one-sweep loop (the owner, 2026-11-07) any pass after a sweep that
 // ran on the branch asks the owner, a re-sweep included; on their yes it gets one: a second re-sweep, or a re-sweep
 // of one, is refused, and what is left is fixed in the build (the owner, 2026-11-13): only what cannot be finished and
-// the owner accepts goes to the handoff's carry-overs.
+// the owner says yes to (never a high) goes to the handoff's carry-overs.
 //
 // Budgets are processed tokens (input + cache read + cache write + output), which the script reads itself from each
 // reviewer's own transcript at --outcome. A role sets its call cap; the script computes its budget from that. More
@@ -77,7 +77,7 @@ const DEFAULT_MODEL = 'claude-opus-5-5';
 const modelKey = (m) => { const s = String(m ?? DEFAULT_MODEL); return /opus/i.test(s) ? 'opus' : /sonnet/i.test(s) ? 'sonnet' : null; };
 // A re-sweep (the owner, 2026-11-03): one blast-radius role, one role per kind with a fixed finding, one alignment role.
 const RESWEEP_NEEDS = { 'blast-radius': 1, dimension: 1 };
-const CARRY_HOME = 'the handoff\'s "Carry-overs from the last PR" (_Active Plan.md); the next feature build fixes them';
+const CARRY_HOME = 'the handoff\'s "Carry-overs from the last PR" (_Active Plan.md); fixed first in the next build';
 const AGENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 // How long a transcript must stay unwritten before --retry reads it as a crash, not a reviewer still running.
 const CRASH_QUIET_MINUTES = 10;
@@ -563,7 +563,7 @@ function decide() {
 	if (refused) {
 		write({ kind: 'decision', contract: contractFile, hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: 0, decision: 'refused', reasons: [refused], resweepOf: first, head });
 		console.log(`REFUSED - one re-sweep per sweep (rule:sweep-tiers): ${refused}. No reviewer runs on this contract.`);
-		console.log(`    What the re-sweep left unfixed is fixed in this build; only what cannot be finished and the owner accepts goes to ${CARRY_HOME}. Log the re-sweep's outcome with --carried <n> if you have not.`);
+		console.log(`    What the re-sweep left unfixed is fixed in this build; only a low or medium the owner says yes to (never a high) goes to ${CARRY_HOME}. Log the re-sweep's outcome with --carried <n> if you have not.`);
 		return 1;
 	}
 	const { open, reported, stuck } = openSweep(s.log);
@@ -930,7 +930,7 @@ function outcome() {
 	// A re-sweep is the last pass: what is left unfixed after it, from either pass, is counted, so nothing falls through.
 	if (decision.resweepOf) {
 		const v = count('carried');
-		if (v === null) { console.log('A re-sweep\'s outcome needs --carried <n>: the findings left unfixed after it, from either pass, each one that cannot be finished and the owner accepted (0 when all are fixed). Nothing logged.'); return 1; }
+		if (v === null) { console.log('A re-sweep\'s outcome needs --carried <n>: the findings left unfixed after it, from either pass, each a low or medium the owner said yes to (0 when all are fixed). Nothing logged.'); return 1; }
 		nums.carried = v;
 	} else if (has('--carried')) { console.log('--carried is for a re-sweep\'s outcome; nothing logged.'); return 1; }
 	if (has('--closed-carries')) {
@@ -1018,7 +1018,7 @@ function outcome() {
 		]);
 		console.log(`    Triage report for the owner: ${f}`);
 	}
-	if (nums.carried > 0) console.log(`CARRY-OVER - ${nums.carried} finding(s) left unfixed after the re-sweep (only what cannot be finished and the owner accepts) go to ${CARRY_HOME}. List each there; every sweep start shows them open until that sweep's outcome closes them with --closed-carries <n>.`);
+	if (nums.carried > 0) console.log(`CARRY-OVER - ${nums.carried} finding(s) left unfixed after the re-sweep (only a low or medium the owner said yes to; never a high) go to ${CARRY_HOME}. List each there; every sweep start shows them open until that sweep's outcome closes them with --closed-carries <n>.`);
 	return 0;
 }
 

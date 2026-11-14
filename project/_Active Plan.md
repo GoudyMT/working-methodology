@@ -28,7 +28,7 @@
 
 **NEXT:** <(1) the exact next action - command or file; (2) what follows.>
 
-**Carry-overs from the last PR (close in this run unless large, risky, device-only or a design call):**
+**Carry-overs from the last PR (only those the owner said yes to; close in this run):**
 - <item> - <pointer>
 
 **Pending the owner:**

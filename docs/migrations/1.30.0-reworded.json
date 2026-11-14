@@ -34,6 +34,16 @@
       "before": "2. **Sweep findings are fixed in their PR**, not only the easy ones; defer only the trivial (info, cosmetic, rare path, no harm), each recorded. Leftovers and post-PR findings at medium or below go to the handoff's carry-overs for the next focus build.",
       "after": "2. **Sweep findings are fixed in their PR**, the small ones too; what carries (the rule above) goes to the handoff's carry-overs.",
       "why": "the owner, 2026-11-13: nothing small rolls over, so no finding is deferred as trivial"
+    },
+    {
+      "before": "**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; only large, risky, device-only or design items carry to the next build, all recorded. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.",
+      "after": "**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; what cannot be finished carries only on the owner's yes, recorded. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.",
+      "why": "Owner, 2026-11-14: nothing carries to the next build by default; a low or medium carries only on the owner's yes, a high never"
+    },
+    {
+      "before": "4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and recorded carry-overs ride on its branch (unless large, risky, device-only or a design call); ONE large sweep after both, CI, one PR. The Resume Point names the feature pick first.",
+      "after": "4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and the carry-overs the owner said yes to ride on its branch; ONE large sweep after both, CI, one PR. The Resume Point names the feature pick first.",
+      "why": "Owner, 2026-11-14: nothing carries to the next build by default; a low or medium carries only on the owner's yes, a high never"
     }
   ]
 }

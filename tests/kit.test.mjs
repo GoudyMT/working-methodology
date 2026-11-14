@@ -1026,13 +1026,13 @@ test('findings are fixed in their build and only what the owner accepts carries,
   // Comments off: what counts is the text the lead is shown.
   const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left unfixed is fixed in this build; only what cannot be finished and the owner accepts goes to the handoff\\'s carry-overs/);
+  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high\) goes to the handoff\\'s carry-overs/);
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left is fixed in this build; only what cannot be finished and the owner accepts is logged with `--carried <n>` and goes to the handoff/);
+  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left is fixed in this build; only a low or medium the owner says yes to \(never a high\) is logged with `--carried <n>` and goes to the handoff/);
   const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(approve, /What the re-sweep left unfixed is fixed in this build; only what cannot be finished and the owner accepts goes to \$\{CARRY_HOME\}/);
-  assert.match(approve, /findings left unfixed after it[^\n]*each one that cannot be finished and the owner accepted/);
+  assert.match(approve, /What the re-sweep left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high\) goes to \$\{CARRY_HOME\}/);
+  assert.match(approve, /findings left unfixed after it[^\n]*each a low or medium the owner said yes to/);
   assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
   assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
 });
@@ -3379,7 +3379,7 @@ test('what a re-sweep leaves is carried: logged, printed, shown at each sweep st
   assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
   const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner accepts[\s\S]*Carry-overs from the last PR/);
+  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner said yes to; never a high[\s\S]*Carry-overs from the last PR/);
   assert.equal(approvalLog(first.dir).pop().carried, 2);
   const next = approveIn(first.dir, [first.f]);
   assert.equal(next.status, 1, `a third pass on this branch asks the owner: ${next.stdout}`);
@@ -7134,10 +7134,10 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
 // 1.20.0 carry-overs N5 and B8: a closeout that started on its own still asks before a remote branch delete, and the
 // core rules send leftovers to the next build, not the roadmap.
 // why: guards rule:kit-standards
-test('a self-started closeout asks before a remote delete, and leftovers carry to the next build', () => {
+test('a self-started closeout asks before a remote delete, and leftovers carry only on the owner yes', () => {
   assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching[^\n]*remote delete on the owner's yes/);
   const core = read(path.resolve('rules/core.md'));
-  assert.match(core, /design items carry to the next build/);
+  assert.match(core, /what cannot be finished carries only on the owner's yes/);
   assert.doesNotMatch(core, /design items go to the roadmap/);
 });
 // Sweep tooling carry-overs from 1.18.0 (C4, C9b, C9e, C9f, C10, C11), each checked real against the code first.
