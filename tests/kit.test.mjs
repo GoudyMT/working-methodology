@@ -3551,36 +3551,38 @@ test('an approved sweep that never started can be closed with --none-ran, and on
   assert.equal(ran.status, 1);
   assert.match(ran.stdout, /started/);
 });
-// why: guards rule:sweep-auto-approval. K50 (the Ask 214 project, 2026-11-14): starts the guard recorded but that never
-// ran (another guard or the owner refused them) left the owner no way to close the round. A slot whose start has no
-// reviewer transcript counts as never ran; one with a transcript, or with no tool id to look up, still counts as ran.
-test('--none-ran closes a round whose recorded starts left no reviewer transcript', () => {
+// why: guards rule:sweep-auto-approval. K50 (reported by a project on the kit, 2026-11-14): starts the guard recorded
+// but that never ran (another guard or the owner refused them) left the owner no way to close the round. A slot counts
+// as never ran only on proof: the lead's transcript holds a refused result for its tool id, and no reviewer's meta file
+// names it. With no transcript to read (another Claude folder, transcripts cleaned up) it counts as ran (the 1.31.0
+// sweep: reading only for a meta file let an empty folder close a round whose reviewers ran).
+test('--none-ran closes a round only on proof that its recorded starts were refused', () => {
   const dir = sweepRepo();
   const r = approveRun(featureContract(), dir);
   assert.equal(r.status, 0);
-  const cfg = makeTemp('cfg-');
   assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_never' }).permissionDecision, 'allow');
+  // No transcript anywhere: no proof, so it ran.
+  const empty = approveIn(dir, [r.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: makeTemp('cfg-') });
+  assert.equal(empty.status, 1, empty.stdout);
+  assert.match(empty.stdout, /started/);
+  // The lead's transcript shows the start refused: it never ran.
+  const cfg = makeTemp('cfg-');
+  const lead = path.join(cfg, 'projects', 'C--repo');
+  fs.mkdirSync(lead, { recursive: true });
+  const refusal = (id) => JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: 'held by a hook' }] } });
+  fs.writeFileSync(path.join(lead, 'session-1.jsonl'), refusal('toolu_never') + String.fromCharCode(10));
   const none = approveIn(dir, [r.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(none.status, 0, none.stdout);
   assert.match(none.stdout, /no reviewer ran/);
-  // A start whose reviewer wrote a transcript ran, so the round is measured.
+  // A refused result for a start whose reviewer has a meta file still ran.
   const r2 = approveRun(featureContract(), dir);
   assert.equal(r2.status, 0, r2.stdout);
   assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_lead_seen' }).permissionDecision, 'allow');
   transcripts({ seen: [[1, 1, 1, 1]] }, {}, cfg);
+  fs.appendFileSync(path.join(lead, 'session-1.jsonl'), refusal('toolu_lead_seen') + String.fromCharCode(10));
   const measured = approveIn(dir, [r2.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(measured.status, 1);
   assert.match(measured.stdout, /started/);
-});
-// why: guards rule:sweep-auto-approval. K50's strict half: a slot with no tool id cannot be looked up, so it ran.
-test('--none-ran counts a recorded start with no tool id as one that ran', () => {
-  const dir = sweepRepo();
-  const r = approveRun(featureContract(), dir);
-  assert.equal(r.status, 0);
-  assert.equal(sweepGuard(dir).permissionDecision, 'allow');
-  const ran = approveIn(dir, [r.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: makeTemp('cfg-') });
-  assert.equal(ran.status, 1);
-  assert.match(ran.stdout, /started/);
 });
 // why: guards rule:sweep-auto-approval
 test('a re-sweep is one per sweep however the first is re-run, and a re-run of the same re-sweep before it ran is fine', () => {

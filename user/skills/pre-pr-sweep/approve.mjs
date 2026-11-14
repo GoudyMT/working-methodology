@@ -639,27 +639,48 @@ function starts(log, contract) {
 	return { clearings, started: clearings.reduce((t, i) => { try { return t + fs.readdirSync(path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]))).filter((f) => !f.endsWith('.retry')).length; } catch { return t; } }, 0) };
 }
 
-// The starts of this round that ran: a slot whose tool id an agent's meta file names, or one with no id to look up.
+// The starts of this round that ran. A slot counts as never ran only on proof that its start was refused: a session
+// transcript holds a refused result (is_error) for its tool id, and no agent's meta file names that id. Anything
+// else counts as ran: no id to look up, no transcript found (another Claude folder, transcripts cleaned up), or a
+// meta file (the 1.31.0 sweep: reading only for a meta file failed open when the folder was moved or emptied).
 function ranStarts(log, contract) {
 	const lines = rawLines();
-	const ids = new Set();
-	for (const project of folders(transcriptRoot())) for (const session of folders(project)) {
-		let names = [];
-		try { names = fs.readdirSync(path.join(session, 'subagents')).filter((n) => n.endsWith('.meta.json')); } catch { continue; }
-		for (const n of names) { try { const id = JSON.parse(fs.readFileSync(path.join(session, 'subagents', n), 'utf8')).toolUseId; if (id) ids.add(String(id)); } catch { /* unreadable: not a start this can match */ } }
-	}
-	let ran = 0;
+	const slots = [];
 	for (const i of starts(log, contract).clearings) {
 		const dir = path.join(path.dirname(LOG), 'kit-sweep-starts', sha(lines[i]));
-		let slots = [];
-		try { slots = fs.readdirSync(dir); } catch { continue; }
-		for (const name of slots) {
+		let names = [];
+		try { names = fs.readdirSync(dir); } catch { continue; }
+		for (const name of names) {
 			let id = '';
 			try { id = fs.readFileSync(path.join(dir, name), 'utf8'); } catch { /* unreadable: counts as ran */ }
-			if (!id || ids.has(id)) ran++;
+			slots.push(id);
 		}
 	}
-	return ran;
+	const wanted = new Set(slots.filter(Boolean));
+	const metaIds = new Set();
+	const refusedIds = new Set();
+	if (wanted.size) for (const project of folders(transcriptRoot())) {
+		let files = [];
+		try { files = fs.readdirSync(project).filter((n) => n.endsWith('.jsonl')).map((n) => path.join(project, n)); } catch { /* none */ }
+		for (const f of files) {
+			let text = '';
+			try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
+			if (![...wanted].some((id) => text.includes(id))) continue;
+			for (const line of text.split('\n')) {
+				if (![...wanted].some((id) => line.includes(id))) continue;
+				let e;
+				try { e = JSON.parse(line); } catch { continue; }
+				const c = e && e.type === 'user' && e.message && Array.isArray(e.message.content) ? e.message.content : [];
+				for (const b of c) if (b && b.type === 'tool_result' && b.is_error === true && wanted.has(String(b.tool_use_id))) refusedIds.add(String(b.tool_use_id));
+			}
+		}
+		for (const session of folders(project)) {
+			let names = [];
+			try { names = fs.readdirSync(path.join(session, 'subagents')).filter((n) => n.endsWith('.meta.json')); } catch { continue; }
+			for (const n of names) { try { const id = JSON.parse(fs.readFileSync(path.join(session, 'subagents', n), 'utf8')).toolUseId; if (id) metaIds.add(String(id)); } catch { /* unreadable: not a start this can match */ } }
+		}
+	}
+	return slots.filter((id) => !id || !refusedIds.has(id) || metaIds.has(id)).length;
 }
 
 // An owner's yes clears a sweep as an approval does, so its outcome is owed too; it stands for the decision it answered.
@@ -918,8 +939,7 @@ function outcome() {
 		// Every clearing of this round (an approval or the owner's yes since the contract's last outcome) has its own
 		// start slots in the guard's folder; any one taken means a reviewer ran.
 		const { clearings } = starts(s.log, contractFile);
-		// A recorded start ran only if a transcript holds its tool id (K50): a start another guard or the owner refused
-		// left none. A slot with no id cannot be looked up, so it counts as one that ran.
+		// A recorded start counts as never ran only on proof it was refused (K50, ranStarts).
 		const started = ranStarts(s.log, contractFile);
 		const at = s.log.map((e, i) => (e.contract === contractFile && clears(e) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
 		if (!clearings.length || at < 0) { console.log('--none-ran closes a cleared sweep; this contract has none. Nothing logged.'); return 1; }
