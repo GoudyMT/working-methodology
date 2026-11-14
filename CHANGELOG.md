@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.30.1 - 2026-11-14
+
+The resume packet check now always names the Active Plan and every file the Resume Point names for a read, so a new session can no longer miss what waits on the owner or the real plan.
+
+### Changed
+- Write names any label or file name a check could not read, and the closeout fixes it before the next session. A label not found names its file for a read instead of the full reading.
+
+### Fixed
+- The check always names the Active Plan for a read. A pending list written on its label line, after a blank line or as numbered items came out empty, and the check then skipped the file.
+- Every file the Resume Point names, up to three, is hashed and read; a file name the check cannot read means the full reading. It used to pick one link as the plan, and some wordings picked the wrong one.
+- A huge tracking file can no longer stall the check: a Resume Point over 4,000 characters is the full reading, and each preview stops at 40 lines.
+- The tracking check finds a Progress or Parking Lot heading with a suffix or at level three, any list marker, and a Parking Lot label; other shapes passed as empty.
+
 ## 1.30.0 - 2026-11-14
 
 A new or compacted session starts from one checked resume packet instead of re-reading every tracking file, and the rule text held back from 1.29.0 lands now that the recall test measures it fairly.

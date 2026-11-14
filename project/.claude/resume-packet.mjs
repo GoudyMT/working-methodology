@@ -2,18 +2,21 @@
 // The resume packet (T3, 1.30.0). A new or compacted session used to re-read every tracking file that CLAUDE.md had
 // already loaded, about 40,000 tokens before any work, because rule 11 must stop a session claiming a re-read it never
 // made. The packet keeps that guard and moves the proof into a script: a fresh tool call that checks every file against
-// the hash it had when the packet was written, so only what changed is read again.
+// the hash it had when the packet was written, so only what changed is read again. The Active Plan and every file the
+// Resume Point names (at most 3) are read every time (1.30.1): the sections shown are a preview, never a stand-in.
 //
-//   write  saves .kit/resume-packet.md (about 2,048 bytes; the Resume Point, lessons and hash lines are never cut): the
-//          sections built from the tracking files, the hash of each, and git. The closeout and the pre-compact hook run it.
+//   write  saves .kit/resume-packet.md (about 2,048 bytes; the lessons and hash lines are never cut): the sections
+//          built from the tracking files, the hash of each, and git. The closeout and the pre-compact hook run it; it
+//          names any label or file name a check could not read.
 //   check  prints the sections rebuilt NOW from the files (never the saved text), one line per file (same / CHANGED /
 //          missing) against the saved hashes, git read live against the packet's, the orientation steps, and one line
 //          that starts "VERDICT:" (read <files> | full reading: <files>).
 //
 // The saved packet supplies only its hashes and its git line; nothing else in it reaches the session, so an edited or
-// padded packet changes nothing a session reads. Every printed line from a file starts with "| ", so no file can put a
-// second VERDICT line in the output. Anything the check cannot tell (no packet, a list that is not the fixed one, a
-// section or the plan not found, a refusal, a throw) is the full reading: it fails closed. It reports, never blocks:
+// padded packet changes nothing a session reads. Every printed line from a file starts with "| ", and every reason is
+// cleaned of line breaks, so no file can put a second VERDICT line in the output. Anything the check cannot tell (no
+// packet, a list that is not the fixed one, no Resume Point, a file name it cannot read, a throw) is the full reading:
+// it fails closed; a section label not found names its file for a read. It reports, never blocks:
 // exit 0 always. Limits: a tracking file hard-linked to a file outside the project is read as the project's own
 // (owners link vault files on purpose); the session that wrote the packet is recorded, not compared.
 // Usage: node .claude/resume-packet.mjs write [--session <id>] | check     (run in the project folder)
@@ -64,17 +67,28 @@ function open(rel, { single = false } = {}) {
 	} catch { return null; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ } }
 }
 const read = (rel) => open(rel)?.text ?? null;
-const line = (text, label) => (text?.match(new RegExp(`^\\*\\*${label}:\\*\\* *(.*)$`, 'm')) || [])[1]?.trim() ?? null;
-
-/** The "- " lines right under a bold label, up to the first blank line. */
-function list(text, label) {
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// The line that starts the next section ends the one above it: a bold label, a heading or a rule.
+const STOP = /^(\*\*[^*\n]+(?::\*\*|\*\*:)|#{1,6} |-{3,}\s*$)/;
+/**
+ * A bold label's text, shown to the session: what follows the label on its line, then the lines under it up to a blank
+ * line or the next section. The label is `**Name:**` or `**Name**:`; a list label may carry a note in brackets
+ * (`**Carry-overs from the last PR (...):**`). Null when the label is not there. Nothing the session must not miss rests
+ * on this reading (the 1.30.0 verify and the 1.30.1 sweep found a dozen shapes it misreads): the check always names
+ * _Active Plan.md, and every file the Resume Point names, for a fresh read.
+ */
+function block(text, label, { note = false } = {}) {
+	const head = new RegExp(`^\\*\\*${esc(label)}${note ? '(?: \\([^)\\n]*\\))?' : ''}(?::\\*\\*|\\*\\*:)`);
 	const lines = (text || '').split(/\r?\n/);
-	const at = lines.findIndex((l) => l.startsWith(`**${label}`));
+	const at = lines.findIndex((l) => head.test(l));
 	if (at < 0) return null;
 	const out = [];
-	for (const l of lines.slice(at + 1)) { if (!l.trim()) break; if (l.startsWith('- ')) out.push(l); }
+	const rest = lines[at].replace(head, '').trim();
+	if (rest) out.push(rest);
+	for (const l of lines.slice(at + 1)) { if (!l.trim() || STOP.test(l)) break; out.push(l.trimEnd()); }
 	return out;
 }
+const nonEmpty = (b) => (b && b.length ? b : null);
 
 /** Each open lesson: its title and its never / always line. Never trimmed. */
 function lessons(text) {
@@ -89,45 +103,81 @@ function lessons(text) {
 	return out.length ? out : ['- none open'];
 }
 
-/** The plan file the Resume Point names: a project-relative path, forward slashes, inside the project, or refused. */
-function planPath(next) {
-	const text = next || '';
-	const raw = text.match(/\]\(<([^>]+\.md)(?:#[^>]*)?>\)|\]\(([^)\s#]+\.md)(?:#[^)\s]*)?\)|`([^`]+\.md)`|(?:^|\s)([\w./%-]+\.md)(?=[\s,.;:)]|$)/);
-	if (!raw) return /\.md\b/i.test(text) ? { refused: '(a .md file the check cannot read as a path)' } : { plan: null };
-	const shown = raw[1] || raw[2] || raw[3] || raw[4];
-	let p = shown;
-	try { p = decodeURIComponent(p); } catch { return { refused: shown }; }
-	if (/\\|^[A-Za-z]:|^\/|(^|\/)\.\.(\/|$)/.test(p) || /[\0-\x1f\x7f-\x9f]/.test(p)) return { refused: shown };
-	// The plan is read through one descriptor that is a plain file inside the project with one name only (a hard link
-	// to a file outside would pass a path check).
-	if (!open(p, { single: true })) return { refused: shown };
-	return { plan: p.split(path.sep).join('/') };
+/**
+ * Every file the Resume Point names: project-relative paths inside the project, the fixed files left out, at most
+ * MAX_NAMED; or refused, which means the full reading. No file is guessed to be "the" plan (the 1.30.1 sweep: every
+ * guess picked a wrong file on some wording): each one named is hashed and read. A .md name left over once the readable
+ * forms are taken out means the check cannot tell, so it refuses.
+ */
+function planPaths(text) {
+	if (text.length > 4000) return { refused: 'a Resume Point over 4,000 characters' };
+	let rest = text;
+	const named = [];
+	const take = (re) => { rest = rest.replace(re, (_, p) => { named.push(p); return ' '; }); };
+	take(/\[[^\]\n]*\]\(<([^>\n]+?\.md)(?:#[^>\n]*)?>\)/g); // [text](<path>)
+	take(/\[[^\]\n]*\]\(([^)<\n]+?\.md)(?:#[^)\n]*)?\)/g); // [text](path), spaces allowed as the kit writes them
+	take(/`([^`\n]+?\.md)`/g); // `path`
+	take(/(?<=^|\s)([\w./%-]+\.md)(?=[\s,.;:)]|$)/gm); // a bare path
+	if (/\.md\b/i.test(rest)) return { refused: 'a .md name the check cannot read as a path' };
+	const plans = [];
+	for (const shown of named) {
+		const q = JSON.stringify(shown.slice(0, 80));
+		let p;
+		try { p = decodeURIComponent(shown).replace(/^\.\//, ''); } catch { return { refused: `${q} cannot be decoded` }; }
+		// A colon anywhere: a drive, a URL or an NTFS stream. Dot segments, a leading slash, a backslash or a control
+		// character: never a plain path inside the project.
+		if (/[\\:]|^\/|(^|\/)\.\.?(\/|$)/.test(p) || new RegExp(UNSAFE.source).test(p)) return { refused: `${q} is not a plain path` };
+		if (FILES.includes(p) || plans.includes(p)) continue;
+		// Read through one descriptor that is a plain file inside the project with one name only (a hard link to a file
+		// outside would pass a path check).
+		if (!open(p, { single: true })) return { refused: `${q} is not a readable file inside the project` };
+		plans.push(p);
+	}
+	if (plans.length > MAX_NAMED) return { refused: `${plans.length} files named, more than ${MAX_NAMED}` };
+	return { plans };
 }
+const MAX_NAMED = 3;
+const SHOW_LINES = 40;
+const SHOW_CHARS = 400;
 
 /** The packet's sections, built only from the files: the same files always give the same text. */
 export function sections() {
 	const plan = read('_Active Plan.md');
 	const memory = read('_Working Memory.md');
-	const next = line(plan, 'NEXT') ?? line(memory, 'Resume Point');
-	const where = planPath(next);
+	const fromPlan = nonEmpty(block(plan, 'NEXT'));
+	const next = fromPlan ?? nonEmpty(block(memory, 'Resume Point'));
+	const where = planPaths(next ? next.join('\n') : '');
+	// What the check cannot tell means the full reading; a section it cannot rebuild names its file for a read.
 	const missing = [];
-	const need = (v, what) => { if (v === null) missing.push(what); return v; };
-	const s = {
-		'Resume Point': [need(next, 'the Resume Point (**NEXT:** in _Active Plan.md or **Resume Point:** in _Working Memory.md)') ?? 'not found'],
-		'Last session': [need(line(memory, 'Last Session'), '**Last Session:** in _Working Memory.md') ?? 'not found'],
-		'Pending the owner': need(list(plan, 'Pending the owner'), '**Pending the owner:** in _Active Plan.md') ?? ['not found'],
-		'Carry-overs': need(list(plan, 'Carry-overs from the last PR'), '**Carry-overs from the last PR** in _Active Plan.md') ?? ['not found'],
-		'Open lessons': need(lessons(read('_Loop Learnings.md')), '## Open lessons in _Loop Learnings.md') ?? ['not found'],
-		Plan: [where.plan ? `plan: ${where.plan}` : where.refused ? `plan: refused ${JSON.stringify(String(where.refused).slice(0, 80))}` : 'plan: none named'],
+	const reads = [];
+	// A preview is at most SHOW_LINES lines of SHOW_CHARS characters: a longer section is cut and its file named for a
+	// read, so a huge file can never make the trim below slow (the 1.30.1 sweep timed a 40,000-line list at 55 s).
+	const shown = (v, file) => {
+		if (v === null) { reads.push(file); return [`- (not found: ${file} is named for a read)`]; }
+		if (!v.length) return ['- (nothing under the label)'];
+		if (v.length > SHOW_LINES || v.some((l) => l.length > SHOW_CHARS)) {
+			reads.push(file);
+			return [...v.slice(0, SHOW_LINES).map((l) => l.slice(0, SHOW_CHARS)), `- (cut here: ${file} is named for a read)`];
+		}
+		return v;
 	};
-	if (where.refused) missing.push(`the plan the Resume Point names (${JSON.stringify(String(where.refused).slice(0, 80))} is not a readable file inside the project)`);
-	const files = [...FILES, ...(where.plan ? [where.plan] : [])];
-	return { s, files, plan: where.plan, missing };
+	if (!next) missing.push('the Resume Point (**NEXT:** in _Active Plan.md or **Resume Point:** in _Working Memory.md)');
+	if (where.refused) missing.push(`the files the Resume Point names: ${where.refused}`);
+	const s = {
+		'Resume Point': next ? shown(next, fromPlan ? '_Active Plan.md' : '_Working Memory.md') : ['not found'],
+		'Last session': shown(nonEmpty(block(memory, 'Last Session')), '_Working Memory.md'),
+		'Pending the owner': shown(block(plan, 'Pending the owner'), '_Active Plan.md'),
+		'Carry-overs': shown(block(plan, 'Carry-overs from the last PR', { note: true }), '_Active Plan.md'),
+		'Open lessons': shown(lessons(read('_Loop Learnings.md')), '_Loop Learnings.md'), // never trimmed, but cut like the rest
+		Plan: where.plans?.length ? where.plans.map((p) => `plan: ${p}`) : ['plan: none named'],
+	};
+	const plans = where.plans || [];
+	return { s, files: [...FILES, ...plans], plans, reads, missing, resumeFrom: fromPlan ? '_Active Plan.md' : '_Working Memory.md' };
 }
 // What each section is built from: a trimmed section names these files for a fresh read.
 const SOURCES = { 'Last session': ['_Working Memory.md'], 'Pending the owner': ['_Active Plan.md'], 'Carry-overs': ['_Active Plan.md'] };
-// Trimmed first when over the size: never the Resume Point, the lessons, the plan or a hash line.
-const TRIM = ['Pending the owner', 'Carry-overs', 'Last session'];
+// Trimmed first when over the size; never the lessons, the plan or a hash line. The Resume Point goes last.
+const TRIM = ['Pending the owner', 'Carry-overs', 'Last session', 'Resume Point'];
 
 // Every line from a file is printed after "| ", so no file can start a line of the packet's or the check's own.
 // Control characters and the Unicode line and paragraph separators become spaces first: a lone CR or a U+2028 would
@@ -192,17 +242,22 @@ function save(file, text) {
 function write(session) {
 	const g = gitState();
 	const head = ['# Resume packet', 'Start a session with: node .claude/resume-packet.mjs check', `written: ${new Date().toISOString()}`, `session: ${session || '-'}`, gitLine(g), '', ''].join('\n');
-	const { s, files } = sections();
+	const { s, files, missing, reads } = sections();
 	fit(s, MAX - Buffer.byteLength(head) - files.length * 40);
 	const hashes = files.map((f) => `${open(f)?.hash ?? 'missing'} ${f}`);
 	const text = `${head}${render(s)}\n## Files\n${hashes.join('\n')}\n`;
 	save(PACKET, text);
 	const size = Buffer.byteLength(text);
-	console.log(`resume packet written: .kit/resume-packet.md (${size} bytes${size > MAX ? `, over ${MAX}: the Resume Point, lessons and hashes are never cut` : ''})`);
+	console.log(`resume packet written: .kit/resume-packet.md (${size} bytes${size > MAX ? `, over ${MAX}: the lessons and hashes are never cut` : ''})`);
+	// Said at write time, so the closeout fixes the file (step 5) instead of every later session paying for it.
+	if (missing.length) console.log(clean(`fix before the next session: a check now is the full reading, it cannot tell ${missing.join('; ')}`));
+	if (reads.length) console.log(clean(`fix before the next session: a section label is not found, so a check names ${[...new Set(reads)].join(', ')} for a read`));
 }
 
 const ORIENT = 'Then, before source-of-truth work (rule:post-compact-orientation): anti-duplication spot-check; ASCII scan; size-cap table (node .claude/tracking-check.mjs caps); log compression check; Sweep check (a branch near a PR without a current report: sweep first); Branch check (work on main: branch first); state the working mode and the first action.';
-const full = (why) => console.log(`${why}\n\n${ORIENT}\nVERDICT: full reading: ${FULL}`);
+// A reason can carry a path from a file: no character in it may start a line of its own.
+const clean = (t) => t.replace(UNSAFE, ' ');
+const full = (why) => console.log(`${clean(why)}\n\n${ORIENT}\nVERDICT: full reading: ${FULL}`);
 
 /** The saved packet's only inputs to the check: its git line and its Files list. Null when it is not one write made. */
 function parse(text) {
@@ -232,9 +287,10 @@ function check() {
 	}
 	const saved = parse(text);
 	if (!saved) return full('The resume packet is not one this script wrote.');
-	// The saved list must be the fixed one, plus at most one plan: a dropped or added line changes nothing checked.
+	// The saved list must be the fixed one, plus at most the files a Resume Point may name: a dropped or added line
+	// changes nothing checked.
 	const extra = [...saved.files.keys()].filter((f) => !FILES.includes(f));
-	if (FILES.some((f) => !saved.files.has(f)) || extra.length > 1) return full('The resume packet\'s file list is not the fixed one.');
+	if (FILES.some((f) => !saved.files.has(f)) || extra.length > MAX_NAMED) return full('The resume packet\'s file list is not the fixed one.');
 	const now = sections();
 	if (now.missing.length) return full(`The check cannot find: ${now.missing.join('; ')}.`);
 	const s = { ...now.s };
@@ -250,9 +306,14 @@ function check() {
 	for (const k of GIT_KEYS) out.push(`git ${k}: ${g[k] === saved.git[k] ? 'same' : `CHANGED (packet ${saved.git[k]}, now ${g[k]})`}`);
 	const readList = [];
 	const add = (f) => { if (f && !readList.includes(f)) readList.push(f); };
-	add(now.plan);
+	// The Active Plan always: it holds what waits on the owner, and no parsed section may stand in for it (the owner,
+	// 2026-11-14, after the 1.30.1 sweep). Then every file the Resume Point names, what changed, and the source of
+	// any section trimmed or not found.
+	add('_Active Plan.md');
+	for (const p of now.plans) add(p);
 	for (const f of FILES) if (state[f] !== 'same') add(f);
-	for (const k of cut) for (const f of SOURCES[k] || []) add(f);
+	for (const k of cut) for (const f of k === 'Resume Point' ? [now.resumeFrom] : SOURCES[k] || []) add(f);
+	for (const f of now.reads) add(f);
 	try { save(STAMP, `${JSON.stringify({ checked: new Date().toISOString() })}\n`); } catch { /* the stamp is only the use check's trace */ }
 	console.log(`${out.join('\n')}\n\n${ORIENT}\nVERDICT: read ${readList.length ? readList.join(', ') : 'nothing more'}`);
 }

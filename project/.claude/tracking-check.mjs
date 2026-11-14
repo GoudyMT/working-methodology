@@ -17,14 +17,26 @@ const CAPS = [
 	{ file: '_Session Log.md', unit: 'sessions', cap: 10, count: (t) => (t.match(/^## /gm) || []).length },
 ];
 
-// The lines of one "## <name>" section, up to the next heading of the same level.
+// The lines of one "## <name>" or "### <name>" section (a suffix such as "(ticked with evidence)" allowed), up to the
+// next heading of the same or a higher level; or the text of a "**<name>:**" label and the lines under it. A shape
+// the check does not see would pass as empty (the 1.30.1 sweep: the kit's own batch-plan heading has a suffix).
 function section(text, name) {
 	const lines = text.replace(/\r\n/g, '\n').split('\n');
-	const start = lines.findIndex((l) => l.trim() === `## ${name}`);
-	if (start < 0) return [];
-	const end = lines.findIndex((l, i) => i > start && /^## /.test(l));
-	return lines.slice(start + 1, end < 0 ? undefined : end);
+	const start = lines.findIndex((l) => new RegExp(`^#{2,3} ${name}\\b`).test(l.trim()));
+	if (start >= 0) {
+		const level = lines[start].trim().match(/^#+/)[0].length;
+		const end = lines.findIndex((l, i) => i > start && new RegExp(`^#{1,${level}} `).test(l));
+		return lines.slice(start + 1, end < 0 ? undefined : end);
+	}
+	const label = new RegExp(`^\\*\\*${name}(?::\\*\\*|\\*\\*:)`);
+	const at = lines.findIndex((l) => label.test(l));
+	if (at < 0) return [];
+	const out = [lines[at].replace(label, '')];
+	for (const l of lines.slice(at + 1)) { if (!l.trim() || /^(\*\*[^*]+(?::\*\*|\*\*:)|#{1,6} )/.test(l)) break; out.push(l); }
+	return out;
 }
+// A list line in any Markdown form: "- ", "* ", "+ ", "1. " or "1) ".
+const ITEM = /^\s*(?:[-*+]|\d+[.)])\s+/;
 
 // Evidence a reader can check: a PR or issue number, a commit, a code span (command, test, file:line), or a measurement.
 const EVIDENCE = /#\d+|\b[0-9a-f]{7,40}\b|`[^`]+`|\d/;
@@ -48,14 +60,15 @@ function main([mode, file]) {
 	if ((mode === 'parking' || mode === 'progress') && file) {
 		const text = fs.readFileSync(path.resolve(root, file), 'utf8');
 		if (mode === 'parking') {
-			const ideas = section(text, 'Parking Lot').filter((l) => /^\s*- /.test(l));
+			// Any written line is an idea; only the template's "<...>" placeholder and comments are not.
+			const ideas = section(text, 'Parking Lot').filter((l) => l.trim() && !/^\s*(<[^>]*>|<!--.*-->)\s*$/.test(l));
 			if (ideas.length) {
 				console.log(`${ideas.length} idea(s) in the Parking Lot: triage each now, next or drop before the sweep (rule:parking-lot).`);
 				process.exitCode = 1;
 			} else console.log('PASS parking lot empty');
 			return;
 		}
-		const done = section(text, 'Progress').filter((l) => /^\s*- (\[x\]|DONE\b)/i.test(l));
+		const done = section(text, 'Progress').filter((l) => ITEM.test(l) && /^(\[x\]|DONE\b)/i.test(l.replace(ITEM, '')));
 		const bare = done.filter((l) => !EVIDENCE.test(l));
 		for (const l of bare) console.log(`no evidence: "${l.trim()}"`);
 		if (bare.length) process.exitCode = 1;

@@ -1,0 +1,86 @@
+{
+ "version": "1.30.1",
+ "date": "2026-11-14",
+ "level": "patch",
+ "area": "Start reading",
+ "title": "fix: the packet check reads the Active Plan and every file named",
+ "headline": "The resume packet check now always names the Active Plan and every file the Resume Point names for a read, so a new session can no longer miss what waits on the owner or the real plan.",
+ "alignment": "v1.30.1 fixes the two gaps the 1.30.0 workbench verify found in the packet check, at their root, and the same kind of gap in the tracking check.",
+ "items": [
+  {
+   "id": "K51",
+   "kind": "fixed",
+   "text": "The check always names the Active Plan for a read. A pending list written on its label line, after a blank line or as numbered items came out empty, and the check then skipped the file.",
+   "evidence": "tests/resume-packet.test.mjs",
+   "where": "What a new session sees waiting on the owner",
+   "before": "Nothing, on several common ways of writing the list",
+   "after": "The Active Plan, read fresh every time"
+  },
+  {
+   "id": "K52",
+   "kind": "fixed",
+   "text": "Every file the Resume Point names, up to three, is hashed and read; a file name the check cannot read means the full reading. It used to pick one link as the plan, and some wordings picked the wrong one.",
+   "evidence": "tests/resume-packet.test.mjs"
+  },
+  {
+   "id": "K51-WRITE",
+   "kind": "changed",
+   "text": "Write names any label or file name a check could not read, and the closeout fixes it before the next session. A label not found names its file for a read instead of the full reading.",
+   "evidence": "tests/resume-packet.test.mjs, user/skills/closeout/SKILL.md"
+  },
+  {
+   "id": "K51-SPEED",
+   "kind": "fixed",
+   "text": "A huge tracking file can no longer stall the check: a Resume Point over 4,000 characters is the full reading, and each preview stops at 40 lines.",
+   "evidence": "tests/resume-packet.test.mjs"
+  },
+  {
+   "id": "TRACK",
+   "kind": "fixed",
+   "text": "The tracking check finds a Progress or Parking Lot heading with a suffix or at level three, any list marker, and a Parking Lot label; other shapes passed as empty.",
+   "evidence": "tests/kit.test.mjs"
+  }
+ ],
+ "verification": [
+  "The new packet test fails on the 1.30.0 code and on the first fix the sweep read; the tracking check test fails on 1.30.0.",
+  "A copy of the workbench's own tracking files, checked with the fixed script, names the Active Plan and both files its Resume Point names, and shows the whole pending list."
+ ],
+ "decisions": [
+  {
+   "decision": "Fixed now as 1.30.1, not in build 5",
+   "why": "The gap is high: a session never saw what waits on the owner. A high never carries; the owner picked the fix now by pop-up."
+  },
+  {
+   "decision": "The check always reads the Active Plan and every named file",
+   "why": "The sweep found a dozen wordings the section and plan guessing misread. The owner ruled by pop-up to stop guessing, for about 400 more tokens a session."
+  }
+ ],
+ "sweep": {
+  "tier": "Fix (security-sensitive)",
+  "commit": "ec900f5",
+  "dimensions": [
+   { "name": "Privacy", "result": "Clean" },
+   { "name": "Supply chain", "result": "Clean: no dependency added" },
+   { "name": "Legal", "result": "Not touched" },
+   { "name": "Code security", "result": "Three highs and six mediums in the section and plan reading, all fixed" },
+   { "name": "Gaps, scaling, test value", "result": "Two slowdowns, three tracking check shapes and five test gaps, all fixed" },
+   { "name": "Alignment", "result": "YES; the fix widened to the root on the owner's ruling" }
+  ],
+  "findings": { "critical": 0, "high": 4, "medium": 13, "low": 11 },
+  "fixed": [
+   "Sections misread on common wordings hid the Active Plan. Fixed in d3d749e.",
+   "An unreadable plan link left another file as the plan. Fixed in d3d749e.",
+   "An old or later plan link was picked over the real one. Fixed in d3d749e.",
+   "A blank line or a numbered item emptied the pending list. Fixed in d3d749e."
+  ],
+  "deferred": [
+   "Rule 11's words name the Resume Point's file and the changed files; the verdict also names the Active Plan. Reworded in build 5 with its recall run, on the owner's yes."
+  ],
+  "accepted": []
+ },
+ "tests": {
+  "before": 705,
+  "after": 706,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}
