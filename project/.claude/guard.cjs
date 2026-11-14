@@ -83,8 +83,12 @@ function answers(input) {
 	// as its own process, past the loader's check). A changed or unrecorded one is skipped, never run.
 	let stamp = {};
 	try { stamp = JSON.parse(fs.readFileSync(path.join(path.dirname(userHooks()), 'kit-install.json'), 'utf8')).files || {}; } catch { /* none */ }
+	// A call a project guard has refused never runs, so the sweep guard must not claim a role's one slot for it (K48,
+	// the Ask 214 project: a start the task gate held spent its slot, and the start after the read was refused).
+	const refused = out.some(([, o]) => o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision === 'deny');
 	for (const [file, reads] of USER) {
 		if (!reads(tool, input)) continue;
+		if (refused && file === 'sweep-guard.cjs') continue;
 		const where = path.join(userHooks(), file);
 		if (!fs.existsSync(where)) continue;
 		try {

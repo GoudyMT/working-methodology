@@ -2895,6 +2895,20 @@ test('the sweep guard holds reviewers to the cleared team size', () => {
   assert.equal(second.permissionDecision, 'deny', 'a second reviewer on a one-role contract');
   assert.match(second.permissionDecisionReason, /Role 1 of the cleared contract[\s\S]*started already/);
 });
+// why: guards rule:sweep-auto-approval. K48 (the Ask 214 project, 2026-11-14): a project whose settings still ran the
+// guards directly checked every start twice, and the second check of the same start found its own slot taken, so no
+// reviewer could ever start. The same start (its tool id in the slot) passes again; any other start is still refused.
+test('the sweep guard counts one start once, however often it is checked', () => {
+  const dir = sweepRepo({ 'README.md': 'y\n' });
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  assert.equal(approveRun(one, dir).status, 0);
+  assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_one' }).permissionDecision, 'allow');
+  assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_one' }).permissionDecision, 'allow', 'the same start, checked a second time');
+  const other = sweepGuard(dir, { tool_use_id: 'toolu_two' });
+  assert.equal(other.permissionDecision, 'deny', 'another start for the same role');
+  assert.match(other.permissionDecisionReason, /started already/);
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a start with no tool id is never the recorded one');
+});
 // why: guards rule:sweep-auto-approval
 test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sweep runs', () => {
   const dir = sweepRepo();

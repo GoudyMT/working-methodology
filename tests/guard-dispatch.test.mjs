@@ -184,3 +184,29 @@ test('a recorded user check runs from the kit\'s own Claude folder', () => {
 	assert.equal(r.status, 0, r.stderr);
 	assert.match(r.stdout, /the recorded check ran/);
 });
+
+// why: guards rule:sweep-auto-approval. K48 (the Ask 214 project, 2026-11-14): a reviewer start that the task gate held
+// still claimed its role's one slot, so the start that ran after the lead read the module was refused as "started
+// already". The sweep guard claims only for a call no project guard has refused.
+test('a start a project guard refuses never reaches the sweep guard, so it spends no slot', () => {
+	const marker = path.join(kitTemp.makeTemp('slot-'), 'claimed');
+	const stub = [
+		'const fs = require("fs");',
+		`fs.writeFileSync(${JSON.stringify(marker)}, "x");`,
+	].join('\n');
+	const run = setup({ oldHook: stub });
+	const transcript = path.join(kitTemp.makeTemp('t-'), 's.jsonl');
+	fs.writeFileSync(transcript, '\n');
+	const start = (env) => run('Agent', { subagent_type: 'reviewer', prompt: 'review' }, { transcript_path: transcript }, env);
+	// The task gate holds a fan-out until the agent-teams module is read; here it is not.
+	const project = kitTemp.makeTemp('proj-');
+	fs.mkdirSync(path.join(project, 'standards'));
+	fs.writeFileSync(path.join(project, 'standards', 'agent-teams.md'), 'rules\n');
+	const held = start({ CLAUDE_PROJECT_DIR: project });
+	assert.equal(held.permissionDecision, 'deny');
+	assert.match(held.permissionDecisionReason, /agent-teams\.md/);
+	assert.equal(fs.existsSync(marker), false, 'the held start reached the sweep guard');
+	// Control: with nothing to read first, the same start reaches it.
+	start({ CLAUDE_PROJECT_DIR: kitTemp.makeTemp('bare-') });
+	assert.equal(fs.existsSync(marker), true, 'the sweep guard never ran, so the test proves nothing');
+});
