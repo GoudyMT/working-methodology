@@ -494,7 +494,7 @@ function shellWritesFrom(command, tool, start, names) {
 	const seen = new Map();
 	// A link made by this command is not on disk when the guard reads it, so nothing past it is placed for sure. Three
 	// reviews of 1.29.0 each found a word the reading of it missed (d/../x, a rooted word, the last part, a folder
-	// replaced), so after a command that can make a link nothing that takes an argument runs in the same command: it is
+	// replaced, a lone redirect), so after a command that can make a link nothing more runs in the same command: it is
 	// held, and runs as a command of its own, where the link is on disk and followed.
 	let linkMade = false;
 	const hit = (x) => {
@@ -530,6 +530,7 @@ function shellWritesFrom(command, tool, start, names) {
 	// once, before the loop: read per command it made a long command quadratic (98 KB took 21 s, past the hook's 10 s).
 	const apart = grouped || !segments.every((g) => plainBreak(g.end));
 	for (let s = 0; s < segments.length; s++) {
+		if (linkMade) return true;
 		const segment = segments[s].map((x) => ({ ...x, value: sub(x.value) }));
 		segment.end = segments[s].end;
 		// Only assignments (P=x, export P=x): nothing is written but a redirect.
@@ -542,7 +543,6 @@ function shellWritesFrom(command, tool, start, names) {
 		}
 		const all = segment.map((x) => x.value);
 		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
-		if (linkMade && segment.length > 1) return true;
 		if (/symlink|symbolic|junction|hardlink|mklink/i.test(all.join(' ')) || all.some((w) => /^(ln|mklink|link|fsutil|tar|bsdtar|unzip|7z|7za|cpio|rsync|expand-archive)$/i.test(path.basename(slash(w)).replace(/\.(exe|cmd|bat)$/i, ''))) || all.some((w) => /^--(symbolic|link|recursive|archive|no-dereference|preserve)|^-[a-z]*[slrRaPd][a-z]*$/.test(w)) && /^(cp|gcp)$/.test(program)) linkMade = true;
 		// sed writes a file wherever its script holds a w or W command (1w.claude/x, s/a/b/gwx, -e '1!w x'), and the forms
 		// have no end, so every place a w or W sits is read as naming the rest of its word, gaps trimmed; a script word past
