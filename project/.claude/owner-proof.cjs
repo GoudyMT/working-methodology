@@ -306,6 +306,17 @@ function movedDir(segment, from) {
 	return path.isAbsolute(a) || /^[a-z]:/i.test(a) ? path.resolve(a) : path.resolve(from, a);
 }
 
+// Whether a folder is reached through a link or a junction: each part of its path, but the parts it shares with the
+// folder the shell started in (those were there before the command and are the same for every word).
+function linkOnTheWay(dir, origin) {
+	const stop = origin ? path.resolve(origin) : null;
+	for (let p = path.resolve(dir); path.dirname(p) !== p; p = path.dirname(p)) {
+		if (stop && (process.platform === 'win32' ? p.toLowerCase() === stop.toLowerCase() : p === stop)) return false;
+		try { if (fs.lstatSync(p).isSymbolicLink()) return true; } catch { /* not there: nothing to follow */ }
+	}
+	return false;
+}
+
 // Where a cd, pushd or Set-Location moves the shell: its folder's parts, or 'unknown'.
 function moved(segment, cwd) {
 	// popd and Pop-Location go back to a folder the stack holds, which the guard does not follow.
@@ -376,7 +387,12 @@ function filterFits(pattern, cwd, pathWord = false) {
 
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
 function shellWrites(command, tool, start, names = proofNames) {
-	startNow = start ? { dir: String(start) } : null;
+	// Each reading has its own real folder: a reading nested in this one must not leave its own behind.
+	const outer = startNow;
+	startNow = start ? { dir: String(start), origin: String(start) } : null;
+	try { return shellWritesFrom(command, tool, start, names); } finally { startNow = outer; }
+}
+function shellWritesFrom(command, tool, start, names) {
 	// Every line is read, here-document bodies too: reading a body as data was spelled around five ways in the 1.24.0
 	// sweep (an end mark bash reads otherwise, a cat function, continued lines, nested quotes), so it fails closed.
 	// A variable set in the command (P=~/.claude) is read as its value where it is used, before the reader splits ${P} at
@@ -550,6 +566,9 @@ function shellWrites(command, tool, start, names = proofNames) {
 			const sure = segment.end === '&&' || s === segments.length - 1;
 			cwd = apart || !sure ? 'unknown' : moved(segment, cwd);
 			if (startNow) startNow.dir = Array.isArray(cwd) ? movedDir(segment, startNow.dir) : null;
+			// Through a link, the shell's ".." is the parent of the link's target, not of the folder the words show: the
+			// folder is then not known, and every later relative word is read the strict way.
+			if (startNow && startNow.dir && linkOnTheWay(startNow.dir, startNow.origin)) { cwd = 'unknown'; startNow.dir = null; }
 			// Into the transcripts only where the guard follows the folder: every later word is then read from there, so
 			// only plain reads pass (S23-2). A move it cannot follow, into them, is refused as before.
 			if (hits.length && cwd === 'unknown') return true;

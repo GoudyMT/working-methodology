@@ -432,6 +432,8 @@ test('a write into .git, a device or share path, a word through a junction and a
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x');
 	fs.symlinkSync(path.join(proj, '.claude'), path.join(proj, 'lnk'), 'junction');
 	fs.symlinkSync(path.join(proj, 'vault'), path.join(proj, 'vlnk'), 'junction');
+	fs.mkdirSync(path.join(proj, '.claude', 'sub'));
+	fs.symlinkSync(path.join(proj, '.claude', 'sub'), path.join(proj, 'deep'), 'junction');
 	fs.linkSync(path.join(proj, '.claude', 'guard.cjs'), path.join(proj, 'plain', 'h.txt'));
 	const ask = (tool_name, tool_input) => {
 		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
@@ -444,7 +446,7 @@ test('a write into .git, a device or share path, a word through a junction and a
 		['Bash', 'mv pay/* .git'], ['Bash', 'tar -xf x.tar -C .git'], ['PowerShell', 'Copy-Item pay/* .git/worktrees/w -Recurse'], ['Bash', 'echo x >> ~/.ssh/config'],
 		['PowerShell', 'Remove-Item lnk/protected-folders.json'], ['Bash', 'rm lnk/protected-folders.json'], ['Bash', 'rm lnk/guard.cjs'], ['PowerShell', 'Remove-Item vlnk/x.txt'],
 		['PowerShell', 'Set-Content plain/* evil'], ['PowerShell', 'Set-Content plain/h.txt evil'], ['Bash', 'echo x > plain/h.txt'],
-		['Bash', 'cd "$X" && rm lnk/guard.cjs'], ['Bash', 'cd . && rm lnk/guard.cjs'], ['Bash', 'cd pay && rm ../lnk/guard.cjs'],
+		['Bash', 'cd "$X" && rm lnk/guard.cjs'], ['Bash', 'cd . && rm lnk/guard.cjs'], ['Bash', 'cd pay && rm ../lnk/guard.cjs'], ['Bash', 'cd deep && rm ../guard.cjs'],
 	];
 	for (const [tool, command] of held) assert.equal(ask(tool, { command }), 'deny', `${tool} ${command}`);
 	if (process.platform === 'win32') {
