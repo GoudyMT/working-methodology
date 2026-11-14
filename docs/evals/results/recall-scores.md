@@ -582,4 +582,4 @@ Brief v2, keys v10 (key 3 names the Active Plan, as rule 11 now does). Every ses
 - **Scored: median 14 of 14, baseline 13, control 0.** The baseline misses question 3 every time, as expected: its rule 11 does not name the Active Plan. One candidate run misses question 12 (it says lows and mediums may carry, not that they carry only on the owner's yes), a rule this build did not change. Borderline calls on question 13 ("no keyword" not said outright) were scored 1 on both sides, as in v9.
 
 control: 0
-gate: kit-1.31.0 median 14 baseline 13 brief v2 keys v10
+gate: kit-1.31.0 median 14 baseline 13 brief v2 keys v10 owner-accepted
