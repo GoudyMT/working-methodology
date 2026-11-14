@@ -607,6 +607,31 @@ function releaseKit() {
   return { ...ctx, git, cli };
 }
 
+// why: guards rule:outward-acts. K49 (the Ask 214 project, 2026-11-14): a settings file kept for a hand merge still ran
+// the kit guards itself, the shape before 1.25.1, so every guard ran twice beside the launcher and no sweep could
+// start. Status and the session notice name those entries; install takes them out, as it took out 1.25.0's guard.cjs
+// entry, keeping a backup and every other line; the shape install writes is quiet.
+test('a project settings file that still runs the guards itself is named, and install takes those entries out', () => {
+  const { kit, home, proj, cli } = releaseKit();
+  assert.equal(cli('install', 'user').status, 0);
+  const quiet = [cli('install', 'project', proj).stdout, cli('status', proj).stdout, sessionStartReport({ kit, home, projectDir: proj })].join('\n');
+  assert.doesNotMatch(quiet, /runs kit guards itself/);
+  const settings = path.join(proj, '.claude', 'settings.json');
+  const s = JSON.parse(read(settings));
+  const before = JSON.stringify(s);
+  // The 1.24.0 shape: each guard as its own entry, a user-layer hook among them.
+  const own = (file) => ({ type: 'command', command: 'node', args: [file.split(path.sep).join('/')] });
+  s.hooks = { ...(s.hooks || {}), PreToolUse: [...((s.hooks || {}).PreToolUse || []), { matcher: 'Agent|Task', hooks: [own(path.join(home, 'kit-hooks', 'sweep-guard.cjs'))] }, { matcher: 'Bash', hooks: [own(path.join(proj, '.claude', 'owner-proof.cjs'))] }] };
+  fs.writeFileSync(settings, JSON.stringify(s, null, 2));
+  for (const text of [cli('status', proj).stdout, sessionStartReport({ kit, home, projectDir: proj })]) {
+    assert.match(text, /\.claude\/settings\.json still runs kit guards itself \(sweep-guard\.cjs, owner-proof\.cjs\)[\s\S]*runs twice[\s\S]*--merged \.claude\/settings\.json/);
+  }
+  const ins = cli('install', 'project', proj);
+  assert.match(ins.stdout, /replaced \.claude\/settings\.json \(the old guard entries, which ran each guard twice\)/);
+  assert.equal(JSON.stringify(JSON.parse(read(settings))), before, 'only the old entries went; every other line stayed');
+  assert.doesNotMatch(cli('status', proj).stdout + sessionStartReport({ kit, home, projectDir: proj }), /runs kit guards itself/);
+});
+
 // why: guards rule:outward-acts
 test('install runs from a clean release tag and stamps it as a release', () => {
   const { kit, home, proj, cli } = releaseKit();

@@ -392,8 +392,9 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
 export const runsProjectGuard = (s) => JSON.stringify(((s && s.hooks) || {}).PreToolUse || '').includes('.claude/guard.cjs');
 
 /**
- * Take the old project-level guard entry out of .claude/settings.json and settings.local.json, keeping a backup and
- * every other line. A byte-order mark is read past (the second pass on 0772397: the parse failed and the entry stayed).
+ * Take every old entry that runs a kit guard file itself out of .claude/settings.json and settings.local.json, keeping
+ * a backup and every other line. A byte-order mark is read past (the second pass on 0772397: the parse failed and
+ * the entry stayed).
  *
  * Returns:
  *     the files that changed, relative to the project
@@ -404,10 +405,16 @@ function dropProjectGuardEntry(projectDir, backupDir) {
     const file = path.join(projectDir, '.claude', name);
     let s;
     try { s = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { continue; }
-    if (!runsProjectGuard(s)) continue;
-    const named = (h) => [h.command, ...(h.args || [])].join(' ').includes('.claude/guard.cjs');
-    const kept = s.hooks.PreToolUse.map((e) => ({ ...e, hooks: (e.hooks || []).filter((h) => !named(h)) })).filter((e) => e.hooks.length);
-    if (kept.length) s.hooks.PreToolUse = kept; else delete s.hooks.PreToolUse;
+    // Every hook that runs a kit guard file itself goes, in any event: the guard.cjs entry of 1.25.0 and the separate
+    // guard entries of 1.24.0 and before alike (K49: those ran every guard twice beside the launcher).
+    if (!launch.oldGuardEntries(JSON.stringify(s)).length) continue;
+    const named = (h) => launch.oldGuardEntries(JSON.stringify({ hooks: { x: [{ hooks: [h] }] } })).length > 0;
+    for (const ev of Object.keys(s.hooks)) {
+      if (!Array.isArray(s.hooks[ev])) continue;
+      const kept = s.hooks[ev].map((e) => ({ ...e, hooks: (e.hooks || []).filter((h) => !named(h)) })).filter((e) => e.hooks.length);
+      if (kept.length) s.hooks[ev] = kept; else delete s.hooks[ev];
+    }
+    if (!Object.keys(s.hooks).length) delete s.hooks;
     fs.mkdirSync(path.join(backupDir, '.claude'), { recursive: true });
     fs.copyFileSync(file, path.join(backupDir, '.claude', name));
     fs.writeFileSync(file, JSON.stringify(s, null, 2) + '\n');
@@ -677,7 +684,7 @@ export function install(ctx) {
       const guards = keys.some(isGuarded);
       // A settings.json the owner changed keeps the PreToolUse entry that ran .claude/guard.cjs straight from the
       // project, which V3 takes away: it comes out here, with a backup, and the owner's other changes stay.
-      for (const f of dropProjectGuardEntry(ctx.projectDir, backupDir)) replaced.push(`${f} (the old guard entry)`);
+      for (const f of dropProjectGuardEntry(ctx.projectDir, backupDir)) replaced.push(`${f} (the old guard entries, which ran each guard twice)`);
       // The project's guards run only through the launcher in the Claude config folder (V3). Without it the shims could
       // not run, so the hooks stay on the project's own .githooks until install user has run.
       const launcher = fs.existsSync(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
@@ -1101,11 +1108,26 @@ function claudeCodeTooOld(text) {
  * Returns:
  *     the message text (one or more lines)
  */
+/** K49: a line for each project settings file that still runs kit guards itself, as the shape before 1.25.1 did. */
+function doubleRunLines(projectDir) {
+  const out = [];
+  for (const name of ['settings.json', 'settings.local.json']) {
+    let text;
+    try { text = fs.readFileSync(path.join(projectDir, '.claude', name), 'utf8'); } catch { continue; }
+    const files = launch.oldGuardEntries(text);
+    if (!files.length) continue;
+    const record = name === 'settings.json' ? `, then record it with kit.mjs install project <folder> --merged .claude/${name}` : '';
+    out.push(`Kit: .claude/${name} still runs kit guards itself (${files.join(', ')}), the shape before 1.25.1. The launcher in the Claude config folder already runs every guard, so each of these runs twice and no sweep reviewer can start. Remove those hook entries by hand, keep the rest of the file${record}.`);
+  }
+  return out;
+}
+
 export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion }) {
   const lines = [];
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old);
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
+  lines.push(...doubleRunLines(projectDir));
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
   const ahead = remoteKitAhead(kit);
   if (ahead > 0) lines.push(`The kit on GitHub is ${ahead} commit(s) ahead of the kit folder. Check out its newest release tag (${releaseCheckout(kit, newestTag(kit))}), then run /methodology-kit update.`);
@@ -1225,6 +1247,7 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     const fix = unreleased ? ` Check out the kit's newest release tag (${releaseCheckout(kit, newest(kit))}), then run ${w.fix}.` : ` Run ${w.fix}.`;
     lines.push(`${w.name}: ${stamp.version}, ${parts.join('; ')}.${ok ? '' : fix}`);
     if (held.length) lines.push(`    ${held.length} file(s) changed here and in the kit: ${held.join(', ')}. Merge the kit's changes by hand, then record it with kit.mjs install ${w.target === 'user' ? 'user' : 'project <folder>'} --merged <file>,<file>.`);
+    if (w.target === 'project') for (const l of doubleRunLines(projectDir)) lines.push(`    ${l}`);
     if (own.length) lines.push(`    ${own.length} file(s) carry this project's own values on the current kit copy: ${own.join(', ')}. Not a gap; fold-back offers any that are portable.`);
     if (!ok) gaps.push(unreleased ? `${w.name} is an unreleased build` : `${w.name} differs from the kit`);
     // V3: read against the record outside the project, which a branch, a patch or a project script cannot rewrite.
@@ -1877,6 +1900,7 @@ function main(argv) {
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
+    if (target === 'project' && !dryRun) for (const l of doubleRunLines(projectDir)) console.log(`    ${l}`);
     // T14: install is finished only when every part is present and wired. The kit's own copy runs, never the project's.
     const use = useCheck(kit, projectDir, home);
     if (target === 'project' && !dryRun && use) {

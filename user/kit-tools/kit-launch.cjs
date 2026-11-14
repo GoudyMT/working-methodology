@@ -111,6 +111,23 @@ function settingsProblem(text) {
 	return '';
 }
 
+// The kit guard files a settings file's hooks run themselves. Since 1.25.1 only the launcher in the Claude config folder
+// runs them, so a project file in the older shape runs each one a second time (K49, the Ask 214 project: the sweep
+// guard's second check of a start found its own slot taken, and no reviewer could start).
+const GUARD_FILE = /(?:^|[\\/])(guard|owner-proof|task-gate|guard-outward|guard-delete|call-cap|canary|sweep-guard)\.cjs$/i;
+/** The kit guard files a settings file's text runs itself, in order, or []. */
+function oldGuardEntries(text) {
+	let s = null;
+	try { s = JSON.parse(String(text).replace(/^﻿/, '')); } catch { return []; }
+	const found = [];
+	const hooks = s && s.hooks && typeof s.hooks === 'object' ? s.hooks : {};
+	for (const groups of Object.values(hooks)) for (const g of Array.isArray(groups) ? groups : []) for (const h of Array.isArray(g && g.hooks) ? g.hooks : []) {
+		const words = [String((h && h.command) || ''), ...(Array.isArray(h && h.args) ? h.args.map(String) : [])].join(' ').split(/[\s'"]+/);
+		for (const w of words) { const m = w.match(GUARD_FILE); if (m && !found.includes(`${m[1].toLowerCase()}.cjs`)) found.push(`${m[1].toLowerCase()}.cjs`); }
+	}
+	return found;
+}
+
 const normPath = (p) => { const x = String(p || '').replace(/^"(.*)"$/, '$1').replace(/\\\\/g, '/').replace(/\\/g, '/'); return WIN ? x.toLowerCase() : x; };
 
 /**
@@ -526,4 +543,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { kitFingerprint, runGuard, verify, settingsProblem, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
