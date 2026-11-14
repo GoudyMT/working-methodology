@@ -5709,8 +5709,10 @@ test('recall v7 is v6 with key 12 following the no-carry rule, and v6 stays as w
   assert.equal(questionCount(text, 7), 14);
   assert.equal(passBar(text, 7), 13);
   const [v6, v7] = [questions(text, 6), questions(text, 7)];
-  assert.deepEqual(v7.filter((r) => r.n !== 12), v6.filter((r) => r.n !== 12));
+  assert.deepEqual(v7.filter((r) => r.n !== 12 && r.n !== 14), v6.filter((r) => r.n !== 12 && r.n !== 14));
   assert.equal(v7[11].q, v6[11].q);
+  assert.equal(v7[13].q, v6[13].q);
+  assert.match(v7[13].key, /never typed words where a pop-up exists$/);
   assert.match(v7[11].key, /nothing carries without the owner's yes/);
   assert.match(v6[11].key, /only medium or lower may carry/);
 });

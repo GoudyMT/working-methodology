@@ -470,3 +470,37 @@ gate: kit-1.26.0 median 13 baseline 12 brief v2 keys v5
 
 control: 0
 gate: kit-1.26.0 median 13 baseline 12 brief v2 keys v5
+
+## Recall v6 and v7 - 1.30.0 stages 1 and 2 against the 1.29.0 baseline (2026-11-14)
+
+Brief v2. Candidate: this branch, the project layer unreleased 1.30.0 in recall's own throwaway folder, the user layer the released 1.29.0. Baseline: 1.29.0 from the release copy on its tag. One blind scorer per round.
+
+**Stage 1, keys v6 (the owner's ruling, option B):** no rule text changed. Question 4's key keeps the push and PR decision, and question 14 asks how a yes is asked. Probe on 1.29.0, 8 sessions per question: question 4 7 of 8, question 14 8 of 8. The 12 saved question 4 answers from the 1.29.0 build: 10 of 12 on the v6 key. The owner accepted v6 by pop-up.
+
+**Stage 2, keys v7:** the rule text pulled from 1.29.0 (pop-up yes, cost first, the two test-rule lines, the no-carry wording, C17, K37) and the owner's no-carry wording in the guards and templates. Key 12 follows the no-carry rule; key 14 follows the pop-up rule's own fallback (typed words only where no pop-up exists), both the owner's by pop-up.
+
+- First round, before the owner's no-carry wording: candidates 12, 14, 13 (median 13 on the bar), so two more ran: 14, 13, 13, 13, 14, median 13; baseline 13, 12, 13; control 0.
+- Final round, on the final text: three new candidates, scored blind with the same baselines and control. Question 14 re-scored blind on the v7 key for those six answers (6 of 6).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 0, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 0, 1 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 13, 14 | 13, 12, 13 | 0 |
+
+- **Scored: median 14, baseline 13, control 0.** Question 12 fails on every baseline, as expected: the released rule still lets a medium carry. The ruler moved (v5 to v7), so the line carries the owner's marker (pop-ups, 2026-11-14).
+
+control: 0
+gate: kit-1.30.0-s2 median 14 baseline 13 brief v2 keys v7 owner-accepted
