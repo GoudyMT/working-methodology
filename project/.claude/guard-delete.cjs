@@ -48,8 +48,16 @@ const FOLDER_OPTION = /^-{1,2}(dir|cd|cwd|prefix|chdir|working-?dir(ectory)?|wor
 // Package tools and builders whose -C names the folder they run in.
 const C_MOVES = new Set(['npm', 'pnpm', 'yarn', 'bun', 'make', 'ninja']);
 const INLINE_DELETE = /\b(rmSync|rmdirSync|unlinkSync|rmtree|rm_rf|rm_r|remove_tree|removeSync|removedirs)\s*\(|\b(fs|fsp|promises|fse|os|shutil|FileUtils|Deno|File)\s*\.\s*(rm|rmdir|unlink|remove|delete)\w*\s*\(|\)\s*\.\s*(rm|rmdir|unlink|rmSync|rmdirSync|unlinkSync)\s*\(|\bunlink\b/;
+// Whether a program name with a wildcard could name a delete program: its last part, read as a pattern, matches one.
+// A pattern this cannot read could match anything.
+function mayDelete(opener) {
+	const base = String(opener).split(/[\\/]/).pop();
+	let re;
+	try { re = new RegExp('^' + base.replace(/[.+^$(){}|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i'); } catch { return true; }
+	return [...DELETERS].some((d) => re.test(d) || re.test(`${d}.exe`));
+}
 // A delete word anywhere in the text, to check text the tokenizer cannot split (backticks, carets).
-const DELETE_WORD = /(^|[^\w-])(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimraf|del-cli|shred)(\.exe)?(?![\w-])/i;
+const DELETE_WORD =/(^|[^\w-])(rm|rmdir|unlink|del|erase|rd|ri|remove-item|rimraf|del-cli|shred)(\.exe)?(?![\w-])/i;
 // New-Item takes the type however it is spelled (-ItemType "Junction", -Type:Junction), and ln takes -s anywhere.
 const MAKES_LINK = /\bmklink\b|\bln(\.exe)?\s([^;|&\n]*\s)?(-[a-z]*s|--sy)|\bsymlink(Sync)?\s*\(|\b(new-item|ni)\b[\s\S]*\b(Junction|SymbolicLink)\b|\b(new-item|ni)\b[\s\S]*\s-(i\w*|t\w*)[\s:]+["']?(j|sy)/i;
 // The read-only searchers: a delete word in their arguments is a pattern, not a command.
@@ -444,7 +452,9 @@ function findDelete(text, ctx, state, depth) {
 		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && after.length > 0 && !NOT_RUN_AFTER.test(after[0]) && deleteSign) return 'a program held in a variable';
 		if (opener === '$' && words.length === 1 && segment.end === '{') return 'a program held in a variable';
 		// A shell expands a wildcard in a program's path: /usr/bin/r[m].
-		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1) return 'a program named by a wildcard';
+		// In quoted text read as a command it may be no command at all: a regex (-match '^\s*- \[x\]') has a backslash and
+		// a star (K54). There it asks with a sign of a delete, or when the name's pattern could be a delete program.
+		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1 && (depth === 0 || deleteSign || mayDelete(opener))) return 'a program named by a wildcard';
 		const skip = new Set();
 		for (let i = 0; i < words.length; i++) {
 			const lower = words[i].toLowerCase();

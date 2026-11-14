@@ -526,9 +526,12 @@ function shellWritesFrom(command, tool, start, names) {
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
-	// Any break that is not plain anywhere in the command (a later || runs on a failure too) makes every cd unsure. Read
-	// once, before the loop: read per command it made a long command quadratic (98 KB took 21 s, past the hook's 10 s).
-	const apart = grouped || !segments.every((g) => plainBreak(g.end));
+	// A break that is not plain at or before a cd (a pipe stage, the background, a || that runs on a failure) makes that
+	// cd unsure; one after it cannot undo it (K54: a later pipe made cd .claude && cat guard.cjs | head a write). The
+	// first such break is found once, before the loop: read per command it made a long command quadratic (98 KB took
+	// 21 s, past the hook's 10 s).
+	const firstApart = segments.findIndex((g) => !plainBreak(g.end));
+	const apartAt = (s) => grouped || (firstApart >= 0 && firstApart <= s);
 	for (let s = 0; s < segments.length; s++) {
 		if (linkMade) return true;
 		const segment = segments[s].map((x) => ({ ...x, value: sub(x.value) }));
@@ -587,7 +590,7 @@ function shellWritesFrom(command, tool, start, names) {
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
-			cwd = apart || !sure || linkMade ? 'unknown' : moved(segment, cwd);
+			cwd = apartAt(s) || !sure || linkMade ? 'unknown' : moved(segment, cwd);
 			if (startNow) startNow.dir = Array.isArray(cwd) ? movedDir(segment, startNow.dir) : null;
 			// Through a link, the shell's ".." is the parent of the link's target, not of the folder the words show: the
 			// folder is then not known, and every later relative word is read the strict way.
