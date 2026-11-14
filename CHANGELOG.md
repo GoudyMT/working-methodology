@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.29.0 - 2026-11-13
+
+The 1.28.0 carry-overs close here, with the guard holes found on the way: a protected file under another Windows name, a write into `.git` by move or copy, and a push carried to another host. The rule text planned for this build did not pass the recall bar and is not in it.
+
+### Changed
+- The mutation measure flips only the lines a branch changed and prints the flip count and a rough minute count first. The whole kit runs only when started by hand with scope set to all. A bad base stops the run.
+- The guard timing tests keep their 8 s limit by the clock on a machine of normal speed. On a machine measured slow the guard's own work is held to 8 s, so a slow runner no longer fails them.
+- Each of the 25 flipped lines the 1.28.0 measure left alive was built and run: 14 now fail a test, 5 are shown equal by 13,048 compared readings, 6 are equal by what reads them. Three restated test lines were cut on the owner's yes.
+- The test check names a rule that a change itself adds to the rule index; the link scan, a CI gate with no failing case, has a test; a used pop-up yes is tested not to answer a second ask.
+
+### Fixed
+- In PowerShell a wildcard under plain folders (`tests/*`) is no longer held as a write to a guard when the folder holds no dot name, no link and no kit file at any depth. Only for a one-statement command of plain text.
+- A project whose path is over 200 characters is found by the session folder name as it is shortened; two such projects alike in their first 200 characters are held, not guessed.
+
+### Security
+- A protected file named with dots or spaces on its end (`settings.json.`) or a stream suffix (`guard.cjs::$DATA`) is read as the file Windows opens. On 1.28.0 PowerShell could write the settings or a guard that way with no hold.
+- A move, a copy or an unpack into `.git` itself, its worktrees or `.ssh` is held, as a write to `.git/config` or the hooks always was; so is the config folder under a name of its own.
+- A device or share spelling of a local path (`\\?\C:\...`, `\\localhost\C$\...`) is read as the local path, and one that cannot be placed is held while a project lists folders. A shell word through a link is read as the file it reaches.
+- Changing what carries a push (`core.sshCommand`, a proxy, the certificate check, the credential helper) asks for the owner's yes, as changing the URL does. A feature push asks when origin pushes to another repo than it fetches from.
+- The folder list `.claude/protected-folders.json` is never written by a tool, and install records it outside the project: gone, changed or not yet recorded, every call is held. The owner accepts a change in their own terminal.
+- A PowerShell listing piped into a writer is held when it is recursive with no folder named, uses `-Exclude`, or filters by a pattern that fits a guard file's name, in every form PowerShell takes for the parameter.
+
 ## 1.28.0 - 2026-11-12
 
 Every guard reads each command a second time, written one way, so every spelling of a gate bypass gets one kind and plain reads stop being held (T16b). The 1.27.0 carry-overs and the review's security findings close here.

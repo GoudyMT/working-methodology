@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, guardDir, releaseState, status as kitStatus } from '../scripts/kit.mjs';
@@ -1253,10 +1254,15 @@ test('R4.2 slow old-shape kit hooks are cut short, and the call is answered well
 	}
 	fs.writeFileSync(stampFile, JSON.stringify(stamp, null, 2));
 	const input = { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: 'x' }, cwd: proj, session_id: 's1' };
+	// K14: the limit is the clock here (the point is the cut), stretched only by how slow this machine starts an idle
+	// node (about 65 ms on the owner's PC; a shared runner has run ten times slower).
+	const idleAt = Date.now();
+	spawnSync(process.execPath, ['-e', '']);
+	const slowness = Math.max(1, (Date.now() - idleAt) / 150);
 	const t0 = Date.now();
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify(input), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home }, timeout: 20000 });
 	assert.equal(r.status, 0, r.stderr);
-	assert.ok(Date.now() - t0 < 8000, `the guard took ${Date.now() - t0} ms`);
+	assert.ok(Date.now() - t0 < Math.min(8000 * slowness, 19000), `the guard took ${Date.now() - t0} ms on a machine ${slowness.toFixed(1)} times slow`);
 	// A hook cut short says so, as a changed one does (C12).
 	assert.match(r.stdout, /canary.cjs ran out of its time/);
 });
@@ -1321,4 +1327,100 @@ test('K4 shims: an older launcher that gives no checked hook names the fix inste
 	assert.notEqual(r.status, 0, 'the commit went through with no hook run');
 	assert.match(r.stderr, /install user/);
 	assert.doesNotMatch(r.stderr, /exec: : not found|cannot execute|Permission denied/);
+});
+// why: guards rule:outward-acts. R6.4 (the 1.25.0 sweep): a pin read the placeholder in the kit's source, and no test
+// read what install makes of it. The installed guard holds no placeholder and names this install's Claude folder,
+// which is where it looks for the user layer's checks.
+test('R6.4 install fills in where the user layer sits: the installed guard names the Claude folder, no placeholder', () => {
+	const { home, proj } = setup();
+	const text = fs.readFileSync(path.join(proj, '.claude', 'guard.cjs'), 'utf8');
+	assert.doesNotMatch(text, /\{\{/);
+	const named = JSON.parse(/const INSTALLED_HOME = ("(?:[^"\\]|\\.)*");/.exec(text)[1]);
+	assert.equal(path.resolve(named), path.resolve(home));
+});
+
+// why: guards rule:outward-acts. C13 (reproduced 2026-11-13: Claude Code names a project folder by the first 200
+// characters of the path's slug, a dash and a short hash once the slug is longer). A session whose shell stands
+// outside its project is found by its transcript's folder; for a long path that name never equalled the full slug,
+// so the project was not found and its guards did not run.
+test('C13 a project with a long path is found by its transcript folder, the name Claude Code shortens', () => {
+	const home = kitTemp.makeTemp('c13-');
+	fs.mkdirSync(path.join(home, 'kit-tools'));
+	fs.copyFileSync(path.join(KIT, 'user', 'kit-tools', 'kit-launch.cjs'), path.join(home, 'kit-tools', 'kit-launch.cjs'));
+	const launch = createRequire(import.meta.url)(path.join(home, 'kit-tools', 'kit-launch.cjs'));
+	const slugOf = (dir) => path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-');
+	const record = (dir) => {
+		const at = path.join(home, 'kit-guard', launch.recordName(dir));
+		fs.mkdirSync(at, { recursive: true });
+		fs.writeFileSync(path.join(at, 'record.json'), JSON.stringify({ projectDir: dir, files: {} }));
+	};
+	const long = path.join(home, 'work', 'a'.repeat(80), 'b'.repeat(80), 'c'.repeat(80));
+	const short = path.join(home, 'work', 'app');
+	record(long);
+	record(short);
+	const from = (folder) => launch.findProject({ cwd: os.tmpdir(), transcript_path: path.join(home, 'projects', folder, 's.jsonl') });
+	const before = process.env.CLAUDE_PROJECT_DIR;
+	delete process.env.CLAUDE_PROJECT_DIR;
+	try {
+		assert.ok(slugOf(long).length > 200);
+		assert.equal(from(`${slugOf(long).slice(0, 200)}-s157ju`).dir, path.resolve(long));
+		assert.equal(from(slugOf(short)).dir, path.resolve(short), 'a short path, by its whole name');
+		// Another long path that shares no 200 characters, and a short name with a tail, are not it.
+		assert.equal(from(`${slugOf(path.join(home, 'other', 'a'.repeat(240))).slice(0, 200)}-s157ju`), null);
+		assert.equal(from(`${slugOf(short)}-s157ju`), null);
+		// Two long paths alike in their first 200 characters cannot be told apart by this name: neither is taken.
+		const twin = path.join(home, 'work', 'a'.repeat(80), 'b'.repeat(80), 'c'.repeat(80) + '-two');
+		record(twin);
+		assert.deepEqual(from(`${slugOf(long).slice(0, 200)}-s157ju`), { ambiguous: true });
+	} finally {
+		if (before !== undefined) process.env.CLAUDE_PROJECT_DIR = before;
+	}
+});
+
+// why: guards rule:security-standards. The 1.29.0 sweep (two reviewers, the same hole): a folder list that was only read
+// from the project could be dropped by a branch switch, a reset, a stash or a clean, and every folder on it lost
+// its hold. Install records the list outside the project, as it records a host's own hook: gone or changed, every
+// call is held until the owner accepts it in their own terminal, and no tool call may carry that flag.
+test('a folder list gone or changed since install holds every call until the owner accepts it', () => {
+	const { home, proj } = setup({ before: (p) => { fs.mkdirSync(path.join(p, '.claude'), { recursive: true }); fs.writeFileSync(path.join(p, '.claude', 'protected-folders.json'), JSON.stringify({ folders: ['vault'] })); } });
+	const list = path.join(proj, '.claude', 'protected-folders.json');
+	const call = (command) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: proj, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '' : '';
+	};
+	assert.equal(call('git status'), '', 'as installed');
+	const kept = fs.readFileSync(list);
+	fs.rmSync(list);
+	assert.match(call('git status'), /protected-folders\.json/, 'gone, as after a switch to a branch without it');
+	install({ kit: KIT, home, target: 'project', projectDir: proj });
+	assert.match(call('git status'), /protected-folders\.json/, 'a plain install does not accept its removal');
+	fs.writeFileSync(list, JSON.stringify({ folders: [] }));
+	assert.match(call('git status'), /protected-folders\.json/, 'emptied');
+	fs.writeFileSync(list, kept);
+	assert.equal(call('git status'), '', 'back as recorded');
+	// The flag that accepts a change is the owner's, in their own terminal: never in a tool call.
+	assert.match(call(`node "${KIT.split(path.sep).join('/')}/scripts/kit.mjs" install project . --accept-host .claude/protected-folders.json`), /^Never by a tool/);
+	fs.writeFileSync(list, JSON.stringify({ folders: ['vault', 'more'] }));
+	install({ kit: KIT, home, target: 'project', projectDir: proj, acceptHost: ['.claude/protected-folders.json'] });
+	assert.equal(call('git status'), '', 'the owner accepted the new list');
+	// The flag is refused by install itself in a shell an AI tool started, however the command was spelled.
+	fs.writeFileSync(list, JSON.stringify({ folders: [] }));
+	const byTool = spawnSync(process.execPath, [path.join(KIT, 'scripts', 'kit.mjs'), 'install', 'project', proj, '--accept-host', '.claude/protected-folders.json'], { encoding: 'utf8', env: { ...ENV, CLAUDECODE: '1', KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home } });
+	assert.equal(byTool.status, 1, byTool.stdout + byTool.stderr);
+	// And with the marker cleared: a tool's shell still gives no terminal.
+	const cleared = spawnSync(process.execPath, [path.join(KIT, 'scripts', 'kit.mjs'), 'install', 'project', proj, '--accept-host', '.claude/protected-folders.json'], { encoding: 'utf8', env: { ...ENV, KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home } });
+	assert.equal(cleared.status, 1, cleared.stdout + cleared.stderr);
+	assert.match(call('git status'), /protected-folders\.json/, 'still held');
+	// The version accepted before is not accepted again by itself.
+	fs.writeFileSync(list, kept);
+	assert.match(call('git status'), /protected-folders\.json/, 'an older accepted list');
+	// A list the record does not hold yet is held until install records it.
+	const fresh = setup();
+	fs.mkdirSync(path.join(fresh.proj, '.claude'), { recursive: true });
+	fs.writeFileSync(path.join(fresh.proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: ['vault'] }));
+	const held = spawnSync(process.execPath, [path.join(fresh.home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: fresh.proj, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: fresh.proj, CLAUDE_CONFIG_DIR: fresh.home } });
+	assert.match(held.stdout, /protected-folders\.json \(a folder list/);
+	install({ kit: KIT, home: fresh.home, target: 'project', projectDir: fresh.proj });
+	const after = spawnSync(process.execPath, [path.join(fresh.home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: fresh.proj, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: fresh.proj, CLAUDE_CONFIG_DIR: fresh.home } });
+	assert.equal(after.stdout, '', 'recorded by a plain install');
 });

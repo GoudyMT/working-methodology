@@ -45,3 +45,15 @@ test('each test lands in one group: guards, unique, machine, repeat, text, windo
 	assert.equal(group(k('seven')), 'nothing');
 	assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), rows.length);
 });
+
+// why: catches a false cut list (K41, the plan check's P6): a measure scoped to a change flips a few lines, so every
+// test that does not reach them would land in "nothing". The sort refuses flips from a scoped run.
+test('the test sort refuses the flips of a scoped measure', async () => {
+	const { main } = await import('../scripts/test-value.mjs');
+	const dir = kitTemp.makeTemp('value-');
+	fs.writeFileSync(path.join(dir, 'map.json'), JSON.stringify({ sha: 'x', tests: { 'tests/a.test.mjs::one': { lines: {}, reads: [] } } }));
+	fs.writeFileSync(path.join(dir, 'whole.json'), JSON.stringify({ sha: 'x', flips: [] }));
+	fs.writeFileSync(path.join(dir, 'scoped.json'), JSON.stringify({ sha: 'x', base: 'origin/main', flips: [] }));
+	assert.equal(main([path.join(dir, 'map.json'), path.join(dir, 'whole.json')]), 0);
+	assert.equal(main([path.join(dir, 'map.json'), path.join(dir, 'whole.json'), path.join(dir, 'scoped.json')]), 2);
+});

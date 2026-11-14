@@ -5,3 +5,6 @@ scripts/recall-gate-base.mjs
 
 # The test runner's coverage map (scripts/test-run.mjs --map): made per machine, never committed.
 tests/.map.json
+
+# A session's own Claude Code settings: personal, never committed.
+.claude/settings.local.json

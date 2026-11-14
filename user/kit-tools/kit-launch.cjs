@@ -23,6 +23,8 @@ const { spawnSync } = require('child_process');
 
 const HOME = path.dirname(__dirname);
 const RECORDS = path.join(HOME, 'kit-guard');
+// The longest project folder name Claude Code writes whole.
+const SLUG_MAX = 200;
 const SHELLS = ['Bash', 'PowerShell'];
 const WIN = process.platform === 'win32';
 const posix = (p) => String(p).split(path.sep).join('/');
@@ -66,12 +68,22 @@ function findProject(input) {
 		const slug = path.basename(path.dirname(String(input.transcript_path)));
 		let names = [];
 		try { names = fs.readdirSync(RECORDS); } catch { /* none */ }
+		const cuts = [];
 		for (const n of names.filter((x) => x.toLowerCase().startsWith(slug.toLowerCase().slice(0, 100) + '-'))) {
 			try {
 				const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, n, 'record.json'), 'utf8'));
-				if (rec && rec.projectDir && path.resolve(rec.projectDir).replace(/[^A-Za-z0-9]/g, '-').toLowerCase() === slug.toLowerCase()) return { dir: path.resolve(rec.projectDir), rec };
+				const full = rec && rec.projectDir ? path.resolve(rec.projectDir).replace(/[^A-Za-z0-9]/g, '-').toLowerCase() : null;
+				// Past 200 characters Claude Code keeps the first 200, then a dash and a short hash of its own (C13, seen on
+				// 2026-11-13): such a folder is matched by those 200 characters, a shorter one by its whole name.
+				const cut = full && full.length > SLUG_MAX && new RegExp(`^.{${SLUG_MAX}}-[a-z0-9]{1,16}$`, 'i').test(slug) && full.slice(0, SLUG_MAX) === slug.slice(0, SLUG_MAX).toLowerCase();
+				if (full && full === slug.toLowerCase()) return { dir: path.resolve(rec.projectDir), rec };
+				if (cut) cuts.push({ dir: path.resolve(rec.projectDir), rec });
 			} catch { /* not a record */ }
 		}
+		// Claude Code's own hash is not ours to work out, so two long paths alike in their first 200 characters cannot
+		// be told apart here (the 1.29.0 sweep): neither is taken, and the call is held with the way out.
+		if (cuts.length === 1) return cuts[0];
+		if (cuts.length > 1) return { ambiguous: true };
 	}
 	return null;
 }
@@ -80,7 +92,7 @@ function findProject(input) {
 // every hook and every command Claude Code runs, so one of these in a project file is a hold.
 // The shell's own start-up variables are here too (the review of 670b3a2): an exported function, SHELLOPTS with PS4,
 // or BASH_ENV runs code in the shell line before node starts.
-const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_CONFIG\w*|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*)$/i;
+const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_CONFIG\w*|GIT_SSH\w*|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|HTTPS?_PROXY|ALL_PROXY|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*)$/i;
 
 /** Why a settings file's text would take the guards off, or ''. */
 function settingsProblem(text) {
@@ -168,6 +180,9 @@ function verify(dir, rec, extraDirs = [], shimsAt = path.join(recordDir(dir), 'h
 	let hookNames = [];
 	try { hookNames = fs.readdirSync(path.join(dir, '.githooks'), { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => e.name); } catch { /* none */ }
 	for (const name of hookNames) if (!(rec.files || {})[`.githooks/${name}`]) changed.push(`.githooks/${name} (not in the install record)`);
+	// A folder list the record does not hold yet (written after the install, or by a kit from before 1.29.0) could be
+	// dropped again with nothing to show it was there: it is held until install records it, which the fix line does.
+	if (!(rec.files || {})['.claude/protected-folders.json'] && fs.existsSync(path.join(dir, '.claude', 'protected-folders.json'))) changed.push('.claude/protected-folders.json (a folder list not in the install record yet)');
 	// The git hook shims beside the record: one swapped there would skip this check at the next commit or push.
 	for (const [name, want] of Object.entries(rec.shims || {})) {
 		let bytes = null;
@@ -202,6 +217,8 @@ function describe(v, rec, dir) {
 	const parts = [];
 	if (v.changed.length) parts.push(`Kit guard files changed outside install: ${v.changed.join(', ')}.`);
 	if (v.hooksPath) parts.push(`core.hooksPath changed outside install (now ${v.hooksPath}).`);
+	// The folder list has its own way back: the install below does not accept a list that is gone or changed.
+	if (v.changed.includes('.claude/protected-folders.json')) parts.push('The folder list (.claude/protected-folders.json) is gone or changed since install recorded it: put it back as it was, or the owner accepts the change in their own terminal with install project --accept-host .claude/protected-folders.json.');
 	if (parts.length && kitUnchanged(rec)) parts.push(`Every call is held until the kit's copies are back. Run, alone: ${fixLine(rec, dir)} (or ask the owner to).`);
 	else if (parts.length) parts.push(`Every call is held until the kit's copies are back. The kit folder (${posix(rec.kitDir || '<kit folder>')}) has changed since this install, so no install may run from this session: the owner runs ${fixLine(rec, dir)} in a terminal, from the release copy on its tag.`);
 	for (const s of v.settings) parts.push(`${posix(s.file)}: ${s.why}. Every call is held until the owner takes that out of the file.`);
@@ -355,6 +372,7 @@ function unrecorded(input) {
 
 function preToolUse(input) {
 	const found = findProject(input);
+	if (found && found.ambiguous) return deny('Held: this session\'s folder name fits more than one installed kit project with a long path, so the kit cannot tell which guards to run. Start the session inside the project folder, or shorten the path.');
 	if (!found) {
 		// Fails closed: a kit project the launcher has no record for runs no guard until install writes one.
 		const dir = unrecorded(input);

@@ -106,3 +106,10 @@ test('a command that only prints git commit does not wait; the commit itself doe
 test('a substitution inside a printed line still runs, so a commit there waits', () => {
 	for (const command of ['echo $(git commit -m x)', 'echo ' + String.fromCharCode(96) + 'git commit -m x' + String.fromCharCode(96)]) assert.equal(gate([], 'Bash', { command }).decision, 'deny', command);
 });
+
+// why: guards rule:context-engineering. K38 (a flip the 1.28.0 measure run left alive): a read of the module counts
+// in the spelling the platform takes as the same file, and only there.
+test('a read in another letter case counts on Windows, where it is the same file, and nowhere else', () => {
+	const upper = (dir) => [read(path.join(dir, RELEASE).toUpperCase())];
+	assert.equal(gate(upper, 'Bash', { command: 'git commit -m x' }).decision, process.platform === 'win32' ? 'pass' : 'deny');
+});

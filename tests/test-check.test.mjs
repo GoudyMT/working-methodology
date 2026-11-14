@@ -93,3 +93,16 @@ test('the test check takes a why tag only when it names a rule in the rule index
 	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
 	assert.match(r.stdout, /A2 tests\/a\.test\.mjs::a guarded one: .*rule:no-such-rule.*not in the rule index/);
 });
+// why: guards rule:test-value. K36 (the 1.28.0 sweep, and the plan check's P15): the index is the change's own copy, so a
+// change could add a row for a made-up rule and tag a hollow test with it. A rule the change itself adds still counts,
+// and the report names it for the owner to read.
+test('the test check names a rule that the change itself adds to the rule index', () => {
+	const dir = repo();
+	const file = path.join(dir, 'tests', 'a.test.mjs');
+	fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('// why: guards rule:outward-acts', '// why: guards rule:made-up-here'));
+	fs.appendFileSync(path.join(dir, 'project', 'standards', 'INDEX.md'), '| made-up-here | `standards/x.md` |\n');
+	sh(dir, 'commit', '-qam', 'a rule of its own');
+	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
+	assert.match(r.stdout, /a guarded one: names rule:made-up-here[^\n]*itself adds/);
+	assert.doesNotMatch(r.stdout, /a guarded one: .*not in the rule index/);
+});

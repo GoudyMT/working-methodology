@@ -99,10 +99,15 @@ export function sortTests(root, map, flips) {
 export function main(argv) {
 	const outAt = argv.indexOf('--out');
 	const out = outAt >= 0 ? argv[outAt + 1] : null;
-	const files = argv.filter((a, i) => i !== outAt && i !== outAt + 1);
+	// With no --out, nothing is taken from the list (the first file was dropped, so the sort could not run without it).
+	const files = outAt < 0 ? argv : argv.filter((a, i) => i !== outAt && i !== outAt + 1);
 	if (files.length < 2) { process.stderr.write('usage: node scripts/test-value.mjs <map.json> <flips.json>... [--out <value.json>]\n'); return 2; }
 	const map = JSON.parse(fs.readFileSync(files[0], 'utf8'));
-	const flips = files.slice(1).flatMap((f) => JSON.parse(fs.readFileSync(f, 'utf8')).flips || []);
+	const runs = files.slice(1).map((f) => JSON.parse(fs.readFileSync(f, 'utf8')));
+	// A measure scoped to a change (mutation-check --base) flips only its lines: sorted, every test that does not reach
+	// them would read as catching nothing, a false cut list (K41).
+	if (runs.some((r) => r.base)) { process.stderr.write('test-value: these flips are from a measure scoped to a change; the sort needs a whole-kit measure\n'); return 2; }
+	const flips = runs.flatMap((r) => r.flips || []);
 	const { rows, counts } = sortTests(process.cwd(), map, flips);
 	if (out) fs.writeFileSync(out, JSON.stringify({ sha: map.sha, flips: flips.length, counts, rows }, null, 1) + '\n');
 	const caught = flips.filter((f) => (f.caughtBy || []).length || f.caught).length;
