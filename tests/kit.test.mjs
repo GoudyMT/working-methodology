@@ -4194,6 +4194,15 @@ test('the tracking check refuses a non-empty parking lot and a done line with no
   assert.equal(g.status, 1);
   assert.match(g.stdout, /no evidence: "- \[x\] it works now"/);
   assert.match(g.stdout, /no evidence: "- DONE: looks fine"/);
+  // Other shapes the plans write (the 1.30.1 sweep): a heading with a suffix, as the kit's batch-plan template has, a
+  // "* " or "1. " list, a "###" heading, and a "**Parking Lot:**" label with the ideas on its line. Each passed as empty.
+  fs.writeFileSync(plan, '# Plan\n\n## Parking Lot (triage before the sweep)\n<empty at the start>\n\n## Progress (ticked with evidence)\n\n* [x] built the export\n');
+  assert.equal(trackRun(dir, ['parking', plan]).status, 0);
+  assert.match(trackRun(dir, ['progress', plan]).stdout, /no evidence: "\* \[x\] built the export"/);
+  for (const lot of ['## Parking Lot (triage)\n* dark tiles', '### Parking Lot\n1. dark tiles', '**Parking Lot:** dark tiles; a CSV export']) {
+    fs.writeFileSync(plan, `# Plan\n\n${lot}\n\n## Tasks\n`);
+    assert.equal(trackRun(dir, ['parking', plan]).status, 1, lot);
+  }
 });
 
 // Skill cases suggested from the repo (the owner, 2026-10-31): the session-start question names the cases the repo's
