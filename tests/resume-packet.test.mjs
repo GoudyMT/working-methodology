@@ -391,5 +391,5 @@ test('write names a cut section as cut, and only a missing label as one to fix',
 	assert.match(w.stdout, /cut in the preview[^\n]*_Active Plan\.md/);
 	const memory = path.join(dir, '_Loop Learnings.md');
 	fs.writeFileSync(memory, fs.readFileSync(memory, 'utf8').replace('## Open lessons', '## Lessons kept elsewhere'));
-	assert.match(run(dir, 'write').stdout, /fix before the next session: a section label is not found[^\n]*_Loop Learnings\.md/);
+	assert.match(run(dir, 'write').stdout, /fix before the next session: a section label is not found[^\n]*_Loop Learnings\.md/); // pin: 1 the closeout acts on this line
 });

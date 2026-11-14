@@ -624,10 +624,10 @@ test('a project settings file that still runs the guards itself is named, and in
   s.hooks = { ...(s.hooks || {}), PreToolUse: [...((s.hooks || {}).PreToolUse || []), { matcher: 'Agent|Task', hooks: [own(path.join(home, 'kit-hooks', 'sweep-guard.cjs'))] }, { matcher: 'Bash', hooks: [own(path.join(proj, '.claude', 'owner-proof.cjs'))] }] };
   fs.writeFileSync(settings, JSON.stringify(s, null, 2));
   for (const text of [cli('status', proj).stdout, sessionStartReport({ kit, home, projectDir: proj })]) {
-    assert.match(text, /\.claude\/settings\.json still runs kit guards itself \(sweep-guard\.cjs, owner-proof\.cjs\)[\s\S]*runs twice[\s\S]*--merged \.claude\/settings\.json/);
+    assert.match(text, /\.claude\/settings\.json[^\n]*\(sweep-guard\.cjs, owner-proof\.cjs\)[\s\S]*--merged \.claude\/settings\.json/);
   }
   const ins = cli('install', 'project', proj);
-  assert.match(ins.stdout, /replaced \.claude\/settings\.json \(the old guard entries, which ran each guard twice\)/);
+  assert.match(ins.stdout, /replaced \.claude\/settings\.json/);
   assert.equal(JSON.stringify(JSON.parse(read(settings))), before, 'only the old entries went; every other line stayed');
   assert.doesNotMatch(cli('status', proj).stdout + sessionStartReport({ kit, home, projectDir: proj }), /runs kit guards itself/);
 });
@@ -5826,12 +5826,17 @@ test('recall v8 and v9 move key 3 to the resume packet rule, and v7 stays as wri
   assert.deepEqual(v8.filter((r) => r.n !== 3), v7.filter((r) => r.n !== 3));
   assert.equal(v8[2].q, v7[2].q);
   assert.match(v8[2].key, /^Run the resume packet check first/);
-  assert.equal(currentVersion(text), 9);
   assert.equal(passBar(text, 9), 13);
   const v9 = questions(text, 9);
   assert.deepEqual(v9.filter((r) => r.n !== 3), v8.filter((r) => r.n !== 3));
   assert.match(v9[2].key, /changed or missing \(no verdict line means the full reading\)/); // pin: 3 recall key v9, frozen
-  assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check[^\n]*before any source-of-truth edit or agent dispatch/m);
+  // v10 (build 5): rule 11 names the Active Plan, and key 3 with it; every other row is v9's.
+  assert.equal(currentVersion(text), 10);
+  assert.equal(passBar(text, 10), 13);
+  const v10 = questions(text, 10);
+  assert.deepEqual(v10.filter((r) => r.n !== 3), v9.filter((r) => r.n !== 3));
+  assert.match(v10[2].key, /fresh reads of the Active Plan, of every file its resume point names/); // pin: 3 recall key v10, frozen
+  assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check`, then a fresh Read of `_Active Plan\.md`[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 
 // why: guards rule:sweep-auto-approval
