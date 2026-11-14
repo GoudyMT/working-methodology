@@ -607,7 +607,7 @@ function releaseKit() {
   return { ...ctx, git, cli };
 }
 
-// why: guards rule:outward-acts. K49 (the Ask 214 project, 2026-11-14): a settings file kept for a hand merge still ran
+// why: guards rule:outward-acts. K49 (a project on the kit, 2026-11-14): a settings file kept for a hand merge still ran
 // the kit guards itself, the shape before 1.25.1, so every guard ran twice beside the launcher and no sweep could
 // start. Status and the session notice name those entries; install takes them out, as it took out 1.25.0's guard.cjs
 // entry, keeping a backup and every other line; the shape install writes is quiet.
@@ -2953,7 +2953,7 @@ test('the sweep guard holds reviewers to the cleared team size', () => {
   assert.equal(second.permissionDecision, 'deny', 'a second reviewer on a one-role contract');
   assert.match(second.permissionDecisionReason, /Role 1 of the cleared contract[\s\S]*started already/);
 });
-// why: guards rule:sweep-auto-approval. K48 (the Ask 214 project, 2026-11-14): a project whose settings still ran the
+// why: guards rule:sweep-auto-approval. K48 (a project on the kit, 2026-11-14): a project whose settings still ran the
 // guards directly checked every start twice, and the second check of the same start found its own slot taken, so no
 // reviewer could ever start. The same start (its tool id in the slot) passes again; any other start is still refused.
 test('the sweep guard counts one start once, however often it is checked', () => {

@@ -23,7 +23,7 @@ novel-lens role runs the plan check's six lenses over what was built instead.
 
 ## 2. Guards that ran twice (K48, K49, K50) and S155
 
-Proof on the released 1.30.1 in a throwaway install (`C:\Users\Max\kit-probes\b5-proof`, its own Claude folder):
+Proof on the released 1.30.1 in a throwaway install with its own Claude folder:
 the old 1.24.0 settings shape beside the launcher refused the same reviewer start as "started already" (K48a); a
 start the task gate refused still claimed its slot (K48b); install and status never named the old entries (K49);
 `--outcome --none-ran` refused a round whose only start never ran (K50). S155: the owner-yes check gave the same
@@ -31,20 +31,28 @@ yes on both runs of one call, so the double run is not what loses the first pop-
 
 - **K48a:** a taken slot that holds this start's own tool id passes (`sweep-guard.cjs`); a start with no id never
   matches.
-- **K48b:** `guard.cjs` does not run the sweep guard for a call a project guard already refused.
-- **K49:** `install project` takes every hook entry that runs a kit guard file itself out of the project's
-  settings files, with a backup, as it already did for 1.25.0's `guard.cjs` entry; status and the session-start
-  notice name any that remain (`kit-launch.cjs` `oldGuardEntries`). The owner said yes to removal beside naming.
-- **K50:** `--none-ran` counts a slot as ran only when an agent's meta file names its tool id, or the slot has no id.
+- **K48b:** `guard.cjs` does not run the sweep guard for a call any earlier guard already refused (a project guard,
+  or the canary; the sweep found the canary case).
+- **K49:** `install project` takes every PreToolUse hook that runs a kit guard from its kit place
+  (`.claude/<guard>.cjs`, `kit-hooks/<hook>.cjs`) out of the project's settings files, with a backup, as it
+  already did for 1.25.0's `guard.cjs` entry; status and the session-start notice name any that remain
+  (`kit-launch.cjs` `oldGuardEntries`). The owner said yes to removal beside naming. The sweep found the first
+  match, by file name in any folder and event, removed a project's own hooks; it now reads only the kit's places,
+  in the whole command text, and leaves groups of odd shape alone.
+- **K50:** `--none-ran` counts a slot as never ran only on proof: a session transcript holds a refused result for
+  its tool id and no agent's meta file names it. No transcript found (a moved or emptied Claude folder) means ran;
+  the sweep found the first version failed open there.
 
 ## 3. Plain reads the guards refused (K54)
 
 Reproduced on 1.30.1: `cd .claude && cat guard.cjs | head -5` (owner-proof: a pipe anywhere made every cd unsure)
 and a project's PowerShell count line (guard-delete: a quoted regex read as a command named "a program by a
-wildcard"). Not reproduced on 1.30.1: the bash bracket class, `$( )` and jq cases. Fixes: only a pipe at or before
-a cd makes it unsure, and any `||` or `&` still makes every cd unsure; in quoted text the wildcard-program hold
-needs a delete sign or a name pattern that could be a delete program (a bracket class always could). The bar: every
-planted write and delete still held (765 of 765 delete cases, owner-proof and guards-hold suites).
+wildcard"). Not reproduced on 1.30.1: the bash bracket class, `$( )` and jq cases. Fixes: a cd stays followed when
+every pipe stage only reads (no `||`, `&`, or pipe into a writer such as `xargs cp`); a quoted pattern after a
+PowerShell match, like, replace or split operator skips only the wildcard-program-name check, every other delete
+check still reads it. The sweep found the first fixes let 18 delete and overwrite spellings through; each is now a
+planted case. The bar: every planted write and delete still held (772 of 772 delete cases, owner-proof and
+guards-hold suites).
 
 ## 4. The rest
 
@@ -59,7 +67,9 @@ planted write and delete still held (765 of 765 delete cases, owner-proof and gu
 
 ## 5. Limits
 
-- The K54 fix reads the quoted text's program by name only; a wildcard name that could match a script which
-  deletes is not held inside quoted text without a delete sign (top-level commands are held as before).
-- K49 removes entries by the kit guard file names; a hook that runs a guard through another wrapper script is not
-  seen.
+- A quoted pattern after `-match` and its kin is never run by PowerShell, so the wildcard name check skips it; a
+  program that ran such an argument as a command would not be held by that check (the others still read it).
+- K49 removes entries that name a kit guard in its kit place; a hook that runs a guard through another wrapper
+  script is not seen.
+- K50 trusts the Claude folder's transcripts as proof of a refusal; a refused result there is written by Claude
+  Code and the guards refuse tool writes to the transcripts.

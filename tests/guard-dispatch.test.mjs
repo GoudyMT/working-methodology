@@ -208,7 +208,7 @@ test('a start a user hook refuses before the sweep guard spends no slot either',
 	assert.equal(fs.existsSync(marker), true, 'the sweep guard never ran, so the test proves nothing');
 });
 
-// why: guards rule:sweep-auto-approval. K48 (the Ask 214 project, 2026-11-14): a reviewer start that the task gate held
+// why: guards rule:sweep-auto-approval. K48 (a project on the kit, 2026-11-14): a reviewer start that the task gate held
 // still claimed its role's one slot, so the start that ran after the lead read the module was refused as "started
 // already". The sweep guard claims only for a call no project guard has refused.
 test('a start a project guard refuses never reaches the sweep guard, so it spends no slot', () => {

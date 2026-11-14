@@ -735,7 +735,7 @@ const ASK = [
 ];
 
 const PASS = [
-	// K54 (the Military Transition App, 2026-11-14): a project's own count line; its quoted regex read as a command
+	// K54 (a project on the kit, 2026-11-14): a project's own count line; its quoted regex read as a command
 	// named a program by a wildcard (\s*-).
 	String.raw`$r = Get-Content -LiteralPath "_Master Roadmap.md"; "Completed: " + ($r -match '^\s*- \[x\]').Count + " | Left: " + ($r -match '^\s*- \[( |/|!)\]').Count`,
 	// M27, from the 1.23.0 mutation check: a command may start with a space, and its search pattern is still not run.
