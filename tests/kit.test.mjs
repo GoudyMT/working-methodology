@@ -994,13 +994,27 @@ test('the release notes audit passes clean notes and names each public-prose fau
 // why: guards rule:pr-body
 test('the sweep report audit passes a done report and names each missing part', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
-  const good = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | low | slow list | DEFERRED roadmap |\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const good = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n- **Layers:** plan 2, CI 0, sweep 1, escaped 0\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | low | slow list | DEFERRED roadmap |\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
   const ok = runAudit('pre-pr-sweep', good);
   assert.equal(ok.status, 0, ok.stdout + ok.stderr);
   const bad = good.replace('- **Date:** 2026-03-04\n', '').replace('## 3. Legal and content', '## 3. Other').replace('FIXED 9f8e7d6', 'will fix').replace('YES - only', 'probably - only');
   const out = runAudit('pre-pr-sweep', bad);
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
+});
+// why: guards rule:sweep-tiers. The sweep shape (the owner's pick, build 5): every review role stays, and each feature
+// or launch-gate report counts which layer caught its highs (the plan check, CI, the sweep, or escaped to a release),
+// so the next decision on the sweep's shape reads numbers, not a recount of old reports.
+test('a feature report counts the layer that caught each high', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const report = (layers, tier = 'feature') => `# Sweep: offline sync\n\n- **Tier:** ${tier}\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n${layers}${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  assert.equal(runAudit('pre-pr-sweep', report('- **Layers:** plan 3, CI 1, sweep 2, escaped 0\n\n')).status, 0);
+  for (const bad of ['\n', '- **Layers:** some\n\n', '- **Layers:** plan 3, sweep 2\n\n']) {
+    const out = runAudit('pre-pr-sweep', report(bad));
+    assert.equal(out.status, 1, bad);
+    assert.match(out.stdout, /Layers:\*\* plan <n>, CI <n>, sweep <n>, escaped <n>/);
+  }
+  assert.equal(runAudit('pre-pr-sweep', report('\n', 'fix')).status, 0, 'a fix report owes no layer count');
 });
 // The owner's decision 6 (1.21.0): a handoff that led with fixes parked the next build behind them.
 // why: guards rule:kit-standards
@@ -1068,7 +1082,7 @@ test('findings are fixed in their build and only what the owner accepts carries,
 // why: guards rule:sweep-auto-approval
 test('the sweep audit refuses a high or critical finding carried as DEFERRED', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
-  const report = (rows) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n${rows}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const report = (rows) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n- **Layers:** plan 2, CI 0, sweep 1, escaped 0\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n${rows}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
   for (const sev of ['high', 'critical']) {
     const out = runAudit('pre-pr-sweep', report(`| 1 | ${sev} | token in log | DEFERRED next build |`));
     assert.equal(out.status, 1, sev + ' DEFERRED must fail');
@@ -6992,7 +7006,7 @@ test('build turns on the kit source commit-msg hook, which refuses a bad message
 // why: guards rule:sweep-auto-approval
 test('the sweep audit reads an indented findings table as it reads a flat one', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
-  const report = (table) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n- Findings:\n${table}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const report = (table) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n- **Layers:** plan 2, CI 0, sweep 1, escaped 0\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n- Findings:\n${table}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
   const rows = (indent, disp) => [`| # | Severity | Finding | Disposition |`, `|---|---|---|---|`, `| 1 | high | token in log | ${disp} |`].map((l) => indent + l).join('\n');
   for (const indent of ['', '  ', '    ', '\t']) {
     const out = runAudit('pre-pr-sweep', report(rows(indent, 'DEFERRED next build')));

@@ -26,6 +26,11 @@ if (tier === 'first push') {
 	if (!/tracked files reviewed/i.test(text)) faults.push('first push: record that the owner reviewed the tracked files (git ls-files)');
 }
 
+// The sweep shape (build 5): a feature or launch-gate report counts which layer caught its highs, so whether the plan
+// check and CI hold what a review role would find is read from the reports, not recounted.
+if ((tier === 'feature' || tier === 'launch gate') && !/^- \*\*Layers:\*\* plan \d+, CI \d+, sweep \d+, escaped \d+\b/m.test(text)) {
+	faults.push('count the highs and criticals by the layer that caught them, near the top: - **Layers:** plan <n>, CI <n>, sweep <n>, escaped <n> (escaped: found after an earlier release)');
+}
 if (!/\b\d{4}-\d{2}-\d{2}\b/.test(lines.slice(0, 20).join('\n'))) faults.push('no date near the top (YYYY-MM-DD)');
 // The branch is named outright, or in the `type/name` at `<commit>` form reports use.
 const branchLine = (l) => (/branch/i.test(l) || /\b[\w.-]+\/[\w.-]+`? at `?[0-9a-f]/.test(l)) && /\b[0-9a-f]{7,40}\b/.test(l);

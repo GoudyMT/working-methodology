@@ -99,6 +99,14 @@ Before handing a project's doc over, run the builder check (a fresh read-only ag
 the questions it would have to guess at). Sort its questions into answered-by-the-records, minor (settle and mark
 as your call) and the owner's (asked the brainstorm skill's way: one message for one or two, its sheet from three up).
 
+**The plan gap check, before the owner's yes:** for any change bigger than one sentence, one fresh read-only
+reviewer reads the design and the code it changes, with the fixed brief in
+[references/plan-check-brief.md](references/plan-check-brief.md), copied unchanged. Each high or critical it names
+goes into the design as one of three: an acceptance test that fails first, a named limit, or the owner's call. Keep
+its list in the design with how each was taken; the sweep report later counts which highs the plan check named
+first (the pre-pr-sweep skill's Layers line). Why: three trial builds showed it names a third or more of a build's
+highs before any code, for about 150,000 tokens; a hole fixed in the design costs less than one found in review.
+
 **The gate:** nothing is built until the owner says yes to the design - no product code, no scaffolding, no
 installs, no new project. Reading and probing are fine. A throwaway spike the owner said yes to may be built; it
 stays labelled throwaway, is never merged, and keeping any of it is a new request back through this gate,
