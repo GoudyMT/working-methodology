@@ -110,7 +110,7 @@ const PARTS = [
 		// A host repo that keeps its own settings never runs the kit's pre-compact hook, so it never gets a packet.
 		wired: () => {
 			let s = null;
-			try { s = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8').replace(/^﻿/, '')); } catch { /* none */ }
+			try { s = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* none */ }
 			const hook = JSON.stringify(s?.hooks?.PreCompact || '').includes('kit-hook.cjs') && JSON.stringify(s?.hooks?.PreCompact || '').includes('pre-compact');
 			if (!hook) return [false, '.claude/settings.json has no PreCompact kit-hook.cjs entry: a compact writes no packet (run kit.mjs install project)'];
 			// Without the allow rule the session's first action stops on a permission prompt.

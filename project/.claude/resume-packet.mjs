@@ -130,7 +130,10 @@ const SOURCES = { 'Last session': ['_Working Memory.md'], 'Pending the owner': [
 const TRIM = ['Pending the owner', 'Carry-overs', 'Last session'];
 
 // Every line from a file is printed after "| ", so no file can start a line of the packet's or the check's own.
-const quote = (l) => `| ${l}`;
+// Control characters and the Unicode line and paragraph separators become spaces first: a lone CR or a U+2028 would
+// otherwise start a new line for a reader that splits on them.
+const UNSAFE = new RegExp(`[\\x00-\\x1f\\x7f-\\x9f${String.fromCharCode(0x2028, 0x2029)}]`, 'g');
+const quote = (l) => `| ${l.replace(UNSAFE, ' ')}`;
 const render = (s) => Object.entries(s).map(([k, v]) => `## ${k}\n${v.map(quote).join('\n')}`).join('\n\n') + '\n';
 
 /** Drop list lines from the end of the trimmable sections until the body fits; returns the trimmed section names. */
