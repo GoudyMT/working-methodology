@@ -1,0 +1,165 @@
+{
+ "version": "1.29.0",
+ "date": "2026-11-13",
+ "level": "minor",
+ "area": "Guards",
+ "title": "fix: close the 1.28.0 carry-overs and the guard holes found",
+ "headline": "The 1.28.0 carry-overs close here, with the guard holes found on the way: a protected file under another Windows name, a write into `.git` by move or copy, and a push carried to another host. The rule text planned for this build did not pass the recall bar and is not in it.",
+ "alignment": "v1.29.0 is the minor release build 3 plans, less its rule text: the recall gate refused it and the gate was not lowered.",
+ "items": [
+  {
+   "id": "WIN-NAMES",
+   "kind": "security",
+   "text": "A protected file named with dots or spaces on its end (`settings.json.`) or a stream suffix (`guard.cjs::$DATA`) is read as the file Windows opens. On 1.28.0 PowerShell could write the settings or a guard that way with no hold.",
+   "evidence": "tests/owner-proof.test.mjs",
+   "where": "A protected file under another Windows name",
+   "before": "Written with no hold",
+   "after": "Held as the file it opens"
+  },
+  {
+   "id": "GIT-WRITES",
+   "kind": "security",
+   "text": "A move, a copy or an unpack into `.git` itself, its worktrees or `.ssh` is held, as a write to `.git/config` or the hooks always was; so is the config folder under a name of its own.",
+   "evidence": "tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "SHARE-PATHS",
+   "kind": "security",
+   "text": "A device or share spelling of a local path (`\\\\?\\C:\\...`, `\\\\localhost\\C$\\...`) is read as the local path, and one that cannot be placed is held while a project lists folders. A shell word through a link is read as the file it reaches.",
+   "evidence": "tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "PUSH-TRANSPORT",
+   "kind": "security",
+   "text": "Changing what carries a push (`core.sshCommand`, a proxy, the certificate check, the credential helper) asks for the owner's yes, as changing the URL does. A feature push asks when origin pushes to another repo than it fetches from.",
+   "evidence": "tests/guards-hold.test.mjs",
+   "where": "A feature push after `git config core.sshCommand ...`",
+   "before": "Ran with no yes, to another host",
+   "after": "The setting itself asks"
+  },
+  {
+   "id": "K34",
+   "kind": "security",
+   "text": "The folder list `.claude/protected-folders.json` is never written by a tool, and install records it outside the project: gone, changed or not yet recorded, every call is held. The owner accepts a change in their own terminal.",
+   "evidence": "tests/owner-proof.test.mjs, tests/guards-outside.test.mjs",
+   "where": "A branch switch, a reset or one yes that removes the list",
+   "before": "Every listed folder lost its hold",
+   "after": "Every call is held until the owner accepts it"
+  },
+  {
+   "id": "PS-FILTER",
+   "kind": "security",
+   "text": "A PowerShell listing piped into a writer is held when it is recursive with no folder named, uses `-Exclude`, or filters by a pattern that fits a guard file's name, in every form PowerShell takes for the parameter.",
+   "evidence": "tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "K32",
+   "kind": "fixed",
+   "text": "In PowerShell a wildcard under plain folders (`tests/*`) is no longer held as a write to a guard when the folder holds no dot name, no link and no kit file at any depth. Only for a one-statement command of plain text.",
+   "evidence": "tests/owner-proof.test.mjs"
+  },
+  {
+   "id": "C13",
+   "kind": "fixed",
+   "text": "A project whose path is over 200 characters is found by the session folder name as it is shortened; two such projects alike in their first 200 characters are held, not guessed.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "K41",
+   "kind": "changed",
+   "text": "The mutation measure flips only the lines a branch changed and prints the flip count and a rough minute count first. The whole kit runs only when started by hand with scope set to all. A bad base stops the run.",
+   "evidence": "tests/mutation-check.test.mjs, tests/test-value.test.mjs"
+  },
+  {
+   "id": "K14",
+   "kind": "changed",
+   "text": "The guard timing tests keep their 8 s limit by the clock on a machine of normal speed. On a machine measured slow the guard's own work is held to 8 s, so a slow runner no longer fails them.",
+   "evidence": "tests/guard-dispatch.test.mjs, tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "K38",
+   "kind": "changed",
+   "text": "Each of the 25 flipped lines the 1.28.0 measure left alive was built and run: 14 now fail a test, 5 are shown equal by 13,048 compared readings, 6 are equal by what reads them. Three restated test lines were cut on the owner's yes.",
+   "evidence": "tests/owner-proof.test.mjs, tests/guards-hold.test.mjs, tests/task-gate.test.mjs, tests/guard-dispatch.test.mjs"
+  },
+  {
+   "id": "K36-J8",
+   "kind": "changed",
+   "text": "The test check names a rule that a change itself adds to the rule index; the link scan, a CI gate with no failing case, has a test; a used pop-up yes is tested not to answer a second ask.",
+   "evidence": "tests/test-check.test.mjs, tests/link-scan.test.mjs, tests/kit.test.mjs"
+  }
+ ],
+ "decisions": [
+  {
+   "decision": "The rule text is not in this release",
+   "why": "Three recall rounds scored it 11 against a bar of 12, and a probe showed the push question passes under half the time on the released kit too. The text was pulled, the bar kept."
+  },
+  {
+   "decision": "The folder list is recorded by install",
+   "why": "A git lookup missed a branch whose last commit did not touch the list and froze a project that removed its list on purpose. A record outside the project covers every way the list can go."
+  },
+  {
+   "decision": "A program that clears its own markers is a named limit",
+   "why": "A check of the push's parent processes was probed: half a second a push, and nothing found for a child started apart from its parent."
+  }
+ ],
+ "verification": [
+  "Each fix that changes behaviour shipped with a test that fails on the code before it; the review's fixes too (25cc097, e191664, 1127e5e, 1b72c7b, 4378a66).",
+  "The Windows name hole was reproduced on disk and against the released 1.28.0 before the fix; both guard proofs and the install check's planted cases pass on this build.",
+  "The timing test fails 9 s of work, a 12 s wait and an 8.5 s wait on the owner's PC, and passes the unchanged guard in 1.9 s."
+ ],
+ "tests": {
+  "before": 674,
+  "after": 691,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "c76ce10",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "One low (a line about the owner's sign-in in the plan), fixed"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Clean: the workflow's inputs reach steps only as environment values"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Five highs fixed; every medium and low fixed or accepted by the owner"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "The timing limit restored to 8 s by the clock; an extra git call per tool call gone with the redesign"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES; the plan file corrected after the rule text was pulled"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 5,
+   "medium": 12,
+   "low": 21
+  },
+  "fixed": [
+   "H1: the folder list was found on another branch only when that branch's last commit touched it. Fixed in 25cc097 and e191664.",
+   "H2: a move or copy into `.git` landed a config or a hooks folder there. Fixed in e191664.",
+   "H3: a device or share spelling of a local path wrote inside a listed folder. Fixed in e191664 and 1127e5e.",
+   "H4: a transport setting moved a feature push to another host. Fixed in 1127e5e.",
+   "H5: a guard that matched the accept flag's text could be spelled round. Fixed in e191664, in the install itself."
+  ],
+  "accepted": [
+   "A PowerShell shell that keeps its own folder between calls, and a race between two calls.",
+   "A protected file's name with a full stop after it in prose is held, as the same line without the stop always was.",
+   "The Windows name rule runs on macOS and Linux too.",
+   "A tool can no longer edit the folder list even with a yes: the K34 change itself."
+  ]
+ }
+}

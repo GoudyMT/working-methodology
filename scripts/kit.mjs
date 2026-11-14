@@ -316,8 +316,28 @@ function writeGuardRecord(ctx, kitInfo, files, keys, prev, isHost, skipped) {
   // first record holds every call until the owner accepts it (the second pass on 0772397).
   let extras = [];
   try { extras = fs.readdirSync(path.join(ctx.projectDir, '.githooks'), { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => `.githooks/${e.name}`).filter((k) => !keys.includes(k)); } catch { /* none */ }
-  for (const key of [...keys.filter(isGuarded), ...extras].sort()) {
+  // The folder list (E3) is the owner's file, recorded as it stands like a host's own hook: read only from the
+  // project, a branch switch, a reset, a stash or a clean dropped it and every folder on it lost its hold (the
+  // 1.29.0 sweep). Gone or changed since it was recorded, every call stays held until the owner accepts that.
+  const LIST = '.claude/protected-folders.json';
+  const listed = fs.existsSync(path.join(ctx.projectDir, LIST)) || Boolean(prev && prev.files && prev.files[LIST]);
+  for (const key of [...keys.filter(isGuarded), ...extras, ...(listed ? [LIST] : [])].sort()) {
     const file = path.join(ctx.projectDir, key);
+    if (key === LIST) {
+      const was = prev && prev.files && prev.files[key];
+      // One accepted version at a time: an older list the owner once accepted is not accepted again by itself.
+      const known = was && /^[0-9a-f]{64}$/.test(was) ? [was] : [];
+      const ok = (ctx.acceptHost || []).includes(key);
+      const now = fs.existsSync(file) ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : null;
+      if (!now && (!was || ok)) continue;
+      host.push(key);
+      if (was && !ok && (!now || !known.includes(now))) {
+        guarded[key] = was;
+        skipped.push({ file: key, reason: `the folder list ${now ? 'changed' : 'is gone'} since it was recorded, so every call stays held: put it back as it was, or the owner accepts the change in their own terminal with install project --accept-host ${key}` });
+      } else guarded[key] = now;
+      accepted[key] = [guarded[key]];
+      continue;
+    }
     if (extras.includes(key) && prev && !(prev.files && prev.files[key]) && !(ctx.acceptHost || []).includes(key)) {
       skipped.push({ file: key, reason: `a hook added to .githooks since the last install, so every call stays held: remove it, or the owner accepts it with install project --accept-host ${key}` });
       continue;
@@ -1808,6 +1828,16 @@ function main(argv) {
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const acceptAt = argv.indexOf('--accept-host');
   const acceptHost = acceptAt >= 0 ? String(argv[acceptAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  // Accepting a changed host file or folder list lifts a hold the kit set on it, so it is the owner's own act, in
+  // their own terminal: a shell an AI tool started carries its marker, and is refused here whatever the command's
+  // spelling was (the review of the recorded folder list: a guard that matches the flag's text can be spelled round).
+  // A marker is an environment value a program can clear before it starts this one, so a terminal is asked for too:
+  // a tool's shell gives its commands a pipe, never a terminal (the review of this check).
+  if (acceptAt >= 0 && (process.env.AI_AGENT || process.env.CLAUDECODE || !process.stdin.isTTY)) {
+    console.error('install: --accept-host is the owner\'s, typed in their own terminal: this is a tool\'s shell or has no terminal, so nothing was accepted or installed.');
+    process.exitCode = 1;
+    return;
+  }
   const projectDir = target === 'project' ? arg : undefined;
   if (cmd === 'install') {
     // E24 C: the kit installs only from the release copy on the owner's PC; a cloud VM has neither.

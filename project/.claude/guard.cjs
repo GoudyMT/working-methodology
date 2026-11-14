@@ -10,6 +10,10 @@
 // owner's pop-up yes allows); the added context of each is kept.
 // Usage: the launcher in the Claude config folder (kit-tools/kit-launch.cjs, V3 in 1.25.1) loads this file after it has
 // checked every guard file against the record outside the project; the project's own settings no longer run it.
+// What the guards cannot see (K30 and K33, the owner's call 2026-11-13: named, not held): a command a program builds
+// at run time (a script that clears the AI shell's markers and then pushes; a check of the push's parent processes
+// was probed, and a child started apart from its parent leaves no chain to read), a shell option set in the owner's
+// own profile (dot globbing), and a cloud session, where no hook runs. The guards catch slips; they are not a sandbox.
 const fs = require('fs');
 const path = require('path');
 

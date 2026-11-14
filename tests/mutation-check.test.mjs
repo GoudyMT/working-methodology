@@ -118,3 +118,31 @@ test('the mutation check records which tests caught each flip, and its slices co
 	}
 	assert.deepEqual(seen.sort(), ['src/a.cjs:1', 'src/a.cjs:2']);
 });
+
+// why: catches a measure that costs 600 CI minutes for a one-line change, or passes green having measured nothing
+// (K41, the owner 2026-11-13; the plan check's P5 and P13). Scoped to a base, only the changed lines are flipped; a
+// base that is no commit stops the run; no flip in scope is said as nothing measured; --count costs no test run.
+test('the mutation check scoped to a base flips only the changed lines, and says so when that is nothing', () => {
+	const { dir } = repo();
+	fs.writeFileSync(path.join(dir, 'src', 'a.cjs'), ['exports.isPos = (x) => x > 0;', 'exports.isBig = (x) => x > 20;', ''].join('\n'));
+	sh(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'change one line');
+	const map = spawnSync(process.execPath, [RUNNER, '--map', '--shards', '1', path.join(dir, 'tests', 'a.test.mjs')], { cwd: dir, encoding: 'utf8' });
+	assert.equal(map.status, 0, map.stdout + map.stderr);
+	const scoped = check(dir, ['--base', 'HEAD~1']);
+	assert.match(scoped.stdout, /mutation check: 1 flips, 0 caught, 1 survived/);
+	assert.doesNotMatch(scoped.stdout, /a\.cjs:1 /);
+	const count = check(dir, ['--base', 'HEAD~1', '--count']);
+	assert.equal(count.status, 0, count.stdout + count.stderr);
+	assert.match(count.stdout, /^flips: 1$/m);
+	assert.doesNotMatch(count.stdout, /SURVIVED|caught/);
+	for (const base of ['no-such-ref', '--output=x', 'HEAD~9']) {
+		const bad = check(dir, ['--base', base]);
+		assert.equal(bad.status, 2, `${base}: ${bad.stdout}${bad.stderr}`);
+		assert.match(bad.stderr, /is not a commit/);
+	}
+	assert.equal(fs.existsSync(path.join(dir, 'x')), false, 'a base is never read as a git option');
+	const none = check(dir, ['--base', 'HEAD']);
+	assert.equal(none.status, 0, none.stdout + none.stderr);
+	assert.match(none.stdout, /nothing measured[^\n]*HEAD/);
+	assert.doesNotMatch(none.stdout, /0 flips, 0 caught/);
+});

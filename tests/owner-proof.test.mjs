@@ -148,7 +148,7 @@ test('the owner-proof guard lets reads of the transcripts through, and every oth
 // S23-2 (the 1.23.0 verify): reads through a variable or after a cd into the transcripts, and a file whose text only
 // names kit-owner.json, were refused. S23-1: the mutation check found writes no test covered.
 // why: guards rule:outward-acts
-test('the owner-proof guard follows a variable and a cd into the transcripts, and reads a quoted heredoc as data', () => {
+test('the owner-proof guard follows a variable and a cd into the transcripts, and holds a heredoc that names the file of the owner', () => {
 	const deny = [
 		['Bash', { command: 'P=~/.claude/projects; echo x >> $P/p/s.jsonl' }],
 		['Bash', { command: 'P=~/.claude/projects/p; cp x.jsonl ${P}/s.jsonl' }],
@@ -167,12 +167,14 @@ test('the owner-proof guard follows a variable and a cd into the transcripts, an
 		['Bash', { command: 'P=~/.claude/; echo x > ${P}kit-owner.json' }],
 		['Bash', { command: 'echo x > ${Q}kit-owner.json' }],
 		['Bash', { command: 'export CDPATH=~/.claude; cd projects && echo x > p/s.jsonl' }],
+		// A heredoc's lines are read like any other (the 1.24.0 sweep), and a name with a full stop after it is the same
+		// file to Windows: this passed until 1.29.0 only because of that full stop.
+		['Bash', { command: "cat > notes.md <<'EOF'\nThe owner file is ~/.claude/kit-owner.json.\nEOF" }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
 	const allow = [
 		['Bash', { command: 'P=~/.claude/projects; grep -c x $P/p/s.jsonl' }],
 		['Bash', { command: 'cd ~/.claude/projects/p && grep -c x s.jsonl' }],
-		['Bash', { command: "cat > notes.md <<'EOF'\nThe owner file is ~/.claude/kit-owner.json.\nEOF" }],
 		['Bash', { command: "sed -i 's/old/kit-owner.json/' notes.md" }],
 	];
 	for (const [tool, input] of allow) assert.equal(run(tool, input), 'allow', `${tool} ${JSON.stringify(input)}`);
@@ -223,7 +225,7 @@ test('a settings write that turns the hooks off is never by a tool, in any spell
 
 // why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the
 // workbench's deny rules stopped the edit tools but not a shell write into the kit source or the release copy. A
-// project lists such folders in .claude/protected-folders.json; that list is a settings file, and a bad one fails closed.
+// project lists such folders in .claude/protected-folders.json; that list is the owner's to write, and a bad one fails closed.
 test('folders a project lists are never written by a tool, from the edit tools or a shell', () => {
 	const proj = kitTemp.makeTemp('e3-');
 	const kept = kitTemp.makeTemp('e3-kept-');
@@ -241,8 +243,13 @@ test('folders a project lists are never written by a tool, from the edit tools o
 	}
 	// Reads stay open.
 	assert.equal(why('Bash', { command: `cat "${k}/README.md"` }), '');
-	// The list itself is a settings file: the owner's yes.
-	assert.match(why('Write', { file_path: list, content: '{"folders": []}' }), /Owner's yes needed/);
+	// K34 (the 1.28.0 sweep, P14): the list was a settings file, so one yes could delete it and every folder on it lost
+	// its hold. It is the owner's to write: no tool writes, moves or deletes it, with a yes or without; a read runs.
+	const l = list.split(path.sep).join('/');
+	for (const [tool, input] of [['Write', { file_path: list, content: '{"folders": []}' }], ['Edit', { file_path: list, old_string: 'a', new_string: 'b' }], ['Bash', { command: 'rm .claude/protected-folders.json' }], ['Bash', { command: `mv "${l}" /tmp/x` }], ['Bash', { command: 'echo {} > .claude/protected-folders.json' }], ['PowerShell', { command: 'Remove-Item .claude\\protected-folders.json' }]]) {
+		assert.match(why(tool, input), /^Never by a tool: the folder list/, `${tool} ${JSON.stringify(input)}`);
+	}
+	assert.equal(why('Bash', { command: 'cat .claude/protected-folders.json' }), '');
 	// A list that cannot be read holds every shell call and names the fix.
 	fs.writeFileSync(list, '{ not json');
 	assert.match(why('Bash', { command: 'git status' }), /protected-folders\.json.*cannot be read/);
@@ -303,7 +310,6 @@ test('a bash wildcard that cannot match a dot name is no write to a guard', () =
 	};
 	for (const command of ['npm test -- tests/*', 'node --test tests/*.test.mjs', 'npm test -- tests/?ard*']) assert.equal(why(command), '', command);
 	for (const command of ["npm test -- 'tests/*'", 'shopt -s dotglob; npm test -- tests/*', 'GLOBIGNORE=x npm test -- tests/*', 'npm test -- tests/\\*', 'npm test -- tests/.*', 'setopt globdots; npm test -- tests/*', 'npm test -- tests/*(D)', 'eval "sh"opt -s dotglob"; npm test -- tests/*', '$(printf shopt) -s dotglob; npm test -- tests/*']) assert.match(why(command), /^Never by a tool/, command);
-	assert.match(why('npm test -- tests/*', 'PowerShell'), /^Never by a tool/, 'PowerShell matches dot names');
 });
 // why: guards rule:security-standards. The plan check's P4 and the 1.28.0 sweep: a reader's exemption holds only for
 // the bare name looked up on PATH; ./sed or ./cat is any program a tool wrote there.
@@ -342,4 +348,122 @@ test('owner-proof places a word by the folder it is in, and holds only what it n
 	assert.match(why('cd .claude && echo x > settings.json'), /^Owner's yes needed/, 'a cd the guard follows');
 	assert.equal(why('export P=.claude/settings.json'), '', 'an export only sets a name');
 	for (const command of ['echo x > .claude/kit-install.json', 'echo x > .claude/kit-guard/record.json']) assert.match(why(command), /^Never by a tool/, command);
+});
+
+// why: guards rule:security-standards. K38, the 25 flips the 1.28.0 measure run left alive: each case below was built
+// and run against its flipped line (graduated lesson: a surviving mutation is dead only after its case was run). A sed
+// that prints is a reader only in its exact shape; a cd is followed by its -path word; a default value is read as the
+// text it gives; a break that is not plain makes every cd unsure.
+test('owner-proof: a dressed-up sed, a cd by -path, a default value and an unsure cd are each read right', () => {
+	const held = ['sed -n e 5p .claude/guard.cjs', 'sed -n 5p -i .claude/guard.cjs', 'cd stuff -path .claude && rm guard.cjs', 'echo x > .claude/${U:-guard.cjs}', 'true | cd docs && rm guard.cjs', 'false || cd docs && echo x > projects/p/s.jsonl'];
+	for (const command of held) assert.equal(run('Bash', { command }), 'deny', command);
+	assert.equal(run('PowerShell', { command: 'Set-Location stuff -Path .claude && Remove-Item guard.cjs' }), 'deny');
+	// A name set twice and never used is read once, not for ever; a quoted word that only holds a guard's name beside
+	// other text is a reader's argument, not a write.
+	for (const command of ['P=a; P=b; echo hi', 'grep x ".claude/guard.cjs y"']) assert.equal(run('Bash', { command }), 'allow', command);
+});
+
+// why: guards rule:security-standards. K32 (the 1.28.0 sweep, P18; the plan check's P2): PowerShell's wildcards match dot
+// names, so tests/* was held as a write to a guard whatever tests held. It runs when the folder it names holds
+// no dot name, no kit- name and no link at any depth; anything the guard cannot see that plainly stays held.
+test('a PowerShell wildcard under a folder that holds no dot name is no write to a guard', { windows: 'also' }, () => {
+	const proj = kitTemp.makeTemp('k32-');
+	for (const d of ['tests/unit', 'sub/.git', 'hooked/.githooks', 'deep/a/b/.claude', 'other', '.claude']) fs.mkdirSync(path.join(proj, ...d.split('/')), { recursive: true });
+	fs.writeFileSync(path.join(proj, 'tests', 'a.test.mjs'), 'x');
+	fs.symlinkSync(path.join(proj, 'other'), path.join(proj, 'linked'), 'junction');
+	fs.mkdirSync(path.join(proj, 'holds-link'));
+	fs.symlinkSync(path.join(proj, '.claude'), path.join(proj, 'holds-link', 'l'), 'junction');
+	const ps = (command, cwd = proj) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'PowerShell', tool_input: { command }, cwd }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+	};
+	for (const command of ['node --test tests/*', 'Remove-Item tests/*', 'Remove-Item tests\\*', 'Get-ChildItem tests/*.mjs', 'Remove-Item -Recurse other/*']) assert.equal(ps(command), 'allow', command);
+	const held = ['Remove-Item sub/*', 'Remove-Item sub/*/config', 'Remove-Item hooked/*', 'Remove-Item -Recurse deep/*', 'Remove-Item linked/*', 'Remove-Item holds-link/*', 'Remove-Item ../*', 'Remove-Item ./*', 'Remove-Item *',
+		'Remove-Item .claude/*', 'Remove-Item $HOME/*', 'Remove-Item ~/*', 'Remove-Item $d/*', 'Remove-Item missing/*', 'Remove-Item "tests/*"', 'Remove-Item tests/../*'];
+	for (const command of held) assert.equal(ps(command), 'deny', command);
+	// Only a command of one statement: one before it could change the folder after the guard read it.
+	for (const command of ['New-Item -ItemType Junction tests/l -Target $t; Remove-Item -Recurse tests/*', 'Get-Date | Out-Null; Remove-Item tests/*', 'New-Item -ItemType Junction tests/l -Target $t\rRemove-Item tests/*', 'Remove-Item tests/*\u0085New-Item x']) assert.equal(ps(command), 'deny', JSON.stringify(command));
+	// After a cd the guard cannot follow, the folder is not known, so nothing is read from the disk.
+	assert.equal(ps('Set-Location $x; Remove-Item tests/*'), 'deny');
+	// A dot name that arrives later is seen: the folder is read each time.
+	fs.mkdirSync(path.join(proj, 'tests', 'unit', '.githooks'));
+	assert.equal(ps('Remove-Item tests/*'), 'deny');
+});
+
+// why: guards rule:security-standards. Found by the security review of this build and reproduced on the released
+// 1.28.0: Windows opens the same file under a name with dots or spaces on its end (settings.json.) or a stream
+// suffix (guard.cjs::$DATA), and neither was read as the file, so PowerShell could write the settings, a guard,
+// .git/config or the owner's yes file with no hold. Each such name is read as the file it opens.
+test('a protected file named with a trailing dot, a trailing space or a stream suffix is still that file', () => {
+	const cases = [
+		['PowerShell', { command: 'Set-Content .claude\\settings.json. x' }],
+		['PowerShell', { command: 'Set-Content .claude\\settings.local.json.. x' }],
+		['PowerShell', { command: 'Set-Content .claude\\guard.cjs. x' }],
+		['PowerShell', { command: 'Set-Content .claude.\\guard.cjs x' }],
+		['PowerShell', { command: 'Set-Content .git\\config. x' }],
+		['PowerShell', { command: 'Set-Content .githooks.\\pre-push x' }],
+		['PowerShell', { command: 'Add-Content $HOME\\.claude\\kit-owner.json. x' }],
+		['PowerShell', { command: 'Remove-Item .claude\\protected-folders.json.' }],
+		['Bash', { command: 'echo x > .claude/guard.cjs::$DATA' }],
+		['Bash', { command: 'echo x > .claude/settings.json:s' }],
+		['Bash', { command: 'echo x > .claude/settings.json::$DATA' }],
+		['Bash', { command: 'echo x > ".claude/guard.cjs. "' }],
+		['Bash', { command: 'echo x >> ~/.claude/kit-owner.json::$DATA' }],
+		['Bash', { command: 'echo x > .git/config::$DATA' }],
+		['Write', { file_path: '.claude/guard.cjs::$DATA', content: 'x' }],
+		['Write', { file_path: '.claude/settings.json.', content: 'x' }],
+		['Edit', { file_path: '.claude/settings.local.json::$DATA', old_string: 'a', new_string: 'b' }],
+		['Write', { file_path: path.join(cfg, 'kit-owner.json::$DATA'), content: '{}' }],
+	];
+	for (const [tool, input] of cases) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
+	// A drive letter keeps its colon, and a name that only looks alike is not the file.
+	for (const [tool, input] of [['Bash', { command: 'echo x > C:/work/notes.txt' }], ['Bash', { command: 'echo x > docs/settings.json.md' }], ['PowerShell', { command: 'Set-Content docs\\guard.cjs.txt x' }]]) assert.equal(run(tool, input), 'allow', JSON.stringify(input));
+});
+
+// why: guards rule:security-standards. The 1.29.0 sweep, each reproduced by its reviewer: a move or copy into .git lands
+// a config or a hooks folder there; a device or network spelling of a local path wrote inside a listed folder; a shell
+// word through a junction that was already there reached the list and the guards; a hard link passed as a plain file.
+test('a write into .git, a device or share path, a word through a junction and a hard link are each read as what they reach', { windows: 'also' }, () => {
+	const proj = kitTemp.makeTemp('sweep29-');
+	for (const d of ['pay/hooks', '.claude', 'vault', 'plain']) fs.mkdirSync(path.join(proj, ...d.split('/')), { recursive: true });
+	fs.writeFileSync(path.join(proj, 'pay', 'config'), 'x');
+	fs.writeFileSync(path.join(proj, '.claude', 'protected-folders.json'), JSON.stringify({ folders: ['vault'] }));
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x');
+	fs.symlinkSync(path.join(proj, '.claude'), path.join(proj, 'lnk'), 'junction');
+	fs.symlinkSync(path.join(proj, 'vault'), path.join(proj, 'vlnk'), 'junction');
+	fs.linkSync(path.join(proj, '.claude', 'guard.cjs'), path.join(proj, 'plain', 'h.txt'));
+	const ask = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? 'deny' : 'allow';
+	};
+	const p = proj.split(path.sep).join('/');
+	const held = [
+		['PowerShell', 'Move-Item pay/* .git -Force'], ['PowerShell', 'Copy-Item pay/* -Destination .git -Recurse'], ['PowerShell', 'Move-Item pay/config .git'],
+		['Bash', 'mv pay/* .git'], ['Bash', 'tar -xf x.tar -C .git'], ['PowerShell', 'Copy-Item pay/* .git/worktrees/w -Recurse'], ['Bash', 'echo x >> ~/.ssh/config'],
+		['PowerShell', 'Remove-Item lnk/protected-folders.json'], ['Bash', 'rm lnk/protected-folders.json'], ['Bash', 'rm lnk/guard.cjs'], ['PowerShell', 'Remove-Item vlnk/x.txt'],
+		['PowerShell', 'Set-Content plain/* evil'], ['PowerShell', 'Set-Content plain/h.txt evil'], ['Bash', 'echo x > plain/h.txt'],
+		['Bash', 'cd "$X" && rm lnk/guard.cjs'],
+	];
+	for (const [tool, command] of held) assert.equal(ask(tool, { command }), 'deny', `${tool} ${command}`);
+	if (process.platform === 'win32') {
+		const drive = p.slice(0, 1);
+		const rest = p.slice(2).split('/').join('\\');
+		for (const spelled of [`\\\\?\\${drive}:${rest}\\vault\\x.txt`, `\\\\localhost\\${drive}$${rest}\\vault\\x.txt`, `\\\\?\\UNC\\localhost\\${drive}$${rest}\\vault\\x.txt`, '\\\\server\\share\\vault\\x.txt', '\\\\?\\Volume{00000000-0000-0000-0000-000000000000}\\vault\\x.txt', '\\\\?\\GLOBALROOT\\Device\\HarddiskVolume3\\vault\\x.txt']) {
+			assert.equal(ask('PowerShell', { command: `Set-Content -LiteralPath ${spelled} y` }), 'deny', spelled);
+			assert.equal(ask('Write', { file_path: spelled, content: 'y' }), 'deny', `Write ${spelled}`);
+		}
+	}
+	// What reaches none of them still runs.
+	for (const [tool, command] of [['Bash', 'mv pay/config pay/config.bak'], ['Bash', 'tar --exclude=.git -cf x.tar pay'], ['PowerShell', 'Get-ChildItem .git'], ['Bash', 'git status']]) assert.equal(ask(tool, { command }), 'allow', `${tool} ${command}`);
+});
+
+// why: guards rule:security-standards. The 1.29.0 sweep: a PowerShell filter names files at any depth with no path word,
+// so a pipeline into a writer deleted the folder list and the guards unseen; a filter that is only read from stays free.
+test('a PowerShell filter piped into a writer is read as naming the files of the guards', () => {
+	for (const command of ['Get-ChildItem -Recurse -Filter *folders.json | Remove-Item', 'Get-ChildItem -Recurse -Include *.j* | Remove-Item -Force', 'Remove-Item -Recurse -Include settings*.json', 'Get-ChildItem -Recurse -Filter *.json | ForEach-Object { Remove-Item $_ }',
+		'Get-ChildItem -Recurse -Fi *folders.json | Remove-Item', 'Get-ChildItem -Recurse -Filter:*folders.json | Remove-Item', 'Get-ChildItem . *folders.json -Recurse | Remove-Item', 'Get-ChildItem -Recurse | Remove-Item',
+		'Get-ChildItem -Recurse -Exclude *.md | Remove-Item', 'Get-ChildItem -Depth 5 | Remove-Item', '& Get-ChildItem -Recurse -Filter *folders.json | Remove-Item', 'Get-ChildItem -Recurse -Filter PROTEC~1.JSO | Remove-Item', 'Remove-Item -Recurse -Include *.j"s"on']) assert.equal(run('PowerShell', { command }), 'deny', command);
+	for (const command of ['Get-ChildItem -Recurse -Filter *.json', 'Get-ChildItem -Recurse -Filter *.cjs | Select-Object Name', 'Get-ChildItem -Recurse -Filter *.txt | Remove-Item']) assert.equal(run('PowerShell', { command }), 'allow', command);
 });

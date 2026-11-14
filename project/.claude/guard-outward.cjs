@@ -142,12 +142,14 @@ function gitOutward(words, start) {
 	if (words.slice(at + 1).some((w) => /^(--output(=|$)|--open-files-in-pager|--ext-diff$|--textconv$)/.test(w) || (sub === 'grep' && /^-o/.test(w)))) return 'git that writes a file or runs a program';
 	// Where origin points decides where a feature-branch push goes without a yes, so moving it is held (T1).
 	const after = words.slice(at + 1).filter((w) => !w.startsWith('-'));
-	if (sub === 'remote' && ['add', 'set-url', 'rename', 'set-head'].includes(after[0])) return 'git with its remote changed';
+	if (sub === 'remote' && ['add', 'set-url', 'rename', 'set-head', 'remove', 'rm'].includes(after[0])) return 'git with its remote changed';
 	// The local origin/HEAD names the default branch the pre-push hook holds when the remote names none (K29).
 	if ((sub === 'symbolic-ref' || sub === 'update-ref') && after.some((w) => /^refs\/remotes\/[^/]+\/head$/i.test(w))) return 'git with its remote changed';
 	// A remote's push refspec decides which branch a bare git push lands on (remote.origin.push HEAD:main), so it is
 	// held with the url (the 1.25.0 sweep).
-	const remoteKey = (w) => /^(remote\.[^=]*\.(url|pushurl|push)|url\.[^=]*\.(insteadof|pushinsteadof))(=|$)/.test(w);
+	// What carries the push decides where it lands too (the 1.29.0 sweep: core.sshCommand sent a push to another
+	// host with origin's URL untouched): the ssh command, a proxy, the certificate check, the credential helper.
+	const remoteKey = (w) => /^(remote\.[^=]*\.(url|pushurl|push|proxy|vcs)|url\.[^=]*\.(insteadof|pushinsteadof)|core\.(sshcommand|gitproxy|askpass)|ssh\.variant|https?\.([^=]*\.)?(proxy|sslverify|sslcainfo|sslcapath|sslcert|sslkey|extraheader|cookiefile)|credential\.([^=]*\.)?helper|protocol\.[^=]*\.allow)(=|$)/.test(w);
 	if (words.slice(start, at).some(remoteKey)) return 'git with its remote changed';
 	if (sub === 'config' && words.slice(at + 1).some(remoteKey) && !words.slice(at + 1).some((w) => /^(--get|--get-all|--get-regexp|--list|-l|get|list)$/.test(w))) return 'git with its remote changed';
 	if (GIT_OUTWARD.has(sub)) return 'git ' + sub;
@@ -454,7 +456,10 @@ function pushLimit(command) {
 // Clearing the AI shell's markers joined them on the owner's pick, 2026-11-12 (C6): the pre-push hook then takes the
 // shell for the owner's terminal, so it switches the hook's AI checks off.
 const MARKERS = 'a command that clears the AI shell\'s markers';
-const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS]);
+// Accepting a changed host file or folder list is how the owner lifts a hold the kit set on it: a tool that ran the
+// install with that flag would lift its own hold (the plan check's P1, the 1.29.0 sweep).
+const ACCEPTS = 'a kit install that accepts a changed file, which only the owner does';
+const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS, ACCEPTS]);
 // A command the guard cannot read is held, not called an outward act, and no yes runs it: the yes could not be matched
 // to what would run (C14).
 const HELD = new Set(['a command too long to read', 'the guard could not read this command']);
@@ -475,6 +480,7 @@ function bypassIn(text, depth = 0) {
 	if (/\bGIT_(DIR|COMMON_DIR)\s*=/i.test(flat) && /\bgit\b/i.test(flat)) return 'git with its hooks moved';
 	if (/GIT_CONFIG_(KEY_\d+=\s*include|PARAMETERS=[^;&|\n]*include)/i.test(flat)) return 'git with its hooks moved';
 	if (markersCleared(flat) && !markerOnlyNamed(text)) return MARKERS;
+	if (/(^|[\s=])--accept-host(?=$|[\s=;&|)])/i.test(flat) && /\binstall\b/i.test(flat)) return ACCEPTS;
 	for (const all of tokenize(joinContinuations(text))) {
 		const words = all.filter((w) => !w.redirect).map((w) => w.value.toLowerCase());
 		for (let i = 0; i < words.length; i++) {
@@ -569,6 +575,27 @@ function uncheckedRepo(input) {
 	return !hooks || !real(path.resolve(cwd, hooks)).startsWith(real(path.join(home, 'kit-guard')) + path.sep);
 }
 
+// I6: whether origin is set to push somewhere other than where it fetches from (a push URL of its own, or a rewrite
+// that applies to pushes only). Git's own answer for both, rewrites applied. A folder that is no repo, or a repo with
+// no origin, pushes nothing; any other failure to answer is taken as moved, so the push asks.
+function originMoved(input) {
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	if (!cwd) return true;
+	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8', timeout: 3000 });
+	const fetch = git('remote', 'get-url', 'origin');
+	// No repo here pushes nothing. A repo with no origin still takes the word as a URL and rewrites it (the 1.29.0
+	// sweep), so that asks, as any other failure does.
+	if (fetch.status !== 0) return !/not a git repository/i.test(String(fetch.stderr));
+	const push = git('remote', 'get-url', '--push', '--all', 'origin');
+	const raw = git('config', '--get', 'remote.origin.url');
+	if (push.status !== 0 || raw.status !== 0) return true;
+	// By host and path, from the URL as origin was given it: https to fetch and ssh to push are one repo, while a
+	// rewrite of both sides to another host (insteadOf) is another one, though fetch and push then agree.
+	const where = (url) => String(url).trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^[^@/]*@/, '').replace(/^([^/:]+):(?!\d+\/)/, '$1/').replace(/^([^/:]+):\d+\//, '$1/').replace(/\.git\/?$/, '').replace(/\/+$/, '');
+	const from = where(raw.stdout);
+	return !from || [fetch.stdout, ...push.stdout.split(/\r?\n/)].filter((u) => u.trim()).some((to) => where(to) !== from);
+}
+
 function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
@@ -602,7 +629,7 @@ function check(input) {
 		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
 		// Inside the push bound a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
-		if (reason && boundedPush(input)) reason = uncheckedRepo(input) ? 'a push from a repo whose git hooks are not the kit\'s' : '';
+		if (reason && boundedPush(input)) reason = uncheckedRepo(input) ? 'a push from a repo whose git hooks are not the kit\'s' : originMoved(input) ? 'a push that origin sends somewhere other than it fetches from' : '';
 		if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
 		// A guard that cannot read the command refuses rather than lets it through.

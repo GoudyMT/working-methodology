@@ -88,6 +88,14 @@ test('the same holes in the spellings beside them are held', () => {
 		'git remote add backup https://example.com/other.git',
 		'git config remote.origin.pushurl https://example.com/other.git',
 		'git config --global url.https://example.com/.insteadOf https://github.com/',
+		// The 1.29.0 sweep: what carries the push decides where it lands as surely as the URL does.
+		'git config core.sshCommand "ssh -o HostName=example.invalid"',
+		'git config --global core.sshCommand ssh-elsewhere',
+		'git config http.proxy http://example.invalid:8080',
+		'git config http.sslVerify false',
+		'git config --global credential.helper store',
+		'git -c core.sshCommand=ssh-elsewhere fetch',
+		'git remote remove origin',
 		'git -c remote.origin.url=https://example.com/x.git push origin feat/x',
 		'echo "[url]" >> ~/.gitconfig',
 		// The local origin/HEAD names the default branch when the remote names none (K29): moving it is held too.
@@ -262,7 +270,6 @@ test('a held command runs once on the owner\'s own pop-up yes for that exact com
 	popUp({ act: `echo ${act}` });
 	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes to a command that only holds this one');
 	popUp({ act });
-	assert.equal(withYes('Bash', { command: 'git push origin release' }), 'allow', 'a feature-branch push needs no yes');
 	assert.equal(withYes('Bash', { command: 'git push origin HEAD' }), 'deny', 'a yes covers only the command it quotes');
 	assert.equal(withYes('Bash', { command: act }, { agent_id: 'a1' }), 'deny', 'never for a subagent');
 	popUp({ act, then: [act] });
@@ -781,7 +788,8 @@ test('plain reads of the guard files pass in the shapes V1 found, and lookalikes
 test('a feature push from another repo runs only where the kit\'s own hooks will check it', () => {
 	const root = kitTemp.makeTemp('k28-');
 	const cfg = path.join(root, 'cfg');
-	const mk = (name) => { const d = path.join(root, name); fs.mkdirSync(d); spawnSync('git', ['init', '-q', '-b', 'main', d]); return d; };
+	// Each has an origin: a repo with none asks (the 1.29.0 sweep), which is not what this test is about.
+	const mk = (name) => { const d = path.join(root, name); fs.mkdirSync(d); spawnSync('git', ['init', '-q', '-b', 'main', d]); spawnSync('git', ['-C', d, 'remote', 'add', 'origin', `https://example.invalid/owner/${name}.git`]); return d; };
 	const proj = mk('proj');
 	const other = mk('other');
 	const ask = (cwd) => {
@@ -888,4 +896,45 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	assert.notEqual(r.status, 0, 'the first push went out past a fake remote ref');
 	assert.match(r.stderr, /First push blocked/);
 	assert.equal(fs.existsSync(path.join(dir, '.git', 'kit-first-push-done')), false);
+});
+// why: guards rule:outward-acts. K38 (flips the 1.28.0 measure run left alive in owner-yes.cjs): a transcript line with
+// no message (Claude Code writes such lines) is skipped, before the pop-up and after it, and the yes still counts.
+test('a yes is found past a transcript line with no message', () => {
+	const act = 'gh pr create --fill';
+	popUp({ act });
+	const bare = JSON.stringify({ type: 'assistant', isSidechain: false }) + '\n';
+	fs.writeFileSync(TRANSCRIPT, bare + fs.readFileSync(TRANSCRIPT, 'utf8') + bare);
+	assert.equal(withYes('Bash', { command: act }), 'allow');
+});
+
+// why: guards rule:outward-acts. I6 (the fetch and push repo compare, open since 1.16.0): origin set to push somewhere
+// other than it fetches from, by a push URL of its own or a rewrite for pushes only, sends a feature branch to another
+// repo. That is not the push the bound frees, so it asks.
+test('a feature push is inside the bound only while origin pushes to where it fetches from', () => {
+	const repo = kitTemp.makeTemp('i6-');
+	const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+	git('init', '-q', '-b', 'main');
+	git('remote', 'add', 'origin', 'https://example.invalid/owner/app.git');
+	const push = () => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git push origin feat/x' }, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: repo } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout && JSON.parse(r.stdout).hookSpecificOutput.permissionDecision ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	assert.equal(push(), '');
+	for (const [key, value] of [['remote.origin.pushurl', 'https://example.invalid/other/repo.git'], ['url.https://example.invalid/other/.pushInsteadOf', 'https://example.invalid/owner/']]) {
+		git('config', key, value);
+		assert.match(push(), /somewhere other than it fetches from/, key);
+		git('config', '--unset-all', key);
+	}
+	assert.equal(push(), '', 'back as it was');
+	// The 1.29.0 sweep: the same repo spelled another way is not moved (https to fetch, ssh to push); a rewrite of
+	// both sides to another host is; and with no origin at all the word may be rewritten too, so it asks.
+	git('config', 'remote.origin.pushurl', 'git@example.invalid:owner/app.git');
+	assert.equal(push(), '', 'the same repo over ssh');
+	git('config', '--unset-all', 'remote.origin.pushurl');
+	git('config', 'url.https://elsewhere.invalid/.insteadOf', 'https://example.invalid/');
+	assert.match(push(), /somewhere other than it fetches from/, 'both sides rewritten');
+	git('config', '--unset-all', 'url.https://elsewhere.invalid/.insteadOf');
+	git('remote', 'remove', 'origin');
+	assert.match(push(), /somewhere other than it fetches from/, 'no origin');
 });
