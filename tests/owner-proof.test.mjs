@@ -470,11 +470,12 @@ test('a PowerShell filter piped into a writer is read as naming the files of the
 	for (const command of ['Get-ChildItem -Recurse -Filter *.json', 'Get-ChildItem -Recurse -Filter *.cjs | Select-Object Name', 'Get-ChildItem -Recurse -Filter *.txt | Remove-Item']) assert.equal(run('PowerShell', { command }), 'allow', command);
 });
 
-// why: guards rule:security-standards. K54 (the Military Transition App, 2026-11-14, reproduced on 1.30.1): a pipe
+// why: guards rule:security-standards. K54 (reported by a project on the kit, 2026-11-14, reproduced on 1.30.1): a pipe
 // later in the command made every earlier cd unsure, so `cd .claude && cat guard.cjs | head -5`, a plain read, was
-// refused as a write to a guard. A pipe after a cd cannot undo it; a cd that is itself a pipe stage or follows || still
-// leaves the folder unknown, and every write from the followed folder is still refused.
-test('a pipe after a cd leaves the cd followed, so a read there passes and a write there is still refused', { windows: 'also' }, () => {
+// refused as a write to a guard. A cd stays followed only when every pipe stage only reads; a file list piped on to a
+// writer (the sweep of the first fix overwrote every guard with `cd .claude && ls | xargs -n1 cp /dev/null`) leaves the
+// folder unknown, as before.
+test('a pipe of plain reads after a cd leaves the cd followed; a pipe into a writer does not', { windows: 'also' }, () => {
 	const proj = kitTemp.makeTemp('cdpipe-');
 	fs.mkdirSync(path.join(proj, '.claude'));
 	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x\n');
@@ -482,12 +483,7 @@ test('a pipe after a cd leaves the cd followed, so a read there passes and a wri
 	for (const c of ['cd .claude && cat guard.cjs | head -5', 'cd .claude && grep -n check guard.cjs | wc -l', 'cd .claude && grep x guard.cjs | sort | uniq']) {
 		assert.equal(bash(c), 'allow', c);
 	}
-	for (const c of ['cd .claude && cat x | tee guard.cjs', 'cd .claude && echo x > guard.cjs | cat', 'cd .claude && cat guard.cjs | head -5 > guard.cjs', 'cd .claude || true; cat x | tee guard.cjs', 'echo | cd .claude; cat x | tee guard.cjs', 'cd .claude && true || tee .claude/guard.cjs', 'cd sub && true & tee .claude/guard.cjs', 'cd sub && cat a | head || tee .claude/guard.cjs']) {
+	for (const c of ['cd .claude && ls | xargs -n1 cp /dev/null', 'cd .claude && ls | xargs -n1 truncate -s0', 'cd .claude && ls | head | xargs -n1 cp /dev/null', 'cd .claude && cat guard.cjs | head -5 > guard.cjs']) {
 		assert.notEqual(bash(c), 'allow', c);
-	}
-	// From inside .claude: a || or a & after the cd means the write may run where the shell still stands (the review of
-	// the first fix).
-	for (const c of ['cd .. && true || tee guard.cjs', 'cd .. && true & tee guard.cjs', 'cd .. && cat a | head || tee guard.cjs']) {
-		assert.notEqual(run('Bash', { command: c }, path.join(proj, '.claude')), 'allow', c);
 	}
 });

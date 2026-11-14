@@ -531,8 +531,12 @@ function shellWritesFrom(command, tool, start, names) {
 	// makes every cd unsure: a || runs its right side after a cd that failed, and a & puts the cd in the background
 	// (the review of this fix). Read once, before the loop: read per command it made a long command quadratic (98 KB
 	// took 21 s, past the hook's 10 s).
+	// A pipe after a cd counts only when every stage of every pipeline is a plain reader with no redirect: a file list
+	// piped on to a writer (ls | xargs cp /dev/null) names its files where no word shows them (the sweep of this fix).
 	const firstPipe = segments.findIndex((g) => g.end === '|');
-	const otherBreak = segments.some((g) => !plainBreak(g.end) && g.end !== '|');
+	const stageReads = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p)) && !g.some((x) => x.redirect); };
+	const pipesRead = segments.every((g, i) => !(g.end === '|' || (i > 0 && segments[i - 1].end === '|')) || stageReads(g));
+	const otherBreak = segments.some((g) => !plainBreak(g.end) && g.end !== '|') || (firstPipe >= 0 && !pipesRead);
 	const apartAt = (s) => grouped || otherBreak || (firstPipe >= 0 && firstPipe <= s);
 	for (let s = 0; s < segments.length; s++) {
 		if (linkMade) return true;
