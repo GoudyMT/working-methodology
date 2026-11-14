@@ -67,7 +67,8 @@ guards-hold suites).
 
 ## 5. Limits
 
-- A quoted pattern after `-match` and its kin is never run by PowerShell, so the wildcard name check skips it; a
+- A quoted pattern after `-match` and its kin, in the PowerShell tool only, after a `$value` and with nothing that
+  could run it on (a pipe, redirect or runner), is never run, so the wildcard name check skips it; a
   program that ran such an argument as a command would not be held by that check (the others still read it).
 - K49 removes entries that name a kit guard in its kit place; a hook that runs a guard through another wrapper
   script is not seen.

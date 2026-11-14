@@ -655,6 +655,10 @@ const ASK = [
 	"bash -c '/mingw64/bin/gi? -C C:/elsewhere clean -dfx'",
 	// A match pattern is not run, but one that names a delete is still read.
 	"$r -match 'x'; bash -c 'rm -rf C:/elsewhere'",
+	// A pattern something runs on is a command (the push review of 1.31.0): bash's $b -match is $b -c.
+	"echo -match '/bin/?m -rf C:/elsewhere' | bash",
+	"bash -c '$a -match \"/bin/?m -rf C:/elsewhere\"'",
+	"b=ba''sh; $b -match '/bin/?m -rf C:/elsewhere'",
 	...CARRY122_ASK,
 	...SWEEP_ASK,
 	...RESWEEP_ASK,
