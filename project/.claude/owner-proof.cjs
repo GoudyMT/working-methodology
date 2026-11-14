@@ -31,9 +31,17 @@ let homeNow = null;
 // It moves with each cd the guard follows, and is used only while its own parts are the parts in hand, so a stale
 // or mistaken one is never read from: the lower-case parts are then all there is.
 let startNow = null;
+// The two sides of the compare are kept between calls: a long command asks for every word (the 98 KB command spent
+// most of its owner-proof time here, the main CI on the PR 37 merge).
+const cwdKeys = new WeakMap();
+const cwdKey = (cwd) => { if (!cwdKeys.has(cwd)) cwdKeys.set(cwd, JSON.stringify(cwd)); return cwdKeys.get(cwd); };
+let startKey = ['', ''];
 function diskBase(cwd) {
 	if (!Array.isArray(cwd)) return null;
-	if (startNow && startNow.dir && JSON.stringify(cwd) === JSON.stringify(parts(startNow.dir))) return startNow.dir;
+	if (startNow && startNow.dir) {
+		if (startKey[0] !== startNow.dir) startKey = [startNow.dir, JSON.stringify(parts(startNow.dir))];
+		if (cwdKey(cwd) === startKey[1]) return startNow.dir;
+	}
 	return (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/');
 }
 const home = () => homeNow ?? findHome();
@@ -154,8 +162,10 @@ function throughLink(word, cwd) {
 	// only one known.
 	const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR || process.cwd();
 	const written = rooted(w) ? w.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : `${from}/${w}`;
+	// The spelling as written is its own key first, so a word asked again skips the resolve.
+	if (linkSeen.has(`\0${written}`)) return linkSeen.get(`\0${written}`);
 	const abs = path.resolve(written);
-	if (linkSeen.has(abs)) return linkSeen.get(abs);
+	if (linkSeen.has(abs)) { linkSeen.set(`\0${written}`, linkSeen.get(abs)); return linkSeen.get(abs); }
 	if (linkSeen.size > 5000) linkSeen.clear();
 	let out = null;
 	try { const r = walked(written); if (slash(r) !== slash(abs)) out = r; } catch { /* not placed */ }
@@ -164,6 +174,7 @@ function throughLink(word, cwd) {
 	const twin = twinOf(abs);
 	if (twin !== null) out = twin;
 	linkSeen.set(abs, out);
+	linkSeen.set(`\0${written}`, out);
 	return out;
 }
 
@@ -498,7 +509,7 @@ function shellWritesFrom(command, tool, start, names) {
 	// held, and runs as a command of its own, where the link is on disk and followed.
 	let linkMade = false;
 	const hit = (x) => {
-		const where = Array.isArray(cwd) ? `A${JSON.stringify(cwd)}` : cwd === null ? 'N' : 'U';
+		const where = Array.isArray(cwd) ? `A${cwdKey(cwd)}` : cwd === null ? 'N' : 'U';
 		const key = `${x.quoted ? 1 : 0}${where}\0${x.value}`;
 		if (!seen.has(key)) seen.set(key, tails(dotless(x.value, x.quoted)).some((w) => names(w, cwd)));
 		return seen.get(key);
