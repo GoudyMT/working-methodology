@@ -150,10 +150,12 @@ export function sections() {
 	// What the check cannot tell means the full reading; a section it cannot rebuild names its file for a read.
 	const missing = [];
 	const reads = [];
+	// Which of them a label not found put there, apart from a preview cut (K53: write called a cut a missing label).
+	const lost = [];
 	// A preview is at most SHOW_LINES lines of SHOW_CHARS characters: a longer section is cut and its file named for a
 	// read, so a huge file can never make the trim below slow (the 1.30.1 sweep timed a 40,000-line list at 55 s).
 	const shown = (v, file) => {
-		if (v === null) { reads.push(file); return [`- (not found: ${file} is named for a read)`]; }
+		if (v === null) { reads.push(file); lost.push(file); return [`- (not found: ${file} is named for a read)`]; }
 		if (!v.length) return ['- (nothing under the label)'];
 		if (v.length > SHOW_LINES || v.some((l) => l.length > SHOW_CHARS)) {
 			reads.push(file);
@@ -172,7 +174,7 @@ export function sections() {
 		Plan: where.plans?.length ? where.plans.map((p) => `plan: ${p}`) : ['plan: none named'],
 	};
 	const plans = where.plans || [];
-	return { s, files: [...FILES, ...plans], plans, reads, missing, resumeFrom: fromPlan ? '_Active Plan.md' : '_Working Memory.md' };
+	return { s, files: [...FILES, ...plans], plans, reads, lost, missing, resumeFrom: fromPlan ? '_Active Plan.md' : '_Working Memory.md' };
 }
 // What each section is built from: a trimmed section names these files for a fresh read.
 const SOURCES = { 'Last session': ['_Working Memory.md'], 'Pending the owner': ['_Active Plan.md'], 'Carry-overs': ['_Active Plan.md'] };
@@ -242,7 +244,7 @@ function save(file, text) {
 function write(session) {
 	const g = gitState();
 	const head = ['# Resume packet', 'Start a session with: node .claude/resume-packet.mjs check', `written: ${new Date().toISOString()}`, `session: ${session || '-'}`, gitLine(g), '', ''].join('\n');
-	const { s, files, missing, reads } = sections();
+	const { s, files, missing, reads, lost } = sections();
 	fit(s, MAX - Buffer.byteLength(head) - files.length * 40);
 	const hashes = files.map((f) => `${open(f)?.hash ?? 'missing'} ${f}`);
 	const text = `${head}${render(s)}\n## Files\n${hashes.join('\n')}\n`;
@@ -251,7 +253,9 @@ function write(session) {
 	console.log(`resume packet written: .kit/resume-packet.md (${size} bytes${size > MAX ? `, over ${MAX}: the lessons and hashes are never cut` : ''})`);
 	// Said at write time, so the closeout fixes the file (step 5) instead of every later session paying for it.
 	if (missing.length) console.log(clean(`fix before the next session: a check now is the full reading, it cannot tell ${missing.join('; ')}`));
-	if (reads.length) console.log(clean(`fix before the next session: a section label is not found, so a check names ${[...new Set(reads)].join(', ')} for a read`));
+	if (lost.length) console.log(clean(`fix before the next session: a section label is not found, so a check names ${[...new Set(lost)].join(', ')} for a read`));
+	const cut = [...new Set(reads)].filter((x) => !lost.includes(x));
+	if (cut.length) console.log(clean(`a long section is cut in the preview, as designed, so a check names ${cut.join(', ')} for a read; nothing to fix`));
 }
 
 const ORIENT = 'Then, before source-of-truth work (rule:post-compact-orientation): anti-duplication spot-check; ASCII scan; size-cap table (node .claude/tracking-check.mjs caps); log compression check; Sweep check (a branch near a PR without a current report: sweep first); Branch check (work on main: branch first); state the working mode and the first action.';
