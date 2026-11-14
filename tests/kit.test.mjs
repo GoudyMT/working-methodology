@@ -618,13 +618,17 @@ test('a project settings file that still runs the guards itself is named, and in
   assert.doesNotMatch(quiet, /runs kit guards itself/);
   const settings = path.join(proj, '.claude', 'settings.json');
   const s = JSON.parse(read(settings));
+  // The project's own hooks stay, whatever their file names, and a group of an odd shape is left as it is (the 1.31.0
+  // sweep: a match by file name alone removed a project's own tools/hooks/guard.cjs and its Stop canary.cjs).
+  s.hooks = { ...(s.hooks || {}), PreToolUse: [...((s.hooks || {}).PreToolUse || []), { matcher: 'Bash', hooks: [{ type: 'command', command: 'node tools/hooks/guard.cjs' }] }, { matcher: 'Read', hooks: 'odd' }], Stop: [{ hooks: [{ type: 'command', command: 'node scripts/canary.cjs' }] }] };
   const before = JSON.stringify(s);
-  // The 1.24.0 shape: each guard as its own entry, a user-layer hook among them.
+  // The 1.24.0 shape: each guard as its own entry, a user-layer hook among them; and one written by hand with shell
+  // punctuation around the path.
   const own = (file) => ({ type: 'command', command: 'node', args: [file.split(path.sep).join('/')] });
-  s.hooks = { ...(s.hooks || {}), PreToolUse: [...((s.hooks || {}).PreToolUse || []), { matcher: 'Agent|Task', hooks: [own(path.join(home, 'kit-hooks', 'sweep-guard.cjs'))] }, { matcher: 'Bash', hooks: [own(path.join(proj, '.claude', 'owner-proof.cjs'))] }] };
+  s.hooks.PreToolUse = [...s.hooks.PreToolUse, { matcher: 'Agent|Task', hooks: [own(path.join(home, 'kit-hooks', 'sweep-guard.cjs'))] }, { matcher: 'Bash', hooks: [own(path.join(proj, '.claude', 'owner-proof.cjs')), { type: 'command', command: 'node .claude/guard-delete.cjs; exit 0' }] }];
   fs.writeFileSync(settings, JSON.stringify(s, null, 2));
   for (const text of [cli('status', proj).stdout, sessionStartReport({ kit, home, projectDir: proj })]) {
-    assert.match(text, /\.claude\/settings\.json[^\n]*\(sweep-guard\.cjs, owner-proof\.cjs\)[\s\S]*--merged \.claude\/settings\.json/);
+    assert.match(text, /\.claude\/settings\.json[^\n]*\(sweep-guard\.cjs, owner-proof\.cjs, guard-delete\.cjs\)[\s\S]*--merged \.claude\/settings\.json/);
   }
   const ins = cli('install', 'project', proj);
   assert.match(ins.stdout, /replaced \.claude\/settings\.json/);

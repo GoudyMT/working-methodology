@@ -111,20 +111,28 @@ function settingsProblem(text) {
 	return '';
 }
 
-// The kit guard files a settings file's hooks run themselves. Since 1.25.1 only the launcher in the Claude config folder
-// runs them, so a project file in the older shape runs each one a second time (K49, the Ask 214 project: the sweep
-// guard's second check of a start found its own slot taken, and no reviewer could start).
-const GUARD_FILE = /(?:^|[\\/])(guard|owner-proof|task-gate|guard-outward|guard-delete|call-cap|canary|sweep-guard)\.cjs$/i;
-/** The kit guard files a settings file's text runs itself, in order, or []. */
+// The kit guards a settings file's PreToolUse hooks run themselves. Since 1.25.1 only the launcher in the Claude
+// config folder runs them, so a project file in the older shape runs each one a second time (K49, reported by a
+// project on the kit: the sweep guard's second check of a start found its own slot taken, and no reviewer could
+// start). Only the kit's own places count: a project guard in .claude, a user hook in kit-hooks. A project's own
+// hook of the same file name elsewhere is the project's (the 1.31.0 sweep). The whole command text is searched, so
+// shell punctuation around the path (`;`, `&&`, `)`, `>>`) hides nothing.
+const KIT_GUARD = /(?:^|[^\w.-])(?:\.claude[\\/](guard|owner-proof|task-gate|guard-outward|guard-delete)|kit-hooks[\\/](call-cap|canary|sweep-guard))\.cjs(?![\w.-])/gi;
+/** The kit guard files one hook entry runs itself, in order, or []. */
+function runsKitGuard(h) {
+	if (!h || typeof h !== 'object') return [];
+	const text = [String(h.command || ''), ...(Array.isArray(h.args) ? h.args.map(String) : [])].join(' ').replace(/\\\\/g, '/');
+	const found = [];
+	for (const m of text.matchAll(KIT_GUARD)) { const f = `${(m[1] || m[2]).toLowerCase()}.cjs`; if (!found.includes(f)) found.push(f); }
+	return found;
+}
+/** The kit guard files a settings file's PreToolUse hooks run themselves, in order, or []. */
 function oldGuardEntries(text) {
 	let s = null;
 	try { s = JSON.parse(String(text).replace(/^﻿/, '')); } catch { return []; }
+	const groups = s && s.hooks && typeof s.hooks === 'object' && Array.isArray(s.hooks.PreToolUse) ? s.hooks.PreToolUse : [];
 	const found = [];
-	const hooks = s && s.hooks && typeof s.hooks === 'object' ? s.hooks : {};
-	for (const groups of Object.values(hooks)) for (const g of Array.isArray(groups) ? groups : []) for (const h of Array.isArray(g && g.hooks) ? g.hooks : []) {
-		const words = [String((h && h.command) || ''), ...(Array.isArray(h && h.args) ? h.args.map(String) : [])].join(' ').split(/[\s'"]+/);
-		for (const w of words) { const m = w.match(GUARD_FILE); if (m && !found.includes(`${m[1].toLowerCase()}.cjs`)) found.push(`${m[1].toLowerCase()}.cjs`); }
-	}
+	for (const g of groups) for (const h of g && typeof g === 'object' && Array.isArray(g.hooks) ? g.hooks : []) for (const f of runsKitGuard(h)) if (!found.includes(f)) found.push(f);
 	return found;
 }
 
@@ -543,4 +551,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };

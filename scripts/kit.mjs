@@ -405,16 +405,16 @@ function dropProjectGuardEntry(projectDir, backupDir) {
     const file = path.join(projectDir, '.claude', name);
     let s;
     try { s = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { continue; }
-    // Every hook that runs a kit guard file itself goes, in any event: the guard.cjs entry of 1.25.0 and the separate
-    // guard entries of 1.24.0 and before alike (K49: those ran every guard twice beside the launcher).
+    // Every PreToolUse hook that runs a kit guard from its kit place itself goes: the guard.cjs entry of 1.25.0 and the
+    // separate guard entries of 1.24.0 and before alike (K49: those ran every guard twice beside the launcher). Only
+    // that event and only those paths (.claude/<guard>.cjs, kit-hooks/<hook>.cjs): a project's own hook of the same
+    // file name elsewhere is the project's (the 1.31.0 sweep). A group or hook of an odd shape is left as it is.
     if (!launch.oldGuardEntries(JSON.stringify(s)).length) continue;
-    const named = (h) => launch.oldGuardEntries(JSON.stringify({ hooks: { x: [{ hooks: [h] }] } })).length > 0;
-    for (const ev of Object.keys(s.hooks)) {
-      if (!Array.isArray(s.hooks[ev])) continue;
-      const kept = s.hooks[ev].map((e) => ({ ...e, hooks: (e.hooks || []).filter((h) => !named(h)) })).filter((e) => e.hooks.length);
-      if (kept.length) s.hooks[ev] = kept; else delete s.hooks[ev];
-    }
-    if (!Object.keys(s.hooks).length) delete s.hooks;
+    const named = (h) => launch.runsKitGuard(h).length > 0;
+    s.hooks.PreToolUse = s.hooks.PreToolUse
+      .map((e) => (e && typeof e === 'object' && Array.isArray(e.hooks) ? { ...e, hooks: e.hooks.filter((h) => !named(h)) } : e))
+      .filter((e) => !(e && typeof e === 'object' && Array.isArray(e.hooks) && !e.hooks.length));
+    if (!s.hooks.PreToolUse.length) delete s.hooks.PreToolUse;
     fs.mkdirSync(path.join(backupDir, '.claude'), { recursive: true });
     fs.copyFileSync(file, path.join(backupDir, '.claude', name));
     fs.writeFileSync(file, JSON.stringify(s, null, 2) + '\n');
@@ -1097,17 +1097,6 @@ function claudeCodeTooOld(text) {
   return `Claude Code ${m[1]} is older than ${ON_FAILURE_MIN}: a guard that crashes or times out lets the command run. Run claude update.`;
 }
 
-/**
- * What a session should know at start: whether the kit has moved past this project, and which
- * skills apply to the cases this project turned on. The session-start hook adds it to Claude's
- * context, so nothing depends on anyone remembering to check.
- *
- * Args:
- *     ctx: { kit, home, projectDir }
- *
- * Returns:
- *     the message text (one or more lines)
- */
 /** K49: a line for each project settings file that still runs kit guards itself, as the shape before 1.25.1 did. */
 function doubleRunLines(projectDir) {
   const out = [];
@@ -1122,6 +1111,17 @@ function doubleRunLines(projectDir) {
   return out;
 }
 
+/**
+ * What a session should know at start: whether the kit has moved past this project, and which
+ * skills apply to the cases this project turned on. The session-start hook adds it to Claude's
+ * context, so nothing depends on anyone remembering to check.
+ *
+ * Args:
+ *     ctx: { kit, home, projectDir }
+ *
+ * Returns:
+ *     the message text (one or more lines)
+ */
 export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion }) {
   const lines = [];
   const old = claudeCodeTooOld(claudeVersion());
