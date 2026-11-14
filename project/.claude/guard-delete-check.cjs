@@ -817,6 +817,13 @@ const asSession = (tool, command, extra) => ({ tool_name: tool, session_id: SESS
 
 for (const command of ASK) check(command, asSession('Bash', command), true);
 for (const command of PASS) check(command, asSession('PowerShell', command), false);
+// The pattern skip in the PowerShell tool ends at anything that could run the pattern (the commit review of 1.31.0).
+for (const command of [
+	"$x -match \u2018/bin/?m -rf C:/elsewhere' | iex \u2018y'",
+	"$x -match '/bin/?m -rf C:/elsewhere'; wsl $Matches[0]",
+	"$x -match '/bin/?m -rf C:/elsewhere'; ./run.ps1",
+	"$x -match '/bin/?m -rf C:/elsewhere'; [scriptblock]::Create($Matches[0]).Invoke()",
+]) check(command, asSession('PowerShell', command), true);
 for (const command of CARRY122_PS_ASK) check('[PowerShell] ' + command, asSession('PowerShell', command), true);
 for (const command of CARRY122_PASS) check(command, asSession('PowerShell', command), false);
 check('[Bash] rm -rf * (bash * skips dot names)', asSession('Bash', 'rm -rf *'), false);
