@@ -185,8 +185,9 @@ each unit is briefed and checked. It buys throughput and a longer lead session. 
 briefs (less re-reading), coupled units batched into one builder, tiny work done by the lead.
 
 Measure spend from the run records (the project's meter), never the Agent result's usage line: that line is the
-conversation's size, not what it spent. Measure in dollars: each model has its own price (Haiku costs about a
-thirtieth of Opus per unit of token work), so a token count across models hides the cost. Cost is calls x context:
+conversation's size, not what it spent. Measure in dollars: each model has its own price (at list price Haiku costs
+about a fortieth of Opus for a prompt under 100K tokens and an eighth above it), so a token count across models
+hides the cost. Cost is calls x context:
 every call re-reads the whole conversation. Wide reading belongs in short-lived agents (a scanner, a builder) whose
 context is thrown away; read files in ranges; prefer one script over many small calls.
 

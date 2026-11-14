@@ -71,7 +71,8 @@ in.
 - **Haiku, the `scanner` role (Read, Grep, Glob only).** Fast and cheap for wide, mechanical reading: every caller
   of a name, counts across files, non-ASCII or comment-label hits in a list of files, a file inventory. Its answers
   are a FIRST PASS: in a past run its "none" was wrong once and it miscounted 7 terms. Re-check any result a decision
-  rests on before it counts. Never give it judgment, design, code or a check where a miss is costly. Its brief names
+  rests on before it counts. Never give it judgment, design, code or a check where a miss is costly. Keep each
+  scan's prompt under 100K tokens: above that Haiku's price rises fivefold. Its brief names
   a search the tool can actually do (in the runs so far, Glob always recursed and a Grep glob with a folder in it
   matched nothing - put the folder in the search path, keep the glob to a file pattern, and start every scan with a
   control count that must be above zero, since tools change) and asks for hits only, with no restating: output
