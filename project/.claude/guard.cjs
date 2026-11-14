@@ -13,7 +13,7 @@
 // What the guards cannot see (K30 and K33, the owner's call 2026-11-13: named, not held): a command a program builds
 // at run time (a script that clears the AI shell's markers and then pushes; a check of the push's parent processes
 // was probed, and a child started apart from its parent leaves no chain to read), a shell option set in the owner's
-// own profile (dot globbing), and a cloud session, where no hook runs. The guards catch slips; they are not a sandbox.
+// own profile (dot globbing), a link that git itself checks out or pulls in, and a cloud session, where no hook runs. The guards catch slips; they are not a sandbox.
 const fs = require('fs');
 const path = require('path');
 
