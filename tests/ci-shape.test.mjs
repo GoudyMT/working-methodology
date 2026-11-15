@@ -64,7 +64,9 @@ test('each shipped CI template meets the shape, and a project with no workflow i
 		assert.match(text, /disableAllHooks/, `${stack} template checks the settings`);
 	}
 	// The step itself, run as CI runs it: a settings file turning hooks off fails it, and one that does not passes.
-	for (const stack of ['node', 'python']) {
+	// The Python step needs python3, as its runner has; a machine without one (Windows' store stub) runs the Node step only.
+	const hasPython = spawnSync(bash(), ['-c', 'python3 -c "import json"'], { encoding: 'utf8' }).status === 0;
+	for (const stack of hasPython ? ['node', 'python'] : ['node']) {
 		const text = fs.readFileSync(path.resolve(`project/_Templates/ci-${stack}.yml`), 'utf8');
 		const m = /- name: Hooks stay on\n\s+run: \|\n((?:\s{10}.*\n)+)/.exec(text);
 		assert.ok(m, `${stack}: the step's script`);
@@ -72,6 +74,8 @@ test('each shipped CI template meets the shape, and a project with no workflow i
 		const step = (files) => spawnSync(bash(), ['-c', script], { cwd: project(files), encoding: 'utf8' }).status;
 		assert.equal(step({ '.claude/settings.json': '{\n  "disableAllHooks": true\n}\n' }), 1, `${stack}: hooks off`);
 		assert.equal(step({ '.claude/settings.local.json': '{"disableAllHooks":true}' }), 1, `${stack}: hooks off locally`);
+		assert.equal(step({ '.claude/settings.json': '{"disable\\u0041llHooks": true}' }), 1, `${stack}: an escaped key`);
+		assert.equal(step({ '.claude/settings.json': '{"disableAllHooks": tru' }), 1, `${stack}: not JSON`);
 		assert.equal(step({ '.claude/settings.json': '{"disableAllHooks": false}' }), 0, `${stack}: hooks on`);
 		assert.equal(step({ 'README.md': 'x\n' }), 0, `${stack}: no settings file`);
 	}

@@ -25,10 +25,11 @@ jobs:
       # K72: a tracked settings file that turns every hook off turns the kit's guards off with no sign.
       - name: Hooks stay on
         run: |
-          # -q: a match exits 0 even when one of the files is missing (with -l alone grep exits 2 and the step passes).
-          if grep -qsE '"disableAllHooks"[[:space:]]*:[[:space:]]*true' .claude/settings.json .claude/settings.local.json; then
-            echo "disableAllHooks is true in a tracked settings file"; exit 1
-          fi
+          # Read as JSON, as Claude Code reads it: a text match misses an escaped key; a file that does not parse fails.
+          for f in .claude/settings.json .claude/settings.local.json; do
+            [ -f "$f" ] || continue
+            node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8").replace(/^﻿/,""));process.exit(s&&s.disableAllHooks===true?1:0)' "$f" || { echo "disableAllHooks is true in $f, or it is not JSON"; exit 1; }
+          done
       # A PR may narrow this run to what the change reaches (vitest related, jest --findRelatedTests) once the
       # narrowed run has missed nothing beside the whole suite; main always runs it whole.
       - run: <npm test>
