@@ -9,7 +9,7 @@ Status: locked by the owner 2026-11-15 (pop-up: "State + decisions", no fold-ins
 - The Active Plan's own "Current Phase" section is gone from the template; the phase lives in the data.
 - Commands run one per call: the guards refuse a chained command that names a `.claude/` file.
 
-Trial on a copy of the workbench's 1.33.1 tracking files (`C:\Users\Max\kit-probes\b8-state-trial2`): `init` moved NEXT, the loose "Then MC3 ..." paragraph and the three pending items into the data; `check` passes. A closeout's hand edits after: the Session Log entry, the Working Memory index line and the Master Roadmap box (3; the rest are `state.mjs` commands). The next action is stated by hand in 1 file (`_State.json`), against 4.
+Trial on a copy of the workbench's 1.33.1 tracking files (a throwaway folder): `init` moved NEXT, the loose "Then MC3 ..." paragraph and the three pending items into the data; `check` passes. A closeout's hand edits after: the Session Log entry, the Working Memory index line and the Master Roadmap box (3; the rest are `state.mjs` commands). The next action is stated by hand in 1 file (`_State.json`), against 4.
 
 ## Proof on the released kit (1.33.1, workbench, 2026-11-15)
 
