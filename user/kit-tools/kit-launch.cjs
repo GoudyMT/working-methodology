@@ -424,11 +424,17 @@ function movesIn(input) {
 		if (WIN && /^\/[A-Za-z](\/|$)/.test(d)) d = `${d[1]}:/${d.slice(3)}`;
 		return d;
 	};
+	// Past the cap the reading would drop a folder, so the call is held instead (the K61 review): no real command needs it.
 	const CAP = 64;
+	let over = false;
 	const out = [];
 	let can = [path.resolve(String(input.cwd || process.cwd()))];
 	const add = (list, dirs) => {
-		for (const d of dirs) if (list.length < CAP && !list.some((x) => same(x, d))) list.push(d);
+		for (const d of dirs) {
+			if (list.some((x) => same(x, d))) continue;
+			if (list.length >= CAP) over = true;
+			else list.push(d);
+		}
 		return list;
 	};
 	let start = true;
@@ -471,17 +477,19 @@ function movesIn(input) {
 			}
 		}
 	}
-	return out;
+	return over ? null : out;
 }
 
 function preToolUse(input) {
 	const here = projectCheck(input);
+	const moves = movesIn(input);
+	if (moves === null) return deny("Held: this command moves between more folders than the kit guard can follow, so it cannot tell which project's guards to run. Split it into shorter commands.");
 	// The command acts in other folders too: each kit project it moves into checks it, with that folder as the call's,
 	// and holds it as it would a call started there (no record, two records). A hold from any of them stops the call.
 	const mine = findProject(input);
 	const answers = [here];
 	const seen = [];
-	for (const dir of movesIn(input)) {
+	for (const dir of moves) {
 		const there = findProject({ cwd: dir }, true);
 		const key = there && !there.ambiguous ? there.dir : dir;
 		if (mine && !mine.ambiguous && there && !there.ambiguous && same(mine.dir, there.dir)) continue;

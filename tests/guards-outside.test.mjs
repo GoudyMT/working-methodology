@@ -1419,6 +1419,8 @@ test('a command that moves into a kit project runs that project\'s guards', () =
 	assert.equal(call('cd ' + parent + ' || cd elsewhere; cd ' + base + ' && git push origin main'), 'deny', 'a relative move from either folder');
 	assert.equal(call('(cd ' + parent + '); cd ' + rel + ' && git push origin main'), 'deny', 'a move inside a subshell does not hide the outer folder');
 	assert.equal(call('git log -C ' + p), 'runs', 'a -C after the subcommand is not a folder');
+	// Past the folders it can follow, the call is held, never read short.
+	assert.equal(call(Array.from({ length: 8 }, (_, i) => 'cd a' + i + ' || cd b' + i).join('; ') + '; git status'), 'deny', 'too many folders to follow');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });
