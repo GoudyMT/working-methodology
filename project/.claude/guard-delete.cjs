@@ -110,7 +110,7 @@ const FEEDS_ON = /[|<>(){}`]|\b(eval|iex|invoke-expression|source)\b|\s-v\s|\$_\
 // What could run a matched pattern's text as a command: a pipe, a redirect, & or a subshell, or any shell or runner.
 // Curly quotes are quotes to PowerShell but not to the strip below, so any of them ends the skip; a script file named
 // or a writer counts too (the text may be written, then run).
-const PATTERN_FEEDS = /[|<>`&{}‘-‟]|\$\(|(^|[\s;(])\.(\s|[\\/])|\.(ps1|psm1|bat|cmd|sh)\b|\b(bash|sh|zsh|dash|ksh|fish|cmd|pwsh|powershell|wsl|ssh|eval|iex|ii|icm|saps|sajb|start|invoke[\w-]*|start-process|start-job|start-threadjob|scriptblock|source|xargs|env|exec|node|python\d*|perl|ruby|php|sudo|watch|timeout|nohup|parallel|set-content|add-content|out-file|tee-object|new-item|sc|ac)\b/i;
+const PATTERN_FEEDS = /[|<>`&{}\u2018-\u201f]|\$\(|(^|[\s;(])\.(\s|[\\/])|\.(ps1|psm1|bat|cmd|sh)\b|\b(bash|sh|zsh|dash|ksh|fish|cmd|pwsh|powershell|wsl|ssh|eval|iex|ii|icm|saps|sajb|start|invoke[\w-]*|start-process|start-job|start-threadjob|scriptblock|source|xargs|env|exec|node|python\d*|perl|ruby|php|sudo|watch|timeout|nohup|parallel|set-content|add-content|out-file|tee-object|new-item|sc|ac)\b/i;
 // Programs that run the command after them.
 const WRAPPERS = new Set(['timeout', 'sudo', 'doas', 'env', 'nice', 'nohup', 'command', 'exec', 'time', 'xargs', 'start-process', 'saps', 'stdbuf', 'ionice', 'chrt', 'setsid', 'runas', 'cmd', 'winpty']);
 // Start-Process git with a ( ) or @( ) list: the list is split off where its words cannot be read, so it asks.

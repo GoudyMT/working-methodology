@@ -129,7 +129,7 @@ function runsKitGuard(h) {
 /** The kit guard files a settings file's PreToolUse hooks run themselves, in order, or []. */
 function oldGuardEntries(text) {
 	let s = null;
-	try { s = JSON.parse(String(text).replace(/^﻿/, '')); } catch { return []; }
+	try { s = JSON.parse(String(text).replace(/^\ufeff/, '')); } catch { return []; }
 	const groups = s && s.hooks && typeof s.hooks === 'object' && Array.isArray(s.hooks.PreToolUse) ? s.hooks.PreToolUse : [];
 	const found = [];
 	for (const g of groups) for (const h of g && typeof g === 'object' && Array.isArray(g.hooks) ? g.hooks : []) for (const f of runsKitGuard(h)) if (!found.includes(f)) found.push(f);
