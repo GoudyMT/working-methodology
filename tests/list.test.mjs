@@ -215,6 +215,11 @@ test('list caught prints the catch rate and found-to-shipped by origin', () => {
 	assert.match(r.stdout, /^Caught by: sweep 1, real-use 1; escaped a gate: 1 of 2/m);
 	assert.match(r.stdout, /^Found to shipped by origin: real-use 2 found, 1 done, 0 closed, 1 open; self 1 found, 0 done, 1 closed, 0 open; not set 1 found, 0 done, 0 closed, 1 open/m);
 	assert.match(st(dir, 'list', 'audit').stdout, /^C2 /m, 'the audit lists rows still owed a label');
+	// A tag given with no place keeps the row's place; "at -" clears it on purpose.
+	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'next').status, 0);
+	assert.equal(rows(dir).find((x) => x.id === 'A2').at, 'T5');
+	assert.equal(st(dir, 'item', 'set', 'A2', 'at', '-').status, 0);
+	assert.equal(rows(dir).find((x) => x.id === 'A2').at, undefined);
 });
 
 // why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
