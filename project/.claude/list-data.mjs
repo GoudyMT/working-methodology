@@ -377,7 +377,8 @@ export function setField(r, field, value) {
 		// A tag with no place keeps the row's place; "at -" clears it.
 		const [t, ...at] = v.split(/\s+/);
 		out.tag = t.toLowerCase();
-		if (at.length) out.at = at.join(' ');
+		if (at.length === 1 && at[0] === '-') delete out.at;
+		else if (at.length) out.at = at.join(' ');
 	} else if (field === 'at') { if (v === '-') delete out.at; else out.at = v; }
 	else if (field === 'caught-by') out.caught_by = v;
 	else if (field === 'escaped') { if (!Object.hasOwn(yes, v)) return { why: 'escaped is yes or no' }; out.escaped = yes[v]; }

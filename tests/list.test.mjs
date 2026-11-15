@@ -397,6 +397,10 @@ test('import moves a checkbox roadmap into data once, and the boxes view writes 
 	assert.equal(st(dir, 'item', 'set', 'R3', 'tag', 'done v1').status, 0);
 	assert.equal(st(dir, 'render').status, 0);
 	assert.ok(read(dir, 'roadmap.md').includes('- [x] R3 Regenerate the README images'));
+	// "-" as the place clears it, in a tag change as in at (the workbench stored a literal "-", 2026-11-15).
+	assert.equal(st(dir, 'item', 'set', 'R4', 'caught-by', 'owner').status, 0);
+	assert.equal(st(dir, 'item', 'set', 'R4', 'tag', 'closed -').status, 0);
+	assert.equal(rows(dir).find((x) => x.id === 'R4').at, undefined);
 	// Once only: a second import is refused, as before.
 	assert.equal(st(dir, 'list', 'import', 'roadmap.md').status, 1);
 });
