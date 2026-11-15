@@ -43,6 +43,7 @@ test('the record writes the changelog in kind order and the PR body with its sum
 	assert.equal(log.split('\n')[0], '## 1.2.0 - 2026-11-12');
 	assert.ok(log.indexOf('### Added') < log.indexOf('### Changed') && log.indexOf('### Changed') < log.indexOf('### Security'), log);
 	const body = prBody(record());
+	// pin: 1 (the H1 the PR-body audit reads as <Area>: <title subject>)
 	assert.equal(body.split('\n')[0], '## Test value: tests say why they are kept');
 	assert.ok(body.includes('| tests | no reason | a why line |'), body);
 	assert.ok(!body.includes('| A PR cannot'), 'an item with no where got a summary row');
