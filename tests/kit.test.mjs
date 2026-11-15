@@ -1548,6 +1548,25 @@ test('memory metadata the memory service adds is not a change to fold back or a 
   assert.ok(foldBack({ kit, home, target: 'project', projectDir: proj }).foldBack.includes(`memory/${file}`));
 });
 
+// 1.36.0 sweep (data loss): the install half. An update over a file whose only change is the memory service's metadata
+// goes ahead, and the file as it was is kept first; a real top-level key named like the metadata is a real edit.
+test('an update over a memory file with only metadata keeps the file as it was', () => {
+  const { kit, home, proj } = makeKit();
+  const front = (body) => `---\nname: style\ndescription: the style rule\nmetadata:\n  type: feedback\n---\n\n${body}\n`;
+  fs.writeFileSync(path.join(kit, 'memory/style.md'), front('style rule'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  const at = path.join(home, 'projects', projectSlug(proj), 'memory', 'style.md');
+  const tagged = read(at).replace('metadata:\n', 'metadata:\n  node_type: memory\n  modified: 2026-11-12T03:19:00.195Z\n');
+  fs.writeFileSync(at, tagged);
+  fs.writeFileSync(path.join(kit, 'memory/style.md'), front('style rule, newer'));
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(r.updated, ['memory/style.md']);
+  assert.equal(read(path.join(r.backupDir, 'memory/style.md')), tagged);
+  // A top-level key that only looks like the metadata (after a blank line) is the owner's text, not the service's.
+  fs.writeFileSync(at, read(at).replace('metadata:\n', '\nmodified: by the owner\nmetadata:\n'));
+  assert.ok(foldBack({ kit, home, target: 'project', projectDir: proj }).foldBack.includes('memory/style.md'));
+});
+
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
 // session start said only that an update was there.
 test('session start names a user layer newer than the project for what it can break', () => {
@@ -8151,8 +8170,13 @@ test('status says current only when the kit folder, ~/.claude and the project al
   // T5 (1.36.0): --merged was taken on trust. A file left as it was when install named the merge was not merged.
   const unmerged = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
   assert.deepEqual(unmerged.merged, []);
-  assert.match(unmerged.skipped.find((s) => s.file === '_Working Standards.md').reason, /unchanged since install named the merge/);
+  assert.match(unmerged.skipped.find((s) => s.file === '_Working Standards.md').reason, /unchanged since install named the merge[\s\S]*again to keep it as it is/);
   assert.equal(status({ kit, home, projectDir: proj, ahead: () => 0 }).current, false);
+  // The same command again is the owner keeping the file as it is (1.36.0 sweep): recorded, not refused for good.
+  const before = read(path.join(proj, '_Working Standards.md'));
+  const kept = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
+  assert.deepEqual(kept.merged, ['_Working Standards.md']);
+  assert.equal(read(path.join(proj, '_Working Standards.md')), before);
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
   const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
   assert.deepEqual(m.merged, ['_Working Standards.md']);

@@ -586,6 +586,7 @@ export function install(ctx) {
   };
   const hostOwned = new Set(stamp.hostOwned || []);
   const owed = {};
+  let kept = false;
   for (const entry of entries) {
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, checked);
     const wantHash = sha(want);
@@ -605,6 +606,13 @@ export function install(ctx) {
     if (cur === wantHash) {
       files[entry.key] = wantHash;
     } else if (base && cur === base) {
+      // A memory file can match its base with the memory service's metadata in it: that file as it was is kept first.
+      if (!ctx.dryRun && entry.key.startsWith('memory/') && sha(fs.readFileSync(entry.dest, 'utf8')) !== base) {
+        const keep = path.join(backupDir, entry.key);
+        fs.mkdirSync(path.dirname(keep), { recursive: true });
+        fs.copyFileSync(entry.dest, keep);
+        kept = true;
+      }
       write(); updated.push(entry.key); files[entry.key] = wantHash;
     } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && !isHost(entry.key))) {
       // A guard file the kit wrote and something else changed is put back (V3). One the kit never wrote (a host's own
@@ -617,9 +625,10 @@ export function install(ctx) {
       write(); replaced.push(entry.key); files[entry.key] = wantHash;
     } else if ((ctx.merged || []).includes(entry.key) && (stamp.owed || {})[entry.key] === cur) {
       // T5 (1.36.0): --merged was taken on trust; a file left as it was when install named the merge holds none of the
-      // kit's changes, and recording it would lose them for good.
-      skipped.push({ file: entry.key, reason: 'recorded as merged, but the file is unchanged since install named the merge: merge the kit\'s copy into it first' });
-      owed[entry.key] = cur;
+      // kit's changes, and recording it would lose them for good. The same command a second time is the owner keeping
+      // the file as it is, so the refusal is never a dead end (1.36.0 sweep).
+      skipped.push({ file: entry.key, reason: 'recorded as merged, but the file is unchanged since install named the merge: merge the kit\'s copy into it first, or run the same command again to keep it as it is' });
+      owed[entry.key] = `kept ${cur}`;
     } else if ((ctx.merged || []).includes(entry.key)) {
       // The owner merged the kit's changes into this file by hand: its text now stands on the current kit copy.
       merged.push(entry.key); files[entry.key] = wantHash;
@@ -778,7 +787,7 @@ export function install(ctx) {
       }
     }
   }
-  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: kept || replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version };
 }
 
 /**
@@ -890,7 +899,7 @@ function oldLayoutFoldBack(kit, oldText) {
 // N14 (1.36.0, reproduced on AI Essentials' memory 2026-11-15): Claude Code's memory adds metadata to a memory file's
 // frontmatter (node_type, originSessionId, modified) and quotes its description. That is no edit of the project's, so
 // a memory file is compared with them taken out and the description unquoted.
-const metaKeys = /^\s+(node_type|originSessionId|modified):.*\n/gm;
+const metaKeys = /^[ \t]+(node_type|originSessionId|modified):.*\n/gm;
 function memoryCore(text) {
   const m = /^---\n([\s\S]*?)\n---/.exec(text.replace(/\r\n/g, '\n'));
   if (!m) return text;
