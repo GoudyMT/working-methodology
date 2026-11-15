@@ -1396,6 +1396,22 @@ test('a command that moves into a kit project runs that project\'s guards', () =
 	assert.equal(call("Set-Location '" + p + "'; git push origin main", 'PowerShell'), 'deny');
 	assert.equal(call('cd ' + p + ' && git status'), 'runs', 'a read in the project still runs');
 	assert.equal(call('cd ' + outside.split(path.sep).join('/') + ' && git push origin main'), 'runs', 'a folder that is no kit project');
+	// Every move counts, not only a leading one (the K61 security review), and Git Bash's /c/... spelling of a drive.
+	assert.equal(call('git status; cd ' + p + ' && git push origin main'), 'deny', 'a move after another command');
+	assert.equal(call('git status && (cd ' + p + ' && git push origin main)'), 'deny', 'a move inside a subshell');
+	if (process.platform === 'win32') {
+		const msys = '/' + p[0].toLowerCase() + p.slice(2);
+		assert.equal(call('cd ' + msys + ' && git push origin main'), 'deny', msys);
+	}
+	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
+	const bare = kitTemp.makeTemp('cd-bare-');
+	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });
+	fs.writeFileSync(path.join(bare, '.kit', 'kit-version.json'), JSON.stringify({ version: '1.0.0' }));
+	fs.mkdirSync(path.join(bare, '.claude'));
+	fs.writeFileSync(path.join(bare, '.claude', 'guard.cjs'), '');
+	const b = bare.split(path.sep).join('/');
+	const direct = call('git status', 'Bash', bare);
+	assert.equal(call('cd ' + b + ' && git status'), direct, 'the same answer as a session started there');
 });
 
 // why: guards rule:security-standards. The 1.29.0 sweep (two reviewers, the same hole): a folder list that was only read

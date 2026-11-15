@@ -668,12 +668,11 @@ function outwardTextFault(input) {
 	const top = git('rev-parse', '--show-toplevel');
 	const root = top.status === 0 && top.stdout.trim() ? path.resolve(top.stdout.trim()) : cwd;
 	// The checks run from the copy install user keeps in the Claude folder, never from the repo being checked: a
-	// session or a branch can edit the repo's own (the K61 security review). A kit project is one with the audit in its
-	// .claude folder; without the installed copy it is held, never let through unread.
-	const kitProject = fs.existsSync(path.join(root, '.claude', 'pr-body-audit.mjs'));
+	// session or a branch can edit the repo's own (the K61 security review). This guard runs only for a kit project
+	// the launcher found by its install record, so what the repo holds never decides whether it checks; without the
+	// installed copy the call is held, never let through unread.
 	const installed = path.join(home(), 'kit-tools', 'audits');
 	const kitFile = (f) => path.join(installed, f);
-	if (!kitProject) return '';
 	if (!['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'name-check.mjs'].every((f) => fs.existsSync(kitFile(f)))) return `the PR-text checks are not in ${installed}, so nothing can audit this; run install user from the release copy (or ask the owner to)`;
 	// The audits call git by its bare name from the repo, where Windows looks first: nothing may run while a program
 	// named like a tool sits at its root.

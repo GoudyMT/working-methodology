@@ -54,9 +54,10 @@ function readRecord(dir) {
 }
 
 /** The project a call belongs to: the nearest folder with a record, from the call's folder, then the session's. */
-function findProject(input) {
+// only: the folder alone, as for a folder a command moves into (no session folder, no transcript).
+function findProject(input, only = false) {
 	const tried = new Set();
-	for (const start of [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean)) {
+	for (const start of (only ? [input.cwd] : [input.cwd, process.env.CLAUDE_PROJECT_DIR]).filter(Boolean)) {
 		for (let d = path.resolve(String(start)); !tried.has(d); d = path.dirname(d)) {
 			tried.add(d);
 			const rec = readRecord(d);
@@ -64,7 +65,7 @@ function findProject(input) {
 		}
 	}
 	// The transcript sits in <home>/projects/<the session's project slug>/: Claude Code names it, no setting can.
-	if (input.transcript_path) {
+	if (!only && input.transcript_path) {
 		const slug = path.basename(path.dirname(String(input.transcript_path)));
 		let names = [];
 		try { names = fs.readdirSync(RECORDS); } catch { /* none */ }
@@ -384,8 +385,8 @@ function runGuard(real, files, input, fix = 'the owner reinstalls the kit with i
 }
 
 /** A kit project with guard files but no record here: its record was deleted, or it predates this launcher. */
-function unrecorded(input) {
-	for (const start of [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean)) {
+function unrecorded(input, only = false) {
+	for (const start of (only ? [input.cwd] : [input.cwd, process.env.CLAUDE_PROJECT_DIR]).filter(Boolean)) {
 		let d = path.resolve(String(start));
 		for (let up = path.dirname(d); ; d = up, up = path.dirname(d)) {
 			if (fs.existsSync(path.join(d, '.kit', 'kit-version.json')) && fs.existsSync(path.join(d, '.claude', 'guard.cjs'))) return d;
@@ -395,43 +396,51 @@ function unrecorded(input) {
 	return null;
 }
 
-// The folder a shell command first moves into (cd, Set-Location, pushd, chdir, or git -C), resolved from the session's
-// folder, or null. Seen live 2026-11-15: a session started outside a kit project worked in one through cd, and the
-// project's guards never ran, since the project was found by the session's folder alone.
-function movedInto(input) {
-	if (!input || !SHELLS.includes(input.tool_name)) return null;
+// Every folder a shell command moves into (cd, chdir, pushd, Set-Location, sl, or git -C), at its start or after a
+// separator or an opening bracket, resolved from the session's folder. Seen live 2026-11-15: a session started outside
+// a kit project worked in one through cd, and the project's guards never ran, since the project was found by the
+// session's folder alone. A folder built at run time ($x, %x%, ~, a backtick) stays unread, as for every guard.
+function movesIn(input) {
+	if (!input || !SHELLS.includes(input.tool_name)) return [];
 	const command = String((input.tool_input && input.tool_input.command) ?? '');
-	const word = String.raw`("([^"]*)"|'([^']*)'|([^\s;&|'"]+))`;
-	const m = new RegExp(String.raw`^\s*(?:(?:cd|chdir|pushd|set-location|sl)\s+(?:-(?:literalpath|path)\s+)?` + word + String.raw`\s*(?:&&|;|\||\n)|git\s+-C\s+` + word + String.raw`\s)`, 'i').exec(command);
-	if (!m) return null;
-	const dir = m[2] ?? m[3] ?? m[4] ?? m[6] ?? m[7] ?? m[8];
-	if (!dir || /[$`%~]/.test(dir)) return null;
-	return path.resolve(String(input.cwd || process.cwd()), dir);
+	const word = String.raw`(?:"([^"]*)"|'([^']*)'|([^\s;&|'"(){}]+))`;
+	const re = new RegExp(String.raw`(?:^|[;&|\n({]|&&|\|\|)\s*(?:(?:cd|chdir|pushd|set-location|sl)\s+(?:-(?:literalpath|path)\s+)?` + word + String.raw`|git\s+-C\s+` + word + ')', 'gi');
+	const out = [];
+	for (const m of command.matchAll(re)) {
+		let dir = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? m[6];
+		if (!dir || /[$`%~]/.test(dir)) continue;
+		// Git Bash names a drive /c/...: the same folder as C:/...
+		if (WIN && /^\/[A-Za-z](\/|$)/.test(dir)) dir = `${dir[1]}:/${dir.slice(3)}`;
+		out.push(path.resolve(String(input.cwd || process.cwd()), dir));
+	}
+	return out;
 }
 
 function preToolUse(input) {
-	const moved = movedInto(input);
 	const here = projectCheck(input);
-	if (!moved) return here;
-	// The command acts in another folder: that folder's kit project, if it is one, checks it too, with its own folder as
-	// the call's. The stricter answer wins: a hold from either stops the call.
-	const there = findProject({ cwd: moved });
-	if (!there || there.ambiguous) return here;
+	// The command acts in other folders too: each kit project it moves into checks it, with that folder as the call's,
+	// and holds it as it would a call started there (no record, two records). A hold from any of them stops the call.
 	const mine = findProject(input);
-	if (mine && !mine.ambiguous && same(mine.dir, there.dir)) return here;
-	const other = projectCheck({ ...input, cwd: moved }, there);
+	const answers = [here];
+	const seen = [];
+	for (const dir of movesIn(input)) {
+		const there = findProject({ cwd: dir }, true);
+		const key = there && !there.ambiguous ? there.dir : dir;
+		if (mine && !mine.ambiguous && there && !there.ambiguous && same(mine.dir, there.dir)) continue;
+		if (seen.some((s) => same(s, key))) continue;
+		seen.push(key);
+		answers.push(projectCheck({ ...input, cwd: dir }, true));
+	}
 	const denies = (o) => Boolean(o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision === 'deny');
-	if (denies(here)) return here;
-	if (denies(other)) return other;
-	return here || other;
+	return answers.find(denies) || answers.find(Boolean) || null;
 }
 
-function projectCheck(input, known) {
-	const found = known || findProject(input);
+function projectCheck(input, only = false) {
+	const found = findProject(input, only);
 	if (found && found.ambiguous) return deny('Held: this session\'s folder name fits more than one installed kit project with a long path, so the kit cannot tell which guards to run. Start the session inside the project folder, or shorten the path.');
 	if (!found) {
 		// Fails closed: a kit project the launcher has no record for runs no guard until install writes one.
-		const dir = unrecorded(input);
+		const dir = unrecorded(input, only);
 		if (!dir) return null;
 		let rec = {};
 		try { const u = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')); rec = { kitDir: u.kitDir || null, kitFingerprint: u.kitFingerprint || null }; } catch { /* none */ }

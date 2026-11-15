@@ -908,6 +908,9 @@ test('PR text and repo names are checked where they are written, and a failing o
 	fs.writeFileSync(path.join(repo, '.claude', 'pr-body-audit.mjs'), "import fs from 'node:fs';\nfs.writeFileSync('ran.txt', 'x');\n");
 	held('gh pr create --title "chore: grant merge through the gate" --body-file typed.md', /fails its audit/);
 	assert.equal(fs.existsSync(path.join(repo, 'ran.txt')), false, 'the repo\'s own audit never ran');
+	// What the repo holds never decides whether its text is checked: with its own audit gone it is checked the same.
+	fs.rmSync(path.join(repo, '.claude', 'pr-body-audit.mjs'));
+	held('gh pr create --title "chore: grant merge through the gate" --body-file typed.md', /fails its audit/);
 	// A flag gh reads another way than this check would: repeated, or joined to its value or to other options.
 	held('gh pr create --title "chore: a clean grant row" --title "chore: x" --body-file good.md', /given twice/);
 	held('gh pr create --title "chore: a clean grant row" --body-file good.md -F typed.md', /given twice/);
