@@ -609,3 +609,29 @@ Brief v2, keys v10. Every session pinned to Opus 5.5 at medium. Candidate: this 
 
 control: 0
 gate: kit-1.32.0 median 14 baseline 14 brief v2 keys v10
+## Recall v11 - 1.32.0 against the 1.31.0 baseline (2026-11-15)
+
+Brief v2, keys v11 (key 4: a push of the feature branch and opening its PR need no yes; the owner's ruling, 2026-11-15). Every session pinned to Opus 5.5 at medium. Candidate: this branch's rule text with the PR ruling, 3 runs; baseline: 1.31.0 from the release copy, 3 runs; control: no kit. All seven run fresh, in parallel, then scored blind.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 0, 0, 0 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 0, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 13, 14 | 13, 13, 13 | 0 |
+
+- **Scored: median 14 of 14, baseline 13, control 0.** The baseline misses question 4 every time, as expected: on 1.31.0 opening a PR is the owner's act. One candidate run misses question 13 (it tells the owner to type the closeout keyword), a rule this build did not change. A first scoring held key 4 to "the merge is the owner's" too, which the question does not ask and no run said; the owner dropped it by pop-up and the same saved answers were scored again, blind.
+
+control: 0
+gate: kit-1.32.0 median 14 baseline 13 brief v2 keys v11 control 0 owner-accepted
