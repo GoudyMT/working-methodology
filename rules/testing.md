@@ -33,7 +33,7 @@ tags:
 
 ### CI Gate {#ci-gate}
 
-**"Green" = every step of every CI workflow file**, not a remembered subset - or name the skipped step and why. Run the FULL local gate before every PR, however small ("reasoned unaffected" is not "ran it green"); copy each command from a full read of the workflow (a folded run block is one command); the exit code is the gate - echo it, never filter output through an invented pattern; re-run the dependency audit before the PR and before merge commands. A test runner may reuse a server already on its port and test a stale build - check who owns it, never kill the owner's. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->
+**"Green" = every step of every CI workflow file**, not a remembered subset - or name the skipped step and why. Before a PR run the tests covering the change, however small; CI's run on the push is the gate (no CI: the full suite once locally) - "reasoned unaffected" is not "ran it green"; copy each command from a full read of the workflow (a folded run block is one command); the exit code is the gate - echo it, never filter output through an invented pattern; re-run the dependency audit before the PR and before merge commands. A test runner may reuse a server already on its port and test a stale build - check who owns it, never kill the owner's. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->
 
 ### Test Lanes {#test-lanes}
 

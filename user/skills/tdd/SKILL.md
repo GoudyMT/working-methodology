@@ -42,10 +42,10 @@ Done when: you have seen the red line and its message matches the missing behavi
 
 ### 4. GREEN: the least code
 Write the simplest code that passes. No options, no extra features, no "while I am here". Run the test, then the
-project's whole test command. A failing sibling test is yours to fix now. A failure you did not cause still goes
-in your report by name. When a test fails, rule:test-integrity applies: dump what the code makes, compare to the
+tests covering the change (CI runs the full suite; with no CI, run it once before the PR). A failing sibling
+test is yours to fix now. A failure you did not cause still goes in your report by name. When a test fails, rule:test-integrity applies: dump what the code makes, compare to the
 spec, fix the code first.
-Done when: the new test and the full suite pass, and the output has no warnings or stray errors.
+Done when: the new test and the covering tests pass, and the output has no warnings or stray errors.
 
 ### 5. REFACTOR, then repeat
 With green only: remove duplication, improve names, extract helpers. Add no behaviour. Rerun after each change.

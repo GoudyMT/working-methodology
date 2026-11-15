@@ -21,7 +21,7 @@ An opt-in overlay for mechanical TDD work, under graduated trust; the default st
 
 **Loop contract:** files to create (path, why, the reference it mirrors - any other file = hard stop); visual increments with their LOCKED reference; expected test collisions from a repo-wide search. Each run: a plan before, a LOOP SUMMARY after.
 
-**Per task:** failing test -> shown FAILING for the right reason -> minimal code -> real counts, whole suite GREEN -> one-line `type: subject` commit -> next. Claude runs the test runner and local git; **push is never automated.** Why: a bad loop unwinds locally. **Command environment:** <!-- PROJECT ADAPTER A11: the tool-shell prefix that finds the right runtime with no installs. -->
+**Per task:** failing test -> shown FAILING for the right reason -> minimal code -> real counts, covering tests GREEN (the full suite: rule:ci-gate) -> one-line `type: subject` commit -> next. Claude runs the test runner and local git; **push is never automated.** Why: a bad loop unwinds locally. **Command environment:** <!-- PROJECT ADAPTER A11: the tool-shell prefix that finds the right runtime with no installs. -->
 
 **Visual-correctness gate.** Tests verify structure, never appearance. After at most **3 visual increments** (any human-facing output) the loop HALTS for a Visual Checkpoint, even when confident; a doubtful visual halts at once; nothing visual reaches the remote unseen. An unreachable state is shown on a throwaway route at narrow and desktop widths in every theme, overflow MEASURED, deleted before the next commit.
 
