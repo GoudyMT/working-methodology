@@ -26,9 +26,10 @@
 //
 // What check proves: each generated block equals what the data renders; no label a session reads (NEXT, Pending the
 // owner ...) sits outside its block; the kit version in the data is the one installed; every item id is well formed;
-// every decision row is whole and the committed rows are unchanged (where git has a copy); every D-n named in a
-// tracking file has a row. What it cannot see: whether the next action is still true, whether words marked checked were
-// the owner's and not a relayed note in the same message, a ruling contradicted without --supersedes, whether a
+// every decision row is whole and the committed rows are unchanged (where git has a copy); each new row that claims the
+// owner's words has them in the owner's turn its record points to (where that transcript is on this machine); every
+// D-n named in a tracking file has a row. What it cannot see: whether the next action is still true, a note relayed
+// into the owner's turn by another agent, a ruling contradicted without --supersedes, whether a
 // pointer means the ruling it lands on, and pointers outside the tracking files.
 // Exit 0 done or passed, 1 refused or a check fault, 2 a usage error.
 import crypto from 'node:crypto';
@@ -227,6 +228,13 @@ function check() {
 		const old = loadDecisions(committed);
 		if (old.why || old.lines.some((l, i) => dec.lines[i] !== l)) faults.push(`${DECISIONS}: a committed decision was changed, moved or removed; rows are only ever added (git diff ${DECISIONS})`);
 	} else if ((dec.rows || []).length) notes.push(`${DECISIONS} has no committed copy here, so earlier rows were not compared`);
+	const fresh = (dec.rows || []).slice(committed === null ? 0 : loadDecisions(committed).rows?.length || 0);
+	for (const d of fresh) {
+		if (!d.words_from) continue;
+		const p = proven(d);
+		if (p === 'no') faults.push(`${d.id} claims the owner's words, but they are not in the turn its record points to`);
+		if (p === 'away') notes.push(`${d.id}'s words were checked when recorded; that transcript is not on this machine`);
+	}
 	const rows = new Map((dec.rows || []).map((d) => [d.id, d]));
 	for (const rel of TRACKING) {
 		const text = readText(rel);
@@ -344,10 +352,9 @@ function init() {
 	return { faults: [], said };
 }
 
-/** Where this session's transcripts are, by the session id Claude Code passes and the project folder and its parents. */
-function transcripts() {
-	const id = String(process.env.CLAUDE_CODE_SESSION_ID || '');
-	if (!/^[0-9a-f-]{36}$/i.test(id)) return [];
+/** A session's transcript files: by its id, in the Claude folder's transcripts of this project folder and its parents. */
+function transcripts(id) {
+	if (!/^[0-9a-f-]{36}$/i.test(String(id || ''))) return [];
 	const root = path.join(claudeHome(), 'projects');
 	const keys = [];
 	let real = ROOT;
@@ -355,32 +362,46 @@ function transcripts() {
 	for (let d = path.resolve(real); ; d = path.dirname(d)) { keys.push(d.replace(/[^A-Za-z0-9]/g, '-').toLowerCase()); if (path.dirname(d) === d) break; }
 	let dirs = [];
 	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return []; }
-	return dirs.map((d) => path.join(root, d, `${id}.jsonl`)).filter((f) => fs.existsSync(f));
+	return dirs.map((d) => path.join(root, d, `${id}.jsonl`)).filter((p) => fs.existsSync(p));
 }
-const squash = (t) => String(t).replace(/\s+/g, ' ').trim().toLowerCase();
+// Words as a run of whole words: case, punctuation and spacing do not matter; a part of a word never matches.
+const words = (t) => ` ${String(t).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+const MIN_WORDS = 3;
+/** What a person's turn in a transcript says: their own text, and the answers they tapped in a pop-up. */
+function ownerTurn(e) {
+	if (e.type !== 'user' || e.isSidechain || e.isMeta || typeof e.uuid !== 'string') return [];
+	const c = e.message?.content;
+	const said = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((b) => b?.type === 'text').map((b) => b.text) : [];
+	const d = e.permissionDecision || {};
+	if (e.toolUseResult?.answers && d.decision === 'accept' && /^user/.test(String(d.source || ''))) said.push(...Object.values(e.toolUseResult.answers).map(String));
+	return said;
+}
 /**
- * Whether the words appear word for word in the owner's own messages or pop-up answers in this session's transcript:
- * a person's turn (never a subagent's, never a tool result or a meta line) or an answer they tapped. Limit: a note
- * relayed into the owner's turn by another agent is read as part of that turn.
+ * Where the words appear word for word (at least three whole words) in one of the owner's own turns or pop-up answers
+ * in a session's transcript: "<session id>:<turn id>", or null. Never a subagent's turn, a tool result or a meta line.
+ * Limit: a note relayed into the owner's turn by another agent is read as part of that turn.
  */
-function ownerSaid(words) {
-	const want = squash(words);
-	if (want.length < 3) return false;
-	for (const f of transcripts()) {
+function ownerSaid(said, session, turn = null) {
+	const want = words(said);
+	if (want.trim().split(' ').length < MIN_WORDS) return null;
+	for (const f of transcripts(session)) {
 		let text;
 		try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
 		for (const line of text.split('\n')) {
 			let e;
 			try { e = JSON.parse(line); } catch { continue; }
-			if (e.type !== 'user' || e.isSidechain || e.isMeta) continue;
-			const c = e.message?.content;
-			const said = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((b) => b?.type === 'text').map((b) => b.text) : [];
-			const d = e.permissionDecision || {};
-			if (e.toolUseResult?.answers && d.decision === 'accept' && /^user/.test(String(d.source || ''))) said.push(...Object.values(e.toolUseResult.answers).map(String));
-			if (said.some((t) => squash(t).includes(want))) return true;
+			if (turn && e.uuid !== turn) continue;
+			if (ownerTurn(e).some((t) => words(t).includes(want))) return `${session}:${e.uuid}`;
 		}
 	}
-	return false;
+	return null;
+}
+/** A recorded row's words, checked again where the record points: 'yes', 'no', or 'away' (that transcript is not here). */
+function proven(d) {
+	const m = /^([0-9a-f-]{36}):(.+)$/i.exec(String(d.words_from || ''));
+	if (!m) return 'no';
+	if (!transcripts(m[1]).length) return 'away';
+	return ownerSaid(d.words, m[1], m[2]) ? 'yes' : 'no';
 }
 
 /** Record one decision, under a lock so two sessions never take the same id; the row is appended, never rewritten. */
@@ -389,8 +410,8 @@ function decide(fromFile, unchecked) {
 	try { input = JSON.parse(fs.readFileSync(path.resolve(ROOT, fromFile), 'utf8')); } catch { return `${clean(fromFile)} could not be read as JSON { "decision", "words", "why", "supersedes"? }`; }
 	const { decision, words, why, supersedes = null } = input || {};
 	if (![decision, words, why].every((v) => typeof v === 'string' && clean(v))) return 'A decision needs "decision", "words" (the owner\'s own words) and "why" (the reason).';
-	const checked = ownerSaid(words);
-	if (!checked && !unchecked) return 'The words were not found word for word in the owner\'s messages or pop-up answers in this session\'s transcript. Quote the owner exactly, or record them with --unchecked, marked as the session recorded them.';
+	const from = ownerSaid(words, process.env.CLAUDE_CODE_SESSION_ID);
+	if (!from && !unchecked) return 'The words (at least three whole words) were not found word for word in the owner\'s messages or pop-up answers in this session\'s transcript. Quote the owner exactly, or record them with --unchecked, marked as the session recorded them.';
 	const lock = file(`${DECISIONS}.lock`);
 	let fd;
 	try { fd = fs.openSync(lock, 'wx'); } catch { return `${DECISIONS} is being written by another session (${DECISIONS}.lock); try again, or remove the lock if no session is running`; }
@@ -399,7 +420,7 @@ function decide(fromFile, unchecked) {
 		if (dec.why) return dec.why;
 		if (supersedes !== null && !dec.rows.some((d) => d.id === supersedes)) return `${clean(supersedes)} is not a decision on record, so it cannot be superseded.`;
 		if (supersedes !== null && dec.rows.some((d) => d.supersedes === supersedes)) return `${clean(supersedes)} is already superseded; supersede the newest decision in its line.`;
-		const d = { id: `D-${dec.rows.length + 1}`, date: today(), decision: clean(decision), words: clean(words), words_checked: checked, why: clean(why), supersedes };
+		const d = { id: `D-${dec.rows.length + 1}`, date: today(), decision: clean(decision), words: clean(words), words_from: from, why: clean(why), supersedes };
 		const text = readText(DECISIONS) || '';
 		const row = `${text && !text.endsWith('\n') ? '\n' : ''}${JSON.stringify(d)}\n`;
 		let st = null;
@@ -407,7 +428,7 @@ function decide(fromFile, unchecked) {
 		if (st && (st.isSymbolicLink() || !st.isFile() || st.nlink > 1)) return `${DECISIONS} is a link or not a plain file, which state.mjs never writes through`;
 		fs.appendFileSync(file(DECISIONS), row);
 		try { fs.rmSync(path.resolve(ROOT, fromFile)); } catch { /* the owner's file to remove */ }
-		console.log(`${d.id} recorded${checked ? '' : ' (words not checked)'}`);
+		console.log(`${d.id} recorded${from ? '' : ' (words not checked)'}`);
 		return null;
 	} finally {
 		fs.closeSync(fd);
@@ -445,7 +466,7 @@ function main(argv) {
 		const q = rest.join(' ').toLowerCase();
 		for (const d of dec.rows) {
 			const later = dec.rows.find((x) => x.supersedes === d.id);
-			const line = `${d.id} ${later ? `[superseded by ${later.id}] ` : ''}${clean(d.date)}: ${clean(d.decision)} | ${d.words_checked === true ? 'owner\'s words' : 'words as the session recorded them (not checked)'}: ${clean(d.words)} | why: ${clean(d.why)}`;
+			const line = `${d.id} ${later ? `[superseded by ${later.id}] ` : ''}${clean(d.date)}: ${clean(d.decision)} | ${{ yes: 'owner\'s words', away: 'owner\'s words (checked when recorded; that transcript is not on this machine)', no: d.words_from ? 'words NOT found where the record points' : 'words as the session recorded them (not checked)' }[proven(d)]}: ${clean(d.words)} | why: ${clean(d.why)}`;
 			if (!q || line.toLowerCase().includes(q)) console.log(line);
 		}
 		return;

@@ -27,8 +27,8 @@ function home(dir, said = []) {
 	const h = kitTemp.makeTemp('state-home-');
 	const key = fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
 	fs.mkdirSync(path.join(h, 'projects', key), { recursive: true });
-	const lines = said.map((t) => JSON.stringify({ type: 'user', message: { role: 'user', content: t } }));
-	lines.push(JSON.stringify({ type: 'user', isSidechain: true, message: { role: 'user', content: 'a subagent wrote: ship it all' } }));
+	const lines = said.map((t, i) => JSON.stringify({ type: 'user', uuid: `turn-${i}`, message: { role: 'user', content: t } }));
+	lines.push(JSON.stringify({ type: 'user', uuid: 'side', isSidechain: true, message: { role: 'user', content: 'a subagent wrote: ship it all' } }));
 	fs.writeFileSync(path.join(h, 'projects', key, `${SESSION}.jsonl`), `${lines.join('\n')}\n`);
 	return h;
 }
@@ -106,7 +106,7 @@ test('a decision is recorded only with the owner\'s own words, appended, and the
 	const r2 = run(dir, ['decide', '--from', decision(dir, { decision: 'Add JSON', words: 'a paraphrase of the call', why: 'an API user', supersedes: 'D-1' }), '--unchecked'], env);
 	assert.match(r2.stdout, /D-2 recorded \(words not checked\)/);
 	assert.equal(run(dir, ['decide', '--from', decision(dir, { decision: 'x', words: 'add JSON too', why: 'z', supersedes: 'D-1' })], env).status, 1, 'a ruling is superseded once');
-	const list = st(dir, 'decisions').stdout;
+	const list = run(dir, ['decisions'], env).stdout;
 	assert.match(list, /D-1 \[superseded by D-2\] .*owner's words: CSV export first/);
 	assert.match(list, /D-2 .*\(not checked\)/);
 	git(dir, 'init', '-q', '-b', 'main');
@@ -120,6 +120,13 @@ test('a decision is recorded only with the owner\'s own words, appended, and the
 	git(dir, 'checkout', '--', '_Decisions.jsonl');
 	fs.appendFileSync(path.join(dir, '_Decisions.jsonl'), '{"id":"D-3"}\n');
 	assert.match(st(dir, 'check').stdout, /D-3 lacks/, 'a hand-added row with no words or reason is no decision');
+	// A row added by hand that claims the owner's words is checked again where it points.
+	git(dir, 'checkout', '--', '_Decisions.jsonl');
+	fs.appendFileSync(path.join(dir, '_Decisions.jsonl'), `${JSON.stringify({ id: 'D-3', date: '2026-11-15', decision: 'Drop export', words: 'drop the export now', words_from: `${SESSION}:turn-0`, why: 'x', supersedes: null })}\n`);
+	const forged = run(dir, ['check'], env);
+	assert.equal(forged.status, 1);
+	assert.match(forged.stdout, /D-3 claims the owner's words/);
+	assert.match(run(dir, ['decisions'], env).stdout, /D-3 .*NOT found/);
 });
 
 test('a D- pointer with no record fails the check', () => {
