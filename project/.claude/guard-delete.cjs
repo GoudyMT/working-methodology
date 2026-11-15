@@ -107,6 +107,10 @@ const ROBOCOPY_REMOVES = /(?:^|[\s(,=;[@]|robocopy(?:\.exe)?)(?:\/+|-)(?:mir|pur
 const PRINTERS = new Set(['echo', 'printf', 'write-host', 'write-output']);
 // What can take a printer's output and run it or keep it: a pipe, a redirect, a group, a backtick, or an eval.
 const FEEDS_ON = /[|<>(){}`]|\b(eval|iex|invoke-expression|source)\b|\s-v\s|\$_\b/i;
+// What could run a matched pattern's text as a command: a pipe, a redirect, & or a subshell, or any shell or runner.
+// Curly quotes are quotes to PowerShell but not to the strip below, so any of them ends the skip; a script file named
+// or a writer counts too (the text may be written, then run).
+const PATTERN_FEEDS = /[|<>`&{}\u2018-\u201f]|\$\(|(^|[\s;(])\.(\s|[\\/])|\.(ps1|psm1|bat|cmd|sh)\b|\b(bash|sh|zsh|dash|ksh|fish|cmd|pwsh|powershell|wsl|ssh|eval|iex|ii|icm|saps|sajb|start|invoke[\w-]*|start-process|start-job|start-threadjob|scriptblock|source|xargs|env|exec|node|python\d*|perl|ruby|php|sudo|watch|timeout|nohup|parallel|set-content|add-content|out-file|tee-object|new-item|sc|ac)\b/i;
 // Programs that run the command after them.
 const WRAPPERS = new Set(['timeout', 'sudo', 'doas', 'env', 'nice', 'nohup', 'command', 'exec', 'time', 'xargs', 'start-process', 'saps', 'stdbuf', 'ionice', 'chrt', 'setsid', 'runas', 'cmd', 'winpty']);
 // Start-Process git with a ( ) or @( ) list: the list is split off where its words cannot be read, so it asks.
@@ -444,7 +448,7 @@ function findDelete(text, ctx, state, depth) {
 		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && after.length > 0 && !NOT_RUN_AFTER.test(after[0]) && deleteSign) return 'a program held in a variable';
 		if (opener === '$' && words.length === 1 && segment.end === '{') return 'a program held in a variable';
 		// A shell expands a wildcard in a program's path: /usr/bin/r[m].
-		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1) return 'a program named by a wildcard';
+		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1 && !(ctx.pattern && depth > 0)) return 'a program named by a wildcard';
 		const skip = new Set();
 		for (let i = 0; i < words.length; i++) {
 			const lower = words[i].toLowerCase();
@@ -584,8 +588,17 @@ function findDelete(text, ctx, state, depth) {
 		}
 		// Quoted text may be a whole command handed to another shell: bash -c 'rm -rf /tmp/*'.
 		if (depth < MAX_DEPTH) {
-			for (const word of segment) {
+			for (let k = 0; k < segment.length; k++) {
+				const word = segment[k];
 				if (!word.quoted) continue;
+				// A pattern after PowerShell's match, like, replace or split operator (or -Pattern) is matched, never run: read as
+				// a command it is held to every check but the wildcard program name (K54: '^\s*- \[x\]' read as a program named
+				// by a wildcard). Every other check still reads it (the review of the first fix: git clean, rsync, robocopy).
+				// Only a real PowerShell match counts: the PowerShell tool (in bash, $b -match '...' runs $b with -c), at the
+				// top, the operator after a $value or a ), and nothing outside plain quotes that could run the text on (a pipe,
+				// a redirect, a shell or runner); echo -match '...' | bash runs it.
+				const pattern = ctx.powershell && depth === 0 && k > 1 && /^-[ic]?(not)?(match|like|replace|split)$/i.test(String(segment[k - 1].value)) && !segment[k - 1].quoted
+					&& !segment[k - 2].quoted && /^\(*\$[\w:]+\)*$|\)$/.test(String(segment[k - 2].value)) && !PATTERN_FEEDS.test(text.replace(/'[^']*'|"[^"$`]*"/g, "''"));
 				// A quoted name=value (git -c core.pager='...') may hold a command in its value.
 				const assigned = /^[\w.-]+=/.test(word.value) ? word.value.slice(word.value.indexOf('=') + 1) : '';
 				// An echo prints its text, but the text may be run: piped on, written to a file, or inside $( ), a group or iex.
@@ -594,7 +607,10 @@ function findDelete(text, ctx, state, depth) {
 				const printed = depth === 0 && PRINTERS.has(first) && !FEEDS_ON.test(text) && !DELETE_WORD.test(word.value) && !/\bclean\b/.test(word.value);
 				const said = printed ? [] : [word.value, assigned];
 				for (const inner of said.filter(Boolean)) {
-					const hit = readNested(inner, ctx, state, depth);
+					const was = ctx.pattern;
+					ctx.pattern = pattern;
+					let hit;
+					try { hit = readNested(inner, ctx, state, depth); } finally { ctx.pattern = was; }
 					if (hit) return hit;
 				}
 			}
@@ -653,7 +669,7 @@ function decide(input, where = {}) {
 	const roots = [realOf(api.resolve(projectDir), api)];
 	const id = String(input.session_id ?? '');
 	const session = SESSION_ID.test(id) ? { id, claude: realOf(api.join(tmpdir, 'claude'), api) } : null;
-	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir() };
+	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir(), powershell: input.tool_name === 'PowerShell' };
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
 	const both = strings.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);

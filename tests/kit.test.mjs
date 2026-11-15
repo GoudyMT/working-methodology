@@ -607,6 +607,35 @@ function releaseKit() {
   return { ...ctx, git, cli };
 }
 
+// why: guards rule:outward-acts. K49 (a project on the kit, 2026-11-14): a settings file kept for a hand merge still ran
+// the kit guards itself, the shape before 1.25.1, so every guard ran twice beside the launcher and no sweep could
+// start. Status and the session notice name those entries; install takes them out, as it took out 1.25.0's guard.cjs
+// entry, keeping a backup and every other line; the shape install writes is quiet.
+test('a project settings file that still runs the guards itself is named, and install takes those entries out', () => {
+  const { kit, home, proj, cli } = releaseKit();
+  assert.equal(cli('install', 'user').status, 0);
+  const quiet = [cli('install', 'project', proj).stdout, cli('status', proj).stdout, sessionStartReport({ kit, home, projectDir: proj })].join('\n');
+  assert.doesNotMatch(quiet, /runs kit guards itself/);
+  const settings = path.join(proj, '.claude', 'settings.json');
+  const s = JSON.parse(read(settings));
+  // The project's own hooks stay, whatever their file names, and a group of an odd shape is left as it is (the 1.31.0
+  // sweep: a match by file name alone removed a project's own tools/hooks/guard.cjs and its Stop canary.cjs).
+  s.hooks = { ...(s.hooks || {}), PreToolUse: [...((s.hooks || {}).PreToolUse || []), { matcher: 'Bash', hooks: [{ type: 'command', command: 'node tools/hooks/guard.cjs' }] }, { matcher: 'Read', hooks: 'odd' }], Stop: [{ hooks: [{ type: 'command', command: 'node scripts/canary.cjs' }] }] };
+  const before = JSON.stringify(s);
+  // The 1.24.0 shape: each guard as its own entry, a user-layer hook among them; and one written by hand with shell
+  // punctuation around the path.
+  const own = (file) => ({ type: 'command', command: 'node', args: [file.split(path.sep).join('/')] });
+  s.hooks.PreToolUse = [...s.hooks.PreToolUse, { matcher: 'Agent|Task', hooks: [own(path.join(home, 'kit-hooks', 'sweep-guard.cjs'))] }, { matcher: 'Bash', hooks: [own(path.join(proj, '.claude', 'owner-proof.cjs')), { type: 'command', command: 'node .claude/guard-delete.cjs; exit 0' }] }];
+  fs.writeFileSync(settings, JSON.stringify(s, null, 2));
+  for (const text of [cli('status', proj).stdout, sessionStartReport({ kit, home, projectDir: proj })]) {
+    assert.match(text, /\.claude\/settings\.json[^\n]*\(sweep-guard\.cjs, owner-proof\.cjs, guard-delete\.cjs\)[\s\S]*--merged \.claude\/settings\.json/);
+  }
+  const ins = cli('install', 'project', proj);
+  assert.match(ins.stdout, /replaced \.claude\/settings\.json/);
+  assert.equal(JSON.stringify(JSON.parse(read(settings))), before, 'only the old entries went; every other line stayed');
+  assert.doesNotMatch(cli('status', proj).stdout + sessionStartReport({ kit, home, projectDir: proj }), /runs kit guards itself/);
+});
+
 // why: guards rule:outward-acts
 test('install runs from a clean release tag and stamps it as a release', () => {
   const { kit, home, proj, cli } = releaseKit();
@@ -969,13 +998,35 @@ test('the release notes audit passes clean notes and names each public-prose fau
 // why: guards rule:pr-body
 test('the sweep report audit passes a done report and names each missing part', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
-  const good = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | low | slow list | DEFERRED roadmap |\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const good = `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n- **Layers:** plan 2, CI 0, sweep 1, escaped 0\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | low | slow list | DEFERRED roadmap |\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
   const ok = runAudit('pre-pr-sweep', good);
   assert.equal(ok.status, 0, ok.stdout + ok.stderr);
   const bad = good.replace('- **Date:** 2026-03-04\n', '').replace('## 3. Legal and content', '## 3. Other').replace('FIXED 9f8e7d6', 'will fix').replace('YES - only', 'probably - only');
   const out = runAudit('pre-pr-sweep', bad);
   assert.equal(out.status, 1);
   for (const want of [/date/i, /dimension 3/i, /finding 1/i, /YES or NO/]) assert.match(out.stdout, want);
+});
+// why: guards rule:sweep-tiers. The sweep shape (the owner's pick, build 5): every review role stays, and each feature
+// or launch-gate report counts which layer caught its highs (the plan check, CI, the sweep, or escaped to a release),
+// so the next decision on the sweep's shape reads numbers, not a recount of old reports.
+test('a feature report counts the layer that caught each high', () => {
+  const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
+  const report = (layers, tier = 'feature') => `# Sweep: offline sync\n\n- **Tier:** ${tier}\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n${layers}${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  assert.equal(runAudit('pre-pr-sweep', report('- **Layers:** plan 3, CI 1, sweep 2, escaped 0\n\n')).status, 0);
+  for (const bad of ['\n', '- **Layers:** some\n\n', '- **Layers:** plan 3, sweep 2\n\n']) {
+    const out = runAudit('pre-pr-sweep', report(bad));
+    assert.equal(out.status, 1, bad);
+    assert.match(out.stdout, /Layers:\*\* plan <n>, CI <n>, sweep <n>, escaped <n>/);
+  }
+  assert.equal(runAudit('pre-pr-sweep', report('\n', 'fix')).status, 0, 'a fix report owes no layer count');
+  // A report from before 1.31.0 says it kept no count, and makes none up.
+  assert.equal(runAudit('pre-pr-sweep', report('- **Layers:** not counted (swept before 1.31.0)\n\n')).status, 0);
+  // The sweep and escaped counts cover every high the report lists, so the line cannot hide them (the 1.31.0 sweep).
+  const rows = '| # | Severity | Finding | Disposition |\n|---|---|---|---|\n| 1 | high | token in log | FIXED 9f8e7d6 |\n| 2 | critical | key in repo | FIXED 9f8e7d6 |\n\n';
+  const hidden = runAudit('pre-pr-sweep', report(`- **Layers:** plan 0, CI 0, sweep 1, escaped 0\n\n${rows}`));
+  assert.equal(hidden.status, 1);
+  assert.match(hidden.stdout, /lists 2 high or critical/);
+  assert.equal(runAudit('pre-pr-sweep', report(`- **Layers:** plan 0, CI 0, sweep 1, escaped 1\n\n${rows}`)).status, 0);
 });
 // The owner's decision 6 (1.21.0): a handoff that led with fixes parked the next build behind them.
 // why: guards rule:kit-standards
@@ -1043,7 +1094,7 @@ test('findings are fixed in their build and only what the owner accepts carries,
 // why: guards rule:sweep-auto-approval
 test('the sweep audit refuses a high or critical finding carried as DEFERRED', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
-  const report = (rows) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n${rows}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const report = (rows) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n- **Layers:** plan 2, CI 0, sweep 1, escaped 0\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n| # | Severity | Finding | Disposition |\n|---|---|---|---|\n${rows}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
   for (const sev of ['high', 'critical']) {
     const out = runAudit('pre-pr-sweep', report(`| 1 | ${sev} | token in log | DEFERRED next build |`));
     assert.equal(out.status, 1, sev + ' DEFERRED must fail');
@@ -1305,6 +1356,13 @@ test('each agent role file matches the role table: tools, denied tools and rules
     assert.equal(fm.disallowedTools || 'none', r.denied, `${r.role} denied tools`);
     assert.equal(fm.skills || 'none', r.rules === 'none' ? 'none' : `${r.role}-rules`, `${r.role} preloaded rules`);
   }
+});
+// why: guards rule:multi-agent-discipline. MC2: a role file with no model runs on whatever the session runs, so its cost and its
+// recall move with the owner's saved pick. Every role file the kit ships names a full model id.
+test('every agent role file the kit ships names its model', () => {
+  const files = fs.readdirSync(path.resolve('user/agents')).filter((f) => f.endsWith('.md'));
+  assert.ok(files.length >= 5);
+  for (const f of files) assert.match(front(path.resolve('user/agents', f)).model || '', /^claude-[a-z]+-\d+(-\d+)?$/, `${f} names no model`);
 });
 
 // why: guards rule:sweep-auto-approval
@@ -2895,6 +2953,20 @@ test('the sweep guard holds reviewers to the cleared team size', () => {
   assert.equal(second.permissionDecision, 'deny', 'a second reviewer on a one-role contract');
   assert.match(second.permissionDecisionReason, /Role 1 of the cleared contract[\s\S]*started already/);
 });
+// why: guards rule:sweep-auto-approval. K48 (a project on the kit, 2026-11-14): a project whose settings still ran the
+// guards directly checked every start twice, and the second check of the same start found its own slot taken, so no
+// reviewer could ever start. The same start (its tool id in the slot) passes again; any other start is still refused.
+test('the sweep guard counts one start once, however often it is checked', () => {
+  const dir = sweepRepo({ 'README.md': 'y\n' });
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  assert.equal(approveRun(one, dir).status, 0);
+  assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_one' }).permissionDecision, 'allow');
+  assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_one' }).permissionDecision, 'allow', 'the same start, checked a second time');
+  const other = sweepGuard(dir, { tool_use_id: 'toolu_two' });
+  assert.equal(other.permissionDecision, 'deny', 'another start for the same role');
+  assert.match(other.permissionDecisionReason, /started already/);
+  assert.equal(sweepGuard(dir).permissionDecision, 'deny', 'a start with no tool id is never the recorded one');
+});
 // why: guards rule:sweep-auto-approval
 test('the sweep guard reads HEAD from the contract\'s checkout, so a worktree sweep runs', () => {
   const dir = sweepRepo();
@@ -3486,6 +3558,39 @@ test('an approved sweep that never started can be closed with --none-ran, and on
   const ran = approveIn(dir, [r.f, '--outcome', '--none-ran']);
   assert.equal(ran.status, 1);
   assert.match(ran.stdout, /started/);
+});
+// why: guards rule:sweep-auto-approval. K50 (reported by a project on the kit, 2026-11-14): starts the guard recorded
+// but that never ran (another guard or the owner refused them) left the owner no way to close the round. A slot counts
+// as never ran only on proof: the lead's transcript holds a refused result for its tool id, and no reviewer's meta file
+// names it. With no transcript to read (another Claude folder, transcripts cleaned up) it counts as ran (the 1.31.0
+// sweep: reading only for a meta file let an empty folder close a round whose reviewers ran).
+test('--none-ran closes a round only on proof that its recorded starts were refused', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0);
+  assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_never' }).permissionDecision, 'allow');
+  // No transcript anywhere: no proof, so it ran.
+  const empty = approveIn(dir, [r.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: makeTemp('cfg-') });
+  assert.equal(empty.status, 1, empty.stdout);
+  assert.match(empty.stdout, /started/);
+  // The lead's transcript shows the start refused: it never ran.
+  const cfg = makeTemp('cfg-');
+  const lead = path.join(cfg, 'projects', 'C--repo');
+  fs.mkdirSync(lead, { recursive: true });
+  const refusal = (id) => JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: 'held by a hook' }] } });
+  fs.writeFileSync(path.join(lead, 'session-1.jsonl'), refusal('toolu_never') + String.fromCharCode(10));
+  const none = approveIn(dir, [r.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(none.status, 0, none.stdout);
+  assert.match(none.stdout, /no reviewer ran/);
+  // A refused result for a start whose reviewer has a meta file still ran.
+  const r2 = approveRun(featureContract(), dir);
+  assert.equal(r2.status, 0, r2.stdout);
+  assert.equal(sweepGuard(dir, { tool_use_id: 'toolu_lead_seen' }).permissionDecision, 'allow');
+  transcripts({ seen: [[1, 1, 1, 1]] }, {}, cfg);
+  fs.appendFileSync(path.join(lead, 'session-1.jsonl'), refusal('toolu_lead_seen') + String.fromCharCode(10));
+  const measured = approveIn(dir, [r2.f, '--outcome', '--none-ran'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(measured.status, 1);
+  assert.match(measured.stdout, /started/);
 });
 // why: guards rule:sweep-auto-approval
 test('a re-sweep is one per sweep however the first is re-run, and a re-run of the same re-sweep before it ran is fine', () => {
@@ -5735,12 +5840,17 @@ test('recall v8 and v9 move key 3 to the resume packet rule, and v7 stays as wri
   assert.deepEqual(v8.filter((r) => r.n !== 3), v7.filter((r) => r.n !== 3));
   assert.equal(v8[2].q, v7[2].q);
   assert.match(v8[2].key, /^Run the resume packet check first/);
-  assert.equal(currentVersion(text), 9);
   assert.equal(passBar(text, 9), 13);
   const v9 = questions(text, 9);
   assert.deepEqual(v9.filter((r) => r.n !== 3), v8.filter((r) => r.n !== 3));
   assert.match(v9[2].key, /changed or missing \(no verdict line means the full reading\)/); // pin: 3 recall key v9, frozen
-  assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check[^\n]*before any source-of-truth edit or agent dispatch/m);
+  // v10 (build 5): rule 11 names the Active Plan, and key 3 with it; every other row is v9's.
+  assert.equal(currentVersion(text), 10);
+  assert.equal(passBar(text, 10), 13);
+  const v10 = questions(text, 10);
+  assert.deepEqual(v10.filter((r) => r.n !== 3), v9.filter((r) => r.n !== 3));
+  assert.match(v10[2].key, /fresh reads of the Active Plan, of every file its resume point names/); // pin: 3 recall key v10, frozen
+  assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check`, then a fresh Read of `_Active Plan\.md`[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 
 // why: guards rule:sweep-auto-approval
@@ -6481,6 +6591,10 @@ test('every recall session runs in the probe folder with the question as its inp
   assert.match(calls[0].opts.cwd.replace(/\\/g, '/'), /kit-probes\/[0-9a-f]{6}\/p[0-9a-f]{6}$/);
   assert.deepEqual(calls.map((c) => c.opts.input), ['First?', 'Second?']);
   assert.equal(calls[0].args[calls[0].args.indexOf('--setting-sources') + 1], 'project');
+  // MC2: recall names its model and effort, pinned to what the main session really runs (workbench MEASURE.md), so a
+  // saved default or a new release never moves the ruler.
+  assert.equal(calls[0].args[calls[0].args.indexOf('--model') + 1], 'claude-opus-5-5');
+  assert.equal(calls[0].args[calls[0].args.indexOf('--effort') + 1], 'medium');
   assert.match(calls[0].args[calls[0].args.indexOf('--disallowedTools') + 1], /Bash/);
   assert.ok(lines.includes('> answer'));
   assert.deepEqual(said.mock.calls.map((c) => c.arguments[0]), ['[1/2] answered (6 chars)', '[2/2] answered (6 chars)']);
@@ -6911,7 +7025,7 @@ test('build turns on the kit source commit-msg hook, which refuses a bad message
 // why: guards rule:sweep-auto-approval
 test('the sweep audit reads an indented findings table as it reads a flat one', () => {
   const dims = ['Privacy and data boundary', 'Supply chain and bundle', 'Legal and content', 'Code security', 'Gaps and scaling', 'Version goal alignment'];
-  const report = (table) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n- Findings:\n${table}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
+  const report = (table) => `# Sweep: offline sync\n\n- **Tier:** feature\n- **Date:** 2026-03-04\n- **Branch:** feature/offline-sync at a1b2c3d\n- **Layers:** plan 2, CI 0, sweep 1, escaped 0\n\n${dims.map((d, i) => `## ${i + 1}. ${d}\n\nPASS\n`).join('\n')}\n- Findings:\n${table}\n\n**Still aligned with the version goals?** YES - only the planned scope shipped.\n`;
   const rows = (indent, disp) => [`| # | Severity | Finding | Disposition |`, `|---|---|---|---|`, `| 1 | high | token in log | ${disp} |`].map((l) => indent + l).join('\n');
   for (const indent of ['', '  ', '    ', '\t']) {
     const out = runAudit('pre-pr-sweep', report(rows(indent, 'DEFERRED next build')));

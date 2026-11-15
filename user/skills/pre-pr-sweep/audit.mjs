@@ -26,6 +26,15 @@ if (tier === 'first push') {
 	if (!/tracked files reviewed/i.test(text)) faults.push('first push: record that the owner reviewed the tracked files (git ls-files)');
 }
 
+// The sweep shape (build 5): a feature or launch-gate report counts which layer caught its highs, so whether the plan
+// check and CI hold what a review role would find is read from the reports, not recounted.
+// A report written before 1.31.0 says so instead of making up counts it never kept (the 1.31.0 sweep: an older report
+// would fail the merge gate after an upgrade).
+const layers = text.match(/^- \*\*Layers:\*\* plan (\d+), CI (\d+), sweep (\d+), escaped (\d+)\b/m);
+const before131 = /^- \*\*Layers:\*\* not counted \(swept before 1\.31\.0\)/m.test(text);
+if ((tier === 'feature' || tier === 'launch gate') && !layers && !before131) {
+	faults.push('count the highs and criticals by the layer that caught them, near the top: - **Layers:** plan <n>, CI <n>, sweep <n>, escaped <n> (escaped: found after an earlier release); a report from before 1.31.0 says "- **Layers:** not counted (swept before 1.31.0)"');
+}
 if (!/\b\d{4}-\d{2}-\d{2}\b/.test(lines.slice(0, 20).join('\n'))) faults.push('no date near the top (YYYY-MM-DD)');
 // The branch is named outright, or in the `type/name` at `<commit>` form reports use.
 const branchLine = (l) => (/branch/i.test(l) || /\b[\w.-]+\/[\w.-]+`? at `?[0-9a-f]/.test(l)) && /\b[0-9a-f]{7,40}\b/.test(l);
@@ -54,6 +63,7 @@ const severity = (s) => ((s.match(SEV) || [])[1] || '').toLowerCase();
 const disposed = (l) => /\bFIXED [0-9a-f]{7,40}\b|\bACCEPTED owner [^\s|]+(?: +[^\s|]+){2,}/.test(l);
 const flag = (id) => faults.push(`finding ${id}: a high or critical finding needs FIXED <commit> or ACCEPTED owner <why>; DEFERRED is for medium and below`);
 let sevCol = -1;
+let highRows = 0;
 // A table may sit indented under a bullet (the fix example's does), so rows are read with their indent dropped.
 lines.forEach((raw, i) => {
 	const l = raw.trimStart();
@@ -63,13 +73,20 @@ lines.forEach((raw, i) => {
 		if (/^\|[\s|:-]+\|$/.test((lines[i + 1] || '').trim())) { sevCol = cells.findIndex((c) => /^severity$/i.test(c)); return; }
 		if (/^\|[\s|:-]+\|$/.test(l.trim())) return;
 		const sev = sevCol >= 0 ? severity(cells[sevCol] || '') : severity(l);
+		if (['high', 'critical'].includes(sev)) highRows++;
 		if (['high', 'critical'].includes(sev) && !disposed(l)) flag(cells[0]);
 	} else {
 		sevCol = -1;
 		const m = l.match(/^\s*[-*] \*\*([A-Z]+[\w.-]*\d)\b([^*]*)\*\*/);
+		if (m && ['high', 'critical'].includes(severity(m[2]))) highRows++;
 		if (m && ['high', 'critical'].includes(severity(m[2])) && !disposed(l)) flag(m[1]);
 	}
 });
+
+// Every high or critical this report lists was caught by the sweep or escaped a release, so the two counts cover
+// them: a Layers line cannot hide a sweep's highs (the 1.31.0 sweep). Which of the two each one is stays the lead's
+// word, checked at the next sweep-shape decision.
+if (layers && highRows > Number(layers[3]) + Number(layers[4])) faults.push(`Layers: the report lists ${highRows} high or critical finding(s), but sweep ${layers[3]} + escaped ${layers[4]} count fewer`);
 
 if (faults.length) {
 	console.log(faults.join('\n'));

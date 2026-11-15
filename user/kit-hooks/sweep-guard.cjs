@@ -169,10 +169,13 @@ function check(input) {
 		// The slot holds the start's tool id, which Claude Code writes into the reviewer's meta file: the outcome counts
 		// that reviewer only, so a decoy with the same brief cannot stand in.
 		const claim = (name) => { const fd = fs.openSync(path.join(slots, name), 'wx'); try { fs.writeSync(fd, String(input.tool_use_id || '')); } finally { fs.closeSync(fd); } };
-		try { claim(String(n)); return; } catch { /* taken */ }
+		// A taken slot that holds this very start's tool id is the same start checked again (settings that still run the
+		// guards directly check each call twice, K48): it passes. A start with no id never matches.
+		const mine = (name) => { try { return Boolean(input.tool_use_id) && fs.readFileSync(path.join(slots, name), 'utf8') === String(input.tool_use_id); } catch { return false; } };
+		try { claim(String(n)); return; } catch { if (mine(String(n))) return; }
 		// A logged retry opens one more slot for its own role, claimed the same way.
 		if (retryOpen(lines, i, e.contract, n + 1)) {
-			try { claim(`${n}.retry`); return; } catch { /* taken */ }
+			try { claim(`${n}.retry`); return; } catch { if (mine(`${n}.retry`)) return; }
 			return deny(`Role ${n + 1} has used its one retry. A further crash is the owner's: \`approve.mjs <contract.json> --outcome --cut-short\`, and the next contract asks them.`);
 		}
 		return deny(`Role ${n + 1} of the cleared contract has started already. If its reviewer crashed: \`approve.mjs <contract.json> --retry ${n + 1} --crashed <id>\`. A further reviewer needs a contract that includes it: ${RUN_FIRST}`);

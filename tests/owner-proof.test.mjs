@@ -469,3 +469,21 @@ test('a PowerShell filter piped into a writer is read as naming the files of the
 		'Get-ChildItem -Recurse -Exclude *.md | Remove-Item', 'Get-ChildItem -Depth 5 | Remove-Item', '& Get-ChildItem -Recurse -Filter *folders.json | Remove-Item', 'Get-ChildItem -Recurse -Filter PROTEC~1.JSO | Remove-Item', 'Remove-Item -Recurse -Include *.j"s"on']) assert.equal(run('PowerShell', { command }), 'deny', command);
 	for (const command of ['Get-ChildItem -Recurse -Filter *.json', 'Get-ChildItem -Recurse -Filter *.cjs | Select-Object Name', 'Get-ChildItem -Recurse -Filter *.txt | Remove-Item']) assert.equal(run('PowerShell', { command }), 'allow', command);
 });
+
+// why: guards rule:security-standards. K54 (reported by a project on the kit, 2026-11-14, reproduced on 1.30.1): a pipe
+// later in the command made every earlier cd unsure, so `cd .claude && cat guard.cjs | head -5`, a plain read, was
+// refused as a write to a guard. A cd stays followed only when every pipe stage only reads; a file list piped on to a
+// writer (the sweep of the first fix overwrote every guard with `cd .claude && ls | xargs -n1 cp /dev/null`) leaves the
+// folder unknown, as before.
+test('a pipe of plain reads after a cd leaves the cd followed; a pipe into a writer does not', { windows: 'also' }, () => {
+	const proj = kitTemp.makeTemp('cdpipe-');
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x\n');
+	const bash = (command) => run('Bash', { command }, proj);
+	for (const c of ['cd .claude && cat guard.cjs | head -5', 'cd .claude && grep -n check guard.cjs | wc -l', 'cd .claude && grep x guard.cjs | sort | uniq']) {
+		assert.equal(bash(c), 'allow', c);
+	}
+	for (const c of ['cd .claude && ls | xargs -n1 cp /dev/null', 'cd .claude && ls | xargs -n1 truncate -s0', 'cd .claude && ls | head | xargs -n1 cp /dev/null', 'cd .claude && cat guard.cjs | head -5 > guard.cjs']) {
+		assert.notEqual(bash(c), 'allow', c);
+	}
+});

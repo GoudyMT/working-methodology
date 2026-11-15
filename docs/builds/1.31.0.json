@@ -1,0 +1,154 @@
+{
+ "version": "1.31.0",
+ "date": "2026-11-14",
+ "level": "minor",
+ "area": "Sweep shape",
+ "title": "feat: the sweep shape, and guards that no longer run twice",
+ "headline": "Every review role stays, the plan gap check becomes a step of the plan skill, and a reviewer start is counted once and only when it runs, so a project with old guard entries can sweep again.",
+ "alignment": "v1.31.0 lands the owner's sweep-shape pick on the three trial builds' numbers and fixes the guard faults two projects reported, each reproduced on the released 1.30.1 first.",
+ "items": [
+  {
+   "id": "SHAPE",
+   "kind": "added",
+   "text": "The plan gap check is a step of the plan skill: one fresh reviewer reads the design and the code it changes with a fixed brief, before the owner's yes, and each high it names goes into the design.",
+   "evidence": "user/skills/plan-feature/SKILL.md, user/skills/plan-feature/references/plan-check-brief.md",
+   "where": "Highs named before any code, per build",
+   "before": "A workbench trial only",
+   "after": "A step every planned feature takes"
+  },
+  {
+   "id": "LAYERS",
+   "kind": "added",
+   "text": "A feature or launch-gate sweep report counts its highs by the layer that caught them (plan, CI, sweep, escaped), and the report audit holds the counts to the highs the report lists; a report from before 1.31.0 says it kept no count.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "Which layer caught each high",
+   "before": "Recounted by hand from old reports",
+   "after": "One line in every feature report"
+  },
+  {
+   "id": "K48",
+   "kind": "fixed",
+   "text": "The sweep guard counts a reviewer start once, however often it is checked, and never for a call another guard refused first, so a held start no longer spends its role's one slot.",
+   "evidence": "tests/kit.test.mjs, tests/guard-dispatch.test.mjs",
+   "where": "A sweep in a project with old guard entries",
+   "before": "Every reviewer refused as started already",
+   "after": "Each role starts once"
+  },
+  {
+   "id": "K49",
+   "kind": "fixed",
+   "text": "Install takes out every settings entry that runs a kit guard from its kit place, with a backup; a project's own hooks of the same name stay. Status and the session-start notice name any left.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K50",
+   "kind": "fixed",
+   "text": "A sweep round whose recorded starts were refused can be closed as none ran; a start counts as refused only when its session's record shows the refusal.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K54",
+   "kind": "fixed",
+   "text": "Two plain reads are no longer refused: a cd followed by piped plain reads, and a match pattern read as a command. Every planted write and delete is still held.",
+   "evidence": "tests/owner-proof.test.mjs, project/.claude/guard-delete-check.cjs"
+  },
+  {
+   "id": "MC2",
+   "kind": "changed",
+   "text": "The recall test names its model and effort, pinned to what the owner's sessions really run, and a test holds every team role file to a named model.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "MC4",
+   "kind": "fixed",
+   "text": "The team build skill gives the scanner model's real price against the top model on both sides of a 100K-token prompt, and scanners keep their prompts under it.",
+   "evidence": "user/skills/agent-team-build/SKILL.md"
+  },
+  {
+   "id": "K53",
+   "kind": "fixed",
+   "text": "The packet writer names a preview cut apart from a missing label, so a closeout no longer looks for a label that is there.",
+   "evidence": "tests/resume-packet.test.mjs"
+  },
+  {
+   "id": "RULE11",
+   "kind": "changed",
+   "text": "Rule 11 and the orientation protocol name the Active Plan beside the files the Resume Point names, as the check prints them; recall keys v10 follow.",
+   "evidence": "docs/evals/recall-questions.md, docs/evals/results/recall-scores.md"
+  },
+  {
+   "id": "SPEED",
+   "kind": "fixed",
+   "text": "The protected-file guard reads a very long command about a quarter faster, so it stays inside the hook's time on a slow runner.",
+   "evidence": "tests/guard-dispatch.test.mjs"
+  }
+ ],
+ "verification": [
+  "Each guard and sweep fix has a test that fails on the code before it; K48 to K50 and K54 were first reproduced on the released 1.30.1, and the sweep's commands against the first fixes are planted cases.",
+  "The delete guard's planted cases: 770 of 770; recall on keys v10: candidate median 14, baseline 13, control 0.",
+  "The coverage map, timed on a small PR: unit tests 1m03s against 2m46s for a full run."
+ ],
+ "decisions": [
+  {
+   "decision": "Every review role stays",
+   "why": "The owner's bar for the cut, set before the trials, held on one condition of three: highs only the leaving roles found, and highs that escaped, were seen in the trial builds."
+  },
+  {
+   "decision": "The plan check lives in the plan skill, not a rule module",
+   "why": "It is a step of planning, and the rule module had no room; the sweep report's Layers line measures it."
+  },
+  {
+   "decision": "Install removes old guard entries, not only names them",
+   "why": "Install already removed 1.25.0's entry the same way; the owner said yes to removal beside naming."
+  }
+ ],
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "4796b3e",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "A home path and two project names in tracked lines, removed"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Clean: no dependency added"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Four highs, three in this build's own first fixes and one in the way back, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "The layer count, install's odd shapes and five tests, all fixed; a slow guard on main fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 4,
+   "medium": 7,
+   "low": 6
+  },
+  "fixed": [
+   "Install removed a project's own hooks that shared a guard's file name. Fixed in b9bdd0d.",
+   "A moved or emptied settings folder closed a round whose reviewers ran. Fixed in 2f2f3fb.",
+   "A cd and a pipe into a writer overwrote the guards. Fixed in 0f72f8f.",
+   "Wildcard programs in quoted text deleted with no delete word. Fixed in cca50bb and 07e10f8."
+  ],
+  "deferred": [],
+  "accepted": []
+ },
+ "tests": {
+  "before": 706,
+  "after": 715,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}

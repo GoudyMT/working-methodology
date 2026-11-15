@@ -643,6 +643,22 @@ const CARRY122_PASS = [
 ];
 
 const ASK = [
+	// K54's bar: quoted text a shell runs, with a wildcard program that may be a delete, still asks with no flag.
+	"bash -c '/bin/?m C:/elsewhere/x'",
+	"bash -c '/bin/[!a]m C:/elsewhere/x'",
+	// The sweep of the first K54 fix: wildcard programs in quoted text that delete with no rm word or flag.
+	`bash -c "/c/Python312/pytho?.exe -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' C:/elsewhere"`,
+	`bash -c '/c/nodejs/nod? -e "require(\\"fs\\").rmSync(\\"C:/elsewhere\\",{recursive:true})"'`,
+	"bash -c '/c/Windows/System32/robocop? e C:/elsewhere //MIR'",
+	"bash -c '/usr/bin/rsyn? -a --del e/ C:/elsewhere/'",
+	"eval '/usr/bin/rsyn? -a --del e/ C:/elsewhere/'",
+	"bash -c '/mingw64/bin/gi? -C C:/elsewhere clean -dfx'",
+	// A match pattern is not run, but one that names a delete is still read.
+	"$r -match 'x'; bash -c 'rm -rf C:/elsewhere'",
+	// A pattern something runs on is a command (the push review of 1.31.0): bash's $b -match is $b -c.
+	"echo -match '/bin/?m -rf C:/elsewhere' | bash",
+	"bash -c '$a -match \"/bin/?m -rf C:/elsewhere\"'",
+	"b=ba''sh; $b -match '/bin/?m -rf C:/elsewhere'",
 	...CARRY122_ASK,
 	...SWEEP_ASK,
 	...RESWEEP_ASK,
@@ -721,6 +737,9 @@ const ASK = [
 ];
 
 const PASS = [
+	// K54 (a project on the kit, 2026-11-14): a project's own count line; its quoted regex read as a command
+	// named a program by a wildcard (\s*-).
+	String.raw`$r = Get-Content -LiteralPath "_Master Roadmap.md"; "Completed: " + ($r -match '^\s*- \[x\]').Count + " | Left: " + ($r -match '^\s*- \[( |/|!)\]').Count`,
 	// M27, from the 1.23.0 mutation check: a command may start with a space, and its search pattern is still not run.
 	' grep -rn "rm -rf /" .',
 	...SWEEP_PASS,
@@ -798,6 +817,13 @@ const asSession = (tool, command, extra) => ({ tool_name: tool, session_id: SESS
 
 for (const command of ASK) check(command, asSession('Bash', command), true);
 for (const command of PASS) check(command, asSession('PowerShell', command), false);
+// The pattern skip in the PowerShell tool ends at anything that could run the pattern (the commit review of 1.31.0).
+for (const command of [
+	"$x -match \u2018/bin/?m -rf C:/elsewhere' | iex \u2018y'",
+	"$x -match '/bin/?m -rf C:/elsewhere'; wsl $Matches[0]",
+	"$x -match '/bin/?m -rf C:/elsewhere'; ./run.ps1",
+	"$x -match '/bin/?m -rf C:/elsewhere'; [scriptblock]::Create($Matches[0]).Invoke()",
+]) check(command, asSession('PowerShell', command), true);
 for (const command of CARRY122_PS_ASK) check('[PowerShell] ' + command, asSession('PowerShell', command), true);
 for (const command of CARRY122_PASS) check(command, asSession('PowerShell', command), false);
 check('[Bash] rm -rf * (bash * skips dot names)', asSession('Bash', 'rm -rf *'), false);

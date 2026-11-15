@@ -53,7 +53,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
-   gates), with `- **Tier:** <tier>` and `- **Covers:** <full sha of the commit the sweep read>` on its first lines (the merge gate reads it), in the shape of the example for its tier. Run
+   gates), with `- **Tier:** <tier>` and `- **Covers:** <full sha of the commit the sweep read>` on its first lines (the merge gate reads it), in the shape of the example for its tier. A feature or launch-gate report also counts its highs and criticals by the layer that caught them: `- **Layers:** plan <n>, CI <n>, sweep <n>, escaped <n>` (plan: named by the plan gap check before the build; CI: a job failed on it; escaped: found after an earlier release). Sweep and escaped together cover every high the report lists, and each high's row names the roles that found it, so a later decision on the sweep's roles reads which highs only one kind of role caught. A report from before 1.31.0 writes `- **Layers:** not counted (swept before 1.31.0)` instead. Run
    `node <this skill's folder>/audit.mjs <report.md>` and fix every fault.
 5. **Fix, each held to the test bar** (rule:finding-pipeline): one sweep per branch, no re-sweep. A fix that changes
    behaviour, guard and permission fixes above all, ships with a test that fails on the code before it and meets

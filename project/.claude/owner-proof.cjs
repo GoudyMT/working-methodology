@@ -31,9 +31,17 @@ let homeNow = null;
 // It moves with each cd the guard follows, and is used only while its own parts are the parts in hand, so a stale
 // or mistaken one is never read from: the lower-case parts are then all there is.
 let startNow = null;
+// The two sides of the compare are kept between calls: a long command asks for every word (the 98 KB command spent
+// most of its owner-proof time here, the main CI on the PR 37 merge).
+const cwdKeys = new WeakMap();
+const cwdKey = (cwd) => { if (!cwdKeys.has(cwd)) cwdKeys.set(cwd, JSON.stringify(cwd)); return cwdKeys.get(cwd); };
+let startKey = ['', ''];
 function diskBase(cwd) {
 	if (!Array.isArray(cwd)) return null;
-	if (startNow && startNow.dir && JSON.stringify(cwd) === JSON.stringify(parts(startNow.dir))) return startNow.dir;
+	if (startNow && startNow.dir) {
+		if (startKey[0] !== startNow.dir) startKey = [startNow.dir, JSON.stringify(parts(startNow.dir))];
+		if (cwdKey(cwd) === startKey[1]) return startNow.dir;
+	}
 	return (/^[a-z]:$/i.test(cwd[0] || '') ? '' : '/') + cwd.join('/');
 }
 const home = () => homeNow ?? findHome();
@@ -154,8 +162,10 @@ function throughLink(word, cwd) {
 	// only one known.
 	const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR || process.cwd();
 	const written = rooted(w) ? w.replace(/^\/([a-z])(?=\/|$)/i, '$1:') : `${from}/${w}`;
+	// The spelling as written is its own key first, so a word asked again skips the resolve.
+	if (linkSeen.has(`\0${written}`)) return linkSeen.get(`\0${written}`);
 	const abs = path.resolve(written);
-	if (linkSeen.has(abs)) return linkSeen.get(abs);
+	if (linkSeen.has(abs)) { linkSeen.set(`\0${written}`, linkSeen.get(abs)); return linkSeen.get(abs); }
 	if (linkSeen.size > 5000) linkSeen.clear();
 	let out = null;
 	try { const r = walked(written); if (slash(r) !== slash(abs)) out = r; } catch { /* not placed */ }
@@ -164,6 +174,7 @@ function throughLink(word, cwd) {
 	const twin = twinOf(abs);
 	if (twin !== null) out = twin;
 	linkSeen.set(abs, out);
+	linkSeen.set(`\0${written}`, out);
 	return out;
 }
 
@@ -498,7 +509,7 @@ function shellWritesFrom(command, tool, start, names) {
 	// held, and runs as a command of its own, where the link is on disk and followed.
 	let linkMade = false;
 	const hit = (x) => {
-		const where = Array.isArray(cwd) ? `A${JSON.stringify(cwd)}` : cwd === null ? 'N' : 'U';
+		const where = Array.isArray(cwd) ? `A${cwdKey(cwd)}` : cwd === null ? 'N' : 'U';
 		const key = `${x.quoted ? 1 : 0}${where}\0${x.value}`;
 		if (!seen.has(key)) seen.set(key, tails(dotless(x.value, x.quoted)).some((w) => names(w, cwd)));
 		return seen.get(key);
@@ -526,9 +537,18 @@ function shellWritesFrom(command, tool, start, names) {
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
-	// Any break that is not plain anywhere in the command (a later || runs on a failure too) makes every cd unsure. Read
-	// once, before the loop: read per command it made a long command quadratic (98 KB took 21 s, past the hook's 10 s).
-	const apart = grouped || !segments.every((g) => plainBreak(g.end));
+	// A pipe at or before a cd makes it unsure (cd as a pipe stage runs apart); a pipe after it cannot undo it (K54: a
+	// later pipe made cd .claude && cat guard.cjs | head a write). Any other break that is not plain, anywhere, still
+	// makes every cd unsure: a || runs its right side after a cd that failed, and a & puts the cd in the background
+	// (the review of this fix). Read once, before the loop: read per command it made a long command quadratic (98 KB
+	// took 21 s, past the hook's 10 s).
+	// A pipe after a cd counts only when every stage of every pipeline is a plain reader with no redirect: a file list
+	// piped on to a writer (ls | xargs cp /dev/null) names its files where no word shows them (the sweep of this fix).
+	const firstPipe = segments.findIndex((g) => g.end === '|');
+	const stageReads = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p)) && !g.some((x) => x.redirect); };
+	const pipesRead = segments.every((g, i) => !(g.end === '|' || (i > 0 && segments[i - 1].end === '|')) || stageReads(g));
+	const otherBreak = segments.some((g) => !plainBreak(g.end) && g.end !== '|') || (firstPipe >= 0 && !pipesRead);
+	const apartAt = (s) => grouped || otherBreak || (firstPipe >= 0 && firstPipe <= s);
 	for (let s = 0; s < segments.length; s++) {
 		if (linkMade) return true;
 		const segment = segments[s].map((x) => ({ ...x, value: sub(x.value) }));
@@ -587,7 +607,7 @@ function shellWritesFrom(command, tool, start, names) {
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
-			cwd = apart || !sure || linkMade ? 'unknown' : moved(segment, cwd);
+			cwd = apartAt(s) || !sure || linkMade ? 'unknown' : moved(segment, cwd);
 			if (startNow) startNow.dir = Array.isArray(cwd) ? movedDir(segment, startNow.dir) : null;
 			// Through a link, the shell's ".." is the parent of the link's target, not of the folder the words show: the
 			// folder is then not known, and every later relative word is read the strict way.

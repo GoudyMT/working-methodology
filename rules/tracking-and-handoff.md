@@ -100,7 +100,7 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 
 Why: the recurring drift is treating reminders and the summary as a re-read, then claiming "I just re-read".
 
-1. **Run `node .claude/resume-packet.mjs check`**, then fresh Read calls on the file its Resume Point names and every file it marks CHANGED or missing, even when it says "nothing in flight". No verdict line = the full reading. NOT reads: the packet, system reminders, the compaction summary, memory.
+1. **Run `node .claude/resume-packet.mjs check`**, then fresh Read calls on `_Active Plan.md`, every file its Resume Point names and every file it marks CHANGED or missing, even when it says "nothing in flight". No verdict line = the full reading. NOT reads: the packet, system reminders, the compaction summary, memory.
 2. **Visible checklist:**
    ```
    Post-Compact Orientation Protocol:
@@ -140,8 +140,8 @@ of what its verdict names, visible checklist, scans), then state mode + first ac
 - Corrections caught mid-session:
 
 ## Reading Order (mandatory, in order)
-1. `node .claude/resume-packet.mjs check`  2. the files its verdict names (the plan the Resume Point names,
-and any tracking file it marks CHANGED or missing)
+1. `node .claude/resume-packet.mjs check`  2. the files its verdict names (the Active Plan, every file the
+Resume Point names, and any tracking file it marks CHANGED or missing)
 
 ## Next Step (REQUIRED)
 - What:  - Why:  - Source: Active Plan Resume Point; Roadmap milestone advanced

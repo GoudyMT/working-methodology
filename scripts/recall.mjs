@@ -39,6 +39,11 @@ const QUESTIONS = path.join(KIT, 'docs', 'evals', 'recall-questions.md');
 // Raw answers quote local paths, so they stay in the gitignored reports folder; only scores are committed.
 const OUT_DIR = path.join(KIT, 'reports', 'evals');
 const MAX_TURNS = '8';
+// MC2: each session names its model and effort, so neither a saved default nor a new release moves the ruler. Pinned to
+// what the owner's main sessions really run (Opus 5.5 at medium, read from the session records on 2026-11-14), never
+// to a setting they do not reach. A change here is a new ruler: it needs its own baseline.
+const RECALL_MODEL = 'claude-opus-5-5';
+const RECALL_EFFORT = 'medium';
 const SCORES = 'docs/evals/results/recall-scores.md';
 const BRIEF = 'docs/evals/recall-scorer-brief.md';
 const QUESTIONS_REL = 'docs/evals/recall-questions.md';
@@ -309,7 +314,7 @@ export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
 export function askAll({ qs, projectDir, run }) {
   const lines = [];
   for (const { n, q, key } of qs) {
-    const r = run('claude', ['-p', '--setting-sources', 'project', '--allowedTools', 'Read,Grep,Glob',
+    const r = run('claude', ['-p', '--model', RECALL_MODEL, '--effort', RECALL_EFFORT, '--setting-sources', 'project', '--allowedTools', 'Read,Grep,Glob',
       '--disallowedTools', 'Edit,Write,Bash,PowerShell,WebFetch,WebSearch,Agent', '--max-turns', MAX_TURNS,
       '--no-session-persistence'], { cwd: projectDir, input: q, encoding: 'utf8', timeout: 600000 });
     const answer = (r.stdout || '').trim();
@@ -345,7 +350,7 @@ export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when,
   const projectDir = probePath(osHome);
   try {
     setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !kitTools.releaseState(kit).problems.length, run });
-    const cli = (run('claude', ['--version'], {}).stdout || 'unknown').trim();
+    const cli = `${(run('claude', ['--version'], {}).stdout || 'unknown').trim()}; model ${RECALL_MODEL}, effort ${RECALL_EFFORT}`;
     const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli });
     lines.push(...askAll({ qs, projectDir, run }));
     fs.mkdirSync(outDir, { recursive: true });

@@ -1,0 +1,16 @@
+{
+  "lines": [
+    {
+      "before": "1. **Run `node .claude/resume-packet.mjs check`**, then fresh Read calls on the file its Resume Point names and every file it marks CHANGED or missing, even when it says \"nothing in flight\". No verdict line = the full reading. NOT reads: the packet, system reminders, the compaction summary, memory.",
+      "after": "1. **Run `node .claude/resume-packet.mjs check`**, then fresh Read calls on `_Active Plan.md`, every file its Resume Point names and every file it marks CHANGED or missing, even when it says \"nothing in flight\". No verdict line = the full reading. NOT reads: the packet, system reminders, the compaction summary, memory."
+    },
+    {
+      "before": "1. `node .claude/resume-packet.mjs check`  2. the files its verdict names (the plan the Resume Point names,",
+      "after": "1. `node .claude/resume-packet.mjs check`  2. the files its verdict names (the Active Plan, every file the"
+    },
+    {
+      "before": "and any tracking file it marks CHANGED or missing)",
+      "after": "Resume Point names, and any tracking file it marks CHANGED or missing)"
+    }
+  ]
+}

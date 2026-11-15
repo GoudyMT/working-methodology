@@ -376,3 +376,20 @@ test('install wires the packet; a project whose settings lack the hook is named,
 	assert.equal(use().wired.ok, false);
 	assert.match(use().wired.detail, /Bash\(node \.claude\/resume-packet\.mjs check\)/);
 });
+
+// why: guards rule:post-compact-orientation. K53 (the 1.30.1 verify on the workbench): a Resume Point over the preview's
+// 400 characters is cut, as designed, and its file named for a read; write called that "a section label is not found",
+// so the closeout looked for a label that was there. A cut is named as a cut, with nothing to fix; a label that is
+// really missing still asks for the fix.
+test('write names a cut section as cut, and only a missing label as one to fix', () => {
+	const dir = project();
+	const plan = path.join(dir, '_Active Plan.md');
+	fs.writeFileSync(plan, fs.readFileSync(plan, 'utf8').replace(/\*\*NEXT:\*\* .*/, `**NEXT:** build the export step in [the plan](docs/plans/export%20step.md). ${'More detail. '.repeat(40)}`));
+	const w = run(dir, 'write');
+	assert.equal(w.status, 0, w.stderr);
+	assert.doesNotMatch(w.stdout, /label is not found/);
+	assert.match(w.stdout, /cut in the preview[^\n]*_Active Plan\.md/);
+	const memory = path.join(dir, '_Loop Learnings.md');
+	fs.writeFileSync(memory, fs.readFileSync(memory, 'utf8').replace('## Open lessons', '## Lessons kept elsewhere'));
+	assert.match(run(dir, 'write').stdout, /fix before the next session: a section label is not found[^\n]*_Loop Learnings\.md/); // pin: 1 the closeout acts on this line
+});
