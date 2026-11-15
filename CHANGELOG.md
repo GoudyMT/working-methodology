@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.34.0 - 2026-11-15
+
+A project's next action, what waits on the owner, the carry-overs and the kit version now live once, in _State.json, and the owner's rulings in _Decisions.jsonl; the Resume Point and the dashboard lines are generated from them, and a check fails the moment they drift.
+
+### Added
+- The state script keeps the next action, what blocks on the owner, what only waits, the carry-overs, the phase and the kit version in _State.json, and writes the Resume Point and the dashboard lines from them.
+- What blocks on the owner and what only waits for the owner's eyes are two lists, so a note for the owner no longer stops the work.
+- The owner's rulings are kept in _Decisions.jsonl with an id, the date, the owner's exact words and the reason; the words must be found in the owner's own messages or pop-up answers, or are marked as not checked. Rows are only ever added.
+- state.mjs check fails when a view differs from the data, a label sits outside its block, the installed kit is newer than the data says, a committed decision changed, or a D-n pointer has no record; the use check and status report it.
+
+### Changed
+- An existing project moves its filled-in Resume Point into the data once with state.mjs init, which refuses anything it cannot move whole and changes nothing then.
+- The closeout sets the state with state.mjs commands instead of hand edits, and its hand-back ends with the next item, so the coordinator can open the next thread at once.
+
+### Security
+- state.mjs never writes through a linked tracking file, leaves no temporary file behind, refuses a planted item id, and the use check runs the kit's own copy of it, never the project's.
+
 ## 1.33.1 - 2026-11-15
 
 Install merges the kit's rule changes into files the owner filled in, line by line, and the guard that follows a command into another kit project reads braces, wildcards and quoting as the shell does, so it no longer stalls on an ordinary command.
