@@ -123,6 +123,9 @@ test('a decision is recorded only with the owner\'s own words, appended, and the
 	// A row added by hand that claims the owner's words is checked again where it points.
 	git(dir, 'checkout', '--', '_Decisions.jsonl');
 	fs.appendFileSync(path.join(dir, '_Decisions.jsonl'), `${JSON.stringify({ id: 'D-3', date: '2026-11-15', decision: 'Drop export', words: 'drop the export now', words_from: `${SESSION}:turn-0`, why: 'x', supersedes: null })}\n`);
+	// Committed or not: a commit does not make a forged claim true.
+	git(dir, 'add', '_Decisions.jsonl');
+	git(dir, '-c', 'user.email=t@example.invalid', '-c', 'user.name=t', 'commit', '-q', '-m', 'forged');
 	const forged = run(dir, ['check'], env);
 	assert.equal(forged.status, 1);
 	assert.match(forged.stdout, /D-3 claims the owner's words/);

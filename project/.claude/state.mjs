@@ -26,7 +26,7 @@
 //
 // What check proves: each generated block equals what the data renders; no label a session reads (NEXT, Pending the
 // owner ...) sits outside its block; the kit version in the data is the one installed; every item id is well formed;
-// every decision row is whole and the committed rows are unchanged (where git has a copy); each new row that claims the
+// every decision row is whole and the committed rows are unchanged (where git has a copy); each row that claims the
 // owner's words has them in the owner's turn its record points to (where that transcript is on this machine); every
 // D-n named in a tracking file has a row. What it cannot see: whether the next action is still true, a note relayed
 // into the owner's turn by another agent, a ruling contradicted without --supersedes, whether a
@@ -228,8 +228,8 @@ function check() {
 		const old = loadDecisions(committed);
 		if (old.why || old.lines.some((l, i) => dec.lines[i] !== l)) faults.push(`${DECISIONS}: a committed decision was changed, moved or removed; rows are only ever added (git diff ${DECISIONS})`);
 	} else if ((dec.rows || []).length) notes.push(`${DECISIONS} has no committed copy here, so earlier rows were not compared`);
-	const fresh = (dec.rows || []).slice(committed === null ? 0 : loadDecisions(committed).rows?.length || 0);
-	for (const d of fresh) {
+	// Every row, committed or not: a commit does not make a forged claim true.
+	for (const d of dec.rows || []) {
 		if (!d.words_from) continue;
 		const p = proven(d);
 		if (p === 'no') faults.push(`${d.id} claims the owner's words, but they are not in the turn its record points to`);
