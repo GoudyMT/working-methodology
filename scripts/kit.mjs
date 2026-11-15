@@ -219,6 +219,37 @@ function renderEntry(kitInfo, entry, projectDir, home, checked = null) {
 
 const readStamp = (p) => ({ files: {}, ...(fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {}) });
 
+// The 1.33.0 workbench verify (the owner, 2026-11-15, "Three-way merge"): a file the owner filled in and the kit also
+// changed was skipped whole, so no release's rule change reached it. The version install last wrote is found among the
+// kit folder's release tags (rendered as install renders it, and held to the hash the stamp recorded, so a wrong
+// guess is never the base), and git merges the owner's edits and the kit's changes against it line by line. Returns
+// { text } on a clean merge, { clashes } when a line both changed, or null when no tag gives the recorded base.
+const MERGE_TAGS = 40;
+function threeWay(kitInfo, entry, ctx, cur, base, want) {
+  const rel = toPosix(path.relative(ctx.kit, entry.src));
+  if (rel.startsWith('..')) return null;
+  const git = (...a) => spawnSync('git', ['-C', ctx.kit, ...NO_PROGRAMS, ...a], { encoding: 'utf8', cwd: SAFE_CWD, maxBuffer: 16 * 1024 * 1024 });
+  const tags = git('tag', '--list', 'v*', '--sort=-v:refname');
+  if (tags.status !== 0) return null;
+  let old = null;
+  for (const tag of tags.stdout.split('\n').filter(Boolean).slice(0, MERGE_TAGS)) {
+    const shown = git('show', `refs/tags/${tag}:${rel}`);
+    if (shown.status !== 0) continue;
+    const text = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, new Map([[entry.src, shown.stdout]]));
+    if (sha(text) === base) { old = text; break; }
+  }
+  if (old === null) return null;
+  const dir = kitTemp.makeTemp('kit-merge-');
+  try {
+    const at = (n, t) => { const f = path.join(dir, n); fs.writeFileSync(f, t); return f; };
+    const r = spawnSync('git', [...NO_PROGRAMS, 'merge-file', '-p', at('yours', cur), at('base', old), at('kit', want)], { encoding: 'utf8', cwd: SAFE_CWD, maxBuffer: 16 * 1024 * 1024 });
+    if (r.status === 0) return { text: r.stdout };
+    return r.status > 0 ? { clashes: r.status } : null;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // V3 (1.25.1): the files that guard a project - every script in .claude and every git hook. The launcher in the
 // Claude config folder hashes them against a record kept there before every call, so one changed outside install holds
 // every call; install always puts the kit's copy back, and fold-back never offers one to the kit.
@@ -520,7 +551,7 @@ export function install(ctx) {
   const prevRecord = ctx.target === 'project' && ctx.home ? readRecord(ctx.home, ctx.projectDir) : null;
   const gitTracks = (f) => spawnSync('git', ['-C', ctx.projectDir, ...NO_PROGRAMS, 'ls-files', '--error-unmatch', f], { encoding: 'utf8', cwd: SAFE_CWD }).status === 0;
   const isHost = (key) => ((prevRecord && prevRecord.host) || []).includes(key) || (prevRecord ? !(prevRecord.files && prevRecord.files[key]) && gitTracks(key) : !stamp.files[key] && gitTracks(key));
-  const created = [], updated = [], replaced = [], skipped = [], merged = [];
+  const created = [], updated = [], replaced = [], skipped = [], merged = [], threeWayMerged = [];
   const hostOwned = new Set(stamp.hostOwned || []);
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
   for (const entry of entries) {
@@ -556,9 +587,18 @@ export function install(ctx) {
       // The owner merged the kit's changes into this file by hand: its text now stands on the current kit copy.
       merged.push(entry.key); files[entry.key] = wantHash;
     } else {
+      const both = base && wantHash !== base;
+      const m = both ? threeWay(kitInfo, entry, ctx, fs.readFileSync(entry.dest, 'utf8'), base, want) : null;
+      if (m && m.text !== undefined) {
+        if (!ctx.dryRun) fs.writeFileSync(entry.dest, m.text);
+        // The kit's side is now the current copy; the owner's edits stay on top, as after a merge by hand.
+        threeWayMerged.push(entry.key); files[entry.key] = wantHash;
+        continue;
+      }
       const reason = !base ? 'already exists and differs from the kit'
         : wantHash === base ? 'changed here - run fold-back'
-        : 'changed here and in the kit - merge by hand';
+        : m && m.clashes ? `changed here and in the kit, and ${m.clashes} part${m.clashes === 1 ? '' : 's'} clash (a line both changed), so nothing was written: merge those lines by hand (or ask Claude to merge the kit's copy of ${entry.key} into yours, keeping your filled-in lines), then run install project again with --merged ${entry.key}`
+        : `changed here and in the kit - merge by hand (no release tag in the kit folder holds the version last installed here, so it cannot be merged line by line), then run install project again with --merged ${entry.key}`;
       skipped.push({ file: entry.key, reason });
     }
   }
@@ -700,7 +740,7 @@ export function install(ctx) {
       }
     }
   }
-  return { created, updated, replaced, retired, skipped, merged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
 }
 
 /**
@@ -1917,6 +1957,7 @@ function main(argv) {
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
     console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
     for (const f of r.merged) console.log(`    recorded as merged by hand: ${f}`);
+    for (const f of r.threeWayMerged || []) console.log(`    merged with your edits: ${f} (your lines and the kit's changes, line by line)`);
     for (const f of r.replaced) console.log(`    replaced ${f}`);
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);

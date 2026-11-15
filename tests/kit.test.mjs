@@ -647,6 +647,44 @@ function releaseKit() {
   return { ...ctx, git, cli };
 }
 
+// The 1.33.0 workbench verify (the owner, 2026-11-15, "Three-way merge"): a file the owner filled in and the kit also
+// changed was skipped whole as "merge by hand", so no release's rule change reached it. Install now merges the two line
+// by line against the version it last installed, read from the release copy's tags, and writes the result when nothing
+// clashes; a clash (a line both changed, or changes on lines next to each other, as git merges) leaves the file as it
+// is and names what to do.
+// why: guards rule:kit-standards
+test('install merges the owner\'s edits with the kit\'s changes line by line, and leaves a clash alone', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  const rules = path.join(kit, 'project/_Working Standards.md');
+  const release = (v, lines) => {
+    fs.writeFileSync(rules, lines.join('\n') + '\n');
+    fs.writeFileSync(path.join(kit, 'VERSION'), `${v}\n`);
+    git('commit', '-q', '-am', `release ${v}`); git('tag', `v${v}`);
+  };
+  const mine = path.join(proj, '_Working Standards.md');
+  const write = (lines) => fs.writeFileSync(mine, lines.join('\n') + '\n');
+  const read = () => fs.readFileSync(mine, 'utf8').split('\n').slice(0, -1);
+  release('1.0.1', ['one', 'two', 'three', 'four', 'five']);
+  assert.equal(cli('install', 'project', proj).status, 0);
+  write(['one, filled in', 'two', 'three', 'four', 'five']);
+  release('1.0.2', ['one', 'two', 'three', 'four', 'five, reworded']);
+  const r = cli('install', 'project', proj);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(read(), ['one, filled in', 'two', 'three', 'four', 'five, reworded'], 'both changes kept');
+  assert.match(r.stdout, /merged with your edits: _Working Standards\.md/);
+  // The next release merges from the version just written, so the owner's line survives again.
+  release('1.0.3', ['one', 'two', 'three, new', 'four', 'five, reworded']);
+  cli('install', 'project', proj);
+  assert.deepEqual(read(), ['one, filled in', 'two', 'three, new', 'four', 'five, reworded']);
+  // A line both changed is a clash: the file stays as the owner has it, and the skip says what to do.
+  write(['one, filled in', 'two', 'three, mine', 'four', 'five, reworded']);
+  release('1.0.4', ['one', 'two', 'three, newer', 'four', 'five, reworded']);
+  const c = cli('install', 'project', proj);
+  assert.deepEqual(read(), ['one, filled in', 'two', 'three, mine', 'four', 'five, reworded'], 'a clash writes nothing');
+  assert.match(c.stdout, /skipped _Working Standards\.md: [^\n]*clash/);
+  assert.match(c.stdout, /--merged _Working Standards\.md/);
+});
+
 // K61 (the owner, 2026-11-15): merge on green had no exact steps; install prints them, each marked done or to do.
 // why: guards rule:standing-grants
 test('install user and install project print the merge-on-green steps', () => {
