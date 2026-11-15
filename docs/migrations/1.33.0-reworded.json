@@ -12,7 +12,7 @@
     },
     {
       "before": "- **Auto-merge goes through the merge gate:** after a PR's gates, under the grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (`$HOME` in PowerShell); without GO the merge waits for the owner's yes (rule:standing-grants).",
-      "after": "- **Auto-merge goes through the merge gate:** after a PR's gates, under the grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (in PowerShell the full path with forward slashes, as install prints it: the PowerShell tool never runs a `$HOME` path unasked); without GO the merge waits for the owner's yes (rule:standing-grants).",
+      "after": "- **Auto-merge goes through the merge gate:** after a PR's gates, under the grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (PowerShell: the full forward-slash path install prints; `$HOME` never runs unasked); without GO the merge waits for the owner's yes (rule:standing-grants).",
       "why": "K61 (the owner, 2026-11-15): the PowerShell tool never runs a $HOME path unasked, so no allow rule can match it; the full path with forward slashes does (proven live)"
     },
     {
