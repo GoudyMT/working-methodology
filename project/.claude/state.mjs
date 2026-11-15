@@ -129,6 +129,9 @@ function loadState() {
 	if (!Array.isArray(s.roadmap) || s.roadmap.some((x) => !x || ['step', 'release', 'carries', 'state'].some((k) => typeof x[k] !== 'string')) || s.roadmap.some((x) => !clean(x.step))) return { why: `${STATE}: "roadmap" is not a list of { step, release, carries, state }` };
 	// A step name may repeat ("fix" for two fix releases); the step with its release is one step.
 	if (new Set(s.roadmap.map((x) => `${x.step}\n${x.release}`)).size !== s.roadmap.length) return { why: `${STATE}: a roadmap step is given twice with the same release` };
+	// list import's record of each row it moved: [tag, text hash] by id (list-data.mjs, importMark).
+	if (s.list_import === undefined) s.list_import = {};
+	if (!s.list_import || typeof s.list_import !== 'object' || Array.isArray(s.list_import) || Object.values(s.list_import).some((m) => !Array.isArray(m) || m.length !== 2 || m.some((x) => typeof x !== 'string'))) return { why: `${STATE}: "list_import" is not a record of [tag, hash] by row id` };
 	return { state: s };
 }
 const saveState = (s, { touch = true } = {}) => { if (touch) s.updated = today(); write(STATE, `${JSON.stringify(s, null, 2)}\n`); };
@@ -205,8 +208,9 @@ function render(s, { overwrite = false } = {}) {
 		const same = now.join('\n') === want.join('\n');
 		const known = s.rendered[rel] ? s.rendered[rel] === blockHash(at) : now.every((l) => !l.trim());
 		if (!same && !known && !overwrite) { out.push(`${rel}: the generated block was edited by hand since the last render; move each change into the data with set, add or done, then run node .claude/state.mjs render --overwrite`); continue; }
-		const lines = [...at.lines.slice(0, at.begin + 1), ...want, ...at.lines.slice(at.end)];
-		if (!same) write(rel, lines.join(at.crlf ? '\r\n' : '\n'));
+		// The begin marker is written in its one form too: text added on the marker line is not kept.
+		const lines = [...at.lines.slice(0, at.begin), BEGIN, ...want, ...at.lines.slice(at.end)];
+		if (!same || at.lines[at.begin] !== BEGIN) write(rel, lines.join(at.crlf ? '\r\n' : '\n'));
 		s.rendered[rel] = sha(want.join('\n'));
 	}
 	out.push(...listBlocks(s, { overwrite }));
@@ -214,9 +218,22 @@ function render(s, { overwrite = false } = {}) {
 	return out;
 }
 
-const io = { readText };
+/** A tracking file that is a link or has a second name: state.mjs neither writes nor reads through it. */
+const linked = (rel) => { try { const st = fs.lstatSync(file(rel)); return st.isSymbolicLink() || !st.isFile() || st.nlink > 1; } catch { return false; } };
+const io = { readText, linked };
+// Files a session reads as instructions or by label: a list view there could pass row text off as a rule, a lesson,
+// an import (@path in CLAUDE.md or AGENTS.md) or a next action, so list blocks are refused in them.
+const NO_LIST = ['CLAUDE.md', 'AGENTS.md', '_Start Here.md', PLAN, MEMORY, '_Loop Learnings.md', '_Session Log.md'];
 // The project's own markdown files that may hold list blocks (the roadmap, counts and rows views).
 const markdownFiles = () => fs.readdirSync(ROOT, { withFileTypes: true }).filter((d) => d.isFile() && /\.md$/i.test(d.name)).map((d) => d.name).sort();
+/** A path the owner named for a command's input: inside the project, a plain file, never a link or a network share. */
+function inside(arg) {
+	if (/^[\\/]{2}/.test(String(arg))) return null;
+	const p = path.resolve(ROOT, String(arg));
+	const rel = path.relative(ROOT, p);
+	if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || linked(rel)) return null;
+	return p;
+}
 
 /**
  * Write (or, with check, compare) every list block from _List.jsonl and the roadmap steps. A block changed by hand since
@@ -224,7 +241,9 @@ const markdownFiles = () => fs.readdirSync(ROOT, { withFileTypes: true }).filter
  */
 function listBlocks(s, { overwrite = false, check = false } = {}) {
 	const out = [];
-	const files = markdownFiles().map((rel) => [rel, readText(rel)]).filter(([, t]) => t !== null && /<!-- list:begin /.test(t));
+	const files = markdownFiles().map((rel) => [rel, readText(rel)]).filter(([, t]) => t !== null && /<!--\s*list:/.test(t));
+	for (const [rel] of files.filter(([rel]) => NO_LIST.some((n) => n.toLowerCase() === rel.toLowerCase()))) out.push(`${rel}: list blocks may not sit in a file a session reads as instructions or by label; put them in _Master Roadmap.md or a file of their own`);
+	if (out.length) return out;
 	if (!files.length) return out;
 	const l = list.loadList(io);
 	if (l.why) return [l.why];
@@ -268,6 +287,7 @@ function check() {
 		for (const [rel, body] of Object.entries(views(state))) {
 			const at = locate(rel);
 			if (at.why) { faults.push(at.why); continue; }
+			if (at.lines[at.begin] !== BEGIN) faults.push(`${rel}: the begin marker line was changed by hand; run node .claude/state.mjs render --overwrite to write it back`);
 			if (at.lines.slice(at.begin + 1, at.end).join('\n') !== inner(body).join('\n')) faults.push(`${rel}: the generated block differs from ${STATE}: run node .claude/state.mjs render (a block edited by hand is refused there; move the change into the data first)`);
 			// The packet reads the first label anywhere in the file, so one outside the block would be read in its place.
 			at.lines.forEach((l, i) => { if ((i < at.begin || i > at.end) && LABELS[rel].some((n) => labelRe(n).test(l))) faults.push(`${rel} line ${i + 1}: "${clean(l).slice(0, 40)}" is a generated label outside the block; move it into the data and delete the line`); });
@@ -290,7 +310,7 @@ function check() {
 	}
 	const l = list.loadList(io);
 	if (l.why) faults.push(l.why);
-	else { const lf = list.faultsOf(l.rows); faults.push(...lf.faults); notes.push(...lf.notes); }
+	else { const lf = list.faultsOf(l.rows, state ? state.list_import : {}); faults.push(...lf.faults); notes.push(...lf.notes); }
 	const rows = new Map((dec.rows || []).map((d) => [d.id, d]));
 	for (const rel of TRACKING) {
 		const text = readText(rel);
@@ -539,6 +559,8 @@ function main(argv) {
 		let at = named[0];
 		if (!at) { at = { step: clean(step), release: '', carries: '', state: '' }; s.roadmap.push(at); }
 		at[field] = clean(text.join(' '));
+		// Checked before it is written: a step and release given twice would lock every state command out.
+		if (s.roadmap.some((x) => x !== at && x.step === at.step && x.release === at.release)) return fail(`step ${at.step} with release ${at.release || '(none)'} is already on the roadmap; nothing written`);
 		saveState(s, { touch: false });
 		return console.log(`step ${at.step} ${field} set; run node .claude/state.mjs render`);
 	}
@@ -590,18 +612,21 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (l.exists) return fail(`${list.LIST} already exists; an import would drop what was changed in the data since. Change rows with item set.`);
 		const { state: s, why } = loadState();
 		if (why) return fail(why);
-		const src = path.resolve(ROOT, rest[1]);
+		const src = inside(rest[1]);
+		if (!src) return fail(`${clean(rest[1])} is not a plain file inside this project`);
 		let text;
 		try { text = fs.readFileSync(src, 'utf8'); } catch { return fail(`${clean(rest[1])} could not be read`); }
 		const p = list.parseMarkdown(text);
-		if (p.faults.length) return fail([`Nothing written: ${p.faults.length} row(s) cannot be moved whole.`, ...p.faults.map(clean)].join('\n'));
+		if (p.faults.length) return fail([`Nothing written: ${p.faults.length} row(s) or table(s) cannot be moved whole.`, ...p.faults.map(clean)].join('\n'));
 		if (p.steps.length && s.roadmap.length) return fail(`Nothing written: ${STATE} already holds roadmap steps; the import would replace them.`);
-		const pairs = p.steps.map((x) => `${clean(x.step)} ${clean(x.release)}`);
-		const twice = pairs.filter((x, k) => pairs.indexOf(x) !== k);
-		if (twice.length) return fail(`Nothing written: roadmap step ${twice[0]} is given twice with the same release.`);
-		write(list.LIST, list.serialize(p.rows));
-		if (p.steps.length) { s.roadmap = p.steps.map((x) => ({ step: clean(x.step), release: clean(x.release), carries: clean(x.carries), state: clean(x.state) })); saveState(s, { touch: false }); }
-		const lf = list.faultsOf(p.rows);
+		// The state first, with the import's record of each row; the list after it. If the list cannot be written, the
+		// state is put back as it was, so a retry starts clean.
+		const before = readText(STATE);
+		s.list_import = Object.fromEntries(p.rows.map((r) => [r.id, list.importMark(r)]));
+		if (p.steps.length) s.roadmap = p.steps.map((x) => ({ step: clean(x.step), release: clean(x.release), carries: clean(x.carries), state: clean(x.state) }));
+		saveState(s, { touch: false });
+		try { write(list.LIST, list.serialize(p.rows)); } catch (e) { write(STATE, before); throw e; }
+		const lf = list.faultsOf(p.rows, s.list_import);
 		console.log(`PASS ${p.rows.length} row(s) and ${p.steps.length} roadmap step(s) moved into ${list.LIST} and ${STATE}; the markdown is unchanged.`);
 		for (const n of lf.notes) console.log(`note: ${n}`);
 		return console.log('Next: put the list:begin roadmap, counts and rows markers where the views go, then run node .claude/state.mjs render.');
@@ -615,15 +640,21 @@ function listCommand(cmd, rest, { fail, usage }) {
 		const q = rest.filter((x) => x !== '--all').join(' ').toLowerCase();
 		const shown = (all ? l.rows : list.ranked(l.rows)).filter((r) => !q || list.line(r).toLowerCase().includes(q));
 		for (const r of shown) console.log(list.line(r));
-		return console.log(`${shown.length} row(s)${all ? '' : ' open, ranked by severity, then real use, the owner, outside, the kit\'s own finds'}`);
+		return console.log(`${shown.length} row(s)${all ? '' : ' open, in work order (now, next, later, then the rest), then by severity (an unrated row after high), then real use, the owner, outside, the kit\'s own finds, then no origin set'}`);
 	}
 	if (rest[0] === 'add') {
 		const i = rest.indexOf('--from');
 		if (i < 0 || !rest[i + 1]) return usage();
+		const src = inside(rest[i + 1]);
+		if (!src) return fail(`${clean(rest[i + 1])} is not a plain file inside this project`);
 		let r;
-		try { r = JSON.parse(fs.readFileSync(path.resolve(ROOT, rest[i + 1]), 'utf8')); } catch { return fail(`${clean(rest[i + 1])} is not a JSON file`); }
-		if (r && typeof r === 'object' && !Array.isArray(r)) { delete r.imported; if (r.severity === undefined) r.severity = 'to set'; }
-		const bad = list.refuse(r, l.rows);
+		try { r = JSON.parse(fs.readFileSync(src, 'utf8')); } catch { return fail(`${clean(rest[i + 1])} is not a JSON file`); }
+		if (r && typeof r === 'object' && !Array.isArray(r) && r.severity === undefined) r.severity = 'to set';
+		const { state: s, why } = loadState();
+		if (why) return fail(why);
+		// A new row owes its labels now, even where an imported row of the same id once did not.
+		if (r && typeof r.id === 'string' && Object.hasOwn(s.list_import, r.id)) return fail(`${clean(r.id)} was moved in by the import; change it with item set`);
+		const bad = list.refuse(r, l.rows, s.list_import);
 		if (bad) return fail(clean(bad));
 		write(list.LIST, list.serialize([...l.rows, r]));
 		return console.log(`${r.id} added; run node .claude/state.mjs render`);
@@ -635,8 +666,9 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (!field || !value.length) return usage();
 		const ch = list.setField(l.rows[at], field, value.join(' '));
 		if (ch.why) return fail(ch.why);
-		const closing = ['done', 'closed'].includes(ch.row.tag) && ch.row.tag !== l.rows[at].tag;
-		const bad = list.refuse(ch.row, l.rows.filter((_, k) => k !== at), { closing });
+		const { state: s, why } = loadState();
+		if (why) return fail(why);
+		const bad = list.refuse(ch.row, l.rows.filter((_, k) => k !== at), s.list_import);
 		if (bad) return fail(clean(bad));
 		const rows = [...l.rows];
 		rows[at] = ch.row;

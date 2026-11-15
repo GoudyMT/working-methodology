@@ -28,17 +28,21 @@ It starts on its own only as rule:compact-ritual says.
    (`_List.jsonl`), each row the session moved changes with `state.mjs item set <id> <field> <value>`: a row tagged
    done or closed names who caught it (`caught-by`) and whether it escaped a gate (`escaped yes`), and a row with a
    number names where it was measured (`measured`); roadmap steps change with `state.mjs step set`. The handoff
-   carries the two lines of `state.mjs list caught` (catch rate, and found to shipped by origin). A markdown list is
-   moved once with `state.mjs list import <file.md>`, which refuses any row it cannot move whole. `node .claude/tracking-check.mjs caps` prints the
+   carries the two lines of `state.mjs list caught` (catch rate, and found to shipped by origin) and the count of
+   `state.mjs list audit` (rows still owed a catcher, a measure label or an origin); each closeout labels at least the
+   rows it touched, and the audit's rows are worked down until the count is 0. A markdown list is moved once with
+   `state.mjs list import <file.md>`, which refuses any row or table it cannot move whole. `node .claude/tracking-check.mjs caps` prints the
    whole-file rows of the size-cap table; an OVER row is fixed before the handoff. The plan's Progress block passes
    `node .claude/tracking-check.mjs progress <plan>`. Where the project keeps
    `.kit/project-map.json`, update its progress from the plan, run `node .claude/project-map.mjs check` until it
    passes, then `render` the page and republish it to the same link (rule:diagrams).
 4. **Verify git:** branch, HEAD, clean, ahead or behind, local and remote branches, finished agent worktrees
    removed (rule:compact-ritual, part 4).
-   A closeout after a release runs `node .claude/release-check.mjs <tag> --pr <n>` (the kit adds `--copy` and
-   `--installed`) until it prints RELEASE COMPLETE. Each MISSING line is a step not done: do it, or name it in the
-   handoff as not done. The release is never called done, shipped or verified while a step is missing.
+   A closeout after a release runs `node .claude/release-check.mjs <tag> --pr <n>` until it prints RELEASE
+   COMPLETE. The kit itself first runs `scripts/release-verify.mjs` (it moves the release copy and runs both installs
+   and status), then, from the kit source folder, `node project/.claude/release-check.mjs <tag> --pr <n> --copy
+   <release copy> --installed <the project it installed into>`. Each MISSING line is a step not done: do it, or name
+   it in the handoff as not done. The release is never called done, shipped or verified while a step is missing.
    Where the repo has a sweep approval log, run `approve.mjs --summary` (pre-pr-sweep skill): a paused state goes
    into the handoff's State Snapshot as "auto-approval: paused since <date>, <reason>; the owner resumes with
    <command>", in every handoff until the owner resumes it. A "carried open" above 0 means findings still sit in the

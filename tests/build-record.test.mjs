@@ -118,3 +118,19 @@ test('the record writes release notes that split what projects get from what sta
 	bad.items[0].reach = 'everyone';
 	assert.match(problems(bad).join('\n'), /reach "everyone"/);
 });
+
+// why: guards the owner's pick of E14, 2026-11-15: the notes command prints the draft, and its upgrading and limits
+// lines are held to the same prose rules as the rest of the record.
+test('build-record notes prints the draft, and the upgrading and limits lines are audited as prose', () => {
+	const bad = record();
+	bad.limits = 'Written with Claude -- fast.';
+	assert.match(problems(bad).join('\n'), /mechanism or AI word|spaced dash/);
+	const dir = kitTemp.makeTemp('notes-cli-');
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	const rec = record();
+	fs.writeFileSync(path.join(dir, 'docs', 'builds', 'r.json'), JSON.stringify(rec));
+	const r = spawnSync(process.execPath, [path.resolve('scripts/build-record.mjs'), 'notes', path.join(dir, 'docs', 'builds', 'r.json')], { encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.stdout, notes(rec));
+	assert.match(r.stdout, /^## Upgrading\n\nRun `install user` first/m, 'the default upgrading line');
+});
