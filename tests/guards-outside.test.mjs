@@ -466,6 +466,9 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 	fs.appendFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), '\n// changed\n');
 	assert.equal(bash(s, fix).decision, 'deny', 'a kit file changed after the install');
 	assert.match(bash(s, 'git status').reason, /kit folder .*changed since/i, 'the refusal says why the fix line is gone');
+	// The owner types it in their own terminal: PowerShell runs a quoted program only after & (1.33.1, the owner's
+	// paste failed with "Unexpected token"), so the line is given in each shell's spelling.
+	assert.ok(bash(s, 'git status').reason.includes(`PowerShell: & ${fix}`), 'the PowerShell spelling');
 	fs.writeFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), fs.readFileSync(path.join(KIT, 'project', '.claude', 'guard.cjs')));
 	assert.notEqual(bash(s, fix).decision, 'deny', 'put back, it passes again');
 	fs.writeFileSync(path.join(kit, 'project', '.claude', 'extra.cjs'), EVIL_GUARD);

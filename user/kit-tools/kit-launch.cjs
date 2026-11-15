@@ -251,7 +251,7 @@ function describe(v, rec, dir) {
 	// The folder list has its own way back: the install below does not accept a list that is gone or changed.
 	if (v.changed.includes('.claude/protected-folders.json')) parts.push('The folder list (.claude/protected-folders.json) is gone or changed since install recorded it: put it back as it was, or the owner accepts the change in their own terminal with install project --accept-host .claude/protected-folders.json.');
 	if (parts.length && kitUnchanged(rec)) parts.push(`Every call is held until the kit's copies are back. Run, alone: ${fixLine(rec, dir)} (or ask the owner to).`);
-	else if (parts.length) parts.push(`Every call is held until the kit's copies are back. The kit folder (${posix(rec.kitDir || '<kit folder>')}) has changed since this install, so no install may run from this session: the owner runs ${fixLine(rec, dir)} in a terminal, from the release copy on its tag.`);
+	else if (parts.length) parts.push(`Every call is held until the kit's copies are back. The kit folder (${posix(rec.kitDir || '<kit folder>')}) has changed since this install, so no install may run from this session: the owner runs it in a terminal, from the release copy on its tag (PowerShell runs a quoted program only after &). PowerShell: & ${fixLine(rec, dir)} Bash: ${fixLine(rec, dir)}`);
 	for (const s of v.settings) parts.push(`${posix(s.file)}: ${s.why}. Every call is held until the owner takes that out of the file.`);
 	return parts.join(' ');
 }
