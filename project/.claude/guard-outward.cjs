@@ -452,12 +452,16 @@ function boundedPr(input) {
 		// The head is a branch of this repo (owner:branch is a fork's), never main or master.
 		if (/^(--head|-H)$/.test(words[i]) && (value.includes(':') || /^(main|master|HEAD)$/i.test(value))) return false;
 		// The body goes out in public: only a plain file of this repo, never a dotfile, a .git file, a link or one outside.
+		// A .md name of plain parts (no dot part, no ~ short name), one plain file whose real path is that name under
+		// the repo's real path: no link, hard link or short name can point it somewhere else.
 		if (/^(--body-file|-F)$/.test(words[i])) {
-			const file = path.resolve(cwd, value);
-			const rel = path.relative(cwd, file);
-			let plain = false;
-			try { plain = fs.lstatSync(file).isFile(); } catch { /* missing */ }
-			if (!plain || !rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.split(/[\\/]/).some((p) => p.startsWith('.'))) return false;
+			if (!/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*\.md$/.test(value)) return false;
+			const file = path.join(cwd, value);
+			const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+			try {
+				const st = fs.lstatSync(file);
+				if (!st.isFile() || st.nlink !== 1 || fold(fs.realpathSync.native(file)) !== fold(path.join(fs.realpathSync.native(cwd), value))) return false;
+			} catch { return false; }
 		}
 		i++;
 	}
