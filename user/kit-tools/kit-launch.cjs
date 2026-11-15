@@ -29,7 +29,11 @@ const SHELLS = ['Bash', 'PowerShell'];
 const WIN = process.platform === 'win32';
 const posix = (p) => String(p).split(path.sep).join('/');
 const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const same = (a, b) => (WIN ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b));
+// One folder by any spelling: an 8.3 short name (C:/Users/RUNNER~1) and its long name are the same folder, so each is
+// read as the file system resolves it (seen in CI on 1.33.0: the session's own project, named by ".", was taken for
+// another project with no record, and every read in it was held).
+const real = (p) => { try { return fs.realpathSync.native(path.resolve(p)); } catch { return path.resolve(p); } };
+const same = (a, b) => (WIN ? real(a).toLowerCase() === real(b).toLowerCase() : real(a) === real(b));
 
 /**
  * The record folder's name for a project: Claude Code's folder name for it, plus a short hash of the full path, so two
@@ -469,7 +473,8 @@ function namedProjects(input) {
 		return new RegExp('^' + one.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^') + '$');
 	};
 	const out = [];
-	for (const dir of recordedProjects()) {
+	const recorded = recordedProjects();
+	for (const dir of recorded) {
 		const p = norm(dir);
 		const name = norm(path.basename(dir));
 		const under = norm(posix(path.relative(cwd, dir)));
@@ -478,7 +483,11 @@ function namedProjects(input) {
 		const globbed = globs.some((g) => { try { const re = globRe(g); return !re || parts.some((x) => re.test(x)) || p.split('/').some((x) => re.test(x)); } catch { return true; } });
 		if (built || has(p) || has(name, true) || (below && has(under, true)) || globbed) out.push(dir);
 	}
-	for (const u of unrec) if (!out.some((x) => same(x, u))) out.push(u);
+	// A folder found by its real path may be a recorded project under another spelling (an 8.3 short name): that record's.
+	for (const u of unrec) {
+		const dir = recorded.find((d) => same(d, u)) || u;
+		if (!out.some((x) => same(x, dir))) out.push(dir);
+	}
 	return out;
 }
 

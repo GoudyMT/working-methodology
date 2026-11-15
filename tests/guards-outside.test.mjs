@@ -1441,7 +1441,11 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	if (process.platform === 'win32') {
 		// An 8.3 short name names the same folder (the sweep); where the disk keeps none, the long path is all there is.
 		const short = spawnSync('cmd', ['/d', '/c', 'for %I in ("' + proj + '") do @echo %~sI'], { encoding: 'utf8' }).stdout.trim();
-		if (short && short.toLowerCase() !== proj.toLowerCase()) assert.equal(call('cd ' + short.split(path.sep).join('/') + ' && git push origin main'), 'deny', short);
+		if (short && short.toLowerCase() !== proj.toLowerCase()) {
+			assert.equal(call('cd ' + short.split(path.sep).join('/') + ' && git push origin main'), 'deny', short);
+			// A session started at the short name is the same project: a read naming "." is not another project's (CI, 1.33.0).
+			assert.notEqual(call('ls .claude/', 'Bash', short), 'deny', 'a read in the session\'s own project by its short name');
+		}
 	}
 	// The second review (on 2ecbbde): home spellings, chained relative moves, a wildcard, and a backslash escape.
 	const homeRel = path.relative(os.homedir(), proj).split(path.sep).join('/');
