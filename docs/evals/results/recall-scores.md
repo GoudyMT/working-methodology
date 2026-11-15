@@ -634,4 +634,4 @@ Brief v2, keys v11 (key 4: a push of the feature branch and opening its PR need 
 - **Scored: median 14 of 14, baseline 13, control 0.** The baseline misses question 4 every time, as expected: on 1.31.0 opening a PR is the owner's act. One candidate run misses question 13 (it tells the owner to type the closeout keyword), a rule this build did not change. A first scoring held key 4 to "the merge is the owner's" too, which the question does not ask and no run said; the owner dropped it by pop-up and the same saved answers were scored again, blind.
 
 control: 0
-gate: kit-1.32.0 median 14 baseline 13 brief v2 keys v11 control 0 owner-accepted
+gate: kit-1.32.0 median 14 baseline 13 brief v2 keys v11 owner-accepted
