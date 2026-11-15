@@ -57,8 +57,8 @@
   }
  ],
  "verification": [
-  "Each behaviour has a test that fails on the code before it (8 of the new state tests failed on the first build's script; all failed before it existed).",
-  "A trial on a copy of the workbench's 1.33.1 tracking files: init moved the stale Resume Point into the data and check passed; a closeout now has 3 hand edits, against 10 to 15.",
+  "Each behaviour has a test that fails on the code before it: 8 of the new state tests failed on the first build's script.",
+  "On a copy of the workbench's 1.33.1 files, init moved the stale Resume Point into the data; a closeout now has 3 hand edits, against 10 to 15.",
   "Recall: median 14 of 14 over 5 runs against the 1.33.1 baseline of 14, control 0, scored blind (gate line k134-final)."
  ],
  "decisions": [
@@ -68,7 +68,7 @@
   },
   {
    "decision": "A hand edit inside a block is refused, not overwritten",
-   "why": "The sweep found render wiped a carry-over typed into the block; render now keeps a hash of what it wrote and writes over a changed block only when told to, after the change is in the data."
+   "why": "The sweep found render wiped a carry-over typed into the block; render now refuses a changed block until the change is moved into the data."
   },
   {
    "decision": "The owner's words must be found where he said them",
