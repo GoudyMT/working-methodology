@@ -87,6 +87,14 @@ test('the check fails when git tracks settings.local.json or a project settings 
 		fs.writeFileSync(f, before);
 	}
 	assert.deepEqual(check(dir).out.failing, []);
+	// A user layer from before 1.36.0 has no settings reader: the check names the update, never crashes.
+	const lib = path.join(homes.get(dir), 'kit-tools', 'kit-launch.cjs');
+	const real = fs.readFileSync(lib, 'utf8');
+	fs.writeFileSync(lib, `${real}\nmodule.exports = { ...module.exports, settingsProblem: undefined };\n`);
+	c = check(dir);
+	assert.equal(c.code, 1, c.err);
+	assert.match(part(c.out, 'guards').wired.detail, /older than this check: run kit\.mjs install user/);
+	fs.writeFileSync(lib, real);
 	// A folder with no git: nothing to track, so the part does not apply.
 	assert.equal(part(check(project({ git: false })).out, 'private-files').wired.ok, null);
 });
@@ -106,6 +114,11 @@ test('the list part passes a fresh install and fails a hand-kept checkbox roadma
 	assert.equal(r.status, 0, r.stdout);
 	assert.deepEqual(check(dir).out.failing, []);
 	assert.match(fs.readFileSync(f, 'utf8'), /^- \[ \] R2 Login page$/m, 'the view shows the moved box');
+	// A roadmap with no generated boxes block fails, and the message names the two marker lines to copy.
+	fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/<!-- list:begin boxes[\s\S]*?<!-- list:end -->\n?/, ''));
+	const n = check(dir);
+	assert.deepEqual(n.out.failing, ['list']);
+	assert.match(part(n.out, 'list').wired.detail, /no generated boxes block[\s\S]*<!-- list:begin boxes -->[\s\S]*<!-- list:end -->/);
 });
 
 // why: catches a break at project/.claude/use-check.mjs:89 that no other test catches

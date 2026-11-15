@@ -52,6 +52,8 @@ const PARTS = [
 				// K72 (1.36.0): a session cannot see this from inside, since its hooks are already off.
 				let text = null;
 				try { text = fs.readFileSync(path.join(dir, '.claude', name), 'utf8'); } catch { /* none */ }
+				// A user layer from before 1.36.0 has no reader for this: name the update, never crash the check (install exits on it).
+				if (text !== null && typeof L.settingsProblem !== 'function') return [false, `${toPosix(HOME)}/kit-tools/kit-launch.cjs is older than this check: run kit.mjs install user`];
 				const why = text === null ? '' : L.settingsProblem(text);
 				if (why) return [false, `.claude/${name}: ${why}; the owner takes it out`];
 			}
@@ -177,7 +179,7 @@ const PARTS = [
 			try { text = fs.readFileSync(path.join(dir, '_Master Roadmap.md'), 'utf8'); } catch { return [null, 'no _Master Roadmap.md']; }
 			const hand = parseMarkdown(text).boxLines.length;
 			if (hand) return [false, `_Master Roadmap.md has ${hand} checkbox line(s) kept by hand: move them into the data once with node .claude/state.mjs list import "_Master Roadmap.md" (the file as it was is kept in .kit/kit-backups)`];
-			return /^<!-- list:begin boxes\b/m.test(text) ? [true, 'the tasks are data; the boxes view is generated'] : [false, '_Master Roadmap.md has no generated boxes block: copy the Tasks block from the kit\'s template, then run node .claude/state.mjs render'];
+			return /^<!-- list:begin boxes\b/m.test(text) ? [true, 'the tasks are data; the boxes view is generated'] : [false, '_Master Roadmap.md has no generated boxes block: copy the Tasks block from the kit\'s template (project/_Master Roadmap.md in the kit folder) where the tasks go, a <!-- list:begin boxes --> line and a <!-- list:end --> line, then run node .claude/state.mjs render'];
 		},
 		used: () => (has('_List.jsonl') && fs.statSync(path.join(dir, '_List.jsonl')).size > 0 ? [true, '_List.jsonl holds rows'] : [null, 'no rows yet']),
 	},
