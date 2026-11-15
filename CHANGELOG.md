@@ -5,7 +5,7 @@
 Before a PR only the tests that cover the change run locally and CI runs the rest, and auto-fix gathers every comment first, fixes each class at its root and stops after two fix rounds.
 
 ### Added
-- Auto-fix makes at most 2 fix rounds per PR: the merge gate counts the pushes this clone logged, refuses a third and names the owner. A log it cannot write, or a PR number with a leading zero, stops the push.
+- Auto-fix makes at most 2 fix rounds per PR, each push counted on GitHub from any clone: the merge gate refuses a third auto-fix and the push guard asks the owner. An unreadable count or log, or a PR number with a leading zero, stops it.
 - The kit's test runner prints a notice on a full local run: CI runs the suite on every PR and push, and a change takes the changed run.
 
 ### Changed

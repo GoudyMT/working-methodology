@@ -10,11 +10,11 @@
   {
    "id": "K57",
    "kind": "added",
-   "text": "Auto-fix makes at most 2 fix rounds per PR: the merge gate counts the pushes this clone logged, refuses a third and names the owner. A log it cannot write, or a PR number with a leading zero, stops the push.",
-   "evidence": "tests/merge-gate.test.mjs",
+   "text": "Auto-fix makes at most 2 fix rounds per PR, each push counted on GitHub from any clone: the merge gate refuses a third auto-fix and the push guard asks the owner. An unreadable count or log, or a PR number with a leading zero, stops it.",
+   "evidence": "tests/merge-gate.test.mjs, tests/guards-hold.test.mjs",
    "where": "A third auto-fix push on one PR",
    "before": "Pushed, with no count",
-   "after": "Refused; the owner decides"
+   "after": "Refused or asked; the owner decides"
   },
   {
    "id": "K59",
@@ -42,13 +42,13 @@
   }
  ],
  "verification": [
-  "Each code change has a test that fails on the code before it: the third push and the leading-zero PR number for the round cap, and the notice on a full run; all five rows were first reproduced on the released 1.31.0.",
+  "Each code change has a test that fails on the code before it: the third push from any clone, the unwritable log, the leading-zero number and the notice; all five rows were first reproduced on the released 1.31.0.",
   "Recall on keys v10: candidate median 14, baseline (1.31.0) 14, control 0."
  ],
  "decisions": [
   {
-   "decision": "The round cap counts the gate log's pushes per PR",
-   "why": "Every auto-fix push already writes one line there; a plain push to the branch is not counted, and the rule line covers that path."
+   "decision": "A round is any push GitHub's CI saw after the PR opened",
+   "why": "The owner's pick: a count in one clone's log missed plain pushes and other clones; distinct CI head commits see both, and an unreadable count asks the owner."
   },
   {
    "decision": "The notice never holds a run",
@@ -73,7 +73,7 @@
    },
    {
     "name": "Code security",
-    "result": "Two highs and four mediums on the round cap and the local-test rule; one high accepted by the owner, the rest fixed"
+    "result": "Two highs and four mediums on the round cap and the local-test rule, all fixed"
    },
    {
     "name": "Gaps, scaling, test value",
@@ -92,16 +92,15 @@
   },
   "fixed": [
    "The new lines said CI runs the full suite, which a kit PR does not. Fixed in b7af2d0 and 9cecb7e.",
-   "The test-first reference still asked for the whole suite before done. Fixed in b7af2d0."
+   "The test-first reference still asked for the whole suite before done. Fixed in b7af2d0.",
+   "A third round could go out by a plain push or from another clone. Fixed in 669b428: rounds are counted on GitHub."
   ],
   "deferred": [],
-  "accepted": [
-   "A third fix round can still go out by a plain push or from a second clone; the gate counts its own clone, and the rule line forbids any other push of a third round."
-  ]
+  "accepted": []
  },
  "tests": {
   "before": 715,
-  "after": 718,
+  "after": 720,
   "flips": "declared tests on main and on this branch; the PR run gives the final count"
  }
 }
