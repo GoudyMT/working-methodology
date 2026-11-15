@@ -403,10 +403,10 @@ function unrecorded(input, only = false) {
 // The kit projects a shell command names, other than the session's own (seen live 2026-11-15: a session outside a
 // kit project worked in one through cd, and none of its guards ran). A reader of moves always misses a spelling
 // (the sweep found command cd, bash -c, eval, cd --, a quote inside a path, GIT_DIR=, 8.3 names, chained relative
-// moves), so this reads no moves and fails toward checking: a project is named when its folder's own name appears as
-// a word in the command, in any spelling (case, slashes, quotes, a backslash escape, Git Bash's /c/ form, home as ~ or
+// moves), so this reads no moves and fails toward checking: a project is named when its folder's own name appears
+// in the command with no name character on either side, in any spelling (case, slashes, quotes, a backslash escape, Git Bash's /c/ form, home as ~ or
 // $HOME), when a path in it resolves into the project (a relative path, an 8.3 short name), or when a wildcard in it
-// could match the project's path or name. A named project's guards run on the call as if it were started there. A
+// could match the project's path or name; a brace list or $'...' quoting names them all. A named project's guards run on the call as if it were started there. A
 // project whose name only appears in a command costs one more check, never a pass. A name built at run time ($x, a
 // backtick) stays unread, as for every guard.
 function recordedProjects() {
@@ -447,23 +447,36 @@ function namedProjects(input) {
 		const u = unrecorded({ cwd: real }, true);
 		if (u && !unrec.some((x) => same(x, u))) unrec.push(u);
 	}
-	const words = new Set(text.split(/[\s;&|(){}=,/]+/).filter(Boolean));
-	const has = (p) => {
+	// A name the shell builds from a brace list or range ({a,b}, {1..3}) or decodes from $'...' or $"..." quoting is
+	// not written out, so such a command names every kit project (the third review, on cd0f9f5).
+	const built = /\{[^{}]*(,|\.\.)[^{}]*\}/.test(command) || /\$['"]/.test(command);
+	const WORD = /[A-Za-z0-9_.-]/;
+	// p appears with no name character after it; bounded, with none before it either (a name may hold a space, so it
+	// is never read as one word of the command).
+	const has = (p, bounded) => {
 		for (let i = text.indexOf(p); i >= 0; i = text.indexOf(p, i + 1)) {
 			const next = text[i + p.length];
-			if (next === undefined || !/[A-Za-z0-9_.-]/.test(next)) return true;
+			if ((next === undefined || !WORD.test(next)) && (!bounded || i === 0 || !WORD.test(text[i - 1]))) return true;
 		}
 		return false;
 	};
-	// A wildcard as the shell would match it, against a whole path or one of its parts.
-	const globRe = (g) => new RegExp('^' + g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^') + '$');
+	// A wildcard as the shell would match it, against a whole path or one of its parts. A run of stars is one star;
+	// one with more wildcards than a path needs, or too long, is not matched at all but counts as naming every project,
+	// so no command can make the reader slow (the third review).
+	const globRe = (g) => {
+		const one = g.replace(/\*+/g, '*');
+		if (one.length > 256 || (one.match(/[*?[]/g) || []).length > 8) return null;
+		return new RegExp('^' + one.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^') + '$');
+	};
 	const out = [];
 	for (const dir of recordedProjects()) {
 		const p = norm(dir);
 		const name = norm(path.basename(dir));
-		const parts = [p, name, norm(posix(path.relative(cwd, dir)))];
-		const globbed = globs.some((g) => { try { const re = globRe(g); return parts.some((x) => re.test(x)) || p.split('/').some((x) => re.test(x)); } catch { return true; } });
-		if (has(p) || words.has(name) || globbed) out.push(dir);
+		const under = norm(posix(path.relative(cwd, dir)));
+		const below = under && !under.startsWith('..') && !path.isAbsolute(under);
+		const parts = [p, name, under];
+		const globbed = globs.some((g) => { try { const re = globRe(g); return !re || parts.some((x) => re.test(x)) || p.split('/').some((x) => re.test(x)); } catch { return true; } });
+		if (built || has(p) || has(name, true) || (below && has(under, true)) || globbed) out.push(dir);
 	}
 	for (const u of unrec) if (!out.some((x) => same(x, u))) out.push(u);
 	return out;

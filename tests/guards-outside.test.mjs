@@ -1454,6 +1454,14 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	assert.equal(call('cd ' + parent + '/' + base.slice(0, 2) + '* && git push origin main'), 'deny', 'a wildcard');
 	assert.equal(call('cd ' + parent + '/a\\pp && git push origin main'), 'deny', 'a backslash escape');
 	assert.equal(call('cd ' + parent + ' && git push origin main'), 'runs', 'the parent folder alone is no kit project');
+	// The third review (on cd0f9f5): brace expansion and $'...' quoting spell a name the shell builds, and a wildcard
+	// with many stars must not stall the reader (each fails toward checking).
+	assert.equal(call('cd ' + parent + '/{x,a}pp && git push origin main'), 'deny', 'a brace list');
+	assert.equal(call('cd ' + parent + '/a{p..p}p && git push origin main'), 'deny', 'a brace range');
+	assert.equal(call("cd $'" + parent + "/a\\x70p' && git push origin main"), 'deny', "$'...' quoting");
+	const t0 = Date.now();
+	assert.equal(call('ls ' + '*a'.repeat(30) + 'Z && git push origin main'), 'deny', 'a wildcard with many stars');
+	assert.ok(Date.now() - t0 < 5000, 'the many-star wildcard is read in linear time');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });
@@ -1463,6 +1471,21 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	const b = bare.split(path.sep).join('/');
 	const direct = call('git status', 'Bash', bare);
 	assert.equal(call('cd ' + b + ' && git status'), direct, 'the same answer as a session started there');
+});
+
+// why: guards rule:outward-acts. The third review (on cd0f9f5): a project whose folder name has a space is never one
+// word of the command, so a name check by words missed it.
+test('a kit project whose folder name has a space is named by the command too', () => {
+	const { home, proj } = setup({ projName: 'my app' });
+	const outside = kitTemp.makeTemp('cd-out-');
+	const call = (command) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const parent = path.dirname(proj).split(path.sep).join('/');
+	assert.equal(call('cd ' + parent + ' && cd "my app" && git push origin main'), 'deny', 'the name in quotes');
+	assert.equal(call('cd ' + parent + ' && cd my\\ app && git push origin main'), 'deny', 'the name with an escaped space');
+	assert.equal(call('cd ' + parent + ' && cd "my apps" && git push origin main'), 'runs', 'a longer name is another folder');
 });
 
 // why: guards rule:security-standards. The 1.29.0 sweep (two reviewers, the same hole): a folder list that was only read
