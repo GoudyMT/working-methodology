@@ -7,11 +7,15 @@
 //   node .claude/name-check.mjs message <file>   one line, "type: subject", no AI or tool trailer
 //   node .claude/name-check.mjs branch <name>    <type>/<plain-kebab-description>, no tool prefix or internal code
 //   node .claude/name-check.mjs title <text>     a PR title: the squash commit's subject on main, same rule
+//   node .claude/name-check.mjs repo <name>      a repo name: plain words in kebab case, no internal code
 import fs from 'node:fs';
 
 const TYPES = ['feat', 'fix', 'refactor', 'test', 'docs', 'chore', 'security', 'perf'];
 // T13 (the owner, 2026-11-10): one change per line; a longer subject packs a list that belongs in the PR body.
 const SUBJECT_MAX = 72;
+// A tracking code (K61, E12, A27, S23-4) tells a reader outside the project nothing, and a subject, title or repo name
+// is public for good (the owner, 2026-11-15, on a probe repo named for its list row).
+const CODE = /(^|[^A-Za-z0-9])[A-Z]{1,3}\d{1,3}(-\d+)?(?![A-Za-z0-9])/;
 const BRANCH_TYPES = ['feature', 'feat', 'fix', 'chore', 'test', 'perf', 'security', 'docs', 'refactor'];
 
 function message(text) {
@@ -25,6 +29,7 @@ function message(text) {
 	if (!new RegExp(`^(${TYPES.join('|')})(\\([a-z0-9-]+\\))?: [a-z0-9\`]`).test(subject) || /\.$/.test(subject)) {
 		faults.push(`the subject must be "type: subject" - types ${TYPES.join(', ')}; lowercase; no period: "${subject}"`);
 	}
+	if (CODE.test(subject.replace(/^[a-z]+(\([a-z0-9-]+\))?: /, ''))) faults.push(`the subject names an internal code (${CODE.exec(subject)[0].trim()}): say what changes in plain words`);
 	const rest = lines.slice(1);
 	if (rest.some((l) => /^(Co-Authored-By|Signed-off-by|Generated-by):/i.test(l) || /generated with|claude|copilot/i.test(l))) {
 		faults.push('no AI or tool trailer: detail goes in the PR body');
@@ -44,10 +49,17 @@ function branch(name) {
 	return [];
 }
 
+function repo(name) {
+	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name) || /(^|-)[a-z]{1,2}\d{1,3}(-|$)/.test(name)) {
+		return [`"${name}": a repo name is plain words in kebab case, lowercase, with no internal code`];
+	}
+	return [];
+}
+
 const [mode, arg] = process.argv.slice(2);
-const faults = mode === 'message' ? message(fs.readFileSync(arg, 'utf8')) : mode === 'branch' ? branch(arg || '') : mode === 'title' ? message(arg || '') : null;
+const faults = mode === 'message' ? message(fs.readFileSync(arg, 'utf8')) : mode === 'branch' ? branch(arg || '') : mode === 'title' ? message(arg || '') : mode === 'repo' ? repo(arg || '') : null;
 if (!faults) {
-	console.error('Usage: node .claude/name-check.mjs message <file> | branch <name> | title <text>');
+	console.error('Usage: node .claude/name-check.mjs message <file> | branch <name> | title <text> | repo <name>');
 	process.exitCode = 2;
 } else if (faults.length) {
 	for (const f of faults) console.error(`name-check: ${f}`);

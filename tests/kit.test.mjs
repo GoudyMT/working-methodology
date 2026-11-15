@@ -4235,6 +4235,19 @@ test('the commit message check passes the house style and names each fault', () 
 test('the PR title check holds a title to the commit subject rule', () => {
   assert.equal(nameRun(['title', 'fix: guards that hold']).status, 0);
   for (const bad of ['Guards: hold the six holes', 'fix: guards that hold.', `feat: ${'x'.repeat(70)}`]) assert.equal(nameRun(['title', bad]).status, 1, bad);
+  // 1.33.0 (the owner, 2026-11-15): a list row's code tells a reader outside the project nothing, and it is public for good.
+  for (const bad of ['chore: the K61 merge steps', 'fix: close S23-4', 'feat: E12 merges on green']) {
+    const r = nameRun(['title', bad]);
+    assert.equal(r.status, 1, bad);
+    assert.match(r.stderr, /internal code/, bad);
+  }
+  for (const ok of ['fix: the Haiku price line and its 100K warning', 'feat: guards read UTF-8 and v1.33.0']) assert.equal(nameRun(['title', ok]).status, 0, ok);
+});
+// why: guards rule:branching (a repo name is public for good, like a branch name)
+test('the repo name check passes plain kebab words and refuses an internal code', () => {
+  // A name with a number in it is still a name (web3, vue3); a code is one or two letters and a number, on its own.
+  for (const ok of ['merge-on-green-probe', 'web3-wallet', 'vue3-starter', 'notes']) assert.equal(nameRun(['repo', ok]).status, 0, ok);
+  for (const bad of ['k61-probe', 'probe-e12', 'My_Repo', 'b2']) assert.equal(nameRun(['repo', bad]).status, 1, bad);
 });
 // why: guards rule:commit-message-format
 test('the branch name check passes plain type-prefixed names and refuses tool prefixes and internal codes', () => {

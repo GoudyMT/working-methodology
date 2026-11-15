@@ -12,6 +12,12 @@ kitTemp.sessionRoot();
 // The one guard process (T2), as the shipped settings run it on every tool call.
 const HOOKS = [path.resolve('project/.claude/guard.cjs')];
 const cfg = kitTemp.makeTemp('cfg-');
+// The audit and name check a PR open runs, from the repo's own .claude folder, and a Lean body that passes them for
+// the title "chore: a clean grant row".
+const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs'];
+const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
+	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
+	'- [x] Settings only; CI green on the head.', '- [x] Reviewed for privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');
 const proj = kitTemp.makeTemp('proj-');
 fs.mkdirSync(path.join(proj, '.claude'));
 fs.mkdirSync(path.join(proj, '.githooks'));
@@ -814,10 +820,14 @@ test('opening a PR from a feature branch runs without a yes; any other PR act as
 		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name, tool_input: { command }, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, CLAUDE_CONFIG_DIR: cfg } });
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision || 'note' : 'runs';
 	};
-	for (const command of ['gh pr create --title "feat: a; b" --base main --fill', 'gh pr create --fill --draft', "gh pr create -t 'x' --fill -H feat/x"]) {
+	// The PR text goes out audited (the owner, 2026-11-15), so the bounded open carries a title and a body file.
+	fs.mkdirSync(path.join(repo, '.claude'), { recursive: true });
+	for (const f of AUDIT_FILES) fs.copyFileSync(path.resolve('project/.claude', f), path.join(repo, '.claude', f));
+	fs.writeFileSync(path.join(repo, 'good.md'), GOOD_BODY);
+	for (const command of ['gh pr create --title "chore: a clean grant row" --base main --body-file good.md', "gh pr create -t 'chore: a clean grant row' -F good.md --draft -H feat/x"]) {
 		assert.notEqual(ask(command), 'deny', command);
 	}
-	assert.notEqual(ask('gh pr create --title "x" --fill', 'PowerShell'), 'deny');
+	assert.notEqual(ask('gh pr create --title "chore: a clean grant row" --body-file good.md', 'PowerShell'), 'deny');
 	for (const command of ['gh pr create --repo o/other --fill', 'gh pr create -R o/other --fill', 'gh pr create --web', 'gh pr create --head main --fill', 'gh pr create --title "$(id)" --fill',
 		'gh pr create --title `id` --fill', 'gh pr create --fill; gh pr merge 1', 'gh pr create --fill && git push origin main', 'gh pr create --title @x --fill', 'gh pr create --body "x\\" --repo o/z" --fill',
 		'gh pr merge 3 --squash', 'gh release create v1.0.0', 'gh pr new --fill']) {
@@ -833,7 +843,7 @@ test('opening a PR from a feature branch runs without a yes; any other PR act as
 		'gh pr create --title x --body-file linked.md', 'gh pr create --title x --body-file hard.md', 'gh pr create --title x --body-file PR-BOD~1.md', 'gh pr create --title x --body-file sub/../pr-body.md']) {
 		assert.equal(ask(command), 'deny', command);
 	}
-	assert.notEqual(ask('gh pr create --title x --body-file pr-body.md'), 'deny', 'the audited body file in the repo');
+	assert.notEqual(ask('gh pr create --title "chore: a clean grant row" --body-file good.md'), 'deny', 'the audited body file in the repo');
 	spawnSync('git', ['-C', repo, 'remote', 'add', 'upstream', 'https://github.com/someone/r.git']);
 	assert.equal(ask('gh pr create --fill'), 'deny', 'with a second remote gh may open it on another repo');
 	spawnSync('git', ['-C', repo, 'remote', 'remove', 'upstream']);
@@ -843,6 +853,55 @@ test('opening a PR from a feature branch runs without a yes; any other PR act as
 	spawnSync('git', ['-C', repo, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
 	assert.equal(ask('gh pr create --fill'), 'deny', 'on main');
 });
+// The owner, 2026-11-15, refusing a probe PR: "we automate, but we dont regress standards". Opening a PR stopped asking
+// in 1.32.0 and nothing audited its text in place of the owner's look, so a hand-typed body and a jargon title went
+// out. The text is checked where it is written: the title and body file must pass the repo's own audit and name check,
+// a body typed into the command or written by gh itself is refused, and a repo name carries no internal code.
+// why: guards rule:pr-body
+test('PR text and repo names are checked where they are written, and a failing one is held', () => {
+	const repo = kitTemp.makeTemp('prtext-');
+	spawnSync('git', ['init', '-q', '-b', 'main', repo]);
+	spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/o/r.git']);
+	spawnSync('git', ['-C', repo, 'checkout', '-q', '-b', 'feat/x']);
+	fs.mkdirSync(path.join(repo, '.claude'));
+	for (const f of AUDIT_FILES) fs.copyFileSync(path.resolve('project/.claude', f), path.join(repo, '.claude', f));
+	const run = (command, tool_name = 'Bash') => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name, tool_input: { command }, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, CLAUDE_CONFIG_DIR: cfg } });
+		const h = r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : null;
+		return h && h.permissionDecision ? h.permissionDecision + ': ' + h.permissionDecisionReason : 'runs';
+	};
+	fs.writeFileSync(path.join(repo, 'good.md'), GOOD_BODY);
+	fs.writeFileSync(path.join(repo, 'typed.md'), 'Throwaway probe: sets adapter row A27 so the merge gate may arm. Safe to delete.\n');
+	fs.writeFileSync(path.join(repo, 'stutter.md'), GOOD_BODY.replace('## Grants: a clean grant row', '## Grants: grant a clean row'));
+	assert.equal(run('gh pr create --title "chore: a clean grant row" --body-file good.md'), 'runs');
+	const held = (command, why, tool) => {
+		const r = run(command, tool);
+		assert.match(r, /^deny: Held: /, command);
+		assert.match(r, why, command);
+	};
+	// The probe PR as it went out: a body typed by hand, never audited.
+	held('gh pr create --title "chore: grant merge through the gate" --body-file typed.md', /fails its audit \(pr-body-audit\.mjs\)[\s\S]*H1 is <Area>: <line>/);
+	held('gh pr create --title "chore: grant merge through the gate" --body "Throwaway probe"', /typed into the command/);
+	held('gh pr create --title "chore: a clean grant row" -b x', /typed into the command/);
+	held('gh pr create --title "chore: a clean grant row" --body-file good.md --body x', /typed into the command/, 'PowerShell');
+	held('gh pr create --title "chore: a clean grant row" --fill', /gh writes itself/);
+	held('gh pr create --fill-first', /gh writes itself/);
+	held('gh pr create --body-file good.md', /--title and --body-file/);
+	// A heading that repeats the title's first word, and a title or repo name that carries an internal code.
+	held('gh pr create --title "chore: grant a clean row" --body-file stutter.md', /H1 area does not repeat the subject: Grants \/ grant/);
+	held('gh pr create --title "chore: the K61 merge steps" --body-file good.md', /internal code/);
+	// An edit of the text is checked the same way, and still asks: only the open is free.
+	held('gh pr edit 1 --body "x"', /typed into the command/);
+	held('gh pr edit 1 --title "chore: the K61 steps" --body-file good.md', /internal code/);
+	held('gh pr edit 1 --body-file good.md', /--title and --body-file/);
+	assert.match(run('gh pr edit 1 --title "chore: a clean grant row" --body-file good.md'), /^deny: Owner's yes needed: gh pr edit/);
+	assert.match(run('gh pr edit 1 --add-label x'), /^deny: Owner's yes needed: gh pr edit/, 'a label edit is not PR text');
+	// A repo name is public for good: plain words in kebab case, no internal code.
+	held('gh repo create pat/k61-probe --private', /repo name/);
+	held('gh repo rename k61-probe --yes -R o/r', /repo name/);
+	assert.match(run('gh repo create o/merge-on-green-probe --private'), /^deny: Owner's yes needed: gh repo create/);
+});
+
 // why: guards rule:outward-acts. The plan check's P8: a nested repo under the project path is another repo, read by its
 // git folder, not by its path.
 test('a feature push from a repo nested inside the project is read as another repo', () => {

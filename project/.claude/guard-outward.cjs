@@ -647,6 +647,71 @@ function decide(input) {
 	return findOutward(text, 0) || findOutward(plainText(text, input?.tool_name), 0);
 }
 
+// PR text and repo names go out in public under the owner's name, and from 1.32.0 opening a PR needs no yes, so nothing
+// looked at the text any more (the owner, 2026-11-15, refusing a probe PR: "we automate, but we dont regress
+// standards"). They are checked where they are written: a PR's title and body file must pass the repo's own PR-body
+// audit and name check, a body typed into the command or written by gh itself is held, and a repo name is plain words
+// with no internal code. A held call names what failed; nothing here lets a call run that would otherwise ask.
+// Returns '' or what failed. A repo with no kit audit in its .claude folder is not checked here (it asks as before).
+const PR_TYPED = /^(-b|--body)(=|$)/;
+const PR_GH_WRITES = /^(-f|--fill|--fill-first|--fill-verbose|-w|--web|-e|--editor|--template|-T)(=|$)/;
+function outwardTextFault(input) {
+	const command = String((input && input.tool_input && input.tool_input.command) ?? '').trim();
+	const m = /^gh (pr (create|new|edit)|repo (create|rename))(\s|$)/.exec(command);
+	if (!m) return '';
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	if (!cwd) return '';
+	const words = (command.match(/"[^"]*"|'[^']*'|[^\s;&|]+|[;&|]+/g) || []).map((w) => w.replace(/^(["'])([\s\S]*)\1$/, '$2'));
+	const end = words.findIndex((w) => /^[;&|]+$/.test(w));
+	const args = (end < 0 ? words : words.slice(0, end)).slice(3);
+	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000 });
+	const top = git('rev-parse', '--show-toplevel');
+	const root = top.status === 0 && top.stdout.trim() ? path.resolve(top.stdout.trim()) : cwd;
+	const kitFile = (f) => path.join(root, '.claude', f);
+	const node = (file, ...a) => require('node:child_process').spawnSync(process.execPath, [file, ...a], { cwd: root, encoding: 'utf8', timeout: 15000 });
+	if (m[3]) {
+		// gh repo create [owner/]name ..., gh repo rename name ...: the first word that is not an option or its value.
+		const valued = new Set(['-R', '--repo', '-d', '--description', '-h', '--homepage', '-t', '--team', '-p', '--template', '-g', '--gitignore', '-l', '--license', '-s', '--source', '-r', '--remote']);
+		let name = '';
+		for (let i = 0; i < args.length; i++) {
+			if (valued.has(args[i])) { i++; continue; }
+			if (args[i].startsWith('-')) continue;
+			name = args[i];
+			break;
+		}
+		if (!name || !fs.existsSync(kitFile('name-check.mjs'))) return '';
+		const r = node(kitFile('name-check.mjs'), 'repo', name.split('/').pop());
+		return r.status === 0 ? '' : `the repo name ${JSON.stringify(name)} fails the name check: ${r.stderr.trim().replace(/^name-check: /gm, '')}`;
+	}
+	const audits = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'name-check.mjs'];
+	if (!audits.every((f) => fs.existsSync(kitFile(f)))) return '';
+	if (args.some((w) => PR_TYPED.test(w))) return 'a PR body typed into the command is never audited: write it to a .md file in the repo, run its audit, and pass it with --body-file (rule:pr-body)';
+	const value = (names) => {
+		const i = args.findIndex((w) => names.includes(w.split('=')[0]));
+		if (i < 0) return null;
+		return args[i].includes('=') ? args[i].slice(args[i].indexOf('=') + 1) : (args[i + 1] ?? '');
+	};
+	const title = value(['-t', '--title']);
+	const file = value(['-F', '--body-file']);
+	if (m[2] === 'edit' && title === null && file === null) return '';
+	if (m[2] !== 'edit' && args.some((w) => PR_GH_WRITES.test(w))) return 'a PR body gh writes itself (--fill, --web, --editor, a template) is never audited: write the body to a .md file in the repo and pass it with --title and --body-file (rule:pr-body)';
+	if (title === null || file === null) return 'PR text is audited as a pair: give both --title and --body-file, so the audit reads the title with its body (rule:pr-body)';
+	// The title first: it is the squash commit's subject on main, and its fault is the plainest to fix.
+	const n = node(kitFile('name-check.mjs'), 'title', title);
+	if (n.status !== 0) return `the PR title fails the name check: ${n.stderr.trim().replace(/^name-check: /gm, '')}`;
+	let body = '';
+	try { body = fs.readFileSync(path.resolve(cwd, file), 'utf8'); } catch { return `the body file ${JSON.stringify(file)} cannot be read, so it cannot be audited`; }
+	// The Lean shape (Changes / Gates / Notes) gets the Lean audit; anything else is held to the Standard one.
+	const audit = /^\*\*Changes\*\*/m.test(body) ? 'pr-body-audit-lean.mjs' : 'pr-body-audit.mjs';
+	const number = m[2] === 'edit' ? (args.find((w) => /^\d+$/.test(w)) || '') : '';
+	const r = node(kitFile(audit), path.resolve(cwd, file), title, ...(number ? [number] : []));
+	if (r.status !== 0) {
+		const failed = String(r.stdout || '').split('\n').filter((l) => /^FAIL\b/.test(l)).map((l) => l.replace(/^FAIL\s+/, '').replace(/\s{2,}/g, ': '));
+		return `the PR text fails its audit (${audit}): ${failed.join('; ') || String(r.stderr || '').trim().slice(0, 300)}. Fix the body file or title and run it again (rule:pr-body)`;
+	}
+	return '';
+}
+
 // The guard's answer for one tool call (the input already parsed, or null when it could not be): the output to print,
 // or null. The dispatcher (guard.cjs) calls this.
 function check(input) {
@@ -672,6 +737,11 @@ function check(input) {
 		// Inside the push bound a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
 		if (reason && boundedPush(input)) reason = uncheckedRepo(input) ? 'a push from a repo whose git hooks are not the kit\'s' : originMoved(input) ? 'a push that origin sends somewhere other than it fetches from' : '';
+		// PR text and repo names are held before any yes or bound is weighed: a failing one goes out with neither.
+		if (/^gh (pr (create|new|edit)|repo (create|rename))$/.test(reason)) {
+			const fault = outwardTextFault(input);
+			if (fault) return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: heldText(fault) } };
+		}
 		if (reason === 'gh pr create' && boundedPr(input)) reason = '';
 		if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
