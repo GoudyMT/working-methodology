@@ -29,7 +29,7 @@ const SHELLS = ['Bash', 'PowerShell'];
 const WIN = process.platform === 'win32';
 const posix = (p) => String(p).split(path.sep).join('/');
 const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-// One folder by any spelling: an 8.3 short name (C:/Users/RUNNER~1) and its long name are the same folder, so each is
+// One folder by any spelling: an 8.3 short name (RUNNER~1) and its long name are the same folder, so each is
 // read as the file system resolves it (seen in CI on 1.33.0: the session's own project, named by ".", was taken for
 // another project with no record, and every read in it was held).
 const real = (p) => { try { return fs.realpathSync.native(path.resolve(p)); } catch { return path.resolve(p); } };
