@@ -15,6 +15,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { parseMarkdown } from './list-data.mjs';
 
 const dir = process.cwd();
 const has = (rel) => fs.existsSync(path.join(dir, rel));
@@ -164,6 +165,21 @@ const PARTS = [
 			const r = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'state.mjs'), 'check'], { cwd: dir, encoding: 'utf8' });
 			return r.status === 0 ? [true, `updated ${s.updated}; the views match the data`] : [false, `the views differ from the data: ${(r.stdout || '').split('\n')[0]}`];
 		},
+	},
+	{
+		// K69 (1.36.0, the owner: "ensure that this new data management standard is how all kits maintain their data"):
+		// the roadmap's tasks are rows of _List.jsonl, shown by a generated checkbox view; a roadmap kept by hand moves once.
+		name: 'list',
+		what: 'the roadmap and its tasks kept as data, with the checkbox view generated from them (K69)',
+		present: () => [has('_List.jsonl') || has('_Master Roadmap.md'), has('_List.jsonl') ? '_List.jsonl' : 'no _List.jsonl yet: the import or the first item add writes it'],
+		wired: () => {
+			let text = null;
+			try { text = fs.readFileSync(path.join(dir, '_Master Roadmap.md'), 'utf8'); } catch { return [null, 'no _Master Roadmap.md']; }
+			const hand = parseMarkdown(text).boxLines.length;
+			if (hand) return [false, `_Master Roadmap.md has ${hand} checkbox line(s) kept by hand: move them into the data once with node .claude/state.mjs list import "_Master Roadmap.md" (the file as it was is kept in .kit/kit-backups)`];
+			return /^<!-- list:begin boxes\b/m.test(text) ? [true, 'the tasks are data; the boxes view is generated'] : [false, '_Master Roadmap.md has no generated boxes block: copy the Tasks block from the kit\'s template, then run node .claude/state.mjs render'];
+		},
+		used: () => (has('_List.jsonl') && fs.statSync(path.join(dir, '_List.jsonl')).size > 0 ? [true, '_List.jsonl holds rows'] : [null, 'no rows yet']),
 	},
 ];
 

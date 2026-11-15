@@ -91,6 +91,23 @@ test('the check fails when git tracks settings.local.json or a project settings 
 	assert.equal(part(check(project({ git: false })).out, 'private-files').wired.ok, null);
 });
 
+// K69 (1.36.0): both real projects kept a hand checkbox roadmap (53 and 555 boxes) on 2026-11-15.
+// why: guards the owner's lock of K69, 2026-11-15 (pop-up "Checkbox lists become data"): the list as data in every project
+test('the list part passes a fresh install and fails a hand-kept checkbox roadmap until it is moved', () => {
+	const dir = project();
+	assert.equal(part(check(dir).out, 'list').wired.ok, true);
+	const f = path.join(dir, '_Master Roadmap.md');
+	fs.writeFileSync(f, `${fs.readFileSync(f, 'utf8')}\n## v1 - "First" (IN PROGRESS)\n\n- [x] Setup\n- [ ] Login page\n`);
+	const c = check(dir);
+	assert.equal(c.code, 1);
+	assert.deepEqual(c.out.failing, ['list']);
+	assert.match(part(c.out, 'list').wired.detail, /2 checkbox line\(s\) kept by hand[\s\S]*state\.mjs list import "_Master Roadmap\.md"/);
+	const r = spawnSync(process.execPath, [path.join(dir, '.claude', 'state.mjs'), 'list', 'import', '_Master Roadmap.md'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '' } });
+	assert.equal(r.status, 0, r.stdout);
+	assert.deepEqual(check(dir).out.failing, []);
+	assert.match(fs.readFileSync(f, 'utf8'), /^- \[ \] R2 Login page$/m, 'the view shows the moved box');
+});
+
 // why: catches a break at project/.claude/use-check.mjs:89 that no other test catches
 test('install project prints the use check and fails when a part is not wired; status names it', () => {
 	const dir = kitTemp.makeTemp('use-cli-');

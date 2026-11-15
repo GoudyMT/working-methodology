@@ -229,6 +229,20 @@ function render(s, { overwrite = false } = {}) {
 	return out;
 }
 
+/**
+ * K69 (1.36.0): after a change to the list or the roadmap, its views are written at once (a block edited by hand is
+ * still refused, never wiped). With the views in the roadmap template, a session that forgot render left check failing.
+ * Returns the line to print after the change.
+ */
+function refreshLists() {
+	const { state: s, why } = loadState();
+	if (why) return `; the views were not written (${why})`;
+	s.rendered = { ...(s.rendered || {}) };
+	const faults = listBlocks(s);
+	saveState(s, { touch: false });
+	return faults.length ? `; the views were not all written:\n${faults.join('\n')}` : '; the views are written';
+}
+
 /** A tracking file that is a link or has a second name: state.mjs neither writes nor reads through it. */
 const linked = (rel) => { try { const st = fs.lstatSync(file(rel)); return st.isSymbolicLink() || !st.isFile() || st.nlink > 1; } catch { return false; } };
 const io = { readText, linked };
@@ -271,7 +285,8 @@ function listBlocks(s, { overwrite = false, check = false } = {}) {
 			const now = lines.slice(b.begin + 1, b.end);
 			const same = now.join('\n') === want.join('\n');
 			if (check) { if (!same) out.push(`${rel}: the ${b.name} list block differs from ${list.LIST} and ${STATE}: run node .claude/state.mjs render (a block edited by hand is refused there; move the change into the data first)`); continue; }
-			const known = s.rendered[key] ? s.rendered[key] === sha(now.join('\n')) : now.every((x) => !x.trim());
+			// An empty block holds no hand-written text, so it is always filled (a block put back empty after a render).
+			const known = now.every((x) => !x.trim()) || s.rendered[key] === sha(now.join('\n'));
 			if (!same && !known && !overwrite) { out.push(`${rel}: the ${b.name} list block was edited by hand since the last render; move each change into the data with item set or step set, then run node .claude/state.mjs render --overwrite`); continue; }
 			if (!same) { lines = [...lines.slice(0, b.begin), list.listBegin(b.name), ...want, ...lines.slice(b.end)]; changed = true; }
 			s.rendered[key] = sha(want.join('\n'));
@@ -575,7 +590,7 @@ function main(argv) {
 			const was = at.step;
 			at.step = to;
 			saveState(s, { touch: false });
-			return console.log(`step ${was} renamed ${to}; rows placed "at" ${was} keep that text: move them with item set <id> at ${to}; then run node .claude/state.mjs render`);
+			return console.log(`step ${was} renamed ${to}; rows placed "at" ${was} keep that text: move them with item set <id> at ${to}${refreshLists()}`);
 		}
 		if (verb !== 'set' || !clean(step) || !['release', 'carries', 'state'].includes(field)) return usage();
 		// A step is named by its name, or by its release where two steps share a name.
@@ -587,7 +602,7 @@ function main(argv) {
 		// Checked before it is written: a step and release given twice would lock every state command out.
 		if (s.roadmap.some((x) => x !== at && x.step === at.step && x.release === at.release)) return fail(`step ${at.step} with release ${at.release || '(none)'} is already on the roadmap; nothing written`);
 		saveState(s, { touch: false });
-		return console.log(`step ${at.step} ${field} set; run node .claude/state.mjs render`);
+		return console.log(`step ${at.step} ${field} set${refreshLists()}`);
 	}
 	if (!['show', 'set', 'add', 'done', 'render'].includes(cmd)) return usage();
 	if (why) return fail(why);
@@ -634,7 +649,8 @@ function listCommand(cmd, rest, { fail, usage }) {
 	const l = list.loadList(io);
 	if (cmd === 'list' && rest[0] === 'import') {
 		if (!rest[1]) return usage();
-		if (l.exists) return fail(`${list.LIST} already exists; an import would drop what was changed in the data since. Change rows with item set.`);
+		// An empty list (the template's, 1.36.0) may take the one import.
+		if (l.exists && (l.why || l.rows.length)) return fail(`${list.LIST} already holds rows; an import would drop what was changed in the data since. Change rows with item set.`);
 		const { state: s, why } = loadState();
 		if (why) return fail(why);
 		const src = inside(rest[1]);
@@ -652,9 +668,23 @@ function listCommand(cmd, rest, { fail, usage }) {
 		saveState(s, { touch: false });
 		try { write(list.LIST, list.serialize(p.rows)); } catch (e) { write(STATE, before); throw e; }
 		const lf = list.faultsOf(p.rows, s.list_import);
-		console.log(`PASS ${p.rows.length} row(s) and ${p.steps.length} roadmap step(s) moved into ${list.LIST} and ${STATE}; the markdown is unchanged.`);
+		// K69: a checkbox list moves out of the file, or it would stand beside its generated view; every other line stays,
+		// and the file as it was is kept first.
+		let moved = '';
+		if (p.boxLines.length) {
+			const rel = path.relative(ROOT, src).split(path.sep).join('/');
+			const keep = `.kit/kit-backups/list-import-${new Date().toISOString().replace(/[:.]/g, '-')}/${rel}`;
+			fs.mkdirSync(path.dirname(file(keep)), { recursive: true });
+			fs.writeFileSync(file(keep), text, { flag: 'wx' });
+			const drop = new Set(p.boxLines);
+			const crlf = /\r\n/.test(text);
+			write(rel, text.replace(/\r\n/g, '\n').split('\n').filter((_, i) => !drop.has(i)).join(crlf ? '\r\n' : '\n'));
+			moved = ` ${p.boxLines.length} checkbox line(s) moved out of ${rel}; the file as it was: ${keep}.`;
+		}
+		console.log(`PASS ${p.rows.length} row(s) and ${p.steps.length} roadmap step(s) moved into ${list.LIST} and ${STATE};${moved || ' the markdown is unchanged.'}`);
+		console.log(`Views${refreshLists().replace(/^; /, ': ')}.`);
 		for (const n of lf.notes) console.log(`note: ${n}`);
-		return console.log('Next: put the list:begin roadmap, counts and rows markers where the views go, then run node .claude/state.mjs render.');
+		return console.log(`Next: put the list:begin ${p.boxLines.length ? 'boxes and roadmap' : 'roadmap, counts and rows'} markers where the views go (the kit's roadmap template has them since 1.36.0), then run node .claude/state.mjs render.`);
 	}
 	if (l.why) return fail(l.why);
 	if (cmd === 'list') {
@@ -673,7 +703,7 @@ function listCommand(cmd, rest, { fail, usage }) {
 				return { ...r, short: d.short };
 			});
 			if (bold.length + clipped.length) write(list.LIST, list.serialize(rows));
-			return console.log(`${bold.length + clipped.length} row(s) given a short name; from the bold lead: ${bold.length}; clipped from the title, worth a look: ${clipped.length}${clipped.length ? ` (${clipped.join(', ')})` : ''}. Change one with node .claude/state.mjs item set <id> short <text>`);
+			return console.log(`${bold.length + clipped.length} row(s) given a short name; from the bold lead: ${bold.length}; clipped from the title, worth a look: ${clipped.length}${clipped.length ? ` (${clipped.join(', ')})` : ''}. Change one with node .claude/state.mjs item set <id> short <text>${bold.length + clipped.length ? refreshLists() : ''}`);
 		}
 		const flags = ['--all', '--agent', '--full'];
 		const all = rest.includes('--all');
@@ -708,7 +738,7 @@ function listCommand(cmd, rest, { fail, usage }) {
 		const bad = list.refuse(r, l.rows, s.list_import, { added: true });
 		if (bad) return fail(clean(bad));
 		write(list.LIST, list.serialize([...l.rows, r]));
-		return console.log(`${r.id} added; run node .claude/state.mjs render`);
+		return console.log(`${r.id} added${refreshLists()}`);
 	}
 	if (rest[0] === 'set') {
 		const [, id, field, ...value] = rest;
@@ -724,7 +754,7 @@ function listCommand(cmd, rest, { fail, usage }) {
 		const rows = [...l.rows];
 		rows[at] = ch.row;
 		write(list.LIST, list.serialize(rows));
-		return console.log(`${id} ${field} set; run node .claude/state.mjs render`);
+		return console.log(`${id} ${field} set${refreshLists()}`);
 	}
 	return usage();
 }

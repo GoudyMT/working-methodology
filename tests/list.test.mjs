@@ -327,6 +327,92 @@ test('step rename renames one roadmap step by its name or release, and refuses a
 	assert.equal(st(dir, 'check').status, 0);
 });
 
+// K69 (1.36.0): both real projects keep their roadmap as checkboxes (53 and 555 boxes on 2026-11-15), which list import
+// could not read. A checkbox roadmap moves into data once; a generated view writes the same boxes back.
+const BOXES = `# Master Roadmap - Demo
+
+**Status Legend:** \`- [ ]\` = not started | \`- [x]\` = complete
+
+## v0 - "Course prototype" (DONE)
+
+- [x] Public repo, first-push gate
+
+## v1 - "Live triage demo" (IN PROGRESS)
+
+> One PR per line, in order.
+
+### Carried items
+
+- [~] Shared vocabulary in model.json (PR 4 size budget)
+- [ ] Regenerate the README images
+- [/] Widen the mask
+- [!] Publish the model (owner's act)
+- [x] First model version
+  - [x] Step 1: gate for unchecked wrong answers
+  - [~] Step 3: build the winner
+
+## Long-Term Backlog
+
+- [ ] A phone app
+
+\`\`\`
+- [ ] an example in a fence, not a row
+\`\`\`
+`;
+// why: guards the owner's lock of K69, 2026-11-15 (pop-up "Checkbox lists become data"): every kit project keeps its list as data
+test('import moves a checkbox roadmap into data once, and the boxes view writes the same boxes back', () => {
+	const dir = project();
+	put(dir, 'roadmap.md', BOXES);
+	const r = st(dir, 'list', 'import', 'roadmap.md');
+	assert.equal(r.status, 0, r.stdout);
+	assert.match(r.stdout, /PASS 9 row\(s\) and 2 roadmap step\(s\)/);
+	const got = rows(dir);
+	assert.deepEqual(got.map((x) => [x.id, x.tag, x.at ?? null]), [
+		['R1', 'done', 'v0'], ['R2', 'after', 'v1'], ['R3', 'later', 'v1'], ['R4', 'now', 'v1'], ['R5', 'blocked', 'v1'],
+		['R6', 'done', 'v1'], ['R7', 'done', 'v1'], ['R8', 'after', 'v1'], ['R9', 'later', null],
+	]);
+	const by = Object.fromEntries(got.map((x) => [x.id, x]));
+	assert.equal(by.R2.section, 'v1 - "Live triage demo" (IN PROGRESS) / Carried items');
+	assert.equal(by.R7.note, 'under R6', 'an indented box keeps its parent');
+	assert.ok(got.every((x) => x.short), 'every moved row gets its short name');
+	assert.ok(!got.some((x) => /example in a fence/.test(x.title)));
+	const s = JSON.parse(read(dir, '_State.json'));
+	assert.deepEqual(s.roadmap.map((x) => [x.step, x.carries, x.state]), [['v0', 'Course prototype', 'DONE'], ['v1', 'Live triage demo', 'IN PROGRESS']]);
+	// The moved boxes leave the file; every other line stays, and the file as it was is kept.
+	const after = read(dir, 'roadmap.md');
+	assert.doesNotMatch(after, /^\s*- \[[ x\/!~]\] (?!an example)/m, 'no hand-kept box is left');
+	for (const keep of ['## v1 - "Live triage demo" (IN PROGRESS)', '> One PR per line, in order.', '### Carried items', '## Long-Term Backlog', '- [ ] an example in a fence, not a row']) assert.ok(after.includes(keep), keep);
+	assert.match(r.stdout, /the file as it was: \.kit\/kit-backups\/list-import-[^ ]+\/roadmap\.md/);
+	const backup = r.stdout.match(/(\.kit\/kit-backups\/list-import-[^ ]+\/roadmap\.md)/)[1];
+	assert.equal(read(dir, backup), BOXES);
+	// The generated view: the same boxes, grouped by section, each with its id.
+	put(dir, 'roadmap.md', `${after}\n<!-- list:begin boxes -->\n<!-- list:end -->\n`);
+	assert.equal(st(dir, 'render').status, 0);
+	const view = read(dir, 'roadmap.md');
+	assert.match(view, /^\*\*v1 - "Live triage demo" \(IN PROGRESS\) \/ Carried items\*\*$/m);
+	for (const line of ['- [~] R2 Shared vocabulary in model.json (PR 4 size budget)', '- [ ] R3 Regenerate the README images', '- [/] R4 Widen the mask', '- [!] R5 Publish the model (owner\'s act)', '- [x] R1 Public repo, first-push gate']) assert.ok(view.includes(line), line);
+	assert.equal(st(dir, 'check').status, 0);
+	// A box changed in the data shows in the view at the next render.
+	assert.equal(st(dir, 'item', 'set', 'R3', 'caught-by', 'owner').status, 0);
+	assert.equal(st(dir, 'item', 'set', 'R3', 'tag', 'done v1').status, 0);
+	assert.equal(st(dir, 'render').status, 0);
+	assert.ok(read(dir, 'roadmap.md').includes('- [x] R3 Regenerate the README images'));
+	// Once only: a second import is refused, as before.
+	assert.equal(st(dir, 'list', 'import', 'roadmap.md').status, 1);
+});
+
+// why: guards the owner's lock of K69, 2026-11-15: a new project starts on the data list
+test('the shipped roadmap template carries the boxes and roadmap blocks, and a fresh project passes check', () => {
+	const dir = project();
+	const t = read(dir, '_Master Roadmap.md');
+	assert.match(t, /<!-- list:begin boxes: generated/);
+	assert.match(t, /<!-- list:begin roadmap: generated/);
+	assert.equal(st(dir, 'check').status, 0, st(dir, 'check').stdout);
+	st(dir, 'item', 'add', '--from', json(dir, { id: 'R1', title: 'First task', tag: 'later', severity: 'to set', origin: 'owner' }));
+	assert.equal(st(dir, 'render').status, 0);
+	assert.ok(read(dir, '_Master Roadmap.md').includes('- [ ] R1 First task'));
+});
+
 // why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('list caught prints the catch rate and found-to-shipped by origin', () => {
 	const dir = project();
