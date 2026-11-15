@@ -3,7 +3,7 @@
  "date": "2026-11-15",
  "level": "minor",
  "area": "Tracking files",
- "title": "feat: the improvement list is kept as data, and a release is checked",
+ "title": "feat: the improvement list is kept as data; releases are checked",
  "headline": "A project's improvement list and roadmap now live as data: each row has one tag, says who caught it and where its numbers were measured, and the roadmap, counts and rows are generated from it. A release is called done only when a check has read every step on GitHub and in the project.",
  "alignment": "v1.35.0 is the second v2.0 step for tracking (T4): after the next action and the decisions in 1.34.0, the list and the roadmap.",
  "items": [
