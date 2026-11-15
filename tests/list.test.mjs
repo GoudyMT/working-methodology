@@ -280,6 +280,53 @@ test('item add refuses a row with no short name or one over 60 characters; list 
 	assert.equal(st(dir, 'check').status, 0);
 });
 
+// K78 (1.36.0): run from another folder, the 1.35.0 state.mjs read that folder and said "no _List.jsonl", which reads
+// as an empty list. An installed copy reads its own project when the shell stands outside any project.
+// why: guards the owner's lock of build 10, 2026-11-15 (state.mjs group): the list read from its own project
+test('an installed state.mjs run from outside a project reads its own project, and names the folder it read', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	st(dir, 'list', 'import', 'list.md');
+	fs.mkdirSync(path.join(dir, '.claude'));
+	for (const f of ['state.mjs', 'list-data.mjs']) {
+		const t = fs.readFileSync(path.join(KIT, 'project', '.claude', f), 'utf8');
+		fs.writeFileSync(path.join(dir, '.claude', f), t.replaceAll('{{CLAUDE_HOME}}', dir.split('\\').join('/')));
+	}
+	const away = kitTemp.makeTemp('away-');
+	const run = (cwd, ...a) => spawnSync(process.execPath, [path.join(dir, '.claude', 'state.mjs'), ...a], { cwd, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '' } });
+	assert.deepEqual(shortIds(run(away, 'list').stdout), ['C2', 'A2'], 'outside any project: its own project');
+	// A folder that is a project of its own is the one read, as before.
+	const other = project();
+	assert.match(run(other, 'list').stdout, new RegExp(`no _List\\.jsonl in ${path.basename(other)}`));
+	// The kit's own template is never taken for a project: run from outside, it reads where the shell stands.
+	assert.match(st(away, 'list').stdout, new RegExp(`no _List\\.jsonl in ${path.basename(away)}`));
+	assert.equal(fs.existsSync(path.join(away, '_List.jsonl')), false);
+});
+
+// K79 (1.36.0): build 10's roadmap step was split by a hand edit of _State.json, because no command renamed a step.
+// why: guards the owner's lock of build 10, 2026-11-15 (state.mjs group): a roadmap step renamed by command
+test('step rename renames one roadmap step by its name or release, and refuses a name already taken', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	st(dir, 'list', 'import', 'list.md');
+	let r = st(dir, 'step', 'rename', '9', '9a');
+	assert.equal(r.status, 0, r.stdout);
+	assert.match(r.stdout, /step 9 renamed 9a/);
+	let s = JSON.parse(read(dir, '_State.json'));
+	assert.deepEqual(s.roadmap.map((x) => x.step), ['8', '9a']);
+	// Named by its release; a name may repeat with another release.
+	assert.equal(st(dir, 'step', 'rename', '1.34.0', '9a').status, 0);
+	// Now two steps are named 9a: the name alone is refused, as step set refuses it.
+	r = st(dir, 'step', 'rename', '9a', '10');
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /names 2 steps/);
+	assert.equal(st(dir, 'step', 'rename', 'nope', 'x').status, 1);
+	assert.equal(st(dir, 'step', 'rename', '1.35.0', '').status, 2, 'no new name is a usage error');
+	s = JSON.parse(read(dir, '_State.json'));
+	assert.deepEqual(s.roadmap.map((x) => x.step), ['9a', '9a']);
+	assert.equal(st(dir, 'check').status, 0);
+});
+
 // why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('list caught prints the catch rate and found-to-shipped by origin', () => {
 	const dir = project();

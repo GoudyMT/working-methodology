@@ -34,6 +34,7 @@
 //   node .claude/state.mjs item add --from <file.json>        a new row, every label it owes included
 //   node .claude/state.mjs item set <id> <field> <value>      tag ("done 1.35.0"), caught-by, escaped, measured, origin ...
 //   node .claude/state.mjs step set <step> release|carries|state <text>
+//   node .claude/state.mjs step rename <step or release> <new name>
 // render also writes the roadmap, counts and rows blocks (list:begin markers) in any of the project's markdown files.
 //
 // What check proves: each generated block equals what the data renders; no label a session reads (NEXT, Pending the
@@ -49,10 +50,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import * as list from './list-data.mjs';
 
-const ROOT = process.cwd();
 const STATE = '_State.json';
+// install project fills this in, so a caller cannot move the transcripts with CLAUDE_CONFIG_DIR (as owner-yes.cjs).
+const INSTALLED_HOME = "{{CLAUDE_HOME}}";
+const installed = !INSTALLED_HOME.startsWith('{' + '{');
+// K78 (1.36.0): the project read is where the shell stands when that is a project; run from outside any project, an
+// installed copy reads its own project (the folder above its .claude), never the kit's template folder. On 1.35.0 a
+// run from another folder said "no _List.jsonl", which reads as an empty list.
+const isProject = (d) => ['_State.json', '_List.jsonl'].some((f) => fs.existsSync(path.join(d, f)));
+const OWN = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const ROOT = !isProject(process.cwd()) && installed && isProject(OWN) ? OWN : process.cwd();
 const DECISIONS = '_Decisions.jsonl';
 const PLAN = '_Active Plan.md';
 const MEMORY = '_Working Memory.md';
@@ -70,9 +80,7 @@ const CARRY = 'Carry-overs from the last PR';
 const CARRY_LABEL = `**${CARRY} (only those the owner said yes to; close in this run):**`;
 const WAITING = 'Waiting for the owner\'s eyes';
 const LABELS = { [PLAN]: ['Updated', 'NEXT', 'Then', CARRY, 'Pending the owner', WAITING], [MEMORY]: ['Last Session', 'Kit', 'Current Phase', 'Resume Point'] };
-// install project fills this in, so a caller cannot move the transcripts with CLAUDE_CONFIG_DIR (as owner-yes.cjs).
-const INSTALLED_HOME = "{{CLAUDE_HOME}}";
-const claudeHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
+const claudeHome = () => (installed ? INSTALLED_HOME : process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'));
 
 const today = () => new Date().toISOString().slice(0, 10);
 const file = (rel) => path.join(ROOT, rel);
@@ -518,7 +526,7 @@ function decide(fromFile, unchecked) {
 function main(argv) {
 	const [cmd, ...rest] = argv;
 	const fail = (m) => { console.log(m); process.exitCode = 1; };
-	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|--agent|--full|caught|audit|shorten|import <file.md>] | item <id> [--json] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text>'); process.exitCode = 2; };
+	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|--agent|--full|caught|audit|shorten|import <file.md>] | item <id> [--json] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text> | step rename <step> <new name>'); process.exitCode = 2; };
 	if (cmd === 'init') {
 		const { faults, said = [] } = init();
 		for (const f of [...faults, ...said]) console.log(f);
@@ -555,6 +563,20 @@ function main(argv) {
 	if (cmd === 'step') {
 		const [verb, step, field, ...text] = rest;
 		if (why) return fail(why);
+		if (verb === 'rename') {
+			// K79 (1.36.0): build 10's step was split by a hand edit of _State.json, for want of this command.
+			const to = clean([field, ...text].join(' '));
+			if (!clean(step) || !to) return usage();
+			const named = s.roadmap.filter((x) => x.step === clean(step) || (x.release && x.release === clean(step)));
+			if (named.length > 1) return fail(`${clean(step)} names ${named.length} steps; name one by its release (${named.map((x) => x.release || '(none)').join(', ')})`);
+			if (!named.length) return fail(`${clean(step)} is not a roadmap step`);
+			const at = named[0];
+			if (s.roadmap.some((x) => x !== at && x.step === to && x.release === at.release)) return fail(`step ${to} with release ${at.release || '(none)'} is already on the roadmap; nothing written`);
+			const was = at.step;
+			at.step = to;
+			saveState(s, { touch: false });
+			return console.log(`step ${was} renamed ${to}; rows placed "at" ${was} keep that text: move them with item set <id> at ${to}; then run node .claude/state.mjs render`);
+		}
 		if (verb !== 'set' || !clean(step) || !['release', 'carries', 'state'].includes(field)) return usage();
 		// A step is named by its name, or by its release where two steps share a name.
 		const named = s.roadmap.filter((x) => x.step === clean(step) || (x.release && x.release === clean(step)));
@@ -636,7 +658,7 @@ function listCommand(cmd, rest, { fail, usage }) {
 	}
 	if (l.why) return fail(l.why);
 	if (cmd === 'list') {
-		if (!l.exists) return console.log(`no ${list.LIST} in this project: add a row with node .claude/state.mjs item add --from <file.json>, or import a markdown list once`);
+		if (!l.exists) return console.log(`no ${list.LIST} in ${path.basename(ROOT)} (${ROOT}): add a row with node .claude/state.mjs item add --from <file.json>, or import a markdown list once`);
 		if (rest[0] === 'caught') return console.log(list.caught(l.rows).join('\n'));
 		if (rest[0] === 'audit') { const a = list.audit(l.rows); return console.log(a.length ? a.join('\n') : 'every row carries its labels'); }
 		if (rest[0] === 'shorten') {
