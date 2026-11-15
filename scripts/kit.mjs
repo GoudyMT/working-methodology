@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
+import { mergeOnGreen, renderMergeOnGreen } from './merge-on-green.mjs';
 
 // git runs a program the config names on some commands (core.fsmonitor on git status and git ls-files, proven on Git for
 // Windows, 2026-11-11), and a project's git config is the agent's to write. Install runs inside a held fix line, so
@@ -1920,6 +1921,11 @@ function main(argv) {
     if (target === 'project' && !dryRun && use) {
       console.log(use.text);
       if (use.code !== 0) process.exitCode = 1;
+    }
+    // K61: the owner's steps to turn on merge on green, each read live and marked done or to do. Read only.
+    if (!dryRun) {
+      const gh = (args) => spawnSync('gh', args, { cwd: projectDir, encoding: 'utf8', timeout: 8000 });
+      for (const l of renderMergeOnGreen(mergeOnGreen({ home, projectDir, gh, protection: mainProtection }))) console.log(l);
     }
   } else if (cmd === 'fold-back') {
     const r = foldBack({ kit, home, target, projectDir });

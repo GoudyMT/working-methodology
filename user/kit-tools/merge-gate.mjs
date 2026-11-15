@@ -236,13 +236,18 @@ function grantFault(git, baseRef) {
 	if (!baseRef) return '';
 	const r = git('show', `${baseRef}:standards/project-adapter.md`);
 	if (r.status !== 0) return `the base has no standards/project-adapter.md, so this project names no standing grant (row A27): this merge is the owner's`;
-	const row = r.stdout.split('\n').find((l) => /^\|\s*A27\s*\|/.test(l));
+	const { granted, value } = grantsMerge(r.stdout);
+	return granted ? '' : `adapter row A27 on the base grants no merge (${value || 'no row'}): this merge is the owner's. To grant it, the owner merges a row A27 that lists merge, such as: merge through the merge gate; auto-fix push`;
+}
+
+// Row A27 of an adapter file's text, and whether it grants merge. Install reads it the same way (K61).
+export function grantsMerge(text) {
+	const row = String(text || '').split('\n').find((l) => /^\|\s*A27\s*\|/.test(l));
 	const value = row ? row.split('|').slice(1, -1).pop().trim().replace(/`/g, '') : '';
 	// A granted act is its own item, led by its name; an item that also says no, not, never, none or without grants
 	// nothing, so "no merge" or "merge: no" is no grant (the 1.22.0 sweep).
 	const items = value.split(/[;,]/).map((x) => x.trim().toLowerCase());
-	const granted = items.some((x) => /^merge\b/.test(x) && !/\b(no|not|never|none|without|except)\b/.test(x));
-	return granted ? '' : `adapter row A27 on the base grants no merge (${value || 'no row'}): this merge is the owner's. To grant it, the owner merges a row A27 that lists merge, such as: merge through the merge gate; auto-fix push`;
+	return { granted: items.some((x) => /^merge\b/.test(x) && !/\b(no|not|never|none|without|except)\b/.test(x)), value };
 }
 
 // The hooks folder this clone really uses (the gate's own runs override it on the command line, so that value is

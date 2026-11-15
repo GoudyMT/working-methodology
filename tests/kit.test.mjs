@@ -31,6 +31,9 @@ function copyKitCli(kit) {
   // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
   fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
   fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
+  // The merge-on-green steps install prints (K61), which read row A27 as the merge gate does.
+  fs.copyFileSync(path.resolve('scripts/merge-on-green.mjs'), path.join(kit, 'scripts/merge-on-green.mjs'));
+  for (const f of ['merge-gate.mjs', 'kit-temp.cjs']) fs.copyFileSync(path.resolve('user/kit-tools', f), path.join(kit, 'user/kit-tools', f));
 }
 
 function makeKit() {
@@ -620,6 +623,21 @@ function releaseKit() {
   const cli = (...args) => spawnSync(process.execPath, [path.join(kit, 'scripts/kit.mjs'), ...args], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: ctx.home } });
   return { ...ctx, git, cli };
 }
+
+// K61 (the owner, 2026-11-15): merge on green had no exact steps; install prints them, each marked done or to do.
+// why: guards rule:standing-grants
+test('install user and install project print the merge-on-green steps', () => {
+  const { proj, cli } = releaseKit();
+  const u = cli('install', 'user');
+  assert.equal(u.status, 0, u.stderr);
+  assert.match(u.stdout, /Merge on green: 0 of 1 step done/);
+  assert.ok(u.stdout.includes('/kit-tools/merge-gate.mjs arm *)",') && u.stdout.includes('"Bash(node '), u.stdout);
+  const p = cli('install', 'project', proj);
+  assert.match(p.stdout, /Merge on green: 0 of 4 steps done/);
+  assert.match(p.stdout, /merge through the merge gate; auto-fix push/);
+  assert.ok(p.stdout.includes('merge-gate.mjs check <PR> says GO'), p.stdout);
+  assert.doesNotMatch(cli('install', 'project', proj, '--dry-run').stdout, /Merge on green/, 'a dry run checks nothing');
+});
 
 // why: guards rule:outward-acts. K49 (a project on the kit, 2026-11-14): a settings file kept for a hand merge still ran
 // the kit guards itself, the shape before 1.25.1, so every guard ran twice beside the launcher and no sweep could
