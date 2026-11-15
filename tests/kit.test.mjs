@@ -647,6 +647,86 @@ function releaseKit() {
   return { ...ctx, git, cli };
 }
 
+// The 1.33.0 workbench verify (the owner, 2026-11-15, "Three-way merge"): a file the owner filled in and the kit also
+// changed was skipped whole as "merge by hand", so no release's rule change reached it. Install now merges the two line
+// by line against the version it last installed, read from the release copy's tags, and writes the result when nothing
+// clashes; a clash (a line both changed, or changes on lines next to each other, as git merges) leaves the file as it
+// is and names what to do.
+// why: guards rule:kit-standards
+test('install merges the owner\'s edits with the kit\'s changes line by line, and leaves a clash alone', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  const rules = path.join(kit, 'project/_Working Standards.md');
+  const release = (v, lines) => {
+    fs.writeFileSync(rules, lines.join('\n') + '\n');
+    fs.writeFileSync(path.join(kit, 'VERSION'), `${v}\n`);
+    git('commit', '-q', '-am', `release ${v}`); git('tag', `v${v}`);
+  };
+  const mine = path.join(proj, '_Working Standards.md');
+  const write = (lines) => fs.writeFileSync(mine, lines.join('\n') + '\n');
+  const read = () => fs.readFileSync(mine, 'utf8').split('\n').slice(0, -1);
+  // Line two is rendered at install ({{OWNER_NAME}}), so the old copy must be rendered before its hash is compared.
+  release('1.0.1', ['one', 'owner {{OWNER_NAME}}', 'three', 'four', 'five']);
+  assert.equal(cli('install', 'project', proj).status, 0);
+  write(['one, filled in', 'owner Pat', 'three', 'four', 'five']);
+  release('1.0.2', ['one', 'owner {{OWNER_NAME}}', 'three', 'four', 'five, reworded']);
+  // A dry run merges nothing.
+  cli('install', 'project', proj, '--dry-run');
+  assert.deepEqual(read(), ['one, filled in', 'owner Pat', 'three', 'four', 'five'], 'a dry run writes nothing');
+  const r = cli('install', 'project', proj);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(read(), ['one, filled in', 'owner Pat', 'three', 'four', 'five, reworded'], 'both changes kept');
+  assert.match(r.stdout, /merged with your edits: _Working Standards\.md/);
+  // The owner's copy is kept in the dated backup folder first.
+  const backups = path.join(proj, '.kit', 'kit-backups');
+  const kept = fs.readdirSync(backups).map((d) => path.join(backups, d, '_Working Standards.md')).filter((p) => fs.existsSync(p));
+  assert.deepEqual(kept.map((p) => fs.readFileSync(p, 'utf8')), ['one, filled in\nowner Pat\nthree\nfour\nfive\n']);
+  // The next release merges from the version just written: line five changes again and the owner's line survives.
+  release('1.0.3', ['one', 'owner {{OWNER_NAME}}', 'three, new', 'four', 'five, reworded again']);
+  cli('install', 'project', proj);
+  assert.deepEqual(read(), ['one, filled in', 'owner Pat', 'three, new', 'four', 'five, reworded again']);
+  // A line both changed is a clash: the file stays as the owner has it, and the skip says what to do.
+  write(['one, filled in', 'owner Pat', 'three, mine', 'four', 'five, reworded again']);
+  release('1.0.4', ['one', 'owner {{OWNER_NAME}}', 'three, newer', 'four', 'five, reworded again']);
+  const c = cli('install', 'project', proj);
+  assert.deepEqual(read(), ['one, filled in', 'owner Pat', 'three, mine', 'four', 'five, reworded again'], 'a clash writes nothing');
+  assert.match(c.stdout, /skipped _Working Standards\.md: [^\n]*clash/);
+  assert.match(c.stdout, /--merged _Working Standards\.md/);
+});
+
+// why: guards rule:kit-standards (the 1.33.1 sweep: a byte that is not UTF-8 came back replaced, and a file saved with
+// Windows line endings clashed whole)
+test('install never merges text that is not UTF-8, and keeps a file\'s Windows line endings', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  const rules = path.join(kit, 'project/_Working Standards.md');
+  const release = (v, lines) => {
+    fs.writeFileSync(rules, lines.join('\n') + '\n');
+    fs.writeFileSync(path.join(kit, 'VERSION'), `${v}\n`);
+    git('commit', '-q', '-am', `release ${v}`); git('tag', `v${v}`);
+  };
+  const mine = path.join(proj, '_Working Standards.md');
+  release('1.0.1', ['one', 'two', 'three', 'four', 'five']);
+  cli('install', 'project', proj);
+  // One byte of Windows-1252 text (an e with an accent), as a Windows editor may save it.
+  const bytes = Buffer.concat([Buffer.from('one caf'), Buffer.from([0xe9]), Buffer.from('\ntwo\nthree\nfour\nfive\n')]);
+  fs.writeFileSync(mine, bytes);
+  release('1.0.2', ['one', 'two', 'three', 'four', 'five, new']);
+  const r = cli('install', 'project', proj);
+  assert.ok(fs.readFileSync(mine).equals(bytes), 'the bytes are left as they were');
+  assert.match(r.stdout, /skipped _Working Standards\.md: [^\n]*not UTF-8/);
+  // Windows line endings: merged as lines, and kept.
+  fs.writeFileSync(mine, 'one, mine\r\ntwo\r\nthree\r\nfour\r\nfive, new\r\n');
+  cli('install', 'project', proj, '--merged', '_Working Standards.md');
+  release('1.0.3', ['one', 'two', 'three', 'four', 'five, newer']);
+  cli('install', 'project', proj);
+  assert.equal(fs.readFileSync(mine, 'utf8'), 'one, mine\r\ntwo\r\nthree\r\nfour\r\nfive, newer\r\n');
+  // A kit folder that is no release is never merged from: no tag would hold its text for the next merge.
+  fs.writeFileSync(rules, 'one\ntwo\nthree\nfour\nfive, unreleased\n');
+  git('commit', '-q', '-am', 'branch work');
+  const u = cli('install', 'project', proj, '--unreleased');
+  assert.equal(fs.readFileSync(mine, 'utf8'), 'one, mine\r\ntwo\r\nthree\r\nfour\r\nfive, newer\r\n', 'nothing written');
+  assert.match(u.stdout, /skipped _Working Standards\.md: [^\n]*no release/);
+});
+
 // K61 (the owner, 2026-11-15): merge on green had no exact steps; install prints them, each marked done or to do.
 // why: guards rule:standing-grants
 test('install user and install project print the merge-on-green steps', () => {
@@ -3856,6 +3936,8 @@ test("the kit's CLAUDE.md and CLAUDE.local.md stay out of git even when the kit 
   kitInstall(dir);
   assert.equal(g(dir, 'check-ignore', '-q', 'CLAUDE.md').status, 0, 'still excluded in tracked mode');
   assert.equal(g(dir, 'check-ignore', '-q', 'CLAUDE.local.md').status, 0);
+  // The backups install keeps hold the owner's text, private files included (the review of ccdbdee).
+  assert.equal(g(dir, 'check-ignore', '-q', '.kit/kit-backups/x/CLAUDE.local.md').status, 0, 'backups stay out in tracked mode');
   g(dir, 'add', 'main.py');
   g(dir, 'add', '-f', 'CLAUDE.md');
   const staged = spawnSync('node', [path.join(dir, '.claude', 'first-push-check.mjs'), '--staged'], { encoding: 'utf8', cwd: dir });

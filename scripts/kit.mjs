@@ -219,6 +219,46 @@ function renderEntry(kitInfo, entry, projectDir, home, checked = null) {
 
 const readStamp = (p) => ({ files: {}, ...(fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {}) });
 
+// The 1.33.0 workbench verify (the owner, 2026-11-15, "Three-way merge"): a file the owner filled in and the kit also
+// changed was skipped whole, so no release's rule change reached it. The version install last wrote is found among the
+// kit folder's release tags (rendered as install renders it, and held to the hash the stamp recorded, so a wrong
+// guess is never the base), and git merges the owner's edits and the kit's changes against it line by line. Returns
+// { text } on a clean merge, { clashes } when a line both changed, or null when no tag gives the recorded base.
+const MERGE_TAGS = 40;
+// Args: ctx; src: the kit file the text is rendered from; renderOld: the old copy's text to what install wrote then;
+// curBuf: the owner's file as bytes; base: the hash the stamp recorded; want: the kit's text now.
+// Returns { text } on a clean merge, else { why } (a line both changed, or why it cannot be merged at all).
+function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
+  // Text that is not UTF-8 would come back with its bytes replaced (the 1.33.1 sweep): it is never merged.
+  const cur = curBuf.toString('utf8');
+  if (!Buffer.from(cur, 'utf8').equals(curBuf)) return { why: 'it is not UTF-8 text, so it cannot be merged line by line' };
+  const rel = toPosix(path.relative(ctx.kit, src));
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return { why: 'no release tag in the kit folder holds the version last installed here' };
+  const git = (...a) => spawnSync('git', ['-C', ctx.kit, ...NO_PROGRAMS, ...a], { encoding: 'utf8', cwd: SAFE_CWD, maxBuffer: 16 * 1024 * 1024 });
+  const tags = git('tag', '--list', 'v*', '--sort=-v:refname');
+  let old = null;
+  for (const tag of tags.status === 0 ? tags.stdout.split('\n').filter(Boolean).slice(0, MERGE_TAGS) : []) {
+    const shown = git('show', `refs/tags/${tag}:${rel}`);
+    if (shown.status !== 0) continue;
+    const text = renderOld(shown.stdout);
+    if (sha(text) === base) { old = text; break; }
+  }
+  if (old === null) return { why: 'no release tag in the kit folder holds the version last installed here' };
+  // A file saved with Windows line endings is merged as lines, and keeps its endings.
+  const crlf = /\r\n/.test(cur) && !/\r\n/.test(old) && !/\r\n/.test(want);
+  const dir = kitTemp.makeTemp('kit-merge-');
+  try {
+    const at = (n, t) => { const p = path.join(dir, n); fs.writeFileSync(p, t); return p; };
+    const r = spawnSync('git', [...NO_PROGRAMS, 'merge-file', '-p', at('yours', crlf ? cur.replace(/\r\n/g, '\n') : cur), at('base', old), at('kit', want)], { encoding: 'utf8', cwd: SAFE_CWD, maxBuffer: 16 * 1024 * 1024 });
+    if (r.status === 0) return { text: crlf ? r.stdout.replace(/\n/g, '\r\n') : r.stdout };
+    // git counts the clashes in its exit code; 128 and above, or none, is git's own error.
+    if (r.status > 0 && r.status < 128) return { why: `${r.status} part${r.status === 1 ? '' : 's'} clash (a line both changed, or changes on lines next to each other)` };
+    return { why: 'git could not merge it' };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // V3 (1.25.1): the files that guard a project - every script in .claude and every git hook. The launcher in the
 // Claude config folder hashes them against a record kept there before every call, so one changed outside install holds
 // every call; install always puts the kit's copy back, and fold-back never offers one to the kit.
@@ -501,7 +541,7 @@ function wireGate(home, dryRun) {
  *     ctx: { kit, home, target, projectDir, dryRun, force }
  *
  * Returns:
- *     { created, updated, replaced, skipped: [{ file, reason }], backupDir, version }
+ *     { created, updated, replaced, retired, skipped: [{ file, reason }], merged, threeWayMerged, hostOwned, backupDir, version }
  */
 export function install(ctx) {
   const { entries, stampPath } = plan(ctx);
@@ -520,9 +560,31 @@ export function install(ctx) {
   const prevRecord = ctx.target === 'project' && ctx.home ? readRecord(ctx.home, ctx.projectDir) : null;
   const gitTracks = (f) => spawnSync('git', ['-C', ctx.projectDir, ...NO_PROGRAMS, 'ls-files', '--error-unmatch', f], { encoding: 'utf8', cwd: SAFE_CWD }).status === 0;
   const isHost = (key) => ((prevRecord && prevRecord.host) || []).includes(key) || (prevRecord ? !(prevRecord.files && prevRecord.files[key]) && gitTracks(key) : !stamp.files[key] && gitTracks(key));
-  const created = [], updated = [], replaced = [], skipped = [], merged = [];
-  const hostOwned = new Set(stamp.hostOwned || []);
+  const created = [], updated = [], replaced = [], skipped = [], merged = [], threeWayMerged = [];
   const backupDir = path.join(path.dirname(stampPath), 'kit-backups', new Date().toISOString().replace(/[:.]/g, '-'));
+  // A file the owner and the kit both changed is merged line by line (the 1.33.0 workbench verify, "Three-way merge"),
+  // only where install may write it: never a guard file (a host's own hook stays the host's), a link, a dry run's
+  // file, or from a kit folder that is no release (its text no tag holds would be the next merge's base). The owner's
+  // copy goes to the dated backup folder first. Returns { merged } or { why } it was not.
+  const releaseKit = Boolean(ctx.release && ctx.release.release);
+  const again = `install ${ctx.target === 'user' ? 'user' : 'project'} again`;
+  const handMerge = (key, why) => `changed here and in the kit, and ${why}, so nothing was written: merge the kit's copy into yours by hand, keeping your own lines, then run ${again} with --merged ${key}`;
+  const mergeInto = (key, dest, src, renderOld, base, want) => {
+    if (isGuarded(key)) return { why: 'it is a guard file, which install never merges' };
+    if (fs.lstatSync(dest).isSymbolicLink()) return { why: 'it is a link, which install never writes through' };
+    if (!releaseKit) return { why: 'this kit folder is no release, so no tag holds its text for the next merge' };
+    const m = threeWay({ ctx, src, renderOld, curBuf: fs.readFileSync(dest), base, want });
+    if (m.text === undefined) return m;
+    if (!ctx.dryRun) {
+      const keep = path.join(backupDir, key);
+      fs.mkdirSync(path.dirname(keep), { recursive: true });
+      fs.copyFileSync(dest, keep);
+      fs.writeFileSync(dest, m.text);
+    }
+    threeWayMerged.push(key);
+    return { merged: true };
+  };
+  const hostOwned = new Set(stamp.hostOwned || []);
   for (const entry of entries) {
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, checked);
     const wantHash = sha(want);
@@ -556,9 +618,12 @@ export function install(ctx) {
       // The owner merged the kit's changes into this file by hand: its text now stands on the current kit copy.
       merged.push(entry.key); files[entry.key] = wantHash;
     } else {
+      const both = base && wantHash !== base;
+      const m = both ? mergeInto(entry.key, entry.dest, entry.src, (t) => renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, new Map([[entry.src, t]])), base, want) : null;
+      if (m && m.merged) { files[entry.key] = wantHash; continue; }
       const reason = !base ? 'already exists and differs from the kit'
         : wantHash === base ? 'changed here - run fold-back'
-        : 'changed here and in the kit - merge by hand';
+        : handMerge(entry.key, m.why);
       skipped.push({ file: entry.key, reason });
     }
   }
@@ -591,7 +656,11 @@ export function install(ctx) {
       (had ? updated : created).push('CLAUDE.local.md');
       files['CLAUDE.local.md'] = sha(text);
     } else if (had !== sha(text) && had !== stamp.files['CLAUDE.local.md']) {
-      skipped.push({ file: 'CLAUDE.local.md', reason: 'changed here - merge the kit\'s CLAUDE.md into it by hand' });
+      const claudeSrc = entries.find((e) => e.key === 'CLAUDE.md');
+      const head = text.slice(0, text.length - kitClaude.length);
+      const m = stamp.files['CLAUDE.local.md'] ? mergeInto('CLAUDE.local.md', local, claudeSrc.src, (t) => head + renderEntry(kitInfo, claudeSrc, ctx.projectDir, ctx.home, new Map([[claudeSrc.src, t]])), stamp.files['CLAUDE.local.md'], text) : { why: 'install has no record of the copy it wrote' };
+      if (m.merged) files['CLAUDE.local.md'] = sha(text);
+      else skipped.push({ file: 'CLAUDE.local.md', reason: handMerge('CLAUDE.local.md', m.why) });
     }
   } else if (claudeEntry) {
     claudeEntry.reason += '; if another repo or team owns this file, run install with --overlay';
@@ -700,7 +769,7 @@ export function install(ctx) {
       }
     }
   }
-  return { created, updated, replaced, retired, skipped, merged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version };
 }
 
 /**
@@ -731,7 +800,8 @@ function keepKitLocal(projectDir, keys, hostOwned = [], shims = null) {
   // The kit's own CLAUDE.md and the personal local files never go public, even when the owner tracks the kit (the
   // owner, 2026-10-31); a host-owned CLAUDE.md is the host's to track.
   const privateKeys = ['CLAUDE.local.md', ...(keys.includes('CLAUDE.md') && !hostOwned.includes('CLAUDE.md') ? ['CLAUDE.md'] : [])];
-  const privateLines = [...privateKeys.map(line), line('') + '.claude/*.local.json'];
+  // The backups install keeps (of a file it replaced, retired or merged) hold the owner's text, private ones too.
+  const privateLines = [...privateKeys.map(line), line('') + '.claude/*.local.json', line('.kit/kit-backups/')];
   const kitLines = cfg.kit === 'tracked' ? privateLines
     : [...new Set([...keys, '.kit/', '.claude/worktrees/', ...privateKeys])].sort().map(line).concat(line('') + '.claude/*.local.json');
   const block = kitLines.length + neverLines.length ? ['# kit:begin - kept local by the methodology kit (rule:kit-stays-local); install rewrites this block',
@@ -863,7 +933,7 @@ export function foldBack(ctx) {
     `Kit ${kitInfo.version}; installed here at ${stamp.version || 'never'}.`,
     list('Fold back: changed here, a candidate for the kit', out.foldBack),
     list('Update: the kit moved on, run install to pull it', out.update),
-    list('Conflict: merge by hand', out.conflict),
+    list('Conflict: changed here and in the kit (install merges them line by line from a release; a clash it names is merged by hand)', out.conflict),
     list('New here: the kit has never seen these', out.added),
     list('Missing here: installed once, now deleted', out.missing),
     list('Guard files changed outside install: run install project to put the kit\'s copies back', out.guarded),
@@ -1151,7 +1221,7 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
     const r = foldBack({ kit, home, target: 'project', projectDir });
     // Only a file changed here and in the kit owes work; one changed only here holds the project's own values.
     const held = r.conflict.filter((k) => !k.startsWith('memory/'));
-    if (held.length) lines.push(`${held.length} kit file(s) changed here and in the kit: ${held.join(', ')}. Merge the kit's changes by hand, then record it with kit.mjs install project <folder> --merged <file>,<file>.`);
+    if (held.length) lines.push(`${held.length} kit file(s) changed here and in the kit: ${held.join(', ')}. Run kit.mjs install project <folder> from the release copy: it merges each line by line, and names any it cannot (a clash), to merge by hand and record with kit.mjs install project <folder> --merged <file>,<file>.`);
   }
   const catalogPath = path.join(projectDir, '.claude', 'kit', 'skill-cases.json');
   const localPath = path.join(projectDir, '.claude', 'skill-cases.local.json');
@@ -1267,7 +1337,7 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     const ok = parts[0] === 'current' && !waiting && !held.length;
     const fix = unreleased ? ` Check out the kit's newest release tag (${releaseCheckout(kit, newest(kit))}), then run ${w.fix}.` : ` Run ${w.fix}.`;
     lines.push(`${w.name}: ${stamp.version}, ${parts.join('; ')}.${ok ? '' : fix}`);
-    if (held.length) lines.push(`    ${held.length} file(s) changed here and in the kit: ${held.join(', ')}. Merge the kit's changes by hand, then record it with kit.mjs install ${w.target === 'user' ? 'user' : 'project <folder>'} --merged <file>,<file>.`);
+    if (held.length) lines.push(`    ${held.length} file(s) changed here and in the kit: ${held.join(', ')}. Run kit.mjs install ${w.target === 'user' ? 'user' : 'project <folder>'} from the release copy: it merges each line by line, and names any it cannot (a clash), to merge by hand and record with --merged <file>,<file>.`);
     if (w.target === 'project') for (const l of doubleRunLines(projectDir)) lines.push(`    ${l}`);
     if (own.length) lines.push(`    ${own.length} file(s) carry this project's own values on the current kit copy: ${own.join(', ')}. Not a gap; fold-back offers any that are portable.`);
     if (!ok) gaps.push(unreleased ? `${w.name} is an unreleased build` : `${w.name} differs from the kit`);
@@ -1915,8 +1985,9 @@ function main(argv) {
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
-    console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
+    console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, merged: ${(r.threeWayMerged || []).length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
     for (const f of r.merged) console.log(`    recorded as merged by hand: ${f}`);
+    for (const f of r.threeWayMerged || []) console.log(`    ${dryRun ? "would merge" : "merged"} with your edits: ${f} (your lines and the kit's changes, line by line${dryRun ? "" : "; your copy is in the backup folder"})`);
     for (const f of r.replaced) console.log(`    replaced ${f}`);
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);

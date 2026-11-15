@@ -466,6 +466,9 @@ test('V3 fix line: a kit folder changed since the install no longer offers the f
 	fs.appendFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), '\n// changed\n');
 	assert.equal(bash(s, fix).decision, 'deny', 'a kit file changed after the install');
 	assert.match(bash(s, 'git status').reason, /kit folder .*changed since/i, 'the refusal says why the fix line is gone');
+	// The owner types it in their own terminal: PowerShell runs a quoted program only after & (1.33.1, the owner's
+	// paste failed with "Unexpected token"), so the line is given in each shell's spelling.
+	assert.ok(bash(s, 'git status').reason.includes(`PowerShell: & ${fix}`), 'the PowerShell spelling');
 	fs.writeFileSync(path.join(kit, 'project', '.claude', 'guard.cjs'), fs.readFileSync(path.join(KIT, 'project', '.claude', 'guard.cjs')));
 	assert.notEqual(bash(s, fix).decision, 'deny', 'put back, it passes again');
 	fs.writeFileSync(path.join(kit, 'project', '.claude', 'extra.cjs'), EVIL_GUARD);
@@ -1464,8 +1467,40 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	assert.equal(call('cd ' + parent + '/a{p..p}p && git push origin main'), 'deny', 'a brace range');
 	assert.equal(call("cd $'" + parent + "/a\\x70p' && git push origin main"), 'deny', "$'...' quoting");
 	const t0 = Date.now();
-	assert.equal(call('ls ' + '*a'.repeat(30) + 'Z && git push origin main'), 'deny', 'a wildcard with many stars');
+	assert.equal(call('ls ' + '*a'.repeat(30) + 'Z && git push origin main'), 'runs', 'a wildcard with many stars names no project it cannot match');
 	assert.ok(Date.now() - t0 < 5000, 'the many-star wildcard is read in linear time');
+	assert.equal(call('ls ' + parent + '/*a*p && git push origin main'), 'deny', 'a wildcard with stars that matches the project');
+	// 1.33.1: failing closed on any brace, $'' or lone [ ran every recorded project's guards and timed the hook out. A
+	// command whose braces, quoting or brackets name no kit project names none.
+	for (const command of ['node -e "const o = {a: 1, b: 2}" && git push origin main', "echo $'plain text' && git push origin main",
+		'echo [x && git push origin main', 'echo {one,two} && git push origin main', 'ls [ab]* && git push origin main',
+		'git add * && git push origin main', 'echo {1..300} && git push origin main']) {
+		assert.equal(call(command), 'runs', command);
+	}
+	// The 1.33.1 sweep: a wildcard names what it matches on disk from the session's folder (a lone * outside a project
+	// named every project), and bash's other spellings name the project they build.
+	for (const command of ['ls ' + parent + '/* && git push origin main', 'cd ' + parent + '/[[:alpha:]]pp && git push origin main',
+		'cd ' + parent + '/[!x]pp && git push origin main', 'cd ' + parent + '/a{p..p..1}p && git push origin main',
+		"cd $'" + parent + "/a\\U00000070p' && git push origin main", "cd $'" + parent + "/a\\160p' && git push origin main",
+		'cd ' + parent + '/{x,{y,a}}pp && git push origin main', 'cd ' + parent + '/a?p && git push origin main']) {
+		assert.equal(call(command), 'deny', command);
+	}
+	// More names than the reader makes is held with its reason, never fanned out over every project.
+	const t1 = Date.now();
+	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'for i in {1..9000}; do echo $i; done' }, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
+	assert.match(r.stdout, /more than 4096 names from its braces/);
+	assert.ok(Date.now() - t1 < 5000, 'held at once');
+	// The review of c07f2bd: a relative wildcard after a cd is read from the folder the cd names, and range ends past a
+	// safe whole number are held, never looped over.
+	assert.equal(call('cd ' + parent + ' && ls a*p && git push origin main'), 'deny', 'a relative wildcard after a cd');
+	assert.equal(call('cd ' + path.dirname(path.dirname(proj)).split(path.sep).join('/') + ' && cd ' + path.basename(path.dirname(proj)) + ' && ls a*p && git push origin main'), 'deny', 'after a cd by a bare name');
+	// A bare name read again inside a folder found later in the pass (the review of bfad509): the second "work" is the
+	// one inside the first, and the project sits there.
+	const chain = kitTemp.makeTemp('cd-chain-');
+	fs.mkdirSync(path.join(chain, 'work', 'work'), { recursive: true });
+	fs.symlinkSync(proj, path.join(chain, 'work', 'work', 'zz'), 'junction');
+	assert.equal(call('cd ' + chain.split(path.sep).join('/') + ' && cd work && cd work && cd z* && git push origin main'), 'deny', 'a name repeated after the folder it is in');
+	assert.notEqual(call('echo {1..99999999999999999999} && git push origin main'), 'runs', 'a range past a safe number');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });
@@ -1475,6 +1510,21 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	const b = bare.split(path.sep).join('/');
 	const direct = call('git status', 'Bash', bare);
 	assert.equal(call('cd ' + b + ' && git status'), direct, 'the same answer as a session started there');
+});
+
+// why: guards rule:outward-acts. The 1.33.1 sweep: a zero-padded or stepped range builds the name bash builds, so a
+// project with digits in its name is named by it.
+test('a zero-padded or stepped brace range names the project bash builds', () => {
+	const { home, proj } = setup({ projName: 'v07' });
+	const outside = kitTemp.makeTemp('cd-out-');
+	const call = (command) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const parent = path.dirname(proj).split(path.sep).join('/');
+	assert.equal(call('cd ' + parent + '/v{06..08} && git push origin main'), 'deny', 'zero-padded');
+	assert.equal(call('cd ' + parent + '/v{01..09..3} && git push origin main'), 'deny', 'stepped: 01, 04, 07');
+	assert.equal(call('cd ' + parent + '/v{02..08..2} && git push origin main'), 'runs', 'stepped past it: 02, 04, 06, 08');
 });
 
 // why: guards rule:outward-acts. The third review (on cd0f9f5): a project whose folder name has a space is never one

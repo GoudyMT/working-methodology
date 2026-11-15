@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.33.1 - 2026-11-15
+
+Install merges the kit's rule changes into files the owner filled in, line by line, and the guard that follows a command into another kit project reads braces, wildcards and quoting as the shell does, so it no longer stalls on an ordinary command.
+
+### Changed
+- Status, the session notice and fold-back say install merges changed files itself, and name the ones left to merge by hand.
+
+### Fixed
+- Install merges a file the owner filled in and the kit changed, line by line against the release it last installed, after keeping a backup. A clash, text that is not UTF-8, a guard file or a link is left alone and named.
+- The guard expands braces as bash does and reads a wildcard against the real folders, so a brace, a * or a [ no longer runs every project's guards and times the hook out. A command it cannot read is held with its reason.
+- A session opened through a junction or a short folder name finds its project's record.
+
+### Security
+- POSIX classes, zero-padded and stepped ranges, U escapes and a wildcard after a cd name the project they build, so its guards run.
+- Install's backups stay out of git in tracked mode too.
+
 ## 1.33.0 - 2026-11-15
 
 Install prints every step only the owner can take to turn on merge on green, ready to paste and marked done or to do; the merge gate can arm again; and PR text, repo names and a command run from outside a project are held to the same checks as everywhere else.

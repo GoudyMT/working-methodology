@@ -1,0 +1,124 @@
+{
+ "version": "1.33.1",
+ "date": "2026-11-15",
+ "level": "patch",
+ "area": "Install and guards",
+ "title": "fix: install merges filled-in files, and guards read braces",
+ "headline": "Install merges the kit's rule changes into files the owner filled in, line by line, and the guard that follows a command into another kit project reads braces, wildcards and quoting as the shell does, so it no longer stalls on an ordinary command.",
+ "alignment": "v1.33.1 fixes the two faults the 1.33.0 workbench verify found: a filled-in core rules file kept its old rule line, and commands with a brace or a bracket timed the guard hook out.",
+ "items": [
+  {
+   "id": "MERGE",
+   "kind": "fixed",
+   "text": "Install merges a file the owner filled in and the kit changed, line by line against the release it last installed, after keeping a backup. A clash, text that is not UTF-8, a guard file or a link is left alone and named.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "A filled-in file the kit changed",
+   "before": "Skipped whole: merge by hand",
+   "after": "Merged; only a clash is left to you"
+  },
+  {
+   "id": "READER",
+   "kind": "fixed",
+   "text": "The guard expands braces as bash does and reads a wildcard against the real folders, so a brace, a * or a [ no longer runs every project's guards and times the hook out. A command it cannot read is held with its reason.",
+   "evidence": "tests/guards-outside.test.mjs",
+   "where": "A command with braces or a wildcard",
+   "before": "Every project checked; the hook timed out",
+   "after": "Only the projects it names"
+  },
+  {
+   "id": "SPELLINGS",
+   "kind": "security",
+   "text": "POSIX classes, zero-padded and stepped ranges, U escapes and a wildcard after a cd name the project they build, so its guards run.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "JUNCTION",
+   "kind": "fixed",
+   "text": "A session opened through a junction or a short folder name finds its project's record.",
+   "evidence": "user/kit-tools/kit-launch.cjs"
+  },
+  {
+   "id": "BACKUPS",
+   "kind": "security",
+   "text": "Install's backups stay out of git in tracked mode too.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "ADVICE",
+   "kind": "changed",
+   "text": "Status, the session notice and fold-back say install merges changed files itself, and name the ones left to merge by hand.",
+   "evidence": "scripts/kit.mjs"
+  }
+ ],
+ "verification": [
+  "Each fix has a test that fails on the code before it; the timeout was measured at 14 seconds on 90 records before and held at once after.",
+  "No rule text changed, so the recall gate does not apply."
+ ],
+ "decisions": [
+  {
+   "decision": "Hold what the reader cannot read",
+   "why": "A command that builds more than 4096 names, or reads more folders than the cap, is held with its reason; checking every project instead timed the hook out."
+  },
+  {
+   "decision": "Merge only from a release",
+   "why": "A base is a release tag rendered to the hash install recorded, so an unreleased kit or a wrong tag never becomes the base."
+  },
+  {
+   "decision": "User layer rolled back during the build",
+   "why": "The owner chose to put 1.32.0 back while 1.33.1 was built, so his sessions stopped timing out."
+  }
+ ],
+ "sweep": {
+  "tier": "Fix (security-sensitive, user data)",
+  "commit": "bcc40a4",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Backups kept out of git in tracked mode"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Three highs in the command reader, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Two highs in the merge and the test gaps, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 5,
+   "medium": 14,
+   "low": 17
+  },
+  "fixed": [
+   "A wide brace range or a lone * ran every project's guards. Fixed in c07f2bd and 6bea38e.",
+   "Bash spellings built names the reader missed. Fixed in c07f2bd.",
+   "The merge rewrote bytes that are not UTF-8 and kept no backup. Fixed in ccdbdee."
+  ],
+  "deferred": [],
+  "accepted": [
+   "A retired file's filled lines stay in the old file; install names it (the owner, 2026-11-15).",
+   "A script that edits the stamp and plants a tag could pick a wrong base; a backup is kept (the owner, 2026-11-15).",
+   "The base is searched in the 40 newest tags (the owner, 2026-11-15).",
+   "A crafted command of 300 KB or more can still slow the hook (the owner, 2026-11-15)."
+  ]
+ },
+ "tests": {
+  "before": 730,
+  "after": 733,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}
