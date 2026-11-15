@@ -229,6 +229,23 @@ test('a changed run picks only the tests that reach the changed lines or files, 
 });
 
 // why: guards rule:test-and-review-cadence
+// 1.35.0: a PR that changed test files ran only those tests, so the pin check, which reads every test file as data,
+// was skipped, and main went red on the merge.
+test('a changed test file also runs the tests that read it as data', () => {
+	const { repo, log, test: file } = fixtureRepo();
+	const lint = path.join(repo, 'tests', 'lint.test.mjs');
+	fs.writeFileSync(lint, [`import { test } from ${HARNESS};`, "import fs from 'node:fs';", `test('lint', () => { fs.appendFileSync(${JSON.stringify(log)}, 'lint\\n'); fs.readFileSync('tests/x.test.mjs', 'utf8'); });`, ''].join('\n'));
+	sh(repo, 'add', '.'); sh(repo, 'commit', '-qm', 'lint');
+	assert.equal(run(repo, ['--map', file, lint]).status, 0);
+	fs.rmSync(log, { force: true });
+	const p = path.join(repo, 'tests', 'x.test.mjs');
+	fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace("mark('f');", "mark('f'); void 0;"));
+	const r = run(repo, ['--changed', file, lint]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.deepEqual(ran(log), ['f', 'lint']);
+});
+
+// why: guards rule:test-and-review-cadence
 test('a changed run with no map, or a map from a commit not in history, runs everything and says why', () => {
 	const { repo, log, test: file } = fixtureRepo();
 	let r = run(repo, ['--changed', file]);

@@ -15,6 +15,9 @@ A project's improvement list and roadmap now live as data: each row has one tag,
 ### Changed
 - At the same severity, rows found in real projects rank above rows the owner asked for, then those from other methods, then the kit's own finds.
 
+### Fixed
+- A PR run that changes test files also runs the tests that read them as data, such as the pin check, so main no longer goes red on a check the PR skipped.
+
 ## 1.34.0 - 2026-11-15
 
 A project's next action, what waits on the owner, the carry-overs and the kit version now live once, in _State.json, and the owner's rulings in _Decisions.jsonl; the Resume Point and the dashboard lines are generated from them, and a check fails the moment they drift.

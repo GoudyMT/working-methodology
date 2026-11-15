@@ -58,6 +58,13 @@
    "reach": "kit",
    "text": "The build record writes the release notes draft, split into what projects get and what stays in the kit; publishing stays the owner's tap.",
    "evidence": "tests/build-record.test.mjs"
+  },
+  {
+   "id": "READERS",
+   "kind": "fixed",
+   "reach": "kit",
+   "text": "A PR run that changes test files also runs the tests that read them as data, such as the pin check, so main no longer goes red on a check the PR skipped.",
+   "evidence": "tests/harness.test.mjs"
   }
  ],
  "verification": [
