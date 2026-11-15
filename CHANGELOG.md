@@ -27,6 +27,8 @@ The list reads as one short line per row, for people and for agents, and every k
 - install --merged is refused on a file left unchanged since install named the merge.
 - Memory metadata the memory service adds is no change to fold back or a reason to skip an update.
 - The testing rule no longer says a project's CI runs the guard proofs; only the kit's CI can.
+- From the pre-PR sweep: list import moves only boxes markdown shows as boxes (never one in a comment, indented code or an indented fence), carries a box's own prose and sub-bullets into its note, keeps each line's ending, refuses a linked folder, and names the steps it made and the short names it clipped; list --step shows one step's rows; a second install --merged on an unchanged file keeps it as it is; a memory file updated with only metadata changed is kept first; a file tool through a hard link or a network path is held; a node option that names a protected file is a write; the CI templates' hooks step now fails when only one settings file exists.
+
 ## 1.35.0 - 2026-11-15
 
 A project's improvement list and roadmap now live as data: each row has one tag, says who caught it and where its numbers were measured, and the roadmap, counts and rows are generated from it. A release is called done only when a check has read every step on GitHub and in the project.
