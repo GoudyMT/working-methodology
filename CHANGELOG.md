@@ -12,7 +12,7 @@ The list reads as one short line per row, for people and for agents, and every k
 - step rename renames a roadmap step by its name or release.
 - A read-only Explore agent on Sonnet installs into each kit project, in place of the built-in one that runs on the session's model; a project without the kit keeps the built-in.
 - CI shape templates for Node and Python projects, and ci-shape.mjs, which reports what a project's workflows lack (main-only triggers, stale-run cancel, one required check) and never fails a run.
-- Status and session start hold a Claude Code older than 2.1.325, which fixed gaps in Bash deny and ask rules, and warn when updates come from the stable channel.
+- Status and session start flag a Claude Code older than 2.1.325 (naming npm when a package manager lags), which fixed gaps in Bash deny and ask rules, and warn when updates come from the stable channel.
 - The use check fails while git tracks .claude/settings.local.json, whose saved approvals can hold secrets, and while a project settings file sets disableAllHooks; the CI templates fail on the latter too.
 - Session start names a user layer newer than the project and what that can break.
 - Each shell command starts again in the project folder (CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR in the template settings).

@@ -346,7 +346,7 @@ test('status and session start flag a Claude Code too old for onFailure, and sta
 // K70 (1.36.0, the 2026-11-15 outside review): Claude Code 2.1.325 fixed gaps in how Bash deny and ask rules match,
 // which the kit's own rules (approve.mjs --resume is denied) rely on. The npm stable channel was still 2.1.311.
 // why: guards the owner's yes to K70, 2026-11-15 (card "Yes, all three into build 10"): the version floor and the warning
-test('status and session start hold a Claude Code under 2.1.325, and warn when updates come from the stable channel', () => {
+test('status and session start flag a Claude Code under 2.1.325, and warn when updates come from the stable channel', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
   install({ kit, home, target: 'project', projectDir: proj });
