@@ -10,6 +10,14 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
 const SCRIPT = path.resolve('project/.claude/ci-shape.mjs');
+// The bash CI's runner has; on Windows, Git Bash beside git itself (the bash PATH finds first there is WSL's: B17).
+const bash = () => {
+	if (process.platform !== 'win32') return 'bash';
+	const exec = spawnSync('git', ['--exec-path'], { encoding: 'utf8' }).stdout.trim();
+	let d = exec;
+	for (let i = 0; i < 4 && !fs.existsSync(path.join(d, 'bin', 'bash.exe')); i++) d = path.dirname(d);
+	return path.join(d, 'bin', 'bash.exe');
+};
 const run = (dir, ...a) => spawnSync(process.execPath, [SCRIPT, ...a], { cwd: dir, encoding: 'utf8' });
 const project = (files) => {
 	const dir = kitTemp.makeTemp('ci-shape-');
@@ -54,6 +62,18 @@ test('each shipped CI template meets the shape, and a project with no workflow i
 		assert.match(r.stdout, /^CI shape: 0 gap\(s\) in 1 workflow\(s\)/m, `${stack}: ${r.stdout}`);
 		// K72: a project whose repo tracks its settings fails CI when they turn every hook off.
 		assert.match(text, /disableAllHooks/, `${stack} template checks the settings`);
+	}
+	// The step itself, run as CI runs it: a settings file turning hooks off fails it, and one that does not passes.
+	for (const stack of ['node', 'python']) {
+		const text = fs.readFileSync(path.resolve(`project/_Templates/ci-${stack}.yml`), 'utf8');
+		const m = /- name: Hooks stay on\n\s+run: \|\n((?:\s{10}.*\n)+)/.exec(text);
+		assert.ok(m, `${stack}: the step's script`);
+		const script = m[1].replace(/^ {10}/gm, '');
+		const step = (files) => spawnSync(bash(), ['-c', script], { cwd: project(files), encoding: 'utf8' }).status;
+		assert.equal(step({ '.claude/settings.json': '{\n  "disableAllHooks": true\n}\n' }), 1, `${stack}: hooks off`);
+		assert.equal(step({ '.claude/settings.local.json': '{"disableAllHooks":true}' }), 1, `${stack}: hooks off locally`);
+		assert.equal(step({ '.claude/settings.json': '{"disableAllHooks": false}' }), 0, `${stack}: hooks on`);
+		assert.equal(step({ 'README.md': 'x\n' }), 0, `${stack}: no settings file`);
 	}
 	const none = run(project({ 'README.md': 'x\n' }));
 	assert.equal(none.status, 0);

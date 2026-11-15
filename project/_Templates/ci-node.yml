@@ -25,7 +25,8 @@ jobs:
       # K72: a tracked settings file that turns every hook off turns the kit's guards off with no sign.
       - name: Hooks stay on
         run: |
-          if grep -lsE '"disableAllHooks"[[:space:]]*:[[:space:]]*true' .claude/settings.json .claude/settings.local.json; then
+          # -q: a match exits 0 even when one of the files is missing (with -l alone grep exits 2 and the step passes).
+          if grep -qsE '"disableAllHooks"[[:space:]]*:[[:space:]]*true' .claude/settings.json .claude/settings.local.json; then
             echo "disableAllHooks is true in a tracked settings file"; exit 1
           fi
       # A PR may narrow this run to what the change reaches (vitest related, jest --findRelatedTests) once the
