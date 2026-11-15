@@ -251,7 +251,10 @@ function labelled(lines, name) {
 	for (let i = at + 1; i < lines.length && lines[i].trim() && !/^(\*\*[^*]+(?::\*\*|\*\*:)|#{1,6} |-{3,}\s*$|<!--)/.test(lines[i]); i++) { out.last = i; out.list.push(lines[i]); }
 	return out;
 }
-const value = (b) => clean([b.note ? `(${b.note})` : '', b.first, ...b.list].join(' '));
+// The notes the kit's own labels carry are the kit's words, not the owner's: never copied onto an item.
+const KIT_NOTES = ['work goes on', 'only those the owner said yes to; close in this run'];
+const ownNote = (b) => (b.note && !KIT_NOTES.includes(b.note.trim()) ? clean(b.note) : '');
+const value = (b) => clean([ownNote(b) ? `(${ownNote(b)})` : '', b.first, ...b.list].join(' '));
 // A template placeholder or an empty "none" is not an item; "none (reason)" is kept as a note, never as an open item.
 const bare = (t) => /^none\.?$/i.test(t) || placeholder(t);
 function asItems(b, kind, s, notes) {
@@ -261,7 +264,7 @@ function asItems(b, kind, s, notes) {
 	for (const t of lines) {
 		if (bare(t)) continue;
 		if (/^none\b/i.test(t)) { notes.push(`${LIST[kind].replace('_', '-')}: ${t}`); continue; }
-		out.push({ id: `${kind}-${++s.seq[kind]}`, what: b.note ? `(${clean(b.note)}) ${t}` : t });
+		out.push({ id: `${kind}-${++s.seq[kind]}`, what: ownNote(b) ? `(${ownNote(b)}) ${t}` : t });
 	}
 	return out;
 }

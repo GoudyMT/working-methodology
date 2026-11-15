@@ -244,6 +244,21 @@ test('init refuses what it cannot move whole, and changes nothing', () => {
 	assert.match(read(dir, '_Active Plan.md'), /\*\*NEXT release \(after this one\):\*\* 2\.0\n\n## Phase/);
 });
 
+test('init reads a block an owner filled by hand in the 1.34.0 template, waiting items and all', () => {
+	const dir = filled({ markers: true });
+	fs.copyFileSync(path.join(KIT, 'project', '_State.json'), path.join(dir, '_State.json'));
+	edit(dir, '_Active Plan.md', /\*\*Waiting for the owner's eyes \(work goes on\):\*\*\n- none/, '**Waiting for the owner\'s eyes (work goes on):**\n- read the notes');
+	edit(dir, '_Active Plan.md', /\*\*NEXT:\*\* .*/, '**NEXT:** ship it');
+	assert.equal(st(dir, 'init').status, 0);
+	const s = JSON.parse(read(dir, '_State.json'));
+	assert.equal(s.next, 'ship it');
+	assert.deepEqual(s.waiting.map((i) => [i.id, i.what]), [['W-1', 'read the notes']]);
+	assert.equal(st(dir, 'check').status, 0);
+	// A decision row removed by hand leaves a gap in the ids: the record is refused, so no id is given twice.
+	fs.writeFileSync(path.join(dir, '_Decisions.jsonl'), `${JSON.stringify({ id: 'D-1', date: '2026-11-15', decision: 'a', words: 'b', why: 'c', supersedes: null })}\n${JSON.stringify({ id: 'D-3', date: '2026-11-15', decision: 'a', words: 'b', why: 'c', supersedes: null })}\n`);
+	assert.match(st(dir, 'check').stdout, /expected id D-2/);
+});
+
 test('the use check names a project with no blocks, and never runs the project\'s own state script', () => {
 	const dir = filled();
 	fs.writeFileSync(path.join(dir, '_State.json'), read(path.join(KIT, 'project'), '_State.json').replace('<YYYY-MM-DD>', '2026-11-15'));
