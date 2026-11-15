@@ -1221,7 +1221,7 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
     const r = foldBack({ kit, home, target: 'project', projectDir });
     // Only a file changed here and in the kit owes work; one changed only here holds the project's own values.
     const held = r.conflict.filter((k) => !k.startsWith('memory/'));
-    if (held.length) lines.push(`${held.length} kit file(s) changed here and in the kit: ${held.join(', ')}. Run install project from the release copy: it merges each line by line, and names any it cannot (a clash), to merge by hand and record with --merged <file>,<file>.`);
+    if (held.length) lines.push(`${held.length} kit file(s) changed here and in the kit: ${held.join(', ')}. Run kit.mjs install project <folder> from the release copy: it merges each line by line, and names any it cannot (a clash), to merge by hand and record with kit.mjs install project <folder> --merged <file>,<file>.`);
   }
   const catalogPath = path.join(projectDir, '.claude', 'kit', 'skill-cases.json');
   const localPath = path.join(projectDir, '.claude', 'skill-cases.local.json');
