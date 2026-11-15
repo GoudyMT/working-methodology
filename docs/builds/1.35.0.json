@@ -61,8 +61,9 @@
   }
  ],
  "verification": [
-  "Every new test failed on the code before it: 9 list tests on 1.34.0's state script, the release and CI tests and the notes test before their code existed.",
-  "On a copy of the workbench list, the import moved 342 rows and 17 roadmap steps, and the generated counts equal the hand recount; it first refused 32 rows the list itself had broken."
+  "Every new test failed on the code before it; after the sweep, 7 of the 14 list tests fail on the swept code and the rest pin behaviour that had no test.",
+  "On a copy of the workbench list, the import moved 342 rows and 17 roadmap steps, and the generated counts equal the hand recount; it first refused 32 rows the list itself had broken.",
+  "The release check reads only GitHub and the release copy, and writes nothing in the project."
  ],
  "decisions": [
   {
@@ -80,19 +81,27 @@
  ],
  "sweep": {
   "tier": "Feature (user data)",
-  "commit": "pending",
+  "commit": "8d34574",
   "dimensions": [
    {
     "name": "Privacy",
-    "result": "pending"
+    "result": "A linked list file is never read or written"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
    },
    {
     "name": "Code security",
-    "result": "pending"
+    "result": "Planted programs, repo config, forged blocks, all fixed"
    },
    {
     "name": "Gaps, scaling, test value",
-    "result": "pending"
+    "result": "Import losses, release steps, test gaps, all fixed"
    },
    {
     "name": "Alignment",
@@ -101,11 +110,16 @@
   ],
   "findings": {
    "critical": 0,
-   "high": 0,
-   "medium": 0,
-   "low": 0
+   "high": 6,
+   "medium": 24,
+   "low": 14
   },
-  "fixed": [],
+  "fixed": [
+   "The release check ran only at closeout, not where the release is made. Fixed in 99b8923.",
+   "The kit could not run the check, and no state check passed as a pass. Fixed in e55095c and 99b8923.",
+   "Import skipped tables and rows it did not know, and a stray pipe cut a note. Fixed in 99b8923.",
+   "Two parts of the list had no test that could fail. Fixed in 99b8923."
+  ],
   "deferred": [],
   "accepted": []
  },
@@ -113,7 +127,7 @@
  "limits": "Rows moved from a markdown list keep their numbers and finders unlabelled until list audit is worked through. The release check cannot tell whether the notes say true things.",
  "tests": {
   "before": 745,
-  "after": 762,
+  "after": 769,
   "flips": "declared tests on main and on this branch; the PR run gives the final count"
  }
 }

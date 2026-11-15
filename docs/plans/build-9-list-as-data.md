@@ -5,6 +5,12 @@ wider slice on the owner's word ("if we can expand it a little bit to encompass 
 certain area, then it just makes sense"): the release-step check (K65, the owner's own ask), E14 (release notes from
 the build record), the T11 ranking part, and K66 (the CI watch report). New 2, New 6 and New 7 stay with the guard step.
 
+Swept (47 findings, 44 real, 6 high, all fixed in the build). Changes from the design below, each from the sweep: the
+release check reads every fact from GitHub's API and runs in the release-notes skill too; imported rows owe their
+labels only while unchanged (a record in `_State.json`, not a mark on the row); open rows rank in work order first;
+sections render as bold lines and list blocks are refused in instruction and labelled files; import refuses any
+table, row or cell it cannot move whole.
+
 ## Proof on the released kit (1.34.0, workbench, 2026-11-15)
 
 - **J3 (every number says where it was measured): real.** The fact-check rule labels whether a claim was checked
