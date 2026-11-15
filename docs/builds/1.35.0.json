@@ -1,0 +1,119 @@
+{
+ "version": "1.35.0",
+ "date": "2026-11-15",
+ "level": "minor",
+ "area": "Tracking files",
+ "title": "feat: the improvement list is kept as data, and a release is checked",
+ "headline": "A project's improvement list and roadmap now live as data: each row has one tag, says who caught it and where its numbers were measured, and the roadmap, counts and rows are generated from it. A release is called done only when a check has read every step on GitHub and in the project.",
+ "alignment": "v1.35.0 is the second v2.0 step for tracking (T4): after the next action and the decisions in 1.34.0, the list and the roadmap.",
+ "items": [
+  {
+   "id": "LIST",
+   "kind": "added",
+   "text": "The improvement list lives in _List.jsonl, one row per line with one tag; state.mjs lists the open rows, adds and changes rows, and imports a markdown list once, whole or not at all.",
+   "evidence": "tests/list.test.mjs",
+   "where": "The improvement list",
+   "before": "Tables by hand, nine shapes",
+   "after": "One row per line, one tag"
+  },
+  {
+   "id": "VIEWS",
+   "kind": "added",
+   "text": "The roadmap table with the open rows per step, the tag counts and the rows are generated between list markers; a hand edit is refused and the check fails on it.",
+   "evidence": "tests/list.test.mjs",
+   "where": "Roadmap counts",
+   "before": "Recounted by hand at each closeout",
+   "after": "Generated and checked"
+  },
+  {
+   "id": "CAUGHT",
+   "kind": "added",
+   "text": "Each closed row names who caught it and whether it slipped past a gate, and each number names where it was measured; list caught prints the catch rate and found to shipped by origin.",
+   "evidence": "tests/list.test.mjs"
+  },
+  {
+   "id": "RANK",
+   "kind": "changed",
+   "text": "At the same severity, rows found in real projects rank above rows the owner asked for, then those from other methods, then the kit's own finds.",
+   "evidence": "tests/list.test.mjs"
+  },
+  {
+   "id": "RELEASE",
+   "kind": "added",
+   "text": "release-check.mjs reads each release step (PR merged, main CI green on the merge commit, the tag on its files, the notes published, the state check) and names every one missing; the closeout calls nothing done until it passes.",
+   "evidence": "tests/release-check.test.mjs",
+   "where": "A release called done",
+   "before": "A claim in the closeout",
+   "after": "Each step read and named"
+  },
+  {
+   "id": "CIWAIT",
+   "kind": "added",
+   "text": "ci-wait.mjs reports each CI run's end in one line, green or red, with one line past ten minutes; the PR body skill starts it after each push.",
+   "evidence": "tests/release-check.test.mjs"
+  },
+  {
+   "id": "NOTES",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The build record writes the release notes draft, split into what projects get and what stays in the kit; publishing stays the owner's tap.",
+   "evidence": "tests/build-record.test.mjs"
+  }
+ ],
+ "verification": [
+  "Every new test failed on the code before it: 9 list tests on 1.34.0's state script, the release and CI tests and the notes test before their code existed.",
+  "On a copy of the workbench list, the import moved 342 rows and 17 roadmap steps, and the generated counts equal the hand recount; it first refused 32 rows the list itself had broken."
+ ],
+ "decisions": [
+  {
+   "decision": "The list as data with no rule text",
+   "why": "The owner picked option A by pop-up: the labels live in the data and the check, so no recall run was needed while the machine was busy."
+  },
+  {
+   "decision": "Imported rows owe their labels to one audit",
+   "why": "Failing 222 old rows at once would block every closeout; rows added or closed from now on must carry them, and list audit names the rest."
+  },
+  {
+   "decision": "A wider build by area",
+   "why": "The owner asked that builds take in aligned work: the release check, the CI report and the notes draft ride with the list."
+  }
+ ],
+ "sweep": {
+  "tier": "Feature (user data)",
+  "commit": "pending",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "pending"
+   },
+   {
+    "name": "Code security",
+    "result": "pending"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "pending"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 0,
+   "low": 0
+  },
+  "fixed": [],
+  "deferred": [],
+  "accepted": []
+ },
+ "upgrading": "Run `install user` first, then `install project` in each project. A project with a markdown improvement list moves it once with `node .claude/state.mjs list import <file.md>`, which names any row it cannot move.",
+ "limits": "Rows moved from a markdown list keep their numbers and finders unlabelled until list audit is worked through. The release check cannot tell whether the notes say true things.",
+ "tests": {
+  "before": 745,
+  "after": 762,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}
