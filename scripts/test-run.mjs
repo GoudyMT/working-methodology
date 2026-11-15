@@ -243,6 +243,8 @@ export async function main(argv) {
 	// as growth, and a run killed outright is swept by the next one.
 	const runRoot = sessionRoot();
 	const testsDir = fs.existsSync(path.join(root, 'tests')) ? path.join(root, 'tests') : path.join(HERE, '..', 'tests');
+	// A notice only: a full run on the owner's machine costs minutes and finds what CI finds (K59). A map needs every test.
+	if (!o.changed && !o.map && !o.files.length && !process.env.CI) process.stdout.write('test-run: a full local run. CI runs the suite on every PR and push; for a change, use --changed.\n');
 	const files = o.files.length ? o.files : fs.readdirSync(testsDir).filter((f) => f.endsWith('.test.mjs')).map((f) => path.join(testsDir, f));
 	const harnessed = files.filter((f) => fs.readFileSync(f, 'utf8').includes('harness.mjs'));
 	const whole = files.filter((f) => !harnessed.includes(f));

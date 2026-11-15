@@ -113,7 +113,7 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
    bisect by re-checking per pick. A trim pass's brief
    carries an allow-list of what may be trimmed; the lead diffs each trim commit against it before keeping it, and a
    line outside it is reverted and the run stops for the user. Run the project's **full gate** - every step its CI
-   runs. A red gate is a finding: diagnose with data, fix the root, one change per commit. Remove the finished
+   runs; where CI runs it, the push is that run (rule:ci-gate). A red gate is a finding: diagnose with data, fix the root, one change per commit. Remove the finished
    worktrees.
 6. **Review (lead and user).** The project's pre-PR review runs as ONE review wave on the integrated branch,
    scaled to stakes, under a Swarm Contract cleared by `~/.claude/skills/pre-pr-sweep/approve.mjs` first (the user decides only on its ASK; FIX THE CONTRACT is the lead's to fix and rerun;

@@ -802,6 +802,47 @@ test('a feature push from another repo runs only where the kit\'s own hooks will
 	spawnSync('git', ['-C', other, 'config', 'core.hooksPath', path.join(cfg, 'kit-guard', 'other-123', 'hooks').split(path.sep).join('/')]);
 	assert.notEqual(ask(other), 'deny', 'a kit project\'s feature push was held');
 });
+// The owner, 2026-11-15: opening a PR from a pushed feature branch needs no yes, like the push. It is free only as one
+// plain gh pr create, on a feature branch, in a repo whose one remote is origin; anything else still asks.
+// why: guards rule:outward-acts
+test('opening a PR from a feature branch runs without a yes; any other PR act asks', () => {
+	const repo = kitTemp.makeTemp('prbound-');
+	spawnSync('git', ['init', '-q', '-b', 'main', repo]);
+	spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/o/r.git']);
+	spawnSync('git', ['-C', repo, 'checkout', '-q', '-b', 'feat/x']);
+	const ask = (command, tool_name = 'Bash') => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name, tool_input: { command }, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, CLAUDE_CONFIG_DIR: cfg } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision || 'note' : 'runs';
+	};
+	for (const command of ['gh pr create --title "feat: a; b" --base main --fill', 'gh pr create --fill --draft', "gh pr create -t 'x' --fill -H feat/x"]) {
+		assert.notEqual(ask(command), 'deny', command);
+	}
+	assert.notEqual(ask('gh pr create --title "x" --fill', 'PowerShell'), 'deny');
+	for (const command of ['gh pr create --repo o/other --fill', 'gh pr create -R o/other --fill', 'gh pr create --web', 'gh pr create --head main --fill', 'gh pr create --title "$(id)" --fill',
+		'gh pr create --title `id` --fill', 'gh pr create --fill; gh pr merge 1', 'gh pr create --fill && git push origin main', 'gh pr create --title @x --fill', 'gh pr create --body "x\\" --repo o/z" --fill',
+		'gh pr merge 3 --squash', 'gh release create v1.0.0', 'gh pr new --fill']) {
+		assert.equal(ask(command), 'deny', command);
+	}
+	assert.equal(ask('gh pr create --fill', 'mcp__terminal__run_in_terminal'), 'deny', 'a command in the owner\'s terminal tab');
+	fs.writeFileSync(path.join(repo, 'pr-body.md'), 'x');
+	fs.writeFileSync(path.join(repo, '.env'), 'x');
+	try { fs.symlinkSync(path.join(repo, '.env'), path.join(repo, 'linked.md')); } catch { fs.writeFileSync(path.join(repo, 'linked.md'), 'x'); fs.linkSync(path.join(repo, 'linked.md'), path.join(repo, 'linked2.md')); }
+	fs.linkSync(path.join(repo, '.env'), path.join(repo, 'hard.md'));
+	for (const command of ['gh pr create --title x --body-file ../secret.md', 'gh pr create --title x --body-file .env', 'gh pr create --title x --body-file .git/config',
+		'gh pr create --title x --body-file D:/keys/id_rsa', 'gh pr create --title x --body-file /etc/passwd', 'gh pr create --title x --body-file missing.md', 'gh pr create --fill --head o:feat/x',
+		'gh pr create --title x --body-file linked.md', 'gh pr create --title x --body-file hard.md', 'gh pr create --title x --body-file PR-BOD~1.md', 'gh pr create --title x --body-file sub/../pr-body.md']) {
+		assert.equal(ask(command), 'deny', command);
+	}
+	assert.notEqual(ask('gh pr create --title x --body-file pr-body.md'), 'deny', 'the audited body file in the repo');
+	spawnSync('git', ['-C', repo, 'remote', 'add', 'upstream', 'https://github.com/someone/r.git']);
+	assert.equal(ask('gh pr create --fill'), 'deny', 'with a second remote gh may open it on another repo');
+	spawnSync('git', ['-C', repo, 'remote', 'remove', 'upstream']);
+	spawnSync('git', ['-C', repo, 'remote', 'set-url', '--push', 'origin', 'https://github.com/x/y.git']);
+	assert.equal(ask('gh pr create --fill'), 'deny', 'origin pushes somewhere else');
+	spawnSync('git', ['-C', repo, 'remote', 'set-url', '--push', 'origin', 'https://github.com/o/r.git']);
+	spawnSync('git', ['-C', repo, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
+	assert.equal(ask('gh pr create --fill'), 'deny', 'on main');
+});
 // why: guards rule:outward-acts. The plan check's P8: a nested repo under the project path is another repo, read by its
 // git folder, not by its path.
 test('a feature push from a repo nested inside the project is read as another repo', () => {

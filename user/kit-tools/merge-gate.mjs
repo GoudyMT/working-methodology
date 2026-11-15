@@ -587,7 +587,8 @@ export function arm({ pr, cwd, config = configDir(), run = realRun, now = () => 
  *     { disarmed, faults }
  */
 export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOString() }) {
-	if (!/^\d+$/.test(String(pr))) return { disarmed: false, faults: ['the PR is a number'] };
+	// Logged as written, and the pre-push hook clears the number it logged: 07 would stop PR 7 but clear nothing.
+	if (!/^[1-9]\d*$/.test(String(pr))) return { disarmed: false, faults: ['the PR is a number, with no leading zero'] };
 	const m = run('gh', ['pr', 'merge', String(pr), '--disable-auto'], cwd);
 	const back = json(run('gh', ['pr', 'view', String(pr), '--json', 'autoMergeRequest,state'], cwd));
 	// The read-back decides: gh may exit non-zero on a PR with nothing to turn off.
@@ -607,7 +608,8 @@ export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOStr
 export function autofix({ pr, cwd, config = configDir(), run = realRun, now = () => new Date().toISOString(), localOrigin = false }) {
 	const no = (...faults) => ({ pushed: false, faults });
 	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
-	if (!/^\d+$/.test(String(pr))) return no('the PR is a number');
+	// One spelling per PR: the log and the stop check match the number as written, and gh reads 07 as 7.
+	if (!/^[1-9]\d*$/.test(String(pr))) return no('the PR is a number, with no leading zero');
 	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
 	if (planted.length) return no(`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`);
 	if (fs.existsSync(path.join(config, 'autonomy-off'))) return no(`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`);

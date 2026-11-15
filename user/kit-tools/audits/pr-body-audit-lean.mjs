@@ -56,7 +56,7 @@ row('no spaced dashes in prose', spacedDash.length === 0, spacedDash.length ? `l
 // Every small PR (docs, chore, test, a dependency or security bump, any minor update) gets the small body: short,
 // informative, never a dump. The limits were measured from a body the owner pointed to as the model (about 150
 // words, 16 lines); bodies past them had drifted into dumps. Re-measure for a new project. A bump names
-// only the figures it can move (the audit, the budgets) inside the one full-gate line.
+// only the figures it can move (the audit, the budgets) inside the one tests-and-CI gate line.
 const nonEmpty = lines.filter((l) => l.trim() !== '').length;
 const words = body.split(/\s+/).filter(Boolean).length;
 const changes = body.slice(at[0], at[1]).split('\n').filter((l) => l.startsWith('- ')).length;

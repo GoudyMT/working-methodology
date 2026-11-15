@@ -35,7 +35,8 @@ commands are in the project brief.
 
 1. Every unit integrated on your branch, checked as `SKILL.md` "The flow" steps 4 and 5 say (the per-unit check or
    the re-run break check; the size checks during integration).
-2. The full gate green on the branch head.
+2. The covering tests green on the branch head; the full gate is CI's run on the push, or a local run where
+   no CI runs it (rule:ci-gate).
 3. Before the review: the ONE review wave you propose as a Swarm Contract (what it holds: `SKILL.md` "The flow",
    step 6), run through `approve.mjs` and sent with its output to the overseer, who checks it, sends a FIX THE CONTRACT back to be fixed and rerun, and takes an ASK to the
    user (`orchestrated.md`, "Sweeps go through the overseer").

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.32.0 - 2026-11-15
+
+Before a PR only the tests that cover the change run locally and CI runs the rest; auto-fix gathers every comment first and fixes each class at its root; and a feature branch's PR opens with no yes.
+
+### Added
+- The kit's test runner prints a notice on a full local run: CI runs the suite on every PR and push, and a change takes the changed run.
+
+### Changed
+- A push of a feature branch and opening its PR need no yes: the guard lets one plain gh pr create through, from a feature branch, in a repo whose one remote is origin. Merge, release, tags and main still ask.
+- One local-test rule: before a PR, run the tests covering the change, and CI's run on the push is the gate; with no CI on the PR the full suite runs once locally. The test-first, loop, team build and PR body texts agree.
+- Auto-fix gathers every CI failure and review comment first, fixes each class once at its root, runs the covering tests and pushes once; every CI failure gets fixed, with no cap, and a branch has one sweep.
+
+### Fixed
+- The merge gate's disarm refuses a PR number with a leading zero, which turned the PR off but left its push held.
+
 ## 1.31.0 - 2026-11-14
 
 Every review role stays, the plan gap check becomes a step of the plan skill, and a reviewer start is counted once and only when it runs, so a project with old guard entries can sweep again.

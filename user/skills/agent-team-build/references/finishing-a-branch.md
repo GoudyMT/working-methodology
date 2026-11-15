@@ -10,8 +10,8 @@ a destructive step taken early cannot be undone.
 
 ## 1. Verify on the tree you will hand over
 
-- Run the project's full gate (the adapter's field 2, rule:agent-team-adapter) on the integrated branch itself. A
-  run on an earlier tree proves only that tree. Any change since the last green run means a new run.
+- Run the project's full gate (the adapter's field 2, rule:agent-team-adapter) on the integrated branch itself (where CI
+  runs it, CI's run on its push; rule:ci-gate). A run on an earlier tree proves only that tree. Any change since the last green run means a new run.
 - A red gate stops the hand-over. Diagnose with data (rule:failure-response); do not list options yet.
 
 Done when: the gate summary shows every CI step at exit 0, on the head commit you name.

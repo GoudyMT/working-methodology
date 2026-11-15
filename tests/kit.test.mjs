@@ -4353,8 +4353,9 @@ test('status names a memory index past 6,000 B, which loads in every session', (
 // The owner, 2026-11-10 (pop-up): Rule 14 names the feature-branch push bound.
 // why: guards rule:collaborative-design-locks
 test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing grant, and Rule 14 is the owner\'s text', () => {
-  // The owner's text, re-locked 2026-11-11 (build 1b): the push bound points to rule:outward-acts.
-  const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s yes, except a push inside the push bound (rule:outward-acts) and a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
+  // The owner's text, re-locked 2026-11-15 (build 6, pop-up): opening a PR from a pushed feature branch joins the push
+  // bound's exception, both pointing to rule:outward-acts.
+  const rule14 = '14. **Outward acts are the owner\'s unless granted.** Nothing is pushed, merged, released or published without the owner\'s yes, except a push inside the push bound and opening a PR from that branch (rule:outward-acts), and a standing grant the owner wrote and only the owner changes (adapter row A27): the grant names its acts and the conditions each must pass; every granted act is logged and reported after with proof, and a kill switch outside the repo stops the next one.';
   assert.ok(read(path.resolve('project/CLAUDE.md')).split('\n').includes(rule14), 'CLAUDE.md Hard Rule 14 is the approved text');
   const six = read(path.resolve('rules/_parts/agents-head.md')).split('\n').find((l) => l.startsWith('6. '));
   assert.match(six, /standing grant/i);
@@ -5845,11 +5846,17 @@ test('recall v8 and v9 move key 3 to the resume packet rule, and v7 stays as wri
   assert.deepEqual(v9.filter((r) => r.n !== 3), v8.filter((r) => r.n !== 3));
   assert.match(v9[2].key, /changed or missing \(no verdict line means the full reading\)/); // pin: 3 recall key v9, frozen
   // v10 (build 5): rule 11 names the Active Plan, and key 3 with it; every other row is v9's.
-  assert.equal(currentVersion(text), 10);
   assert.equal(passBar(text, 10), 13);
   const v10 = questions(text, 10);
   assert.deepEqual(v10.filter((r) => r.n !== 3), v9.filter((r) => r.n !== 3));
   assert.match(v10[2].key, /fresh reads of the Active Plan, of every file its resume point names/); // pin: 3 recall key v10, frozen
+  // v11 (build 6, the owner's ruling 2026-11-15): key 4 frees opening the PR; every other row is v10's.
+  assert.equal(currentVersion(text), 11);
+  assert.equal(passBar(text, 11), 13);
+  const v11 = questions(text, 11);
+  assert.deepEqual(v11.filter((r) => r.n !== 4), v10.filter((r) => r.n !== 4));
+  assert.equal(v11[3].q, v10[3].q);
+  assert.match(v11[3].key, /^Yes, with no yes needed: a plain push of the feature branch to origin, then opening its PR; never main, a tag, a force or a delete$/); // pin: 4 recall key v11, frozen
   assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check`, then a fresh Read of `_Active Plan\.md`[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 

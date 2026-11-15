@@ -73,7 +73,8 @@ When the agents return:
 1. Read every summary. Treat each as a claim, and re-weigh it with your fuller context (rule:anti-hallucination):
    a real finding, or an artifact of narrow scope?
 2. Check for overlap: did two agents touch or conclude about the same code?
-3. Apply the fixes through the normal flow, one root per commit, and run the project's full gate once on the result.
+3. Apply the fixes through the normal flow, one root per commit, and run the project's full gate once on the result
+   (where CI runs it, CI's run on the push; rule:ci-gate).
 4. Spot-check one claim per agent against the code itself. Agents make systematic errors; a clean summary is not
    proof.
 

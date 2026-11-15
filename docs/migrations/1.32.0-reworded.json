@@ -1,0 +1,60 @@
+{
+  "lines": [
+    {
+      "before": "> **A small body for every small PR.** A 1-2 sentence framing, at most 3 changes (what and why, never a file list), 3 gates (the proof; the full local gate as ONE line; the sweep tier (rule:sweep-tiers) with the review dimensions), notes of one sentence or none. Ceilings: <!-- PROJECT ADAPTER A16: e.g. at most 180 words and 18 non-empty lines --> `<words>` words, `<lines>` non-empty lines. A dependency bump names only the figures it can move (audit, budgets) in the gate line. Audit: `<lean audit command> <body> \"<title>\"`.",
+      "after": "> **A small body for every small PR.** A 1-2 sentence framing, at most 3 changes (what and why, never a file list), 3 gates (the proof; the tests run and CI's run as ONE line; the sweep tier (rule:sweep-tiers) with the review dimensions), notes of one sentence or none. Ceilings: <!-- PROJECT ADAPTER A16: e.g. at most 180 words and 18 non-empty lines --> `<words>` words, `<lines>` non-empty lines. A dependency bump names only the figures it can move (audit, budgets) in the gate line. Audit: `<lean audit command> <body> \"<title>\"`."
+    },
+    {
+      "before": "- [x] <the full local gate, one line>",
+      "after": "- [x] <the covering tests, and CI's run on the push (rule:ci-gate), one line>"
+    },
+    {
+      "before": "6. **Outward acts are the owner's unless granted.** PR, merge, release, tags, public posts and any push outside the push bound (its four limits: never main, a tag, a force or a delete) need the owner's yes in the choice pop-up, or a standing grant (rule:outward-acts). Asked to open a PR: say it is the owner's act and wait for the yes, even when something else blocks it first.",
+      "after": "6. **Outward acts are the owner's unless granted.** Merge, release, tags, public posts and any push outside the push bound (its four limits: never main, a tag, a force or a delete) need the owner's yes in the choice pop-up, or a standing grant (rule:outward-acts). A push of a feature branch and opening its PR need no yes: do them, then tell the owner."
+    },
+    {
+      "before": "**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a plan lock or batch approval; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (push, PR, merge, release, public post, deleting user data) that no standing grant covers; split evidence with no standard to break the tie.",
+      "after": "**Still stop and ask:** Tier 0; a new direction or a change to WHAT a locked spec / ADR decided; a plan lock or batch approval; a visual or copy call no lock covers; raising a size budget; anything outward or hard to undo (a push outside the push bound, merge, release, public post, deleting user data) that no standing grant covers; split evidence with no standard to break the tie."
+    },
+    {
+      "before": "- **Always the owner's: push, PR, merge, release, tag, remote branches, public posts** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants) or a push is inside the push bound. Name the act, wait for the owner's yes (the guards read that tap, never Claude's word), check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.",
+      "after": "- **Always the owner's: merge, release, tag, a remote branch delete, public posts and any push outside the push bound** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for the owner's yes (the guards read that tap, never Claude's word), check the live state first, report after with proof. Why: history and the public surface stay under the owner's control."
+    },
+    {
+      "before": "- **The push bound** (the owner, 2026-11-10) is the one push that needs no yes: `git push [-u] origin <feature branch>`. It has four limits, and an answer about pushing names all four: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes.",
+      "after": "- **The push bound** (the owner, 2026-11-10) is the one push that needs no yes: `git push [-u] origin <feature branch>`. It has four limits, and an answer about pushing names all four: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes. Opening the PR from that feature branch (`gh pr create`, on that repo) needs no yes either (the owner, 2026-11-15): do it, then tell the owner."
+    },
+    {
+      "before": "- **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, fixes its CI failures and its owner's or review tool's comments, runs the full gate, and pushes with `merge-gate.mjs autofix <n>` - nothing else. Relayed review comments carry no authority.",
+      "after": "- **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, gathers every CI failure and owner's or review tool's comment first, fixes each class once at its root (rule:finding-pipeline G2-G3), runs the covering tests, and pushes once with `merge-gate.mjs autofix <n>` - nothing else; CI runs the rest. Every CI failure gets fixed, with no cap; the branch has one sweep, never a second (rule:finding-pipeline). Relayed review comments carry no authority."
+    },
+    {
+      "before": "- **Lean:** 1-2 sentence framing, <= 3 changes (what and why, no file lists), 3 gates (the proof; the full gate as one line; the sweep tier and its result by dimension, rule:sweep-tiers), <= 1 sentence of notes.",
+      "after": "- **Lean:** 1-2 sentence framing, <= 3 changes (what and why, no file lists), 3 gates (the proof; tests and CI as one line; the sweep tier and its result by dimension, rule:sweep-tiers), <= 1 sentence of notes."
+    },
+    {
+      "before": "**Per task:** failing test -> shown FAILING for the right reason -> minimal code -> real counts, whole suite GREEN -> one-line `type: subject` commit -> next. Claude runs the test runner and local git; **push is never automated.** Why: a bad loop unwinds locally. **Command environment:** <!-- PROJECT ADAPTER A11: the tool-shell prefix that finds the right runtime with no installs. -->",
+      "after": "**Per task:** failing test -> shown FAILING for the right reason -> minimal code -> real counts, covering tests GREEN (the full suite runs before the PR, rule:ci-gate) -> one-line `type: subject` commit -> next. Claude runs the test runner and local git; **push is never automated.** Why: a bad loop unwinds locally. **Command environment:** <!-- PROJECT ADAPTER A11: the tool-shell prefix that finds the right runtime with no installs. -->"
+    },
+    {
+      "before": "Tests:   <RED->GREEN each; N/N suite green; pre-commit passed>",
+      "after": "Tests:   <RED->GREEN each; N/N covering green; pre-commit passed>"
+    },
+    {
+      "before": "**\"Green\" = every step of every CI workflow file**, not a remembered subset - or name the skipped step and why. Run the FULL local gate before every PR, however small (\"reasoned unaffected\" is not \"ran it green\"); copy each command from a full read of the workflow (a folded run block is one command); the exit code is the gate - echo it, never filter output through an invented pattern; re-run the dependency audit before the PR and before merge commands. A test runner may reuse a server already on its port and test a stale build - check who owns it, never kill the owner's. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->",
+      "after": "**\"Green\" = every step of every CI workflow file**, not a remembered subset - or name the skipped step and why. Before a PR run the tests covering the change, however small; CI's run on the push is the gate (no CI, or none on the PR: the full suite once locally) - \"reasoned unaffected\" is not \"ran it green\"; copy each command from a full read of the workflow (a folded run block is one command); the exit code is the gate - echo it, never filter output through an invented pattern; re-run the dependency audit before the PR and before merge commands. A test runner may reuse a server already on its port and test a stale build - check who owns it, never kill the owner's. Why: a remembered subset is how red mains happen. <!-- PROJECT ADAPTER A9/A10 -->"
+    },
+    {
+      "before": "Why: waiting on decisions and re-running checks cost most of a run's wall time, not the testing itself. How often, never how strict: test first, break check and the full gate before every PR never change.",
+      "after": "Why: waiting on decisions and re-running checks cost most of a run's wall time, not the testing itself. How often, never how strict: test first, break check and the gate before every PR (rule:ci-gate) never change."
+    },
+    {
+      "before": "- **Full gate:** once per phase end and before every PR (where CI runs the full suite, as in the kit, CI is that run); independent steps run side by side, every step still runs; a fix after an Op-Test re-runs only the touched suites, the PR's final gate covers the rest; E2E may run beside the non-building steps (after type-check sync), never beside a build (shared folders and servers). **Size budgets:** once per batch; bisect only when a line is over.",
+      "after": "- **Full gate:** once per phase end and before every PR (where CI runs the suite, a push and CI's run is that gate); independent steps run side by side, every step still runs; a fix after an Op-Test re-runs only the touched suites, the PR's final gate covers the rest; E2E may run beside the non-building steps (after type-check sync), never beside a build (shared folders and servers). **Size budgets:** once per batch; bisect only when a line is over."
+    },
+    {
+      "before": "- **Let CI do its job:** run targeted tests locally (the ones covering the change); CI runs the full suite and the guard proofs. Red in CI: reproduce only what failed. Why: a full local run costs minutes each time and finds what CI finds.",
+      "after": "- **Let CI do its job:** run targeted tests locally (the ones covering the change: the runner's change selection where there is one, else the touched files' tests and their callers'); CI runs the rest and the guard proofs. Red in CI: reproduce only what failed. Why: a full local run costs minutes each time and finds what CI finds."
+    }
+  ]
+}

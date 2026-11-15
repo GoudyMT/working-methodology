@@ -772,6 +772,8 @@ test('merge gate: a disarm that does not take is reported, not logged', () => {
 	assert.match(r.faults[0], /still armed/);
 	assert.doesNotMatch(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'), /DISARMED/);
 	assert.equal(disarm({ ...s.opts, pr: 'x' }).disarmed, false);
+	// The hook clears the number the log holds, so 07 would turn PR 7 off and leave its push held.
+	assert.match(disarm({ ...s.opts, pr: '07' }).faults[0], /leading zero/);
 });
 // why: guards rule:standing-grants
 test('merge gate: the CLI exits 1 on NO GO and 2 on a bad call', () => {
@@ -929,6 +931,8 @@ test('merge gate: autofix stops on the kill switch, nothing to push, another bra
 	assert.equal(originHead(s), before, 'nothing went out');
 	assert.ok(fixed);
 	assert.equal(autofix({ ...s.opts, pr: 'x' }).pushed, false);
+	// A stop logged for PR 7 must hold 07 too: one spelling, so the stop check cannot be read past.
+	assert.match(autofix({ ...s.opts, pr: '07' }).faults[0], /leading zero/);
 });
 // why: guards rule:standing-grants
 test('merge gate: a disarm reads back rather than trusting gh, on a PR with nothing to turn off', () => {

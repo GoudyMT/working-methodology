@@ -430,6 +430,48 @@ function boundedPush(input) {
 // Which limit of the push bound a refused push hit, for the refusal's words only: the decision above never reads this.
 // rule:outward-acts holds the bound: a plain `git push [-u] origin <feature branch>`, never main or master, a tag, a
 // force or a delete.
+// Opening a PR from a pushed feature branch (the owner, 2026-11-15: "every push to a feature branch, first push and
+// opening the PR included, goes without asking"): one plain `gh pr create` with only these options, in a repo whose one
+// remote is origin and pushes where it fetches, so gh can only open it on that repo. The base may be main; the head is
+// never main or master. A merge, a release or a PR to another repo still asks.
+const PR_VALUE = new Set(['--title', '-t', '--body-file', '-F', '--base', '-B', '--head', '-H', '--assignee', '-a', '--reviewer', '--label', '-l']);
+const PR_FLAG = new Set(['--draft', '-d', '--fill']);
+function boundedPr(input) {
+	if (input && input.tool_name === 'mcp__terminal__run_in_terminal') return false;
+	const command = String((input && input.tool_input && input.tool_input.command) ?? '').trim();
+	// A value is a plain word, or quoted text with nothing that expands: no $, backtick or backslash inside it, and no @
+	// (PowerShell splats a variable's words from it).
+	const words = command.match(/"[^"$`\\]*"|'[^']*'|[A-Za-z0-9._/:+=-]+|\S/g) || [];
+	if (!/^gh pr create( +("[^"$`\\]*"|'[^']*'|[A-Za-z0-9._/:+=-]+))*$/.test(command)) return false;
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	if (!cwd || uncheckedRepo(input)) return false;
+	for (let i = 3; i < words.length; i++) {
+		if (PR_FLAG.has(words[i])) continue;
+		if (!PR_VALUE.has(words[i]) || i + 1 >= words.length || /^-/.test(words[i + 1])) return false;
+		const value = words[i + 1].replace(/^(["'])([\s\S]*)\1$/, '$2');
+		// The head is a branch of this repo (owner:branch is a fork's), never main or master.
+		if (/^(--head|-H)$/.test(words[i]) && (value.includes(':') || /^(main|master|HEAD)$/i.test(value))) return false;
+		// The body goes out in public: only a plain file of this repo, never a dotfile, a .git file, a link or one outside.
+		// A .md name of plain parts (no dot part, no ~ short name), one plain file whose real path is that name under
+		// the repo's real path: no link, hard link or short name can point it somewhere else.
+		if (/^(--body-file|-F)$/.test(words[i])) {
+			if (!/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*\.md$/.test(value)) return false;
+			const file = path.join(cwd, value);
+			const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+			try {
+				const st = fs.lstatSync(file);
+				if (!st.isFile() || st.nlink !== 1 || fold(fs.realpathSync.native(file)) !== fold(path.join(fs.realpathSync.native(cwd), value))) return false;
+			} catch { return false; }
+		}
+		i++;
+	}
+	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8', timeout: 3000 });
+	const remotes = git('remote');
+	if (remotes.status !== 0 || remotes.stdout.trim() !== 'origin' || originMoved(input)) return false;
+	const branch = git('symbolic-ref', '--short', 'HEAD');
+	return branch.status === 0 && !/^(main|master)$/i.test(branch.stdout.trim());
+}
+
 function pushLimit(command) {
 	const words = String(command).trim().split(/\s+/);
 	const at = words.indexOf('push');
@@ -630,6 +672,7 @@ function check(input) {
 		// Inside the push bound a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
 		if (reason && boundedPush(input)) reason = uncheckedRepo(input) ? 'a push from a repo whose git hooks are not the kit\'s' : originMoved(input) ? 'a push that origin sends somewhere other than it fetches from' : '';
+		if (reason === 'gh pr create' && boundedPr(input)) reason = '';
 		if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
 		// A guard that cannot read the command refuses rather than lets it through.
