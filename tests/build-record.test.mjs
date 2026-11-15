@@ -106,7 +106,7 @@ test('the record writes release notes that split what projects get from what sta
 	assert.ok(text.indexOf('- A test check.') > text.indexOf('- A PR cannot choose its own map.'), 'a kit-only item is not listed for projects');
 	assert.match(text, /^A minor release\. v1\.2\.0 is the test value step\.$/m);
 	assert.match(text, /^## Upgrading\n\nRun install user first/m);
-	assert.match(text, /^Known limits: A test with no why line still runs\.$/m);
+	assert.match(text, /^Known limits: .*no why line/m);
 	const file = path.join(kitTemp.makeTemp('notes-'), 'notes.md');
 	fs.writeFileSync(file, text);
 	const audit = spawnSync(process.execPath, [path.resolve('user/skills/release-notes/audit.mjs'), file, '1.2.0'], { encoding: 'utf8', cwd: path.dirname(file) });

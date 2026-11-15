@@ -102,8 +102,8 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	st(dir, 'list', 'import', 'list.md');
 	let r = st(dir, 'check');
 	assert.equal(r.status, 0, r.stdout);
-	assert.match(r.stdout, /note: 2 imported done or closed row\(s\) name no catcher/);
-	assert.match(r.stdout, /note: 1 imported row\(s\) hold a number with no measure label/);
+	assert.match(r.stdout, /note: 2 imported .* no catcher/);
+	assert.match(r.stdout, /note: 1 imported .* measure label/);
 
 	r = st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0');
 	assert.equal(r.status, 1, 'done with no catcher is refused');
@@ -213,6 +213,7 @@ test('list caught prints the catch rate and found-to-shipped by origin', () => {
 	const r = st(dir, 'list', 'caught');
 	assert.equal(r.status, 0, r.stdout);
 	assert.match(r.stdout, /^Caught by: sweep 1, real-use 1; escaped a gate: 1 of 2/m);
+	// pin: 1 the closeout copies this line into the handoff, where the coordinator reads it
 	assert.match(r.stdout, /^Found to shipped by origin: real-use 2 found, 1 done, 0 closed, 1 open; self 1 found, 0 done, 1 closed, 0 open; not set 1 found, 0 done, 0 closed, 1 open/m);
 	assert.match(st(dir, 'list', 'audit').stdout, /^C2 /m, 'the audit lists rows still owed a label');
 	// A tag given with no place keeps the row's place; "at -" clears it on purpose.
@@ -237,6 +238,7 @@ test('render writes the roadmap, counts and rows blocks from the data, and check
 	const out = read(dir, '_Master Roadmap.md');
 	assert.match(out, /^\| 9 \| 1\.35\.0 \| The list as data \| not started \| 1 \|$/m, 'the open rows placed in each step are counted');
 	assert.match(out, /^Total 4 rows: 1 done, 1 closed, 1 next, 1 later\.$/m);
+	// pin: 1 check compares the generated view byte for byte
 	assert.match(out, /^\| A1 \| The closeout deleted 480 items \| Source: a project \| high \| not set \| \*\*\[DONE 1\.14\.0\]\*\* fixed and probed \|$/m);
 	assert.match(out, /^\*\*C\. Found inside\*\*$/m, 'a section is a bold line, never a heading a reader takes for its own');
 	assert.match(out, /^Owner text above\.$/m);

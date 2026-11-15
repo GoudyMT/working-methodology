@@ -150,6 +150,8 @@ function select(root, files) {
 			else for (const r of hit) only.add(`${f}::${r.name}`);
 			// A test the map has never seen is new: it runs.
 			for (const r of ranges) if (r.name !== null && !map.tests[`${f}::${r.name}`]) only.add(`${f}::${r.name}`);
+			// A test that reads test files as data (the pin check) runs too: 1.35.0's PR run skipped it and main went red.
+			for (const [key, t] of entries) if (!key.startsWith(`${f}::`) && t.reads.some((r) => reaches(r, f))) only.add(key);
 			continue;
 		}
 		let found = false;

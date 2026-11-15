@@ -158,7 +158,7 @@ test('a tag whose files are not the merge commit\'s, and a release copy off the 
 	sh(t.work, 'tag', '-f', 'v1.1.0');
 	const r = releaseCheck({ ...t.opts, copy: t.copy }, t.deps);
 	assert.equal(r.ok, false);
-	assert.match(all(r), /tag v1\.1\.0 does not hold the merge commit's files/);
+	assert.match(all(r), /tag v1\.1\.0 .* merge commit's files/);
 	assert.match(all(r), /release copy is not on v1\.1\.0/);
 	// An annotated tag on the right commit passes: GitHub's commit for a tag name is the commit, never the tag object.
 	const u = setup();
