@@ -400,105 +400,79 @@ function unrecorded(input, only = false) {
 // separator or an opening bracket, resolved from the session's folder. Seen live 2026-11-15: a session started outside
 // a kit project worked in one through cd, and the project's guards never ran, since the project was found by the
 // session's folder alone. A folder built at run time ($x, %x%, ~, a backtick) stays unread, as for every guard.
-// The shell's folder is read as a set of the folders it could be in, never one guess: a move adds each folder it gives
-// from every folder already in the set (a move inside ( ), after || or a lone &, may not run, so nothing is dropped),
-// and a move it cannot follow (popd, cd -, an option it does not model, any other variable) adds nothing and the
-// reading goes on. A git -C, --work-tree or --git-dir before git's subcommand is read the same way and moves nothing.
-// Home is followed in its plain spellings (~, $HOME, %USERPROFILE%). What stays unread is a folder built at run time,
-// as for every guard: inside a kit project its own outward guard already treats a moved command as acting elsewhere,
-// and outside one the kit stays out of the way (the K61 security reviews, the limit named).
-const MOVERS = /^(cd|chdir|pushd|popd|push-location|pop-location|set-location|sl)$/i;
-const BREAK = /^(&&|\|\||[;&|\n(){}])$/;
-const GIT_GLOBAL_VALUE = /^(-c|--namespace|--exec-path|--super-prefix|--config-env|--attr-source)$/;
-function movesIn(input) {
+// The kit projects a shell command names, other than the session's own (seen live 2026-11-15: a session outside a
+// kit project worked in one through cd, and none of its guards ran). A reader of moves always misses a spelling
+// (the sweep found command cd, bash -c, eval, cd --, a quote inside a path, GIT_DIR=, 8.3 names), so this reads no
+// moves: a project is named when its folder appears in the command in any spelling (case, slashes, quotes, Git Bash's
+// /c/ form, a relative path from the session's folder, an 8.3 short name), or when its folder's name appears as a
+// word and its parent folder, or the session's folder above it, does too. A named project's guards run on the call
+// as if it were started there. Running a project's guards on a command that only mentions it costs a check, never a
+// pass. A folder built at run time ($x, a backtick) stays unread, as for every guard.
+function recordedProjects() {
+	let names = [];
+	try { names = fs.readdirSync(RECORDS); } catch { return []; }
+	const out = [];
+	for (const n of names) {
+		try {
+			const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, n, 'record.json'), 'utf8'));
+			if (rec && typeof rec.projectDir === 'string') out.push(path.resolve(rec.projectDir));
+		} catch { /* not a record */ }
+	}
+	return out;
+}
+function namedProjects(input) {
 	if (!input || !SHELLS.includes(input.tool_name)) return [];
 	const command = String((input.tool_input && input.tool_input.command) ?? '');
-	const tokens = command.match(/"[^"]*"|'[^']*'|&&|\|\||[;&|\n(){}]|[^\s;&|'"(){}]+/g) || [];
-	const unq = (w) => w.replace(/^(["'])([\s\S]*)\1$/, '$2');
-	const home = require('os').homedir();
-	const plain = (w) => {
-		if (w === undefined) return null;
-		let d = unq(w).replace(/^(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\]|$)/i, home.split(path.sep).join('/'));
-		if (/[$`%~*?]/.test(d)) return null;
-		// Git Bash names a drive /c/...: the same folder as C:/...
-		if (WIN && /^\/[A-Za-z](\/|$)/.test(d)) d = `${d[1]}:/${d.slice(3)}`;
-		return d;
-	};
-	// Past the cap the reading would drop a folder, so the call is held instead (the K61 review): no real command needs it.
-	const CAP = 64;
-	let over = false;
-	const out = [];
-	let can = [path.resolve(String(input.cwd || process.cwd()))];
-	const add = (list, dirs) => {
-		for (const d of dirs) {
-			if (list.some((x) => same(x, d))) continue;
-			if (list.length >= CAP) over = true;
-			else list.push(d);
-		}
-		return list;
-	};
-	let start = true;
-	for (let i = 0; i < tokens.length; i++) {
-		const w = tokens[i];
-		if (BREAK.test(w)) { start = true; continue; }
-		const lead = start;
-		start = false;
-		if (!lead) continue;
-		const args = [];
-		for (let j = i + 1; j < tokens.length && !BREAK.test(tokens[j]); j++) args.push(tokens[j]);
-		i += args.length;
-		if (MOVERS.test(unq(w))) {
-			if (/^(popd|pop-location)$/i.test(unq(w))) continue;
-			const opts = args.filter((a) => /^-/.test(unq(a)));
-			const named = args.findIndex((a) => /^-(path|literalpath|lp)$/i.test(unq(a)));
-			const folder = named >= 0 ? args[named + 1] : args.find((a) => !/^-/.test(unq(a)));
-			if (opts.some((o) => !/^-(path|literalpath|lp|P|L)$/i.test(unq(o)))) continue;
-			const d = plain(folder);
-			if (d === null) continue;
-			const next = can.map((c) => path.resolve(c, d));
-			add(out, next);
-			can = add(can, next);
-			continue;
-		}
-		if (/^git(\.exe)?$/i.test(unq(w))) {
-			// Only git's own options, before its subcommand: git -C a -C b is a/b, as git reads it.
-			let g = can.slice();
-			for (let j = 0; j < args.length; j++) {
-				const t = unq(args[j]);
-				if (!t.startsWith('-')) break;
-				if (GIT_GLOBAL_VALUE.test(t)) { j++; continue; }
-				const v = t === '-C' || /^--(work-tree|git-dir)$/.test(t) ? args[++j] : /^--(work-tree|git-dir)=/.test(t) ? t.slice(t.indexOf('=') + 1) : undefined;
-				if (v === undefined && !(t === '-C' || /^--(work-tree|git-dir)/.test(t))) continue;
-				const d = plain(v);
-				if (d === null) continue;
-				const next = g.map((c) => path.resolve(c, d));
-				if (t === '-C') g = next;
-				add(out, next);
-			}
-		}
+	if (!command.trim()) return [];
+	const cwd = path.resolve(String(input.cwd || process.cwd()));
+	const fold = (s) => (WIN ? s.toLowerCase() : s);
+	// One spelling for a path: forward slashes, no quotes, the drive as c:/, no doubled slashes.
+	const norm = (s) => fold(String(s)).replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/');
+	let text = norm(command);
+	const tokens = text.split(/[\s;&|(){}=,]+/).filter(Boolean);
+	// An 8.3 short name or any relative path: the folder it names, as the file system resolves it from the session. A
+	// kit project the launcher has no record for is found from these too, so it holds the call as it would there.
+	const unrec = [];
+	for (const t of tokens) {
+		if (!/[/~.]/.test(t) || /[$*?]/.test(t)) continue;
+		let real = '';
+		try { real = fs.realpathSync.native(path.resolve(cwd, t)); } catch { continue; }
+		text += ` ${norm(real)}`;
+		const u = unrecorded({ cwd: real }, true);
+		if (u && !unrec.some((x) => same(x, u))) unrec.push(u);
 	}
-	return over ? null : out;
+	const words = new Set(text.split(/[\s;&|(){}=,/]+/).filter(Boolean));
+	const has = (p) => {
+		for (let i = text.indexOf(p); i >= 0; i = text.indexOf(p, i + 1)) {
+			const next = text[i + p.length];
+			if (next === undefined || !/[A-Za-z0-9_.-]/.test(next)) return true;
+		}
+		return false;
+	};
+	const out = [];
+	for (const dir of recordedProjects()) {
+		const p = norm(dir);
+		const parent = norm(path.dirname(dir));
+		const under = fold(posix(path.relative(cwd, dir)));
+		const below = under && !under.startsWith('..') && !path.isAbsolute(under);
+		if (has(p) || (below && has(under)) || (words.has(norm(path.basename(dir))) && (has(parent) || below))) out.push(dir);
+	}
+	for (const u of unrec) if (!out.some((x) => same(x, u))) out.push(u);
+	return out;
 }
 
 function preToolUse(input) {
 	const here = projectCheck(input);
-	const moves = movesIn(input);
-	if (moves === null) return deny("Held: this command moves between more folders than the kit guard can follow, so it cannot tell which project's guards to run. Split it into shorter commands.");
-	// The command acts in other folders too: each kit project it moves into checks it, with that folder as the call's,
-	// and holds it as it would a call started there (no record, two records). A hold from any of them stops the call.
+	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
+	// a call started there. The strictest answer wins: a refusal, then an ask, then the rest (as guard.cjs merges).
 	const mine = findProject(input);
 	const answers = [here];
-	const seen = [];
-	for (const dir of moves) {
-		const there = findProject({ cwd: dir }, true);
-		const key = there && !there.ambiguous ? there.dir : dir;
-		if (mine && !mine.ambiguous && there && !there.ambiguous && same(mine.dir, there.dir)) continue;
-		if (seen.some((s) => same(s, key))) continue;
-		seen.push(key);
+	for (const dir of namedProjects(input)) {
+		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
 		answers.push(projectCheck({ ...input, cwd: dir }, true));
 	}
-	const denies = (o) => Boolean(o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision === 'deny');
-	return answers.find(denies) || answers.find(Boolean) || null;
+	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };
+	return answers.reduce((best, o) => (rank(o) > rank(best) ? o : best), null);
 }
 
 function projectCheck(input, only = false) {

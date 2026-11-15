@@ -1380,7 +1380,7 @@ test('C13 a project with a long path is found by its transcript folder, the name
 // why: guards rule:outward-acts. Seen live 2026-11-15: a session started in another folder worked in a kit project
 // through cd, and none of that project's guards ran, because the launcher found the project by the session's folder
 // alone. A command that first moves into a kit project (cd, Set-Location, pushd, git -C) runs that project's guards.
-test('a command that moves into a kit project runs that project\'s guards', () => {
+test('a command that names a kit project runs that project\'s guards', () => {
 	const { home, proj } = setup();
 	const outside = kitTemp.makeTemp('cd-out-');
 	const call = (command, tool_name = 'Bash', cwd = outside) => {
@@ -1403,7 +1403,7 @@ test('a command that moves into a kit project runs that project\'s guards', () =
 		const msys = '/' + p[0].toLowerCase() + p.slice(2);
 		assert.equal(call('cd ' + msys + ' && git push origin main'), 'deny', msys);
 	}
-	// Each move is read from where the moves before it left the shell, and the options cd and Set-Location take.
+	// Chained, relative and optioned moves.
 	const parent = path.dirname(proj).split(path.sep).join('/');
 	const base = path.basename(proj);
 	assert.equal(call('cd ' + parent + ' && cd ' + base + ' && git push origin main'), 'deny', 'a relative move after another move');
@@ -1413,14 +1413,36 @@ test('a command that moves into a kit project runs that project\'s guards', () =
 	assert.equal(call('cd -P ' + p + ' && git push origin main'), 'deny', 'cd -P');
 	assert.equal(call('Set-Location -LiteralPath "' + p + '"; git push origin main', 'PowerShell'), 'deny', 'Set-Location -LiteralPath');
 	assert.equal(call('Push-Location ' + p + '; git push origin main', 'PowerShell'), 'deny', 'Push-Location');
-	// A move it cannot follow does not end the reading, and a move that may not run drops no folder (the K61 review).
+	// A move it cannot follow, or one that may not run, hides no folder the command names (the K61 review).
 	assert.equal(call('popd; cd ' + p + ' && git push origin main'), 'deny', 'after a popd');
 	assert.equal(call('cd $X; cd ' + p + ' && git push origin main'), 'deny', 'after a variable');
 	assert.equal(call('cd ' + parent + ' || cd elsewhere; cd ' + base + ' && git push origin main'), 'deny', 'a relative move from either folder');
 	assert.equal(call('(cd ' + parent + '); cd ' + rel + ' && git push origin main'), 'deny', 'a move inside a subshell does not hide the outer folder');
 	assert.equal(call('git log -C ' + p), 'runs', 'a -C after the subcommand is not a folder');
-	// Past the folders it can follow, the call is held, never read short.
-	assert.equal(call(Array.from({ length: 8 }, (_, i) => 'cd a' + i + ' || cd b' + i).join('; ') + '; git status'), 'deny', 'too many folders to follow');
+	// The sweep's bypasses (role 2, 2026-11-15): a reader of moves always misses a spelling, so a command that names a
+	// kit project's folder anywhere runs that project's guards, however it gets there.
+	for (const command of ['command cd ' + p + ' && git push origin main', 'builtin cd ' + p + ' && git push origin main',
+		'if true; then cd ' + p + ' && git push origin main; fi', 'FOO=1 git -C ' + p + ' push origin main', 'nohup git -C ' + p + ' push origin main',
+		"bash -c 'cd " + p + " && gh pr merge 1'", 'sh -c "cd ' + p + '; git push origin main"', 'eval "cd ' + p + '" && git push origin main',
+		'env -C ' + p + ' git push origin main', 'cd -- ' + p + ' && rm .claude/guard.cjs', 'cd -e ' + p + ' && git push origin main',
+		'cd ' + parent + '/"' + base + '" && git push origin main', "cd '" + parent + "/'" + base + ' && git push origin main',
+		'GIT_DIR=' + p + '/.git git push origin main', 'export GIT_DIR=' + p + '/.git; git push origin main']) {
+		assert.equal(call(command), 'deny', command);
+	}
+	for (const command of ["$null = Set-Location '" + p + "'; git push origin main", "iex \"cd '" + p + "'; git push origin main\"",
+		"Set-Location -Path '" + p + "' -PassThru; git push origin main", "Set-Location -LiteralPath:'" + p + "'; git push origin main",
+		"Set-Location ('" + p + "'); git push origin main"]) {
+		assert.equal(call(command, 'PowerShell'), 'deny', command);
+	}
+	if (process.platform === 'win32') {
+		assert.equal(call('cmd /c "cd /d ' + proj + ' && git push origin main"'), 'deny', 'cmd /c with a Windows path');
+		assert.equal(call('cd ' + p.toUpperCase() + ' && git push origin main'), 'deny', 'another case of the path');
+	}
+	if (process.platform === 'win32') {
+		// An 8.3 short name names the same folder (the sweep); where the disk keeps none, the long path is all there is.
+		const short = spawnSync('cmd', ['/d', '/c', 'for %I in ("' + proj + '") do @echo %~sI'], { encoding: 'utf8' }).stdout.trim();
+		if (short && short.toLowerCase() !== proj.toLowerCase()) assert.equal(call('cd ' + short.split(path.sep).join('/') + ' && git push origin main'), 'deny', short);
+	}
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });
