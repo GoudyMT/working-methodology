@@ -329,6 +329,12 @@ test('step rename renames one roadmap step by its name or release, and refuses a
 	s = JSON.parse(read(dir, '_State.json'));
 	assert.deepEqual(s.roadmap.map((x) => x.step), ['9a', '9a']);
 	assert.equal(st(dir, 'check').status, 0);
+	// A name already taken with the same release is refused, and nothing is written.
+	assert.equal(st(dir, 'step', 'set', 'Z', 'release', '1.35.0').status, 0);
+	r = st(dir, 'step', 'rename', 'Z', '9a');
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /step 9a with release 1\.35\.0 is already on the roadmap; nothing written/);
+	assert.deepEqual(JSON.parse(read(dir, '_State.json')).roadmap.map((x) => x.step), ['9a', '9a', 'Z']);
 });
 
 // K69 (1.36.0): both real projects keep their roadmap as checkboxes (53 and 555 boxes on 2026-11-15), which list import
@@ -399,7 +405,7 @@ test('import moves a checkbox roadmap into data once, and the boxes view writes 
 	// A box changed in the data shows in the view at the next render.
 	assert.equal(st(dir, 'item', 'set', 'R3', 'caught-by', 'owner').status, 0);
 	assert.equal(st(dir, 'item', 'set', 'R3', 'tag', 'done v1').status, 0);
-	assert.equal(st(dir, 'render').status, 0);
+	// item set writes the views itself: no render between.
 	assert.ok(read(dir, 'roadmap.md').includes('- [x] R3 Regenerate the README images'));
 	// "-" as the place clears it, in a tag change as in at (the workbench stored a literal "-", 2026-11-15).
 	assert.equal(st(dir, 'item', 'set', 'R4', 'caught-by', 'owner').status, 0);
@@ -451,10 +457,13 @@ test('the shipped roadmap template carries the boxes and roadmap blocks, and a f
 	const t = read(dir, '_Master Roadmap.md');
 	assert.match(t, /<!-- list:begin boxes: generated/);
 	assert.match(t, /<!-- list:begin roadmap: generated/);
-	assert.equal(st(dir, 'check').status, 0, st(dir, 'check').stdout);
-	st(dir, 'item', 'add', '--from', json(dir, { id: 'R1', title: 'First task', tag: 'later', severity: 'to set', origin: 'owner' }));
-	assert.equal(st(dir, 'render').status, 0);
+	const c = st(dir, 'check');
+	assert.equal(c.status, 0, c.stdout);
+	// item add and step set write the views themselves: no render between.
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { id: 'R1', title: 'First task', tag: 'later', severity: 'to set', origin: 'owner' })).status, 0);
 	assert.ok(read(dir, '_Master Roadmap.md').includes('- [ ] R1 First task'));
+	assert.equal(st(dir, 'step', 'set', 'v1', 'state', 'planned').status, 0);
+	assert.match(read(dir, '_Master Roadmap.md'), /^\| v1 \|[^\n]*\| planned \|/m);
 });
 
 // why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
