@@ -121,3 +121,15 @@ test('install project names the real repo in the repo and protect steps, and mar
 	assert.equal(step(local, 'repo').state, 'not checked');
 	assert.match(renderMergeOnGreen(local).join('\n'), /repos\/<owner>\/<repo>/);
 });
+
+// why: guards rule:standing-grants (the K61 security review: a URL whose path only mentions github.com named a repo,
+// so status read another repo's settings)
+test('the GitHub repo is read from the start of the remote URL only', async () => {
+	const { slugOf } = await import('../scripts/safe-git.mjs');
+	for (const [url, slug] of [['https://github.com/pat/app.git', 'pat/app'], ['https://x@github.com/pat/app', 'pat/app'], ['git@github.com:pat/app.git', 'pat/app'], ['ssh://git@github.com/pat/app/', 'pat/app']]) {
+		assert.equal(slugOf(url), slug, url);
+	}
+	for (const url of ['https://evil.example/github.com/pat/app', 'https://github.com.evil.example/pat/app', 'https://github.com/../app', 'https://github.com/pat/..', 'file:///c/github.com/pat/app', '']) {
+		assert.equal(slugOf(url), null, url);
+	}
+});

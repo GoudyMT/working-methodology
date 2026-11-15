@@ -21,6 +21,13 @@ export const safeGh = (args) => spawnSync('gh', args, { encoding: 'utf8', cwd: S
  */
 export function githubSlug(dir) {
   const r = safeGit(dir, 'remote', 'get-url', 'origin');
-  const m = r.status === 0 && /github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(\.git)?\/?$/.exec(r.stdout.trim());
-  return m ? `${m[1]}/${m[2]}` : null;
+  return r.status === 0 ? slugOf(r.stdout.trim()) : null;
+}
+
+// The host is read from the start of the URL, so a path that only mentions github.com names no GitHub repo (the K61
+// security review), and a . or .. part is no owner or repo name.
+export function slugOf(url) {
+  const m = /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(String(url));
+  if (!m || [m[1], m[2]].some((p) => /^\.+$/.test(p))) return null;
+  return `${m[1]}/${m[2]}`;
 }
