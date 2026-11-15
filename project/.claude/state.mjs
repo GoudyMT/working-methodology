@@ -24,7 +24,10 @@
 //   node .claude/state.mjs init                               once, in a project from before 1.34.0: moves the
 //                                                              filled-in Resume Point into the data and marks the blocks
 // The improvement list and the roadmap (1.35.0, list-data.mjs holds the shape and the reasons):
-//   node .claude/state.mjs list [text] [--all]                the open rows, ranked (or every row)
+//   node .claude/state.mjs list [text] [--all]                the open rows, ranked (or every row), one short line each
+//   node .claude/state.mjs list --agent | --full              one JSON line a row with short fields | the whole titles
+//   node .claude/state.mjs list shorten                       once: a short name for each row from before 1.36.0
+//   node .claude/state.mjs item <id> [--json]                 the whole row
 //   node .claude/state.mjs list caught | audit                the catch rate and found to shipped by origin; the rows
 //                                                              still owed a label
 //   node .claude/state.mjs list import <file.md>              once: a markdown list into _List.jsonl, whole or not at all
@@ -515,7 +518,7 @@ function decide(fromFile, unchecked) {
 function main(argv) {
 	const [cmd, ...rest] = argv;
 	const fail = (m) => { console.log(m); process.exitCode = 1; };
-	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|caught|audit|import <file.md>] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text>'); process.exitCode = 2; };
+	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|--agent|--full|caught|audit|shorten|import <file.md>] | item <id> [--json] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text>'); process.exitCode = 2; };
 	if (cmd === 'init') {
 		const { faults, said = [] } = init();
 		for (const f of [...faults, ...said]) console.log(f);
@@ -636,11 +639,37 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (!l.exists) return console.log(`no ${list.LIST} in this project: add a row with node .claude/state.mjs item add --from <file.json>, or import a markdown list once`);
 		if (rest[0] === 'caught') return console.log(list.caught(l.rows).join('\n'));
 		if (rest[0] === 'audit') { const a = list.audit(l.rows); return console.log(a.length ? a.join('\n') : 'every row carries its labels'); }
+		if (rest[0] === 'shorten') {
+			// Once, for rows from before 1.36.0: each row with no short name is given one, its bold lead whole or its title
+			// clipped; the clipped ones are named, since a clipped title can read badly.
+			const bold = [];
+			const clipped = [];
+			const rows = l.rows.map((r) => {
+				if (r.short != null) return r;
+				const d = list.derive(r.title);
+				(d.bold ? bold : clipped).push(r.id);
+				return { ...r, short: d.short };
+			});
+			if (bold.length + clipped.length) write(list.LIST, list.serialize(rows));
+			return console.log(`${bold.length + clipped.length} row(s) given a short name; from the bold lead: ${bold.length}; clipped from the title, worth a look: ${clipped.length}${clipped.length ? ` (${clipped.join(', ')})` : ''}. Change one with node .claude/state.mjs item set <id> short <text>`);
+		}
+		const flags = ['--all', '--agent', '--full'];
 		const all = rest.includes('--all');
-		const q = rest.filter((x) => x !== '--all').join(' ').toLowerCase();
+		const q = rest.filter((x) => !flags.includes(x)).join(' ').toLowerCase();
 		const shown = (all ? l.rows : list.ranked(l.rows)).filter((r) => !q || list.line(r).toLowerCase().includes(q));
+		// K68: the short view by default; one JSON line a row for an agent; the 1.35.0 full lines on --full.
+		if (rest.includes('--agent')) { for (const r of shown) console.log(JSON.stringify(list.agent(r))); return undefined; }
+		if (!rest.includes('--full')) return console.log(list.table(shown, { all }).join('\n'));
 		for (const r of shown) console.log(list.line(r));
 		return console.log(`${shown.length} row(s)${all ? '' : ' open, in work order (now, next, later, then the rest), then by severity (an unrated row after high), then real use, the owner, outside, the kit\'s own finds, then no origin set'}`);
+	}
+	if (rest[0] && !['add', 'set'].includes(rest[0])) {
+		// item <id> [--json]: the whole row, one field to a line, or as one JSON line.
+		const r = l.rows.find((x) => x.id === rest[0]);
+		if (!r) return fail(`${clean(rest[0])} is not a row`);
+		if (rest.includes('--json')) return console.log(JSON.stringify(r));
+		for (const [k, v] of Object.entries(r)) console.log(`${k}: ${clean(typeof v === 'object' ? JSON.stringify(v) : String(v))}`);
+		return undefined;
 	}
 	if (rest[0] === 'add') {
 		const i = rest.indexOf('--from');
@@ -654,7 +683,7 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (why) return fail(why);
 		// A new row owes its labels now, even where an imported row of the same id once did not.
 		if (r && typeof r.id === 'string' && Object.hasOwn(s.list_import, r.id)) return fail(`${clean(r.id)} was moved in by the import; change it with item set`);
-		const bad = list.refuse(r, l.rows, s.list_import);
+		const bad = list.refuse(r, l.rows, s.list_import, { added: true });
 		if (bad) return fail(clean(bad));
 		write(list.LIST, list.serialize([...l.rows, r]));
 		return console.log(`${r.id} added; run node .claude/state.mjs render`);

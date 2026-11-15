@@ -24,7 +24,10 @@ const st = (dir, ...a) => spawnSync(process.execPath, [SCRIPT, ...a], { cwd: dir
 const read = (dir, f) => fs.readFileSync(path.join(dir, f), 'utf8');
 const put = (dir, f, t) => fs.writeFileSync(path.join(dir, f), t);
 const rows = (dir) => read(dir, '_List.jsonl').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-const json = (dir, o) => { put(dir, 'item.json', JSON.stringify(o)); return 'item.json'; };
+// A new row carries its short name (K68); a case that tests the refusal passes short: undefined, which drops it.
+const json = (dir, o) => { put(dir, 'item.json', JSON.stringify({ short: String(o.title ?? o.id).slice(0, 60), ...o })); return 'item.json'; };
+// The ids of the short view's rows: the lines between its header and its closing count.
+const shortIds = (out) => { const l = out.split('\n'); const h = l.findIndex((x) => /^ID\s+TAG\s+STEP\s+SEV\s+FROM\s+TITLE$/.test(x)); return l.slice(h + 1).filter((x) => /^\S+\s{2,}\S/.test(x) && !/^\d+ (open|row)/.test(x)).map((x) => x.split(/\s+/)[0]); };
 
 // A list in the shape the workbench keeps: a roadmap table, then sections of rows in different table shapes.
 const LIST = `# Improvement List
@@ -186,17 +189,95 @@ test('list shows the open rows in work order, then by severity, then real use an
 	st(dir, 'item', 'add', '--from', json(dir, { id: 'K4', title: 'Guard wording', tag: 'later', at: 'T9', severity: 'high', origin: 'owner' }));
 	const r = st(dir, 'list');
 	assert.equal(r.status, 0, r.stdout);
-	const ids = r.stdout.split('\n').filter((l) => /^\S+ \[/.test(l)).map((l) => l.split(' ')[0]);
+	const ids = shortIds(r.stdout);
 	// C2 is placed in the next build, so it leads; the later rows follow by severity, then origin.
 	assert.deepEqual(ids, ['C2', 'K3', 'K4', 'A2']);
 	assert.doesNotMatch(r.stdout, /^A1 /m, 'done rows are not in the open list');
 	assert.match(st(dir, 'list', 'install').stdout, /^K3 /m, 'a text filter');
 	st(dir, 'item', 'add', '--from', json(dir, { id: 'K6', title: 'Unrated', tag: 'later', at: 'T5', severity: 'to set', origin: 'self' }));
 	st(dir, 'item', 'add', '--from', json(dir, { id: 'K7', title: 'Owner call', tag: 'owner', severity: 'critical', origin: 'owner' }));
-	const again = st(dir, 'list').stdout.split('\n').filter((l) => /^\S+ \[/.test(l)).map((l) => l.split(' ')[0]);
+	const again = shortIds(st(dir, 'list').stdout);
 	assert.deepEqual(again, ['C2', 'K3', 'K4', 'K6', 'A2', 'K7'], 'an unrated row ranks after high; a row waiting on the owner after the work order');
-	const every = st(dir, 'list', '--all').stdout.split('\n').filter((l) => /^\S+ \[/.test(l)).map((l) => l.split(' ')[0]);
+	const every = shortIds(st(dir, 'list', '--all').stdout);
 	assert.deepEqual(every, ['A1', 'A2', 'C1', 'C2', 'K3', 'K4', 'K6', 'K7'], '--all keeps file order, done rows included');
+});
+
+// K68 (1.36.0): on 1.35.0 `list` printed each row's whole title, so three rows filled a screen of the owner's phone.
+// why: guards the owner's lock of K68, 2026-11-15: both views, one line per row, and a stored short name on every row
+test('list prints one short line per open row, and the whole row is one command away', () => {
+	const dir = project();
+	const long = `${'A very long title that runs on and on '.repeat(6)}end`;
+	put(dir, 'list.md', LIST.replace('Install misses a hook', `**Install misses a hook** ${long}`));
+	st(dir, 'list', 'import', 'list.md');
+	st(dir, 'item', 'add', '--from', json(dir, { id: 'K3', title: long, short: 'Install drops a setting', tag: 'next', at: 'build 10 (1.36.0)', severity: 'high', origin: 'real-use' }));
+	const r = st(dir, 'list');
+	assert.equal(r.status, 0, r.stdout);
+	assert.deepEqual(shortIds(r.stdout), ['K3', 'C2', 'A2']);
+	const lines = r.stdout.trimEnd().split('\n');
+	// Columns of 9 and a short name of at most 60: a row line is the id's column plus 96 at most.
+	for (const l of lines) assert.ok(l.length <= 100, `one short line per row: ${l.length} chars in ${l}`);
+	const k3 = lines.find((l) => l.startsWith('K3 '));
+	// The stored short name is shown, never the title, and the build is named by its number.
+	assert.match(k3, /^K3\s+next\s+b10\s+high\s+real-use\s+Install drops a setting$/);
+	// A row with no short name yet shows its bold lead, or its title clipped with three dots.
+	assert.match(lines.find((l) => l.startsWith('A2 ')), /\bInstall misses a hook$/);
+	assert.match(lines.find((l) => l.startsWith('C2 ')), /Recall moves with the folder name$/);
+	assert.match(lines.at(-1), /^3 open\. Whole row: state\.mjs item <id> \| full titles: list --full/);
+	// The whole row, one field to a line, the long title whole.
+	const one = st(dir, 'item', 'K3');
+	assert.equal(one.status, 0, one.stdout);
+	assert.ok(one.stdout.includes(`title: ${long}`), one.stdout);
+	assert.match(one.stdout, /^short: Install drops a setting$/m);
+	assert.match(st(dir, 'item', 'K9').stdout, /K9 is not a row/);
+	// The full text of every open row stays one flag away, as the 1.35.0 lines.
+	assert.ok(st(dir, 'list', '--full').stdout.includes(long));
+});
+
+// why: guards the owner's lock of K68, 2026-11-15: the agent view, short fields and the whole row only on ask
+test('list --agent prints one JSON line per row with short fields; item --json gives the whole row', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	st(dir, 'list', 'import', 'list.md');
+	st(dir, 'item', 'add', '--from', json(dir, { id: 'K3', title: 'Install drops a setting the owner set by hand in a long story', short: 'Install drops a setting', tag: 'later', at: 'T5', severity: 'high', origin: 'real-use', note: 'seen twice' }));
+	const r = st(dir, 'list', '--agent');
+	assert.equal(r.status, 0, r.stdout);
+	const got = r.stdout.trim().split('\n').map((l) => JSON.parse(l));
+	assert.deepEqual(got.map((x) => x.id), ['C2', 'K3', 'A2']);
+	assert.deepEqual(got[1], { id: 'K3', tag: 'later', at: 'T5', sev: 'high', origin: 'real-use', short: 'Install drops a setting', more: 'item K3' });
+	assert.ok(!r.stdout.includes('long story'), 'the title is not in the agent view');
+	assert.equal(got[0].origin, null);
+	const whole = JSON.parse(st(dir, 'item', 'K3', '--json').stdout);
+	assert.equal(whole.note, 'seen twice');
+	assert.equal(shortIds(st(dir, 'list', '--agent', '--all').stdout).length, 0, 'the agent view has no table header');
+	assert.equal(st(dir, 'list', '--agent', '--all').stdout.trim().split('\n').length, 5);
+});
+
+// why: guards the owner's lock of K68, 2026-11-15: a new row carries a stored short name; old rows get one once
+test('item add refuses a row with no short name or one over 60 characters; list shorten fills the old rows once', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST.replace('Install misses a hook', '**Install misses a hook** when the folder is new'));
+	st(dir, 'list', 'import', 'list.md');
+	const base = { id: 'K3', title: 'Install drops a setting', tag: 'later', at: 'T5', severity: 'low', origin: 'self' };
+	let r = st(dir, 'item', 'add', '--from', json(dir, { ...base, short: undefined }));
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /K3 has no short name/);
+	r = st(dir, 'item', 'add', '--from', json(dir, { ...base, short: 'x'.repeat(61) }));
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /short name is over 60 characters/);
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, base)).status, 0);
+	assert.match(st(dir, 'list', 'audit').stdout, /^C2 owes origin, short:/m, 'audit names a row with no short name');
+	// The old rows get one, once: a bold lead whole, else the clipped title, and the clipped ones are named to check.
+	r = st(dir, 'list', 'shorten');
+	assert.equal(r.status, 0, r.stdout);
+	assert.match(r.stdout, /^4 row\(s\) given a short name/m);
+	assert.match(r.stdout, /from the bold lead: 1; clipped from the title, worth a look: 3 \(A1, C1, C2\)/);
+	const by = Object.fromEntries(rows(dir).map((x) => [x.id, x.short]));
+	assert.equal(by.A2, 'Install misses a hook');
+	assert.equal(by.K3, 'Install drops a setting', 'a stored short name is kept');
+	assert.match(st(dir, 'list', 'shorten').stdout, /^0 row\(s\) given a short name/m, 'a second run changes nothing');
+	assert.equal(st(dir, 'item', 'set', 'C2', 'short', 'Recall and the folder name').status, 0);
+	assert.equal(rows(dir).find((x) => x.id === 'C2').short, 'Recall and the folder name');
+	assert.equal(st(dir, 'check').status, 0);
 });
 
 // why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
