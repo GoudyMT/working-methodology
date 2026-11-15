@@ -1464,8 +1464,15 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	assert.equal(call('cd ' + parent + '/a{p..p}p && git push origin main'), 'deny', 'a brace range');
 	assert.equal(call("cd $'" + parent + "/a\\x70p' && git push origin main"), 'deny', "$'...' quoting");
 	const t0 = Date.now();
-	assert.equal(call('ls ' + '*a'.repeat(30) + 'Z && git push origin main'), 'deny', 'a wildcard with many stars');
+	assert.equal(call('ls ' + '*a'.repeat(30) + 'Z && git push origin main'), 'runs', 'a wildcard with many stars names no project it cannot match');
 	assert.ok(Date.now() - t0 < 5000, 'the many-star wildcard is read in linear time');
+	assert.equal(call('ls ' + parent + '/*a*p && git push origin main'), 'deny', 'a wildcard with stars that matches the project');
+	// 1.33.1: failing closed on any brace, $'' or lone [ ran every recorded project's guards and timed the hook out. A
+	// command whose braces, quoting or brackets name no kit project names none.
+	for (const command of ['node -e "const o = {a: 1, b: 2}" && git push origin main', "echo $'plain text' && git push origin main",
+		'echo [x && git push origin main', 'echo {one,two} && git push origin main', 'ls [xz]* && git push origin main']) {
+		assert.equal(call(command), 'runs', command);
+	}
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });

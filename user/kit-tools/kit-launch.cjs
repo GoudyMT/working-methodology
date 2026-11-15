@@ -410,7 +410,7 @@ function unrecorded(input, only = false) {
 // moves), so this reads no moves and fails toward checking: a project is named when its folder's own name appears
 // in the command with no name character on either side, in any spelling (case, slashes, quotes, a backslash escape, Git Bash's /c/ form, home as ~ or
 // $HOME), when a path in it resolves into the project (a relative path, an 8.3 short name), or when a wildcard in it
-// could match the project's path or name; a brace list or $'...' quoting names them all. A named project's guards run on the call as if it were started there. A
+// could match the project's path or name; a brace list is expanded and $'...' quoting decoded, as the shell does. A named project's guards run on the call as if it were started there. A
 // project whose name only appears in a command costs one more check, never a pass. A name built at run time ($x, a
 // backtick) stays unread, as for every guard.
 function recordedProjects() {
@@ -435,15 +435,46 @@ function namedProjects(input) {
 	// One spelling for a path: home expanded, forward slashes, no quotes, the drive as c:/, no doubled slashes.
 	const norm = (s) => fold(String(s).replace(/(^|[\s=(:;&|"'])(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\\s"']|$)/gi, (m, a) => a + home))
 		.replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/');
+	// $'...' is read as the text its escapes make, and $"..." as the string itself (the third review, on cd0f9f5).
+	const ESC = { n: '\n', t: '\t', r: '\r', a: '', b: '', e: '', f: '', v: '' };
+	const decoded = command.replace(/\$'((?:[^'\\]|\\[\s\S])*)'/g, (m, s) => s.replace(/\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|[0-7]{1,3}|[\s\S])/g,
+		(e, c) => (/^[xu]/.test(c) && c.length > 1 ? String.fromCharCode(parseInt(c.slice(1), 16)) : /^[0-7]/.test(c) ? String.fromCharCode(parseInt(c, 8)) : (ESC[c] ?? c)))).replace(/\$"/g, '"');
+	// A brace list or range ({a,b}, {1..3}) builds names the command never writes out: each word is expanded as the shell
+	// would. Past EXPAND_MAX words the command names every project (fails toward checking); short of it, only the names
+	// it really makes count, so a command with braces costs no check of a project it does not name (1.33.1: failing
+	// closed on every brace, $'' or lone [ ran the guards of every recorded project and timed the hook out).
+	const EXPAND_MAX = 256;
+	const made = [];
+	let built = false;
+	const expandWord = (w, depth = 0) => {
+		if (built) return;
+		const groups = [...w.matchAll(/\{([^{}]*)\}/g)];
+		const g = groups.find((x) => x[1].includes(',') || /^(-?\d+|[^.])\.\.(-?\d+|[^.])$/.test(x[1]));
+		if (!g || depth > 8) { if (made.length >= EXPAND_MAX) built = true; else made.push(w); return; }
+		const before = w.slice(0, g.index);
+		const after = w.slice(g.index + g[0].length);
+		let alts = [];
+		const range = /^(-?\d+|[^.])\.\.(-?\d+|[^.])$/.exec(g[1]);
+		if (!g[1].includes(',') && range) {
+			const num = /^-?\d+$/.test(range[1]) && /^-?\d+$/.test(range[2]);
+			const [a, b] = num ? [Number(range[1]), Number(range[2])] : [range[1].charCodeAt(0), range[2].charCodeAt(0)];
+			if (Math.abs(b - a) > EXPAND_MAX) { built = true; return; }
+			for (let i = a; a <= b ? i <= b : i >= b; i += a <= b ? 1 : -1) alts.push(num ? String(i) : String.fromCharCode(i));
+		} else alts = g[1].split(',');
+		for (const alt of alts) expandWord(before + alt + after, depth + 1);
+	};
+	for (const w of decoded.split(/\s+/)) if (/\{[^{}]*(,|\.\.)[^{}]*\}/.test(w)) expandWord(w);
 	// A backslash is a separator on Windows and an escape in a POSIX shell (my\ app is "my app"): both readings count.
-	let text = `${norm(command)} ${norm(command.replace(/\\(.)/g, '$1'))}`;
+	const spelled = `${decoded} ${made.join(' ')}`;
+	let text = `${norm(spelled)} ${norm(spelled.replace(/\\(.)/g, '$1'))}`;
 	const tokens = text.split(/[\s;&|(){}=,]+/).filter(Boolean);
 	// A relative path or an 8.3 short name: the folder it names, as the file system resolves it from the session. A
 	// kit project the launcher has no record for is found from these too, so it holds the call as it would there.
 	const unrec = [];
 	const globs = [];
 	for (const t of tokens) {
-		if (/[*?[]/.test(t)) { globs.push(t); continue; }
+		// A [ with no ] after it is a plain character to the shell, not a wildcard.
+		if (/[*?]/.test(t) || /\[[^\]]+\]/.test(t)) { globs.push(t); continue; }
 		if (!/[/~.]/.test(t) || /\$/.test(t)) continue;
 		let real = '';
 		try { real = fs.realpathSync.native(path.resolve(cwd, t)); } catch { continue; }
@@ -451,9 +482,6 @@ function namedProjects(input) {
 		const u = unrecorded({ cwd: real }, true);
 		if (u && !unrec.some((x) => same(x, u))) unrec.push(u);
 	}
-	// A name the shell builds from a brace list or range ({a,b}, {1..3}) or decodes from $'...' or $"..." quoting is
-	// not written out, so such a command names every kit project (the third review, on cd0f9f5).
-	const built = /\{[^{}]*(,|\.\.)[^{}]*\}/.test(command) || /\$['"]/.test(command);
 	const WORD = /[A-Za-z0-9_.-]/;
 	// p appears with no name character after it; bounded, with none before it either (a name may hold a space, so it
 	// is never read as one word of the command).
@@ -464,13 +492,37 @@ function namedProjects(input) {
 		}
 		return false;
 	};
-	// A wildcard as the shell would match it, against a whole path or one of its parts. A run of stars is one star;
-	// one with more wildcards than a path needs, or too long, is not matched at all but counts as naming every project,
-	// so no command can make the reader slow (the third review).
-	const globRe = (g) => {
-		const one = g.replace(/\*+/g, '*');
-		if (one.length > 256 || (one.match(/[*?[]/g) || []).length > 8) return null;
-		return new RegExp('^' + one.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^') + '$');
+	// A wildcard as the shell would match it (*, ?, [set], [!set]), against a whole path or one of its parts. It is
+	// matched without a regex, in time linear in the two lengths for each star, so no wildcard can make the reader slow
+	// (the third review), and no wildcard names a project it cannot match (1.33.1).
+	const globMatch = (g, s) => {
+		const pat = [];
+		for (let i = 0; i < g.length; i++) {
+			const ch = g[i];
+			const close = ch === '[' ? g.indexOf(']', i + 2) : -1;
+			if (ch === '*') { if (pat[pat.length - 1] !== '*') pat.push('*'); } else if (ch === '?') pat.push('?');
+			else if (close > 0) {
+				const body = g.slice(i + 1, close);
+				const neg = body[0] === '!' || body[0] === '^';
+				pat.push({ neg, set: neg ? body.slice(1) : body });
+				i = close;
+			} else pat.push(ch);
+		}
+		const one = (p, c) => {
+			if (p === '?') return true;
+			if (typeof p === 'string') return p === c;
+			let hit = false;
+			for (let k = 0; k < p.set.length; k++) {
+				if (p.set[k + 1] === '-' && k + 2 < p.set.length) { if (c >= p.set[k] && c <= p.set[k + 2]) hit = true; k += 2; } else if (p.set[k] === c) hit = true;
+			}
+			return hit !== p.neg;
+		};
+		let pi = 0, si = 0, star = -1, mark = 0;
+		while (si < s.length) {
+			if (pi < pat.length && pat[pi] !== '*' && one(pat[pi], s[si])) { pi++; si++; } else if (pi < pat.length && pat[pi] === '*') { star = pi++; mark = si; } else if (star >= 0) { pi = star + 1; si = ++mark; } else return false;
+		}
+		while (pi < pat.length && pat[pi] === '*') pi++;
+		return pi === pat.length;
 	};
 	const out = [];
 	const recorded = recordedProjects();
@@ -480,7 +532,7 @@ function namedProjects(input) {
 		const under = norm(posix(path.relative(cwd, dir)));
 		const below = under && !under.startsWith('..') && !path.isAbsolute(under);
 		const parts = [p, name, under];
-		const globbed = globs.some((g) => { try { const re = globRe(g); return !re || parts.some((x) => re.test(x)) || p.split('/').some((x) => re.test(x)); } catch { return true; } });
+		const globbed = globs.some((g) => parts.some((x) => globMatch(g, x)) || p.split('/').some((x) => globMatch(g, x)));
 		if (built || has(p) || has(name, true) || (below && has(under, true)) || globbed) out.push(dir);
 	}
 	// A folder found by its real path may be a recorded project under another spelling (an 8.3 short name): that record's.
