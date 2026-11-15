@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const dir = process.cwd();
 const has = (rel) => fs.existsSync(path.join(dir, rel));
@@ -139,7 +140,8 @@ const PARTS = [
 			let s = null;
 			try { s = JSON.parse(fs.readFileSync(path.join(dir, '_State.json'), 'utf8')); } catch { /* none */ }
 			if (!s || /^<.*>$/.test(String(s.updated))) return [null, 'not filled in yet: the first closeout sets it'];
-			const r = spawnSync(process.execPath, [path.join(dir, '.claude', 'state.mjs'), 'check'], { cwd: dir, encoding: 'utf8' });
+			// The state.mjs beside this script, never the project's copy: status runs this check on a folder it reads.
+			const r = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'state.mjs'), 'check'], { cwd: dir, encoding: 'utf8' });
 			return r.status === 0 ? [true, `updated ${s.updated}; the views match the data`] : [false, `the views differ from the data: ${(r.stdout || '').split('\n')[0]}`];
 		},
 	},
