@@ -1525,6 +1525,14 @@ test('every agent role file the kit ships names its model', () => {
   for (const f of files) assert.match(front(path.resolve('user/agents', f)).model || '', /^claude-[a-z]+-\d+(-\d+)?$/, `${f} names no model`);
 });
 
+// N8 (1.36.0; real by quote on 1.25.0: `cd src && ls` passed the installed guard, and a text rule against a lasting cd
+// failed twice in AI Essentials): Claude Code returns the shell to the project after each Bash or PowerShell command
+// when this is set (env-vars docs, read 2026-11-15), so a cd cannot carry into the next command.
+test('the project settings keep each shell command starting in the project folder', () => {
+  const s = JSON.parse(read(path.resolve('project/.claude/settings.json')));
+  assert.equal(s.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR, '1');
+});
+
 // MC2 and MC5 (1.36.0, the owner's pick 2026-11-15 "Roles user, Explore per project"): the built-in Explore runs on
 // the session's model (Opus); a project agent named Explore overrides it (Claude Code sub-agents docs, read
 // 2026-11-15). It installs into kit projects only, so a project without the kit keeps the built-in; it carries no

@@ -3,7 +3,8 @@
     "baseRef": "head"
   },
   "env": {
-    "npm_config_yes": "false"
+    "npm_config_yes": "false",
+    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
   },
   "permissions": {
     "allow": [
