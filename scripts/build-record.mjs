@@ -33,6 +33,7 @@ export function problems(rec) {
 		need(Object.hasOwn(KINDS, it.kind), `item ${i + 1} kind "${it.kind}" is not one of ${Object.keys(KINDS).join(', ')}`);
 		for (const k of ['text', 'evidence']) need(text(it[k]), `item ${i + 1} (${it.id}) has no ${k}`);
 		need(!it.where || (text(it.before) && text(it.after)), `item ${i + 1} (${it.id}) names a where without its before and after`);
+		need(it.reach === undefined || ['projects', 'kit'].includes(it.reach), `item ${i + 1} (${it.id}) reach "${it.reach}" is not projects or kit`);
 	});
 	need(Array.isArray(rec.verification) && rec.verification.length > 0, 'verification is empty');
 	// The Standard body's four sections are all required, Design decisions among them (K15).
@@ -50,14 +51,14 @@ export function problems(rec) {
 	// What the PR body audit would fail in the text the body is written from, named here (K15): the same words, the
 	// same dash rule, the same bullet size; the body adds one Tests bullet to at most 3 verification lines.
 	const prose = [rec.headline, rec.alignment, ...(rec.items || []).flatMap((it) => [it.text, it.before, it.after]),
-		...(rec.decisions || []).flatMap((d) => [d.decision, d.why]), ...(rec.verification || []), ...((s && [s.fixed, s.deferred, s.accepted].flat()) || [])].filter(text);
+		...(rec.decisions || []).flatMap((d) => [d.decision, d.why]), ...(rec.verification || []), rec.upgrading, rec.limits, ...((s && [s.fixed, s.deferred, s.accepted].flat()) || [])].filter(text);
 	for (const p of prose) {
 		const plain = p.replace(/`[^`]*`/g, '');
 		const word = BANNED.find((re) => re.test(plain));
 		need(!word, `"${p.slice(0, 40)}..." has a mechanism or AI word (${word})`);
 		need(!/ - |--/.test(plain), `"${p.slice(0, 40)}..." has a spaced dash`);
 		// The headline and the alignment line are paragraphs; every other line becomes a bullet.
-		need(p === rec.headline || p === rec.alignment || p.length <= 240, `"${p.slice(0, 40)}..." is over 240 characters`);
+		need([rec.headline, rec.alignment, rec.upgrading, rec.limits].includes(p) || p.length <= 240, `"${p.slice(0, 40)}..." is over 240 characters`);
 	}
 	need(!Array.isArray(rec.verification) || rec.verification.length <= 3, 'verification has more than 3 lines (the body adds the tests line; the audit shows 4)');
 	need(!s || (s.dimensions || []).some((d) => /^code security$/i.test(d.name || '')), 'sweep has no Code security dimension');
@@ -113,6 +114,25 @@ export function prBody(rec) {
 	return out.map((l) => (l.startsWith('|') ? l : l.split('\n').map((x) => wrap(x)).join('\n'))).join('\n');
 }
 
+/**
+ * The release notes draft (E14, 1.35.0), in the shape of the kit's published notes: the headline, the level and the
+ * alignment, what changed for projects, what stays in the kit (an item with reach "kit"), then upgrading and known
+ * limits. Notes were drafted by hand until 1.34.0, and 1.34.0's went out only when the owner asked. Publishing stays
+ * the owner's tap; release-check.mjs then reads that they are out.
+ */
+export function notes(rec) {
+	const bullet = (it) => `- ${it.text.trim()}`;
+	const projects = rec.items.filter((it) => it.reach !== 'kit');
+	const kit = rec.items.filter((it) => it.reach === 'kit');
+	const out = [`# Methodology Kit v${rec.version}`, '', rec.headline.trim(), '', `A ${rec.level} release.${rec.alignment ? ` ${rec.alignment.trim()}` : ''}`, ''];
+	if (projects.length) out.push('## What changed for projects', '', ...projects.map(bullet), '');
+	if (kit.length) out.push('## What changed in the kit itself', '', 'These stay in the kit and are not installed into projects.', '', ...kit.map(bullet), '');
+	out.push('## Upgrading', '', (rec.upgrading || 'Run `install user` first, then `install project` in each project.').trim(), '');
+	if (rec.limits) out.push(`Known limits: ${rec.limits.trim()}`, '');
+	// One line per paragraph and bullet, as the published notes are: GitHub keeps a wrapped line's breaks.
+	return out.join('\n');
+}
+
 /** The record for the version in VERSION, its path, and the checks against VERSION and CHANGELOG.md. */
 export function checkRepo(root, file) {
 	const version = fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim();
@@ -133,10 +153,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 	if (cmd === 'check') {
 		if (r.problems.length) { process.stderr.write(`Build record ${path.relative(ROOT, r.at)}:\n${r.problems.map((p) => `    ${p}`).join('\n')}\n`); process.exitCode = 1; }
 		else process.stdout.write(`Build record ${path.relative(ROOT, r.at)}: whole, and the changelog matches\n`);
-	} else if ((cmd === 'changelog' || cmd === 'pr') && r.rec && !problems(r.rec).length) {
-		process.stdout.write(cmd === 'changelog' ? changelog(r.rec) : prBody(r.rec));
+	} else if (['changelog', 'pr', 'notes'].includes(cmd) && r.rec && !problems(r.rec).length) {
+		process.stdout.write({ changelog, pr: prBody, notes }[cmd](r.rec));
 	} else {
-		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr [<record>]\n');
+		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>]\n');
 		process.exitCode = r.rec ? 1 : 2;
 	}
 }

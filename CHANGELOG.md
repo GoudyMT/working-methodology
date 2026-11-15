@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.35.0 - 2026-11-15
+
+A project's improvement list and roadmap now live as data: each row has one tag, says who caught it and where its numbers were measured, and the roadmap, counts and rows are generated from it. A release is called done only when a check has read every step on GitHub and in the project.
+
+### Added
+- The improvement list lives in _List.jsonl, one row per line with one tag; state.mjs lists the open rows, adds and changes rows, and imports a markdown list once, whole or not at all.
+- The roadmap table with the open rows per step, the tag counts and the rows are generated between list markers; a hand edit is refused and the check fails on it.
+- Each closed row names who caught it and whether it slipped past a gate, and each number names where it was measured; list caught prints the catch rate and found to shipped by origin.
+- release-check.mjs reads each release step (PR merged, main CI green on the merge commit, the tag on its files, the notes published, the state check) and names every one missing; the closeout calls nothing done until it passes.
+- ci-wait.mjs reports each CI run's end in one line, green or red, with one line past ten minutes; the PR body skill starts it after each push.
+- The build record writes the release notes draft, split into what projects get and what stays in the kit; publishing stays the owner's tap.
+
+### Changed
+- At the same severity, rows found in real projects rank above rows the owner asked for, then those from other methods, then the kit's own finds.
+
 ## 1.34.0 - 2026-11-15
 
 A project's next action, what waits on the owner, the carry-overs and the kit version now live once, in _State.json, and the owner's rulings in _Decisions.jsonl; the Resume Point and the dashboard lines are generated from them, and a check fails the moment they drift.

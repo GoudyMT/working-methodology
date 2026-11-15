@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { problems, changelog, prBody, checkRepo } from '../scripts/build-record.mjs';
+import { problems, changelog, prBody, notes, checkRepo } from '../scripts/build-record.mjs';
 
 kitTemp.sessionRoot();
 const record = () => ({
@@ -89,4 +89,48 @@ test('a whole record writes a PR body that passes the audit, and one that would 
 	fs.writeFileSync(f, prBody(rec));
 	const r = spawnSync(process.execPath, [path.resolve('project/.claude/pr-body-audit.mjs'), f, rec.title, '31'], { encoding: 'utf8', cwd: dir });
 	assert.equal(r.status, 0, r.stdout.split('\n').filter((l) => l.startsWith('FAIL')).join('\n'));
+});
+// why: guards the owner's pick of E14, 2026-11-15; catches release notes drafted by hand that drift from the record (E14, 1.35.0): the notes are written from the
+// same record, split by reach, and pass the release-notes audit as written.
+test('the record writes release notes that split what projects get from what stays in the kit, and pass the audit', () => {
+	const rec = record();
+	rec.alignment = 'v1.2.0 is the test value step.';
+	rec.items[2].reach = 'kit';
+	rec.upgrading = 'Run install user first, then install project in each project.';
+	rec.limits = 'A test with no why line still runs.';
+	const text = notes(rec);
+	const lines = text.split('\n');
+	assert.equal(lines[0], '# Methodology Kit v1.2.0');
+	assert.ok(text.indexOf('## What changed for projects') < text.indexOf('- Each test carries a why line.'), text);
+	assert.ok(text.indexOf('## What changed in the kit itself') < text.indexOf('- A test check.'), text);
+	assert.ok(text.indexOf('- A test check.') > text.indexOf('- A PR cannot choose its own map.'), 'a kit-only item is not listed for projects');
+	assert.match(text, /^A minor release\. v1\.2\.0 is the test value step\.$/m);
+	assert.match(text, /^## Upgrading\n\nRun install user first/m);
+	assert.match(text, /^Known limits: A test with no why line still runs\.$/m);
+	const file = path.join(kitTemp.makeTemp('notes-'), 'notes.md');
+	fs.writeFileSync(file, text);
+	const audit = spawnSync(process.execPath, [path.resolve('user/skills/release-notes/audit.mjs'), file, '1.2.0'], { encoding: 'utf8', cwd: path.dirname(file) });
+	assert.equal(audit.status, 0, audit.stdout + audit.stderr);
+	const kitOnly = record();
+	kitOnly.items.forEach((it) => { it.reach = 'kit'; });
+	assert.doesNotMatch(notes(kitOnly), /What changed for projects/);
+	const bad = record();
+	bad.items[0].reach = 'everyone';
+	assert.match(problems(bad).join('\n'), /reach "everyone"/);
+});
+
+// why: guards the owner's pick of E14, 2026-11-15: the notes command prints the draft, and its upgrading and limits
+// lines are held to the same prose rules as the rest of the record.
+test('build-record notes prints the draft, and the upgrading and limits lines are audited as prose', () => {
+	const bad = record();
+	bad.limits = 'Written with Claude -- fast.';
+	assert.match(problems(bad).join('\n'), /mechanism or AI word|spaced dash/);
+	const dir = kitTemp.makeTemp('notes-cli-');
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	const rec = record();
+	fs.writeFileSync(path.join(dir, 'docs', 'builds', 'r.json'), JSON.stringify(rec));
+	const r = spawnSync(process.execPath, [path.resolve('scripts/build-record.mjs'), 'notes', path.join(dir, 'docs', 'builds', 'r.json')], { encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.stdout, notes(rec));
+	assert.match(r.stdout, /^## Upgrading\n\nRun `install user` first/m, 'the default upgrading line');
 });

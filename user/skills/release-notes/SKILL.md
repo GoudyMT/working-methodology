@@ -20,6 +20,10 @@ release format wins over anything here.
    `_Templates/_Changelog Entry Template.md`: grouped one-line changes, the detail left in the PR body.
 5. **Hand off** the draft, its audit result and the sources to the owner. Create the tag and publish only on
    the owner's explicit go (rule:outward-acts); after publishing, read the live body back and diff it.
+6. **Check every step:** `node .claude/release-check.mjs <tag> --pr <n>` until it prints RELEASE COMPLETE (the
+   closeout skill gives the kit's own form). It reads the merge, main CI, the tag, the published notes (and runs this
+   audit on them) and the state check; a release is not called done in this session or any other while a step is
+   MISSING. The kit drafts its own notes from its build record with `node scripts/build-record.mjs notes` first.
 
 ## The rule
 
