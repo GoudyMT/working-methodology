@@ -257,13 +257,27 @@ function caseKit() {
 }
 
 // 1.21.1 carry 6: a main held by a ruleset alone is protected, though GitHub has no classic protection for it.
-// why: guards rule:outward-acts
-test('status reads main as protected by a ruleset, and unprotected only when neither holds it', () => {
+// 1.33.0 (I3, A5, the owner's ruling): protected means what the merge gate needs, from either source: a required
+// check that must be up to date, no force push and no delete. Any rule at all no longer counts.
+// why: guards rule:first-push-gate
+test('status reads main as protected only with an up-to-date required check, no force push and no delete', () => {
+  const ok = (o) => ({ status: 0, stdout: JSON.stringify(o), stderr: '' });
   const answers = (prot, rules) => (args) => (args[1].includes('/protection') ? prot : rules);
   const notProtected = { status: 1, stdout: '{"message":"Branch not protected"}', stderr: 'gh: Branch not protected (HTTP 404)' };
-  assert.equal(mainProtection('.', answers({ status: 0, stdout: '{}', stderr: '' })), 'protected');
-  assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[{"type":"required_status_checks"}]', stderr: '' })), 'protected');
-  assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[]', stderr: '' })), 'unprotected');
+  const classic = (strict, force = false, del = false) => ok({ required_status_checks: { strict, contexts: ['ci'], checks: [{ context: 'ci' }] }, allow_force_pushes: { enabled: force }, allow_deletions: { enabled: del } });
+  assert.equal(mainProtection('.', answers(classic(true), ok([]))), 'protected');
+  assert.equal(mainProtection('.', answers(classic(false), ok([]))), 'unprotected', 'the kit template before 1.33.0: not up to date');
+  assert.equal(mainProtection('.', answers(classic(true, true), ok([]))), 'unprotected', 'force pushes allowed');
+  assert.equal(mainProtection('.', answers(classic(true, false, true), ok([]))), 'unprotected', 'deletion allowed');
+  assert.equal(mainProtection('.', answers(ok({}), ok([]))), 'unprotected', 'a rule that requires nothing');
+  // The ruleset seen live on the probe repo, 2026-11-15: it blocked deletion only, and status called main protected.
+  assert.equal(mainProtection('.', answers(notProtected, ok([{ type: 'deletion' }]))), 'unprotected');
+  const full = [{ type: 'deletion' }, { type: 'non_fast_forward' }, { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'ci' }] } }];
+  assert.equal(mainProtection('.', answers(notProtected, ok(full))), 'protected');
+  assert.equal(mainProtection('.', answers(notProtected, ok([{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'ci' }] } }]))), 'unprotected', 'no force push or delete block');
+  assert.equal(mainProtection('.', answers(notProtected, ok([]))), 'unprotected');
+  // A check from classic protection and the blocks from a ruleset hold together, as GitHub layers them.
+  assert.equal(mainProtection('.', answers(ok({ required_status_checks: { strict: true, contexts: ['ci'] }, allow_force_pushes: { enabled: true }, allow_deletions: { enabled: true } }), ok(full.slice(0, 2)))), 'protected');
   assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '', stderr: 'HTTP 403' })), null);
   // The 1.22.0 sweep (T2): the real gh prints a JSON body on an error (tests/contracts/gh.json); that is no answer.
   assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '{"message":"Forbidden"}', stderr: 'gh: Forbidden (HTTP 403)' })), null);
@@ -4074,6 +4088,7 @@ test('the kit ships the main branch rule as settings, and status flags an unprot
   assert.equal(rule.enforce_admins, false, 'admins may bypass');
   assert.equal(rule.required_pull_request_reviews, null, 'no review for a solo owner');
   assert.equal(rule.required_status_checks.contexts.length, 1, 'one gate check');
+  assert.equal(rule.required_status_checks.strict, true, 'the merge gate needs a branch up to date before it merges');
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
   install({ kit, home, target: 'project', projectDir: proj });
