@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { check, arm, disarm, autofix, branchRounds, live, status, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
+import { check, arm, disarm, autofix, live, status, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -75,9 +75,7 @@ function setup() {
 		fs.copyFileSync(path.join(KIT, 'user/skills', s, 'audit.mjs'), path.join(config, 'skills', s, 'audit.mjs'));
 	}
 	const state = {
-		pr: { number: 7, state: 'OPEN', isDraft: false, isCrossRepository: false, headRefName: 'feat/subtract', headRefOid: sha, baseRefName: 'main', title: TITLE, body: BODY, url: 'https://github.com/o/r/pull/7', createdAt: '2026-11-15T00:00:00Z' },
-		// The PR's CI runs as gh run list gives them: one or more per pushed head (null: GitHub cannot be read).
-		runs: [],
+		pr: { number: 7, state: 'OPEN', isDraft: false, isCrossRepository: false, headRefName: 'feat/subtract', headRefOid: sha, baseRefName: 'main', title: TITLE, body: BODY, url: 'https://github.com/o/r/pull/7' },
 		repo: { full_name: 'o/r', html_url: 'https://github.com/o/r', allow_auto_merge: true, delete_branch_on_merge: true },
 		baseTip: null,
 		protection: { contexts: ['kit-tests'], checks: [], strict: true },
@@ -114,8 +112,6 @@ function setup() {
 		}
 		if (args[0] === 'pr' && args[1] === 'merge' && args.includes('--disable-auto')) { if (state.disarmHolds) state.armed = false; return { status: 0, stdout: '', stderr: '' }; }
 		if (args[0] === 'pr' && args[1] === 'merge') { state.armed = state.mergeStatus === 0 && state.armOnMerge; return { status: state.mergeStatus, stdout: '', stderr: state.mergeStatus ? 'refused' : '' }; }
-		if (args[0] === 'run' && args[1] === 'list') return state.runs ? ok(state.runs.filter((r) => r.headBranch === args[args.indexOf('--branch') + 1]).map(({ headSha, createdAt }) => ({ headSha, createdAt }))) : no;
-		if (args[0] === 'pr' && args[1] === 'list') return ok(state.pr.state === 'OPEN' && state.pr.headRefName === args[args.indexOf('--head') + 1] ? [{ number: state.pr.number, createdAt: state.pr.createdAt, isCrossRepository: state.pr.isCrossRepository }] : []);
 		if (args[0] === 'release') return ok(Object.fromEntries(args[args.indexOf('--json') + 1].split(',').filter((k) => k in state.release).map((k) => [k, state.release[k]])));
 		return no;
 	};
@@ -776,6 +772,8 @@ test('merge gate: a disarm that does not take is reported, not logged', () => {
 	assert.match(r.faults[0], /still armed/);
 	assert.doesNotMatch(fs.readFileSync(path.join(s.work, '.git', 'kit-merge-gate.log'), 'utf8'), /DISARMED/);
 	assert.equal(disarm({ ...s.opts, pr: 'x' }).disarmed, false);
+	// The hook clears the number the log holds, so 07 would turn PR 7 off and leave its push held.
+	assert.match(disarm({ ...s.opts, pr: '07' }).faults[0], /leading zero/);
 });
 // why: guards rule:standing-grants
 test('merge gate: the CLI exits 1 on NO GO and 2 on a bad call', () => {
@@ -933,74 +931,6 @@ test('merge gate: autofix stops on the kill switch, nothing to push, another bra
 	assert.equal(originHead(s), before, 'nothing went out');
 	assert.ok(fixed);
 	assert.equal(autofix({ ...s.opts, pr: 'x' }).pushed, false);
-});
-// K57: at most 2 review-fix rounds per PR; the third is the owner's call, so autofix refuses it and pushes nothing.
-// why: guards rule:outward-acts
-test('merge gate: autofix makes at most 2 fix rounds per PR, and another PR keeps its own count', () => {
-	const s = setup();
-	const fix = (n) => {
-		fs.writeFileSync(path.join(s.work, 'math.txt'), `add\nsub\nfix ${n}\n`);
-		sh(s.work, 'commit', '-qam', `fix ${n}`);
-		return sh(s.work, 'rev-parse', 'HEAD');
-	};
-	for (const round of [1, 2]) {
-		const fixed = fix(round);
-		const r = autofix(s.opts);
-		assert.equal(r.pushed, true, `round ${round}: ${r.faults.join('\n')}`);
-		s.state.pr.headRefOid = fixed;
-	}
-	fix(3);
-	const before = originHead(s);
-	// Armed, so a cap read after the disarm would show as a gh write before the refusal.
-	s.state.armed = true;
-	const calls = s.state.calls.length;
-	assert.match(autofix(s.opts).faults[0], /2 fix rounds.*owner/);
-	assert.equal(originHead(s), before, 'nothing went out');
-	assert.deepEqual(s.state.calls.slice(calls).filter((c) => /--disable-auto/.test(c)), [], 'the refusal comes before the disarm');
-	assert.match(autofix({ ...s.opts, pr: '07' }).faults[0], /leading zero/, 'another spelling of PR 7 gets no fresh count');
-	assert.match(disarm({ ...s.opts, pr: '07' }).faults[0], /leading zero/, 'a disarm logs the one spelling the hook clears');
-	s.state.armed = false;
-	// PR 70 shares no count with PR 7: only PR 7's own log lines count against it.
-	const log = path.join(s.work, '.git', 'kit-merge-gate.log');
-	fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace(/AUTOFIX 7 /g, 'AUTOFIX 70 '));
-	const r70 = autofix(s.opts);
-	assert.equal(r70.pushed, true, `rounds of PR 70 do not count against PR 7: ${r70.faults.join(' / ')}`);
-});
-// A round the log cannot hold would not count (the 1.25.0 sweep: a read-only log let one yes push three times).
-// why: guards rule:outward-acts
-test('merge gate: autofix pushes nothing when its gate log cannot be written', () => {
-	const s = setup();
-	const before = originHead(s);
-	fixCommit(s);
-	const log = path.join(s.work, '.git', 'kit-merge-gate.log');
-	fs.writeFileSync(log, '');
-	fs.chmodSync(log, 0o444);
-	try {
-		assert.match(autofix(s.opts).faults[0], /cannot be written/);
-		assert.equal(originHead(s), before, 'nothing went out');
-	} finally { fs.chmodSync(log, 0o644); }
-});
-// K57, the owner's pick A: a round is any push GitHub's CI saw after the PR opened, from any clone or command, so
-// pushes this clone never logged still count, and an unreadable count asks the owner.
-// why: guards rule:outward-acts
-test('merge gate: autofix counts the rounds GitHub saw from any clone, and asks when it cannot read them', () => {
-	const s = setup();
-	const ci = (headSha, createdAt) => ({ headBranch: 'feat/subtract', headSha, createdAt });
-	fixCommit(s);
-	const before = originHead(s);
-	// The opening push, then two fixes pushed from another clone (two workflows each), and a run from before the PR.
-	s.state.runs = [ci('old', '2026-11-14T00:00:00Z'), ci('a', '2026-11-15T00:00:01Z'), ci('a', '2026-11-15T00:00:02Z'), ci('b', '2026-11-15T01:00:00Z'), ci('c', '2026-11-15T02:00:00Z'), ci('c', '2026-11-15T02:00:01Z')];
-	assert.match(autofix(s.opts).faults[0], /2 fix rounds.*owner/);
-	assert.deepEqual(branchRounds({ branch: 'feat/subtract', cwd: s.work, run: s.run }), { pr: 7, rounds: 2 });
-	s.state.runs = s.state.runs.slice(0, 4);
-	assert.deepEqual(branchRounds({ branch: 'feat/subtract', cwd: s.work, run: s.run }), { pr: 7, rounds: 1 }, 'a run from before the PR is no round');
-	s.state.runs = null;
-	assert.match(autofix(s.opts).faults[0], /could not be read from GitHub/);
-	assert.equal(branchRounds({ branch: 'feat/subtract', cwd: s.work, run: s.run }), null);
-	assert.equal(originHead(s), before, 'nothing went out');
-	assert.deepEqual(branchRounds({ branch: 'feat/other', cwd: s.work, run: s.run }), { pr: null, rounds: 0 });
-	s.state.runs = [ci('a', '2026-11-15T00:00:01Z')];
-	assert.equal(autofix(s.opts).pushed, true, 'one push since the PR opened is round 0');
 });
 // why: guards rule:standing-grants
 test('merge gate: a disarm reads back rather than trusting gh, on a PR with nothing to turn off', () => {

@@ -38,7 +38,6 @@
 //   node merge-gate.mjs check <pr>        the same checks, never arms
 //   node merge-gate.mjs disarm <pr>       turn auto-merge off on an armed PR
 //   node merge-gate.mjs autofix <pr>      make one auto-fix push and log it, disarming first
-//   node merge-gate.mjs rounds <branch>   the fix rounds of the open PR from this branch (the push guard reads it)
 //   node merge-gate.mjs live pr <n>       audit the live PR body
 //   node merge-gate.mjs live release <tag>  audit the live release body
 //   node merge-gate.mjs status            the kill switch, and each PR still armed in this repo's log
@@ -542,7 +541,6 @@ export function status({ cwd, config = configDir(), run = realRun }) {
 	return { killSwitch: fs.existsSync(path.join(config, 'autonomy-off')), armed: [...armed.values()] };
 }
 
-const MAX_FIX_ROUNDS = 2;
 const gateLog = (cwd, run) => path.join(path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd).stdout.trim() || '.git'), 'kit-merge-gate.log');
 
 /**
@@ -589,7 +587,7 @@ export function arm({ pr, cwd, config = configDir(), run = realRun, now = () => 
  *     { disarmed, faults }
  */
 export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOString() }) {
-	// Logged as written, and the hook and autofix match the logged number: 07 would stop PR 7 but clear nothing.
+	// Logged as written, and the pre-push hook clears the number it logged: 07 would stop PR 7 but clear nothing.
 	if (!/^[1-9]\d*$/.test(String(pr))) return { disarmed: false, faults: ['the PR is a number, with no leading zero'] };
 	const m = run('gh', ['pr', 'merge', String(pr), '--disable-auto'], cwd);
 	const back = json(run('gh', ['pr', 'view', String(pr), '--json', 'autoMergeRequest,state'], cwd));
@@ -597,33 +595,6 @@ export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOStr
 	if (!back || back.autoMergeRequest) return { disarmed: false, faults: [`PR ${pr} is still armed: ${(m.stderr || m.stdout).trim() || 'auto-merge still shows on the PR'}`] };
 	fs.appendFileSync(gateLog(cwd, run), `${now()} DISARMED ${pr}\n`);
 	return { disarmed: true, faults: [] };
-}
-
-const loggedRounds = (log, pr) => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.split(' ')[1] === 'AUTOFIX' && l.split(' ')[2] === String(pr)).length : 0);
-
-/**
- * The fix rounds a PR has had (K57, the owner's pick A, 2026-11-15): every push GitHub's CI saw since the PR opened,
- * as distinct head commits less the first, from any clone and by any command; or this clone's auto-fix log, when that
- * says more (a project with no CI on its PRs). null when GitHub cannot be read, so a caller asks rather than guesses.
- */
-export function roundsOf({ pr, head, createdAt, cwd, run = realRun }) {
-	const runs = json(run('gh', ['run', 'list', '--branch', head, '--event', 'pull_request', '--limit', '500', '--json', 'headSha,createdAt'], cwd));
-	if (!Array.isArray(runs)) return null;
-	const heads = new Set(runs.filter((x) => String(x.createdAt) >= String(createdAt)).map((x) => x.headSha));
-	return Math.max(heads.size - 1, loggedRounds(gateLog(cwd, run), pr), 0);
-}
-
-/**
- * The fix rounds of the open PR whose head is this branch, for the push guard: { pr, rounds }, { pr: null } with no
- * open PR, or null when GitHub cannot be read.
- */
-export function branchRounds({ branch, cwd, run = realRun }) {
-	const open = json(run('gh', ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'number,createdAt,isCrossRepository'], cwd));
-	if (!Array.isArray(open)) return null;
-	const mine = open.filter((x) => x.isCrossRepository === false);
-	if (!mine.length) return { pr: null, rounds: 0 };
-	const rounds = roundsOf({ pr: mine[0].number, head: branch, createdAt: mine[0].createdAt, cwd, run });
-	return rounds === null ? null : { pr: mine[0].number, rounds };
 }
 
 /**
@@ -637,23 +608,12 @@ export function branchRounds({ branch, cwd, run = realRun }) {
 export function autofix({ pr, cwd, config = configDir(), run = realRun, now = () => new Date().toISOString(), localOrigin = false }) {
 	const no = (...faults) => ({ pushed: false, faults });
 	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
-	// One spelling per PR: gh reads 07 as 7, and the round count below keys on the number as written.
-	if (!/^[1-9]\d*$/.test(String(pr))) return no('the PR is a number, with no leading zero');
+	if (!/^\d+$/.test(String(pr))) return no('the PR is a number');
 	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
 	if (planted.length) return no(`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`);
 	if (fs.existsSync(path.join(config, 'autonomy-off'))) return no(`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`);
-	// At most 2 fix rounds per PR (rule:outward-acts): a third means the fixes miss a root, and what next is the owner's.
-	const log = gateLog(cwd, run);
-	const capped = `PR ${pr} has had its ${MAX_FIX_ROUNDS} fix rounds: a third is the owner's call, so tell them what is left with a recommendation`;
-	if (loggedRounds(log, pr) >= MAX_FIX_ROUNDS) return no(capped);
-	// A round that cannot be logged would not count, so an unwritable log stops the push before anything goes out.
-	try { fs.appendFileSync(log, ''); } catch (e) { return no(`the gate log ${log} cannot be written (${e.code || e.message}): this round would go uncounted`); }
-	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest,url,createdAt'], cwd));
+	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest,url'], cwd));
 	if (!p || p.state !== 'OPEN' || p.isCrossRepository !== false) return no(`PR ${pr} is not an open PR from this repo`);
-	// Every push counts, from any clone and by any command: GitHub's CI saw it. Read before anything goes out.
-	const rounds = roundsOf({ pr, head: p.headRefName, createdAt: p.createdAt, cwd, run });
-	if (rounds === null) return no(`the fix rounds of PR ${pr} could not be read from GitHub (gh run list), so this push asks the owner`);
-	if (rounds >= MAX_FIX_ROUNDS) return no(capped);
 	// gh reads the PR from whichever remote it picks; the push goes to origin, so origin must be the PR's repo.
 	// git pushes to every push URL, so there must be one; it is read as host and owner/repo and must be the PR's
 	// exactly (a URL that only ends in that path is another host). A local folder named like the repo counts only
@@ -678,7 +638,7 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 	}
 	const out = git('push', 'origin', `${local}:refs/heads/${p.headRefName}`);
 	if (out.status !== 0) return no(`the push failed: ${(out.stderr || out.stdout).trim().slice(0, 200)}`);
-	fs.appendFileSync(log, `${now()} AUTOFIX ${pr} ${local}\n`);
+	fs.appendFileSync(gateLog(cwd, run), `${now()} AUTOFIX ${pr} ${local}\n`);
 	return { pushed: true, sha: local, faults: [] };
 }
 
@@ -703,11 +663,6 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
 		const r = autofix({ pr: a, cwd });
 		console.log(r.pushed ? `PUSHED: ${r.sha} to PR ${a}; logged. Run the gate again to arm it.` : r.faults.join('\n'));
 		process.exit(r.pushed ? 0 : 1);
-	} else if (cmd === 'rounds' && a) {
-		const r = branchRounds({ branch: a, cwd });
-		if (!r) { console.log('rounds unknown: GitHub could not be read'); process.exit(1); }
-		console.log(r.pr ? `rounds ${r.rounds} pr ${r.pr}` : 'rounds 0 no open PR');
-		process.exit(0);
 	} else if (cmd === 'status') {
 		const r = status({ cwd });
 		console.log(`Kill switch: ${r.killSwitch ? 'SET, every merge asks the owner' : 'off'}`);
@@ -718,7 +673,7 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
 		console.log(r.ok ? `Live ${a} body: clean` : r.faults.join('\n'));
 		process.exit(r.ok ? 0 : 1);
 	} else {
-		console.log('Usage: node merge-gate.mjs arm <pr> | check <pr> | disarm <pr> | autofix <pr> | rounds <branch> | status | live pr <n> | live release <tag>');
+		console.log('Usage: node merge-gate.mjs arm <pr> | check <pr> | disarm <pr> | autofix <pr> | status | live pr <n> | live release <tag>');
 		process.exit(2);
 	}
 }

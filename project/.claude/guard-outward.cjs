@@ -430,6 +430,34 @@ function boundedPush(input) {
 // Which limit of the push bound a refused push hit, for the refusal's words only: the decision above never reads this.
 // rule:outward-acts holds the bound: a plain `git push [-u] origin <feature branch>`, never main or master, a tag, a
 // force or a delete.
+// Opening a PR from a pushed feature branch (the owner, 2026-11-15: "every push to a feature branch, first push and
+// opening the PR included, goes without asking"): one plain `gh pr create` with only these options, in a repo whose one
+// remote is origin and pushes where it fetches, so gh can only open it on that repo. The base may be main; the head is
+// never main or master. A merge, a release or a PR to another repo still asks.
+const PR_VALUE = new Set(['--title', '-t', '--body-file', '-F', '--base', '-B', '--head', '-H', '--assignee', '-a', '--reviewer', '--label', '-l']);
+const PR_FLAG = new Set(['--draft', '-d', '--fill']);
+function boundedPr(input) {
+	if (input && input.tool_name === 'mcp__terminal__run_in_terminal') return false;
+	const command = String((input && input.tool_input && input.tool_input.command) ?? '').trim();
+	// A value is a plain word, or quoted text with nothing that expands: no $, backtick or backslash inside it, and no @
+	// (PowerShell splats a variable's words from it).
+	const words = command.match(/"[^"$`\\]*"|'[^']*'|[A-Za-z0-9._/:+=-]+|\S/g) || [];
+	if (!/^gh pr create( +("[^"$`\\]*"|'[^']*'|[A-Za-z0-9._/:+=-]+))*$/.test(command)) return false;
+	for (let i = 3; i < words.length; i++) {
+		if (PR_FLAG.has(words[i])) continue;
+		if (!PR_VALUE.has(words[i]) || i + 1 >= words.length || /^-/.test(words[i + 1])) return false;
+		if (/^(--head|-H)$/.test(words[i]) && /^["']?(main|master|HEAD)["']?$/i.test(words[i + 1])) return false;
+		i++;
+	}
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	if (!cwd) return false;
+	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8', timeout: 3000 });
+	const remotes = git('remote');
+	if (remotes.status !== 0 || remotes.stdout.trim() !== 'origin' || originMoved(input)) return false;
+	const branch = git('symbolic-ref', '--short', 'HEAD');
+	return branch.status === 0 && !/^(main|master)$/i.test(branch.stdout.trim());
+}
+
 function pushLimit(command) {
 	const words = String(command).trim().split(/\s+/);
 	const at = words.indexOf('push');
@@ -596,26 +624,6 @@ function originMoved(input) {
 	return !from || [fetch.stdout, ...push.stdout.split(/\r?\n/)].filter((u) => u.trim()).some((to) => where(to) !== from);
 }
 
-// K57, the owner's pick A (2026-11-15): a push to a branch with an open PR is a fix round, at most 2 per PR, counted on
-// GitHub by the merge gate (`merge-gate.mjs rounds`: every push its CI saw, from any clone). A third round, or a count
-// that cannot be read, asks the owner. Only a GitHub origin has PRs to count. Returns the reason, or '' when free.
-function thirdRound(input, command) {
-	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
-	if (!cwd) return 'a push whose fix rounds cannot be counted (no folder for the call)';
-	const { spawnSync } = require('node:child_process');
-	const origin = spawnSync('git', ['-C', cwd, 'remote', 'get-url', 'origin'], { encoding: 'utf8', timeout: 3000 });
-	if (!/(^|[@/])github\.com[/:]/i.test(String(origin.stdout).trim())) return '';
-	const spec = command.trim().split(/ +/).pop();
-	const branch = spec.slice(spec.lastIndexOf(':') + 1).replace(/^refs\/heads\//, '');
-	const home = process.env.CLAUDE_CONFIG_DIR || path.join(require('node:os').homedir(), '.claude');
-	const tool = path.join(home, 'kit-tools', 'merge-gate.mjs');
-	if (!fs.existsSync(tool)) return 'a push whose fix rounds cannot be counted (no merge gate in the Claude folder)';
-	const r = spawnSync(process.execPath, [tool, 'rounds', branch === 'HEAD' ? spawnSync('git', ['-C', cwd, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8', timeout: 3000 }).stdout.trim() : branch], { cwd, encoding: 'utf8', timeout: 15000 });
-	const m = r.status === 0 && /^rounds (\d+)(?: pr (\d+))?/.exec(String(r.stdout));
-	if (!m) return 'a push whose fix rounds could not be read from GitHub';
-	return Number(m[1]) >= 2 ? `a push that would be a third fix round on PR ${m[2]} (at most 2 per PR, then the owner decides)` : '';
-}
-
 function decide(input) {
 	const strings = [];
 	collectStrings(input?.tool_input, strings, 0);
@@ -649,7 +657,8 @@ function check(input) {
 		if (/\bgit\b[\s\S]*\bpush\b|\bgh\s+pr\s+(create|edit)\b/.test(command)) prNote = 'Before a PR: its body comes from the pr-body skill, with its audit shown (rule:pr-body).';
 		// Inside the push bound a feature-branch push goes without a yes; anything else held needs the owner's
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
-		if (reason && boundedPush(input)) reason = uncheckedRepo(input) ? 'a push from a repo whose git hooks are not the kit\'s' : originMoved(input) ? 'a push that origin sends somewhere other than it fetches from' : thirdRound(input, command);
+		if (reason && boundedPush(input)) reason = uncheckedRepo(input) ? 'a push from a repo whose git hooks are not the kit\'s' : originMoved(input) ? 'a push that origin sends somewhere other than it fetches from' : '';
+		if (reason === 'gh pr create' && boundedPr(input)) reason = '';
 		if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
 	} catch {
 		// A guard that cannot read the command refuses rather than lets it through.

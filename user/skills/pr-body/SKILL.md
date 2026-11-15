@@ -1,6 +1,6 @@
 ---
 name: pr-body
-description: Write a pull request body in the project's Standard or Lean format, audit it, and show it to the owner before any push or PR command. Use whenever a pull request is about to be opened or its body edited, or the owner asks for a PR body or PR description. Serves rule:pr-body.
+description: Write a pull request body in the project's Standard or Lean format, audit it before the PR command, and give it to the owner after. Use whenever a pull request is about to be opened or its body edited, or the owner asks for a PR body or PR description. Serves rule:pr-body.
 ---
 
 # PR Body
@@ -22,8 +22,8 @@ template and audit scripts win over anything here.
    or any private file; an unfixed security finding gets its severity and tracker, never its detail.
 4. **Audit:** `node .claude/pr-body-audit.mjs <body.md> "<title>" [<PR number>]` (Lean: `.claude/pr-body-audit-lean.mjs`); with no number it keeps 8 characters for the " (#n)" suffix.
    Fix every failure; then reread for flow.
-5. **Hand off** the rendered body and the audit result to the owner, naming the sources you read. Nothing is
-   pushed and no PR is opened until the owner says go (rule:outward-acts).
+5. **Open and hand off:** a PR from a feature branch opens with no yes (rule:outward-acts); then give the owner the
+   PR link, the audit result and the sources you read. Editing a merged PR's body or a release is still the owner's.
 
 ## The rule
 
