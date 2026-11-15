@@ -1525,6 +1525,24 @@ test('every agent role file the kit ships names its model', () => {
   for (const f of files) assert.match(front(path.resolve('user/agents', f)).model || '', /^claude-[a-z]+-\d+(-\d+)?$/, `${f} names no model`);
 });
 
+// MC2 and MC5 (1.36.0, the owner's pick 2026-11-15 "Roles user, Explore per project"): the built-in Explore runs on
+// the session's model (Opus); a project agent named Explore overrides it (Claude Code sub-agents docs, read
+// 2026-11-15). It installs into kit projects only, so a project without the kit keeps the built-in; it carries no
+// hook, so the trust a project agent file's hooks need does not touch it. The five roles stay user level for theirs.
+test('the kit ships a read-only Explore on Sonnet into each kit project, and none into the Claude folder', () => {
+  const fm = front(path.resolve('project/.claude/agents/Explore.md'));
+  assert.equal(fm.name, 'Explore');
+  assert.equal(fm.model, 'claude-sonnet-5-5');
+  for (const t of ['Edit', 'Write', 'NotebookEdit', 'Agent']) assert.ok(!fm.tools.split(/,\s*/).includes(t), `Explore takes no ${t}`);
+  assert.doesNotMatch(read(path.resolve('project/.claude/agents/Explore.md')), /hooks:/, 'a project agent file\'s hooks are skipped in -p, so it carries none');
+  const home = makeTemp('explore-home-');
+  const proj = makeTemp('explore-proj-');
+  install({ kit: path.resolve('.'), home, target: 'user' });
+  install({ kit: path.resolve('.'), home, target: 'project', projectDir: proj });
+  assert.equal(fs.existsSync(path.join(home, 'agents', 'Explore.md')), false);
+  assert.equal(front(path.join(proj, '.claude', 'agents', 'Explore.md')).model, 'claude-sonnet-5-5');
+});
+
 // why: guards rule:sweep-auto-approval
 test('build writes each role its rules skill from the IDs in the role table, under its cap', () => {
   const out = build({ kit: path.resolve('.') });
