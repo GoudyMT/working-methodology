@@ -645,7 +645,9 @@ function shellWritesFrom(command, tool, start, names) {
 		// For the guards and settings (T1): running a script is no write to it (node <file>, the file the only word named,
 		// no inline code), and git reading or staging a file writes none (git diff --output does, so it is refused). The
 		// transcripts keep the stricter reading they had.
-		if (names !== proofNames && !defines && program === 'node' && hits.length === 1 && hits[0] === segment[1]) continue;
+		// The word is the script, never an option: node's own options write files (--redirect-warnings, --cpu-prof-dir,
+		// --diagnostic-dir, --heap-prof-name; the 1.36.0 sweep).
+		if (names !== proofNames && !defines && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
 		// Only the subcommand right after git (no global option, which can move git or run a program), no option that runs
 		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
 		if (names !== proofNames && !defines && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
