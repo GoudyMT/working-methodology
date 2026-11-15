@@ -2,18 +2,18 @@
 
 ## 1.36.0 - 2026-11-15
 
-The list reads as one short line per row, for people and for agents, and every kit project now keeps its roadmap as data, with a checkbox roadmap kept by hand moved in once. Install checks a hand merge before it records one, and the guards no longer hold running a kit script with 2>&1 or after a plain Set-Location.
+The list reads as one short line per row, and every kit project keeps its roadmap as data: a hand-kept checkbox roadmap moves in once. Install checks a hand merge before it records one, and the guards stop holding the kit's own scripts.
 
 ### Added
-- state.mjs list prints one short line per row (id, tag, step, severity, origin, a stored short name); list --agent prints one JSON line per row; item <id> prints the whole row; list --full keeps the full titles.
+- state.mjs list prints one short line per row (id, tag, step, severity, origin, a stored short name); `list --agent` prints one JSON line per row; `item <id>` prints the whole row; `list --full` keeps the full titles.
 - Every row carries a short name of at most 60 characters: a new row must give one, and list shorten fills one in once for rows from before 1.36.0.
-- list import also reads a checkbox roadmap: each box becomes a row, each version heading a roadmap step; the boxes leave the file, which is kept as it was in .kit/kit-backups, and a generated boxes view shows them again. A new tag, blocked, stands for a [!] box.
-- The roadmap template carries the generated roadmap and boxes views; the use check fails until a hand-kept checkbox roadmap is moved into the data.
-- step rename renames a roadmap step by its name or release.
-- A read-only Explore agent on Sonnet installs into each kit project, in place of the built-in one that runs on the session's model; a project without the kit keeps the built-in.
+- list import also reads a checkbox roadmap: each box becomes a row and each version heading a roadmap step; the boxes leave the file, kept as it was in .kit/kit-backups, and a generated view shows them again.
+- The roadmap template carries the generated roadmap and boxes views; the use check fails until a hand-kept checkbox roadmap is moved into the data. A new tag, blocked, stands for a [!] box.
+- step rename renames a roadmap step by its name or release, and `list --step` shows one step's rows.
+- A read-only `Explore` helper on `Sonnet` installs into each kit project, in place of the built-in one that runs on the session's model; a project without the kit keeps the built-in.
 - CI shape templates for Node and Python projects, and ci-shape.mjs, which reports what a project's workflows lack (main-only triggers, stale-run cancel, one required check) and never fails a run.
-- Status and session start flag a Claude Code older than 2.1.325 (naming npm when a package manager lags), which fixed gaps in Bash deny and ask rules, and warn when updates come from the stable channel.
-- The use check fails while git tracks .claude/settings.local.json, whose saved approvals can hold secrets, and while a project settings file sets disableAllHooks; the CI templates fail on the latter too.
+- Status and session start flag a `claude` CLI older than 2.1.325, which fixed gaps in Bash deny and ask rules, naming npm when a package manager lags, and warn when updates come from the stable channel.
+- The use check fails while git tracks `.claude/settings.local.json`, whose saved approvals can hold secrets, and while a project settings file sets disableAllHooks; the CI templates fail on the latter too.
 - Session start names a user layer newer than the project and what that can break.
 - Each shell command starts again in the project folder (CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR in the template settings).
 
@@ -23,12 +23,13 @@ The list reads as one short line per row, for people and for agents, and every k
 
 ### Fixed
 - The guards let 2>&1, and a plain Set-Location before a command, run a kit script instead of holding it as a write to a protected file.
-- A Write or Edit aimed into a kit project from outside it runs that project's guards.
-- install --merged is refused on a file left unchanged since install named the merge.
-- Memory metadata the memory service adds is no change to fold back or a reason to skip an update.
+- A Write, Edit or NotebookEdit aimed into a kit project from outside it runs that project's guards; one through a hard link or a network path is held.
+- `install --merged` is refused on a file left unchanged since install named the merge; the same command again keeps the file as it is.
+- Memory metadata the memory service adds is no change to fold back or a reason to skip an update; a file updated over it is kept first.
+- list import moves only boxes markdown shows as boxes, carries a box's own lines into its note, keeps each line's ending, refuses a linked folder, and names the steps it made and the names it clipped.
+- A node option that names a protected file (a warnings file, a profile folder) is held as a write.
+- The CI templates' hooks step reads the settings as JSON and fails when only one settings file exists; before, it passed with hooks off.
 - The testing rule no longer says a project's CI runs the guard proofs; only the kit's CI can.
-- From the pre-PR sweep: list import moves only boxes markdown shows as boxes (never one in a comment, indented code or an indented fence), carries a box's own prose and sub-bullets into its note, keeps each line's ending, refuses a linked folder, and names the steps it made and the short names it clipped; list --step shows one step's rows; a second install --merged on an unchanged file keeps it as it is; a memory file updated with only metadata changed is kept first; a file tool through a hard link or a network path is held; a node option that names a protected file is a write; the CI templates' hooks step now fails when only one settings file exists.
-
 ## 1.35.0 - 2026-11-15
 
 A project's improvement list and roadmap now live as data: each row has one tag, says who caught it and where its numbers were measured, and the roadmap, counts and rows are generated from it. A release is called done only when a check has read every step on GitHub and in the project.
