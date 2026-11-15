@@ -635,3 +635,29 @@ Brief v2, keys v11 (key 4: a push of the feature branch and opening its PR need 
 
 control: 0
 gate: kit-1.32.0 median 14 baseline 13 brief v2 keys v11 owner-accepted
+## Recall v11 - 1.33.0 against the 1.32.0 baseline (2026-11-15)
+
+Brief v2, keys v11. Every session pinned to Opus 5.5 at medium. Candidate: this branch's final rule text, 5 runs (a first 3 on an earlier draft of the text landed on the bar, so all 5 were run fresh on the final text); baseline: 1.32.0 from the release copy, 3 runs; control: no kit. All nine scored together, blind.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 0, 0, 1, 1, 0 | 0, 1, 0 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 0, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 0, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 13, 13, 12, 14, 13 | 13, 14, 13 | 0 |
+
+- **Scored: median 13 of 14, baseline 13, control 0.** Question 4 misses on both sides at the same rate (3 of 5 candidate runs, 2 of 3 baseline runs): the test folder has no branch or commit, so each run answers "not yet" and states the push rule only in part. This build did not change that rule. One candidate run misses questions 7 and 10, both marked borderline by the scorer, in rules this build did not change. The script lists 4, 7 and 10 as failing more in candidate runs because it counts runs, and the candidate has five.
+
+control: 0
+gate: k133-final median 13 baseline 13 brief v2 keys v11

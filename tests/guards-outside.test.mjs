@@ -1377,6 +1377,121 @@ test('C13 a project with a long path is found by its transcript folder, the name
 	}
 });
 
+// why: guards rule:outward-acts. Seen live 2026-11-15: a session started in another folder worked in a kit project
+// through cd, and none of that project's guards ran, because the launcher found the project by the session's folder
+// alone. A command that first moves into a kit project (cd, Set-Location, pushd, git -C) runs that project's guards.
+test('a command that names a kit project runs that project\'s guards', () => {
+	const { home, proj } = setup();
+	const outside = kitTemp.makeTemp('cd-out-');
+	const call = (command, tool_name = 'Bash', cwd = outside) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input: { command }, cwd, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: cwd, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const p = proj.split(path.sep).join('/');
+	const rel = path.relative(outside, proj).split(path.sep).join('/');
+	assert.equal(call('git push origin main'), 'runs', 'outside any kit project nothing is checked');
+	for (const command of ['cd ' + p + ' && git push origin main', 'cd "' + p + '"; git push origin main', 'pushd ' + p + ' && git push origin main', 'git -C ' + p + ' push origin main', 'cd ' + rel + ' && git push origin main']) {
+		assert.equal(call(command), 'deny', command);
+	}
+	assert.equal(call("Set-Location '" + p + "'; git push origin main", 'PowerShell'), 'deny');
+	assert.equal(call('cd ' + p + ' && git status'), 'runs', 'a read in the project still runs');
+	assert.equal(call('cd ' + outside.split(path.sep).join('/') + ' && git push origin main'), 'runs', 'a folder that is no kit project');
+	// Every move counts, not only a leading one (the K61 security review), and Git Bash's /c/... spelling of a drive.
+	assert.equal(call('git status; cd ' + p + ' && git push origin main'), 'deny', 'a move after another command');
+	assert.equal(call('git status && (cd ' + p + ' && git push origin main)'), 'deny', 'a move inside a subshell');
+	if (process.platform === 'win32') {
+		const msys = '/' + p[0].toLowerCase() + p.slice(2);
+		assert.equal(call('cd ' + msys + ' && git push origin main'), 'deny', msys);
+	}
+	// Chained, relative and optioned moves.
+	const parent = path.dirname(proj).split(path.sep).join('/');
+	const base = path.basename(proj);
+	assert.equal(call('cd ' + parent + ' && cd ' + base + ' && git push origin main'), 'deny', 'a relative move after another move');
+	assert.equal(call('cd ' + parent + ' && git -C ' + base + ' push origin main'), 'deny', 'git -C from the folder a move left');
+	assert.equal(call('git -C ' + parent + ' -C ' + base + ' push origin main'), 'deny', 'git -C chained');
+	assert.equal(call('git --work-tree=' + p + ' push origin main'), 'deny', 'git --work-tree');
+	assert.equal(call('cd -P ' + p + ' && git push origin main'), 'deny', 'cd -P');
+	assert.equal(call('Set-Location -LiteralPath "' + p + '"; git push origin main', 'PowerShell'), 'deny', 'Set-Location -LiteralPath');
+	assert.equal(call('Push-Location ' + p + '; git push origin main', 'PowerShell'), 'deny', 'Push-Location');
+	// A move it cannot follow, or one that may not run, hides no folder the command names (the K61 review).
+	assert.equal(call('popd; cd ' + p + ' && git push origin main'), 'deny', 'after a popd');
+	assert.equal(call('cd $X; cd ' + p + ' && git push origin main'), 'deny', 'after a variable');
+	assert.equal(call('cd ' + parent + ' || cd elsewhere; cd ' + base + ' && git push origin main'), 'deny', 'a relative move from either folder');
+	assert.equal(call('(cd ' + parent + '); cd ' + rel + ' && git push origin main'), 'deny', 'a move inside a subshell does not hide the outer folder');
+	assert.equal(call('git log -C ' + p), 'runs', 'a -C after the subcommand is not a folder');
+	// The sweep's bypasses (role 2, 2026-11-15): a reader of moves always misses a spelling, so a command that names a
+	// kit project's folder anywhere runs that project's guards, however it gets there.
+	for (const command of ['command cd ' + p + ' && git push origin main', 'builtin cd ' + p + ' && git push origin main',
+		'if true; then cd ' + p + ' && git push origin main; fi', 'FOO=1 git -C ' + p + ' push origin main', 'nohup git -C ' + p + ' push origin main',
+		"bash -c 'cd " + p + " && gh pr merge 1'", 'sh -c "cd ' + p + '; git push origin main"', 'eval "cd ' + p + '" && git push origin main',
+		'env -C ' + p + ' git push origin main', 'cd -- ' + p + ' && rm .claude/guard.cjs', 'cd -e ' + p + ' && git push origin main',
+		'cd ' + parent + '/"' + base + '" && git push origin main', "cd '" + parent + "/'" + base + ' && git push origin main',
+		'GIT_DIR=' + p + '/.git git push origin main', 'export GIT_DIR=' + p + '/.git; git push origin main']) {
+		assert.equal(call(command), 'deny', command);
+	}
+	for (const command of ["$null = Set-Location '" + p + "'; git push origin main", "iex \"cd '" + p + "'; git push origin main\"",
+		"Set-Location -Path '" + p + "' -PassThru; git push origin main", "Set-Location -LiteralPath:'" + p + "'; git push origin main",
+		"Set-Location ('" + p + "'); git push origin main"]) {
+		assert.equal(call(command, 'PowerShell'), 'deny', command);
+	}
+	if (process.platform === 'win32') {
+		assert.equal(call('cmd /c "cd /d ' + proj + ' && git push origin main"'), 'deny', 'cmd /c with a Windows path');
+		assert.equal(call('cd ' + p.toUpperCase() + ' && git push origin main'), 'deny', 'another case of the path');
+	}
+	if (process.platform === 'win32') {
+		// An 8.3 short name names the same folder (the sweep); where the disk keeps none, the long path is all there is.
+		const short = spawnSync('cmd', ['/d', '/c', 'for %I in ("' + proj + '") do @echo %~sI'], { encoding: 'utf8' }).stdout.trim();
+		if (short && short.toLowerCase() !== proj.toLowerCase()) {
+			assert.equal(call('cd ' + short.split(path.sep).join('/') + ' && git push origin main'), 'deny', short);
+			// A session started at the short name is the same project: a read naming "." is not another project's (CI, 1.33.0).
+			assert.notEqual(call('ls .claude/', 'Bash', short), 'deny', 'a read in the session\'s own project by its short name');
+		}
+	}
+	// The second review (on 2ecbbde): home spellings, chained relative moves, a wildcard, and a backslash escape.
+	const homeRel = path.relative(os.homedir(), proj).split(path.sep).join('/');
+	if (!homeRel.startsWith('..')) {
+		assert.equal(call('cd ~/' + homeRel + ' && git push origin main'), 'deny', '~/');
+		assert.equal(call('cd $HOME/' + homeRel + ' && git push origin main'), 'deny', '$HOME/');
+	}
+	const grand = path.dirname(path.dirname(proj)).split(path.sep).join('/');
+	assert.equal(call('cd ' + grand + ' && cd ' + path.basename(path.dirname(proj)) + ' && cd ' + base + ' && git push origin main'), 'deny', 'chained relative moves');
+	assert.equal(call('cd ' + parent + '/' + base.slice(0, 2) + '* && git push origin main'), 'deny', 'a wildcard');
+	assert.equal(call('cd ' + parent + '/a\\pp && git push origin main'), 'deny', 'a backslash escape');
+	assert.equal(call('cd ' + parent + ' && git push origin main'), 'runs', 'the parent folder alone is no kit project');
+	// The third review (on cd0f9f5): brace expansion and $'...' quoting spell a name the shell builds, and a wildcard
+	// with many stars must not stall the reader (each fails toward checking).
+	assert.equal(call('cd ' + parent + '/{x,a}pp && git push origin main'), 'deny', 'a brace list');
+	assert.equal(call('cd ' + parent + '/a{p..p}p && git push origin main'), 'deny', 'a brace range');
+	assert.equal(call("cd $'" + parent + "/a\\x70p' && git push origin main"), 'deny', "$'...' quoting");
+	const t0 = Date.now();
+	assert.equal(call('ls ' + '*a'.repeat(30) + 'Z && git push origin main'), 'deny', 'a wildcard with many stars');
+	assert.ok(Date.now() - t0 < 5000, 'the many-star wildcard is read in linear time');
+	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
+	const bare = kitTemp.makeTemp('cd-bare-');
+	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });
+	fs.writeFileSync(path.join(bare, '.kit', 'kit-version.json'), JSON.stringify({ version: '1.0.0' }));
+	fs.mkdirSync(path.join(bare, '.claude'));
+	fs.writeFileSync(path.join(bare, '.claude', 'guard.cjs'), '');
+	const b = bare.split(path.sep).join('/');
+	const direct = call('git status', 'Bash', bare);
+	assert.equal(call('cd ' + b + ' && git status'), direct, 'the same answer as a session started there');
+});
+
+// why: guards rule:outward-acts. The third review (on cd0f9f5): a project whose folder name has a space is never one
+// word of the command, so a name check by words missed it.
+test('a kit project whose folder name has a space is named by the command too', () => {
+	const { home, proj } = setup({ projName: 'my app' });
+	const outside = kitTemp.makeTemp('cd-out-');
+	const call = (command) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const parent = path.dirname(proj).split(path.sep).join('/');
+	assert.equal(call('cd ' + parent + ' && cd "my app" && git push origin main'), 'deny', 'the name in quotes');
+	assert.equal(call('cd ' + parent + ' && cd my\\ app && git push origin main'), 'deny', 'the name with an escaped space');
+	assert.equal(call('cd ' + parent + ' && cd "my apps" && git push origin main'), 'runs', 'a longer name is another folder');
+});
+
 // why: guards rule:security-standards. The 1.29.0 sweep (two reviewers, the same hole): a folder list that was only read
 // from the project could be dropped by a branch switch, a reset, a stash or a clean, and every folder on it lost
 // its hold. Install records the list outside the project, as it records a host's own hook: gone or changed, every

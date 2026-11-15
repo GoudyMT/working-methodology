@@ -21,8 +21,15 @@ const DEFAULTS = { shipped: ['src/'], exclude: ['.test.', '.spec.'], versionFile
  * Returns:
  *     { ok, detail }
  */
+// A program the repo's own git config names (core.fsmonitor, an external diff, a textconv) never runs here: the guard
+// runs these audits inside a hook (the K61 sweep).
+// Nothing is fetched either: a partial clone fetches a missing object through a transport the config names.
+const GIT_SAFE = ['-c', 'core.fsmonitor=false', '-c', 'diff.external=', '-c', 'protocol.allow=never',
+	...['ext', 'file', 'ssh', 'git', 'http', 'https'].flatMap((p) => ['-c', `protocol.${p}.allow=never`])];
+const GIT_ENV = { ...process.env, GIT_NO_LAZY_FETCH: '1' };
+
 export function versionBumpCheck(body, cwd = process.cwd()) {
-	const git = (...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+	const git = (...a) => spawnSync('git', ['-C', cwd, ...GIT_SAFE, ...a], { encoding: 'utf8', env: GIT_ENV });
 	const top = git('rev-parse', '--show-toplevel');
 	if (top.status !== 0) return { ok: true, detail: 'not a git repository' };
 	const root = top.stdout.trim();
@@ -33,10 +40,10 @@ export function versionBumpCheck(body, cwd = process.cwd()) {
 		.find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
 	if (!base) return { ok: false, detail: 'no base branch found: set PR_BASE' };
 	const range = `${base}...HEAD`;
-	const shipped = git('diff', '--name-only', range).stdout.split('\n').filter(Boolean)
+	const shipped = git('diff', '--no-ext-diff', '--no-textconv', '--name-only', range).stdout.split('\n').filter(Boolean)
 		.filter((p) => cfg.shipped.some((s) => p.startsWith(s)) && !cfg.exclude.some((x) => p.includes(x)));
 	if (!shipped.length) return { ok: true, detail: 'no shipped file changed' };
-	const bumped = git('diff', range, '--', cfg.versionFile).stdout.split('\n').some((l) => l.startsWith('+') && /"version"\s*:/.test(l));
+	const bumped = git('diff', '--no-ext-diff', '--no-textconv', range, '--', cfg.versionFile).stdout.split('\n').some((l) => l.startsWith('+') && /"version"\s*:/.test(l));
 	if (bumped) return { ok: true, detail: `${shipped.length} shipped file(s); version bumped` };
 	const saysNone = /no user-facing change/i.test(body);
 	return {

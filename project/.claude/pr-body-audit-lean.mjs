@@ -19,6 +19,10 @@ const subject = title.replace(/^[a-z]+(\([a-z0-9-]+\))?: /, '');
 row('title is type: subject, at most 72 with the squash suffix (smaller PR)', /^(feat|fix|refactor|test|docs|chore|security|perf)(\([a-z0-9-]+\))?: [a-z0-9`]/.test(title) && squash <= 72, `${title} (${squash} with the suffix)`);
 row('H1 is <Area>: <line>, no type prefix', /^## [A-Z][A-Za-z ]+: [a-z]/.test(lines[0]) && !/^## (feat|fix|chore|security|docs)/.test(lines[0]), lines[0]);
 row('H1 line carries the title subject', lines[0].endsWith(subject), `subject: ${subject}`);
+// A heading whose area repeats the subject's first word reads twice ("Grants: grant ..."): the area names the part, the subject what changed.
+const stem = (w) => String(w || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(es|s)$/, '');
+const area = (/^## ([^:]+):/.exec(lines[0]) || [])[1] || '';
+row('H1 area does not repeat the subject', !area || stem(area.split(/\s+/).pop()) !== stem(subject.split(/\s+/)[0]), `${area} / ${subject.split(/\s+/)[0] || ''}`);
 
 const long = lines.map((l, i) => [i + 1, l.length]).filter(([, n]) => n > 110);
 row('every line <= 110', long.length === 0, `max ${Math.max(...lines.map((l) => l.length))}; over: ${JSON.stringify(long)}`);

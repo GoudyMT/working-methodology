@@ -29,7 +29,11 @@ const SHELLS = ['Bash', 'PowerShell'];
 const WIN = process.platform === 'win32';
 const posix = (p) => String(p).split(path.sep).join('/');
 const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const same = (a, b) => (WIN ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b));
+// One folder by any spelling: an 8.3 short name (RUNNER~1) and its long name are the same folder, so each is
+// read as the file system resolves it (seen in CI on 1.33.0: the session's own project, named by ".", was taken for
+// another project with no record, and every read in it was held).
+const real = (p) => { try { return fs.realpathSync.native(path.resolve(p)); } catch { return path.resolve(p); } };
+const same = (a, b) => (WIN ? real(a).toLowerCase() === real(b).toLowerCase() : real(a) === real(b));
 
 /**
  * The record folder's name for a project: Claude Code's folder name for it, plus a short hash of the full path, so two
@@ -54,9 +58,10 @@ function readRecord(dir) {
 }
 
 /** The project a call belongs to: the nearest folder with a record, from the call's folder, then the session's. */
-function findProject(input) {
+// only: the folder alone, as for a folder a command moves into (no session folder, no transcript).
+function findProject(input, only = false) {
 	const tried = new Set();
-	for (const start of [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean)) {
+	for (const start of (only ? [input.cwd] : [input.cwd, process.env.CLAUDE_PROJECT_DIR]).filter(Boolean)) {
 		for (let d = path.resolve(String(start)); !tried.has(d); d = path.dirname(d)) {
 			tried.add(d);
 			const rec = readRecord(d);
@@ -64,7 +69,7 @@ function findProject(input) {
 		}
 	}
 	// The transcript sits in <home>/projects/<the session's project slug>/: Claude Code names it, no setting can.
-	if (input.transcript_path) {
+	if (!only && input.transcript_path) {
 		const slug = path.basename(path.dirname(String(input.transcript_path)));
 		let names = [];
 		try { names = fs.readdirSync(RECORDS); } catch { /* none */ }
@@ -384,8 +389,8 @@ function runGuard(real, files, input, fix = 'the owner reinstalls the kit with i
 }
 
 /** A kit project with guard files but no record here: its record was deleted, or it predates this launcher. */
-function unrecorded(input) {
-	for (const start of [input.cwd, process.env.CLAUDE_PROJECT_DIR].filter(Boolean)) {
+function unrecorded(input, only = false) {
+	for (const start of (only ? [input.cwd] : [input.cwd, process.env.CLAUDE_PROJECT_DIR]).filter(Boolean)) {
 		let d = path.resolve(String(start));
 		for (let up = path.dirname(d); ; d = up, up = path.dirname(d)) {
 			if (fs.existsSync(path.join(d, '.kit', 'kit-version.json')) && fs.existsSync(path.join(d, '.claude', 'guard.cjs'))) return d;
@@ -395,12 +400,117 @@ function unrecorded(input) {
 	return null;
 }
 
+// Every folder a shell command moves into (cd, chdir, pushd, Set-Location, sl, or git -C), at its start or after a
+// separator or an opening bracket, resolved from the session's folder. Seen live 2026-11-15: a session started outside
+// a kit project worked in one through cd, and the project's guards never ran, since the project was found by the
+// session's folder alone. A folder built at run time ($x, %x%, ~, a backtick) stays unread, as for every guard.
+// The kit projects a shell command names, other than the session's own (seen live 2026-11-15: a session outside a
+// kit project worked in one through cd, and none of its guards ran). A reader of moves always misses a spelling
+// (the sweep found command cd, bash -c, eval, cd --, a quote inside a path, GIT_DIR=, 8.3 names, chained relative
+// moves), so this reads no moves and fails toward checking: a project is named when its folder's own name appears
+// in the command with no name character on either side, in any spelling (case, slashes, quotes, a backslash escape, Git Bash's /c/ form, home as ~ or
+// $HOME), when a path in it resolves into the project (a relative path, an 8.3 short name), or when a wildcard in it
+// could match the project's path or name; a brace list or $'...' quoting names them all. A named project's guards run on the call as if it were started there. A
+// project whose name only appears in a command costs one more check, never a pass. A name built at run time ($x, a
+// backtick) stays unread, as for every guard.
+function recordedProjects() {
+	let names = [];
+	try { names = fs.readdirSync(RECORDS); } catch { return []; }
+	const out = [];
+	for (const n of names) {
+		try {
+			const rec = JSON.parse(fs.readFileSync(path.join(RECORDS, n, 'record.json'), 'utf8'));
+			if (rec && typeof rec.projectDir === 'string') out.push(path.resolve(rec.projectDir));
+		} catch { /* not a record */ }
+	}
+	return out;
+}
+function namedProjects(input) {
+	if (!input || !SHELLS.includes(input.tool_name)) return [];
+	const command = String((input.tool_input && input.tool_input.command) ?? '');
+	if (!command.trim()) return [];
+	const cwd = path.resolve(String(input.cwd || process.cwd()));
+	const fold = (s) => (WIN ? s.toLowerCase() : s);
+	const home = posix(require('os').homedir());
+	// One spelling for a path: home expanded, forward slashes, no quotes, the drive as c:/, no doubled slashes.
+	const norm = (s) => fold(String(s).replace(/(^|[\s=(:;&|"'])(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\\s"']|$)/gi, (m, a) => a + home))
+		.replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/');
+	// A backslash is a separator on Windows and an escape in a POSIX shell (my\ app is "my app"): both readings count.
+	let text = `${norm(command)} ${norm(command.replace(/\\(.)/g, '$1'))}`;
+	const tokens = text.split(/[\s;&|(){}=,]+/).filter(Boolean);
+	// A relative path or an 8.3 short name: the folder it names, as the file system resolves it from the session. A
+	// kit project the launcher has no record for is found from these too, so it holds the call as it would there.
+	const unrec = [];
+	const globs = [];
+	for (const t of tokens) {
+		if (/[*?[]/.test(t)) { globs.push(t); continue; }
+		if (!/[/~.]/.test(t) || /\$/.test(t)) continue;
+		let real = '';
+		try { real = fs.realpathSync.native(path.resolve(cwd, t)); } catch { continue; }
+		text += ` ${norm(real)}`;
+		const u = unrecorded({ cwd: real }, true);
+		if (u && !unrec.some((x) => same(x, u))) unrec.push(u);
+	}
+	// A name the shell builds from a brace list or range ({a,b}, {1..3}) or decodes from $'...' or $"..." quoting is
+	// not written out, so such a command names every kit project (the third review, on cd0f9f5).
+	const built = /\{[^{}]*(,|\.\.)[^{}]*\}/.test(command) || /\$['"]/.test(command);
+	const WORD = /[A-Za-z0-9_.-]/;
+	// p appears with no name character after it; bounded, with none before it either (a name may hold a space, so it
+	// is never read as one word of the command).
+	const has = (p, bounded) => {
+		for (let i = text.indexOf(p); i >= 0; i = text.indexOf(p, i + 1)) {
+			const next = text[i + p.length];
+			if ((next === undefined || !WORD.test(next)) && (!bounded || i === 0 || !WORD.test(text[i - 1]))) return true;
+		}
+		return false;
+	};
+	// A wildcard as the shell would match it, against a whole path or one of its parts. A run of stars is one star;
+	// one with more wildcards than a path needs, or too long, is not matched at all but counts as naming every project,
+	// so no command can make the reader slow (the third review).
+	const globRe = (g) => {
+		const one = g.replace(/\*+/g, '*');
+		if (one.length > 256 || (one.match(/[*?[]/g) || []).length > 8) return null;
+		return new RegExp('^' + one.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^') + '$');
+	};
+	const out = [];
+	const recorded = recordedProjects();
+	for (const dir of recorded) {
+		const p = norm(dir);
+		const name = norm(path.basename(dir));
+		const under = norm(posix(path.relative(cwd, dir)));
+		const below = under && !under.startsWith('..') && !path.isAbsolute(under);
+		const parts = [p, name, under];
+		const globbed = globs.some((g) => { try { const re = globRe(g); return !re || parts.some((x) => re.test(x)) || p.split('/').some((x) => re.test(x)); } catch { return true; } });
+		if (built || has(p) || has(name, true) || (below && has(under, true)) || globbed) out.push(dir);
+	}
+	// A folder found by its real path may be a recorded project under another spelling (an 8.3 short name): that record's.
+	for (const u of unrec) {
+		const dir = recorded.find((d) => same(d, u)) || u;
+		if (!out.some((x) => same(x, dir))) out.push(dir);
+	}
+	return out;
+}
+
 function preToolUse(input) {
-	const found = findProject(input);
+	const here = projectCheck(input);
+	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
+	// a call started there. The strictest answer wins: a refusal, then an ask, then the rest (as guard.cjs merges).
+	const mine = findProject(input);
+	const answers = [here];
+	for (const dir of namedProjects(input)) {
+		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
+		answers.push(projectCheck({ ...input, cwd: dir }, true));
+	}
+	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };
+	return answers.reduce((best, o) => (rank(o) > rank(best) ? o : best), null);
+}
+
+function projectCheck(input, only = false) {
+	const found = findProject(input, only);
 	if (found && found.ambiguous) return deny('Held: this session\'s folder name fits more than one installed kit project with a long path, so the kit cannot tell which guards to run. Start the session inside the project folder, or shorten the path.');
 	if (!found) {
 		// Fails closed: a kit project the launcher has no record for runs no guard until install writes one.
-		const dir = unrecorded(input);
+		const dir = unrecorded(input, only);
 		if (!dir) return null;
 		let rec = {};
 		try { const u = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')); rec = { kitDir: u.kitDir || null, kitFingerprint: u.kitFingerprint || null }; } catch { /* none */ }

@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
+import { mergeOnGreen, renderMergeOnGreen } from './merge-on-green.mjs';
 
 // git runs a program the config names on some commands (core.fsmonitor on git status and git ls-files, proven on Git for
 // Windows, 2026-11-11), and a project's git config is the agent's to write. Install runs inside a held fix line, so
@@ -22,9 +23,7 @@ import launch from '../user/kit-tools/kit-launch.cjs';
 // the fix line runs from the project, where the agent could leave a git.exe.
 // A protocol.<name>.allow in the repo config beats protocol.allow, so each transport is named too (the security review on
 // 0696ddf; no lazy fetch from these commands was reproduced on git 2.56, 2026-11-11).
-const NO_PROGRAMS = ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never',
-  ...['ext', 'file', 'ssh', 'git', 'http', 'https'].flatMap((p) => ['-c', `protocol.${p}.allow=never`])];
-const SAFE_CWD = path.dirname(process.execPath);
+import { NO_PROGRAMS, SAFE_CWD, safeGh, githubSlug } from './safe-git.mjs';
 
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
@@ -259,7 +258,7 @@ const readRecord = (home, projectDir) => {
  * Returns:
  *     the sha256 of each shim, by hook name
  */
-function writeShims(home, hooks, proj) {
+export function writeShims(home, hooks, proj) {
   fs.mkdirSync(hooks, { recursive: true });
   const launcher = toPosix(path.join(home, 'kit-tools', 'kit-launch.cjs'));
   // Single quotes, so no $, backtick or quote in a folder name is read by the shell (the 1.25.1 sweep); NODE_OPTIONS
@@ -1180,22 +1179,44 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
 }
 
 /**
- * Whether main has a branch rule on GitHub, read with gh (rule:first-push-gate, "Protect main").
+ * Whether main is protected the way the merge gate needs (rule:first-push-gate, "Protect main"; I3 and A5, the
+ * owner's ruling 2026-11-15): a required status check that must be up to date, no force push and no delete. Classic
+ * protection and rulesets count together, as GitHub layers them; a rule that holds less does not count.
  *
  * Returns:
  *     'protected', 'unprotected', or null when it cannot tell (no GitHub remote, no gh, no access)
  */
-export function mainProtection(projectDir, gh = (args) => spawnSync('gh', args, { cwd: projectDir, encoding: 'utf8', timeout: 8000 })) {
-  const r = gh(['api', 'repos/{owner}/{repo}/branches/main/protection']);
+export function mainProtection(projectDir, gh = safeGh, slug = githubSlug(projectDir)) {
+  // gh runs from node's own folder and names the repo, never through the project folder (the K61 security review).
+  if (!slug) return null;
+  const r = gh(['api', `repos/${slug}/branches/main/protection`]);
   if (r.error) return null;
-  if (r.status === 0) return 'protected';
-  if (!/Branch not protected/i.test(`${r.stdout}${r.stderr}`)) return null;
-  // A ruleset protects a branch with no classic protection: GitHub answers 404 for the one and lists the other.
-  const rules = gh(['api', 'repos/{owner}/{repo}/rules/branches/main']);
+  let prot = null;
+  if (r.status === 0) {
+    try { prot = JSON.parse(r.stdout); } catch { return null; }
+    // An answer not in the shape GitHub gives tells nothing (the K61 sweep).
+    if (!prot || typeof prot !== 'object' || Array.isArray(prot)) return null;
+  } else if (!/Branch not protected/i.test(`${r.stdout}${r.stderr}`)) return null;
+  // A ruleset protects a branch with no classic protection: GitHub answers 404 for the one and lists the other, 30 to
+  // a page unless asked for more.
+  const rules = gh(['api', `repos/${slug}/rules/branches/main?per_page=100`]);
   if (rules.error || rules.status !== 0) return null;
   let list = null;
   try { list = JSON.parse(rules.stdout); } catch { return null; } // an answer that is not JSON tells nothing
-  return Array.isArray(list) && list.length > 0 ? 'protected' : 'unprotected';
+  if (!Array.isArray(list)) return null;
+  const sets = list.filter((x) => x && typeof x === 'object');
+  const has = (type) => sets.some((x) => x.type === type);
+  const rsc = sets.filter((x) => x.type === 'required_status_checks').map((x) => x.parameters || {});
+  const p = prot && typeof prot === 'object' ? prot : {};
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const c = p.required_status_checks && typeof p.required_status_checks === 'object' ? p.required_status_checks : {};
+  const classicChecks = arr(c.contexts).length + arr(c.checks).length > 0;
+  const checks = classicChecks || rsc.some((x) => arr(x.required_status_checks).length);
+  // Up to date counts only from a source that also requires a check (the K61 sweep).
+  const strict = (classicChecks && c.strict === true) || rsc.some((x) => x.strict_required_status_checks_policy === true && arr(x.required_status_checks).length);
+  const noForce = (prot && !(p.allow_force_pushes && p.allow_force_pushes.enabled)) || has('non_fast_forward');
+  const noDelete = (prot && !(p.allow_deletions && p.allow_deletions.enabled)) || has('deletion');
+  return checks && strict && noForce && noDelete ? 'protected' : 'unprotected';
 }
 
 /**
@@ -1263,7 +1284,7 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
   const reportDir = path.join(projectDir, '.kit', 'reports');
   const open = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((f) => /^IR-.*\.md$/.test(f)).sort()
     .filter((f) => !/^\| Status \| (closed|declined) \|/m.test(fs.readFileSync(path.join(reportDir, f), 'utf8'))) : [];
-  if (protection(projectDir) === 'unprotected') lines.push('main is not protected on GitHub: run the "Protect main" step of rule:first-push-gate (an outward act; the owner says go).');
+  if (protection(projectDir) === 'unprotected') lines.push('main is not protected on GitHub the way the merge gate needs (a required check that must be up to date, no force push, no delete): run the "Protect main" step of rule:first-push-gate (an outward act; the owner says go).');
   if (open.length) lines.push(`${open.length} improvement report(s) open: ${open.join(', ')}. Hand filed ones to the kit.`);
   // T3 (1.30.0): install skips a CLAUDE.md the project filled in, so it can keep the old start reading: the tracking
   // files inlined at start and the old rule 11. Status names the exact lines to change.
@@ -1562,9 +1583,9 @@ export function build({ kit }) {
     out.set(`project/${where(m)}`, front + stamp(m.src) + '\n' + m.body);
   }
   const rows = mods.flatMap((m) => headings(m.body).map((h) => `| ${h.id} | ${h.title} | \`${where(m)}\` | ${(m.meta.tags[h.id] || []).join(', ')} |`));
-  // The merge gate needs the PR-body audits where no branch or session can edit them: a kit-local project keeps
-  // .claude/ out of git, so its base holds none. An exact copy, so the two cannot drift.
-  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
+  // The merge gate and the PR-text guard need the PR-body audits and the name check where no branch or session can edit
+  // them: a kit-local project keeps .claude/ out of git, so its base holds none. An exact copy, so the two cannot drift.
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs']) {
     out.set(`user/kit-tools/audits/${f}`, fs.readFileSync(path.join(kit, 'project', '.claude', f), 'utf8'));
   }
   // The merge gate makes its temp folders through the one helper; the same exact-copy rule keeps them alike.
@@ -1906,6 +1927,10 @@ function main(argv) {
     if (target === 'project' && !dryRun && use) {
       console.log(use.text);
       if (use.code !== 0) process.exitCode = 1;
+    }
+    // K61: the owner's steps to turn on merge on green, each read live and marked done or to do. Read only.
+    if (!dryRun) {
+      for (const l of renderMergeOnGreen(mergeOnGreen({ home, projectDir, gh: safeGh, protection: mainProtection }))) console.log(l);
     }
   } else if (cmd === 'fold-back') {
     const r = foldBack({ kit, home, target, projectDir });

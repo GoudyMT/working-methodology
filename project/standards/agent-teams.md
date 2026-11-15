@@ -8,7 +8,7 @@
 
 ### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
-Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs` (`$HOME` in PowerShell; or your Claude config folder), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.
+Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs` (PowerShell: full path; or your Claude config folder), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.
 
 | # | Role | The distinct question ONLY this role asks | Context injected | What a finding looks like | Token budget |
 |---|---|---|---|---|---|
@@ -97,7 +97,7 @@ The portable playbook is user level: the `agent-team-build` skill (both modes) a
    CI-only gate: run <scanner> on each changed file by absolute path before reporting.
    Style: ASCII only; comments explain WHY for a reader with only the code - no labels, no history, no
      commented-out code; constants UPPERCASE.
-   Commits: one line `type: subject`, imperative, lowercase, no period, no body, no trailer, no AI
+   Commits: one line `type: subject`, plain result, lowercase, no period, no body, no trailer, no AI
      attribution; never --no-verify.
    Budgets: never raise a limit; report an overage with the measured shortfall.
    Visuals + copy: change only what the plan specifies from a locked wireframe or copy line.

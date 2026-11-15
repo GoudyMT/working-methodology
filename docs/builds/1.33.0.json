@@ -1,0 +1,155 @@
+{
+ "version": "1.33.0",
+ "date": "2026-11-15",
+ "level": "minor",
+ "area": "Merge on green",
+ "title": "feat: install prints merge-on-green steps; PR text is checked",
+ "headline": "Install prints every step only the owner can take to turn on merge on green, ready to paste and marked done or to do; the merge gate can arm again; and PR text, repo names and a command run from outside a project are held to the same checks as everywhere else.",
+ "alignment": "v1.33.0 lands the owner's merge-on-green item and his rulings of 2026-11-15: every change only the user can make comes with exact steps, and the kit's own automation never lowers a standard it automates.",
+ "items": [
+  {
+   "id": "K61",
+   "kind": "added",
+   "text": "Install prints the merge-on-green steps ready to paste: the allow block, the grant with its git commands, the repo settings and the branch protection for both shells. Each is marked done, to do, or not checked with why.",
+   "evidence": "tests/merge-on-green.test.mjs, tests/kit.test.mjs",
+   "where": "Turning on merge on green",
+   "before": "A rule to read and lines to work out",
+   "after": "Each step printed, ready to paste, marked done"
+  },
+  {
+   "id": "PR-TEXT",
+   "kind": "changed",
+   "text": "PR text is checked where it is written: a PR needs a title and body file that pass the PR-body audit and name check. A typed body, stdin, gh api or another spelling is held; repo names are checked too. Descriptions are not.",
+   "evidence": "tests/guards-hold.test.mjs",
+   "where": "Opening or editing a PR",
+   "before": "The text went out unread",
+   "after": "Held unless it passes its audit"
+  },
+  {
+   "id": "TITLE",
+   "kind": "changed",
+   "text": "One title standard for commits, PRs and repo names: the plain result, as merged, with no internal tracking code. Shared tech names such as SHA256, UTF8 and S3 still pass.",
+   "evidence": "tests/kit.test.mjs, rules/git-and-release.md"
+  },
+  {
+   "id": "NAMED",
+   "kind": "security",
+   "text": "A command that names a kit project from outside it runs that project's guards, in any spelling of its path or name, a wildcard, a brace list or $'' quoting included.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "I3-A5",
+   "kind": "changed",
+   "text": "Status counts main as protected only with a required check that must be up to date, no force push and no delete, from branch protection or a ruleset; the protection template requires up to date.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "Is main protected",
+   "before": "Any rule counted",
+   "after": "Only what the merge gate needs"
+  },
+  {
+   "id": "ARM",
+   "kind": "fixed",
+   "text": "The merge gate can arm again: since 1.26.0 it read only the old hook shim and said no push hold on every project.",
+   "evidence": "tests/merge-gate.test.mjs"
+  },
+  {
+   "id": "AUDIT-GIT",
+   "kind": "security",
+   "text": "The PR-text audits run no program the repo's git config names and fetch nothing, since the guard runs them inside a hook.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "PS-HOME",
+   "kind": "fixed",
+   "text": "The merge gate's PowerShell allow lines carry the full path with forward slashes, since the PowerShell tool never runs a $HOME path unasked.",
+   "evidence": "tests/merge-on-green.test.mjs, rules/core.md"
+  },
+  {
+   "id": "GATE-READ",
+   "kind": "fixed",
+   "text": "The merge gate and status count up to date only from a source that also requires a check, read the rules 100 to a page, and name no repo when origin pushes somewhere else; check refuses a PR number with a leading zero, as disarm does.",
+   "evidence": "tests/merge-gate.test.mjs, tests/kit.test.mjs"
+  },
+  {
+   "id": "LAYERS",
+   "kind": "changed",
+   "text": "Run install user and install project together: a project on 1.33.0 reads its PR checks from the user layer, and holds every PR until install user has run.",
+   "evidence": "guard-outward.cjs, tests/guards-hold.test.mjs"
+  }
+ ],
+ "verification": [
+  "Each code change has a test that fails on the code before it; the arm, template, PowerShell and status bugs were first reproduced live on a throwaway repo.",
+  "Recall on keys v11, five candidate runs on the final rule text scored blind with the baseline: candidate median 13, baseline (1.32.0) 13, control 0."
+ ],
+ "decisions": [
+  {
+   "decision": "The owner writes the allow lines and the grant",
+   "why": "Each is the owner's own act: install prints them and marks each done when it finds it, and the repo settings are outward acts."
+  },
+  {
+   "decision": "PR text is held, not asked",
+   "why": "A failing title or body goes out with neither a yes nor the bound: an ask would let a tap send text no audit passed."
+  },
+  {
+   "decision": "A named project fails toward checking",
+   "why": "A reader of moves always misses a spelling, so any command that names a kit project runs its guards; a name in a command costs one more check, never a pass."
+  },
+  {
+   "decision": "Run install user and install project together",
+   "why": "A project layer on 1.33.0 with a user layer on 1.32.0 holds every PR, because the audits it runs live in the user layer; the message says to run install user."
+  }
+ ],
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "1866197",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Not touched: no personal data read or sent"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency added"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Two highs (repo config programs in the audits, guards skipped from outside a project) and five mediums, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "One high (an untested bound) and the test trims, the name allow-list and the layer note, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES; three highs on the printed steps from the owner's phone, all fixed"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 6,
+   "medium": 12,
+   "low": 13
+  },
+  "fixed": [
+   "The audits ran programs the repo's git config names. Fixed in 508444d and cd0f9f5.",
+   "A command could work in a kit project from outside it with none of its guards. Fixed in 2ecbbde, 211b859 and eb1deaa.",
+   "The bounded-open test no longer tested the bound. Fixed in 4b0c3a1.",
+   "The printed steps missed the Free-plan limit, the track file content and the exact commands. Fixed in c12e39d."
+  ],
+  "deferred": [],
+  "accepted": [
+   "A body file swapped between the guard check and gh reading it: CI and the merge gate re-read the body GitHub holds (the owner, 2026-11-15).",
+   "An admin can bypass the required check on main: by design for a solo owner (the owner, 2026-11-15).",
+   "A repo description and homepage are not audited, only its name (the owner, 2026-11-15)."
+  ]
+ },
+ "tests": {
+  "before": 717,
+  "after": 730,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}

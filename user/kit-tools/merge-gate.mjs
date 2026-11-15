@@ -124,7 +124,8 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	const facts = {};
 	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
 	const gh = (...a) => run('gh', a, cwd);
-	if (!/^\d+$/.test(String(pr))) return { go: false, faults: ['the PR is a number'], facts };
+	// As disarm and autofix read it: 07 is not the 7 the log and the hook hold (the K61 sweep).
+	if (!/^[1-9]\d*$/.test(String(pr))) return { go: false, faults: ['the PR is a number, with no leading zero'], facts };
 
 	// The audits below are children that call git by bare name from this folder, so nothing may run while one sits here.
 	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
@@ -170,7 +171,8 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 
 	// 4. A required check on the base: branch protection or a ruleset.
 	const prot = json(gh('api', `repos/${repo.full_name}/branches/${encodeURIComponent(p.baseRefName)}/protection/required_status_checks`));
-	const rules = json(gh('api', `repos/${repo.full_name}/rules/branches/${encodeURIComponent(p.baseRefName)}`));
+	// GitHub pages this list 30 to a page: one page of 100 holds every rule a branch is likely to carry (the K61 sweep).
+	const rules = json(gh('api', `repos/${repo.full_name}/rules/branches/${encodeURIComponent(p.baseRefName)}?per_page=100`));
 	// Each answer is held to its shape: a string where a list belongs would read as one check per letter.
 	const list = (v) => v == null || Array.isArray(v);
 	const ruleSets = Array.isArray(rules) ? rules.filter((r) => r && r.type === 'required_status_checks') : [];
@@ -182,7 +184,10 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	facts.required = required;
 	if (!required.length) faults.push(`${p.baseRefName} requires no status check, so auto-merge would merge at once: protect it first (rule:first-push-gate)`);
 	// Unless the base needs the branch up to date, a PR checked against an old base merges onto a new one untested.
-	const strict = (prot && prot.strict === true) || ruleSets.some((r) => (r.parameters || {}).strict_required_status_checks_policy === true);
+	// It counts only from a source that also requires a check: a strict ruleset with no check of its own holds no
+	// check up to date (the K61 sweep).
+	const strict = (prot && prot.strict === true && fromProt.some((c) => typeof c === 'string' && c))
+		|| ruleSets.some((r) => (r.parameters || {}).strict_required_status_checks_policy === true && ((r.parameters || {}).required_status_checks || []).some((c) => c && typeof c.context === 'string' && c.context));
 	if (required.length && !strict) faults.push(`${p.baseRefName} does not require a branch to be up to date before it merges, so a PR could merge onto a base its checks never ran on: the owner turns on "require branches to be up to date" for its required checks`);
 	// GitHub waits only for required checks, and merges at once past a failed optional one, so any failure stops it here.
 	// A check's name is the workflow author's text: one line, no control characters, so it cannot write the triage.
@@ -236,13 +241,18 @@ function grantFault(git, baseRef) {
 	if (!baseRef) return '';
 	const r = git('show', `${baseRef}:standards/project-adapter.md`);
 	if (r.status !== 0) return `the base has no standards/project-adapter.md, so this project names no standing grant (row A27): this merge is the owner's`;
-	const row = r.stdout.split('\n').find((l) => /^\|\s*A27\s*\|/.test(l));
+	const { granted, value } = grantsMerge(r.stdout);
+	return granted ? '' : `adapter row A27 on the base grants no merge (${value || 'no row'}): this merge is the owner's. To grant it, the owner merges a row A27 that lists merge, such as: merge through the merge gate; auto-fix push`;
+}
+
+// Row A27 of an adapter file's text, and whether it grants merge. Install reads it the same way (K61).
+export function grantsMerge(text) {
+	const row = String(text || '').split('\n').find((l) => /^\|\s*A27\s*\|/.test(l));
 	const value = row ? row.split('|').slice(1, -1).pop().trim().replace(/`/g, '') : '';
 	// A granted act is its own item, led by its name; an item that also says no, not, never, none or without grants
 	// nothing, so "no merge" or "merge: no" is no grant (the 1.22.0 sweep).
 	const items = value.split(/[;,]/).map((x) => x.trim().toLowerCase());
-	const granted = items.some((x) => /^merge\b/.test(x) && !/\b(no|not|never|none|without|except)\b/.test(x));
-	return granted ? '' : `adapter row A27 on the base grants no merge (${value || 'no row'}): this merge is the owner's. To grant it, the owner merges a row A27 that lists merge, such as: merge through the merge gate; auto-fix push`;
+	return { granted: items.some((x) => /^merge\b/.test(x) && !/\b(no|not|never|none|without|except)\b/.test(x)), value };
 }
 
 // The hooks folder this clone really uses (the gate's own runs override it on the command line, so that value is
@@ -262,7 +272,10 @@ function holdFault(git, cwd, env = process.env) {
 	let text = '';
 	try { text = fs.readFileSync(hook, 'utf8'); } catch { /* no hook: the fault below says so */ }
 	// The kit's hook shim (V3) checks the guards from outside, then execs the project's own hook: the hold is in that one.
-	const shim = /^# The kit's hook shim/m.test(text) && /^exec '((?:[^']|'\'')*)' "\$@"$/m.exec(text);
+	// From 1.26.0 the shim runs a copy the launcher wrote from the checked bytes of the project's hook, which the shim
+	// names in its [ -f '<hook>' ] line; before, it ran that hook itself (exec '<hook>').
+	const isShim = /^# The kit's hook shim/m.test(text);
+	const shim = isShim && (/^\[ -f '((?:[^']|'\\'')*)' \] \|\|/m.exec(text) || /^exec '((?:[^']|'\\'')*)' "\$@"$/m.exec(text));
 	if (shim) {
 		hook = shim[1].split("'\''").join("'");
 		text = '';

@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { check, arm, disarm, autofix, live, status, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
+import { writeShims } from '../scripts/kit.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -106,7 +107,7 @@ function setup() {
 		// name is sent encoded.
 		const b = encodeURIComponent(state.pr.baseRefName);
 		if (args[0] === 'api' && args[1] === `repos/o/r/branches/${b}/protection/required_status_checks`) return state.protection ? ok(state.protection) : no;
-		if (args[0] === 'api' && args[1] === `repos/o/r/rules/branches/${b}`) return ok(state.rules);
+		if (args[0] === 'api' && args[1] === `repos/o/r/rules/branches/${b}?per_page=100`) return ok(state.rules);
 		if (args[0] === 'api' && args[1] === `repos/o/r/branches/${b}`) {
 			return ok({ commit: { sha: state.baseTip ?? spawnSync('git', ['rev-parse', `refs/remotes/origin/${state.pr.baseRefName}`], { cwd, encoding: 'utf8' }).stdout.trim() } });
 		}
@@ -176,6 +177,7 @@ test('merge gate: a PR that passes every check is armed, pinned to the checked h
 // The second pass on 1.25.1 (role 4): with V3 the hooks folder holds the kit's shims, which check the guards from outside
 // and then exec the project's .githooks/pre-push. The hold is read through the shim, so the gate still arms.
 // why: guards rule:standing-grants
+// Legacy: the exec '<path>' shim install wrote before 1.26.0, still read for a project not yet reinstalled.
 test('merge gate: under the kit\'s hook shims the push hold is read in the hook the shim runs', () => {
 	const s = setup();
 	const own = path.join(s.root, 'own-hooks');
@@ -192,6 +194,22 @@ test('merge gate: under the kit\'s hook shims the push hold is read in the hook 
 	const n = arm(t.opts);
 	assert.equal(n.armed, false);
 	assert.ok(n.faults.some((f) => /no push hold: .*own-hooks-pre-push does not stop/.test(f)), n.faults.join('\n'));
+});
+
+// 1.33.0: from 1.26.0 the shims install writes run a checked copy (exec "$run"), and the test above still built the
+// old exec '<path>' form by hand, so every real arm said "no push hold". The shim here is the one install writes.
+// why: guards rule:standing-grants
+test('merge gate: the push hold is read through the shim install really writes', () => {
+	for (const [hook, armed] of [[path.join(KIT, 'project/.githooks/pre-push'), true], [null, false]]) {
+		const s = setup();
+		fs.mkdirSync(path.join(s.work, '.githooks'), { recursive: true });
+		if (hook) fs.copyFileSync(hook, path.join(s.work, '.githooks', 'pre-push'));
+		else fs.writeFileSync(path.join(s.work, '.githooks', 'pre-push'), '#!/bin/sh\nexit 0\n');
+		writeShims(s.root, path.join(s.root, 'kit-hooks'), s.work.split(path.sep).join('/'));
+		const r = arm(s.opts);
+		assert.equal(r.armed, armed, r.faults.join('\n'));
+		if (!armed) assert.ok(r.faults.some((f) => /no push hold: .*\.githooks[\\/]pre-push does not stop/.test(f)), r.faults.join('\n'));
+	}
 });
 
 // M30: the canned gh above can answer in shapes the real gh never gives. The field names are checked live below;
@@ -228,7 +246,7 @@ test('merge gate: the canned gh answers with the types and shapes the real gh ga
 	const prot = call('/branches/main/protection/required_status_checks');
 	if (prot.status === 0) for (const k of Object.keys(fake.protection)) assert.equal(type(prot.json[k]), 'array', `protection ${k}`);
 	else assert.match(prot.stderr, /HTTP 404/);
-	const rules = api('/rules/branches/main');
+	const rules = api('/rules/branches/main?per_page=100');
 	assert.equal(type(rules), 'array');
 	const needed = rules.filter((r) => r.type === 'required_status_checks').flatMap((r) => r.parameters.required_status_checks);
 	assert.ok(prot.status === 0 || needed.length, 'the real base names its required checks in protection or a ruleset');
@@ -301,6 +319,8 @@ const CASES = [
 	['a check whose result went stale', (s) => { s.state.pr.statusCheckRollup = [{ name: 'kit-tests', status: 'COMPLETED', conclusion: 'STALE' }]; }, /checks are failing: kit-tests/],
 	['a required-check answer of the wrong shape', (s) => { s.state.protection = { contexts: 'kit-tests', checks: null }; }, /could not read the required checks/],
 	['a base that does not need the branch up to date', (s) => { s.state.protection.strict = false; }, /up to date/],
+	// The K61 sweep: up to date counts only from a source that also requires a check.
+	['a strict ruleset with no check of its own', (s) => { s.state.protection.strict = false; s.state.rules = [{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [] } }]; }, /up to date/],
 	['a link named like a gate folder', (s) => {
 		const blob = sh(s.work, 'hash-object', '-w', 'math.txt');
 		sh(s.work, 'update-index', '--add', '--cacheinfo', `120000,${blob},.githooks`);
@@ -774,6 +794,8 @@ test('merge gate: a disarm that does not take is reported, not logged', () => {
 	assert.equal(disarm({ ...s.opts, pr: 'x' }).disarmed, false);
 	// The hook clears the number the log holds, so 07 would turn PR 7 off and leave its push held.
 	assert.match(disarm({ ...s.opts, pr: '07' }).faults[0], /leading zero/);
+	// check reads the number the same way, so arm cannot pass 07 where disarm refuses it.
+	assert.match(check({ ...s.opts, pr: '07' }).faults[0], /leading zero/);
 });
 // why: guards rule:standing-grants
 test('merge gate: the CLI exits 1 on NO GO and 2 on a bad call', () => {

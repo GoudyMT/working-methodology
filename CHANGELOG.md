@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.33.0 - 2026-11-15
+
+Install prints every step only the owner can take to turn on merge on green, ready to paste and marked done or to do; the merge gate can arm again; and PR text, repo names and a command run from outside a project are held to the same checks as everywhere else.
+
+### Added
+- Install prints the merge-on-green steps ready to paste: the allow block, the grant with its git commands, the repo settings and the branch protection for both shells. Each is marked done, to do, or not checked with why.
+
+### Changed
+- PR text is checked where it is written: a PR needs a title and body file that pass the PR-body audit and name check. A typed body, stdin, gh api or another spelling is held; repo names are checked too. Descriptions are not.
+- One title standard for commits, PRs and repo names: the plain result, as merged, with no internal tracking code. Shared tech names such as SHA256, UTF8 and S3 still pass.
+- Status counts main as protected only with a required check that must be up to date, no force push and no delete, from branch protection or a ruleset; the protection template requires up to date.
+- Run install user and install project together: a project on 1.33.0 reads its PR checks from the user layer, and holds every PR until install user has run.
+
+### Fixed
+- The merge gate can arm again: since 1.26.0 it read only the old hook shim and said no push hold on every project.
+- The merge gate's PowerShell allow lines carry the full path with forward slashes, since the PowerShell tool never runs a $HOME path unasked.
+- The merge gate and status count up to date only from a source that also requires a check, read the rules 100 to a page, and name no repo when origin pushes somewhere else; check refuses a PR number with a leading zero, as disarm does.
+
+### Security
+- A command that names a kit project from outside it runs that project's guards, in any spelling of its path or name, a wildcard, a brace list or $'' quoting included.
+- The PR-text audits run no program the repo's git config names and fetch nothing, since the guard runs them inside a hook.
+
 ## 1.32.0 - 2026-11-15
 
 Before a PR only the tests that cover the change run locally and CI runs the rest; auto-fix gathers every comment first and fixes each class at its root; and a feature branch's PR opens with no yes.

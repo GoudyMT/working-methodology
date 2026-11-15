@@ -31,6 +31,9 @@ function copyKitCli(kit) {
   // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
   fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
   fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
+  // The merge-on-green steps install prints (K61), which read row A27 as the merge gate does.
+  for (const f of ['merge-on-green.mjs', 'safe-git.mjs']) fs.copyFileSync(path.resolve('scripts', f), path.join(kit, 'scripts', f));
+  for (const f of ['merge-gate.mjs', 'kit-temp.cjs']) fs.copyFileSync(path.resolve('user/kit-tools', f), path.join(kit, 'user/kit-tools', f));
 }
 
 function makeKit() {
@@ -257,17 +260,54 @@ function caseKit() {
 }
 
 // 1.21.1 carry 6: a main held by a ruleset alone is protected, though GitHub has no classic protection for it.
-// why: guards rule:outward-acts
-test('status reads main as protected by a ruleset, and unprotected only when neither holds it', () => {
+// 1.33.0 (I3, A5, the owner's ruling): protected means what the merge gate needs, from either source: a required
+// check that must be up to date, no force push and no delete. Any rule at all no longer counts.
+// why: guards rule:first-push-gate
+test('status reads main as protected only with an up-to-date required check, no force push and no delete', () => {
+  const ok = (o) => ({ status: 0, stdout: JSON.stringify(o), stderr: '' });
   const answers = (prot, rules) => (args) => (args[1].includes('/protection') ? prot : rules);
   const notProtected = { status: 1, stdout: '{"message":"Branch not protected"}', stderr: 'gh: Branch not protected (HTTP 404)' };
-  assert.equal(mainProtection('.', answers({ status: 0, stdout: '{}', stderr: '' })), 'protected');
-  assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[{"type":"required_status_checks"}]', stderr: '' })), 'protected');
-  assert.equal(mainProtection('.', answers(notProtected, { status: 0, stdout: '[]', stderr: '' })), 'unprotected');
-  assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '', stderr: 'HTTP 403' })), null);
+  const classic = (strict, force = false, del = false) => ok({ required_status_checks: { strict, contexts: ['ci'], checks: [{ context: 'ci' }] }, allow_force_pushes: { enabled: force }, allow_deletions: { enabled: del } });
+  // The repo is named, so gh never reads it from a folder (the K61 security review); with no GitHub repo gh never runs.
+  const mp = (gh) => mainProtection('.', gh, 'o/r');
+  assert.equal(mainProtection('.', () => { throw new Error('gh ran'); }, null), null);
+  assert.equal(mp((args) => (args[1].startsWith('repos/o/r/') ? ok(args[1].includes('/rules/') ? [] : {}) : { status: 1, stdout: '', stderr: 'wrong repo' })), 'unprotected');
+  assert.equal(mp(answers(classic(true), ok([]))), 'protected');
+  assert.equal(mp(answers(classic(false), ok([]))), 'unprotected', 'the kit template before 1.33.0: not up to date');
+  assert.equal(mp(answers(classic(true, true), ok([]))), 'unprotected', 'force pushes allowed');
+  assert.equal(mp(answers(classic(true, false, true), ok([]))), 'unprotected', 'deletion allowed');
+  assert.equal(mp(answers(ok({}), ok([]))), 'unprotected', 'a rule that requires nothing');
+  // The ruleset seen live on the probe repo, 2026-11-15: it blocked deletion only, and status called main protected.
+  assert.equal(mp(answers(notProtected, ok([{ type: 'deletion' }]))), 'unprotected');
+  const full = [{ type: 'deletion' }, { type: 'non_fast_forward' }, { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'ci' }] } }];
+  assert.equal(mp(answers(notProtected, ok(full))), 'protected');
+  assert.equal(mp(answers(notProtected, ok([{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'ci' }] } }]))), 'unprotected', 'no force push or delete block');
+  assert.equal(mp(answers(notProtected, ok([]))), 'unprotected');
+  // A check from classic protection and the blocks from a ruleset hold together, as GitHub layers them.
+  assert.equal(mp(answers(ok({ required_status_checks: { strict: true, contexts: ['ci'] }, allow_force_pushes: { enabled: true }, allow_deletions: { enabled: true } }), ok(full.slice(0, 2)))), 'protected');
+  assert.equal(mp(answers(notProtected, { status: 1, stdout: '', stderr: 'HTTP 403' })), null);
   // The 1.22.0 sweep (T2): the real gh prints a JSON body on an error (tests/contracts/gh.json); that is no answer.
-  assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '{"message":"Forbidden"}', stderr: 'gh: Forbidden (HTTP 403)' })), null);
-  assert.equal(mainProtection('.', answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
+  assert.equal(mp(answers(notProtected, { status: 1, stdout: '{"message":"Forbidden"}', stderr: 'gh: Forbidden (HTTP 403)' })), null);
+  assert.equal(mp(answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
+  // The K61 sweep: up to date counts only from a source that also requires a check, a list answer is no protection,
+  // and the rules are read 100 to a page (GitHub gives 30 unless asked).
+  const strictNoCheck = [{ type: 'deletion' }, { type: 'non_fast_forward' }, { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [] } }];
+  assert.equal(mp(answers(ok({ required_status_checks: { strict: false, contexts: ['ci'] }, allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false } }), ok(strictNoCheck))), 'unprotected', 'a strict ruleset with no check does not make classic checks up to date');
+  assert.equal(mp(answers(ok([]), ok(full))), null, 'a list where an object belongs');
+  const asked = [];
+  mp((args) => { asked.push(args[1]); return args[1].includes('/protection') ? notProtected : ok(full); });
+  assert.ok(asked.includes('repos/o/r/rules/branches/main?per_page=100'), asked.join(' '));
+});
+// why: guards rule:first-push-gate (the K61 sweep: a push URL set apart from origin's fetch URL named one repo while
+// the work went to another)
+test('a remote whose push URL names another repo names no repo', async () => {
+  const { githubSlug } = await import('../scripts/safe-git.mjs');
+  const dir = makeTemp('slug-');
+  spawnSync('git', ['init', '-q', '-b', 'main', dir]);
+  spawnSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git']);
+  assert.equal(githubSlug(dir), 'o/r');
+  spawnSync('git', ['-C', dir, 'remote', 'set-url', '--push', 'origin', 'https://github.com/x/y.git']);
+  assert.equal(githubSlug(dir), null);
 });
 
 // why: catches a break at scripts/kit.mjs:1213 that no other test catches
@@ -606,6 +646,19 @@ function releaseKit() {
   const cli = (...args) => spawnSync(process.execPath, [path.join(kit, 'scripts/kit.mjs'), ...args], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: ctx.home } });
   return { ...ctx, git, cli };
 }
+
+// K61 (the owner, 2026-11-15): merge on green had no exact steps; install prints them, each marked done or to do.
+// why: guards rule:standing-grants
+test('install user and install project print the merge-on-green steps', () => {
+  const { proj, cli } = releaseKit();
+  const u = cli('install', 'user');
+  assert.equal(u.status, 0, u.stderr);
+  assert.match(u.stdout, /Merge on green: 0 of 1 step done/);
+  assert.ok(u.stdout.includes('/kit-tools/merge-gate.mjs arm *)",') && u.stdout.includes('"Bash(node '), u.stdout);
+  const p = cli('install', 'project', proj);
+  assert.match(p.stdout, /Merge on green: 0 of 4 steps done/);
+  assert.doesNotMatch(cli('install', 'project', proj, '--dry-run').stdout, /Merge on green/, 'a dry run checks nothing');
+});
 
 // why: guards rule:outward-acts. K49 (a project on the kit, 2026-11-14): a settings file kept for a hand merge still ran
 // the kit guards itself, the shape before 1.25.1, so every guard ran twice beside the launcher and no sweep could
@@ -3923,7 +3976,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     return rows;
   };
   const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
-    'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
+    'H1 area does not repeat the subject', 'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
     'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'no spaced dashes in prose',
     'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
   const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
@@ -3937,6 +3990,8 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     ['a scoped type', lean, title.replace('feat:', 'feat(hooks):'), []],
     ['a type prefix in the H1', sub('## Commit hook:', '## feat:'), title, ['H1 is <Area>: <line>, no type prefix']],
     ['an H1 that drops the title subject', lean, title.replace(' on commit', ''), ['H1 line carries the title subject']],
+    // 1.33.0 (the owner, 2026-11-15): a heading whose area ends in the subject's first word reads it twice.
+    ['an H1 area that repeats the subject', sub('## Commit hook:', `## Commit ${lean.split('\n')[0].replace(/^## [^:]+: /, '').split(/\s+/)[0]}:`), title, ['H1 area does not repeat the subject']],
     ['a line of 110', sub(NOTES, `**Notes** - ${'x'.repeat(98)}`), title, []],
     ['a line of 111', sub(NOTES, `**Notes** - ${'x'.repeat(99)}`), title, ['every line <= 110']],
     ['an em dash', sub('Tooling only;', `Tooling only${String.fromCharCode(0x2014)}`), title, ['0 non-ASCII characters']],
@@ -4074,6 +4129,7 @@ test('the kit ships the main branch rule as settings, and status flags an unprot
   assert.equal(rule.enforce_admins, false, 'admins may bypass');
   assert.equal(rule.required_pull_request_reviews, null, 'no review for a solo owner');
   assert.equal(rule.required_status_checks.contexts.length, 1, 'one gate check');
+  assert.equal(rule.required_status_checks.strict, true, 'the merge gate needs a branch up to date before it merges');
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
   install({ kit, home, target: 'project', projectDir: proj });
@@ -4198,6 +4254,20 @@ test('the commit message check passes the house style and names each fault', () 
 test('the PR title check holds a title to the commit subject rule', () => {
   assert.equal(nameRun(['title', 'fix: guards that hold']).status, 0);
   for (const bad of ['Guards: hold the six holes', 'fix: guards that hold.', `feat: ${'x'.repeat(70)}`]) assert.equal(nameRun(['title', bad]).status, 1, bad);
+  // 1.33.0 (the owner, 2026-11-15): a list row's code tells a reader outside the project nothing, and it is public for good.
+  for (const bad of ['chore: the K61 merge steps', 'fix: close S23-4', 'feat: E12 merges on green']) {
+    const r = nameRun(['title', bad]);
+    assert.equal(r.status, 1, bad);
+    assert.match(r.stderr, /internal code/, bad);
+  }
+  // Names the field shares in the same shape are words (the K61 sweep).
+  for (const ok of ['fix: the Haiku price line and its 100K warning', 'feat: guards read UTF-8 and v1.33.0', 'fix: the SHA256 check reads UTF8 on ARM64', 'feat: sync to S3 from EC2']) assert.equal(nameRun(['title', ok]).status, 0, ok);
+});
+// why: guards rule:branching (a repo name is public for good, like a branch name)
+test('the repo name check passes plain kebab words and refuses an internal code', () => {
+  // A name with a number in it is still a name (web3, vue3); a code is one or two letters and a number, on its own.
+  for (const ok of ['merge-on-green-probe', 'web3-wallet', 'vue3-starter', 'notes', 'py3-tools', 's3-sync', 'ec2-scripts', 'h2-console']) assert.equal(nameRun(['repo', ok]).status, 0, ok);
+  for (const bad of ['k61-probe', 'probe-e12', 'My_Repo', 'b2']) assert.equal(nameRun(['repo', bad]).status, 1, bad);
 });
 // why: guards rule:commit-message-format
 test('the branch name check passes plain type-prefixed names and refuses tool prefixes and internal codes', () => {
@@ -6329,7 +6399,8 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
 test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
   for (const f of ['rules/agent-teams.md', 'rules/reviews-and-findings.md']) {
     const text = read(path.resolve(f));
-    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*`\$HOME` in PowerShell/, f);
+    // 1.33.0: the PowerShell tool never runs a $HOME path unasked, so the rules give it the full path.
+    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*PowerShell: full path/, f);
     // pin: 2 (the lead's order when the tool is missing)
   assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }
@@ -7652,7 +7723,7 @@ test('install user lands the merge gate and its audits at the paths the rules gi
   const home = makeTemp('tools-home-');
   install({ kit: path.resolve('.'), home, target: 'user' });
   assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'merge-gate.mjs')));
-  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs']) {
     assert.equal(read(path.join(home, 'kit-tools', 'audits', f)), read(path.resolve('project/.claude', f)), f);
   }
   // The gate imports its temp helper from beside it: without the copy, the installed gate cannot start at all.
