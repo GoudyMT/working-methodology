@@ -435,7 +435,7 @@ function boundedPush(input) {
 // remote is origin and pushes where it fetches, so gh can only open it on that repo. The base may be main; the head is
 // never main or master. A merge, a release or a PR to another repo still asks.
 const PR_VALUE = new Set(['--title', '-t', '--body-file', '-F', '--base', '-B', '--head', '-H', '--assignee', '-a', '--reviewer', '--label', '-l']);
-const PR_FLAG = new Set(['--draft', '-d', '--fill']);
+const PR_FLAG = new Set(['--draft', '-d']);
 function boundedPr(input) {
 	if (input && input.tool_name === 'mcp__terminal__run_in_terminal') return false;
 	const command = String((input && input.tool_input && input.tool_input.command) ?? '').trim();
@@ -658,7 +658,11 @@ const PR_GH_WRITES = /^(-f|--fill|--fill-first|--fill-verbose|-w|--web|-e|--edit
 function outwardTextFault(input) {
 	const command = String((input && input.tool_input && input.tool_input.command) ?? '').trim();
 	const m = /^gh (pr (create|new|edit)|repo (create|rename))(\s|$)/.exec(command);
-	if (!m) return '';
+	// Any other spelling (gh -R x pr create, GH_REPO=x gh, "gh", gh.exe, two spaces, after cd &&) is read here no
+	// surer than gh reads it, and gh api writes a PR with no title or body file at all: each is held (the K61 sweep).
+	if (!m) return /\sapi\s/.test(command) && /\/pulls\b/.test(command)
+		? 'a PR written through gh api is never audited: open or edit it with gh pr create or gh pr edit, --title and --body-file (rule:pr-body)'
+		: 'PR text or a repo name is audited only in one plain gh command on its own: gh pr create --title "<title>" --body-file <file> (or gh pr edit, gh repo create, gh repo rename), with nothing before it';
 	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
 	if (!cwd) return '';
 	const words = (command.match(/"[^"]*"|'[^']*'|[^\s;&|]+|[;&|]+/g) || []).map((w) => w.replace(/^(["'])([\s\S]*)\1$/, '$2'));
@@ -690,6 +694,12 @@ function outwardTextFault(input) {
 			name = args[i];
 			break;
 		}
+		// gh repo create --source <folder> with no name takes the folder's own name.
+		if (!name && m[3] === 'create') {
+			const i = args.findIndex((w) => ['-s', '--source'].includes(w.split('=')[0]));
+			const source = i < 0 ? '' : args[i].includes('=') ? args[i].slice(args[i].indexOf('=') + 1) : (args[i + 1] ?? '');
+			if (source) name = path.basename(path.resolve(cwd, source));
+		}
 		if (!name) return '';
 		const r = node(kitFile('name-check.mjs'), 'repo', name.split('/').pop());
 		return r.status === 0 ? '' : `the repo name ${JSON.stringify(name)} fails the name check: ${r.stderr.trim().replace(/^name-check: /gm, '')}`;
@@ -710,6 +720,8 @@ function outwardTextFault(input) {
 	if (m[2] === 'edit' && title === null && file === null) return '';
 	if (m[2] !== 'edit' && args.some((w) => PR_GH_WRITES.test(w))) return 'a PR body gh writes itself (--fill, --web, --editor, a template) is never audited: write the body to a .md file in the repo and pass it with --title and --body-file (rule:pr-body)';
 	if (title === null || file === null) return 'PR text is audited as a pair: give both --title and --body-file, so the audit reads the title with its body (rule:pr-body)';
+	// gh reads a body file of - from stdin, which no audit sees, and a value starting with - is another flag.
+	if (file === '-' || file.startsWith('-') || title.startsWith('-')) return 'a title or body file that is - or starts with - is read by gh from stdin or as another flag, never audited: give a .md file in the repo';
 	// The title first: it is the squash commit's subject on main, and its fault is the plainest to fix.
 	const n = node(kitFile('name-check.mjs'), 'title', title);
 	if (n.status !== 0) return `the PR title fails the name check: ${n.stderr.trim().replace(/^name-check: /gm, '')}`;
@@ -752,7 +764,7 @@ function check(input) {
 		// own pop-up answer for this exact command (T1). A subagent's pop-up is no owner's, so it always hands back.
 		if (reason && boundedPush(input)) reason = uncheckedRepo(input) ? 'a push from a repo whose git hooks are not the kit\'s' : originMoved(input) ? 'a push that origin sends somewhere other than it fetches from' : '';
 		// PR text and repo names are held before any yes or bound is weighed: a failing one goes out with neither.
-		if (/^gh (pr (create|new|edit)|repo (create|rename))$/.test(reason)) {
+		if (/^gh (pr (create|new|edit)|repo (create|rename))$/.test(reason) || (reason === 'gh api with a write method' && /\/pulls\b/.test(command))) {
 			const fault = outwardTextFault(input);
 			if (fault) return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: heldText(fault) } };
 		}
