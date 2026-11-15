@@ -3,7 +3,7 @@
  "date": "2026-11-15",
  "level": "minor",
  "area": "Merge on green",
- "title": "feat: install prints the merge-on-green steps, and PR text is checked",
+ "title": "feat: install prints merge-on-green steps; PR text is checked",
  "headline": "Install prints every step only the owner can take to turn on merge on green, ready to paste and marked done or to do; the merge gate can arm again; and PR text, repo names and a command run from outside a project are held to the same checks as everywhere else.",
  "alignment": "v1.33.0 lands the owner's merge-on-green item and his rulings of 2026-11-15: every change only the user can make comes with exact steps, and the kit's own automation never lowers a standard it automates.",
  "items": [
