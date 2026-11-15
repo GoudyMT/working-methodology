@@ -966,7 +966,7 @@ test('merge gate: a running optional check stops arming, since it could fail aft
 test('merge gate: a high closes only by a real commit in the branch, in its own cell, in every report', () => {
 	const s = setup();
 	const f = path.join(s.work, 'reports/sweeps/sub.md');
-	const base = fs.readFileSync(f, 'utf8');
+	const base = fs.readFileSync(f, 'utf8').replace('sweep 0, escaped 0', 'sweep 1, escaped 0');
 	const withRow = (row) => fs.writeFileSync(f, base + `\n| ID | Severity | Finding | Disposition |\n|---|---|---|---|\n${row}\n`);
 	withRow('| S1 | high | leaks a token | FIXED deadbee |');
 	assert.match(check(s.opts).faults.join('\n'), /not closed by a commit/);
