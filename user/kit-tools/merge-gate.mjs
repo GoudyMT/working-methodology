@@ -608,7 +608,8 @@ export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOStr
 export function autofix({ pr, cwd, config = configDir(), run = realRun, now = () => new Date().toISOString(), localOrigin = false }) {
 	const no = (...faults) => ({ pushed: false, faults });
 	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
-	if (!/^\d+$/.test(String(pr))) return no('the PR is a number');
+	// One spelling per PR: the log and the stop check match the number as written, and gh reads 07 as 7.
+	if (!/^[1-9]\d*$/.test(String(pr))) return no('the PR is a number, with no leading zero');
 	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
 	if (planted.length) return no(`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`);
 	if (fs.existsSync(path.join(config, 'autonomy-off'))) return no(`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`);

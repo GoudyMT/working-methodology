@@ -931,6 +931,8 @@ test('merge gate: autofix stops on the kill switch, nothing to push, another bra
 	assert.equal(originHead(s), before, 'nothing went out');
 	assert.ok(fixed);
 	assert.equal(autofix({ ...s.opts, pr: 'x' }).pushed, false);
+	// A stop logged for PR 7 must hold 07 too: one spelling, so the stop check cannot be read past.
+	assert.match(autofix({ ...s.opts, pr: '07' }).faults[0], /leading zero/);
 });
 // why: guards rule:standing-grants
 test('merge gate: a disarm reads back rather than trusting gh, on a PR with nothing to turn off', () => {

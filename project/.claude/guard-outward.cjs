@@ -443,14 +443,24 @@ function boundedPr(input) {
 	// (PowerShell splats a variable's words from it).
 	const words = command.match(/"[^"$`\\]*"|'[^']*'|[A-Za-z0-9._/:+=-]+|\S/g) || [];
 	if (!/^gh pr create( +("[^"$`\\]*"|'[^']*'|[A-Za-z0-9._/:+=-]+))*$/.test(command)) return false;
+	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
+	if (!cwd || uncheckedRepo(input)) return false;
 	for (let i = 3; i < words.length; i++) {
 		if (PR_FLAG.has(words[i])) continue;
 		if (!PR_VALUE.has(words[i]) || i + 1 >= words.length || /^-/.test(words[i + 1])) return false;
-		if (/^(--head|-H)$/.test(words[i]) && /^["']?(main|master|HEAD)["']?$/i.test(words[i + 1])) return false;
+		const value = words[i + 1].replace(/^(["'])([\s\S]*)\1$/, '$2');
+		// The head is a branch of this repo (owner:branch is a fork's), never main or master.
+		if (/^(--head|-H)$/.test(words[i]) && (value.includes(':') || /^(main|master|HEAD)$/i.test(value))) return false;
+		// The body goes out in public: only a plain file of this repo, never a dotfile, a .git file, a link or one outside.
+		if (/^(--body-file|-F)$/.test(words[i])) {
+			const file = path.resolve(cwd, value);
+			const rel = path.relative(cwd, file);
+			let plain = false;
+			try { plain = fs.lstatSync(file).isFile(); } catch { /* missing */ }
+			if (!plain || !rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.split(/[\\/]/).some((p) => p.startsWith('.'))) return false;
+		}
 		i++;
 	}
-	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
-	if (!cwd) return false;
 	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8', timeout: 3000 });
 	const remotes = git('remote');
 	if (remotes.status !== 0 || remotes.stdout.trim() !== 'origin' || originMoved(input)) return false;
