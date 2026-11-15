@@ -4241,12 +4241,13 @@ test('the PR title check holds a title to the commit subject rule', () => {
     assert.equal(r.status, 1, bad);
     assert.match(r.stderr, /internal code/, bad);
   }
-  for (const ok of ['fix: the Haiku price line and its 100K warning', 'feat: guards read UTF-8 and v1.33.0']) assert.equal(nameRun(['title', ok]).status, 0, ok);
+  // Names the field shares in the same shape are words (the K61 sweep).
+  for (const ok of ['fix: the Haiku price line and its 100K warning', 'feat: guards read UTF-8 and v1.33.0', 'fix: the SHA256 check reads UTF8 on ARM64', 'feat: sync to S3 from EC2']) assert.equal(nameRun(['title', ok]).status, 0, ok);
 });
 // why: guards rule:branching (a repo name is public for good, like a branch name)
 test('the repo name check passes plain kebab words and refuses an internal code', () => {
   // A name with a number in it is still a name (web3, vue3); a code is one or two letters and a number, on its own.
-  for (const ok of ['merge-on-green-probe', 'web3-wallet', 'vue3-starter', 'notes']) assert.equal(nameRun(['repo', ok]).status, 0, ok);
+  for (const ok of ['merge-on-green-probe', 'web3-wallet', 'vue3-starter', 'notes', 'py3-tools', 's3-sync', 'ec2-scripts', 'h2-console']) assert.equal(nameRun(['repo', ok]).status, 0, ok);
   for (const bad of ['k61-probe', 'probe-e12', 'My_Repo', 'b2']) assert.equal(nameRun(['repo', bad]).status, 1, bad);
 });
 // why: guards rule:commit-message-format
@@ -7702,7 +7703,7 @@ test('install user lands the merge gate and its audits at the paths the rules gi
   const home = makeTemp('tools-home-');
   install({ kit: path.resolve('.'), home, target: 'user' });
   assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'merge-gate.mjs')));
-  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs']) {
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs']) {
     assert.equal(read(path.join(home, 'kit-tools', 'audits', f)), read(path.resolve('project/.claude', f)), f);
   }
   // The gate imports its temp helper from beside it: without the copy, the installed gate cannot start at all.
