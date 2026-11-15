@@ -575,13 +575,28 @@ function namedProjects(input) {
 		try { real = fs.realpathSync.native(path.resolve(cwd, t)); } catch { return; }
 		if (seen.has(real)) return;
 		seen.add(real);
-		try { if (dirs.length < 64 && fs.statSync(real).isDirectory()) dirs.push(real); } catch { /* gone */ }
+		try {
+			if (fs.statSync(real).isDirectory()) {
+				if (dirs.length >= DIRS_MAX) unreadable = `more than ${DIRS_MAX} folders to read its wildcards from`;
+				else dirs.push(real);
+			}
+		} catch { /* gone */ }
 		text += ` ${norm(real)}`;
 		const u = unrecorded({ cwd: real }, true);
 		if (u && !unrec.some((x) => same(x, u))) unrec.push(u);
 	};
-	// Paths first, so a relative wildcard is also read from the folders they name.
-	for (const t of tokens) if (!isGlob(t) && /[/~.]/.test(t) && !/\$/.test(t)) resolveTo(t);
+	// Paths first, so a relative wildcard is also read from the folders they name. A bare name (cd app) is a folder too
+	// when it is one, from the session's folder or from a folder named before it (the review of c07f2bd); a command whose
+	// wildcards follow more folders than the guard reads is held.
+	const DIRS_MAX = 64;
+	for (const t of tokens) {
+		if (isGlob(t) || /\$/.test(t)) continue;
+		if (/[/~.]/.test(t)) { resolveTo(t); continue; }
+		for (const base of [cwd, ...dirs]) {
+			const at = path.join(base, t);
+			try { if (fs.statSync(at).isDirectory()) resolveTo(at); } catch { /* not a folder */ }
+		}
+	}
 	for (const t of tokens) {
 		if (unreadable) break;
 		if (isGlob(t)) for (const m of expandGlob(t)) resolveTo(m);

@@ -800,7 +800,8 @@ function keepKitLocal(projectDir, keys, hostOwned = [], shims = null) {
   // The kit's own CLAUDE.md and the personal local files never go public, even when the owner tracks the kit (the
   // owner, 2026-10-31); a host-owned CLAUDE.md is the host's to track.
   const privateKeys = ['CLAUDE.local.md', ...(keys.includes('CLAUDE.md') && !hostOwned.includes('CLAUDE.md') ? ['CLAUDE.md'] : [])];
-  const privateLines = [...privateKeys.map(line), line('') + '.claude/*.local.json'];
+  // The backups install keeps (of a file it replaced, retired or merged) hold the owner's text, private ones too.
+  const privateLines = [...privateKeys.map(line), line('') + '.claude/*.local.json', line('.kit/kit-backups/')];
   const kitLines = cfg.kit === 'tracked' ? privateLines
     : [...new Set([...keys, '.kit/', '.claude/worktrees/', ...privateKeys])].sort().map(line).concat(line('') + '.claude/*.local.json');
   const block = kitLines.length + neverLines.length ? ['# kit:begin - kept local by the methodology kit (rule:kit-stays-local); install rewrites this block',

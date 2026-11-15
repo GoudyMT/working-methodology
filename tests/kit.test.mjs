@@ -3936,6 +3936,8 @@ test("the kit's CLAUDE.md and CLAUDE.local.md stay out of git even when the kit 
   kitInstall(dir);
   assert.equal(g(dir, 'check-ignore', '-q', 'CLAUDE.md').status, 0, 'still excluded in tracked mode');
   assert.equal(g(dir, 'check-ignore', '-q', 'CLAUDE.local.md').status, 0);
+  // The backups install keeps hold the owner's text, private files included (the review of ccdbdee).
+  assert.equal(g(dir, 'check-ignore', '-q', '.kit/kit-backups/x/CLAUDE.local.md').status, 0, 'backups stay out in tracked mode');
   g(dir, 'add', 'main.py');
   g(dir, 'add', '-f', 'CLAUDE.md');
   const staged = spawnSync('node', [path.join(dir, '.claude', 'first-push-check.mjs'), '--staged'], { encoding: 'utf8', cwd: dir });

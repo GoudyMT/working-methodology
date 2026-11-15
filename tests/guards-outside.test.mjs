@@ -1490,6 +1490,7 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	// The review of c07f2bd: a relative wildcard after a cd is read from the folder the cd names, and range ends past a
 	// safe whole number are held, never looped over.
 	assert.equal(call('cd ' + parent + ' && ls a*p && git push origin main'), 'deny', 'a relative wildcard after a cd');
+	assert.equal(call('cd ' + path.dirname(path.dirname(proj)).split(path.sep).join('/') + ' && cd ' + path.basename(path.dirname(proj)) + ' && ls a*p && git push origin main'), 'deny', 'after a cd by a bare name');
 	assert.notEqual(call('echo {1..99999999999999999999} && git push origin main'), 'runs', 'a range past a safe number');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
