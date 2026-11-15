@@ -651,7 +651,8 @@ function fileProjects(input) {
 	if (/^[\\/]{2}/.test(spelled)) { out.held = 'writes to a network path'; return out; }
 	let abs = path.resolve(String(input.cwd || process.cwd()), spelled);
 	// A file with a second name (a hard link) may be a guard file under another path: held, as state.mjs and install hold it.
-	try { if (fs.lstatSync(abs).nlink > 1) { out.held = 'writes a file that has a second name (a hard link)'; return out; } } catch { /* not there yet */ }
+	// stat, not lstat: a link outside the project that leads to such a file is held as the file is (the commit review).
+	try { if (fs.statSync(abs).nlink > 1) { out.held = 'writes a file that has a second name (a hard link)'; return out; } } catch { /* not there yet */ }
 	try { abs = fs.realpathSync.native(abs); } catch { try { abs = path.join(fs.realpathSync.native(path.dirname(abs)), path.basename(abs)); } catch { /* not there yet */ } }
 	const real = (d) => { try { return fs.realpathSync.native(d); } catch { return d; } };
 	// A recorded folder is matched by its real path and handed on by its recorded spelling, the one its record answers to.
@@ -679,7 +680,8 @@ function preToolUse(input) {
 	const key = typeof ti.file_path === 'string' ? 'file_path' : typeof ti.notebook_path === 'string' ? 'notebook_path' : null;
 	const fanned = key ? { ...input, tool_input: { ...ti, [key]: path.resolve(String(input.cwd || process.cwd()), ti[key]) } } : input;
 	const files = fileProjects(input);
-	if (files.held && recordedProjects().length) answers.push(deny(`Held: this tool ${files.held}, so the kit cannot tell which of its projects it reaches. Use the file's own path on its drive.`));
+	// Held whether or not a project is recorded: an unrecorded one is reachable too (the commit review).
+	if (files.held) answers.push(deny(`Held: this tool ${files.held}, so the kit cannot tell which of its projects it reaches. Use the file's own path on its drive.`));
 	for (const dir of [...named, ...files.filter((d) => !named.some((x) => same(x, d)))]) {
 		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
 		answers.push(projectCheck({ ...fanned, cwd: dir }, true));

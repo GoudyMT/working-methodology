@@ -1409,6 +1409,14 @@ test('a file tool aimed into a kit project from outside it runs that project\'s 
 	const twin = path.join(outside, `twin-${path.basename(proj)}.cjs`);
 	fs.linkSync(guard, twin);
 	assert.equal(call('Write', { file_path: twin, content: 'x' }), 'deny', 'a second name for a guard file');
+	const via = path.join(outside, `via-${path.basename(proj)}.cjs`);
+	// A file link needs a privilege Windows gives only in developer mode; CI's Linux run always makes one.
+	let linked = true;
+	try { fs.symlinkSync(twin, via, 'file'); } catch (e) { if (e.code !== 'EPERM') throw e; linked = false; }
+	if (linked) {
+		assert.equal(call('Write', { file_path: via, content: 'x' }), 'deny', 'a link that leads to that second name');
+		fs.rmSync(via);
+	}
 	fs.rmSync(twin);
 	// A project installed through a link (a junction to its folder) still holds its guard files, and an ordinary file
 	// there still runs.
