@@ -14,6 +14,9 @@ const HOOKS = [path.resolve('project/.claude/guard.cjs')];
 const cfg = kitTemp.makeTemp('cfg-');
 // The audit and name check a PR open runs, from the repo's own .claude folder, and a Lean body that passes them for
 // the title "chore: a clean grant row".
+// The PR-text guard reads the copy install user keeps in the Claude folder (user/kit-tools/audits).
+fs.mkdirSync(path.join(cfg, 'kit-tools', 'audits'), { recursive: true });
+for (const f of fs.readdirSync(path.resolve('user/kit-tools/audits'))) fs.copyFileSync(path.resolve('user/kit-tools/audits', f), path.join(cfg, 'kit-tools', 'audits', f));
 const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs'];
 const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
 	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
@@ -900,6 +903,28 @@ test('PR text and repo names are checked where they are written, and a failing o
 	held('gh repo create pat/k61-probe --private', /repo name/);
 	held('gh repo rename k61-probe --yes -R o/r', /repo name/);
 	assert.match(run('gh repo create o/merge-on-green-probe --private'), /^deny: Owner's yes needed: gh repo create/);
+	// The checks run from the Claude folder's copy, never the repo's own (the K61 security review): a repo whose audit
+	// is rigged to pass, or to run a program, is still read by the installed one.
+	fs.writeFileSync(path.join(repo, '.claude', 'pr-body-audit.mjs'), "import fs from 'node:fs';\nfs.writeFileSync('ran.txt', 'x');\n");
+	held('gh pr create --title "chore: grant merge through the gate" --body-file typed.md', /fails its audit/);
+	assert.equal(fs.existsSync(path.join(repo, 'ran.txt')), false, 'the repo\'s own audit never ran');
+	// A flag gh reads another way than this check would: repeated, or joined to its value or to other options.
+	held('gh pr create --title "chore: a clean grant row" --title "chore: x" --body-file good.md', /given twice/);
+	held('gh pr create --title "chore: a clean grant row" --body-file good.md -F typed.md', /given twice/);
+	held('gh pr create --title "chore: a clean grant row" --body-file good.md -bx', /spell each one on its own/);
+	held('gh pr create --title "chore: a clean grant row" --body-file good.md -fd', /spell each one on its own/);
+	// A program named like a tool at the repo root would run in place of the git the audits call.
+	fs.writeFileSync(path.join(repo, 'git.exe'), 'x');
+	held('gh pr create --title "chore: a clean grant row" --body-file good.md', /named like a tool/);
+	fs.rmSync(path.join(repo, 'git.exe'));
+	// With no installed copy, a kit project's PR text is held, never let through unread.
+	const saved = path.join(repo, 'saved-audits');
+	fs.renameSync(path.join(cfg, 'kit-tools', 'audits'), saved);
+	try {
+		held('gh pr create --title "chore: a clean grant row" --body-file good.md', /run install user/);
+	} finally {
+		fs.renameSync(saved, path.join(cfg, 'kit-tools', 'audits'));
+	}
 });
 
 // why: guards rule:outward-acts. The plan check's P8: a nested repo under the project path is another repo, read by its

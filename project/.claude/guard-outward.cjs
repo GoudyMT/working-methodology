@@ -41,7 +41,7 @@ const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'hel
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
 const { plainText, joinContinuations, tokenize, canonical } = require('./guard-read.cjs');
-const { ownerYes, askText, yesText, neverText, heldText } = require('./owner-yes.cjs');
+const { home, ownerYes, askText, yesText, neverText, heldText } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -664,10 +664,22 @@ function outwardTextFault(input) {
 	const words = (command.match(/"[^"]*"|'[^']*'|[^\s;&|]+|[;&|]+/g) || []).map((w) => w.replace(/^(["'])([\s\S]*)\1$/, '$2'));
 	const end = words.findIndex((w) => /^[;&|]+$/.test(w));
 	const args = (end < 0 ? words : words.slice(0, end)).slice(3);
-	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000 });
+	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
 	const top = git('rev-parse', '--show-toplevel');
 	const root = top.status === 0 && top.stdout.trim() ? path.resolve(top.stdout.trim()) : cwd;
-	const kitFile = (f) => path.join(root, '.claude', f);
+	// The checks run from the copy install user keeps in the Claude folder, never from the repo being checked: a
+	// session or a branch can edit the repo's own (the K61 security review). A kit project is one with the audit in its
+	// .claude folder; without the installed copy it is held, never let through unread.
+	const kitProject = fs.existsSync(path.join(root, '.claude', 'pr-body-audit.mjs'));
+	const installed = path.join(home(), 'kit-tools', 'audits');
+	const kitFile = (f) => path.join(installed, f);
+	if (!kitProject) return '';
+	if (!['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'name-check.mjs'].every((f) => fs.existsSync(kitFile(f)))) return `the PR-text checks are not in ${installed}, so nothing can audit this; run install user from the release copy (or ask the owner to)`;
+	// The audits call git by its bare name from the repo, where Windows looks first: nothing may run while a program
+	// named like a tool sits at its root.
+	let planted = [];
+	try { planted = fs.readdirSync(root).filter((f) => /^(git|gh|node)\.(exe|com|bat|cmd)$/i.test(f)); } catch { /* none */ }
+	if (planted.length) return `a program named like a tool sits at the repo root and would run in place of it: ${planted.join(', ')}`;
 	const node = (file, ...a) => require('node:child_process').spawnSync(process.execPath, [file, ...a], { cwd: root, encoding: 'utf8', timeout: 15000 });
 	if (m[3]) {
 		// gh repo create [owner/]name ..., gh repo rename name ...: the first word that is not an option or its value.
@@ -679,13 +691,16 @@ function outwardTextFault(input) {
 			name = args[i];
 			break;
 		}
-		if (!name || !fs.existsSync(kitFile('name-check.mjs'))) return '';
+		if (!name) return '';
 		const r = node(kitFile('name-check.mjs'), 'repo', name.split('/').pop());
 		return r.status === 0 ? '' : `the repo name ${JSON.stringify(name)} fails the name check: ${r.stderr.trim().replace(/^name-check: /gm, '')}`;
 	}
-	const audits = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'name-check.mjs'];
-	if (!audits.every((f) => fs.existsSync(kitFile(f)))) return '';
 	if (args.some((w) => PR_TYPED.test(w))) return 'a PR body typed into the command is never audited: write it to a .md file in the repo, run its audit, and pass it with --body-file (rule:pr-body)';
+	// gh reads a short option joined to its value (-bx) or several in one word (-fd), and the last of a repeated flag:
+	// each is read here only one way, so any other spelling is held (the K61 security review).
+	if (args.some((w) => /^-[^-]./.test(w))) return 'a short option joined to its value or to other options cannot be read for sure: spell each one on its own (-t "title" -F body.md)';
+	const count = (names) => args.filter((w) => names.includes(w.split('=')[0])).length;
+	if (count(['-t', '--title']) > 1 || count(['-F', '--body-file']) > 1) return 'a title or body file given twice cannot be audited for sure: give each once';
 	const value = (names) => {
 		const i = args.findIndex((w) => names.includes(w.split('=')[0]));
 		if (i < 0) return null;
