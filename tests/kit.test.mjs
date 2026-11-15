@@ -1579,6 +1579,10 @@ test('session start names a user layer newer than the project for what it can br
   bump({ kit, level: 'minor', note: 'newer', date: '2026-02-01' });
   install({ kit, home, target: 'user' });
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs kit 1\.1\.0, this project 1\.0\.0: [\s\S]*missing hook\. Run \/methodology-kit update before either\./);
+  // The other way round is not this skew: a project newer than the user layer gets no such line.
+  bump({ kit, level: 'minor', note: 'newest', date: '2026-02-02' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs kit/);
 });
 
 // N8 (1.36.0; real by quote on 1.25.0: `cd src && ls` passed the installed guard, and a text rule against a lasting cd
