@@ -16,7 +16,7 @@ Serves step 8. If the command that proves a claim has not run in this turn, the 
 
 | Claim | Proof | Not enough |
 |---|---|---|
-| Tests pass | Full project test command, 0 failures, exit 0 | An earlier run, "should pass", only your own file |
+| Tests pass | The covering tests, then CI's run on the push (no CI: the full project test command), 0 failures, exit 0 | An earlier run, "should pass", only your own file |
 | Lint or types clean | That tool's output, 0 errors | A partial check, extrapolation |
 | Build succeeds | Build command exit 0 | Lint passing, logs that look fine |
 | Gate green | Every step of every CI workflow (rule:ci-gate) | A remembered subset |
@@ -28,8 +28,9 @@ Serves step 8. If the command that proves a claim has not run in this turn, the 
 
 ## Scope
 
-- A test you wrote passing is not a passing suite. Before "done", run the project's whole test command even if the
-  task named one file. A task's scope bounds the deliverable, not the verification.
+- A test you wrote passing is not a passing suite. Before "done", run the tests covering the change, not only your own
+  file, and let CI run the rest (no CI on the PR: the whole test command). A task's scope bounds the deliverable,
+  not the verification.
 - Any failure that run shows, including one you did not cause, goes in the report by name. A red test left out
   falsifies the report.
 - Verify before: any success wording, a commit, a PR, moving to the next task, handing work to an agent.
