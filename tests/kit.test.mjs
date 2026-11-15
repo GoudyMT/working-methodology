@@ -32,7 +32,7 @@ function copyKitCli(kit) {
   fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
   fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
   // The merge-on-green steps install prints (K61), which read row A27 as the merge gate does.
-  fs.copyFileSync(path.resolve('scripts/merge-on-green.mjs'), path.join(kit, 'scripts/merge-on-green.mjs'));
+  for (const f of ['merge-on-green.mjs', 'safe-git.mjs']) fs.copyFileSync(path.resolve('scripts', f), path.join(kit, 'scripts', f));
   for (const f of ['merge-gate.mjs', 'kit-temp.cjs']) fs.copyFileSync(path.resolve('user/kit-tools', f), path.join(kit, 'user/kit-tools', f));
 }
 
@@ -268,23 +268,27 @@ test('status reads main as protected only with an up-to-date required check, no 
   const answers = (prot, rules) => (args) => (args[1].includes('/protection') ? prot : rules);
   const notProtected = { status: 1, stdout: '{"message":"Branch not protected"}', stderr: 'gh: Branch not protected (HTTP 404)' };
   const classic = (strict, force = false, del = false) => ok({ required_status_checks: { strict, contexts: ['ci'], checks: [{ context: 'ci' }] }, allow_force_pushes: { enabled: force }, allow_deletions: { enabled: del } });
-  assert.equal(mainProtection('.', answers(classic(true), ok([]))), 'protected');
-  assert.equal(mainProtection('.', answers(classic(false), ok([]))), 'unprotected', 'the kit template before 1.33.0: not up to date');
-  assert.equal(mainProtection('.', answers(classic(true, true), ok([]))), 'unprotected', 'force pushes allowed');
-  assert.equal(mainProtection('.', answers(classic(true, false, true), ok([]))), 'unprotected', 'deletion allowed');
-  assert.equal(mainProtection('.', answers(ok({}), ok([]))), 'unprotected', 'a rule that requires nothing');
+  // The repo is named, so gh never reads it from a folder (the K61 security review); with no GitHub repo gh never runs.
+  const mp = (gh) => mainProtection('.', gh, 'o/r');
+  assert.equal(mainProtection('.', () => { throw new Error('gh ran'); }, null), null);
+  assert.equal(mp((args) => (args[1].startsWith('repos/o/r/') ? ok(args[1].includes('/rules/') ? [] : {}) : { status: 1, stdout: '', stderr: 'wrong repo' })), 'unprotected');
+  assert.equal(mp(answers(classic(true), ok([]))), 'protected');
+  assert.equal(mp(answers(classic(false), ok([]))), 'unprotected', 'the kit template before 1.33.0: not up to date');
+  assert.equal(mp(answers(classic(true, true), ok([]))), 'unprotected', 'force pushes allowed');
+  assert.equal(mp(answers(classic(true, false, true), ok([]))), 'unprotected', 'deletion allowed');
+  assert.equal(mp(answers(ok({}), ok([]))), 'unprotected', 'a rule that requires nothing');
   // The ruleset seen live on the probe repo, 2026-11-15: it blocked deletion only, and status called main protected.
-  assert.equal(mainProtection('.', answers(notProtected, ok([{ type: 'deletion' }]))), 'unprotected');
+  assert.equal(mp(answers(notProtected, ok([{ type: 'deletion' }]))), 'unprotected');
   const full = [{ type: 'deletion' }, { type: 'non_fast_forward' }, { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'ci' }] } }];
-  assert.equal(mainProtection('.', answers(notProtected, ok(full))), 'protected');
-  assert.equal(mainProtection('.', answers(notProtected, ok([{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'ci' }] } }]))), 'unprotected', 'no force push or delete block');
-  assert.equal(mainProtection('.', answers(notProtected, ok([]))), 'unprotected');
+  assert.equal(mp(answers(notProtected, ok(full))), 'protected');
+  assert.equal(mp(answers(notProtected, ok([{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'ci' }] } }]))), 'unprotected', 'no force push or delete block');
+  assert.equal(mp(answers(notProtected, ok([]))), 'unprotected');
   // A check from classic protection and the blocks from a ruleset hold together, as GitHub layers them.
-  assert.equal(mainProtection('.', answers(ok({ required_status_checks: { strict: true, contexts: ['ci'] }, allow_force_pushes: { enabled: true }, allow_deletions: { enabled: true } }), ok(full.slice(0, 2)))), 'protected');
-  assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '', stderr: 'HTTP 403' })), null);
+  assert.equal(mp(answers(ok({ required_status_checks: { strict: true, contexts: ['ci'] }, allow_force_pushes: { enabled: true }, allow_deletions: { enabled: true } }), ok(full.slice(0, 2)))), 'protected');
+  assert.equal(mp(answers(notProtected, { status: 1, stdout: '', stderr: 'HTTP 403' })), null);
   // The 1.22.0 sweep (T2): the real gh prints a JSON body on an error (tests/contracts/gh.json); that is no answer.
-  assert.equal(mainProtection('.', answers(notProtected, { status: 1, stdout: '{"message":"Forbidden"}', stderr: 'gh: Forbidden (HTTP 403)' })), null);
-  assert.equal(mainProtection('.', answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
+  assert.equal(mp(answers(notProtected, { status: 1, stdout: '{"message":"Forbidden"}', stderr: 'gh: Forbidden (HTTP 403)' })), null);
+  assert.equal(mp(answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
 });
 
 // why: catches a break at scripts/kit.mjs:1213 that no other test catches

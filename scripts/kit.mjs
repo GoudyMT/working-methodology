@@ -23,9 +23,7 @@ import { mergeOnGreen, renderMergeOnGreen } from './merge-on-green.mjs';
 // the fix line runs from the project, where the agent could leave a git.exe.
 // A protocol.<name>.allow in the repo config beats protocol.allow, so each transport is named too (the security review on
 // 0696ddf; no lazy fetch from these commands was reproduced on git 2.56, 2026-11-11).
-const NO_PROGRAMS = ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never',
-  ...['ext', 'file', 'ssh', 'git', 'http', 'https'].flatMap((p) => ['-c', `protocol.${p}.allow=never`])];
-const SAFE_CWD = path.dirname(process.execPath);
+import { NO_PROGRAMS, SAFE_CWD, safeGh, githubSlug } from './safe-git.mjs';
 
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
@@ -1188,15 +1186,17 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
  * Returns:
  *     'protected', 'unprotected', or null when it cannot tell (no GitHub remote, no gh, no access)
  */
-export function mainProtection(projectDir, gh = (args) => spawnSync('gh', args, { cwd: projectDir, encoding: 'utf8', timeout: 8000 })) {
-  const r = gh(['api', 'repos/{owner}/{repo}/branches/main/protection']);
+export function mainProtection(projectDir, gh = safeGh, slug = githubSlug(projectDir)) {
+  // gh runs from node's own folder and names the repo, never through the project folder (the K61 security review).
+  if (!slug) return null;
+  const r = gh(['api', `repos/${slug}/branches/main/protection`]);
   if (r.error) return null;
   let prot = null;
   if (r.status === 0) {
     try { prot = JSON.parse(r.stdout); } catch { return null; }
   } else if (!/Branch not protected/i.test(`${r.stdout}${r.stderr}`)) return null;
   // A ruleset protects a branch with no classic protection: GitHub answers 404 for the one and lists the other.
-  const rules = gh(['api', 'repos/{owner}/{repo}/rules/branches/main']);
+  const rules = gh(['api', `repos/${slug}/rules/branches/main`]);
   if (rules.error || rules.status !== 0) return null;
   let list = null;
   try { list = JSON.parse(rules.stdout); } catch { return null; } // an answer that is not JSON tells nothing
@@ -1924,8 +1924,7 @@ function main(argv) {
     }
     // K61: the owner's steps to turn on merge on green, each read live and marked done or to do. Read only.
     if (!dryRun) {
-      const gh = (args) => spawnSync('gh', args, { cwd: projectDir, encoding: 'utf8', timeout: 8000 });
-      for (const l of renderMergeOnGreen(mergeOnGreen({ home, projectDir, gh, protection: mainProtection }))) console.log(l);
+      for (const l of renderMergeOnGreen(mergeOnGreen({ home, projectDir, gh: safeGh, protection: mainProtection }))) console.log(l);
     }
   } else if (cmd === 'fold-back') {
     const r = foldBack({ kit, home, target, projectDir });

@@ -40,7 +40,7 @@ const homeWith = (allow) => {
 	if (allow) fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ permissions: { allow } }));
 	return home;
 };
-const repoAnswer = (auto, del) => (args) => (args[1] === 'repos/{owner}/{repo}'
+const repoAnswer = (auto, del) => (args) => (args[1] === 'repos/pat/app'
 	? { status: 0, stdout: JSON.stringify({ full_name: 'pat/app', allow_auto_merge: auto, delete_branch_on_merge: del }), stderr: '' }
 	: { status: 1, stdout: '', stderr: 'unexpected' });
 const step = (r, id) => r.steps.find((s) => s.id === id);

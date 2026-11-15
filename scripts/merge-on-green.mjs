@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { safeGit, githubSlug } from './safe-git.mjs';
 import { grantsMerge } from '../user/kit-tools/merge-gate.mjs';
 
 const ACTS = ['arm', 'disarm', 'autofix'];
@@ -36,13 +36,6 @@ export function allowLines(home, userHome = os.homedir()) {
 	};
 }
 
-// The GitHub owner/repo of origin, or null when origin is not a GitHub repo.
-function githubRepo(projectDir) {
-	const r = spawnSync('git', ['-C', projectDir, 'remote', 'get-url', 'origin'], { encoding: 'utf8', timeout: 5000 });
-	const m = r.status === 0 && /github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(\.git)?\/?$/.exec(r.stdout.trim());
-	return m ? `${m[1]}/${m[2]}` : null;
-}
-
 // Row A26's check name, the first item of its value, or null while it is still the template's.
 function checkName(projectDir) {
 	let text = '';
@@ -60,7 +53,7 @@ function checkName(projectDir) {
  *     home: the Claude config folder
  *     projectDir: the project folder, or undefined for the user layer
  *     userHome: the user's home folder
- *     gh: runs gh with an argument list in the project folder (injected by tests)
+ *     gh: runs gh with an argument list, from outside the project folder (safe-git.mjs safeGh; tests inject one)
  *     protection: main's protection, 'protected' | 'unprotected' | null (kit.mjs mainProtection)
  *
  * Returns:
@@ -84,7 +77,7 @@ export function mergeOnGreen({ home, projectDir, userHome = os.homedir(), gh, pr
 	const gate = allow.bash[0].replace(/^Bash\((.*) arm \*\)$/, '$1');
 	if (!projectDir) return { steps, gate };
 
-	const show = spawnSync('git', ['-C', projectDir, 'show', 'refs/remotes/origin/main:standards/project-adapter.md'], { encoding: 'utf8', timeout: 5000 });
+	const show = safeGit(projectDir, 'show', 'refs/remotes/origin/main:standards/project-adapter.md');
 	steps.push({
 		id: 'grant',
 		title: 'Grant merge on green in this project, once. The merge gate reads this grant only from main, and the file is a grant path, so you merge its PR yourself.',
@@ -96,11 +89,11 @@ export function mergeOnGreen({ home, projectDir, userHome = os.homedir(), gh, pr
 		],
 	});
 
-	const repo = githubRepo(projectDir);
+	const repo = githubSlug(projectDir);
 	const slug = repo || '<owner>/<repo>';
 	let repoState = 'not checked';
 	if (repo && gh) {
-		const r = gh(['api', 'repos/{owner}/{repo}']);
+		const r = gh(['api', `repos/${repo}`]);
 		let j = null;
 		try { j = r && r.status === 0 ? JSON.parse(r.stdout) : null; } catch { j = null; }
 		if (j && typeof j.allow_auto_merge === 'boolean' && typeof j.delete_branch_on_merge === 'boolean') {
