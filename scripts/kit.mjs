@@ -600,7 +600,7 @@ export function install(ctx) {
       write(); created.push(entry.key); files[entry.key] = wantHash;
       continue;
     }
-    const cur = sha(fs.readFileSync(entry.dest, 'utf8'));
+    const cur = sha(compared(entry.key, fs.readFileSync(entry.dest, 'utf8')));
     const base = stamp.files[entry.key];
     if (cur === wantHash) {
       files[entry.key] = wantHash;
@@ -887,6 +887,19 @@ function oldLayoutFoldBack(kit, oldText) {
   return { changed, projectOnly };
 }
 
+// N14 (1.36.0, reproduced on AI Essentials' memory 2026-11-15): Claude Code's memory adds metadata to a memory file's
+// frontmatter (node_type, originSessionId, modified) and quotes its description. That is no edit of the project's, so
+// a memory file is compared with them taken out and the description unquoted.
+const metaKeys = /^\s+(node_type|originSessionId|modified):.*\n/gm;
+function memoryCore(text) {
+  const m = /^---\n([\s\S]*?)\n---/.exec(text.replace(/\r\n/g, '\n'));
+  if (!m) return text;
+  const front = `${m[1]}\n`.replace(metaKeys, '').replace(/^description: "((?:[^"\\]|\\.)*)"$/m, (x, d) => `description: ${d.replace(/\\"/g, '"')}`);
+  return text.replace(/\r\n/g, '\n').replace(m[0], `---\n${front.replace(/\n$/, '')}\n---`);
+}
+/** A file's text as install and fold-back compare it. */
+const compared = (key, text) => (key.startsWith('memory/') ? memoryCore(text) : text);
+
 export function foldBack(ctx) {
   const kitInfo = loadKit(ctx.kit);
   const { entries, stampPath, memoryDir } = plan(ctx);
@@ -900,7 +913,7 @@ export function foldBack(ctx) {
     const base = stamp.files[entry.key];
     if (!fs.existsSync(entry.dest)) { if (base) out.missing.push(entry.key); continue; }
     const curText = fs.readFileSync(entry.dest, 'utf8');
-    const cur = sha(curText), wantHash = sha(want);
+    const cur = sha(compared(entry.key, curText)), wantHash = sha(want);
     if (cur === wantHash) continue;
     // A guard file that differs is never the project's own work to fold back: install puts the kit's copy back (V3).
     if (ctx.target === 'project' && isGuarded(entry.key)) {

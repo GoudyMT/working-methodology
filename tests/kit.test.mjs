@@ -1525,6 +1525,29 @@ test('every agent role file the kit ships names its model', () => {
   for (const f of files) assert.match(front(path.resolve('user/agents', f)).model || '', /^claude-[a-z]+-\d+(-\d+)?$/, `${f} names no model`);
 });
 
+// N14 (1.36.0, reproduced on AI Essentials' memory 2026-11-15): Claude Code's memory writes metadata into a memory
+// file's frontmatter (node_type, originSessionId, modified) and quotes its description; fold-back then showed the file
+// as the project's own change, and install skipped it, with no real edit in it.
+test('memory metadata the memory service adds is not a change to fold back or a reason to skip an update', () => {
+  const kit = path.resolve('.');
+  const home = makeTemp('n14-home-');
+  const proj = makeTemp('n14-proj-');
+  install({ kit, home, target: 'project', projectDir: proj });
+  const memoryDir = path.join(home, 'projects', projectSlug(proj), 'memory');
+  const file = fs.readdirSync(memoryDir).find((f) => f !== 'MEMORY.md' && f.endsWith('.md'));
+  assert.ok(file, 'the fixture kit ships a memory file');
+  const at = path.join(memoryDir, file);
+  const text = read(at);
+  const tagged = text.replace(/^description: (.*)$/m, (m, d) => `description: "${d}"`).replace(/^metadata:\n/m, 'metadata:\n  node_type: memory\n  originSessionId: 49209561-6213-4071-83c6-aaecdbd8d1f4\n  modified: 2026-11-12T03:19:00.195Z\n');
+  assert.notEqual(tagged, text, 'the fixture file has frontmatter to tag');
+  fs.writeFileSync(at, tagged);
+  const r = foldBack({ kit, home, target: 'project', projectDir: proj });
+  assert.ok(![...r.foldBack, ...r.conflict].includes(`memory/${file}`), JSON.stringify(r));
+  // A real edit beside the metadata still counts.
+  fs.writeFileSync(at, `${tagged}\n- a real line of this project\n`);
+  assert.ok(foldBack({ kit, home, target: 'project', projectDir: proj }).foldBack.includes(`memory/${file}`));
+});
+
 // N8 (1.36.0; real by quote on 1.25.0: `cd src && ls` passed the installed guard, and a text rule against a lasting cd
 // failed twice in AI Essentials): Claude Code returns the shell to the project after each Bash or PowerShell command
 // when this is set (env-vars docs, read 2026-11-15), so a cd cannot carry into the next command.
