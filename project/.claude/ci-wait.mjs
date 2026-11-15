@@ -14,6 +14,7 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { repoOf } from './release-check.mjs';
 
 const MID = 10 * 60 * 1000;
 const NONE = 5 * 60 * 1000;
@@ -31,7 +32,7 @@ const verdict = (c) => (c === 'success' ? 'green' : ['skipped', 'neutral'].inclu
  * Returns:
  *     { code } - 0 all finished, one or more green and none red; 1 a run red; 2 no run, none green, or given up
  */
-export async function ciWait({ commit, every = 30, max = 60 }, deps = {}) {
+export async function ciWait({ commit, repo, every = 30, max = 60 }, deps = {}) {
 	const gh = deps.gh || ((args) => spawnSync('gh', args, { cwd: path.dirname(process.execPath), encoding: 'utf8', timeout: 60000 }));
 	const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
 	const now = deps.now || (() => Date.now());
@@ -41,7 +42,7 @@ export async function ciWait({ commit, every = 30, max = 60 }, deps = {}) {
 	let said = false;
 	let settled = null;
 	for (;;) {
-		const r = gh(['run', 'list', '--commit', commit, '--json', 'databaseId,name,status,conclusion,url']);
+		const r = gh(['run', 'list', '-R', repo, '--commit', commit, '--json', 'databaseId,name,status,conclusion,url']);
 		let runs = null;
 		try { runs = r.status === 0 ? JSON.parse(r.stdout) : null; } catch { /* read again next poll */ }
 		const t = now() - start;
@@ -77,9 +78,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 	const commit = a[0];
 	const every = opt('--every', 30);
 	const max = opt('--max', 60);
+	// gh runs outside the project, so the repo is named: --repo, or the one the project's origin remote names.
+	const ri = a.indexOf('--repo');
+	const origin = spawnSync('git', ['--no-optional-locks', '-C', process.cwd(), '-c', 'core.fsmonitor=false', 'remote', 'get-url', 'origin'], { cwd: path.dirname(process.execPath), encoding: 'utf8' });
+	const repo = ri >= 0 ? a[ri + 1] : repoOf(origin.stdout);
 	// gh matches a commit by its full sha only: a short one would find no run and report none.
-	if (!/^[0-9a-f]{40}$/i.test(commit || '') || !(every >= 10 && every <= 600) || !(max > 0 && max <= 360)) {
-		process.stdout.write('usage: node .claude/ci-wait.mjs <full 40-character commit sha> [--every <seconds, 10 to 600>] [--max <minutes, up to 360>]\n');
+	if (!/^[0-9a-f]{40}$/i.test(commit || '') || !(every >= 10 && every <= 600) || !(max > 0 && max <= 360) || !/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo || '')) {
+		process.stdout.write('usage: node .claude/ci-wait.mjs <full 40-character commit sha> [--repo <owner/name>] [--every <seconds, 10 to 600>] [--max <minutes, up to 360>] (the repo comes from the origin remote when not given)\n');
 		process.exitCode = 2;
-	} else ciWait({ commit, every, max }).then((r) => { process.exitCode = r.code; });
+	} else ciWait({ commit, repo, every, max }).then((r) => { process.exitCode = r.code; });
 }

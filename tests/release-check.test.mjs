@@ -190,8 +190,13 @@ const ends = (p) => p.lines.map((l) => l.replace(/^\d+ /, '')).filter((l) => /^C
 // why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('ci-wait prints one line as each run ends, green or red, and exits on the settled result', async () => {
 	let p = polls([[run('queued', '')], [run('in_progress', '')], [run('completed', 'success')]]);
-	let r = await ciWait({ commit: 'abc1234', every: 30 }, p.deps);
+	const asked = [];
+	const gh = p.deps.gh;
+	p.deps.gh = (args) => { asked.push(args); return gh(args); };
+	let r = await ciWait({ commit: 'abc1234', repo: 'o/r', every: 30 }, p.deps);
 	assert.equal(r.code, 0);
+	// gh runs outside the project folder, so every call names the repo.
+	assert.ok(asked.every((a) => a.join(' ').includes('-R o/r')), JSON.stringify(asked[0]));
 	assert.deepEqual(ends(p), ['CI CI: green (success) in 1m00s https://github.com/o/r/actions/runs/2']);
 	p = polls([[run('in_progress', ''), run('in_progress', '', 'Lint')], [run('completed', 'failure'), run('in_progress', '', 'Lint')], [run('completed', 'failure'), run('completed', 'success', 'Lint')]]);
 	r = await ciWait({ commit: 'abc1234', every: 30 }, p.deps);
