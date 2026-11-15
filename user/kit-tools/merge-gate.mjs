@@ -262,7 +262,10 @@ function holdFault(git, cwd, env = process.env) {
 	let text = '';
 	try { text = fs.readFileSync(hook, 'utf8'); } catch { /* no hook: the fault below says so */ }
 	// The kit's hook shim (V3) checks the guards from outside, then execs the project's own hook: the hold is in that one.
-	const shim = /^# The kit's hook shim/m.test(text) && /^exec '((?:[^']|'\'')*)' "\$@"$/m.exec(text);
+	// From 1.26.0 the shim runs a copy the launcher wrote from the checked bytes of the project's hook, which the shim
+	// names in its [ -f '<hook>' ] line; before, it ran that hook itself (exec '<hook>').
+	const isShim = /^# The kit's hook shim/m.test(text);
+	const shim = isShim && (/^\[ -f '((?:[^']|'\\'')*)' \] \|\|/m.exec(text) || /^exec '((?:[^']|'\\'')*)' "\$@"$/m.exec(text));
 	if (shim) {
 		hook = shim[1].split("'\''").join("'");
 		text = '';

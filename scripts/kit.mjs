@@ -259,7 +259,7 @@ const readRecord = (home, projectDir) => {
  * Returns:
  *     the sha256 of each shim, by hook name
  */
-function writeShims(home, hooks, proj) {
+export function writeShims(home, hooks, proj) {
   fs.mkdirSync(hooks, { recursive: true });
   const launcher = toPosix(path.join(home, 'kit-tools', 'kit-launch.cjs'));
   // Single quotes, so no $, backtick or quote in a folder name is read by the shell (the 1.25.1 sweep); NODE_OPTIONS

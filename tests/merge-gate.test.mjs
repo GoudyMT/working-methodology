@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { check, arm, disarm, autofix, live, status, PROTECTED, toolPath } from '../user/kit-tools/merge-gate.mjs';
+import { writeShims } from '../scripts/kit.mjs';
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -192,6 +193,22 @@ test('merge gate: under the kit\'s hook shims the push hold is read in the hook 
 	const n = arm(t.opts);
 	assert.equal(n.armed, false);
 	assert.ok(n.faults.some((f) => /no push hold: .*own-hooks-pre-push does not stop/.test(f)), n.faults.join('\n'));
+});
+
+// 1.33.0: from 1.26.0 the shims install writes run a checked copy (exec "$run"), and the test above still built the
+// old exec '<path>' form by hand, so every real arm said "no push hold". The shim here is the one install writes.
+// why: guards rule:standing-grants
+test('merge gate: the push hold is read through the shim install really writes', () => {
+	for (const [hook, armed] of [[path.join(KIT, 'project/.githooks/pre-push'), true], [null, false]]) {
+		const s = setup();
+		fs.mkdirSync(path.join(s.work, '.githooks'), { recursive: true });
+		if (hook) fs.copyFileSync(hook, path.join(s.work, '.githooks', 'pre-push'));
+		else fs.writeFileSync(path.join(s.work, '.githooks', 'pre-push'), '#!/bin/sh\nexit 0\n');
+		writeShims(s.root, path.join(s.root, 'kit-hooks'), s.work.split(path.sep).join('/'));
+		const r = arm(s.opts);
+		assert.equal(r.armed, armed, r.faults.join('\n'));
+		if (!armed) assert.ok(r.faults.some((f) => /no push hold: .*\.githooks[\\/]pre-push does not stop/.test(f)), r.faults.join('\n'));
+	}
 });
 
 // M30: the canned gh above can answer in shapes the real gh never gives. The field names are checked live below;
