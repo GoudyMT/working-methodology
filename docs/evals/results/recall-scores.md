@@ -687,3 +687,30 @@ Brief v2, keys v11. Every session pinned to Opus 5.5 at medium. Candidate: this 
 
 control: 0
 gate: k134-final median 14 baseline 14 brief v2 keys v11
+
+## Recall v11 - 1.36.0 against the 1.35.0 baseline (2026-11-15)
+
+Candidate: the branch at 1267683 (1.36.0), five runs; baseline: v1.35.0, three runs; control: no kit. Opus 5.5 at medium, CLI 2.1.318, brief v2. The first three candidate runs had a median of 13 on the bar, so two more ran and all nine were blinded and scored together (reports/evals/blind-1.36.0-b).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 0, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 0, 1, 0, 0, 0 | 0, 0, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 0, 1, 1 | 0, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 0, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 13, 14, 12, 13, 13 | 12, 11, 14 | 0 |
+
+- **Scored: median 13 of 14, baseline 12, control 0.** Question 4 (the push and PR question) misses in 4 of 5 candidate runs and 2 of 3 baseline runs. Evidence check: this build changed no line of the push or PR rule (`git diff v1.35.0 HEAD -- rules/ project/AGENTS.md project/CLAUDE.md` touches agent-teams, testing and tracking-and-handoff only), every miss is a run that opens "not yet" (no branch exists) and leaves out the no-yes PR or the four limits, and the two passes are marked borderline: run variance on the question that has missed in every build since keys v6, not this build. Question 6 misses once on each side.
+
+control: 0
+gate: b10-1.36.0 median 13 baseline 12 brief v2 keys v11
