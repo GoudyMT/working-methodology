@@ -1394,6 +1394,9 @@ test('a file tool aimed into a kit project from outside it runs that project\'s 
 	assert.equal(call('Write', { file_path: guard, content: 'x' }), 'deny', 'Write');
 	assert.equal(call('Edit', { file_path: guard, old_string: 'a', new_string: 'b' }), 'deny', 'Edit');
 	assert.equal(call('Write', { file_path: path.relative(outside, guard), content: 'x' }), 'deny', 'a path relative to the session');
+	// The settings that wire the guards hold by their path alone (no .cjs shape): a relative path must reach the
+	// project's guards as the full path it names, or it is read from the project's folder as another file.
+	assert.equal(call('Write', { file_path: path.relative(outside, path.join(proj, '.claude', 'settings.json')), content: '{}' }), 'deny', 'relative settings path');
 	assert.equal(call('Write', { file_path: path.join(proj, 'src', 'a.js'), content: 'x' }), 'runs', 'an ordinary file in the project still runs');
 	assert.equal(call('Write', { file_path: path.join(outside, 'notes.md'), content: 'x' }), 'runs', 'a file in no kit project');
 });

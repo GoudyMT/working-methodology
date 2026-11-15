@@ -661,9 +661,14 @@ function preToolUse(input) {
 	if (named.unreadable && recordedProjects().some((d) => !(mine && !mine.ambiguous && same(mine.dir, d)))) {
 		answers.push(deny(`This command makes ${named.unreadable}, so the kit cannot tell which of its projects it reaches. Split it into smaller commands, or spell the folders out.`));
 	}
+	// A file path is handed on whole, as the session's folder resolves it: read from the other project's folder, a
+	// relative one would name another file (the push security review of E35).
+	const ti = input.tool_input || {};
+	const key = typeof ti.file_path === 'string' ? 'file_path' : typeof ti.notebook_path === 'string' ? 'notebook_path' : null;
+	const fanned = key ? { ...input, tool_input: { ...ti, [key]: path.resolve(String(input.cwd || process.cwd()), ti[key]) } } : input;
 	for (const dir of [...named, ...fileProjects(input).filter((d) => !named.some((x) => same(x, d)))]) {
 		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
-		answers.push(projectCheck({ ...input, cwd: dir }, true));
+		answers.push(projectCheck({ ...fanned, cwd: dir }, true));
 	}
 	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };
 	return answers.reduce((best, o) => (rank(o) > rank(best) ? o : best), null);
