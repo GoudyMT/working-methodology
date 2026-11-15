@@ -199,6 +199,20 @@ test('reads of the guards and ordinary commands still pass', () => {
 	assert.equal(decide('Write', { file_path: path.join(proj, 'src', 'a.js'), content: 'x' }), 'allow', 'Write src/a.js');
 });
 
+// K76 and K77 (1.36.0, reproduced live on 1.35.0): `2>&1` and a PowerShell `Set-Location x;` before running a kit
+// script made the guards read the command as one where a definition could hide, so running state.mjs was held as a
+// write to a protected file. 2>&1 points one output at another and writes no file; a plain folder change defines
+// nothing.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('running a kit script with 2>&1, or after a plain Set-Location, passes; a write beside it is still held', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	for (const c of ['node .claude/state.mjs list 2>&1', 'node .claude/state.mjs list 2>&1 | head -5', 'node .claude/state.mjs list >&2']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['node .claude/state.mjs list 2>&1', `Set-Location "${proj}"; node .claude/state.mjs item K68`, `sl ${proj}; node .claude/state.mjs list 2>&1`]) assert.equal(ps(c), 'allow', c);
+	// A write beside the fold is still a write, and a definition beside a folder change still stands in for node.
+	for (const c of ['node .claude/state.mjs list 2>&1 > .claude/guard.cjs', 'node() { cp /tmp/x "$1"; } 2>&1; node .claude/settings.json', 'node .claude/x.mjs 2>&1 & cp x .claude/guard.cjs', 'node .claude/state.mjs &> .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+	for (const c of [`Set-Location "${proj}"; function node { cp x $args[0] }; node .claude/settings.json`, `Set-Location "${proj}"; Set-Alias node cp; node x .claude/guard.cjs`, `Set-Location "${proj}"; node -e "require('fs').writeFileSync('.claude/settings.json','')"`]) assert.equal(ps(c), 'deny', c);
+});
+
 // why: guards rule:outward-acts
 test('a subagent is refused, not asked, for each held command', () => {
 	for (const c of ['git commit --no-verify -m x', 'echo x > .claude/guard-outward.cjs', 'git config core.hooksPath /dev/null']) {

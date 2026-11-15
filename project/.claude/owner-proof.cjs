@@ -529,7 +529,12 @@ function shellWritesFrom(command, tool, start, names) {
 	// and the list of ways has no end: the exemptions hold only when nothing runs before the program in the same shell
 	// (no ;, &, || or new line; a pipe's stages are separate shells), but plain variables set and a plain cd first
 	// (P=x; grep $P, cd dir && grep), and never beside a definition.
-	const bare = text.replace(/^(\s*([A-Za-z_]\w*=|cd\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)\s*(;|&&)\s*)+/, '');
+	// K77 (1.36.0): a plain PowerShell folder change (Set-Location x;) leads as a plain cd does; it defines nothing.
+	// K76 (1.36.0): an output pointed at another (2>&1, >&2) writes no file, so its & is no break a definition hides
+	// behind; &> and >&file still name a file and stay a redirect the words below read.
+	// In PowerShell a backslash is the path separator, not a quote (K32), so a folder may hold one.
+	const lead = tool === 'PowerShell' ? /^(\s*([A-Za-z_]\w*=|(cd|chdir|pushd|set-location|sl|push-location)\s+)("[^"$`]*"|'[^']*'|[^\s;&|$`'"()]*)\s*(;|&&)\s*)+/i : /^(\s*([A-Za-z_]\w*=|cd\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)\s*(;|&&)\s*)+/;
+	const bare = text.replace(lead, '').replace(/(^|\s)\d?>&\d(?=\s|$)/g, '$1');
 	// V1 (the 1.25.0 verify): a line of nothing but plain readers, a print-only sed and a cd can redefine nothing, so
 	// its ; and && do not count as a place a definition could hide.
 	const onlyReads = !/[`]|\$\(|<\(/.test(text) && segments.every((g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); const onPath = !/[\\/]/.test(w[0] || ''); return (onPath && (READERS.has(p) || PIPE_READERS.has(p))) || CHANGERS.has(p) || printSed(w); });
