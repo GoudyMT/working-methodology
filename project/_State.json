@@ -1,0 +1,15 @@
+{
+  "updated": "<YYYY-MM-DD>",
+  "phase": "<which version or sub-project is current, one or two sentences + link>",
+  "next": "<(1) the exact next action - command or file; (2) what follows>",
+  "then": "",
+  "blocking": [],
+  "waiting": [],
+  "carry_overs": [],
+  "last_session": "<N> (<YYYY-MM-DD> - <topic, <= 50 words>)",
+  "seq": {
+    "B": 0,
+    "W": 0,
+    "C": 0
+  }
+}

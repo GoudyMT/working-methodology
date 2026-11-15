@@ -45,6 +45,8 @@ Why: the log's job is narrative + latest state; old detail is noise once source-
 | `_Master Roadmap.md` | task status: checkboxes ONLY | hashes, rationale, next actions, descriptions |
 | `_Active Plan.md` | the exact next action | history, task lists, rationale |
 
+**State is data:** the next action, owner waits and carry-overs live in `_State.json`, decisions in `_Decisions.jsonl`; the Resume Point and dashboard lines are generated (`node .claude/state.mjs`), never hand-edited.
+
 **Anti-duplication:** source-of-truth content (spec / ADR / plan / git log / code) is pointed to, never restated; content several tracking files need lives inline only in its unique-function file ("write it anyway" -> STOP). Why: one item in eight places is eight places to go stale.
 
 **Session-end batch, in order:** Session Log (the depth) -> Working Memory (Last Session + one index line) -> Master Roadmap (boxes only) -> Active Plan (status + exact Resume Point); about 5-10 changed lines beyond the log entry.

@@ -17,7 +17,11 @@ It starts on its own only as rule:compact-ritual says.
    session's folder and lists anything else it made for the owner. Probe folders the thread made with
    `node <kit>/scripts/kit.mjs scratch new <thread> <label>` go with `scratch clean <thread>`, no ask: each to the
    bin with its guard record; one marked `scratch keep <folder> "<why>"` stays and is named; strays are listed.
-3. **Batch the tracking files** at the session end (rule:tracking-file-batching). `node .claude/tracking-check.mjs caps` prints the
+3. **Batch the tracking files** at the session end (rule:tracking-file-batching). The next action, what blocks on
+   the owner, what only waits for the owner's eyes, the carry-overs, the phase and the last session are data: change
+   them with `node .claude/state.mjs set | add | done`, record each owner decision with `state.mjs decide`, then
+   run `state.mjs render` and `state.mjs check` until it passes; never edit a generated block by hand. A project with
+   no generated block yet runs `state.mjs init` once. `node .claude/tracking-check.mjs caps` prints the
    whole-file rows of the size-cap table; an OVER row is fixed before the handoff. The plan's Progress block passes
    `node .claude/tracking-check.mjs progress <plan>`. Where the project keeps
    `.kit/project-map.json`, update its progress from the plan, run `node .claude/project-map.mjs check` until it
@@ -35,7 +39,8 @@ It starts on its own only as rule:compact-ritual says.
    every fault. In a project with several sessions, send the full text it prints as ONE message to the coordinating
    session, never a file path (the next session may not be able to read it). The channel by host: in a Claude
    project thread, `send_message` to `@parent`; elsewhere, the one the project names. The closeout is done only
-   when the coordinator confirms it received the text; then close the thread.
+   when the coordinator confirms it received the text; then close the thread. The text ends with the next item from
+   `node .claude/state.mjs show`, so the coordinator can open the next thread for it at once.
 
 ## The scan
 
