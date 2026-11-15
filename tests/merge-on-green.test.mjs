@@ -68,6 +68,8 @@ test('install user shows the allow step to do until all six lines are in the set
 	const text = renderMergeOnGreen(todo).join('\n');
 	for (const l of [...allowLines(home).bash, ...allowLines(home).powershell]) assert.ok(text.includes(`"${l}"`), l);
 	assert.match(text, /settings\.json/);
+	// The whole block to paste, as it sits in the file (the K61 sweep: six bare lines left where they go to a guess).
+	assert.match(text, /"permissions": \{\n\s+"allow": \[/);
 	const own = (h, n = 6) => {
 		const l = [...allowLines(h).bash, ...allowLines(h).powershell].slice(0, n);
 		fs.writeFileSync(path.join(h, 'settings.json'), JSON.stringify({ permissions: { allow: l } }));
@@ -91,6 +93,9 @@ test('install project shows the grant as done only once row A27 grants merge on 
 	assert.match(text, /"standards\/project-adapter\.md"/, 'names the track entry');
 	assert.match(text, /git add -f standards\/project-adapter\.md/);
 	assert.match(text, /you merge/i);
+	// Paste-ready: the exact track file and the commands, the same in both shells, and the fetch after the merge.
+	for (const l of ['{ "track": ["standards/project-adapter.md"] }', 'git switch -c docs/grant-merge-on-green', 'git add -f standards/project-adapter.md .kit/tracking.json', 'git push -u origin docs/grant-merge-on-green', 'git fetch origin']) assert.ok(text.includes(l), l);
+	assert.match(text, /main pushed/);
 	assert.equal(step(mergeOnGreen(opts(project({ a27: 'merge through the merge gate; auto-fix push' }))), 'grant').state, 'to do', 'granted in the working copy only');
 	assert.equal(step(mergeOnGreen(opts(project({ a27: 'no merge', onMain: true }))), 'grant').state, 'to do');
 	assert.equal(step(mergeOnGreen(opts(project({ a27: 'merge through the merge gate; auto-fix push', onMain: true }))), 'grant').state, 'done');
@@ -108,6 +113,12 @@ test('install project names the real repo in the repo and protect steps, and mar
 	assert.ok(text.includes('gh api -X PUT repos/pat/app/branches/main/protection --input .kit/branch-protection.json'), text);
 	assert.match(text, /"kit-tests"/, 'the check name from row A26');
 	assert.match(text, /merge-gate\.mjs check <PR>/);
+	// The check line in each shell's spelling, and the protect file copied in each shell, from the project folder.
+	const full = home.split(path.sep).join('/');
+	assert.ok(text.includes(`PowerShell: node ${full}/kit-tools/merge-gate.mjs check <PR>`), 'the PowerShell check line');
+	for (const l of ['cp .claude/kit/branch-protection.json .kit/branch-protection.json', 'Copy-Item .claude/kit/branch-protection.json .kit/branch-protection.json']) assert.ok(text.includes(l), l);
+	assert.match(text, /project folder/);
+	assert.match(text, /has run/, 'a required check must have run once');
 	const on = mergeOnGreen({ home, projectDir: dir, gh: repoAnswer(true, true), protection: () => 'protected' });
 	assert.equal(step(on, 'repo').state, 'done');
 	assert.equal(step(on, 'protect').state, 'done');
@@ -115,11 +126,16 @@ test('install project names the real repo in the repo and protect steps, and mar
 	const blind = mergeOnGreen({ home, projectDir: dir, gh: () => ({ status: 1, stdout: '', stderr: 'HTTP 401' }), protection: () => null });
 	assert.equal(step(blind, 'repo').state, 'not checked');
 	assert.equal(step(blind, 'protect').state, 'not checked');
-	assert.match(renderMergeOnGreen(blind).join('\n'), /gh api -X PATCH repos\/pat\/app/);
+	const blindText = renderMergeOnGreen(blind).join('\n');
+	assert.match(blindText, /gh api -X PATCH repos\/pat\/app/);
+	// Each unchecked step says why and how to check again.
+	assert.match(blindText, /not checked: [^\n]*gh auth login[^\n]*install project again/);
+	assert.match(blindText, /private repo/, 'the Free-plan limit on a private repo');
 	// No GitHub remote yet: the steps wait for the first push, with the repo left for the owner to name.
 	const local = mergeOnGreen({ home, projectDir: project({ remote: null }), gh: repoAnswer(true, true), protection: () => 'protected' });
 	assert.equal(step(local, 'repo').state, 'not checked');
 	assert.match(renderMergeOnGreen(local).join('\n'), /repos\/<owner>\/<repo>/);
+	assert.match(renderMergeOnGreen(local).join('\n'), /not checked: [^\n]*push the repo to GitHub first/);
 });
 
 // why: guards rule:standing-grants (the K61 security review: a URL whose path only mentions github.com named a repo,

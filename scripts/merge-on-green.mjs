@@ -70,27 +70,39 @@ export function mergeOnGreen({ home, projectDir, userHome = os.homedir(), gh, pr
 	} catch { have = []; }
 	steps.push({
 		id: 'allow',
-		title: `Let Claude run the merge gate's arm, disarm and autofix without asking, once per PC: add these six lines to "permissions": { "allow": [ ... ] } in ${posix(path.join(home, 'settings.json'))}. Claude never writes them.`,
+		title: `Let Claude run the merge gate's arm, disarm and autofix without asking, once per PC: in ${posix(path.join(home, 'settings.json'))}, add these six lines to the "allow" list (paste the whole block if the file has none). Claude never writes them.`,
 		state: wanted.every((l) => have.includes(l)) ? 'done' : 'to do',
-		lines: wanted.map((l, i) => `"${l}"${i < wanted.length - 1 ? ',' : ''}`),
+		lines: ['"permissions": {', '  "allow": [', ...wanted.map((l, i) => `    "${l}"${i < wanted.length - 1 ? ',' : ''}`), '  ]', '}'],
 	});
 	const gate = allow.bash[0].replace(/^Bash\((.*) arm \*\)$/, '$1');
-	if (!projectDir) return { steps, gate };
+	const psGate = allow.powershell[0].replace(/^PowerShell\((.*) arm \*\)$/, '$1');
+	if (!projectDir) return { steps, gate, psGate };
 
 	const show = safeGit(projectDir, 'show', 'refs/remotes/origin/main:standards/project-adapter.md');
+	const branch = 'docs/grant-merge-on-green';
+	const subject = 'docs: grant merge on green through the merge gate';
 	steps.push({
 		id: 'grant',
-		title: 'Grant merge on green in this project, once. The merge gate reads this grant only from main, and the file is a grant path, so you merge its PR yourself.',
+		title: 'Grant merge on green in this project, once. Needs: the repo on GitHub with main pushed. The merge gate reads the grant only from main, and the file is a grant path, so you merge its PR yourself.',
 		state: show.status === 0 && grantsMerge(show.stdout).granted ? 'done' : 'to do',
 		lines: [
-			`In standards/project-adapter.md, set row A27's value to: ${GRANT_VALUE}`,
-			'In .kit/tracking.json, add "standards/project-adapter.md" to "track" (the kit\'s files stay out of git otherwise).',
-			'git add -f standards/project-adapter.md, commit it on a branch and open its PR; you merge it.',
+			`In standards/project-adapter.md, set the value of the grant row (A27) to: ${GRANT_VALUE}`,
+			'In .kit/tracking.json, add "standards/project-adapter.md" to its "track" list, or create the file as:',
+			'    { "track": ["standards/project-adapter.md"] }',
+			'Then, from the project folder (the same in PowerShell and Bash):',
+			`    git switch -c ${branch}`,
+			'    git add -f standards/project-adapter.md .kit/tracking.json',
+			`    git commit -m "${subject}"`,
+			`    git push -u origin ${branch}`,
+			'Ask Claude to open its PR (its body is audited), and merge it yourself. After you merge: git fetch origin',
 		],
 	});
 
 	const repo = githubSlug(projectDir);
 	const slug = repo || '<owner>/<repo>';
+	// Why a step could not be checked, and how to check it again.
+	const noRepo = 'the repo is not on GitHub yet: push the repo to GitHub first, then run install project again';
+	const noAnswer = 'GitHub gave no answer: run gh auth login, then install project again. On the GitHub Free plan a private repo has no auto-merge or branch protection: make it public or use a paid plan';
 	let repoState = 'not checked';
 	if (repo && gh) {
 		const r = gh(['api', `repos/${repo}`]);
@@ -104,6 +116,7 @@ export function mergeOnGreen({ home, projectDir, userHome = os.homedir(), gh, pr
 		id: 'repo',
 		title: 'Let GitHub merge a PR once its checks pass, and delete its branch after, once per repo:',
 		state: repoState,
+		why: repo ? noAnswer : noRepo,
 		lines: [`gh api -X PATCH repos/${slug} -F allow_auto_merge=true -F delete_branch_on_merge=true`],
 	});
 
@@ -111,28 +124,31 @@ export function mergeOnGreen({ home, projectDir, userHome = os.homedir(), gh, pr
 	const name = checkName(projectDir);
 	steps.push({
 		id: 'protect',
-		title: 'Protect main with one required check that must be up to date, no force push and no delete, once per repo:',
+		title: 'Protect main with one required check that must be up to date, no force push and no delete, once per repo. Needs: a CI check that has run once on a PR, so GitHub knows its name. From the project folder:',
 		state: prot === 'protected' ? 'done' : prot === 'unprotected' ? 'to do' : 'not checked',
+		why: repo ? noAnswer : noRepo,
 		lines: [
-			`Copy .claude/kit/branch-protection.json to .kit/branch-protection.json and put ${name ? `"${name}"` : 'your CI check\'s name (row A26)'} in "contexts".`,
+			'Bash:       cp .claude/kit/branch-protection.json .kit/branch-protection.json',
+			'PowerShell: Copy-Item .claude/kit/branch-protection.json .kit/branch-protection.json',
+			`Put ${name ? `"${name}"` : 'your CI job\'s name (the check name row A26 records)'} in its "contexts" list, then:`,
 			`gh api -X PUT repos/${slug}/branches/main/protection --input .kit/branch-protection.json`,
 		],
 	});
-	return { steps, gate };
+	return { steps, gate, psGate };
 }
 
 /**
  * The merge-on-green block install prints: a count, then each step with its lines unless it is done.
  */
-export function renderMergeOnGreen({ steps, gate = 'node ~/.claude/kit-tools/merge-gate.mjs' }) {
+export function renderMergeOnGreen({ steps, gate = 'node ~/.claude/kit-tools/merge-gate.mjs', psGate = gate }) {
 	const done = steps.filter((s) => s.state === 'done').length;
 	const out = [`Merge on green: ${done} of ${steps.length} step${steps.length === 1 ? '' : 's'} done (rule:standing-grants). Each step is yours to take.`];
 	steps.forEach((s, i) => {
 		out.push(`    [${s.state}] ${i + 1}. ${s.title}`);
+		if (s.state === 'not checked' && s.why) out.push(`        (not checked: ${s.why})`);
 		if (s.state !== 'done') for (const l of s.lines) out.push(`        ${l}`);
 	});
-	out.push(steps.length === 1
-		? '    The project steps print at install project.'
-		: `    Then, on a PR whose gates passed: ${gate} check <PR> says GO.`);
+	if (steps.length === 1) out.push('    The project steps print at install project.');
+	else out.push('    Then, on a PR whose gates passed, this says GO:', `        Bash:       ${gate} check <PR>`, `        PowerShell: ${psGate} check <PR>`);
 	return out;
 }

@@ -638,8 +638,6 @@ test('install user and install project print the merge-on-green steps', () => {
   assert.ok(u.stdout.includes('/kit-tools/merge-gate.mjs arm *)",') && u.stdout.includes('"Bash(node '), u.stdout);
   const p = cli('install', 'project', proj);
   assert.match(p.stdout, /Merge on green: 0 of 4 steps done/);
-  assert.match(p.stdout, /merge through the merge gate; auto-fix push/);
-  assert.ok(p.stdout.includes('merge-gate.mjs check <PR> says GO'), p.stdout);
   assert.doesNotMatch(cli('install', 'project', proj, '--dry-run').stdout, /Merge on green/, 'a dry run checks nothing');
 });
 
