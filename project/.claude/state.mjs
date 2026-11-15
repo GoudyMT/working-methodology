@@ -26,6 +26,7 @@
 // The improvement list and the roadmap (1.35.0, list-data.mjs holds the shape and the reasons):
 //   node .claude/state.mjs list [text] [--all]                the open rows, ranked (or every row), one short line each
 //   node .claude/state.mjs list --agent | --full              one JSON line a row with short fields | the whole titles
+//   node .claude/state.mjs list --step <step>                 one roadmap step's rows (its name, build number or release)
 //   node .claude/state.mjs list shorten                       once: a short name for each row from before 1.36.0
 //   node .claude/state.mjs item <id> [--json]                 the whole row
 //   node .claude/state.mjs list caught | audit                the catch rate and found to shipped by origin; the rows
@@ -551,7 +552,7 @@ function decide(fromFile, unchecked) {
 function main(argv) {
 	const [cmd, ...rest] = argv;
 	const fail = (m) => { console.log(m); process.exitCode = 1; };
-	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|--agent|--full|caught|audit|shorten|import <file.md>] | item <id> [--json] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text> | step rename <step> <new name>'); process.exitCode = 2; };
+	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|--agent|--full|--step <step>|caught|audit|shorten|import <file.md>] | item <id> [--json] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text> | step rename <step> <new name>'); process.exitCode = 2; };
 	if (cmd === 'init') {
 		const { faults, said = [] } = init();
 		for (const f of [...faults, ...said]) console.log(f);
@@ -725,8 +726,13 @@ function listCommand(cmd, rest, { fail, usage }) {
 		}
 		const flags = ['--all', '--agent', '--full'];
 		const all = rest.includes('--all');
-		const q = rest.filter((x) => !flags.includes(x)).join(' ').toLowerCase();
-		const shown = (all ? l.rows : list.ranked(l.rows)).filter((r) => !q || list.line(r).toLowerCase().includes(q));
+		// --step <s>: one roadmap step's rows, by its name, its build number or its release.
+		const at = rest.indexOf('--step');
+		const stepName = at >= 0 ? rest[at + 1] : null;
+		if (at >= 0 && !stepName) return usage();
+		const step = stepName ? (loadState().state?.roadmap || []).find((x) => x.step === stepName || x.release === stepName) || { step: stepName, release: '' } : null;
+		const q = rest.filter((x, i) => !flags.includes(x) && (at < 0 || (i !== at && i !== at + 1))).join(' ').toLowerCase();
+		const shown = (all ? l.rows : list.ranked(l.rows)).filter((r) => (!q || list.line(r).toLowerCase().includes(q)) && (!step || list.inStep(r, step)));
 		// K68: the short view by default; one JSON line a row for an agent; the 1.35.0 full lines on --full.
 		if (rest.includes('--agent')) { for (const r of shown) console.log(JSON.stringify(list.agent(r))); return undefined; }
 		if (!rest.includes('--full')) return console.log(list.table(shown, { all }).join('\n'));

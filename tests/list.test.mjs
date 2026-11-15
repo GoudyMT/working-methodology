@@ -231,6 +231,10 @@ test('list prints one short line per open row, and the whole row is one command 
 	assert.match(st(dir, 'item', 'K9').stdout, /K9 is not a row/);
 	// The full text of every open row stays one flag away, as the 1.35.0 lines.
 	assert.ok(st(dir, 'list', '--full').stdout.includes(long));
+	// One step's rows (the sweep's novel lens: 555 rows need a cut by step): by its name, or its build number.
+	assert.deepEqual(shortIds(st(dir, 'list', '--step', '9').stdout), ['C2']);
+	assert.deepEqual(shortIds(st(dir, 'list', '--step', '10').stdout), ['K3']);
+	assert.deepEqual(shortIds(st(dir, 'list', '--step', 'T5').stdout), ['A2']);
 });
 
 // why: guards the owner's lock of K68, 2026-11-15: the agent view, short fields and the whole row only on ask
