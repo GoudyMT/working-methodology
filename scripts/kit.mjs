@@ -1250,6 +1250,9 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   // rules of every project, so it is named too.
   const checkout = `Check out the kit's newest release tag (${releaseCheckout(kit, newestTag(kit))})`;
   const userStamp = readStamp(path.join(home, STAMP_USER));
+  // N5 (1.36.0; seen in a 1.16 project under a 1.18 user layer, whose approve.mjs needed a hook that project lacked, while
+  // session start said only that an update was there): the skew is named for what it breaks.
+  if (stamp.version && userStamp.version && semverAbove(userStamp.version, stamp.version)) lines.push(`~/.claude runs kit ${userStamp.version}, this project ${stamp.version}: the user layer's skills and hooks can need project files this install lacks, so a sweep or a build may stop on a missing hook. Run /methodology-kit update before either.`);
   if (userStamp.release === false) lines.push(`~/.claude runs an unreleased kit build (${userStamp.describe || 'no git history'}). ${checkout}, then run node "${toPosix(kit)}/scripts/kit.mjs" install user.`);
   if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.`);
   if (stamp.version) {

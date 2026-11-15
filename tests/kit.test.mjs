@@ -1548,6 +1548,18 @@ test('memory metadata the memory service adds is not a change to fold back or a 
   assert.ok(foldBack({ kit, home, target: 'project', projectDir: proj }).foldBack.includes(`memory/${file}`));
 });
 
+// N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
+// session start said only that an update was there.
+test('session start names a user layer newer than the project for what it can break', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /this project 1\.0\.0/);
+  bump({ kit, level: 'minor', note: 'newer', date: '2026-02-01' });
+  install({ kit, home, target: 'user' });
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs kit 1\.1\.0, this project 1\.0\.0: [\s\S]*missing hook\. Run \/methodology-kit update before either\./);
+});
+
 // N8 (1.36.0; real by quote on 1.25.0: `cd src && ls` passed the installed guard, and a text rule against a lasting cd
 // failed twice in AI Essentials): Claude Code returns the shell to the project after each Bash or PowerShell command
 // when this is set (env-vars docs, read 2026-11-15), so a cd cannot carry into the next command.
