@@ -109,7 +109,7 @@
   "deferred": [],
   "accepted": []
  },
- "upgrading": "Run `install user` first, then `install project` in each project. A project with a markdown improvement list moves it once with `node .claude/state.mjs list import <file.md>`, which names any row it cannot move.",
+ "upgrading": "Run `install user` first, then `install project` in each project. A project with a markdown improvement list moves it once with the state script's `list import`, which names any row it cannot move.",
  "limits": "Rows moved from a markdown list keep their numbers and finders unlabelled until list audit is worked through. The release check cannot tell whether the notes say true things.",
  "tests": {
   "before": 745,
