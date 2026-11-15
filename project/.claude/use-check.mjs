@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const dir = process.cwd();
 const has = (rel) => fs.existsSync(path.join(dir, rel));
@@ -120,6 +121,29 @@ const PARTS = [
 		},
 		// A packet written proves the hook ran; the check's stamp proves a session read it.
 		used: () => (has('.kit/resume-check.json') ? [true, 'a session ran the check'] : has('.kit/resume-packet.md') ? [null, 'a packet is written; no session has run the check yet'] : [null, 'no packet yet: written at the first closeout or compact']),
+	},
+	{
+		name: 'state',
+		what: 'the next action and the owner\'s decisions kept as data, with the Resume Point generated from them (T4)',
+		present: () => {
+			const missing = ['.claude/state.mjs', '_State.json', '_Decisions.jsonl'].filter((f) => !has(f));
+			return [missing.length === 0, missing.length ? `missing ${missing.join(', ')}` : 'state.mjs, _State.json, _Decisions.jsonl'];
+		},
+		// A project from before 1.34.0 has a filled-in Resume Point with no generated block until init moves it.
+		wired: () => {
+			const unmarked = ['_Active Plan.md', '_Working Memory.md'].filter((f) => {
+				try { const t = fs.readFileSync(path.join(dir, f), 'utf8'); return !/^<!-- state:begin\b.*-->\r?$/m.test(t) || !/^<!-- state:end -->\r?$/m.test(t); } catch { return true; }
+			});
+			return unmarked.length ? [false, `${unmarked.join(' and ')} ha${unmarked.length === 1 ? 's' : 've'} no generated block: run node .claude/state.mjs init once`] : [true, 'both views carry a generated block'];
+		},
+		used: () => {
+			let s = null;
+			try { s = JSON.parse(fs.readFileSync(path.join(dir, '_State.json'), 'utf8')); } catch { /* none */ }
+			if (!s || /^<.*>$/.test(String(s.updated))) return [null, 'not filled in yet: the first closeout sets it'];
+			// The state.mjs beside this script, never the project's copy: status runs this check on a folder it reads.
+			const r = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'state.mjs'), 'check'], { cwd: dir, encoding: 'utf8' });
+			return r.status === 0 ? [true, `updated ${s.updated}; the views match the data`] : [false, `the views differ from the data: ${(r.stdout || '').split('\n')[0]}`];
+		},
 	},
 ];
 

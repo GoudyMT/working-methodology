@@ -1,0 +1,19 @@
+{
+  "lines": [
+    {
+      "before": "| `_Working Memory` | Last Session / Current Phase / Resume Point | <= 50 / 60 / 40 words |",
+      "after": "| `_State.json` | last session / phase / next | <= 50 / 60 / 40 words |",
+      "why": "T4 (the owner, 2026-11-15, pop-up \"State + decisions\"): the next action, the phase and the last session are data in _State.json, set with state.mjs and rendered, never edited by hand"
+    },
+    {
+      "before": "**Session-end batch, in order:** Session Log (the depth) -> Working Memory (Last Session + one index line) -> Master Roadmap (boxes only) -> Active Plan (status + exact Resume Point); about 5-10 changed lines beyond the log entry.",
+      "after": "**Session-end batch, in order:** Session Log (the depth) -> Working Memory (one index line) -> Master Roadmap (boxes only) -> `state.mjs` set / add / done, then render and check; about 5-10 changed lines beyond the log entry.",
+      "why": "T4 (the owner, 2026-11-15, pop-up \"State + decisions\"): the next action, the phase and the last session are data in _State.json, set with state.mjs and rendered, never edited by hand"
+    },
+    {
+      "before": "1. **Anti-duplication scan** - hashes in the Session Log only, locks in ADRs, next actions in the Active Plan, statuses in the Roadmap.",
+      "after": "1. **Anti-duplication scan** - hashes in the Session Log only, locks in ADRs, next actions in `_State.json`, statuses in the Roadmap.",
+      "why": "T4 (the owner, 2026-11-15, pop-up \"State + decisions\"): the next action, the phase and the last session are data in _State.json, set with state.mjs and rendered, never edited by hand"
+    }
+  ]
+}

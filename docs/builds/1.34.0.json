@@ -1,0 +1,127 @@
+{
+ "version": "1.34.0",
+ "date": "2026-11-15",
+ "level": "minor",
+ "area": "Tracking files",
+ "title": "feat: the next action and the owner's decisions are kept as data",
+ "headline": "A project's next action, what waits on the owner, the carry-overs and the kit version now live once, in _State.json, and the owner's rulings in _Decisions.jsonl; the Resume Point and the dashboard lines are generated from them, and a check fails the moment they drift.",
+ "alignment": "v1.34.0 is the first v2.0 step after the sweep shape: T4, state as data. On 1.33.1 four tracking files stated the next action by hand and three were two releases stale; now one file does, and the views cannot drift unseen.",
+ "items": [
+  {
+   "id": "STATE",
+   "kind": "added",
+   "text": "The state script keeps the next action, what blocks on the owner, what only waits, the carry-overs, the phase and the kit version in _State.json, and writes the Resume Point and the dashboard lines from them.",
+   "evidence": "tests/state.test.mjs",
+   "where": "The next action",
+   "before": "Stated by hand in four files",
+   "after": "Kept once; the views are generated"
+  },
+  {
+   "id": "WAITING",
+   "kind": "added",
+   "text": "What blocks on the owner and what only waits for the owner's eyes are two lists, so a note for the owner no longer stops the work.",
+   "evidence": "tests/state.test.mjs"
+  },
+  {
+   "id": "DECISIONS",
+   "kind": "added",
+   "text": "The owner's rulings are kept in _Decisions.jsonl with an id, the date, the owner's exact words and the reason; the words must be found in the owner's own messages or pop-up answers, or are marked as not checked. Rows are only ever added.",
+   "evidence": "tests/state.test.mjs",
+   "where": "The owner's decisions",
+   "before": "Spread over plans and memory, no ids",
+   "after": "One record, D-1 and on"
+  },
+  {
+   "id": "CHECK",
+   "kind": "added",
+   "text": "state.mjs check fails when a view differs from the data, a label sits outside its block, the installed kit is newer than the data says, a committed decision changed, or a D-n pointer has no record; the use check and status report it.",
+   "evidence": "tests/state.test.mjs"
+  },
+  {
+   "id": "INIT",
+   "kind": "changed",
+   "text": "An existing project moves its filled-in Resume Point into the data once with state.mjs init, which refuses anything it cannot move whole and changes nothing then.",
+   "evidence": "tests/state.test.mjs"
+  },
+  {
+   "id": "CLOSEOUT",
+   "kind": "changed",
+   "text": "The closeout sets the state with state.mjs commands instead of hand edits, and its hand-back ends with the next item, so the coordinator can open the next thread at once.",
+   "evidence": "user/skills/closeout/SKILL.md"
+  },
+  {
+   "id": "SAFE",
+   "kind": "security",
+   "text": "state.mjs never writes through a linked tracking file, leaves no temporary file behind, refuses a planted item id, and the use check runs the kit's own copy of it, never the project's.",
+   "evidence": "tests/state.test.mjs"
+  }
+ ],
+ "verification": [
+  "Each behaviour has a test that fails on the code before it: 8 of the new state tests failed on the first build's script.",
+  "On a copy of the workbench's 1.33.1 files, init moved the stale Resume Point into the data; a closeout now has 3 hand edits, against 10 to 15.",
+  "Recall: median 14 of 14 over 5 runs against the 1.33.1 baseline of 14, control 0, scored blind (gate line k134-final)."
+ ],
+ "decisions": [
+  {
+   "decision": "State and decisions first; the list and the roadmap as data next",
+   "why": "The owner picked this slice by pop-up: it fixes the drift that was proven, with one small review; the list and the roadmap follow in 1.35.0."
+  },
+  {
+   "decision": "A hand edit inside a block is refused, not overwritten",
+   "why": "The sweep found render wiped a carry-over typed into the block; render now refuses a changed block until the change is moved into the data."
+  },
+  {
+   "decision": "The owner's words must be found where he said them",
+   "why": "The kit's approach rests on the owner's word being his own; a decision row points to the turn its words came from and is checked again there."
+  }
+ ],
+ "sweep": {
+  "tier": "Feature (user data)",
+  "commit": "363e61c",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "A linked tracking file is never written through"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "The owner's words and planted ids, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Hand edits wiped, stale data, init losses, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 5,
+   "medium": 20,
+   "low": 9
+  },
+  "fixed": [
+   "Render wiped a hand-written carry-over and check then passed. Fixed in 084c77a.",
+   "The checks could not see stale data after an install. Fixed in 084c77a.",
+   "A failed init could lose the Resume Point. Fixed in 084c77a.",
+   "Decide stored any text as the owner's words. Fixed in 084c77a and 7e1475a."
+  ],
+  "deferred": [],
+  "accepted": []
+ },
+ "tests": {
+  "before": 733,
+  "after": 745,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}

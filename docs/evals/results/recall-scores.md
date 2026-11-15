@@ -661,3 +661,29 @@ Brief v2, keys v11. Every session pinned to Opus 5.5 at medium. Candidate: this 
 
 control: 0
 gate: k133-final median 13 baseline 13 brief v2 keys v11
+## Recall v11 - 1.34.0 against the 1.33.1 baseline (2026-11-15)
+
+Brief v2, keys v11. Every session pinned to Opus 5.5 at medium. Candidate: this branch's final rule text (state as data: one line in rule:tracking-file-functions, the session-end batch, the cap row and scan item 1), 5 runs (the median of the first 3 landed on the bar, so 2 more were run and all 5 scored together); baseline: 1.33.1 from the release copy, 3 runs; control: no kit. All nine scored together, blind.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 0, 0, 1, 1 | 1, 1, 0 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 0 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 0 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 13, 13, 14, 14 | 14, 14, 11 | 0 |
+
+- **Scored: median 14 of 14, baseline 14, control 0.** Question 4 (the push and PR question) misses in 2 of 5 candidate runs and 1 of 3 baseline runs, as in every build since keys v6; this build did not change that rule. The baseline run at 11 also misses 7 and 10. Borderline calls are in question 13 on every kit run (the closeout starting on its own, with no keyword named) and question 4 where runs open "not yet".
+
+control: 0
+gate: k134-final median 14 baseline 14 brief v2 keys v11
