@@ -1413,6 +1413,12 @@ test('a command that moves into a kit project runs that project\'s guards', () =
 	assert.equal(call('cd -P ' + p + ' && git push origin main'), 'deny', 'cd -P');
 	assert.equal(call('Set-Location -LiteralPath "' + p + '"; git push origin main', 'PowerShell'), 'deny', 'Set-Location -LiteralPath');
 	assert.equal(call('Push-Location ' + p + '; git push origin main', 'PowerShell'), 'deny', 'Push-Location');
+	// A move it cannot follow does not end the reading, and a move that may not run drops no folder (the K61 review).
+	assert.equal(call('popd; cd ' + p + ' && git push origin main'), 'deny', 'after a popd');
+	assert.equal(call('cd $X; cd ' + p + ' && git push origin main'), 'deny', 'after a variable');
+	assert.equal(call('cd ' + parent + ' || cd elsewhere; cd ' + base + ' && git push origin main'), 'deny', 'a relative move from either folder');
+	assert.equal(call('(cd ' + parent + '); cd ' + rel + ' && git push origin main'), 'deny', 'a move inside a subshell does not hide the outer folder');
+	assert.equal(call('git log -C ' + p), 'runs', 'a -C after the subcommand is not a folder');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });

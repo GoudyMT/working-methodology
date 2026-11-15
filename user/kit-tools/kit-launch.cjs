@@ -400,12 +400,16 @@ function unrecorded(input, only = false) {
 // separator or an opening bracket, resolved from the session's folder. Seen live 2026-11-15: a session started outside
 // a kit project worked in one through cd, and the project's guards never ran, since the project was found by the
 // session's folder alone. A folder built at run time ($x, %x%, ~, a backtick) stays unread, as for every guard.
-// Each move is read from the folder the moves before it left (cd a && cd b is a/b); a git -C or --work-tree folder is
-// read from there too, and moves nothing. Home is followed in its plain spellings (~, $HOME, %USERPROFILE%). A move
-// this cannot follow (popd, cd -, an option it does not model, any other variable) leaves the rest unread: inside a
-// kit project its own outward guard already treats a moved command as acting elsewhere, and outside one the kit
-// stays out of the way (the K61 security review, the limit named).
+// The shell's folder is read as a set of the folders it could be in, never one guess: a move adds each folder it gives
+// from every folder already in the set (a move inside ( ), after || or a lone &, may not run, so nothing is dropped),
+// and a move it cannot follow (popd, cd -, an option it does not model, any other variable) adds nothing and the
+// reading goes on. A git -C, --work-tree or --git-dir before git's subcommand is read the same way and moves nothing.
+// Home is followed in its plain spellings (~, $HOME, %USERPROFILE%). What stays unread is a folder built at run time,
+// as for every guard: inside a kit project its own outward guard already treats a moved command as acting elsewhere,
+// and outside one the kit stays out of the way (the K61 security reviews, the limit named).
 const MOVERS = /^(cd|chdir|pushd|popd|push-location|pop-location|set-location|sl)$/i;
+const BREAK = /^(&&|\|\||[;&|\n(){}])$/;
+const GIT_GLOBAL_VALUE = /^(-c|--namespace|--exec-path|--super-prefix|--config-env|--attr-source)$/;
 function movesIn(input) {
 	if (!input || !SHELLS.includes(input.tool_name)) return [];
 	const command = String((input.tool_input && input.tool_input.command) ?? '');
@@ -413,46 +417,57 @@ function movesIn(input) {
 	const unq = (w) => w.replace(/^(["'])([\s\S]*)\1$/, '$2');
 	const home = require('os').homedir();
 	const plain = (w) => {
+		if (w === undefined) return null;
 		let d = unq(w).replace(/^(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\]|$)/i, home.split(path.sep).join('/'));
 		if (/[$`%~*?]/.test(d)) return null;
 		// Git Bash names a drive /c/...: the same folder as C:/...
 		if (WIN && /^\/[A-Za-z](\/|$)/.test(d)) d = `${d[1]}:/${d.slice(3)}`;
 		return d;
 	};
+	const CAP = 64;
 	const out = [];
-	let at = path.resolve(String(input.cwd || process.cwd()));
+	let can = [path.resolve(String(input.cwd || process.cwd()))];
+	const add = (list, dirs) => {
+		for (const d of dirs) if (list.length < CAP && !list.some((x) => same(x, d))) list.push(d);
+		return list;
+	};
 	let start = true;
 	for (let i = 0; i < tokens.length; i++) {
 		const w = tokens[i];
-		if (/^(&&|\|\||[;&|\n(){}])$/.test(w)) { start = true; continue; }
+		if (BREAK.test(w)) { start = true; continue; }
 		const lead = start;
 		start = false;
-		if (lead && MOVERS.test(unq(w))) {
-			const args = [];
-			for (let j = i + 1; j < tokens.length && !/^(&&|\|\||[;&|\n(){}])$/.test(tokens[j]); j++) args.push(tokens[j]);
-			i += args.length;
-			if (/^(popd|pop-location)$/i.test(unq(w))) return out;
+		if (!lead) continue;
+		const args = [];
+		for (let j = i + 1; j < tokens.length && !BREAK.test(tokens[j]); j++) args.push(tokens[j]);
+		i += args.length;
+		if (MOVERS.test(unq(w))) {
+			if (/^(popd|pop-location)$/i.test(unq(w))) continue;
 			const opts = args.filter((a) => /^-/.test(unq(a)));
 			const named = args.findIndex((a) => /^-(path|literalpath|lp)$/i.test(unq(a)));
 			const folder = named >= 0 ? args[named + 1] : args.find((a) => !/^-/.test(unq(a)));
-			if (opts.some((o) => !/^-(path|literalpath|lp|P|L)$/i.test(unq(o))) || folder === undefined) return out;
+			if (opts.some((o) => !/^-(path|literalpath|lp|P|L)$/i.test(unq(o)))) continue;
 			const d = plain(folder);
-			if (d === null) return out;
-			at = path.resolve(at, d);
-			out.push(at);
+			if (d === null) continue;
+			const next = can.map((c) => path.resolve(c, d));
+			add(out, next);
+			can = add(can, next);
 			continue;
 		}
-		if (lead && /^git(\.exe)?$/i.test(unq(w))) {
-			// git -C a -C b is a/b, as git reads it.
-			let g = at;
-			for (let j = i + 1; j < tokens.length && !/^(&&|\|\||[;&|\n(){}])$/.test(tokens[j]); j++) {
-				const t = unq(tokens[j]);
-				const v = t === '-C' ? tokens[j + 1] : /^--(work-tree|git-dir)=/.test(t) ? t.slice(t.indexOf('=') + 1) : /^--(work-tree|git-dir)$/.test(t) ? tokens[j + 1] : null;
-				if (v === null) continue;
-				const d = v === undefined ? null : plain(v);
-				if (d === null) return out;
-				if (t === '-C') g = path.resolve(g, d);
-				out.push(t === '-C' ? g : path.resolve(g, d));
+		if (/^git(\.exe)?$/i.test(unq(w))) {
+			// Only git's own options, before its subcommand: git -C a -C b is a/b, as git reads it.
+			let g = can.slice();
+			for (let j = 0; j < args.length; j++) {
+				const t = unq(args[j]);
+				if (!t.startsWith('-')) break;
+				if (GIT_GLOBAL_VALUE.test(t)) { j++; continue; }
+				const v = t === '-C' || /^--(work-tree|git-dir)$/.test(t) ? args[++j] : /^--(work-tree|git-dir)=/.test(t) ? t.slice(t.indexOf('=') + 1) : undefined;
+				if (v === undefined && !(t === '-C' || /^--(work-tree|git-dir)/.test(t))) continue;
+				const d = plain(v);
+				if (d === null) continue;
+				const next = g.map((c) => path.resolve(c, d));
+				if (t === '-C') g = next;
+				add(out, next);
 			}
 		}
 	}
