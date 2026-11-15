@@ -1,0 +1,63 @@
+# The kit's CI shape for a Node project (K44). Copy to .github/workflows/ci.yml and fill the <...> slots.
+# Shape: PR and main-push triggers, never both on one push; stale runs cancelled; two lanes; one required check
+# ("ci"); main runs everything. Check what is missing with: node .claude/ci-shape.mjs
+name: CI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: <20>
+          cache: <npm>
+      - run: <npm ci>
+      # K72: a tracked settings file that turns every hook off turns the kit's guards off with no sign.
+      - name: Hooks stay on
+        run: |
+          if grep -lsE '"disableAllHooks"[[:space:]]*:[[:space:]]*true' .claude/settings.json .claude/settings.local.json; then
+            echo "disableAllHooks is true in a tracked settings file"; exit 1
+          fi
+      # A PR may narrow this run to what the change reaches (vitest related, jest --findRelatedTests) once the
+      # narrowed run has missed nothing beside the whole suite; main always runs it whole.
+      - run: <npm test>
+  lanes:
+    # A job-level if cannot read files, so this job looks for a slow test and says so (as the kit's own CI does).
+    runs-on: ubuntu-latest
+    outputs:
+      slow: ${{ steps.find.outputs.slow }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: if [ -n "$(find tests/slow -type f 2>/dev/null | head -n 1)" ]; then echo slow=true >> "$GITHUB_OUTPUT"; else echo slow=false >> "$GITHUB_OUTPUT"; fi
+  slow:
+    # The slow lane, on by a job-level if when its folder holds a test, never a workflow path filter.
+    needs: lanes
+    if: needs.lanes.outputs.slow == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: <20>
+      - run: <npm ci>
+      - run: <npm run test:slow>
+  ci:
+    # The one required check: it fails if any lane failed, and passes when the slow lane had nothing to run.
+    needs: [fast, lanes, slow]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          [ "${{ needs.fast.result }}" = success ] && [ "${{ needs.lanes.result }}" = success ] || exit 1
+          case "${{ needs.slow.result }}" in success|skipped) ;; *) exit 1;; esac
