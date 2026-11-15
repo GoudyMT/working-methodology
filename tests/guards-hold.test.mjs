@@ -802,6 +802,34 @@ test('a feature push from another repo runs only where the kit\'s own hooks will
 	spawnSync('git', ['-C', other, 'config', 'core.hooksPath', path.join(cfg, 'kit-guard', 'other-123', 'hooks').split(path.sep).join('/')]);
 	assert.notEqual(ask(other), 'deny', 'a kit project\'s feature push was held');
 });
+// K57, the owner's pick A (2026-11-15): a feature push to a branch whose open PR has had its 2 fix rounds, counted on
+// GitHub by the merge gate, is a third round and asks the owner; so does a count the gate cannot give.
+// why: guards rule:outward-acts
+test('a feature push that would be a third fix round on an open PR asks the owner', () => {
+	const root = kitTemp.makeTemp('k57-');
+	const proj = path.join(root, 'proj');
+	const cfg = path.join(root, 'cfg');
+	fs.mkdirSync(proj);
+	spawnSync('git', ['init', '-q', '-b', 'main', proj]);
+	spawnSync('git', ['-C', proj, 'remote', 'add', 'origin', 'https://github.com/o/r.git']);
+	const seen = path.join(root, 'args.txt');
+	const ask = (out, code = 0, command = 'git push origin feat/x') => {
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: proj, CLAUDE_CONFIG_DIR: cfg, FAKE_OUT: out, FAKE_CODE: String(code) } });
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision || 'note' : 'runs';
+	};
+	assert.equal(ask('rounds 0 no open PR'), 'deny', 'with no merge gate to count, the push asks');
+	fs.mkdirSync(path.join(cfg, 'kit-tools'), { recursive: true });
+	fs.writeFileSync(path.join(cfg, 'kit-tools', 'merge-gate.mjs'), `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(seen)}, process.argv.slice(2).join(' '));\nconsole.log(process.env.FAKE_OUT);\nprocess.exit(Number(process.env.FAKE_CODE));\n`);
+	assert.notEqual(ask('rounds 0 no open PR'), 'deny', 'a push with no open PR');
+	assert.equal(fs.readFileSync(seen, 'utf8'), 'rounds feat/x');
+	assert.notEqual(ask('rounds 1 pr 7'), 'deny', 'the second fix round');
+	assert.equal(ask('rounds 2 pr 7'), 'deny', 'a third fix round went out with no yes');
+	assert.equal(ask('rounds unknown: GitHub could not be read', 1), 'deny', 'a count that could not be read');
+	assert.equal(ask('rounds 2 pr 7', 0, 'git push -u origin HEAD:refs/heads/feat/x'), 'deny', 'the branch named another way');
+	// Another host has no PRs to count: the push stays inside the bound.
+	spawnSync('git', ['-C', proj, 'remote', 'set-url', 'origin', 'https://example.invalid/o/r.git']);
+	assert.notEqual(ask('rounds 2 pr 7'), 'deny');
+});
 // why: guards rule:outward-acts. The plan check's P8: a nested repo under the project path is another repo, read by its
 // git folder, not by its path.
 test('a feature push from a repo nested inside the project is read as another repo', () => {
