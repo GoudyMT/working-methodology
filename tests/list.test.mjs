@@ -51,6 +51,7 @@ const LIST = `# Improvement List
 | C2 | Recall moves with the folder name | high | **[NEXT build 9 (1.35.0)]** open |
 `;
 
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('import reads every row with its one tag, its section and its other cells, and the roadmap table into the steps', () => {
 	const dir = project();
 	put(dir, 'list.md', LIST);
@@ -68,6 +69,7 @@ test('import reads every row with its one tag, its section and its other cells, 
 	assert.equal(read(dir, 'list.md'), LIST, 'import only reads the markdown');
 });
 
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('import refuses a list it cannot move whole, and writes nothing', () => {
 	for (const [bad, why] of [
 		[LIST.replace('**[CLOSED]** not real', 'not real'), /C1 has no tag/],
@@ -93,6 +95,7 @@ test('import refuses a list it cannot move whole, and writes nothing', () => {
 
 // J4: a closed row says who caught it; J3: a number says where it was measured. Imported rows owe both to the
 // one-time audit (counted, not failed); a row added or changed since must carry them.
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('check fails a new or changed row that closes with no catcher or holds a number with no measure label', () => {
 	const dir = project();
 	put(dir, 'list.md', LIST);
@@ -126,6 +129,7 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	assert.match(r.stdout, /K1 holds a number/);
 });
 
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('item add refuses a planted id, an unknown tag, label or catcher, and a second row with the same id', () => {
 	const dir = project();
 	put(dir, 'list.md', LIST);
@@ -147,6 +151,7 @@ test('item add refuses a planted id, an unknown tag, label or catcher, and a sec
 });
 
 // T11: rows from real projects rank above rows the kit found on itself, at the same severity.
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('list shows the open rows ranked by severity, then real use and the owner before the kit\'s own finds', () => {
 	const dir = project();
 	put(dir, 'list.md', LIST);
@@ -162,6 +167,7 @@ test('list shows the open rows ranked by severity, then real use and the owner b
 	assert.match(st(dir, 'list', 'install').stdout, /^K3 /m, 'a text filter');
 });
 
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('list caught prints the catch rate and found-to-shipped by origin', () => {
 	const dir = project();
 	put(dir, 'list.md', LIST);
@@ -179,6 +185,7 @@ test('list caught prints the catch rate and found-to-shipped by origin', () => {
 	assert.match(st(dir, 'list', 'audit').stdout, /^C2 /m, 'the audit lists rows still owed a label');
 });
 
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('render writes the roadmap, counts and rows blocks from the data, and check catches a hand edit in one', () => {
 	const dir = project();
 	put(dir, 'list.md', LIST);
@@ -212,6 +219,7 @@ test('render writes the roadmap, counts and rows blocks from the data, and check
 
 // The workbench roadmap has two steps named "fix" (1.25.1 and 1.33.1); the first trial import wrote both and every
 // later command then refused the state.
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('two roadmap steps may share a name; step set names one by its release', () => {
 	const dir = project();
 	put(dir, 'list.md', LIST.replace('| 9 | 1.35.0 |', '| fix | 1.25.1 | a fix | released |\n| fix | 1.33.1 | a fix | released |\n| 9 | 1.35.0 |'));
@@ -226,6 +234,7 @@ test('two roadmap steps may share a name; step set names one by its release', ()
 	assert.deepEqual(s.roadmap.filter((x) => x.step === 'fix').map((x) => x.state), ['released', 'shipped']);
 });
 
+// why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
 test('a project with no list is untouched: check and render pass as before', () => {
 	const dir = project();
 	assert.equal(st(dir, 'render').status, 0);

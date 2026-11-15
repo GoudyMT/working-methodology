@@ -54,6 +54,7 @@ function setup() {
 	return { project, copy, installed, merged, facts, deps, lines, work, origin };
 }
 
+// why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('a release with every step done passes, and names each step it read', () => {
 	const t = setup();
 	const r = releaseCheck({ tag: 'v1.1.0', pr: 5, project: t.project, copy: t.copy, installed: t.installed }, t.deps);
@@ -63,6 +64,7 @@ test('a release with every step done passes, and names each step it read', () =>
 });
 
 // The 1.34.0 miss: the tag was out, the notes were not.
+// why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('a tag with no published release notes is named missing, and the check fails', () => {
 	const t = setup();
 	t.facts.release = null;
@@ -77,6 +79,7 @@ test('a tag with no published release notes is named missing, and the check fail
 	}
 });
 
+// why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('every missing step is named at once, not only the first', () => {
 	const t = setup();
 	t.facts.pr = { state: 'OPEN', mergeCommit: null, baseRefName: 'main' };
@@ -89,6 +92,7 @@ test('every missing step is named at once, not only the first', () => {
 	for (const want of [/PR 5 is not merged/, /release notes/, /state check/, /installed.*1\.0\.0/]) assert.match(all, want);
 });
 
+// why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('main CI that failed, is still running, or never ran on the merge commit is missing', () => {
 	for (const runs of [
 		[{ name: 'CI', status: 'completed', conclusion: 'failure', headBranch: 'main', event: 'push' }],
@@ -104,6 +108,7 @@ test('main CI that failed, is still running, or never ran on the merge commit is
 	}
 });
 
+// why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('a tag whose files are not the merge commit\'s, and a release copy off the tag, are missing', () => {
 	const t = setup();
 	fs.writeFileSync(path.join(t.work, 'VERSION'), '1.1.1\n');
@@ -133,6 +138,7 @@ function polls(answers) {
 }
 const run = (status, conclusion, name = 'CI') => ({ databaseId: name.length, name, status, conclusion, url: `https://github.com/o/r/actions/runs/${name.length}` });
 
+// why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('ci-wait prints one line as each run ends, green or red, and exits on the result', async () => {
 	let p = polls([[run('queued', '')], [run('in_progress', '')], [run('completed', 'success')]]);
 	let r = await ciWait({ commit: 'abc1234', every: 30 }, p.deps);
@@ -145,6 +151,7 @@ test('ci-wait prints one line as each run ends, green or red, and exits on the r
 	assert.match(p.lines.at(-1), /^CI done: 1 red, 1 green/);
 });
 
+// why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('ci-wait says once when a run passes ten minutes, and gives up past its limit', async () => {
 	const long = Array.from({ length: 30 }, () => [run('in_progress', '')]);
 	const p = polls([...long, [run('completed', 'success')]]);

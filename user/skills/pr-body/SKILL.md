@@ -24,6 +24,9 @@ template and audit scripts win over anything here.
    Fix every failure; then reread for flow.
 5. **Open and hand off:** a PR from a feature branch opens with no yes (rule:outward-acts); then give the owner the
    PR link, the audit result and the sources you read. Editing a merged PR's body or a release is still the owner's.
+6. **Report CI unasked:** after each push to the PR, start `node .claude/ci-wait.mjs <pushed commit>` in the
+   background and pass each line it prints on to the owner as it comes: one line as each run ends, green or red,
+   one once a run passes ten minutes, and the result.
 
 ## The rule
 

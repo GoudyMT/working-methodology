@@ -23,6 +23,15 @@
 //   node .claude/state.mjs check                              exit 1 on any fault below
 //   node .claude/state.mjs init                               once, in a project from before 1.34.0: moves the
 //                                                              filled-in Resume Point into the data and marks the blocks
+// The improvement list and the roadmap (1.35.0, list-data.mjs holds the shape and the reasons):
+//   node .claude/state.mjs list [text] [--all]                the open rows, ranked (or every row)
+//   node .claude/state.mjs list caught | audit                the catch rate and found to shipped by origin; the rows
+//                                                              still owed a label
+//   node .claude/state.mjs list import <file.md>              once: a markdown list into _List.jsonl, whole or not at all
+//   node .claude/state.mjs item add --from <file.json>        a new row, every label it owes included
+//   node .claude/state.mjs item set <id> <field> <value>      tag ("done 1.35.0"), caught-by, escaped, measured, origin ...
+//   node .claude/state.mjs step set <step> release|carries|state <text>
+// render also writes the roadmap, counts and rows blocks (list:begin markers) in any of the project's markdown files.
 //
 // What check proves: each generated block equals what the data renders; no label a session reads (NEXT, Pending the
 // owner ...) sits outside its block; the kit version in the data is the one installed; every item id is well formed;
@@ -486,7 +495,7 @@ function decide(fromFile, unchecked) {
 function main(argv) {
 	const [cmd, ...rest] = argv;
 	const fail = (m) => { console.log(m); process.exitCode = 1; };
-	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init'); process.exitCode = 2; };
+	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|caught|audit|import <file.md>] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text>'); process.exitCode = 2; };
 	if (cmd === 'init') {
 		const { faults, said = [] } = init();
 		for (const f of [...faults, ...said]) console.log(f);

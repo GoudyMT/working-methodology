@@ -90,7 +90,7 @@ test('a whole record writes a PR body that passes the audit, and one that would 
 	const r = spawnSync(process.execPath, [path.resolve('project/.claude/pr-body-audit.mjs'), f, rec.title, '31'], { encoding: 'utf8', cwd: dir });
 	assert.equal(r.status, 0, r.stdout.split('\n').filter((l) => l.startsWith('FAIL')).join('\n'));
 });
-// why: catches release notes drafted by hand that drift from the record (E14, 1.35.0): the notes are written from the
+// why: guards the owner's pick of E14, 2026-11-15; catches release notes drafted by hand that drift from the record (E14, 1.35.0): the notes are written from the
 // same record, split by reach, and pass the release-notes audit as written.
 test('the record writes release notes that split what projects get from what stays in the kit, and pass the audit', () => {
 	const rec = record();
