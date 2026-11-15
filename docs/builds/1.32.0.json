@@ -2,19 +2,19 @@
  "version": "1.32.0",
  "date": "2026-11-15",
  "level": "minor",
- "area": "Local tests and review fixes",
- "title": "feat: covering tests before a PR, and 2 auto-fix rounds at most",
- "headline": "Before a PR only the tests that cover the change run locally and CI runs the rest, and auto-fix gathers every comment first, fixes each class at its root and stops after two fix rounds.",
- "alignment": "v1.32.0 lands the five rows the kit found on itself about local test runs and the review loop, each reproduced on the released 1.31.0 first.",
+ "area": "Local tests and outward acts",
+ "title": "feat: covering tests before a PR, and PRs open with no yes",
+ "headline": "Before a PR only the tests that cover the change run locally and CI runs the rest; auto-fix gathers every comment first and fixes each class at its root; and a feature branch's PR opens with no yes.",
+ "alignment": "v1.32.0 lands the rows the kit found on itself about local test runs and the review loop, each reproduced on the released 1.31.0 first, and the owner's two rulings of 2026-11-15.",
  "items": [
   {
-   "id": "K57",
-   "kind": "added",
-   "text": "Auto-fix makes at most 2 fix rounds per PR, each push counted on GitHub from any clone: the merge gate refuses a third auto-fix and the push guard asks the owner. An unreadable count or log, or a PR number with a leading zero, stops it.",
-   "evidence": "tests/merge-gate.test.mjs, tests/guards-hold.test.mjs",
-   "where": "A third auto-fix push on one PR",
-   "before": "Pushed, with no count",
-   "after": "Refused or asked; the owner decides"
+   "id": "PR-BOUND",
+   "kind": "changed",
+   "text": "A push of a feature branch and opening its PR need no yes: the guard lets one plain gh pr create through, from a feature branch, in a repo whose one remote is origin. Merge, release, tags and main still ask.",
+   "evidence": "tests/guards-hold.test.mjs, rules/core.md",
+   "where": "Opening a PR from a pushed feature branch",
+   "before": "The owner's yes in a pop-up",
+   "after": "Opened, then the owner is told"
   },
   {
    "id": "K59",
@@ -34,21 +34,31 @@
   {
    "id": "K56-K58",
    "kind": "changed",
-   "text": "Auto-fix gathers every CI failure and review comment first, fixes each class once at its root, runs the covering tests and pushes once.",
+   "text": "Auto-fix gathers every CI failure and review comment first, fixes each class once at its root, runs the covering tests and pushes once; every CI failure gets fixed, with no cap, and a branch has one sweep.",
    "evidence": "rules/core.md, project/AGENTS.md, user/skills/builder-rules/SKILL.md",
    "where": "One round of review fixes",
    "before": "A fix and a push per comment",
    "after": "Every comment, each root once, one push"
+  },
+  {
+   "id": "DISARM",
+   "kind": "fixed",
+   "text": "The merge gate's disarm refuses a PR number with a leading zero, which turned the PR off but left its push held.",
+   "evidence": "tests/merge-gate.test.mjs"
   }
  ],
  "verification": [
-  "Each code change has a test that fails on the code before it: the third push from any clone, the unwritable log, the leading-zero number and the notice; all five rows were first reproduced on the released 1.31.0.",
-  "Recall on keys v10: candidate median 14, baseline (1.31.0) 14, control 0."
+  "Each code change has a test that fails on the code before it: the PR bound, the leading-zero disarm and the notice; the local-test rows were first reproduced on the released 1.31.0.",
+  "Recall: PENDING."
  ],
  "decisions": [
   {
-   "decision": "A round is any push GitHub's CI saw after the PR opened",
-   "why": "The owner's pick: a count in one clone's log missed plain pushes and other clones; distinct CI head commits see both, and an unreadable count asks the owner."
+   "decision": "No cap on fix rounds",
+   "why": "The owner's ruling: every CI failure on a PR gets fixed, and the limit that matters is one sweep per branch, which the kit already holds; a cap counted CI fixes as review loops."
+  },
+  {
+   "decision": "The PR bound is narrow",
+   "why": "Only one plain gh pr create, on a feature branch, in a repo with origin as its one remote, so it cannot open a PR on another repo or hide a second command."
   },
   {
    "decision": "The notice never holds a run",
@@ -73,7 +83,7 @@
    },
    {
     "name": "Code security",
-    "result": "Two highs and four mediums on the round cap and the local-test rule, all fixed"
+    "result": "Two highs and four mediums on the round cap and the local-test rule; the cap was removed on the owner's ruling, the rest fixed"
    },
    {
     "name": "Gaps, scaling, test value",
@@ -93,14 +103,14 @@
   "fixed": [
    "The new lines said CI runs the full suite, which a kit PR does not. Fixed in b7af2d0 and 9cecb7e.",
    "The test-first reference still asked for the whole suite before done. Fixed in b7af2d0.",
-   "A third round could go out by a plain push or from another clone. Fixed in 669b428: rounds are counted on GitHub."
+   "A third fix round could pass the cap by a plain push or from another clone. Closed in 335ee6f: the owner ruled no cap."
   ],
   "deferred": [],
   "accepted": []
  },
  "tests": {
   "before": 715,
-  "after": 720,
+  "after": 717,
   "flips": "declared tests on main and on this branch; the PR run gives the final count"
  }
 }
