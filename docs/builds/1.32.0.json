@@ -56,27 +56,52 @@
   }
  ],
  "sweep": {
-  "tier": "PENDING",
-  "commit": "PENDING",
+  "tier": "Fix (security-sensitive)",
+  "commit": "b0a5ed1",
   "dimensions": [
    {
+    "name": "Privacy",
+    "result": "Clean: no name, path or account added"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Clean: no dependency added"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
     "name": "Code security",
-    "result": "PENDING"
+    "result": "Two highs and four mediums on the round cap and the local-test rule; one high accepted by the owner, the rest fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Leftover full-run lines in nine files and five test gaps, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
    }
   ],
   "findings": {
    "critical": 0,
-   "high": 0,
-   "medium": 0,
-   "low": 0
+   "high": 3,
+   "medium": 6,
+   "low": 9
   },
-  "fixed": [],
+  "fixed": [
+   "The new lines said CI runs the full suite, which a kit PR does not. Fixed in b7af2d0 and 9cecb7e.",
+   "The test-first reference still asked for the whole suite before done. Fixed in b7af2d0."
+  ],
   "deferred": [],
-  "accepted": []
+  "accepted": [
+   "A third fix round can still go out by a plain push or from a second clone; the gate counts its own clone, and the rule line forbids any other push of a third round."
+  ]
  },
  "tests": {
   "before": 715,
-  "after": 717,
+  "after": 718,
   "flips": "declared tests on main and on this branch; the PR run gives the final count"
  }
 }
