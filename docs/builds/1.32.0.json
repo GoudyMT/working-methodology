@@ -1,0 +1,74 @@
+{
+ "version": "1.32.0",
+ "date": "2026-11-15",
+ "level": "minor",
+ "area": "Local tests and review fixes",
+ "title": "feat: covering tests before a PR, and 2 auto-fix rounds at most",
+ "headline": "Before a PR only the tests that cover the change run locally and CI runs the full suite, and auto-fix gathers every comment first, fixes each class at its root and stops after two fix rounds.",
+ "alignment": "v1.32.0 lands the five rows the kit found on itself about local test runs and the review loop, each reproduced on the released 1.31.0 first.",
+ "items": [
+  {
+   "id": "K57",
+   "kind": "added",
+   "text": "Auto-fix makes at most 2 fix rounds per PR: the merge gate refuses a third push and names the owner, who decides on a recommendation. A PR number with a leading zero is refused, so it cannot start a fresh count.",
+   "evidence": "tests/merge-gate.test.mjs",
+   "where": "A third auto-fix push on one PR",
+   "before": "Pushed, with no count",
+   "after": "Refused; the owner decides"
+  },
+  {
+   "id": "K59",
+   "kind": "added",
+   "text": "The kit's test runner prints a notice on a full local run: CI runs the full suite on push, and a change takes the changed run.",
+   "evidence": "tests/harness.test.mjs"
+  },
+  {
+   "id": "K55",
+   "kind": "changed",
+   "text": "One local-test rule: before a PR, run the tests covering the change; CI's run on the push is the gate, and with no CI the full suite runs once locally. The test-first, loop and team build texts agree.",
+   "evidence": "rules/testing.md, user/skills/tdd/SKILL.md, rules/loop-mode.md",
+   "where": "Local tests before a PR",
+   "before": "The full suite, then CI again",
+   "after": "The covering tests; CI runs the rest"
+  },
+  {
+   "id": "K56",
+   "kind": "changed",
+   "text": "Auto-fix gathers every CI failure and review comment first, fixes each class once at its root, runs the covering tests and pushes once.",
+   "evidence": "rules/core.md, project/AGENTS.md, user/skills/builder-rules/SKILL.md",
+   "where": "One round of review fixes",
+   "before": "A fix and a push per comment",
+   "after": "Every comment, each root once, one push"
+  }
+ ],
+ "verification": [
+  "Each code change has a test that fails on the code before it: the third push and the leading-zero PR number for the round cap, and the notice on a full run; all five rows were first reproduced on the released 1.31.0.",
+  "Recall on keys v10: PENDING."
+ ],
+ "decisions": [
+  {
+   "decision": "The round cap counts the gate log's pushes per PR",
+   "why": "Every auto-fix push already writes one line there; a plain push to the branch is not counted, and the rule line covers that path."
+  },
+  {
+   "decision": "The notice never holds a run",
+   "why": "A full local run is still right where no CI runs, so the runner tells and the exit code is unchanged."
+  }
+ ],
+ "sweep": {
+  "tier": "PENDING",
+  "commit": "PENDING",
+  "dimensions": [
+   { "name": "Code security", "result": "PENDING" }
+  ],
+  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "fixed": [],
+  "deferred": [],
+  "accepted": []
+ },
+ "tests": {
+  "before": 715,
+  "after": 717,
+  "flips": "declared tests on main and on this branch; the PR run gives the final count"
+ }
+}

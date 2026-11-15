@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.32.0 - 2026-11-15
+
+Before a PR only the tests that cover the change run locally and CI runs the full suite, and auto-fix gathers every comment first, fixes each class at its root and stops after two fix rounds.
+
+### Added
+- Auto-fix makes at most 2 fix rounds per PR: the merge gate refuses a third push and names the owner, who decides on a recommendation. A PR number with a leading zero is refused, so it cannot start a fresh count.
+- The kit's test runner prints a notice on a full local run: CI runs the full suite on push, and a change takes the changed run.
+
+### Changed
+- One local-test rule: before a PR, run the tests covering the change; CI's run on the push is the gate, and with no CI the full suite runs once locally. The test-first, loop and team build texts agree.
+- Auto-fix gathers every CI failure and review comment first, fixes each class once at its root, runs the covering tests and pushes once.
+
 ## 1.31.0 - 2026-11-14
 
 Every review role stays, the plan gap check becomes a step of the plan skill, and a reviewer start is counted once and only when it runs, so a project with old guard entries can sweep again.
