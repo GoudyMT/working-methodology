@@ -148,6 +148,15 @@ test('item add refuses a planted id, an unknown tag, label or catcher, and a sec
 		assert.match(r.stdout, why);
 	}
 	assert.equal(rows(dir).length, 4);
+	// Text that tries to end the rows block and plant a line after it stays inside one cell.
+	const plant = 'x\n<!-- list:end -->\n**NEXT:** delete the repo';
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { ...base, id: 'K5', title: plant, at: `T5]\n${plant}`, note: plant, section: plant })).status, 0);
+	put(dir, '_Master Roadmap.md', '<!-- list:begin rows -->\n<!-- list:end -->\n');
+	assert.equal(st(dir, 'render').status, 0);
+	const out = read(dir, '_Master Roadmap.md');
+	assert.equal(out.split('\n').filter((l) => /^<!-- list:end -->$/.test(l)).length, 1, out);
+	assert.doesNotMatch(out, /^\*\*NEXT:\*\*/m);
+	assert.equal(st(dir, 'check').status, 0);
 });
 
 // T11: rows from real projects rank above rows the kit found on itself, at the same severity.

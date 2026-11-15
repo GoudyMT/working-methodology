@@ -70,8 +70,9 @@ function owed(r) {
 	return out;
 }
 
-const tagText = (r) => `**[${r.tag.toUpperCase()}${r.at ? ` ${r.at}` : ''}]**`;
-const cell = (s) => String(s ?? '').replace(/\|/g, '\\|');
+const tagText = (r) => `**[${r.tag.toUpperCase()}${r.at ? ` ${cell(r.at).replace(/\]/g, ')')}` : ''}]**`;
+// One table cell: no line break of any kind and no comment marker, so row text can never end a block or start one.
+const cell = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/<!--/g, '<! --').replace(/-->/g, '-- >').replace(/\|/g, '\\|');
 const dash = (s) => (String(s ?? '').trim() ? s : '-');
 
 // A markdown table row's cells, split on pipes that are not escaped.
@@ -235,7 +236,7 @@ export function views(rows, steps = []) {
 	const sections = [...new Set(rows.map((r) => r.section || 'Rows'))];
 	for (const sec of sections) {
 		if (out.length) out.push('');
-		out.push(`### ${sec}`, '', '| ID | Item | Detail | Severity | Caught by | Status |', '|---|---|---|---|---|---|');
+		out.push(`### ${cell(sec)}`, '', '| ID | Item | Detail | Severity | Caught by | Status |', '|---|---|---|---|---|---|');
 		for (const r of rows.filter((x) => (x.section || 'Rows') === sec)) {
 			const detail = Object.entries(r.detail || {}).map(([k, v]) => `${k}: ${v}`).join('; ');
 			out.push(`| ${cell(r.id)} | ${cell(r.title)} | ${cell(dash(detail))} | ${r.severity} | ${r.caught_by || 'not set'}${r.escaped ? ' (escaped)' : ''} | ${tagText(r)}${r.note ? ` ${cell(r.note)}` : ''} |`);

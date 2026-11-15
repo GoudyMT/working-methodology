@@ -119,6 +119,8 @@ test('a tag whose files are not the merge commit\'s, and a release copy off the 
 	assert.equal(r.ok, false);
 	assert.match(r.missing.join('\n'), /tag v1\.1\.0.*merge/);
 	assert.match(r.missing.join('\n'), /release copy/);
+	// The check reads GitHub's tag and leaves the project's own tags as they were.
+	assert.equal(sh(t.project, 'rev-parse', 'refs/tags/v1.1.0^{commit}'), t.merged);
 });
 
 // K66: a fake clock and a fake GitHub that answers each poll in turn.

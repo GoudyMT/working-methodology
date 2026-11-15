@@ -68,11 +68,17 @@ export function releaseCheck({ tag, pr, project, copy, installed }, deps = {}) {
 	step(`main CI green on the merge commit`, ci);
 
 	let tagged = 'no merge commit to compare';
-	git(project, 'fetch', '-q', 'origin', `+refs/tags/${tag}:refs/tags/${tag}`);
-	const tagCommit = git(project, 'rev-parse', '--verify', '-q', `refs/tags/${tag}^{commit}`).stdout.trim();
+	// The tag as GitHub holds it, read without writing any ref here: a local tag of the same name proves nothing.
+	const remoteTag = (dir) => {
+		const out = git(dir, 'ls-remote', 'origin', `refs/tags/${tag}`, `refs/tags/${tag}^{}`).stdout.split(/\r?\n/).map((l) => l.split('\t'));
+		const peeled = out.find(([, ref]) => ref === `refs/tags/${tag}^{}`);
+		const direct = out.find(([, ref]) => ref === `refs/tags/${tag}`);
+		return ((peeled || direct || [])[0] || '').trim();
+	};
+	const tagCommit = remoteTag(project);
 	if (!tagCommit) tagged = `no tag ${tag} on GitHub`;
 	else if (merge) {
-		git(project, 'fetch', '-q', 'origin', merge);
+		git(project, 'fetch', '-q', 'origin', merge, tagCommit);
 		// The tag may sit on the squash commit or a commit with the same files: the files are what ships.
 		tagged = tree(project, merge) && tree(project, tagCommit) === tree(project, merge) ? null : `tag ${tag} does not hold the merge commit's files (${tagCommit.slice(0, 12)} against ${merge.slice(0, 12)})`;
 	}
@@ -85,9 +91,8 @@ export function releaseCheck({ tag, pr, project, copy, installed }, deps = {}) {
 	step('state check', st && st.status !== 0 ? `the state check fails: ${one(st.stdout || st.stderr)}` : null);
 
 	if (copy) {
-		git(copy, 'fetch', '-q', 'origin', `+refs/tags/${tag}:refs/tags/${tag}`);
 		const head = git(copy, 'rev-parse', 'HEAD').stdout.trim();
-		const at = git(copy, 'rev-parse', '--verify', '-q', `refs/tags/${tag}^{commit}`).stdout.trim();
+		const at = remoteTag(copy);
 		const dirty = git(copy, 'status', '--porcelain').stdout.trim();
 		step(`release copy on ${tag}`, !at || head !== at ? `the release copy is not on ${tag} (HEAD ${head.slice(0, 12)})` : dirty ? 'the release copy has changes' : null);
 	}
