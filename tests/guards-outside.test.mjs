@@ -1403,6 +1403,16 @@ test('a command that moves into a kit project runs that project\'s guards', () =
 		const msys = '/' + p[0].toLowerCase() + p.slice(2);
 		assert.equal(call('cd ' + msys + ' && git push origin main'), 'deny', msys);
 	}
+	// Each move is read from where the moves before it left the shell, and the options cd and Set-Location take.
+	const parent = path.dirname(proj).split(path.sep).join('/');
+	const base = path.basename(proj);
+	assert.equal(call('cd ' + parent + ' && cd ' + base + ' && git push origin main'), 'deny', 'a relative move after another move');
+	assert.equal(call('cd ' + parent + ' && git -C ' + base + ' push origin main'), 'deny', 'git -C from the folder a move left');
+	assert.equal(call('git -C ' + parent + ' -C ' + base + ' push origin main'), 'deny', 'git -C chained');
+	assert.equal(call('git --work-tree=' + p + ' push origin main'), 'deny', 'git --work-tree');
+	assert.equal(call('cd -P ' + p + ' && git push origin main'), 'deny', 'cd -P');
+	assert.equal(call('Set-Location -LiteralPath "' + p + '"; git push origin main', 'PowerShell'), 'deny', 'Set-Location -LiteralPath');
+	assert.equal(call('Push-Location ' + p + '; git push origin main', 'PowerShell'), 'deny', 'Push-Location');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });

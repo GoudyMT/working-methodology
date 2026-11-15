@@ -460,7 +460,7 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 	const file = path.join(proj, '.claude', 'settings.json');
 	popUp({ act: `Edit ${file}: x => y => z` });
 	assert.equal(withYes('Edit', { file_path: file, old_string: 'x => y', new_string: 'z' }), 'deny', 'an edit quote with its own separator in it');
-	const act = 'gh pr create --fill';
+	const act = 'gh pr merge 7 --squash';
 	popUp({ act, tried: { tool: 'Bash', input: { command: act } } });
 	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes after a Bash call ran in PowerShell');
 	assert.equal(withYes('Bash', { command: act }), 'allow');
@@ -583,7 +583,8 @@ test('a held push names the limit of the push bound it hit', () => {
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main' });
 	assert.equal(withYes('Bash', { command: 'KIT_PUSH_APPROVED=1 git push origin main' }), 'allow', 'the act the refusal names runs on that yes');
 	// pin: 2 (the kind a session acts on: hand back, or ask the owner)
-	assert.match(why('Bash', { command: 'gh pr create --fill' }), /^Owner's yes needed: gh pr create is an outward act/);
+	// gh pr create is checked for its text first (1.33.0), so the kind is shown on another PR act.
+	assert.match(why('Bash', { command: 'gh pr merge 7 --squash' }), /^Owner's yes needed: gh pr merge is an outward act/);
 	assert.match(why('Bash', { command: 'git push origin main' }, { agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 });
 // why: guards rule:outward-acts
@@ -1028,7 +1029,7 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 // why: guards rule:outward-acts. K38 (flips the 1.28.0 measure run left alive in owner-yes.cjs): a transcript line with
 // no message (Claude Code writes such lines) is skipped, before the pop-up and after it, and the yes still counts.
 test('a yes is found past a transcript line with no message', () => {
-	const act = 'gh pr create --fill';
+	const act = 'gh pr merge 7 --squash';
 	popUp({ act });
 	const bare = JSON.stringify({ type: 'assistant', isSidechain: false }) + '\n';
 	fs.writeFileSync(TRANSCRIPT, bare + fs.readFileSync(TRANSCRIPT, 'utf8') + bare);

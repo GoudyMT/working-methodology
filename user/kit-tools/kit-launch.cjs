@@ -400,18 +400,61 @@ function unrecorded(input, only = false) {
 // separator or an opening bracket, resolved from the session's folder. Seen live 2026-11-15: a session started outside
 // a kit project worked in one through cd, and the project's guards never ran, since the project was found by the
 // session's folder alone. A folder built at run time ($x, %x%, ~, a backtick) stays unread, as for every guard.
+// Each move is read from the folder the moves before it left (cd a && cd b is a/b); a git -C or --work-tree folder is
+// read from there too, and moves nothing. Home is followed in its plain spellings (~, $HOME, %USERPROFILE%). A move
+// this cannot follow (popd, cd -, an option it does not model, any other variable) leaves the rest unread: inside a
+// kit project its own outward guard already treats a moved command as acting elsewhere, and outside one the kit
+// stays out of the way (the K61 security review, the limit named).
+const MOVERS = /^(cd|chdir|pushd|popd|push-location|pop-location|set-location|sl)$/i;
 function movesIn(input) {
 	if (!input || !SHELLS.includes(input.tool_name)) return [];
 	const command = String((input.tool_input && input.tool_input.command) ?? '');
-	const word = String.raw`(?:"([^"]*)"|'([^']*)'|([^\s;&|'"(){}]+))`;
-	const re = new RegExp(String.raw`(?:^|[;&|\n({]|&&|\|\|)\s*(?:(?:cd|chdir|pushd|set-location|sl)\s+(?:-(?:literalpath|path)\s+)?` + word + String.raw`|git\s+-C\s+` + word + ')', 'gi');
-	const out = [];
-	for (const m of command.matchAll(re)) {
-		let dir = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? m[6];
-		if (!dir || /[$`%~]/.test(dir)) continue;
+	const tokens = command.match(/"[^"]*"|'[^']*'|&&|\|\||[;&|\n(){}]|[^\s;&|'"(){}]+/g) || [];
+	const unq = (w) => w.replace(/^(["'])([\s\S]*)\1$/, '$2');
+	const home = require('os').homedir();
+	const plain = (w) => {
+		let d = unq(w).replace(/^(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\]|$)/i, home.split(path.sep).join('/'));
+		if (/[$`%~*?]/.test(d)) return null;
 		// Git Bash names a drive /c/...: the same folder as C:/...
-		if (WIN && /^\/[A-Za-z](\/|$)/.test(dir)) dir = `${dir[1]}:/${dir.slice(3)}`;
-		out.push(path.resolve(String(input.cwd || process.cwd()), dir));
+		if (WIN && /^\/[A-Za-z](\/|$)/.test(d)) d = `${d[1]}:/${d.slice(3)}`;
+		return d;
+	};
+	const out = [];
+	let at = path.resolve(String(input.cwd || process.cwd()));
+	let start = true;
+	for (let i = 0; i < tokens.length; i++) {
+		const w = tokens[i];
+		if (/^(&&|\|\||[;&|\n(){}])$/.test(w)) { start = true; continue; }
+		const lead = start;
+		start = false;
+		if (lead && MOVERS.test(unq(w))) {
+			const args = [];
+			for (let j = i + 1; j < tokens.length && !/^(&&|\|\||[;&|\n(){}])$/.test(tokens[j]); j++) args.push(tokens[j]);
+			i += args.length;
+			if (/^(popd|pop-location)$/i.test(unq(w))) return out;
+			const opts = args.filter((a) => /^-/.test(unq(a)));
+			const named = args.findIndex((a) => /^-(path|literalpath|lp)$/i.test(unq(a)));
+			const folder = named >= 0 ? args[named + 1] : args.find((a) => !/^-/.test(unq(a)));
+			if (opts.some((o) => !/^-(path|literalpath|lp|P|L)$/i.test(unq(o))) || folder === undefined) return out;
+			const d = plain(folder);
+			if (d === null) return out;
+			at = path.resolve(at, d);
+			out.push(at);
+			continue;
+		}
+		if (lead && /^git(\.exe)?$/i.test(unq(w))) {
+			// git -C a -C b is a/b, as git reads it.
+			let g = at;
+			for (let j = i + 1; j < tokens.length && !/^(&&|\|\||[;&|\n(){}])$/.test(tokens[j]); j++) {
+				const t = unq(tokens[j]);
+				const v = t === '-C' ? tokens[j + 1] : /^--(work-tree|git-dir)=/.test(t) ? t.slice(t.indexOf('=') + 1) : /^--(work-tree|git-dir)$/.test(t) ? tokens[j + 1] : null;
+				if (v === null) continue;
+				const d = v === undefined ? null : plain(v);
+				if (d === null) return out;
+				if (t === '-C') g = path.resolve(g, d);
+				out.push(t === '-C' ? g : path.resolve(g, d));
+			}
+		}
 	}
 	return out;
 }
