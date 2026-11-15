@@ -1198,7 +1198,7 @@ function claudeCodeTooOld(text) {
   const m = /(\d+\.\d+\.\d+)/.exec(String(text ?? ''));
   if (!m) return null;
   if (semverAbove(ON_FAILURE_MIN, m[1])) return { min: ON_FAILURE_MIN, line: `Claude Code ${m[1]} is older than ${ON_FAILURE_MIN}: a guard that crashes or times out lets the command run. Run claude update.` };
-  if (semverAbove(RULES_MIN, m[1])) return { min: RULES_MIN, line: `Claude Code ${m[1]} is older than ${RULES_MIN}: Bash deny and ask rules can miss a command, and the kit's settings rely on them. Run claude update (a WinGet or other package install updates through its own tool).` };
+  if (semverAbove(RULES_MIN, m[1])) return { min: RULES_MIN, line: `Claude Code ${m[1]} is older than ${RULES_MIN}: Bash deny and ask rules can miss a command, and the kit's settings rely on them. Run claude update; a package manager that has no ${RULES_MIN} yet (WinGet was at 2.1.318 on 2026-11-15) leaves npm i -g @anthropic-ai/claude-code@latest.` };
   return null;
 }
 /** A warning when Claude Code updates from the stable channel, which trailed the floor on 2026-11-15 (2.1.311), or ''. */
