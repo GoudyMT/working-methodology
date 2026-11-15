@@ -930,6 +930,33 @@ test('merge gate: autofix stops on the kill switch, nothing to push, another bra
 	assert.ok(fixed);
 	assert.equal(autofix({ ...s.opts, pr: 'x' }).pushed, false);
 });
+// K57: at most 2 review-fix rounds per PR; the third is the owner's call, so autofix refuses it and pushes nothing.
+// why: guards rule:outward-acts
+test('merge gate: autofix makes at most 2 fix rounds per PR, and another PR keeps its own count', () => {
+	const s = setup();
+	const fix = (n) => {
+		fs.writeFileSync(path.join(s.work, 'math.txt'), `add\nsub\nfix ${n}\n`);
+		sh(s.work, 'commit', '-qam', `fix ${n}`);
+		return sh(s.work, 'rev-parse', 'HEAD');
+	};
+	for (const round of [1, 2]) {
+		const fixed = fix(round);
+		const r = autofix(s.opts);
+		assert.equal(r.pushed, true, `round ${round}: ${r.faults.join('\n')}`);
+		s.state.pr.headRefOid = fixed;
+	}
+	const third = fix(3);
+	const before = originHead(s);
+	const r = autofix(s.opts);
+	assert.equal(r.pushed, false);
+	assert.match(r.faults[0], /2 fix rounds.*owner/);
+	assert.equal(originHead(s), before, 'nothing went out');
+	assert.notEqual(originHead(s), third);
+	// PR 70 shares no count with PR 7: only PR 7's own log lines count against it.
+	const log = path.join(s.work, '.git', 'kit-merge-gate.log');
+	fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace(/AUTOFIX 7 /g, 'AUTOFIX 70 '));
+	assert.equal(autofix(s.opts).pushed, true, 'rounds of PR 70 do not count against PR 7');
+});
 // why: guards rule:standing-grants
 test('merge gate: a disarm reads back rather than trusting gh, on a PR with nothing to turn off', () => {
 	const s = setup();

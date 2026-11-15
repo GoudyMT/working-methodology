@@ -541,6 +541,7 @@ export function status({ cwd, config = configDir(), run = realRun }) {
 	return { killSwitch: fs.existsSync(path.join(config, 'autonomy-off')), armed: [...armed.values()] };
 }
 
+const MAX_FIX_ROUNDS = 2;
 const gateLog = (cwd, run) => path.join(path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd).stdout.trim() || '.git'), 'kit-merge-gate.log');
 
 /**
@@ -611,6 +612,10 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
 	if (planted.length) return no(`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`);
 	if (fs.existsSync(path.join(config, 'autonomy-off'))) return no(`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`);
+	// At most 2 fix rounds per PR (rule:outward-acts): a third means the fixes miss a root, and what next is the owner's.
+	const log = gateLog(cwd, run);
+	const rounds = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.split(' ')[1] === 'AUTOFIX' && l.split(' ')[2] === String(pr)).length : 0;
+	if (rounds >= MAX_FIX_ROUNDS) return no(`PR ${pr} has had its ${MAX_FIX_ROUNDS} fix rounds: a third is the owner's call, so tell them what is left with a recommendation`);
 	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest,url'], cwd));
 	if (!p || p.state !== 'OPEN' || p.isCrossRepository !== false) return no(`PR ${pr} is not an open PR from this repo`);
 	// gh reads the PR from whichever remote it picks; the push goes to origin, so origin must be the PR's repo.
@@ -637,7 +642,7 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 	}
 	const out = git('push', 'origin', `${local}:refs/heads/${p.headRefName}`);
 	if (out.status !== 0) return no(`the push failed: ${(out.stderr || out.stdout).trim().slice(0, 200)}`);
-	fs.appendFileSync(gateLog(cwd, run), `${now()} AUTOFIX ${pr} ${local}\n`);
+	fs.appendFileSync(log, `${now()} AUTOFIX ${pr} ${local}\n`);
 	return { pushed: true, sha: local, faults: [] };
 }
 
