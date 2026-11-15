@@ -23,7 +23,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+
+const kitTemp = createRequire(import.meta.url)('./kit-temp.cjs');
 
 const GREEN = ['success'];
 const BESIDE = path.dirname(process.execPath);
@@ -47,13 +50,13 @@ export function repoOf(url) {
 function auditNotes(body, version) {
 	const audit = path.join(claudeHome(), 'skills', 'release-notes', 'audit.mjs');
 	if (!fs.existsSync(audit)) return null;
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-notes-'));
-	try {
+	// The kit's one temp helper: the folder is made new and removed after, even when the audit throws.
+	return kitTemp.withTemp('kit-notes-', (dir) => {
 		const f = path.join(dir, 'notes.md');
 		fs.writeFileSync(f, body);
 		const r = spawnSync(process.execPath, [audit, f, version], { cwd: dir, encoding: 'utf8', timeout: 60000 });
 		return r.status === 0 ? [] : String(r.stdout || r.stderr).split(/\r?\n/).filter((l) => /^line \d+:/.test(l));
-	} finally { fs.rmSync(dir, { recursive: true, force: true }); }
+	});
 }
 
 /**

@@ -96,6 +96,25 @@ test('notes that are missing, a draft, empty, failing the audit or never audited
 });
 
 // why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
+test('the live notes run the installed release-notes audit, in a temp folder that is removed after', () => {
+	const home = kitTemp.makeTemp('rc-home-');
+	fs.mkdirSync(path.join(home, 'skills', 'release-notes'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/skills/release-notes/audit.mjs'), path.join(home, 'skills', 'release-notes', 'audit.mjs'));
+	const before = process.env.CLAUDE_CONFIG_DIR;
+	process.env.CLAUDE_CONFIG_DIR = home;
+	try {
+		for (const [body, ok] of [['Methodology kit 1.1.0 adds one thing.', true], ['Written by Claude -- fast.', false]]) {
+			const t = setup();
+			t.facts.release = { tagName: 'v1.1.0', isDraft: false, body };
+			delete t.deps.audit;
+			const r = releaseCheck(t.opts, t.deps);
+			assert.equal(r.ok, ok, t.lines.join('\n'));
+			if (!ok) assert.match(all(r), /fail the release-notes audit: line 1/);
+		}
+	} finally { if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before; }
+});
+
+// why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 test('every missing step is named at once, and a project with no state script is not a pass', () => {
 	const t = setup();
 	t.facts.pr = { state: 'OPEN', mergeCommit: null, baseRefName: 'main' };
