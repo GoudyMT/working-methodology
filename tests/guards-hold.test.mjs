@@ -582,8 +582,8 @@ test('a held push names the limit of the push bound it hit', () => {
 	assert.ok(why('Bash', { command: 'git push origin main' }).includes('`KIT_PUSH_APPROVED=1 git push origin main`'), 'the push act to quote');
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main' });
 	assert.equal(withYes('Bash', { command: 'KIT_PUSH_APPROVED=1 git push origin main' }), 'allow', 'the act the refusal names runs on that yes');
-	// pin: 2 (the kind a session acts on: hand back, or ask the owner)
 	// gh pr create is checked for its text first (1.33.0), so the kind is shown on another PR act.
+	// pin: 2 (the kind a session acts on: hand back, or ask the owner)
 	assert.match(why('Bash', { command: 'gh pr merge 7 --squash' }), /^Owner's yes needed: gh pr merge is an outward act/);
 	assert.match(why('Bash', { command: 'git push origin main' }, { agent_id: 'a1' }), /^Hand back: a subagent cannot get the owner's yes/);
 });

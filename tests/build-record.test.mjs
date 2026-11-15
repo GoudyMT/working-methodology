@@ -10,7 +10,7 @@ import { problems, changelog, prBody, checkRepo } from '../scripts/build-record.
 
 kitTemp.sessionRoot();
 const record = () => ({
-	version: '1.2.0', date: '2026-11-12', level: 'minor', area: 'Tests', title: 'feat: tests say why they are kept',
+	version: '1.2.0', date: '2026-11-12', level: 'minor', area: 'Test value', title: 'feat: tests say why they are kept',
 	headline: 'Every test names what it guards.',
 	items: [
 		{ id: 'T1', kind: 'changed', text: 'Each test carries a why line.', evidence: 'tests/x.test.mjs', where: 'tests', before: 'no reason', after: 'a why line' },
@@ -43,7 +43,7 @@ test('the record writes the changelog in kind order and the PR body with its sum
 	assert.equal(log.split('\n')[0], '## 1.2.0 - 2026-11-12');
 	assert.ok(log.indexOf('### Added') < log.indexOf('### Changed') && log.indexOf('### Changed') < log.indexOf('### Security'), log);
 	const body = prBody(record());
-	assert.equal(body.split('\n')[0], '## Tests: tests say why they are kept');
+	assert.equal(body.split('\n')[0], '## Test value: tests say why they are kept');
 	assert.ok(body.includes('| tests | no reason | a why line |'), body);
 	assert.ok(!body.includes('| A PR cannot'), 'an item with no where got a summary row');
 	assert.match(body, /\*\*High and critical findings:\*\* 1, each fixed here[\s\S]*one high, fixed here/);

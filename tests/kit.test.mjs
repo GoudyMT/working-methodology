@@ -303,7 +303,7 @@ test('status reads main as protected only with an up-to-date required check, no 
 test('a remote whose push URL names another repo names no repo', async () => {
   const { githubSlug } = await import('../scripts/safe-git.mjs');
   const dir = makeTemp('slug-');
-  spawnSync('git', ['init', '-q', dir]);
+  spawnSync('git', ['init', '-q', '-b', 'main', dir]);
   spawnSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git']);
   assert.equal(githubSlug(dir), 'o/r');
   spawnSync('git', ['-C', dir, 'remote', 'set-url', '--push', 'origin', 'https://github.com/x/y.git']);
@@ -3976,7 +3976,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     return rows;
   };
   const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
-    'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
+    'H1 area does not repeat the subject', 'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
     'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'no spaced dashes in prose',
     'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
   const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
@@ -3990,6 +3990,8 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     ['a scoped type', lean, title.replace('feat:', 'feat(hooks):'), []],
     ['a type prefix in the H1', sub('## Commit hook:', '## feat:'), title, ['H1 is <Area>: <line>, no type prefix']],
     ['an H1 that drops the title subject', lean, title.replace(' on commit', ''), ['H1 line carries the title subject']],
+    // 1.33.0 (the owner, 2026-11-15): a heading whose area ends in the subject's first word reads it twice.
+    ['an H1 area that repeats the subject', sub('## Commit hook:', `## Commit ${lean.split('\n')[0].replace(/^## [^:]+: /, '').split(/\s+/)[0]}:`), title, ['H1 area does not repeat the subject']],
     ['a line of 110', sub(NOTES, `**Notes** - ${'x'.repeat(98)}`), title, []],
     ['a line of 111', sub(NOTES, `**Notes** - ${'x'.repeat(99)}`), title, ['every line <= 110']],
     ['an em dash', sub('Tooling only;', `Tooling only${String.fromCharCode(0x2014)}`), title, ['0 non-ASCII characters']],
@@ -6397,7 +6399,8 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
 test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
   for (const f of ['rules/agent-teams.md', 'rules/reviews-and-findings.md']) {
     const text = read(path.resolve(f));
-    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*`\$HOME` in PowerShell/, f);
+    // 1.33.0: the PowerShell tool never runs a $HOME path unasked, so the rules give it the full path.
+    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*PowerShell: full path/, f);
     // pin: 2 (the lead's order when the tool is missing)
   assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }

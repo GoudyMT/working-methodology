@@ -109,6 +109,7 @@ test('install project names the real repo in the repo and protect steps, and mar
 	assert.equal(step(off, 'repo').state, 'to do');
 	assert.equal(step(off, 'protect').state, 'to do');
 	const text = renderMergeOnGreen(off).join('\n');
+	// pin: 1 (the owner pastes these commands as printed, and gh reads them)
 	assert.ok(text.includes('gh api -X PATCH repos/pat/app -F allow_auto_merge=true -F delete_branch_on_merge=true'), text);
 	assert.ok(text.includes('gh api -X PUT repos/pat/app/branches/main/protection --input .kit/branch-protection.json'), text);
 	assert.match(text, /"kit-tests"/, 'the check name from row A26');
