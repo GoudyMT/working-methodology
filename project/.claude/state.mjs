@@ -1,28 +1,41 @@
 #!/usr/bin/env node
 // State as data (T4, 1.34.0). On 1.33.1 four tracking files stated the next action by hand, and three of them were
 // two releases stale while the fourth was current: every closeout edited some and missed others. Now the next action,
-// what waits on the owner and the carry-overs live once, in _State.json, and the owner's decisions in _Decisions.jsonl
-// with an id, the owner's own words and the reason. The Resume Point in _Active Plan.md and the dashboard lines in
+// what waits on the owner, the carry-overs and the kit version live once, in _State.json, and the owner's decisions in
+// _Decisions.jsonl with an id, the words and the reason. The Resume Point in _Active Plan.md and the dashboard lines in
 // _Working Memory.md are generated between markers from the data; text outside the markers stays the owner's.
 //
 // Two lists keep apart what blocks work and what only waits (E15): "blocking" needs the owner before work goes on,
 // "waiting" needs the owner's eyes sometime and work goes on.
 //
-// Usage (from the project folder):
+// Usage (from the project folder; one command per call, never chained):
 //   node .claude/state.mjs show [--json]                     the next action, what blocks, what waits
-//   node .claude/state.mjs set next|then|phase|last-session <text>
+//   node .claude/state.mjs set next|then|phase|last-session|kit <text>
 //   node .claude/state.mjs add blocking|waiting|carry <text>  prints the new id (B-n, W-n, C-n; never given twice)
 //   node .claude/state.mjs done <id>                          removes an item
-//   node .claude/state.mjs decide <decision> --words <the owner's words> --why <reason> [--supersedes D-n]
+//   node .claude/state.mjs decide --from <file.json> [--unchecked]
+//        the file holds { "decision", "words", "why", "supersedes"? }; it is read, recorded and removed. The words
+//        must be found word for word in one of the owner's messages or pop-up answers in this session's transcript;
+//        --unchecked records them marked "as the session recorded them, not checked" instead.
 //   node .claude/state.mjs decisions [text]                   the decisions, or those that contain the text
-//   node .claude/state.mjs render                             writes the generated blocks from the data
-//   node .claude/state.mjs check                              exit 1 when a view differs from the data, or a D-n
-//                                                              named in a tracking file has no record
+//   node .claude/state.mjs render [--overwrite]               writes the generated blocks from the data; refuses a
+//                                                              block edited by hand since the last render
+//   node .claude/state.mjs check                              exit 1 on any fault below
 //   node .claude/state.mjs init                               once, in a project from before 1.34.0: moves the
 //                                                              filled-in Resume Point into the data and marks the blocks
+//
+// What check proves: each generated block equals what the data renders; no label a session reads (NEXT, Pending the
+// owner ...) sits outside its block; the kit version in the data is the one installed; every item id is well formed;
+// every decision row is whole and the committed rows are unchanged (where git has a copy); every D-n named in a
+// tracking file has a row. What it cannot see: whether the next action is still true, whether words marked checked were
+// the owner's and not a relayed note in the same message, a ruling contradicted without --supersedes, whether a
+// pointer means the ruling it lands on, and pointers outside the tracking files.
 // Exit 0 done or passed, 1 refused or a check fault, 2 a usage error.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = process.cwd();
 const STATE = '_State.json';
@@ -37,72 +50,120 @@ const IS_BEGIN = /^<!-- state:begin\b.*-->$/;
 const IS_END = /^<!-- state:end -->$/;
 const KINDS = { blocking: 'B', waiting: 'W', carry: 'C' };
 const LIST = { B: 'blocking', W: 'waiting', C: 'carry_overs' };
-const FIELDS = { next: 'next', then: 'then', phase: 'phase', 'last-session': 'last_session' };
-// The labels the resume packet reads (resume-packet.mjs): a generated block keeps them word for word.
-const CARRY_LABEL = '**Carry-overs from the last PR (only those the owner said yes to; close in this run):**';
+const FIELDS = { next: 'next', then: 'then', phase: 'phase', 'last-session': 'last_session', kit: 'kit' };
+// The labels the resume packet and a session read (resume-packet.mjs): a generated block keeps them word for word.
+const CARRY = 'Carry-overs from the last PR';
+const CARRY_LABEL = `**${CARRY} (only those the owner said yes to; close in this run):**`;
+const WAITING = 'Waiting for the owner\'s eyes';
+const LABELS = { [PLAN]: ['Updated', 'NEXT', 'Then', CARRY, 'Pending the owner', WAITING], [MEMORY]: ['Last Session', 'Kit', 'Current Phase', 'Resume Point'] };
+// install project fills this in, so a caller cannot move the transcripts with CLAUDE_CONFIG_DIR (as owner-yes.cjs).
+const INSTALLED_HOME = "{{CLAUDE_HOME}}";
+const claudeHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
 
 const today = () => new Date().toISOString().slice(0, 10);
 const file = (rel) => path.join(ROOT, rel);
 const readText = (rel) => { try { return fs.readFileSync(file(rel), 'utf8'); } catch { return null; } };
-// One line of plain text: no line break, and no comment marker that could end a block early or start a new one.
-const clean = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/<!--/g, '<! --').replace(/-->/g, '-- >').replace(/\s+/g, ' ').trim();
-// Written whole to a temporary file first, so a crash never leaves half a file.
+const placeholder = (v) => /^<.*>$/.test(String(v ?? ''));
+const sha = (t) => crypto.createHash('sha256').update(t).digest('hex').slice(0, 16);
+// One line of plain text: no line break of any kind (C0, C1, the Unicode line and paragraph separators), and no comment
+// marker that could end a block early or start a new one.
+const clean = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/<!--/g, '<! --').replace(/-->/g, '-- >').replace(/\s+/g, ' ').trim();
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// A label as the packet reads it, with an optional note in brackets: **Name:**, **Name**: or **Name (note):**.
+const labelRe = (name) => new RegExp(`^\\*\\*${esc(name)}(?: \\(([^)\\n]*)\\))?(?::\\*\\*|\\*\\*:)\\s*`);
+
+/**
+ * Write a file whole: a temporary file with a random name, made new (never through a planted name), then renamed over
+ * the target. A target that is a link is refused, as install refuses it, so a linked vault copy never goes stale
+ * silently. On any failure the temporary file is removed and the target is as it was.
+ */
 function write(rel, text) {
-	const tmp = `${file(rel)}.${process.pid}.tmp`;
-	fs.writeFileSync(tmp, text);
-	fs.renameSync(tmp, file(rel));
+	const target = file(rel);
+	let st = null;
+	try { st = fs.lstatSync(target); } catch { /* new file */ }
+	if (st && (st.isSymbolicLink() || !st.isFile() || st.nlink > 1)) throw new Error(`${rel} is a link or not a plain file, which state.mjs never writes through`);
+	const tmp = `${target}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+	try {
+		fs.writeFileSync(tmp, text, { flag: 'wx' });
+		fs.renameSync(tmp, target);
+	} catch (e) {
+		try { fs.rmSync(tmp, { force: true }); } catch { /* gone */ }
+		throw new Error(`${rel} could not be written (${clean(e.code || e.message)}); it is unchanged`);
+	}
 }
 
-/** The state, or a reason it cannot be read. */
+/** The state, or a reason it cannot be read. Every id is checked here, so no id can carry a line or a marker. */
 function loadState() {
 	const text = readText(STATE);
 	if (text === null) return { why: `no ${STATE}: run node .claude/state.mjs init` };
 	let s;
-	try { s = JSON.parse(text); } catch (e) { return { why: `${STATE} is not JSON (${clean(e.message)})` }; }
+	try { s = JSON.parse(text); } catch { return { why: `${STATE} is not JSON` }; }
 	if (!s || typeof s !== 'object' || Array.isArray(s)) return { why: `${STATE} is not an object` };
-	for (const k of ['next', 'then', 'phase', 'last_session', 'updated']) if (s[k] !== undefined && typeof s[k] !== 'string') return { why: `${STATE}: "${k}" is not text` };
-	for (const k of Object.values(LIST)) {
-		if (s[k] === undefined) s[k] = [];
-		if (!Array.isArray(s[k]) || s[k].some((i) => !i || typeof i.id !== 'string' || typeof i.what !== 'string')) return { why: `${STATE}: "${k}" is not a list of { id, what }` };
-	}
+	for (const k of ['next', 'then', 'phase', 'last_session', 'updated', 'kit']) if (s[k] !== undefined && typeof s[k] !== 'string') return { why: `${STATE}: "${k}" is not text` };
 	s.seq = { B: 0, W: 0, C: 0, ...(s.seq || {}) };
+	const seen = new Set();
+	for (const [kind, k] of Object.entries(LIST)) {
+		if (s[k] === undefined) s[k] = [];
+		if (!Number.isSafeInteger(s.seq[kind]) || s.seq[kind] < 0) return { why: `${STATE}: seq.${kind} is not a whole number` };
+		if (!Array.isArray(s[k])) return { why: `${STATE}: "${k}" is not a list` };
+		for (const i of s[k]) {
+			const m = i && typeof i.what === 'string' && typeof i.id === 'string' && new RegExp(`^${kind}-(\\d{1,9})$`).exec(i.id);
+			if (!m) return { why: `${STATE}: an item in "${k}" is not { id: "${kind}-<n>", what }` };
+			if (seen.has(i.id) || Number(m[1]) > s.seq[kind]) return { why: `${STATE}: ${i.id} is given twice or above seq.${kind}` };
+			seen.add(i.id);
+		}
+	}
+	if (s.rendered !== undefined && (typeof s.rendered !== 'object' || Array.isArray(s.rendered) || s.rendered === null)) return { why: `${STATE}: "rendered" is not an object` };
 	return { state: s };
 }
-const saveState = (s) => { s.updated = today(); write(STATE, `${JSON.stringify(s, null, 2)}\n`); };
+const saveState = (s, { touch = true } = {}) => { if (touch) s.updated = today(); write(STATE, `${JSON.stringify(s, null, 2)}\n`); };
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** The decisions in order, or a reason the file is not a clean record. */
-function loadDecisions() {
-	const text = readText(DECISIONS);
-	if (text === null) return { rows: [] };
+function loadDecisions(text = readText(DECISIONS)) {
+	if (text === null) return { rows: [], lines: [] };
 	const rows = [];
-	const lines = text.split(/\r?\n/);
+	const lines = text.split(/\r?\n/).filter((l) => l.trim());
 	for (let i = 0; i < lines.length; i++) {
-		if (!lines[i].trim()) continue;
 		let d;
-		try { d = JSON.parse(lines[i]); } catch { return { why: `${DECISIONS} line ${i + 1} is not JSON` }; }
-		if (!d || d.id !== `D-${rows.length + 1}`) return { why: `${DECISIONS} line ${i + 1}: expected id D-${rows.length + 1}` };
-		if (d.supersedes != null && !rows.some((r) => r.id === d.supersedes)) return { why: `${DECISIONS}: ${d.id} supersedes ${clean(d.supersedes)}, which is not an earlier decision` };
+		try { d = JSON.parse(lines[i]); } catch { return { why: `${DECISIONS} row ${i + 1} is not JSON` }; }
+		if (!d || d.id !== `D-${rows.length + 1}`) return { why: `${DECISIONS} row ${i + 1}: expected id D-${rows.length + 1}` };
+		if (!DATE.test(String(d.date)) || ['decision', 'words', 'why'].some((k) => typeof d[k] !== 'string' || !clean(d[k]))) return { why: `${DECISIONS}: ${d.id} lacks its date, decision, words or why` };
+		if (d.supersedes != null) {
+			if (!rows.some((r) => r.id === d.supersedes)) return { why: `${DECISIONS}: ${d.id} supersedes ${clean(d.supersedes)}, which is not an earlier decision` };
+			if (rows.some((r) => r.supersedes === d.supersedes)) return { why: `${DECISIONS}: ${d.id} supersedes ${clean(d.supersedes)}, which an earlier decision already supersedes (supersede the newest)` };
+		}
 		rows.push(d);
 	}
-	return { rows };
+	return { rows, lines };
 }
 
-const items = (list, none = '- none') => (list.length ? list.map((i) => `- ${i.id}: ${clean(i.what)}${i.since ? ` (since ${clean(i.since)})` : ''}`) : [none]);
+// A repo's own config must not run a program, and git starts from Node's own folder (as resume-packet.mjs).
+const NO_PROGRAMS = ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never'];
+const git = (...a) => spawnSync('git', ['--no-optional-locks', '-C', ROOT, ...NO_PROGRAMS, ...a], { encoding: 'utf8', cwd: path.dirname(process.execPath), timeout: 10000, env: { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(ROOT) } });
+/** The committed copy of the decisions, or null where git keeps none (no repo, not tracked, gitignored). */
+function committedDecisions() {
+	const r = git('show', `HEAD:./${DECISIONS}`);
+	return r.status === 0 ? r.stdout : null;
+}
+
+const items = (list) => (list.length ? list.map((i) => `- ${i.id}: ${clean(i.what)}${i.since ? ` (since ${clean(i.since)})` : ''}`) : ['- none']);
 /** The two generated blocks, as lines between the markers. */
 function views(s) {
 	const plan = [`**Updated:** ${clean(s.updated)}`, '', `**NEXT:** ${clean(s.next)}`, ''];
 	if (clean(s.then)) plan.push(`**Then:** ${clean(s.then)}`, '');
 	plan.push(CARRY_LABEL, ...items(s.carry_overs), '', '**Pending the owner:**', ...items(s.blocking), '',
-		'**Waiting for the owner\'s eyes (work goes on):**', ...items(s.waiting));
-	const memory = [`**Last Session:** ${clean(s.last_session)}`, '',
+		`**${WAITING} (work goes on):**`, ...items(s.waiting));
+	const memory = [`**Last Session:** ${clean(s.last_session)}`, '', `**Kit:** ${clean(s.kit)}`, '',
 		`**Current Phase:** ${clean(s.phase)} -> [\`_Active Plan.md\`](_Active Plan.md)`, '',
 		`**Resume Point:** ${clean(s.next)} -> [\`_Active Plan.md\`](_Active Plan.md) Resume Point`];
 	return { [PLAN]: plan, [MEMORY]: memory };
 }
+// The block sits between blank lines, so the resume packet's label reading stops at its edges.
+const inner = (body) => ['', ...body, ''];
 
 /** Where a file's one generated block sits: { lines, begin, end, crlf }, or { why }. */
-function locate(rel) {
-	const text = readText(rel);
+function locate(rel, text = readText(rel)) {
 	if (text === null) return { why: `${rel} is missing` };
 	const crlf = /\r\n/.test(text);
 	const lines = text.split(/\r?\n/);
@@ -111,23 +172,41 @@ function locate(rel) {
 	if (begins.length !== 1 || ends.length !== 1 || ends[0] < begins[0]) return { why: `${rel} has no single generated block (run node .claude/state.mjs init)` };
 	return { lines, begin: begins[0], end: ends[0], crlf };
 }
-// The block sits between blank lines, so the resume packet's label reading stops at its edges.
-const inner = (body) => ['', ...body, ''];
+const blockHash = (at) => sha(at.lines.slice(at.begin + 1, at.end).join('\n'));
 
-function render(s) {
+/**
+ * Write each block from the data. A block that differs both from the last render (by its recorded hash) and from
+ * what the data renders now was edited by hand: it is refused, so a hand-written line is never wiped silently, until
+ * the change is moved into the data (set, add, done) and the render is run with --overwrite.
+ */
+function render(s, { overwrite = false } = {}) {
 	const out = [];
+	s.rendered = { ...(s.rendered || {}) };
 	for (const [rel, body] of Object.entries(views(s))) {
 		const at = locate(rel);
 		if (at.why) { out.push(at.why); continue; }
-		const lines = [...at.lines.slice(0, at.begin + 1), ...inner(body), ...at.lines.slice(at.end)];
-		write(rel, lines.join(at.crlf ? '\r\n' : '\n'));
+		const want = inner(body);
+		const now = at.lines.slice(at.begin + 1, at.end);
+		const same = now.join('\n') === want.join('\n');
+		const known = s.rendered[rel] ? s.rendered[rel] === blockHash(at) : now.every((l) => !l.trim());
+		if (!same && !known && !overwrite) { out.push(`${rel}: the generated block was edited by hand since the last render; move each change into the data with set, add or done, then run node .claude/state.mjs render --overwrite`); continue; }
+		const lines = [...at.lines.slice(0, at.begin + 1), ...want, ...at.lines.slice(at.end)];
+		if (!same) write(rel, lines.join(at.crlf ? '\r\n' : '\n'));
+		s.rendered[rel] = sha(want.join('\n'));
 	}
+	saveState(s, { touch: false });
 	return out;
 }
 
-/** Every fault: a view that differs from the data, a broken record, a D-n pointer with no decision. */
+/** The installed kit version from install's stamp, or null outside an installed project. */
+function installedKit() {
+	try { return JSON.parse(fs.readFileSync(path.join(ROOT, '.kit', 'kit-version.json'), 'utf8')).version || null; } catch { return null; }
+}
+
+/** Every fault: a view that differs from the data, a label outside its block, a stale kit, a broken record, a lost pointer. */
 function check() {
 	const faults = [];
+	const notes = [];
 	const { state, why } = loadState();
 	if (why) faults.push(why);
 	const dec = loadDecisions();
@@ -136,41 +215,69 @@ function check() {
 		for (const [rel, body] of Object.entries(views(state))) {
 			const at = locate(rel);
 			if (at.why) { faults.push(at.why); continue; }
-			const now = at.lines.slice(at.begin + 1, at.end);
-			if (now.join('\n') !== inner(body).join('\n')) faults.push(`${rel}: the generated block differs from ${STATE} (edited by hand?): run node .claude/state.mjs render, after moving any change into the data with set, add or done`);
+			if (at.lines.slice(at.begin + 1, at.end).join('\n') !== inner(body).join('\n')) faults.push(`${rel}: the generated block differs from ${STATE}: run node .claude/state.mjs render (a block edited by hand is refused there; move the change into the data first)`);
+			// The packet reads the first label anywhere in the file, so one outside the block would be read in its place.
+			at.lines.forEach((l, i) => { if ((i < at.begin || i > at.end) && LABELS[rel].some((n) => labelRe(n).test(l))) faults.push(`${rel} line ${i + 1}: "${clean(l).slice(0, 40)}" is a generated label outside the block; move it into the data and delete the line`); });
 		}
+		const kit = installedKit();
+		if (kit && !placeholder(state.updated) && state.kit !== kit) faults.push(`${STATE} says kit ${clean(state.kit) || '(none)'} but ${kit} is installed: check the next action and the phase, then run node .claude/state.mjs set kit ${kit}`);
 	}
-	const known = new Set((dec.rows || []).map((d) => d.id));
+	const committed = dec.why ? null : committedDecisions();
+	if (committed !== null) {
+		const old = loadDecisions(committed);
+		if (old.why || old.lines.some((l, i) => dec.lines[i] !== l)) faults.push(`${DECISIONS}: a committed decision was changed, moved or removed; rows are only ever added (git diff ${DECISIONS})`);
+	} else if ((dec.rows || []).length) notes.push(`${DECISIONS} has no committed copy here, so earlier rows were not compared`);
+	const rows = new Map((dec.rows || []).map((d) => [d.id, d]));
 	for (const rel of TRACKING) {
 		const text = readText(rel);
 		if (text === null) continue;
-		for (const id of new Set(text.match(/\bD-\d+\b/g) || [])) if (!known.has(id)) faults.push(`${id} is named in ${rel} but has no record in ${DECISIONS}`);
+		for (const id of new Set(text.match(/\bD-\d+\b/g) || [])) {
+			if (!rows.has(id)) faults.push(`${id} is named in ${rel} but has no record in ${DECISIONS}`);
+			else if ((dec.rows || []).some((d) => d.supersedes === id)) notes.push(`${id} in ${rel} is superseded`);
+		}
 	}
-	return { faults, decisions: known.size };
+	return { faults, notes, decisions: rows.size };
 }
 
-/** A bold label's text in a file written by hand: its line, then the lines under it up to a blank line or a new label. */
-function labelled(lines, label) {
-	const at = lines.findIndex((l) => l.startsWith(`**${label}`) && /^\*\*[^*]+(?::\*\*|\*\*:)/.test(l));
-	if (at < 0) return null;
-	const out = { at, last: at, first: lines[at].replace(/^\*\*[^*]+(?::\*\*|\*\*:)\s*/, ''), list: [] };
-	for (let i = at + 1; i < lines.length && lines[i].trim() && !/^(\*\*[^*]+(?::\*\*|\*\*:)|#{1,6} |-{3,}\s*$)/.test(lines[i]); i++) { out.last = i; out.list.push(lines[i]); }
+/** One labelled block in a file written by hand: the label line, its note, its text and the lines under it. */
+function labelled(lines, name) {
+	const re = labelRe(name);
+	const all = lines.flatMap((l, i) => (re.test(l) ? [i] : []));
+	if (all.length > 1) return { twice: `"**${name}**" appears ${all.length} times` };
+	if (!all.length) return null;
+	const at = all[0];
+	const m = re.exec(lines[at]);
+	const out = { at, last: at, note: m[1] || '', first: lines[at].slice(m[0].length).trim(), list: [] };
+	for (let i = at + 1; i < lines.length && lines[i].trim() && !/^(\*\*[^*]+(?::\*\*|\*\*:)|#{1,6} |-{3,}\s*$|<!--)/.test(lines[i]); i++) { out.last = i; out.list.push(lines[i]); }
 	return out;
 }
-// A template placeholder ("<...>") or an empty "none" is not an item.
-const real = (t) => t && !/^<[^>]*>$/.test(t.trim()) && !/^none\.?$/i.test(t.trim());
-const asItems = (b, kind, s) => (b ? b.list.map((l) => l.replace(/^\s*[-*+]\s+/, '').trim()).filter(real).map((what) => ({ id: `${kind}-${++s.seq[kind]}`, what })) : []);
+const value = (b) => clean([b.note ? `(${b.note})` : '', b.first, ...b.list].join(' '));
+// A template placeholder or an empty "none" is not an item; "none (reason)" is kept as a note, never as an open item.
+const bare = (t) => /^none\.?$/i.test(t) || placeholder(t);
+function asItems(b, kind, s, notes) {
+	if (!b) return [];
+	const lines = [b.first, ...b.list.map((l) => l.replace(/^\s*[-*+]\s+/, ''))].map(clean).filter(Boolean);
+	const out = [];
+	for (const t of lines) {
+		if (bare(t)) continue;
+		if (/^none\b/i.test(t)) { notes.push(`${LIST[kind].replace('_', '-')}: ${t}`); continue; }
+		out.push({ id: `${kind}-${++s.seq[kind]}`, what: b.note ? `(${clean(b.note)}) ${t}` : t });
+	}
+	return out;
+}
 
 /**
- * Wrap the lines from the first to the last of the given labels in markers. Unlabelled lines between them are
- * returned as `loose` (init keeps them as "then", so nothing written is lost), or refused when `keepLoose` is false.
+ * The text of a file with its labelled lines replaced by the empty marker pair, or { why }. Plain paragraphs between
+ * the labels are returned as `loose` when allowed; a heading, a table, a rule or a list between them is never folded
+ * into one line: the block is refused instead.
  */
-function wrap(rel, labels, { keepLoose = false } = {}) {
+function wrapped(rel, labels, { keepLoose = false } = {}) {
 	const text = readText(rel);
 	if (text === null) return { why: `${rel} is missing` };
-	if (locate(rel).lines) return { loose: [] };
+	if (!locate(rel, text).why) return { text, loose: [] };
 	const lines = text.split(/\r?\n/);
-	const found = labels.map((l) => labelled(lines, l)).filter(Boolean);
+	const found = [];
+	for (const l of labels) { const b = labelled(lines, l); if (b?.twice) return { why: `${rel}: ${b.twice}, so init cannot tell which is the live one; keep one and run init again` }; if (b) found.push(b); }
 	if (!found.length) return { why: `${rel}: none of ${labels.join(', ')} found, so the block could not be placed; add the two marker lines by hand` };
 	const from = Math.min(...found.map((b) => b.at));
 	const to = Math.max(...found.map((b) => b.last));
@@ -178,78 +285,166 @@ function wrap(rel, labels, { keepLoose = false } = {}) {
 	const loose = [];
 	for (let i = from; i <= to; i++) {
 		if (!lines[i].trim() || owned.has(i)) continue;
-		if (!keepLoose) return { why: `${rel}: line ${i + 1} sits between the labels and is not one of them, so the block was not placed; add the two marker lines by hand` };
+		if (!keepLoose || /^\s*(#|\||-{3,}|[-*+] |\d+[.)] |```|<)/.test(lines[i])) return { why: `${rel}: line ${i + 1} ("${clean(lines[i]).slice(0, 40)}") sits between the labels and is not one of them, so the block was not placed; move it out, or add the two marker lines by hand` };
 		loose.push(lines[i].trim());
 	}
 	lines.splice(from, to - from + 1, BEGIN, END);
-	write(rel, lines.join(/\r\n/.test(text) ? '\r\n' : '\n'));
-	return { loose };
+	return { text: lines.join(/\r\n/.test(text) ? '\r\n' : '\n'), loose };
 }
 
+/**
+ * Move a filled-in Resume Point into the data. Everything is read and checked first; then the data is saved, then
+ * each view is written whole. A view that fails to write is left exactly as it was, so init can be run again.
+ */
 function init() {
 	const old = loadState();
-	if (old.state && !/^<.*>$/.test(old.state.updated || '')) return { faults: [`${STATE} is already in use (updated ${clean(old.state.updated)}); init runs once`] };
-	const plan = (readText(PLAN) || '').split(/\r?\n/);
-	const memory = (readText(MEMORY) || '').split(/\r?\n/);
-	const s = { updated: today(), phase: '', next: '', then: '', blocking: [], waiting: [], carry_overs: [], last_session: '', seq: { B: 0, W: 0, C: 0 } };
-	const next = labelled(plan, 'NEXT') || labelled(memory, 'Resume Point');
-	if (next) s.next = clean([next.first, ...next.list].join(' ').replace(/\s*->\s*\[`_Active Plan\.md`\].*$/, ''));
-	s.carry_overs = asItems(labelled(plan, 'Carry-overs from the last PR'), 'C', s);
-	s.blocking = asItems(labelled(plan, 'Pending the owner'), 'B', s);
-	// The last session keeps its pointer; the phase loses only the link to the Active Plan the view adds back.
-	const last = labelled(memory, 'Last Session');
-	if (last) s.last_session = clean([last.first, ...last.list].join(' '));
-	const phase = labelled(memory, 'Current Phase');
-	if (phase) s.phase = clean([phase.first, ...phase.list].join(' ').replace(/\s*->\s*\[`_Active Plan\.md`\]\(_Active Plan\.md\)\s*$/, ''));
-	const planWrap = wrap(PLAN, ['NEXT', 'Carry-overs from the last PR', 'Pending the owner'], { keepLoose: true });
+	if (old.why && readText(STATE) !== null) return { faults: [old.why] };
+	const inUse = old.state && !placeholder(old.state.updated);
+	if (inUse && !locate(PLAN).why && !locate(MEMORY).why) return { faults: [`${STATE} is already in use (updated ${clean(old.state.updated)}) and both views carry their blocks; init has nothing to do`] };
+	const planText = readText(PLAN);
+	const memText = readText(MEMORY);
+	if (planText === null || memText === null) return { faults: [`${planText === null ? PLAN : MEMORY} is missing`] };
+	const plan = planText.split(/\r?\n/);
+	const memory = memText.split(/\r?\n/);
+	const s = { updated: today(), kit: installedKit() || '', phase: '', next: '', then: '', blocking: [], waiting: inUse ? old.state.waiting : [], carry_overs: [], last_session: '', seq: { B: 0, W: 0, C: 0, ...(inUse ? old.state.seq : {}) } };
+	const read = (lines, name) => { const b = labelled(lines, name); if (b?.twice) throw new Error(`${lines === plan ? PLAN : MEMORY}: ${b.twice}, so init cannot tell which is the live one; keep one and run init again`); return b; };
+	const notes = [];
+	try {
+		const next = read(plan, 'NEXT') || read(memory, 'Resume Point');
+		if (next) s.next = value(next).replace(/\s*->\s*\[`_Active Plan\.md`\].*$/, '');
+		const then = read(plan, 'Then');
+		if (then) s.then = value(then);
+		s.carry_overs = asItems(read(plan, CARRY), 'C', s, notes);
+		s.blocking = asItems(read(plan, 'Pending the owner'), 'B', s, notes);
+		if (!inUse) s.waiting = asItems(read(plan, WAITING), 'W', s, notes);
+		const last = read(memory, 'Last Session');
+		if (last) s.last_session = value(last);
+		const phase = read(memory, 'Current Phase');
+		if (phase) s.phase = value(phase).replace(/\s*->\s*\[`_Active Plan\.md`\]\(_Active Plan\.md\)$/, '');
+	} catch (e) { return { faults: [e.message] }; }
+	const p = wrapped(PLAN, ['NEXT', 'Then', CARRY, 'Pending the owner', WAITING, 'Updated'], { keepLoose: true });
+	const m = wrapped(MEMORY, ['Last Session', 'Kit', 'Current Phase', 'Resume Point']);
+	if (p.why || m.why) return { faults: [p.why, m.why].filter(Boolean) };
+	if (p.loose.length || notes.length) s.then = clean([s.then, ...p.loose, ...notes].join(' '));
 	// The hand-kept date line goes stale first (1.33.1: three releases old); the generated block carries the date now.
-	if (!planWrap.why) write(PLAN, readText(PLAN).replace(/^\*\*Last Updated:\*\*.*\r?\n(\r?\n)?/m, ''));
-	if (planWrap.loose?.length) s.then = clean([s.then, ...planWrap.loose].join(' '));
-	const faults = [planWrap.why, wrap(MEMORY, ['Last Session', 'Current Phase', 'Resume Point']).why].filter(Boolean);
+	const dated = /^\*\*Last Updated:\*\*.*$/m.exec(p.text);
+	const planOut = dated ? p.text.replace(/^\*\*Last Updated:\*\*.*\r?\n(\r?\n)?/m, '') : p.text;
+	const fill = (text, rel) => { const at = locate(rel, text); return [...at.lines.slice(0, at.begin + 1), ...inner(views(s)[rel]), ...at.lines.slice(at.end)].join(at.crlf ? '\r\n' : '\n'); };
+	const outs = { [PLAN]: fill(planOut, PLAN), [MEMORY]: fill(m.text, MEMORY) };
+	s.rendered = Object.fromEntries(Object.entries(views(s)).map(([rel, body]) => [rel, sha(inner(body).join('\n'))]));
 	saveState(s);
-	if (!readText(DECISIONS)) write(DECISIONS, '');
-	return { faults: [...faults, ...render(s)] };
+	if (readText(DECISIONS) === null) write(DECISIONS, '');
+	for (const [rel, text] of Object.entries(outs)) write(rel, text);
+	const said = [];
+	if (dated) said.push(`removed from ${PLAN}: "${clean(dated[0])}" (the block shows the date now)`);
+	if (/^## Current Phase\s*$/m.test(planOut)) said.push(`${PLAN} still has its own "## Current Phase" section: fold it into node .claude/state.mjs set phase, then delete the section`);
+	return { faults: [], said };
+}
+
+/** Where this session's transcripts are, by the session id Claude Code passes and the project folder and its parents. */
+function transcripts() {
+	const id = String(process.env.CLAUDE_CODE_SESSION_ID || '');
+	if (!/^[0-9a-f-]{36}$/i.test(id)) return [];
+	const root = path.join(claudeHome(), 'projects');
+	const keys = [];
+	let real = ROOT;
+	try { real = fs.realpathSync.native(ROOT); } catch { /* as given */ }
+	for (let d = path.resolve(real); ; d = path.dirname(d)) { keys.push(d.replace(/[^A-Za-z0-9]/g, '-').toLowerCase()); if (path.dirname(d) === d) break; }
+	let dirs = [];
+	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return []; }
+	return dirs.map((d) => path.join(root, d, `${id}.jsonl`)).filter((f) => fs.existsSync(f));
+}
+const squash = (t) => String(t).replace(/\s+/g, ' ').trim().toLowerCase();
+/**
+ * Whether the words appear word for word in the owner's own messages or pop-up answers in this session's transcript:
+ * a person's turn (never a subagent's, never a tool result or a meta line) or an answer they tapped. Limit: a note
+ * relayed into the owner's turn by another agent is read as part of that turn.
+ */
+function ownerSaid(words) {
+	const want = squash(words);
+	if (want.length < 3) return false;
+	for (const f of transcripts()) {
+		let text;
+		try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
+		for (const line of text.split('\n')) {
+			let e;
+			try { e = JSON.parse(line); } catch { continue; }
+			if (e.type !== 'user' || e.isSidechain || e.isMeta) continue;
+			const c = e.message?.content;
+			const said = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((b) => b?.type === 'text').map((b) => b.text) : [];
+			const d = e.permissionDecision || {};
+			if (e.toolUseResult?.answers && d.decision === 'accept' && /^user/.test(String(d.source || ''))) said.push(...Object.values(e.toolUseResult.answers).map(String));
+			if (said.some((t) => squash(t).includes(want))) return true;
+		}
+	}
+	return false;
+}
+
+/** Record one decision, under a lock so two sessions never take the same id; the row is appended, never rewritten. */
+function decide(fromFile, unchecked) {
+	let input;
+	try { input = JSON.parse(fs.readFileSync(path.resolve(ROOT, fromFile), 'utf8')); } catch { return `${clean(fromFile)} could not be read as JSON { "decision", "words", "why", "supersedes"? }`; }
+	const { decision, words, why, supersedes = null } = input || {};
+	if (![decision, words, why].every((v) => typeof v === 'string' && clean(v))) return 'A decision needs "decision", "words" (the owner\'s own words) and "why" (the reason).';
+	const checked = ownerSaid(words);
+	if (!checked && !unchecked) return 'The words were not found word for word in the owner\'s messages or pop-up answers in this session\'s transcript. Quote the owner exactly, or record them with --unchecked, marked as the session recorded them.';
+	const lock = file(`${DECISIONS}.lock`);
+	let fd;
+	try { fd = fs.openSync(lock, 'wx'); } catch { return `${DECISIONS} is being written by another session (${DECISIONS}.lock); try again, or remove the lock if no session is running`; }
+	try {
+		const dec = loadDecisions();
+		if (dec.why) return dec.why;
+		if (supersedes !== null && !dec.rows.some((d) => d.id === supersedes)) return `${clean(supersedes)} is not a decision on record, so it cannot be superseded.`;
+		if (supersedes !== null && dec.rows.some((d) => d.supersedes === supersedes)) return `${clean(supersedes)} is already superseded; supersede the newest decision in its line.`;
+		const d = { id: `D-${dec.rows.length + 1}`, date: today(), decision: clean(decision), words: clean(words), words_checked: checked, why: clean(why), supersedes };
+		const text = readText(DECISIONS) || '';
+		const row = `${text && !text.endsWith('\n') ? '\n' : ''}${JSON.stringify(d)}\n`;
+		let st = null;
+		try { st = fs.lstatSync(file(DECISIONS)); } catch { /* new */ }
+		if (st && (st.isSymbolicLink() || !st.isFile() || st.nlink > 1)) return `${DECISIONS} is a link or not a plain file, which state.mjs never writes through`;
+		fs.appendFileSync(file(DECISIONS), row);
+		try { fs.rmSync(path.resolve(ROOT, fromFile)); } catch { /* the owner's file to remove */ }
+		console.log(`${d.id} recorded${checked ? '' : ' (words not checked)'}`);
+		return null;
+	} finally {
+		fs.closeSync(fd);
+		fs.rmSync(lock, { force: true });
+	}
 }
 
 function main(argv) {
 	const [cmd, ...rest] = argv;
 	const fail = (m) => { console.log(m); process.exitCode = 1; };
-	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set <field> <text> | add blocking|waiting|carry <text> | done <id> | decide <text> --words <w> --why <r> [--supersedes D-n] | decisions [text] | render | check | init'); process.exitCode = 2; };
+	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init'); process.exitCode = 2; };
 	if (cmd === 'init') {
-		const { faults } = init();
-		for (const f of faults) console.log(f);
-		if (faults.length) process.exitCode = 1; else console.log(`PASS ${STATE} written from the Resume Point; check it with node .claude/state.mjs show`);
+		const { faults, said = [] } = init();
+		for (const f of [...faults, ...said]) console.log(f);
+		if (faults.length) process.exitCode = 1; else console.log(`PASS ${STATE} written from the Resume Point; read it with node .claude/state.mjs show`);
 		return;
 	}
 	if (cmd === 'check') {
-		const { faults, decisions } = check();
+		const { faults, notes, decisions } = check();
 		for (const f of faults) console.log(f);
-		if (faults.length) process.exitCode = 1; else console.log(`PASS state: the views match ${STATE}; ${decisions} decision(s); every D- pointer lands`);
+		for (const n of notes) console.log(`note: ${n}`);
+		if (faults.length) process.exitCode = 1;
+		else console.log(`PASS state: the blocks match ${STATE} and the installed kit; ${decisions} decision(s), each D-n in the tracking files has a row. Not checked: whether the next action is still true.`);
 		return;
 	}
-	if (cmd === 'decisions' || cmd === 'decide') {
+	if (cmd === 'decide') {
+		const i = rest.indexOf('--from');
+		if (i < 0 || !rest[i + 1]) return usage();
+		const why = decide(rest[i + 1], rest.includes('--unchecked'));
+		return why ? fail(why) : undefined;
+	}
+	if (cmd === 'decisions') {
 		const dec = loadDecisions();
 		if (dec.why) return fail(dec.why);
-		if (cmd === 'decisions') {
-			const q = rest.join(' ').toLowerCase();
-			for (const d of dec.rows) {
-				const later = dec.rows.find((x) => x.supersedes === d.id);
-				const line = `${d.id} ${clean(d.date)}: ${clean(d.decision)} | words: "${clean(d.words)}" | why: ${clean(d.why)}${later ? ` | superseded by ${later.id}` : ''}`;
-				if (!q || line.toLowerCase().includes(q)) console.log(line);
-			}
-			return;
+		const q = rest.join(' ').toLowerCase();
+		for (const d of dec.rows) {
+			const later = dec.rows.find((x) => x.supersedes === d.id);
+			const line = `${d.id} ${later ? `[superseded by ${later.id}] ` : ''}${clean(d.date)}: ${clean(d.decision)} | ${d.words_checked === true ? 'owner\'s words' : 'words as the session recorded them (not checked)'}: ${clean(d.words)} | why: ${clean(d.why)}`;
+			if (!q || line.toLowerCase().includes(q)) console.log(line);
 		}
-		const opt = (name) => { const i = rest.indexOf(name); if (i < 0) return null; const v = rest[i + 1]; rest.splice(i, 2); return v ?? ''; };
-		const words = opt('--words');
-		const why = opt('--why');
-		const supersedes = opt('--supersedes');
-		const decision = clean(rest.join(' '));
-		if (!decision || !clean(words) || !clean(why)) return fail('A decision needs its text, --words (the owner\'s own words) and --why (the reason).');
-		if (supersedes !== null && !dec.rows.some((d) => d.id === supersedes)) return fail(`${clean(supersedes)} is not a decision on record, so it cannot be superseded.`);
-		const d = { id: `D-${dec.rows.length + 1}`, date: today(), decision, words: clean(words), why: clean(why), supersedes: supersedes ?? null };
-		const text = readText(DECISIONS) || '';
-		write(DECISIONS, `${text}${text && !text.endsWith('\n') ? '\n' : ''}${JSON.stringify(d)}\n`);
-		console.log(`${d.id} recorded`);
 		return;
 	}
 	const { state: s, why } = loadState();
@@ -257,12 +452,19 @@ function main(argv) {
 	if (why) return fail(why);
 	if (cmd === 'show') {
 		if (rest[0] === '--json') return console.log(JSON.stringify(s, null, 2));
+		const list = (head, l) => console.log([head, ...items(l).map((x) => `  ${x}`)].join('\n'));
 		console.log(`NEXT: ${clean(s.next)}`);
 		if (clean(s.then)) console.log(`Then: ${clean(s.then)}`);
-		console.log('Blocking (needs the owner before work goes on):', ...items(s.blocking).map((l) => `\n  ${l}`));
-		console.log('Waiting (needs the owner\'s eyes; work goes on):', ...items(s.waiting).map((l) => `\n  ${l}`));
-		console.log('Carry-overs:', ...items(s.carry_overs).map((l) => `\n  ${l}`));
-		console.log(`Last session: ${clean(s.last_session)} | updated ${clean(s.updated)}`);
+		list('Blocking (needs the owner before work goes on):', s.blocking);
+		list('Waiting (needs the owner\'s eyes; work goes on):', s.waiting);
+		list('Carry-overs:', s.carry_overs);
+		console.log(`Kit: ${clean(s.kit)} | last session: ${clean(s.last_session)} | updated ${clean(s.updated)}`);
+		return;
+	}
+	if (cmd === 'render') {
+		const faults = render(s, { overwrite: rest.includes('--overwrite') });
+		for (const f of faults) console.log(f);
+		if (faults.length) process.exitCode = 1;
 		return;
 	}
 	if (cmd === 'set') {
@@ -277,16 +479,13 @@ function main(argv) {
 		s[LIST[kind]].push(item);
 		console.log(`${item.id} added`);
 	} else if (cmd === 'done') {
-		const list = LIST[(rest[0] || '').split('-')[0]];
+		const list = /^[BWC]-\d+$/.test(rest[0] || '') ? LIST[rest[0][0]] : null;
 		const at = list ? s[list].findIndex((i) => i.id === rest[0]) : -1;
 		if (at < 0) return fail(`${clean(rest[0])} is not an open item.`);
 		s[list].splice(at, 1);
 		console.log(`${rest[0]} done`);
 	}
-	if (cmd !== 'render') saveState(s);
-	const faults = cmd === 'render' ? render(s) : [];
-	for (const f of faults) console.log(f);
-	if (faults.length) process.exitCode = 1;
+	saveState(s);
 }
 
-main(process.argv.slice(2));
+try { main(process.argv.slice(2)); } catch (e) { console.log(clean(e.message)); process.exitCode = 1; }

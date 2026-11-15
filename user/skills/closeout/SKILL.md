@@ -18,10 +18,13 @@ It starts on its own only as rule:compact-ritual says.
    `node <kit>/scripts/kit.mjs scratch new <thread> <label>` go with `scratch clean <thread>`, no ask: each to the
    bin with its guard record; one marked `scratch keep <folder> "<why>"` stays and is named; strays are listed.
 3. **Batch the tracking files** at the session end (rule:tracking-file-batching). The next action, what blocks on
-   the owner, what only waits for the owner's eyes, the carry-overs, the phase and the last session are data: change
-   them with `node .claude/state.mjs set | add | done`, record each owner decision with `state.mjs decide`, then
-   run `state.mjs render` and `state.mjs check` until it passes; never edit a generated block by hand. A project with
-   no generated block yet runs `state.mjs init` once. `node .claude/tracking-check.mjs caps` prints the
+   the owner, what only waits for the owner's eyes, the carry-overs, the phase, the kit version and the last session
+   are data: change them with `node .claude/state.mjs set | add | done`, one command per call. Record each owner
+   decision with `state.mjs decide --from <file.json>`: its words are the owner's exact words from this session,
+   and words not found there go in only with `--unchecked`, marked so. Then run `state.mjs render` and
+   `state.mjs check` until it passes. Never edit a generated block by hand: render refuses a block edited since the
+   last render, and only `render --overwrite`, after the change is in the data, writes over it. A project with no
+   generated block yet runs `state.mjs init` once. `node .claude/tracking-check.mjs caps` prints the
    whole-file rows of the size-cap table; an OVER row is fixed before the handoff. The plan's Progress block passes
    `node .claude/tracking-check.mjs progress <plan>`. Where the project keeps
    `.kit/project-map.json`, update its progress from the plan, run `node .claude/project-map.mjs check` until it
@@ -31,7 +34,7 @@ It starts on its own only as rule:compact-ritual says.
    Where the repo has a sweep approval log, run `approve.mjs --summary` (pre-pr-sweep skill): a paused state goes
    into the handoff's State Snapshot as "auto-approval: paused since <date>, <reason>; the owner resumes with
    <command>", in every handoff until the owner resumes it. A "carried open" above 0 means findings still sit in the
-   handoff's "Carry-overs from the last PR": list each there.
+   handoff's "Carry-overs from the last PR": add each with `state.mjs add carry`, then render again.
 5. **Write the resume packet:** `node .claude/resume-packet.mjs write` after the batch, so its hashes are of the final
    files; the next session starts from `check`. A line starting "fix before the next session" names a label or file
    name the check cannot read: fix that line in the tracking file and write again.

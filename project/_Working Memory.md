@@ -10,6 +10,8 @@
 
 **Last Session:** <N> (<YYYY-MM-DD> - <topic, <= 50 words>)
 
+**Kit:** <x.y.z>
+
 **Current Phase:** <which version or sub-project is current, one or two sentences + link> -> [`_Active Plan.md`](_Active Plan.md)
 
 **Resume Point:** <(1) the exact next action - command or file; (2) what follows> -> [`_Active Plan.md`](_Active Plan.md) Resume Point

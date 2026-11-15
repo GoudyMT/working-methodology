@@ -1,6 +1,15 @@
 # Build 8 (1.34.0): state as data, first slice of T4
 
-Status: design, waiting for the owner's lock. Nothing is built.
+Status: locked by the owner 2026-11-15 (pop-up: "State + decisions", no fold-ins); built on `feat/state-as-data`; swept (39 findings, 5 high, all fixed in the build). Built as below, with these changes from the design, each from the sweep:
+
+- `kit` is in the data, and `check` fails when the installed kit (`.kit/kit-version.json`) differs: the drift on 1.33.1 came in at installs, and the views alone could not show it.
+- `render` refuses a block edited by hand since the last render (a hash of each rendered block is kept in the data); `render --overwrite` writes over it once the change is in the data.
+- `decide --from <file.json>` takes its input from a file, so the guards never read the owner's words as a command. The words must be found word for word in the owner's messages or pop-up answers in the session's transcript, or are recorded with `--unchecked`, marked so. Rows are appended under a lock; `check` fails a committed row that changed.
+- The resume packet does not hash `_State.json` (design item 5 dropped): the Active Plan is read in full every session, and `check` fails when the data and the views differ, so a data-only edit is already caught.
+- The Active Plan's own "Current Phase" section is gone from the template; the phase lives in the data.
+- Commands run one per call: the guards refuse a chained command that names a `.claude/` file.
+
+Trial on a copy of the workbench's 1.33.1 tracking files (`C:\Users\Max\kit-probes\b8-state-trial2`): `init` moved NEXT, the loose "Then MC3 ..." paragraph and the three pending items into the data; `check` passes. A closeout's hand edits after: the Session Log entry, the Working Memory index line and the Master Roadmap box (3; the rest are `state.mjs` commands). The next action is stated by hand in 1 file (`_State.json`), against 4.
 
 ## Proof on the released kit (1.33.1, workbench, 2026-11-15)
 

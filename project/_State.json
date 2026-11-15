@@ -1,5 +1,6 @@
 {
   "updated": "<YYYY-MM-DD>",
+  "kit": "<x.y.z>",
   "phase": "<which version or sub-project is current, one or two sentences + link>",
   "next": "<(1) the exact next action - command or file; (2) what follows>",
   "then": "",
@@ -11,5 +12,9 @@
     "B": 0,
     "W": 0,
     "C": 0
+  },
+  "rendered": {
+    "_Active Plan.md": "51d466a8e07a0a1d",
+    "_Working Memory.md": "1e755b3a78992695"
   }
 }

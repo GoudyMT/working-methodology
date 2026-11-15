@@ -4,9 +4,9 @@
 
 ---
 
-## Current Phase
+## Phase
 
-<Which version / sub-project is current, one or two sentences + link. Loop Workflow Mode is OFF by default (re-arm each compact).>
+The phase and the kit version are data in `_State.json` (`node .claude/state.mjs set phase` / `set kit`), shown in [`_Working Memory.md`](_Working Memory.md). Loop Workflow Mode is OFF by default (re-arm each compact).
 
 ---
 

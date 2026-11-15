@@ -16,7 +16,7 @@ Measured caps; over a cap -> compress BEFORE proceeding.
 | File | Section | Cap |
 |---|---|---|
 | `_Master Roadmap` | per-version entry | <= 80 words / 4 lines |
-| `_Working Memory` | Last Session / Current Phase / Resume Point | <= 50 / 60 / 40 words |
+| `_State.json` | last session / phase / next | <= 50 / 60 / 40 words |
 | `_Working Memory` | Session Index entry | <= 60 words |
 | `_Active Plan` | Status / component row | <= 60 / 30 words |
 | `_Session Log` | per entry | the template |
@@ -45,11 +45,11 @@ Why: the log's job is narrative + latest state; old detail is noise once source-
 | `_Master Roadmap.md` | task status: checkboxes ONLY | hashes, rationale, next actions, descriptions |
 | `_Active Plan.md` | the exact next action | history, task lists, rationale |
 
-**State is data:** the next action, owner waits and carry-overs live in `_State.json`, decisions in `_Decisions.jsonl`; the Resume Point and dashboard lines are generated (`node .claude/state.mjs`), never hand-edited.
+**State is data:** the next action, owner waits, carry-overs and kit version live in `_State.json`, decisions in `_Decisions.jsonl` (the owner's exact words); the Resume Point and dashboard lines are generated (`node .claude/state.mjs`), never hand-edited.
 
 **Anti-duplication:** source-of-truth content (spec / ADR / plan / git log / code) is pointed to, never restated; content several tracking files need lives inline only in its unique-function file ("write it anyway" -> STOP). Why: one item in eight places is eight places to go stale.
 
-**Session-end batch, in order:** Session Log (the depth) -> Working Memory (Last Session + one index line) -> Master Roadmap (boxes only) -> Active Plan (status + exact Resume Point); about 5-10 changed lines beyond the log entry.
+**Session-end batch, in order:** Session Log (the depth) -> Working Memory (one index line) -> Master Roadmap (boxes only) -> `state.mjs` set / add / done, then render and check; about 5-10 changed lines beyond the log entry.
 
 **The plan file is the progress record** (chat is not the handoff): a `## Progress` block at its top (current task, done with evidence, next, branch, open questions); tick only against shown evidence, record the measurement not just the verdict, note what would make a done task not done. **Each step names its check before it starts** (`<step> -> verify: <the test, command or measurement>`). Why: a step with no named check is done when someone says so.
 
@@ -74,7 +74,7 @@ One outward doc per major phase on WHY its tools and conventions were chosen: Ov
 ### Pre-Compact Scan {#pre-compact-scan}
 
 0. **ASCII scan** of this session's edits (any non-ASCII byte). 0b. **Comment-label scan** of every touched source file: phase / task / session / ADR labels reworded to the MECHANISM. Emit pass / fail - a check not shown did not happen.
-1. **Anti-duplication scan** - hashes in the Session Log only, locks in ADRs, next actions in the Active Plan, statuses in the Roadmap.
+1. **Anti-duplication scan** - hashes in the Session Log only, locks in ADRs, next actions in `_State.json`, statuses in the Roadmap.
 2. Audit the Roadmap, dashboard, Active Plan and current log entry against caps and template.
 3. **Size-cap table** `| item | words | cap | status |` - the four whole-file rows from `node .claude/tracking-check.mjs caps` + every capped line touched, counted by hand - never estimated; OVER rows fixed; done only when the all-`ok` table is shown.
 4. **Loop-learnings check** - lessons captured; the handoff names open lessons + any regression.
