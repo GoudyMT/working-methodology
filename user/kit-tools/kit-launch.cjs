@@ -459,12 +459,14 @@ function namedProjects(input) {
 		const step = Math.abs(Number(m[5] || 1)) || 1;
 		if (m[1] !== undefined) {
 			const [a, b] = [Number(m[1]), Number(m[2])];
-			if (Math.abs(b - a) / step >= NAMES_MAX) return { count: Infinity };
+			// Ends past a safe whole number cannot be counted exactly: held (the 1.33.1 review).
+			if (![a, b, step].every(Number.isSafeInteger) || Math.floor(Math.abs(b - a) / step) + 1 > NAMES_MAX) return { count: Infinity };
 			// bash pads to the longer end when either end starts with a 0.
 			const width = /^-?0\d/.test(m[1]) || /^-?0\d/.test(m[2]) ? Math.max(m[1].length, m[2].length) : 0;
 			const pad = (n) => (n < 0 ? '-' + String(-n).padStart(width - 1, '0') : String(n).padStart(width, '0'));
 			const out = [];
-			for (let i = a; a <= b ? i <= b : i >= b; i += a <= b ? step : -step) out.push(pad(i));
+			const n = Math.floor(Math.abs(b - a) / step) + 1;
+			for (let k = 0; k < n; k++) out.push(pad(a <= b ? a + k * step : a - k * step));
 			return { alts: out };
 		}
 		const [a, b] = [m[3].charCodeAt(0), m[4].charCodeAt(0)];
@@ -544,7 +546,9 @@ function namedProjects(input) {
 	const expandGlob = (t) => {
 		const drive = /^[a-z]:\//i.exec(t);
 		const rootLen = drive ? 3 : t.startsWith('/') ? 1 : 0;
-		let bases = [rootLen ? t.slice(0, rootLen) : posix(cwd) + '/'];
+		// A relative wildcard is read from the session's folder and from every folder the command names, since a cd before
+		// it may have moved there (the 1.33.1 review).
+		let bases = rootLen ? [t.slice(0, rootLen)] : [posix(cwd) + '/', ...dirs.map((d) => posix(d) + '/')];
 		for (const seg of t.slice(rootLen).split('/').filter(Boolean)) {
 			if (!isGlob(seg)) { bases = bases.map((b) => b + seg + '/'); continue; }
 			const pat = compile(seg);
@@ -565,20 +569,22 @@ function namedProjects(input) {
 	// would there.
 	const unrec = [];
 	const seen = new Set();
+	const dirs = [];
 	const resolveTo = (t) => {
 		let real = '';
 		try { real = fs.realpathSync.native(path.resolve(cwd, t)); } catch { return; }
 		if (seen.has(real)) return;
 		seen.add(real);
+		try { if (dirs.length < 64 && fs.statSync(real).isDirectory()) dirs.push(real); } catch { /* gone */ }
 		text += ` ${norm(real)}`;
 		const u = unrecorded({ cwd: real }, true);
 		if (u && !unrec.some((x) => same(x, u))) unrec.push(u);
 	};
+	// Paths first, so a relative wildcard is also read from the folders they name.
+	for (const t of tokens) if (!isGlob(t) && /[/~.]/.test(t) && !/\$/.test(t)) resolveTo(t);
 	for (const t of tokens) {
 		if (unreadable) break;
-		if (isGlob(t)) { for (const m of expandGlob(t)) resolveTo(m); continue; }
-		if (!/[/~.]/.test(t) || /\$/.test(t)) continue;
-		resolveTo(t);
+		if (isGlob(t)) for (const m of expandGlob(t)) resolveTo(m);
 	}
 	const WORD = /[A-Za-z0-9_.-]/;
 	// p appears with no name character after it; bounded, with none before it either (a name may hold a space, so it

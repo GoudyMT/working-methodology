@@ -1487,6 +1487,10 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'for i in {1..9000}; do echo $i; done' }, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
 	assert.match(r.stdout, /more than 4096 names from its braces/);
 	assert.ok(Date.now() - t1 < 5000, 'held at once');
+	// The review of c07f2bd: a relative wildcard after a cd is read from the folder the cd names, and range ends past a
+	// safe whole number are held, never looped over.
+	assert.equal(call('cd ' + parent + ' && ls a*p && git push origin main'), 'deny', 'a relative wildcard after a cd');
+	assert.notEqual(call('echo {1..99999999999999999999} && git push origin main'), 'runs', 'a range past a safe number');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });
