@@ -289,6 +289,25 @@ test('status reads main as protected only with an up-to-date required check, no 
   // The 1.22.0 sweep (T2): the real gh prints a JSON body on an error (tests/contracts/gh.json); that is no answer.
   assert.equal(mp(answers(notProtected, { status: 1, stdout: '{"message":"Forbidden"}', stderr: 'gh: Forbidden (HTTP 403)' })), null);
   assert.equal(mp(answers({ status: 1, stdout: '', stderr: 'HTTP 401' })), null);
+  // The K61 sweep: up to date counts only from a source that also requires a check, a list answer is no protection,
+  // and the rules are read 100 to a page (GitHub gives 30 unless asked).
+  const strictNoCheck = [{ type: 'deletion' }, { type: 'non_fast_forward' }, { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [] } }];
+  assert.equal(mp(answers(ok({ required_status_checks: { strict: false, contexts: ['ci'] }, allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false } }), ok(strictNoCheck))), 'unprotected', 'a strict ruleset with no check does not make classic checks up to date');
+  assert.equal(mp(answers(ok([]), ok(full))), null, 'a list where an object belongs');
+  const asked = [];
+  mp((args) => { asked.push(args[1]); return args[1].includes('/protection') ? notProtected : ok(full); });
+  assert.ok(asked.includes('repos/o/r/rules/branches/main?per_page=100'), asked.join(' '));
+});
+// why: guards rule:first-push-gate (the K61 sweep: a push URL set apart from origin's fetch URL named one repo while
+// the work went to another)
+test('a remote whose push URL names another repo names no repo', async () => {
+  const { githubSlug } = await import('../scripts/safe-git.mjs');
+  const dir = makeTemp('slug-');
+  spawnSync('git', ['init', '-q', dir]);
+  spawnSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git']);
+  assert.equal(githubSlug(dir), 'o/r');
+  spawnSync('git', ['-C', dir, 'remote', 'set-url', '--push', 'origin', 'https://github.com/x/y.git']);
+  assert.equal(githubSlug(dir), null);
 });
 
 // why: catches a break at scripts/kit.mjs:1213 that no other test catches

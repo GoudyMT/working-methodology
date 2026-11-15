@@ -124,7 +124,8 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	const facts = {};
 	const git = (...a) => run('git', [...NO_HOOKS, ...a], cwd);
 	const gh = (...a) => run('gh', a, cwd);
-	if (!/^\d+$/.test(String(pr))) return { go: false, faults: ['the PR is a number'], facts };
+	// As disarm and autofix read it: 07 is not the 7 the log and the hook hold (the K61 sweep).
+	if (!/^[1-9]\d*$/.test(String(pr))) return { go: false, faults: ['the PR is a number, with no leading zero'], facts };
 
 	// The audits below are children that call git by bare name from this folder, so nothing may run while one sits here.
 	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
@@ -170,7 +171,8 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 
 	// 4. A required check on the base: branch protection or a ruleset.
 	const prot = json(gh('api', `repos/${repo.full_name}/branches/${encodeURIComponent(p.baseRefName)}/protection/required_status_checks`));
-	const rules = json(gh('api', `repos/${repo.full_name}/rules/branches/${encodeURIComponent(p.baseRefName)}`));
+	// GitHub pages this list 30 to a page: one page of 100 holds every rule a branch is likely to carry (the K61 sweep).
+	const rules = json(gh('api', `repos/${repo.full_name}/rules/branches/${encodeURIComponent(p.baseRefName)}?per_page=100`));
 	// Each answer is held to its shape: a string where a list belongs would read as one check per letter.
 	const list = (v) => v == null || Array.isArray(v);
 	const ruleSets = Array.isArray(rules) ? rules.filter((r) => r && r.type === 'required_status_checks') : [];
@@ -182,7 +184,10 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	facts.required = required;
 	if (!required.length) faults.push(`${p.baseRefName} requires no status check, so auto-merge would merge at once: protect it first (rule:first-push-gate)`);
 	// Unless the base needs the branch up to date, a PR checked against an old base merges onto a new one untested.
-	const strict = (prot && prot.strict === true) || ruleSets.some((r) => (r.parameters || {}).strict_required_status_checks_policy === true);
+	// It counts only from a source that also requires a check: a strict ruleset with no check of its own holds no
+	// check up to date (the K61 sweep).
+	const strict = (prot && prot.strict === true && fromProt.some((c) => typeof c === 'string' && c))
+		|| ruleSets.some((r) => (r.parameters || {}).strict_required_status_checks_policy === true && ((r.parameters || {}).required_status_checks || []).some((c) => c && typeof c.context === 'string' && c.context));
 	if (required.length && !strict) faults.push(`${p.baseRefName} does not require a branch to be up to date before it merges, so a PR could merge onto a base its checks never ran on: the owner turns on "require branches to be up to date" for its required checks`);
 	// GitHub waits only for required checks, and merges at once past a failed optional one, so any failure stops it here.
 	// A check's name is the workflow author's text: one line, no control characters, so it cannot write the triage.

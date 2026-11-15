@@ -1194,9 +1194,12 @@ export function mainProtection(projectDir, gh = safeGh, slug = githubSlug(projec
   let prot = null;
   if (r.status === 0) {
     try { prot = JSON.parse(r.stdout); } catch { return null; }
+    // An answer not in the shape GitHub gives tells nothing (the K61 sweep).
+    if (!prot || typeof prot !== 'object' || Array.isArray(prot)) return null;
   } else if (!/Branch not protected/i.test(`${r.stdout}${r.stderr}`)) return null;
-  // A ruleset protects a branch with no classic protection: GitHub answers 404 for the one and lists the other.
-  const rules = gh(['api', `repos/${slug}/rules/branches/main`]);
+  // A ruleset protects a branch with no classic protection: GitHub answers 404 for the one and lists the other, 30 to
+  // a page unless asked for more.
+  const rules = gh(['api', `repos/${slug}/rules/branches/main?per_page=100`]);
   if (rules.error || rules.status !== 0) return null;
   let list = null;
   try { list = JSON.parse(rules.stdout); } catch { return null; } // an answer that is not JSON tells nothing
@@ -1205,9 +1208,12 @@ export function mainProtection(projectDir, gh = safeGh, slug = githubSlug(projec
   const has = (type) => sets.some((x) => x.type === type);
   const rsc = sets.filter((x) => x.type === 'required_status_checks').map((x) => x.parameters || {});
   const p = prot && typeof prot === 'object' ? prot : {};
-  const checks = (p.required_status_checks && ((p.required_status_checks.contexts || []).length || (p.required_status_checks.checks || []).length))
-    || rsc.some((x) => (x.required_status_checks || []).length);
-  const strict = (p.required_status_checks && p.required_status_checks.strict === true) || rsc.some((x) => x.strict_required_status_checks_policy === true);
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const c = p.required_status_checks && typeof p.required_status_checks === 'object' ? p.required_status_checks : {};
+  const classicChecks = arr(c.contexts).length + arr(c.checks).length > 0;
+  const checks = classicChecks || rsc.some((x) => arr(x.required_status_checks).length);
+  // Up to date counts only from a source that also requires a check (the K61 sweep).
+  const strict = (classicChecks && c.strict === true) || rsc.some((x) => x.strict_required_status_checks_policy === true && arr(x.required_status_checks).length);
   const noForce = (prot && !(p.allow_force_pushes && p.allow_force_pushes.enabled)) || has('non_fast_forward');
   const noDelete = (prot && !(p.allow_deletions && p.allow_deletions.enabled)) || has('deletion');
   return checks && strict && noForce && noDelete ? 'protected' : 'unprotected';

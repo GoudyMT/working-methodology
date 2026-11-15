@@ -21,7 +21,10 @@ export const safeGh = (args) => spawnSync('gh', args, { encoding: 'utf8', cwd: S
  */
 export function githubSlug(dir) {
   const r = safeGit(dir, 'remote', 'get-url', 'origin');
-  return r.status === 0 ? slugOf(r.stdout.trim()) : null;
+  const slug = r.status === 0 ? slugOf(r.stdout.trim()) : null;
+  // A push URL set apart sends the work to another repo than the one read here: then no repo is named (the K61 sweep).
+  const push = safeGit(dir, 'remote', 'get-url', '--push', 'origin');
+  return slug && push.status === 0 && slugOf(push.stdout.trim()) === slug ? slug : null;
 }
 
 // The host is read from the start of the URL, so a path that only mentions github.com names no GitHub repo (the K61

@@ -138,7 +138,7 @@
   {
    "args": [
     "api",
-    "repos/o/r/rules/branches/main"
+    "repos/o/r/rules/branches/main?per_page=100"
    ],
    "status": 0,
    "stderr": "",
