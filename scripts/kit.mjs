@@ -1204,7 +1204,7 @@ function claudeCodeTooOld(text) {
 /** A warning when Claude Code updates from the stable channel, which trailed the floor on 2026-11-15 (2.1.311), or ''. */
 function stableChannelLine(home) {
   let s = null;
-  try { s = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^﻿/, '')); } catch { return ''; }
+  try { s = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { return ''; }
   return s && s.autoUpdatesChannel === 'stable' ? `Claude Code: autoUpdatesChannel is "stable", which trails the latest channel and can stay under the kit's floor (${RULES_MIN}). Set it to "latest" in the Claude config folder's settings.json, or check the version at each update.` : '';
 }
 
