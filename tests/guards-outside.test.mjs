@@ -355,7 +355,7 @@ test('V3 pre-push: an intact install still lets an AI push a feature branch', ()
 	assert.equal(git(remote, ['rev-parse', '-q', '--verify', 'refs/heads/feature/ok']).status, 0);
 });
 
-const status = (home, proj) => kitStatus({ kit: KIT, home, projectDir: proj, ahead: () => 0, protection: () => null, newest: () => null, inodes: () => ({ level: 'ok', text: '' }), claudeVersion: () => '2.1.302 (Claude Code)' });
+const status = (home, proj) => kitStatus({ kit: KIT, home, projectDir: proj, ahead: () => 0, protection: () => null, newest: () => null, inodes: () => ({ level: 'ok', text: '' }), claudeVersion: () => '2.1.325 (Claude Code)' });
 
 // why: guards rule:outward-acts
 test('V3 status: a guard file changed outside install is a gap, never the project\'s own values', () => {

@@ -1159,11 +1159,22 @@ export function installedClaudeVersion() {
   return claudeVersionRead;
 }
 
-/** The line to give when Claude Code is too old for onFailure, or '' when it is new enough or cannot be read. */
+// K70 (1.36.0, the 2026-11-15 outside review): 2.1.325 fixed gaps in how Bash deny and ask rules match a command, and
+// the kit's own rules rely on them (approve.mjs --resume is denied to a tool).
+const RULES_MIN = '2.1.325';
+/** The floor a Claude Code version misses first, as { min, line }, or null when it is new enough or cannot be read. */
 function claudeCodeTooOld(text) {
   const m = /(\d+\.\d+\.\d+)/.exec(String(text ?? ''));
-  if (!m || !semverAbove(ON_FAILURE_MIN, m[1])) return '';
-  return `Claude Code ${m[1]} is older than ${ON_FAILURE_MIN}: a guard that crashes or times out lets the command run. Run claude update.`;
+  if (!m) return null;
+  if (semverAbove(ON_FAILURE_MIN, m[1])) return { min: ON_FAILURE_MIN, line: `Claude Code ${m[1]} is older than ${ON_FAILURE_MIN}: a guard that crashes or times out lets the command run. Run claude update.` };
+  if (semverAbove(RULES_MIN, m[1])) return { min: RULES_MIN, line: `Claude Code ${m[1]} is older than ${RULES_MIN}: Bash deny and ask rules can miss a command, and the kit's settings rely on them. Run claude update (a WinGet or other package install updates through its own tool).` };
+  return null;
+}
+/** A warning when Claude Code updates from the stable channel, which trailed the floor on 2026-11-15 (2.1.311), or ''. */
+function stableChannelLine(home) {
+  let s = null;
+  try { s = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^﻿/, '')); } catch { return ''; }
+  return s && s.autoUpdatesChannel === 'stable' ? `Claude Code: autoUpdatesChannel is "stable", which trails the latest channel and can stay under the kit's floor (${RULES_MIN}). Set it to "latest" in the Claude config folder's settings.json, or check the version at each update.` : '';
 }
 
 /** K49: a line for each project settings file that still runs kit guards itself, as the shape before 1.25.1 did. */
@@ -1194,7 +1205,9 @@ function doubleRunLines(projectDir) {
 export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion }) {
   const lines = [];
   const old = claudeCodeTooOld(claudeVersion());
-  if (old) lines.push(old);
+  if (old) lines.push(old.line);
+  const channel = stableChannelLine(home);
+  if (channel) lines.push(channel);
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
@@ -1306,9 +1319,11 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
   const gaps = [];
   const old = claudeCodeTooOld(claudeVersion());
   if (old) {
-    lines.push(old);
-    gaps.push(`Claude Code is older than ${ON_FAILURE_MIN}`);
+    lines.push(old.line);
+    gaps.push(`Claude Code is older than ${old.min}`);
   }
+  const channel = stableChannelLine(home);
+  if (channel) lines.push(channel);
   const n = ahead(kit);
   if (n > 0) {
     lines.push(`    GitHub has ${n} newer kit commit(s): check out its newest release tag (${releaseCheckout(kit, newest(kit))}), then update both below.`);

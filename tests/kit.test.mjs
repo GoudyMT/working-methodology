@@ -14,8 +14,8 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 // The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
 // suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
-const status = (o) => kitStatus({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
-const sessionStartReport = (o) => kitSessionStart({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
+const status = (o) => kitStatus({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
+const sessionStartReport = (o) => kitSessionStart({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -338,9 +338,36 @@ test('status and session start flag a Claude Code too old for onFailure, and sta
   for (const v of ['2.1.295 (Claude Code)', '2.1.302 (Claude Code)', '3.0.0', null, 'garbage']) {
     assert.doesNotMatch(at(v).text, /older than 2\.1\.295/, String(v));
   }
-  assert.equal(at('2.1.302 (Claude Code)').current, true);
+  assert.equal(at('2.1.325 (Claude Code)').current, true);
   assert.match(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.200' }), /Claude Code 2\.1\.200 is older than 2\.1\.295/);
-  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.295' }), /older than/);
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.325' }), /older than/);
+});
+
+// K70 (1.36.0, the 2026-11-15 outside review): Claude Code 2.1.325 fixed gaps in how Bash deny and ask rules match,
+// which the kit's own rules (approve.mjs --resume is denied) rely on. The npm stable channel was still 2.1.311.
+// why: guards the owner's yes to K70, 2026-11-15 (card "Yes, all three into build 10"): the version floor and the warning
+test('status and session start hold a Claude Code under 2.1.325, and warn when updates come from the stable channel', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  const at = (v) => status({ kit, home, projectDir: proj, ahead: () => 0, claudeVersion: () => v });
+  const mid = at('2.1.318 (Claude Code)');
+  assert.equal(mid.current, false);
+  assert.match(mid.text, /Claude Code 2\.1\.318 is older than 2\.1\.325: Bash deny and ask rules can miss a command[\s\S]*claude update/);
+  assert.match(mid.text, /Not current: .*Claude Code is older than 2\.1\.325/);
+  assert.doesNotMatch(mid.text, /older than 2\.1\.295/, 'one line, the floor the version misses first');
+  assert.equal(at('2.1.325 (Claude Code)').current, true);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.318' }), /older than 2\.1\.325/);
+  // The stable channel: a warning, not a gap; quiet on the latest channel or with no setting.
+  const settings = path.join(home, 'settings.json');
+  const s = JSON.parse(fs.readFileSync(settings, 'utf8'));
+  fs.writeFileSync(settings, JSON.stringify({ ...s, autoUpdatesChannel: 'stable' }));
+  const stable = at('2.1.325 (Claude Code)');
+  assert.match(stable.text, /autoUpdatesChannel is "stable"/);
+  assert.equal(stable.current, true, 'a warning only');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.325' }), /autoUpdatesChannel is "stable"/);
+  fs.writeFileSync(settings, JSON.stringify({ ...s, autoUpdatesChannel: 'latest' }));
+  assert.doesNotMatch(at('2.1.325 (Claude Code)').text, /stable/);
 });
 
 // The 1.23.0 security review: on Windows cmd looks in the current folder first, and session start runs in the

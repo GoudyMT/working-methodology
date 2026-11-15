@@ -59,6 +59,38 @@ test('an unwired part fails the check by name: the guard entry gone, git hooks n
 	assert.match(part(m.out, 'guards').present.detail, /owner-yes\.cjs/);
 });
 
+// K71 and K72 (1.36.0, the 2026-11-15 outside review): saved approvals in .claude/settings.local.json can hold
+// secrets, and git keeps tracking a file once added whatever the ignore lists say; "disableAllHooks": true in a project
+// settings file turns every hook off with no sign, and a session cannot see it from inside.
+// why: guards the owner's yes to K71 and K72, 2026-11-15 (card "Yes, all three into build 10"; K71 check only, pop-up)
+test('the check fails when git tracks settings.local.json or a project settings file turns hooks off', () => {
+	const dir = project();
+	assert.deepEqual(check(dir).out.failing, []);
+	assert.equal(fs.existsSync(path.join(dir, '.gitignore')), false, 'install leaves nothing git can see (rule:kit-stays-local)');
+	// Tracked by git: the check fails and names the way out.
+	fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{}');
+	spawnSync('git', ['-C', dir, 'add', '-f', '.claude/settings.local.json']);
+	let c = check(dir);
+	assert.equal(c.code, 1);
+	assert.ok(c.out.failing.includes('private-files'), JSON.stringify(c.out.failing));
+	assert.match(part(c.out, 'private-files').wired.detail, /git tracks \.claude\/settings\.local\.json[\s\S]*git rm --cached/);
+	spawnSync('git', ['-C', dir, 'rm', '-q', '--cached', '.claude/settings.local.json']);
+	assert.deepEqual(check(dir).out.failing, []);
+	// disableAllHooks in either project settings file fails the guards part.
+	for (const name of ['settings.local.json', 'settings.json']) {
+		const f = path.join(dir, '.claude', name);
+		const before = fs.readFileSync(f, 'utf8');
+		fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(before), disableAllHooks: true }));
+		c = check(dir);
+		assert.equal(c.code, 1, name);
+		assert.match(part(c.out, 'guards').wired.detail, /disableAllHooks/, name);
+		fs.writeFileSync(f, before);
+	}
+	assert.deepEqual(check(dir).out.failing, []);
+	// A folder with no git: nothing to track, so the part does not apply.
+	assert.equal(part(check(project({ git: false })).out, 'private-files').wired.ok, null);
+});
+
 // why: catches a break at project/.claude/use-check.mjs:89 that no other test catches
 test('install project prints the use check and fails when a part is not wired; status names it', () => {
 	const dir = kitTemp.makeTemp('use-cli-');

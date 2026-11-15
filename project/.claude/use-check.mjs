@@ -48,6 +48,11 @@ const PARTS = [
 			for (const name of ['settings.json', 'settings.local.json']) {
 				const s = read(path.join(dir, '.claude', name));
 				if (JSON.stringify(s?.hooks?.PreToolUse || '').includes('.claude/guard.cjs')) return [false, `.claude/${name} still runs guard.cjs itself: run kit.mjs install project, which takes that entry out`];
+				// K72 (1.36.0): a session cannot see this from inside, since its hooks are already off.
+				let text = null;
+				try { text = fs.readFileSync(path.join(dir, '.claude', name), 'utf8'); } catch { /* none */ }
+				const why = text === null ? '' : L.settingsProblem(text);
+				if (why) return [false, `.claude/${name}: ${why}; the owner takes it out`];
 			}
 			if (!L.launcherWired(read(path.join(HOME, 'settings.json')), path.join(HOME, 'kit-tools', 'kit-launch.cjs'), read(path.join(HOME, 'kit-install.json'))?.node)) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs whole, on every tool and every settings change: run kit.mjs install user`];
 			if (!fs.existsSync(path.join(guardDir(), 'record.json'))) return [false, 'no guard record for this project in the Claude config folder: run kit.mjs install project'];
@@ -96,6 +101,21 @@ const PARTS = [
 			const log = path.resolve(dir, common, 'kit-push.log');
 			return fs.existsSync(log) ? [true, 'kit-push.log has pushes'] : [null, 'no push yet'];
 		},
+	},
+	{
+		// K71 (1.36.0, the owner's pick 2026-11-15: check only): saved approvals in settings.local.json can hold secrets.
+		// Claude Code's global exclude and the kit's exclude block keep an untracked copy out; once git tracks the file,
+		// no ignore line takes it out, so tracking is the fault. No .gitignore line: install leaves nothing git can see
+		// (rule:kit-stays-local).
+		name: 'private-files',
+		what: 'the personal settings file kept out of git (.claude/settings.local.json)',
+		present: () => [null, 'nothing to install: the file is the owner\'s'],
+		wired: () => {
+			if (!isRepo()) return [null, 'not a git repository'];
+			if (git('ls-files', '--error-unmatch', '.claude/settings.local.json').status === 0) return [false, 'git tracks .claude/settings.local.json, whose saved approvals can hold secrets: run git rm --cached .claude/settings.local.json and commit (the file stays on disk)'];
+			return [true, 'git does not track it'];
+		},
+		used: () => [null, 'nothing to trace'],
 	},
 	{
 		name: 'test-lanes',
