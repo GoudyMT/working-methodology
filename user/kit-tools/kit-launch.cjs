@@ -634,6 +634,22 @@ function namedProjects(input) {
 	return out;
 }
 
+// E35 (1.36.0, reproduced on 1.35.0 from the folder above a kit project): a file tool names its project by its path, as
+// a shell command does by its words, so a Write or Edit of a kit project's file from outside it runs that project's
+// guards. A recorded project that holds the path, else a kit project found above it.
+function fileProjects(input) {
+	const ti = (input && input.tool_input) || {};
+	const p = ti.file_path ?? ti.notebook_path;
+	if (typeof p !== 'string' || !p) return [];
+	let abs = path.resolve(String(input.cwd || process.cwd()), p);
+	try { abs = fs.realpathSync.native(abs); } catch { try { abs = path.join(fs.realpathSync.native(path.dirname(abs)), path.basename(abs)); } catch { /* not there yet */ } }
+	const inside = (d) => { const rel = path.relative(d, abs); return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel); };
+	const out = recordedProjects().filter(inside);
+	const u = unrecorded({ cwd: path.dirname(abs) }, true);
+	if (u && !out.some((x) => same(x, u))) out.push(u);
+	return out;
+}
+
 function preToolUse(input) {
 	const here = projectCheck(input);
 	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
@@ -645,7 +661,7 @@ function preToolUse(input) {
 	if (named.unreadable && recordedProjects().some((d) => !(mine && !mine.ambiguous && same(mine.dir, d)))) {
 		answers.push(deny(`This command makes ${named.unreadable}, so the kit cannot tell which of its projects it reaches. Split it into smaller commands, or spell the folders out.`));
 	}
-	for (const dir of named) {
+	for (const dir of [...named, ...fileProjects(input).filter((d) => !named.some((x) => same(x, d)))]) {
 		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
 		answers.push(projectCheck({ ...input, cwd: dir }, true));
 	}

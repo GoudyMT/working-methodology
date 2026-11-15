@@ -1380,6 +1380,24 @@ test('C13 a project with a long path is found by its transcript folder, the name
 	}
 });
 
+// E35 (1.36.0, reproduced on the 1.35.0 launcher 2026-11-15 from the folder above the workbench): a shell command
+// into a kit project ran its guards, but a Write or Edit with the full path of one of its guard files did not.
+// why: guards rule:outward-acts (a guard file written from outside the project is a guard switched off)
+test('a file tool aimed into a kit project from outside it runs that project\'s guards', () => {
+	const { home, proj } = setup();
+	const outside = path.dirname(proj);
+	const call = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const guard = path.join(proj, '.claude', 'owner-proof.cjs');
+	assert.equal(call('Write', { file_path: guard, content: 'x' }), 'deny', 'Write');
+	assert.equal(call('Edit', { file_path: guard, old_string: 'a', new_string: 'b' }), 'deny', 'Edit');
+	assert.equal(call('Write', { file_path: path.relative(outside, guard), content: 'x' }), 'deny', 'a path relative to the session');
+	assert.equal(call('Write', { file_path: path.join(proj, 'src', 'a.js'), content: 'x' }), 'runs', 'an ordinary file in the project still runs');
+	assert.equal(call('Write', { file_path: path.join(outside, 'notes.md'), content: 'x' }), 'runs', 'a file in no kit project');
+});
+
 // why: guards rule:outward-acts. Seen live 2026-11-15: a session started in another folder worked in a kit project
 // through cd, and none of that project's guards ran, because the launcher found the project by the session's folder
 // alone. A command that first moves into a kit project (cd, Set-Location, pushd, git -C) runs that project's guards.
