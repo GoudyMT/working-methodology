@@ -945,18 +945,36 @@ test('merge gate: autofix makes at most 2 fix rounds per PR, and another PR keep
 		assert.equal(r.pushed, true, `round ${round}: ${r.faults.join('\n')}`);
 		s.state.pr.headRefOid = fixed;
 	}
-	const third = fix(3);
+	fix(3);
 	const before = originHead(s);
-	const r = autofix(s.opts);
-	assert.equal(r.pushed, false);
-	assert.match(r.faults[0], /2 fix rounds.*owner/);
+	// Armed, so a cap read after the disarm would show as a gh write before the refusal.
+	s.state.armed = true;
+	const calls = s.state.calls.length;
+	assert.match(autofix(s.opts).faults[0], /2 fix rounds.*owner/);
 	assert.equal(originHead(s), before, 'nothing went out');
-	assert.notEqual(originHead(s), third);
-	assert.equal(autofix({ ...s.opts, pr: '07' }).pushed, false, 'another spelling of PR 7 gets no fresh count');
+	assert.deepEqual(s.state.calls.slice(calls).filter((c) => /--disable-auto/.test(c)), [], 'the refusal comes before the disarm');
+	assert.match(autofix({ ...s.opts, pr: '07' }).faults[0], /leading zero/, 'another spelling of PR 7 gets no fresh count');
+	assert.match(disarm({ ...s.opts, pr: '07' }).faults[0], /leading zero/, 'a disarm logs the one spelling the hook clears');
+	s.state.armed = false;
 	// PR 70 shares no count with PR 7: only PR 7's own log lines count against it.
 	const log = path.join(s.work, '.git', 'kit-merge-gate.log');
 	fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replace(/AUTOFIX 7 /g, 'AUTOFIX 70 '));
-	assert.equal(autofix(s.opts).pushed, true, 'rounds of PR 70 do not count against PR 7');
+	const r70 = autofix(s.opts);
+	assert.equal(r70.pushed, true, `rounds of PR 70 do not count against PR 7: ${r70.faults.join(' / ')}`);
+});
+// A round the log cannot hold would not count (the 1.25.0 sweep: a read-only log let one yes push three times).
+// why: guards rule:outward-acts
+test('merge gate: autofix pushes nothing when its gate log cannot be written', () => {
+	const s = setup();
+	const before = originHead(s);
+	fixCommit(s);
+	const log = path.join(s.work, '.git', 'kit-merge-gate.log');
+	fs.writeFileSync(log, '');
+	fs.chmodSync(log, 0o444);
+	try {
+		assert.match(autofix(s.opts).faults[0], /cannot be written/);
+		assert.equal(originHead(s), before, 'nothing went out');
+	} finally { fs.chmodSync(log, 0o644); }
 });
 // why: guards rule:standing-grants
 test('merge gate: a disarm reads back rather than trusting gh, on a PR with nothing to turn off', () => {

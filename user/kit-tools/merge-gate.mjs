@@ -588,7 +588,8 @@ export function arm({ pr, cwd, config = configDir(), run = realRun, now = () => 
  *     { disarmed, faults }
  */
 export function disarm({ pr, cwd, run = realRun, now = () => new Date().toISOString() }) {
-	if (!/^\d+$/.test(String(pr))) return { disarmed: false, faults: ['the PR is a number'] };
+	// Logged as written, and the hook and autofix match the logged number: 07 would stop PR 7 but clear nothing.
+	if (!/^[1-9]\d*$/.test(String(pr))) return { disarmed: false, faults: ['the PR is a number, with no leading zero'] };
 	const m = run('gh', ['pr', 'merge', String(pr), '--disable-auto'], cwd);
 	const back = json(run('gh', ['pr', 'view', String(pr), '--json', 'autoMergeRequest,state'], cwd));
 	// The read-back decides: gh may exit non-zero on a PR with nothing to turn off.
@@ -617,6 +618,8 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 	const log = gateLog(cwd, run);
 	const rounds = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.split(' ')[1] === 'AUTOFIX' && l.split(' ')[2] === String(pr)).length : 0;
 	if (rounds >= MAX_FIX_ROUNDS) return no(`PR ${pr} has had its ${MAX_FIX_ROUNDS} fix rounds: a third is the owner's call, so tell them what is left with a recommendation`);
+	// A round that cannot be logged would not count, so an unwritable log stops the push before anything goes out.
+	try { fs.appendFileSync(log, ''); } catch (e) { return no(`the gate log ${log} cannot be written (${e.code || e.message}): this round would go uncounted`); }
 	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest,url'], cwd));
 	if (!p || p.state !== 'OPEN' || p.isCrossRepository !== false) return no(`PR ${pr} is not an open PR from this repo`);
 	// gh reads the PR from whichever remote it picks; the push goes to origin, so origin must be the PR's repo.

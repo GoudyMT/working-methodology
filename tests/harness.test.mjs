@@ -311,16 +311,16 @@ test('a map is made only from a clean tree, so its line numbers match its commit
 
 // K59: a full local run costs minutes and finds what CI finds, so the runner says so; the run itself is unchanged.
 // why: guards rule:test-and-review-cadence
-test('a full local run prints a notice that CI runs the full suite; CI, --changed and named files print none', () => {
+test('a full local run prints a notice that CI runs the suite; CI, --changed, --map and named files print none', () => {
 	const dir = kitTemp.makeTemp('notice-');
 	fs.mkdirSync(path.join(dir, 'tests'));
 	const file = path.join(dir, 'tests', 'x.test.mjs');
 	fs.writeFileSync(file, `import { test } from 'node:test';\ntest('a', () => {});\n`);
-	const notice = /test-run: a full local run\. CI runs the full suite on push; for a change, use --changed\./;
+	const notice = /test-run: a full local run\. CI runs the suite on every PR and push; for a change, use --changed\./;
 	const local = run(dir, [], { CI: '' });
 	assert.equal(local.status, 0, local.stdout + local.stderr);
 	assert.match(local.stdout, notice);
-	for (const [args, env] of [[[], { CI: 'true' }], [['--changed'], { CI: '' }], [[file], { CI: '' }]]) {
+	for (const [args, env] of [[[], { CI: 'true' }], [['--changed'], { CI: '' }], [['--map'], { CI: '' }], [[file], { CI: '' }]]) {
 		const r = run(dir, args, env);
 		assert.equal(r.status, 0, r.stdout + r.stderr);
 		assert.doesNotMatch(r.stdout, notice, `${args.join(' ')} CI=${env.CI}`);
