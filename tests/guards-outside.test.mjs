@@ -355,7 +355,7 @@ test('V3 pre-push: an intact install still lets an AI push a feature branch', ()
 	assert.equal(git(remote, ['rev-parse', '-q', '--verify', 'refs/heads/feature/ok']).status, 0);
 });
 
-const status = (home, proj) => kitStatus({ kit: KIT, home, projectDir: proj, ahead: () => 0, protection: () => null, newest: () => null, inodes: () => ({ level: 'ok', text: '' }), claudeVersion: () => '2.1.302 (Claude Code)' });
+const status = (home, proj) => kitStatus({ kit: KIT, home, projectDir: proj, ahead: () => 0, protection: () => null, newest: () => null, inodes: () => ({ level: 'ok', text: '' }), claudeVersion: () => '2.1.325 (Claude Code)' });
 
 // why: guards rule:outward-acts
 test('V3 status: a guard file changed outside install is a gap, never the project\'s own values', () => {
@@ -1378,6 +1378,57 @@ test('C13 a project with a long path is found by its transcript folder, the name
 	} finally {
 		if (before !== undefined) process.env.CLAUDE_PROJECT_DIR = before;
 	}
+});
+
+// E35 (1.36.0, reproduced on the 1.35.0 launcher 2026-11-15 from the folder above the workbench): a shell command
+// into a kit project ran its guards, but a Write or Edit with the full path of one of its guard files did not.
+// why: guards rule:outward-acts (a guard file written from outside the project is a guard switched off)
+test('a file tool aimed into a kit project from outside it runs that project\'s guards', () => {
+	const { home, proj } = setup();
+	const outside = path.dirname(proj);
+	const call = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const guard = path.join(proj, '.claude', 'owner-proof.cjs');
+	assert.equal(call('Write', { file_path: guard, content: 'x' }), 'deny', 'Write');
+	assert.equal(call('Edit', { file_path: guard, old_string: 'a', new_string: 'b' }), 'deny', 'Edit');
+	assert.equal(call('Write', { file_path: path.relative(outside, guard), content: 'x' }), 'deny', 'a path relative to the session');
+	// The settings that wire the guards hold by their path alone (no .cjs shape): a relative path must reach the
+	// project's guards as the full path it names, or it is read from the project's folder as another file.
+	assert.equal(call('Write', { file_path: path.relative(outside, path.join(proj, '.claude', 'settings.json')), content: '{}' }), 'deny', 'relative settings path');
+	assert.equal(call('Write', { file_path: path.join(proj, 'src', 'a.js'), content: 'x' }), 'runs', 'an ordinary file in the project still runs');
+	assert.equal(call('Write', { file_path: path.join(outside, 'notes.md'), content: 'x' }), 'runs', 'a file in no kit project');
+	// The 1.36.0 sweep: every file tool, every spelling of the path, and a second name for the file.
+	assert.equal(call('NotebookEdit', { notebook_path: guard, new_source: 'x' }), 'deny', 'NotebookEdit');
+	assert.equal(call('Read', { file_path: guard }), 'runs', 'a read is no write: no fan-out');
+	if (process.platform === 'win32') {
+		assert.equal(call('Write', { file_path: `\\\\?\\${guard}`, content: 'x' }), 'deny', 'a \\\\?\\ device path');
+		assert.equal(call('Write', { file_path: `\\\\localhost\\${guard[0]}$${guard.slice(2)}`, content: 'x' }), 'deny', 'a network path to this machine');
+	}
+	const twin = path.join(outside, `twin-${path.basename(proj)}.cjs`);
+	fs.linkSync(guard, twin);
+	assert.equal(call('Write', { file_path: twin, content: 'x' }), 'deny', 'a second name for a guard file');
+	const via = path.join(outside, `via-${path.basename(proj)}.cjs`);
+	// A file link needs a privilege Windows gives only in developer mode; CI's Linux run always makes one.
+	let linked = true;
+	try { fs.symlinkSync(twin, via, 'file'); } catch (e) { if (e.code !== 'EPERM') throw e; linked = false; }
+	if (linked) {
+		assert.equal(call('Write', { file_path: via, content: 'x' }), 'deny', 'a link that leads to that second name');
+		fs.rmSync(via);
+	}
+	fs.rmSync(twin);
+	// A project installed through a link (a junction to its folder) still holds its guard files, and an ordinary file
+	// there still runs.
+	const { home: h2, proj: p2 } = setup({ projName: 'linked', before: (p) => fs.symlinkSync(p, `${p}-alias`, 'junction') });
+	fs.rmSync(path.join(h2, 'kit-guard'), { recursive: true });
+	install({ kit: KIT, home: h2, target: 'project', projectDir: `${p2}-alias` });
+	const call2 = (file_path) => {
+		const r = spawnSync(process.execPath, [path.join(h2, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path, content: 'x' }, cwd: path.dirname(p2), session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: path.dirname(p2), CLAUDE_CONFIG_DIR: h2 } });
+		return r.stdout ? `${(JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision} ${r.stdout}` : 'runs';
+	};
+	assert.match(call2(path.join(p2, '.claude', 'owner-proof.cjs')), /^deny/, 'the real path of a project recorded through a link');
+	assert.equal(call2(path.join(p2, 'src', 'a.js')), 'runs', 'an ordinary file there still runs');
 });
 
 // why: guards rule:outward-acts. Seen live 2026-11-15: a session started in another folder worked in a kit project

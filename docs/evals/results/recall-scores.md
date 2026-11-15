@@ -687,3 +687,31 @@ Brief v2, keys v11. Every session pinned to Opus 5.5 at medium. Candidate: this 
 
 control: 0
 gate: k134-final median 14 baseline 14 brief v2 keys v11
+
+## Recall v11 - 1.36.0 against the 1.35.0 baseline (2026-11-15)
+
+Candidate: the branch at 1267683 (1.36.0), five runs; baseline: v1.35.0, five runs; control: no kit. Opus 5.5 at medium, CLI 2.1.318, brief v2. The first three candidate runs had a median of 13 on the bar, so two more ran. CI's gate then held the three-run baseline median (12) under the last recorded baseline (14), so the baseline got two more runs as well, and all eleven were blinded and scored together (reports/evals/blind-1.36.0-c).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 4 | 0, 1, 0, 0, 0 | 0, 0, 1, 1, 0 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 6 | 1, 1, 0, 1, 1 | 0, 1, 1, 0, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 0, 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| Total | 13, 14, 12, 13, 13 | 12, 12, 14, 13, 13 | 0 |
+
+- **Scored: median 13 of 14, baseline 13, control 0.** The baseline is the released v1.35.0, unchanged, and still sits under the last recorded baseline of 14. Its misses fall on the questions the candidate misses: question 4 (push and PR: 4 of 5 candidate runs, 3 of 5 baseline runs), question 6 and question 12; this build changed no line of those rules (`git diff v1.35.0 HEAD -- rules/ project/AGENTS.md project/CLAUDE.md` touches agent-teams, testing and tracking-and-handoff only). The scorer also gave the same saved baseline answers different totals across the three scoring rounds (base-2: 11, then 12), so part of the drop is scoring variance. The earlier record does not name its CLI version, so a version change cannot be ruled out.
+- **Owner-accepted** (the owner, 2026-11-15, by pop-up: "Yes, accept"): the baseline under 14 is accepted for this release; the next build is held to the baseline it measures.
+
+control: 0
+gate: b10-1.36.0 median 13 baseline 13 brief v2 keys v11 owner-accepted

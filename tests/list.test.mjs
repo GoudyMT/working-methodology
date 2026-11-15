@@ -24,7 +24,10 @@ const st = (dir, ...a) => spawnSync(process.execPath, [SCRIPT, ...a], { cwd: dir
 const read = (dir, f) => fs.readFileSync(path.join(dir, f), 'utf8');
 const put = (dir, f, t) => fs.writeFileSync(path.join(dir, f), t);
 const rows = (dir) => read(dir, '_List.jsonl').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-const json = (dir, o) => { put(dir, 'item.json', JSON.stringify(o)); return 'item.json'; };
+// A new row carries its short name (K68); a case that tests the refusal passes short: undefined, which drops it.
+const json = (dir, o) => { put(dir, 'item.json', JSON.stringify({ short: String(o.title ?? o.id).slice(0, 60), ...o })); return 'item.json'; };
+// The ids of the short view's rows: the lines between its header and its closing count.
+const shortIds = (out) => { const l = out.split('\n'); const h = l.findIndex((x) => /^ID\s+TAG\s+STEP\s+SEV\s+FROM\s+TITLE$/.test(x)); return l.slice(h + 1).filter((x) => /^\S+\s{2,}\S/.test(x) && !/^\d+ (open|row)/.test(x)).map((x) => x.split(/\s+/)[0]); };
 
 // A list in the shape the workbench keeps: a roadmap table, then sections of rows in different table shapes.
 const LIST = `# Improvement List
@@ -186,17 +189,282 @@ test('list shows the open rows in work order, then by severity, then real use an
 	st(dir, 'item', 'add', '--from', json(dir, { id: 'K4', title: 'Guard wording', tag: 'later', at: 'T9', severity: 'high', origin: 'owner' }));
 	const r = st(dir, 'list');
 	assert.equal(r.status, 0, r.stdout);
-	const ids = r.stdout.split('\n').filter((l) => /^\S+ \[/.test(l)).map((l) => l.split(' ')[0]);
+	const ids = shortIds(r.stdout);
 	// C2 is placed in the next build, so it leads; the later rows follow by severity, then origin.
 	assert.deepEqual(ids, ['C2', 'K3', 'K4', 'A2']);
 	assert.doesNotMatch(r.stdout, /^A1 /m, 'done rows are not in the open list');
 	assert.match(st(dir, 'list', 'install').stdout, /^K3 /m, 'a text filter');
 	st(dir, 'item', 'add', '--from', json(dir, { id: 'K6', title: 'Unrated', tag: 'later', at: 'T5', severity: 'to set', origin: 'self' }));
 	st(dir, 'item', 'add', '--from', json(dir, { id: 'K7', title: 'Owner call', tag: 'owner', severity: 'critical', origin: 'owner' }));
-	const again = st(dir, 'list').stdout.split('\n').filter((l) => /^\S+ \[/.test(l)).map((l) => l.split(' ')[0]);
+	const again = shortIds(st(dir, 'list').stdout);
 	assert.deepEqual(again, ['C2', 'K3', 'K4', 'K6', 'A2', 'K7'], 'an unrated row ranks after high; a row waiting on the owner after the work order');
-	const every = st(dir, 'list', '--all').stdout.split('\n').filter((l) => /^\S+ \[/.test(l)).map((l) => l.split(' ')[0]);
+	const every = shortIds(st(dir, 'list', '--all').stdout);
 	assert.deepEqual(every, ['A1', 'A2', 'C1', 'C2', 'K3', 'K4', 'K6', 'K7'], '--all keeps file order, done rows included');
+});
+
+// K68 (1.36.0): on 1.35.0 `list` printed each row's whole title, so three rows filled a screen of the owner's phone.
+// why: guards the owner's lock of K68, 2026-11-15: both views, one line per row, and a stored short name on every row
+test('list prints one short line per open row, and the whole row is one command away', () => {
+	const dir = project();
+	const long = `${'A very long title that runs on and on '.repeat(6)}end`;
+	put(dir, 'list.md', LIST.replace('Install misses a hook', `**Install misses a hook** ${long}`));
+	st(dir, 'list', 'import', 'list.md');
+	st(dir, 'item', 'add', '--from', json(dir, { id: 'K3', title: long, short: 'Install drops a setting', tag: 'next', at: 'build 10 (1.36.0)', severity: 'high', origin: 'real-use' }));
+	const r = st(dir, 'list');
+	assert.equal(r.status, 0, r.stdout);
+	assert.deepEqual(shortIds(r.stdout), ['K3', 'C2', 'A2']);
+	const lines = r.stdout.trimEnd().split('\n');
+	// Columns of 9 and a short name of at most 60: a row line is the id's column plus 96 at most.
+	for (const l of lines) assert.ok(l.length <= 100, `one short line per row: ${l.length} chars in ${l}`);
+	const k3 = lines.find((l) => l.startsWith('K3 '));
+	// The stored short name is shown, never the title, and the build is named by its number.
+	assert.match(k3, /^K3\s+next\s+b10\s+high\s+real-use\s+Install drops a setting$/);
+	// A row with no short name yet shows its bold lead, or its title clipped with three dots.
+	assert.match(lines.find((l) => l.startsWith('A2 ')), /\bInstall misses a hook$/);
+	assert.match(lines.find((l) => l.startsWith('C2 ')), /Recall moves with the folder name$/);
+	assert.match(lines.at(-1), /^3 open\.[\s\S]*state\.mjs item <id>[\s\S]*list --full/);
+	// The whole row, one field to a line, the long title whole.
+	const one = st(dir, 'item', 'K3');
+	assert.equal(one.status, 0, one.stdout);
+	assert.ok(one.stdout.includes(`title: ${long}`), one.stdout);
+	assert.match(one.stdout, /^short: Install drops a setting$/m);
+	assert.match(st(dir, 'item', 'K9').stdout, /K9 is not a row/);
+	// The full text of every open row stays one flag away, as the 1.35.0 lines.
+	assert.ok(st(dir, 'list', '--full').stdout.includes(long));
+	// One step's rows (the sweep's novel lens: 555 rows need a cut by step): by its name, or its build number.
+	assert.deepEqual(shortIds(st(dir, 'list', '--step', '9').stdout), ['C2']);
+	assert.deepEqual(shortIds(st(dir, 'list', '--step', '10').stdout), ['K3']);
+	assert.deepEqual(shortIds(st(dir, 'list', '--step', 'T5').stdout), ['A2']);
+});
+
+// why: guards the owner's lock of K68, 2026-11-15: the agent view, short fields and the whole row only on ask
+test('list --agent prints one JSON line per row with short fields; item --json gives the whole row', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	st(dir, 'list', 'import', 'list.md');
+	st(dir, 'item', 'add', '--from', json(dir, { id: 'K3', title: 'Install drops a setting the owner set by hand in a long story', short: 'Install drops a setting', tag: 'later', at: 'T5', severity: 'high', origin: 'real-use', note: 'seen twice' }));
+	const r = st(dir, 'list', '--agent');
+	assert.equal(r.status, 0, r.stdout);
+	const got = r.stdout.trim().split('\n').map((l) => JSON.parse(l));
+	assert.deepEqual(got.map((x) => x.id), ['C2', 'K3', 'A2']);
+	assert.deepEqual(got[1], { id: 'K3', tag: 'later', at: 'T5', sev: 'high', origin: 'real-use', short: 'Install drops a setting', more: 'item K3' });
+	assert.ok(!r.stdout.includes('long story'), 'the title is not in the agent view');
+	assert.equal(got[0].origin, null);
+	const whole = JSON.parse(st(dir, 'item', 'K3', '--json').stdout);
+	assert.equal(whole.note, 'seen twice');
+	assert.equal(shortIds(st(dir, 'list', '--agent', '--all').stdout).length, 0, 'the agent view has no table header');
+	assert.equal(st(dir, 'list', '--agent', '--all').stdout.trim().split('\n').length, 5);
+});
+
+// why: guards the owner's lock of K68, 2026-11-15: a new row carries a stored short name; old rows get one once
+test('item add refuses a row with no short name or one over 60 characters; list shorten fills the old rows once', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST.replace('Install misses a hook', '**Install misses a hook** when the folder is new'));
+	st(dir, 'list', 'import', 'list.md');
+	const base = { id: 'K3', title: 'Install drops a setting', tag: 'later', at: 'T5', severity: 'low', origin: 'self' };
+	let r = st(dir, 'item', 'add', '--from', json(dir, { ...base, short: undefined }));
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /K3 has no short name/);
+	r = st(dir, 'item', 'add', '--from', json(dir, { ...base, short: 'x'.repeat(61) }));
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /short name is over 60 characters/);
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, base)).status, 0);
+	assert.match(st(dir, 'list', 'audit').stdout, /^C2 owes origin, short:/m, 'audit names a row with no short name');
+	// The old rows get one, once: a bold lead whole, else the clipped title, and the clipped ones are named to check.
+	r = st(dir, 'list', 'shorten');
+	assert.equal(r.status, 0, r.stdout);
+	assert.match(r.stdout, /^4 row\(s\) given a short name/m);
+	assert.match(r.stdout, /bold lead: 1;[\s\S]*worth a look: 3 \(A1, C1, C2\)/);
+	const by = Object.fromEntries(rows(dir).map((x) => [x.id, x.short]));
+	assert.equal(by.A2, 'Install misses a hook');
+	assert.equal(by.K3, 'Install drops a setting', 'a stored short name is kept');
+	assert.match(st(dir, 'list', 'shorten').stdout, /^0 row\(s\) given a short name/m, 'a second run changes nothing');
+	assert.equal(st(dir, 'item', 'set', 'C2', 'short', 'Recall and the folder name').status, 0);
+	assert.equal(rows(dir).find((x) => x.id === 'C2').short, 'Recall and the folder name');
+	assert.equal(st(dir, 'check').status, 0);
+});
+
+// K78 (1.36.0): run from another folder, the 1.35.0 state.mjs read that folder and said "no _List.jsonl", which reads
+// as an empty list. An installed copy reads its own project when the shell stands outside any project.
+// why: guards the owner's lock of build 10, 2026-11-15 (state.mjs group): the list read from its own project
+test('an installed state.mjs run from outside a project reads its own project, and names the folder it read', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	st(dir, 'list', 'import', 'list.md');
+	fs.mkdirSync(path.join(dir, '.claude'));
+	for (const f of ['state.mjs', 'list-data.mjs']) {
+		const t = fs.readFileSync(path.join(KIT, 'project', '.claude', f), 'utf8');
+		fs.writeFileSync(path.join(dir, '.claude', f), t.replaceAll('{{CLAUDE_HOME}}', dir.split('\\').join('/')));
+	}
+	const away = kitTemp.makeTemp('away-');
+	const run = (cwd, ...a) => spawnSync(process.execPath, [path.join(dir, '.claude', 'state.mjs'), ...a], { cwd, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '' } });
+	assert.deepEqual(shortIds(run(away, 'list').stdout), ['C2', 'A2'], 'outside any project: its own project');
+	// A folder that is a project of its own is the one read, as before.
+	const other = project();
+	assert.match(run(other, 'list').stdout, new RegExp(`no _List\\.jsonl in ${path.basename(other)}`));
+	// The kit's own template is never taken for a project: run from outside, it reads where the shell stands.
+	assert.match(st(away, 'list').stdout, new RegExp(`no _List\\.jsonl in ${path.basename(away)}`));
+	assert.equal(fs.existsSync(path.join(away, '_List.jsonl')), false);
+});
+
+// K79 (1.36.0): build 10's roadmap step was split by a hand edit of _State.json, because no command renamed a step.
+// why: guards the owner's lock of build 10, 2026-11-15 (state.mjs group): a roadmap step renamed by command
+test('step rename renames one roadmap step by its name or release, and refuses a name already taken', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	st(dir, 'list', 'import', 'list.md');
+	let r = st(dir, 'step', 'rename', '9', '9a');
+	assert.equal(r.status, 0, r.stdout);
+	assert.match(r.stdout, /step 9 renamed 9a/);
+	let s = JSON.parse(read(dir, '_State.json'));
+	assert.deepEqual(s.roadmap.map((x) => x.step), ['8', '9a']);
+	// Named by its release; a name may repeat with another release.
+	assert.equal(st(dir, 'step', 'rename', '1.34.0', '9a').status, 0);
+	// Now two steps are named 9a: the name alone is refused, as step set refuses it.
+	r = st(dir, 'step', 'rename', '9a', '10');
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /names 2 steps/);
+	assert.equal(st(dir, 'step', 'rename', 'nope', 'x').status, 1);
+	assert.equal(st(dir, 'step', 'rename', '1.35.0', '').status, 2, 'no new name is a usage error');
+	s = JSON.parse(read(dir, '_State.json'));
+	assert.deepEqual(s.roadmap.map((x) => x.step), ['9a', '9a']);
+	assert.equal(st(dir, 'check').status, 0);
+	// A name already taken with the same release is refused, and nothing is written.
+	assert.equal(st(dir, 'step', 'set', 'Z', 'release', '1.35.0').status, 0);
+	r = st(dir, 'step', 'rename', 'Z', '9a');
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /step 9a with release 1\.35\.0[\s\S]*nothing written/);
+	assert.deepEqual(JSON.parse(read(dir, '_State.json')).roadmap.map((x) => x.step), ['9a', '9a', 'Z']);
+});
+
+// K69 (1.36.0): both real projects keep their roadmap as checkboxes (53 and 555 boxes on 2026-11-15), which list import
+// could not read. A checkbox roadmap moves into data once; a generated view writes the same boxes back.
+const BOXES = `# Master Roadmap - Demo
+
+**Status Legend:** \`- [ ]\` = not started | \`- [x]\` = complete
+
+## v0 - "Course prototype" (DONE)
+
+- [x] Public repo, first-push gate
+
+## v1 - "Live triage demo" (IN PROGRESS)
+
+> One PR per line, in order.
+
+### Carried items
+
+- [~] Shared vocabulary in model.json (PR 4 size budget)
+- [ ] Regenerate the README images
+- [/] Widen the mask
+- [!] Publish the model (owner's act)
+- [x] First model version
+  - [x] Step 1: gate for unchecked wrong answers
+  - [~] Step 3: build the winner
+
+## Long-Term Backlog
+
+- [ ] A phone app
+
+\`\`\`
+- [ ] an example in a fence, not a row
+\`\`\`
+`;
+// why: guards the owner's lock of K69, 2026-11-15 (pop-up "Checkbox lists become data"): every kit project keeps its list as data
+test('import moves a checkbox roadmap into data once, and the boxes view writes the same boxes back', () => {
+	const dir = project();
+	put(dir, 'roadmap.md', BOXES);
+	const r = st(dir, 'list', 'import', 'roadmap.md');
+	assert.equal(r.status, 0, r.stdout);
+	assert.match(r.stdout, /PASS 9 row\(s\) and 2 roadmap step\(s\)/);
+	const got = rows(dir);
+	assert.deepEqual(got.map((x) => [x.id, x.tag, x.at ?? null]), [
+		['R1', 'done', 'v0'], ['R2', 'after', 'v1'], ['R3', 'later', 'v1'], ['R4', 'now', 'v1'], ['R5', 'blocked', 'v1'],
+		['R6', 'done', 'v1'], ['R7', 'done', 'v1'], ['R8', 'after', 'v1'], ['R9', 'later', null],
+	]);
+	const by = Object.fromEntries(got.map((x) => [x.id, x]));
+	assert.equal(by.R2.section, 'v1 - "Live triage demo" (IN PROGRESS) / Carried items');
+	assert.equal(by.R7.note, 'under R6', 'an indented box keeps its parent');
+	assert.ok(got.every((x) => x.short), 'every moved row gets its short name');
+	assert.ok(!got.some((x) => /example in a fence/.test(x.title)));
+	const s = JSON.parse(read(dir, '_State.json'));
+	assert.deepEqual(s.roadmap.map((x) => [x.step, x.carries, x.state]), [['v0', 'Course prototype', 'DONE'], ['v1', 'Live triage demo', 'IN PROGRESS']]);
+	// The moved boxes leave the file; every other line stays, and the file as it was is kept.
+	const after = read(dir, 'roadmap.md');
+	assert.doesNotMatch(after, /^\s*- \[[ x\/!~]\] (?!an example)/m, 'no hand-kept box is left');
+	for (const keep of ['## v1 - "Live triage demo" (IN PROGRESS)', '> One PR per line, in order.', '### Carried items', '## Long-Term Backlog', '- [ ] an example in a fence, not a row']) assert.ok(after.includes(keep), keep);
+	assert.match(r.stdout, /: \.kit\/kit-backups\/list-import-[^ ]+\/roadmap\.md/);
+	const backup = r.stdout.match(/(\.kit\/kit-backups\/list-import-[^ ]+\/roadmap\.md)/)[1];
+	assert.equal(read(dir, backup), BOXES);
+	// The generated view: the same boxes, grouped by section, each with its id.
+	put(dir, 'roadmap.md', `${after}\n<!-- list:begin boxes -->\n<!-- list:end -->\n`);
+	assert.equal(st(dir, 'render').status, 0);
+	const view = read(dir, 'roadmap.md');
+	assert.match(view, /^\*\*v1 - "Live triage demo" \(IN PROGRESS\) \/ Carried items\*\*$/m);
+	for (const line of ['- [~] R2 Shared vocabulary in model.json (PR 4 size budget)', '- [ ] R3 Regenerate the README images', '- [/] R4 Widen the mask', '- [!] R5 Publish the model (owner\'s act)', '- [x] R1 Public repo, first-push gate']) assert.ok(view.includes(line), line);
+	assert.equal(st(dir, 'check').status, 0);
+	// A box changed in the data shows in the view at the next render.
+	assert.equal(st(dir, 'item', 'set', 'R3', 'caught-by', 'owner').status, 0);
+	assert.equal(st(dir, 'item', 'set', 'R3', 'tag', 'done v1').status, 0);
+	// item set writes the views itself: no render between.
+	assert.ok(read(dir, 'roadmap.md').includes('- [x] R3 Regenerate the README images'));
+	// "-" as the place clears it, in a tag change as in at (the workbench stored a literal "-", 2026-11-15).
+	assert.equal(st(dir, 'item', 'set', 'R4', 'caught-by', 'owner').status, 0);
+	assert.equal(st(dir, 'item', 'set', 'R4', 'tag', 'closed -').status, 0);
+	assert.equal(rows(dir).find((x) => x.id === 'R4').at, undefined);
+	// Once only: a second import is refused, as before.
+	assert.equal(st(dir, 'list', 'import', 'roadmap.md').status, 1);
+});
+
+// 1.36.0 sweep (data loss): the import took boxes markdown never shows as boxes (in a comment, in indented code, in an
+// indented fence) and deleted them from the file, left a box's own prose and sub-bullets behind with no box, and wrote
+// a file with mixed line endings back all in one. Each is checked the way an owner's roadmap holds it.
+const ODD = [
+	'# Roadmap', '', '## v1 - "Demo" (IN PROGRESS)', '', '- [ ] Ship the demo', '  It needs the model first.', '  - check the size', '',
+	'<!--', '- [ ] a box the owner commented out', '-->', '', 'Code an owner indented:', '', '    - [ ] an indented code line', '',
+	'- Notes', '  ```', '  - [ ] a box in an indented fence', '  ```', '', '- [x] Done item', '    - [x] a nested box under it', '',
+].join('\n');
+// why: guards the owner's lock of K69, 2026-11-15: the move to data never loses or invents an owner's line
+test('import moves only real boxes, carries a box\'s own lines into its note, and keeps each line ending', () => {
+	const dir = project();
+	// One line ending per line, as a file edited on two systems has: the box lines end in CRLF, the rest in LF.
+	const mixed = ODD.split('\n').map((l) => (/- \[[ x]\] (Ship|Done)|^Code an/.test(l) ? `${l}\r` : l)).join('\n');
+	put(dir, 'roadmap.md', mixed);
+	const r = st(dir, 'list', 'import', 'roadmap.md');
+	assert.equal(r.status, 0, r.stdout);
+	const got = rows(dir);
+	assert.deepEqual(got.map((x) => x.title), ['Ship the demo', 'Done item', 'a nested box under it']);
+	// pin: 3 frozen text: the owner's own lines, carried into the note word for word.
+	assert.equal(got[0].note, 'It needs the model first. / - check the size');
+	assert.equal(got[2].note, 'under R2');
+	assert.equal(got[2].short, 'Done item: a nested box under it', 'a child row reads alone in the short view');
+	assert.match(r.stdout, /roadmap step\(s\) made: v1/);
+	assert.match(r.stdout, /install project <folder> --merged "roadmap\.md"/);
+	const after = read(dir, 'roadmap.md');
+	for (const keep of ['- [ ] a box the owner commented out', '    - [ ] an indented code line', '  - [ ] a box in an indented fence', 'Code an owner indented:']) assert.ok(after.includes(keep), keep);
+	for (const gone of ['Ship the demo', 'It needs the model first.', 'check the size', 'Done item', 'nested box']) assert.ok(!after.includes(gone), gone);
+	// Every line kept has the ending it had.
+	assert.equal(after, mixed.split('\n').filter((l) => !/Ship|needs the model|check the size|Done item|nested box/.test(l)).join('\n'));
+	// A generated block that never closes would hide the rest of the file from the import.
+	const u = project();
+	put(u, 'r2.md', '## A\n\n<!-- list:begin boxes -->\n- [ ] R1 x\n');
+	const f = st(u, 'list', 'import', 'r2.md');
+	assert.equal(f.status, 1);
+	assert.match(f.stdout, /never closes/);
+});
+
+// why: guards the owner's lock of K69, 2026-11-15: a new project starts on the data list
+test('the shipped roadmap template carries the boxes and roadmap blocks, and a fresh project passes check', () => {
+	const dir = project();
+	const t = read(dir, '_Master Roadmap.md');
+	assert.match(t, /<!-- list:begin boxes: generated/);
+	assert.match(t, /<!-- list:begin roadmap: generated/);
+	const c = st(dir, 'check');
+	assert.equal(c.status, 0, c.stdout);
+	// item add and step set write the views themselves: no render between.
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { id: 'R1', title: 'First task', tag: 'later', severity: 'to set', origin: 'owner' })).status, 0);
+	assert.ok(read(dir, '_Master Roadmap.md').includes('- [ ] R1 First task'));
+	assert.equal(st(dir, 'step', 'set', 'v1', 'state', 'planned').status, 0);
+	assert.match(read(dir, '_Master Roadmap.md'), /^\| v1 \|[^\n]*\| planned \|/m);
 });
 
 // why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)
@@ -371,6 +639,21 @@ test('markers render did not write, and inputs outside the project, are refused'
 	assert.match(r.stdout, /not a plain file inside this project/);
 	fs.rmSync(out);
 	assert.match(st(project(), 'list', 'import', '../x.md').stdout, /not a plain file inside this project/);
+	// 1.36.0 sweep: a checkbox import rewrites its source and writes a backup, so neither may go through a linked folder.
+	const away = kitTemp.makeTemp('list-away-');
+	put(away, 'road.md', '- [ ] a box\n');
+	const p1 = project();
+	fs.symlinkSync(away, path.join(p1, 'docs'), 'junction');
+	assert.match(st(p1, 'list', 'import', 'docs/road.md').stdout, /not a plain file inside this project/);
+	assert.equal(read(away, 'road.md'), '- [ ] a box\n', 'the file through the link is untouched');
+	const p2 = project();
+	put(p2, 'road.md', '- [ ] a box\n');
+	fs.symlinkSync(away, path.join(p2, '.kit'), 'junction');
+	const k = st(p2, 'list', 'import', 'road.md');
+	assert.equal(k.status, 1, k.stdout);
+	assert.match(k.stdout, /\.kit is a link/);
+	assert.deepEqual(fs.readdirSync(away).sort(), ['road.md'], 'no backup written through the link');
+	assert.equal(read(p2, 'road.md'), '- [ ] a box\n');
 	// A list file with a second name is neither read nor written.
 	fs.renameSync(path.join(dir, '_List.jsonl'), path.join(dir, 'real.jsonl'));
 	fs.linkSync(path.join(dir, 'real.jsonl'), path.join(dir, '_List.jsonl'));

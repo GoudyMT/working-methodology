@@ -14,8 +14,8 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 // The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
 // suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
-const status = (o) => kitStatus({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
-const sessionStartReport = (o) => kitSessionStart({ claudeVersion: () => '2.1.302 (Claude Code)', ...o });
+const status = (o) => kitStatus({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
+const sessionStartReport = (o) => kitSessionStart({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
 
 // Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
 // kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
@@ -338,9 +338,38 @@ test('status and session start flag a Claude Code too old for onFailure, and sta
   for (const v of ['2.1.295 (Claude Code)', '2.1.302 (Claude Code)', '3.0.0', null, 'garbage']) {
     assert.doesNotMatch(at(v).text, /older than 2\.1\.295/, String(v));
   }
-  assert.equal(at('2.1.302 (Claude Code)').current, true);
+  assert.equal(at('2.1.325 (Claude Code)').current, true);
   assert.match(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.200' }), /Claude Code 2\.1\.200 is older than 2\.1\.295/);
-  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.295' }), /older than/);
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.325' }), /older than/);
+});
+
+// K70 (1.36.0, the 2026-11-15 outside review): Claude Code 2.1.325 fixed gaps in how Bash deny and ask rules match,
+// which the kit's own rules (approve.mjs --resume is denied) rely on. The npm stable channel was still 2.1.311.
+// why: guards the owner's yes to K70, 2026-11-15 (card "Yes, all three into build 10"): the version floor and the warning
+test('status and session start flag a Claude Code under 2.1.325, and warn when updates come from the stable channel', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  const at = (v) => status({ kit, home, projectDir: proj, ahead: () => 0, claudeVersion: () => v });
+  const mid = at('2.1.318 (Claude Code)');
+  assert.equal(mid.current, false);
+  assert.match(mid.text, /Claude Code 2\.1\.318 is older than 2\.1\.325[\s\S]*Bash deny and ask rules[\s\S]*claude update/);
+  // The sweep's novel lens: WinGet stayed at 2.1.318 on 2026-11-15, so the line names a path that reaches the floor.
+  assert.match(mid.text, /npm i -g @anthropic-ai\/claude-code@latest/);
+  assert.match(mid.text, /Not current: .*Claude Code is older than 2\.1\.325/);
+  assert.doesNotMatch(mid.text, /older than 2\.1\.295/, 'one line, the floor the version misses first');
+  assert.equal(at('2.1.325 (Claude Code)').current, true);
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.318' }), /older than 2\.1\.325/);
+  // The stable channel: a warning, not a gap; quiet on the latest channel or with no setting.
+  const settings = path.join(home, 'settings.json');
+  const s = JSON.parse(fs.readFileSync(settings, 'utf8'));
+  fs.writeFileSync(settings, JSON.stringify({ ...s, autoUpdatesChannel: 'stable' }));
+  const stable = at('2.1.325 (Claude Code)');
+  assert.match(stable.text, /autoUpdatesChannel is "stable"/);
+  assert.equal(stable.current, true, 'a warning only');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, claudeVersion: () => '2.1.325' }), /autoUpdatesChannel is "stable"/);
+  fs.writeFileSync(settings, JSON.stringify({ ...s, autoUpdatesChannel: 'latest' }));
+  assert.doesNotMatch(at('2.1.325 (Claude Code)').text, /stable/);
 });
 
 // The 1.23.0 security review: on Windows cmd looks in the current folder first, and session start runs in the
@@ -1496,6 +1525,90 @@ test('every agent role file the kit ships names its model', () => {
   const files = fs.readdirSync(path.resolve('user/agents')).filter((f) => f.endsWith('.md'));
   assert.ok(files.length >= 5);
   for (const f of files) assert.match(front(path.resolve('user/agents', f)).model || '', /^claude-[a-z]+-\d+(-\d+)?$/, `${f} names no model`);
+});
+
+// N14 (1.36.0, reproduced on AI Essentials' memory 2026-11-15): Claude Code's memory writes metadata into a memory
+// file's frontmatter (node_type, originSessionId, modified) and quotes its description; fold-back then showed the file
+// as the project's own change, and install skipped it, with no real edit in it.
+test('memory metadata the memory service adds is not a change to fold back or a reason to skip an update', () => {
+  const kit = path.resolve('.');
+  const home = makeTemp('n14-home-');
+  const proj = makeTemp('n14-proj-');
+  install({ kit, home, target: 'project', projectDir: proj });
+  const memoryDir = path.join(home, 'projects', projectSlug(proj), 'memory');
+  const file = fs.readdirSync(memoryDir).find((f) => f !== 'MEMORY.md' && f.endsWith('.md'));
+  assert.ok(file, 'the fixture kit ships a memory file');
+  const at = path.join(memoryDir, file);
+  const text = read(at);
+  const tagged = text.replace(/^description: (.*)$/m, (m, d) => `description: "${d}"`).replace(/^metadata:\n/m, 'metadata:\n  node_type: memory\n  originSessionId: 49209561-6213-4071-83c6-aaecdbd8d1f4\n  modified: 2026-11-12T03:19:00.195Z\n');
+  assert.notEqual(tagged, text, 'the fixture file has frontmatter to tag');
+  fs.writeFileSync(at, tagged);
+  const r = foldBack({ kit, home, target: 'project', projectDir: proj });
+  assert.ok(![...r.foldBack, ...r.conflict].includes(`memory/${file}`), JSON.stringify(r));
+  // A real edit beside the metadata still counts.
+  fs.writeFileSync(at, `${tagged}\n- a real line of this project\n`);
+  assert.ok(foldBack({ kit, home, target: 'project', projectDir: proj }).foldBack.includes(`memory/${file}`));
+});
+
+// 1.36.0 sweep (data loss): the install half. An update over a file whose only change is the memory service's metadata
+// goes ahead, and the file as it was is kept first; a real top-level key named like the metadata is a real edit.
+test('an update over a memory file with only metadata keeps the file as it was', () => {
+  const { kit, home, proj } = makeKit();
+  const front = (body) => `---\nname: style\ndescription: the style rule\nmetadata:\n  type: feedback\n---\n\n${body}\n`;
+  fs.writeFileSync(path.join(kit, 'memory/style.md'), front('style rule'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  const at = path.join(home, 'projects', projectSlug(proj), 'memory', 'style.md');
+  const tagged = read(at).replace('metadata:\n', 'metadata:\n  node_type: memory\n  modified: 2026-11-12T03:19:00.195Z\n');
+  fs.writeFileSync(at, tagged);
+  fs.writeFileSync(path.join(kit, 'memory/style.md'), front('style rule, newer'));
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(r.updated, ['memory/style.md']);
+  assert.equal(read(path.join(r.backupDir, 'memory/style.md')), tagged);
+  // A top-level key that only looks like the metadata (after a blank line) is the owner's text, not the service's.
+  fs.writeFileSync(at, read(at).replace('metadata:\n', '\nmodified: by the owner\nmetadata:\n'));
+  assert.ok(foldBack({ kit, home, target: 'project', projectDir: proj }).foldBack.includes('memory/style.md'));
+});
+
+// N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
+// session start said only that an update was there.
+test('session start names a user layer newer than the project for what it can break', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /this project 1\.0\.0/);
+  bump({ kit, level: 'minor', note: 'newer', date: '2026-02-01' });
+  install({ kit, home, target: 'user' });
+  assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs kit 1\.1\.0, this project 1\.0\.0: [\s\S]*missing hook\. Run \/methodology-kit update before either\./);
+  // The other way round is not this skew: a project newer than the user layer gets no such line.
+  bump({ kit, level: 'minor', note: 'newest', date: '2026-02-02' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs kit/);
+});
+
+// N8 (1.36.0; real by quote on 1.25.0: `cd src && ls` passed the installed guard, and a text rule against a lasting cd
+// failed twice in AI Essentials): Claude Code returns the shell to the project after each Bash or PowerShell command
+// when this is set (env-vars docs, read 2026-11-15), so a cd cannot carry into the next command.
+test('the project settings keep each shell command starting in the project folder', () => {
+  const s = JSON.parse(read(path.resolve('project/.claude/settings.json')));
+  assert.equal(s.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR, '1');
+});
+
+// MC2 and MC5 (1.36.0, the owner's pick 2026-11-15 "Roles user, Explore per project"): the built-in Explore runs on
+// the session's model (Opus); a project agent named Explore overrides it (Claude Code sub-agents docs, read
+// 2026-11-15). It installs into kit projects only, so a project without the kit keeps the built-in; it carries no
+// hook, so the trust a project agent file's hooks need does not touch it. The five roles stay user level for theirs.
+test('the kit ships a read-only Explore on Sonnet into each kit project, and none into the Claude folder', () => {
+  const fm = front(path.resolve('project/.claude/agents/Explore.md'));
+  assert.equal(fm.name, 'Explore');
+  assert.equal(fm.model, 'claude-sonnet-5-5');
+  for (const t of ['Edit', 'Write', 'NotebookEdit', 'Agent']) assert.ok(!fm.tools.split(/,\s*/).includes(t), `Explore takes no ${t}`);
+  assert.doesNotMatch(read(path.resolve('project/.claude/agents/Explore.md')), /hooks:/, 'a project agent file\'s hooks are skipped in -p, so it carries none');
+  const home = makeTemp('explore-home-');
+  const proj = makeTemp('explore-proj-');
+  install({ kit: path.resolve('.'), home, target: 'user' });
+  install({ kit: path.resolve('.'), home, target: 'project', projectDir: proj });
+  assert.equal(fs.existsSync(path.join(home, 'agents', 'Explore.md')), false);
+  assert.equal(front(path.join(proj, '.claude', 'agents', 'Explore.md')).model, 'claude-sonnet-5-5');
 });
 
 // why: guards rule:sweep-auto-approval
@@ -8060,6 +8173,16 @@ test('status says current only when the kit folder, ~/.claude and the project al
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, false);
   assert.match(r.text, /1 file\(s\) changed here and in the kit[\s\S]*_Working Standards\.md[\s\S]*by hand/);
+  // T5 (1.36.0): --merged was taken on trust. A file left as it was when install named the merge was not merged.
+  const unmerged = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
+  assert.deepEqual(unmerged.merged, []);
+  assert.match(unmerged.skipped.find((s) => s.file === '_Working Standards.md').reason, /unchanged since install named the merge[\s\S]*again to keep it as it is/);
+  assert.equal(status({ kit, home, projectDir: proj, ahead: () => 0 }).current, false);
+  // The same command again is the owner keeping the file as it is (1.36.0 sweep): recorded, not refused for good.
+  const before = read(path.join(proj, '_Working Standards.md'));
+  const kept = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
+  assert.deepEqual(kept.merged, ['_Working Standards.md']);
+  assert.equal(read(path.join(proj, '_Working Standards.md')), before);
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
   const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
   assert.deepEqual(m.merged, ['_Working Standards.md']);

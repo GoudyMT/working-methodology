@@ -24,13 +24,18 @@
 //   node .claude/state.mjs init                               once, in a project from before 1.34.0: moves the
 //                                                              filled-in Resume Point into the data and marks the blocks
 // The improvement list and the roadmap (1.35.0, list-data.mjs holds the shape and the reasons):
-//   node .claude/state.mjs list [text] [--all]                the open rows, ranked (or every row)
+//   node .claude/state.mjs list [text] [--all]                the open rows, ranked (or every row), one short line each
+//   node .claude/state.mjs list --agent | --full              one JSON line a row with short fields | the whole titles
+//   node .claude/state.mjs list --step <step>                 one roadmap step's rows (its name, build number or release)
+//   node .claude/state.mjs list shorten                       once: a short name for each row from before 1.36.0
+//   node .claude/state.mjs item <id> [--json]                 the whole row
 //   node .claude/state.mjs list caught | audit                the catch rate and found to shipped by origin; the rows
 //                                                              still owed a label
 //   node .claude/state.mjs list import <file.md>              once: a markdown list into _List.jsonl, whole or not at all
 //   node .claude/state.mjs item add --from <file.json>        a new row, every label it owes included
 //   node .claude/state.mjs item set <id> <field> <value>      tag ("done 1.35.0"), caught-by, escaped, measured, origin ...
 //   node .claude/state.mjs step set <step> release|carries|state <text>
+//   node .claude/state.mjs step rename <step or release> <new name>
 // render also writes the roadmap, counts and rows blocks (list:begin markers) in any of the project's markdown files.
 //
 // What check proves: each generated block equals what the data renders; no label a session reads (NEXT, Pending the
@@ -46,10 +51,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import * as list from './list-data.mjs';
 
-const ROOT = process.cwd();
 const STATE = '_State.json';
+// install project fills this in, so a caller cannot move the transcripts with CLAUDE_CONFIG_DIR (as owner-yes.cjs).
+const INSTALLED_HOME = "{{CLAUDE_HOME}}";
+const installed = !INSTALLED_HOME.startsWith('{' + '{');
+// K78 (1.36.0): the project read is where the shell stands when that is a project; run from outside any project, an
+// installed copy reads its own project (the folder above its .claude), never the kit's template folder. On 1.35.0 a
+// run from another folder said "no _List.jsonl", which reads as an empty list.
+const isProject = (d) => ['_State.json', '_List.jsonl'].some((f) => fs.existsSync(path.join(d, f)));
+const OWN = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const ROOT = !isProject(process.cwd()) && installed && isProject(OWN) ? OWN : process.cwd();
 const DECISIONS = '_Decisions.jsonl';
 const PLAN = '_Active Plan.md';
 const MEMORY = '_Working Memory.md';
@@ -67,9 +81,7 @@ const CARRY = 'Carry-overs from the last PR';
 const CARRY_LABEL = `**${CARRY} (only those the owner said yes to; close in this run):**`;
 const WAITING = 'Waiting for the owner\'s eyes';
 const LABELS = { [PLAN]: ['Updated', 'NEXT', 'Then', CARRY, 'Pending the owner', WAITING], [MEMORY]: ['Last Session', 'Kit', 'Current Phase', 'Resume Point'] };
-// install project fills this in, so a caller cannot move the transcripts with CLAUDE_CONFIG_DIR (as owner-yes.cjs).
-const INSTALLED_HOME = "{{CLAUDE_HOME}}";
-const claudeHome = () => (INSTALLED_HOME.startsWith('{' + '{') ? process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude') : INSTALLED_HOME);
+const claudeHome = () => (installed ? INSTALLED_HOME : process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'));
 
 const today = () => new Date().toISOString().slice(0, 10);
 const file = (rel) => path.join(ROOT, rel);
@@ -218,6 +230,20 @@ function render(s, { overwrite = false } = {}) {
 	return out;
 }
 
+/**
+ * K69 (1.36.0): after a change to the list or the roadmap, its views are written at once (a block edited by hand is
+ * still refused, never wiped). With the views in the roadmap template, a session that forgot render left check failing.
+ * Returns the line to print after the change.
+ */
+function refreshLists() {
+	const { state: s, why } = loadState();
+	if (why) return `; the views were not written (${why})`;
+	s.rendered = { ...(s.rendered || {}) };
+	const faults = listBlocks(s);
+	saveState(s, { touch: false });
+	return faults.length ? `; the views were not all written:\n${faults.join('\n')}` : '; the views are written';
+}
+
 /** A tracking file that is a link or has a second name: state.mjs neither writes nor reads through it. */
 const linked = (rel) => { try { const st = fs.lstatSync(file(rel)); return st.isSymbolicLink() || !st.isFile() || st.nlink > 1; } catch { return false; } };
 const io = { readText, linked };
@@ -232,7 +258,17 @@ function inside(arg) {
 	const p = path.resolve(ROOT, String(arg));
 	const rel = path.relative(ROOT, p);
 	if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || linked(rel)) return null;
+	// A linked folder on the way (a junction under the project) would lead a read, and an import's rewrite, outside it.
+	if (!realUnder(p)) return null;
 	return p;
+}
+/** Whether a path, once every link on the way is followed, still sits where its spelling says, under the real ROOT. */
+function realUnder(p) {
+	try {
+		const want = path.relative(ROOT, p);
+		const got = path.relative(fs.realpathSync.native(ROOT), fs.realpathSync.native(p));
+		return process.platform === 'win32' ? want.toLowerCase() === got.toLowerCase() : want === got;
+	} catch { return false; }
 }
 
 /**
@@ -260,7 +296,8 @@ function listBlocks(s, { overwrite = false, check = false } = {}) {
 			const now = lines.slice(b.begin + 1, b.end);
 			const same = now.join('\n') === want.join('\n');
 			if (check) { if (!same) out.push(`${rel}: the ${b.name} list block differs from ${list.LIST} and ${STATE}: run node .claude/state.mjs render (a block edited by hand is refused there; move the change into the data first)`); continue; }
-			const known = s.rendered[key] ? s.rendered[key] === sha(now.join('\n')) : now.every((x) => !x.trim());
+			// An empty block holds no hand-written text, so it is always filled (a block put back empty after a render).
+			const known = now.every((x) => !x.trim()) || s.rendered[key] === sha(now.join('\n'));
 			if (!same && !known && !overwrite) { out.push(`${rel}: the ${b.name} list block was edited by hand since the last render; move each change into the data with item set or step set, then run node .claude/state.mjs render --overwrite`); continue; }
 			if (!same) { lines = [...lines.slice(0, b.begin), list.listBegin(b.name), ...want, ...lines.slice(b.end)]; changed = true; }
 			s.rendered[key] = sha(want.join('\n'));
@@ -515,7 +552,7 @@ function decide(fromFile, unchecked) {
 function main(argv) {
 	const [cmd, ...rest] = argv;
 	const fail = (m) => { console.log(m); process.exitCode = 1; };
-	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|caught|audit|import <file.md>] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text>'); process.exitCode = 2; };
+	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|--agent|--full|--step <step>|caught|audit|shorten|import <file.md>] | item <id> [--json] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text> | step rename <step> <new name>'); process.exitCode = 2; };
 	if (cmd === 'init') {
 		const { faults, said = [] } = init();
 		for (const f of [...faults, ...said]) console.log(f);
@@ -552,6 +589,20 @@ function main(argv) {
 	if (cmd === 'step') {
 		const [verb, step, field, ...text] = rest;
 		if (why) return fail(why);
+		if (verb === 'rename') {
+			// K79 (1.36.0): build 10's step was split by a hand edit of _State.json, for want of this command.
+			const to = clean([field, ...text].join(' '));
+			if (!clean(step) || !to) return usage();
+			const named = s.roadmap.filter((x) => x.step === clean(step) || (x.release && x.release === clean(step)));
+			if (named.length > 1) return fail(`${clean(step)} names ${named.length} steps; name one by its release (${named.map((x) => x.release || '(none)').join(', ')})`);
+			if (!named.length) return fail(`${clean(step)} is not a roadmap step`);
+			const at = named[0];
+			if (s.roadmap.some((x) => x !== at && x.step === to && x.release === at.release)) return fail(`step ${to} with release ${at.release || '(none)'} is already on the roadmap; nothing written`);
+			const was = at.step;
+			at.step = to;
+			saveState(s, { touch: false });
+			return console.log(`step ${was} renamed ${to}; rows placed "at" ${was} keep that text: move them with item set <id> at ${to}${refreshLists()}`);
+		}
 		if (verb !== 'set' || !clean(step) || !['release', 'carries', 'state'].includes(field)) return usage();
 		// A step is named by its name, or by its release where two steps share a name.
 		const named = s.roadmap.filter((x) => x.step === clean(step) || (x.release && x.release === clean(step)));
@@ -562,7 +613,7 @@ function main(argv) {
 		// Checked before it is written: a step and release given twice would lock every state command out.
 		if (s.roadmap.some((x) => x !== at && x.step === at.step && x.release === at.release)) return fail(`step ${at.step} with release ${at.release || '(none)'} is already on the roadmap; nothing written`);
 		saveState(s, { touch: false });
-		return console.log(`step ${at.step} ${field} set; run node .claude/state.mjs render`);
+		return console.log(`step ${at.step} ${field} set${refreshLists()}`);
 	}
 	if (!['show', 'set', 'add', 'done', 'render'].includes(cmd)) return usage();
 	if (why) return fail(why);
@@ -609,7 +660,8 @@ function listCommand(cmd, rest, { fail, usage }) {
 	const l = list.loadList(io);
 	if (cmd === 'list' && rest[0] === 'import') {
 		if (!rest[1]) return usage();
-		if (l.exists) return fail(`${list.LIST} already exists; an import would drop what was changed in the data since. Change rows with item set.`);
+		// An empty list (the template's, 1.36.0) may take the one import.
+		if (l.exists && (l.why || l.rows.length)) return fail(`${list.LIST} already holds rows; an import would drop what was changed in the data since. Change rows with item set.`);
 		const { state: s, why } = loadState();
 		if (why) return fail(why);
 		const src = inside(rest[1]);
@@ -619,6 +671,9 @@ function listCommand(cmd, rest, { fail, usage }) {
 		const p = list.parseMarkdown(text);
 		if (p.faults.length) return fail([`Nothing written: ${p.faults.length} row(s) or table(s) cannot be moved whole.`, ...p.faults.map(clean)].join('\n'));
 		if (p.steps.length && s.roadmap.length) return fail(`Nothing written: ${STATE} already holds roadmap steps; the import would replace them.`);
+		// The backup goes under .kit; a linked .kit or backup folder would put the owner's file somewhere else.
+		const keepDir = ['.kit', '.kit/kit-backups'].find((d) => { try { return !fs.lstatSync(file(d)).isDirectory(); } catch { return false; } });
+		if (p.boxLines.length && keepDir) return fail(`Nothing written: ${keepDir} is a link or not a folder, so the file as it was cannot be kept.`);
 		// The state first, with the import's record of each row; the list after it. If the list cannot be written, the
 		// state is put back as it was, so a retry starts clean.
 		const before = readText(STATE);
@@ -627,20 +682,70 @@ function listCommand(cmd, rest, { fail, usage }) {
 		saveState(s, { touch: false });
 		try { write(list.LIST, list.serialize(p.rows)); } catch (e) { write(STATE, before); throw e; }
 		const lf = list.faultsOf(p.rows, s.list_import);
-		console.log(`PASS ${p.rows.length} row(s) and ${p.steps.length} roadmap step(s) moved into ${list.LIST} and ${STATE}; the markdown is unchanged.`);
+		// K69: a checkbox list moves out of the file, or it would stand beside its generated view; every other line stays,
+		// and the file as it was is kept first.
+		let moved = '';
+		const rel = path.relative(ROOT, src).split(path.sep).join('/');
+		if (p.boxLines.length) {
+			const keep = `.kit/kit-backups/list-import-${new Date().toISOString().replace(/[:.]/g, '-')}/${rel}`;
+			fs.mkdirSync(path.dirname(file(keep)), { recursive: true });
+			if (!realUnder(path.dirname(file(keep)))) throw new Error(`${path.dirname(keep)} leads outside the project; ${rel} is unchanged`);
+			fs.writeFileSync(file(keep), text, { flag: 'wx' });
+			const drop = new Set(p.boxLines);
+			// Split on LF alone: each kept line keeps its own ending, in a file whose endings are mixed as well.
+			write(rel, text.split('\n').filter((_, i) => !drop.has(i)).join('\n'));
+			moved = ` ${p.rows.length} box(es) and their own lines (${p.boxLines.length} line(s)) moved out of ${rel}; the file as it was: ${keep}.`;
+		}
+		console.log(`PASS ${p.rows.length} row(s) and ${p.steps.length} roadmap step(s) moved into ${list.LIST} and ${STATE};${moved || ' the markdown is unchanged.'}`);
+		// What the import decided for the owner to look over: the steps it made and the short names it clipped.
+		if (p.steps.length) console.log(`roadmap step(s) made: ${p.steps.map((x) => clean(x.step)).join(', ')} (rename one with step rename <step> <new>)`);
+		const clipped = p.rows.filter((r) => r.short?.endsWith('...'));
+		if (clipped.length) console.log(`short name(s) clipped: ${clipped.map((r) => r.id).join(', ')} (set one with item set <id> short <text>)`);
+		console.log(`Views${refreshLists().replace(/^; /, ': ')}.`);
 		for (const n of lf.notes) console.log(`note: ${n}`);
-		return console.log('Next: put the list:begin roadmap, counts and rows markers where the views go, then run node .claude/state.mjs render.');
+		return console.log(`Next: put the list:begin ${p.boxLines.length ? 'boxes and roadmap' : 'roadmap, counts and rows'} markers where the views go (the kit's roadmap template has them since 1.36.0; if install named this file to merge, merge it, then run node <kit>/scripts/kit.mjs install project <folder> --merged "${rel}"), then run node .claude/state.mjs render.`);
 	}
 	if (l.why) return fail(l.why);
 	if (cmd === 'list') {
-		if (!l.exists) return console.log(`no ${list.LIST} in this project: add a row with node .claude/state.mjs item add --from <file.json>, or import a markdown list once`);
+		if (!l.exists) return console.log(`no ${list.LIST} in ${path.basename(ROOT)} (${ROOT}): add a row with node .claude/state.mjs item add --from <file.json>, or import a markdown list once`);
 		if (rest[0] === 'caught') return console.log(list.caught(l.rows).join('\n'));
 		if (rest[0] === 'audit') { const a = list.audit(l.rows); return console.log(a.length ? a.join('\n') : 'every row carries its labels'); }
+		if (rest[0] === 'shorten') {
+			// Once, for rows from before 1.36.0: each row with no short name is given one, its bold lead whole or its title
+			// clipped; the clipped ones are named, since a clipped title can read badly.
+			const bold = [];
+			const clipped = [];
+			const rows = l.rows.map((r) => {
+				if (r.short != null) return r;
+				const d = list.derive(r.title);
+				(d.bold ? bold : clipped).push(r.id);
+				return { ...r, short: d.short };
+			});
+			if (bold.length + clipped.length) write(list.LIST, list.serialize(rows));
+			return console.log(`${bold.length + clipped.length} row(s) given a short name; from the bold lead: ${bold.length}; clipped from the title, worth a look: ${clipped.length}${clipped.length ? ` (${clipped.join(', ')})` : ''}. Change one with node .claude/state.mjs item set <id> short <text>${bold.length + clipped.length ? refreshLists() : ''}`);
+		}
+		const flags = ['--all', '--agent', '--full'];
 		const all = rest.includes('--all');
-		const q = rest.filter((x) => x !== '--all').join(' ').toLowerCase();
-		const shown = (all ? l.rows : list.ranked(l.rows)).filter((r) => !q || list.line(r).toLowerCase().includes(q));
+		// --step <s>: one roadmap step's rows, by its name, its build number or its release.
+		const at = rest.indexOf('--step');
+		const stepName = at >= 0 ? rest[at + 1] : null;
+		if (at >= 0 && !stepName) return usage();
+		const step = stepName ? (loadState().state?.roadmap || []).find((x) => x.step === stepName || x.release === stepName) || { step: stepName, release: '' } : null;
+		const q = rest.filter((x, i) => !flags.includes(x) && (at < 0 || (i !== at && i !== at + 1))).join(' ').toLowerCase();
+		const shown = (all ? l.rows : list.ranked(l.rows)).filter((r) => (!q || list.line(r).toLowerCase().includes(q)) && (!step || list.inStep(r, step)));
+		// K68: the short view by default; one JSON line a row for an agent; the 1.35.0 full lines on --full.
+		if (rest.includes('--agent')) { for (const r of shown) console.log(JSON.stringify(list.agent(r))); return undefined; }
+		if (!rest.includes('--full')) return console.log(list.table(shown, { all }).join('\n'));
 		for (const r of shown) console.log(list.line(r));
 		return console.log(`${shown.length} row(s)${all ? '' : ' open, in work order (now, next, later, then the rest), then by severity (an unrated row after high), then real use, the owner, outside, the kit\'s own finds, then no origin set'}`);
+	}
+	if (rest[0] && !['add', 'set'].includes(rest[0])) {
+		// item <id> [--json]: the whole row, one field to a line, or as one JSON line.
+		const r = l.rows.find((x) => x.id === rest[0]);
+		if (!r) return fail(`${clean(rest[0])} is not a row`);
+		if (rest.includes('--json')) return console.log(JSON.stringify(r));
+		for (const [k, v] of Object.entries(r)) console.log(`${k}: ${clean(typeof v === 'object' ? JSON.stringify(v) : String(v))}`);
+		return undefined;
 	}
 	if (rest[0] === 'add') {
 		const i = rest.indexOf('--from');
@@ -654,10 +759,10 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (why) return fail(why);
 		// A new row owes its labels now, even where an imported row of the same id once did not.
 		if (r && typeof r.id === 'string' && Object.hasOwn(s.list_import, r.id)) return fail(`${clean(r.id)} was moved in by the import; change it with item set`);
-		const bad = list.refuse(r, l.rows, s.list_import);
+		const bad = list.refuse(r, l.rows, s.list_import, { added: true });
 		if (bad) return fail(clean(bad));
 		write(list.LIST, list.serialize([...l.rows, r]));
-		return console.log(`${r.id} added; run node .claude/state.mjs render`);
+		return console.log(`${r.id} added${refreshLists()}`);
 	}
 	if (rest[0] === 'set') {
 		const [, id, field, ...value] = rest;
@@ -673,7 +778,7 @@ function listCommand(cmd, rest, { fail, usage }) {
 		const rows = [...l.rows];
 		rows[at] = ch.row;
 		write(list.LIST, list.serialize(rows));
-		return console.log(`${id} ${field} set; run node .claude/state.mjs render`);
+		return console.log(`${id} ${field} set${refreshLists()}`);
 	}
 	return usage();
 }

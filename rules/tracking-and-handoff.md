@@ -55,14 +55,14 @@ Why: the log's job is narrative + latest state; old detail is noise once source-
 |---|---|---|
 | `_Session Log.md` | narrative: WHAT happened WHEN; commit hashes once | checkboxes, next actions, decision lists |
 | `_Working Memory.md` | dashboard: WHERE we are | task breakdowns, rationale, risk register |
-| `_Master Roadmap.md` | task status: checkboxes ONLY | hashes, rationale, next actions, descriptions |
+| `_Master Roadmap.md` | task status: checkboxes ONLY, generated from `_List.jsonl` | hashes, rationale, next actions, descriptions |
 | `_Active Plan.md` | the exact next action | history, task lists, rationale |
 
-**State is data:** the next action, owner waits, carry-overs and kit version live in `_State.json`, decisions in `_Decisions.jsonl` (the owner's exact words); the Resume Point and dashboard lines are generated (`node .claude/state.mjs`), never hand-edited.
+**State is data:** the next action, owner waits, carry-overs and kit version live in `_State.json`, decisions in `_Decisions.jsonl` (the owner's exact words); the Resume Point and dashboard lines are generated (`node .claude/state.mjs`), never hand-edited. **So is the task list (K69):** each task and finding is a row of `_List.jsonl` and each version a roadmap step, changed only with `state.mjs item` and `step`; the roadmap's boxes are its generated view. A list kept by hand moves in once (`state.mjs list import`). Why: a hand-kept list was recounted by hand at every closeout, and its views drifted from it.
 
 **Anti-duplication:** source-of-truth content (spec / ADR / plan / git log / code) is pointed to, never restated; content several tracking files need lives inline only in its unique-function file ("write it anyway" -> STOP). Why: one item in eight places is eight places to go stale.
 
-**Session-end batch, in order:** Session Log (the depth) -> Working Memory (one index line) -> Master Roadmap (boxes only) -> `state.mjs` set / add / done, then render and check; about 5-10 changed lines beyond the log entry.
+**Session-end batch, in order:** Session Log (the depth) -> Working Memory (one index line) -> the list (`state.mjs item set`, which writes the boxes) -> `state.mjs` set / add / done, then render and check; about 5-10 changed lines beyond the log entry.
 
 **The plan file is the progress record** (chat is not the handoff): a `## Progress` block at its top (current task, done with evidence, next, branch, open questions); tick only against shown evidence, record the measurement not just the verdict, note what would make a done task not done. **Each step names its check before it starts** (`<step> -> verify: <the test, command or measurement>`). Why: a step with no named check is done when someone says so.
 

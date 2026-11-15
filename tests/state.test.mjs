@@ -134,7 +134,8 @@ test('a decision is recorded only with the owner\'s own words, appended, and the
 
 test('a D- pointer with no record fails the check', () => {
 	const dir = project();
-	edit(dir, '_Master Roadmap.md', '- [ ] <item>', '- [ ] JSON export, per D-7');
+	// The roadmap's tasks are generated since K69 (1.36.0); its hand-kept text below the blocks takes the pointer.
+	edit(dir, '_Master Roadmap.md', '- <pointer to the standard that governs it>', '- JSON export, per D-7');
 	const r = st(dir, 'check');
 	assert.equal(r.status, 1);
 	assert.match(r.stdout, /D-7.*_Master Roadmap\.md/);

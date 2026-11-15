@@ -1,0 +1,206 @@
+{
+ "version": "1.36.0",
+ "date": "2026-11-15",
+ "level": "minor",
+ "area": "Lists and install",
+ "title": "feat: short list views, roadmaps as data, install checks merges",
+ "headline": "The list reads as one short line per row, and every kit project keeps its roadmap as data: a hand-kept checkbox roadmap moves in once. Install checks a hand merge before it records one, and the guards stop holding the kit's own scripts.",
+ "alignment": "v1.36.0 is the v2.0 install step (T5) with the list views: no hand merge left unchecked, and every project's roadmap kept as data.",
+ "items": [
+  {
+   "id": "K68",
+   "kind": "added",
+   "text": "state.mjs list prints one short line per row (id, tag, step, severity, origin, a stored short name); `list --agent` prints one JSON line per row; `item <id>` prints the whole row; `list --full` keeps the full titles.",
+   "evidence": "tests/list.test.mjs",
+   "where": "state.mjs list",
+   "before": "Every row's whole title",
+   "after": "One line a row, a stored short name"
+  },
+  {
+   "id": "SHORT",
+   "kind": "added",
+   "text": "Every row carries a short name of at most 60 characters: a new row must give one, and list shorten fills one in once for rows from before 1.36.0.",
+   "evidence": "tests/list.test.mjs"
+  },
+  {
+   "id": "K69",
+   "kind": "added",
+   "text": "list import also reads a checkbox roadmap: each box becomes a row and each version heading a roadmap step; the boxes leave the file, kept as it was in .kit/kit-backups, and a generated view shows them again.",
+   "evidence": "tests/list.test.mjs",
+   "where": "A checkbox roadmap",
+   "before": "Kept by hand, unreadable by import",
+   "after": "Moved into data once, view generated"
+  },
+  {
+   "id": "K69-CHECK",
+   "kind": "added",
+   "text": "The roadmap template carries the generated roadmap and boxes views; the use check fails until a hand-kept checkbox roadmap is moved into the data. A new tag, blocked, stands for a [!] box.",
+   "evidence": "tests/use-check.test.mjs"
+  },
+  {
+   "id": "STEPS",
+   "kind": "added",
+   "text": "step rename renames a roadmap step by its name or release, and `list --step` shows one step's rows.",
+   "evidence": "tests/list.test.mjs"
+  },
+  {
+   "id": "MC5",
+   "kind": "added",
+   "text": "A read-only `Explore` helper on `Sonnet` installs into each kit project, in place of the built-in one that runs on the session's model; a project without the kit keeps the built-in.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K44",
+   "kind": "added",
+   "text": "CI shape templates for Node and Python projects, and ci-shape.mjs, which reports what a project's workflows lack (main-only triggers, stale-run cancel, one required check) and never fails a run.",
+   "evidence": "tests/ci-shape.test.mjs"
+  },
+  {
+   "id": "K70",
+   "kind": "added",
+   "text": "Status and session start flag a `claude` CLI older than 2.1.325, which fixed gaps in Bash deny and ask rules, naming npm when a package manager lags, and warn when updates come from the stable channel.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K71-K72",
+   "kind": "added",
+   "text": "The use check fails while git tracks `.claude/settings.local.json`, whose saved approvals can hold secrets, and while a project settings file sets disableAllHooks; the CI templates fail on the latter too.",
+   "evidence": "tests/use-check.test.mjs"
+  },
+  {
+   "id": "N5",
+   "kind": "added",
+   "text": "Session start names a user layer newer than the project and what that can break.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "N8",
+   "kind": "added",
+   "text": "Each shell command starts again in the project folder (CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR in the template settings).",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "VIEWS",
+   "kind": "changed",
+   "text": "A change to the list or the roadmap writes its views at once; an empty view block is always filled.",
+   "evidence": "tests/list.test.mjs"
+  },
+  {
+   "id": "K78",
+   "kind": "changed",
+   "text": "An installed state.mjs run from outside any project reads its own project, and names the folder it read.",
+   "evidence": "tests/list.test.mjs"
+  },
+  {
+   "id": "K76-K77",
+   "kind": "fixed",
+   "text": "The guards let 2>&1, and a plain Set-Location before a command, run a kit script instead of holding it as a write to a protected file.",
+   "evidence": "tests/guards-hold.test.mjs",
+   "where": "Running a kit script",
+   "before": "Held with 2>&1 or after Set-Location",
+   "after": "Runs"
+  },
+  {
+   "id": "E35",
+   "kind": "fixed",
+   "text": "A Write, Edit or NotebookEdit aimed into a kit project from outside it runs that project's guards; one through a hard link or a network path is held.",
+   "evidence": "tests/guards-outside.test.mjs",
+   "where": "A file tool from outside",
+   "before": "Ran no project guard",
+   "after": "Runs that project's guards"
+  },
+  {
+   "id": "T5",
+   "kind": "fixed",
+   "text": "`install --merged` is refused on a file left unchanged since install named the merge; the same command again keeps the file as it is.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "install --merged",
+   "before": "Taken on trust",
+   "after": "Refused on a file left as it was"
+  },
+  {
+   "id": "N14",
+   "kind": "fixed",
+   "text": "Memory metadata the memory service adds is no change to fold back or a reason to skip an update; a file updated over it is kept first.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "IMPORT",
+   "kind": "fixed",
+   "text": "list import moves only boxes markdown shows as boxes, carries a box's own lines into its note, keeps each line's ending, refuses a linked folder, and names the steps it made and the names it clipped.",
+   "evidence": "tests/list.test.mjs"
+  },
+  {
+   "id": "NODE",
+   "kind": "fixed",
+   "text": "A node option that names a protected file (a warnings file, a profile folder) is held as a write.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "HOOKS",
+   "kind": "fixed",
+   "text": "The CI templates' hooks step reads the settings as JSON and fails when only one settings file exists; before, it passed with hooks off.",
+   "evidence": "tests/ci-shape.test.mjs"
+  },
+  {
+   "id": "K45",
+   "kind": "fixed",
+   "reach": "kit",
+   "text": "The testing rule no longer says a project's CI runs the guard proofs; only the kit's CI can.",
+   "evidence": "tests/kit.test.mjs"
+  }
+ ],
+ "verification": [
+  "Every new test failed on the code before it, the sweep's fixes included. A test that runs the CI templates' hooks step for real found it never failed; it now reads JSON.",
+  "A dry run of the 1.35.0 install on both real projects and the workbench found no hand merge left; one project merged 4 files on its own.",
+  "Recall: median 13 of 14 over five candidate runs, baseline 12, control 0. The one question that misses more (push and PR) is on a rule this build did not change."
+ ],
+ "decisions": [
+  {
+   "decision": "Both views, a stored short name",
+   "why": "The owner picked this by pop-up after seeing both: a person reads the short table, a script reads one JSON line a row, and the whole row is `item <id>`."
+  },
+  {
+   "decision": "Checkbox lists become data",
+   "why": "The owner's pop-up pick (K69). The use check fails until a hand-kept roadmap is moved, and the import keeps the file as it was in `.kit/kit-backups`."
+  },
+  {
+   "decision": "Tracked local settings, check only",
+   "why": "The owner picked a check over writing a .gitignore line, which would break the rule that the kit leaves nothing git can see."
+  },
+  {
+   "decision": "Roles stay user level, Explore per project",
+   "why": "A project role file's hooks do not run until the folder is trusted, and never in print mode, so the five roles stay in the user folder; only a hook-free Explore installs per project."
+  }
+ ],
+ "sweep": {
+  "tier": "Feature (security-sensitive, user data)",
+  "commit": "1267683",
+  "dimensions": [
+   { "name": "Privacy", "result": "Import and backup stay inside the project; a linked folder is refused" },
+   { "name": "Supply chain", "result": "Not touched" },
+   { "name": "Legal", "result": "Not touched" },
+   { "name": "Code security", "result": "Node options, file-tool fan-out, state.mjs folders, all fixed" },
+   { "name": "Gaps, scaling, test value", "result": "Import losses, install, test gaps, all fixed" },
+   { "name": "Alignment", "result": "YES" }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 1,
+   "medium": 17,
+   "low": 13
+  },
+  "fixed": [
+   "Import took boxes in a comment or indented code and deleted them from the roadmap. Fixed in 6cb0e7c."
+  ],
+  "deferred": [],
+  "accepted": []
+ },
+ "upgrading": "Run `install user` first, then `install project` in each project. A project with a hand-kept checkbox roadmap moves it once with `node .claude/state.mjs list import \"_Master Roadmap.md\"`, as the use check says.",
+ "limits": "The import reads boxes under level-two version headings as roadmap steps; any other heading stays a section name. Rows from before 1.36.0 get a short name only when list shorten runs.",
+ "tests": {
+  "before": 771,
+  "after": 791,
+  "flips": "declared tests on v1.35.0 and on this branch; the PR run gives the final count"
+ }
+}

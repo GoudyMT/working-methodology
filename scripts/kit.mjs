@@ -585,6 +585,8 @@ export function install(ctx) {
     return { merged: true };
   };
   const hostOwned = new Set(stamp.hostOwned || []);
+  const owed = {};
+  let kept = false;
   for (const entry of entries) {
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, checked);
     const wantHash = sha(want);
@@ -599,11 +601,18 @@ export function install(ctx) {
       write(); created.push(entry.key); files[entry.key] = wantHash;
       continue;
     }
-    const cur = sha(fs.readFileSync(entry.dest, 'utf8'));
+    const cur = sha(compared(entry.key, fs.readFileSync(entry.dest, 'utf8')));
     const base = stamp.files[entry.key];
     if (cur === wantHash) {
       files[entry.key] = wantHash;
     } else if (base && cur === base) {
+      // A memory file can match its base with the memory service's metadata in it: that file as it was is kept first.
+      if (!ctx.dryRun && entry.key.startsWith('memory/') && sha(fs.readFileSync(entry.dest, 'utf8')) !== base) {
+        const keep = path.join(backupDir, entry.key);
+        fs.mkdirSync(path.dirname(keep), { recursive: true });
+        fs.copyFileSync(entry.dest, keep);
+        kept = true;
+      }
       write(); updated.push(entry.key); files[entry.key] = wantHash;
     } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && !isHost(entry.key))) {
       // A guard file the kit wrote and something else changed is put back (V3). One the kit never wrote (a host's own
@@ -614,6 +623,12 @@ export function install(ctx) {
         fs.copyFileSync(entry.dest, keep);
       }
       write(); replaced.push(entry.key); files[entry.key] = wantHash;
+    } else if ((ctx.merged || []).includes(entry.key) && (stamp.owed || {})[entry.key] === cur) {
+      // T5 (1.36.0): --merged was taken on trust; a file left as it was when install named the merge holds none of the
+      // kit's changes, and recording it would lose them for good. The same command a second time is the owner keeping
+      // the file as it is, so the refusal is never a dead end (1.36.0 sweep).
+      skipped.push({ file: entry.key, reason: 'recorded as merged, but the file is unchanged since install named the merge: merge the kit\'s copy into it first, or run the same command again to keep it as it is' });
+      owed[entry.key] = `kept ${cur}`;
     } else if ((ctx.merged || []).includes(entry.key)) {
       // The owner merged the kit's changes into this file by hand: its text now stands on the current kit copy.
       merged.push(entry.key); files[entry.key] = wantHash;
@@ -625,6 +640,8 @@ export function install(ctx) {
         : wantHash === base ? 'changed here - run fold-back'
         : handMerge(entry.key, m.why);
       skipped.push({ file: entry.key, reason });
+      // The file as it stood when a merge was owed, so a later --merged on it unchanged is refused.
+      if (both) owed[entry.key] = cur;
     }
   }
   // A team, client or open-source repo owns its CLAUDE.md. The kit then sits on top as an overlay: its CLAUDE.md goes
@@ -709,6 +726,7 @@ export function install(ctx) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
+    if (Object.keys(owed).length) out.owed = owed;
     // The node the launcher entry names (V3): kept here so status and the launcher can check the entry is the one written.
     if (ctx.target === 'user') out.node = toPosix(process.execPath);
     // Set by the CLI's release check; a stamp without it predates the check and reads as unknown, not unreleased.
@@ -769,7 +787,7 @@ export function install(ctx) {
       }
     }
   }
-  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: kept || replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version };
 }
 
 /**
@@ -878,6 +896,19 @@ function oldLayoutFoldBack(kit, oldText) {
   return { changed, projectOnly };
 }
 
+// N14 (1.36.0, reproduced on AI Essentials' memory 2026-11-15): Claude Code's memory adds metadata to a memory file's
+// frontmatter (node_type, originSessionId, modified) and quotes its description. That is no edit of the project's, so
+// a memory file is compared with them taken out and the description unquoted.
+const metaKeys = /^[ \t]+(node_type|originSessionId|modified):.*\n/gm;
+function memoryCore(text) {
+  const m = /^---\n([\s\S]*?)\n---/.exec(text.replace(/\r\n/g, '\n'));
+  if (!m) return text;
+  const front = `${m[1]}\n`.replace(metaKeys, '').replace(/^description: "((?:[^"\\]|\\.)*)"$/m, (x, d) => `description: ${d.replace(/\\"/g, '"')}`);
+  return text.replace(/\r\n/g, '\n').replace(m[0], `---\n${front.replace(/\n$/, '')}\n---`);
+}
+/** A file's text as install and fold-back compare it. */
+const compared = (key, text) => (key.startsWith('memory/') ? memoryCore(text) : text);
+
 export function foldBack(ctx) {
   const kitInfo = loadKit(ctx.kit);
   const { entries, stampPath, memoryDir } = plan(ctx);
@@ -891,7 +922,7 @@ export function foldBack(ctx) {
     const base = stamp.files[entry.key];
     if (!fs.existsSync(entry.dest)) { if (base) out.missing.push(entry.key); continue; }
     const curText = fs.readFileSync(entry.dest, 'utf8');
-    const cur = sha(curText), wantHash = sha(want);
+    const cur = sha(compared(entry.key, curText)), wantHash = sha(want);
     if (cur === wantHash) continue;
     // A guard file that differs is never the project's own work to fold back: install puts the kit's copy back (V3).
     if (ctx.target === 'project' && isGuarded(entry.key)) {
@@ -1159,11 +1190,22 @@ export function installedClaudeVersion() {
   return claudeVersionRead;
 }
 
-/** The line to give when Claude Code is too old for onFailure, or '' when it is new enough or cannot be read. */
+// K70 (1.36.0, the 2026-11-15 outside review): 2.1.325 fixed gaps in how Bash deny and ask rules match a command, and
+// the kit's own rules rely on them (approve.mjs --resume is denied to a tool).
+const RULES_MIN = '2.1.325';
+/** The floor a Claude Code version misses first, as { min, line }, or null when it is new enough or cannot be read. */
 function claudeCodeTooOld(text) {
   const m = /(\d+\.\d+\.\d+)/.exec(String(text ?? ''));
-  if (!m || !semverAbove(ON_FAILURE_MIN, m[1])) return '';
-  return `Claude Code ${m[1]} is older than ${ON_FAILURE_MIN}: a guard that crashes or times out lets the command run. Run claude update.`;
+  if (!m) return null;
+  if (semverAbove(ON_FAILURE_MIN, m[1])) return { min: ON_FAILURE_MIN, line: `Claude Code ${m[1]} is older than ${ON_FAILURE_MIN}: a guard that crashes or times out lets the command run. Run claude update.` };
+  if (semverAbove(RULES_MIN, m[1])) return { min: RULES_MIN, line: `Claude Code ${m[1]} is older than ${RULES_MIN}: Bash deny and ask rules can miss a command, and the kit's settings rely on them. Run claude update; a package manager that has no ${RULES_MIN} yet (WinGet was at 2.1.318 on 2026-11-15) leaves npm i -g @anthropic-ai/claude-code@latest.` };
+  return null;
+}
+/** A warning when Claude Code updates from the stable channel, which trailed the floor on 2026-11-15 (2.1.311), or ''. */
+function stableChannelLine(home) {
+  let s = null;
+  try { s = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { return ''; }
+  return s && s.autoUpdatesChannel === 'stable' ? `Claude Code: autoUpdatesChannel is "stable", which trails the latest channel and can stay under the kit's floor (${RULES_MIN}). Set it to "latest" in the Claude config folder's settings.json, or check the version at each update.` : '';
 }
 
 /** K49: a line for each project settings file that still runs kit guards itself, as the shape before 1.25.1 did. */
@@ -1194,7 +1236,9 @@ function doubleRunLines(projectDir) {
 export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion }) {
   const lines = [];
   const old = claudeCodeTooOld(claudeVersion());
-  if (old) lines.push(old);
+  if (old) lines.push(old.line);
+  const channel = stableChannelLine(home);
+  if (channel) lines.push(channel);
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
@@ -1215,6 +1259,9 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   // rules of every project, so it is named too.
   const checkout = `Check out the kit's newest release tag (${releaseCheckout(kit, newestTag(kit))})`;
   const userStamp = readStamp(path.join(home, STAMP_USER));
+  // N5 (1.36.0; seen in a 1.16 project under a 1.18 user layer, whose approve.mjs needed a hook that project lacked, while
+  // session start said only that an update was there): the skew is named for what it breaks.
+  if (stamp.version && userStamp.version && semverAbove(userStamp.version, stamp.version)) lines.push(`~/.claude runs kit ${userStamp.version}, this project ${stamp.version}: the user layer's skills and hooks can need project files this install lacks, so a sweep or a build may stop on a missing hook. Run /methodology-kit update before either.`);
   if (userStamp.release === false) lines.push(`~/.claude runs an unreleased kit build (${userStamp.describe || 'no git history'}). ${checkout}, then run node "${toPosix(kit)}/scripts/kit.mjs" install user.`);
   if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.`);
   if (stamp.version) {
@@ -1306,9 +1353,11 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
   const gaps = [];
   const old = claudeCodeTooOld(claudeVersion());
   if (old) {
-    lines.push(old);
-    gaps.push(`Claude Code is older than ${ON_FAILURE_MIN}`);
+    lines.push(old.line);
+    gaps.push(`Claude Code is older than ${old.min}`);
   }
+  const channel = stableChannelLine(home);
+  if (channel) lines.push(channel);
   const n = ahead(kit);
   if (n > 0) {
     lines.push(`    GitHub has ${n} newer kit commit(s): check out its newest release tag (${releaseCheckout(kit, newest(kit))}), then update both below.`);

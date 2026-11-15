@@ -1,0 +1,34 @@
+{
+  "lines": [
+    {
+      "before": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins where it differs from the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop are role-file hooks; the push guard is also a git pre-push hook (`core.hooksPath` = the kit's guard-checking shims), so it holds for any AI tool that marks its shell. Role files stay user level (`~/.claude/agents/`): Claude Code skips a project-level agent file's hooks until the folder is trusted, and always in `-p`, so a project copy silently drops its guards.",
+      "after": "The project's own filled \"Rules every brief carries\" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop are role-file hooks; the push guard is also a git pre-push hook (the kit's shims), so it holds for any AI tool that marks its shell. Role files stay in `~/.claude/agents/`: a project agent file's hooks wait for folder trust and never run in `-p`, so a project copy drops them. Only `Explore` (no hooks) installs per project, replacing the built-in in kit projects alone (MC5).",
+      "why": "build 10 (MC5, the owner 2026-11-15 \"Roles user, Explore per project\"): only a hook-free Explore installs per project"
+    },
+    {
+      "before": "Size a test by what it needs, not its type: **small** (one process), **medium** (this machine), **large** (another machine, a real service, a browser, a live model); ask before writing it. Large tests live in the slow-lane folder (`tests/slow`, or `.kit/lanes.json`). Two lanes on one PR, both required to merge: the fast lane reports first; the slow lane runs beside it, on by a job-level `if` when its folder holds a test, never a path filter. `node .claude/lane-state.mjs` reports one lane, two lanes or over budget (fast lane over its budget, default 10 minutes, 3 PR runs in a row); then the levers in order: measure, parallel, cancel stale runs, change-scoped selection, and moving a test to the slow lane last. A fast test over its limit (300 s) fails: fix or move it, with the reason. A bug the slow lane catches gets a fast test before its fix. The owner's alone: a lane leaving the merge decision. A security or owner-rule test never changes lane for speed. Model-calling evals run in their own lane against the owner's threshold. pytest: mark by folder in a `conftest.py` hook, markers registered, `--strict-markers`. Why: fast feedback without lowering the gate.",
+      "after": "Size a test by what it needs, not its type: **small** (one process), **medium** (this machine), **large** (another machine, a real service, a browser, a live model); ask before writing it. Large tests live in the slow-lane folder (`tests/slow`, or `.kit/lanes.json`). Two lanes on one PR, both required to merge: the fast lane reports first; the slow lane runs beside it, on by a job-level `if` when its folder holds a test, never a path filter. `node .claude/lane-state.mjs` reports one lane, two lanes or over budget (fast lane over its budget, default 10 minutes, 3 PR runs in a row); then the levers in order: measure, parallel, cancel stale runs, change-scoped selection, and moving a test to the slow lane last. A fast test over its limit (300 s) fails: fix or move it, with the reason. A bug the slow lane catches gets a fast test before its fix. The owner's alone: a lane leaving the merge decision. A security or owner-rule test never changes lane for speed. Model-calling evals run in their own lane against the owner's threshold. **CI shape:** `_Templates/ci-<stack>.yml`; gaps: `node .claude/ci-shape.mjs`. pytest: mark by folder in a `conftest.py` hook, markers registered, `--strict-markers`. Why: fast feedback without lowering the gate.",
+      "why": "build 10 (K44): the CI shape templates and the report-only check are named in the lanes rule"
+    },
+    {
+      "before": "- **Let CI do its job:** run targeted tests locally (the ones covering the change: the runner's change selection where there is one, else the touched files' tests and their callers'); CI runs the rest and the guard proofs. Red in CI: reproduce only what failed. Why: a full local run costs minutes each time and finds what CI finds.",
+      "after": "- **Let CI do its job:** run targeted tests locally (the ones covering the change: the runner's change selection where there is one, else the touched files' tests and their callers'); CI runs the rest (guard proofs: kit CI only). Red in CI: reproduce only what failed. Why: a full local run costs minutes each time and finds what CI finds.",
+      "why": "build 10 (K45): only the kit's own CI runs the guard proofs"
+    },
+    {
+      "before": "| `_Master Roadmap.md` | task status: checkboxes ONLY | hashes, rationale, next actions, descriptions |",
+      "after": "| `_Master Roadmap.md` | task status: checkboxes ONLY, generated from `_List.jsonl` | hashes, rationale, next actions, descriptions |",
+      "why": "build 10 (K69, the owner 2026-11-15 \"Checkbox lists become data\"): the roadmap checkboxes are generated from the data"
+    },
+    {
+      "before": "**State is data:** the next action, owner waits, carry-overs and kit version live in `_State.json`, decisions in `_Decisions.jsonl` (the owner's exact words); the Resume Point and dashboard lines are generated (`node .claude/state.mjs`), never hand-edited.",
+      "after": "**State is data:** the next action, owner waits, carry-overs and kit version live in `_State.json`, decisions in `_Decisions.jsonl` (the owner's exact words); the Resume Point and dashboard lines are generated (`node .claude/state.mjs`), never hand-edited. **So is the task list (K69):** each task and finding is a row of `_List.jsonl` and each version a roadmap step, changed only with `state.mjs item` and `step`; the roadmap's boxes are its generated view. A list kept by hand moves in once (`state.mjs list import`). Why: a hand-kept list was recounted by hand at every closeout, and its views drifted from it.",
+      "why": "build 10 (K69): the roadmap tasks are named as list rows"
+    },
+    {
+      "before": "**Session-end batch, in order:** Session Log (the depth) -> Working Memory (one index line) -> Master Roadmap (boxes only) -> `state.mjs` set / add / done, then render and check; about 5-10 changed lines beyond the log entry.",
+      "after": "**Session-end batch, in order:** Session Log (the depth) -> Working Memory (one index line) -> the list (`state.mjs item set`, which writes the boxes) -> `state.mjs` set / add / done, then render and check; about 5-10 changed lines beyond the log entry.",
+      "why": "build 10 (K69): the closeout renders the generated views"
+    }
+  ]
+}

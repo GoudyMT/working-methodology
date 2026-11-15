@@ -59,6 +59,68 @@ test('an unwired part fails the check by name: the guard entry gone, git hooks n
 	assert.match(part(m.out, 'guards').present.detail, /owner-yes\.cjs/);
 });
 
+// K71 and K72 (1.36.0, the 2026-11-15 outside review): saved approvals in .claude/settings.local.json can hold
+// secrets, and git keeps tracking a file once added whatever the ignore lists say; "disableAllHooks": true in a project
+// settings file turns every hook off with no sign, and a session cannot see it from inside.
+// why: guards the owner's yes to K71 and K72, 2026-11-15 (card "Yes, all three into build 10"; K71 check only, pop-up)
+test('the check fails when git tracks settings.local.json or a project settings file turns hooks off', () => {
+	const dir = project();
+	assert.deepEqual(check(dir).out.failing, []);
+	assert.equal(fs.existsSync(path.join(dir, '.gitignore')), false, 'install leaves nothing git can see (rule:kit-stays-local)');
+	// Tracked by git: the check fails and names the way out.
+	fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{}');
+	spawnSync('git', ['-C', dir, 'add', '-f', '.claude/settings.local.json']);
+	let c = check(dir);
+	assert.equal(c.code, 1);
+	assert.ok(c.out.failing.includes('private-files'), JSON.stringify(c.out.failing));
+	assert.match(part(c.out, 'private-files').wired.detail, /git tracks \.claude\/settings\.local\.json[\s\S]*git rm --cached/);
+	spawnSync('git', ['-C', dir, 'rm', '-q', '--cached', '.claude/settings.local.json']);
+	assert.deepEqual(check(dir).out.failing, []);
+	// disableAllHooks in either project settings file fails the guards part.
+	for (const name of ['settings.local.json', 'settings.json']) {
+		const f = path.join(dir, '.claude', name);
+		const before = fs.readFileSync(f, 'utf8');
+		fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(before), disableAllHooks: true }));
+		c = check(dir);
+		assert.equal(c.code, 1, name);
+		assert.match(part(c.out, 'guards').wired.detail, /disableAllHooks/, name);
+		fs.writeFileSync(f, before);
+	}
+	assert.deepEqual(check(dir).out.failing, []);
+	// A user layer from before 1.36.0 has no settings reader: the check names the update, never crashes.
+	const lib = path.join(homes.get(dir), 'kit-tools', 'kit-launch.cjs');
+	const real = fs.readFileSync(lib, 'utf8');
+	fs.writeFileSync(lib, `${real}\nmodule.exports = { ...module.exports, settingsProblem: undefined };\n`);
+	c = check(dir);
+	assert.equal(c.code, 1, c.err);
+	assert.match(part(c.out, 'guards').wired.detail, /older than this check[\s\S]*install user/);
+	fs.writeFileSync(lib, real);
+	// A folder with no git: nothing to track, so the part does not apply.
+	assert.equal(part(check(project({ git: false })).out, 'private-files').wired.ok, null);
+});
+
+// K69 (1.36.0): both real projects kept a hand checkbox roadmap (53 and 555 boxes) on 2026-11-15.
+// why: guards the owner's lock of K69, 2026-11-15 (pop-up "Checkbox lists become data"): the list as data in every project
+test('the list part passes a fresh install and fails a hand-kept checkbox roadmap until it is moved', () => {
+	const dir = project();
+	assert.equal(part(check(dir).out, 'list').wired.ok, true);
+	const f = path.join(dir, '_Master Roadmap.md');
+	fs.writeFileSync(f, `${fs.readFileSync(f, 'utf8')}\n## v1 - "First" (IN PROGRESS)\n\n- [x] Setup\n- [ ] Login page\n`);
+	const c = check(dir);
+	assert.equal(c.code, 1);
+	assert.deepEqual(c.out.failing, ['list']);
+	assert.match(part(c.out, 'list').wired.detail, /2 checkbox line\(s\) kept by hand[\s\S]*state\.mjs list import "_Master Roadmap\.md"/);
+	const r = spawnSync(process.execPath, [path.join(dir, '.claude', 'state.mjs'), 'list', 'import', '_Master Roadmap.md'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '' } });
+	assert.equal(r.status, 0, r.stdout);
+	assert.deepEqual(check(dir).out.failing, []);
+	assert.match(fs.readFileSync(f, 'utf8'), /^- \[ \] R2 Login page$/m, 'the view shows the moved box');
+	// A roadmap with no generated boxes block fails, and the message names the two marker lines to copy.
+	fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/<!-- list:begin boxes[\s\S]*?<!-- list:end -->\n?/, ''));
+	const n = check(dir);
+	assert.deepEqual(n.out.failing, ['list']);
+	assert.match(part(n.out, 'list').wired.detail, /no generated boxes block[\s\S]*<!-- list:begin boxes -->[\s\S]*<!-- list:end -->/);
+});
+
 // why: catches a break at project/.claude/use-check.mjs:89 that no other test catches
 test('install project prints the use check and fails when a part is not wired; status names it', () => {
 	const dir = kitTemp.makeTemp('use-cli-');

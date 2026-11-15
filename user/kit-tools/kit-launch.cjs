@@ -634,6 +634,35 @@ function namedProjects(input) {
 	return out;
 }
 
+// E35 (1.36.0, reproduced on 1.35.0 from the folder above a kit project): a file tool names its project by its path, as
+// a shell command does by its words, so a Write or Edit of a kit project's file from outside it runs that project's
+// guards. A recorded project that holds the path, else a kit project found above it.
+// The tools that write a file by its path; a read changes nothing a guard keeps (the 1.36.0 sweep).
+const FILE_WRITES = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
+function fileProjects(input) {
+	const ti = (input && input.tool_input) || {};
+	const p = ti.file_path ?? ti.notebook_path;
+	if (!FILE_WRITES.includes(input && input.tool_name) || typeof p !== 'string' || !p) return [];
+	const out = [];
+	// A network path is never touched here (a share that does not answer would stall every call to the hook's time-out),
+	// and it cannot be placed in a project without it: held, with the way out. A \\?\ or \\.\ drive path is the drive path.
+	let spelled = String(p);
+	if (WIN && /^[\\/]{2}[?.][\\/][a-zA-Z]:/.test(spelled)) spelled = spelled.slice(4);
+	if (/^[\\/]{2}/.test(spelled)) { out.held = 'writes to a network path'; return out; }
+	let abs = path.resolve(String(input.cwd || process.cwd()), spelled);
+	// A file with a second name (a hard link) may be a guard file under another path: held, as state.mjs and install hold it.
+	// stat, not lstat: a link outside the project that leads to such a file is held as the file is (the commit review).
+	try { if (fs.statSync(abs).nlink > 1) { out.held = 'writes a file that has a second name (a hard link)'; return out; } } catch { /* not there yet */ }
+	try { abs = fs.realpathSync.native(abs); } catch { try { abs = path.join(fs.realpathSync.native(path.dirname(abs)), path.basename(abs)); } catch { /* not there yet */ } }
+	const real = (d) => { try { return fs.realpathSync.native(d); } catch { return d; } };
+	// A recorded folder is matched by its real path and handed on by its recorded spelling, the one its record answers to.
+	const inside = (d) => { const rel = path.relative(real(d), abs); return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel); };
+	out.push(...recordedProjects().filter(inside));
+	const u = unrecorded({ cwd: path.dirname(abs) }, true);
+	if (u && !out.some((x) => same(real(x), u))) out.push(u);
+	return out;
+}
+
 function preToolUse(input) {
 	const here = projectCheck(input);
 	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
@@ -645,9 +674,17 @@ function preToolUse(input) {
 	if (named.unreadable && recordedProjects().some((d) => !(mine && !mine.ambiguous && same(mine.dir, d)))) {
 		answers.push(deny(`This command makes ${named.unreadable}, so the kit cannot tell which of its projects it reaches. Split it into smaller commands, or spell the folders out.`));
 	}
-	for (const dir of named) {
+	// A file path is handed on whole, as the session's folder resolves it: read from the other project's folder, a
+	// relative one would name another file (the push security review of E35).
+	const ti = input.tool_input || {};
+	const key = typeof ti.file_path === 'string' ? 'file_path' : typeof ti.notebook_path === 'string' ? 'notebook_path' : null;
+	const fanned = key ? { ...input, tool_input: { ...ti, [key]: path.resolve(String(input.cwd || process.cwd()), ti[key]) } } : input;
+	const files = fileProjects(input);
+	// Held whether or not a project is recorded: an unrecorded one is reachable too (the commit review).
+	if (files.held) answers.push(deny(`Held: this tool ${files.held}, so the kit cannot tell which of its projects it reaches. Use the file's own path on its drive.`));
+	for (const dir of [...named, ...files.filter((d) => !named.some((x) => same(x, d)))]) {
 		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
-		answers.push(projectCheck({ ...input, cwd: dir }, true));
+		answers.push(projectCheck({ ...fanned, cwd: dir }, true));
 	}
 	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };
 	return answers.reduce((best, o) => (rank(o) > rank(best) ? o : best), null);

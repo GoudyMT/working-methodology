@@ -25,6 +25,12 @@ host's files. A tracked `CLAUDE.md` is taken as the host's: the install writes t
 keeps the kit's local files out of git. For an untracked one, run the install with `--overlay`. Point the kit's
 rules at the host's rules instead of restating them.
 
+**A host's own local lint reads the kit's files.** Git's exclude list keeps them out of git, but `prettier --check .`
+and `eslint .` read every file on disk (N7, reproduced on 1.35.0: 64 files and 216 errors, all the kit's). CI is not
+touched: the kit's files are not in the repo. Run the local gate on the tracked files, and record that form in the
+adapter (A9): `git ls-files -z | xargs -0 npx prettier --check --ignore-unknown`, and
+`git ls-files -z -- '*.js' '*.mjs' '*.cjs' | xargs -0 npx eslint`.
+
 ## 2. Orient (read-only)
 
 Read, with real tool calls, not from memory:

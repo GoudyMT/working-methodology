@@ -15,6 +15,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { parseMarkdown } from './list-data.mjs';
 
 const dir = process.cwd();
 const has = (rel) => fs.existsSync(path.join(dir, rel));
@@ -48,6 +49,13 @@ const PARTS = [
 			for (const name of ['settings.json', 'settings.local.json']) {
 				const s = read(path.join(dir, '.claude', name));
 				if (JSON.stringify(s?.hooks?.PreToolUse || '').includes('.claude/guard.cjs')) return [false, `.claude/${name} still runs guard.cjs itself: run kit.mjs install project, which takes that entry out`];
+				// K72 (1.36.0): a session cannot see this from inside, since its hooks are already off.
+				let text = null;
+				try { text = fs.readFileSync(path.join(dir, '.claude', name), 'utf8'); } catch { /* none */ }
+				// A user layer from before 1.36.0 has no reader for this: name the update, never crash the check (install exits on it).
+				if (text !== null && typeof L.settingsProblem !== 'function') return [false, `${toPosix(HOME)}/kit-tools/kit-launch.cjs is older than this check: run kit.mjs install user`];
+				const why = text === null ? '' : L.settingsProblem(text);
+				if (why) return [false, `.claude/${name}: ${why}; the owner takes it out`];
 			}
 			if (!L.launcherWired(read(path.join(HOME, 'settings.json')), path.join(HOME, 'kit-tools', 'kit-launch.cjs'), read(path.join(HOME, 'kit-install.json'))?.node)) return [false, `${toPosix(HOME)}/settings.json does not run kit-launch.cjs whole, on every tool and every settings change: run kit.mjs install user`];
 			if (!fs.existsSync(path.join(guardDir(), 'record.json'))) return [false, 'no guard record for this project in the Claude config folder: run kit.mjs install project'];
@@ -98,6 +106,21 @@ const PARTS = [
 		},
 	},
 	{
+		// K71 (1.36.0, the owner's pick 2026-11-15: check only): saved approvals in settings.local.json can hold secrets.
+		// Claude Code's global exclude and the kit's exclude block keep an untracked copy out; once git tracks the file,
+		// no ignore line takes it out, so tracking is the fault. No .gitignore line: install leaves nothing git can see
+		// (rule:kit-stays-local).
+		name: 'private-files',
+		what: 'the personal settings file kept out of git (.claude/settings.local.json)',
+		present: () => [null, 'nothing to install: the file is the owner\'s'],
+		wired: () => {
+			if (!isRepo()) return [null, 'not a git repository'];
+			if (git('ls-files', '--error-unmatch', '.claude/settings.local.json').status === 0) return [false, 'git tracks .claude/settings.local.json, whose saved approvals can hold secrets: run git rm --cached .claude/settings.local.json and commit (the file stays on disk)'];
+			return [true, 'git does not track it'];
+		},
+		used: () => [null, 'nothing to trace'],
+	},
+	{
 		name: 'test-lanes',
 		what: 'the lane-state report (E32)',
 		present: () => [has('.claude/lane-state.mjs'), has('.claude/lane-state.mjs') ? 'lane-state.mjs' : 'missing lane-state.mjs'],
@@ -144,6 +167,21 @@ const PARTS = [
 			const r = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'state.mjs'), 'check'], { cwd: dir, encoding: 'utf8' });
 			return r.status === 0 ? [true, `updated ${s.updated}; the views match the data`] : [false, `the views differ from the data: ${(r.stdout || '').split('\n')[0]}`];
 		},
+	},
+	{
+		// K69 (1.36.0, the owner: "ensure that this new data management standard is how all kits maintain their data"):
+		// the roadmap's tasks are rows of _List.jsonl, shown by a generated checkbox view; a roadmap kept by hand moves once.
+		name: 'list',
+		what: 'the roadmap and its tasks kept as data, with the checkbox view generated from them (K69)',
+		present: () => [has('_List.jsonl') || has('_Master Roadmap.md'), has('_List.jsonl') ? '_List.jsonl' : 'no _List.jsonl yet: the import or the first item add writes it'],
+		wired: () => {
+			let text = null;
+			try { text = fs.readFileSync(path.join(dir, '_Master Roadmap.md'), 'utf8'); } catch { return [null, 'no _Master Roadmap.md']; }
+			const hand = parseMarkdown(text).boxLines.length;
+			if (hand) return [false, `_Master Roadmap.md has ${hand} checkbox line(s) kept by hand: move them into the data once with node .claude/state.mjs list import "_Master Roadmap.md" (the file as it was is kept in .kit/kit-backups)`];
+			return /^<!-- list:begin boxes\b/m.test(text) ? [true, 'the tasks are data; the boxes view is generated'] : [false, '_Master Roadmap.md has no generated boxes block: copy the Tasks block from the kit\'s template (project/_Master Roadmap.md in the kit folder) where the tasks go, a <!-- list:begin boxes --> line and a <!-- list:end --> line, then run node .claude/state.mjs render'];
+		},
+		used: () => (has('_List.jsonl') && fs.statSync(path.join(dir, '_List.jsonl')).size > 0 ? [true, '_List.jsonl holds rows'] : [null, 'no rows yet']),
 	},
 ];
 
