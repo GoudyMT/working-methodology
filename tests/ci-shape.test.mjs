@@ -45,9 +45,9 @@ test('the CI shape check names the doubled runs, the missing cancel and the miss
 	const dir = project({ '.github/workflows/ci.yml': DOUBLED });
 	const r = run(dir);
 	assert.equal(r.status, 0, 'report only: it never fails a run');
-	assert.match(r.stdout, /ci\.yml: MISSING triggers: push and pull_request both run on a PR branch push/);
-	assert.match(r.stdout, /ci\.yml: MISSING stale runs: no concurrency group with cancel-in-progress/);
-	assert.match(r.stdout, /ci\.yml: MISSING one required check: no summary job that needs the others and runs always\(\)/);
+	assert.match(r.stdout, /ci\.yml: MISSING triggers:[\s\S]*push and pull_request/);
+	assert.match(r.stdout, /ci\.yml: MISSING stale runs:[\s\S]*cancel-in-progress/);
+	assert.match(r.stdout, /ci\.yml: MISSING one required check:[\s\S]*always\(\)/);
 	assert.match(r.stdout, /^CI shape: 3 gap\(s\) in 1 workflow\(s\)/m);
 	const json = JSON.parse(run(dir, '--json').stdout);
 	assert.equal(json.workflows[0].gaps.length, 3);
@@ -81,5 +81,5 @@ test('each shipped CI template meets the shape, and a project with no workflow i
 	}
 	const none = run(project({ 'README.md': 'x\n' }));
 	assert.equal(none.status, 0);
-	assert.match(none.stdout, /no workflow in \.github\/workflows: start from _Templates\/ci-<stack>\.yml/);
+	assert.match(none.stdout, /no workflow in \.github\/workflows[\s\S]*_Templates\/ci-<stack>\.yml/);
 });

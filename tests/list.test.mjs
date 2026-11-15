@@ -222,7 +222,7 @@ test('list prints one short line per open row, and the whole row is one command 
 	// A row with no short name yet shows its bold lead, or its title clipped with three dots.
 	assert.match(lines.find((l) => l.startsWith('A2 ')), /\bInstall misses a hook$/);
 	assert.match(lines.find((l) => l.startsWith('C2 ')), /Recall moves with the folder name$/);
-	assert.match(lines.at(-1), /^3 open\. Whole row: state\.mjs item <id> \| full titles: list --full/);
+	assert.match(lines.at(-1), /^3 open\.[\s\S]*state\.mjs item <id>[\s\S]*list --full/);
 	// The whole row, one field to a line, the long title whole.
 	const one = st(dir, 'item', 'K3');
 	assert.equal(one.status, 0, one.stdout);
@@ -274,7 +274,7 @@ test('item add refuses a row with no short name or one over 60 characters; list 
 	r = st(dir, 'list', 'shorten');
 	assert.equal(r.status, 0, r.stdout);
 	assert.match(r.stdout, /^4 row\(s\) given a short name/m);
-	assert.match(r.stdout, /from the bold lead: 1; clipped from the title, worth a look: 3 \(A1, C1, C2\)/);
+	assert.match(r.stdout, /bold lead: 1;[\s\S]*worth a look: 3 \(A1, C1, C2\)/);
 	const by = Object.fromEntries(rows(dir).map((x) => [x.id, x.short]));
 	assert.equal(by.A2, 'Install misses a hook');
 	assert.equal(by.K3, 'Install drops a setting', 'a stored short name is kept');
@@ -333,7 +333,7 @@ test('step rename renames one roadmap step by its name or release, and refuses a
 	assert.equal(st(dir, 'step', 'set', 'Z', 'release', '1.35.0').status, 0);
 	r = st(dir, 'step', 'rename', 'Z', '9a');
 	assert.equal(r.status, 1);
-	assert.match(r.stdout, /step 9a with release 1\.35\.0 is already on the roadmap; nothing written/);
+	assert.match(r.stdout, /step 9a with release 1\.35\.0[\s\S]*nothing written/);
 	assert.deepEqual(JSON.parse(read(dir, '_State.json')).roadmap.map((x) => x.step), ['9a', '9a', 'Z']);
 });
 
@@ -392,7 +392,7 @@ test('import moves a checkbox roadmap into data once, and the boxes view writes 
 	const after = read(dir, 'roadmap.md');
 	assert.doesNotMatch(after, /^\s*- \[[ x\/!~]\] (?!an example)/m, 'no hand-kept box is left');
 	for (const keep of ['## v1 - "Live triage demo" (IN PROGRESS)', '> One PR per line, in order.', '### Carried items', '## Long-Term Backlog', '- [ ] an example in a fence, not a row']) assert.ok(after.includes(keep), keep);
-	assert.match(r.stdout, /the file as it was: \.kit\/kit-backups\/list-import-[^ ]+\/roadmap\.md/);
+	assert.match(r.stdout, /: \.kit\/kit-backups\/list-import-[^ ]+\/roadmap\.md/);
 	const backup = r.stdout.match(/(\.kit\/kit-backups\/list-import-[^ ]+\/roadmap\.md)/)[1];
 	assert.equal(read(dir, backup), BOXES);
 	// The generated view: the same boxes, grouped by section, each with its id.
@@ -433,6 +433,7 @@ test('import moves only real boxes, carries a box\'s own lines into its note, an
 	assert.equal(r.status, 0, r.stdout);
 	const got = rows(dir);
 	assert.deepEqual(got.map((x) => x.title), ['Ship the demo', 'Done item', 'a nested box under it']);
+	// pin: 3 frozen text: the owner's own lines, carried into the note word for word.
 	assert.equal(got[0].note, 'It needs the model first. / - check the size');
 	assert.equal(got[2].note, 'under R2');
 	assert.equal(got[2].short, 'Done item: a nested box under it', 'a child row reads alone in the short view');

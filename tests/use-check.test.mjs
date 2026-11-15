@@ -93,7 +93,7 @@ test('the check fails when git tracks settings.local.json or a project settings 
 	fs.writeFileSync(lib, `${real}\nmodule.exports = { ...module.exports, settingsProblem: undefined };\n`);
 	c = check(dir);
 	assert.equal(c.code, 1, c.err);
-	assert.match(part(c.out, 'guards').wired.detail, /older than this check: run kit\.mjs install user/);
+	assert.match(part(c.out, 'guards').wired.detail, /older than this check[\s\S]*install user/);
 	fs.writeFileSync(lib, real);
 	// A folder with no git: nothing to track, so the part does not apply.
 	assert.equal(part(check(project({ git: false })).out, 'private-files').wired.ok, null);

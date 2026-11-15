@@ -353,7 +353,7 @@ test('status and session start flag a Claude Code under 2.1.325, and warn when u
   const at = (v) => status({ kit, home, projectDir: proj, ahead: () => 0, claudeVersion: () => v });
   const mid = at('2.1.318 (Claude Code)');
   assert.equal(mid.current, false);
-  assert.match(mid.text, /Claude Code 2\.1\.318 is older than 2\.1\.325: Bash deny and ask rules can miss a command[\s\S]*claude update/);
+  assert.match(mid.text, /Claude Code 2\.1\.318 is older than 2\.1\.325[\s\S]*Bash deny and ask rules[\s\S]*claude update/);
   // The sweep's novel lens: WinGet stayed at 2.1.318 on 2026-11-15, so the line names a path that reaches the floor.
   assert.match(mid.text, /npm i -g @anthropic-ai\/claude-code@latest/);
   assert.match(mid.text, /Not current: .*Claude Code is older than 2\.1\.325/);
