@@ -1443,6 +1443,17 @@ test('a command that names a kit project runs that project\'s guards', () => {
 		const short = spawnSync('cmd', ['/d', '/c', 'for %I in ("' + proj + '") do @echo %~sI'], { encoding: 'utf8' }).stdout.trim();
 		if (short && short.toLowerCase() !== proj.toLowerCase()) assert.equal(call('cd ' + short.split(path.sep).join('/') + ' && git push origin main'), 'deny', short);
 	}
+	// The second review (on 2ecbbde): home spellings, chained relative moves, a wildcard, and a backslash escape.
+	const homeRel = path.relative(os.homedir(), proj).split(path.sep).join('/');
+	if (!homeRel.startsWith('..')) {
+		assert.equal(call('cd ~/' + homeRel + ' && git push origin main'), 'deny', '~/');
+		assert.equal(call('cd $HOME/' + homeRel + ' && git push origin main'), 'deny', '$HOME/');
+	}
+	const grand = path.dirname(path.dirname(proj)).split(path.sep).join('/');
+	assert.equal(call('cd ' + grand + ' && cd ' + path.basename(path.dirname(proj)) + ' && cd ' + base + ' && git push origin main'), 'deny', 'chained relative moves');
+	assert.equal(call('cd ' + parent + '/' + base.slice(0, 2) + '* && git push origin main'), 'deny', 'a wildcard');
+	assert.equal(call('cd ' + parent + '/a\\pp && git push origin main'), 'deny', 'a backslash escape');
+	assert.equal(call('cd ' + parent + ' && git push origin main'), 'runs', 'the parent folder alone is no kit project');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
 	fs.mkdirSync(path.join(bare, '.kit'), { recursive: true });

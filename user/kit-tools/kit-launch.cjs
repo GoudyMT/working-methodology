@@ -402,12 +402,13 @@ function unrecorded(input, only = false) {
 // session's folder alone. A folder built at run time ($x, %x%, ~, a backtick) stays unread, as for every guard.
 // The kit projects a shell command names, other than the session's own (seen live 2026-11-15: a session outside a
 // kit project worked in one through cd, and none of its guards ran). A reader of moves always misses a spelling
-// (the sweep found command cd, bash -c, eval, cd --, a quote inside a path, GIT_DIR=, 8.3 names), so this reads no
-// moves: a project is named when its folder appears in the command in any spelling (case, slashes, quotes, Git Bash's
-// /c/ form, a relative path from the session's folder, an 8.3 short name), or when its folder's name appears as a
-// word and its parent folder, or the session's folder above it, does too. A named project's guards run on the call
-// as if it were started there. Running a project's guards on a command that only mentions it costs a check, never a
-// pass. A folder built at run time ($x, a backtick) stays unread, as for every guard.
+// (the sweep found command cd, bash -c, eval, cd --, a quote inside a path, GIT_DIR=, 8.3 names, chained relative
+// moves), so this reads no moves and fails toward checking: a project is named when its folder's own name appears as
+// a word in the command, in any spelling (case, slashes, quotes, a backslash escape, Git Bash's /c/ form, home as ~ or
+// $HOME), when a path in it resolves into the project (a relative path, an 8.3 short name), or when a wildcard in it
+// could match the project's path or name. A named project's guards run on the call as if it were started there. A
+// project whose name only appears in a command costs one more check, never a pass. A name built at run time ($x, a
+// backtick) stays unread, as for every guard.
 function recordedProjects() {
 	let names = [];
 	try { names = fs.readdirSync(RECORDS); } catch { return []; }
@@ -426,15 +427,20 @@ function namedProjects(input) {
 	if (!command.trim()) return [];
 	const cwd = path.resolve(String(input.cwd || process.cwd()));
 	const fold = (s) => (WIN ? s.toLowerCase() : s);
-	// One spelling for a path: forward slashes, no quotes, the drive as c:/, no doubled slashes.
-	const norm = (s) => fold(String(s)).replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/');
-	let text = norm(command);
+	const home = posix(require('os').homedir());
+	// One spelling for a path: home expanded, forward slashes, no quotes, the drive as c:/, no doubled slashes.
+	const norm = (s) => fold(String(s).replace(/(^|[\s=(:;&|"'])(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\\s"']|$)/gi, (m, a) => a + home))
+		.replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/');
+	// A backslash is a separator on Windows and an escape in a POSIX shell (my\ app is "my app"): both readings count.
+	let text = `${norm(command)} ${norm(command.replace(/\\(.)/g, '$1'))}`;
 	const tokens = text.split(/[\s;&|(){}=,]+/).filter(Boolean);
-	// An 8.3 short name or any relative path: the folder it names, as the file system resolves it from the session. A
+	// A relative path or an 8.3 short name: the folder it names, as the file system resolves it from the session. A
 	// kit project the launcher has no record for is found from these too, so it holds the call as it would there.
 	const unrec = [];
+	const globs = [];
 	for (const t of tokens) {
-		if (!/[/~.]/.test(t) || /[$*?]/.test(t)) continue;
+		if (/[*?[]/.test(t)) { globs.push(t); continue; }
+		if (!/[/~.]/.test(t) || /\$/.test(t)) continue;
 		let real = '';
 		try { real = fs.realpathSync.native(path.resolve(cwd, t)); } catch { continue; }
 		text += ` ${norm(real)}`;
@@ -449,13 +455,15 @@ function namedProjects(input) {
 		}
 		return false;
 	};
+	// A wildcard as the shell would match it, against a whole path or one of its parts.
+	const globRe = (g) => new RegExp('^' + g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^') + '$');
 	const out = [];
 	for (const dir of recordedProjects()) {
 		const p = norm(dir);
-		const parent = norm(path.dirname(dir));
-		const under = fold(posix(path.relative(cwd, dir)));
-		const below = under && !under.startsWith('..') && !path.isAbsolute(under);
-		if (has(p) || (below && has(under)) || (words.has(norm(path.basename(dir))) && (has(parent) || below))) out.push(dir);
+		const name = norm(path.basename(dir));
+		const parts = [p, name, norm(posix(path.relative(cwd, dir)))];
+		const globbed = globs.some((g) => { try { const re = globRe(g); return parts.some((x) => re.test(x)) || p.split('/').some((x) => re.test(x)); } catch { return true; } });
+		if (has(p) || words.has(name) || globbed) out.push(dir);
 	}
 	for (const u of unrec) if (!out.some((x) => same(x, u))) out.push(u);
 	return out;
