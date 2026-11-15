@@ -1377,6 +1377,27 @@ test('C13 a project with a long path is found by its transcript folder, the name
 	}
 });
 
+// why: guards rule:outward-acts. Seen live 2026-11-15: a session started in another folder worked in a kit project
+// through cd, and none of that project's guards ran, because the launcher found the project by the session's folder
+// alone. A command that first moves into a kit project (cd, Set-Location, pushd, git -C) runs that project's guards.
+test('a command that moves into a kit project runs that project\'s guards', () => {
+	const { home, proj } = setup();
+	const outside = kitTemp.makeTemp('cd-out-');
+	const call = (command, tool_name = 'Bash', cwd = outside) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input: { command }, cwd, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: cwd, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const p = proj.split(path.sep).join('/');
+	const rel = path.relative(outside, proj).split(path.sep).join('/');
+	assert.equal(call('git push origin main'), 'runs', 'outside any kit project nothing is checked');
+	for (const command of ['cd ' + p + ' && git push origin main', 'cd "' + p + '"; git push origin main', 'pushd ' + p + ' && git push origin main', 'git -C ' + p + ' push origin main', 'cd ' + rel + ' && git push origin main']) {
+		assert.equal(call(command), 'deny', command);
+	}
+	assert.equal(call("Set-Location '" + p + "'; git push origin main", 'PowerShell'), 'deny');
+	assert.equal(call('cd ' + p + ' && git status'), 'runs', 'a read in the project still runs');
+	assert.equal(call('cd ' + outside.split(path.sep).join('/') + ' && git push origin main'), 'runs', 'a folder that is no kit project');
+});
+
 // why: guards rule:security-standards. The 1.29.0 sweep (two reviewers, the same hole): a folder list that was only read
 // from the project could be dropped by a branch switch, a reset, a stash or a clean, and every folder on it lost
 // its hold. Install records the list outside the project, as it records a host's own hook: gone or changed, every

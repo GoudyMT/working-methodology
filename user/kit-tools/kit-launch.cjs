@@ -395,8 +395,39 @@ function unrecorded(input) {
 	return null;
 }
 
+// The folder a shell command first moves into (cd, Set-Location, pushd, chdir, or git -C), resolved from the session's
+// folder, or null. Seen live 2026-11-15: a session started outside a kit project worked in one through cd, and the
+// project's guards never ran, since the project was found by the session's folder alone.
+function movedInto(input) {
+	if (!input || !SHELLS.includes(input.tool_name)) return null;
+	const command = String((input.tool_input && input.tool_input.command) ?? '');
+	const word = String.raw`("([^"]*)"|'([^']*)'|([^\s;&|'"]+))`;
+	const m = new RegExp(String.raw`^\s*(?:(?:cd|chdir|pushd|set-location|sl)\s+(?:-(?:literalpath|path)\s+)?` + word + String.raw`\s*(?:&&|;|\||\n)|git\s+-C\s+` + word + String.raw`\s)`, 'i').exec(command);
+	if (!m) return null;
+	const dir = m[2] ?? m[3] ?? m[4] ?? m[6] ?? m[7] ?? m[8];
+	if (!dir || /[$`%~]/.test(dir)) return null;
+	return path.resolve(String(input.cwd || process.cwd()), dir);
+}
+
 function preToolUse(input) {
-	const found = findProject(input);
+	const moved = movedInto(input);
+	const here = projectCheck(input);
+	if (!moved) return here;
+	// The command acts in another folder: that folder's kit project, if it is one, checks it too, with its own folder as
+	// the call's. The stricter answer wins: a hold from either stops the call.
+	const there = findProject({ cwd: moved });
+	if (!there || there.ambiguous) return here;
+	const mine = findProject(input);
+	if (mine && !mine.ambiguous && same(mine.dir, there.dir)) return here;
+	const other = projectCheck({ ...input, cwd: moved }, there);
+	const denies = (o) => Boolean(o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision === 'deny');
+	if (denies(here)) return here;
+	if (denies(other)) return other;
+	return here || other;
+}
+
+function projectCheck(input, known) {
+	const found = known || findProject(input);
 	if (found && found.ambiguous) return deny('Held: this session\'s folder name fits more than one installed kit project with a long path, so the kit cannot tell which guards to run. Start the session inside the project folder, or shorten the path.');
 	if (!found) {
 		// Fails closed: a kit project the launcher has no record for runs no guard until install writes one.
