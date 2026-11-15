@@ -1399,6 +1399,28 @@ test('a file tool aimed into a kit project from outside it runs that project\'s 
 	assert.equal(call('Write', { file_path: path.relative(outside, path.join(proj, '.claude', 'settings.json')), content: '{}' }), 'deny', 'relative settings path');
 	assert.equal(call('Write', { file_path: path.join(proj, 'src', 'a.js'), content: 'x' }), 'runs', 'an ordinary file in the project still runs');
 	assert.equal(call('Write', { file_path: path.join(outside, 'notes.md'), content: 'x' }), 'runs', 'a file in no kit project');
+	// The 1.36.0 sweep: every file tool, every spelling of the path, and a second name for the file.
+	assert.equal(call('NotebookEdit', { notebook_path: guard, new_source: 'x' }), 'deny', 'NotebookEdit');
+	assert.equal(call('Read', { file_path: guard }), 'runs', 'a read is no write: no fan-out');
+	if (process.platform === 'win32') {
+		assert.equal(call('Write', { file_path: `\\\\?\\${guard}`, content: 'x' }), 'deny', 'a \\\\?\\ device path');
+		assert.equal(call('Write', { file_path: `\\\\localhost\\${guard[0]}$${guard.slice(2)}`, content: 'x' }), 'deny', 'a network path to this machine');
+	}
+	const twin = path.join(outside, `twin-${path.basename(proj)}.cjs`);
+	fs.linkSync(guard, twin);
+	assert.equal(call('Write', { file_path: twin, content: 'x' }), 'deny', 'a second name for a guard file');
+	fs.rmSync(twin);
+	// A project installed through a link (a junction to its folder) still holds its guard files, and an ordinary file
+	// there still runs.
+	const { home: h2, proj: p2 } = setup({ projName: 'linked', before: (p) => fs.symlinkSync(p, `${p}-alias`, 'junction') });
+	fs.rmSync(path.join(h2, 'kit-guard'), { recursive: true });
+	install({ kit: KIT, home: h2, target: 'project', projectDir: `${p2}-alias` });
+	const call2 = (file_path) => {
+		const r = spawnSync(process.execPath, [path.join(h2, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path, content: 'x' }, cwd: path.dirname(p2), session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: path.dirname(p2), CLAUDE_CONFIG_DIR: h2 } });
+		return r.stdout ? `${(JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision} ${r.stdout}` : 'runs';
+	};
+	assert.match(call2(path.join(p2, '.claude', 'owner-proof.cjs')), /^deny/, 'the real path of a project recorded through a link');
+	assert.equal(call2(path.join(p2, 'src', 'a.js')), 'runs', 'an ordinary file there still runs');
 });
 
 // why: guards rule:outward-acts. Seen live 2026-11-15: a session started in another folder worked in a kit project
