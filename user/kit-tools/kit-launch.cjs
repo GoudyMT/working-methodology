@@ -589,12 +589,17 @@ function namedProjects(input) {
 	// when it is one, from the session's folder or from a folder named before it (the review of c07f2bd); a command whose
 	// wildcards follow more folders than the guard reads is held.
 	const DIRS_MAX = 64;
-	for (const t of tokens) {
-		if (isGlob(t) || /\$/.test(t)) continue;
-		if (/[/~.]/.test(t)) { resolveTo(t); continue; }
-		for (const base of [cwd, ...dirs]) {
-			const at = path.join(base, t);
-			try { if (fs.statSync(at).isDirectory()) resolveTo(at); } catch { /* not a folder */ }
+	// Read again while a pass finds a new folder, so a name inside a folder found later in the pass is read from it too
+	// (cd a && cd b && cd a, the review of bfad509); DIRS_MAX bounds the passes.
+	for (let before = -1; before !== dirs.length && !unreadable;) {
+		before = dirs.length;
+		for (const t of tokens) {
+			if (isGlob(t) || /\$/.test(t)) continue;
+			if (/[/~.]/.test(t)) { resolveTo(t); continue; }
+			for (const base of [cwd, ...dirs]) {
+				const at = path.join(base, t);
+				try { if (fs.statSync(at).isDirectory()) resolveTo(at); } catch { /* not a folder */ }
+			}
 		}
 	}
 	for (const t of tokens) {

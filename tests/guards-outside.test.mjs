@@ -1491,6 +1491,12 @@ test('a command that names a kit project runs that project\'s guards', () => {
 	// safe whole number are held, never looped over.
 	assert.equal(call('cd ' + parent + ' && ls a*p && git push origin main'), 'deny', 'a relative wildcard after a cd');
 	assert.equal(call('cd ' + path.dirname(path.dirname(proj)).split(path.sep).join('/') + ' && cd ' + path.basename(path.dirname(proj)) + ' && ls a*p && git push origin main'), 'deny', 'after a cd by a bare name');
+	// A bare name read again inside a folder found later in the pass (the review of bfad509): the second "work" is the
+	// one inside the first, and the project sits there.
+	const chain = kitTemp.makeTemp('cd-chain-');
+	fs.mkdirSync(path.join(chain, 'work', 'work'), { recursive: true });
+	fs.symlinkSync(proj, path.join(chain, 'work', 'work', 'zz'), 'junction');
+	assert.equal(call('cd ' + chain.split(path.sep).join('/') + ' && cd work && cd work && cd z* && git push origin main'), 'deny', 'a name repeated after the folder it is in');
 	assert.notEqual(call('echo {1..99999999999999999999} && git push origin main'), 'runs', 'a range past a safe number');
 	// A kit project the launcher has no record for holds a call that moves into it, as it holds one started there.
 	const bare = kitTemp.makeTemp('cd-bare-');
