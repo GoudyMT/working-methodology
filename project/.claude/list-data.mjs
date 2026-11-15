@@ -94,7 +94,13 @@ export function parseMarkdown(text) {
 		const l = lines[i];
 		const h = l.match(/^#{2,3} (.+)$/);
 		if (h) { section = h[1].trim(); continue; }
-		if (!/^\|/.test(l) || !/^\|[\s:|-]+\|$/.test(lines[i + 1] || '')) continue;
+		if (/^\|/.test(l) && !/^\|[\s:|-]+\|$/.test(lines[i + 1] || '')) {
+			// A row with no header above it: markdown shows it as plain text, so it would be dropped unseen.
+			if (/^\|[\s:|-]+\|$/.test(l.trim())) continue;
+			faults.push(`${cells(l)[0]} is outside any table (line ${i + 1}): a blank line or a missing header splits it from its table`);
+			continue;
+		}
+		if (!/^\|/.test(l)) continue;
 		const head = cells(l);
 		const body = [];
 		const lineNo = [];

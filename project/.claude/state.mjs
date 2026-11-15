@@ -118,7 +118,8 @@ function loadState() {
 	if (s.rendered !== undefined && (typeof s.rendered !== 'object' || Array.isArray(s.rendered) || s.rendered === null)) return { why: `${STATE}: "rendered" is not an object` };
 	if (s.roadmap === undefined) s.roadmap = [];
 	if (!Array.isArray(s.roadmap) || s.roadmap.some((x) => !x || ['step', 'release', 'carries', 'state'].some((k) => typeof x[k] !== 'string')) || s.roadmap.some((x) => !clean(x.step))) return { why: `${STATE}: "roadmap" is not a list of { step, release, carries, state }` };
-	if (new Set(s.roadmap.map((x) => x.step)).size !== s.roadmap.length) return { why: `${STATE}: a roadmap step is given twice` };
+	// A step name may repeat ("fix" for two fix releases); the step with its release is one step.
+	if (new Set(s.roadmap.map((x) => `${x.step}\n${x.release}`)).size !== s.roadmap.length) return { why: `${STATE}: a roadmap step is given twice with the same release` };
 	return { state: s };
 }
 const saveState = (s, { touch = true } = {}) => { if (touch) s.updated = today(); write(STATE, `${JSON.stringify(s, null, 2)}\n`); };
@@ -523,7 +524,10 @@ function main(argv) {
 		const [verb, step, field, ...text] = rest;
 		if (why) return fail(why);
 		if (verb !== 'set' || !clean(step) || !['release', 'carries', 'state'].includes(field)) return usage();
-		let at = s.roadmap.find((x) => x.step === clean(step));
+		// A step is named by its name, or by its release where two steps share a name.
+		const named = s.roadmap.filter((x) => x.step === clean(step) || (x.release && x.release === clean(step)));
+		if (named.length > 1) return fail(`${clean(step)} names ${named.length} steps; name one by its release (${named.map((x) => x.release || '(none)').join(', ')})`);
+		let at = named[0];
 		if (!at) { at = { step: clean(step), release: '', carries: '', state: '' }; s.roadmap.push(at); }
 		at[field] = clean(text.join(' '));
 		saveState(s, { touch: false });
@@ -583,6 +587,9 @@ function listCommand(cmd, rest, { fail, usage }) {
 		const p = list.parseMarkdown(text);
 		if (p.faults.length) return fail([`Nothing written: ${p.faults.length} row(s) cannot be moved whole.`, ...p.faults.map(clean)].join('\n'));
 		if (p.steps.length && s.roadmap.length) return fail(`Nothing written: ${STATE} already holds roadmap steps; the import would replace them.`);
+		const pairs = p.steps.map((x) => `${clean(x.step)} ${clean(x.release)}`);
+		const twice = pairs.filter((x, k) => pairs.indexOf(x) !== k);
+		if (twice.length) return fail(`Nothing written: roadmap step ${twice[0]} is given twice with the same release.`);
 		write(list.LIST, list.serialize(p.rows));
 		if (p.steps.length) { s.roadmap = p.steps.map((x) => ({ step: clean(x.step), release: clean(x.release), carries: clean(x.carries), state: clean(x.state) })); saveState(s, { touch: false }); }
 		const lf = list.faultsOf(p.rows);

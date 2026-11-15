@@ -73,6 +73,8 @@ test('import refuses a list it cannot move whole, and writes nothing', () => {
 		[LIST.replace('**[CLOSED]** not real', 'not real'), /C1 has no tag/],
 		[LIST.replace('| C2 |', '| A1 |'), /A1 is given twice/],
 		[LIST.replace('[CLOSED]', '[PARKED]'), /C1.*PARKED/],
+		// The workbench list on 1.34.0: a blank line inside the E table left 30 rows outside any table.
+		[LIST.replace('| C2 |', '\n| C2 |'), /C2 .*outside any table/],
 	]) {
 		const dir = project();
 		put(dir, 'list.md', bad);
@@ -206,6 +208,22 @@ test('render writes the roadmap, counts and rows blocks from the data, and check
 	assert.equal(st(dir, 'step', 'set', '9', 'carries', 'The list as data, typed').status, 0);
 	assert.equal(st(dir, 'render', '--overwrite').status, 0);
 	assert.equal(st(dir, 'check').status, 0);
+});
+
+// The workbench roadmap has two steps named "fix" (1.25.1 and 1.33.1); the first trial import wrote both and every
+// later command then refused the state.
+test('two roadmap steps may share a name; step set names one by its release', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST.replace('| 9 | 1.35.0 |', '| fix | 1.25.1 | a fix | released |\n| fix | 1.33.1 | a fix | released |\n| 9 | 1.35.0 |'));
+	assert.equal(st(dir, 'list', 'import', 'list.md').status, 0);
+	assert.equal(st(dir, 'check').status, 0);
+	let r = st(dir, 'step', 'set', 'fix', 'state', 'shipped');
+	assert.equal(r.status, 1, 'an ambiguous name changes nothing');
+	assert.match(r.stdout, /1\.25\.1, 1\.33\.1/);
+	r = st(dir, 'step', 'set', '1.33.1', 'state', 'shipped');
+	assert.equal(r.status, 0, r.stdout);
+	const s = JSON.parse(read(dir, '_State.json'));
+	assert.deepEqual(s.roadmap.filter((x) => x.step === 'fix').map((x) => x.state), ['released', 'shipped']);
 });
 
 test('a project with no list is untouched: check and render pass as before', () => {
