@@ -257,7 +257,17 @@ function inside(arg) {
 	const p = path.resolve(ROOT, String(arg));
 	const rel = path.relative(ROOT, p);
 	if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || linked(rel)) return null;
+	// A linked folder on the way (a junction under the project) would lead a read, and an import's rewrite, outside it.
+	if (!realUnder(p)) return null;
 	return p;
+}
+/** Whether a path, once every link on the way is followed, still sits where its spelling says, under the real ROOT. */
+function realUnder(p) {
+	try {
+		const want = path.relative(ROOT, p);
+		const got = path.relative(fs.realpathSync.native(ROOT), fs.realpathSync.native(p));
+		return process.platform === 'win32' ? want.toLowerCase() === got.toLowerCase() : want === got;
+	} catch { return false; }
 }
 
 /**
@@ -660,6 +670,9 @@ function listCommand(cmd, rest, { fail, usage }) {
 		const p = list.parseMarkdown(text);
 		if (p.faults.length) return fail([`Nothing written: ${p.faults.length} row(s) or table(s) cannot be moved whole.`, ...p.faults.map(clean)].join('\n'));
 		if (p.steps.length && s.roadmap.length) return fail(`Nothing written: ${STATE} already holds roadmap steps; the import would replace them.`);
+		// The backup goes under .kit; a linked .kit or backup folder would put the owner's file somewhere else.
+		const keepDir = ['.kit', '.kit/kit-backups'].find((d) => { try { return !fs.lstatSync(file(d)).isDirectory(); } catch { return false; } });
+		if (p.boxLines.length && keepDir) return fail(`Nothing written: ${keepDir} is a link or not a folder, so the file as it was cannot be kept.`);
 		// The state first, with the import's record of each row; the list after it. If the list cannot be written, the
 		// state is put back as it was, so a retry starts clean.
 		const before = readText(STATE);
@@ -671,20 +684,25 @@ function listCommand(cmd, rest, { fail, usage }) {
 		// K69: a checkbox list moves out of the file, or it would stand beside its generated view; every other line stays,
 		// and the file as it was is kept first.
 		let moved = '';
+		const rel = path.relative(ROOT, src).split(path.sep).join('/');
 		if (p.boxLines.length) {
-			const rel = path.relative(ROOT, src).split(path.sep).join('/');
 			const keep = `.kit/kit-backups/list-import-${new Date().toISOString().replace(/[:.]/g, '-')}/${rel}`;
 			fs.mkdirSync(path.dirname(file(keep)), { recursive: true });
+			if (!realUnder(path.dirname(file(keep)))) throw new Error(`${path.dirname(keep)} leads outside the project; ${rel} is unchanged`);
 			fs.writeFileSync(file(keep), text, { flag: 'wx' });
 			const drop = new Set(p.boxLines);
-			const crlf = /\r\n/.test(text);
-			write(rel, text.replace(/\r\n/g, '\n').split('\n').filter((_, i) => !drop.has(i)).join(crlf ? '\r\n' : '\n'));
-			moved = ` ${p.boxLines.length} checkbox line(s) moved out of ${rel}; the file as it was: ${keep}.`;
+			// Split on LF alone: each kept line keeps its own ending, in a file whose endings are mixed as well.
+			write(rel, text.split('\n').filter((_, i) => !drop.has(i)).join('\n'));
+			moved = ` ${p.rows.length} box(es) and their own lines (${p.boxLines.length} line(s)) moved out of ${rel}; the file as it was: ${keep}.`;
 		}
 		console.log(`PASS ${p.rows.length} row(s) and ${p.steps.length} roadmap step(s) moved into ${list.LIST} and ${STATE};${moved || ' the markdown is unchanged.'}`);
+		// What the import decided for the owner to look over: the steps it made and the short names it clipped.
+		if (p.steps.length) console.log(`roadmap step(s) made: ${p.steps.map((x) => clean(x.step)).join(', ')} (rename one with step rename <step> <new>)`);
+		const clipped = p.rows.filter((r) => r.short?.endsWith('...'));
+		if (clipped.length) console.log(`short name(s) clipped: ${clipped.map((r) => r.id).join(', ')} (set one with item set <id> short <text>)`);
 		console.log(`Views${refreshLists().replace(/^; /, ': ')}.`);
 		for (const n of lf.notes) console.log(`note: ${n}`);
-		return console.log(`Next: put the list:begin ${p.boxLines.length ? 'boxes and roadmap' : 'roadmap, counts and rows'} markers where the views go (the kit's roadmap template has them since 1.36.0), then run node .claude/state.mjs render.`);
+		return console.log(`Next: put the list:begin ${p.boxLines.length ? 'boxes and roadmap' : 'roadmap, counts and rows'} markers where the views go (the kit's roadmap template has them since 1.36.0; if install named this file to merge, merge it, then run node <kit>/scripts/kit.mjs install project <folder> --merged "${rel}"), then run node .claude/state.mjs render.`);
 	}
 	if (l.why) return fail(l.why);
 	if (cmd === 'list') {

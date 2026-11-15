@@ -401,6 +401,42 @@ test('import moves a checkbox roadmap into data once, and the boxes view writes 
 	assert.equal(st(dir, 'list', 'import', 'roadmap.md').status, 1);
 });
 
+// 1.36.0 sweep (data loss): the import took boxes markdown never shows as boxes (in a comment, in indented code, in an
+// indented fence) and deleted them from the file, left a box's own prose and sub-bullets behind with no box, and wrote
+// a file with mixed line endings back all in one. Each is checked the way an owner's roadmap holds it.
+const ODD = [
+	'# Roadmap', '', '## v1 - "Demo" (IN PROGRESS)', '', '- [ ] Ship the demo', '  It needs the model first.', '  - check the size', '',
+	'<!--', '- [ ] a box the owner commented out', '-->', '', 'Code an owner indented:', '', '    - [ ] an indented code line', '',
+	'- Notes', '  ```', '  - [ ] a box in an indented fence', '  ```', '', '- [x] Done item', '    - [x] a nested box under it', '',
+].join('\n');
+// why: guards the owner's lock of K69, 2026-11-15: the move to data never loses or invents an owner's line
+test('import moves only real boxes, carries a box\'s own lines into its note, and keeps each line ending', () => {
+	const dir = project();
+	// One line ending per line, as a file edited on two systems has: the box lines end in CRLF, the rest in LF.
+	const mixed = ODD.split('\n').map((l) => (/- \[[ x]\] (Ship|Done)|^Code an/.test(l) ? `${l}\r` : l)).join('\n');
+	put(dir, 'roadmap.md', mixed);
+	const r = st(dir, 'list', 'import', 'roadmap.md');
+	assert.equal(r.status, 0, r.stdout);
+	const got = rows(dir);
+	assert.deepEqual(got.map((x) => x.title), ['Ship the demo', 'Done item', 'a nested box under it']);
+	assert.equal(got[0].note, 'It needs the model first. / - check the size');
+	assert.equal(got[2].note, 'under R2');
+	assert.equal(got[2].short, 'Done item: a nested box under it', 'a child row reads alone in the short view');
+	assert.match(r.stdout, /roadmap step\(s\) made: v1/);
+	assert.match(r.stdout, /install project <folder> --merged "roadmap\.md"/);
+	const after = read(dir, 'roadmap.md');
+	for (const keep of ['- [ ] a box the owner commented out', '    - [ ] an indented code line', '  - [ ] a box in an indented fence', 'Code an owner indented:']) assert.ok(after.includes(keep), keep);
+	for (const gone of ['Ship the demo', 'It needs the model first.', 'check the size', 'Done item', 'nested box']) assert.ok(!after.includes(gone), gone);
+	// Every line kept has the ending it had.
+	assert.equal(after, mixed.split('\n').filter((l) => !/Ship|needs the model|check the size|Done item|nested box/.test(l)).join('\n'));
+	// A generated block that never closes would hide the rest of the file from the import.
+	const u = project();
+	put(u, 'r2.md', '## A\n\n<!-- list:begin boxes -->\n- [ ] R1 x\n');
+	const f = st(u, 'list', 'import', 'r2.md');
+	assert.equal(f.status, 1);
+	assert.match(f.stdout, /never closes/);
+});
+
 // why: guards the owner's lock of K69, 2026-11-15: a new project starts on the data list
 test('the shipped roadmap template carries the boxes and roadmap blocks, and a fresh project passes check', () => {
 	const dir = project();
@@ -585,6 +621,21 @@ test('markers render did not write, and inputs outside the project, are refused'
 	assert.match(r.stdout, /not a plain file inside this project/);
 	fs.rmSync(out);
 	assert.match(st(project(), 'list', 'import', '../x.md').stdout, /not a plain file inside this project/);
+	// 1.36.0 sweep: a checkbox import rewrites its source and writes a backup, so neither may go through a linked folder.
+	const away = kitTemp.makeTemp('list-away-');
+	put(away, 'road.md', '- [ ] a box\n');
+	const p1 = project();
+	fs.symlinkSync(away, path.join(p1, 'docs'), 'junction');
+	assert.match(st(p1, 'list', 'import', 'docs/road.md').stdout, /not a plain file inside this project/);
+	assert.equal(read(away, 'road.md'), '- [ ] a box\n', 'the file through the link is untouched');
+	const p2 = project();
+	put(p2, 'road.md', '- [ ] a box\n');
+	fs.symlinkSync(away, path.join(p2, '.kit'), 'junction');
+	const k = st(p2, 'list', 'import', 'road.md');
+	assert.equal(k.status, 1, k.stdout);
+	assert.match(k.stdout, /\.kit is a link/);
+	assert.deepEqual(fs.readdirSync(away).sort(), ['road.md'], 'no backup written through the link');
+	assert.equal(read(p2, 'road.md'), '- [ ] a box\n');
 	// A list file with a second name is neither read nor written.
 	fs.renameSync(path.join(dir, '_List.jsonl'), path.join(dir, 'real.jsonl'));
 	fs.linkSync(path.join(dir, 'real.jsonl'), path.join(dir, '_List.jsonl'));
