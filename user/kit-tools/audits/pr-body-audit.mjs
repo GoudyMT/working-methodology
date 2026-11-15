@@ -20,7 +20,8 @@ const squash = title.length + (/^\d+$/.test(number || '') ? number.length + 4 : 
 // keep, the extra lines the review must name - come from .kit/pr-body.json (rule:pr-body; adapter A16):
 //   { "dimensions": ["Code security", ...], "auditLine": "0 high", "verifiedClean": ["..."] }
 // Without it, code security is the one dimension required; the secrets line is required always.
-const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+// No program the repo's git config names runs here (the K61 sweep).
+const top = spawnSync('git', ['-c', 'core.fsmonitor=false', 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 const root = top.status === 0 ? top.stdout.trim() : process.cwd();
 let project = {};
 try { project = JSON.parse(readFileSync(path.join(root, '.kit', 'pr-body.json'), 'utf8')); } catch { /* the defaults */ }

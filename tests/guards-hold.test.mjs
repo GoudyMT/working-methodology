@@ -931,6 +931,31 @@ test('PR text and repo names are checked where they are written, and a failing o
 	}
 });
 
+// The sweep on 1866197 (role 1): the audits the guard runs call git in the repo, and a program the repo's own git config
+// names (diff.external, core.fsmonitor) ran inside the hook. Every git the audits run turns those off.
+// why: guards rule:pr-body
+test('the PR text audits run no program the repo git config names', () => {
+	const repo = kitTemp.makeTemp('prgit-');
+	const marker = path.join(kitTemp.makeTemp('prgit-mark-'), 'ran.txt').split(path.sep).join('/');
+	const git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-C', repo, ...a], { encoding: 'utf8' });
+	git('init', '-q', '-b', 'main');
+	fs.writeFileSync(path.join(repo, 'package.json'), '{ "version": "1.0.0" }\n');
+	fs.mkdirSync(path.join(repo, 'src'));
+	fs.writeFileSync(path.join(repo, 'src', 'a.js'), '1\n');
+	git('add', '-A');
+	git('commit', '-q', '-m', 'chore: start');
+	git('checkout', '-q', '-b', 'feat/x');
+	fs.writeFileSync(path.join(repo, 'src', 'a.js'), '2\n');
+	fs.writeFileSync(path.join(repo, 'package.json'), '{ "version": "1.1.0" }\n');
+	git('commit', '-q', '-am', 'feat: two');
+	git('remote', 'add', 'origin', 'https://github.com/o/r.git');
+	git('config', 'diff.external', `sh -c 'echo diff >> ${marker}' --`);
+	git('config', 'core.fsmonitor', `sh -c 'echo fsmonitor >> ${marker}'; :`);
+	fs.writeFileSync(path.join(repo, 'good.md'), GOOD_BODY);
+	const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'gh pr create --title "chore: a clean grant row" --body-file good.md' }, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, CLAUDE_CONFIG_DIR: cfg } });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : '', '', 'a program from the repo config ran');
+});
 // why: guards rule:outward-acts. The plan check's P8: a nested repo under the project path is another repo, read by its
 // git folder, not by its path.
 test('a feature push from a repo nested inside the project is read as another repo', () => {
