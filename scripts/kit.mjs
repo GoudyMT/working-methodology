@@ -585,6 +585,7 @@ export function install(ctx) {
     return { merged: true };
   };
   const hostOwned = new Set(stamp.hostOwned || []);
+  const owed = {};
   for (const entry of entries) {
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home, checked);
     const wantHash = sha(want);
@@ -614,6 +615,11 @@ export function install(ctx) {
         fs.copyFileSync(entry.dest, keep);
       }
       write(); replaced.push(entry.key); files[entry.key] = wantHash;
+    } else if ((ctx.merged || []).includes(entry.key) && (stamp.owed || {})[entry.key] === cur) {
+      // T5 (1.36.0): --merged was taken on trust; a file left as it was when install named the merge holds none of the
+      // kit's changes, and recording it would lose them for good.
+      skipped.push({ file: entry.key, reason: 'recorded as merged, but the file is unchanged since install named the merge: merge the kit\'s copy into it first' });
+      owed[entry.key] = cur;
     } else if ((ctx.merged || []).includes(entry.key)) {
       // The owner merged the kit's changes into this file by hand: its text now stands on the current kit copy.
       merged.push(entry.key); files[entry.key] = wantHash;
@@ -625,6 +631,8 @@ export function install(ctx) {
         : wantHash === base ? 'changed here - run fold-back'
         : handMerge(entry.key, m.why);
       skipped.push({ file: entry.key, reason });
+      // The file as it stood when a merge was owed, so a later --merged on it unchanged is refused.
+      if (both) owed[entry.key] = cur;
     }
   }
   // A team, client or open-source repo owns its CLAUDE.md. The kit then sits on top as an overlay: its CLAUDE.md goes
@@ -709,6 +717,7 @@ export function install(ctx) {
     fs.mkdirSync(path.dirname(stampPath), { recursive: true });
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
+    if (Object.keys(owed).length) out.owed = owed;
     // The node the launcher entry names (V3): kept here so status and the launcher can check the entry is the one written.
     if (ctx.target === 'user') out.node = toPosix(process.execPath);
     // Set by the CLI's release check; a stamp without it predates the check and reads as unknown, not unreleased.

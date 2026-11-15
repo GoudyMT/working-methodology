@@ -8087,6 +8087,11 @@ test('status says current only when the kit folder, ~/.claude and the project al
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, false);
   assert.match(r.text, /1 file\(s\) changed here and in the kit[\s\S]*_Working Standards\.md[\s\S]*by hand/);
+  // T5 (1.36.0): --merged was taken on trust. A file left as it was when install named the merge was not merged.
+  const unmerged = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
+  assert.deepEqual(unmerged.merged, []);
+  assert.match(unmerged.skipped.find((s) => s.file === '_Working Standards.md').reason, /unchanged since install named the merge/);
+  assert.equal(status({ kit, home, projectDir: proj, ahead: () => 0 }).current, false);
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newest, edited here\n');
   const m = install({ kit, home, target: 'project', projectDir: proj, merged: ['_Working Standards.md'] });
   assert.deepEqual(m.merged, ['_Working Standards.md']);
