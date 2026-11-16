@@ -534,16 +534,17 @@ function shellWritesFrom(command, tool, start, names) {
 	// behind; &> and >&file still name a file and stay a redirect the words below read.
 	// In PowerShell a backslash is the path separator, not a quote (K32), so a folder may hold one.
 	// A new line ends a folder change as ; does (the 1.36.1 sweep).
-	const lead = tool === 'PowerShell' ? /^(\s*([A-Za-z_]\w*=|(cd|chdir|pushd|set-location|sl|push-location)\s+)("[^"$`]*"|'[^']*'|[^\s;&|$`'"()]*)[ \t]*(;|&&|\n)\s*)+/i : /^(\s*([A-Za-z_]\w*=|(cd|pushd)\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)[ \t]*(;|&&|\n)\s*)+/;
-	// 1.36.1: plain folder changes at the very end (Pop-Location, popd, cd .., Set-Location back, after ; && or a new
-	// line, popd's output dropped) run after the program, so no definition hides there; anything after them counts.
-	const trail = tool === 'PowerShell'
-		? /(\s*(;|&&|\n)\s*(pop-location|popd|set-location|sl|cd|chdir)(\s+("[^"$`]*"|'[^']*'|[^\s;&|$`'"()]+))?(\s*\|\s*out-null|\s*>\s*\$null)?\s*)+;?\s*$/i
-		: /(\s*(;|&&|\n)\s*(popd|cd)(\s+("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]+))?(\s*>\s*\/dev\/null)?\s*)+;?\s*$/;
-	const bare = text.replace(lead, '').replace(trail, '').replace(/(^|\s)\d?>&\d(?=\s|$)/g, '$1');	// V1 (the 1.25.0 verify): a line of nothing but plain readers, a print-only sed and a cd can redefine nothing, so
-	// its ; and && do not count as a place a definition could hide.
-	const onlyReads = !/[`]|\$\(|<\(/.test(text) && segments.every((g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); const onPath = !/[\\/]/.test(w[0] || ''); return (onPath && (READERS.has(p) || PIPE_READERS.has(p))) || CHANGERS.has(p) || printSed(w); });
-	const defines = (!onlyReads && /[;&\n]|\|\|/.test(bare)) || /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i.test(text);
+	const DEFINITION = /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i;
+	// K87 (build 11): only what runs before a program can stand in for it, so a program's exemption asks of the
+	// commands before it alone: a plain reader, a folder change or a plain assignment defines nothing, and anything else
+	// may. A command after it is read on its own, as every command is. A substitution anywhere keeps the whole reading.
+	const plainStep = (g) => {
+		const w = g.filter((x) => !x.redirect).map((x) => x.value);
+		const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
+		return (!/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p))) || CHANGERS.has(p) || printSed(w) || (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
+	};
+	const substituted = /[`]|\$\(|<\(/.test(text);
+	const definesBefore = (s) => (s > 0 && (substituted || !segments.slice(0, s).every(plainStep))) || DEFINITION.test(segments.slice(0, s + 1).map((g) => g.map((x) => x.value).join(' ')).join(' ; '));
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
@@ -629,12 +630,12 @@ function shellWritesFrom(command, tool, start, names) {
 		}
 		if (hits.length === 0) continue;
 		if (segment.some((x) => x.redirect && hit(x))) return true;
-		if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || printSed(all)) && !defines) {
+		if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || printSed(all)) && !definesBefore(s)) {
 			// Piped on, the read must go to another reader.
 			if (segment.end === '|' && segments[s + 1] && !PIPE_READERS.has(path.basename(slash(segments[s + 1][0]?.value || '')).replace(/\.(exe|cmd|bat)$/, ''))) return true;
 			continue;
 		}
-		if (COPIERS.has(program) && !defines) {
+		if (COPIERS.has(program) && !definesBefore(s)) {
 			// A copy out is a read. Any option outside the known plain ones may name the destination (-t, --t...,
 			// -Destination and its short forms), so the guard refuses rather than guess.
 			// PowerShell takes any start of a parameter's name and some take a value, so there only a bare two-word copy
@@ -654,10 +655,10 @@ function shellWritesFrom(command, tool, start, names) {
 		// --diagnostic-dir, --heap-prof-name; the 1.36.0 sweep).
 		// Never with a bracket in the command: a PowerShell argument in brackets runs as code, and a path it joins from
 		// pieces ('.cl'+'aude/...') is no word the reader sees (the 1.36.1 sweep).
-		if (names !== proofNames && !defines && !grouped && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
+		if (names !== proofNames && !definesBefore(s) && !grouped && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
 		// Only the subcommand right after git (no global option, which can move git or run a program), no option that runs
 		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
-		if (names !== proofNames && !defines && !grouped && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
+		if (names !== proofNames && !definesBefore(s) && !grouped && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.

@@ -203,6 +203,20 @@ test('reads of the guards and ordinary commands still pass', () => {
 // script made the guards read the command as one where a definition could hide, so running state.mjs was held as a
 // write to a protected file. 2>&1 points one output at another and writes no file; a plain folder change defines
 // nothing.
+// K87 (build 11, reproduced on 1.36.1 through the launcher): a kit script followed by any second command (`&& ls`,
+// `; git status`, `; Get-ChildItem`) was held as a write to a protected file. Only what runs before a program can
+// stand in for it, so a command after the script defines nothing for it; every later command is still read on its own.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('a kit script followed by other commands passes; a write after it or a definition before it is still held', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	const fwd = proj.split(path.sep).join('/');
+	for (const c of ['node .claude/state.mjs view && ls', 'node .claude/use-check.mjs && cd .. && ls', 'node .claude/state.mjs view && cd .. && git status', 'node .claude/ci-shape.mjs; git status', 'cat .claude/settings.json && ls', `cd ${fwd} && node .claude/state.mjs next && cd .. && ls`]) assert.equal(bash(c), 'allow', c);
+	for (const c of ['node .claude/state.mjs view; Set-Location ..; Get-ChildItem', 'node .claude/state.mjs view; Get-ChildItem']) assert.equal(ps(c), 'allow', c);
+	// A write after the script is read on its own; a definition, a sourced file or a substitution before it still stands in.
+	for (const c of ['node .claude/state.mjs view && cp x .claude/guard.cjs', 'node .claude/state.mjs view; echo x > .claude/settings.json', 'source x.sh; node .claude/settings.json && ls', 'alias node=cp; node x .claude/guard.cjs && ls', 'PATH=/tmp/x; node .claude/settings.json && ls', 'f=$(cp x y); node .claude/settings.json && ls', 'false || node .claude/settings.json && ls']) assert.equal(bash(c), 'deny', c);
+	for (const c of ['Set-Alias node Copy-Item; node x .claude/guard.cjs; Get-ChildItem', 'node .claude/state.mjs view; Copy-Item x .claude/guard.cjs']) assert.equal(ps(c), 'deny', c);
+});
+
 // why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
 test('running a kit script with 2>&1, or after a plain Set-Location, passes; a write beside it is still held', () => {
 	const ps = (command) => decide('PowerShell', { command });
