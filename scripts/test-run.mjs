@@ -105,8 +105,10 @@ function buildMap(mapDir, root, sha) {
 function testRanges(text) {
 	const starts = [];
 	text.split('\n').forEach((l, i) => {
-		const m = /^\s*test\(\s*(['"`])((?:\\.|(?!\1).)*)\1/.exec(l);
-		if (/^\s*test\(/.test(l)) starts.push({ line: i + 1, name: m && !(m[1] === '`' && m[2].includes('${')) ? m[2].replace(/\\(.)/g, '$1') : null });
+		// A name counts only as one whole literal before the next argument; `'a' + 'b'` or `test (` read as unknown, so the
+		// whole file runs (the build 14 sweep: both kept an edited test from running).
+		const m = /^\s*test\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1\s*[,)]/.exec(l);
+		if (/^\s*test\s*\(/.test(l)) starts.push({ line: i + 1, name: m && !(m[1] === '`' && m[2].includes('${')) ? m[2].replace(/\\(.)/g, '$1') : null });
 	});
 	return starts.map((s, i) => ({ ...s, end: i + 1 < starts.length ? starts[i + 1].line - 1 : Infinity }));
 }
@@ -116,9 +118,13 @@ function changes(root, sha) {
 	const out = {};
 	const at = (f) => (out[f] ||= { old: new Set(), now: new Set(), whole: false });
 	let file = null;
-	for (const l of git(root, 'diff', '-U0', '--no-color', '--no-renames', sha, '--').stdout.split('\n')) {
-		if (l.startsWith('--- ')) file = l === '--- /dev/null' ? null : l.slice(6);
-		else if (l.startsWith('+++ ')) { if (l !== '+++ /dev/null') file = l.slice(6); at(file); }
+	// Text diffs whatever an attributes file says, and paths unquoted; git ends a path holding a space with a tab. Any
+	// changed file the hunks did not place (binary, or a name git still quotes) runs every test that reaches it (the
+	// build 14 sweep).
+	const diff = git(root, '-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-renames', '--text', '--no-ext-diff', '--no-textconv', sha, '--').stdout;
+	for (const l of diff.split('\n')) {
+		if (l.startsWith('--- ')) file = l === '--- /dev/null' ? null : l.slice(6).replace(/\t$/, '');
+		else if (l.startsWith('+++ ')) { if (l !== '+++ /dev/null') file = l.slice(6).replace(/\t$/, ''); at(file); }
 		else if (l.startsWith('@@') && file) {
 			const [, a, b = '1', c, d = '1'] = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(l);
 			const span = (start, n, set) => {
@@ -129,6 +135,7 @@ function changes(root, sha) {
 		}
 	}
 	for (const f of git(root, 'ls-files', '--others', '--exclude-standard').stdout.split('\n').filter(Boolean)) at(f).whole = true;
+	for (const f of git(root, 'diff', '-z', '--name-only', '--no-renames', sha, '--').stdout.split('\0').filter(Boolean)) if (!out[f] || (!out[f].old.size && !out[f].now.size)) at(f).whole = true;
 	return out;
 }
 

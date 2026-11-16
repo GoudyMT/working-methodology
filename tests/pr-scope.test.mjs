@@ -39,8 +39,11 @@ test('a PR runs the reached tests only with a map for its base and no risky chan
 	assert.equal(scope(dir, 'not-a-ref').scope, 'full', 'a base that is not a commit');
 	// K9, the 1.27.0 sweep: every file the selection rests on, one row each, not three of ten.
 	map(base);
-	for (const f of ['scripts/test-run.mjs', 'scripts/pr-scope.mjs', 'tests/map-trace.cjs', 'package.json', 'package-lock.json', 'kit.config.json', '.gitattributes', 'project/.claude/kit-temp.cjs']) {
-		assert.equal(change(() => { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), 'r\n'); }).scope, 'full', f);
+	// The build 14 sweep: a .gitattributes in a subfolder (`*.mjs -diff`) hid that folder's changes from the selection.
+	for (const f of ['scripts/test-run.mjs', 'scripts/pr-scope.mjs', 'tests/map-trace.cjs', 'package.json', 'package-lock.json', 'kit.config.json', '.gitattributes', 'scripts/.gitattributes', 'project/.claude/.gitattributes', 'project/.claude/kit-temp.cjs']) {
+		// The map is written in each change: leaving the branch that committed one removes the untracked copy, and with no
+		// map every row read full whatever its file (the build 14 sweep's probe).
+		assert.equal(change(() => { map(base); fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), 'r\n'); }).scope, 'full', f);
 	}
 });
 

@@ -13,7 +13,9 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 // The map itself too: one a PR commits would choose what that PR runs (the security review of this build).
-export const RISKY = /^(\.github\/|tests\/\.map\.json$|scripts\/test-run\.mjs$|scripts\/pr-scope\.mjs$|tests\/harness\.mjs$|tests\/map-trace\.cjs$|package(-lock)?\.json$|kit\.config\.json$|\.gitattributes$|project\/\.claude\/kit-temp\.cjs$)/;
+// A .gitattributes in any folder: one can make git show that folder's files as binary, with no line numbers to select by
+// (the build 14 sweep).
+export const RISKY = /^(\.github\/|tests\/\.map\.json$|scripts\/test-run\.mjs$|scripts\/pr-scope\.mjs$|tests\/harness\.mjs$|tests\/map-trace\.cjs$|package(-lock)?\.json$|kit\.config\.json$|project\/\.claude\/kit-temp\.cjs$)|(^|\/)\.gitattributes$/;
 
 export function scope(root, base) {
 	const git = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8' });

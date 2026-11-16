@@ -258,6 +258,35 @@ test('a changed run adds the always files once, runs everything above half, and 
 	assert.equal(ran(log).length, 6);
 });
 
+// The build 14 sweep: a file git shows as binary, a path with a space, a test named at run time and a test written
+// `test (` each kept a reached test from running. Each now runs it, or runs its whole file.
+// why: guards rule:test-and-review-cadence
+test('a changed run still picks the tests a binary diff, a spaced path or an odd test start reaches', () => {
+	const { repo, log, test: file } = fixtureRepo();
+	const p = (rel) => path.join(repo, rel);
+	fs.writeFileSync(p('a b.md'), 'spaced\n');
+	fs.appendFileSync(file, [
+		"test('reads spaced', () => { mark('reads spaced'); fs.readFileSync('a b.md', 'utf8'); });",
+		"test('first ' + 'second', () => { mark('built'); });",
+		"test ('spaced start', () => { mark('spaced start'); });", ''].join('\n'));
+	sh(repo, 'add', '.'); sh(repo, 'commit', '-qm', 'more');
+	assert.equal(run(repo, ['--map', file]).status, 0);
+	const pick = (edit) => {
+		sh(repo, 'checkout', '-q', '--', '.');
+		edit();
+		const r = run(repo, ['--changed', '--pick', file]);
+		assert.equal(r.status, 0, r.stdout + r.stderr);
+		return r.stdout;
+	};
+	const sub = (rel, from, to) => fs.writeFileSync(p(rel), fs.readFileSync(p(rel), 'utf8').replace(from, to));
+	// A local attributes file (left untracked by checkout) makes git show src/a.mjs as binary, with no line numbers.
+	assert.match(pick(() => { fs.writeFileSync(p('src/.gitattributes'), '*.mjs -diff\n'); sub('src/a.mjs', 'return 2;', 'return 5;'); }), /tests\/x\.test\.mjs::(g|\*)$/m);
+	fs.rmSync(p('src/.gitattributes'));
+	assert.match(pick(() => sub('a b.md', 'spaced', 'changed')), /tests\/x\.test\.mjs::(reads spaced|\*)$/m);
+	assert.match(pick(() => sub('tests/x.test.mjs', "mark('built');", "mark('built'); void 0;")), /^tests\/x\.test\.mjs::\*$/m);
+	assert.match(pick(() => sub('tests/x.test.mjs', "mark('spaced start');", "mark('spaced start'); void 0;")), /tests\/x\.test\.mjs::(spaced start|\*)$/m);
+});
+
 // why: guards rule:test-and-review-cadence
 // 1.35.0: a PR that changed test files ran only those tests, so the pin check, which reads every test file as data,
 // was skipped, and main went red on the merge.
