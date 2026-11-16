@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 // The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
 // suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
 const status = (o) => kitStatus({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
@@ -415,9 +415,20 @@ test('the release check never runs a program the kit folder\'s git config names,
   fs.writeFileSync(prog, `#!/bin/sh\necho ran > "${marker.split(path.sep).join('/')}"\nexec git-upload-pack "$@"\n`, { mode: 0o755 });
   g('remote', 'add', 'origin', path.dirname(kit));
   g('config', 'remote.origin.uploadpack', prog.split(path.sep).join('/'));
-  const say = kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null });
-  assert.doesNotMatch(say, /newer kit release/);
+  // An upstream, so the 1.36.1 check reached its fetch (the build 11 sweep: without one it returned first).
+  g('update-ref', 'refs/remotes/origin/main', 'HEAD'); g('config', 'branch.main.remote', 'origin'); g('config', 'branch.main.merge', 'refs/heads/main');
+  kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null });
   assert.equal(fs.existsSync(marker), false, 'a program the kit folder\'s config named ran');
+  // The listing itself reads no GIT_ variable, no global or system config, and runs from outside the kit folder.
+  const { args, opts } = lsRemoteCall('https://github.com/o/r.git', { PATH: 'p', GIT_DIR: kit, GIT_CONFIG_GLOBAL: 'evil', GIT_SSH_COMMAND: 'x', HTTPS_PROXY: 'h' });
+  assert.ok(!args.includes('-C'), 'it runs from outside the kit folder');
+  assert.equal(opts.env.GIT_DIR, undefined);
+  assert.equal(opts.env.GIT_SSH_COMMAND, undefined);
+  assert.equal(opts.env.GIT_CONFIG_NOSYSTEM, '1');
+  assert.notEqual(opts.env.GIT_CONFIG_GLOBAL, 'evil');
+  assert.ok(args.includes('protocol.https.allow=always') && args.includes('protocol.file.allow=never'), 'https only');
+  // What the listing prints is read as tags only.
+  assert.deepEqual(tagsOf(`${'a'.repeat(40)}\trefs/tags/v1.2.0\n${'b'.repeat(40)}\trefs/heads/main\n${'c'.repeat(40)}\trefs/tags/v1.3.0\n`), ['v1.2.0', 'v1.3.0']);
 });
 
 // M13 (b) (build 11, real on 1.36.1): a file only an unreleased build installed, changed here, is kept and the install

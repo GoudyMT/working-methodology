@@ -1605,16 +1605,29 @@ export function newerReleases(tags, version) {
   const newest = newer.reduce((best, t) => (!best || semverAbove(t.slice(1), best.slice(1)) ? t : best), null);
   return { count: newer.length, newest };
 }
+// The build 11 sweep: git still reads the global and system config (a url.<x>.insteadOf sends the listing to another
+// host) and the environment (GIT_DIR, GIT_CONFIG_*), so the listing runs with neither: no GIT_ variable, no global or
+// system config, no prompt, https only.
+export function lsRemoteCall(url, env = process.env) {
+  const clean = Object.fromEntries(Object.entries(env).filter(([k]) => !/^GIT_/i.test(k)));
+  return {
+    args: [...NO_PROGRAMS, '-c', 'protocol.https.allow=always', '-c', 'credential.helper=', '-c', 'core.askPass=', 'ls-remote', '--tags', '--refs', url],
+    opts: { encoding: 'utf8', timeout: 8000, cwd: SAFE_CWD, env: { ...clean, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '' } },
+  };
+}
+/** The release tags in git ls-remote --tags --refs output: "<sha>\trefs/tags/<tag>" per line. */
+export const tagsOf = (stdout) => String(stdout).split(/\r?\n/).map((l) => /^[0-9a-f]{40,64}\trefs\/tags\/(\S+)$/.exec(l.trim())).filter(Boolean).map((m) => m[1]);
 function remoteKitAhead(kit) {
   const none = { count: 0, newest: null };
-  const url = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'config', '--get', 'remote.origin.url'], { encoding: 'utf8', cwd: SAFE_CWD }).stdout.trim();
+  const clean = lsRemoteCall('', process.env).opts.env;
+  const url = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'config', '--get', 'remote.origin.url'], { encoding: 'utf8', cwd: SAFE_CWD, env: clean }).stdout.trim();
   if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+?(\.git)?\/?$/.test(url)) return none;
   let version = '';
   try { version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim(); } catch { return none; }
-  const r = spawnSync('git', [...NO_PROGRAMS, '-c', 'protocol.https.allow=always', '-c', 'credential.helper=', '-c', 'core.askPass=', 'ls-remote', '--tags', '--refs', url],
-    { encoding: 'utf8', timeout: 8000, cwd: SAFE_CWD, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '' } });
+  const { args, opts } = lsRemoteCall(url);
+  const r = spawnSync('git', args, opts);
   if (r.status !== 0) return none;
-  return newerReleases(r.stdout.split(/\r?\n/).map((l) => l.split('refs/tags/')[1]).filter(Boolean), version);
+  return newerReleases(tagsOf(r.stdout), version);
 }
 
 /**
