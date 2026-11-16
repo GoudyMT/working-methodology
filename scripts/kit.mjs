@@ -146,6 +146,10 @@ function unreleasedText(stamp) {
   return `unreleased ${stamp.describe || 'build'}${extra.length ? ` with ${extra.join(' and ')}` : ''}`;
 }
 
+// M13 (b) (build 11): a file only an unreleased build installed, changed here, is kept, and the install stays
+// unreleased until it is gone; a reinstall keeps it again, so the line names it and the step that clears it.
+const keptText = (stamp, fix) => ((stamp.leftover || []).length ? ` Kept from an unreleased build: ${stamp.leftover.join(', ')}. Keep what you need, remove it by hand, then run ${fix}.` : '');
+
 // A git pull moves the kit folder onto main, off every release tag, so every fix line names a tag instead: one line
 // that runs as typed in PowerShell and bash.
 const releaseCheckout = (kit, tag) => `git -C "${toPosix(kit)}" fetch --tags; git -C "${toPosix(kit)}" checkout ${tag || '<newest v tag>'}`;
@@ -277,6 +281,27 @@ const OTHER_HOOKS = ['applypatch-msg', 'pre-applypatch', 'post-applypatch', 'pre
 /** Where the outside record and git hook shims of a project live (the launcher names them the same way). */
 export function guardDir(home, projectDir) {
   return path.join(home, 'kit-guard', launch.recordName(projectDir));
+}
+
+/**
+ * K81 (build 11): forget the guard record of a project folder the owner deleted, so the launcher stops reading it on
+ * every call. Only when the folder is gone and the folder above it is there: a project on an unplugged drive or an
+ * offline share keeps its record, its git hook shims and the owner's accepted files.
+ *
+ * Returns:
+ *     { removed: [record folders], why: '' } or { removed: [], why } when nothing is removed
+ */
+export function forget({ home, dir }) {
+  const abs = path.resolve(String(dir || ''));
+  if (!dir || fs.existsSync(abs)) return { removed: [], why: `${toPosix(abs)} is there: forget is only for a project folder that was deleted` };
+  if (!fs.existsSync(path.dirname(abs))) return { removed: [], why: `the folder above it (${toPosix(path.dirname(abs))}) cannot be found either, so its drive or share may only be offline; its record stays` };
+  const removed = [];
+  for (const d of [guardDir(home, abs), legacyGuardDir(home, abs)].filter(Boolean)) {
+    if (!fs.existsSync(d)) continue;
+    fs.rmSync(d, { recursive: true, force: true });
+    removed.push(toPosix(d));
+  }
+  return { removed, why: removed.length ? '' : `no guard record names ${toPosix(abs)}` };
 }
 
 /** Where 1.25.1 kept a project's record, when its name was too long for B13 to keep (C2); null when it is the same. */
@@ -703,13 +728,41 @@ export function install(ctx) {
   for (const key of [...retiredKeys, ...branchOnly]) {
     const base = stamp.files[key];
     const heir = [].concat(replacedBy[key] || []).find((h) => skipped.some((s) => s.file === h));
-    const dest = key.startsWith('memory/') && memoryDir ? path.join(memoryDir, key.slice(7))
-      : path.join(ctx.target === 'user' ? ctx.home : ctx.projectDir, key);
+    const root = key.startsWith('memory/') && memoryDir ? memoryDir : ctx.target === 'user' ? ctx.home : ctx.projectDir;
+    const dest = path.join(root, key.startsWith('memory/') && memoryDir ? key.slice(7) : key);
+    // M13 (g) (build 11): a key that climbs out of its folder (a hand-edited stamp) names a file install never wrote.
+    const rel = path.relative(root, dest);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) { delete files[key]; continue; }
+    // The build 11 sweep: a key inside by its text can run through a link (a junction needs no admin) to a file
+    // outside, so the folder it sits in is read as the file system resolves it.
+    let realParent = null;
+    let realRoot = null;
+    try { realParent = fs.realpathSync.native(path.dirname(dest)); realRoot = fs.realpathSync.native(root); } catch { /* not there: nothing to remove */ }
+    if (realParent && realRoot) {
+      const inner = path.relative(realRoot, realParent);
+      if (inner.startsWith('..') || path.isAbsolute(inner)) { delete files[key]; continue; }
+    }
+    // M13 (f) (build 11): on a case-folding file system a key the kit renamed by case alone is the shipped file itself.
+    // Any platform: Linux mounts case-folding disks too (WSL on /mnt/c, exFAT, casefold ext4; the build 11 sweep), and
+    // on a case-sensitive one the old name is only a file left behind.
+    if ([...planned].some((k) => k !== key && k.toLowerCase() === key.toLowerCase())) { delete files[key]; continue; }
     if (heir && base && fs.existsSync(dest)) {
       skipped.push({ file: key, reason: `retired by the kit, but kept while ${heir} is skipped: merge ${heir}, then remove this file by hand` });
       continue;
     }
     if (!base || !fs.existsSync(dest)) { if (!fs.existsSync(dest)) delete files[key]; continue; }
+    // M13 (c) (build 11): a memory file the owner's own MEMORY.md (skipped, so not rewritten) still links stays until
+    // the link goes; removed, it leaves the index pointing at nothing.
+    if (key.startsWith('memory/') && memoryDir && skipped.some((s) => s.file === 'memory/MEMORY.md')) {
+      let index = '';
+      try { index = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf8'); } catch { /* none */ }
+      // Any Markdown link form: (name), (./name), (<name>), (name "title"), or a reference line "[x]: name".
+      const name = key.slice(7).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`(\\(\\s*<?|\\]:\\s*<?)(\\./)?${name}>?(\\s|\\)|$)`, 'm').test(index)) {
+        skipped.push({ file: key, reason: `${branchOnly.includes(key) ? 'only an unreleased build installed it' : 'retired by the kit'}, and your MEMORY.md still links it (install leaves your changed copy as it is): remove the link, then remove this file by hand` });
+        continue;
+      }
+    }
     if (sha(fs.readFileSync(dest, 'utf8')) !== base) {
       if (branchOnly.includes(key)) {
         skipped.push({ file: key, reason: 'only an unreleased build installed it, and it changed here - keep what you need, then remove it by hand' });
@@ -752,7 +805,14 @@ export function install(ctx) {
         const recFile = path.join(ctx.home, 'kit-guard', n, 'record.json');
         let rec = null;
         try { rec = JSON.parse(fs.readFileSync(recFile, 'utf8')); } catch { continue; }
-        if (!rec || !rec.projectDir || !rec.shims || !fs.existsSync(rec.projectDir)) continue;
+        // K81 (build 11): a record whose folder cannot be found is named, never removed here. A folder on an unplugged
+        // drive, a share offline or a folder renamed for a while is still a project: removing its record took its git
+        // hook shims and the owner's accepted files with it (the build 11 sweep). The owner forgets a deleted one.
+        if (rec && typeof rec.projectDir === 'string' && path.isAbsolute(rec.projectDir) && !fs.existsSync(rec.projectDir)) {
+          skipped.push({ file: `kit-guard/${n}`, reason: `its project ${toPosix(rec.projectDir)} is not there; if you deleted it, run node "${toPosix(ctx.kit)}/scripts/kit.mjs" forget "${toPosix(rec.projectDir)}"` });
+          continue;
+        }
+        if (!rec || typeof rec.projectDir !== 'string' || !fs.existsSync(rec.projectDir) || !rec.shims) continue;
         // The shims run a hook from the launcher's checked copy, and only a first-push-check that reads its project
         // from KIT_HOOK_PROJECT can run there (the 1.27.0 sweep): a project still on an older kit keeps its shims,
         // and is named, until install project brings its hooks up to this release. Only the file the record accepted
@@ -1238,7 +1298,7 @@ function doubleRunLines(projectDir) {
  * Returns:
  *     the message text (one or more lines)
  */
-export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion }) {
+export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
   const lines = [];
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old.line);
@@ -1247,8 +1307,8 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
-  const ahead = remoteKitAhead(kit);
-  if (ahead > 0) lines.push(`The kit on GitHub is ${ahead} commit(s) ahead of the kit folder. Check out its newest release tag (${releaseCheckout(kit, newestTag(kit))}), then run /methodology-kit update.`);
+  const ahead = remote(kit);
+  if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.
@@ -1268,7 +1328,7 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   // session start said only that an update was there): the skew is named for what it breaks.
   if (stamp.version && userStamp.version && semverAbove(userStamp.version, stamp.version)) lines.push(`~/.claude runs kit ${userStamp.version}, this project ${stamp.version}: the user layer's skills and hooks can need project files this install lacks, so a sweep or a build may stop on a missing hook. Run /methodology-kit update before either.`);
   if (userStamp.release === false) lines.push(`~/.claude runs an unreleased kit build (${userStamp.describe || 'no git history'}). ${checkout}, then run node "${toPosix(kit)}/scripts/kit.mjs" install user.`);
-  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.`);
+  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.${keptText(stamp, '/methodology-kit update')}`);
   if (stamp.version) {
     const r = foldBack({ kit, home, target: 'project', projectDir });
     // Only a file changed here and in the kit owes work; one changed only here holds the project's own values.
@@ -1363,13 +1423,15 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
   }
   const channel = stableChannelLine(home);
   if (channel) lines.push(channel);
-  const n = ahead(kit);
+  const a = ahead(kit);
+  const n = typeof a === 'number' ? a : a.count;
   if (n > 0) {
-    lines.push(`    GitHub has ${n} newer kit commit(s): check out its newest release tag (${releaseCheckout(kit, newest(kit))}), then update both below.`);
+    const tag = (a && a.newest) || newest(kit);
+    lines.push(`    GitHub has ${n} newer kit release(s), newest ${tag || 'unknown'}: check out its newest release tag (${releaseCheckout(kit, tag)}), then update both below.`);
     gaps.push('the kit folder is behind GitHub');
   }
   const where = [
-    { name: '~/.claude', target: 'user', stampPath: path.join(home, STAMP_USER), fix: `node ${toPosix(kit)}/scripts/kit.mjs install user` },
+    { name: '~/.claude', target: 'user', stampPath: path.join(home, STAMP_USER), fix: `node "${toPosix(kit)}/scripts/kit.mjs" install user` },
     { name: 'This project', target: 'project', stampPath: path.join(projectDir, STAMP_PROJECT), fix: '/methodology-kit update' },
   ];
   for (const w of where) {
@@ -1389,7 +1451,7 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     const parts = [unreleased || (semverAbove(version, stamp.version) ? `behind kit ${version}` : 'current')];
     if (waiting) parts.push(`${waiting} file(s) waiting`);
     const ok = parts[0] === 'current' && !waiting && !held.length;
-    const fix = unreleased ? ` Check out the kit's newest release tag (${releaseCheckout(kit, newest(kit))}), then run ${w.fix}.` : ` Run ${w.fix}.`;
+    const fix = (unreleased ? ` Check out the kit's newest release tag (${releaseCheckout(kit, newest(kit))}), then run ${w.fix}.` : ` Run ${w.fix}.`) + keptText(stamp, w.fix);
     lines.push(`${w.name}: ${stamp.version}, ${parts.join('; ')}.${ok ? '' : fix}`);
     if (held.length) lines.push(`    ${held.length} file(s) changed here and in the kit: ${held.join(', ')}. Run kit.mjs install ${w.target === 'user' ? 'user' : 'project <folder>'} from the release copy: it merges each line by line, and names any it cannot (a clash), to merge by hand and record with --merged <file>,<file>.`);
     if (w.target === 'project') for (const l of doubleRunLines(projectDir)) lines.push(`    ${l}`);
@@ -1531,15 +1593,41 @@ function writeNotice(projectDir, version) {
 }
 
 /**
- * How many commits the kit's upstream (its GitHub repo) has that the kit folder lacks. A fetch that fails or
- * takes too long counts as 0: an offline machine must still start its session.
+ * The kit releases on GitHub newer than the kit folder's VERSION: { count, newest }. A listing that fails or takes
+ * too long counts as none: an offline machine must still start its session.
  */
+// M13 (a) (build 11): the kit folder sits on a release tag, detached, so commits past an upstream branch never
+// counted; what the owner needs is a newer release, named from the remote itself rather than from local tags. The
+// remote is only listed, never fetched, and only at a GitHub https address, from outside the kit folder: the folder's
+// own git config (an upload-pack program, hooks, a credential helper) is never read, and nothing is written to it.
+export function newerReleases(tags, version) {
+  const newer = tags.filter((t) => /^v\d+\.\d+\.\d+$/.test(t) && semverAbove(t.slice(1), version));
+  const newest = newer.reduce((best, t) => (!best || semverAbove(t.slice(1), best.slice(1)) ? t : best), null);
+  return { count: newer.length, newest };
+}
+// The build 11 sweep: git still reads the global and system config (a url.<x>.insteadOf sends the listing to another
+// host) and the environment (GIT_DIR, GIT_CONFIG_*), so the listing runs with neither: no GIT_ variable, no global or
+// system config, no prompt, https only.
+export function lsRemoteCall(url, env = process.env) {
+  const clean = Object.fromEntries(Object.entries(env).filter(([k]) => !/^GIT_/i.test(k)));
+  return {
+    args: [...NO_PROGRAMS, '-c', 'protocol.https.allow=always', '-c', 'credential.helper=', '-c', 'core.askPass=', 'ls-remote', '--tags', '--refs', url],
+    opts: { encoding: 'utf8', timeout: 8000, cwd: SAFE_CWD, env: { ...clean, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '' } },
+  };
+}
+/** The release tags in git ls-remote --tags --refs output: "<sha>\trefs/tags/<tag>" per line. */
+export const tagsOf = (stdout) => String(stdout).split(/\r?\n/).map((l) => /^[0-9a-f]{40,64}\trefs\/tags\/(\S+)$/.exec(l.trim())).filter(Boolean).map((m) => m[1]);
 function remoteKitAhead(kit) {
-  const git = (...a) => spawnSync('git', ['-C', kit, ...a], { encoding: 'utf8', timeout: 8000 });
-  if (git('rev-parse', '--abbrev-ref', '@{u}').status !== 0) return 0;
-  if (git('fetch', '--quiet').status !== 0) return 0;
-  const n = Number(git('rev-list', '--count', 'HEAD..@{u}').stdout.trim());
-  return Number.isFinite(n) ? n : 0;
+  const none = { count: 0, newest: null };
+  const clean = lsRemoteCall('', process.env).opts.env;
+  const url = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'config', '--get', 'remote.origin.url'], { encoding: 'utf8', cwd: SAFE_CWD, env: clean }).stdout.trim();
+  if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+?(\.git)?\/?$/.test(url)) return none;
+  let version = '';
+  try { version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim(); } catch { return none; }
+  const { args, opts } = lsRemoteCall(url);
+  const r = spawnSync('git', args, opts);
+  if (r.status !== 0) return none;
+  return newerReleases(tagsOf(r.stdout), version);
 }
 
 /**
@@ -2095,6 +2183,10 @@ function main(argv) {
       fs.writeFileSync(path.join(kit, rel), text);
     }
     console.log(`build: wrote ${out.size} file(s) from rules/; commit-msg hook: ${sourceHooks(kit)}`);
+  } else if (cmd === 'forget') {
+    const r = forget({ home, dir: target });
+    console.log(r.removed.length ? `forget: removed ${r.removed.join(', ')}` : `forget: nothing removed: ${r.why}`);
+    if (!r.removed.length) process.exitCode = 1;
   } else if (cmd === 'status') {
     const r = status({ kit, home, projectDir: target || process.cwd() });
     console.log(r.text);

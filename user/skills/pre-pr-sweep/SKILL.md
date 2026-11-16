@@ -40,16 +40,15 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    a false `--base`, clearing the AI-shell marker, invented outcome numbers, or an `--owner-yes` the owner never gave
    would get past it, and each is a stop-and-tell-the-owner event. It checks a contract's shape, not whether each role's question fits its kind; the outcome trips catch that.
 3. **Run the agents this session** as the `reviewer` role, against the branch HEAD (from another checkout, the brief names the cleared one), each with its role's context
-   and a finding cap; each brief carries its role's `calls` from the contract in these words:
-   "Call cap: <n>. A call is one message from you, however many tools it runs, so run independent reads together in one message. A hook counts
-   your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did
-   not get to as 'not checked'." In a project the start notice says has no hook, drop the hook sentence and have the reviewer count. The cap's last two calls are for the report. What a role did not check goes in the
-   report as not checked, never as a pass. Each brief also carries `Sweep: <hash> role <n>` from the start notice
-   (n is the role's place in the contract) and the role's `Token ceiling: <n>` from it; the hook stops the reviewer
-   while one more call still fits under the ceiling, the same hand-in. The sweep guard refuses a brief without all three lines. The brief carries the
-   diff (`git diff <base>...HEAD` for the files its role reads), not whole files: the reviewer reads more by range,
-   and the call-cap hook refuses a whole file over 40 KB. Each brief opens with the "Project rules" read instruction from the agent-team-build templates
-   (rule:agent-canary). Findings go through rule:finding-pipeline; receive them per
+   and a finding cap. **The brief is the file approve.mjs wrote for the role** (`<contract>-brief-<n>.md`, named
+   when it clears the contract or logs the owner's yes): pass it as the prompt, as written (from 1.37.0, T6). It
+   carries the rules block by line range, `Sweep: <hash> role <n>`, the role's `Call cap: <n>` (the hook's wording,
+   or the count-it-yourself wording where no hook runs) and `Token ceiling: <n>`, the role's diff, a scratch folder
+   of its own, and the report shape. The cap's last two calls are the refused one and the report; the hook stops a
+   reviewer while this call, one more and the report still fit under the ceiling. What a role did not check goes
+   in the report as not checked, never as a pass. The sweep guard refuses a brief without the three guard lines;
+   the call-cap hook refuses a whole file over 40 KB; the canary checks the report's shape once at the hand-back.
+   Findings go through rule:finding-pipeline; receive them per
    [references/receiving-findings.md](references/receiving-findings.md). A screen or flow in the change adds the
    ui-review skill's scored review as one role.
 4. **Write the report** at `<sweep folder>/YYYY-MM-DD-<milestone>.md` (a triage report may sit in the PR body's
@@ -69,7 +68,10 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents auto` finds each reviewer from its brief's Sweep tag, so ids lost to a compaction do not end a sweep; or each reviewer's agent id, one per
    role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a reviewer that crashed (no report, not finished, its transcript quiet for 10 minutes): `node approve.mjs <contract.json> --retry <n> --crashed <id>` gives role n one more start with the same brief, and `--agents` names the retry. A crash's tokens count against its role's budget; a sweep cut short, where none of these works (a role's second crash, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds
    `--carried <n>`, a sweep that fixes carried findings `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
-   the mid model, for the reviewer model trial). A bug later found in code the
+   the mid model, for the reviewer model trial). When every role handed back a report in its shape, the script
+   counts `--findings` from the reports, writes `<contract>-ledger.md` (one row per finding) and refuses a count
+   that differs; `--real` and `--duplicates` stay the lead's triage, and the ledger marks findings two roles placed
+   on the same line. A bug later found in code the
    sweep passed: `--escape "<what>"`. `--summary` prints the trial so far; put its line in the rundown.
 
 ## The audit

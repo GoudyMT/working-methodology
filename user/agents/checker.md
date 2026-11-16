@@ -2,7 +2,7 @@
 name: checker
 description: Read-only review of ONE unit a builder finished - against its plan, the goals the user set, the project's rules and the builder's own evidence. Returns PASS, FIX or ESCALATE. Use only when the lead hands over a complete checker brief (agent-team-build skill).
 model: claude-opus-5-5
-effort: xhigh
+effort: high
 omitClaudeMd: true
 tools: Read, Grep, Glob, Bash, PowerShell
 disallowedTools: Edit, Write, WebFetch, WebSearch, Agent

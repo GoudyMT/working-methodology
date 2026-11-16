@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 // The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
 // suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
 const status = (o) => kitStatus({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
@@ -390,6 +390,60 @@ test('the Claude Code version read never runs a claude program planted in the cu
   assert.equal(r.stdout.trim(), 'null');
 });
 
+// M13 (a) (build 11, real on 1.36.1): the kit folder sits on a release tag, detached, so the old check of commits
+// past its upstream branch never fired, and the tag its fix named was read before the fetch. A newer release on the
+// remote is what the owner needs to hear, counted from the remote's own release tags and named from them.
+// why: guards rule:owners-rules (install only from a release)
+test('the release check counts and names the remote\'s newer release tags only', () => {
+  assert.deepEqual(newerReleases(['v1.0.0', 'v1.1.0', 'v1.10.0', 'v1.2.0', 'v2.0.0-beta.1', 'latest'], '1.1.0'), { count: 2, newest: 'v1.10.0' });
+  assert.deepEqual(newerReleases(['v1.0.0'], '1.0.0'), { count: 0, newest: null });
+  const { kit, home, proj } = makeKit();
+  const ahead = () => ({ count: 1, newest: 'v1.1.0' });
+  assert.match(status({ kit, home, projectDir: proj, ahead }).text, /1 newer kit release\(s\), newest v1\.1\.0[^\n]*checkout v1\.1\.0/);
+  assert.match(kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null, ahead }), /1 newer kit release\(s\), newest v1\.1\.0[^\n]*checkout v1\.1\.0/);
+});
+
+// The security review of M13 (a): a fetch inside the kit folder ran with that folder's own git config, which can name
+// a program (an upload-pack, a hook). The check only lists a GitHub https remote, from outside the folder.
+// why: guards rule:security-standards (no kit check runs a program a repo's config names)
+test('the release check never runs a program the kit folder\'s git config names, and asks no remote but GitHub https', () => {
+  const { kit, home, proj } = makeKit();
+  const g = (...a) => { const r = spawnSync('git', ['-C', kit, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); };
+  g('init', '-q', '-b', 'main'); g('add', '-A'); g('commit', '-q', '-m', 'one'); g('tag', 'v1.0.0');
+  const marker = path.join(path.dirname(kit), 'ran.txt');
+  const prog = path.join(path.dirname(kit), 'up.sh');
+  fs.writeFileSync(prog, `#!/bin/sh\necho ran > "${marker.split(path.sep).join('/')}"\nexec git-upload-pack "$@"\n`, { mode: 0o755 });
+  g('remote', 'add', 'origin', path.dirname(kit));
+  g('config', 'remote.origin.uploadpack', prog.split(path.sep).join('/'));
+  // An upstream, so the 1.36.1 check reached its fetch (the build 11 sweep: without one it returned first).
+  g('update-ref', 'refs/remotes/origin/main', 'HEAD'); g('config', 'branch.main.remote', 'origin'); g('config', 'branch.main.merge', 'refs/heads/main');
+  kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null });
+  assert.equal(fs.existsSync(marker), false, 'a program the kit folder\'s config named ran');
+  // The listing itself reads no GIT_ variable, no global or system config, and runs from outside the kit folder.
+  const { args, opts } = lsRemoteCall('https://github.com/o/r.git', { PATH: 'p', GIT_DIR: kit, GIT_CONFIG_GLOBAL: 'evil', GIT_SSH_COMMAND: 'x', HTTPS_PROXY: 'h' });
+  assert.ok(!args.includes('-C'), 'it runs from outside the kit folder');
+  assert.equal(opts.env.GIT_DIR, undefined);
+  assert.equal(opts.env.GIT_SSH_COMMAND, undefined);
+  assert.equal(opts.env.GIT_CONFIG_NOSYSTEM, '1');
+  assert.notEqual(opts.env.GIT_CONFIG_GLOBAL, 'evil');
+  assert.ok(args.includes('protocol.https.allow=always') && args.includes('protocol.file.allow=never'), 'https only');
+  // What the listing prints is read as tags only.
+  assert.deepEqual(tagsOf(`${'a'.repeat(40)}\trefs/tags/v1.2.0\n${'b'.repeat(40)}\trefs/heads/main\n${'c'.repeat(40)}\trefs/tags/v1.3.0\n`), ['v1.2.0', 'v1.3.0']);
+});
+
+// M13 (b) (build 11, real on 1.36.1): a file only an unreleased build installed, changed here, is kept and the install
+// stays unreleased; the fix line said to check out a release and reinstall, which keeps it again. The line names the
+// file and the step that clears it, at status and at session start.
+// why: guards rule:owners-rules (a fix line that cannot fix wastes the owner's turn)
+test('a kept file from an unreleased build is named with the step that clears it', () => {
+  const { kit, home, proj } = makeKit();
+  fs.mkdirSync(path.join(proj, '.kit'), { recursive: true });
+  fs.writeFileSync(path.join(proj, '.kit', 'kit-version.json'), JSON.stringify({ version: '1.0.0', release: false, describe: 'v1.0.0-2-gabc', leftover: ['.claude/extra.mjs'], files: {} }));
+  const r = kitStatus({ kit, home, projectDir: proj, ahead: () => 0, protection: () => null, inodes: () => ({ level: 'ok', pct: 1, text: '' }), claudeVersion: () => null });
+  assert.match(r.text, /\.claude\/extra\.mjs[^\n]*remove it by hand[^\n]*then run \/methodology-kit update/);
+  assert.match(kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null }), /\.claude\/extra\.mjs[^\n]*remove it by hand/);
+});
+
 // why: guards rule:owners-rules
 test('status reports a project or ~/.claude with no install record, and writes nothing', () => {
   const { kit, home, proj } = makeKit();
@@ -655,9 +709,10 @@ test('session start says when the kit on GitHub is ahead of the kit folder', () 
   spawnSync('git', ['clone', '-q', remote, other]);
   fs.writeFileSync(path.join(other, 'VERSION'), '1.2.0\n');
   git(other, 'commit', '-q', '-am', 'release'); git(other, 'tag', 'v1.2.0'); git(other, 'push', '-q', 'origin', 'main', 'v1.2.0');
-  // A pull would move the kit folder onto main, off every release tag, so the line names the newest tag instead.
-  const say = sessionStartReport({ kit, home, projectDir: proj });
-  assert.match(say, /1 commit\(s\) ahead[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.2\.0\)[\s\S]*\/methodology-kit update/);
+  // A pull would move the kit folder onto main, off every release tag, so the line names the newest tag instead. The
+  // check lists only a GitHub https remote (the security review of build 11), so this local one stands in for it.
+  const say = sessionStartReport({ kit, home, projectDir: proj, ahead: () => ({ count: 1, newest: 'v1.2.0' }) });
+  assert.match(say, /1 newer kit release\(s\), newest v1\.2\.0[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.2\.0\)[\s\S]*\/methodology-kit update/);
   assert.doesNotMatch(say, /git pull/);
 });
 
@@ -904,7 +959,7 @@ test('status and session start show an unreleased install as a gap; an older sta
   // ~/.claude carries the rules of every project, so its unreleased build is named too.
   install({ kit, home, target: 'user', release: unreleased });
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.match(r.text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*node .*kit\.mjs install user/);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*node "[^"\n]*kit\.mjs" install user/);
   assert.match(r.text, /^Not current: ~\/\.claude .*unreleased build; This project .*unreleased build\.$/m);
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*kit\.mjs" install user/);
   // Reinstalled from the release: the gap closes.
@@ -913,6 +968,90 @@ test('status and session start show an unreleased install as a gap; an older sta
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, true, r.text);
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /unreleased/);
+});
+
+// M13 (c) (build 11, real on 1.36.1): a memory file only an unreleased build had was removed while the owner's
+// changed MEMORY.md, which install skips, still linked it. It stays, named, until the link goes.
+// why: guards rule:tracking-file-functions (a memory index that links a missing file misleads every session)
+test('a branch-only memory file that a changed MEMORY.md still links is kept and named', () => {
+  const { kit, home, proj } = makeKit();
+  fs.writeFileSync(path.join(kit, 'memory/branch.md'), 'branch rule\n');
+  fs.writeFileSync(path.join(kit, 'memory/MEMORY.md'), '- [Style](style.md)\n- [Branch](branch.md)\n');
+  install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const memory = path.join(home, 'projects', projectSlug(proj), 'memory');
+  fs.rmSync(path.join(kit, 'memory/branch.md'));
+  fs.writeFileSync(path.join(kit, 'memory/MEMORY.md'), '- [Style](style.md)\n');
+  // The owner added a line of their own, so install skips MEMORY.md, and their copy still links branch.md.
+  fs.appendFileSync(path.join(memory, 'MEMORY.md'), '- [Mine](mine.md)\n');
+  const r = install({ kit, home, target: 'project', projectDir: proj, release: released(kit, 'v1.0.0') });
+  assert.ok(fs.existsSync(path.join(memory, 'branch.md')), 'removed while MEMORY.md still links it');
+  assert.ok(r.skipped.some((s) => s.file === 'memory/branch.md' && /MEMORY\.md still links it/.test(s.reason)), JSON.stringify(r.skipped));
+});
+// The build 11 sweep: the link may be written in any Markdown form.
+// why: guards rule:tracking-file-functions
+test('a changed MEMORY.md keeps a branch-only memory file it links in any Markdown form', () => {
+  for (const link of ['(./branch.md)', '(<branch.md>)', '(branch.md "the branch rule")', '\n[b]: branch.md']) {
+    const { kit, home, proj } = makeKit();
+    fs.writeFileSync(path.join(kit, 'memory/branch.md'), 'branch rule\n');
+    install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+    const memory = path.join(home, 'projects', projectSlug(proj), 'memory');
+    fs.rmSync(path.join(kit, 'memory/branch.md'));
+    fs.appendFileSync(path.join(memory, 'MEMORY.md'), `- [Mine]${link}\n`);
+    install({ kit, home, target: 'project', projectDir: proj, release: released(kit, 'v1.0.0') });
+    assert.ok(fs.existsSync(path.join(memory, 'branch.md')), link);
+  }
+});
+
+// M13 (f) (build 11): on a file system that folds case, a file the kit renamed by case alone is the same file under its
+// old name, so removing the old name removed the shipped file until the next install.
+// why: guards rule:owners-rules (an install never loses a shipped file)
+test('a file renamed by case alone survives the install that retires its old name', { windows: true }, () => {
+  const { kit, home, proj } = makeKit();
+  // A rename by case alone goes through a third name, as git does on a case-folding file system.
+  const skill = (from, to) => { const d = path.join(kit, 'user/skills/human-factor'); fs.renameSync(path.join(d, from), path.join(d, 'tmp.md')); fs.renameSync(path.join(d, 'tmp.md'), path.join(d, to)); };
+  skill('SKILL.md', 'skill.md');
+  install({ kit, home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  skill('skill.md', 'SKILL.md');
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
+  assert.ok(fs.existsSync(path.join(home, 'skills/human-factor/SKILL.md')), 'the shipped file was removed under its old name');
+});
+
+// M13 (g) (build 11): a record key in the install stamp that climbs out of its folder (a hand-edited stamp) names a
+// file install never wrote, and the clean-up must not touch it.
+// why: guards rule:security-standards (install removes only what it put there)
+test('the clean-up never removes a file outside its folder, whatever the stamp says', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const outside = path.join(path.dirname(home), 'outside.txt');
+  fs.writeFileSync(outside, 'owner file\n');
+  const stampFile = path.join(home, 'kit-install.json');
+  const stamp = JSON.parse(read(stampFile));
+  stamp.files['../outside.txt'] = crypto.createHash('sha256').update('owner file\n').digest('hex');
+  fs.writeFileSync(stampFile, JSON.stringify(stamp));
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
+  assert.ok(fs.existsSync(outside), 'a file outside ~/.claude was removed');
+  // The build 11 sweep: a key that stays inside by its text but runs through a link (a junction needs no admin on
+  // Windows) reaches a file outside all the same.
+  install({ kit, home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const away = path.join(path.dirname(home), 'away');
+  fs.mkdirSync(away);
+  fs.writeFileSync(path.join(away, 'victim.txt'), 'owner file\n');
+  fs.symlinkSync(away, path.join(home, 'j'), process.platform === 'win32' ? 'junction' : 'dir');
+  const linked = JSON.parse(read(stampFile));
+  linked.files['j/victim.txt'] = crypto.createHash('sha256').update('owner file\n').digest('hex');
+  fs.writeFileSync(stampFile, JSON.stringify(linked));
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
+  assert.ok(fs.existsSync(path.join(away, 'victim.txt')), 'a file reached through a link was removed');
+});
+
+// M13 (g) (build 11): status's fix line for ~/.claude named the kit folder unquoted, so a folder with a space broke it.
+// why: guards rule:owners-rules (a fix line runs as typed)
+test('status names the kit folder in quotes in the install user line', () => {
+  const { kit, home, proj } = makeKit();
+  const spaced = path.join(path.dirname(kit), 'my kit');
+  fs.renameSync(kit, spaced);
+  install({ kit: spaced, home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  assert.match(status({ kit: spaced, home, projectDir: proj, ahead: () => 0 }).text, /node "[^"\n]*my kit\/scripts\/kit\.mjs" install user/);
 });
 
 // why: catches a break at scripts/kit.mjs:594 that no other test catches
@@ -2493,11 +2632,12 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
 // on the pop-up that quotes the ask's or the pause's act, and the call runs in that session.
 const TAP_SID = '0aaaaaaa-1bbb-2ccc-3ddd-4eeeeeeeeeee';
 // One answered pop-up, as Claude Code writes it in the session's transcript (shape read from a live record).
-function ownerTaps(cfg, dir, act, { answer = 'Yes', labels = ['Yes', 'No'], at = new Date(Date.now() + 1000).toISOString(), source = 'user_temporary', sid = TAP_SID, folder } = {}) {
+function ownerTaps(cfg, dir, act, { answer = 'Yes', labels = ['Yes', 'No'], at = new Date(Date.now() + 1000).toISOString(), source = 'user_temporary', sid = TAP_SID, folder, bare = false } = {}) {
   const where = path.join(cfg, 'projects', folder || fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'));
   fs.mkdirSync(where, { recursive: true });
   const id = `toolu_${crypto.randomBytes(6).toString('hex')}`;
-  const question = `May I go on? \`${act}\``;
+  // bare: the question names the act without backticks, as build 11's first resume pop-ups did.
+  const question = bare ? `May I go on? ${act}` : `May I go on? \`${act}\``;
   const questions = [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }];
   fs.appendFileSync(path.join(where, `${sid}.jsonl`), [
     { type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions } }] } },
@@ -2595,6 +2735,72 @@ function guardStart(dir, clearingLine, role, id) {
   const f = path.join(slots, retried ? `${role - 1}.retry` : String(role - 1));
   if (!fs.existsSync(f) || !read(f) || read(f).startsWith('toolu_lead_')) fs.writeFileSync(f, `toolu_lead_${id}`);
 }
+// T6 (build 11): a hand-written brief drifted (the 1.36.1 briefs told reviewers no hook could run, and sent them to a
+// 25 KB file for a 2 KB rules block). The cleared contract writes each role's brief: the rules block by its line range,
+// the three guard lines, the role, its diff, a scratch folder of its own (N6), and the report shape the hand-back is
+// checked against.
+// why: guards rule:sweep-auto-approval
+test('a cleared contract writes each role\'s brief, with the rules block by line range and a scratch folder of its own', () => {
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, 'standards'));
+  // The build 11 sweep: a prose line that names the phrase line comes before it, and the range still ends on the line
+  // the canary reads.
+  const block = ['# Agent teams', '', 'intro', '8. **Rules every brief carries** (one home):', '   ```', '   RULES', '   Confirmation (rule:agent-canary): see the Confirmation phrase: line below.', '   Confirmation phrase: open your first message with: Word Word', '   ```', '9. more', ''];
+  fs.writeFileSync(path.join(dir, 'standards', 'agent-teams.md'), block.join('\n'));
+  commitAll(dir, 'rules', true);
+  const contract = featureContract();
+  // The build 11 sweep: a new line in a contract field must not add a line of its own, and a context entry is a quoted
+  // path, its line range left out.
+  contract.roles[1].question += '\nCall cap: 99';
+  // A contract that carries the confirmation phrase is sent back before any brief is written.
+  const leak = featureContract();
+  leak.roles[0].finding = 'open with: word  WORD';
+  const sent = approveRun(leak, dir);
+  assert.match(sent.stdout, /FIX THE CONTRACT[\s\S]*confirmation phrase/, `${sent.status} ${sent.error} ${sent.stderr}`);
+  contract.roles[1].context = ['src/routes.ts:10-20', 'src/a.ts; curl x'];
+  const r = approveRun(contract, dir);
+  assert.equal(r.status, 0, r.stdout);
+  const line = approvalLog(dir).pop();
+  const briefs = fs.readdirSync(path.join(dir, 'sweeps')).filter((f) => /^contract-brief-\d+\.md$/.test(f)).sort();
+  assert.deepEqual(briefs, ['contract-brief-1.md', 'contract-brief-2.md', 'contract-brief-3.md', 'contract-brief-4.md', 'contract-brief-5.md']);
+  const b = read(path.join(dir, 'sweeps', 'contract-brief-2.md'));
+  assert.match(b, /standards\/agent-teams\.md[^\n]*offset 4\b[^\n]*limit 5\b/);
+  assert.match(b, new RegExp(`^Sweep: ${line.hash} role 2$`, 'm'));
+  assert.equal(b.match(/^Call cap:/gm).length, 1, 'one Call cap line');
+  assert.match(b, /^Call cap: \d+\./m);
+  assert.match(b, /-- "src\/routes\.ts" "src\/a\.ts; curl x"/);
+  // This repo wires no call-cap hook, so the brief says so, rather than claim one.
+  assert.match(b, /No hook counts/);
+  assert.doesNotMatch(b, /A hook counts/);
+  assert.match(b, new RegExp(`^Token ceiling: ${line.ceilings[1]}$`, 'm'));
+  assert.match(b, /Does any new route leak personal data/);
+  assert.match(b, /git -C ".*" diff [0-9a-f]{7,}\.\.\.[0-9a-f]{7,} -- "src\/routes\.ts"/);
+  assert.match(b, /Scratch: .*role-2/);
+  assert.doesNotMatch(b, /role-1\b/, 'another role\'s folder');
+  assert.match(b, /^ROLE: /m);
+  assert.match(b, /Not checked:/);
+  assert.doesNotMatch(b, /Word Word/, 'the brief never carries the phrase');
+  assert.match(r.stdout, /contract-brief-1\.md/);
+});
+
+// The build 11 sweep: the canary reads the phrase from the main checkout, so a brief written in a worktree sends the
+// reviewer to the main checkout's rules file too, by its full path (untracked notes are not in the worktree).
+// why: guards rule:agent-canary
+test('a brief written in a worktree names the main checkout\'s rules file', () => {
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, 'standards'));
+  fs.writeFileSync(path.join(dir, 'standards', 'agent-teams.md'), ['8. **Rules every brief carries**', '   Confirmation phrase: open with: Word Word', ''].join('\n'));
+  fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), 'standards/\n');
+  const wt = path.join(path.dirname(dir), `${path.basename(dir)}-wt`);
+  g(dir, 'worktree', 'add', '-q', wt, '-b', 'feat/wt');
+  fs.mkdirSync(path.join(wt, 'sweeps'), { recursive: true });
+  const r = approveRun(featureContract(), wt);
+  assert.equal(r.status, 0, r.stdout);
+  const b = read(path.join(wt, 'sweeps', 'contract-brief-1.md'));
+  const mainFile = fs.realpathSync.native(path.join(dir, 'standards', 'agent-teams.md')).split(path.sep).join('/');
+  assert.ok(b.toLowerCase().includes(`${mainFile.toLowerCase()} with the read tool at offset 1`), b.split('\n')[0]);
+});
+
 function approveRun(contract, dir = sweepRepo()) {
   const f = path.join(dir, 'sweeps', 'contract.json');
   fs.writeFileSync(f, JSON.stringify(contract));
@@ -2609,19 +2815,29 @@ const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.js
 function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session-1') {
   const dir = path.join(cfg, 'projects', 'C--repo', session, 'subagents');
   fs.mkdirSync(dir, { recursive: true });
-  const at = new Date().toISOString();
+  const base = Date.now();
   for (const [id, calls] of Object.entries(spec)) {
     let model = 'claude-opus-5-5';
+    // A call given as { u, gap } starts gap ms after the line before it (the cache outlives a short gap only).
+    let shift = 0;
+    const at0 = new Date(base).toISOString();
     const lines = calls.map((c, i) => {
+      if (c && c.gap) shift += c.gap;
+      const at = new Date(base + shift).toISOString();
       // { refused: text } is a hook's refusal of a tool call, as Claude Code writes it into the transcript.
       if (c && c.refused) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, is_error: true, content: c.refused }] } });
+      // { handback: text } is the reviewer's report, handed back through the hand-back tool.
+      // { handback, refusedWith } is a hand-back the canary refused: the call and its error result.
+      if (c && c.handback && c.refusedWith) return [JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: `msg_${id}_${i}`, role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'tool_use', id: `toolu_r${i}`, name: 'SubagentHandback', input: { message: c.handback } }], usage: { input_tokens: 0, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0, output_tokens: 0 } } }),
+        JSON.stringify({ type: 'user', uuid: `${id}-${i}r`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_r${i}`, is_error: true, content: c.refusedWith }] } })].join('\n');
+      if (c && c.handback) return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: `msg_${id}_${i}`, role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'tool_use', id: `toolu_h${i}`, name: 'SubagentHandback', input: { message: c.handback } }], usage: { input_tokens: 0, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0, output_tokens: 0 } } });
       // { read: text } is a tool's plain answer, such as a file the reviewer read.
       if (c && c.read) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, content: c.read }] } });
       const { id: mid = `msg_${id}_${i}`, u = c, model: m = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
       model = m;
       return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
     });
-    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
+    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at0, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
     fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', toolUseId: `toolu_lead_${id}`, model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
   }
   return cfg;
@@ -2803,6 +3019,38 @@ test('the owner resumes auto-approval with a pop-up Yes to the pause\'s act, aft
   const line = approvalLog(r.dir).pop();
   assert.deepEqual([line.kind, line.proof], ['resume', 'popup']);
   assert.equal(resume().status, 1, 'nothing left to resume');
+});
+
+// K91 (build 11): the resume was refused twice on Yeses to pop-ups that named the act without backticks, and the
+// refusal read as if the owner had not answered. It now says why, and the lead can check a Yes before handing over
+// the command, without using it.
+// why: guards rule:sweep-auto-approval
+test('a Yes to an unquoted act is named in the refusal, and --tap checks a Yes without using it', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(Math.ceil(537500 * 1.3)));
+  const code = (approveIn(r.dir, [r.f]).stdout.match(/`sweep resume ([0-9a-f]{6})`/) || [])[1];
+  assert.ok(code);
+  const act = `sweep resume ${code}`;
+  const cfg = makeTemp('cfg-');
+  const tap = () => approveIn(r.dir, ['--tap', act], tapEnv(cfg));
+  const none = tap();
+  assert.equal(none.status, 1);
+  assert.match(none.stdout, /No Yes from the owner/);
+  assert.doesNotMatch(none.stdout, /without backticks/, 'no Yes at all is not an unquoted one');
+  ownerTaps(cfg, r.dir, act, { bare: true });
+  const bare = approveIn(r.dir, ['--resume'], tapEnv(cfg));
+  assert.equal(bare.status, 1, 'an unquoted act counts for nothing');
+  assert.match(bare.stdout, /without backticks around it[^\n]*ask again with the act in backticks/);
+  assert.match(tap().stdout, /without backticks/);
+  ownerTaps(cfg, r.dir, act);
+  const held = tap();
+  assert.equal(held.status, 0, held.stdout);
+  assert.match(held.stdout, /holds the owner's Yes/);
+  assert.notEqual(approvalLog(r.dir).pop().kind, 'resume', 'the check logs nothing');
+  assert.equal(approveIn(r.dir, ['--resume'], tapEnv(cfg)).status, 0, 'the Yes the check saw is still unused');
+  const used = tap();
+  assert.equal(used.status, 1);
+  assert.match(used.stdout, /already used/);
 });
 
 // The installed approve.mjs reads the owner's taps in the Claude folder install user filled in, so a caller cannot
@@ -3147,6 +3395,30 @@ test('the canary checks a hand-back at the call, refuses a miss once, and lets t
   canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'p2' });
   assert.deepEqual(canaryLog(dir).map((e) => [e.agent, e.result]), [['p1', 'hit'], ['p2', 'miss'], ['p2', 'closed-out']]);
 });
+// T6 (build 11): a reviewer's report is the findings ledger's source, so its shape is checked at the hand-back: a role
+// line, one line per finding in the five fields (or "No findings"), and what it did not check. A report out of shape
+// is refused once with what is missing; the second goes through, logged, so a role never loops on its report.
+// why: guards rule:sweep-auto-approval
+test('a reviewer\'s hand-back is checked for the report shape once, and the second try goes through', () => {
+  const dir = canaryRepo();
+  const handback = (id, message, type = 'reviewer') => {
+    const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_type: type, agent_id: id, tool_input: { message } });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+  };
+  const good = `${FAKE_PHRASE}\nROLE: Security: imports\nhigh | CONFIRMED | an import writes outside the project | src/import.ts:12 | node x.mjs ../a wrote /tmp/a\nNot checked: the export path`;
+  assert.equal(handback('s1', good).permissionDecision, 'allow');
+  assert.equal(handback('s2', `${FAKE_PHRASE}\nROLE: Test value\nNo findings\nNot checked: nothing`).permissionDecision, 'allow');
+  const bad = handback('s3', `${FAKE_PHRASE}\nSecurity role\nhigh | an import writes outside | src/import.ts:12`);
+  assert.equal(bad.permissionDecision, 'deny');
+  assert.match(bad.permissionDecisionReason, /ROLE:/);
+  assert.match(bad.permissionDecisionReason, /Not checked:/);
+  assert.match(bad.permissionDecisionReason, /five fields/);
+  assert.ok(!bad.permissionDecisionReason.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'never names the phrase');
+  assert.equal(handback('s3', `${FAKE_PHRASE}\nSecurity role\nstill loose`).permissionDecision, 'allow', 'the second try goes through');
+  assert.equal(handback('b1', `${FAKE_PHRASE}\nUNIT u1 DONE`, 'builder').permissionDecision, 'allow', 'only a reviewer reports findings');
+  assert.deepEqual(canaryLog(dir).filter((e) => e.agent === 's3').map((e) => e.result), ['shape-miss', 'shape-after-miss']);
+});
+
 // why: guards rule:sweep-auto-approval
 test('every kit role checks its hand-back call', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
@@ -4912,8 +5184,11 @@ test('no agent may log the owner\'s yes or a resume, in any shell', () => {
 // why: guards rule:sweep-auto-approval
 test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
   const dir = makeTemp('cap-');
-  assert.equal(capHook(dir, 10, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
-  const stop = capHook(dir, 11, 12);
+  // The hook sees the calls before the one it is asked about, and that one is spent already: refused, it still costs a
+  // call, and the report is one more. So the cap's last two calls are the refused one and the report (build 11: the
+  // 1.36.1 sweep's role 6 ran 16 calls against 15, refused at its 16th).
+  assert.equal(capHook(dir, 9, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
+  const stop = capHook(dir, 10, 12);
   assert.equal(stop.permissionDecision, 'deny');
   assert.match(stop.permissionDecisionReason, /hand in your report/);
   assert.equal(capHook(dir, 11, 12, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow');
@@ -5010,20 +5285,59 @@ test('the call-cap hook stops a reviewer before a call would take it past its to
   const dir = makeTemp('ceil-');
   const session = path.join(dir, 'session-1');
   fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
-  const hook = (calls, extra = {}) => {
-    const lines = [{ message: { role: 'user', content: 'a brief. Call cap: 12. Token ceiling: 100000.' } }];
+  const hook = (calls, extra = {}, sizes = Array(calls).fill(30000), ceiling = 200000) => {
+    const lines = [{ message: { role: 'user', content: `a brief. Call cap: 40. Token ceiling: ${ceiling}.` } }];
     // Streaming writes a message's id on several lines; it counts once, at its last line.
-    for (let i = 0; i < calls; i++) for (const part of [1, 30000]) lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 0, cache_read_input_tokens: part, cache_creation_input_tokens: 0, output_tokens: 0 } } });
+    for (let i = 0; i < calls; i++) for (const part of [1, sizes[i]]) lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 0, cache_read_input_tokens: part, cache_creation_input_tokens: 0, output_tokens: 0 } } });
     fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
     const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 }, ...extra });
     return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
   };
-  assert.equal(hook(2).permissionDecision, 'allow', '60,000 spent; one more call of 30,000 stays under 100,000');
-  const stop = hook(3);
-  assert.equal(stop.permissionDecision, 'deny', '90,000 spent; one more call would pass 100,000');
-  assert.match(stop.permissionDecisionReason, /token ceiling reached \(90,000 of 100,000\)[\s\S]*hand in your report/i);
-  assert.equal(hook(3, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow', 'the report always goes');
-  assert.equal(hook(3, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers');
+  // The call asked about is spent already; refused, the report follows it. Allowed, one more call and then the report.
+  assert.equal(hook(3).permissionDecision, 'allow', '90,000 spent; this call, one more and the report: 180,000');
+  const stop = hook(4);
+  assert.equal(stop.permissionDecision, 'deny', '120,000 spent; this call, one more and the report would pass 200,000');
+  assert.match(stop.permissionDecisionReason, /token ceiling reached \(120,000 of 200,000\)[\s\S]*hand in your report/i);
+  assert.equal(hook(4, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow', 'the report always goes');
+  assert.equal(hook(4, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers');
+  // Build 11: a real role of the 1.36.0 sweep (its call sizes, in order) ran to 974,950 against 827,461. Replayed, the
+  // hook stops it where the call it refuses and the report still land under the ceiling.
+  const real = [14198, 17438, 21162, 43440, 46640, 71479, 73781, 80176, 80788, 83380, 85567, 86987, 87435, 89919, 92561];
+  let n = 1;
+  while (n < real.length && hook(n, {}, real, 827461).permissionDecision === 'allow') n++;
+  const spent = real.slice(0, n + 2).reduce((t, x) => t + x, 0);
+  assert.ok(n < real.length - 2, `stopped at call ${n + 1}`);
+  assert.ok(spent <= 827461, `the refused call and the report end at ${spent}, under 827,461`);
+  // The build 11 sweep: the context grows each call, so a jump (a large file read) makes the next calls cost more than
+  // the last did. 50,000 spent with a last call of 30,000 after 10,000: three flat calls fit, three growing ones do not.
+  const grow = hook(3, {}, [10000, 10000, 30000]);
+  assert.equal(grow.permissionDecision, 'deny', 'the next calls grow as the last one did');
+  assert.equal(hook(3, {}, [30000, 30000, 30000], 230000).permissionDecision, 'allow', 'flat calls under the same room');
+});
+
+// The build 11 sweep: the message making a call may be in the transcript when the hook reads it, or not yet. A call
+// still waiting on its answer is the one asked about, so it never counts twice and the cap lands on the same call.
+// why: guards rule:sweep-auto-approval
+test('the call cap counts the calls before this one, whether or not this one is written yet', () => {
+  const dir = makeTemp('cap-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  const hook = (calls, current, extra = {}) => {
+    const lines = [{ message: { role: 'user', content: 'a brief. Call cap: 12.' } }];
+    for (let i = 0; i < calls; i++) {
+      lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 1 }, content: [{ type: 'tool_use', id: `t${i}`, name: 'Read', input: {} }] } });
+      lines.push({ message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${i}`, content: 'ok' }] } });
+    }
+    if (current) lines.push({ message: { role: 'assistant', id: 'mc', usage: { input_tokens: 1 }, content: [{ type: 'tool_use', id: 'tc', name: 'Read', input: {} }] } });
+    fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash', tool_input: {}, tool_use_id: 'tc', ...extra });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+  };
+  for (const current of [false, true]) {
+    assert.equal(hook(9, current), 'allow', `nine before it, this one ${current ? '' : 'not '}written`);
+    assert.equal(hook(10, current), 'deny', `ten before it, this one ${current ? '' : 'not '}written`);
+  }
+  assert.equal(hook(9, true, { tool_use_id: undefined }), 'allow', 'with no call id, the last call still waiting is this one');
 });
 
 // Each sweep below runs on a log of 25 measured roles of 200,000 tokens over 6 calls, starting at 10,000: the
@@ -5066,10 +5380,80 @@ test('the drift signals pause a sweep, each by name', () => {
   assert.doesNotMatch(driftSweep([stopped[0], usual(), usual(), usual(), usual()]).o.stdout, /paused/, 'one of five is no drift');
   const start = Array(5).fill(0).map(() => [[11500, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]);
   assert.match(driftSweep(start).o.stdout, /paused: .*the starting context .*15% over its median of 10,000/);
-  const rewrite = [[[10000, 0, 0, 0], [0, 28000, 0, 0], [0, 0, 30000, 0]], [[10000, 0, 0, 0], [0, 0, 30000, 0]], usual(), usual(), usual()];
+  const late = { u: [0, 0, 30000, 0], gap: 6 * 60 * 1000 };
+  const rewrite = [[[10000, 0, 0, 0], [0, 28000, 0, 0], late], [[10000, 0, 0, 0], late], usual(), usual(), usual()];
   assert.match(driftSweep(rewrite).o.stdout, /paused: .*2 cache re-writes after the first call/);
+  // The build 11 sweep: a call soon after the last that reads back less is a context the model trimmed, not an
+  // expired cache: the cache lives 5 minutes.
+  const soon = { u: [0, 0, 30000, 0], gap: 4 * 60 * 1000 };
+  assert.doesNotMatch(driftSweep([[[10000, 0, 0, 0], [0, 28000, 0, 0], soon], [[10000, 0, 0, 0], soon], usual(), usual(), usual()]).o.stdout, /cache re-writes/);
+  // After the gap, a miss that still read back just over half the context is one too (the sweep's case: 51.5%).
+  const half = { u: [0, 15000, 14000, 0], gap: 6 * 60 * 1000 };
+  assert.match(driftSweep([[[10000, 0, 0, 0], [0, 28000, 0, 0], half], [[10000, 0, 0, 0], [0, 28000, 0, 0], half], usual(), usual(), usual()]).o.stdout, /paused: .*2 cache re-writes/);
+  // Build 11: a call that reads the whole cache and writes a large batch of new results (a dozen reads at once) is no
+  // expired cache. Every role of the 1.36.1 sweep had one such call, and the sweep paused on 7 re-writes that were none.
+  const batch = () => [[2, 0, 13600, 323], [2, 13600, 22659, 828], [2, 36259, 2506, 674], ...Array(3).fill([0, 40000, 0, 0])];
+  assert.doesNotMatch(driftSweep([batch(), batch(), usual(), usual(), usual()]).o.stdout, /cache re-writes/);
   const heavy = Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 60000, 0, 0], [0, 60000, 0, 0]]);
   assert.match(driftSweep(heavy).o.stdout, /paused: .*content per call .*over its p95 of 33,333/);
+});
+
+// T6 (build 11): the finding counts were typed by the lead. The reports are now in a checked shape, so the outcome
+// counts the findings from them, writes the ledger beside the contract, and refuses a typed count that differs.
+// why: guards rule:finding-pipeline
+test('the outcome counts the findings from the reviewers\' reports, writes the ledger, and refuses a typed count that differs', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const report = (rows) => ({ handback: ['P', 'ROLE: a role', ...rows, 'Not checked: nothing'].join('\n') });
+  const two = report(['high | CONFIRMED | an import writes outside | src/import.ts:12 | ran it', 'low | PLAUSIBLE | a log names a path | src/routes.ts:4 | read it']);
+  const same = report(['medium | CONFIRMED | the same import write | src/import.ts:12 | ran it too']);
+  const none = report(['No findings']);
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const cfg = transcripts({ [ids[0]]: [[10000, 0, 0, 0], two], [ids[1]]: [[10000, 0, 0, 0], same], [ids[2]]: [[10000, 0, 0, 0], none], [ids[3]]: [[10000, 0, 0, 0], none], [ids[4]]: [[10000, 0, 0, 0], none] });
+  const run = (findings) => approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', String(findings), '--real', '2', '--duplicates', '1'], { CLAUDE_CONFIG_DIR: cfg });
+  const wrong = run(4);
+  assert.equal(wrong.status, 1);
+  assert.match(wrong.stdout, /--findings 4\b[^\n]*\b3 finding[\s\S]*--findings 3\b/);
+  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').length, 0, 'nothing logged');
+  const ok = run(3);
+  assert.equal(ok.status, 0, ok.stdout);
+  const line = approvalLog(dir).filter((e) => e.kind === 'outcome').pop();
+  assert.equal(line.findings, 3);
+  assert.equal(line.sameLine, 2, 'two roles named src/import.ts:12');
+  const ledger = read(path.join(dir, 'sweeps', 'contract-ledger.md'));
+  assert.match(ledger, /^\| 1 \| high \| CONFIRMED \|[^\n]*\| src\/import\.ts:12 \|$/m);
+  assert.match(ledger, /^\| 2 \| medium \| CONFIRMED \|[^\n]*\| src\/import\.ts:12 \|$/m);
+  assert.equal(ledger.split('\n').filter((l) => /^\| \d/.test(l)).length, 3);
+});
+// The build 11 sweep: only a delivered report counts. A hand-back the canary refused never reached the lead, a run it
+// voided counts none, notes out of role are not findings, and one role out of shape is named, never a silent pass.
+// why: guards rule:finding-pipeline
+test('the findings count reads only delivered reports, skips out-of-role notes, and names a role it cannot read', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const shaped = (rows) => ['P', 'ROLE: a role', ...rows, 'Not checked: nothing'].join('\n');
+  const one = 'high | CONFIRMED | a write outside | src/import.ts:12 | ran it';
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const spec = {
+    // Refused (no Not checked line), then a plain reply: nothing was delivered as a report.
+    [ids[0]]: [[10000, 0, 0, 0], { handback: ['P', 'ROLE: a role', one, one, one].join('\n'), refusedWith: 'Your report is out of the shape your brief gives' }, { handback: shaped(['No findings']) }],
+    // Out-of-role notes after the findings.
+    [ids[1]]: [[10000, 0, 0, 0], { handback: shaped([one, 'Out of role:', 'low | PLAUSIBLE | another area | g:1 | note']) }],
+    [ids[2]]: [[10000, 0, 0, 0], { handback: shaped(['No findings']) }],
+    [ids[3]]: [[10000, 0, 0, 0], { handback: shaped(['No findings']) }],
+    [ids[4]]: [[10000, 0, 0, 0], { handback: shaped(['No findings']) }],
+  };
+  const run = (cfgSpec, findings) => approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', String(findings), '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: transcripts(cfgSpec) });
+  const wrong = run(spec, 4);
+  assert.match(wrong.stdout, /hold \(ledger[\s\S]*--findings 1\b/);
+  // A void run, and a role whose report is out of shape: the count is not checked, and the roles are named.
+  const voided = { ...spec, [ids[0]]: [[10000, 0, 0, 0], { refused: 'Your message did not open the way your rules require, so this run is void' }, { handback: shaped([one]) }] };
+  const named = run(voided, 7);
+  assert.equal(named.status, 0, named.stdout);
+  assert.match(named.stdout, /--findings[^\n]*not checked[^\n]*\b1 \([^)\n]*void/);
+  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked, false);
 });
 
 // The 1.23.0 sweep's findings on the drift signals.
@@ -5086,6 +5470,15 @@ test('the ceiling\'s check allows one call past it, the margin the hook works wi
   // 10,000 + 4 x 28,000 + 100,000 = 222,000: past the 200,000 ceiling by less than its largest call.
   const margin = driftSweep([[[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), [0, 100000, 0, 0]], usual(), usual(), usual(), usual()]);
   assert.doesNotMatch(margin.o.stdout, /did not hold/);
+});
+// Build 11: the 1.36.0 triage said "the hook is missing or did not fire" for roles whose transcripts held the hook's
+// own refusal. A role the hook did stop is named as stopped too late, which points at the hook's margin, not its wiring.
+// why: guards rule:sweep-auto-approval
+test('a role past its ceiling that the hook did stop is named as stopped too late, not as unhooked', () => {
+  const late = [[10000, 0, 0, 0], ...Array(4).fill([0, 50000, 0, 0]), { refused: 'Token ceiling reached (210,000 of 200,000): one more call would pass it.' }, [0, 60000, 0, 0], [0, 70000, 0, 0]];
+  const { o } = driftSweep([late, usual(), usual(), usual(), usual()]);
+  assert.match(o.stdout, /ceiling did not hold[^\n]*340,000 against 200,000 \(the hook stopped it too late\)/);
+  assert.doesNotMatch(o.stdout, /340,000 against 200,000 \(the hook is missing/);
 });
 // why: guards rule:sweep-auto-approval
 test('a role past its call cap pauses the sweep under ceilings too: the cap did not hold', () => {
@@ -5113,9 +5506,10 @@ test('the one guard process runs the call-cap hook on every tool an agent calls,
   assert.ok(!routes('Read').includes('call-cap.cjs'), 'the main session');
 });
 // why: guards rule:sweep-auto-approval
+// From 1.37.0 (T6) the wording is in the brief approve.mjs writes (checked in the brief test); the skill sends the lead there.
 test('the sweep skill gives the lead the brief\'s call-cap wording', () => {
   const skill = read(path.resolve('user/skills/pre-pr-sweep/SKILL.md'));
-  assert.match(skill, /Call cap: <n>\. A call is one message/);
+  assert.match(skill, /<contract>-brief-<n>\.md/);
   assert.match(skill, /FIX THE CONTRACT/);
 });
 
@@ -8176,7 +8570,7 @@ test('status says current only when the kit folder, ~/.claude and the project al
   assert.match(r.text, /~\/\.claude: 1\.0\.0, behind kit 1\.0\.1/);
   assert.match(r.text, /This project: 1\.0\.0, behind kit 1\.0\.1; 1 file\(s\) waiting/);
   assert.match(r.text, /Run \/methodology-kit update\./);
-  assert.match(r.text, /kit\.mjs install user\./);
+  assert.match(r.text, /kit\.mjs" install user\./);
   assert.match(r.text, /^Not current: /m);
 
   // Same version, a file carrying this project's own values on top of the current kit copy (a filled adapter row, a
@@ -8218,7 +8612,7 @@ test('status says current only when the kit folder, ~/.claude and the project al
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
   r = status({ kit, home, projectDir: proj, ahead: () => 2, newest: () => 'v1.0.3' });
   assert.equal(r.current, false);
-  assert.match(r.text, /GitHub has 2 newer kit commit[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
+  assert.match(r.text, /GitHub has 2 newer kit release\(s\), newest v1\.0\.3[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
   assert.doesNotMatch(r.text, /git pull/);
 });
 

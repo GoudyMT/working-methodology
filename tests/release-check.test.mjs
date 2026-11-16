@@ -76,6 +76,21 @@ test('a release with every step done passes, names each step it read, and writes
 	assert.ok(t.calls.every((a) => a[0] === 'api' || a.includes('-R')), 'every gh call names the repo, never the one gh guesses');
 });
 
+// J1 (build 11, the owner's pick "take, light"): before an item moves, one number in its result file is run again; a
+// result with no re-run, or one whose re-run differs from what it recorded, keeps the release from being called done.
+// why: guards rule:fact-check (a recorded number is a claim until it is run again)
+test('a result file passes only with a re-run that matches the number it recorded', () => {
+	const t = setup();
+	const result = path.join(kitTemp.makeTemp('rc-result-'), 'RESULT.md');
+	const run = (text) => { fs.writeFileSync(result, text); return releaseCheck({ ...t.opts, result }, t.deps); };
+	assert.equal(run('# Verify\n- **Re-run:** workbench list rows: recorded 397, re-run 397\n').ok, true, t.lines.join('\n'));
+	assert.equal(run('# Verify\n- **Re-run:** list rows: recorded 1,204, re-run 1204\n').ok, true, 'a thousands comma reads as the same number');
+	assert.match(all(run('# Verify\nAll rows verified.\n')), /re-run.*no "Re-run:" line/i);
+	assert.match(all(run('# Verify\n- **Re-run:** list rows: recorded 397, re-run 396\n')), /re-run.*397.*396/i);
+	assert.match(all(releaseCheck({ ...t.opts, result: path.join(path.dirname(result), 'none.md') }, t.deps)), /re-run.*cannot be read/i);
+	assert.deepEqual(argsOf(['v1.0.0', '--pr', '7', '--result', 'r.md']).result, 'r.md');
+});
+
 // why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
 // The 1.34.0 miss: the tag was out, the notes were not.
 test('notes that are missing, a draft, empty, failing the audit or never audited are named missing', () => {

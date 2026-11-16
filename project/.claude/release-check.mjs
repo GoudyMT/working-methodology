@@ -6,6 +6,8 @@
 //
 // Usage (from the project folder; the PR is the one whose merge is released):
 //   node .claude/release-check.mjs <tag> --pr <n> [--repo <owner/name>] [--copy <release copy>] [--installed <project>]
+//                                  [--result <RESULT.md>]
+//   --result      a verify's result file, whose "Re-run: <what>: recorded <n>, re-run <n>" line must match (J1)
 //   --repo        the GitHub repo; by default the one the project's origin remote names
 //   --copy        a release copy whose HEAD must be the tag's commit (the kit's own flow)
 //   --installed   a project whose installed kit (.kit/kit-version.json) must be the tag's version; its state check is
@@ -69,7 +71,7 @@ function auditNotes(body, version) {
  * Returns:
  *     { ok, missing: [plain lines] }
  */
-export function releaseCheck({ tag, pr, project, repo, copy, installed }, deps = {}) {
+export function releaseCheck({ tag, pr, project, repo, copy, installed, result }, deps = {}) {
 	const gh = deps.gh || ((args) => run('gh', args));
 	const g = deps.git || git;
 	const log = deps.log || ((l) => process.stdout.write(`${l}\n`));
@@ -85,7 +87,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed }, deps =
 		log('MISSING the GitHub repo: the origin remote names no GitHub repo; pass --repo <owner/name>.');
 		return { ok: false, missing: ['the GitHub repo'] };
 	}
-	const steps = 5 + (copy ? 1 : 0) + (installed ? 1 : 0);
+	const steps = 5 + (copy ? 1 : 0) + (installed ? 1 : 0) + (result ? 1 : 0);
 	const missing = [];
 	let n = 0;
 	const step = (title, why) => {
@@ -153,6 +155,17 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed }, deps =
 		const want = tag.replace(/^v/, '');
 		step(`installed kit ${want}`, v === want ? null : `the installed kit in ${installed} is ${v ? one(v) : 'not stamped'}, not ${want}`);
 	}
+	// J1 (build 11): one number the result file recorded is run again before the item moves; a re-run that differs
+	// stops it. The line: "Re-run: <what>: recorded <n>, re-run <n>".
+	if (result) {
+		let text = null;
+		try { text = fs.readFileSync(result, 'utf8'); } catch { /* named below */ }
+		const m = text && text.match(/Re-run:\**\s*(.+?):\s*recorded\s+([\d,.]+),\s*re-run\s+([\d,.]+)/i);
+		const num = (s) => Number(String(s).replace(/,/g, ''));
+		step('re-run of a recorded number', text === null ? `${result} cannot be read`
+			: !m ? `${result} has no "Re-run:" line (Re-run: <what>: recorded <n>, re-run <n>)`
+				: num(m[2]) !== num(m[3]) ? `${one(m[1])} recorded ${m[2]}, but the re-run gave ${m[3]}: the item does not move` : null);
+	}
 	log(missing.length ? `MISSING ${missing.length} step(s): the release is not done, and the closeout does not call it done.` : `RELEASE COMPLETE: every step of ${tag} is done.`);
 	return { ok: missing.length === 0, missing };
 }
@@ -160,7 +173,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed }, deps =
 /** The arguments, or a reason they are not usable: a flag with no value, or one the check does not know, is refused. */
 export function argsOf(argv) {
 	const o = { tag: argv[0] };
-	const FLAGS = ['--pr', '--repo', '--copy', '--installed'];
+	const FLAGS = ['--pr', '--repo', '--copy', '--installed', '--result'];
 	for (let i = 1; i < argv.length; i++) {
 		if (!FLAGS.includes(argv[i])) return { why: `unknown argument ${one(argv[i])}` };
 		const v = argv[i + 1];
@@ -175,10 +188,10 @@ export function argsOf(argv) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 	const o = argsOf(process.argv.slice(2));
 	if (o.why) {
-		process.stdout.write(`${o.why}\nusage: node .claude/release-check.mjs <tag> --pr <n> [--repo <owner/name>] [--copy <release copy>] [--installed <project>]\n`);
+		process.stdout.write(`${o.why}\nusage: node .claude/release-check.mjs <tag> --pr <n> [--repo <owner/name>] [--copy <release copy>] [--installed <project>] [--result <RESULT.md>]\n`);
 		process.exitCode = 2;
 	} else {
-		const r = releaseCheck({ tag: o.tag, pr: o.pr, repo: o.repo, project: process.cwd(), copy: o.copy && path.resolve(o.copy), installed: o.installed && path.resolve(o.installed) });
+		const r = releaseCheck({ tag: o.tag, pr: o.pr, repo: o.repo, project: process.cwd(), copy: o.copy && path.resolve(o.copy), installed: o.installed && path.resolve(o.installed), result: o.result && path.resolve(o.result) });
 		process.exitCode = r.ok ? 0 : 1;
 	}
 }

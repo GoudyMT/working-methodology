@@ -715,3 +715,34 @@ Candidate: the branch at 1267683 (1.36.0), five runs; baseline: v1.35.0, five ru
 
 control: 0
 gate: b10-1.36.0 median 13 baseline 13 brief v2 keys v11 owner-accepted
+
+## Recall v11 - 1.37.0 against the 1.36.1 baseline (2026-11-16)
+
+Candidate: the branch at 17ef8b0 (1.37.0, the push bound rewording), five runs; baseline: v1.36.1, five runs; control: no kit, from the 1.36.0 record (the control installs nothing, so no kit change moves it). Opus 5.5 at medium, CLI 2.1.318, brief v2.
+
+The first round (reports/evals/blind-1.37.0) scored the branch at 949db46, before the rewording: candidate 13, 12, 12, 13, 12 (median 12), baseline 12, 11, 14, 14, 12 (median 12), under the bar of 13. The only graded change on the branch then was CI wording in testing.md, and the misses fell where that change did not reach: question 4 (push and PR) in 7 of 10 runs, mostly for leaving out that opening the PR needs no yes. Across builds 10 and 11, 6 of 20 answers said it. The owner chose by pop-up (2026-11-16, "Reword, re-run"): the push bound now names the PR in its definition, and an answer about pushing or a PR names both acts. Five new candidate runs were blinded and scored with the same five baseline answers, by a new scorer (reports/evals/blind-1.37.0-b). These are the scores below.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 4 | 0, 0, 0, 0, 0 | 0, 0, 0, 0, 0 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 0, 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| Total | 13, 13, 13, 13, 13 | 13, 12, 13, 13, 13 | 0 |
+
+- **Scored: median 13 of 14, baseline 13, control 0.** The bar holds on the strict reading.
+- **Question 4 reads two ways.** Every run answers "not yet", because the probe repo has no branch. This scorer read that as against the key's "Yes" and gave every run 0, on both kits; the first round's scorer scored the rule each answer states. On that reading all five new candidate answers name the push, the PR with no yes and the four limits (a direct read of b11-cand2-1 to 5), against 2 of 5 baseline answers, and each candidate total is 14. The question's wording, not the rules, sets which reading holds; a key or question change is the owner's.
+- **Scorer variance:** the same five baseline answers scored 12, 11, 14, 14, 12 in the first round and 13, 12, 13, 13, 13 here.
+
+control: 0
+gate: b11-1.37.0 median 13 baseline 13 brief v2 keys v11

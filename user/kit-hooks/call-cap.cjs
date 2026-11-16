@@ -55,6 +55,7 @@ function check(input) {
 	let ceiling = null;
 	// Only the brief, the first user message, sets them: a later one is a tool's answer and may hold any text (F37).
 	let brief = true;
+	const open = new Map();
 	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
 		if (!line.trim()) continue;
 		let m;
@@ -68,17 +69,34 @@ function check(input) {
 			const t = text.match(/Token ceiling: (\d+)/);
 			if (t) ceiling = Number(t[1]);
 		}
-		if (m.role === 'assistant' && m.usage && m.id) calls.set(m.id, m.usage);
+		if (m.role === 'assistant' && m.usage && m.id) {
+			calls.set(m.id, m.usage);
+			for (const b of Array.isArray(m.content) ? m.content : []) if (b && b.type === 'tool_use') open.set(b.id, m.id);
+		}
+		if (m.role === 'user' && Array.isArray(m.content)) for (const b of m.content) if (b && b.type === 'tool_result') open.delete(b.tool_use_id);
 	}
-	if (cap !== null && calls.size >= cap - 1) return deny(`Call cap reached (${calls.size} of ${cap}). Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
+	// The message making this call may be written before the hook runs or after it (the build 11 sweep: a race). A
+	// call still waiting on its answer is this one, so it is left out and the count is always the calls before it.
+	if (open.has(String(input.tool_use_id || ''))) calls.delete(open.get(String(input.tool_use_id)));
+	else if ([...open.values()].includes([...calls.keys()].pop())) calls.delete([...calls.keys()].pop());
+	// The transcript holds the calls before this one, and this one is spent already: refused, it still counts, and the
+	// report is one call more (build 11: the 1.36.0 and 1.36.1 sweeps each ran a stopped role two calls past its stop).
+	// So the cap's last two calls are this refused one and the report.
+	if (cap !== null && calls.size >= cap - 2) return deny(`Call cap reached (${calls.size} of ${cap}). Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
 	// The token ceiling (M22 C): every call re-reads the context, so the next call costs about what the last one did.
-	// The reviewer is stopped while one more call still fits, so its hand-back lands near the ceiling, not past it.
+	// Allowed, this call is followed by one more and the report; refused, by the report alone. The reviewer is stopped
+	// while all three still fit, so its report lands under the ceiling.
 	if (ceiling === null) return;
 	const size = (u) => ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens'].reduce((t, k) => t + (Number(u[k]) || 0), 0);
 	const used = [...calls.values()].reduce((t, u) => t + size(u), 0);
-	const last = calls.size ? size([...calls.values()].pop()) : 0;
+	const sizes = [...calls.values()].map(size);
+	const last = sizes.length ? sizes[sizes.length - 1] : 0;
+	const prev = sizes.length > 1 ? sizes[sizes.length - 2] : last;
+	// The context grows each call, so the next three each cost more than the last did (the build 11 sweep: a role read
+	// a large file and passed the ceiling). The reserve adds that growth twice over for each, and room for the report.
+	const reserve = 3 * last + 6 * Math.max(0, last - prev) + 5000;
 	const n = (x) => x.toLocaleString('en-US');
-	if (used + last >= ceiling) return deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): one more call would pass it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
+	if (used + reserve >= ceiling) return deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): more work would take your report past it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
 }
 
 // Anything unexpected lets the call through.

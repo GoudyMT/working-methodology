@@ -452,7 +452,8 @@ function namedProjects(input) {
 	const NAMES_MAX = 4096;
 	const made = [];
 	let unreadable = '';
-	const RANGE = /^(?:(-?\d+)\.\.(-?\d+)|([A-Za-z])\.\.([A-Za-z]))(?:\.\.(-?\d+))?$/;
+	// bash takes a sign on either end and on the step ({+7..7}, {1..3..+1}); the build 11 repro of the MC3 trial.
+	const RANGE = /^(?:([-+]?\d+)\.\.([-+]?\d+)|([A-Za-z])\.\.([A-Za-z]))(?:\.\.([-+]?\d+))?$/;
 	const rangeOf = (body) => {
 		const m = RANGE.exec(body);
 		if (!m) return null;
@@ -462,7 +463,7 @@ function namedProjects(input) {
 			// Ends past a safe whole number cannot be counted exactly: held (the 1.33.1 review).
 			if (![a, b, step].every(Number.isSafeInteger) || Math.floor(Math.abs(b - a) / step) + 1 > NAMES_MAX) return { count: Infinity };
 			// bash pads to the longer end when either end starts with a 0.
-			const width = /^-?0\d/.test(m[1]) || /^-?0\d/.test(m[2]) ? Math.max(m[1].length, m[2].length) : 0;
+			const width = /^[-+]?0\d/.test(m[1]) || /^[-+]?0\d/.test(m[2]) ? Math.max(m[1].length, m[2].length) : 0;
 			const pad = (n) => (n < 0 ? '-' + String(-n).padStart(width - 1, '0') : String(n).padStart(width, '0'));
 			const out = [];
 			const n = Math.floor(Math.abs(b - a) / step) + 1;
@@ -474,18 +475,76 @@ function namedProjects(input) {
 		for (let i = a; a <= b ? i <= b : i >= b; i += a <= b ? step : -step) out.push(String.fromCharCode(i));
 		return { alts: out };
 	};
+	// The first group bash expands in a word, read as bash does (build 11, the MC3 trial's repro: a{p,{z}}p built app
+	// unread): a brace and its matching close, with a comma at its own level (a list, whose items may hold braces of
+	// their own) or a range; any other brace is text, and the search goes on inside it.
+	// A word is a list of characters, each marked quoted or not: a quoted or escaped brace or comma is text to bash. The
+	// pairs are found in one pass with a stack (the push security review: a scan per brace was quadratic, and a brace
+	// with no close ended the search where bash skips it).
+	const WORD_MAX = 8192;
+	// The work one command may cost the reader, in characters scanned over every expansion (the push security review:
+	// nested lists could multiply the scans past the hook's 10 s). Past it the command is held as unreadable.
+	const WORK_MAX = 2000000;
+	let work = 0;
+	const firstGroup = (w) => {
+		work += w.length;
+		if (work > WORK_MAX) { unreadable = 'braces that would take the guard too long to read'; return null; }
+		const stack = [];
+		let best = null;
+		for (let j = 0; j < w.length; j++) {
+			if (w[j].q) continue;
+			if (w[j].c === '{') stack.push({ start: j, cuts: [] });
+			else if (w[j].c === ',' && stack.length) stack[stack.length - 1].cuts.push(j);
+			else if (w[j].c === '}' && stack.length) {
+				const g = stack.pop();
+				if (best && best.start < g.start) continue;
+				if (g.cuts.length) {
+					const alts = [];
+					let from = g.start + 1;
+					for (const c of [...g.cuts, j]) { alts.push(w.slice(from, c)); from = c + 1; }
+					best = { start: g.start, end: j, alts };
+				} else if (w.slice(g.start + 1, j).every((x) => !x.q && x.c !== '{' && x.c !== '}')) {
+					const r = rangeOf(w.slice(g.start + 1, j).map((x) => x.c).join(''));
+					if (r) best = { start: g.start, end: j, ...r, alts: r.alts && r.alts.map((a) => [...a].map((c) => ({ c, q: false }))) };
+				}
+			}
+		}
+		return best;
+	};
 	const expandWord = (w, depth = 0) => {
 		if (unreadable) return;
-		const groups = [...w.matchAll(/\{([^{}]*)\}/g)];
-		const g = groups.find((x) => x[1].includes(',') || RANGE.test(x[1]));
-		if (!g) { if (made.length >= NAMES_MAX) unreadable = `more than ${NAMES_MAX} names from its braces`; else made.push(w); return; }
+		const g = firstGroup(w);
+		if (unreadable) return;
+		if (!g) { if (made.length >= NAMES_MAX) unreadable = `more than ${NAMES_MAX} names from its braces`; else made.push(w.map((x) => x.c).join('')); return; }
 		if (depth > 16) { unreadable = 'braces nested deeper than the guard reads'; return; }
-		const r = !g[1].includes(',') ? rangeOf(g[1]) : null;
-		if (r && r.count === Infinity) { unreadable = `more than ${NAMES_MAX} names from its braces`; return; }
-		const alts = r ? r.alts : g[1].split(',');
-		for (const alt of alts) expandWord(w.slice(0, g.index) + alt + w.slice(g.index + g[0].length), depth + 1);
+		if (g.count === Infinity) { unreadable = `more than ${NAMES_MAX} names from its braces`; return; }
+		for (const alt of g.alts) expandWord([...w.slice(0, g.start), ...alt, ...w.slice(g.end + 1)], depth + 1);
 	};
-	for (const w of decoded.split(/\s+/)) if (/\{[^{}]*(,|\.\.)[^{}]*\}/.test(w)) expandWord(w);
+	// Each word is read two ways and both count, so a reading the guard gets wrong can only add a check: as bash splits
+	// and quotes it, and as plain text split at spaces (the reading before build 11).
+	const bashWords = (s) => {
+		const words = [];
+		let cur = [];
+		let q = null;
+		for (let i = 0; i < s.length; i++) {
+			const ch = s[i];
+			if (q === "'") { if (ch === "'") q = null; else cur.push({ c: ch, q: true }); continue; }
+			// In double quotes a backslash escapes only $ ` " \ and a new line; before anything else it stays (bash).
+			if (q === '"') { if (ch === '"') q = null; else if (ch === '\\' && i + 1 < s.length && /[$`"\\\n]/.test(s[i + 1])) cur.push({ c: s[++i], q: true }); else cur.push({ c: ch, q: true }); continue; }
+			if (ch === "'" || ch === '"') { q = ch; continue; }
+			if (ch === '\\' && i + 1 < s.length) { cur.push({ c: s[++i], q: true }); continue; }
+			if (/\s/.test(ch)) { if (cur.length) words.push(cur); cur = []; continue; }
+			cur.push({ c: ch, q: false });
+		}
+		if (cur.length) words.push(cur);
+		return words;
+	};
+	const plainWords = decoded.split(/\s+/).filter(Boolean).map((w) => [...w].map((c) => ({ c, q: false })));
+	for (const w of [...bashWords(decoded), ...plainWords]) {
+		if (!w.some((x) => x.c === '{')) continue;
+		if (w.length > WORD_MAX) { unreadable = `a word over ${WORD_MAX} characters with braces in it`; break; }
+		expandWord(w);
+	}
 	// A backslash is a separator on Windows and an escape in a POSIX shell (my\ app is "my app"): both readings count.
 	const spelled = `${decoded} ${made.join(' ')}`;
 	let text = `${norm(spelled)} ${norm(spelled.replace(/\\(.)/g, '$1'))}`;

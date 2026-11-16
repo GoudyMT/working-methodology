@@ -50,7 +50,7 @@ import { createRequire } from 'node:module';
 
 const SELF = fileURLToPath(import.meta.url);
 // The owner's pop-up answers, read the way the guards read them (an exact copy the kit's build keeps in kit-tools).
-const { sessionYes } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
+const { sessionYes, unquotedYes } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
 const toPosix = (p) => p.split(path.sep).join('/');
 
 // A tier's cap counts only the roles beyond its floor (2026-11-03): a cap below the floor made a
@@ -112,6 +112,8 @@ const START_DRIFT = 1.1;
 const CONTENT_PCT = 0.95;
 const STOPPED_SHARE = 1 / 3;
 const REWRITES_TRIP = 2;
+// The prompt cache lives 5 minutes; a shorter gap between two calls cannot have let it expire.
+const REWRITE_GAP_MS = 5 * 60 * 1000;
 const TRIAL_EVERY = 10;
 const TRIAL_EVERY_EARNED = 20;
 // Two questions sharing this much of their words are one question asked twice. Rewording beats a word count, so the
@@ -548,6 +550,11 @@ function decide() {
 	const s = state();
 	const facts = diffFacts();
 	const { why, fix, need, extras, cap, first, refused, budgets = [], total = 0 } = check(c, facts, s.log);
+	// The build 11 sweep: a contract's text goes into its briefs, so one that carries the confirmation phrase would
+	// hand a reviewer what it must find by reading. Read as the canary reads it: letters and digits, any case.
+	const words = (t) => ` ${String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+	const block = rulesBlock();
+	if (block && block.phrase && words(block.phrase).trim()) (c.roles || []).forEach((r, i) => { if (words(JSON.stringify(r)).includes(words(block.phrase))) fix.push(`role ${i + 1}'s text carries the confirmation phrase: take it out, the reviewer finds it by reading`); });
 	const head = git('rev-parse', 'HEAD').stdout.trim() || null;
 	// A stop is cured by adding what it named, not by asking for less: a lighter contract at the HEAD of a stop is the
 	// owner's, whatever its file is called, however often it is rerun and whatever outcome came between. A new commit
@@ -604,6 +611,7 @@ function decide() {
 	}
 	console.log(`APPROVED - ${c.tier} ${first ? `re-sweep of ${rel(first)}` : 'sweep'}, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
 	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash, ceilings, ceilingFrom));
+	console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(c, entry.hash, ceilings, facts).join(', ')}`);
 	for (const l of carryLine) console.log(l);
 	return 0;
 }
@@ -627,6 +635,128 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilin
 		`    ${sweepLine(hash)}`,
 		'    Findings come when the sweep finishes.',
 	].join('\n');
+}
+
+// T6 (build 11): each role's brief is written from the cleared contract, so the lines the guards and the hand-back
+// check read cannot drift (the 1.36.1 briefs told reviewers no hook could run, and sent them to a 25 KB file for a
+// 2 KB rules block). The lead passes each file as the reviewer's prompt, as written.
+const FINDING_CAP = 8;
+// Every line break a field could carry, written as escapes so this file stays ASCII.
+const LINE_BREAKS = new RegExp('[\r\n\u2028\u2029]+', 'g');
+// The rules block every brief points at, by file and line range, so the reviewer reads the block and not the module
+// around it: the file the rule index names for rule:agent-team-adapter, else the module where the kit puts it.
+// It is read from the main checkout, where the canary reads the phrase, so a reviewer in a worktree (where the notes may
+// be untracked) is sent to the same file the check reads (the build 11 sweep). A file the index names outside the
+// repo is not read.
+function rulesBlock() {
+	const top = path.dirname(path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git'));
+	let file = null;
+	try { const row = fs.readFileSync(path.join(top, 'standards', 'INDEX.md'), 'utf8').match(/^\|\s*agent-team-adapter\s*\|[^|\n]*\|\s*`([^`]+)`/m); if (row) file = row[1]; } catch { /* no index */ }
+	const inside = (f) => { const r = path.relative(top, path.resolve(top, f)); return r && !r.startsWith('..') && !path.isAbsolute(r); };
+	for (const f of [file, 'standards/agent-teams.md', 'rules/agent-teams.md'].filter((f) => f && inside(f))) {
+		let lines;
+		try { lines = fs.readFileSync(path.join(top, f), 'utf8').split(/\r?\n/); } catch { continue; }
+		const start = lines.findIndex((l) => /\*\*Rules every brief carries\*\*/.test(l));
+		// The line the canary reads the phrase from, as it reads it.
+		const end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && /^\s*Confirmation phrase: .* with: \S/.test(l));
+		if (end > start) return { file: toPosix(path.join(top, f)), offset: start + 1, limit: end - start + 1, phrase: lines[end].replace(/^\s*Confirmation phrase: .* with: /, '').trim() };
+		return { file: toPosix(path.join(top, f)) };
+	}
+	return null;
+}
+function writeBriefs(c, hash, ceilings, facts) {
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
+	const block = rulesBlock();
+	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
+	const base = git('rev-parse', '--short', facts.base).stdout.trim() || facts.baseName;
+	const hooked = hookState(facts.base) !== 'none';
+	const stem = contractFile.replace(/\.json$/i, '');
+	const out = [];
+	(c.roles || []).forEach((r, i) => {
+		const n = i + 1;
+		const scratch = toPosix(path.join(os.tmpdir(), `kit-sweep-${hash.slice(0, 8)}`, `role-${n}`));
+		// Contract text goes in on one line, so a field cannot add a line of its own (a phrase, a second Role or Call cap
+		// line; the build 11 sweep). A context entry is a path, quoted for the shell; a line range or rule after it
+		// (file.md:10-20) is not part of the path git reads.
+		const one = (s) => String(s ?? '').replace(LINE_BREAKS, ' ').trim();
+		const files = (Array.isArray(r.context) ? r.context : []).map((f) => one(f).replace(/:[\w.-]*$/, '')).filter((f) => f && !/["`$\\]/.test(f)).map((f) => `"${f}"`).join(' ');
+		r = { ...r, role: one(r.role), kind: one(r.kind), question: one(r.question), finding: one(r.finding) };
+		const text = [
+			block && block.limit
+				? `Project rules: read ${block.file} with the Read tool at offset ${block.offset} and limit ${block.limit} (the "Rules every brief carries" block, to its last line), and work under them; you are read-only.`
+				: `Project rules: read the "Rules every brief carries" block in ${block ? block.file : 'standards/agent-teams.md'} with the Read tool, to its last line, and work under them; you are read-only.`,
+			'',
+			`Sweep: ${hash} role ${n}`,
+			`Call cap: ${r.calls}. A call is one message from you, however many tools it runs, so run independent reads together in one message. ${hooked ? 'A hook counts your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did not get to as \'not checked\'.' : 'No hook counts them here, so count your own calls.'} The cap's last two calls are for the report.`,
+			`Token ceiling: ${ceilings[i]}`,
+			'',
+			`Role: ${r.role || r.kind} (${r.kind})`,
+			`Question: ${r.question || ''}`,
+			`Repository: ${toPosix(top)}, at ${head} (base ${facts.baseName}). Read the change with: git -C "${toPosix(top)}" diff ${base}...${head}${files ? ` -- ${files}` : ''}`,
+			'Read more by line range as you need; never a whole file over 40 KB.',
+			`Scratch: ${scratch} is yours alone for any probe that writes; write nowhere else, never in the repository or another role's folder.`,
+			'',
+			`Finding format: ${r.finding || 'file:line, the claim, the input that breaks it or the rule it breaks, the proof'}. At most ${Number.isInteger(r.findingCap) ? r.findingCap : FINDING_CAP} findings, ranked by severity.`,
+			'Report: hand it back with SubagentHandback. After the opening your rules require, the report is:',
+			`ROLE: ${r.role || r.kind}`,
+			'<severity> | <CONFIRMED or PLAUSIBLE> | <one-line claim> | <file:line> | <evidence>   (one line per finding; "No findings" if none)',
+			'Not checked: <what you did not get to, or "nothing">',
+			'Change no file in the repository.',
+			'',
+		].join('\n');
+		const f = `${stem}-brief-${n}.md`;
+		fs.writeFileSync(f, text);
+		out.push(rel(f));
+	});
+	return out;
+}
+
+// T6 (build 11): the findings in a reviewer's report, read from its last hand-back in the shape its brief gives (the
+// canary checks it): [{ severity, verdict, claim, where, evidence }], or null when no report in that shape is there.
+// The build 11 sweep: only the hand-back that was delivered counts (a refused one never reached the lead), a run the
+// canary voided counts none, and rows stop where the out-of-role notes begin.
+function reportRows(parsed) {
+	const refused = new Set();
+	let voided = false;
+	for (const e of parsed) {
+		const content = e && e.message && e.message.role === 'user' && Array.isArray(e.message.content) ? e.message.content : [];
+		for (const b of content) {
+			if (!b || b.type !== 'tool_result' || b.is_error !== true) continue;
+			refused.add(b.tool_use_id);
+			if (/this run is void/i.test(typeof b.content === 'string' ? b.content : JSON.stringify(b.content))) voided = true;
+		}
+	}
+	if (voided) return { void: true };
+	let message = null;
+	for (const e of parsed) {
+		const content = e && e.message && e.message.role === 'assistant' && Array.isArray(e.message.content) ? e.message.content : [];
+		const h = content.find((b) => b && b.type === 'tool_use' && b.name === 'SubagentHandback' && b.input && typeof b.input.message === 'string' && !refused.has(b.id));
+		if (h) message = h.input.message;
+	}
+	if (message === null) return null;
+	const lines = message.split(/\r?\n/);
+	if (!lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) return null;
+	const rows = [];
+	for (const l of lines) {
+		if (/^\W*out[- ]of[- ]role/i.test(l)) break;
+		if (!/^\s*(critical|high|medium|low)\s*\|/i.test(l)) continue;
+		const f = l.split('|').map((x) => x.trim());
+		if (f.length < 5 || !/^(CONFIRMED|PLAUSIBLE)$/i.test(f[1])) return null;
+		rows.push({ severity: f[0].toLowerCase(), verdict: f[1].toUpperCase(), claim: f[2], where: f[3], evidence: f.slice(4).join(' | ') });
+	}
+	return rows;
+}
+// Each role's finding cap, as its brief gave it.
+function roleCaps() {
+	try { return (JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []).map((r) => (Number.isInteger(r.findingCap) ? r.findingCap : FINDING_CAP)); } catch { return []; }
+}
+// The ledger beside the contract, one row per finding, so a count the outcome logs can be read back to its reports.
+function writeLedger(rows) {
+	const f = `${contractFile.replace(/\.json$/i, '')}-ledger.md`;
+	const cell = (s) => String(s).replace(/\|/g, '/').replace(/\s+/g, ' ');
+	fs.writeFileSync(f, [`# Findings ledger: ${path.basename(contractFile)}`, '', 'Written by approve.mjs --outcome from the reviewers\' hand-backs.', '', '| Role | Severity | Verdict | Claim | Where |', '|---|---|---|---|---|',
+		...rows.map((x) => `| ${x.role} | ${x.severity} | ${x.verdict} | ${cell(x.claim)} | ${cell(x.where)} |`), ''].join('\n'));
+	return rel(f);
 }
 
 // The last approved sweep is reported once any outcome for its contract follows it, even one logged after a later
@@ -704,6 +834,12 @@ const pauseCode = (s) => { const lines = rawLines(); const i = s.log.map((e, k) 
 const popUpHow = (act) => `ask with the AskUserQuestion pop-up, the question quoting \`${act}\`, one option labelled "Yes" and one starting "No"`;
 // One tap answers one ask or one pause.
 const tapUsed = (log, tap) => log.some((e) => e.tap === tap);
+// Why a Yes is missing: a Yes whose question names the act without backticks counts for nothing, and the refusal says
+// so, or the lead reads it as no answer and asks the owner the same wrong way again (build 11's resume).
+const unquotedNote = (act, since) => {
+	const u = unquotedYes(act, { since, repo: repoRoot() });
+	return u ? ` The owner's Yes at ${new Date(u.at).toISOString()} answered a question that names ${act} without backticks around it, so it counts for nothing: ask again with the act in backticks.` : '';
+};
 const repoRoot = () => path.dirname(path.dirname(LOG));
 
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
@@ -724,7 +860,7 @@ function ownerYes() {
 	// The owner's tap on this ask's act, after the ask. Read before anything is written, so a refusal logs nothing.
 	const act = `sweep yes ${askCode(last.hash)}`;
 	const yes = sessionYes(act, { since: Date.parse(last.time), repo: repoRoot() });
-	if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask. ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
+	if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask.${unquotedNote(act, Date.parse(last.time))} ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
 	if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered an ask; one answer is for one ask. Nothing logged.'); return 1; }
 	const proof = { proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() };
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
@@ -732,6 +868,8 @@ function ownerYes() {
 	// started reviewers with no ceiling at all (the 1.23.0 sweep).
 	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings } : {}), ...proof });
 	console.log(`The owner's yes is logged; the reviewers may start. ${sweepLine(last.hash)}`);
+	const facts = diffFacts();
+	if (facts && Array.isArray(last.ceilings)) console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(JSON.parse(raw), last.hash, last.ceilings, facts).join(', ')}`);
 	return 0;
 }
 
@@ -842,17 +980,28 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 		const started = (parsed.find((e) => e && e.timestamp) || {}).timestamp;
 		if (!started || !(started >= since)) { bad.push(`${id} (started ${started || 'at no recorded time'}, before this sweep was cleared at ${since})`); return null; }
 		const seen = new Map();
+		// When each call began (its first line) and ended (its last), for the gap the cache outlives.
+		const began = new Map();
+		const ended = new Map();
 		for (const e of parsed) {
 			const m = e && e.message;
-			if (m && m.role === 'assistant' && m.usage) seen.set(m.id || e.uuid, m);
+			if (!(m && m.role === 'assistant' && m.usage)) continue;
+			const key = m.id || e.uuid;
+			seen.set(key, m);
+			const at = Date.parse(e && e.timestamp);
+			if (!began.has(key)) began.set(key, at);
+			ended.set(key, at);
 		}
+		const keys = [...seen.keys()];
 		const u = (m, k) => Number(m.usage[k]) || 0;
 		const calls = [...seen.values()];
 		const per = (m) => u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens');
 		const tokens = calls.reduce((t, m) => t + per(m), 0);
 		// The split by kind (for a dollar ceiling later: cache reads are most of the meter and few of the dollars), the
 		// starting context, the largest and last call (the ceiling's margin), and the cache re-writes after the first
-		// call (a call that wrote over half of what it processed: the cache had expired).
+		// call: a call that read back under half of the context the call before it held, so the cache had expired. A call
+		// that reads the whole cache and writes a large batch of new results is no re-write (build 11: every role of the
+		// 1.36.1 sweep had one, and the sweep paused on 7 re-writes that were none).
 		const split = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
 		for (const m of calls) { split.input += u(m, 'input_tokens'); split.cacheRead += u(m, 'cache_read_input_tokens'); split.cacheWrite += u(m, 'cache_creation_input_tokens'); split.output += u(m, 'output_tokens'); }
 		const shape = {
@@ -860,7 +1009,13 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 			firstCall: calls.length ? per(calls[0]) - u(calls[0], 'output_tokens') : 0,
 			maxCall: Math.max(0, ...calls.map(per)),
 			lastCall: calls.length ? per(calls[calls.length - 1]) : 0,
-			rewrites: calls.slice(1).filter((m) => u(m, 'cache_creation_input_tokens') * 2 > per(m)).length,
+			// Only after a gap the cache can expire in (5 minutes): a call soon after the last that reads back less is a
+			// context the model trimmed, not an expired cache. After such a gap any read short of the last context is one;
+			// the old under-half bar missed a miss that read back 51% (the build 11 sweep). With no times it counts.
+			rewrites: calls.slice(1).filter((m, i) => {
+				const gap = began.get(keys[i + 1]) - ended.get(keys[i]);
+				return u(m, 'cache_read_input_tokens') < per(calls[i]) - u(calls[i], 'output_tokens') && !(gap < REWRITE_GAP_MS);
+			}).length,
 			// Stopped: the call-cap hook refused a tool at the ceiling. Its own words in the transcript say so; the spend
 			// alone cannot tell a role that was stopped from one that was done.
 			// Only a refusal counts, with the hook's numbers in it: a reviewer that read the hook's source or this script
@@ -870,7 +1025,7 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
 		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
 		toolIds.set(id, String(meta.toolUseId || ''));
-		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, ...shape, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp) };
+		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, ...shape, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp), ledger: reportRows(parsed) };
 	});
 	// A crash and its retry name one role by design.
 	const own = roles.filter((x) => x && !crashed.has(x.agent));
@@ -1006,7 +1161,25 @@ function outcome() {
 	}
 	let roles = [];
 	try { roles = JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []; } catch { /* labels only */ }
-	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, lastCall: _l, ...x }, i) => {
+	// T6 (build 11): when every role handed back a report in its shape, the findings are counted from the reports, and a
+	// typed count that differs is refused; the ledger is written either way, so the count can be read back.
+	const ledgers = read.roles.filter((x) => !isLost(x.agent)).map((x) => x.ledger);
+	if (ledgers.length && ledgers.every(Array.isArray)) {
+		const rows = ledgers.flatMap((l, i) => l.map((x) => ({ role: i + 1, ...x })));
+		const where = writeLedger(rows);
+		if (rows.length !== nums.findings) { console.log(`--findings ${nums.findings} does not match the ${rows.length} finding(s) the reviewers' reports hold (ledger: ${where}). Pass --findings ${rows.length}. Nothing logged.`); return 1; }
+		nums.sameLine = rows.filter((x) => x.where && rows.some((y) => y !== x && y.role !== x.role && y.where === x.where)).length;
+		nums.findingsChecked = true;
+		// A role past its finding cap is named, never cut: its findings were delivered (the build 11 sweep).
+		const caps = roleCaps();
+		ledgers.forEach((l, i) => { if (caps[i] && l.length > caps[i]) console.log(`    Role ${i + 1} reported ${l.length} findings, over its cap of ${caps[i]}: rank them, and triage all of them.`); });
+	} else if (ledgers.length) {
+		// The build 11 sweep: one role out of shape used to switch the check off for every role, with no word.
+		const off = ledgers.map((l, i) => (Array.isArray(l) ? null : `${i + 1} (${l && l.void ? 'its run was void' : 'no report in its shape'})`)).filter(Boolean);
+		console.log(`    --findings is not checked against the reports: role(s) ${off.join(', ')}. Count those by hand.`);
+		nums.findingsChecked = false;
+	}
+	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, lastCall: _l, ledger: _g, ...x }, i) => {
 		const c = read.roles.find((y) => isLost(y.agent) && y.index === index);
 		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls, crashedTokens: c.tokens } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null, ceiling: (decision.ceilings || [])[i] ?? null };
 	});
@@ -1025,7 +1198,7 @@ function outcome() {
 	if (!bounded && decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
 	const n = (x) => Math.round(x).toLocaleString('en-US');
 	// A crash and its retry each had the whole ceiling, so the check reads the retry alone, as the call check does.
-	for (const x of per) { const own = x.tokens - (x.crashedTokens || 0); if (x.ceiling && own > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(own)} against ${n(x.ceiling)} (the hook is missing or did not fire)`); }
+	for (const x of per) { const own = x.tokens - (x.crashedTokens || 0); if (x.ceiling && own > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(own)} against ${n(x.ceiling)} (${x.stopped ? 'the hook stopped it too late' : 'the hook is missing or did not fire'})`); }
 	// Past the cap's own stop (one call over is the hook's margin): the hook is missing or did not hold. Without a
 	// baseline the whole-sweep trip covers it and this is a note; under the bound nothing else would, so it trips (the
 	// 1.23.0 sweep).
@@ -1095,13 +1268,24 @@ function summary() {
 function main() {
 	if (!LOG) { console.log('ASK THE OWNER - not inside a git repository, so there is no approval log.'); return 1; }
 	if (has('--summary')) return summary();
+	// A read-only check the lead runs before it hands the owner a command: does this session hold the owner's Yes to the
+	// act? It logs nothing and uses no tap.
+	if (has('--tap')) {
+		const act = String(opt('--tap') || '').trim();
+		if (!act) { console.log('Name the act: --tap "sweep resume <code>". Nothing logged.'); return 1; }
+		const yes = sessionYes(act, { repo: repoRoot() });
+		const used = yes && tapUsed(state().log, yes.tap);
+		if (yes) { console.log(`This session holds the owner's Yes to \`${act}\` at ${new Date(yes.at).toISOString()}${used ? ', already used: one answer is for one ask' : ''}. Nothing logged.`); return used ? 1 : 0; }
+		console.log(`No Yes from the owner to \`${act}\` in this session.${unquotedNote(act, 0)} Nothing logged.`);
+		return 1;
+	}
 	if (has('--resume')) {
 		const s = state();
 		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
 		// The owner's tap on this pause's act, after the pause.
 		const act = `sweep resume ${pauseCode(s)}`;
 		const yes = sessionYes(act, { since: Date.parse(s.pausedAt || 0), repo: repoRoot() });
-		if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause. Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
+		if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause.${unquotedNote(act, Date.parse(s.pausedAt || 0))} Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
 		if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered; one answer is for one pause. Nothing logged.'); return 1; }
 		write({ kind: 'resume', proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() });
 		console.log(`Auto-approval resumed on the owner's Yes; the next review comes after ${state().reviewEvery} more.`);
