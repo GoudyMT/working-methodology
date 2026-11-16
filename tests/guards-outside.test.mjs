@@ -1617,7 +1617,13 @@ test('a nested brace list or a range with a plus sign names the project bash bui
 		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
 	};
 	const parent = path.dirname(proj).split(path.sep).join('/');
-	for (const word of ['v{0,{z}}7', 'v{{0,x},y}7', 'v{x,{0,y}}7', 'v0{+7..7}', 'v0{+7..+7}', 'v{x,0{6..7}}']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'deny', word);
+	for (const word of ['v{0,{z}}7', 'v{{0,x},y}7', 'v{x,{0,y}}7', 'v0{+7..7}', 'v0{+7..+7}', 'v{x,0{6..7}}', 'v{"0",x}7']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'deny', word);
+	// The push security review: a brace with no close is text to bash, which goes on to the next one.
+	assert.equal(call(`cp x ${parent}/{/../v{0,}7/.claude/guard.cjs`), 'deny', 'a stray brace before the list');
+	// And a word of thousands of braces is read in one pass, well inside the hook's 10 s.
+	const t0 = Date.now();
+	call(`ls ${'{'.repeat(4000)}x${'}'.repeat(4000)}`);
+	assert.ok(Date.now() - t0 < 5000, `took ${Date.now() - t0} ms`);
 	// Braces that build no kit project name none.
 	for (const word of ['v{0,{z}}8', 'v{+08..09}']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'runs', word);
 });

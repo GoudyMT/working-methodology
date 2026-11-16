@@ -478,37 +478,65 @@ function namedProjects(input) {
 	// The first group bash expands in a word, read as bash does (build 11, the MC3 trial's repro: a{p,{z}}p built app
 	// unread): a brace and its matching close, with a comma at its own level (a list, whose items may hold braces of
 	// their own) or a range; any other brace is text, and the search goes on inside it.
+	// A word is a list of characters, each marked quoted or not: a quoted or escaped brace or comma is text to bash. The
+	// pairs are found in one pass with a stack (the push security review: a scan per brace was quadratic, and a brace
+	// with no close ended the search where bash skips it).
+	const WORD_MAX = 8192;
 	const firstGroup = (w) => {
-		for (let i = w.indexOf('{'); i >= 0; i = w.indexOf('{', i + 1)) {
-			let depth = 0;
-			const cuts = [];
-			let end = -1;
-			for (let j = i; j < w.length; j++) {
-				if (w[j] === '{') depth++;
-				else if (w[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
-				else if (w[j] === ',' && depth === 1) cuts.push(j);
+		const stack = [];
+		let best = null;
+		for (let j = 0; j < w.length; j++) {
+			if (w[j].q) continue;
+			if (w[j].c === '{') stack.push({ start: j, cuts: [] });
+			else if (w[j].c === ',' && stack.length) stack[stack.length - 1].cuts.push(j);
+			else if (w[j].c === '}' && stack.length) {
+				const g = stack.pop();
+				if (best && best.start < g.start) continue;
+				if (g.cuts.length) {
+					const alts = [];
+					let from = g.start + 1;
+					for (const c of [...g.cuts, j]) { alts.push(w.slice(from, c)); from = c + 1; }
+					best = { start: g.start, end: j, alts };
+				} else if (w.slice(g.start + 1, j).every((x) => !x.q && x.c !== '{' && x.c !== '}')) {
+					const r = rangeOf(w.slice(g.start + 1, j).map((x) => x.c).join(''));
+					if (r) best = { start: g.start, end: j, ...r, alts: r.alts && r.alts.map((a) => [...a].map((c) => ({ c, q: false }))) };
+				}
 			}
-			if (end < 0) return null;
-			if (cuts.length) {
-				const alts = [];
-				let from = i + 1;
-				for (const c of [...cuts, end]) { alts.push(w.slice(from, c)); from = c + 1; }
-				return { start: i, end, alts };
-			}
-			const r = rangeOf(w.slice(i + 1, end));
-			if (r) return { start: i, end, ...r };
 		}
-		return null;
+		return best;
 	};
 	const expandWord = (w, depth = 0) => {
 		if (unreadable) return;
 		const g = firstGroup(w);
-		if (!g) { if (made.length >= NAMES_MAX) unreadable = `more than ${NAMES_MAX} names from its braces`; else made.push(w); return; }
+		if (!g) { if (made.length >= NAMES_MAX) unreadable = `more than ${NAMES_MAX} names from its braces`; else made.push(w.map((x) => x.c).join('')); return; }
 		if (depth > 16) { unreadable = 'braces nested deeper than the guard reads'; return; }
 		if (g.count === Infinity) { unreadable = `more than ${NAMES_MAX} names from its braces`; return; }
-		for (const alt of g.alts) expandWord(w.slice(0, g.start) + alt + w.slice(g.end + 1), depth + 1);
+		for (const alt of g.alts) expandWord([...w.slice(0, g.start), ...alt, ...w.slice(g.end + 1)], depth + 1);
 	};
-	for (const w of decoded.split(/\s+/)) if (/\{.*(,|\.\.).*\}/.test(w)) expandWord(w);
+	// Each word is read two ways and both count, so a reading the guard gets wrong can only add a check: as bash splits
+	// and quotes it, and as plain text split at spaces (the reading before build 11).
+	const bashWords = (s) => {
+		const words = [];
+		let cur = [];
+		let q = null;
+		for (let i = 0; i < s.length; i++) {
+			const ch = s[i];
+			if (q === "'") { if (ch === "'") q = null; else cur.push({ c: ch, q: true }); continue; }
+			if (q === '"') { if (ch === '"') q = null; else if (ch === '\\' && i + 1 < s.length) cur.push({ c: s[++i], q: true }); else cur.push({ c: ch, q: true }); continue; }
+			if (ch === "'" || ch === '"') { q = ch; continue; }
+			if (ch === '\\' && i + 1 < s.length) { cur.push({ c: s[++i], q: true }); continue; }
+			if (/\s/.test(ch)) { if (cur.length) words.push(cur); cur = []; continue; }
+			cur.push({ c: ch, q: false });
+		}
+		if (cur.length) words.push(cur);
+		return words;
+	};
+	const plainWords = decoded.split(/\s+/).filter(Boolean).map((w) => [...w].map((c) => ({ c, q: false })));
+	for (const w of [...bashWords(decoded), ...plainWords]) {
+		if (!w.some((x) => x.c === '{')) continue;
+		if (w.length > WORD_MAX) { unreadable = `a word over ${WORD_MAX} characters with braces in it`; break; }
+		expandWord(w);
+	}
 	// A backslash is a separator on Windows and an escape in a POSIX shell (my\ app is "my app"): both readings count.
 	const spelled = `${decoded} ${made.join(' ')}`;
 	let text = `${norm(spelled)} ${norm(spelled.replace(/\\(.)/g, '$1'))}`;
