@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The test check (T15 Part A, the owner 2026-11-10): holds each test a change adds or edits to the kit's bar for a new
 // test (rule:test-value): it fails first, it earns its place, it sits in the right lane, and it is owed at all.
-//   node scripts/test-check.mjs <base> [--strict]
+//   node scripts/test-check.mjs <base> [--strict] [--slice i/n] [--budget <seconds>]
 //   A1 fails first      the change's test files run against the base commit's code: a new test must fail there, on an
 //                       assertion. A changed test that passes there adds no catch, and is named.
 //   A2 earns its place  the test carries "// why: guards <rule or the owner's decision>", or catches a flip in the
@@ -41,14 +41,17 @@ function tests(text) {
 }
 
 // Run some tests of some files in a folder; the names that went red on an assertion, and those that went red otherwise.
-function run(dir, keys, env = {}) {
+function run(dir, keys, env = {}, timeout = 600000) {
 	const only = path.join(dir, '.test-check-only.json');
 	fs.writeFileSync(only, JSON.stringify(keys));
 	const files = [...new Set(keys.map((k) => k.slice(0, k.indexOf('::'))))].map((f) => path.join(dir, f));
 	const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...base } = process.env;
-	const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: dir, encoding: 'utf8', timeout: 600000, env: { ...base, ...env, KIT_ONLY: only, KIT_REPO: dir, KIT_MAP_OFF: '1' } });
+	const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: dir, encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: { ...base, ...env, KIT_ONLY: only, KIT_REPO: dir, KIT_MAP_OFF: '1' } });
 	const out = String(r.stdout || '');
 	const red = new Map();
+	// Stopped early (the budget, or output past the buffer): the tests with a result keep it, the rest are named as not
+	// checked (the K95 sweep: every test was named so, and the finished ones' findings were lost).
+	if (r.error) red.cut = new Set([...out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
 	// Each top-level "not ok <n> - <name>" with its YAML block up to the next result line.
 	for (const m of out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?\n([\s\S]*?)(?=^(?:ok|not ok) \d+ - |^1\.\.|(?![\s\S]))/gm)) red.set(m[1], /ERR_ASSERTION|AssertionError/.test(m[2]));
 	// A file that could not load (an import the base lacks) fails as a whole, under its own path: each of its tests
@@ -60,7 +63,11 @@ function run(dir, keys, env = {}) {
 	return red;
 }
 
-export function check(root, base, { strict = false, slice = null } = {}) {
+export function check(root, base, { strict = false, slice = null, budget = null } = {}) {
+	// K95 (build 12): a step that would run past the budget is not started or is stopped, and its tests are named.
+	const deadline = budget === null ? Infinity : Date.now() + budget;
+	const left = () => Math.max(0, deadline - Date.now());
+	const say = (s) => process.stderr.write(`test check: ${s}\n`);
 	const findings = [];
 	const note = (key, rule, text) => findings.push({ key, rule, text });
 	const baseSha = git(root, 'rev-parse', '--verify', '--end-of-options', `${base}^{commit}`).stdout.trim();
@@ -86,6 +93,7 @@ export function check(root, base, { strict = false, slice = null } = {}) {
 	for (const t of newOrChanged) if (LARGE.test(t.body) && !t.file.startsWith('tests/slow/')) note(t.key, 'A3', 'needs another machine, a real service, a browser or a model: it belongs in tests/slow');
 	if (newOrChanged.length) {
 		// A1: the change's test files on the base commit's code.
+		say(`A1: ${newOrChanged.length} test(s) on the base commit, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
 		kitTemp.sessionRoot();
 		const copy = makeTemp('test-check-');
 		const home = makeTemp('test-check-home-');
@@ -97,9 +105,12 @@ export function check(root, base, { strict = false, slice = null } = {}) {
 				fs.mkdirSync(path.dirname(path.join(copy, f)), { recursive: true });
 				fs.copyFileSync(path.join(root, f), path.join(copy, f));
 			}
-			const red = run(copy, newOrChanged.map((t) => t.key), { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home });
+			// One read of the time left: a second could land on 0, which spawnSync reads as no limit (the K95 sweep).
+			const ms = Math.min(600000, left());
+			const red = ms > 0 ? run(copy, newOrChanged.map((t) => t.key), { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home }, ms) : Object.assign(new Map(), { cut: new Set() });
 			for (const t of newOrChanged) {
-				if (!red.has(t.name) && red.has(`file:${t.file}`)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)');
+				if (red.cut && !red.cut.has(t.name)) note(t.key, 'A1', 'not checked: the time budget ran out');
+				else if (!red.has(t.name) && red.has(`file:${t.file}`)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)');
 				else if (!red.has(t.name)) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
 				else if (!red.get(t.name)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (a crash or a missing file)');
 			}
@@ -127,12 +138,16 @@ export function check(root, base, { strict = false, slice = null } = {}) {
 		};
 		const untagged = newOrChanged.filter((t) => !tagged(t));
 		if (untagged.length) {
-			const mapped = spawnSync(process.execPath, [path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))], { cwd: root, encoding: 'utf8' });
+			say(`A2: ${untagged.length} untagged test(s) measured against the flips of this change, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
+			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
+			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))]);
 			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');
-			const m = mapped.status === 0 ? spawnSync(process.execPath, [path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000'], { cwd: root, encoding: 'utf8' }) : mapped;
-			const flips = fs.existsSync(flipsFile) ? JSON.parse(fs.readFileSync(flipsFile, 'utf8')).flips : null;
+			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000']) : mapped;
+			const outOfTime = (m.error && m.error.code === 'ETIMEDOUT') || (mapped.error && mapped.error.code === 'ETIMEDOUT');
+			const flips = !outOfTime && fs.existsSync(flipsFile) ? JSON.parse(fs.readFileSync(flipsFile, 'utf8')).flips : null;
 			for (const t of untagged) {
-				if (!flips) note(t.key, 'A2', `not measured (${String(m.stderr || m.stdout).trim().split('\n').pop() || 'the mutation check could not run'})`);
+				if (outOfTime) note(t.key, 'A2', 'not measured: the time budget ran out');
+				else if (!flips) note(t.key, 'A2', `not measured (${String(m.stderr || m.stdout).trim().split('\n').pop() || 'the mutation check could not run'})`);
 				else if (!flips.some((f) => (f.caughtBy || []).includes(t.key))) note(t.key, 'A2', 'catches no flip in the lines this change made, and names no rule it guards (// why: guards <rule>)');
 			}
 		}
@@ -144,14 +159,18 @@ export function check(root, base, { strict = false, slice = null } = {}) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 	const args = process.argv.slice(2);
-	const base = args.find((a, k) => !a.startsWith('--') && args[k - 1] !== '--slice');
+	const base = args.find((a, k) => !a.startsWith('--') && args[k - 1] !== '--slice' && args[k - 1] !== '--budget');
 	if (!base) { process.stderr.write('usage: node scripts/test-check.mjs <base> [--strict]\n'); process.exitCode = 2; }
 	else {
 		const top = git(process.cwd(), 'rev-parse', '--show-toplevel').stdout.trim();
 		const at = args.indexOf('--slice');
 		const m = at >= 0 ? /^(\d+)\/(\d+)$/.exec(args[at + 1] || '') : null;
 		const slice = m && Number(m[1]) < Number(m[2]) ? { i: Number(m[1]), n: Number(m[2]) } : null;
-		const r = at >= 0 && !slice ? { code: 2, text: 'test check: --slice takes i/n, with i under n' } : check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice });
+		const bt = args.indexOf('--budget');
+		const secs = bt >= 0 && /^\d+$/.test(args[bt + 1] || '') ? Number(args[bt + 1]) : null;
+		const r = at >= 0 && !slice ? { code: 2, text: 'test check: --slice takes i/n, with i under n' }
+			: bt >= 0 && secs === null ? { code: 2, text: 'test check: --budget takes whole seconds' }
+				: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000 });
 		process.stdout.write(r.text + '\n');
 		process.exitCode = r.code;
 	}

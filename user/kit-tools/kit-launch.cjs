@@ -722,6 +722,45 @@ function fileProjects(input) {
 	return out;
 }
 
+/**
+ * Whether a recorded folder is gone (K94, build 12): the file system says it is not there, and no folder above it
+ * holds its name in another case. A folder the session cannot read (a denied read, set by a command the guards allow)
+ * is there (the build 12 sweep: existsSync read it as gone, and its guards were skipped).
+ */
+function gone(dir) {
+	try { fs.lstatSync(dir); return false; } catch (e) { if (e.code !== 'ENOENT') return false; }
+	const parent = path.dirname(dir);
+	if (parent === dir) return true;
+	try {
+		const base = path.basename(dir).toLowerCase();
+		return !fs.readdirSync(parent).some((n) => n.toLowerCase() === base);
+	} catch (e) { return e.code === 'ENOENT' || e.code === 'ENOTDIR'; }
+}
+
+// Whether a call is the forget of this gone project and nothing else: one shell command, node running a kit.mjs with
+// forget and this folder, no separator, redirect, substitution or variable anywhere in it.
+function forgets(input, dir) {
+	if (!SHELLS.includes(input && input.tool_name)) return false;
+	const command = String(((input && input.tool_input) || {}).command ?? '').trim();
+	if (/[;&|<>`$()\n{}]/.test(command.replace(/^&\s+/, ''))) return false;
+	const m = /^(?:&\s+)?(?:"([^"]+)"|(\S+))\s+(?:"([^"]+)"|(\S+))\s+forget\s+(?:"([^"]+)"|([^"\s]+))$/i.exec(command);
+	if (!m) return false;
+	const fold = (s) => (WIN ? s.toLowerCase() : s);
+	const same = (a, b) => fold(posix(a)) === fold(posix(b));
+	const cwd = String(input.cwd || process.cwd());
+	// The program is node by name or the node that runs this launcher, and the script is the installed kit's own
+	// kit.mjs, by its real path (the push security review: any script named kit.mjs passed).
+	const program = m[1] || m[2];
+	if (!(program === 'node' || same(path.resolve(cwd, program), process.execPath) || same(path.resolve(cwd, program), process.execPath.replace(/\.exe$/i, '')))) return false;
+	let kitDir = null;
+	try { kitDir = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')).kitDir || null; } catch { return false; }
+	const real = (p) => { try { return fs.realpathSync.native(p); } catch { return null; } };
+	const script = real(path.resolve(cwd, m[3] || m[4]));
+	const kitScript = kitDir && real(path.join(kitDir, 'scripts', 'kit.mjs'));
+	if (!script || !kitScript || !same(script, kitScript)) return false;
+	return same(path.resolve(cwd, m[5] || m[6]), path.resolve(dir));
+}
+
 function preToolUse(input) {
 	const here = projectCheck(input);
 	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
@@ -743,6 +782,14 @@ function preToolUse(input) {
 	if (files.held) answers.push(deny(`Held: this tool ${files.held}, so the kit cannot tell which of its projects it reaches. Use the file's own path on its drive.`));
 	for (const dir of [...named, ...files.filter((d) => !named.some((x) => same(x, d)))]) {
 		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
+		// K94 (build 12): a recorded folder that is gone held every command naming it, the forget that clears it included,
+		// with a reason that sent the owner to reinstall it. Now forget, alone, passes; anything else naming it is held
+		// with the way out, since a command could make it again with guards no install wrote (the build 12 sweep: any
+		// reading of which commands write is a parser the shell can differ from, so none is kept).
+		if (gone(dir)) {
+			if (!forgets(input, dir)) answers.push(deny(`Held: ${posix(dir)} is a kit project that was deleted, and its guard record is still kept. Clear it first, alone: node "<kit folder>/scripts/kit.mjs" forget "${posix(dir)}" (or ask the owner to).`));
+			continue;
+		}
 		answers.push(projectCheck({ ...fanned, cwd: dir }, true));
 	}
 	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };
@@ -905,4 +952,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };

@@ -267,7 +267,7 @@ by its fixed ID; `standards/INDEX.md` lists every ID and its file.
 | evidence-and-failures | `standards/evidence-and-failures.md` | When something fails, a number surprises, or a probe is planned. |
 | git-and-release | `.claude/rules/git-and-release.md` | Before a commit, branch, PR, merge or release. |
 | kit-standards | `standards/kit-standards.md` | Before changing a rule or the kit. |
-| loop-mode | `standards/loop-mode.md` | When the owner turns loop mode on. |
+| loop-mode | `standards/loop-mode.md` | When loop mode is armed or a build loop runs. |
 | project-adapter | `standards/project-adapter.md` | Before an agent batch; filled in per project. |
 | reviews-and-findings | `standards/reviews-and-findings.md` | Before a sweep, a review or a PR, and when handling a finding. |
 | security | `standards/security.md` | At a design lock, before a commit, and for any code that touches data, auth or secrets. |

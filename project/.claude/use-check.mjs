@@ -183,6 +183,21 @@ const PARTS = [
 		},
 		used: () => (has('_List.jsonl') && fs.statSync(path.join(dir, '_List.jsonl')).size > 0 ? [true, '_List.jsonl holds rows'] : [null, 'no rows yet']),
 	},
+	{
+		// T7 (build 12): the loop driver and the bounds file it reads.
+		name: 'loop',
+		what: 'the loop driver: the build loop\'s steps, counted stops and loop mode, within the bounds file (T7)',
+		present: () => {
+			const missing = ['.claude/loop.mjs', '.claude/bounds.json'].filter((f) => !has(f));
+			return [missing.length === 0, missing.length ? `missing ${missing.join(', ')} (run kit.mjs install project)` : 'loop.mjs, bounds.json'];
+		},
+		wired: () => {
+			let b = null;
+			try { b = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'bounds.json'), 'utf8')); } catch { return [false, '.claude/bounds.json is not JSON: the loop starts no run (the owner fixes it; a tool writes it only on the owner\'s pop-up Yes)']; }
+			return Array.isArray(b && b.steps) && b.steps.length ? [true, `${b.steps.length} steps, ${b.steps.filter((s) => s && s.who === 'owner').length} of them the owner's`] : [false, '.claude/bounds.json has no steps: the loop starts no run'];
+		},
+		used: () => (has('.git/kit-loop.jsonl') ? [true, 'a run or loop mode was recorded'] : [null, 'no loop run yet']),
+	},
 ];
 
 function run() {

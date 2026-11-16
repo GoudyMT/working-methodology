@@ -99,6 +99,14 @@ Add `--dry-run` to see what would change first. Add `--force` to replace files t
 old copies are kept in a dated `kit-backups` folder next to the install record. Use it once, when a machine or
 project adopts the kit for the first time, after reading the dry run.
 
+To retire a kit project, delete its folder yourself, then clear its guard record (`install user` names each one
+whose folder is gone). Until then, a command that names the folder is held, the forget alone excepted; the record
+goes once its drive answers:
+
+```bash
+node scripts/kit.mjs forget "<deleted project folder>"
+```
+
 ## How the rules are organized
 
 The core rules load in every session through `AGENTS.md`, which any AI coding tool reads and `CLAUDE.md`

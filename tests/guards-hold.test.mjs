@@ -230,6 +230,19 @@ test('a kit script followed by other commands passes; a write after it or a defi
 	for (const c of ['node .claude/state.mjs view 2>&1; git status', 'node .claude/state.mjs view; ls > /dev/null']) assert.equal(bash(c), 'allow', c);
 });
 
+// K93 (build 12, reproduced on 1.37.0): two kit scripts in one command (render, then check) were held as a write to a
+// protected file, since only readers counted as plain beside a kit script. A node run of a script file defines nothing
+// in the shell that runs it, so it is plain beside another; node with an option first, or inline code, is not.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('two kit scripts in one command pass; node with inline code or an option beside one is still held', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	for (const c of ['node .claude/state.mjs render > /dev/null && node .claude/state.mjs check', 'node .claude/state.mjs render && node .claude/state.mjs check', 'node .claude/state.mjs view; node .claude/use-check.mjs', 'node .claude/state.mjs render 2>&1 && node .claude/state.mjs check | head -5']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['node .claude/state.mjs render; node .claude/state.mjs check', 'node .claude/state.mjs render | Out-Null; node .claude/state.mjs check']) assert.equal(ps(c), 'allow', c);
+	for (const c of ['node -e "require(\'fs\').copyFileSync(\'x\', \'.claude/guard.cjs\')"; node .claude/state.mjs check', 'node .claude/state.mjs check; node --redirect-warnings=x .claude/settings.json', 'node .claude/state.mjs view && node x.js > .claude/guard.cjs', 'node .claude/state.mjs view; /tmp/node .claude/settings.json', 'node .claude/guard.cjs; node x.js "$_"',
+		// The sweep: a script of the session's own may make a link a copy then reads through, so only a kit script is plain.
+		'node mk.js && cp .claude/settings.json out.txt', 'node mk.js; cat .claude/guard.cjs > out.txt']) assert.equal(bash(c), 'deny', c);
+});
+
 // why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
 test('running a kit script with 2>&1, or after a plain Set-Location, passes; a write beside it is still held', () => {
 	const ps = (command) => decide('PowerShell', { command });
@@ -312,17 +325,19 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT }) {
+function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT, ask = null }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
-	const question = `May I run \`${act}\`?`;
+	const question = ask || `May I run \`${act}\`?`;
+	// Each pop-up its own id, as Claude Code gives it: a spent tap is kept by that id.
+	const askId = `toolu_ask_${Math.random().toString(36).slice(2)}`;
 	const input = { questions: [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }] };
 	if (filled) input.answers = { [question]: answer };
 	const lines = [
 		// The call the guard held before the pop-up, in the tool that ran it.
 		...(tried ? [{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_tried', name: tried.tool, input: tried.input }] } }] : []),
 		// An act sent in the same message as the pop-up is written before the answer, as Claude Code writes it.
-		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_ask1', name: 'AskUserQuestion', input }, ...beside.map((command, k) => ({ type: 'tool_use', id: `toolu_beside${k}`, name: 'Bash', input: { command } }))] } },
-		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask1', content: 'answered' }] } },
+		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: askId, name: 'AskUserQuestion', input }, ...beside.map((command, k) => ({ type: 'tool_use', id: `toolu_beside${k}`, name: 'Bash', input: { command } }))] } },
+		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: askId, content: 'answered' }] } },
 		...then.map((command, k) => ({ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: `toolu_run${k}`, name: 'Bash', input: { command } }] } })),
 	];
 	fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -370,6 +385,21 @@ test('a held command runs once on the owner\'s own pop-up yes for that exact com
 });
 
 // why: guards rule:outward-acts
+// T7 (build 12, the owner's lock 2026-11-16): the bounds file says what a thread may do alone, so it is written as the
+// settings are, only on the owner's pop-up Yes to that exact edit.
+// why: guards rule:loop-driver
+test('the bounds file takes the owner\'s yes for the exact edit, and no shell writes it', () => {
+	const bounds = path.join(proj, '.claude', 'bounds.json');
+	popUp({ act: 'echo nothing' });
+	assert.equal(withYes('Edit', { file_path: bounds, old_string: '"who": "owner"', new_string: '"who": "alone"' }), 'deny', 'an edit with no yes');
+	assert.equal(withYes('Write', { file_path: bounds, content: '{}' }), 'deny', 'a write with no yes');
+	for (const c of ['echo {} > .claude/bounds.json', 'sed -i s/owner/alone/ .claude/bounds.json', 'cp /tmp/b .claude/bounds.json', 'rm .claude/bounds.json']) assert.equal(bash(c), 'deny', c);
+	popUp({ act: `Edit ${bounds}: "fixRound": 3 => "fixRound": 4` });
+	assert.equal(withYes('Edit', { file_path: bounds, old_string: '"fixRound": 3', new_string: '"fixRound": 4' }), 'allow', 'the edit the owner read');
+	assert.equal(withYes('Edit', { file_path: bounds, old_string: '"fixRound": 3', new_string: '"fixRound": 9' }), 'deny', 'another edit');
+	assert.equal(bash('cat .claude/bounds.json'), 'allow', 'a read');
+});
+
 test('the settings take the owner\'s yes for the exact edit; the guards and hooks never do', () => {
 	const settings = path.join(proj, '.claude', 'settings.json');
 	popUp({ act: `Edit ${settings}: "deny": [] => "deny": ["Bash(x)"]` });
@@ -511,6 +541,35 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
 });
 
+// The build 12 sweep, on the owner's yes: a later No to the same act took nothing back; a question quoting two acts
+// was a yes to both; and a forked session, which copies the transcript, could spend one tap a second time.
+// why: guards rule:outward-acts (a yes answers the one act the owner read, once)
+test('the owner\'s latest answer counts, a yes is for a question quoting one act, and one tap runs once across sessions', () => {
+	const act = 'gh pr merge 9 --squash';
+	popUp({ act });
+	const later = new Date().toISOString();
+	const q = `May I run \`${act}\`?`;
+	const questions = [{ question: q, header: 'Owner yes', multiSelect: false, options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }];
+	fs.appendFileSync(TRANSCRIPT, [
+		{ type: 'assistant', isSidechain: false, timestamp: later, message: { content: [{ type: 'tool_use', id: 'toolu_ask2', name: 'AskUserQuestion', input: { questions } }] } },
+		{ type: 'user', isSidechain: false, timestamp: later, permissionDecision: { decision: 'accept', source: 'user_temporary' }, toolUseResult: { questions, answers: { [q]: 'No' } }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask2', content: 'answered' }] } },
+	].map((l) => JSON.stringify(l)).join('\n') + '\n');
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a later No was overridden by an earlier Yes');
+	popUp({ act, ask: `May I run \`git status\`? I will not run \`${act}\`.` });
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a question quoting two acts');
+	// A fork copies the transcript, tap and all, into a new session: the tap runs once, in one of them.
+	popUp({ act: 'gh pr merge 10 --squash' });
+	const SID2 = '99999999-2222-3333-4444-555555555555';
+	const fork = path.join(path.dirname(TRANSCRIPT), `${SID2}.jsonl`);
+	fs.copyFileSync(TRANSCRIPT, fork);
+	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }), 'allow');
+	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }), 'allow', 'the same call, asked again by another guard');
+	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }, { transcript_path: fork, session_id: SID2, tool_use_id: 'toolu_fork' }), 'deny', 'a forked session ran the tap again');
+	// The record of spent taps is the owner's like the transcripts: removed, a copied tap would run again.
+	const spent = path.join(cfg, 'kit-yes-spent').split(path.sep).join('/');
+	for (const c of [`rm -rf ${spent}`, `echo x > ${spent}/toolu_ask1`, `mv ${spent} /tmp/x`]) assert.equal(bash(c), 'deny', c);
+});
+
 // why: guards rule:outward-acts (a yes answers the one act the owner read). The 1.25.0 carry-overs: an edit whose text
 // holds the quote's own separators reads as another edit (R1.5); a yes given after a held call in one shell let the
 // same text run in another, which reads it differently (R1.6); a yes to push a branch let a tag of that name go
@@ -523,10 +582,18 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 	popUp({ act, tried: { tool: 'Bash', input: { command: act } } });
 	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes after a Bash call ran in PowerShell');
 	assert.equal(withYes('Bash', { command: act }), 'allow');
-	// The review on ceecedd: a shell act asked with no held call before it has no shell to bind to; an edit with a
-	// semicolon (the MultiEdit separator) has no act.
+	// The review on ceecedd: a shell act asked with no held call before it has no shell to bind to. K97 and New 6
+	// (build 12, the build 11 closeout transcript): that cost the owner a second tap whenever the pop-up came first. A
+	// question that names the shell binds it now, with no try; one that names none still binds nothing, since the same
+	// text does other things in each shell (the build 12 sweep: git rm -r *.log). An edit with a semicolon (the
+	// MultiEdit separator) has no act.
 	popUp({ act, tried: null });
-	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes with no held call before it');
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes with no held call before it and no shell named');
+	popUp({ act, tried: null, ask: `May I run this in Bash: \`${act}\`?` });
+	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes for Bash ran in PowerShell');
+	assert.equal(withYes('Bash', { command: act }), 'allow', 'a yes that names its shell cost a second tap');
+	popUp({ act, tried: null, ask: `In Bash or PowerShell: \`${act}\`?` });
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a question that names both shells');
 	popUp({ act: `Edit ${file}: x; => y` });
 	assert.equal(withYes('Edit', { file_path: file, old_string: 'x;', new_string: 'y' }), 'deny', 'an edit holding a separator');
 	const { grantsRef } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));

@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.38.0 - 2026-11-16
+
+A build loop now runs under a script that keeps its steps in order, counts the stops that have a number and halts until the owner says go on, within a bounds file the owner signs.
+
+### Added
+- `node .claude/loop.mjs` keeps a build loop's state in the git folder, says the one next step, refuses a step out of order or with no evidence, and needs the owner's Yes, in the session the hooks record, after an owner's step opened.
+- Fix rounds and canary misses per unit, visual increments and CI fixes are counted; at a bounds limit the run halts with a triage card (why, the data, the options) that only the owner's Yes clears.
+- `.claude/bounds.json` lists the loop's steps, which are the owner's, and its limits; install seeds it once, a tool writes it only on the owner's pop-up Yes to that exact edit, and a run on a changed one waits for that Yes.
+- The README says how to retire a kit project: delete its folder, then clear its record with `kit.mjs forget`.
+
+### Changed
+- Loop mode arms only when the owner's latest message is exactly the phrase, sent since it was last off; the hooks halt it on any other owner message and turn it off at session start and a compact.
+- The kill switch `autonomy-off` now makes every loop step the owner's, as it does every merge.
+- Recall v12: key 4 says an answer that first notes there is nothing to push yet still scores when it states the rule (the owner's ruling).
+
+### Fixed
+- Two kit scripts in one command (render, then check) are no longer held as a write to a protected file; any other node script, inline code or an option beside one still is.
+- The forget of a deleted kit project now runs, and clears its record when the folder above it is gone too, while its drive answers; any other command naming it says how to clear it.
+- A Yes asked before the act was tried counts when its question names the shell; the owner's latest answer decides, a Yes is for one quoted act, and one tap runs once across sessions.
+- A refused resume or yes says when no session id is set, or when no transcript of that session is kept for the repository.
+- The release notes audit reads a double hyphen only in prose, so a command quoted with a flag no longer fails a draft the build record wrote.
+- The CI test check keeps to a time budget, says each step as it starts, and names each test it could not check instead of being cancelled with no report.
+
 ## 1.37.0 - 2026-11-16
 
 A sweep's briefs are written from its cleared contract, each reviewer's report is checked for shape, and the findings are counted from the reports. The call cap and token ceiling now stop a reviewer in time, the cache trip counts only expired cache, and install keeps files it used to lose.

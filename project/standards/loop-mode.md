@@ -12,6 +12,8 @@ An opt-in overlay for mechanical TDD work, under graduated trust; the default st
 
 **State machine.** OFF by default and after every compact. Armed only by the owner's exact phrase **"begin loop workflow"**, after a clean orientation, a learnings scan in Claude's report, an agreed contract (for files or visuals), and the owner's comfort. ANY owner message mid-loop halts it. Why: a persistent keyword outlives the context that justified it.
 
+**Held by code:** Claude arms it with `node .claude/loop.mjs mode arm`, which arms only when the owner's latest message is the phrase; the hooks halt it on any other message and turn it off at session start and a compact (rule:loop-driver).
+
 **Loop contract:** files to create (path, why, the reference it mirrors - any other file = hard stop); visual increments with their LOCKED reference; expected test collisions from a repo-wide search. Each run: a plan before, a LOOP SUMMARY after.
 
 **Per task:** failing test -> shown FAILING for the right reason -> minimal code -> real counts, covering tests GREEN (the full suite runs before the PR, rule:ci-gate) -> one-line `type: subject` commit -> next. Claude runs the test runner and local git; **push is never automated.** Why: a bad loop unwinds locally. **Command environment:** <!-- PROJECT ADAPTER A11: the tool-shell prefix that finds the right runtime with no installs. -->
@@ -54,3 +56,7 @@ Standing; a repeat is a regression. Why: each cost a real slip before it graduat
 6. **The tool shell's runtime** - see rule:project-adapter (A23, the owner's shell).
 7. **Never `cd` into a subfolder** - use quoted absolute paths or `git -C`; the only `cd` is to the root.
 8. **Stop the preview before any rebuild;** unreachable states: "Visual-correctness gate".
+
+## The Loop Driver {#loop-driver}
+
+A build loop (proof to closeout, one list item) runs under `node .claude/loop.mjs`: `start <item>`, then `next` before each step and `done <step> --evidence "<proof>"` after it; the script refuses a step out of order. The steps, who owns each and the limits live in `.claude/bounds.json`, the owner's file: a tool writes it only on the owner's pop-up Yes to that exact edit, and a run halts if it changes. An owner's step is done only on the owner's Yes, after it opened, to the `loop <step> <code>` act `next` prints; a guard's step (merge, tag) needs only its evidence, since the guard already asks for the act. Count each stop that has a number as it happens: `count fix-round --unit <id>`, `canary-miss --unit <id>`, `visual`, `ci-fix`; `visual-check` takes the owner's Yes. At a limit the run halts with a triage card (why, the data, the options); only the owner's Yes to `loop resume <code>` clears it. `autonomy-off` in the Claude folder makes every step the owner's. Why: a limit needs an instrument; 17 of 26 stops rested on memory.

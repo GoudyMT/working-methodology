@@ -66,6 +66,43 @@ test('the test check names a test that does not fail first, catches nothing or s
 	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--strict'], { cwd: dir, encoding: 'utf8' }).status, 1, 'strict fails on a finding');
 });
 
+// K95 (build 12, seen on PR 47): two slices ran past the job's 15 minutes measuring flips and were cancelled with no
+// line of output, so even their quick findings were lost. With a time budget the check stops a step that would run
+// past it, names each test it could not check, and still reports what it found; it says each step as it starts.
+// why: guards the owner's rule never to lower a gate (a check that is cancelled reports nothing)
+test('the test check keeps to its time budget, names what it could not check and still reports the rest', () => {
+	const dir = repo();
+	const t0 = Date.now();
+	const r = spawnSync(process.execPath, [CHECK, 'HEAD~1', '--budget', '0'], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.ok(Date.now() - t0 < 60000, `took ${Date.now() - t0} ms`);
+	const k = (n) => `tests/a.test.mjs::${n}`;
+	const line = (rule) => r.stdout.split('\n').find((l) => l.includes(`${rule} ${k('a hollow one')}`)) || '';
+	assert.ok(line('A1').includes('not checked'), r.stdout);
+	assert.ok(line('A2').includes('not measured'), r.stdout);
+	assert.match(r.stdout, new RegExp(`A3 ${k('a browser one')}: `), 'a quick finding was lost');
+	assert.match(r.stderr, /test check: /, 'no progress line');
+	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--budget', 'x'], { cwd: dir, encoding: 'utf8' }).status, 2);
+});
+
+// The sweep of K95: a run stopped at the budget kept the results of the tests that had finished, but named every test
+// "not checked", so a real finding was lost. Only a test with no result is named so.
+// why: guards the owner's rule never to lower a gate
+test('a run stopped at the budget keeps the findings of the tests that finished before it', () => {
+	const dir = repo();
+	const head = ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';"];
+	fs.writeFileSync(path.join(dir, 'tests', 'q.test.mjs'), [...head, "test('a quick hollow one', () => { assert.equal(1, 1); });", ''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'z.test.mjs'), [...head, "test('a slow one', async () => { await new Promise((r) => setTimeout(r, 120000)); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'two more');
+	const r = spawnSync(process.execPath, [CHECK, 'HEAD~1', '--budget', '15'], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	const quick = r.stdout.split('\n').find((l) => l.includes('A1 tests/q.test.mjs::a quick hollow one')) || '';
+	assert.ok(quick && !quick.includes('not checked'), `a finished test's finding was lost: ${r.stdout}`);
+	const slow = r.stdout.split('\n').find((l) => l.includes('A1 tests/z.test.mjs::a slow one'));
+	assert.ok(slow && slow.includes('not checked'), r.stdout);
+});
+
 // why: guards the owner's rule never to lower a gate. K13, the 1.27.0 build: on a PR that changed 616 tests the check
 // ran past its 15 minutes and checked nothing; split into slices, each changed test is checked once.
 test('the test check splits the changed tests into slices that cover each once', () => {

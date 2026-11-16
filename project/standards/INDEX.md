@@ -59,6 +59,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` | kit, methodology, change a rule, briefs, one home, improvement report, process gap, kit gap, missing kit, kit gate |
 | loop-workflow-mode | Loop Workflow Mode (Keyword-Gated TDD Loop) | `standards/loop-mode.md` | loop, autonomous, keyword |
 | graduated-loop-lessons | Graduated loop lessons | `standards/loop-mode.md` | lessons, learned, regression |
+| loop-driver | The Loop Driver | `standards/loop-mode.md` | loop, bounds, stop, counter, triage |
 | project-adapter | Project Adapter (FILL-IN TEMPLATE) | `standards/project-adapter.md` | project values, stack, adapter, fill in |
 | finding-pipeline | The Finding Pipeline (Sweep Finding -> Fix) | `standards/reviews-and-findings.md` | findings, review results, fix findings, triage |
 | features-first | Features First; Findings Ride Inside the PR | `standards/reviews-and-findings.md` | fix-only pr, findings in the pr |

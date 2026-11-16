@@ -119,6 +119,31 @@ test('the record writes release notes that split what projects get from what sta
 	assert.match(problems(bad).join('\n'), /reach "everyone"/);
 });
 
+// K96 (build 12, reproduced on the 1.37.0 draft): the record check reads a dash only in prose, outside code spans, so
+// it passed a line quoting `approve.mjs --tap "<act>"`, and the notes audit then failed that draft on its double
+// hyphen; the live line was reworded by hand. A flag in code is code, in the notes as in the record; prose is still held.
+// why: catches release notes the record writes that the notes audit then refuses
+test('a record line that quotes a command with a --flag writes notes the audit passes; a prose double hyphen still fails', () => {
+	const rec = record();
+	rec.items[0].text = 'A tap check, `approve.mjs --tap "<act>"`, reads a Yes before the owner is handed a command.';
+	assert.deepEqual(problems(rec), []);
+	const dir = kitTemp.makeTemp('notes-');
+	const audit = (text) => { const f = path.join(dir, 'notes.md'); fs.writeFileSync(f, text); return spawnSync(process.execPath, [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.2.0'], { encoding: 'utf8', cwd: dir }); };
+	const r = audit(notes(rec));
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.equal(audit(`${notes(rec)}\n\n\`\`\`bash\nnode scripts/kit.mjs install project --dry-run\n\`\`\`\n`).status, 0, 'a flag in a code block failed');
+	assert.match(audit(`${notes(rec)}\nUpgrading is quick -- run install.\n`).stdout, /double hyphen/);
+	assert.match(audit(`${notes(rec)}\nRun \`install\` -- then check.\n`).stdout, /double hyphen/);
+	// The sweep: read as CommonMark reads fences and spans, so no line turns the rest of the notes into code.
+	const dashes = (tail) => (audit(`${notes(rec)}\n${tail}`).stdout.match(/double hyphen/g) || []).length;
+	assert.equal(dashes('```x``` names the key -- in prose.\n\nLater prose -- another dash.\n'), 2, 'an inline span read as a fence');
+	assert.equal(dashes('~~~md\n```js\n~~~\n\nLater prose -- a dash.\n'), 1, 'a backtick line closed a tilde fence');
+	assert.equal(dashes('````md\n```js\n````\n\nLater prose -- a dash.\n'), 1, 'a shorter fence closed a longer one');
+	assert.equal(dashes('Text.\n\n    ```\n\nLater prose -- a dash.\n'), 1, 'an indented block read as a fence');
+	assert.equal(dashes('Press the ` key -- then the `` key.\n'), 1, 'runs of two lengths read as a span');
+	assert.equal(dashes('~~~\nnode x --flag\n~~~\n'), 0, 'a flag in a tilde fence');
+});
+
 // why: guards the owner's pick of E14, 2026-11-15: the notes command prints the draft, and its upgrading and limits
 // lines are held to the same prose rules as the rest of the record.
 test('build-record notes prints the draft, and the upgrading and limits lines are audited as prose', () => {

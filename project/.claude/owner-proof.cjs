@@ -68,7 +68,7 @@ const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold the owner\'s answers, so they are protected files. Read them; Claude Code and the owner write them.';
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
-const SETTINGS_REASON = 'a write to a settings file, which wires the guards';
+const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
 // script may hold w, W, e or an s///w that writes a file or runs a program (the plan check's P3).
@@ -107,7 +107,8 @@ function insideProof(file, cwd) {
 	const h = slash(real(path.resolve(home())));
 	// The auto memory sits beside the transcripts (projects/<project>/memory/), and sessions write it.
 	if (/\/projects\/[^/]+\/memory(\/|$)/.test(p)) return false;
-	return p === `${h}/kit-owner.json` || p === `${h}/projects` || p.startsWith(`${h}/projects/`);
+	// The spent taps (the build 12 sweep): removed, a tap a forked session copied would run again.
+	return p === `${h}/kit-owner.json` || p === `${h}/projects` || p.startsWith(`${h}/projects/`) || p === `${h}/kit-yes-spent` || p.startsWith(`${h}/kit-yes-spent/`);
 }
 
 // Windows reaches a local file by other spellings too (the 1.29.0 sweep: \\?\C:\..., \\.\C:\..., \\?\UNC\host\C$\...
@@ -219,7 +220,7 @@ function partsOf(word) {
 
 // Whether the parts, from index i, name the transcripts (outside a project's memory) or kit-owner.json.
 function protectedFrom(p, i) {
-	if (i < p.length && fits(p[i], 'kit-owner.json')) return true;
+	if (i < p.length && (fits(p[i], 'kit-owner.json') || fits(p[i], 'kit-yes-spent'))) return true;
 	if (i >= p.length || !fits(p[i], 'projects')) return false;
 	// projects/<project>/memory/..., written out with no wildcard in the memory part, is the auto memory.
 	return !(p.length > i + 2 && p[i + 2] === 'memory' && !/[*?[]/.test(p[i + 1]) && p[i] === 'projects');
@@ -263,10 +264,11 @@ function guardShape(p) {
 	}
 	return false;
 }
-// The settings that wire the hooks: a .claude folder's settings.json or settings.local.json.
+// The settings that wire the hooks: a .claude folder's settings.json or settings.local.json. T7 (build 12, the owner's
+// lock): the loop's bounds file, which says what a thread may do alone, takes the same yes for the exact edit.
 function settingsShape(p) {
 	for (let i = 0; i + 1 < p.length; i++) {
-		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json'))) return true;
+		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json') || fits(p[i + 1], 'bounds.json'))) return true;
 	}
 	// The user's own settings when the Claude folder has another name (the 1.29.0 sweep).
 	const h = homeParts();
@@ -550,7 +552,11 @@ function shellWritesFrom(command, tool, start, names) {
 		const SORT_SAFE = /^(-[bdfghiMnrRsuVz]+|-[kt].*|--(unique|reverse|numeric-sort|ignore-case|ignore-leading-blanks|human-numeric-sort|version-sort|stable|zero-terminated|key=.*|field-separator=.*))$/;
 		const writes = (p === 'sort' && w.slice(1).some((a) => a.startsWith('-') && a !== '--' && !SORT_SAFE.test(a)))
 			|| (p === 'uniq' && w.slice(1).some((a) => !/^-[cdiuDz]+$|^--(count|repeated|unique|ignore-case|zero-terminated)$/.test(a)));
+		// K93 (build 12): node running one of the project's kit scripts (.claude/<name>.mjs or .cjs, which only install
+		// writes) is a child process, so it defines nothing in this shell. Any other script may make a link a later copy
+		// reads through (the build 12 sweep), and with an option first (inline code, a file it writes) node is not plain.
 		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1))) || CHANGERS.has(p) || printSed(w)
+			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
 			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
 			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
 	};

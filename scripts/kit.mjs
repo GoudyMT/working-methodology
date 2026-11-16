@@ -268,7 +268,8 @@ function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
 // every call; install always puts the kit's copy back, and fold-back never offers one to the kit.
 // The project's own data (1.36.1): seeded by the first install, then the project's alone. A kit change to the template
 // is never merged into it (the 1.36.0 template _State.json clashed in every project), updated, or folded back.
-export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl'];
+// T7 (build 12): the loop's bounds file too, the owner's from the first install, so no kit change loosens it.
+export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl', '.claude/bounds.json'];
 export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
 // The kit's own git hooks, which the shims check the guard files before. Every other hook git knows gets a shim that
 // runs the project's own hook of that name, so a host that keeps its hooks in .githooks keeps every one (1.25.1 sweep).
@@ -285,16 +286,31 @@ export function guardDir(home, projectDir) {
 
 /**
  * K81 (build 11): forget the guard record of a project folder the owner deleted, so the launcher stops reading it on
- * every call. Only when the folder is gone and the folder above it is there: a project on an unplugged drive or an
- * offline share keeps its record, its git hook shims and the owner's accepted files.
+ * every call. Only when the folder is gone and the drive or share it was on answers: a project on an unplugged drive
+ * or an offline share keeps its record, its git hook shims and the owner's accepted files. K94 (build 12): the folder
+ * above it may be gone too (a deleted probe folder held its records for good), so only the root is asked. A drive
+ * mounted on a folder that answers looks deleted (the parent check missed that as well); its project then comes back
+ * with no record, and the launcher holds every call there until install project runs again: closed, not open.
+ *
+ * Args:
+ *     home: the Claude folder that holds kit-guard
+ *     dir: the deleted project folder
+ *     exists: the existence check (a test stands in a drive that does not answer)
  *
  * Returns:
  *     { removed: [record folders], why: '' } or { removed: [], why } when nothing is removed
  */
-export function forget({ home, dir }) {
+export function forget({ home, dir, exists = fs.existsSync }) {
   const abs = path.resolve(String(dir || ''));
-  if (!dir || fs.existsSync(abs)) return { removed: [], why: `${toPosix(abs)} is there: forget is only for a project folder that was deleted` };
-  if (!fs.existsSync(path.dirname(abs))) return { removed: [], why: `the folder above it (${toPosix(path.dirname(abs))}) cannot be found either, so its drive or share may only be offline; its record stays` };
+  // There unless the file system says it is not, in any case of its name: a folder the session cannot read, or one
+  // spelled in another case, is a live project (the build 12 sweep).
+  const missing = () => {
+    try { fs.lstatSync(abs); return false; } catch (e) { if (e.code !== 'ENOENT') return false; }
+    try { const base = path.basename(abs).toLowerCase(); return !fs.readdirSync(path.dirname(abs)).some((n) => n.toLowerCase() === base); } catch (e) { return e.code === 'ENOENT' || e.code === 'ENOTDIR'; }
+  };
+  if (!dir || exists(abs) || !missing()) return { removed: [], why: `${toPosix(abs)} is there: forget is only for a project folder that was deleted` };
+  const root = path.parse(abs).root;
+  if (!exists(root)) return { removed: [], why: `its drive or share (${toPosix(root)}) does not answer, so it may only be offline; its record stays` };
   const removed = [];
   for (const d of [guardDir(home, abs), legacyGuardDir(home, abs)].filter(Boolean)) {
     if (!fs.existsSync(d)) continue;

@@ -1732,6 +1732,30 @@ test('install seeds the project data files once and never merges, updates or fol
   assert.ok(![...fb.foldBack, ...fb.conflict, ...fb.update].some((k) => k in data), JSON.stringify(fb));
 });
 
+// T7 (build 12, the owner's lock): the bounds file is the owner's from the first install on, as the data is: a kit
+// change to its template never reaches a project that has one, so no install loosens what the owner set.
+// why: guards rule:loop-driver
+test('install seeds the loop bounds file once and never changes the owner\'s', () => {
+  const { kit, home, proj } = makeKit();
+  fs.mkdirSync(path.join(kit, 'project', '.claude'), { recursive: true });
+  const template = (merge) => `{\n  "steps": [\n    { "step": "merge", "who": "${merge}" }\n  ],\n\n\n\n  "limits": { "fixRound": 3 }\n}\n`;
+  fs.writeFileSync(path.join(kit, 'project', '.claude', 'bounds.json'), template('owner'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  const file = path.join(proj, '.claude', 'bounds.json');
+  assert.equal(read(file), template('owner'), 'a new project gets the template');
+  // The owner tightens a limit; the kit's template loosens a step on a line far from it, which a merge would take.
+  const mine = template('owner').replace('"fixRound": 3', '"fixRound": 2');
+  fs.writeFileSync(file, mine);
+  fs.writeFileSync(path.join(kit, 'project', '.claude', 'bounds.json'), template('alone'));
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(file), mine, 'install changed the owner\'s bounds');
+  assert.ok(![...r.updated, ...r.threeWayMerged].includes('.claude/bounds.json'), JSON.stringify(r));
+  // Untouched by the owner, it still stays as seeded: the owner reads every loosening before it applies.
+  fs.writeFileSync(file, template('owner'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(file), template('owner'));
+});
+
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
 // session start said only that an update was there.
 test('session start names a user layer newer than the project for what it can break', () => {
@@ -3051,6 +3075,26 @@ test('a Yes to an unquoted act is named in the refusal, and --tap checks a Yes w
   const used = tap();
   assert.equal(used.status, 1);
   assert.match(used.stdout, /already used/);
+});
+
+// New 2 (build 7, added in build 12): a resume from the owner's terminal was refused with no session id set, or from
+// a folder outside the repo, and the refusal named neither, so it read as if the owner had not answered.
+// why: guards rule:sweep-auto-approval
+test('a refused resume says when no session id is set, or when no transcript of that session is kept for this repo', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(Math.ceil(537500 * 1.3)));
+  const code = (approveIn(r.dir, [r.f]).stdout.match(/`sweep resume ([0-9a-f]{6})`/) || [])[1];
+  assert.ok(code);
+  const cfg = makeTemp('cfg-');
+  const none = approveIn(r.dir, ['--resume'], { CLAUDE_CODE_SESSION_ID: '', CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(none.status, 1);
+  assert.match(none.stdout, /CLAUDE_CODE_SESSION_ID is not set/);
+  const elsewhere = approveIn(r.dir, ['--resume'], tapEnv(cfg));
+  assert.equal(elsewhere.status, 1);
+  assert.ok(elsewhere.stdout.includes(TAP_SID), 'the refusal does not name the session it looked for');
+  assert.match(elsewhere.stdout, /no transcript/);
+  ownerTaps(cfg, r.dir, 'sweep resume 000000');
+  assert.doesNotMatch(approveIn(r.dir, ['--resume'], tapEnv(cfg)).stdout, /CLAUDE_CODE_SESSION_ID|no transcript/, 'a session that is read was named as missing');
 });
 
 // The installed approve.mjs reads the owner's taps in the Claude folder install user filled in, so a caller cannot
@@ -6534,12 +6578,18 @@ test('recall v8 and v9 move key 3 to the resume packet rule, and v7 stays as wri
   assert.deepEqual(v10.filter((r) => r.n !== 3), v9.filter((r) => r.n !== 3));
   assert.match(v10[2].key, /fresh reads of the Active Plan, of every file its resume point names/); // pin: 3 recall key v10, frozen
   // v11 (build 6, the owner's ruling 2026-11-15): key 4 frees opening the PR; every other row is v10's.
-  assert.equal(currentVersion(text), 11);
   assert.equal(passBar(text, 11), 13);
   const v11 = questions(text, 11);
   assert.deepEqual(v11.filter((r) => r.n !== 4), v10.filter((r) => r.n !== 4));
   assert.equal(v11[3].q, v10[3].q);
   assert.match(v11[3].key, /^Yes, with no yes needed: a plain push of the feature branch to origin, then opening its PR; never main, a tag, a force or a delete$/); // pin: 4 recall key v11, frozen
+  // v12 (build 12, the owner's pop-up 2026-11-16, K98): key 4 says an answer noting nothing to push yet still scores.
+  assert.equal(currentVersion(text), 12);
+  assert.equal(passBar(text, 12), 13);
+  const v12 = questions(text, 12);
+  assert.deepEqual(v12.filter((r) => r.n !== 4), v11.filter((r) => r.n !== 4));
+  assert.equal(v12[3].q, v11[3].q);
+  assert.match(v12[3].key, /^Yes, with no yes needed: [^|]*never main, a tag, a force or a delete\. An answer that first says this folder has nothing to push yet still scores when it states that rule$/); // pin: 4 recall key v12, frozen
   assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check`, then a fresh Read of `_Active Plan\.md`[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 
