@@ -48,6 +48,8 @@ function ownerTaps(r, act, { answer = 'Yes', sid = SID } = {}) {
 }
 // Stamped now, a few milliseconds after the driver's last line, as a real message comes after it.
 const ownerSays = (r, text) => { const t = Date.now(); while (Date.now() - t < 5); transcript(r, [{ type: 'user', isSidechain: false, timestamp: new Date().toISOString(), message: { role: 'user', content: text } }]); };
+// The plan step's self-approval line (T7 slice 2): the session records it before it asks the owner.
+const shadow = (r, would = 'yes') => loop(r, ['shadow', '--would', would, '--why', 'grounded in the item and the charter']);
 const resume = (r) => { ownerTaps(r, `loop resume ${code(loop(r, ['next']).stdout, 'resume')}`); return loop(r, ['resume']); };
 
 // why: guards rule:loop-driver
@@ -77,6 +79,7 @@ test('an owner step is done only on the owner\'s Yes to its loop act in the reco
 	loop(r, ['start', 'K1']);
 	loop(r, ['done', 'proof', '--evidence', 'red test']);
 	const act = `loop design ${code(loop(r, ['next']).stdout, 'design')}`;
+	assert.equal(shadow(r).status, 0);
 	assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 1, 'no Yes');
 	ownerTaps(r, act, { answer: 'No' });
 	assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 1, 'a No is no lock');
@@ -143,6 +146,7 @@ test('a changed bounds file, a hand edit of the log or the kill switch stops the
 	loop(r2, ['halt', 'ends here']);
 	assert.equal(resume(r2).status, 0);
 	for (const s of ['proof', 'design', 'build', 'sweep', 'pr', 'ci', 'merge', 'tag', 'release', 'install', 'verify', 'closeout']) {
+		if (s === 'design') shadow(r2);
 		if (s === 'design') ownerTaps(r2, `loop design ${code(loop(r2, ['next']).stdout, 'design')}`);
 		assert.equal(loop(r2, ['done', s, '--evidence', 'x']).status, 0, s);
 	}
@@ -167,6 +171,7 @@ test('a changed bounds file, a hand edit of the log or the kill switch stops the
 	// A guard's step too: with the switch on, its evidence alone is not enough (the build 12 sweep).
 	fs.rmSync(path.join(r4.cfg, 'autonomy-off'));
 	for (const s of ['proof', 'design', 'build', 'sweep', 'pr', 'ci']) {
+		if (s === 'design') shadow(r4);
 		if (s === 'design') ownerTaps(r4, `loop design ${code(loop(r4, ['next']).stdout, 'design')}`);
 		assert.equal(loop(r4, ['done', s, '--evidence', 'x']).status, 0, s);
 	}
@@ -175,6 +180,64 @@ test('a changed bounds file, a hand edit of the log or the kill switch stops the
 	const r5 = repo();
 	fs.rmSync(path.join(r5.dir, '.claude', 'bounds.json'));
 	assert.equal(loop(r5, ['start', 'K1']).status, 1, 'no bounds file');
+});
+
+// T7 slice 2 (build 13; the stop-point map's S3, the owner's streak of 10, 2026-11-16): each plan says whether it would
+// approve itself, and the record of whether the owner agreed comes from the owner's own answers, never the session's
+// word. Self-approval stays off; the streak only shows how close the owner's bar is.
+// why: guards the owner's S3 shadow mode: no plan skips the owner, and a disagreement cannot be hidden
+test('the plan step needs its self-approval line first, and the streak counts only plans the owner passed on the first answer', () => {
+	const r = repo();
+	const finish = (run) => {
+		for (const s of ['build', 'sweep', 'pr', 'ci', 'merge', 'tag', 'release', 'install', 'verify', 'closeout']) assert.equal(loop(run, ['done', s, '--evidence', 'x']).status, 0, s);
+	};
+	const plan = (item, would, answers) => {
+		assert.equal(loop(r, ['start', item]).status, 0);
+		assert.equal(loop(r, ['shadow', '--would', would, '--why', 'x']).status, 1, 'a shadow line before the plan step opened');
+		loop(r, ['done', 'proof', '--evidence', 'x']);
+		const act = `loop design ${code(loop(r, ['next']).stdout, 'design')}`;
+		const bare = loop(r, ['done', 'design', '--evidence', 'plan v1']);
+		assert.equal(bare.status, 1, 'a plan with no self-approval line');
+		assert.match(bare.stdout, /shadow --would yes\|no --why/);
+		assert.equal(loop(r, ['shadow', '--would', 'maybe', '--why', 'x']).status, 2);
+		assert.equal(loop(r, ['shadow', '--would', would]).status, 2, 'no why');
+		assert.equal(shadow(r, would).status, 0);
+		assert.equal(shadow(r, would === 'yes' ? 'no' : 'yes').status, 1, 'a second verdict on the same plan');
+		for (const a of answers) ownerTaps(r, act, { answer: a });
+		assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 0);
+		finish(r);
+		return loop(r, ['show']).stdout;
+	};
+	assert.match(plan('K1', 'yes', ['Yes']), /shadow: 1 of 10 agreeing plans in a row/);
+	assert.match(plan('K2', 'yes', ['Yes']), /shadow: 2 of 10/);
+	assert.match(plan('K3', 'no', ['Yes']), /shadow: 2 of 10/, 'a "would not" plan moves nothing');
+	assert.match(plan('K4', 'yes', ['No', 'Yes']), /shadow: 0 of 10/, 'a plan the owner first answered No to resets the streak');
+	assert.deepEqual(log(r).filter((e) => e.kind === 'done' && e.step === 'design').map((e) => e.shadow.outcome), ['agree', 'agree', 'cautious', 'disagree']);
+	assert.match(loop(r, ['show']).stdout, /self-approval stays off/);
+	// The owner's bounds file sets the step and the streak; at the streak the record says the owner may decide.
+	const short = repo();
+	const file = path.join(short.dir, '.claude', 'bounds.json');
+	const b = JSON.parse(fs.readFileSync(file, 'utf8'));
+	b.shadow = { step: 'design', streak: 1 };
+	fs.writeFileSync(file, JSON.stringify(b));
+	loop(short, ['start', 'K1']);
+	loop(short, ['done', 'proof', '--evidence', 'x']);
+	// A Yes given before the verdict was recorded is not the owner's word on that verdict, so it locks nothing.
+	const shortAct = `loop design ${code(loop(short, ['next']).stdout, 'design')}`;
+	ownerTaps(short, shortAct);
+	const t = Date.now();
+	while (Date.now() - t < 1100);
+	shadow(short);
+	assert.equal(loop(short, ['done', 'design', '--evidence', 'x']).status, 1, 'a Yes from before the verdict');
+	ownerTaps(short, shortAct);
+	assert.equal(loop(short, ['done', 'design', '--evidence', 'x']).status, 0);
+	assert.match(loop(short, ['show']).stdout, /shadow: 1 of 1 .*reached: the owner may decide whether plans like these approve themselves; self-approval stays off until then/);
+	b.shadow = { step: 'design', streak: 0 };
+	fs.writeFileSync(file, JSON.stringify(b));
+	assert.match(loop(repo(), ['start', 'K1']).stdout, /run started|NEXT/, 'the shipped bounds start');
+	const bad = repo();
+	fs.writeFileSync(path.join(bad.dir, '.claude', 'bounds.json'), JSON.stringify(b));
+	assert.match(loop(bad, ['start', 'K1']).stdout, /shadow/, 'a streak under 1 is refused');
 });
 
 // why: guards rule:loop-workflow-mode (armed only by the owner's exact phrase; any owner message halts it)

@@ -259,7 +259,7 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 // The owner's latest Yes to one act in this session's own transcript, in this repo's folder of transcripts, after a
 // time: { at, tap } (tap names the answer, so one answer is used once), or null. For approve.mjs: an ask or a pause
 // prints the act ("sweep yes <code>"), the lead quotes it in a pop-up, and the owner's tap is the yes.
-function sessionYeses(sessionId, repo) {
+function sessionYeses(sessionId, repo, { all = false } = {}) {
 	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return [];
 	const root = path.join(home(), 'projects');
 	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
@@ -272,9 +272,14 @@ function sessionYeses(sessionId, repo) {
 	for (const d of dirs) {
 		let lines;
 		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
-		out.push(...yeses(lines));
+		out.push(...yeses(lines, { all }));
 	}
 	return out;
+}
+// Every answer the owner gave to one act after a time, oldest first, a No included: { at, yes }. For the loop's plan
+// shadow (T7 slice 2), which counts a plan the owner first answered No to as a disagreement.
+function sessionAnswers(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
+	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && y.acts.includes(squash(act))).map((y) => ({ at: y.at, yes: y.yes })).sort((a, b) => a.at - b.at);
 }
 function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
 	let best = null;
@@ -309,4 +314,4 @@ function unquotedYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSI
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, unquotedYes, sessionGap, tailLines, FRESH_MS };
+module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, unquotedYes, sessionGap, tailLines, FRESH_MS };

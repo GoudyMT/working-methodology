@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "about": "What a thread may do alone and what stays the owner's (J6), read by .claude/loop.mjs. The owner's file: a tool changes it only on the owner's pop-up Yes to that exact edit. A step is done in this order. alone: the thread does it. owner: it needs the owner's Yes to its loop act after it opened. guard: the act itself is an outward act the guards hold for the owner's yes, so the step records its evidence. limits: a run halts when a count reaches its number.",
+  "about": "What a thread may do alone and what stays the owner's (J6), read by .claude/loop.mjs. The owner's file: a tool changes it only on the owner's pop-up Yes to that exact edit. A step is done in this order. alone: the thread does it. owner: it needs the owner's Yes to its loop act after it opened. guard: the act itself is an outward act the guards hold for the owner's yes, so the step records its evidence. limits: a run halts when a count reaches its number. shadow: the plan step, whose self-approval line the loop records before the owner is asked, and how many plans in a row the owner must agree with before self-approval may even be offered (it stays off).",
   "steps": [
     { "step": "proof", "who": "alone" },
     { "step": "design", "who": "owner" },
@@ -15,5 +15,6 @@
     { "step": "verify", "who": "alone" },
     { "step": "closeout", "who": "alone" }
   ],
-  "limits": { "fixRound": 3, "canaryMiss": 2, "visual": 3 }
+  "limits": { "fixRound": 3, "canaryMiss": 2, "visual": 3 },
+  "shadow": { "step": "design", "streak": 10 }
 }

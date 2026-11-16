@@ -13,6 +13,8 @@
 //   node .claude/loop.mjs count fix-round|canary-miss --unit <id> | visual | visual-check | ci-fix
 //        visual-check is the owner looking: it needs their Yes to `loop visual-check <code>` (show prints it)
 //   node .claude/loop.mjs halt "<why>" | resume                a stop; only the owner's Yes to `loop resume <code>` clears it
+//   node .claude/loop.mjs shadow --would yes|no --why "<why>"   the plan's self-approval line (S3), once, before the owner
+//                                                              is asked to lock it; the plan step is not done without it
 //   node .claude/loop.mjs mode arm | prompt --text "<message>" | off --why "<why>"
 //        arm: only when the session's latest owner message is exactly "begin loop workflow" and came after loop mode
 //        was last turned off; prompt and off are the hooks' (any other owner message halts the loop; session start and
@@ -71,13 +73,17 @@ function bounds() {
 	if (!steps.length || steps.some((s) => !s || !/^[a-z][a-z-]*$/.test(String(s.step)) || !WHO.includes(s.who))) return { why: `.claude/bounds.json needs steps, each { "step": "<name>", "who": "${WHO.join('" | "')}" }` };
 	const limits = (b && b.limits) || {};
 	for (const k of ['fixRound', 'canaryMiss', 'visual']) if (!Number.isInteger(limits[k]) || limits[k] < 1) return { why: `.claude/bounds.json needs limits.${k}, a whole number of at least 1` };
-	return { hash: sha(raw), steps, limits };
+	// The plan shadow (T7 slice 2, S3): which owner step is the plan lock, and how many agreeing plans in a row the
+	// owner's bar is (10, the owner's pick 2026-11-16). Self-approval itself is not built; the streak is data.
+	const shadow = { step: 'design', streak: 10, ...((b && b.shadow) || {}) };
+	if (!/^[a-z][a-z-]*$/.test(String(shadow.step)) || !Number.isInteger(shadow.streak) || shadow.streak < 1) return { why: '.claude/bounds.json: shadow needs { "step": "<the plan step>", "streak": <a whole number of at least 1> }' };
+	return { hash: sha(raw), steps, limits, shadow };
 }
 
 /** The log read once: the open run, what it has done, its counts, whether it is halted, loop mode, the last bounds. */
 function read() {
 	const lines = LOG && fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean) : [];
-	const s = { run: null, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, taps: new Set(), mode: { state: 'off', why: 'not armed', time: '' }, opened: null, lastBounds: null };
+	const s = { run: null, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, taps: new Set(), mode: { state: 'off', why: 'not armed', time: '' }, opened: null, lastBounds: null, shadow: null, streak: 0 };
 	const handEdit = (at) => ({ why: 'the loop log was changed by hand', at, time: new Date(0).toISOString() });
 	lines.forEach((l, i) => {
 		let e;
@@ -85,9 +91,16 @@ function read() {
 		if (!e || typeof e !== 'object' || e.prev !== (i ? sha(lines[i - 1]) : '')) { if (s.run && !s.halt) s.halt = handEdit(i); return; }
 		if (e.tap) s.taps.add(e.tap);
 		if (e.kind === 'mode') s.mode = { state: e.state, why: e.why || '', time: e.time };
-		else if (e.kind === 'start') { Object.assign(s, { run: { item: e.item, id: e.run, bounds: e.bounds }, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, opened: e.time }); s.lastBounds = e.bounds; }
+		else if (e.kind === 'start') { Object.assign(s, { run: { item: e.item, id: e.run, bounds: e.bounds }, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, opened: e.time, shadow: null }); s.lastBounds = e.bounds; }
 		else if (!s.run) return;
-		else if (e.kind === 'done') { s.done.push(e.step); s.opened = e.time; }
+		else if (e.kind === 'done') {
+			s.done.push(e.step); s.opened = e.time; s.shadow = null;
+			// The streak runs across runs: a plan the owner passed on the first answer adds one, one they first said No to
+			// ends it; a plan that would not approve itself moves nothing.
+			if (e.shadow && e.shadow.outcome === 'agree') s.streak++;
+			else if (e.shadow && e.shadow.outcome === 'disagree') s.streak = 0;
+		}
+		else if (e.kind === 'shadow') s.shadow = { would: e.would, step: e.step, time: e.time };
 		else if (e.kind === 'count') { s.counts[e.key] = (s.counts[e.key] || 0) + 1; if (e.counter === 'visual-check') { s.visualSince = 0; s.checks++; } else if (e.counter === 'visual') s.visualSince++; }
 		else if (e.kind === 'halt') s.halt = { why: e.why, at: i, time: e.time };
 		else if (e.kind === 'resume') { s.halt = null; s.run.bounds = e.bounds; s.lastBounds = e.bounds; s.opened = e.time; }
@@ -143,6 +156,12 @@ function settle(s, b) {
 		return read();
 	}
 	return s;
+}
+
+// The plan shadow's record: the streak against the owner's bar.
+function shadowLine(s, b) {
+	const at = `shadow: ${s.streak} of ${b.shadow.streak} agreeing plans in a row`;
+	return s.streak >= b.shadow.streak ? `${at}; reached: the owner may decide whether plans like these approve themselves; self-approval stays off until then` : `${at}; self-approval stays off`;
 }
 
 function lastOwnerMessage() {
@@ -214,7 +233,7 @@ function main(argv) {
 	s = settle(s, b);
 	if (['start', 'next', 'show'].includes(cmd)) {
 		if (cmd === 'show') out(`loop mode: ${s.mode.state}${s.mode.state === 'off' ? ` (${s.mode.why})` : ''}`);
-		if (!s.run) { out('No loop run is open: node .claude/loop.mjs start <item>.'); return 0; }
+		if (!s.run) { if (cmd === 'show') out(shadowLine(s, b)); out('No loop run is open: node .claude/loop.mjs start <item>.'); return 0; }
 		if (s.halt) { out(card(s, b, s.halt.why)); return 0; }
 		const step = nextStep(s, b);
 		if (!step) { out(`Run ${s.run.item}: every step is done.`); return 0; }
@@ -222,6 +241,7 @@ function main(argv) {
 		out(who === 'alone' ? `NEXT ${step.step}: alone`
 			: who === 'guard' ? `NEXT ${step.step}: the guard's; the act itself waits for the owner's yes where the guards hold it, then record its evidence`
 				: `NEXT ${step.step}: the owner's${step.who !== 'owner' ? ' (the kill switch autonomy-off is on)' : ''}; ask in the pop-up, the question quoting \`loop ${step.step} ${code(s, step.step)}\``);
+		if (cmd === 'show') out(shadowLine(s, b));
 		if (cmd === 'show') out(`Run ${s.run.item}: done ${s.done.join(', ') || 'nothing yet'}; counts ${Object.entries(s.counts).map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}; visual since the last check ${s.visualSince}, the owner's check: \`${checkAct(s)}\``);
 		return 0;
 	}
@@ -241,6 +261,18 @@ function main(argv) {
 		return 3;
 	}
 	if (s.halt) { out(card(s, b, s.halt.why)); return 1; }
+	if (cmd === 'shadow') {
+		const would = opt('--would');
+		const why = opt('--why');
+		if (!['yes', 'no'].includes(would) || !why || !String(why).trim()) { out('usage: node .claude/loop.mjs shadow --would yes|no --why "<what the verdict rests on: the item, the spec and charter, the impact test, the red-team pass>"'); return 2; }
+		const step = nextStep(s, b);
+		if (!step || step.step !== b.shadow.step) { out(`loop: refused: the self-approval line belongs to the plan step (${b.shadow.step}), and the next step is ${step ? step.step : 'none'}. Nothing written.`); return 1; }
+		// One verdict per plan: a second could hide the first after the owner answered it.
+		if (s.shadow) { out(`loop: refused: this plan already says it would${s.shadow.would === 'yes' ? '' : ' not'} approve itself; the record keeps the first verdict. Nothing written.`); return 1; }
+		write({ kind: 'shadow', step: step.step, would, why: String(why) });
+		out(`loop: recorded: the plan would${would === 'yes' ? '' : ' not'} approve itself. Ask the owner now, as always: self-approval stays off.`);
+		return 0;
+	}
 	if (cmd === 'done') {
 		const stepName = rest[0];
 		const evidence = opt('--evidence');
@@ -248,12 +280,20 @@ function main(argv) {
 		const step = nextStep(s, b);
 		if (!step || step.step !== stepName) { out(card(s, b, `step ${stepName} is out of order`, { halted: false })); return 1; }
 		let tap;
+		let shadowed;
+		const plan = step.step === b.shadow.step;
+		if (plan && !s.shadow) { out(`loop: refused: ${step.step} is the plan lock, and the plan carries no self-approval line yet: node .claude/loop.mjs shadow --would yes|no --why "<why>", then ask the owner. Nothing written.`); return 1; }
+		if (plan) {
+			// Agreement is read from the owner's own answers to the plan's act since the verdict, never the session's word.
+			const first = yesReader.sessionAnswers(`loop ${step.step} ${code(s, step.step)}`, { since: Date.parse(s.shadow.time), repo: ROOT, sessionId: session() })[0];
+			shadowed = { would: s.shadow.would, outcome: s.shadow.would === 'no' ? 'cautious' : first && first.yes ? 'agree' : 'disagree' };
+		}
 		if (whoFor(step) === 'owner') {
-			const yes = ownerYes(s, `loop ${step.step} ${code(s, step.step)}`, s.opened);
+			const yes = ownerYes(s, `loop ${step.step} ${code(s, step.step)}`, plan ? s.shadow.time : s.opened);
 			if (!yes.tap) { out(`loop: refused: ${step.step} is the owner's step, and ${yes.why}. Ask in the pop-up, then run this again. Nothing written.`); return 1; }
 			tap = yes.tap;
 		}
-		write({ kind: 'done', step: step.step, evidence: String(evidence), ...(tap ? { tap } : {}) });
+		write({ kind: 'done', step: step.step, evidence: String(evidence), ...(tap ? { tap } : {}), ...(shadowed ? { shadow: shadowed } : {}) });
 		const next = nextStep(read(), b);
 		if (!next) { write({ kind: 'close' }); out(`Run ${s.run.item}: every step is done; the run is closed.`); return 0; }
 		out(`NEXT ${next.step}: ${whoFor(next) === 'alone' ? 'alone' : whoFor(next) === 'guard' ? 'the guard\'s' : 'the owner\'s'}`);
