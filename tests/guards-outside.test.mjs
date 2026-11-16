@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import { createRequire } from 'node:module';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, guardDir, releaseState, status as kitStatus } from '../scripts/kit.mjs';
+import { install, foldBack, forget, guardDir, releaseState, status as kitStatus } from '../scripts/kit.mjs';
 
 kitTemp.sessionRoot();
 const KIT = path.resolve('.');
@@ -1191,20 +1191,29 @@ test('C9 install user: every recorded project gets the current shims, and the la
 });
 
 // K81 (build 11, reproduced 2026-11-16: 105 of 108 records named folders deleted since): the launcher reads every
-// record on each call, so a record whose project is gone is cost and nothing else. A project that comes back with a
-// kit install and no record is held by the launcher until install project writes one, so dropping it guards no less.
-// why: guards rule:security-standards (the record set the launcher reads stays the projects that exist)
-test('K81 install user drops the record of a project folder that no longer exists, and keeps the rest', () => {
+// record on each call. The sweep showed install cannot tell a deleted folder from one on an unplugged drive, and
+// removing a live project's record took its git hook shims and the owner's accepted files. So install names a record
+// it cannot find, and forget removes one only when the folder is gone and the folder above it is there.
+// why: guards rule:security-standards (a project's guards are never dropped because its drive was away)
+test('K81 a record whose folder is gone is named by install and removed only by forget, never for an offline drive', () => {
 	const { home, proj, session: s } = setup();
-	const gone = path.join(home, 'kit-guard', 'c--gone-probe-0123456789');
-	fs.mkdirSync(path.join(gone, 'hooks'), { recursive: true });
-	fs.writeFileSync(path.join(gone, 'record.json'), JSON.stringify({ projectDir: path.join(path.dirname(proj), 'gone-probe'), files: {}, shims: {} }));
-	const odd = path.join(home, 'kit-guard', 'not-a-record');
-	fs.mkdirSync(odd, { recursive: true });
-	install({ kit: KIT, home, target: 'user' });
-	assert.equal(fs.existsSync(gone), false, 'the record of a deleted folder stayed');
+	const deleted = path.join(path.dirname(proj), 'gone-probe');
+	fs.mkdirSync(deleted);
+	install({ kit: KIT, home, target: 'project', projectDir: deleted });
+	const rec = guardDir(home, deleted);
+	assert.ok(fs.existsSync(path.join(rec, 'record.json')));
+	fs.rmSync(deleted, { recursive: true, force: true });
+	const r = install({ kit: KIT, home, target: 'user' });
+	assert.ok(fs.existsSync(rec), 'install removed a record');
+	assert.ok(r.skipped.some((x) => /gone-probe is not there[\s\S]*kit\.mjs" forget/.test(x.reason)), JSON.stringify(r.skipped));
+	// A folder whose drive is away: the folder above it is missing too, so forget keeps it.
+	const offline = forget({ home, dir: path.join(path.dirname(proj), 'no-such-drive', 'app') });
+	assert.deepEqual(offline.removed, []);
+	assert.match(offline.why, /offline/);
+	assert.match(forget({ home, dir: proj }).why, /is there/, 'a live project is never forgotten');
+	assert.deepEqual(forget({ home, dir: deleted }).removed.length, 1);
+	assert.equal(fs.existsSync(rec), false);
 	assert.ok(fs.existsSync(path.join(guardDir(home, proj), 'record.json')), 'a live project lost its record');
-	assert.ok(fs.existsSync(odd), 'a folder that is no record is not the kit\'s to remove');
 	assert.equal(bash(s, 'git status').decision, 'allow');
 });
 
@@ -1594,6 +1603,23 @@ test('a zero-padded or stepped brace range names the project bash builds', () =>
 	assert.equal(call('cd ' + parent + '/v{06..08} && git push origin main'), 'deny', 'zero-padded');
 	assert.equal(call('cd ' + parent + '/v{01..09..3} && git push origin main'), 'deny', 'stepped: 01, 04, 07');
 	assert.equal(call('cd ' + parent + '/v{02..08..2} && git push origin main'), 'runs', 'stepped past it: 02, 04, 06, 08');
+});
+
+// Build 11 (the MC3 trial's suspects, reproduced on 1.36.1): bash expands a brace list nested in another
+// (a{p,{z}}p builds app) and a range with a plus sign ({+7..7}), and the launcher read neither, so a write into a
+// kit project named that way from outside it ran none of the project's guards.
+// why: guards rule:outward-acts
+test('a nested brace list or a range with a plus sign names the project bash builds', () => {
+	const { home, proj } = setup({ projName: 'v07' });
+	const outside = kitTemp.makeTemp('cd-out-');
+	const call = (command) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const parent = path.dirname(proj).split(path.sep).join('/');
+	for (const word of ['v{0,{z}}7', 'v{{0,x},y}7', 'v{x,{0,y}}7', 'v0{+7..7}', 'v0{+7..+7}', 'v{x,0{6..7}}']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'deny', word);
+	// Braces that build no kit project name none.
+	for (const word of ['v{0,{z}}8', 'v{+08..09}']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'runs', word);
 });
 
 // why: guards rule:outward-acts. The third review (on cd0f9f5): a project whose folder name has a space is never one

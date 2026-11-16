@@ -283,6 +283,27 @@ export function guardDir(home, projectDir) {
   return path.join(home, 'kit-guard', launch.recordName(projectDir));
 }
 
+/**
+ * K81 (build 11): forget the guard record of a project folder the owner deleted, so the launcher stops reading it on
+ * every call. Only when the folder is gone and the folder above it is there: a project on an unplugged drive or an
+ * offline share keeps its record, its git hook shims and the owner's accepted files.
+ *
+ * Returns:
+ *     { removed: [record folders], why: '' } or { removed: [], why } when nothing is removed
+ */
+export function forget({ home, dir }) {
+  const abs = path.resolve(String(dir || ''));
+  if (!dir || fs.existsSync(abs)) return { removed: [], why: `${toPosix(abs)} is there: forget is only for a project folder that was deleted` };
+  if (!fs.existsSync(path.dirname(abs))) return { removed: [], why: `the folder above it (${toPosix(path.dirname(abs))}) cannot be found either, so its drive or share may only be offline; its record stays` };
+  const removed = [];
+  for (const d of [guardDir(home, abs), legacyGuardDir(home, abs)].filter(Boolean)) {
+    if (!fs.existsSync(d)) continue;
+    fs.rmSync(d, { recursive: true, force: true });
+    removed.push(toPosix(d));
+  }
+  return { removed, why: removed.length ? '' : `no guard record names ${toPosix(abs)}` };
+}
+
 /** Where 1.25.1 kept a project's record, when its name was too long for B13 to keep (C2); null when it is the same. */
 function legacyGuardDir(home, projectDir) {
   const old = path.join(home, 'kit-guard', launch.legacyRecordName(projectDir));
@@ -771,14 +792,14 @@ export function install(ctx) {
         const recFile = path.join(ctx.home, 'kit-guard', n, 'record.json');
         let rec = null;
         try { rec = JSON.parse(fs.readFileSync(recFile, 'utf8')); } catch { continue; }
-        // K81 (build 11): the launcher reads every record on each call, and a record whose project folder is gone guards
-        // nothing. If the project comes back, the launcher holds it until install project writes a new record.
-        if (rec && typeof rec.projectDir === 'string' && rec.projectDir && !fs.existsSync(rec.projectDir)) {
-          if (!ctx.dryRun) fs.rmSync(path.join(ctx.home, 'kit-guard', n), { recursive: true, force: true });
-          replaced.push(`kit-guard/${n} (removed: its project ${toPosix(path.resolve(rec.projectDir))} no longer exists)`);
+        // K81 (build 11): a record whose folder cannot be found is named, never removed here. A folder on an unplugged
+        // drive, a share offline or a folder renamed for a while is still a project: removing its record took its git
+        // hook shims and the owner's accepted files with it (the build 11 sweep). The owner forgets a deleted one.
+        if (rec && typeof rec.projectDir === 'string' && path.isAbsolute(rec.projectDir) && !fs.existsSync(rec.projectDir)) {
+          skipped.push({ file: `kit-guard/${n}`, reason: `its project ${toPosix(rec.projectDir)} is not there; if you deleted it, run node "${toPosix(ctx.kit)}/scripts/kit.mjs" forget "${toPosix(rec.projectDir)}"` });
           continue;
         }
-        if (!rec || !rec.projectDir || !rec.shims) continue;
+        if (!rec || typeof rec.projectDir !== 'string' || !fs.existsSync(rec.projectDir) || !rec.shims) continue;
         // The shims run a hook from the launcher's checked copy, and only a first-push-check that reads its project
         // from KIT_HOOK_PROJECT can run there (the 1.27.0 sweep): a project still on an older kit keeps its shims,
         // and is named, until install project brings its hooks up to this release. Only the file the record accepted
@@ -2136,6 +2157,10 @@ function main(argv) {
       fs.writeFileSync(path.join(kit, rel), text);
     }
     console.log(`build: wrote ${out.size} file(s) from rules/; commit-msg hook: ${sourceHooks(kit)}`);
+  } else if (cmd === 'forget') {
+    const r = forget({ home, dir: target });
+    console.log(r.removed.length ? `forget: removed ${r.removed.join(', ')}` : `forget: nothing removed: ${r.why}`);
+    if (!r.removed.length) process.exitCode = 1;
   } else if (cmd === 'status') {
     const r = status({ kit, home, projectDir: target || process.cwd() });
     console.log(r.text);
