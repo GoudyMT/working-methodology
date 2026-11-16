@@ -66,6 +66,24 @@ test('the test check names a test that does not fail first, catches nothing or s
 	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--strict'], { cwd: dir, encoding: 'utf8' }).status, 1, 'strict fails on a finding');
 });
 
+// K95 (build 12, seen on PR 47): two slices ran past the job's 15 minutes measuring flips and were cancelled with no
+// line of output, so even their quick findings were lost. With a time budget the check stops a step that would run
+// past it, names each test it could not check, and still reports what it found; it says each step as it starts.
+// why: guards the owner's rule never to lower a gate (a check that is cancelled reports nothing)
+test('the test check keeps to its time budget, names what it could not check and still reports the rest', () => {
+	const dir = repo();
+	const t0 = Date.now();
+	const r = spawnSync(process.execPath, [CHECK, 'HEAD~1', '--budget', '0'], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.ok(Date.now() - t0 < 20000, `took ${Date.now() - t0} ms`);
+	const k = (n) => `tests/a.test.mjs::${n}`;
+	assert.match(r.stdout, new RegExp(`A1 ${k('a hollow one')}: not checked: the time budget ran out`));
+	assert.match(r.stdout, new RegExp(`A2 ${k('a hollow one')}: not measured: the time budget ran out`));
+	assert.match(r.stdout, new RegExp(`A3 ${k('a browser one')}: `), 'a quick finding was lost');
+	assert.match(r.stderr, /test check: /, 'no progress line');
+	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--budget', 'x'], { cwd: dir, encoding: 'utf8' }).status, 2);
+});
+
 // why: guards the owner's rule never to lower a gate. K13, the 1.27.0 build: on a PR that changed 616 tests the check
 // ran past its 15 minutes and checked nothing; split into slices, each changed test is checked once.
 test('the test check splits the changed tests into slices that cover each once', () => {
