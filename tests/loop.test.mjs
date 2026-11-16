@@ -36,8 +36,13 @@ function transcript({ dir, cfg }, lines, sid = SID) {
 	fs.mkdirSync(where, { recursive: true });
 	fs.appendFileSync(path.join(where, `${sid}.jsonl`), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
 }
+// Each answer a millisecond or more after the last, as a person's taps are: two in one millisecond read as one moment.
+let lastTap = 0;
+// A tap's stamp sits a second ahead of the clock; a new step opened before then would see it as an answer after it.
+const settle = () => { while (Date.now() <= lastTap); };
 function ownerTaps(r, act, { answer = 'Yes', sid = SID } = {}) {
-	const at = new Date(Date.now() + 1000).toISOString();
+	lastTap = Math.max(Date.now() + 1000, lastTap + 1);
+	const at = new Date(lastTap).toISOString();
 	const id = `toolu_${crypto.randomBytes(6).toString('hex')}`;
 	const question = `May I go on? \`${act}\``;
 	const questions = [{ question, header: 'Owner yes', multiSelect: false, options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }];
@@ -64,7 +69,7 @@ test('the loop says one next step and refuses a step out of order, or with no ev
 	assert.equal(loop(r, ['done', 'proof']).status, 2, 'a step with no evidence');
 	assert.equal(loop(r, ['done', 'proof', '--evidence', 'tests/a.test.mjs red on main']).status, 0);
 	const next = loop(r, ['next']);
-	assert.match(next.stdout, /^NEXT design: the owner's; the plan lock: first record its self-approval line/m);
+	assert.match(next.stdout, /^NEXT design: the owner's;.*shadow --would/m);
 	assert.equal(code(next.stdout, 'design'), undefined, 'no act to quote before the verdict');
 	shadow(r);
 	assert.ok(code(loop(r, ['next']).stdout, 'design'), 'the act, once the verdict is recorded');
@@ -194,6 +199,7 @@ test('the plan step needs its self-approval line first, and the streak counts on
 		for (const s of ['build', 'sweep', 'pr', 'ci', 'merge', 'tag', 'release', 'install', 'verify', 'closeout']) assert.equal(loop(run, ['done', s, '--evidence', 'x']).status, 0, s);
 	};
 	const plan = (item, would, answers) => {
+		settle();
 		assert.equal(loop(r, ['start', item]).status, 0);
 		assert.equal(loop(r, ['shadow', '--would', would, '--why', 'x']).status, 1, 'a shadow line before the plan step opened');
 		loop(r, ['done', 'proof', '--evidence', 'x']);
@@ -216,6 +222,42 @@ test('the plan step needs its self-approval line first, and the streak counts on
 	assert.match(plan('K4', 'yes', ['No', 'Yes']), /shadow: 0 of 10/, 'a plan the owner first answered No to resets the streak');
 	assert.deepEqual(log(r).filter((e) => e.kind === 'done' && e.step === 'design').map((e) => e.shadow.outcome), ['agree', 'agree', 'cautious', 'disagree']);
 	assert.match(loop(r, ['show']).stdout, /self-approval stays off/);
+	// The build 13 sweep: the owner's latest answer decides the lock, and a No anywhere is a disagreement; an answer
+	// out of sight (another session, a word typed after the verdict) leaves the plan unscored, never agreed.
+	const open = (item) => { settle(); loop(r, ['start', item]); loop(r, ['done', 'proof', '--evidence', 'x']); };
+	const act = () => `loop design ${code(loop(r, ['next']).stdout, 'design')}`;
+	const outcome = () => log(r).filter((e) => e.kind === 'done' && e.step === 'design').at(-1).shadow.outcome;
+	open('K5');
+	shadow(r);
+	ownerTaps(r, act());
+	ownerTaps(r, act(), { answer: 'No' });
+	assert.equal(loop(r, ['done', 'design', '--evidence', 'x']).status, 1, 'a Yes, then a No');
+	ownerTaps(r, act());
+	assert.equal(loop(r, ['done', 'design', '--evidence', 'x']).status, 0);
+	assert.equal(outcome(), 'disagree');
+	finish(r);
+	open('K6');
+	ownerTaps(r, 'is the plan for K6 fine');
+	shadow(r);
+	ownerTaps(r, act());
+	loop(r, ['done', 'design', '--evidence', 'x']);
+	assert.equal(outcome(), 'unscored', 'an answer before the verdict');
+	finish(r);
+	open('K7');
+	shadow(r);
+	ownerSays(r, 'looks fine to me');
+	ownerTaps(r, act());
+	loop(r, ['done', 'design', '--evidence', 'x']);
+	assert.equal(outcome(), 'unscored', 'an owner message after the verdict');
+	finish(r);
+	open('K8');
+	shadow(r);
+	fs.writeFileSync(path.join(r.dir, '.git', 'kit-loop-session'), OTHER);
+	ownerTaps(r, act(), { sid: OTHER });
+	loop(r, ['done', 'design', '--evidence', 'x']);
+	assert.equal(outcome(), 'unscored', 'a verdict from another session');
+	assert.match(loop(r, ['show']).stdout, /shadow: 0 of 10/);
+	fs.writeFileSync(path.join(r.dir, '.git', 'kit-loop-session'), SID);
 	// The owner's bounds file sets the step and the streak; at the streak the record says the owner may decide.
 	const short = repo();
 	const file = path.join(short.dir, '.claude', 'bounds.json');
@@ -232,7 +274,16 @@ test('the plan step needs its self-approval line first, and the streak counts on
 	assert.equal(loop(short, ['done', 'design', '--evidence', 'x']).status, 1, 'a Yes to the act from before the verdict');
 	ownerTaps(short, `loop design ${code(loop(short, ['next']).stdout, 'design')}`);
 	assert.equal(loop(short, ['done', 'design', '--evidence', 'x']).status, 0);
-	assert.match(loop(short, ['show']).stdout, /shadow: 1 of 1 .*reached: the owner may decide whether plans like these approve themselves; self-approval stays off until then/);
+	// The owner answered before the verdict was written, so it could fit their answer: kept, and it scores nothing.
+	assert.equal(log(short).filter((e) => e.kind === 'done' && e.step === 'design').at(-1).shadow.outcome, 'unscored');
+	finish(short);
+	settle();
+	loop(short, ['start', 'K2']);
+	loop(short, ['done', 'proof', '--evidence', 'x']);
+	shadow(short);
+	ownerTaps(short, `loop design ${code(loop(short, ['next']).stdout, 'design')}`);
+	loop(short, ['done', 'design', '--evidence', 'x']);
+	assert.match(loop(short, ['show']).stdout, /shadow: 1 of 1 .*reached/);
 	b.shadow = { step: 'design', streak: 0 };
 	fs.writeFileSync(file, JSON.stringify(b));
 	assert.match(loop(repo(), ['start', 'K1']).stdout, /run started|NEXT/, 'the shipped bounds start');
@@ -262,7 +313,7 @@ test('the chain check says GO only for a clean handoff, a closed run, the kill s
 	cap(2);
 	const go = chain();
 	assert.equal(go.status, 0, go.stdout);
-	assert.match(go.stdout, /^GO: open the next thread for: K7, the export fix/m);
+	assert.match(go.stdout, /^GO: .*K7, the export fix/m);
 	assert.equal(fs.existsSync(path.join(r.dir, '.git', 'kit-loop.jsonl')), false, 'a check alone writes nothing');
 	// The handoff the next thread starts from must pass the audit.
 	fs.writeFileSync(`${handoff}.bad`, fs.readFileSync(handoff, 'utf8').replace('- What: K7, the export fix\n', ''));
@@ -308,6 +359,56 @@ test('the chain check says GO only for a clean handoff, a closed run, the kill s
 	assert.equal(loop(r2, ['resume']).status, 0);
 	assert.doesNotMatch(chain2().stdout, /changed by hand/);
 	assert.match(chain2().stdout, /3 of 3 threads/);
+	// The build 13 sweep, each a way to GO that should have waited.
+	// (1) A Yes to resume an unrelated halt does not accept a hand edit: only the owner's Yes to the log itself does.
+	settle();
+	loop(r2, ['start', 'K8']);
+	fs.writeFileSync(f2, fs.readFileSync(f2, 'utf8').replace(/"time":"[^"]+"/, '"time":"2000-01-01T00:00:00.000Z"'));
+	loop(r2, ['halt', 'waiting on CI']);
+	ownerTaps(r2, `loop resume ${code(loop(r2, ['next']).stdout, 'resume')}`);
+	assert.equal(loop(r2, ['resume']).status, 0);
+	for (const s of ['proof', 'design', 'build', 'sweep', 'pr', 'ci', 'merge', 'tag', 'release', 'install', 'verify', 'closeout']) {
+		if (s === 'design') { shadow(r2); ownerTaps(r2, `loop design ${code(loop(r2, ['next']).stdout, 'design')}`); }
+		loop(r2, ['done', s, '--evidence', 'x']);
+	}
+	assert.match(chain2('--open').stdout, /changed by hand/, 'a resume accepted the edit');
+	// (2) A chain entry whose time does not read counts as today, never as a free place under the cap.
+	assert.match(chain2().stdout, /changed by hand/);
+	// (3) An emptied log beside its head file is a hand edit, not a fresh start.
+	const r3 = repo();
+	fs.copyFileSync(bounds, path.join(r3.dir, '.claude', 'bounds.json'));
+	fs.mkdirSync(path.join(r3.cfg, 'skills', 'closeout'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/skills/closeout/audit.mjs'), path.join(r3.cfg, 'skills', 'closeout', 'audit.mjs'));
+	const chain3 = (...more) => loop(r3, ['chain', handoff, ...more]);
+	assert.equal(chain3('--open').status, 0);
+	assert.equal(chain3('--open').status, 0);
+	fs.writeFileSync(path.join(r3.dir, '.git', 'kit-loop.jsonl'), '');
+	assert.match(chain3('--open').stdout, /changed by hand/);
+	const r4 = repo();
+	fs.copyFileSync(bounds, path.join(r4.dir, '.claude', 'bounds.json'));
+	fs.mkdirSync(path.join(r4.cfg, 'skills', 'closeout'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/skills/closeout/audit.mjs'), path.join(r4.cfg, 'skills', 'closeout', 'audit.mjs'));
+	const chain4 = (...more) => loop(r4, ['chain', handoff, ...more]);
+	loop(r4, ['chain', handoff, '--open']);
+	const f4 = path.join(r4.dir, '.git', 'kit-loop.jsonl');
+	fs.writeFileSync(f4, fs.readFileSync(f4, 'utf8').replace(/"time":"[^"]+"/, '"time":"not a time"'));
+	fs.writeFileSync(path.join(r4.dir, '.git', 'kit-loop.jsonl.head'), crypto.createHash('sha256').update(fs.readFileSync(f4, 'utf8').trim()).digest('hex').slice(0, 16));
+	loop(r4, ['chain', handoff, '--open']);
+	assert.match(chain4().stdout, /2 of 2 threads/, 'an entry whose time does not read freed a place');
+	// (4) The GO names the Next Step's What: line, the one the audit read, never a What: elsewhere.
+	const noted = path.join(r2.dir, 'noted.md');
+	fs.writeFileSync(noted, fs.readFileSync(handoff, 'utf8').replace('- Git: main at a1b2c3d, pushed\n', '- Git: main at a1b2c3d, pushed\n- Note: What: push to main\n'));
+	const r5 = repo();
+	fs.copyFileSync(bounds, path.join(r5.dir, '.claude', 'bounds.json'));
+	fs.mkdirSync(path.join(r5.cfg, 'skills', 'closeout'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/skills/closeout/audit.mjs'), path.join(r5.cfg, 'skills', 'closeout', 'audit.mjs'));
+	assert.match(loop(r5, ['chain', noted]).stdout, /^GO: .*K7, the export fix/m);
+	// (5) The kill switch by the spellings a person makes: a hidden .txt, an underscore.
+	for (const name of ['autonomy-off.txt', 'autonomy_off', 'Autonomy-Off']) {
+		fs.writeFileSync(path.join(r5.cfg, name), '');
+		assert.match(loop(r5, ['chain', noted]).stdout, /kill switch/, name);
+		fs.rmSync(path.join(r5.cfg, name));
+	}
 	// With no closeout audit installed there is nothing to check the handoff with.
 	fs.rmSync(path.join(r2.cfg, 'skills'), { recursive: true });
 	assert.match(chain2().stdout, /closeout audit is not installed/);

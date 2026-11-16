@@ -96,7 +96,9 @@ function read() {
 		if (e.kind === 'mode') s.mode = { state: e.state, why: e.why || '', time: e.time };
 		else if (e.kind === 'start') { Object.assign(s, { run: { item: e.item, id: e.run, bounds: e.bounds }, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, opened: e.time, shadow: null }); s.lastBounds = e.bounds; }
 		else if (e.kind === 'chain') { s.chains.push(e.time); if (e.bounds) s.lastBounds = e.bounds; }
-		else if (e.kind === 'accept') s.broken = null;
+		// The owner accepts the log as it stood: an edit made later to a line above the acceptance is a new break (the
+		// build 13 sweep: an edit at an index accepted before stayed hidden).
+		else if (e.kind === 'accept') { if (e.prefix === sha(lines.slice(0, i).join('\n'))) s.broken = null; else s.broken = { at: i }; }
 		else if (!s.run) return;
 		else if (e.kind === 'done') {
 			s.done.push(e.step); s.opened = e.time; s.shadow = null;
@@ -105,14 +107,18 @@ function read() {
 			if (e.shadow && e.shadow.outcome === 'agree') s.streak++;
 			else if (e.shadow && e.shadow.outcome === 'disagree') s.streak = 0;
 		}
-		else if (e.kind === 'shadow') s.shadow = { would: e.would, step: e.step, time: e.time };
+		else if (e.kind === 'shadow') s.shadow = { would: e.would, step: e.step, time: e.time, session: e.session, scored: e.scored === true };
 		else if (e.kind === 'count') { s.counts[e.key] = (s.counts[e.key] || 0) + 1; if (e.counter === 'visual-check') { s.visualSince = 0; s.checks++; } else if (e.counter === 'visual') s.visualSince++; }
 		else if (e.kind === 'halt') s.halt = { why: e.why, at: i, time: e.time };
-		else if (e.kind === 'resume') { s.halt = null; s.broken = null; s.run.bounds = e.bounds; s.lastBounds = e.bounds; s.opened = e.time; }
+		// A resume clears the halt only: a hand edit stays until the owner accepts the log itself (the build 13 sweep: a
+		// Yes to resume an unrelated halt also passed an edited chain count, and the owner was never shown the edit).
+		else if (e.kind === 'resume') { s.halt = null; s.run.bounds = e.bounds; s.lastBounds = e.bounds; s.opened = e.time; }
 		else if (e.kind === 'close') s.run = null;
 	});
 	let head = '';
 	try { head = fs.readFileSync(HEAD, 'utf8').trim(); } catch { /* none yet */ }
+	// An emptied or deleted log beside a head file is a hand edit too (the build 13 sweep: it reset the day's count).
+	if (head && !lines.length) s.broken = { at: 0 };
 	if (lines.length && head !== sha(lines[lines.length - 1])) { s.broken = { at: lines.length - 1 }; if (s.run && !s.halt) s.halt = handEdit(lines.length - 1); }
 	return s;
 }
@@ -133,10 +139,15 @@ function ownerYes(s, act, since) {
 const hash6 = (s) => sha(s).slice(0, 6);
 const code = (s, what) => hash6(`${s.run.id}:${what}`);
 const resumeAct = (s) => `loop resume ${code(s, `resume:${s.halt.at}`)}`;
-const brokenAct = (s) => `loop resume ${hash6(`log:${s.broken.at}`)}`;
+const logLines = () => (LOG && fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean) : []);
+// The act names the log as it is now, so a Yes to an earlier state of it accepts nothing.
+const brokenAct = (s) => `loop resume ${hash6(`log:${s.broken.at}:${sha(logLines().join('\n'))}`)}`;
 const checkAct = (s) => `loop visual-check ${code(s, `check:${s.checks}`)}`;
 const boundsAct = (s, b) => `loop bounds ${hash6(`${s.lastBounds}:${b.hash}`)}`;
-const killSwitch = () => fs.existsSync(path.join(yesReader.home(), 'autonomy-off'));
+// The kill switch by any spelling the owner may make: Explorer's new text file hides ".txt", and a dash or an
+// underscore reads the same to a person (the build 13 sweep).
+const KILL = /^autonomy[-_ ]?off(\..*)?$/i;
+const killSwitch = () => { try { return fs.readdirSync(yesReader.home()).some((f) => KILL.test(f)); } catch { return false; } };
 // The act an owner's step is answered on. The plan step's act exists only once its self-approval line is recorded,
 // and is made from that line, so no ask made before the verdict can quote the act its agreement is read from (the
 // build 13 review: a No asked first, then a verdict written to fit it).
@@ -186,7 +197,13 @@ function chain(s, b, handoff, open) {
 	else {
 		const r = spawnSync(process.execPath, [audit, path.resolve(handoff)], { cwd: ROOT, encoding: 'utf8', timeout: 30000 });
 		if (r.status !== 0) stops.push(`the handoff fails the closeout audit: ${String(r.stdout || r.stderr || r.error).trim().split('\n').join('; ')}`);
-		next = ((fs.readFileSync(handoff, 'utf8').match(/What:[ \t]*(.+)/) || [])[1] || '').trim();
+		// The What: line the audit read: in the Next Step section, at the start of a line (the build 13 sweep: the first
+		// "What:" anywhere, a note in another section included, became the task GO named).
+		const text = fs.readFileSync(handoff, 'utf8');
+		const at = text.search(/^## Next Step/m);
+		const body = at < 0 ? '' : text.slice(at).split(/\r?\n/).slice(1).join('\n').split(/^## /m)[0];
+		next = ((body.match(/^[ \t]*(?:- )?What:[ \t]*(.+)$/m) || [])[1] || '').trim();
+		if (!next) stops.push('the handoff\'s Next Step names no What: line');
 	}
 	if (s.run && s.halt) stops.push(`run ${s.run.item} is halted: ${s.halt.why}`);
 	else if (s.run) stops.push(`run ${s.run.item} is still open; finish it first`);
@@ -298,7 +315,7 @@ function main(argv) {
 	if (cmd === 'resume' && !s.run && s.broken) {
 		const yes = ownerYes(s, brokenAct(s), new Date(0).toISOString());
 		if (!yes.tap) { out(`loop: refused: the log was changed by hand with no run open; the owner accepts it with a Yes quoting \`${brokenAct(s)}\` (${yes.why}). Nothing written.`); return 1; }
-		write({ kind: 'accept', tap: yes.tap });
+		write({ kind: 'accept', tap: yes.tap, prefix: sha(logLines().join('\n')) });
 		out('loop: the owner accepted the log as it is.');
 		return 0;
 	}
@@ -326,8 +343,13 @@ function main(argv) {
 		if (!step || step.step !== b.shadow.step) { out(`loop: refused: the self-approval line belongs to the plan step (${b.shadow.step}), and the next step is ${step ? step.step : 'none'}. Nothing written.`); return 1; }
 		// One verdict per plan: a second could hide the first after the owner answered it.
 		if (s.shadow) { out(`loop: refused: this plan already says it would${s.shadow.would === 'yes' ? '' : ' not'} approve itself; the record keeps the first verdict. Nothing written.`); return 1; }
-		write({ kind: 'shadow', step: step.step, would, why: String(why) });
-		out(`loop: recorded: the plan would${would === 'yes' ? '' : ' not'} approve itself. Ask the owner now, as always: self-approval stays off.`);
+		// A verdict written after the owner already answered or wrote since the step opened could fit what they said (the
+		// build 13 sweep: an ask that did not quote the act, then a verdict to match). It is kept, but scores nothing.
+		const sid = session();
+		const msg = lastOwnerMessage();
+		const talked = yesReader.sessionAnswers(null, { since: Date.parse(s.opened), repo: ROOT, sessionId: sid }).length > 0 || Boolean(msg && Date.parse(msg.at) > Date.parse(s.opened));
+		write({ kind: 'shadow', step: step.step, would, why: String(why), session: sid, scored: !talked });
+		out(`loop: recorded: the plan would${would === 'yes' ? '' : ' not'} approve itself${talked ? ' (unscored: the owner answered or wrote after the step opened, so the verdict could fit their answer)' : ''}. Ask the owner now, as always: self-approval stays off.`);
 		return 0;
 	}
 	if (cmd === 'done') {
@@ -342,8 +364,17 @@ function main(argv) {
 		if (plan && !s.shadow) { out(`loop: refused: ${step.step} is the plan lock, and the plan carries no self-approval line yet: node .claude/loop.mjs shadow --would yes|no --why "<why>", then ask the owner. Nothing written.`); return 1; }
 		if (plan) {
 			// Agreement is read from the owner's own answers to the plan's act since the verdict, never the session's word.
-			const first = yesReader.sessionAnswers(stepAct(s, b, step), { since: Date.parse(s.shadow.time), repo: ROOT, sessionId: session() })[0];
-			shadowed = { would: s.shadow.would, outcome: s.shadow.would === 'no' ? 'cautious' : first && first.yes ? 'agree' : 'disagree' };
+			// The owner's latest answer decides the lock, a No at the same moment as a Yes included, as the guards read it
+			// (the build 13 sweep: a Yes then a No locked the plan and counted as agreement).
+			const answers = yesReader.sessionAnswers(stepAct(s, b, step), { since: Date.parse(s.shadow.time), repo: ROOT, sessionId: session() });
+			const last = answers.length ? answers[answers.length - 1].at : null;
+			if (!answers.length || answers.some((a) => a.at === last && !a.yes)) { out(`loop: refused: the owner's latest answer to \`${stepAct(s, b, step)}\` is ${answers.length ? 'not Yes' : 'not given yet'}. Nothing written.`); return 1; }
+			// Scored only where every answer can be seen: the same session as the verdict, no owner message since it, and a
+			// transcript the reader holds whole. A No is a disagreement wherever it is seen.
+			const msg = lastOwnerMessage();
+			const unseen = !s.shadow.scored || s.shadow.session !== session() || Boolean(msg && Date.parse(msg.at) > Date.parse(s.shadow.time)) || yesReader.sessionCut(session(), ROOT);
+			const outcome = s.shadow.would === 'yes' && answers.some((a) => !a.yes) ? 'disagree' : unseen ? 'unscored' : s.shadow.would === 'no' ? 'cautious' : 'agree';
+			shadowed = { would: s.shadow.would, outcome };
 		}
 		if (whoFor(step) === 'owner') {
 			const yes = ownerYes(s, stepAct(s, b, step), plan ? s.shadow.time : s.opened);

@@ -276,10 +276,22 @@ function sessionYeses(sessionId, repo, { all = false } = {}) {
 	}
 	return out;
 }
-// Every answer the owner gave to one act after a time, oldest first, a No included: { at, yes }. For the loop's plan
-// shadow (T7 slice 2), which counts a plan the owner first answered No to as a disagreement.
+// Every answer the owner gave to one act after a time (with act null, to any pop-up), oldest first, a No included:
+// { at, yes }. For the loop's plan shadow (T7 slice 2), which counts a plan the owner answered No to as a disagreement.
 function sessionAnswers(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
-	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && y.acts.includes(squash(act))).map((y) => ({ at: y.at, yes: y.yes })).sort((a, b) => a.at - b.at);
+	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && (act === null || y.acts.includes(squash(act)))).map((y) => ({ at: y.at, yes: y.yes })).sort((a, b) => a.at - b.at);
+}
+// Whether this session's transcript is longer than the part the readers read, so an old answer may be out of sight.
+function sessionCut(sessionId, repo) {
+	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return false;
+	const root = path.join(home(), 'projects');
+	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
+	let real = repo;
+	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
+	const keys = above(real).map(key);
+	let dirs = [];
+	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return false; }
+	return dirs.some((d) => { try { return fs.statSync(path.join(root, d, `${sessionId}.jsonl`)).size > TAIL_BYTES; } catch { return false; } });
 }
 function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
 	let best = null;
@@ -314,4 +326,4 @@ function unquotedYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSI
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, unquotedYes, sessionGap, tailLines, FRESH_MS };
+module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };
