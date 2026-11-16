@@ -41,7 +41,8 @@ It starts on its own only as rule:compact-ritual says.
    A closeout after a release runs `node .claude/release-check.mjs <tag> --pr <n>` until it prints RELEASE
    COMPLETE. The kit itself first runs `scripts/release-verify.mjs` (it moves the release copy and runs both installs
    and status), then, from the kit source folder, `node project/.claude/release-check.mjs <tag> --pr <n> --copy
-   <release copy> --installed <the project it installed into>`. Each MISSING line is a step not done: do it, or name
+   <release copy> --installed <the project it installed into> --result <its verify RESULT.md>`, after running one number
+   the result file recorded again and writing `Re-run: <what>: recorded <n>, re-run <n>` in it (J1). Each MISSING line is a step not done: do it, or name
    it in the handoff as not done. The release is never called done, shipped or verified while a step is missing.
    Where the repo has a sweep approval log, run `approve.mjs --summary` (pre-pr-sweep skill): a paused state goes
    into the handoff's State Snapshot as "auto-approval: paused since <date>, <reason>; the owner resumes with

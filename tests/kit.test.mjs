@@ -2716,7 +2716,8 @@ test('a cleared contract writes each role\'s brief, with the rules block by line
   const b = read(path.join(dir, 'sweeps', 'contract-brief-2.md'));
   assert.match(b, /standards\/agent-teams\.md with the Read tool at offset 4 and limit 4\b/);
   assert.match(b, new RegExp(`^Sweep: ${line.hash} role 2$`, 'm'));
-  assert.match(b, /^Call cap: \d+\. /m);
+  // This repo wires no call-cap hook, so the brief says so, rather than claim one.
+  assert.match(b, /^Call cap: \d+\. A call is one message from you[^\n]*No hook counts them here, so count your own calls\./m);
   assert.match(b, new RegExp(`^Token ceiling: ${line.ceilings[1]}$`, 'm'));
   assert.match(b, /Does any new route leak personal data/);
   assert.match(b, /git -C ".*" diff [0-9a-f]{7,}\.\.\.[0-9a-f]{7,} -- src\/routes\.ts/);
@@ -5326,9 +5327,10 @@ test('the one guard process runs the call-cap hook on every tool an agent calls,
   assert.ok(!routes('Read').includes('call-cap.cjs'), 'the main session');
 });
 // why: guards rule:sweep-auto-approval
+// From 1.37.0 (T6) the wording is in the brief approve.mjs writes (checked in the brief test); the skill sends the lead there.
 test('the sweep skill gives the lead the brief\'s call-cap wording', () => {
   const skill = read(path.resolve('user/skills/pre-pr-sweep/SKILL.md'));
-  assert.match(skill, /Call cap: <n>\. A call is one message/);
+  assert.match(skill, /<contract>-brief-<n>\.md[\s\S]{0,200}pass it as the prompt, as written/);
   assert.match(skill, /FIX THE CONTRACT/);
 });
 
