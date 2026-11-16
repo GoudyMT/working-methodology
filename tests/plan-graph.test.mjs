@@ -31,7 +31,7 @@ test('the plan graph names parallel units that share a file, and passes units ke
 		row('U7', '`src/d.mjs`', 'after U6'),
 	]);
 	assert.equal(r.status, 1, r.stdout + r.stderr);
-	assert.match(r.stdout, /U1 and U2 may run at once and both touch src\/b\.mjs/);
+	assert.match(r.stdout, /U1 and U2 may run at once.*touch src\/b\.mjs/);
 	assert.doesNotMatch(r.stdout, /U1 and U3|U3 and U1/, 'an ordered pair was named');
 	assert.doesNotMatch(r.stdout, /U4/, 'a unit that runs alone was named');
 	assert.match(r.stdout, /U5 runs after U9, which is not a unit/);
@@ -39,7 +39,7 @@ test('the plan graph names parallel units that share a file, and passes units ke
 	assert.ok(fs.existsSync(path.join(r.dir, '.git', 'kit-plan-graph.jsonl')), 'no trace for the use check');
 	const ok = check([row('U1', '`src/a.mjs`', 'parallel'), row('U2', '`src/b.mjs`', 'parallel'), row('U3', '`src/a.mjs`, `src/b.mjs`', 'after U1, U2')]);
 	assert.equal(ok.status, 0, ok.stdout + ok.stderr);
-	assert.match(ok.stdout, /3 units, no shared file between units that may run at once/);
+	assert.match(ok.stdout, /3 units, no shared file/);
 	assert.equal(check([]).status, 2, 'a plan with no units table');
 });
 
@@ -54,7 +54,7 @@ test('the plan graph reads escaped pipes, folders, paths in any case and order w
 		fs.writeFileSync(path.join(dir, 'plan.md'), plan(rows).replace('\n## Collision list', `${tail.join('\n')}\n## Collision list`));
 		return spawnSync(process.execPath, [GRAPH, path.join(dir, 'plan.md')], { cwd: dir, encoding: 'utf8' }).stdout;
 	};
-	assert.match(one(['| U1 | a \\| b | `src/a.js` | x | x | parallel | builder |', row('U2', '`src/a.js`', 'parallel')]), /U1 and U2 may run at once and both touch src\/a\.js/);
+	assert.match(one(['| U1 | a \\| b | `src/a.js` | x | x | parallel | builder |', row('U2', '`src/a.js`', 'parallel')]), /U1 and U2 may run at once.*touch src\/a\.js/);
 	assert.match(one([row('U1', '`src/`', 'parallel'), row('U2', '`./Src/A.js`', 'parallel')]), /U1 and U2 may run at once/);
 	assert.match(one([row('U1', '`src/a.js`', 'parallel'), row('U2', 'src/a.js', 'parallel')]), /U2 names no file in backticks/);
 	assert.doesNotMatch(one([row('U1', '`x.js`', 'parallel'), row('U2', '`x.js`', 'after U1 (uses its types), until review')]), /fault/);

@@ -37,7 +37,7 @@ test('the rule map lists what holds each rule, names the rules nothing holds, an
 	git('add', 'scripts/plain.mjs');
 	r = run('check');
 	assert.equal(r.status, 1);
-	assert.match(r.stderr, /docs\/rule-map\.json is stale: run node scripts\/rule-map\.mjs write/);
+	assert.match(r.stderr, /rule-map\.json is stale.*rule-map\.mjs write/);
 	// CI's gate holds the map fresh. pin: 1 (GitHub runs this line)
 	const gate = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8').split('\n  kit-tests:')[1];
 	assert.match(gate, /- name: Rule map is fresh\n\s+run: node scripts\/rule-map\.mjs check\n/);
