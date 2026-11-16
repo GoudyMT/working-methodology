@@ -57,6 +57,10 @@ test('CI checks the build record on every PR that moves VERSION', () => {
 	const ci = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
 	const step = ci.split('- name: Build record\n')[1].split('- name:')[0];
 	assert.match(step, /if git diff --quiet "\$PR_BASE" HEAD -- VERSION; then .*; else node scripts\/build-record\.mjs check; fi/); // pin: 1
+	// K105: the same PR's fix ledger is read by the test check, which states each named test's verdict.
+	const check = ci.split('- name: Test check (report)\n')[1].split('- name:')[0];
+	assert.match(check, /if ! git diff --quiet "\$BASE_SHA" HEAD -- VERSION; then record=\(--record "docs\/builds\/\$\(tr -d '\\r\\n' < VERSION\)\.json"\); fi/); // pin: 1
+	assert.match(check, /test-check\.mjs "\$BASE_SHA" [^\n]*"\$\{record\[@\]\}"/);
 });
 
 // why: guards rule:release-notes (the changelog a release ships is the one its record writes, for the version it names).

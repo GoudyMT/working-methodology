@@ -178,3 +178,28 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	const r2 = spawnSync(process.execPath, [CHECK, base2], { cwd: dir, encoding: 'utf8' });
 	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
 });
+
+// K105 (PR 49): the PR claimed each fix had a test that fails first, and nothing read the claim. With the record, the
+// check states the verdict of each test the fix ledger names, and names a fix whose test does not fail first or is
+// not one this change adds or changes.
+// why: guards rule:test-value
+test('the test check states the verdict of each test the fix ledger names', () => {
+	const dir = repo();
+	const rec = path.join(dir, 'record.json');
+	const fix = (id, severity, test) => ({ id, severity, text: id, commit: 'abc1234', test });
+	fs.writeFileSync(rec, JSON.stringify({ sweep: { fixes: [
+		fix('F1', 'high', 'tests/a.test.mjs::zero is not positive'),
+		fix('F2', 'medium', 'tests/a.test.mjs::a hollow one'),
+		fix('F3', 'high', 'tests/a.test.mjs::one is positive'),
+		fix('F4', 'low', 'no test: no real input'),
+	] } }));
+	const r = spawnSync(process.execPath, [CHECK, 'HEAD~1', '--record', rec], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /^Fix ledger: 4 fix\(es\)$/m);
+	assert.match(r.stdout, /^ {4}F1 \(high\) tests\/a\.test\.mjs::zero is not positive: fails first$/m);
+	assert.match(r.stdout, /^ {4}F4 \(low\) no test: no real input$/m);
+	assert.match(r.stdout, /A5 F2: the test it names passes on the base commit/);
+	assert.match(r.stdout, /A5 F3: the test it names is not one this change adds or changes/);
+	assert.doesNotMatch(r.stdout, /A5 F1|A5 F4/);
+	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--record', path.join(dir, 'none.json')], { cwd: dir, encoding: 'utf8' }).status, 2, 'a record it cannot read');
+});

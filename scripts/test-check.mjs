@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 // The test check (T15 Part A, the owner 2026-11-10): holds each test a change adds or edits to the kit's bar for a new
 // test (rule:test-value): it fails first, it earns its place, it sits in the right lane, and it is owed at all.
-//   node scripts/test-check.mjs <base> [--strict] [--slice i/n] [--budget <seconds>]
+//   node scripts/test-check.mjs <base> [--strict] [--slice i/n] [--budget <seconds>] [--record <build record>]
 //   A1 fails first      the change's test files run against the base commit's code: a new test must fail there, on an
 //                       assertion. A changed test that passes there adds no catch, and is named.
 //   A2 earns its place  the test carries "// why: guards <rule or the owner's decision>", or catches a flip in the
 //                       lines the change made (the mutation check, with a map of only these tests).
 //   A3 right lane       a test that needs another machine, a real service, a browser or a live model sits in tests/slow.
 //   A4 owed             a change of prose, wiring or removals only, that adds a test, is named.
+//   A5 fix ledger       with --record <build record>: each test the record's sweep.fixes names gets its A1 verdict; a
+//                       fix whose test does not fail first, or is not added or changed here, is named (K105).
+//   A new test in a file the base lacks fails first when that file cannot load there; a loop that makes tests is one
+//   unit, run by its file.
 // It reports, and exits 0, until the owner makes it required (--strict: exit 1 on any finding). Exit 2: it could not run.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -79,7 +83,7 @@ function run(dir, keys, env = {}, timeout = 600000) {
 	return red;
 }
 
-export function check(root, base, { strict = false, slice = null, budget = null } = {}) {
+export function check(root, base, { strict = false, slice = null, budget = null, record = null } = {}) {
 	// K95 (build 12): a step that would run past the budget is not started or is stopped, and its tests are named.
 	const deadline = budget === null ? Infinity : Date.now() + budget;
 	const left = () => Math.max(0, deadline - Date.now());
@@ -106,6 +110,7 @@ export function check(root, base, { strict = false, slice = null, budget = null 
 	const namesOf = (t, seen) => (t.loop ? [...seen].filter((n) => t.loop.test(n)) : [t.name]);
 	// A slice (i/n) takes every n-th changed test, in key order, so a PR that changes many tests is checked on several
 	// machines at once instead of timing out on one (K13, the 1.27.0 build: 616 changed tests ran past 15 minutes).
+	const allKeys = new Set(newOrChanged.map((t) => t.key));
 	if (slice) newOrChanged = newOrChanged.sort((a, b) => (a.key < b.key ? -1 : 1)).filter((_, k) => k % slice.n === slice.i);
 	// A4: a change with no code in it, that still adds a test.
 	const code = changed.filter(([s, f]) => s !== 'D' && !TEST_FILE.test(f) && /\.(c?js|mjs|sh)$|^project\/\.githooks\//.test(f));
@@ -179,14 +184,34 @@ export function check(root, base, { strict = false, slice = null, budget = null 
 			}
 		}
 	}
+	// A5 (K105): each test the fix ledger names gets its A1 verdict, and the PR's fix line may claim only that. A fix
+	// whose test does not fail first, or is not one this change adds or changes, is a finding. With slices, the slice
+	// holding the test states its verdict, and the first slice names a test no slice holds.
+	const ledger = [];
+	if (record) {
+		const mine = new Set(newOrChanged.map((t) => t.key));
+		for (const f of record) {
+			const head = `${f.id} (${f.severity})`;
+			if (f.test === 'no test: no real input') { if (!slice || slice.i === 0) ledger.push(`    ${head} no test: no real input`); continue; }
+			if (!allKeys.has(f.test)) {
+				if (!slice || slice.i === 0) { ledger.push(`    ${head} ${f.test}: not added or changed here`); note(f.id, 'A5', 'the test it names is not one this change adds or changes'); }
+				continue;
+			}
+			if (!mine.has(f.test)) continue;
+			const a1 = findings.find((x) => x.rule === 'A1' && x.key === f.test);
+			ledger.push(`    ${head} ${f.test}: ${a1 ? a1.text : 'fails first'}`);
+			if (a1) note(f.id, 'A5', `the test it names ${a1.text}`);
+		}
+	}
 	const lines = [`Test check: ${newOrChanged.length} new or changed test(s) since ${baseSha.slice(0, 9)}, ${findings.length} finding(s)`];
 	for (const f of findings) lines.push(`    ${f.rule} ${f.key}: ${f.text}`);
+	if (record && ledger.length) lines.push(`Fix ledger: ${record.length} fix(es)`, ...ledger);
 	return { code: strict && findings.length ? 1 : 0, text: lines.join('\n'), findings };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 	const args = process.argv.slice(2);
-	const base = args.find((a, k) => !a.startsWith('--') && args[k - 1] !== '--slice' && args[k - 1] !== '--budget');
+	const base = args.find((a, k) => !a.startsWith('--') && !['--slice', '--budget', '--record'].includes(args[k - 1]));
 	if (!base) { process.stderr.write('usage: node scripts/test-check.mjs <base> [--strict]\n'); process.exitCode = 2; }
 	else {
 		const top = git(process.cwd(), 'rev-parse', '--show-toplevel').stdout.trim();
@@ -195,9 +220,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 		const slice = m && Number(m[1]) < Number(m[2]) ? { i: Number(m[1]), n: Number(m[2]) } : null;
 		const bt = args.indexOf('--budget');
 		const secs = bt >= 0 && /^\d+$/.test(args[bt + 1] || '') ? Number(args[bt + 1]) : null;
+		// --record <build record>: the fix ledger whose tests get a verdict (K105).
+		const rt = args.indexOf('--record');
+		let record = null;
+		let bad = null;
+		if (rt >= 0) {
+			try { record = JSON.parse(fs.readFileSync(args[rt + 1] || '', 'utf8')).sweep.fixes; } catch { /* named below */ }
+			if (!Array.isArray(record)) bad = `test check: cannot read the fix ledger (sweep.fixes) in "${args[rt + 1] || ''}"`;
+		}
 		const r = at >= 0 && !slice ? { code: 2, text: 'test check: --slice takes i/n, with i under n' }
 			: bt >= 0 && secs === null ? { code: 2, text: 'test check: --budget takes whole seconds' }
-				: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000 });
+				: bad ? { code: 2, text: bad }
+					: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000, record });
 		process.stdout.write(r.text + '\n');
 		process.exitCode = r.code;
 	}

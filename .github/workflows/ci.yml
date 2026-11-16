@@ -139,8 +139,11 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SLICE: ${{ matrix.slice }}
+        # K105: a PR that moves VERSION carries its build record; each test its fix ledger names gets a verdict here.
         run: |
-          node scripts/test-check.mjs "$BASE_SHA" --slice "$SLICE/4" --budget 720 | tee -a "$GITHUB_STEP_SUMMARY"
+          record=()
+          if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
+          node scripts/test-check.mjs "$BASE_SHA" --slice "$SLICE/4" --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.
