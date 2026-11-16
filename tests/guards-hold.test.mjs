@@ -214,6 +214,18 @@ test('running a kit script with 2>&1, or after a plain Set-Location, passes; a w
 	// 1.36.1 (held live verifying 1.36.0): a folder change back after the script (Pop-Location, popd) defines nothing either.
 	for (const c of [`Push-Location "${proj}"; node .claude/state.mjs list; Pop-Location`, `pushd ${proj}; node .claude/state.mjs list 2>&1; popd`]) assert.equal(ps(c), 'allow', c);
 	for (const c of [`Push-Location "${proj}"; node .claude/state.mjs list; Pop-Location; Copy-Item x .claude/guard.cjs`, `Push-Location "${proj}"; node .claude/settings.json; Pop-Location; function node { }`]) assert.equal(ps(c), 'deny', c);
+	// The 1.36.1 sweep: the same move back in its other common forms, and in Bash.
+	// (A move back by "..", cd .. or Set-Location .., is still held: the guard reads ".." as the folder above the project.)
+	for (const c of [`Set-Location "${proj}"\nnode .claude/state.mjs list\nPop-Location`, `Push-Location "${proj}"; node .claude/state.mjs list; Pop-Location | Out-Null`]) assert.equal(ps(c), 'allow', c);
+	// Only the move back at the very end is read as plain: a script sourced before node still stands in for it.
+	assert.equal(ps(`Push-Location "${proj}"; . ./x.ps1; node .claude/settings.json; Pop-Location`), 'deny');
+	assert.equal(bash(`cd ${proj.split(path.sep).join('/')} && source x.sh; node .claude/settings.json; popd`), 'deny');
+	const fwd = proj.split(path.sep).join('/');
+	for (const c of [`pushd ${fwd} && node .claude/state.mjs list; popd`, `pushd ${fwd} && node .claude/state.mjs list; popd > /dev/null`]) assert.equal(bash(c), 'allow', c);
+	for (const c of [`pushd ${fwd} && node .claude/state.mjs list; popd > .claude/guard.cjs`, `cd ${fwd} && node .claude/state.mjs list; cd $(cp x .claude/guard.cjs)`]) assert.equal(bash(c), 'deny', c);
+	// The 1.36.1 sweep: a PowerShell argument in brackets runs as code, and a name joined from pieces is never seen as a
+	// protected path, so a command with one gets no exemption.
+	for (const c of [`node .claude/settings.json (Copy-Item x ('.cl'+'aude/settings.json'))`, `git add .claude/guard.cjs (ni ('al'+'ias:popd') -Value Copy-Item -Force)`]) assert.equal(ps(c), 'deny', c);
 	// The 1.36.0 sweep: node's own options write files (a warnings file, a profile, a report). A protected path named in
 	// one is a write, not the script node runs.
 	for (const c of ['node --redirect-warnings=.claude/settings.json x.js', 'node --cpu-prof-dir=.githooks x.js', 'node --diagnostic-dir .claude x.js', 'node --heap-prof-name=.claude/guard.cjs x.js']) assert.equal(bash(c), 'deny', c);
