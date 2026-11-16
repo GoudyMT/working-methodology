@@ -4,7 +4,7 @@
  "level": "minor",
  "area": "Loop",
  "title": "feat: a loop driver keeps the build loop's steps and stops",
- "headline": "A build loop now runs under a script that keeps its steps in order, counts the stops that have a number, and halts with a triage card only the owner's Yes clears, within a bounds file the owner signs. Chained kit scripts run, a deleted project holds nothing, and a Yes asked before the act was tried counts.",
+ "headline": "A build loop now runs under a script that keeps its steps in order, counts the stops that have a number, and halts with a triage card only the owner's Yes clears, within a bounds file the owner signs. Chained kit scripts run, a deleted project's record can be cleared, and a Yes whose question names its shell counts before any try.",
  "alignment": "v1.38.0 is step T7 of the v2.0 plan, slice 1: the loop driver and the bounds file, with the carry-overs of build 11 closed in the same release.",
  "items": [
   {
@@ -19,7 +19,7 @@
   {
    "id": "STOPS",
    "kind": "added",
-   "text": "Fix rounds and canary misses per unit, visual increments (reset only by the owner's check) and CI fixes are counted; at a bounds limit the run halts with a triage card (why, the data, the options), and only the owner's Yes to `loop resume <code>` clears it.",
+   "text": "Fix rounds and canary misses per unit, visual increments and CI fixes are counted; at a bounds limit the run halts with a triage card (why, the data, the options) that only the owner's Yes clears.",
    "evidence": "tests/loop.test.mjs",
    "where": "Stop rules held by code",
    "before": "6 of 26",
@@ -61,7 +61,7 @@
   {
    "id": "K97",
    "kind": "fixed",
-   "text": "An owner's Yes asked before the act was tried now counts when its question names the shell, so it no longer costs a second tap; the owner's latest answer decides, a Yes is for a question quoting one act, and one tap runs once across sessions.",
+   "text": "A Yes asked before the act was tried counts when its question names the shell; the owner's latest answer decides, a Yes is for one quoted act, and one tap runs once across sessions.",
    "evidence": "tests/guards-hold.test.mjs"
   },
   {
@@ -98,7 +98,7 @@
   }
  ],
  "verification": [
-  "Each fix has a test that fails on 1.37.0 and passes here.",
+  "Each fix and each sweep finding has a test that fails on the code before it and passes here.",
   "K93, K94 and K96 were reproduced on the released 1.37.0 before the fix; K97's cause was read from the build 11 transcript."
  ],
  "decisions": [
@@ -113,5 +113,54 @@
  ],
  "upgrading": "Run `install user` first, then `install project` in each project. A project gets `.claude/bounds.json` once; edit it only through a pop-up Yes to the exact edit.",
  "limits": "The driver counts what it is told: a session that never runs `count` is not stopped by a counter. Watchers, plan self-approval and thread chaining are T7's second slice.",
- "tests": { "before": 807, "after": 0, "flips": "declared tests on v1.37.0 and on this branch; the PR run gives the final count" }
+ "tests": {
+  "before": 813,
+  "after": 830,
+  "flips": "declared tests on v1.37.0 and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive, user data)",
+  "commit": "5cce278",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "No new sink; the spent-tap record holds pop-up ids only, guarded"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "A hidden live project, any act clearing an owner step, a Yes in the wrong shell, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "The notes fences, the stopped test check and pinned tests, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 3,
+   "medium": 12,
+   "low": 16
+  },
+  "fixed": [
+   "A live project whose folder read was denied looked missing, and its guard files took writes. Fixed in ea6ecf0.",
+   "Any act with any Yes marked an owner step of the loop done. Fixed in 721bc1a.",
+   "A Yes asked before any try ran in a shell the owner did not mean. Fixed in f8f53f8.",
+   "A later No took nothing back, and a forked session spent one tap twice. Fixed in 02b12ec.",
+   "The notes audit read an inline span as a fence, and a stopped test check lost its findings. Fixed in 6ed9a13 and e8da997."
+  ],
+  "deferred": [],
+  "accepted": []
+ }
 }
