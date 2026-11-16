@@ -550,7 +550,10 @@ function shellWritesFrom(command, tool, start, names) {
 		const SORT_SAFE = /^(-[bdfghiMnrRsuVz]+|-[kt].*|--(unique|reverse|numeric-sort|ignore-case|ignore-leading-blanks|human-numeric-sort|version-sort|stable|zero-terminated|key=.*|field-separator=.*))$/;
 		const writes = (p === 'sort' && w.slice(1).some((a) => a.startsWith('-') && a !== '--' && !SORT_SAFE.test(a)))
 			|| (p === 'uniq' && w.slice(1).some((a) => !/^-[cdiuDz]+$|^--(count|repeated|unique|ignore-case|zero-terminated)$/.test(a)));
+		// K93 (build 12): node running a script file is a child process, so it defines nothing in this shell; with an
+		// option first (inline code, a file it writes) it is not plain.
 		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1))) || CHANGERS.has(p) || printSed(w)
+			|| (onPath && p === 'node' && w.length > 1 && !w[1].startsWith('-'))
 			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
 			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
 	};

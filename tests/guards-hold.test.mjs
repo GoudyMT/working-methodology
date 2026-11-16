@@ -230,6 +230,17 @@ test('a kit script followed by other commands passes; a write after it or a defi
 	for (const c of ['node .claude/state.mjs view 2>&1; git status', 'node .claude/state.mjs view; ls > /dev/null']) assert.equal(bash(c), 'allow', c);
 });
 
+// K93 (build 12, reproduced on 1.37.0): two kit scripts in one command (render, then check) were held as a write to a
+// protected file, since only readers counted as plain beside a kit script. A node run of a script file defines nothing
+// in the shell that runs it, so it is plain beside another; node with an option first, or inline code, is not.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('two kit scripts in one command pass; node with inline code or an option beside one is still held', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	for (const c of ['node .claude/state.mjs render > /dev/null && node .claude/state.mjs check', 'node .claude/state.mjs render && node .claude/state.mjs check', 'node .claude/state.mjs view; node .claude/use-check.mjs', 'node .claude/state.mjs render 2>&1 && node .claude/state.mjs check | head -5']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['node .claude/state.mjs render; node .claude/state.mjs check', 'node .claude/state.mjs render | Out-Null; node .claude/state.mjs check']) assert.equal(ps(c), 'allow', c);
+	for (const c of ['node -e "require(\'fs\').copyFileSync(\'x\', \'.claude/guard.cjs\')"; node .claude/state.mjs check', 'node .claude/state.mjs check; node --redirect-warnings=x .claude/settings.json', 'node .claude/state.mjs view && node x.js > .claude/guard.cjs', 'node .claude/state.mjs view; /tmp/node .claude/settings.json', 'node .claude/guard.cjs; node x.js "$_"']) assert.equal(bash(c), 'deny', c);
+});
+
 // why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
 test('running a kit script with 2>&1, or after a plain Set-Location, passes; a write beside it is still held', () => {
 	const ps = (command) => decide('PowerShell', { command });
