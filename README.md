@@ -107,6 +107,16 @@ goes once its drive answers:
 node scripts/kit.mjs forget "<deleted project folder>"
 ```
 
+To hear when a pull request turns green, fails, conflicts or merges without watching it, add it to the watcher and
+register the watcher once with the Task Scheduler line it prints (Windows; it only reads, and runs while you are
+logged on). Each entry expires after 48 hours unless you give `--hours`; `schtasks /Delete` in the same printout
+stops it (the same lines run in PowerShell and Bash):
+
+```bash
+node "$HOME/.claude/kit-tools/watch.mjs" add owner/repo 12
+node "$HOME/.claude/kit-tools/watch.mjs" schedule
+```
+
 ## How the rules are organized
 
 The core rules load in every session through `AGENTS.md`, which any AI coding tool reads and `CLAUDE.md`
