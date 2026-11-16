@@ -86,7 +86,7 @@ function yeses(lines) {
 			for (const q of asked.get(b.tool_use_id).questions) {
 				const answer = String(r.answers[q.question] ?? '');
 				const labels = (q.options || []).map((o) => String(o.label || ''));
-				if (YES_LABEL.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l))) out.push({ at, acts: spans(q.question), line: n, asked: asked.get(b.tool_use_id).line, id: String(b.tool_use_id) });
+				if (YES_LABEL.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l))) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id: String(b.tool_use_id) });
 			}
 		}
 	}
@@ -234,24 +234,38 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 // The owner's latest Yes to one act in this session's own transcript, in this repo's folder of transcripts, after a
 // time: { at, tap } (tap names the answer, so one answer is used once), or null. For approve.mjs: an ask or a pause
 // prints the act ("sweep yes <code>"), the lead quotes it in a pop-up, and the owner's tap is the yes.
-function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
-	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return null;
+function sessionYeses(sessionId, repo) {
+	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return [];
 	const root = path.join(home(), 'projects');
 	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
 	let real = repo;
 	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
 	const keys = above(real).map(key);
 	let dirs = [];
-	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return null; }
-	let best = null;
+	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return []; }
+	const out = [];
 	for (const d of dirs) {
 		let lines;
 		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
-		for (const y of yeses(lines)) if (y.at > since && y.acts.includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at, tap: `${sessionId}:${y.id}` };
+		out.push(...yeses(lines));
 	}
+	return out;
+}
+function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
+	let best = null;
+	for (const y of sessionYeses(sessionId, repo)) if (y.at > since && y.acts.includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at, tap: `${sessionId}:${y.id}` };
+	return best;
+}
+
+// The owner's latest Yes after a time to a question that names the act without backticks around it, so it counts for
+// nothing: { at } or null. A refusal names it, so the lead asks again with the act quoted (K91: build 11's resume was
+// refused twice on such a Yes, and the refusal read as if the owner had not answered).
+function unquotedYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
+	let best = null;
+	for (const y of sessionYeses(sessionId, repo)) if (y.at > since && !y.acts.includes(squash(act)) && String(y.text || '').includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at };
 	return best;
 }
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, tailLines, FRESH_MS };
+module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, unquotedYes, tailLines, FRESH_MS };
