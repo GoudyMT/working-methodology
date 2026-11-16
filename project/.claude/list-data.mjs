@@ -49,7 +49,9 @@ function stepOf(h) {
 	const d = o > 0 ? h.slice(0, o).indexOf(' - ') : -1;
 	if (d <= 0 || h.slice(o + 2, -1).includes(')')) return null;
 	const carries = h.slice(d + 3, o).trim().replace(/^"/, '').replace(/"$/, '').trim();
-	return carries ? { step: h.slice(0, d).trim(), carries, state: h.slice(o + 2, -1).trim() } : null;
+	// Spacing read as one space, as the state keeps a step's name (the 1.36.1 sweep: "A  B" was placed at no step).
+	const one = (x) => x.replace(/\s+/g, ' ').trim();
+	return carries ? { step: one(h.slice(0, d)), carries: one(carries), state: one(h.slice(o + 2, -1)) } : null;
 }
 const clip = (s) => (s.length > SHORT ? `${s.slice(0, SHORT - 3).replace(/[\s.,;:]+$/, '')}...` : s);
 // Any control character, line or paragraph separator, or bidi override: none belongs in one line of list text.

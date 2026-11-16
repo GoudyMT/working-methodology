@@ -519,11 +519,17 @@ test('a checkbox roadmap moves into a list that already holds rows, with new ids
 	put(dir, 'rel.md', '## 1.34.0 - "Shadow" (open)\n\n- [ ] Under the release\n');
 	assert.equal(st(dir, 'list', 'import', 'rel.md').status, 0);
 	assert.equal(JSON.parse(read(dir, '_State.json')).roadmap.filter((x) => x.step === '1.34.0').length, 0);
-	// Two steps in one file that differ only in spacing are refused, so the state never holds a step twice.
-	put(dir, 'sp.md', '## A  B - "c" (open)\n\n- [ ] one\n\n## A B - "d" (open)\n\n- [ ] two\n');
-	const sp = st(dir, 'list', 'import', 'sp.md');
-	assert.equal(sp.status, 1);
+	// Two roadmap rows in one file that differ only in spacing are refused, so the state never holds a step twice.
+	const blank = project();
+	put(blank, 'sp.md', '| Build | Release | What it carries | State |\n|---|---|---|---|\n| A  B |  | x | open |\n| A B |  | y | open |\n\n- [ ] a box\n');
+	const sp = st(blank, 'list', 'import', 'sp.md');
+	assert.equal(sp.status, 1, sp.stdout);
 	assert.match(sp.stdout, /same step once their spacing/);
+	// A heading spaced unlike its held step is still that step, and its boxes are placed at it.
+	assert.equal(st(dir, 'step', 'set', 'A B', 'state', 'open').status, 0);
+	put(dir, 'sp2.md', '## A  B - "c" (open)\n\n- [ ] spaced box\n');
+	assert.equal(st(dir, 'list', 'import', 'sp2.md').status, 0);
+	assert.equal(rows(dir).find((x) => x.title === 'spaced box').at, 'A B');
 	// An id a row taken out by hand still marks is never given to a new box.
 	const lines = read(dir, '_List.jsonl').split('\n').filter((x) => !x.startsWith('{"id":"R2"'));
 	put(dir, '_List.jsonl', lines.join('\n'));
@@ -538,6 +544,15 @@ test('a checkbox roadmap moves into a list that already holds rows, with new ids
 	assert.match(mixed.stdout, /4 table row\(s\) stay in mixed\.md/);
 	assert.ok(read(dir, 'mixed.md').includes('| A1 | The closeout deleted 480 items |'));
 	assert.equal(rows(dir).filter((x) => x.title === 'A mixed box').length, 1);
+	// An empty list beside a state that holds steps: the boxes come in, and a heading the state holds adds no step.
+	const fresh = project();
+	assert.equal(st(fresh, 'step', 'set', 'v1', 'state', 'open').status, 0);
+	put(fresh, 'road.md', '## v1 - "First" (open)\n\n- [ ] Task one\n\n## v2 - "Second" (planned)\n\n- [ ] Task two\n');
+	assert.equal(st(fresh, 'list', 'import', 'road.md').status, 0);
+	assert.deepEqual(JSON.parse(read(fresh, '_State.json')).roadmap.map((x) => x.step), ['v1', 'v2']);
+	// A list file that is not clean gives its own reason, never "already holds rows".
+	put(fresh, '_List.jsonl', 'not json\n');
+	assert.match(st(fresh, 'list', 'import', 'road.md').stdout, /line 1 is not JSON/);
 	// A file of tables still needs an empty list: its rows would replace what the list holds.
 	put(dir, 'more.md', LIST);
 	const t = st(dir, 'list', 'import', 'more.md');
