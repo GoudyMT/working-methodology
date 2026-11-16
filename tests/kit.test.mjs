@@ -6553,12 +6553,18 @@ test('recall v8 and v9 move key 3 to the resume packet rule, and v7 stays as wri
   assert.deepEqual(v10.filter((r) => r.n !== 3), v9.filter((r) => r.n !== 3));
   assert.match(v10[2].key, /fresh reads of the Active Plan, of every file its resume point names/); // pin: 3 recall key v10, frozen
   // v11 (build 6, the owner's ruling 2026-11-15): key 4 frees opening the PR; every other row is v10's.
-  assert.equal(currentVersion(text), 11);
   assert.equal(passBar(text, 11), 13);
   const v11 = questions(text, 11);
   assert.deepEqual(v11.filter((r) => r.n !== 4), v10.filter((r) => r.n !== 4));
   assert.equal(v11[3].q, v10[3].q);
   assert.match(v11[3].key, /^Yes, with no yes needed: a plain push of the feature branch to origin, then opening its PR; never main, a tag, a force or a delete$/); // pin: 4 recall key v11, frozen
+  // v12 (build 12, the owner's pop-up 2026-11-16, K98): key 4 says an answer noting nothing to push yet still scores.
+  assert.equal(currentVersion(text), 12);
+  assert.equal(passBar(text, 12), 13);
+  const v12 = questions(text, 12);
+  assert.deepEqual(v12.filter((r) => r.n !== 4), v11.filter((r) => r.n !== 4));
+  assert.equal(v12[3].q, v11[3].q);
+  assert.match(v12[3].key, /^Yes, with no yes needed: [^|]*never main, a tag, a force or a delete\. An answer that first says this folder has nothing to push yet still scores when it states that rule$/); // pin: 4 recall key v12, frozen
   assert.match(read(path.resolve('project/CLAUDE.md')), /^11\. [^\n]*resume-packet\.mjs check`, then a fresh Read of `_Active Plan\.md`[^\n]*before any source-of-truth edit or agent dispatch/m);
 });
 
