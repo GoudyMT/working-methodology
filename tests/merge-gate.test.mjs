@@ -24,7 +24,7 @@ const sh = (cwd, ...a) => {
 	return r.stdout.trim();
 };
 const TITLE = 'feat: add a subtract function';
-const BODY = '## Math: add a subtract function\n\nThe math module can now subtract.\n\n**Changes**\n- New `sub(a, b)` export.\n\n**Gates**\n- [x] The test passes.\n- [x] Full local gate green.\n- [x] Sweep by dimension: privacy, supply chain, legal, code security; no secrets or account information.\n\n**Notes** - none.\n';
+const BODY = '## Math: add a subtract function\n\nThe math module can now subtract.\n\n**Changes**\n- New `sub(a, b)` export.\n\n**Gates**\n- [x] The test passes.\n- [x] Full local gate green.\n- [x] Triage tier: privacy, supply chain, legal, code security; no secrets or account information.\n\n**Notes** - none.\n';
 const report = (branch, sha, extra = '') => `# Sweep: subtract\n\n- **Tier:** feature\n- **Date:** 2026-11-05\n- **Branch:** ${branch} at ${sha.slice(0, 7)}\n- **Covers:** ${sha}\n- **Layers:** plan 0, CI 0, sweep 0, escaped 0\n\n## Result\nPrivacy: clean. Supply chain: clean. Legal: clean. Security: clean. Gaps and scaling: clean.\nVersion goal alignment: YES\n${extra}`;
 
 // approve.mjs's log: each line chained to the one before, in the repo's git folder.
@@ -264,6 +264,8 @@ test('merge gate: check never arms, even on GO', () => {
 // Each case breaks one condition; the gate must say which and arm nothing.
 const CASES = [
 	['the kill switch', (s) => fs.writeFileSync(path.join(s.config, 'autonomy-off'), ''), /kill switch/],
+	// The build 13 sweep: Explorer's new text file hides ".txt", so the switch a person makes is often this one.
+	['the kill switch as a text file', (s) => fs.writeFileSync(path.join(s.config, 'autonomy-off.txt'), ''), /kill switch/],
 	['a closed PR', (s) => { s.state.pr.state = 'CLOSED'; }, /not open/],
 	['a draft', (s) => { s.state.pr.isDraft = true; }, /draft/],
 	['a fork', (s) => { s.state.pr.isCrossRepository = true; }, /another repository/],
@@ -462,6 +464,12 @@ test('live body audit (I21): a published PR body is read back and audited by the
 	s.state.pr.body = BODY + '\nWritten with Claude.\n';
 	const r = live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run });
 	assert.equal(r.ok, false);
+	// The build 13 sweep: the audit was picked by the title, and every title is type: subject, so a Standard body met the
+	// Lean audit; it is picked by the body's shape, as CI's PR body job picks it.
+	s.state.pr.body = '## Math: add a subtract function\n\nThe math module can now subtract.\n\n### Summary\n\nx\n';
+	const std = live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run });
+	assert.match(std.faults.join('\n'), /pr-body-audit\.mjs/);
+	assert.doesNotMatch(std.faults.join('\n'), /pr-body-audit-lean\.mjs/);
 });
 
 // why: guards rule:standing-grants
@@ -722,7 +730,8 @@ test('merge gate: the audit is read from the kit\'s own layout on the base', () 
 test('merge gate: a squash-style title is read by the full audit, not the lean one', () => {
 	const s = setup();
 	s.state.pr.title = 'Add a subtract function';
-	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit\.mjs/);
+	// From build 13 the body's shape picks the audit, as CI does; a title that is not type: subject still fails it.
+	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit-lean\.mjs.*FAIL\s+title is type: subject/s);
 });
 // why: guards rule:standing-grants. The 1.28.0 sweep: CI counts the squash suffix at the PR number's length and the gate
 // kept 8 for it, so a title CI passed (65 here: 70 with " (#7)") failed the gate and held the merge.

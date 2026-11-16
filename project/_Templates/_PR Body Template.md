@@ -76,7 +76,7 @@ dimensions in `.kit/pr-body.json` (adapter A16), and GitHub already shows the fi
 **Gates**
 - [x] <the proof the change is safe: the specific test / acceptance>
 - [x] <the covering tests, and CI's run on the push (rule:ci-gate), one line>
-- [x] <sweep: light check or exempt, by dimension>
+- [x] <Triage tier review (or Fix tier, or "Sweep exempt" for no code and no public text): the result by dimension>
 
 **Notes** - <one-line rationale, or omit.>
 ```

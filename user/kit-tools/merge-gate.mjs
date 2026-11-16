@@ -62,10 +62,12 @@ export const KIT_SOURCE_PROTECTED = [/^user\//i, /^project\//i, /^rules\//i, /^s
 const NO_HOOKS = ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-c', 'diff.ignoreSubmodules=none', '-c', 'diff.relative=false'];
 // What may change after the swept commit: the release bump.
 export const AFTER_SWEEP = ['VERSION', 'CHANGELOG.md'];
-const CONVENTIONAL = /^[a-z]+(\([^)]*\))?!?: /;
 const SHA = /^[0-9a-f]{40}$/;
 // STALE: GitHub marks a result it no longer counts; it is not a pass.
 const BAD_CHECK = /^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE|STALE)$/;
+// The kill switch by any spelling the owner may make (the build 13 sweep): Explorer's new text file hides ".txt".
+const KILL = /^autonomy[-_ ]?off(\..*)?$/i;
+const killed = (config) => { try { return fs.readdirSync(config).find((f) => KILL.test(f)) || null; } catch { return null; } };
 const HOLD_LABEL = /^(do[- ]not[- ]merge|hold|wip)$/i;
 
 // Programs Windows would start from the working folder, ahead of PATH, when a child calls them by bare name.
@@ -132,7 +134,7 @@ export function check({ pr, cwd, config = configDir(), run = realRun }) {
 	if (planted.length) return { go: false, faults: [`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`], facts };
 
 	// 1. Kill switch.
-	if (fs.existsSync(path.join(config, 'autonomy-off'))) faults.push(`kill switch: ${path.join(config, 'autonomy-off')} exists; every merge asks the owner`);
+	if (killed(config)) faults.push(`kill switch: ${path.join(config, killed(config))} exists; every merge asks the owner`);
 
 	// 2. The PR itself.
 	const p = json(gh('pr', 'view', String(pr), '--json', 'number,state,isDraft,isCrossRepository,headRefName,headRefOid,baseRefName,title,body,url,statusCheckRollup,reviewDecision,labels,autoMergeRequest'));
@@ -466,7 +468,9 @@ function pinBase({ git, gh, repo, base, cwd }) {
 }
 
 function bodyFaults({ cwd, config, body, title, number = '', baseRef, git, run }) {
-	const name = CONVENTIONAL.test(title) ? 'pr-body-audit-lean.mjs' : 'pr-body-audit.mjs';
+	// Every title is type: subject since 1.25.0, so the body says its format, as CI's PR body job reads it: a Standard
+	// body has a "### Summary" section (the build 13 sweep: picked by its title, every Standard body met the Lean audit).
+	const name = /^### Summary$/m.test(body) ? 'pr-body-audit.mjs' : 'pr-body-audit-lean.mjs';
 	const found = baseAudit(git, baseRef, name, config);
 	if (!found) return [`${baseRef} has no ${name}, and no installed copy in ${path.join(config, 'kit-tools', 'audits')}: install the kit's user layer`];
 	try {
@@ -551,7 +555,7 @@ export function status({ cwd, config = configDir(), run = realRun }) {
 		if (kind === 'ARMED') armed.set(String(what).split('/').pop(), { pr: String(what).split('/').pop(), url: what, sha, unread: rest === 'unread' });
 		if (kind === 'DISARMED') armed.delete(what);
 	}
-	return { killSwitch: fs.existsSync(path.join(config, 'autonomy-off')), armed: [...armed.values()] };
+	return { killSwitch: Boolean(killed(config)), armed: [...armed.values()] };
 }
 
 const gateLog = (cwd, run) => path.join(path.resolve(cwd, run('git', [...NO_HOOKS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd).stdout.trim() || '.git'), 'kit-merge-gate.log');
@@ -625,7 +629,7 @@ export function autofix({ pr, cwd, config = configDir(), run = realRun, now = ()
 	if (!/^[1-9]\d*$/.test(String(pr))) return no('the PR is a number, with no leading zero');
 	const planted = fs.readdirSync(cwd).filter((f) => ROOT_TOOL.test(f));
 	if (planted.length) return no(`a program named like a tool sits at the repo root, and would run in place of it: ${planted.join(', ')}`);
-	if (fs.existsSync(path.join(config, 'autonomy-off'))) return no(`kill switch: ${path.join(config, 'autonomy-off')} exists; this push asks the owner`);
+	if (killed(config)) return no(`kill switch: ${path.join(config, killed(config))} exists; this push asks the owner`);
 	const p = json(run('gh', ['pr', 'view', String(pr), '--json', 'state,isCrossRepository,headRefName,headRefOid,autoMergeRequest,url'], cwd));
 	if (!p || p.state !== 'OPEN' || p.isCrossRepository !== false) return no(`PR ${pr} is not an open PR from this repo`);
 	// gh reads the PR from whichever remote it picks; the push goes to origin, so origin must be the PR's repo.

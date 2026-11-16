@@ -112,6 +112,13 @@ installs, no new project. Reading and probing are fine. A throwaway spike the ow
 stays labelled throwaway, is never merged, and keeping any of it is a new request back through this gate,
 rebuilt test-first (rule:tdd).
 
+**The self-approval line (shadow mode), before the owner's yes:** the design ends with `Would self-approve: yes|no`
+and why: grounded in the list item, the spec and the Success Charter; the impact test all no; the red-team pass
+clean; no Tier 0, no new direction, no visual call and no budget raise. Under the loop driver, record it before
+asking: `node .claude/loop.mjs shadow --would yes|no --why "<why>"`; the plan step is not done without it, and the
+driver counts from the owner's own answers how many plans in a row they passed as they were. The owner still says
+yes to every design: the line only builds the record that could one day earn plans like these their own approval.
+
 **Done when:** the owner has approved the design (in chat or the doc), and the doc's calls you made alone are
 listed for them.
 

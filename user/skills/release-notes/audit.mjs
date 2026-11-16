@@ -24,22 +24,34 @@ each(/[^\x00-\x7F]/, 'non-ASCII character (public prose is ASCII)');
 // Read as CommonMark does (the build 12 sweep): a fence opens with up to 3 spaces and 3 or more of one mark (a
 // backtick fence's info has no backtick), and closes only with the same mark, at least as long, and nothing after it;
 // a code span closes only on a run of backticks as long as the one that opened it.
+// A code span may run onto the next line inside one paragraph (the build 13 sweep: read a line at a time, a span's
+// closing mark paired with the next span's opening one and hid the prose between them), so spans are taken from the
+// fence-free text whole, never across a blank line, and their marks and contents become spaces in place.
 let fence = null;
-const spanless = (l) => l.replace(/(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g, ' ');
-lines.forEach((l, i) => {
+const fenceFree = lines.map((l) => {
   if (fence) {
     const close = /^ {0,3}(`+|~+)\s*$/.exec(l);
     if (close && close[1][0] === fence[0] && close[1].length >= fence.length) fence = null;
-    return;
+    return '';
   }
   const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
-  if (open && !(open[1][0] === '`' && open[2].includes('`'))) { fence = open[1]; return; }
-  if (/(^|[^-])--([^-]|$)/.test(spanless(l))) faults.push(`line ${i + 1}: double hyphen (public prose is dash-free)`);
+  if (open && !(open[1][0] === '`' && open[2].includes('`'))) { fence = open[1]; return ''; }
+  return l;
 });
-// How the release was made is never public prose: tool names, agent words, and "written by AI" phrasing. A product
-// feature that uses AI ("answers with your own AI key") is a claim about the product, so bare "AI" is not flagged.
-each(/\b(Claude|ChatGPT|GPT-?\d*|Copilot|subagents?|coding agents?|AI agents?|assistant model|language model)\b/i, 'AI or tool reference');
-each(/\b(written|generated|built|reviewed|drafted|made|coded) (by|with) (an? )?(AI|LLM|model|agent)/i, 'AI or tool reference (how it was made)');
+const blank = (m) => m.replace(/[^\n]/g, ' ');
+const prose = fenceFree.join('\n').replace(/(`+)(?!`)((?:(?!\n[ \t]*\n)[\s\S])*?[^`])\1(?!`)/g, blank).split('\n');
+prose.forEach((p, i) => { if (/(^|[^-])--([^-]|$)/.test(p)) faults.push(`line ${i + 1}: double hyphen (public prose is dash-free)`); });
+// How the release was made is never public text: tool names, agent words, and "written by AI" phrasing, in prose or in
+// code, since the page shows both. A product feature that uses AI ("answers with your own AI key") is a claim about
+// the product, so bare "AI" is not flagged. K102 (build 13): a path is a file's name, not a tool reference, so a path
+// such as .claude/loop-state.json or ~/.claude/kit-tools is read without its words, wherever it sits.
+// In code, a lowercase name is a program or a key (the `claude` command whose version the kit checks), so code is read
+// for the products' own capitalized names and the how-it-was-made phrases; prose is read for every word, in any case.
+const pathless = (l) => l.replace(/[^\s`'"()<>]*[/\\][^\s`'"()<>]*|(?<![\w.])\.[A-Za-z][\w.-]*/g, ' ');
+const TOOL_WORDS = /\b(Claude|ChatGPT|GPT-?\d*|Copilot|subagents?|coding agents?|AI agents?|assistant model|language model)\b/i;
+const TOOL_NAMES = /\b(Claude|ChatGPT|GPT-?\d*|Copilot)\b/;
+lines.forEach((l, i) => { if (TOOL_WORDS.test(pathless(prose[i])) || TOOL_NAMES.test(pathless(l))) faults.push(`line ${i + 1}: AI or tool reference`); });
+each({ test: (l) => /\b(written|generated|built|reviewed|drafted|made|coded) (by|with) (an? )?(AI|LLM|model|agent)/i.test(pathless(l)) }, 'AI or tool reference (how it was made)');
 each(/\]\((?:\.\.?\/)*(?:_|docs\/(?:plans|sweeps|superpowers)\/)[^)]*\)/, 'link into gitignored notes');
 each(/\b\d[\d,]* (?:tests?|mutants?|findings?)\b|\b(?:fixed|closed|resolved) \d[\d,]* (?:bugs?|issues?|defects?)\b|\b(?:vitest|playwright|eslint|test suite|lint)\b/i, 'test or tooling tally (say what users get)');
 

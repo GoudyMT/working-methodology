@@ -1,0 +1,132 @@
+{
+ "version": "1.39.0",
+ "date": "2026-11-16",
+ "level": "minor",
+ "area": "Loop",
+ "title": "feat: a watcher, a plan self-approval record and a chain check",
+ "headline": "A watcher tells the owner when a pull request turns ready, each plan now says whether it would approve itself and the loop keeps score from the owner's own answers, and one check says whether the next thread may open.",
+ "alignment": "v1.39.0 is step T7 of the v2.0 plan, slice 2: watchers, plan self-approval in shadow mode and the thread chaining check, with the carry-overs of build 12 closed in the same release.",
+ "items": [
+  {
+   "id": "E13",
+   "kind": "added",
+   "text": "The kit tools' `watch.mjs` shows a desktop alert when a pull request you added turns green, fails, conflicts, merges or closes; it only reads, each entry expires, and you register it once with the line it prints.",
+   "evidence": "tests/watch.test.mjs",
+   "where": "A PR that turns green",
+   "before": "Waits until someone looks",
+   "after": "A desktop alert"
+  },
+  {
+   "id": "SHADOW",
+   "kind": "added",
+   "text": "Each plan records whether it would approve itself before the owner is asked; the loop counts, from the owner's own answers, how many such plans in a row they passed as they were, against a bar of 10. Self-approval stays off.",
+   "evidence": "tests/loop.test.mjs",
+   "where": "Plans a session could approve alone",
+   "before": "No record",
+   "after": "Counted from the owner's answers"
+  },
+  {
+   "id": "CHAIN",
+   "kind": "added",
+   "text": "`loop.mjs chain <handoff>` says GO only when the handoff passes the closeout audit, no run is open, the kill switch is off and today's thread cap is not reached; with no cap in the bounds file it says STOP.",
+   "evidence": "tests/loop.test.mjs"
+  },
+  {
+   "id": "NEW4",
+   "kind": "changed",
+   "text": "Both PR body audits now require the sweep tier: the Standard review line starts with it, and a lean body opens a gate with it or with a stated exemption.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K102",
+   "kind": "fixed",
+   "text": "The release notes audit reads a path such as `.claude/loop.mjs` as a file name, so a draft the build record wrote no longer fails on it; a tool named in code still does.",
+   "evidence": "tests/build-record.test.mjs"
+  },
+  {
+   "id": "KILL",
+   "kind": "changed",
+   "text": "The kill switch holds by any spelling a person makes, such as `autonomy-off.txt` from a new text file, in the merge gate and the loop.",
+   "evidence": "tests/merge-gate.test.mjs"
+  },
+  {
+   "id": "GATE",
+   "kind": "fixed",
+   "text": "The merge gate audits a published PR body with the audit its shape calls for, as CI does, so a Standard body no longer meets the Lean audit.",
+   "evidence": "tests/merge-gate.test.mjs"
+  },
+  {
+   "id": "LOOPYES",
+   "kind": "fixed",
+   "text": "A loop step reads the owner's latest answer to its act, and only from a question that quotes that act alone.",
+   "evidence": "tests/loop.test.mjs"
+  }
+ ],
+ "verification": [
+  "Each change and each sweep finding has a test that fails on the code before it and passes here.",
+  "K102 and New 4 were reproduced on the released 1.38.0; New 3 was not, and is closed.",
+  "The installed watcher read a merged PR from GitHub and alerted once."
+ ],
+ "decisions": [
+  {
+   "decision": "The plan step's act is made from its self-approval line",
+   "why": "No ask made before the verdict can quote the act its agreement is read from, so a verdict cannot be written to fit an answer."
+  },
+  {
+   "decision": "No rule text changes; the driver's refusals and the plan skill carry the new steps",
+   "why": "Each rule edit costs a recall run, and the driver and the skill reach every project the same way."
+  }
+ ],
+ "upgrading": "Run `install user` first, then `install project` in each project. The watcher is off until you register it; chaining is off until you add `limits.threadsPerDay` to `.claude/bounds.json`.",
+ "limits": "The chain check caps threads, not tokens. The watcher reads pull requests only, runs while you are logged on, and alerts only on Windows.",
+ "tests": {
+  "before": 832,
+  "after": 843,
+  "flips": "declared tests on v1.38.0 and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "6dfebd0",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "No new sink; the watcher logs PR numbers and states in its own folder"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "A plan locked after a No, a verdict written to fit an answer, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Wrapped spans, tool names in code, pinned prose, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 3,
+   "medium": 12,
+   "low": 10
+  },
+  "fixed": [
+   "A Yes then a No to the plan's act locked the plan as agreed; the latest answer decides now. Fixed in 3657bf8.",
+   "A verdict written after the owner had answered could fit the answer; such a plan is unscored. Fixed in 3657bf8.",
+   "A program named like gh in the current folder ran in its place; programs are found by full path. Fixed in 8474d85.",
+   "A Yes to an unrelated resume accepted a hand-edited log; only a Yes to the log does. Fixed in 3657bf8.",
+   "The merge gate met every Standard body with the Lean audit; the body's shape picks it now. Fixed in 1e5d4d1."
+  ],
+  "deferred": [],
+  "accepted": []
+ }
+}

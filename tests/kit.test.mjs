@@ -3740,6 +3740,14 @@ test('the Standard PR audit holds the Review section to the sweep summary and re
   assert.match(noTable.stdout, /FAIL\s+Review parts in order/);
   const noCommit = stdAudit(dir, honestBody().replace('Feature review of `9a1d6e20`.', 'Feature review.'));
   assert.match(noCommit.stdout, /FAIL\s+Review parts in order/);
+  // New 4 (build 13, reproduced on 1.38.0): the template's line is "<Tier> review of", and a body naming no tier passed.
+  const noTier = stdAudit(dir, honestBody().replace('Feature review of `9a1d6e20`.', 'Review of `9a1d6e20`.'));
+  assert.equal(noTier.status, 1);
+  assert.match(noTier.stdout, /FAIL\s+Review names the sweep tier/);
+  assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Fix (security-sensitive) review of')).stdout, /PASS\s+Review names the sweep tier/);
+  assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Featured review of')).stdout, /FAIL\s+Review names the sweep tier/);
+  // The build 13 sweep: only a parenthesis of modifiers sits between the tier and "review of".
+  assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Feature flags stay off; a light review of')).stdout, /FAIL\s+Review names the sweep tier/);
   const linked = stdAudit(dir, honestBody().replace('- **Deferred:** none.', '- **Deferred:** see [the report](docs/sweeps/2026-05-14-pin.md).'));
   assert.equal(linked.status, 1);
   assert.match(linked.stdout, /FAIL\s+no vault paths/);
@@ -4512,7 +4520,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   };
   const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
     'H1 area does not repeat the subject', 'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
-    'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'no spaced dashes in prose',
+    'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'review names the sweep tier', 'no spaced dashes in prose',
     'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
   const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
   const NOTES = '**Notes** - Tooling only; the app does not change.';
@@ -4538,6 +4546,14 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     ['Gates before Changes', lean.replace(/(\*\*Changes\*\*[\s\S]*?)(\*\*Gates\*\*[\s\S]*?)(\*\*Notes\*\*)/, '$2$1$3'), title, ['Changes / Gates / Notes, in order']],
     ['an open gate', sub('- [x] A one-file', '- [ ] A one-file'), title, ['every gate ticked']],
     ['a missing dimension', sub('legal and licensing, ', ''), title, ['review names the dimensions']],
+    // New 4 (build 13, reproduced on 1.38.0): the rule's third gate is the sweep tier and its result by dimension, and
+    // a body that named no tier passed. An exemption is stated as one; a tier word in other prose is not the gate.
+    ['no sweep tier', sub('- [x] Fix tier review: privacy', '- [x] Reviewed for privacy'), title, ['review names the sweep tier']],
+    ['a stated exemption', sub('- [x] Fix tier review: privacy', '- [x] Sweep exempt: privacy'), title, []],
+    ['a tier word outside the gates', sub('- [x] Fix tier review: privacy', '- [x] Reviewed for privacy').replace('Tooling only;', 'Tooling only, a triage tier change;'), title, ['review names the sweep tier']],
+    // The build 13 sweep: the tier opens the last gate; a tier word in another gate, or a negated exemption, is no tier.
+    ['a tier word in another gate', sub('- [x] Fix tier review: privacy', '- [x] Reviewed for privacy').replace('- [x] The covering tests', '- [x] The fix tier tests'), title, ['review names the sweep tier']],
+    ['a negated exemption', sub('- [x] Fix tier review: privacy', '- [x] Not sweep exempt: privacy'), title, ['review names the sweep tier']],
     ['a spaced dash', sub('Tooling only;', 'Tooling only - for now;'), title, ['no spaced dashes in prose']],
     ['a double dash', sub('Tooling only;', 'Tooling only -- for now;'), title, ['no spaced dashes in prose']],
     ['a dash in inline code', sub('Tooling only;', 'Tooling only (`a - b`);'), title, []],
