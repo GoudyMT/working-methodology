@@ -5387,6 +5387,9 @@ test('the drift signals pause a sweep, each by name', () => {
   // expired cache: the cache lives 5 minutes.
   const soon = { u: [0, 0, 30000, 0], gap: 4 * 60 * 1000 };
   assert.doesNotMatch(driftSweep([[[10000, 0, 0, 0], [0, 28000, 0, 0], soon], [[10000, 0, 0, 0], soon], usual(), usual(), usual()]).o.stdout, /cache re-writes/);
+  // After the gap, a miss that still read back just over half the context is one too (the sweep's case: 51.5%).
+  const half = { u: [0, 15000, 14000, 0], gap: 6 * 60 * 1000 };
+  assert.match(driftSweep([[[10000, 0, 0, 0], [0, 28000, 0, 0], half], [[10000, 0, 0, 0], [0, 28000, 0, 0], half], usual(), usual(), usual()]).o.stdout, /paused: .*2 cache re-writes/);
   // Build 11: a call that reads the whole cache and writes a large batch of new results (a dozen reads at once) is no
   // expired cache. Every role of the 1.36.1 sweep had one such call, and the sweep paused on 7 re-writes that were none.
   const batch = () => [[2, 0, 13600, 323], [2, 13600, 22659, 828], [2, 36259, 2506, 674], ...Array(3).fill([0, 40000, 0, 0])];

@@ -1010,10 +1010,11 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 			maxCall: Math.max(0, ...calls.map(per)),
 			lastCall: calls.length ? per(calls[calls.length - 1]) : 0,
 			// Only after a gap the cache can expire in (5 minutes): a call soon after the last that reads back less is a
-			// context the model trimmed, not an expired cache (the build 11 sweep). With no times it counts.
+			// context the model trimmed, not an expired cache. After such a gap any read short of the last context is one;
+			// the old under-half bar missed a miss that read back 51% (the build 11 sweep). With no times it counts.
 			rewrites: calls.slice(1).filter((m, i) => {
 				const gap = began.get(keys[i + 1]) - ended.get(keys[i]);
-				return u(m, 'cache_read_input_tokens') * 2 < per(calls[i]) - u(calls[i], 'output_tokens') && !(gap < REWRITE_GAP_MS);
+				return u(m, 'cache_read_input_tokens') < per(calls[i]) - u(calls[i], 'output_tokens') && !(gap < REWRITE_GAP_MS);
 			}).length,
 			// Stopped: the call-cap hook refused a tool at the ceiling. Its own words in the transcript say so; the spend
 			// alone cannot tell a role that was stopped from one that was done.
