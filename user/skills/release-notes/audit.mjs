@@ -21,10 +21,20 @@ const each = (re, what) => lines.forEach((l, i) => { if (re.test(l)) faults.push
 each(/[^\x00-\x7F]/, 'non-ASCII character (public prose is ASCII)');
 // K96 (build 12): a flag in code is code, not a dash, as the build record's check reads it: the dash rule reads prose,
 // with code spans and fenced code blocks left out.
-let fenced = false;
+// Read as CommonMark does (the build 12 sweep): a fence opens with up to 3 spaces and 3 or more of one mark (a
+// backtick fence's info has no backtick), and closes only with the same mark, at least as long, and nothing after it;
+// a code span closes only on a run of backticks as long as the one that opened it.
+let fence = null;
+const spanless = (l) => l.replace(/(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g, ' ');
 lines.forEach((l, i) => {
-  if (/^\s*(```|~~~)/.test(l)) { fenced = !fenced; return; }
-  if (!fenced && /(^|[^-])--([^-]|$)/.test(l.replace(/`[^`\n]*`/g, ' '))) faults.push(`line ${i + 1}: double hyphen (public prose is dash-free)`);
+  if (fence) {
+    const close = /^ {0,3}(`+|~+)\s*$/.exec(l);
+    if (close && close[1][0] === fence[0] && close[1].length >= fence.length) fence = null;
+    return;
+  }
+  const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
+  if (open && !(open[1][0] === '`' && open[2].includes('`'))) { fence = open[1]; return; }
+  if (/(^|[^-])--([^-]|$)/.test(spanless(l))) faults.push(`line ${i + 1}: double hyphen (public prose is dash-free)`);
 });
 // How the release was made is never public prose: tool names, agent words, and "written by AI" phrasing. A product
 // feature that uses AI ("answers with your own AI key") is a claim about the product, so bare "AI" is not flagged.

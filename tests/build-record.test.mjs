@@ -134,6 +134,14 @@ test('a record line that quotes a command with a --flag writes notes the audit p
 	assert.equal(audit(`${notes(rec)}\n\n\`\`\`bash\nnode scripts/kit.mjs install project --dry-run\n\`\`\`\n`).status, 0, 'a flag in a code block failed');
 	assert.match(audit(`${notes(rec)}\nUpgrading is quick -- run install.\n`).stdout, /double hyphen/);
 	assert.match(audit(`${notes(rec)}\nRun \`install\` -- then check.\n`).stdout, /double hyphen/);
+	// The sweep: read as CommonMark reads fences and spans, so no line turns the rest of the notes into code.
+	const dashes = (tail) => (audit(`${notes(rec)}\n${tail}`).stdout.match(/double hyphen/g) || []).length;
+	assert.equal(dashes('```x``` names the key -- in prose.\n\nLater prose -- another dash.\n'), 2, 'an inline span read as a fence');
+	assert.equal(dashes('~~~md\n```js\n~~~\n\nLater prose -- a dash.\n'), 1, 'a backtick line closed a tilde fence');
+	assert.equal(dashes('````md\n```js\n````\n\nLater prose -- a dash.\n'), 1, 'a shorter fence closed a longer one');
+	assert.equal(dashes('Text.\n\n    ```\n\nLater prose -- a dash.\n'), 1, 'an indented block read as a fence');
+	assert.equal(dashes('Press the ` key -- then the `` key.\n'), 1, 'runs of two lengths read as a span');
+	assert.equal(dashes('~~~\nnode x --flag\n~~~\n'), 0, 'a flag in a tilde fence');
 });
 
 // why: guards the owner's pick of E14, 2026-11-15: the notes command prints the draft, and its upgrading and limits
