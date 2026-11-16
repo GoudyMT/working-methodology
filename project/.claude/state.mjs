@@ -556,7 +556,7 @@ function decide(fromFile, unchecked) {
 function main(argv) {
 	const [cmd, ...rest] = argv;
 	const fail = (m) => { console.log(m); process.exitCode = 1; };
-	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|--agent|--full|--step <step>|caught|audit|shorten|import <file.md>] | item <id> [--json] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text> | step rename <step> <new name>'); process.exitCode = 2; };
+	const usage = () => { console.log('Usage: node .claude/state.mjs show [--json] | set next|then|phase|last-session|kit <text> | add blocking|waiting|carry <text> | done <id> | decide --from <file.json> [--unchecked] | decisions [text] | render [--overwrite] | check | init | list [text|--all|--agent|--full|--step <step>|caught|audit|shorten|import <file.md>] | item <id> [--json] | item add --from <file.json> | item set <id> <field> <value> | step set <step> release|carries|state <text> | step rename <step> <new name> | step move <step> before|after <step>'); process.exitCode = 2; };
 	if (cmd === 'init') {
 		const { faults, said = [] } = init();
 		for (const f of [...faults, ...said]) console.log(f);
