@@ -211,6 +211,9 @@ test('running a kit script with 2>&1, or after a plain Set-Location, passes; a w
 	// A write beside the fold is still a write, and a definition beside a folder change still stands in for node.
 	for (const c of ['node .claude/state.mjs list 2>&1 > .claude/guard.cjs', 'node() { cp /tmp/x "$1"; } 2>&1; node .claude/settings.json', 'node .claude/x.mjs 2>&1 & cp x .claude/guard.cjs', 'node .claude/state.mjs &> .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
 	for (const c of [`Set-Location "${proj}"; function node { cp x $args[0] }; node .claude/settings.json`, `Set-Location "${proj}"; Set-Alias node cp; node x .claude/guard.cjs`, `Set-Location "${proj}"; node -e "require('fs').writeFileSync('.claude/settings.json','')"`]) assert.equal(ps(c), 'deny', c);
+	// 1.36.1 (held live verifying 1.36.0): a folder change back after the script (Pop-Location, popd) defines nothing either.
+	for (const c of [`Push-Location "${proj}"; node .claude/state.mjs list; Pop-Location`, `pushd ${proj}; node .claude/state.mjs list 2>&1; popd`]) assert.equal(ps(c), 'allow', c);
+	for (const c of [`Push-Location "${proj}"; node .claude/state.mjs list; Pop-Location; Copy-Item x .claude/guard.cjs`, `Push-Location "${proj}"; node .claude/settings.json; Pop-Location; function node { }`]) assert.equal(ps(c), 'deny', c);
 	// The 1.36.0 sweep: node's own options write files (a warnings file, a profile, a report). A protected path named in
 	// one is a write, not the script node runs.
 	for (const c of ['node --redirect-warnings=.claude/settings.json x.js', 'node --cpu-prof-dir=.githooks x.js', 'node --diagnostic-dir .claude x.js', 'node --heap-prof-name=.claude/guard.cjs x.js']) assert.equal(bash(c), 'deny', c);

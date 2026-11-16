@@ -534,7 +534,10 @@ function shellWritesFrom(command, tool, start, names) {
 	// behind; &> and >&file still name a file and stay a redirect the words below read.
 	// In PowerShell a backslash is the path separator, not a quote (K32), so a folder may hold one.
 	const lead = tool === 'PowerShell' ? /^(\s*([A-Za-z_]\w*=|(cd|chdir|pushd|set-location|sl|push-location)\s+)("[^"$`]*"|'[^']*'|[^\s;&|$`'"()]*)\s*(;|&&)\s*)+/i : /^(\s*([A-Za-z_]\w*=|cd\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)\s*(;|&&)\s*)+/;
-	const bare = text.replace(lead, '').replace(/(^|\s)\d?>&\d(?=\s|$)/g, '$1');
+	// 1.36.1: a folder change back at the very end (; Pop-Location, ; popd) runs after the program, so no definition
+	// hides there; anything after it still counts.
+	const trail = tool === 'PowerShell' ? /(\s*;\s*(pop-location|popd)\s*)+;?\s*$/i : /(\s*;\s*popd\s*)+;?\s*$/;
+	const bare = text.replace(lead, '').replace(trail, '').replace(/(^|\s)\d?>&\d(?=\s|$)/g, '$1');
 	// V1 (the 1.25.0 verify): a line of nothing but plain readers, a print-only sed and a cd can redefine nothing, so
 	// its ; and && do not count as a place a definition could hide.
 	const onlyReads = !/[`]|\$\(|<\(/.test(text) && segments.every((g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); const onPath = !/[\\/]/.test(w[0] || ''); return (onPath && (READERS.has(p) || PIPE_READERS.has(p))) || CHANGERS.has(p) || printSed(w); });
