@@ -284,6 +284,7 @@ function listBlocks(s, { overwrite = false, check = false } = {}) {
 	const l = list.loadList(io);
 	if (l.why) return [l.why];
 	const v = list.views(l.rows, s.roadmap || []);
+	const empty = list.views([], []);
 	for (const [rel, text] of files) {
 		const at = list.blocksIn(text);
 		if (at.why) { out.push(`${rel}: ${at.why}`); continue; }
@@ -297,7 +298,9 @@ function listBlocks(s, { overwrite = false, check = false } = {}) {
 			const same = now.join('\n') === want.join('\n');
 			if (check) { if (!same) out.push(`${rel}: the ${b.name} list block differs from ${list.LIST} and ${STATE}: run node .claude/state.mjs render (a block edited by hand is refused there; move the change into the data first)`); continue; }
 			// An empty block holds no hand-written text, so it is always filled (a block put back empty after a render).
-			const known = now.every((x) => !x.trim()) || s.rendered[key] === sha(now.join('\n'));
+			// So is one that still holds the view of no data at all, as the template ships it: the template's state holds no
+			// hash for it, since a hash there is a change install three-way merges into each project's state (1.36.1).
+			const known = now.every((x) => !x.trim()) || now.join('\n') === inner(empty[b.name]).join('\n') || s.rendered[key] === sha(now.join('\n'));
 			if (!same && !known && !overwrite) { out.push(`${rel}: the ${b.name} list block was edited by hand since the last render; move each change into the data with item set or step set, then run node .claude/state.mjs render --overwrite`); continue; }
 			if (!same) { lines = [...lines.slice(0, b.begin), list.listBegin(b.name), ...want, ...lines.slice(b.end)]; changed = true; }
 			s.rendered[key] = sha(want.join('\n'));

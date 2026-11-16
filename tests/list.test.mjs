@@ -489,6 +489,9 @@ test('the shipped roadmap template carries the boxes and roadmap blocks, and a f
 	assert.match(t, /<!-- list:begin roadmap: generated/);
 	const c = st(dir, 'check');
 	assert.equal(c.status, 0, c.stdout);
+	// 1.36.1: the template's state holds no view hash. A hash shipped there is a change install three-way merges into
+	// every project's own state data, where it clashed (the workbench, verifying 1.36.0).
+	assert.doesNotMatch(read(dir, '_State.json'), /_Master Roadmap\.md#/);
 	// item add and step set write the views themselves: no render between.
 	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { id: 'R1', title: 'First task', tag: 'later', severity: 'to set', origin: 'owner' })).status, 0);
 	assert.ok(read(dir, '_Master Roadmap.md').includes('- [ ] R1 First task'));
