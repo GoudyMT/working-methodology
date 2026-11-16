@@ -49,7 +49,9 @@ function stepOf(h) {
 	const d = o > 0 ? h.slice(0, o).indexOf(' - ') : -1;
 	if (d <= 0 || h.slice(o + 2, -1).includes(')')) return null;
 	const carries = h.slice(d + 3, o).trim().replace(/^"/, '').replace(/"$/, '').trim();
-	return carries ? { step: h.slice(0, d).trim(), carries, state: h.slice(o + 2, -1).trim() } : null;
+	// Spacing read as one space, as the state keeps a step's name (the 1.36.1 sweep: "A  B" was placed at no step).
+	const one = (x) => x.replace(/\s+/g, ' ').trim();
+	return carries ? { step: one(h.slice(0, d)), carries: one(carries), state: one(h.slice(o + 2, -1)) } : null;
 }
 const clip = (s) => (s.length > SHORT ? `${s.slice(0, SHORT - 3).replace(/[\s.,;:]+$/, '')}...` : s);
 // Any control character, line or paragraph separator, or bidi override: none belongs in one line of list text.
@@ -140,7 +142,7 @@ const SEPARATOR = /^\|[\s:|-]+\|$/;
  * it cannot move (no tag, an unknown tag, an id twice, a cell too many or too few, a row outside a table, an indented
  * table, a table with an ID or a Status column but not both), so a half list is never written. Fenced code is skipped.
  */
-export function parseMarkdown(text) {
+export function parseMarkdown(text, { taken = [] } = {}) {
 	// Split on LF alone, so line i here is line i of the file whatever its endings; a CR is not part of the text.
 	const lines = text.split('\n').map((l) => l.replace(/\r$/, ''));
 	const rows = [];
@@ -215,7 +217,7 @@ export function parseMarkdown(text) {
 				if (steps.some((s) => s.step === c[0] && s.release === (c[1] || ''))) { faults.push(`roadmap step ${c[0]} ${c[1] || ''} is given twice (line ${lineNo[n]})`); return; }
 				// The first other column is what the step carries; any further one is kept in it, named.
 				const carries = rest.map(([name, k], j) => (j === 0 ? c[k] : c[k] ? `${name}: ${c[k]}` : '')).filter(Boolean).join('; ');
-				steps.push({ step: c[0], release: c[1] || '', carries, state: st >= 0 ? c[st] || '' : '' });
+				steps.push({ step: c[0], release: c[1] || '', carries, state: st >= 0 ? c[st] || '' : '', table: true });
 			});
 			continue;
 		}
@@ -247,7 +249,8 @@ export function parseMarkdown(text) {
 	let n = 0;
 	const parents = [];
 	for (const x of boxes) {
-		do n++; while (rows.some((r) => r.id === `R${n}`));
+		// An id the list already holds is skipped too (1.36.1: boxes may join a list that has rows).
+		do n++; while (rows.some((r) => r.id === `R${n}`) || taken.includes(`R${n}`));
 		const id = `R${n}`;
 		// An indented box keeps the box above it at a lower depth as its parent.
 		while (parents.length && parents[parents.length - 1].depth >= x.depth) parents.pop();
@@ -270,7 +273,7 @@ export function parseMarkdown(text) {
 	if (comment) faults.push('an HTML comment never closes, so the rest of the file was not read');
 	if (generated) faults.push(`the generated block at line ${generated} never closes (no ${END}), so the rest of the file was not read`);
 	if (!rows.length && !faults.length) faults.push('no table with an ID column and a Status column, and no checkbox list, was found');
-	return { rows, steps, faults, boxLines: boxes.flatMap((x) => [x.line, ...x.moreLines]).sort((a, b) => a - b) };
+	return { rows, steps, faults, boxLines: boxes.flatMap((x) => [x.line, ...x.moreLines]).sort((a, b) => a - b), tableRows: rows.length - boxes.length };
 }
 
 export const serialize = (rows) => rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');

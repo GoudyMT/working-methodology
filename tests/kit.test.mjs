@@ -1569,6 +1569,30 @@ test('an update over a memory file with only metadata keeps the file as it was',
   assert.ok(foldBack({ kit, home, target: 'project', projectDir: proj }).foldBack.includes('memory/style.md'));
 });
 
+// 1.36.1 (verifying 1.36.0 in the workbench, and the 1.36.1 sweep): the template _State.json gained two lines, and
+// install three-way merged them into the project's own state, which clashed and asked for a hand merge. The state, the
+// list and the decisions are the project's data from the first install on: seeded once, never merged or folded back.
+// why: guards rule:kit-standards (an install never asks the owner to hand-merge the project's own data)
+test('install seeds the project data files once and never merges, updates or folds them back', () => {
+  const { kit, home, proj } = makeKit();
+  const data = { '_State.json': '{\n  "kit": "<x.y.z>",\n  "rendered": {}\n}\n', '_List.jsonl': '', '_Decisions.jsonl': '' };
+  for (const [f, t] of Object.entries(data)) fs.writeFileSync(path.join(kit, 'project', f), t);
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(path.join(proj, '_State.json')), data['_State.json'], 'a new project gets the template');
+  const mine = '{\n  "kit": "1.0.0",\n  "rendered": {\n    "_Master Roadmap.md#boxes": "abc"\n  }\n}\n';
+  fs.writeFileSync(path.join(proj, '_State.json'), mine);
+  fs.writeFileSync(path.join(proj, '_List.jsonl'), '{"id":"R1"}\n');
+  // The kit changes its template data next to the project's own lines.
+  fs.writeFileSync(path.join(kit, 'project', '_State.json'), '{\n  "kit": "<x.y.z>",\n  "rendered": {},\n  "roadmap": []\n}\n');
+  fs.writeFileSync(path.join(kit, 'project', '_List.jsonl'), '\n');
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(path.join(proj, '_State.json')), mine);
+  assert.equal(read(path.join(proj, '_List.jsonl')), '{"id":"R1"}\n');
+  for (const f of Object.keys(data)) assert.ok(![...r.updated, ...r.skipped.map((s) => s.file), ...r.threeWayMerged].includes(f), `${f}: ${JSON.stringify(r)}`);
+  const fb = foldBack({ kit, home, target: 'project', projectDir: proj });
+  assert.ok(![...fb.foldBack, ...fb.conflict, ...fb.update].some((k) => k in data), JSON.stringify(fb));
+});
+
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
 // session start said only that an update was there.
 test('session start names a user layer newer than the project for what it can break', () => {

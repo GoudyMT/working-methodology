@@ -262,6 +262,9 @@ function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
 // V3 (1.25.1): the files that guard a project - every script in .claude and every git hook. The launcher in the
 // Claude config folder hashes them against a record kept there before every call, so one changed outside install holds
 // every call; install always puts the kit's copy back, and fold-back never offers one to the kit.
+// The project's own data (1.36.1): seeded by the first install, then the project's alone. A kit change to the template
+// is never merged into it (the 1.36.0 template _State.json clashed in every project), updated, or folded back.
+export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl'];
 export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
 // The kit's own git hooks, which the shims check the guard files before. Every other hook git knows gets a shim that
 // runs the project's own hook of that name, so a host that keeps its hooks in .githooks keeps every one (1.25.1 sweep).
@@ -601,6 +604,7 @@ export function install(ctx) {
       write(); created.push(entry.key); files[entry.key] = wantHash;
       continue;
     }
+    if (ctx.target === 'project' && DATA_FILES.includes(entry.key)) { files[entry.key] = stamp.files[entry.key] || wantHash; continue; }
     const cur = sha(compared(entry.key, fs.readFileSync(entry.dest, 'utf8')));
     const base = stamp.files[entry.key];
     if (cur === wantHash) {
@@ -921,6 +925,7 @@ export function foldBack(ctx) {
     const want = renderEntry(kitInfo, entry, ctx.projectDir, ctx.home);
     const base = stamp.files[entry.key];
     if (!fs.existsSync(entry.dest)) { if (base) out.missing.push(entry.key); continue; }
+    if (ctx.target === 'project' && DATA_FILES.includes(entry.key)) continue;
     const curText = fs.readFileSync(entry.dest, 'utf8');
     const cur = sha(compared(entry.key, curText)), wantHash = sha(want);
     if (cur === wantHash) continue;

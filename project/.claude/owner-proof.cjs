@@ -533,9 +533,14 @@ function shellWritesFrom(command, tool, start, names) {
 	// K76 (1.36.0): an output pointed at another (2>&1, >&2) writes no file, so its & is no break a definition hides
 	// behind; &> and >&file still name a file and stay a redirect the words below read.
 	// In PowerShell a backslash is the path separator, not a quote (K32), so a folder may hold one.
-	const lead = tool === 'PowerShell' ? /^(\s*([A-Za-z_]\w*=|(cd|chdir|pushd|set-location|sl|push-location)\s+)("[^"$`]*"|'[^']*'|[^\s;&|$`'"()]*)\s*(;|&&)\s*)+/i : /^(\s*([A-Za-z_]\w*=|cd\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)\s*(;|&&)\s*)+/;
-	const bare = text.replace(lead, '').replace(/(^|\s)\d?>&\d(?=\s|$)/g, '$1');
-	// V1 (the 1.25.0 verify): a line of nothing but plain readers, a print-only sed and a cd can redefine nothing, so
+	// A new line ends a folder change as ; does (the 1.36.1 sweep).
+	const lead = tool === 'PowerShell' ? /^(\s*([A-Za-z_]\w*=|(cd|chdir|pushd|set-location|sl|push-location)\s+)("[^"$`]*"|'[^']*'|[^\s;&|$`'"()]*)[ \t]*(;|&&|\n)\s*)+/i : /^(\s*([A-Za-z_]\w*=|(cd|pushd)\s+)("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]*)[ \t]*(;|&&|\n)\s*)+/;
+	// 1.36.1: plain folder changes at the very end (Pop-Location, popd, cd .., Set-Location back, after ; && or a new
+	// line, popd's output dropped) run after the program, so no definition hides there; anything after them counts.
+	const trail = tool === 'PowerShell'
+		? /(\s*(;|&&|\n)\s*(pop-location|popd|set-location|sl|cd|chdir)(\s+("[^"$`]*"|'[^']*'|[^\s;&|$`'"()]+))?(\s*\|\s*out-null|\s*>\s*\$null)?\s*)+;?\s*$/i
+		: /(\s*(;|&&|\n)\s*(popd|cd)(\s+("[^"$`\\]*"|'[^']*'|[^\s;&|$`'"()\\]+))?(\s*>\s*\/dev\/null)?\s*)+;?\s*$/;
+	const bare = text.replace(lead, '').replace(trail, '').replace(/(^|\s)\d?>&\d(?=\s|$)/g, '$1');	// V1 (the 1.25.0 verify): a line of nothing but plain readers, a print-only sed and a cd can redefine nothing, so
 	// its ; and && do not count as a place a definition could hide.
 	const onlyReads = !/[`]|\$\(|<\(/.test(text) && segments.every((g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); const onPath = !/[\\/]/.test(w[0] || ''); return (onPath && (READERS.has(p) || PIPE_READERS.has(p))) || CHANGERS.has(p) || printSed(w); });
 	const defines = (!onlyReads && /[;&\n]|\|\|/.test(bare)) || /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i.test(text);
@@ -647,10 +652,12 @@ function shellWritesFrom(command, tool, start, names) {
 		// transcripts keep the stricter reading they had.
 		// The word is the script, never an option: node's own options write files (--redirect-warnings, --cpu-prof-dir,
 		// --diagnostic-dir, --heap-prof-name; the 1.36.0 sweep).
-		if (names !== proofNames && !defines && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
+		// Never with a bracket in the command: a PowerShell argument in brackets runs as code, and a path it joins from
+		// pieces ('.cl'+'aude/...') is no word the reader sees (the 1.36.1 sweep).
+		if (names !== proofNames && !defines && !grouped && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
 		// Only the subcommand right after git (no global option, which can move git or run a program), no option that runs
 		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
-		if (names !== proofNames && !defines && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
+		if (names !== proofNames && !defines && !grouped && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.

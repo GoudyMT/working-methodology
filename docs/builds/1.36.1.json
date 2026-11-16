@@ -1,0 +1,121 @@
+{
+ "version": "1.36.1",
+ "date": "2026-11-16",
+ "level": "patch",
+ "area": "Lists",
+ "title": "fix: a checkbox roadmap imports into a list that has rows",
+ "headline": "A project whose improvement list is already data can now move its checkbox roadmap in, so the 1.36.0 use check has a way out. Install no longer merges a project's own state, list and decisions, and the guards close a way past them that bracketed PowerShell arguments opened.",
+ "alignment": "v1.36.1 fixes what verifying 1.36.0 in the workbench found, so every kit project can finish the move to a roadmap kept as data.",
+ "items": [
+  {
+   "id": "K83",
+   "kind": "fixed",
+   "text": "`list import` of a checkbox roadmap adds its rows to a list that already holds rows, with new ids, all or nothing; a box already in the list is refused, and tables beside the boxes stay in the file.",
+   "evidence": "tests/list.test.mjs",
+   "where": "A roadmap beside a list kept as data",
+   "before": "Import refused; install exited 1",
+   "after": "Its boxes join the list"
+  },
+  {
+   "id": "K84",
+   "kind": "fixed",
+   "text": "Install seeds a project's state, list and decisions once and never merges, updates or folds them back, so a kit change to their templates never asks for a hand merge.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "Install over a project's state",
+   "before": "A clash to merge by hand",
+   "after": "Never merged"
+  },
+  {
+   "id": "K85",
+   "kind": "fixed",
+   "text": "A folder change back after a kit script (Pop-Location, popd, after ; && or a new line) no longer makes the guards hold the script as a write to a protected file.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "STEPMOVE",
+   "kind": "added",
+   "text": "step move places a roadmap step before or after another, by its name or release.",
+   "evidence": "tests/list.test.mjs",
+   "where": "Placing a new roadmap step",
+   "before": "A hand edit of _State.json",
+   "after": "One command"
+  },
+  {
+   "id": "BRACKETS",
+   "kind": "security",
+   "text": "A command with a bracket gets no read exemption from the guards: a PowerShell argument in brackets runs as code, and a protected path joined from pieces inside it was let through.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "SPACING",
+   "kind": "fixed",
+   "text": "Import reads a heading step's spacing as one space, places its boxes at the step the state holds, and refuses two steps that differ only in spacing.",
+   "evidence": "tests/list.test.mjs"
+  }
+ ],
+ "verification": [
+  "Each fix has a test that fails on 1.36.0 and passes here, the sweep's fixes included.",
+  "A checkbox roadmap moves into a list that holds rows with new ids; a failed rewrite leaves the list and the state as they were, and a retry adds each box once.",
+  "An install over a project whose state, list and decisions changed leaves all three as they are, with nothing to merge."
+ ],
+ "decisions": [
+  {
+   "decision": "A fix release, in the same thread",
+   "why": "The owner picked a 1.36.1 fix build by pop-up after the workbench verify found the dead end; 1.36.0 stays unshipped until this verifies."
+  },
+  {
+   "decision": "Data files are seeded once",
+   "why": "The sweep showed that dropping the template hashes alone made the next upgrade clash again; the root fix is that install never merges the project's own data."
+  }
+ ],
+ "sweep": {
+  "tier": "Fix",
+  "commit": "6f10fb0",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Not touched"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Bracketed arguments, folder moves back, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Import retries, data merges, test gaps, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 4,
+   "medium": 11,
+   "low": 13
+  },
+  "fixed": [
+   "The upgrade from 1.36.0 would clash on the state again; install now never merges the project's data. Fixed in 2234d6f.",
+   "A bracketed PowerShell argument could write a guard file past the read exemption. Fixed in 7e37158.",
+   "Two tests could pass with the trail and the kept marks broken. Fixed in 7e37158 and 650deb7."
+  ],
+  "deferred": [],
+  "accepted": []
+ },
+ "upgrading": "Run `install user` first, then `install project` in each project. A project the 1.36.0 use check stopped moves its checkbox roadmap with `list import` now.",
+ "limits": "Boxes under a heading the state already holds as a step keep that step as it is; its carries and state are not read again.",
+ "tests": {
+  "before": 791,
+  "after": 793,
+  "flips": "declared tests on v1.36.0 and on this branch; the PR run gives the final count"
+ }
+}
