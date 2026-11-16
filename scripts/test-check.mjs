@@ -23,13 +23,27 @@ const TEST_FILE = /^tests\/.*\.test\.mjs$/;
 // A URL only counts where a call reaches it: a test of a pattern names hosts in strings it never visits.
 const LARGE = /\b(fetch|https?\.(get|request)|goto)\(\s*['"`]https?:\/\/(?!127\.0\.0\.1|localhost|\[::1\])[a-z0-9.-]+\.[a-z]{2,}|\b(playwright|puppeteer|chromium\.launch)\b|ANTHROPIC_API_KEY|\bclaude(\.exe)?['"]?\s*,\s*\[\s*['"]-p['"]/i;
 
-// The top-level tests of a file's text: name, its comment lines and body.
+// The top-level tests of a file's text: name, its comment lines and body. A top-level loop that makes tests is one
+// unit, named by the first test( inside it as written (`name ${n}`), and listed in .loops (K105: the loop-made tests
+// of PR 49 were never read).
+const NAMED = /\btest\((['"`])((?:\\.|(?!\1).)*)\1/;
+const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|Object\.(entries|keys|values)\([^\n]*\)\.forEach\()/;
 function tests(text) {
 	const lines = String(text).split('\n');
 	const starts = [];
-	lines.forEach((l, i) => { const m = /^test\((['"`])((?:\\.|(?!\1).)*)\1/.exec(l); if (m) starts.push([i, m[2].replace(/\\(.)/g, '$1')]); });
+	lines.forEach((l, i) => {
+		const m = /^test\((['"`])((?:\\.|(?!\1).)*)\1/.exec(l);
+		if (m) { starts.push([i, m[2].replace(/\\(.)/g, '$1'), false]); return; }
+		if (!LOOP.test(l)) return;
+		// The loop's own lines: up to the next line at the margin that is not a closing bracket.
+		for (let j = i; j < lines.length && (j === i || !/^[^\s}\])]/.test(lines[j])); j++) {
+			const n = NAMED.exec(lines[j]);
+			if (n) { starts.push([i, n[2], true]); break; }
+		}
+	});
 	const comment = (l) => /^\s*\/\//.test(l);
 	const out = new Map();
+	out.loops = new Set(starts.filter((s) => s[2]).map((s) => s[1]));
 	starts.forEach(([i, name], k) => {
 		let head = i;
 		while (head > 0 && comment(lines[head - 1])) head--;
@@ -51,7 +65,9 @@ function run(dir, keys, env = {}, timeout = 600000) {
 	const red = new Map();
 	// Stopped early (the budget, or output past the buffer): the tests with a result keep it, the rest are named as not
 	// checked (the K95 sweep: every test was named so, and the finished ones' findings were lost).
-	if (r.error) red.cut = new Set([...out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
+	// Every result's name, so a loop's tests are found by its pattern.
+	red.seen = new Set([...out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
+	if (r.error) red.cut = red.seen;
 	// Each top-level "not ok <n> - <name>" with its YAML block up to the next result line.
 	for (const m of out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?\n([\s\S]*?)(?=^(?:ok|not ok) \d+ - |^1\.\.|(?![\s\S]))/gm)) red.set(m[1], /ERR_ASSERTION|AssertionError/.test(m[2]));
 	// A file that could not load (an import the base lacks) fails as a whole, under its own path: each of its tests
@@ -77,12 +93,17 @@ export function check(root, base, { strict = false, slice = null, budget = null 
 	let newOrChanged = [];
 	for (const f of testFiles) {
 		const now = tests(fs.readFileSync(path.join(root, f), 'utf8'));
-		const was = tests(git(root, 'show', `${baseSha}:${f}`).stdout || '');
+		const onBase = git(root, 'cat-file', '-e', `${baseSha}:${f}`).status === 0;
+		const was = tests(onBase ? git(root, 'show', `${baseSha}:${f}`).stdout : '');
 		for (const [name, body] of now) {
 			if (was.get(name) === body) continue;
-			newOrChanged.push({ key: `${f}::${name}`, file: f, name, body, isNew: !was.has(name) });
+			// A loop's tests are named at run time: its pattern, the written name with each ${...} read as any text.
+			const loop = now.loops.has(name) ? new RegExp(`^${name.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`) : null;
+			newOrChanged.push({ key: `${f}::${name}`, file: f, name, body, isNew: !was.has(name), newFile: !onBase, loop });
 		}
 	}
+	// The names a run gave this test: its own, or each name its loop made.
+	const namesOf = (t, seen) => (t.loop ? [...seen].filter((n) => t.loop.test(n)) : [t.name]);
 	// A slice (i/n) takes every n-th changed test, in key order, so a PR that changes many tests is checked on several
 	// machines at once instead of timing out on one (K13, the 1.27.0 build: 616 changed tests ran past 15 minutes).
 	if (slice) newOrChanged = newOrChanged.sort((a, b) => (a.key < b.key ? -1 : 1)).filter((_, k) => k % slice.n === slice.i);
@@ -107,12 +128,18 @@ export function check(root, base, { strict = false, slice = null, budget = null 
 			}
 			// One read of the time left: a second could land on 0, which spawnSync reads as no limit (the K95 sweep).
 			const ms = Math.min(600000, left());
-			const red = ms > 0 ? run(copy, newOrChanged.map((t) => t.key), { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home }, ms) : Object.assign(new Map(), { cut: new Set() });
+			// A loop is run by its whole file: the harness takes exact names, and a loop's names exist only at run time.
+			const keys = [...new Set(newOrChanged.map((t) => (t.loop ? `${t.file}::*` : t.key)))];
+			const red = ms > 0 ? run(copy, keys, { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home }, ms) : Object.assign(new Map(), { cut: new Set(), seen: new Set() });
 			for (const t of newOrChanged) {
-				if (red.cut && !red.cut.has(t.name)) note(t.key, 'A1', 'not checked: the time budget ran out');
-				else if (!red.has(t.name) && red.has(`file:${t.file}`)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)');
-				else if (!red.has(t.name)) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
-				else if (!red.get(t.name)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (a crash or a missing file)');
+				const names = namesOf(t, red.seen);
+				const reds = names.filter((n) => red.has(n));
+				if (red.cut && !names.some((n) => red.cut.has(n))) note(t.key, 'A1', 'not checked: the time budget ran out');
+				// K105: a new test in a file the base does not have fails first when that file cannot load there; a file the
+				// base has that cannot load proves nothing about the test (N12: still named).
+				else if (!reds.length && red.has(`file:${t.file}`)) { if (!t.newFile) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)'); }
+				else if (!reds.length) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
+				else if (!reds.some((n) => red.get(n))) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (a crash or a missing file)');
 			}
 		} finally {
 			removeTemp(copy);
@@ -148,7 +175,7 @@ export function check(root, base, { strict = false, slice = null, budget = null 
 			for (const t of untagged) {
 				if (outOfTime) note(t.key, 'A2', 'not measured: the time budget ran out');
 				else if (!flips) note(t.key, 'A2', `not measured (${String(m.stderr || m.stdout).trim().split('\n').pop() || 'the mutation check could not run'})`);
-				else if (!flips.some((f) => (f.caughtBy || []).includes(t.key))) note(t.key, 'A2', 'catches no flip in the lines this change made, and names no rule it guards (// why: guards <rule>)');
+				else if (!flips.some((f) => (f.caughtBy || []).some((k) => k === t.key || (t.loop && k.startsWith(`${t.file}::`) && t.loop.test(k.slice(t.file.length + 2)))))) note(t.key, 'A2', 'catches no flip in the lines this change made, and names no rule it guards (// why: guards <rule>)');
 			}
 		}
 	}

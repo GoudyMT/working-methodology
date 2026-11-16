@@ -61,7 +61,8 @@ test('the test check names a test that does not fail first, catches nothing or s
 	assert.doesNotMatch(r.stdout, new RegExp(`A[12] ${k('zero is not positive')}`), 'the real new test was named');
 	assert.doesNotMatch(r.stdout, new RegExp(`A2 ${k('a guarded one')}`), 'a guard test was asked to catch a flip');
 	assert.doesNotMatch(r.stdout, new RegExp(`A3 ${k('a pattern one')}`), 'a host named in a string is not a call to it');
-	assert.match(r.stdout, /A1 tests\/b\.test\.mjs::two is two: .*could not load/);
+	// K105: a test in a file the base does not have, red there because its file cannot load, fails first.
+	assert.doesNotMatch(r.stdout, /A1 tests\/b\.test\.mjs::two is two/, 'a new file that cannot load on the base was named');
 	assert.doesNotMatch(r.stdout, /one is positive/, 'an unchanged test was checked');
 	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--strict'], { cwd: dir, encoding: 'utf8' }).status, 1, 'strict fails on a finding');
 });
@@ -142,4 +143,38 @@ test('the test check names a rule that the change itself adds to the rule index'
 	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
 	assert.match(r.stdout, /a guarded one: names rule:made-up-here[^\n]*itself adds/);
 	assert.doesNotMatch(r.stdout, /a guarded one: .*not in the rule index/);
+});
+
+// K105 (build 13, PR 49): the check read only `test('<literal>'` at the start of a line, so a test made in a loop was
+// never checked, and a loop a fix added passed whatever it proved. N12: the check now flags less (a new file that cannot
+// load on the base fails first), so what it must still flag is a row here: a changed file that cannot load there.
+// why: guards rule:test-value
+test('the test check reads tests made in a loop, and still names a changed file that cannot load on the base', () => {
+	const dir = repo();
+	// The base before the fix, so a loop that proves the fix fails there.
+	const base = sh(dir, 'rev-parse', 'HEAD~1');
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		"for (const n of [0, -1]) test(`not positive: ${n}`, () => { assert.equal(a.isPos(n), false); });",
+		'for (const n of [5, 6]) {',
+		"\ttest(`a hollow loop: ${n}`, () => { assert.equal(typeof a.isPos(n), 'boolean'); });",
+		'}',
+		''].join('\n'));
+	sh(dir, 'commit', '-qam', 'loops');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::a hollow loop: \$\{n\}: passes on the base commit/);
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::not positive/, 'a loop that fails first was named');
+	// A file the base has, changed to read a module only the change adds: its red on the base proves nothing.
+	const lead = ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';"];
+	const old = path.join(dir, 'tests', 'old.test.mjs');
+	fs.writeFileSync(old, [...lead, "test('old', () => { assert.equal(1, 1); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'an old file');
+	const base2 = sh(dir, 'rev-parse', 'HEAD');
+	fs.writeFileSync(path.join(dir, 'src', 'c.cjs'), 'exports.three = () => 3;\n');
+	fs.writeFileSync(old, [...lead, "import { createRequire } from 'node:module';", "const c = createRequire(import.meta.url)('../src/c.cjs');", "test('old', () => { assert.equal(c.three(), 3); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'the old file reads c');
+	const r2 = spawnSync(process.execPath, [CHECK, base2], { cwd: dir, encoding: 'utf8' });
+	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
 });
