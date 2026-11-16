@@ -140,7 +140,7 @@ const SEPARATOR = /^\|[\s:|-]+\|$/;
  * it cannot move (no tag, an unknown tag, an id twice, a cell too many or too few, a row outside a table, an indented
  * table, a table with an ID or a Status column but not both), so a half list is never written. Fenced code is skipped.
  */
-export function parseMarkdown(text) {
+export function parseMarkdown(text, { taken = [] } = {}) {
 	// Split on LF alone, so line i here is line i of the file whatever its endings; a CR is not part of the text.
 	const lines = text.split('\n').map((l) => l.replace(/\r$/, ''));
 	const rows = [];
@@ -247,7 +247,8 @@ export function parseMarkdown(text) {
 	let n = 0;
 	const parents = [];
 	for (const x of boxes) {
-		do n++; while (rows.some((r) => r.id === `R${n}`));
+		// An id the list already holds is skipped too (1.36.1: boxes may join a list that has rows).
+		do n++; while (rows.some((r) => r.id === `R${n}`) || taken.includes(`R${n}`));
 		const id = `R${n}`;
 		// An indented box keeps the box above it at a lower depth as its parent.
 		while (parents.length && parents[parents.length - 1].depth >= x.depth) parents.pop();
@@ -270,7 +271,7 @@ export function parseMarkdown(text) {
 	if (comment) faults.push('an HTML comment never closes, so the rest of the file was not read');
 	if (generated) faults.push(`the generated block at line ${generated} never closes (no ${END}), so the rest of the file was not read`);
 	if (!rows.length && !faults.length) faults.push('no table with an ID column and a Status column, and no checkbox list, was found');
-	return { rows, steps, faults, boxLines: boxes.flatMap((x) => [x.line, ...x.moreLines]).sort((a, b) => a - b) };
+	return { rows, steps, faults, boxLines: boxes.flatMap((x) => [x.line, ...x.moreLines]).sort((a, b) => a - b), tableRows: rows.length - boxes.length };
 }
 
 export const serialize = (rows) => rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');

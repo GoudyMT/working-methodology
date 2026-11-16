@@ -660,28 +660,36 @@ function listCommand(cmd, rest, { fail, usage }) {
 	const l = list.loadList(io);
 	if (cmd === 'list' && rest[0] === 'import') {
 		if (!rest[1]) return usage();
-		// An empty list (the template's, 1.36.0) may take the one import.
-		if (l.exists && (l.why || l.rows.length)) return fail(`${list.LIST} already holds rows; an import would drop what was changed in the data since. Change rows with item set.`);
+		if (l.why) return fail(l.why);
+		const held = l.exists ? l.rows : [];
 		const { state: s, why } = loadState();
 		if (why) return fail(why);
 		const src = inside(rest[1]);
 		if (!src) return fail(`${clean(rest[1])} is not a plain file inside this project`);
 		let text;
 		try { text = fs.readFileSync(src, 'utf8'); } catch { return fail(`${clean(rest[1])} could not be read`); }
-		const p = list.parseMarkdown(text);
+		const p = list.parseMarkdown(text, { taken: held.map((r) => r.id) });
+		// A list's tables move once, into an empty list (the template's, 1.36.0): their rows would stand for rows the data
+		// holds. Checkbox rows only add (1.36.1: a project that moved its list in 1.35.0 keeps its roadmap as boxes).
+		if (held.length && p.tableRows) return fail(`${list.LIST} already holds rows; an import would drop what was changed in the data since. Change rows with item set.`);
 		if (p.faults.length) return fail([`Nothing written: ${p.faults.length} row(s) or table(s) cannot be moved whole.`, ...p.faults.map(clean)].join('\n'));
-		if (p.steps.length && s.roadmap.length) return fail(`Nothing written: ${STATE} already holds roadmap steps; the import would replace them.`);
+		if (p.tableRows && p.steps.length && s.roadmap.length) return fail(`Nothing written: ${STATE} already holds roadmap steps; the import would replace them.`);
+		// A heading step the state already holds by name is kept as it is; the boxes under it are placed at it.
+		const newSteps = held.length || !p.tableRows ? p.steps.filter((x) => !s.roadmap.some((y) => y.step === clean(x.step))) : p.steps;
 		// The backup goes under .kit; a linked .kit or backup folder would put the owner's file somewhere else.
 		const keepDir = ['.kit', '.kit/kit-backups'].find((d) => { try { return !fs.lstatSync(file(d)).isDirectory(); } catch { return false; } });
 		if (p.boxLines.length && keepDir) return fail(`Nothing written: ${keepDir} is a link or not a folder, so the file as it was cannot be kept.`);
 		// The state first, with the import's record of each row; the list after it. If the list cannot be written, the
 		// state is put back as it was, so a retry starts clean.
 		const before = readText(STATE);
-		s.list_import = Object.fromEntries(p.rows.map((r) => [r.id, list.importMark(r)]));
-		if (p.steps.length) s.roadmap = p.steps.map((x) => ({ step: clean(x.step), release: clean(x.release), carries: clean(x.carries), state: clean(x.state) }));
+		s.list_import = { ...(held.length ? s.list_import : {}), ...Object.fromEntries(p.rows.map((r) => [r.id, list.importMark(r)])) };
+		const step = (x) => ({ step: clean(x.step), release: clean(x.release), carries: clean(x.carries), state: clean(x.state) });
+		if (p.tableRows) { if (p.steps.length) s.roadmap = p.steps.map(step); } else s.roadmap = [...s.roadmap, ...newSteps.map(step)];
 		saveState(s, { touch: false });
-		try { write(list.LIST, list.serialize(p.rows)); } catch (e) { write(STATE, before); throw e; }
-		const lf = list.faultsOf(p.rows, s.list_import);
+		const all = [...held, ...p.rows];
+		const made = p.tableRows ? p.steps : newSteps;
+		try { write(list.LIST, list.serialize(all)); } catch (e) { write(STATE, before); throw e; }
+		const lf = list.faultsOf(all, s.list_import);
 		// K69: a checkbox list moves out of the file, or it would stand beside its generated view; every other line stays,
 		// and the file as it was is kept first.
 		let moved = '';
@@ -696,9 +704,9 @@ function listCommand(cmd, rest, { fail, usage }) {
 			write(rel, text.split('\n').filter((_, i) => !drop.has(i)).join('\n'));
 			moved = ` ${p.rows.length} box(es) and their own lines (${p.boxLines.length} line(s)) moved out of ${rel}; the file as it was: ${keep}.`;
 		}
-		console.log(`PASS ${p.rows.length} row(s) and ${p.steps.length} roadmap step(s) moved into ${list.LIST} and ${STATE};${moved || ' the markdown is unchanged.'}`);
+		console.log(`PASS ${p.rows.length} row(s) and ${made.length} roadmap step(s) moved into ${list.LIST} and ${STATE};${moved || ' the markdown is unchanged.'}`);
 		// What the import decided for the owner to look over: the steps it made and the short names it clipped.
-		if (p.steps.length) console.log(`roadmap step(s) made: ${p.steps.map((x) => clean(x.step)).join(', ')} (rename one with step rename <step> <new>)`);
+		if (made.length) console.log(`roadmap step(s) made: ${made.map((x) => clean(x.step)).join(', ')} (rename one with step rename <step> <new>)`);
 		const clipped = p.rows.filter((r) => r.short?.endsWith('...'));
 		if (clipped.length) console.log(`short name(s) clipped: ${clipped.map((r) => r.id).join(', ')} (set one with item set <id> short <text>)`);
 		console.log(`Views${refreshLists().replace(/^; /, ': ')}.`);

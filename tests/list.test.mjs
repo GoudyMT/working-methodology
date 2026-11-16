@@ -452,6 +452,35 @@ test('import moves only real boxes, carries a box\'s own lines into its note, an
 	assert.match(f.stdout, /never closes/);
 });
 
+// 1.36.1 (found verifying 1.36.0 in the workbench, 2026-11-15): a project that moved its improvement list into data in
+// 1.35.0 (358 rows) still kept its roadmap as 34 boxes; import refused any list with rows, so the use check's one way
+// out was a dead end and install exited 1.
+// why: guards the owner's lock of K69, 2026-11-15: every kit project's roadmap moves into data, whatever it already holds
+test('a checkbox roadmap moves into a list that already holds rows, with new ids and no step twice', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	assert.equal(st(dir, 'list', 'import', 'list.md').status, 0);
+	st(dir, 'item', 'add', '--from', json(dir, { id: 'R1', title: 'A row the list already had', tag: 'later', severity: 'low', origin: 'owner' }));
+	const before = rows(dir);
+	put(dir, 'roadmap.md', '## 9 - "The list as data" (DONE)\n\n- [x] Import the list\n\n## v3 - "Next" (PLANNED)\n\n- [ ] A new task\n  - [ ] Its first part\n');
+	const r = st(dir, 'list', 'import', 'roadmap.md');
+	assert.equal(r.status, 0, r.stdout);
+	const after = rows(dir);
+	assert.deepEqual(after.slice(0, before.length), before, 'the rows it held are untouched');
+	const added = after.slice(before.length);
+	assert.deepEqual(added.map((x) => [x.id, x.title]), [['R2', 'Import the list'], ['R3', 'A new task'], ['R4', 'Its first part']]);
+	assert.equal(added[2].note, 'under R3');
+	// A step the state already holds is kept as it was; a new one is added.
+	const s = JSON.parse(read(dir, '_State.json'));
+	assert.deepEqual(s.roadmap.map((x) => [x.step, x.release, x.state]), [['8', '1.34.0', 'released'], ['9', '1.35.0', 'not started'], ['v3', '', 'PLANNED']]);
+	assert.equal(read(dir, 'roadmap.md').includes('- ['), false, 'the boxes left the file');
+	// A file of tables still needs an empty list: its rows would replace what the list holds.
+	put(dir, 'more.md', LIST);
+	const t = st(dir, 'list', 'import', 'more.md');
+	assert.equal(t.status, 1);
+	assert.match(t.stdout, /already holds rows/);
+});
+
 // why: guards the owner's lock of K69, 2026-11-15: a new project starts on the data list
 test('the shipped roadmap template carries the boxes and roadmap blocks, and a fresh project passes check', () => {
 	const dir = project();
