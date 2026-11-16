@@ -2632,11 +2632,12 @@ function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/syn
 // on the pop-up that quotes the ask's or the pause's act, and the call runs in that session.
 const TAP_SID = '0aaaaaaa-1bbb-2ccc-3ddd-4eeeeeeeeeee';
 // One answered pop-up, as Claude Code writes it in the session's transcript (shape read from a live record).
-function ownerTaps(cfg, dir, act, { answer = 'Yes', labels = ['Yes', 'No'], at = new Date(Date.now() + 1000).toISOString(), source = 'user_temporary', sid = TAP_SID, folder } = {}) {
+function ownerTaps(cfg, dir, act, { answer = 'Yes', labels = ['Yes', 'No'], at = new Date(Date.now() + 1000).toISOString(), source = 'user_temporary', sid = TAP_SID, folder, bare = false } = {}) {
   const where = path.join(cfg, 'projects', folder || fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'));
   fs.mkdirSync(where, { recursive: true });
   const id = `toolu_${crypto.randomBytes(6).toString('hex')}`;
-  const question = `May I go on? \`${act}\``;
+  // bare: the question names the act without backticks, as build 11's first resume pop-ups did.
+  const question = bare ? `May I go on? ${act}` : `May I go on? \`${act}\``;
   const questions = [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }];
   fs.appendFileSync(path.join(where, `${sid}.jsonl`), [
     { type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions } }] } },
@@ -3018,6 +3019,38 @@ test('the owner resumes auto-approval with a pop-up Yes to the pause\'s act, aft
   const line = approvalLog(r.dir).pop();
   assert.deepEqual([line.kind, line.proof], ['resume', 'popup']);
   assert.equal(resume().status, 1, 'nothing left to resume');
+});
+
+// K91 (build 11): the resume was refused twice on Yeses to pop-ups that named the act without backticks, and the
+// refusal read as if the owner had not answered. It now says why, and the lead can check a Yes before handing over
+// the command, without using it.
+// why: guards rule:sweep-auto-approval
+test('a Yes to an unquoted act is named in the refusal, and --tap checks a Yes without using it', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(Math.ceil(537500 * 1.3)));
+  const code = (approveIn(r.dir, [r.f]).stdout.match(/`sweep resume ([0-9a-f]{6})`/) || [])[1];
+  assert.ok(code);
+  const act = `sweep resume ${code}`;
+  const cfg = makeTemp('cfg-');
+  const tap = () => approveIn(r.dir, ['--tap', act], tapEnv(cfg));
+  const none = tap();
+  assert.equal(none.status, 1);
+  assert.match(none.stdout, /No Yes from the owner/);
+  assert.doesNotMatch(none.stdout, /without backticks/, 'no Yes at all is not an unquoted one');
+  ownerTaps(cfg, r.dir, act, { bare: true });
+  const bare = approveIn(r.dir, ['--resume'], tapEnv(cfg));
+  assert.equal(bare.status, 1, 'an unquoted act counts for nothing');
+  assert.match(bare.stdout, /without backticks around it[^\n]*ask again with the act in backticks/);
+  assert.match(tap().stdout, /without backticks/);
+  ownerTaps(cfg, r.dir, act);
+  const held = tap();
+  assert.equal(held.status, 0, held.stdout);
+  assert.match(held.stdout, /holds the owner's Yes/);
+  assert.notEqual(approvalLog(r.dir).pop().kind, 'resume', 'the check logs nothing');
+  assert.equal(approveIn(r.dir, ['--resume'], tapEnv(cfg)).status, 0, 'the Yes the check saw is still unused');
+  const used = tap();
+  assert.equal(used.status, 1);
+  assert.match(used.stdout, /already used/);
 });
 
 // The installed approve.mjs reads the owner's taps in the Claude folder install user filled in, so a caller cannot

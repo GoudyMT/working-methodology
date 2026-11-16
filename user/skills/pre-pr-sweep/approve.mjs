@@ -50,7 +50,7 @@ import { createRequire } from 'node:module';
 
 const SELF = fileURLToPath(import.meta.url);
 // The owner's pop-up answers, read the way the guards read them (an exact copy the kit's build keeps in kit-tools).
-const { sessionYes } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
+const { sessionYes, unquotedYes } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
 const toPosix = (p) => p.split(path.sep).join('/');
 
 // A tier's cap counts only the roles beyond its floor (2026-11-03): a cap below the floor made a
@@ -834,6 +834,12 @@ const pauseCode = (s) => { const lines = rawLines(); const i = s.log.map((e, k) 
 const popUpHow = (act) => `ask with the AskUserQuestion pop-up, the question quoting \`${act}\`, one option labelled "Yes" and one starting "No"`;
 // One tap answers one ask or one pause.
 const tapUsed = (log, tap) => log.some((e) => e.tap === tap);
+// Why a Yes is missing: a Yes whose question names the act without backticks counts for nothing, and the refusal says
+// so, or the lead reads it as no answer and asks the owner the same wrong way again (build 11's resume).
+const unquotedNote = (act, since) => {
+	const u = unquotedYes(act, { since, repo: repoRoot() });
+	return u ? ` The owner's Yes at ${new Date(u.at).toISOString()} answered a question that names ${act} without backticks around it, so it counts for nothing: ask again with the act in backticks.` : '';
+};
 const repoRoot = () => path.dirname(path.dirname(LOG));
 
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
@@ -854,7 +860,7 @@ function ownerYes() {
 	// The owner's tap on this ask's act, after the ask. Read before anything is written, so a refusal logs nothing.
 	const act = `sweep yes ${askCode(last.hash)}`;
 	const yes = sessionYes(act, { since: Date.parse(last.time), repo: repoRoot() });
-	if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask. ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
+	if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask.${unquotedNote(act, Date.parse(last.time))} ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
 	if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered an ask; one answer is for one ask. Nothing logged.'); return 1; }
 	const proof = { proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() };
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
@@ -1261,13 +1267,24 @@ function summary() {
 function main() {
 	if (!LOG) { console.log('ASK THE OWNER - not inside a git repository, so there is no approval log.'); return 1; }
 	if (has('--summary')) return summary();
+	// A read-only check the lead runs before it hands the owner a command: does this session hold the owner's Yes to the
+	// act? It logs nothing and uses no tap.
+	if (has('--tap')) {
+		const act = String(opt('--tap') || '').trim();
+		if (!act) { console.log('Name the act: --tap "sweep resume <code>". Nothing logged.'); return 1; }
+		const yes = sessionYes(act, { repo: repoRoot() });
+		const used = yes && tapUsed(state().log, yes.tap);
+		if (yes) { console.log(`This session holds the owner's Yes to \`${act}\` at ${new Date(yes.at).toISOString()}${used ? ', already used: one answer is for one ask' : ''}. Nothing logged.`); return used ? 1 : 0; }
+		console.log(`No Yes from the owner to \`${act}\` in this session.${unquotedNote(act, 0)} Nothing logged.`);
+		return 1;
+	}
 	if (has('--resume')) {
 		const s = state();
 		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
 		// The owner's tap on this pause's act, after the pause.
 		const act = `sweep resume ${pauseCode(s)}`;
 		const yes = sessionYes(act, { since: Date.parse(s.pausedAt || 0), repo: repoRoot() });
-		if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause. Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
+		if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause.${unquotedNote(act, Date.parse(s.pausedAt || 0))} Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
 		if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered; one answer is for one pause. Nothing logged.'); return 1; }
 		write({ kind: 'resume', proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() });
 		console.log(`Auto-approval resumed on the owner's Yes; the next review comes after ${state().reviewEvery} more.`);
