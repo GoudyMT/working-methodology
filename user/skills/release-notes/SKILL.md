@@ -33,7 +33,7 @@ skill adds the steps, the examples and the audit; it never restates the rule.
 
 ## The audit
 
-`audit.mjs` checks what a script can see: ASCII only, dash-free (no em dash, no double hyphen), no AI or tool
+`audit.mjs` checks what a script can see: ASCII only, dash-free (no em dash, no double hyphen outside code), no AI or tool
 words, no links into gitignored notes, no tooling or test tallies, and that the version given matches the
 `version` in `package.json` when one exists. It cannot check that a claim is true; that audit is yours.
 
