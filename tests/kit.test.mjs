@@ -6911,8 +6911,10 @@ test('a PR runs the reached tests and the security set, or every test; main save
   assert.match(step('Every test'), /steps\.scope\.outputs\.scope != 'changed'/);
   assert.match(step('The tests the change reaches'), /steps\.scope\.outputs\.scope == 'changed'[\s\S]*--changed/);
   const { SECURITY_FILES } = await import(pathToFileURL(path.resolve('scripts/test-value.mjs')).href);
-  const security = step('The security set');
-  for (const f of SECURITY_FILES) assert.ok(security.includes(f), `${f} left out of the security set`);
+  // K105: the security set joins the changed run (--always), so a security test the change reaches runs once.
+  const security = step('The tests the change reaches');
+  for (const f of SECURITY_FILES) assert.ok(security.includes(`--always ${f}`), `${f} left out of the security set`);
+  assert.doesNotMatch(ci, /- name: The security set\n/, 'the security set runs a second time');
   // The map is kept by main's push run only, and a PR takes it from main's own push run of its base commit, never from
   // the Actions cache, which a PR's earlier run can write (the security review of this build).
   const keep = ci.split('- name: Keep the coverage map\n')[1].split('- name:')[0];

@@ -96,14 +96,12 @@ jobs:
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
         run: node scripts/test-run.mjs --shards 4
 
+      # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
+      # It joins the changed run (--always), so a security test the change reaches runs once (K105); over half the suite
+      # reached, the runner runs every test.
       - name: The tests the change reaches
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
-        run: node scripts/test-run.mjs --changed --shards 4
-
-      # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
-      - name: The security set
-        if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
-        run: node scripts/test-run.mjs --shards 4 tests/guards-hold.test.mjs tests/guards-outside.test.mjs tests/owner-proof.test.mjs tests/task-gate.test.mjs tests/guard-dispatch.test.mjs tests/guard-prompts.test.mjs
+        run: node scripts/test-run.mjs --changed --shards 4 --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
 
   # T15 Part A: each test the PR adds or changes, held to the bar for a new test. It reports to the run's summary and
   # is not required until the owner locks it.
