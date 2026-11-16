@@ -102,6 +102,10 @@ test('a hand-edited list is held to the bounds at each pass: 20 entries, the exp
 // why: guards the owner's lock A: the schedule line the owner pastes runs one pass, and nothing else
 test('the schedule line refuses a path its quoting cannot carry', () => {
 	assert.equal(scheduleLines('C:/Program Files/nodejs/node.exe', 'C:/Users/a/.claude/kit-tools/watch.mjs', '').ok, true);
+	// Every line that is not a schtasks command is a comment, and the environment's value is never printed.
+	const noted = scheduleLines('C:/node.exe', 'C:/w.mjs', 'C:/x$(ni y)');
+	assert.ok(noted.text.split('\n').every((l) => /^(schtasks |# )/.test(l)), noted.text);
+	assert.doesNotMatch(noted.text, /ni y/);
 	for (const bad of ['C:/u$(ni x)/watch.mjs', "C:/Users/O'Brien/watch.mjs", 'C:/u`x/watch.mjs', 'C:/u"x/watch.mjs']) {
 		const s = scheduleLines('C:/Program Files/nodejs/node.exe', bad, '');
 		assert.equal(s.ok, false, bad);
@@ -172,7 +176,7 @@ test('schedule prints a PowerShell-ready Task Scheduler line for the owner and r
 	const r = rig();
 	const out = r.run(['schedule']);
 	assert.equal(out.code, 0);
-	assert.match(out.out, /^schtasks \/Create \/SC MINUTE \/MO 5 \/TN "Kit watcher" \/TR "conhost\.exe --headless '.+node(\.exe)?' '.+\/watch\.mjs' once" \/F$/m);
+	assert.match(out.out, /^schtasks \/Create \/SC MINUTE \/MO 5 \/TN "Kit watcher" \/TR "conhost\.exe --headless '.+node(\.exe)?' '.+\/watch\.mjs' once" \/F$/m); // pin: 1 (the line the owner pastes into a shell)
 	assert.match(out.out, /schtasks \/Delete \/TN "Kit watcher" \/F/);
 	assert.equal(fs.readdirSync(r.dir).length, 0, 'nothing written');
 	// The real command line, end to end: usage and a clean exit.

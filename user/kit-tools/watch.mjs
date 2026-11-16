@@ -83,9 +83,10 @@ export function scheduleLines(node, script, configDir = process.env.CLAUDE_CONFI
 	const bad = [node, script].find((p) => !/^[A-Za-z0-9 _.:/\\()-]+$/.test(p));
 	if (bad) return { ok: false, text: `watch: ${bad} holds a character the schedule line cannot quote safely (a $, a backtick or a quote); move the kit or node to a plain path first. Nothing printed to run.` };
 	const lines = [`schtasks /Create /SC MINUTE /MO 5 /TN "Kit watcher" /TR "conhost.exe --headless '${node}' '${script}' once" /F`,
-		'Runs every 5 minutes while you are logged on; it only reads PRs you added and shows a desktop alert. To stop it:',
+		'# Runs every 5 minutes while you are logged on; it only reads PRs you added and shows a desktop alert. To stop it:',
 		'schtasks /Delete /TN "Kit watcher" /F'];
-	if (configDir) lines.push(`CLAUDE_CONFIG_DIR is set in this shell (${configDir}): the task reads it only if it is set for your account, not just this shell.`);
+	// A note, never a value: the printout is pasted into a shell, so nothing from the environment goes in it.
+	if (configDir) lines.push('# CLAUDE_CONFIG_DIR is set in this shell: the task reads it only if it is set for your account, not just this shell.');
 	return { ok: true, text: lines.join('\n') };
 }
 

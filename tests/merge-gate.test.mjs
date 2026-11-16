@@ -264,6 +264,8 @@ test('merge gate: check never arms, even on GO', () => {
 // Each case breaks one condition; the gate must say which and arm nothing.
 const CASES = [
 	['the kill switch', (s) => fs.writeFileSync(path.join(s.config, 'autonomy-off'), ''), /kill switch/],
+	// The build 13 sweep: Explorer's new text file hides ".txt", so the switch a person makes is often this one.
+	['the kill switch as a text file', (s) => fs.writeFileSync(path.join(s.config, 'autonomy-off.txt'), ''), /kill switch/],
 	['a closed PR', (s) => { s.state.pr.state = 'CLOSED'; }, /not open/],
 	['a draft', (s) => { s.state.pr.isDraft = true; }, /draft/],
 	['a fork', (s) => { s.state.pr.isCrossRepository = true; }, /another repository/],
