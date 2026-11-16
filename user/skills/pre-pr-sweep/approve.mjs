@@ -50,7 +50,7 @@ import { createRequire } from 'node:module';
 
 const SELF = fileURLToPath(import.meta.url);
 // The owner's pop-up answers, read the way the guards read them (an exact copy the kit's build keeps in kit-tools).
-const { sessionYes, unquotedYes } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
+const { sessionYes, unquotedYes, sessionGap } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
 const toPosix = (p) => p.split(path.sep).join('/');
 
 // A tier's cap counts only the roles beyond its floor (2026-11-03): a cap below the floor made a
@@ -837,6 +837,9 @@ const tapUsed = (log, tap) => log.some((e) => e.tap === tap);
 // Why a Yes is missing: a Yes whose question names the act without backticks counts for nothing, and the refusal says
 // so, or the lead reads it as no answer and asks the owner the same wrong way again (build 11's resume).
 const unquotedNote = (act, since) => {
+	// New 2 (build 12): with no session to read, say which part is missing, not that the owner did not answer.
+	const gap = sessionGap({ repo: repoRoot() });
+	if (gap) return ` No pop-up was read: ${gap}.`;
 	const u = unquotedYes(act, { since, repo: repoRoot() });
 	return u ? ` The owner's Yes at ${new Date(u.at).toISOString()} answered a question that names ${act} without backticks around it, so it counts for nothing: ask again with the act in backticks.` : '';
 };

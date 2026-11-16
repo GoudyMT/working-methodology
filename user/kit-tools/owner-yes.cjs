@@ -111,8 +111,9 @@ function ownerYes(input, now = Date.now()) {
 	const yes = yeses(lines).filter((y) => y.acts.includes(act)).pop();
 	if (!yes || now - yes.at < 0 || now - yes.at > FRESH_MS) return null;
 	// The yes is for the shell the held call ran in: Bash and PowerShell read the same text differently (the 1.25.0
-	// sweep, R1.6). The last call of this act before the pop-up names it; a shell act asked with no held call before it
-	// has no shell, so no yes (the review on ceecedd): the refusal says to try, then ask.
+	// sweep, R1.6). The last call of this act before the pop-up names it. A shell act asked with no held call before it
+	// is bound by its first run after the pop-up (K97 and New 6, build 12): the owner read the same text either way,
+	// and the loop below finds the yes spent by that run, so no second run, in either shell, uses it.
 	let tried = '';
 	for (const raw of lines.slice(0, yes.asked)) {
 		let e;
@@ -122,8 +123,7 @@ function ownerYes(input, now = Date.now()) {
 			if (b && b.type === 'tool_use' && actText({ tool_name: b.name, tool_input: b.input }) === act) tried = String(b.name);
 		}
 	}
-	const shell = ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(String(input.tool_name));
-	if ((shell && !tried) || (tried && tried !== String(input.tool_name))) return null;
+	if (tried && tried !== String(input.tool_name)) return null;
 	// Spent by any run of the act after the pop-up was asked, the answer's own line or not: Claude Code writes every
 	// tool call of a message before their results, so an act sent beside the pop-up sits above the answer (the 1.25.0
 	// sweep: one tap ran it twice).
@@ -257,6 +257,22 @@ function sessionYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSIO
 	return best;
 }
 
+// Why no pop-up of this session can be read at all, or '' (New 2, build 12): a script run from the owner's terminal
+// needs the session's id, and finds its transcript only from the repo that session works in.
+function sessionGap({ sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
+	if (!sessionId) return 'CLAUDE_CODE_SESSION_ID is not set in this shell, so no session\'s pop-ups can be read: set it to the id of the session that asked';
+	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId))) return `CLAUDE_CODE_SESSION_ID (${String(sessionId).slice(0, 40)}) is not a session id`;
+	const root = path.join(home(), 'projects');
+	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
+	let real = repo;
+	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
+	const keys = above(real).map(key);
+	let dirs = [];
+	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { /* none */ }
+	if (dirs.some((d) => fs.existsSync(path.join(root, d, `${sessionId}.jsonl`)))) return '';
+	return `no transcript of session ${sessionId} is kept for this repository or a folder above it: run this from the repository that session works in`;
+}
+
 // The owner's latest Yes after a time to a question that names the act without backticks around it, so it counts for
 // nothing: { at } or null. A refusal names it, so the lead asks again with the act quoted (K91: build 11's resume was
 // refused twice on such a Yes, and the refusal read as if the owner had not answered).
@@ -268,4 +284,4 @@ function unquotedYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSI
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, unquotedYes, tailLines, FRESH_MS };
+module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, unquotedYes, sessionGap, tailLines, FRESH_MS };

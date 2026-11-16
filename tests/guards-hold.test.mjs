@@ -534,10 +534,16 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 	popUp({ act, tried: { tool: 'Bash', input: { command: act } } });
 	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes after a Bash call ran in PowerShell');
 	assert.equal(withYes('Bash', { command: act }), 'allow');
-	// The review on ceecedd: a shell act asked with no held call before it has no shell to bind to; an edit with a
-	// semicolon (the MultiEdit separator) has no act.
+	// The review on ceecedd: a shell act asked with no held call before it bound to no shell, so any shell could use it.
+	// K97 and New 6 (build 12, the build 11 closeout transcript): that cost the owner a second tap whenever the pop-up
+	// came first. Its first run after the pop-up binds the shell now, as a held call before it would: the owner saw the
+	// same text either way, and any later run, in either shell, finds the yes spent. An edit with a semicolon (the
+	// MultiEdit separator) has no act.
 	popUp({ act, tried: null });
-	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes with no held call before it');
+	assert.equal(withYes('Bash', { command: act }), 'allow', 'a yes asked before the act was tried cost a second tap');
+	popUp({ act, tried: null, then: [act] });
+	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes ran again in another shell');
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes ran twice');
 	popUp({ act: `Edit ${file}: x; => y` });
 	assert.equal(withYes('Edit', { file_path: file, old_string: 'x;', new_string: 'y' }), 'deny', 'an edit holding a separator');
 	const { grantsRef } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));

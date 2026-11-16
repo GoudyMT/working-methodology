@@ -3053,6 +3053,25 @@ test('a Yes to an unquoted act is named in the refusal, and --tap checks a Yes w
   assert.match(used.stdout, /already used/);
 });
 
+// New 2 (build 7, added in build 12): a resume from the owner's terminal was refused with no session id set, or from
+// a folder outside the repo, and the refusal named neither, so it read as if the owner had not answered.
+// why: guards rule:sweep-auto-approval
+test('a refused resume says when no session id is set, or when no transcript of that session is kept for this repo', () => {
+  const r = approveRun(featureContract());
+  outcome(r, String(Math.ceil(537500 * 1.3)));
+  const code = (approveIn(r.dir, [r.f]).stdout.match(/`sweep resume ([0-9a-f]{6})`/) || [])[1];
+  assert.ok(code);
+  const cfg = makeTemp('cfg-');
+  const none = approveIn(r.dir, ['--resume'], { CLAUDE_CODE_SESSION_ID: '', CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(none.status, 1);
+  assert.match(none.stdout, /CLAUDE_CODE_SESSION_ID is not set/);
+  const elsewhere = approveIn(r.dir, ['--resume'], tapEnv(cfg));
+  assert.equal(elsewhere.status, 1);
+  assert.match(elsewhere.stdout, /no transcript of session [0-9a-f-]{36} is kept for this repository/);
+  ownerTaps(cfg, r.dir, 'sweep resume 000000');
+  assert.doesNotMatch(approveIn(r.dir, ['--resume'], tapEnv(cfg)).stdout, /is not set|no transcript of session/, 'a session that is read was named as missing');
+});
+
 // The installed approve.mjs reads the owner's taps in the Claude folder install user filled in, so a caller cannot
 // point it at a forged transcript through CLAUDE_CONFIG_DIR.
 // why: guards rule:sweep-auto-approval
