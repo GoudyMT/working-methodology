@@ -302,7 +302,13 @@ export function guardDir(home, projectDir) {
  */
 export function forget({ home, dir, exists = fs.existsSync }) {
   const abs = path.resolve(String(dir || ''));
-  if (!dir || exists(abs)) return { removed: [], why: `${toPosix(abs)} is there: forget is only for a project folder that was deleted` };
+  // There unless the file system says it is not, in any case of its name: a folder the session cannot read, or one
+  // spelled in another case, is a live project (the build 12 sweep).
+  const missing = () => {
+    try { fs.lstatSync(abs); return false; } catch (e) { if (e.code !== 'ENOENT') return false; }
+    try { const base = path.basename(abs).toLowerCase(); return !fs.readdirSync(path.dirname(abs)).some((n) => n.toLowerCase() === base); } catch (e) { return e.code === 'ENOENT' || e.code === 'ENOTDIR'; }
+  };
+  if (!dir || exists(abs) || !missing()) return { removed: [], why: `${toPosix(abs)} is there: forget is only for a project folder that was deleted` };
   const root = path.parse(abs).root;
   if (!exists(root)) return { removed: [], why: `its drive or share (${toPosix(root)}) does not answer, so it may only be offline; its record stays` };
   const removed = [];

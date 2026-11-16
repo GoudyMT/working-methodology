@@ -722,6 +722,35 @@ function fileProjects(input) {
 	return out;
 }
 
+/**
+ * Whether a recorded folder is gone (K94, build 12): the file system says it is not there, and no folder above it
+ * holds its name in another case. A folder the session cannot read (a denied read, set by a command the guards allow)
+ * is there (the build 12 sweep: existsSync read it as gone, and its guards were skipped).
+ */
+function gone(dir) {
+	try { fs.lstatSync(dir); return false; } catch (e) { if (e.code !== 'ENOENT') return false; }
+	const parent = path.dirname(dir);
+	if (parent === dir) return true;
+	try {
+		const base = path.basename(dir).toLowerCase();
+		return !fs.readdirSync(parent).some((n) => n.toLowerCase() === base);
+	} catch (e) { return e.code === 'ENOENT' || e.code === 'ENOTDIR'; }
+}
+
+// Whether a call writes into a gone project's .claude or .githooks folder: by a file tool's path, or by a shell
+// command that names either folder under it.
+function refills(input, dir) {
+	const ti = (input && input.tool_input) || {};
+	const p = ti.file_path ?? ti.notebook_path;
+	const under = (abs) => ['.claude', '.githooks'].some((d) => { const rel = path.relative(path.join(dir, d), abs); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); });
+	if (FILE_WRITES.includes(input && input.tool_name) && typeof p === 'string') return under(path.resolve(String(input.cwd || process.cwd()), p));
+	if (!SHELLS.includes(input && input.tool_name)) return false;
+	const fold = (s) => (WIN ? s.toLowerCase() : s);
+	const text = fold(String(ti.command ?? '').replace(/\\/g, '/'));
+	const d = fold(posix(dir));
+	return ['.claude', '.githooks'].some((x) => text.includes(`${d}/${x}`));
+}
+
 function preToolUse(input) {
 	const here = projectCheck(input);
 	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
@@ -743,9 +772,14 @@ function preToolUse(input) {
 	if (files.held) answers.push(deny(`Held: this tool ${files.held}, so the kit cannot tell which of its projects it reaches. Use the file's own path on its drive.`));
 	for (const dir of [...named, ...files.filter((d) => !named.some((x) => same(x, d)))]) {
 		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
-		// K94 (build 12): a recorded folder that is not there holds no guard file to protect, so it holds nothing (a
-		// deleted probe held every command naming it, forget included). Back with other files, it is held again.
-		if (!fs.existsSync(dir)) continue;
+		// K94 (build 12): a recorded folder that is gone holds no guard file to protect, so a command naming it is not held
+		// for it (a deleted probe held every command naming it, forget included). Back with other files, it is held again.
+		// A command that writes its .claude or .githooks folder is held: the project would come back with guards no
+		// install wrote (the build 12 sweep).
+		if (gone(dir)) {
+			if (refills(input, dir)) answers.push(deny(`Held: ${posix(dir)} is a kit project that was deleted; its guard files are written only by install. Clear its record first, alone: node "<kit folder>/scripts/kit.mjs" forget "${posix(dir)}".`));
+			continue;
+		}
 		answers.push(projectCheck({ ...fanned, cwd: dir }, true));
 	}
 	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };
@@ -908,4 +942,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
