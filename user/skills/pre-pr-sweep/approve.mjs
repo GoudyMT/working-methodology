@@ -548,6 +548,11 @@ function decide() {
 	const s = state();
 	const facts = diffFacts();
 	const { why, fix, need, extras, cap, first, refused, budgets = [], total = 0 } = check(c, facts, s.log);
+	// The build 11 sweep: a contract's text goes into its briefs, so one that carries the confirmation phrase would
+	// hand a reviewer what it must find by reading. Read as the canary reads it: letters and digits, any case.
+	const words = (t) => ` ${String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+	const block = rulesBlock();
+	if (block && block.phrase && words(block.phrase).trim()) (c.roles || []).forEach((r, i) => { if (words(JSON.stringify(r)).includes(words(block.phrase))) fix.push(`role ${i + 1}'s text carries the confirmation phrase: take it out, the reviewer finds it by reading`); });
 	const head = git('rev-parse', 'HEAD').stdout.trim() || null;
 	// A stop is cured by adding what it named, not by asking for less: a lighter contract at the HEAD of a stop is the
 	// owner's, whatever its file is called, however often it is rerun and whatever outcome came between. A new commit
@@ -634,24 +639,32 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilin
 // check read cannot drift (the 1.36.1 briefs told reviewers no hook could run, and sent them to a 25 KB file for a
 // 2 KB rules block). The lead passes each file as the reviewer's prompt, as written.
 const FINDING_CAP = 8;
+// Every line break a field could carry, written as escapes so this file stays ASCII.
+const LINE_BREAKS = new RegExp('[\r\n\u2028\u2029]+', 'g');
 // The rules block every brief points at, by file and line range, so the reviewer reads the block and not the module
 // around it: the file the rule index names for rule:agent-team-adapter, else the module where the kit puts it.
-function rulesBlock(top) {
+// It is read from the main checkout, where the canary reads the phrase, so a reviewer in a worktree (where the notes may
+// be untracked) is sent to the same file the check reads (the build 11 sweep). A file the index names outside the
+// repo is not read.
+function rulesBlock() {
+	const top = path.dirname(path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git'));
 	let file = null;
 	try { const row = fs.readFileSync(path.join(top, 'standards', 'INDEX.md'), 'utf8').match(/^\|\s*agent-team-adapter\s*\|[^|\n]*\|\s*`([^`]+)`/m); if (row) file = row[1]; } catch { /* no index */ }
-	for (const f of [file, 'standards/agent-teams.md', 'rules/agent-teams.md'].filter(Boolean)) {
+	const inside = (f) => { const r = path.relative(top, path.resolve(top, f)); return r && !r.startsWith('..') && !path.isAbsolute(r); };
+	for (const f of [file, 'standards/agent-teams.md', 'rules/agent-teams.md'].filter((f) => f && inside(f))) {
 		let lines;
 		try { lines = fs.readFileSync(path.join(top, f), 'utf8').split(/\r?\n/); } catch { continue; }
 		const start = lines.findIndex((l) => /\*\*Rules every brief carries\*\*/.test(l));
-		const end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && /Confirmation phrase:/.test(l));
-		if (end > start) return { file: toPosix(path.join(top, f)), offset: start + 1, limit: end - start + 1 };
+		// The line the canary reads the phrase from, as it reads it.
+		const end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && /^\s*Confirmation phrase: .* with: \S/.test(l));
+		if (end > start) return { file: toPosix(path.join(top, f)), offset: start + 1, limit: end - start + 1, phrase: lines[end].replace(/^\s*Confirmation phrase: .* with: /, '').trim() };
 		return { file: toPosix(path.join(top, f)) };
 	}
 	return null;
 }
 function writeBriefs(c, hash, ceilings, facts) {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
-	const block = rulesBlock(top);
+	const block = rulesBlock();
 	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
 	const base = git('rev-parse', '--short', facts.base).stdout.trim() || facts.baseName;
 	const hooked = hookState(facts.base) !== 'none';
@@ -660,7 +673,12 @@ function writeBriefs(c, hash, ceilings, facts) {
 	(c.roles || []).forEach((r, i) => {
 		const n = i + 1;
 		const scratch = toPosix(path.join(os.tmpdir(), `kit-sweep-${hash.slice(0, 8)}`, `role-${n}`));
-		const files = Array.isArray(r.context) ? r.context.join(' ') : '';
+		// Contract text goes in on one line, so a field cannot add a line of its own (a phrase, a second Role or Call cap
+		// line; the build 11 sweep). A context entry is a path, quoted for the shell; a line range or rule after it
+		// (file.md:10-20) is not part of the path git reads.
+		const one = (s) => String(s ?? '').replace(LINE_BREAKS, ' ').trim();
+		const files = (Array.isArray(r.context) ? r.context : []).map((f) => one(f).replace(/:[\w.-]*$/, '')).filter((f) => f && !/["`$\\]/.test(f)).map((f) => `"${f}"`).join(' ');
+		r = { ...r, role: one(r.role), kind: one(r.kind), question: one(r.question), finding: one(r.finding) };
 		const text = [
 			block && block.limit
 				? `Project rules: read ${block.file} with the Read tool at offset ${block.offset} and limit ${block.limit} (the "Rules every brief carries" block, to its last line), and work under them; you are read-only.`
@@ -693,11 +711,24 @@ function writeBriefs(c, hash, ceilings, facts) {
 
 // T6 (build 11): the findings in a reviewer's report, read from its last hand-back in the shape its brief gives (the
 // canary checks it): [{ severity, verdict, claim, where, evidence }], or null when no report in that shape is there.
+// The build 11 sweep: only the hand-back that was delivered counts (a refused one never reached the lead), a run the
+// canary voided counts none, and rows stop where the out-of-role notes begin.
 function reportRows(parsed) {
+	const refused = new Set();
+	let voided = false;
+	for (const e of parsed) {
+		const content = e && e.message && e.message.role === 'user' && Array.isArray(e.message.content) ? e.message.content : [];
+		for (const b of content) {
+			if (!b || b.type !== 'tool_result' || b.is_error !== true) continue;
+			refused.add(b.tool_use_id);
+			if (/this run is void/i.test(typeof b.content === 'string' ? b.content : JSON.stringify(b.content))) voided = true;
+		}
+	}
+	if (voided) return { void: true };
 	let message = null;
 	for (const e of parsed) {
 		const content = e && e.message && e.message.role === 'assistant' && Array.isArray(e.message.content) ? e.message.content : [];
-		const h = content.find((b) => b && b.type === 'tool_use' && b.name === 'SubagentHandback' && b.input && typeof b.input.message === 'string');
+		const h = content.find((b) => b && b.type === 'tool_use' && b.name === 'SubagentHandback' && b.input && typeof b.input.message === 'string' && !refused.has(b.id));
 		if (h) message = h.input.message;
 	}
 	if (message === null) return null;
@@ -705,12 +736,17 @@ function reportRows(parsed) {
 	if (!lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) return null;
 	const rows = [];
 	for (const l of lines) {
+		if (/^\W*out[- ]of[- ]role/i.test(l)) break;
 		if (!/^\s*(critical|high|medium|low)\s*\|/i.test(l)) continue;
 		const f = l.split('|').map((x) => x.trim());
 		if (f.length < 5 || !/^(CONFIRMED|PLAUSIBLE)$/i.test(f[1])) return null;
 		rows.push({ severity: f[0].toLowerCase(), verdict: f[1].toUpperCase(), claim: f[2], where: f[3], evidence: f.slice(4).join(' | ') });
 	}
 	return rows;
+}
+// Each role's finding cap, as its brief gave it.
+function roleCaps() {
+	try { return (JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []).map((r) => (Number.isInteger(r.findingCap) ? r.findingCap : FINDING_CAP)); } catch { return []; }
 }
 // The ledger beside the contract, one row per finding, so a count the outcome logs can be read back to its reports.
 function writeLedger(rows) {
@@ -1110,6 +1146,15 @@ function outcome() {
 		const where = writeLedger(rows);
 		if (rows.length !== nums.findings) { console.log(`--findings ${nums.findings} does not match the ${rows.length} finding(s) the reviewers' reports hold (ledger: ${where}). Pass --findings ${rows.length}. Nothing logged.`); return 1; }
 		nums.sameLine = rows.filter((x) => x.where && rows.some((y) => y !== x && y.role !== x.role && y.where === x.where)).length;
+		nums.findingsChecked = true;
+		// A role past its finding cap is named, never cut: its findings were delivered (the build 11 sweep).
+		const caps = roleCaps();
+		ledgers.forEach((l, i) => { if (caps[i] && l.length > caps[i]) console.log(`    Role ${i + 1} reported ${l.length} findings, over its cap of ${caps[i]}: rank them, and triage all of them.`); });
+	} else if (ledgers.length) {
+		// The build 11 sweep: one role out of shape used to switch the check off for every role, with no word.
+		const off = ledgers.map((l, i) => (Array.isArray(l) ? null : `${i + 1} (${l && l.void ? 'its run was void' : 'no report in its shape'})`)).filter(Boolean);
+		console.log(`    --findings is not checked against the reports: role(s) ${off.join(', ')}. Count those by hand.`);
+		nums.findingsChecked = false;
 	}
 	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, lastCall: _l, ledger: _g, ...x }, i) => {
 		const c = read.roles.find((y) => isLost(y.agent) && y.index === index);
