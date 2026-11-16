@@ -46,10 +46,12 @@ function run(dir, keys, env = {}, timeout = 600000) {
 	fs.writeFileSync(only, JSON.stringify(keys));
 	const files = [...new Set(keys.map((k) => k.slice(0, k.indexOf('::'))))].map((f) => path.join(dir, f));
 	const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...base } = process.env;
-	const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: dir, encoding: 'utf8', timeout, env: { ...base, ...env, KIT_ONLY: only, KIT_REPO: dir, KIT_MAP_OFF: '1' } });
+	const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: dir, encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: { ...base, ...env, KIT_ONLY: only, KIT_REPO: dir, KIT_MAP_OFF: '1' } });
 	const out = String(r.stdout || '');
 	const red = new Map();
-	if (r.error && r.error.code === 'ETIMEDOUT') red.timedOut = true;
+	// Stopped early (the budget, or output past the buffer): the tests with a result keep it, the rest are named as not
+	// checked (the K95 sweep: every test was named so, and the finished ones' findings were lost).
+	if (r.error) red.cut = new Set([...out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
 	// Each top-level "not ok <n> - <name>" with its YAML block up to the next result line.
 	for (const m of out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?\n([\s\S]*?)(?=^(?:ok|not ok) \d+ - |^1\.\.|(?![\s\S]))/gm)) red.set(m[1], /ERR_ASSERTION|AssertionError/.test(m[2]));
 	// A file that could not load (an import the base lacks) fails as a whole, under its own path: each of its tests
@@ -103,9 +105,11 @@ export function check(root, base, { strict = false, slice = null, budget = null 
 				fs.mkdirSync(path.dirname(path.join(copy, f)), { recursive: true });
 				fs.copyFileSync(path.join(root, f), path.join(copy, f));
 			}
-			const red = left() > 0 ? run(copy, newOrChanged.map((t) => t.key), { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home }, Math.min(600000, left())) : Object.assign(new Map(), { timedOut: true });
+			// One read of the time left: a second could land on 0, which spawnSync reads as no limit (the K95 sweep).
+			const ms = Math.min(600000, left());
+			const red = ms > 0 ? run(copy, newOrChanged.map((t) => t.key), { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home }, ms) : Object.assign(new Map(), { cut: new Set() });
 			for (const t of newOrChanged) {
-				if (red.timedOut) note(t.key, 'A1', 'not checked: the time budget ran out');
+				if (red.cut && !red.cut.has(t.name)) note(t.key, 'A1', 'not checked: the time budget ran out');
 				else if (!red.has(t.name) && red.has(`file:${t.file}`)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)');
 				else if (!red.has(t.name)) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
 				else if (!red.get(t.name)) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (a crash or a missing file)');
@@ -135,7 +139,7 @@ export function check(root, base, { strict = false, slice = null, budget = null 
 		const untagged = newOrChanged.filter((t) => !tagged(t));
 		if (untagged.length) {
 			say(`A2: ${untagged.length} untagged test(s) measured against the flips of this change, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
-			const step = (args) => (left() > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', ...(budget === null ? {} : { timeout: left() }) }) : { status: null, error: { code: 'ETIMEDOUT' } });
+			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
 			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))]);
 			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');
 			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000']) : mapped;

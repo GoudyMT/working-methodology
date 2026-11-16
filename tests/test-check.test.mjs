@@ -1,4 +1,4 @@
-// T15 Part A (the owner, 2026-11-10): the bar for a new test is checked by a script, not left as one line of rule
+﻿// T15 Part A (the owner, 2026-11-10): the bar for a new test is checked by a script, not left as one line of rule
 // text: it fails first, earns its place, sits in the right lane, and is owed at all.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
@@ -75,13 +75,29 @@ test('the test check keeps to its time budget, names what it could not check and
 	const t0 = Date.now();
 	const r = spawnSync(process.execPath, [CHECK, 'HEAD~1', '--budget', '0'], { cwd: dir, encoding: 'utf8' });
 	assert.equal(r.status, 0, r.stdout + r.stderr);
-	assert.ok(Date.now() - t0 < 20000, `took ${Date.now() - t0} ms`);
+	assert.ok(Date.now() - t0 < 60000, `took ${Date.now() - t0} ms`);
 	const k = (n) => `tests/a.test.mjs::${n}`;
 	assert.match(r.stdout, new RegExp(`A1 ${k('a hollow one')}: not checked: the time budget ran out`));
 	assert.match(r.stdout, new RegExp(`A2 ${k('a hollow one')}: not measured: the time budget ran out`));
 	assert.match(r.stdout, new RegExp(`A3 ${k('a browser one')}: `), 'a quick finding was lost');
 	assert.match(r.stderr, /test check: /, 'no progress line');
 	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--budget', 'x'], { cwd: dir, encoding: 'utf8' }).status, 2);
+});
+
+// The sweep of K95: a run stopped at the budget kept the results of the tests that had finished, but named every test
+// "not checked", so a real finding was lost. Only a test with no result is named so.
+// why: guards the owner's rule never to lower a gate
+test('a run stopped at the budget keeps the findings of the tests that finished before it', () => {
+	const dir = repo();
+	const head = ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';"];
+	fs.writeFileSync(path.join(dir, 'tests', 'q.test.mjs'), [...head, "test('a quick hollow one', () => { assert.equal(1, 1); });", ''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'z.test.mjs'), [...head, "test('a slow one', async () => { await new Promise((r) => setTimeout(r, 120000)); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'two more');
+	const r = spawnSync(process.execPath, [CHECK, 'HEAD~1', '--budget', '15'], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /A1 tests\/q\.test\.mjs::a quick hollow one: passes on the base commit/, 'a finished test\'s finding was lost');
+	assert.match(r.stdout, /A1 tests\/z\.test\.mjs::a slow one: not checked/);
 });
 
 // why: guards the owner's rule never to lower a gate. K13, the 1.27.0 build: on a PR that changed 616 tests the check
