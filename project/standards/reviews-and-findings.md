@@ -14,7 +14,7 @@
 - **G5 Blast radius:** files, shipped vs new, public interfaces, other callers, the revert story, in the report; the owner's yes only for shipped code outside the branch's scope or a public interface.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **One sweep:** one sweep per branch; a high, critical, security or owner-rule fix ships with a test that fails before it, a low or medium one only if a real input shows it (else its ledger row says `no test: no real input`; rule:test-value); CI runs the full suite and auto-fix handles red. A second pass is the owner's call; escapes are measured next build. A low or medium that cannot be finished carries only on the owner's yes, first next build. A high or critical never carries: it is fixed before the PR (found after it: on the open PR), or the owner accepts it.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **One sweep** per branch; a high, critical, security or owner-rule fix ships with a failing-first test, a low or medium only if a real input shows it (else `no test: no real input`; rule:test-value); CI runs the full suite and auto-fix handles red. A second pass is the owner's call; escapes are measured next build. Findings are fixed in the build that finds them. A low or medium that cannot be finished carries only on the owner's yes, first next build. A high or critical never carries: it is fixed before the PR (found after it: on its PR), or the owner accepts it.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
