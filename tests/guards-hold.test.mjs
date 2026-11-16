@@ -220,9 +220,11 @@ test('a kit script followed by other commands passes; a write after it or a defi
 	// defined later in the text. Only plain commands may sit beside an exempt program.
 	for (const c of ['node .claude/guard.cjs </dev/null; cp /tmp/evil "$_"', 'git diff .git/config; cp /tmp/evil "$_"', 'cat .claude/settings.json; cp /tmp/evil "$_"', 'ls .githooks/pre-push && cp /tmp/evil "$_"', 'cat .claude/guard.cjs; cat /tmp/evil > "$_"',
 		// The push security review: sort -o and uniq write files, so they are not plain beside it either.
-		'node .claude/guard.cjs; sort -o "$_" /tmp/evil', 'node .claude/guard.cjs; sort -o .claude/guard.cjs /tmp/evil', 'cat .claude/settings.json; uniq /tmp/evil "${_}"', 'node .claude/guard.cjs; ls !$', 'node .claude/guard.cjs; sort -uo .claude/guard.cjs /tmp/evil', 'node .claude/guard.cjs; sort --output=.claude/guard.cjs /tmp/evil', 'node .claude/guard.cjs; uniq -f 1 /tmp/evil .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
-		// A sort or uniq that cannot write is a plain read, as before the review (CI on build 11's PR).
-	for (const c of ['node .claude/guard.cjs | sort | uniq -c', 'node .claude/guard.cjs; sort -u /tmp/a | uniq']) assert.equal(bash(c), 'allow', c);
+		'node .claude/guard.cjs; sort -o "$_" /tmp/evil', 'node .claude/guard.cjs; sort -o .claude/guard.cjs /tmp/evil', 'cat .claude/settings.json; uniq /tmp/evil "${_}"', 'node .claude/guard.cjs; ls !$', 'node .claude/guard.cjs; sort -uo .claude/guard.cjs /tmp/evil', 'node .claude/guard.cjs; sort --output=.claude/guard.cjs /tmp/evil', 'node .claude/guard.cjs; uniq -f 1 /tmp/evil .claude/guard.cjs',
+		// The next push review: sort --compress-program runs a program, and uniq's - is a name too.
+		'node .claude/guard.cjs; sort --compress-program=sh /tmp/a', 'node .claude/guard.cjs; sort --compress=sh /tmp/a', 'node .claude/guard.cjs; sort -T /tmp /tmp/a', 'node .claude/guard.cjs; uniq - .claude/guard.cjs', 'node .claude/guard.cjs; uniq -- /tmp/a .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+	// A sort or uniq in a read-only form is a plain read, as before the review (CI on build 11's PR).
+	for (const c of ['node .claude/guard.cjs | sort | uniq -c', 'node .claude/guard.cjs; sort -u /tmp/a | uniq', 'node .claude/guard.cjs | sort -t , -k 2 -n | uniq -cd']) assert.equal(bash(c), 'allow', c);
 	for (const c of ['gi .claude/guard.cjs -ov g; Set-Content -Path $g.FullName -Value x', 'gi .claude/settings.json -ov g; Copy-Item x $g.FullName', '{ get-content .claude/guard.cjs } | select -ov f; function get-content { Copy-Item x $args[0] }; & $f[0]']) assert.equal(ps(c), 'deny', c);
 	// Plain commands beside it still pass, a git read and a dropped output among them.
 	for (const c of ['node .claude/state.mjs view 2>&1; git status', 'node .claude/state.mjs view; ls > /dev/null']) assert.equal(bash(c), 'allow', c);
