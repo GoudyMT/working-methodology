@@ -131,8 +131,11 @@ function session() {
 function ownerYes(s, act, since) {
 	const sid = session();
 	if (!sid) return { why: 'no session is recorded (the kit\'s prompt hook records it at the owner\'s next message)' };
-	const yes = yesReader.sessionYes(act, { since: Date.parse(since), repo: ROOT, sessionId: sid });
-	if (!yes || s.taps.has(yes.tap)) return { why: `this session holds no unused Yes from the owner to \`${act}\` since then` };
+	// The owner's latest answer decides, and a Yes counts only for a question quoting this one act, as the guards read
+	// it (the build 13 sweep).
+	const yes = yesReader.sessionLatest(act, { since: Date.parse(since), repo: ROOT, sessionId: sid });
+	if (yes && yes.yes && !yes.single) return { why: `the owner's Yes was to a question quoting more than \`${act}\`; ask with this act alone` };
+	if (!yes || !yes.yes || s.taps.has(yes.tap)) return { why: `this session holds no unused Yes from the owner to \`${act}\` since then${yes && !yes.yes ? ' (their latest answer is not Yes)' : ''}` };
 	return { tap: yes.tap };
 }
 

@@ -92,6 +92,9 @@ test('an owner step is done only on the owner\'s Yes to its loop act in the reco
 	assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 1, 'a No is no lock');
 	ownerTaps(r, act, { sid: OTHER });
 	assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 1, 'a Yes in the session the environment names');
+	// The build 13 sweep: a question quoting this act beside another is no Yes to it.
+	ownerTaps(r, `${act}\` and \`git push origin main`);
+	assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 1, 'a Yes to two acts at once');
 	ownerTaps(r, 'git status');
 	assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1', '--act', 'git status']).status, 1, 'a Yes to another act');
 	ownerTaps(r, act);

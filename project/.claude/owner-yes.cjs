@@ -281,6 +281,14 @@ function sessionYeses(sessionId, repo, { all = false } = {}) {
 function sessionAnswers(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
 	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && (act === null || y.acts.includes(squash(act)))).map((y) => ({ at: y.at, yes: y.yes })).sort((a, b) => a.at - b.at);
 }
+// The owner's latest answer to one act after a time, as the guards read it: { at, yes, single, tap } or null. single is
+// whether the question quoted this act alone (the build 13 sweep: the loop took any Yes, the newest even after a No, and
+// a question quoting several acts as a Yes to each).
+function sessionLatest(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
+	let best = null;
+	for (const y of sessionYeses(sessionId, repo, { all: true })) if (y.at > since && y.acts.includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at, yes: y.yes, single: y.acts.length === 1, tap: `${sessionId}:${y.id}` };
+	return best;
+}
 // Whether this session's transcript is longer than the part the readers read, so an old answer may be out of sight.
 function sessionCut(sessionId, repo) {
 	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return false;
@@ -326,4 +334,4 @@ function unquotedYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSI
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };
+module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionLatest, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };
