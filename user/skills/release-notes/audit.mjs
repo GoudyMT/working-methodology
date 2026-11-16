@@ -19,7 +19,13 @@ const lines = text.split('\n');
 const each = (re, what) => lines.forEach((l, i) => { if (re.test(l)) faults.push(`line ${i + 1}: ${what}`); });
 
 each(/[^\x00-\x7F]/, 'non-ASCII character (public prose is ASCII)');
-each(/(^|[^-])--([^-]|$)/, 'double hyphen (public prose is dash-free)');
+// K96 (build 12): a flag in code is code, not a dash, as the build record's check reads it: the dash rule reads prose,
+// with code spans and fenced code blocks left out.
+let fenced = false;
+lines.forEach((l, i) => {
+  if (/^\s*(```|~~~)/.test(l)) { fenced = !fenced; return; }
+  if (!fenced && /(^|[^-])--([^-]|$)/.test(l.replace(/`[^`\n]*`/g, ' '))) faults.push(`line ${i + 1}: double hyphen (public prose is dash-free)`);
+});
 // How the release was made is never public prose: tool names, agent words, and "written by AI" phrasing. A product
 // feature that uses AI ("answers with your own AI key") is a claim about the product, so bare "AI" is not flagged.
 each(/\b(Claude|ChatGPT|GPT-?\d*|Copilot|subagents?|coding agents?|AI agents?|assistant model|language model)\b/i, 'AI or tool reference');
