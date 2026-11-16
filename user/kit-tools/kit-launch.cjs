@@ -482,7 +482,13 @@ function namedProjects(input) {
 	// pairs are found in one pass with a stack (the push security review: a scan per brace was quadratic, and a brace
 	// with no close ended the search where bash skips it).
 	const WORD_MAX = 8192;
+	// The work one command may cost the reader, in characters scanned over every expansion (the push security review:
+	// nested lists could multiply the scans past the hook's 10 s). Past it the command is held as unreadable.
+	const WORK_MAX = 2000000;
+	let work = 0;
 	const firstGroup = (w) => {
+		work += w.length;
+		if (work > WORK_MAX) { unreadable = 'braces that would take the guard too long to read'; return null; }
 		const stack = [];
 		let best = null;
 		for (let j = 0; j < w.length; j++) {
@@ -508,6 +514,7 @@ function namedProjects(input) {
 	const expandWord = (w, depth = 0) => {
 		if (unreadable) return;
 		const g = firstGroup(w);
+		if (unreadable) return;
 		if (!g) { if (made.length >= NAMES_MAX) unreadable = `more than ${NAMES_MAX} names from its braces`; else made.push(w.map((x) => x.c).join('')); return; }
 		if (depth > 16) { unreadable = 'braces nested deeper than the guard reads'; return; }
 		if (g.count === Infinity) { unreadable = `more than ${NAMES_MAX} names from its braces`; return; }
@@ -522,7 +529,8 @@ function namedProjects(input) {
 		for (let i = 0; i < s.length; i++) {
 			const ch = s[i];
 			if (q === "'") { if (ch === "'") q = null; else cur.push({ c: ch, q: true }); continue; }
-			if (q === '"') { if (ch === '"') q = null; else if (ch === '\\' && i + 1 < s.length) cur.push({ c: s[++i], q: true }); else cur.push({ c: ch, q: true }); continue; }
+			// In double quotes a backslash escapes only $ ` " \ and a new line; before anything else it stays (bash).
+			if (q === '"') { if (ch === '"') q = null; else if (ch === '\\' && i + 1 < s.length && /[$`"\\\n]/.test(s[i + 1])) cur.push({ c: s[++i], q: true }); else cur.push({ c: ch, q: true }); continue; }
 			if (ch === "'" || ch === '"') { q = ch; continue; }
 			if (ch === '\\' && i + 1 < s.length) { cur.push({ c: s[++i], q: true }); continue; }
 			if (/\s/.test(ch)) { if (cur.length) words.push(cur); cur = []; continue; }

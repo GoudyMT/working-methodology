@@ -1623,7 +1623,12 @@ test('a nested brace list or a range with a plus sign names the project bash bui
 	// And a word of thousands of braces is read in one pass, well inside the hook's 10 s.
 	const t0 = Date.now();
 	call(`ls ${'{'.repeat(4000)}x${'}'.repeat(4000)}`);
+	// Twelve lists of two beside a deep nest with no comma: 4096 names, each scanning the nest.
+	call(`ls ${'{a,b}'.repeat(12)}${'{'.repeat(3000)}x${'}'.repeat(3000)}`);
 	assert.ok(Date.now() - t0 < 5000, `took ${Date.now() - t0} ms`);
+	// In double quotes a backslash before a plain letter stays: bash builds v0\7, which the guard reads both as a Windows
+	// path and with the escape dropped (v07), so it is held either way.
+	assert.equal(call(`cp x ${parent}/v0{"\\7",}/.claude/guard.cjs`), 'deny', 'a backslash kept in quotes');
 	// Braces that build no kit project name none.
 	for (const word of ['v{0,{z}}8', 'v{+08..09}']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'runs', word);
 });
