@@ -1,0 +1,808 @@
+{
+ "rules": {
+  "multi-agent-discipline": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs",
+    "tests/plan-graph.test.mjs"
+   ],
+   "workflows": []
+  },
+  "swarm-contract": {
+   "guards": [],
+   "scripts": [
+    "user/skills/pre-pr-sweep/approve.mjs"
+   ],
+   "tests": [],
+   "workflows": []
+  },
+  "patterns-and-dispatch": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "agent-role-table": {
+   "guards": [
+    "user/kit-hooks/clean-tree.cjs",
+    "user/kit-hooks/edit-fence.cjs"
+   ],
+   "scripts": [
+    "scripts/kit.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "agent-canary": {
+   "guards": [
+    "user/kit-hooks/canary.cjs"
+   ],
+   "scripts": [
+    "project/.claude/canary-phrase.mjs",
+    "project/.claude/pr-body-audit-lean.mjs",
+    "project/.claude/pr-body-audit.mjs",
+    "user/kit-tools/audits/canary-phrase.mjs",
+    "user/kit-tools/audits/pr-body-audit-lean.mjs",
+    "user/kit-tools/audits/pr-body-audit.mjs",
+    "user/skills/release-notes/audit.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "agent-team-adapter": {
+   "guards": [
+    "user/kit-hooks/canary.cjs"
+   ],
+   "scripts": [
+    "project/.claude/canary-phrase.mjs",
+    "scripts/kit.mjs",
+    "user/kit-tools/audits/canary-phrase.mjs",
+    "user/skills/pre-pr-sweep/approve.mjs",
+    "user/skills/release-notes/audit.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "code-standards": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "size-budgets": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/size-band.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "critical-rules-priority-index": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "instruction-priority": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "owners-rules": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "collaborative-design-locks": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "goal-before-mechanism": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "delegated-decisions": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "edit-discipline": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "outward-acts": {
+   "guards": [
+    "project/.claude/guard-outward.cjs",
+    "project/.githooks/pre-push"
+   ],
+   "scripts": [],
+   "tests": [
+    "tests/ci-install-check.test.mjs",
+    "tests/guard-dispatch.test.mjs",
+    "tests/guard-prompts.test.mjs",
+    "tests/guards-hold.test.mjs",
+    "tests/guards-outside.test.mjs",
+    "tests/kit.test.mjs",
+    "tests/lane-state.test.mjs",
+    "tests/owner-proof.test.mjs",
+    "tests/recall-ci.test.mjs",
+    "tests/release-verify.test.mjs",
+    "tests/rule-map.test.mjs",
+    "tests/test-check.test.mjs",
+    "tests/test-value.test.mjs",
+    "tests/use-check.test.mjs"
+   ],
+   "workflows": []
+  },
+  "session-workflow": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "recovery-protocol": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "what-this-file-is-not": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "context-engineering": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/task-gate.test.mjs"
+   ],
+   "workflows": []
+  },
+  "anti-hallucination": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "correction-loop": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "autonomous-fixes": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "direction-changes": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "re-plan-on-failure": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "simplicity-lens": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "dual-horizon": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "success-charter": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "visual-design-collaboration": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "craft-floor": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "design-for-human-error": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "diagrams": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/project-map.mjs"
+   ],
+   "tests": [],
+   "workflows": []
+  },
+  "failure-response": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "enumerate-before-you-count": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "instruments-and-evals": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "probe-scope": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit-temp.test.mjs",
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "snag-response": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "blocked-prompts": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "cost-first": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "fact-check": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/release-check.test.mjs"
+   ],
+   "workflows": []
+  },
+  "pre-commit": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "commit-message-format": {
+   "guards": [
+    "project/.githooks/commit-msg"
+   ],
+   "scripts": [
+    "project/.claude/name-check.mjs",
+    "user/kit-tools/audits/name-check.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "branching": {
+   "guards": [
+    "project/.githooks/pre-push"
+   ],
+   "scripts": [
+    "project/.claude/name-check.mjs",
+    "user/kit-tools/audits/name-check.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "pr-body": {
+   "guards": [
+    "project/.claude/guard-outward.cjs"
+   ],
+   "scripts": [
+    "project/.claude/pr-body-audit-lean.mjs",
+    "project/.claude/pr-body-audit.mjs",
+    "scripts/build-record.mjs",
+    "user/kit-tools/audits/pr-body-audit-lean.mjs",
+    "user/kit-tools/audits/pr-body-audit.mjs",
+    "user/skills/release-notes/audit.mjs"
+   ],
+   "tests": [
+    "tests/build-record.test.mjs",
+    "tests/guards-hold.test.mjs",
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "release-notes": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/pr-body-audit-lean.mjs",
+    "project/.claude/pr-body-audit.mjs",
+    "project/.claude/release-check.mjs",
+    "user/kit-tools/audits/pr-body-audit-lean.mjs",
+    "user/kit-tools/audits/pr-body-audit.mjs",
+    "user/kit-tools/merge-gate.mjs",
+    "user/skills/release-notes/audit.mjs"
+   ],
+   "tests": [
+    "tests/build-record.test.mjs"
+   ],
+   "workflows": []
+  },
+  "post-merge-check": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "kit-stays-local": {
+   "guards": [
+    "project/.githooks/pre-commit"
+   ],
+   "scripts": [
+    "project/.claude/first-push-check.mjs",
+    "project/.claude/use-check.mjs",
+    "scripts/kit.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs",
+    "tests/use-check.test.mjs"
+   ],
+   "workflows": []
+  },
+  "first-push-gate": {
+   "guards": [
+    "project/.githooks/pre-commit",
+    "project/.githooks/pre-push"
+   ],
+   "scripts": [
+    "project/.claude/first-push-check.mjs",
+    "scripts/kit.mjs",
+    "user/kit-tools/merge-gate.mjs",
+    "user/skills/pre-pr-sweep/audit.mjs"
+   ],
+   "tests": [
+    "tests/guards-hold.test.mjs",
+    "tests/guards-outside.test.mjs",
+    "tests/kit.test.mjs",
+    "tests/merge-on-green.test.mjs"
+   ],
+   "workflows": []
+  },
+  "standing-grants": {
+   "guards": [
+    "project/.githooks/pre-push"
+   ],
+   "scripts": [
+    "scripts/merge-on-green.mjs",
+    "user/kit-tools/merge-gate.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs",
+    "tests/merge-gate.test.mjs",
+    "tests/merge-on-green.test.mjs"
+   ],
+   "workflows": []
+  },
+  "kit-standards": {
+   "guards": [
+    "user/kit-hooks/kit-gate.cjs"
+   ],
+   "scripts": [
+    "project/.claude/improvement-report.mjs",
+    "scripts/kit.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "loop-workflow-mode": {
+   "guards": [
+    "project/.claude/kit-hook.cjs"
+   ],
+   "scripts": [
+    "project/.claude/loop.mjs"
+   ],
+   "tests": [
+    "tests/loop.test.mjs"
+   ],
+   "workflows": []
+  },
+  "graduated-loop-lessons": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "loop-driver": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/loop.mjs"
+   ],
+   "tests": [
+    "tests/guards-hold.test.mjs",
+    "tests/kit.test.mjs",
+    "tests/loop.test.mjs"
+   ],
+   "workflows": []
+  },
+  "project-adapter": {
+   "guards": [
+    "project/.claude/owner-proof.cjs"
+   ],
+   "scripts": [],
+   "tests": [
+    "tests/owner-proof.test.mjs"
+   ],
+   "workflows": []
+  },
+  "finding-pipeline": {
+   "guards": [],
+   "scripts": [
+    "user/skills/pre-pr-sweep/approve.mjs",
+    "user/skills/pre-pr-sweep/audit.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "features-first": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "milestone-sweep": {
+   "guards": [],
+   "scripts": [
+    "user/skills/pre-pr-sweep/audit.mjs"
+   ],
+   "tests": [],
+   "workflows": []
+  },
+  "sweep-tiers": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/pr-body-audit-lean.mjs",
+    "project/.claude/pr-body-audit.mjs",
+    "scripts/kit.mjs",
+    "user/kit-tools/audits/pr-body-audit-lean.mjs",
+    "user/kit-tools/audits/pr-body-audit.mjs",
+    "user/skills/pre-pr-sweep/approve.mjs",
+    "user/skills/pre-pr-sweep/audit.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "sweep-auto-approval": {
+   "guards": [
+    "user/kit-hooks/call-cap.cjs",
+    "user/kit-hooks/sweep-guard.cjs"
+   ],
+   "scripts": [
+    "user/skills/pre-pr-sweep/approve.mjs"
+   ],
+   "tests": [
+    "tests/guard-dispatch.test.mjs",
+    "tests/kit.test.mjs",
+    "tests/lane-state.test.mjs"
+   ],
+   "workflows": []
+  },
+  "pre-pr-deep-sweep": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "pre-push-op-test": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "preview-test": {
+   "guards": [],
+   "scripts": [
+    "user/skills/preview-test/audit.mjs"
+   ],
+   "tests": [],
+   "workflows": []
+  },
+  "visible-tracking": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "parking-lot": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/tracking-check.mjs"
+   ],
+   "tests": [],
+   "workflows": []
+  },
+  "security-standards": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/guards-hold.test.mjs",
+    "tests/guards-outside.test.mjs",
+    "tests/kit.test.mjs",
+    "tests/link-scan.test.mjs",
+    "tests/owner-proof.test.mjs",
+    "tests/recall-ci.test.mjs",
+    "tests/resume-packet.test.mjs"
+   ],
+   "workflows": []
+  },
+  "mid-design-red-team": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "tdd": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "ci-gate": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "test-lanes": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/lane-state.mjs",
+    "scripts/kit.mjs",
+    "scripts/test-check.mjs",
+    "scripts/test-value.mjs"
+   ],
+   "tests": [
+    "tests/lane-state.test.mjs"
+   ],
+   "workflows": []
+  },
+  "test-and-review-cadence": {
+   "guards": [],
+   "scripts": [
+    "scripts/pr-scope.mjs",
+    "user/skills/pre-pr-sweep/approve.mjs"
+   ],
+   "tests": [
+    "tests/harness.test.mjs"
+   ],
+   "workflows": []
+  },
+  "sub-agent-verification": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "test-integrity": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "test-value": {
+   "guards": [],
+   "scripts": [
+    "scripts/mutation-check.mjs",
+    "scripts/test-check.mjs"
+   ],
+   "tests": [
+    "tests/build-record.test.mjs",
+    "tests/mutation-check.test.mjs",
+    "tests/pin-check.test.mjs",
+    "tests/rule-map.test.mjs",
+    "tests/test-check.test.mjs"
+   ],
+   "workflows": []
+  },
+  "word-pins": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs",
+    "tests/pin-check.test.mjs"
+   ],
+   "workflows": []
+  },
+  "sdd-triangle": {
+   "guards": [],
+   "scripts": [
+    "user/skills/adr/audit.mjs"
+   ],
+   "tests": [],
+   "workflows": []
+  },
+  "tracking-file-size-caps": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/tracking-check.mjs"
+   ],
+   "tests": [],
+   "workflows": []
+  },
+  "session-log-compression": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "tracking-file-functions": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/tracking-check.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "status-files-rot-silently": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "tracking-file-batching": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "decision-documents": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "compact-ritual": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  },
+  "pre-compact-scan": {
+   "guards": [],
+   "scripts": [
+    "user/skills/closeout/audit.mjs"
+   ],
+   "tests": [],
+   "workflows": []
+  },
+  "post-compact-orientation": {
+   "guards": [],
+   "scripts": [
+    "project/.claude/resume-packet.mjs",
+    "scripts/kit.mjs"
+   ],
+   "tests": [
+    "tests/kit.test.mjs",
+    "tests/resume-packet.test.mjs"
+   ],
+   "workflows": []
+  },
+  "handoff-message-structure": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
+   "workflows": []
+  }
+ },
+ "prose": [
+  "patterns-and-dispatch",
+  "code-standards",
+  "critical-rules-priority-index",
+  "instruction-priority",
+  "goal-before-mechanism",
+  "edit-discipline",
+  "session-workflow",
+  "recovery-protocol",
+  "what-this-file-is-not",
+  "anti-hallucination",
+  "correction-loop",
+  "autonomous-fixes",
+  "direction-changes",
+  "re-plan-on-failure",
+  "simplicity-lens",
+  "dual-horizon",
+  "success-charter",
+  "visual-design-collaboration",
+  "craft-floor",
+  "design-for-human-error",
+  "enumerate-before-you-count",
+  "snag-response",
+  "blocked-prompts",
+  "cost-first",
+  "pre-commit",
+  "post-merge-check",
+  "graduated-loop-lessons",
+  "features-first",
+  "pre-push-op-test",
+  "mid-design-red-team",
+  "tdd",
+  "test-integrity",
+  "session-log-compression",
+  "status-files-rot-silently",
+  "tracking-file-batching",
+  "decision-documents"
+ ]
+}

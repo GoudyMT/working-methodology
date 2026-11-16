@@ -333,6 +333,10 @@ jobs:
       - name: Project map
         run: node project/.claude/project-map.mjs check
 
+      # T8: which rule each guard, script, test and workflow names; the rules diet reads it, so a stale map fails here.
+      - name: Rule map is fresh
+        run: node scripts/rule-map.mjs check
+
       # No symlink or junction in the repo points outside it. The scan only reports, so the count decides here.
       - name: Link scan
         shell: bash
