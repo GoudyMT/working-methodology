@@ -90,6 +90,8 @@ test('a hand-edited list is held to the bounds at each pass: 20 entries, the exp
 	fs.writeFileSync(outside, 'ORIGINAL');
 	fs.rmSync(path.join(r.dir, 'watch.log'), { force: true });
 	fs.linkSync(outside, path.join(r.dir, 'watch.log'));
+	r.states[9] = pr('OPEN', []);
+	r.run(['add', REPO, '9']);
 	r.run(['once']);
 	assert.equal(fs.readFileSync(outside, 'utf8'), 'ORIGINAL');
 	assert.ok(r.log().length > 0, 'the watcher logs to its own file again');
