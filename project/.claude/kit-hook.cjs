@@ -40,19 +40,27 @@ function writePacket() {
 }
 
 // Loop mode's state machine (rule:loop-workflow-mode), held by the loop driver: any owner message but the phrase
-// halts an armed loop, and session start and a compact turn it off. Only the phrase's presence is handed on.
+// halts an armed loop, and session start and a compact turn it off. Only the phrase's presence is handed on. The
+// prompt and session start hooks also record the session, the one whose answers the driver reads: Claude Code hands
+// it to the hook, where the caller's environment could name another (the build 12 sweep). Short time-outs, so the
+// hook's own 10 seconds still leave room for the rest.
 function loopMode() {
 	try {
 		const script = path.join(PROJECT, '.claude', 'loop.mjs');
 		if (!fs.existsSync(script)) return;
+		const { spawnSync } = require('child_process');
+		const sid = String(INPUT.session_id || '');
+		if (MODE !== 'pre-compact' && /^[0-9a-f-]{36}$/i.test(sid)) {
+			const git = spawnSync('git', ['-C', PROJECT, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', timeout: 3000 });
+			if (git.status === 0) fs.writeFileSync(path.join(git.stdout.trim(), 'kit-loop-session'), sid);
+		}
 		const args = MODE === 'prompt' ? ['prompt', '--text', String(INPUT.prompt || '').trim() === 'begin loop workflow' ? 'begin loop workflow' : 'another message']
 			: ['off', '--why', MODE === 'pre-compact' ? 'compact' : 'session start'];
-		require('child_process').spawnSync(process.execPath, [script, 'mode', ...args], { cwd: PROJECT, encoding: 'utf8', timeout: 10000 });
+		spawnSync(process.execPath, [script, 'mode', ...args], { cwd: PROJECT, encoding: 'utf8', timeout: 3000 });
 	} catch { /* a hook that errors must never stop a session */ }
 }
 
 async function main() {
-	loopMode();
 	const packet = MODE === 'pre-compact' ? writePacket() : '';
 	const stampPath = path.join(HOME, 'kit-install.json');
 	const kit = fs.existsSync(stampPath) ? JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir : null;
@@ -75,6 +83,8 @@ async function main() {
 		emit(`${packet ? `${packet}\n` : ''}Methodology kit not found in the Claude config folder ${HOME.split(path.sep).join('/')} (no kitDir in its kit-install.json). Run "node <kit>/scripts/kit.mjs install user" with CLAUDE_CONFIG_DIR set to that folder.`);
 		return;
 	}
+	// After the full stop above, so a slow git cannot keep the hook from printing it.
+	loopMode();
 	const lib = await import(pathToFileURL(path.join(kit, 'scripts', 'kit.mjs')).href);
 	// Claude Code passes the hook input on stdin; for SessionStart, source is startup, resume, clear or compact.
 	const ctx = { kit, home: HOME, projectDir: PROJECT, source: INPUT.source };

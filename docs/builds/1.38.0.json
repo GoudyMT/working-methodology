@@ -10,7 +10,7 @@
   {
    "id": "LOOP",
    "kind": "added",
-   "text": "`node .claude/loop.mjs` keeps a build loop's state in the git folder, says the one next step, refuses a step out of order or with no evidence, and needs the owner's Yes after an owner's step opened.",
+   "text": "`node .claude/loop.mjs` keeps a build loop's state in the git folder, says the one next step, refuses a step out of order or with no evidence, and needs the owner's Yes, in the session the hooks record, after an owner's step opened.",
    "evidence": "tests/loop.test.mjs",
    "where": "Running a build loop",
    "before": "Steps kept from memory",
@@ -19,7 +19,7 @@
   {
    "id": "STOPS",
    "kind": "added",
-   "text": "Fix rounds and canary misses per unit, visual increments and CI fixes are counted; at a bounds limit the run halts with a triage card (why, the data, the options), and only the owner's Yes to `loop resume <code>` clears it.",
+   "text": "Fix rounds and canary misses per unit, visual increments (reset only by the owner's check) and CI fixes are counted; at a bounds limit the run halts with a triage card (why, the data, the options), and only the owner's Yes to `loop resume <code>` clears it.",
    "evidence": "tests/loop.test.mjs",
    "where": "Stop rules held by code",
    "before": "6 of 26",
@@ -28,13 +28,13 @@
   {
    "id": "BOUNDS",
    "kind": "added",
-   "text": "`.claude/bounds.json` lists the loop's steps, which are the owner's, and its limits; install seeds it once, and a tool writes it only on the owner's pop-up Yes to that exact edit.",
+   "text": "`.claude/bounds.json` lists the loop's steps, which are the owner's, and its limits; install seeds it once, a tool writes it only on the owner's pop-up Yes to that exact edit, and a run on a changed one waits for that Yes.",
    "evidence": "tests/guards-hold.test.mjs"
   },
   {
    "id": "MODE",
    "kind": "changed",
-   "text": "Loop mode arms only when the owner's latest message is exactly the phrase; the hooks halt it on any other owner message and turn it off at session start and a compact.",
+   "text": "Loop mode arms only when the owner's latest message is exactly the phrase, sent since it was last off; the hooks halt it on any other owner message and turn it off at session start and a compact.",
    "evidence": "tests/loop.test.mjs"
   },
   {
@@ -46,7 +46,7 @@
   {
    "id": "K93",
    "kind": "fixed",
-   "text": "Two kit scripts in one command (render, then check) are no longer held as a write to a protected file; node with inline code or an option beside one still is.",
+   "text": "Two kit scripts in one command (render, then check) are no longer held as a write to a protected file; any other node script, inline code or an option beside one still is.",
    "evidence": "tests/guards-hold.test.mjs"
   },
   {
@@ -61,7 +61,7 @@
   {
    "id": "K97",
    "kind": "fixed",
-   "text": "An owner's Yes asked before the act was tried now counts for its first run, in the shell that runs it, so it no longer costs a second tap.",
+   "text": "An owner's Yes asked before the act was tried now counts when its question names the shell, so it no longer costs a second tap; the owner's latest answer decides, a Yes is for a question quoting one act, and one tap runs once across sessions.",
    "evidence": "tests/guards-hold.test.mjs"
   },
   {
@@ -107,8 +107,8 @@
    "why": "Workflows and /loop keep no counters and hold no stop across a compaction; a script both can call keeps the state in the git folder."
   },
   {
-   "decision": "A Yes asked before the act was tried binds to its first run",
-   "why": "The owner reads the same text either way, and any later run spends it, so the second tap bought nothing."
+   "decision": "A Yes asked before the act was tried binds only to a shell its question names",
+   "why": "The same text does other things in Bash and PowerShell (git rm -r *.log), so a Yes naming no shell still waits for a held try; naming the shell saves the second tap."
   }
  ],
  "upgrading": "Run `install user` first, then `install project` in each project. A project gets `.claude/bounds.json` once; edit it only through a pop-up Yes to the exact edit.",
