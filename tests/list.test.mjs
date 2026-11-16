@@ -345,6 +345,15 @@ test('step rename renames one roadmap step by its name or release, and refuses a
 	assert.equal(st(dir, 'step', 'move', 'Z', 'before', 'nope').status, 1);
 	assert.equal(st(dir, 'step', 'move', '9a', 'before', 'Z').status, 1, 'a name for two steps is refused');
 	assert.equal(st(dir, 'step', 'move', 'Z', 'beside', '1.34.0').status, 2);
+	// A step moved beside itself is refused, and the order stays.
+	assert.equal(st(dir, 'step', 'move', 'Z', 'before', 'Z').status, 1);
+	assert.deepEqual(JSON.parse(read(dir, '_State.json')).roadmap.map((x) => x.step), ['9a', 'Z', '9a']);
+	// The roadmap view follows the move with no render between.
+	put(dir, 'view.md', '<!-- list:begin roadmap -->\n<!-- list:end -->\n');
+	assert.equal(st(dir, 'render').status, 0);
+	assert.equal(st(dir, 'step', 'move', 'Z', 'before', '1.34.0').status, 0);
+	const v = read(dir, 'view.md');
+	assert.ok(v.indexOf('| Z |') < v.indexOf('| 9a |'), v);
 });
 
 // K69 (1.36.0): both real projects keep their roadmap as checkboxes (53 and 555 boxes on 2026-11-15), which list import
@@ -484,6 +493,43 @@ test('a checkbox roadmap moves into a list that already holds rows, with new ids
 	const s = JSON.parse(read(dir, '_State.json'));
 	assert.deepEqual(s.roadmap.map((x) => [x.step, x.release, x.state]), [['8', '1.34.0', 'released'], ['9', '1.35.0', 'not started'], ['v3', '', 'PLANNED']]);
 	assert.equal(read(dir, 'roadmap.md').includes('- ['), false, 'the boxes left the file');
+	// The held rows keep their import marks, and the PASS line names only the step it made.
+	assert.ok(['A1', 'A2', 'C1', 'C2'].every((id) => id in s.list_import), JSON.stringify(Object.keys(s.list_import)));
+	assert.match(r.stdout, /PASS 3 row\(s\) and 1 roadmap step\(s\)/);
+	assert.match(r.stdout, /roadmap step\(s\) made: v3 \(/);
+	// The 1.36.1 sweep. The kept copy of the file is the same boxes again: refused, nothing written.
+	const backup = r.stdout.match(/(\.kit\/kit-backups\/list-import-[^ ]+\/roadmap\.md)/)[1];
+	const again = st(dir, 'list', 'import', backup);
+	assert.equal(again.status, 1);
+	assert.match(again.stdout, /imported before/);
+	assert.equal(rows(dir).length, after.length);
+	// A failed rewrite of the file leaves the list and the state as they were, so a retry adds each box once.
+	const lockedBefore = [read(dir, '_List.jsonl'), read(dir, '_State.json')];
+	put(dir, 'locked.md', '## Locked\n\n- [ ] Locked box\n');
+	fs.chmodSync(path.join(dir, 'locked.md'), 0o444);
+	const locked = st(dir, 'list', 'import', 'locked.md');
+	fs.chmodSync(path.join(dir, 'locked.md'), 0o644);
+	if (locked.status !== 0) {
+		assert.match(locked.stdout, /Nothing written/);
+		assert.deepEqual([read(dir, '_List.jsonl'), read(dir, '_State.json')], lockedBefore);
+		assert.equal(st(dir, 'list', 'import', 'locked.md').status, 0);
+	}
+	assert.equal(rows(dir).filter((x) => x.title === 'Locked box').length, 1);
+	// A heading named like a step's release is that step, not a second one no command could name.
+	put(dir, 'rel.md', '## 1.34.0 - "Shadow" (open)\n\n- [ ] Under the release\n');
+	assert.equal(st(dir, 'list', 'import', 'rel.md').status, 0);
+	assert.equal(JSON.parse(read(dir, '_State.json')).roadmap.filter((x) => x.step === '1.34.0').length, 0);
+	// Two steps in one file that differ only in spacing are refused, so the state never holds a step twice.
+	put(dir, 'sp.md', '## A  B - "c" (open)\n\n- [ ] one\n\n## A B - "d" (open)\n\n- [ ] two\n');
+	const sp = st(dir, 'list', 'import', 'sp.md');
+	assert.equal(sp.status, 1);
+	assert.match(sp.stdout, /same step once their spacing/);
+	// An id a row taken out by hand still marks is never given to a new box.
+	const lines = read(dir, '_List.jsonl').split('\n').filter((x) => !x.startsWith('{"id":"R2"'));
+	put(dir, '_List.jsonl', lines.join('\n'));
+	put(dir, 'new.md', '## Later\n\n- [ ] A later box\n');
+	assert.equal(st(dir, 'list', 'import', 'new.md').status, 0);
+	assert.notEqual(rows(dir).find((x) => x.title === 'A later box').id, 'R2');
 	// A file of tables still needs an empty list: its rows would replace what the list holds.
 	put(dir, 'more.md', LIST);
 	const t = st(dir, 'list', 'import', 'more.md');

@@ -690,42 +690,49 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (!src) return fail(`${clean(rest[1])} is not a plain file inside this project`);
 		let text;
 		try { text = fs.readFileSync(src, 'utf8'); } catch { return fail(`${clean(rest[1])} could not be read`); }
-		const p = list.parseMarkdown(text, { taken: held.map((r) => r.id) });
+		// An id the list holds, or one an import mark still names (a row taken out by hand), is never given again.
+		const p = list.parseMarkdown(text, { taken: [...held.map((r) => r.id), ...Object.keys(s.list_import || {})] });
 		// A list's tables move once, into an empty list (the template's, 1.36.0): their rows would stand for rows the data
 		// holds. Checkbox rows only add (1.36.1: a project that moved its list in 1.35.0 keeps its roadmap as boxes).
 		if (held.length && p.tableRows) return fail(`${list.LIST} already holds rows; an import would drop what was changed in the data since. Change rows with item set.`);
 		if (p.faults.length) return fail([`Nothing written: ${p.faults.length} row(s) or table(s) cannot be moved whole.`, ...p.faults.map(clean)].join('\n'));
+		// A box the list already holds (the same title in the same section) is a second import of the same lines, from the
+		// kept copy or a retry: refused, so no row comes in twice (the 1.36.1 sweep).
+		const twice = p.rows.filter((r) => held.some((h) => h.title === r.title && (h.section || '') === (r.section || '')));
+		if (twice.length) return fail(`Nothing written: ${twice.length} box(es) are already rows of ${list.LIST} (${clean(twice[0].title).slice(0, 40)}); this file, or a copy of it, was imported before.`);
 		if (p.tableRows && p.steps.length && s.roadmap.length) return fail(`Nothing written: ${STATE} already holds roadmap steps; the import would replace them.`);
-		// A heading step the state already holds by name is kept as it is; the boxes under it are placed at it.
-		const newSteps = held.length || !p.tableRows ? p.steps.filter((x) => !s.roadmap.some((y) => y.step === clean(x.step))) : p.steps;
+		// A heading step the state already holds, by its name or its release, is kept as it is; the boxes under it are
+		// placed at it (a second step answering to the same name could never be named again: the 1.36.1 sweep).
+		const holds = (name) => s.roadmap.some((y) => y.step === clean(name) || (y.release && y.release === clean(name)));
+		const newSteps = held.length || !p.tableRows ? p.steps.filter((x) => !holds(x.step)) : p.steps;
+		const names = (p.tableRows ? p.steps : newSteps).map((x) => `${clean(x.step)}\n${clean(x.release)}`);
+		if (new Set(names).size !== names.length) return fail('Nothing written: two roadmap steps in the file are the same step once their spacing is read as one space.');
 		// The backup goes under .kit; a linked .kit or backup folder would put the owner's file somewhere else.
 		const keepDir = ['.kit', '.kit/kit-backups'].find((d) => { try { return !fs.lstatSync(file(d)).isDirectory(); } catch { return false; } });
 		if (p.boxLines.length && keepDir) return fail(`Nothing written: ${keepDir} is a link or not a folder, so the file as it was cannot be kept.`);
-		// The state first, with the import's record of each row; the list after it. If the list cannot be written, the
-		// state is put back as it was, so a retry starts clean.
-		const before = readText(STATE);
-		s.list_import = { ...(held.length ? s.list_import : {}), ...Object.fromEntries(p.rows.map((r) => [r.id, list.importMark(r)])) };
-		const step = (x) => ({ step: clean(x.step), release: clean(x.release), carries: clean(x.carries), state: clean(x.state) });
-		if (p.tableRows) { if (p.steps.length) s.roadmap = p.steps.map(step); } else s.roadmap = [...s.roadmap, ...newSteps.map(step)];
-		saveState(s, { touch: false });
-		const all = [...held, ...p.rows];
-		const made = p.tableRows ? p.steps : newSteps;
-		try { write(list.LIST, list.serialize(all)); } catch (e) { write(STATE, before); throw e; }
-		const lf = list.faultsOf(all, s.list_import);
-		// K69: a checkbox list moves out of the file, or it would stand beside its generated view; every other line stays,
-		// and the file as it was is kept first.
-		let moved = '';
+		// The file as it was is kept, and the boxes leave it, before any data is written; then the state, then the list. A
+		// failure at any step puts back what was written before it, so a retry never adds a row twice (the 1.36.1 sweep).
 		const rel = path.relative(ROOT, src).split(path.sep).join('/');
+		let moved = '';
 		if (p.boxLines.length) {
 			const keep = `.kit/kit-backups/list-import-${new Date().toISOString().replace(/[:.]/g, '-')}/${rel}`;
 			fs.mkdirSync(path.dirname(file(keep)), { recursive: true });
-			if (!realUnder(path.dirname(file(keep)))) throw new Error(`${path.dirname(keep)} leads outside the project; ${rel} is unchanged`);
+			if (!realUnder(path.dirname(file(keep)))) return fail(`Nothing written: ${path.dirname(keep)} leads outside the project.`);
 			fs.writeFileSync(file(keep), text, { flag: 'wx' });
 			const drop = new Set(p.boxLines);
 			// Split on LF alone: each kept line keeps its own ending, in a file whose endings are mixed as well.
-			write(rel, text.split('\n').filter((_, i) => !drop.has(i)).join('\n'));
+			try { write(rel, text.split('\n').filter((_, i) => !drop.has(i)).join('\n')); } catch (e) { return fail(`Nothing written: ${clean(e.message)}`); }
 			moved = ` ${p.rows.length} box(es) and their own lines (${p.boxLines.length} line(s)) moved out of ${rel}; the file as it was: ${keep}.`;
 		}
+		const before = readText(STATE);
+		const undo = () => { if (p.boxLines.length) write(rel, text); write(STATE, before); };
+		s.list_import = { ...(held.length ? s.list_import : {}), ...Object.fromEntries(p.rows.map((r) => [r.id, list.importMark(r)])) };
+		const step = (x) => ({ step: clean(x.step), release: clean(x.release), carries: clean(x.carries), state: clean(x.state) });
+		if (p.tableRows) { if (p.steps.length) s.roadmap = p.steps.map(step); } else s.roadmap = [...s.roadmap, ...newSteps.map(step)];
+		const all = [...held, ...p.rows];
+		const made = p.tableRows ? p.steps : newSteps;
+		try { saveState(s, { touch: false }); write(list.LIST, list.serialize(all)); } catch (e) { undo(); return fail(`Nothing written: ${clean(e.message)}`); }
+		const lf = list.faultsOf(all, s.list_import);
 		console.log(`PASS ${p.rows.length} row(s) and ${made.length} roadmap step(s) moved into ${list.LIST} and ${STATE};${moved || ' the markdown is unchanged.'}`);
 		// What the import decided for the owner to look over: the steps it made and the short names it clipped.
 		if (made.length) console.log(`roadmap step(s) made: ${made.map((x) => clean(x.step)).join(', ')} (rename one with step rename <step> <new>)`);
