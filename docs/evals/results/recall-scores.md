@@ -746,3 +746,33 @@ The first round (reports/evals/blind-1.37.0) scored the branch at 949db46, befor
 
 control: 0
 gate: b11-1.37.0 median 13 baseline 13 brief v2 keys v11
+
+## Recall v12 - 1.38.0 against the 1.37.0 baseline (2026-11-16)
+
+Candidate: the branch at 0e4cc45 (1.38.0, the loop driver and the build 11 carry-overs), three runs; baseline: v1.37.0 from the release copy, three runs; control: no kit, one run. Opus 5.5 at medium, CLI 2.1.318, brief v2, keys v12. One fresh blind scorer (reports/evals/blind-1.38.0).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 14, 14 | 14, 14, 14 | 0 |
+
+- **Scored: median 14 of 14, baseline 14, control 0.** The bar of 13 holds.
+- **The ruler moved:** keys v12 rewords key 4 only, on the owner's pop-up (2026-11-16, recall v12 key 4: Yes). Under it every question 4 answer scored, on both kits, where keys v11 split the scorers (K98). The owner-accepted marker records that pop-up.
+- **The blinding cut one answer line:** the notice filter removed a baseline question 9 line ("once the current build passes all its checks"), which names no side. The lead put it back before scoring and logged it in removed-lines.txt.
+- **Borderline calls:** 15, all 1s a stricter scorer could flip, spread across both kits (question 13's "no keyword" and question 4's "to origin" most often).
+
+control: 0
+gate: b12-1.38.0 median 14 baseline 14 brief v2 keys v12 owner-accepted
