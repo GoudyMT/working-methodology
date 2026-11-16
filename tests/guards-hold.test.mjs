@@ -381,6 +381,21 @@ test('a held command runs once on the owner\'s own pop-up yes for that exact com
 });
 
 // why: guards rule:outward-acts
+// T7 (build 12, the owner's lock 2026-11-16): the bounds file says what a thread may do alone, so it is written as the
+// settings are, only on the owner's pop-up Yes to that exact edit.
+// why: guards rule:loop-driver
+test('the bounds file takes the owner\'s yes for the exact edit, and no shell writes it', () => {
+	const bounds = path.join(proj, '.claude', 'bounds.json');
+	popUp({ act: 'echo nothing' });
+	assert.equal(withYes('Edit', { file_path: bounds, old_string: '"who": "owner"', new_string: '"who": "alone"' }), 'deny', 'an edit with no yes');
+	assert.equal(withYes('Write', { file_path: bounds, content: '{}' }), 'deny', 'a write with no yes');
+	for (const c of ['echo {} > .claude/bounds.json', 'sed -i s/owner/alone/ .claude/bounds.json', 'cp /tmp/b .claude/bounds.json', 'rm .claude/bounds.json']) assert.equal(bash(c), 'deny', c);
+	popUp({ act: `Edit ${bounds}: "fixRound": 3 => "fixRound": 4` });
+	assert.equal(withYes('Edit', { file_path: bounds, old_string: '"fixRound": 3', new_string: '"fixRound": 4' }), 'allow', 'the edit the owner read');
+	assert.equal(withYes('Edit', { file_path: bounds, old_string: '"fixRound": 3', new_string: '"fixRound": 9' }), 'deny', 'another edit');
+	assert.equal(bash('cat .claude/bounds.json'), 'allow', 'a read');
+});
+
 test('the settings take the owner\'s yes for the exact edit; the guards and hooks never do', () => {
 	const settings = path.join(proj, '.claude', 'settings.json');
 	popUp({ act: `Edit ${settings}: "deny": [] => "deny": ["Bash(x)"]` });

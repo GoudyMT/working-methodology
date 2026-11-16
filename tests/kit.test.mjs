@@ -1732,6 +1732,30 @@ test('install seeds the project data files once and never merges, updates or fol
   assert.ok(![...fb.foldBack, ...fb.conflict, ...fb.update].some((k) => k in data), JSON.stringify(fb));
 });
 
+// T7 (build 12, the owner's lock): the bounds file is the owner's from the first install on, as the data is: a kit
+// change to its template never reaches a project that has one, so no install loosens what the owner set.
+// why: guards rule:loop-driver
+test('install seeds the loop bounds file once and never changes the owner\'s', () => {
+  const { kit, home, proj } = makeKit();
+  fs.mkdirSync(path.join(kit, 'project', '.claude'), { recursive: true });
+  const template = (merge) => `{\n  "steps": [\n    { "step": "merge", "who": "${merge}" }\n  ],\n\n\n\n  "limits": { "fixRound": 3 }\n}\n`;
+  fs.writeFileSync(path.join(kit, 'project', '.claude', 'bounds.json'), template('owner'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  const file = path.join(proj, '.claude', 'bounds.json');
+  assert.equal(read(file), template('owner'), 'a new project gets the template');
+  // The owner tightens a limit; the kit's template loosens a step on a line far from it, which a merge would take.
+  const mine = template('owner').replace('"fixRound": 3', '"fixRound": 2');
+  fs.writeFileSync(file, mine);
+  fs.writeFileSync(path.join(kit, 'project', '.claude', 'bounds.json'), template('alone'));
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(file), mine, 'install changed the owner\'s bounds');
+  assert.ok(![...r.updated, ...r.threeWayMerged].includes('.claude/bounds.json'), JSON.stringify(r));
+  // Untouched by the owner, it still stays as seeded: the owner reads every loosening before it applies.
+  fs.writeFileSync(file, template('owner'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(file), template('owner'));
+});
+
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
 // session start said only that an update was there.
 test('session start names a user layer newer than the project for what it can break', () => {

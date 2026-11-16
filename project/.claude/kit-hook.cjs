@@ -17,6 +17,8 @@ const MODE = process.argv[2];
 // The Claude config folder: CLAUDE_CONFIG_DIR when a second one is in use, else ~/.claude.
 const HOME = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const PROJECT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// The hook input, read once: stdin can be read only once.
+const INPUT = (() => { try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch { return {}; } })();
 
 function emit(text) {
 	const out = { systemMessage: text };
@@ -29,8 +31,7 @@ function emit(text) {
 // that matches the files even when the kit is missing or a later step throws (T3).
 function writePacket() {
 	try {
-		let session = '';
-		try { session = String(JSON.parse(fs.readFileSync(0, 'utf8') || '{}').session_id || ''); } catch { /* none */ }
+		const session = String(INPUT.session_id || '');
 		const script = path.join(PROJECT, '.claude', 'resume-packet.mjs');
 		if (!fs.existsSync(script)) return 'resume packet: .claude/resume-packet.mjs is missing (install project).';
 		const r = require('child_process').spawnSync(process.execPath, [script, 'write', '--session', session], { cwd: PROJECT, encoding: 'utf8', timeout: 15000 });
@@ -38,7 +39,20 @@ function writePacket() {
 	} catch (e) { return `resume packet not written: ${e.message}`; }
 }
 
+// Loop mode's state machine (rule:loop-workflow-mode), held by the loop driver: any owner message but the phrase
+// halts an armed loop, and session start and a compact turn it off. Only the phrase's presence is handed on.
+function loopMode() {
+	try {
+		const script = path.join(PROJECT, '.claude', 'loop.mjs');
+		if (!fs.existsSync(script)) return;
+		const args = MODE === 'prompt' ? ['prompt', '--text', String(INPUT.prompt || '').trim() === 'begin loop workflow' ? 'begin loop workflow' : 'another message']
+			: ['off', '--why', MODE === 'pre-compact' ? 'compact' : 'session start'];
+		require('child_process').spawnSync(process.execPath, [script, 'mode', ...args], { cwd: PROJECT, encoding: 'utf8', timeout: 10000 });
+	} catch { /* a hook that errors must never stop a session */ }
+}
+
 async function main() {
+	loopMode();
 	const packet = MODE === 'pre-compact' ? writePacket() : '';
 	const stampPath = path.join(HOME, 'kit-install.json');
 	const kit = fs.existsSync(stampPath) ? JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir : null;
@@ -46,8 +60,7 @@ async function main() {
 		// A missing kit is a full stop (the owner, 2026-10-31): every prompt is refused with the fix, except a prompt
 		// that installs it.
 		if (MODE === 'prompt') {
-			let prompt = '';
-			try { prompt = String(JSON.parse(fs.readFileSync(0, 'utf8') || '{}').prompt || ''); } catch { /* none */ }
+			const prompt = String(INPUT.prompt || '');
 			if (/methodology-kit|kit\.mjs/i.test(prompt)) return;
 			const where = HOME.split(path.sep).join('/');
 			// The kit folder, from this project's install record.
@@ -64,9 +77,7 @@ async function main() {
 	}
 	const lib = await import(pathToFileURL(path.join(kit, 'scripts', 'kit.mjs')).href);
 	// Claude Code passes the hook input on stdin; for SessionStart, source is startup, resume, clear or compact.
-	let source;
-	try { source = JSON.parse(fs.readFileSync(0, 'utf8') || '{}').source; } catch { source = undefined; }
-	const ctx = { kit, home: HOME, projectDir: PROJECT, source };
+	const ctx = { kit, home: HOME, projectDir: PROJECT, source: INPUT.source };
 	if (MODE === 'session-start') {
 		const text = lib.sessionStartReport(ctx);
 		if (text) emit(text);

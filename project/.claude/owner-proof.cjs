@@ -68,7 +68,7 @@ const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold the owner\'s answers, so they are protected files. Read them; Claude Code and the owner write them.';
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
-const SETTINGS_REASON = 'a write to a settings file, which wires the guards';
+const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
 // script may hold w, W, e or an s///w that writes a file or runs a program (the plan check's P3).
@@ -263,10 +263,11 @@ function guardShape(p) {
 	}
 	return false;
 }
-// The settings that wire the hooks: a .claude folder's settings.json or settings.local.json.
+// The settings that wire the hooks: a .claude folder's settings.json or settings.local.json. T7 (build 12, the owner's
+// lock): the loop's bounds file, which says what a thread may do alone, takes the same yes for the exact edit.
 function settingsShape(p) {
 	for (let i = 0; i + 1 < p.length; i++) {
-		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json'))) return true;
+		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json') || fits(p[i + 1], 'bounds.json'))) return true;
 	}
 	// The user's own settings when the Claude folder has another name (the 1.29.0 sweep).
 	const h = homeParts();

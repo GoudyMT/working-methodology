@@ -1,10 +1,11 @@
 ---
 id: loop-mode
 load: on-demand
-when: When the owner turns loop mode on.
+when: When loop mode is armed or a build loop runs.
 tags:
   loop-workflow-mode: loop, autonomous, keyword
   graduated-loop-lessons: lessons, learned, regression
+  loop-driver: loop, bounds, stop, counter, triage
 ---
 
 # Loop Mode
@@ -17,7 +18,7 @@ An opt-in overlay for mechanical TDD work, under graduated trust; the default st
 
 **Self-Correction Boundary - self-correct mechanics, escalate choices.** Self-correct (log the lesson; ~2 attempts): an anchor miss, a typo or wrong import, an API differing from the guess (read the installed types), an under-tested implied branch. Hard stop and escalate even when a fix is reachable: a decision, name, format or style outside the plan; an integrity-LOWERING test change; an off-contract file or unverified visual; a 4th visual increment; a spec / ADR / public-interface change; an unexpected test result; non-convergence; a call for the owner's visual / legal eye; the end of the tasks or the goal. Why: "self-correct more" must never become silent drift.
 
-**State machine.** OFF by default and after every compact. Armed only by the owner's exact phrase **"begin loop workflow"**, after a clean orientation, a learnings scan in Claude's report, an agreed contract (for files or visuals), and the owner's comfort. ANY owner message mid-loop halts it. Why: a persistent keyword outlives the context that justified it.
+**State machine.** OFF by default and after every compact. Armed only by the owner's exact phrase **"begin loop workflow"**, after a clean orientation, a learnings scan in Claude's report, an agreed contract (for files or visuals), and the owner's comfort. ANY owner message mid-loop halts it. The loop driver holds it: Claude runs `node .claude/loop.mjs mode arm`, which arms only when the owner's latest message is the phrase; the hooks halt it on any other message and turn it off at session start and a compact. Why: a persistent keyword outlives the context that justified it.
 
 **Loop contract:** files to create (path, why, the reference it mirrors - any other file = hard stop); visual increments with their LOCKED reference; expected test collisions from a repo-wide search. Each run: a plan before, a LOOP SUMMARY after.
 
@@ -61,3 +62,7 @@ Standing; a repeat is a regression. Why: each cost a real slip before it graduat
 6. **The tool shell's runtime** - see rule:project-adapter (A23, the owner's shell).
 7. **Never `cd` into a subfolder** - use quoted absolute paths or `git -C`; the only `cd` is to the root.
 8. **Stop the preview before any rebuild;** unreachable states: "Visual-correctness gate".
+
+## The Loop Driver {#loop-driver}
+
+A build loop (proof to closeout, one list item) runs under `node .claude/loop.mjs`: `start <item>`, then `next` before each step and `done <step> --evidence "<proof>"` after it; the script refuses a step out of order. The steps, who owns each and the limits live in `.claude/bounds.json`, the owner's file: a tool writes it only on the owner's pop-up Yes to that exact edit, and a run halts if it changes. An owner's step is done only on the owner's Yes after it opened, to the `loop <step> <code>` act `next` prints or, with `--act`, to the outward act the guard asked for. Count each stop that has a number as it happens: `count fix-round --unit <id>`, `canary-miss --unit <id>`, `visual`, `visual-check`, `ci-fix`. At a limit the run halts with a triage card (why, the data, the options); only the owner's Yes to `loop resume <code>` clears it. `autonomy-off` in the Claude folder makes every step the owner's. Why: a limit needs an instrument; 17 of 26 stops rested on memory.
