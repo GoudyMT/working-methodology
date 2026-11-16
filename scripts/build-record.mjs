@@ -14,6 +14,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const KINDS = { added: 'Added', changed: 'Changed', fixed: 'Fixed', security: 'Security', removed: 'Removed' };
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
+export const NO_TEST = 'no test: no real input';
+export const TEST_KEY = /^tests\/[^:\s]+\.test\.mjs::\S/;
+// A hand-typed claim that every fix or finding has its test (PR 49's line 1), which no check read.
+const FIX_CLAIM = /\b(each|every|all)\b[^.]*\b(findings?|fix(es)?)\b[^.]*\btests?\b/i;
 
 /** The problems with a record, as plain lines; none when it is whole. */
 export function problems(rec) {
@@ -46,7 +50,25 @@ export function problems(rec) {
 	if (s) {
 		need(Array.isArray(s.dimensions) && s.dimensions.length > 0, 'sweep names no dimension');
 		for (const sev of SEVERITIES) need(Number.isInteger((s.findings || {})[sev]), `sweep findings has no ${sev} count`);
+		// K105: the fix ledger, one row per fix. A high, critical, security or owner-rule fix names the test that fails
+		// first on the code before it; a low or medium may say no real input shows the problem. CI's test check states
+		// the verdict of each named test; the body's fix line is written from these rows.
+		need(Array.isArray(s.fixes), 'sweep has no fixes list (one row per fix: id, severity, text, commit, test)');
+		(Array.isArray(s.fixes) ? s.fixes : []).forEach((f, i) => {
+			const id = (f && f.id) || `row ${i + 1}`;
+			need(f && text(f.id) && SEVERITIES.includes(f.severity) && text(f.text) && text(f.commit), `fix ${id} needs an id, a severity (${SEVERITIES.join(', ')}), a text and a commit`);
+			if (!f) return;
+			const key = TEST_KEY.test(f.test || '');
+			need(key || f.test === NO_TEST, `fix ${id} test "${f.test}" is not a test key or "${NO_TEST}"`);
+			const owed = ['critical', 'high'].includes(f.severity) || f.security === true || f.owner === true;
+			const why = [f.severity, f.security === true && 'security', f.owner === true && 'owner rule'].filter(Boolean).join(', ');
+			need(!owed || key, `fix ${id} (${why}) names no test: a high, critical, security or owner-rule fix keeps a test that fails first`);
+		});
+		const hcRows = (Array.isArray(s.fixes) ? s.fixes : []).filter((f) => f && ['critical', 'high'].includes(f.severity)).length;
+		const hcFound = ((s.findings || {}).critical || 0) + ((s.findings || {}).high || 0);
+		need(!Array.isArray(s.fixes) || hcRows >= hcFound - (s.accepted || []).length, `sweep has ${hcFound} high or critical finding(s) but ${hcRows} high or critical fix row(s)`);
 	}
+	need(!(rec.verification || []).some((v) => FIX_CLAIM.test(String(v))), 'a verification line states the fix-test claim: it is written from sweep.fixes, never typed');
 	need(rec.tests && Number.isInteger(rec.tests.before) && Number.isInteger(rec.tests.after), 'tests has no before and after count');
 	// The record is the source of outward text: plain ASCII, as the PR body and changelog must be.
 	const nonAscii = [...JSON.stringify(rec)].find((ch) => ch.charCodeAt(0) > 126);
@@ -54,7 +76,7 @@ export function problems(rec) {
 	// What the PR body audit would fail in the text the body is written from, named here (K15): the same words, the
 	// same dash rule, the same bullet size; the body adds one Tests bullet to at most 3 verification lines.
 	const prose = [rec.headline, rec.alignment, ...(rec.items || []).flatMap((it) => [it.text, it.before, it.after]),
-		...(rec.decisions || []).flatMap((d) => [d.decision, d.why]), ...(rec.verification || []), rec.upgrading, rec.limits, ...((s && [s.fixed, s.deferred, s.accepted].flat()) || [])].filter(text);
+		...(rec.decisions || []).flatMap((d) => [d.decision, d.why]), ...(rec.verification || []), rec.upgrading, rec.limits, ...((s && [(s.fixes || []).map((f) => f && f.text), s.deferred, s.accepted].flat()) || [])].filter(text);
 	for (const p of prose) {
 		const plain = p.replace(/`[^`]*`/g, '');
 		const word = BANNED.find((re) => re.test(plain));
@@ -110,7 +132,13 @@ export function prBody(rec) {
 	out.push('### Verification', '', ...rec.verification.map((v) => `- ${v}`), `- Tests: ${rec.tests.before} before, ${rec.tests.after} after${rec.tests.flips ? `; ${rec.tests.flips}` : ''}.`, '');
 	out.push('### Review', '', `${s.tier} review of \`${s.commit}\`.`, '', '| Dimension | Result |', '|---|---|', ...s.dimensions.map((d) => `| ${d.name} | ${d.result} |`), '');
 	const hc = (s.findings.critical || 0) + (s.findings.high || 0);
-	out.push(`- **High and critical findings:** ${hc ? `${hc}, each fixed here or accepted by the owner:\n${count(s.fixed) || ''}` : 'none.'}`);
+	const fixes = s.fixes || [];
+	const fixLine = (f) => `${f.text.trim().replace(/\.$/, '')}. Fixed in ${f.commit}; ${f.test === NO_TEST ? NO_TEST : `test \`${f.test}\``}.`;
+	const hcFixes = fixes.filter((f) => ['critical', 'high'].includes(f.severity)).map(fixLine);
+	out.push(`- **High and critical findings:** ${hc ? `${hc}, each fixed here or accepted by the owner:\n${count(hcFixes) || ''}` : 'none.'}`);
+	// K105: the claim is counted from the ledger rows, and CI's test check states each named test's verdict.
+	const tested = fixes.filter((f) => f.test !== NO_TEST).length;
+	out.push(`- **Fix tests:** ${tested} with a test that fails first, checked in CI; ${fixes.length - tested} with ${NO_TEST}.`);
 	out.push(`- **Deferred:** ${count(s.deferred) ? `\n${count(s.deferred)}` : 'none.'}`);
 	out.push(`- **Accepted risks:** ${count(s.accepted) ? `\n${count(s.accepted)}` : 'none.'}`);
 	out.push('- **Secrets:** no secrets or account information in the diff.', '', `Version alignment: YES. ${rec.alignment || `v${rec.version} is the ${rec.level} release this build plans.`}`, '');

@@ -19,7 +19,8 @@ const record = () => ({
 	],
 	decisions: [{ decision: 'One record', why: 'the changelog and the body never differ' }],
 	verification: ['Every test passed in CI.'],
-	sweep: { tier: 'Feature', commit: 'abc1234', dimensions: [{ name: 'Code security', result: 'clean' }], findings: { critical: 0, high: 1, medium: 2, low: 0 }, fixed: ['one high, fixed here'] },
+	sweep: { tier: 'Feature', commit: 'abc1234', dimensions: [{ name: 'Code security', result: 'clean' }], findings: { critical: 0, high: 1, medium: 2, low: 0 },
+		fixes: [{ id: 'F1', severity: 'high', text: 'one high, fixed here', commit: 'abc1234', test: 'tests/x.test.mjs::a' }, { id: 'F2', severity: 'low', text: 'one low, a parser edge', commit: 'abc1235', test: 'no test: no real input' }] },
 	tests: { before: 10, after: 8 },
 });
 
@@ -205,4 +206,23 @@ test('build-record notes prints the draft, and the upgrading and limits lines ar
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.stdout, notes(rec));
 	assert.match(r.stdout, /^## Upgrading\n\nRun `install user` first/m, 'the default upgrading line');
+});
+
+// K105 (build 13, PR 49): the PR said each finding had a test that fails first, and nothing checked it; six low or
+// medium parser edges got tests only because every fix needed one. The fix ledger is now rows in the record: a high,
+// critical, security or owner-rule fix names its test, a low or medium may say no real input shows it, and the body's
+// fix line is written from the rows, never typed.
+// why: guards rule:test-value
+test('the fix ledger needs a test for a high, critical, security or owner fix, and the body counts it from the rows', () => {
+	assert.deepEqual(problems(record()), []);
+	const body = prBody(record());
+	assert.match(body, /\*\*Fix tests:\*\* 1 with a test that fails first, checked in CI; 1 with no test: no real input\./);
+	assert.match(body, /one high, fixed here\. Fixed in abc1234; test `tests\/x\.test\.mjs::a`\./);
+	const gap = (edit) => { const r = record(); edit(r); return problems(r).join('\n'); };
+	assert.match(gap((r) => { r.sweep.fixes[0].test = 'no test: no real input'; }), /fix F1 \(high\) names no test/);
+	assert.match(gap((r) => { r.sweep.fixes[1].security = true; }), /fix F2 \(low, security\) names no test/);
+	assert.match(gap((r) => { r.sweep.fixes[1].test = 'none'; }), /fix F2 test "none" is not a test key or "no test: no real input"/);
+	assert.match(gap((r) => { r.verification = ['Each sweep finding has a test that fails first.']; }), /fix-test claim.*written from sweep\.fixes/);
+	assert.match(gap((r) => { delete r.sweep.fixes; }), /sweep has no fixes list/);
+	assert.match(gap((r) => { r.sweep.fixes = []; }), /1 high or critical finding\(s\) but 0 high or critical fix row\(s\)/);
 });
