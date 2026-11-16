@@ -544,8 +544,12 @@ function shellWritesFrom(command, tool, start, names) {
 		const w = g.filter((x) => !x.redirect).map((x) => x.value);
 		const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
 		const onPath = !/[\\/]/.test(w[0] || '');
-		// sort -o and uniq's second name write a file, so neither is plain here (the push security review of build 11).
-		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && p !== 'sort' && p !== 'uniq' || (p === 'out-null' && w.length === 1))) || CHANGERS.has(p) || printSed(w)
+		// sort -o and uniq's second name write a file (the push security review of build 11), so each is plain only when
+		// it cannot: sort with no output option, uniq with one name at most and no option that takes a value.
+		const names = w.slice(1).filter((a) => !a.startsWith('-'));
+		const writes = (p === 'sort' && w.slice(1).some((a) => /^--o|^-[^-]*o/.test(a)))
+			|| (p === 'uniq' && (names.length > 1 || (names.length === 1 && w.some((a) => /^-[fsw]$|^--(skip|check)-/.test(a)))));
+		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1))) || CHANGERS.has(p) || printSed(w)
 			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
 			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
 	};
