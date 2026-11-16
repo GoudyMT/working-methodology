@@ -79,5 +79,6 @@ test('the use check finds a plan checked in a worktree', () => {
 	spawnSync(process.execPath, [GRAPH, path.join(wt, 'plan.md')], { cwd: wt, encoding: 'utf8' });
 	const r = spawnSync(process.execPath, [path.resolve('project/.claude/use-check.mjs'), '--json'], { cwd: wt, encoding: 'utf8' });
 	const part = JSON.parse(r.stdout).parts.find((p) => p.name === 'plan graph');
+	assert.ok(part, 'the use check has no plan graph part');
 	assert.equal(part.used.ok, true, JSON.stringify(part));
 });
