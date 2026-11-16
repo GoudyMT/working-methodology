@@ -335,6 +335,16 @@ test('step rename renames one roadmap step by its name or release, and refuses a
 	assert.equal(r.status, 1);
 	assert.match(r.stdout, /step 9a with release 1\.35\.0[\s\S]*nothing written/);
 	assert.deepEqual(JSON.parse(read(dir, '_State.json')).roadmap.map((x) => x.step), ['9a', '9a', 'Z']);
+	// 1.36.1 (the workbench, 2026-11-15: a new step went to the end and only a hand edit moved it): step move places it.
+	r = st(dir, 'step', 'move', 'Z', 'before', '1.34.0');
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.deepEqual(JSON.parse(read(dir, '_State.json')).roadmap.map((x) => [x.step, x.release]), [['Z', '1.35.0'], ['9a', '1.34.0'], ['9a', '1.35.0']]);
+	assert.equal(st(dir, 'step', 'move', 'Z', 'after', '1.34.0').status, 0);
+	assert.deepEqual(JSON.parse(read(dir, '_State.json')).roadmap.map((x) => [x.step, x.release]), [['9a', '1.34.0'], ['Z', '1.35.0'], ['9a', '1.35.0']]);
+	assert.equal(st(dir, 'step', 'move', 'Z', 'after', '1.35.0').status, 1, 'a release two steps share is refused');
+	assert.equal(st(dir, 'step', 'move', 'Z', 'before', 'nope').status, 1);
+	assert.equal(st(dir, 'step', 'move', '9a', 'before', 'Z').status, 1, 'a name for two steps is refused');
+	assert.equal(st(dir, 'step', 'move', 'Z', 'beside', '1.34.0').status, 2);
 });
 
 // K69 (1.36.0): both real projects keep their roadmap as checkboxes (53 and 555 boxes on 2026-11-15), which list import

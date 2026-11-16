@@ -26,6 +26,7 @@
 // The improvement list and the roadmap (1.35.0, list-data.mjs holds the shape and the reasons):
 //   node .claude/state.mjs list [text] [--all]                the open rows, ranked (or every row), one short line each
 //   node .claude/state.mjs list --agent | --full              one JSON line a row with short fields | the whole titles
+//   node .claude/state.mjs step move <step> before|after <step>   place a roadmap step (by its name or release)
 //   node .claude/state.mjs list --step <step>                 one roadmap step's rows (its name, build number or release)
 //   node .claude/state.mjs list shorten                       once: a short name for each row from before 1.36.0
 //   node .claude/state.mjs item <id> [--json]                 the whole row
@@ -605,6 +606,24 @@ function main(argv) {
 			at.step = to;
 			saveState(s, { touch: false });
 			return console.log(`step ${was} renamed ${to}; rows placed "at" ${was} keep that text: move them with item set <id> at ${to}${refreshLists()}`);
+		}
+		if (verb === 'move') {
+			// 1.36.1: step set adds a new step at the end, and only a hand edit of _State.json moved it.
+			const where = field;
+			const other = clean(text.join(' '));
+			if (!clean(step) || !['before', 'after'].includes(where) || !other) return usage();
+			const one = (name) => {
+				const named = s.roadmap.filter((x) => x.step === name || (x.release && x.release === name));
+				return named.length === 1 ? { at: named[0] } : { why: named.length ? `${name} names ${named.length} steps; name one by its release (${named.map((x) => x.release || '(none)').join(', ')})` : `${name} is not a roadmap step` };
+			};
+			const a = one(clean(step));
+			const b = one(other);
+			if (a.why || b.why) return fail(a.why || b.why);
+			if (a.at === b.at) return fail('a step cannot move beside itself');
+			s.roadmap.splice(s.roadmap.indexOf(a.at), 1);
+			s.roadmap.splice(s.roadmap.indexOf(b.at) + (where === 'after' ? 1 : 0), 0, a.at);
+			saveState(s, { touch: false });
+			return console.log(`step ${a.at.step} moved ${where} ${b.at.step}${refreshLists()}`);
 		}
 		if (verb !== 'set' || !clean(step) || !['release', 'carries', 'state'].includes(field)) return usage();
 		// A step is named by its name, or by its release where two steps share a name.
