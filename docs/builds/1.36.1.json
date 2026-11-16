@@ -1,0 +1,82 @@
+{
+ "version": "1.36.1",
+ "date": "2026-11-16",
+ "level": "patch",
+ "area": "Lists",
+ "title": "fix: a checkbox roadmap imports into a list that already has rows",
+ "headline": "A project whose improvement list is already data can now move its checkbox roadmap in, so the 1.36.0 use check has a way out. The template state no longer ships view hashes that clashed in every project, and a roadmap step can be placed by command.",
+ "alignment": "v1.36.1 fixes what verifying 1.36.0 in the workbench found, so every kit project can finish the move to a roadmap kept as data.",
+ "items": [
+  {
+   "id": "K83",
+   "kind": "fixed",
+   "text": "`list import` of a checkbox roadmap adds its rows to a list that already holds rows, with new ids, and keeps any roadmap step the state already holds; a file of tables still needs an empty list.",
+   "evidence": "tests/list.test.mjs",
+   "where": "A roadmap beside a list kept as data",
+   "before": "Import refused; install exited 1",
+   "after": "Its boxes join the list"
+  },
+  {
+   "id": "K84",
+   "kind": "fixed",
+   "text": "The template state holds no view hash, so install no longer clashes on a project's own state; a view block still showing the template's empty view is filled at the first change.",
+   "evidence": "tests/list.test.mjs",
+   "where": "Install over a project's state",
+   "before": "A clash to merge by hand",
+   "after": "No change to merge"
+  },
+  {
+   "id": "K85",
+   "kind": "fixed",
+   "text": "A folder change back after a kit script (Pop-Location, popd) no longer makes the guards hold the script as a write to a protected file.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "STEPMOVE",
+   "kind": "added",
+   "text": "step move places a roadmap step before or after another, by its name or release.",
+   "evidence": "tests/list.test.mjs",
+   "where": "Placing a new roadmap step",
+   "before": "A hand edit of _State.json",
+   "after": "One command"
+  }
+ ],
+ "verification": [
+  "Each fix has a test that fails on 1.36.0 and passes here.",
+  "In a throwaway project on 1.35.0 data with 4 rows, a checkbox roadmap moves in with new ids and the rows it held are untouched."
+ ],
+ "decisions": [
+  {
+   "decision": "A fix release, in the same thread",
+   "why": "The owner picked a 1.36.1 fix build by pop-up after the workbench verify found the dead end; 1.36.0 stays unshipped until this verifies."
+  }
+ ],
+ "sweep": {
+  "tier": "Fix",
+  "commit": "6f10fb0",
+  "dimensions": [
+   { "name": "Privacy", "result": "Not touched" },
+   { "name": "Supply chain", "result": "Not touched" },
+   { "name": "Legal", "result": "Not touched" },
+   { "name": "Code security", "result": "The guard's folder change back; see the review" },
+   { "name": "Gaps, scaling, test value", "result": "See the review" },
+   { "name": "Alignment", "result": "YES" }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 0,
+   "low": 0
+  },
+  "fixed": [],
+  "deferred": [],
+  "accepted": []
+ },
+ "upgrading": "Run `install user` first, then `install project` in each project. A project the 1.36.0 use check stopped moves its checkbox roadmap with `list import` now.",
+ "limits": "Boxes under a heading the state already holds as a step keep that step as it is; its carries and state are not read again.",
+ "tests": {
+  "before": 791,
+  "after": 792,
+  "flips": "declared tests on v1.36.0 and on this branch; the PR run gives the final count"
+ }
+}
