@@ -88,18 +88,278 @@
  "upgrading": "Run `install user` first, then `install project` in each project. A sweep's fixes now go in the build record as `sweep.fixes` rows, where a project keeps one.",
  "limits": "Whether a real input shows a low or medium problem is the lead's call, shown in the record; no script can tell. The rule map counts a name, not proof that the code holds the rule.",
  "sweep": {
-  "tier": "Feature",
-  "commit": "TBD",
+  "tier": "Feature (security-sensitive)",
+  "commit": "1b0fd3e",
   "dimensions": [
-   { "name": "Privacy", "result": "TBD" },
-   { "name": "Supply chain", "result": "TBD" },
-   { "name": "Legal", "result": "TBD" },
-   { "name": "Code security", "result": "TBD" },
-   { "name": "Gaps, scaling, test value", "result": "TBD" },
-   { "name": "Alignment", "result": "TBD" }
+   {
+    "name": "Privacy",
+    "result": "Not touched: no new data leaves the machine"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency, no action pin changed"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "A hidden diff, borrowed results and typed labels, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Plan shapes, sibling lines and test gaps, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
   ],
-  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
-  "fixes": [],
+  "findings": {
+   "critical": 0,
+   "high": 8,
+   "medium": 15,
+   "low": 9
+  },
+  "fixes": [
+   {
+    "id": "S1",
+    "severity": "high",
+    "text": "A .gitattributes in a subfolder hid that folder's changes from the PR test pick; any .gitattributes runs the full suite; diffs are read as text",
+    "commit": "92945c8",
+    "test": "tests/pr-scope.test.mjs::a PR runs the reached tests only with a map for its base and no risky change; anything else runs everything",
+    "security": true
+   },
+   {
+    "id": "S2",
+    "severity": "high",
+    "text": "A new test file that only ended non-zero on the old code read as failing first; a test with its own passing result reads as passing",
+    "commit": "fd60b5f",
+    "test": "tests/test-check.test.mjs::the test check keys each result by its file, and a fix test red only because its file cannot load is named",
+    "security": true
+   },
+   {
+    "id": "S3",
+    "severity": "high",
+    "text": "A fix test in a file made unable to load on the old code read as failing first; the ledger names a fix test red only because its file cannot load",
+    "commit": "fd60b5f",
+    "test": "tests/test-check.test.mjs::the test check keys each result by its file, and a fix test red only because its file cannot load is named",
+    "security": true
+   },
+   {
+    "id": "S4",
+    "severity": "high",
+    "text": "A passing test took the red result of a same-named test in another file; results are keyed by file; each file runs on its own",
+    "commit": "fd60b5f",
+    "test": "tests/test-check.test.mjs::the test check keys each result by its file, and a fix test red only because its file cannot load is named",
+    "security": true
+   },
+   {
+    "id": "S5",
+    "severity": "high",
+    "text": "A loop name took the red result of another file's test that fit its pattern; a loop matches only its own file, less its plain tests",
+    "commit": "fd60b5f",
+    "test": "tests/test-check.test.mjs::the test check keys each result by its file, and a fix test red only because its file cannot load is named",
+    "security": true
+   },
+   {
+    "id": "S6",
+    "severity": "high",
+    "text": "Any accepted line hid a high fix row typed as medium; only an accepted line naming a high or critical counts",
+    "commit": "2f4a2ad",
+    "test": "tests/build-record.test.mjs::the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes",
+    "security": true
+   },
+   {
+    "id": "S7",
+    "severity": "high",
+    "text": "A guard file fix could be typed medium and ship with no test; each fix commit is read; a guard file fixed with no test is named",
+    "commit": "2f4a2ad",
+    "test": "tests/build-record.test.mjs::the repo check reads each fix commit and names a guard file fixed with no test",
+    "security": true
+   },
+   {
+    "id": "S8",
+    "severity": "high",
+    "text": "The body said each named fix test fails first, checked in CI, before any verdict; the line says what the rows hold and points to the test check",
+    "commit": "2f4a2ad",
+    "test": "tests/build-record.test.mjs::the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes",
+    "security": true
+   },
+   {
+    "id": "S9",
+    "severity": "medium",
+    "text": "A change to a path with a space ran none of the tests that read it; paths unquoted, the tab trimmed, unplaced files run whole",
+    "commit": "92945c8",
+    "test": "tests/harness.test.mjs::a changed run still picks the tests a binary diff, a spaced path or an odd test start reaches",
+    "security": true
+   },
+   {
+    "id": "S10",
+    "severity": "medium",
+    "text": "Editing a test named at run time ran no test; a name that is not one whole literal runs the whole file",
+    "commit": "92945c8",
+    "test": "tests/harness.test.mjs::a changed run still picks the tests a binary diff, a spaced path or an odd test start reaches",
+    "security": true
+   },
+   {
+    "id": "S11",
+    "severity": "medium",
+    "text": "A test written test ( was read as part of the test above it; a space before the bracket starts a test",
+    "commit": "92945c8",
+    "test": "tests/harness.test.mjs::a changed run still picks the tests a binary diff, a spaced path or an odd test start reaches",
+    "security": true
+   },
+   {
+    "id": "S12",
+    "severity": "medium",
+    "text": "A security or owner flag typed as a string read as false; the flags must be true or false",
+    "commit": "2f4a2ad",
+    "test": "tests/build-record.test.mjs::the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes"
+   },
+   {
+    "id": "S13",
+    "severity": "medium",
+    "text": "A PR that left VERSION alone had no fix ledger read; a change install reads must move VERSION",
+    "commit": "4ca4ded",
+    "test": "tests/build-record.test.mjs::CI checks the build record on every PR that moves VERSION",
+    "security": true
+   },
+   {
+    "id": "S14",
+    "severity": "medium",
+    "text": "A test key holding a tool word made the body fail its audit; the body names no test key; the record keeps it",
+    "commit": "2f4a2ad",
+    "test": "tests/build-record.test.mjs::the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes"
+   },
+   {
+    "id": "S15",
+    "severity": "medium",
+    "text": "A fix line under 240 characters grew over it in the body; the whole body line is held to 240",
+    "commit": "2f4a2ad",
+    "test": "tests/build-record.test.mjs::the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes"
+   },
+   {
+    "id": "S16",
+    "severity": "medium",
+    "text": "The team build skill still owed a failing-first test for every fix; it names the fix-test bar",
+    "commit": "165ba0f",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "S17",
+    "severity": "medium",
+    "text": "An escaped pipe in a plan cell shifted the columns, so a shared file was missed; pipes a backslash escapes stay in the cell",
+    "commit": "b104d87",
+    "test": "tests/plan-graph.test.mjs::the plan graph reads escaped pipes, folders, paths in any case and order words, and stops at the units table"
+   },
+   {
+    "id": "S18",
+    "severity": "medium",
+    "text": "A plan file outside backticks was dropped and the plan read clean; such a unit is named",
+    "commit": "b104d87",
+    "test": "tests/plan-graph.test.mjs::the plan graph reads escaped pipes, folders, paths in any case and order words, and stops at the units table"
+   },
+   {
+    "id": "S19",
+    "severity": "medium",
+    "text": "A folder, a ./ prefix or another letter case missed a clash; paths are folded and a folder covers its files",
+    "commit": "b104d87",
+    "test": "tests/plan-graph.test.mjs::the plan graph reads escaped pipes, folders, paths in any case and order words, and stops at the units table"
+   },
+   {
+    "id": "S20",
+    "severity": "medium",
+    "text": "A side table under Units was read as units; the table ends at its first line that is not a row",
+    "commit": "b104d87",
+    "test": "tests/plan-graph.test.mjs::the plan graph reads escaped pipes, folders, paths in any case and order words, and stops at the units table"
+   },
+   {
+    "id": "S21",
+    "severity": "medium",
+    "text": "An order cell took any word starting with u as a unit; only ids the table has count; an order naming none is named",
+    "commit": "b104d87",
+    "test": "tests/plan-graph.test.mjs::the plan graph reads escaped pipes, folders, paths in any case and order words, and stops at the units table"
+   },
+   {
+    "id": "S22",
+    "severity": "medium",
+    "text": "The loop match for flips had no test; the loop test checks it",
+    "commit": "fd60b5f",
+    "test": "tests/test-check.test.mjs::the test check reads tests made in a loop, and still names a changed file that cannot load on the base"
+   },
+   {
+    "id": "S23",
+    "severity": "medium",
+    "text": "The ledger slice paths had no test; the ledger is read over two slices",
+    "commit": "fd60b5f",
+    "test": "tests/test-check.test.mjs::the test check keys each result by its file, and a fix test red only because its file cannot load is named"
+   },
+   {
+    "id": "S24",
+    "severity": "low",
+    "text": "A hand edit of the body's fix lines was read by no check; the body job holds them to the record",
+    "commit": "4ca4ded",
+    "test": "tests/build-record.test.mjs::the body check holds the fix lines of a published body to the record"
+   },
+   {
+    "id": "S25",
+    "severity": "low",
+    "text": "The common brief owed a failing-first test for every fix; it names the fix-test bar",
+    "commit": "165ba0f",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "S26",
+    "severity": "low",
+    "text": "The plan skill owed a failing-first test for every fix; it names the fix-test bar",
+    "commit": "165ba0f",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "S27",
+    "severity": "low",
+    "text": "A line about the auto-fix push read as a typed fix-test claim; the claim reads only a quantifier on the fixes",
+    "commit": "2f4a2ad",
+    "test": "tests/build-record.test.mjs::the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes"
+   },
+   {
+    "id": "S28",
+    "severity": "low",
+    "text": "An alignment row or a bold id made a false unit; both are read as markdown",
+    "commit": "b104d87",
+    "test": "tests/plan-graph.test.mjs::the plan graph reads escaped pipes, folders, paths in any case and order words, and stops at the units table"
+   },
+   {
+    "id": "S29",
+    "severity": "low",
+    "text": "A plan checked in a worktree read as never checked; the use check reads the common git folder",
+    "commit": "b104d87",
+    "test": "tests/plan-graph.test.mjs::the use check finds a plan checked in a worktree"
+   },
+   {
+    "id": "S30",
+    "severity": "low",
+    "text": "The rule map read untracked and ignored files; it reads the files git tracks",
+    "commit": "b104d87",
+    "test": "tests/rule-map.test.mjs::the rule map lists what holds each rule, names the rules nothing holds, and check fails on a stale map"
+   },
+   {
+    "id": "S31",
+    "severity": "low",
+    "text": "The body audit of fix rows had no test; the ledger test covers it",
+    "commit": "2f4a2ad",
+    "test": "tests/build-record.test.mjs::the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes"
+   },
+   {
+    "id": "S32",
+    "severity": "low",
+    "text": "Whole sentences were pinned with no pin case; stable tokens pinned",
+    "commit": "3694062",
+    "test": "no test: no real input"
+   }
+  ],
   "deferred": [],
   "accepted": []
  },
