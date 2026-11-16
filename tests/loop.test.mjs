@@ -64,8 +64,10 @@ test('the loop says one next step and refuses a step out of order, or with no ev
 	assert.equal(loop(r, ['done', 'proof']).status, 2, 'a step with no evidence');
 	assert.equal(loop(r, ['done', 'proof', '--evidence', 'tests/a.test.mjs red on main']).status, 0);
 	const next = loop(r, ['next']);
-	assert.match(next.stdout, /^NEXT design: the owner's/m);
-	assert.ok(code(next.stdout, 'design'), next.stdout);
+	assert.match(next.stdout, /^NEXT design: the owner's; the plan lock: first record its self-approval line/m);
+	assert.equal(code(next.stdout, 'design'), undefined, 'no act to quote before the verdict');
+	shadow(r);
+	assert.ok(code(loop(r, ['next']).stdout, 'design'), 'the act, once the verdict is recorded');
 	assert.equal(loop(r, ['start', 'K2']).status, 1, 'a second run while one is open');
 	// Run from another folder, the script keeps to its own project's log and bounds (the build 12 sweep).
 	const elsewhere = repo();
@@ -78,8 +80,8 @@ test('an owner step is done only on the owner\'s Yes to its loop act in the reco
 	const r = repo();
 	loop(r, ['start', 'K1']);
 	loop(r, ['done', 'proof', '--evidence', 'red test']);
-	const act = `loop design ${code(loop(r, ['next']).stdout, 'design')}`;
 	assert.equal(shadow(r).status, 0);
+	const act = `loop design ${code(loop(r, ['next']).stdout, 'design')}`;
 	assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 1, 'no Yes');
 	ownerTaps(r, act, { answer: 'No' });
 	assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 1, 'a No is no lock');
@@ -195,7 +197,6 @@ test('the plan step needs its self-approval line first, and the streak counts on
 		assert.equal(loop(r, ['start', item]).status, 0);
 		assert.equal(loop(r, ['shadow', '--would', would, '--why', 'x']).status, 1, 'a shadow line before the plan step opened');
 		loop(r, ['done', 'proof', '--evidence', 'x']);
-		const act = `loop design ${code(loop(r, ['next']).stdout, 'design')}`;
 		const bare = loop(r, ['done', 'design', '--evidence', 'plan v1']);
 		assert.equal(bare.status, 1, 'a plan with no self-approval line');
 		assert.match(bare.stdout, /shadow --would yes\|no --why/);
@@ -203,6 +204,7 @@ test('the plan step needs its self-approval line first, and the streak counts on
 		assert.equal(loop(r, ['shadow', '--would', would]).status, 2, 'no why');
 		assert.equal(shadow(r, would).status, 0);
 		assert.equal(shadow(r, would === 'yes' ? 'no' : 'yes').status, 1, 'a second verdict on the same plan');
+		const act = `loop design ${code(loop(r, ['next']).stdout, 'design')}`;
 		for (const a of answers) ownerTaps(r, act, { answer: a });
 		assert.equal(loop(r, ['done', 'design', '--evidence', 'plan v1']).status, 0);
 		finish(r);
@@ -222,14 +224,13 @@ test('the plan step needs its self-approval line first, and the streak counts on
 	fs.writeFileSync(file, JSON.stringify(b));
 	loop(short, ['start', 'K1']);
 	loop(short, ['done', 'proof', '--evidence', 'x']);
-	// A Yes given before the verdict was recorded is not the owner's word on that verdict, so it locks nothing.
-	const shortAct = `loop design ${code(loop(short, ['next']).stdout, 'design')}`;
-	ownerTaps(short, shortAct);
-	const t = Date.now();
-	while (Date.now() - t < 1100);
+	// The plan's act is made from its verdict (the build 13 review): an answer to the act the step had before a verdict,
+	// the 1.38.0 spelling, locks nothing, so a session cannot ask first and write a verdict to fit the answer.
+	const run = log(short).find((e) => e.kind === 'start').run;
+	ownerTaps(short, `loop design ${crypto.createHash('sha256').update(`${run}:design`).digest('hex').slice(0, 6)}`);
 	shadow(short);
-	assert.equal(loop(short, ['done', 'design', '--evidence', 'x']).status, 1, 'a Yes from before the verdict');
-	ownerTaps(short, shortAct);
+	assert.equal(loop(short, ['done', 'design', '--evidence', 'x']).status, 1, 'a Yes to the act from before the verdict');
+	ownerTaps(short, `loop design ${code(loop(short, ['next']).stdout, 'design')}`);
 	assert.equal(loop(short, ['done', 'design', '--evidence', 'x']).status, 0);
 	assert.match(loop(short, ['show']).stdout, /shadow: 1 of 1 .*reached: the owner may decide whether plans like these approve themselves; self-approval stays off until then/);
 	b.shadow = { step: 'design', streak: 0 };
@@ -238,6 +239,60 @@ test('the plan step needs its self-approval line first, and the streak counts on
 	const bad = repo();
 	fs.writeFileSync(path.join(bad.dir, '.claude', 'bounds.json'), JSON.stringify(b));
 	assert.match(loop(bad, ['start', 'K1']).stdout, /shadow/, 'a streak under 1 is refused');
+});
+
+// T7 slice 2 (build 13; the stop-point map's S13): opening the next thread on its own needs a handoff that passes the
+// closeout audit, a daily cap and the kill switch off. The check is the instrument; chaining stays off until the
+// owner writes a cap into the bounds file, and opening the thread stays the coordinator's.
+// why: guards the owner's S13 stop: no runaway threads, and no thread opened on a handoff the next one cannot use
+test('the chain check says GO only for a clean handoff, a closed run, the kill switch off and today\'s cap not reached', () => {
+	const r = repo();
+	fs.mkdirSync(path.join(r.cfg, 'skills', 'closeout'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/skills/closeout/audit.mjs'), path.join(r.cfg, 'skills', 'closeout', 'audit.mjs'));
+	const handoff = path.join(r.dir, 'handoff.md');
+	fs.writeFileSync(handoff, '# Notes - Continuation Handoff\n\n## REQUIRED FIRST ACTIONS\nRun the Post-Compact Orientation Protocol.\n\n## Working Mode: Plan\n\n## State Snapshot\n- Git: main at a1b2c3d, pushed\n\n## Newly-Established Working Standards\nnone\n\n## Critical In-Flight Context\n- none\n\n## Reading Order\n1. _Start Here.md\n\n## Next Step\n- What: K7, the export fix\n\n## Anti-Hallucination Discipline\n- verified\n');
+	const bounds = path.join(r.dir, '.claude', 'bounds.json');
+	const cap = (n) => { const b = JSON.parse(fs.readFileSync(bounds, 'utf8')); if (n == null) delete b.limits.threadsPerDay; else b.limits.threadsPerDay = n; fs.writeFileSync(bounds, JSON.stringify(b)); };
+	const chain = (...more) => loop(r, ['chain', handoff, ...more]);
+	assert.equal(loop(r, ['chain']).status, 2, 'no handoff named');
+	const off = chain();
+	assert.equal(off.status, 1);
+	assert.match(off.stdout, /^STOP/m);
+	assert.match(off.stdout, /threadsPerDay/, 'with no cap, chaining is off');
+	cap(2);
+	const go = chain();
+	assert.equal(go.status, 0, go.stdout);
+	assert.match(go.stdout, /^GO: open the next thread for: K7, the export fix/m);
+	assert.equal(fs.existsSync(path.join(r.dir, '.git', 'kit-loop.jsonl')), false, 'a check alone writes nothing');
+	// The handoff the next thread starts from must pass the audit.
+	fs.writeFileSync(`${handoff}.bad`, fs.readFileSync(handoff, 'utf8').replace('- What: K7, the export fix\n', ''));
+	const bad = loop(r, ['chain', `${handoff}.bad`]);
+	assert.equal(bad.status, 1);
+	assert.match(bad.stdout, /closeout audit[\s\S]*Next Step: say what comes next/);
+	// An open or halted run, and the kill switch, each stop it.
+	loop(r, ['start', 'K6']);
+	assert.match(chain().stdout, /run K6 is still open/);
+	loop(r, ['halt', 'stuck']);
+	assert.match(chain().stdout, /halted/);
+	const r2 = repo();
+	fs.mkdirSync(path.join(r2.cfg, 'skills', 'closeout'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/skills/closeout/audit.mjs'), path.join(r2.cfg, 'skills', 'closeout', 'audit.mjs'));
+	fs.copyFileSync(bounds, path.join(r2.dir, '.claude', 'bounds.json'));
+	const chain2 = (...more) => loop(r2, ['chain', handoff, ...more]);
+	assert.equal(chain2().status, 0);
+	fs.writeFileSync(path.join(r2.cfg, 'autonomy-off'), '');
+	assert.match(chain2().stdout, /kill switch/);
+	fs.rmSync(path.join(r2.cfg, 'autonomy-off'));
+	// The cap counts the threads opened in the last 24 hours, each recorded by --open.
+	assert.equal(chain2('--open').status, 0);
+	assert.equal(chain2('--open').status, 0);
+	const full = chain2('--open');
+	assert.equal(full.status, 1);
+	assert.match(full.stdout, /2 of 2 threads opened in the last 24 hours/);
+	assert.equal(log(r2).filter((e) => e.kind === 'chain').length, 2, 'a refused open is not recorded');
+	// With no closeout audit installed there is nothing to check the handoff with.
+	fs.rmSync(path.join(r2.cfg, 'skills'), { recursive: true });
+	assert.match(chain2().stdout, /closeout audit is not installed/);
 });
 
 // why: guards rule:loop-workflow-mode (armed only by the owner's exact phrase; any owner message halts it)

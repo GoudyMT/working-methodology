@@ -15,6 +15,8 @@
 //   node .claude/loop.mjs halt "<why>" | resume                a stop; only the owner's Yes to `loop resume <code>` clears it
 //   node .claude/loop.mjs shadow --would yes|no --why "<why>"   the plan's self-approval line (S3), once, before the owner
 //                                                              is asked to lock it; the plan step is not done without it
+//   node .claude/loop.mjs chain <handoff.md> [--open]          GO or STOP for opening the next thread (S13); --open
+//                                                              records the opening against limits.threadsPerDay
 //   node .claude/loop.mjs mode arm | prompt --text "<message>" | off --why "<why>"
 //        arm: only when the session's latest owner message is exactly "begin loop workflow" and came after loop mode
 //        was last turned off; prompt and off are the hooks' (any other owner message halts the loop; session start and
@@ -73,6 +75,7 @@ function bounds() {
 	if (!steps.length || steps.some((s) => !s || !/^[a-z][a-z-]*$/.test(String(s.step)) || !WHO.includes(s.who))) return { why: `.claude/bounds.json needs steps, each { "step": "<name>", "who": "${WHO.join('" | "')}" }` };
 	const limits = (b && b.limits) || {};
 	for (const k of ['fixRound', 'canaryMiss', 'visual']) if (!Number.isInteger(limits[k]) || limits[k] < 1) return { why: `.claude/bounds.json needs limits.${k}, a whole number of at least 1` };
+	if (limits.threadsPerDay !== undefined && (!Number.isInteger(limits.threadsPerDay) || limits.threadsPerDay < 1)) return { why: '.claude/bounds.json: limits.threadsPerDay, when set, is a whole number of at least 1' };
 	// The plan shadow (T7 slice 2, S3): which owner step is the plan lock, and how many agreeing plans in a row the
 	// owner's bar is (10, the owner's pick 2026-11-16). Self-approval itself is not built; the streak is data.
 	const shadow = { step: 'design', streak: 10, ...((b && b.shadow) || {}) };
@@ -83,7 +86,7 @@ function bounds() {
 /** The log read once: the open run, what it has done, its counts, whether it is halted, loop mode, the last bounds. */
 function read() {
 	const lines = LOG && fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean) : [];
-	const s = { run: null, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, taps: new Set(), mode: { state: 'off', why: 'not armed', time: '' }, opened: null, lastBounds: null, shadow: null, streak: 0 };
+	const s = { run: null, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, taps: new Set(), mode: { state: 'off', why: 'not armed', time: '' }, opened: null, lastBounds: null, shadow: null, streak: 0, chains: [] };
 	const handEdit = (at) => ({ why: 'the loop log was changed by hand', at, time: new Date(0).toISOString() });
 	lines.forEach((l, i) => {
 		let e;
@@ -92,6 +95,7 @@ function read() {
 		if (e.tap) s.taps.add(e.tap);
 		if (e.kind === 'mode') s.mode = { state: e.state, why: e.why || '', time: e.time };
 		else if (e.kind === 'start') { Object.assign(s, { run: { item: e.item, id: e.run, bounds: e.bounds }, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, opened: e.time, shadow: null }); s.lastBounds = e.bounds; }
+		else if (e.kind === 'chain') s.chains.push(e.time);
 		else if (!s.run) return;
 		else if (e.kind === 'done') {
 			s.done.push(e.step); s.opened = e.time; s.shadow = null;
@@ -131,6 +135,10 @@ const resumeAct = (s) => `loop resume ${code(s, `resume:${s.halt.at}`)}`;
 const checkAct = (s) => `loop visual-check ${code(s, `check:${s.checks}`)}`;
 const boundsAct = (s, b) => `loop bounds ${hash6(`${s.lastBounds}:${b.hash}`)}`;
 const killSwitch = () => fs.existsSync(path.join(yesReader.home(), 'autonomy-off'));
+// The act an owner's step is answered on. The plan step's act exists only once its self-approval line is recorded,
+// and is made from that line, so no ask made before the verdict can quote the act its agreement is read from (the
+// build 13 review: a No asked first, then a verdict written to fit it).
+const stepAct = (s, b, step) => (step.step !== b.shadow.step ? `loop ${step.step} ${code(s, step.step)}` : s.shadow ? `loop ${step.step} ${code(s, `${step.step}:${s.shadow.time}:${s.shadow.would}`)}` : null);
 const nextStep = (s, b) => b.steps.find((x) => !s.done.includes(x.step)) || null;
 // The kill switch makes every step the owner's, a guard's step included (the build 12 sweep).
 const whoFor = (step) => (killSwitch() ? 'owner' : step.who);
@@ -162,6 +170,33 @@ function settle(s, b) {
 function shadowLine(s, b) {
 	const at = `shadow: ${s.streak} of ${b.shadow.streak} agreeing plans in a row`;
 	return s.streak >= b.shadow.streak ? `${at}; reached: the owner may decide whether plans like these approve themselves; self-approval stays off until then` : `${at}; self-approval stays off`;
+}
+
+// Thread chaining (T7 slice 2, S13): the next thread opens on its own only when the handoff it starts from passes the
+// closeout audit, no run is open or halted, the kill switch is off, and today's cap is not reached. With no cap in the
+// bounds file, chaining is off: the cap is the owner's to set. Opening the thread itself is the coordinator's.
+function chain(s, b, handoff, open) {
+	const stops = [];
+	const audit = path.join(yesReader.home(), 'skills', 'closeout', 'audit.mjs');
+	let next = '';
+	if (!fs.existsSync(audit)) stops.push(`the closeout audit is not installed (${audit}); run install user from the release copy`);
+	else if (!fs.existsSync(handoff)) stops.push(`no handoff at ${handoff}`);
+	else {
+		const r = spawnSync(process.execPath, [audit, path.resolve(handoff)], { cwd: ROOT, encoding: 'utf8', timeout: 30000 });
+		if (r.status !== 0) stops.push(`the handoff fails the closeout audit: ${String(r.stdout || r.stderr || r.error).trim().split('\n').join('; ')}`);
+		next = ((fs.readFileSync(handoff, 'utf8').match(/What:[ \t]*(.+)/) || [])[1] || '').trim();
+	}
+	if (s.run && s.halt) stops.push(`run ${s.run.item} is halted: ${s.halt.why}`);
+	else if (s.run) stops.push(`run ${s.run.item} is still open; finish it first`);
+	if (killSwitch()) stops.push('the kill switch autonomy-off is on in the Claude folder');
+	const cap = b.limits.threadsPerDay;
+	const today = s.chains.filter((t) => Date.now() - Date.parse(t) < 24 * 3600 * 1000).length;
+	if (cap === undefined) stops.push('chaining is off: the owner sets limits.threadsPerDay in .claude/bounds.json (a pop-up Yes to that exact edit)');
+	else if (today >= cap) stops.push(`${today} of ${cap} threads opened in the last 24 hours`);
+	if (stops.length) { out(['STOP: the next thread waits for the owner.', ...stops.map((x) => `- ${x}`)].join('\n')); return 1; }
+	if (open) write({ kind: 'chain', next: next.slice(0, 200) });
+	out(`GO: open the next thread for: ${next}${open ? ` (recorded: ${today + 1} of ${cap} in the last 24 hours)` : ''}`);
+	return 0;
 }
 
 function lastOwnerMessage() {
@@ -229,8 +264,10 @@ function main(argv) {
 		write({ kind: 'start', item: String(item), run: sha(`${item}:${Date.now()}:${crypto.randomBytes(8).toString('hex')}`), bounds: b.hash, ...(tap ? { tap } : {}) });
 		s = read();
 	}
-	if (b.why) { out(`loop: ${b.why}.`); return 1; }
+	if (cmd === 'chain' && (!rest[0] || rest[0].startsWith('--'))) { out('usage: node .claude/loop.mjs chain <handoff.md> [--open]'); return 2; }
+	if (b.why) { out(`${cmd === 'chain' ? 'STOP: ' : 'loop: '}${b.why}.`); return 1; }
 	s = settle(s, b);
+	if (cmd === 'chain') return chain(s, b, rest[0], rest.includes('--open'));
 	if (['start', 'next', 'show'].includes(cmd)) {
 		if (cmd === 'show') out(`loop mode: ${s.mode.state}${s.mode.state === 'off' ? ` (${s.mode.why})` : ''}`);
 		if (!s.run) { if (cmd === 'show') out(shadowLine(s, b)); out('No loop run is open: node .claude/loop.mjs start <item>.'); return 0; }
@@ -240,7 +277,7 @@ function main(argv) {
 		const who = whoFor(step);
 		out(who === 'alone' ? `NEXT ${step.step}: alone`
 			: who === 'guard' ? `NEXT ${step.step}: the guard's; the act itself waits for the owner's yes where the guards hold it, then record its evidence`
-				: `NEXT ${step.step}: the owner's${step.who !== 'owner' ? ' (the kill switch autonomy-off is on)' : ''}; ask in the pop-up, the question quoting \`loop ${step.step} ${code(s, step.step)}\``);
+				: `NEXT ${step.step}: the owner's${step.who !== 'owner' ? ' (the kill switch autonomy-off is on)' : ''}; ${stepAct(s, b, step) ? `ask in the pop-up, the question quoting \`${stepAct(s, b, step)}\`` : 'the plan lock: first record its self-approval line, node .claude/loop.mjs shadow --would yes|no --why "<why>"; then next prints the act to quote'}`);
 		if (cmd === 'show') out(shadowLine(s, b));
 		if (cmd === 'show') out(`Run ${s.run.item}: done ${s.done.join(', ') || 'nothing yet'}; counts ${Object.entries(s.counts).map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}; visual since the last check ${s.visualSince}, the owner's check: \`${checkAct(s)}\``);
 		return 0;
@@ -281,15 +318,15 @@ function main(argv) {
 		if (!step || step.step !== stepName) { out(card(s, b, `step ${stepName} is out of order`, { halted: false })); return 1; }
 		let tap;
 		let shadowed;
-		const plan = step.step === b.shadow.step;
+		const plan = step.step === b.shadow.step && whoFor(step) === 'owner';
 		if (plan && !s.shadow) { out(`loop: refused: ${step.step} is the plan lock, and the plan carries no self-approval line yet: node .claude/loop.mjs shadow --would yes|no --why "<why>", then ask the owner. Nothing written.`); return 1; }
 		if (plan) {
 			// Agreement is read from the owner's own answers to the plan's act since the verdict, never the session's word.
-			const first = yesReader.sessionAnswers(`loop ${step.step} ${code(s, step.step)}`, { since: Date.parse(s.shadow.time), repo: ROOT, sessionId: session() })[0];
+			const first = yesReader.sessionAnswers(stepAct(s, b, step), { since: Date.parse(s.shadow.time), repo: ROOT, sessionId: session() })[0];
 			shadowed = { would: s.shadow.would, outcome: s.shadow.would === 'no' ? 'cautious' : first && first.yes ? 'agree' : 'disagree' };
 		}
 		if (whoFor(step) === 'owner') {
-			const yes = ownerYes(s, `loop ${step.step} ${code(s, step.step)}`, plan ? s.shadow.time : s.opened);
+			const yes = ownerYes(s, stepAct(s, b, step), plan ? s.shadow.time : s.opened);
 			if (!yes.tap) { out(`loop: refused: ${step.step} is the owner's step, and ${yes.why}. Ask in the pop-up, then run this again. Nothing written.`); return 1; }
 			tap = yes.tap;
 		}

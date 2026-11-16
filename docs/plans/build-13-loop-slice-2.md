@@ -30,7 +30,9 @@ the dead probe guard records are forgotten at closeout on their own pop-up. Bran
 ## 2. Plan self-approval in shadow mode (S3)
 
 In the loop driver. Before the owner's plan step (`design` by default; `shadow.step` in the bounds file), the session
-records `shadow --would yes|no --why "<why>"`; `done design` refuses without one. Agreement comes from the owner's own
+records `shadow --would yes|no --why "<why>"`; `done design` refuses without one. The step's act is made from the
+verdict and exists only after it, so no ask made before the verdict can quote the act agreement is read from (the
+commit review: ask first, then write a verdict to fit the answer). Agreement comes from the owner's own
 pop-up answers to that step's act, never from the session: a `yes` the owner approved on the first answer adds one;
 a `yes` the owner first answered No to resets the streak to 0; a `no` is kept as data and moves nothing. `show`
 prints the streak against 10 (`shadow.streak`). Self-approval stays off: reaching 10 only says the owner may decide.
@@ -52,5 +54,5 @@ closeout audit; no run is open or halted; the kill switch is off; and today's op
 
 ## Known limits
 
-The shadow trusts that a revised plan is re-asked with the same act; the driver reads only the owner's answers to
-that act. The watcher runs only while the owner is logged on, and alerts only on Windows.
+The shadow reads only the owner's answers to the plan's act; a plan talked over in plain chat before the verdict is
+not seen. One verdict per plan, so a revision after a No stays a disagreement. The watcher runs only while the owner is logged on, and alerts only on Windows.
