@@ -976,6 +976,20 @@ test('a branch-only memory file that a changed MEMORY.md still links is kept and
   assert.ok(fs.existsSync(path.join(memory, 'branch.md')), 'removed while MEMORY.md still links it');
   assert.ok(r.skipped.some((s) => s.file === 'memory/branch.md' && /MEMORY\.md still links it/.test(s.reason)), JSON.stringify(r.skipped));
 });
+// The build 11 sweep: the link may be written in any Markdown form.
+// why: guards rule:tracking-file-functions
+test('a changed MEMORY.md keeps a branch-only memory file it links in any Markdown form', () => {
+  for (const link of ['(./branch.md)', '(<branch.md>)', '(branch.md "the branch rule")', '\n[b]: branch.md']) {
+    const { kit, home, proj } = makeKit();
+    fs.writeFileSync(path.join(kit, 'memory/branch.md'), 'branch rule\n');
+    install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+    const memory = path.join(home, 'projects', projectSlug(proj), 'memory');
+    fs.rmSync(path.join(kit, 'memory/branch.md'));
+    fs.appendFileSync(path.join(memory, 'MEMORY.md'), `- [Mine]${link}\n`);
+    install({ kit, home, target: 'project', projectDir: proj, release: released(kit, 'v1.0.0') });
+    assert.ok(fs.existsSync(path.join(memory, 'branch.md')), link);
+  }
+});
 
 // M13 (f) (build 11): on a file system that folds case, a file the kit renamed by case alone is the same file under its
 // old name, so removing the old name removed the shipped file until the next install.
@@ -1005,6 +1019,18 @@ test('the clean-up never removes a file outside its folder, whatever the stamp s
   fs.writeFileSync(stampFile, JSON.stringify(stamp));
   install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
   assert.ok(fs.existsSync(outside), 'a file outside ~/.claude was removed');
+  // The build 11 sweep: a key that stays inside by its text but runs through a link (a junction needs no admin on
+  // Windows) reaches a file outside all the same.
+  install({ kit, home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const away = path.join(path.dirname(home), 'away');
+  fs.mkdirSync(away);
+  fs.writeFileSync(path.join(away, 'victim.txt'), 'owner file\n');
+  fs.symlinkSync(away, path.join(home, 'j'), process.platform === 'win32' ? 'junction' : 'dir');
+  const linked = JSON.parse(read(stampFile));
+  linked.files['j/victim.txt'] = crypto.createHash('sha256').update('owner file\n').digest('hex');
+  fs.writeFileSync(stampFile, JSON.stringify(linked));
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
+  assert.ok(fs.existsSync(path.join(away, 'victim.txt')), 'a file reached through a link was removed');
 });
 
 // M13 (g) (build 11): status's fix line for ~/.claude named the kit folder unquoted, so a folder with a space broke it.

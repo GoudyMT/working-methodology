@@ -733,8 +733,19 @@ export function install(ctx) {
     // M13 (g) (build 11): a key that climbs out of its folder (a hand-edited stamp) names a file install never wrote.
     const rel = path.relative(root, dest);
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) { delete files[key]; continue; }
+    // The build 11 sweep: a key inside by its text can run through a link (a junction needs no admin) to a file
+    // outside, so the folder it sits in is read as the file system resolves it.
+    let realParent = null;
+    let realRoot = null;
+    try { realParent = fs.realpathSync.native(path.dirname(dest)); realRoot = fs.realpathSync.native(root); } catch { /* not there: nothing to remove */ }
+    if (realParent && realRoot) {
+      const inner = path.relative(realRoot, realParent);
+      if (inner.startsWith('..') || path.isAbsolute(inner)) { delete files[key]; continue; }
+    }
     // M13 (f) (build 11): on a case-folding file system a key the kit renamed by case alone is the shipped file itself.
-    if ((process.platform === 'win32' || process.platform === 'darwin') && [...planned].some((k) => k !== key && k.toLowerCase() === key.toLowerCase())) { delete files[key]; continue; }
+    // Any platform: Linux mounts case-folding disks too (WSL on /mnt/c, exFAT, casefold ext4; the build 11 sweep), and
+    // on a case-sensitive one the old name is only a file left behind.
+    if ([...planned].some((k) => k !== key && k.toLowerCase() === key.toLowerCase())) { delete files[key]; continue; }
     if (heir && base && fs.existsSync(dest)) {
       skipped.push({ file: key, reason: `retired by the kit, but kept while ${heir} is skipped: merge ${heir}, then remove this file by hand` });
       continue;
@@ -745,8 +756,10 @@ export function install(ctx) {
     if (key.startsWith('memory/') && memoryDir && skipped.some((s) => s.file === 'memory/MEMORY.md')) {
       let index = '';
       try { index = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf8'); } catch { /* none */ }
-      if (index.includes(`(${key.slice(7)})`)) {
-        skipped.push({ file: key, reason: 'only an unreleased build installed it, and your MEMORY.md still links it (install leaves your changed copy as it is): remove the link, then remove this file by hand' });
+      // Any Markdown link form: (name), (./name), (<name>), (name "title"), or a reference line "[x]: name".
+      const name = key.slice(7).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`(\\(\\s*<?|\\]:\\s*<?)(\\./)?${name}>?(\\s|\\)|$)`, 'm').test(index)) {
+        skipped.push({ file: key, reason: `${branchOnly.includes(key) ? 'only an unreleased build installed it' : 'retired by the kit'}, and your MEMORY.md still links it (install leaves your changed copy as it is): remove the link, then remove this file by hand` });
         continue;
       }
     }
