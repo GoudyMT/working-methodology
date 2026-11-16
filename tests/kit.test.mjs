@@ -2814,10 +2814,15 @@ const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.js
 function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session-1') {
   const dir = path.join(cfg, 'projects', 'C--repo', session, 'subagents');
   fs.mkdirSync(dir, { recursive: true });
-  const at = new Date().toISOString();
+  const base = Date.now();
   for (const [id, calls] of Object.entries(spec)) {
     let model = 'claude-opus-5-5';
+    // A call given as { u, gap } starts gap ms after the line before it (the cache outlives a short gap only).
+    let shift = 0;
+    const at0 = new Date(base).toISOString();
     const lines = calls.map((c, i) => {
+      if (c && c.gap) shift += c.gap;
+      const at = new Date(base + shift).toISOString();
       // { refused: text } is a hook's refusal of a tool call, as Claude Code writes it into the transcript.
       if (c && c.refused) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, is_error: true, content: c.refused }] } });
       // { handback: text } is the reviewer's report, handed back through the hand-back tool.
@@ -2831,7 +2836,7 @@ function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session
       model = m;
       return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
     });
-    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
+    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at0, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
     fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', toolUseId: `toolu_lead_${id}`, model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
   }
   return cfg;
@@ -5270,6 +5275,36 @@ test('the call-cap hook stops a reviewer before a call would take it past its to
   const spent = real.slice(0, n + 2).reduce((t, x) => t + x, 0);
   assert.ok(n < real.length - 2, `stopped at call ${n + 1}`);
   assert.ok(spent <= 827461, `the refused call and the report end at ${spent}, under 827,461`);
+  // The build 11 sweep: the context grows each call, so a jump (a large file read) makes the next calls cost more than
+  // the last did. 50,000 spent with a last call of 30,000 after 10,000: three flat calls fit, three growing ones do not.
+  const grow = hook(3, {}, [10000, 10000, 30000]);
+  assert.equal(grow.permissionDecision, 'deny', 'the next calls grow as the last one did');
+  assert.equal(hook(3, {}, [30000, 30000, 30000], 230000).permissionDecision, 'allow', 'flat calls under the same room');
+});
+
+// The build 11 sweep: the message making a call may be in the transcript when the hook reads it, or not yet. A call
+// still waiting on its answer is the one asked about, so it never counts twice and the cap lands on the same call.
+// why: guards rule:sweep-auto-approval
+test('the call cap counts the calls before this one, whether or not this one is written yet', () => {
+  const dir = makeTemp('cap-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  const hook = (calls, current, extra = {}) => {
+    const lines = [{ message: { role: 'user', content: 'a brief. Call cap: 12.' } }];
+    for (let i = 0; i < calls; i++) {
+      lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 1 }, content: [{ type: 'tool_use', id: `t${i}`, name: 'Read', input: {} }] } });
+      lines.push({ message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${i}`, content: 'ok' }] } });
+    }
+    if (current) lines.push({ message: { role: 'assistant', id: 'mc', usage: { input_tokens: 1 }, content: [{ type: 'tool_use', id: 'tc', name: 'Read', input: {} }] } });
+    fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash', tool_input: {}, tool_use_id: 'tc', ...extra });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow';
+  };
+  for (const current of [false, true]) {
+    assert.equal(hook(9, current), 'allow', `nine before it, this one ${current ? '' : 'not '}written`);
+    assert.equal(hook(10, current), 'deny', `ten before it, this one ${current ? '' : 'not '}written`);
+  }
+  assert.equal(hook(9, true, { tool_use_id: undefined }), 'allow', 'with no call id, the last call still waiting is this one');
 });
 
 // Each sweep below runs on a log of 25 measured roles of 200,000 tokens over 6 calls, starting at 10,000: the
@@ -5312,8 +5347,13 @@ test('the drift signals pause a sweep, each by name', () => {
   assert.doesNotMatch(driftSweep([stopped[0], usual(), usual(), usual(), usual()]).o.stdout, /paused/, 'one of five is no drift');
   const start = Array(5).fill(0).map(() => [[11500, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]);
   assert.match(driftSweep(start).o.stdout, /paused: .*the starting context .*15% over its median of 10,000/);
-  const rewrite = [[[10000, 0, 0, 0], [0, 28000, 0, 0], [0, 0, 30000, 0]], [[10000, 0, 0, 0], [0, 0, 30000, 0]], usual(), usual(), usual()];
+  const late = { u: [0, 0, 30000, 0], gap: 6 * 60 * 1000 };
+  const rewrite = [[[10000, 0, 0, 0], [0, 28000, 0, 0], late], [[10000, 0, 0, 0], late], usual(), usual(), usual()];
   assert.match(driftSweep(rewrite).o.stdout, /paused: .*2 cache re-writes after the first call/);
+  // The build 11 sweep: a call soon after the last that reads back less is a context the model trimmed, not an
+  // expired cache: the cache lives 5 minutes.
+  const soon = { u: [0, 0, 30000, 0], gap: 4 * 60 * 1000 };
+  assert.doesNotMatch(driftSweep([[[10000, 0, 0, 0], [0, 28000, 0, 0], soon], [[10000, 0, 0, 0], soon], usual(), usual(), usual()]).o.stdout, /cache re-writes/);
   // Build 11: a call that reads the whole cache and writes a large batch of new results (a dozen reads at once) is no
   // expired cache. Every role of the 1.36.1 sweep had one such call, and the sweep paused on 7 re-writes that were none.
   const batch = () => [[2, 0, 13600, 323], [2, 13600, 22659, 828], [2, 36259, 2506, 674], ...Array(3).fill([0, 40000, 0, 0])];
