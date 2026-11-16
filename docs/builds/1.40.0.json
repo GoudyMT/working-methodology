@@ -1,0 +1,111 @@
+{
+ "version": "1.40.0",
+ "date": "2026-11-16",
+ "level": "minor",
+ "area": "Tests",
+ "title": "feat: a fix test bar by severity, one security run, plan graphs",
+ "headline": "A fix now needs a test that fails first when it is high, critical, security or an owner rule, and otherwise only when a real input shows the problem; CI states each fix test's verdict, runs the security tests once, and reads plans and rules as graphs.",
+ "alignment": "v1.40.0 is build 14 of the v2.0 plan: K105, the sweep-fix test bar and the PR test run, with step T8, graphs where they pay.",
+ "items": [
+  {
+   "id": "K105-BAR",
+   "kind": "changed",
+   "text": "A high, critical, security or owner-rule fix ships with a test that fails before it; a low or medium one gets a test only when a real input shows the problem, and its ledger row says `no test: no real input`.",
+   "evidence": "rules/reviews-and-findings.md",
+   "where": "A low parser-edge fix",
+   "before": "A new test, always",
+   "after": "A test only for a real input"
+  },
+  {
+   "id": "K105-LEDGER",
+   "kind": "added",
+   "text": "The build record keeps one row per sweep fix (severity, commit and its test), refuses a high, critical, security or owner-rule row with no test, and writes the PR's fix-test line from the rows.",
+   "evidence": "tests/build-record.test.mjs",
+   "where": "The PR's fix-test claim",
+   "before": "Typed, checked nowhere",
+   "after": "Counted from the fix rows"
+  },
+  {
+   "id": "K105-VERDICT",
+   "kind": "added",
+   "text": "The test check states, for each test the fix rows name, whether it fails first on the code before the change, and names a fix whose test does not.",
+   "evidence": "tests/test-check.test.mjs"
+  },
+  {
+   "id": "K105-BLIND",
+   "kind": "fixed",
+   "text": "The test check reads tests made in a loop, and counts a new test in a file the old code cannot load as failing first; a changed file that cannot load is still named.",
+   "evidence": "tests/test-check.test.mjs"
+  },
+  {
+   "id": "K105-LANE",
+   "kind": "changed",
+   "text": "A PR's changed run adds the security tests itself, so each runs once, and runs the whole suite when the change reaches over half of it.",
+   "evidence": "tests/harness.test.mjs",
+   "where": "Security tests on a PR",
+   "before": "Run twice",
+   "after": "Run once"
+  },
+  {
+   "id": "T8-PLAN",
+   "kind": "added",
+   "text": "`node .claude/plan-graph.mjs <plan>` names every pair of batch-plan units that may run at once and touch the same file, an order naming no unit, and an order cycle.",
+   "evidence": "tests/plan-graph.test.mjs"
+  },
+  {
+   "id": "T8-RULES",
+   "kind": "added",
+   "text": "`scripts/rule-map.mjs` lists, for each rule, the guards, scripts, tests and workflows whose code names it, and the rules only prose holds; CI fails a stale map.",
+   "evidence": "tests/rule-map.test.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "T8-PICK",
+   "kind": "added",
+   "text": "`test-run.mjs --changed --pick` prints the tests a change reaches without running them, and a unit brief takes its covering tests from it.",
+   "evidence": "tests/harness.test.mjs",
+   "reach": "kit"
+  }
+ ],
+ "decisions": [
+  {
+   "decision": "The fix ledger lives in the committed build record",
+   "why": "CI reads only what is committed; the sweep's own ledger stays the reviewers' raw list, in a folder git ignores."
+  },
+  {
+   "decision": "Tests made in a loop are run by their file",
+   "why": "The harness filter takes exact names, and a loop's names exist only at run time; slower for a large file, right for every loop shape."
+  },
+  {
+   "decision": "No outside task-graph tool",
+   "why": "A read of the beads tool showed ordering only, no file fences, and a database, a binary and hooks of its own beside the guards."
+  }
+ ],
+ "verification": [
+  "Each new check was seen failing on the code before it and passing after.",
+  "The rule lines were scored by the recall test against the released 1.39.0."
+ ],
+ "upgrading": "Run `install user` first, then `install project` in each project. A sweep's fixes now go in the build record as `sweep.fixes` rows, where a project keeps one.",
+ "limits": "Whether a real input shows a low or medium problem is the lead's call, shown in the record; no script can tell. The rule map counts a name, not proof that the code holds the rule.",
+ "sweep": {
+  "tier": "Feature",
+  "commit": "TBD",
+  "dimensions": [
+   { "name": "Privacy", "result": "TBD" },
+   { "name": "Supply chain", "result": "TBD" },
+   { "name": "Legal", "result": "TBD" },
+   { "name": "Code security", "result": "TBD" },
+   { "name": "Gaps, scaling, test value", "result": "TBD" },
+   { "name": "Alignment", "result": "TBD" }
+  ],
+  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "fixes": [],
+  "deferred": [],
+  "accepted": []
+ },
+ "tests": {
+  "before": 843,
+  "after": 849,
+  "flips": "declared tests on v1.39.0 and on this branch; the PR run gives the final count"
+ }
+}
