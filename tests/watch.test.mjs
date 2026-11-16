@@ -116,7 +116,7 @@ test('schedule prints a PowerShell-ready Task Scheduler line for the owner and r
 	const r = rig();
 	const out = r.run(['schedule']);
 	assert.equal(out.code, 0);
-	assert.match(out.out, /^schtasks \/Create \/SC MINUTE \/MO 5 \/TN "Kit watcher" \/TR "'.+node(\.exe)?' '.+\/watch\.mjs' once" \/F$/m);
+	assert.match(out.out, /^schtasks \/Create \/SC MINUTE \/MO 5 \/TN "Kit watcher" \/TR "conhost\.exe --headless '.+node(\.exe)?' '.+\/watch\.mjs' once" \/F$/m);
 	assert.match(out.out, /schtasks \/Delete \/TN "Kit watcher" \/F/);
 	assert.equal(fs.readdirSync(r.dir).length, 0, 'nothing written');
 	// The real command line, end to end: usage and a clean exit.

@@ -131,7 +131,8 @@ export function main(argv, { dir = path.join(home(), 'kit-watch'), read = ghRead
 	}
 	if (cmd === 'schedule') {
 		// Both paths in single quotes inside /TR: schtasks turns them into double quotes, so a path with spaces holds.
-		print([`schtasks /Create /SC MINUTE /MO 5 /TN "Kit watcher" /TR "'${posix(process.execPath)}' '${posix(SELF)}' once" /F`,
+		// conhost --headless runs node with no console window, so a pass every 5 minutes does not flash one.
+		print([`schtasks /Create /SC MINUTE /MO 5 /TN "Kit watcher" /TR "conhost.exe --headless '${posix(process.execPath)}' '${posix(SELF)}' once" /F`,
 			'Runs every 5 minutes while you are logged on; it only reads PRs you added and shows a desktop alert. To stop it:',
 			'schtasks /Delete /TN "Kit watcher" /F'].join('\n'));
 		return 0;
