@@ -57,6 +57,10 @@ test('CI checks the build record on every PR that moves VERSION', () => {
 	const ci = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
 	const step = ci.split('- name: Build record\n')[1].split('- name:')[0];
 	assert.match(step, /if git diff --quiet "\$PR_BASE" HEAD -- VERSION; then .*; else node scripts\/build-record\.mjs check; fi/); // pin: 1
+	// The build 14 sweep: a PR that left VERSION alone had no fix ledger read, so a guard fix could ship with no row. A
+	// change install reads now owes the bump, by the base's own rule.
+	assert.match(step, /git show "\$PR_BASE:scripts\/pr-scope\.mjs" > "\$RUNNER_TEMP\/pr-scope\.mjs"/);
+	assert.match(step, /node "\$RUNNER_TEMP\/pr-scope\.mjs" --install "\$PR_BASE"[^\n]*install=false[^\n]*exit 1/);
 	// K105: the same PR's fix ledger is read by the test check, which states each named test's verdict.
 	const check = ci.split('- name: Test check (report)\n')[1].split('- name:')[0];
 	assert.match(check, /if ! git diff --quiet "\$BASE_SHA" HEAD -- VERSION; then record=\(--record "docs\/builds\/\$\(tr -d '\\r\\n' < VERSION\)\.json"\); fi/); // pin: 1
@@ -267,4 +271,27 @@ test('the repo check reads each fix commit and names a guard file fixed with no 
 	const found = checkRepo(dir).problems.join('\n');
 	assert.match(found, /fix F2 changes project\/\.claude\/guard\.cjs, a guard or gate file: mark it security and name its test/);
 	assert.match(found, /fix F1 commit deadbee is not a commit here/);
+});
+
+// The build 14 sweep: the body's fix lines were written from the record, but a hand edit after that was read by no
+// check. CI's body job now holds them to the record when VERSION moves.
+// why: guards rule:pr-body
+test('the body check holds the fix lines of a published body to the record', () => {
+	const dir = kitTemp.makeTemp('record-body-');
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'VERSION'), '1.2.0\n');
+	fs.writeFileSync(path.join(dir, 'docs', 'builds', '1.2.0.json'), JSON.stringify(record()));
+	fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), `# Changelog\n\n${changelog(record())}`);
+	const body = path.join(dir, 'body.md');
+	const run = () => spawnSync(process.execPath, [path.resolve('scripts/build-record.mjs'), 'body', body], { cwd: dir, encoding: 'utf8', env: { ...process.env, KIT_RECORD_ROOT: dir } });
+	fs.writeFileSync(body, prBody(record()).replace(/\n/g, '\r\n'));
+	assert.equal(run().status, 0, run().stdout + run().stderr);
+	fs.writeFileSync(body, prBody(record()).replace('1 with no test', '0 with no test'));
+	const r = run();
+	assert.equal(r.status, 1);
+	assert.match(r.stderr, /the body's fix lines differ from the build record/);
+	// pin: 1 (GitHub runs these lines)
+	const job = fs.readFileSync(path.resolve('.github/workflows/pr-body.yml'), 'utf8');
+	assert.match(job, /fetch-depth: 0/);
+	assert.match(job, /if git diff --quiet "origin\/\$BASE_REF" HEAD -- VERSION; then [^\n]*; else node scripts\/build-record\.mjs body "\$RUNNER_TEMP\/pr-body\.md"; fi/);
 });

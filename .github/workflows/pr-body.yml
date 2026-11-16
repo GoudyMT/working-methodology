@@ -21,6 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The base branch, to see whether this PR moves VERSION.
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -44,3 +46,12 @@ jobs:
           else
             node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE" "$PR_NUMBER"
           fi
+
+      # K105 (the build 14 sweep): a PR that moves VERSION carries its build record; the body's fix lines must be the
+      # ones that record writes, so a hand edit cannot claim more than the fix ledger holds.
+      - name: The fix lines match the build record
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git diff --quiet "origin/$BASE_REF" HEAD -- VERSION; then echo "VERSION unchanged: no build record to match"; else node scripts/build-record.mjs body "$RUNNER_TEMP/pr-body.md"; fi

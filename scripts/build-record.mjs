@@ -201,10 +201,21 @@ export function checkRepo(root, file) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 	const [cmd, file] = process.argv.slice(2);
-	const r = checkRepo(ROOT, file);
-	if (cmd === 'check') {
-		if (r.problems.length) { process.stderr.write(`Build record ${path.relative(ROOT, r.at)}:\n${r.problems.map((p) => `    ${p}`).join('\n')}\n`); process.exitCode = 1; }
-		else process.stdout.write(`Build record ${path.relative(ROOT, r.at)}: whole, and the changelog matches\n`);
+	const root = process.env.KIT_RECORD_ROOT ? path.resolve(process.env.KIT_RECORD_ROOT) : ROOT;
+	const r = checkRepo(root, cmd === 'body' ? undefined : file);
+	if (cmd === 'body') {
+		// The build 14 sweep: the published body's fix lines, from "High and critical findings" to "Deferred", must be the
+		// ones the record writes; a hand edit after the record wrote them is named.
+		const span = (t) => { const s = String(t).replace(/\r\n/g, '\n'); const a = s.indexOf('- **High and critical findings:**'); const b = s.indexOf('- **Deferred:**', a); return a < 0 || b < 0 ? null : s.slice(a, b).replace(/\s+/g, ' ').trim(); };
+		let body = null;
+		try { body = fs.readFileSync(file || '', 'utf8'); } catch { /* named below */ }
+		const want = r.rec && !problems(r.rec).length ? span(prBody(r.rec)) : null;
+		if (body === null || want === null) { process.stderr.write(`build record body: ${body === null ? `cannot read "${file || ''}"` : 'the record is not whole'}\n`); process.exitCode = 2; }
+		else if (span(body) !== want) { process.stderr.write(`build record body: the body's fix lines differ from the build record (run: node scripts/build-record.mjs pr)\n`); process.exitCode = 1; }
+		else process.stdout.write('build record body: the fix lines match the record\n');
+	} else if (cmd === 'check') {
+		if (r.problems.length) { process.stderr.write(`Build record ${path.relative(root, r.at)}:\n${r.problems.map((p) => `    ${p}`).join('\n')}\n`); process.exitCode = 1; }
+		else process.stdout.write(`Build record ${path.relative(root, r.at)}: whole, and the changelog matches\n`);
 	} else if (['changelog', 'pr', 'notes'].includes(cmd) && r.rec && !problems(r.rec).length) {
 		process.stdout.write({ changelog, pr: prBody, notes }[cmd](r.rec));
 	} else {

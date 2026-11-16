@@ -358,8 +358,11 @@ jobs:
         shell: bash
         env:
           PR_BASE: origin/${{ github.base_ref }}
+        # K105 (the build 14 sweep): a change install reads moves VERSION, so its fix ledger is read; the base's own rule
+        # says which changes those are (K9).
         run: |
-          if git diff --quiet "$PR_BASE" HEAD -- VERSION; then echo "VERSION unchanged: no build record owed"; else node scripts/build-record.mjs check; fi
+          git show "$PR_BASE:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || printf '%s\n' 'process.stdout.write("install=true\n")' > "$RUNNER_TEMP/pr-scope.mjs"
+          if git diff --quiet "$PR_BASE" HEAD -- VERSION; then node "$RUNNER_TEMP/pr-scope.mjs" --install "$PR_BASE" | grep -qx 'install=false' || { echo "This PR changes what install reads: move VERSION and add its build record"; exit 1; }; echo "VERSION unchanged: no build record owed"; else node scripts/build-record.mjs check; fi
 
       # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
       # a replaced download fails here before it runs.
