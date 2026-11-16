@@ -752,7 +752,14 @@ export function install(ctx) {
         const recFile = path.join(ctx.home, 'kit-guard', n, 'record.json');
         let rec = null;
         try { rec = JSON.parse(fs.readFileSync(recFile, 'utf8')); } catch { continue; }
-        if (!rec || !rec.projectDir || !rec.shims || !fs.existsSync(rec.projectDir)) continue;
+        // K81 (build 11): the launcher reads every record on each call, and a record whose project folder is gone guards
+        // nothing. If the project comes back, the launcher holds it until install project writes a new record.
+        if (rec && typeof rec.projectDir === 'string' && rec.projectDir && !fs.existsSync(rec.projectDir)) {
+          if (!ctx.dryRun) fs.rmSync(path.join(ctx.home, 'kit-guard', n), { recursive: true, force: true });
+          replaced.push(`kit-guard/${n} (removed: its project ${toPosix(path.resolve(rec.projectDir))} no longer exists)`);
+          continue;
+        }
+        if (!rec || !rec.projectDir || !rec.shims) continue;
         // The shims run a hook from the launcher's checked copy, and only a first-push-check that reads its project
         // from KIT_HOOK_PROJECT can run there (the 1.27.0 sweep): a project still on an older kit keeps its shims,
         // and is named, until install project brings its hooks up to this release. Only the file the record accepted

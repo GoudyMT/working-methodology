@@ -1190,6 +1190,24 @@ test('C9 install user: every recorded project gets the current shims, and the la
 	assert.equal(bash(s, 'git status').decision, 'allow');
 });
 
+// K81 (build 11, reproduced 2026-11-16: 105 of 108 records named folders deleted since): the launcher reads every
+// record on each call, so a record whose project is gone is cost and nothing else. A project that comes back with a
+// kit install and no record is held by the launcher until install project writes one, so dropping it guards no less.
+// why: guards rule:security-standards (the record set the launcher reads stays the projects that exist)
+test('K81 install user drops the record of a project folder that no longer exists, and keeps the rest', () => {
+	const { home, proj, session: s } = setup();
+	const gone = path.join(home, 'kit-guard', 'c--gone-probe-0123456789');
+	fs.mkdirSync(path.join(gone, 'hooks'), { recursive: true });
+	fs.writeFileSync(path.join(gone, 'record.json'), JSON.stringify({ projectDir: path.join(path.dirname(proj), 'gone-probe'), files: {}, shims: {} }));
+	const odd = path.join(home, 'kit-guard', 'not-a-record');
+	fs.mkdirSync(odd, { recursive: true });
+	install({ kit: KIT, home, target: 'user' });
+	assert.equal(fs.existsSync(gone), false, 'the record of a deleted folder stayed');
+	assert.ok(fs.existsSync(path.join(guardDir(home, proj), 'record.json')), 'a live project lost its record');
+	assert.ok(fs.existsSync(odd), 'a folder that is no record is not the kit\'s to remove');
+	assert.equal(bash(s, 'git status').decision, 'allow');
+});
+
 // why: guards rule:first-push-gate (the 1.27.0 sweep, high): the new shims run a project's hooks from the launcher's
 // copy, which only a 1.27.0 first-push-check can place; a project still on an older kit could no longer commit, so
 // install user leaves its shims and names the project.
