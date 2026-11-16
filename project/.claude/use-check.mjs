@@ -184,9 +184,9 @@ const PARTS = [
 		used: () => (has('_List.jsonl') && fs.statSync(path.join(dir, '_List.jsonl')).size > 0 ? [true, '_List.jsonl holds rows'] : [null, 'no rows yet']),
 	},
 	{
-		// T7 (build 12): the loop driver and the owner's bounds file it reads.
+		// T7 (build 12): the loop driver and the bounds file it reads.
 		name: 'loop',
-		what: 'the loop driver: the build loop\'s steps, counted stops and loop mode, within the owner\'s bounds file (T7)',
+		what: 'the loop driver: the build loop\'s steps, counted stops and loop mode, within the bounds file (T7)',
 		present: () => {
 			const missing = ['.claude/loop.mjs', '.claude/bounds.json'].filter((f) => !has(f));
 			return [missing.length === 0, missing.length ? `missing ${missing.join(', ')} (run kit.mjs install project)` : 'loop.mjs, bounds.json'];
