@@ -22,6 +22,7 @@ A build loop now runs under a script that keeps its steps in order, counts the s
 - A refused resume or yes says when no session id is set, or when no transcript of that session is kept for the repository.
 - The release notes audit reads a double hyphen only in prose, so a command quoted with a flag no longer fails a draft the build record wrote.
 - The CI test check keeps to a time budget, says each step as it starts, and names each test it could not check instead of being cancelled with no report.
+
 ## 1.37.0 - 2026-11-16
 
 A sweep's briefs are written from its cleared contract, each reviewer's report is checked for shape, and the findings are counted from the reports. The call cap and token ceiling now stop a reviewer in time, the cache trip counts only expired cache, and install keeps files it used to lose.
