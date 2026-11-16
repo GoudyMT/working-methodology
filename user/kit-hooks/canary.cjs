@@ -82,6 +82,21 @@ function finalReport(input) {
 	return null;
 }
 
+// What a reviewer's report lacks against the shape its brief gives: a "ROLE:" line, one line per finding in five
+// fields (severity | CONFIRMED or PLAUSIBLE | claim | file:line | evidence) or "No findings", and a "Not checked:" line.
+const SEVERITY_ROW = /^\s*(critical|high|medium|low)\s*\|/i;
+function reportFaults(report) {
+	const lines = String(report).split(/\r?\n/);
+	const faults = [];
+	if (!lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) faults.push('a "ROLE: <your role>" line');
+	const rows = lines.filter((l) => SEVERITY_ROW.test(l));
+	if (!rows.length && !lines.some((l) => /^\s*No findings\b/i.test(l))) faults.push('one line per finding, or "No findings"');
+	const loose = rows.filter((l) => { const f = l.split('|').map((x) => x.trim()); return f.length < 5 || f.slice(0, 5).some((x) => !x) || !/^(CONFIRMED|PLAUSIBLE)$/i.test(f[1]); });
+	if (loose.length) faults.push(`each finding in five fields, "<severity> | <CONFIRMED or PLAUSIBLE> | <claim> | <file:line> | <evidence>" (${loose.length} line(s) are not)`);
+	if (!lines.some((l) => /^\s*Not checked:/i.test(l))) faults.push('a "Not checked:" line (what you did not get to, or "nothing")');
+	return faults;
+}
+
 // Kit roles that report up and task no one; an orchestrator and the main session are taskers.
 const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer'];
 
@@ -114,6 +129,23 @@ function run(input) {
 			return {};
 		}
 		const opens = words(report).startsWith(phrase);
+		// T6 (build 11): a reviewer's report is what the findings ledger is read from, so its shape is checked here too,
+		// once: a second try goes through, logged, so a role never loops on its report.
+		if (opens && input.agent_type === 'reviewer') {
+			const shaped = path.join(found.commonDir, 'kit-canary-shape', key);
+			if (fs.existsSync(shaped)) {
+				fs.rmSync(shaped, { force: true });
+				log(found.commonDir, { ...who, result: reportFaults(report).length ? 'shape-after-miss' : 'hit' });
+				touch(seen);
+				return {};
+			}
+			const faults = reportFaults(report);
+			if (faults.length) {
+				log(found.commonDir, { ...who, result: 'shape-miss' });
+				touch(shaped);
+				return { out: { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Your report is out of the shape your brief gives, so the sweep cannot count it. Send it again with: ${faults.join('; ')}.` } } };
+			}
+		}
 		log(found.commonDir, { ...who, result: opens ? 'hit' : 'miss' });
 		if (opens) { touch(seen); return {}; }
 		touch(mark);

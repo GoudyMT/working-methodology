@@ -2697,6 +2697,37 @@ function guardStart(dir, clearingLine, role, id) {
   const f = path.join(slots, retried ? `${role - 1}.retry` : String(role - 1));
   if (!fs.existsSync(f) || !read(f) || read(f).startsWith('toolu_lead_')) fs.writeFileSync(f, `toolu_lead_${id}`);
 }
+// T6 (build 11): a hand-written brief drifted (the 1.36.1 briefs told reviewers no hook could run, and sent them to a
+// 25 KB file for a 2 KB rules block). The cleared contract writes each role's brief: the rules block by its line range,
+// the three guard lines, the role, its diff, a scratch folder of its own (N6), and the report shape the hand-back is
+// checked against.
+// why: guards rule:sweep-auto-approval
+test('a cleared contract writes each role\'s brief, with the rules block by line range and a scratch folder of its own', () => {
+  const dir = sweepRepo();
+  fs.mkdirSync(path.join(dir, 'standards'));
+  const block = ['# Agent teams', '', 'intro', '8. **Rules every brief carries** (one home):', '   ```', '   RULES', '   Confirmation phrase: open your first message with: Word Word', '   ```', '9. more', ''];
+  fs.writeFileSync(path.join(dir, 'standards', 'agent-teams.md'), block.join('\n'));
+  commitAll(dir, 'rules', true);
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const line = approvalLog(dir).pop();
+  const briefs = fs.readdirSync(path.join(dir, 'sweeps')).filter((f) => /^contract-brief-\d+\.md$/.test(f)).sort();
+  assert.deepEqual(briefs, ['contract-brief-1.md', 'contract-brief-2.md', 'contract-brief-3.md', 'contract-brief-4.md', 'contract-brief-5.md']);
+  const b = read(path.join(dir, 'sweeps', 'contract-brief-2.md'));
+  assert.match(b, /standards\/agent-teams\.md with the Read tool at offset 4 and limit 4\b/);
+  assert.match(b, new RegExp(`^Sweep: ${line.hash} role 2$`, 'm'));
+  assert.match(b, /^Call cap: \d+\. /m);
+  assert.match(b, new RegExp(`^Token ceiling: ${line.ceilings[1]}$`, 'm'));
+  assert.match(b, /Does any new route leak personal data/);
+  assert.match(b, /git -C ".*" diff [0-9a-f]{7,}\.\.\.[0-9a-f]{7,} -- src\/routes\.ts/);
+  assert.match(b, /Scratch: .*role-2/);
+  assert.doesNotMatch(b, /role-1\b/, 'another role\'s folder');
+  assert.match(b, /^ROLE: /m);
+  assert.match(b, /Not checked:/);
+  assert.doesNotMatch(b, /Word Word/, 'the brief never carries the phrase');
+  assert.match(r.stdout, /contract-brief-1\.md/);
+});
+
 function approveRun(contract, dir = sweepRepo()) {
   const f = path.join(dir, 'sweeps', 'contract.json');
   fs.writeFileSync(f, JSON.stringify(contract));
@@ -3249,6 +3280,30 @@ test('the canary checks a hand-back at the call, refuses a miss once, and lets t
   canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'p2' });
   assert.deepEqual(canaryLog(dir).map((e) => [e.agent, e.result]), [['p1', 'hit'], ['p2', 'miss'], ['p2', 'closed-out']]);
 });
+// T6 (build 11): a reviewer's report is the findings ledger's source, so its shape is checked at the hand-back: a role
+// line, one line per finding in the five fields (or "No findings"), and what it did not check. A report out of shape
+// is refused once with what is missing; the second goes through, logged, so a role never loops on its report.
+// why: guards rule:sweep-auto-approval
+test('a reviewer\'s hand-back is checked for the report shape once, and the second try goes through', () => {
+  const dir = canaryRepo();
+  const handback = (id, message, type = 'reviewer') => {
+    const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_type: type, agent_id: id, tool_input: { message } });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+  };
+  const good = `${FAKE_PHRASE}\nROLE: Security: imports\nhigh | CONFIRMED | an import writes outside the project | src/import.ts:12 | node x.mjs ../a wrote /tmp/a\nNot checked: the export path`;
+  assert.equal(handback('s1', good).permissionDecision, 'allow');
+  assert.equal(handback('s2', `${FAKE_PHRASE}\nROLE: Test value\nNo findings\nNot checked: nothing`).permissionDecision, 'allow');
+  const bad = handback('s3', `${FAKE_PHRASE}\nSecurity role\nhigh | an import writes outside | src/import.ts:12`);
+  assert.equal(bad.permissionDecision, 'deny');
+  assert.match(bad.permissionDecisionReason, /ROLE:/);
+  assert.match(bad.permissionDecisionReason, /Not checked:/);
+  assert.match(bad.permissionDecisionReason, /five fields/);
+  assert.ok(!bad.permissionDecisionReason.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'never names the phrase');
+  assert.equal(handback('s3', `${FAKE_PHRASE}\nSecurity role\nstill loose`).permissionDecision, 'allow', 'the second try goes through');
+  assert.equal(handback('b1', `${FAKE_PHRASE}\nUNIT u1 DONE`, 'builder').permissionDecision, 'allow', 'only a reviewer reports findings');
+  assert.deepEqual(canaryLog(dir).filter((e) => e.agent === 's3').map((e) => e.result), ['shape-miss', 'shape-after-miss']);
+});
+
 // why: guards rule:sweep-auto-approval
 test('every kit role checks its hand-back call', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {

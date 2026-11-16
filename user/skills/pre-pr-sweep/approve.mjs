@@ -604,6 +604,7 @@ function decide() {
 	}
 	console.log(`APPROVED - ${c.tier} ${first ? `re-sweep of ${rel(first)}` : 'sweep'}, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
 	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash, ceilings, ceilingFrom));
+	console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(c, entry.hash, ceilings, facts).join(', ')}`);
 	for (const l of carryLine) console.log(l);
 	return 0;
 }
@@ -627,6 +628,67 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilin
 		`    ${sweepLine(hash)}`,
 		'    Findings come when the sweep finishes.',
 	].join('\n');
+}
+
+// T6 (build 11): each role's brief is written from the cleared contract, so the lines the guards and the hand-back
+// check read cannot drift (the 1.36.1 briefs told reviewers no hook could run, and sent them to a 25 KB file for a
+// 2 KB rules block). The lead passes each file as the reviewer's prompt, as written.
+const FINDING_CAP = 8;
+// The rules block every brief points at, by file and line range, so the reviewer reads the block and not the module
+// around it: the file the rule index names for rule:agent-team-adapter, else the module where the kit puts it.
+function rulesBlock(top) {
+	let file = null;
+	try { const row = fs.readFileSync(path.join(top, 'standards', 'INDEX.md'), 'utf8').match(/^\|\s*agent-team-adapter\s*\|[^|\n]*\|\s*`([^`]+)`/m); if (row) file = row[1]; } catch { /* no index */ }
+	for (const f of [file, 'standards/agent-teams.md', 'rules/agent-teams.md'].filter(Boolean)) {
+		let lines;
+		try { lines = fs.readFileSync(path.join(top, f), 'utf8').split(/\r?\n/); } catch { continue; }
+		const start = lines.findIndex((l) => /\*\*Rules every brief carries\*\*/.test(l));
+		const end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && /Confirmation phrase:/.test(l));
+		if (end > start) return { file: toPosix(path.join(top, f)), offset: start + 1, limit: end - start + 1 };
+		return { file: toPosix(path.join(top, f)) };
+	}
+	return null;
+}
+function writeBriefs(c, hash, ceilings, facts) {
+	const top = git('rev-parse', '--show-toplevel').stdout.trim();
+	const block = rulesBlock(top);
+	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
+	const base = git('rev-parse', '--short', facts.base).stdout.trim() || facts.baseName;
+	const hooked = hookState(facts.base) !== 'none';
+	const stem = contractFile.replace(/\.json$/i, '');
+	const out = [];
+	(c.roles || []).forEach((r, i) => {
+		const n = i + 1;
+		const scratch = toPosix(path.join(os.tmpdir(), `kit-sweep-${hash.slice(0, 8)}`, `role-${n}`));
+		const files = Array.isArray(r.context) ? r.context.join(' ') : '';
+		const text = [
+			block && block.limit
+				? `Project rules: read ${block.file} with the Read tool at offset ${block.offset} and limit ${block.limit} (the "Rules every brief carries" block, to its last line), and work under them; you are read-only.`
+				: `Project rules: read the "Rules every brief carries" block in ${block ? block.file : 'standards/agent-teams.md'} with the Read tool, to its last line, and work under them; you are read-only.`,
+			'',
+			`Sweep: ${hash} role ${n}`,
+			`Call cap: ${r.calls}. A call is one message from you, however many tools it runs, so run independent reads together in one message. ${hooked ? 'A hook counts your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did not get to as \'not checked\'.' : 'No hook counts them here, so count your own calls.'} The cap's last two calls are for the report.`,
+			`Token ceiling: ${ceilings[i]}`,
+			'',
+			`Role: ${r.role || r.kind} (${r.kind})`,
+			`Question: ${r.question || ''}`,
+			`Repository: ${toPosix(top)}, at ${head} (base ${facts.baseName}). Read the change with: git -C "${toPosix(top)}" diff ${base}...${head}${files ? ` -- ${files}` : ''}`,
+			'Read more by line range as you need; never a whole file over 40 KB.',
+			`Scratch: ${scratch} is yours alone for any probe that writes; write nowhere else, never in the repository or another role's folder.`,
+			'',
+			`Finding format: ${r.finding || 'file:line, the claim, the input that breaks it or the rule it breaks, the proof'}. At most ${Number.isInteger(r.findingCap) ? r.findingCap : FINDING_CAP} findings, ranked by severity.`,
+			'Report: hand it back with SubagentHandback. After the opening your rules require, the report is:',
+			`ROLE: ${r.role || r.kind}`,
+			'<severity> | <CONFIRMED or PLAUSIBLE> | <one-line claim> | <file:line> | <evidence>   (one line per finding; "No findings" if none)',
+			'Not checked: <what you did not get to, or "nothing">',
+			'Change no file in the repository.',
+			'',
+		].join('\n');
+		const f = `${stem}-brief-${n}.md`;
+		fs.writeFileSync(f, text);
+		out.push(rel(f));
+	});
+	return out;
 }
 
 // The last approved sweep is reported once any outcome for its contract follows it, even one logged after a later
@@ -732,6 +794,8 @@ function ownerYes() {
 	// started reviewers with no ceiling at all (the 1.23.0 sweep).
 	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings } : {}), ...proof });
 	console.log(`The owner's yes is logged; the reviewers may start. ${sweepLine(last.hash)}`);
+	const facts = diffFacts();
+	if (facts && Array.isArray(last.ceilings)) console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(JSON.parse(raw), last.hash, last.ceilings, facts).join(', ')}`);
 	return 0;
 }
 

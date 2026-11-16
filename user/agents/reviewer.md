@@ -51,4 +51,6 @@ block the brief names, with the Read tool, to its last line.
 ## Report (your final message)
 
 The first line follows your rules block. Then: ROLE: <role>; then each finding as
-`<severity> | <CONFIRMED or PLAUSIBLE> | <one-line claim> | <file:line> | <evidence>`; then any out-of-role note.
+`<severity> | <CONFIRMED or PLAUSIBLE> | <one-line claim> | <file:line> | <evidence>` (or `No findings`); then
+`Not checked: <what you did not get to, or "nothing">`; then any out-of-role note. The hand-back is checked for this
+shape once, and the sweep's findings ledger is read from it.
