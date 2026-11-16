@@ -40,6 +40,9 @@ export function problems(rec) {
 	need(Array.isArray(rec.decisions) && rec.decisions.length > 0 && rec.decisions.every((d) => d && text(d.decision) && text(d.why)), 'decisions is empty, or one has no decision and why');
 	const s = rec.sweep;
 	need(s && text(s.tier) && text(s.commit), 'sweep has no tier or commit');
+	// The tier the PR body audit reads at the start of the review line (the build 13 sweep: a record could write a body
+	// the audit then failed).
+	need(!s || !text(s.tier) || /^(Feature|Fix|Triage|First push|Launch gate)(?: \([^)\n]*\))?$/.test(s.tier), `sweep tier "${s && s.tier}" is not Feature, Fix, Triage, First push or Launch gate, with modifiers in a parenthesis`);
 	if (s) {
 		need(Array.isArray(s.dimensions) && s.dimensions.length > 0, 'sweep names no dimension');
 		for (const sev of SEVERITIES) need(Number.isInteger((s.findings || {})[sev]), `sweep findings has no ${sev} count`);

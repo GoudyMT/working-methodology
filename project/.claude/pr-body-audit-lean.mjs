@@ -51,10 +51,10 @@ const dims = ['privacy', 'supply chain', 'legal', 'code security', 'secrets or a
 const missing = dims.filter((d) => !body.replace(/\s+/g, ' ').includes(d));
 row('review names the dimensions', missing.length === 0, missing.length ? `missing ${missing}` : dims.join(', '));
 // The third gate is the sweep tier and its result by dimension (rule:pr-body, rule:sweep-tiers), or a stated exemption:
-// a named tier is one the owner can correct. Read in the gate lines only, so a tier word in other prose is not the gate.
-const gateText = body.slice(at[1], at[2]).replace(/\s+/g, ' ');
-const tier = /\b(?:(?:feature|fix|triage|first push|launch gate)[ -]tier\b|sweep exempt\b)/i.exec(gateText);
-row('review names the sweep tier', Boolean(tier), tier ? tier[0] : 'name the tier (feature, fix, triage, first push or launch gate tier) or "sweep exempt"');
+// a named tier is one the owner can correct. It opens a gate (the build 13 sweep: a tier word inside another gate's
+// sentence, a comment, an unfilled placeholder or "Not sweep exempt" passed when read anywhere in the gates).
+const tier = gates.map((g) => /^- \[x\] ((?:feature|fix|triage|first push|launch gate)[ -]tier\b|sweep exempt\b)/i.exec(g)).find(Boolean);
+row('review names the sweep tier', Boolean(tier), tier ? tier[1] : 'open a gate with the tier (Feature, Fix, Triage, First push or Launch gate tier) or "Sweep exempt"');
 
 // The template's own "**Notes** - " marker is structure, and inline code (`node --flag`) and fenced code blocks
 // are code; every other spaced dash is prose.

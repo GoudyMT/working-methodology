@@ -3746,6 +3746,8 @@ test('the Standard PR audit holds the Review section to the sweep summary and re
   assert.match(noTier.stdout, /FAIL\s+Review names the sweep tier/);
   assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Fix (security-sensitive) review of')).stdout, /PASS\s+Review names the sweep tier/);
   assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Featured review of')).stdout, /FAIL\s+Review names the sweep tier/);
+  // The build 13 sweep: only a parenthesis of modifiers sits between the tier and "review of".
+  assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Feature flags stay off; a light review of')).stdout, /FAIL\s+Review names the sweep tier/);
   const linked = stdAudit(dir, honestBody().replace('- **Deferred:** none.', '- **Deferred:** see [the report](docs/sweeps/2026-05-14-pin.md).'));
   assert.equal(linked.status, 1);
   assert.match(linked.stdout, /FAIL\s+no vault paths/);
@@ -4549,6 +4551,9 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     ['no sweep tier', sub('- [x] Fix tier review: privacy', '- [x] Reviewed for privacy'), title, ['review names the sweep tier']],
     ['a stated exemption', sub('- [x] Fix tier review: privacy', '- [x] Sweep exempt: privacy'), title, []],
     ['a tier word outside the gates', sub('- [x] Fix tier review: privacy', '- [x] Reviewed for privacy').replace('Tooling only;', 'Tooling only, a triage tier change;'), title, ['review names the sweep tier']],
+    // The build 13 sweep: the tier opens the last gate; a tier word in another gate, or a negated exemption, is no tier.
+    ['a tier word in another gate', sub('- [x] Fix tier review: privacy', '- [x] Reviewed for privacy').replace('- [x] The covering tests', '- [x] The fix tier tests'), title, ['review names the sweep tier']],
+    ['a negated exemption', sub('- [x] Fix tier review: privacy', '- [x] Not sweep exempt: privacy'), title, ['review names the sweep tier']],
     ['a spaced dash', sub('Tooling only;', 'Tooling only - for now;'), title, ['no spaced dashes in prose']],
     ['a double dash', sub('Tooling only;', 'Tooling only -- for now;'), title, ['no spaced dashes in prose']],
     ['a dash in inline code', sub('Tooling only;', 'Tooling only (`a - b`);'), title, []],
