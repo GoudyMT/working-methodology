@@ -52,11 +52,11 @@
   {
    "id": "K94",
    "kind": "fixed",
-   "text": "A deleted kit project no longer holds every command that names it, and `kit.mjs forget` clears its record when the folder above it is gone too, while its drive answers.",
+   "text": "The forget of a deleted kit project now runs, and clears its record when the folder above it is gone too, while its drive answers; any other command naming it says how to clear it.",
    "evidence": "tests/guards-outside.test.mjs",
    "where": "A deleted probe folder",
-   "before": "Every command held",
-   "after": "Nothing held"
+   "before": "Its record could not be cleared",
+   "after": "Cleared by forget"
   },
   {
    "id": "K97",

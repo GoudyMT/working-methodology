@@ -100,7 +100,8 @@ old copies are kept in a dated `kit-backups` folder next to the install record. 
 project adopts the kit for the first time, after reading the dry run.
 
 To retire a kit project, delete its folder yourself, then clear its guard record (`install user` names each one
-whose folder is gone). A folder that is gone holds no command that names it; the record goes once its drive answers:
+whose folder is gone). Until then, a command that names the folder is held, the forget alone excepted; the record
+goes once its drive answers:
 
 ```bash
 node scripts/kit.mjs forget "<deleted project folder>"

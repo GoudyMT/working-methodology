@@ -737,18 +737,16 @@ function gone(dir) {
 	} catch (e) { return e.code === 'ENOENT' || e.code === 'ENOTDIR'; }
 }
 
-// Whether a call writes into a gone project's .claude or .githooks folder: by a file tool's path, or by a shell
-// command that names either folder under it.
-function refills(input, dir) {
-	const ti = (input && input.tool_input) || {};
-	const p = ti.file_path ?? ti.notebook_path;
-	const under = (abs) => ['.claude', '.githooks'].some((d) => { const rel = path.relative(path.join(dir, d), abs); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); });
-	if (FILE_WRITES.includes(input && input.tool_name) && typeof p === 'string') return under(path.resolve(String(input.cwd || process.cwd()), p));
+// Whether a call is the forget of this gone project and nothing else: one shell command, node running a kit.mjs with
+// forget and this folder, no separator, redirect, substitution or variable anywhere in it.
+function forgets(input, dir) {
 	if (!SHELLS.includes(input && input.tool_name)) return false;
+	const command = String(((input && input.tool_input) || {}).command ?? '').trim();
+	if (/[;&|<>`$()\n{}]/.test(command.replace(/^&\s+/, ''))) return false;
+	const m = /^(?:&\s+)?(?:"[^"]*node(?:\.exe)?"|[^"\s]*node(?:\.exe)?)\s+(?:"[^"]*kit\.mjs"|[^"\s]*kit\.mjs)\s+forget\s+(?:"([^"]+)"|([^"\s]+))$/i.exec(command);
+	if (!m) return false;
 	const fold = (s) => (WIN ? s.toLowerCase() : s);
-	const text = fold(String(ti.command ?? '').replace(/\\/g, '/'));
-	const d = fold(posix(dir));
-	return ['.claude', '.githooks'].some((x) => text.includes(`${d}/${x}`));
+	return fold(posix(path.resolve(m[1] || m[2]))) === fold(posix(path.resolve(dir)));
 }
 
 function preToolUse(input) {
@@ -772,12 +770,12 @@ function preToolUse(input) {
 	if (files.held) answers.push(deny(`Held: this tool ${files.held}, so the kit cannot tell which of its projects it reaches. Use the file's own path on its drive.`));
 	for (const dir of [...named, ...files.filter((d) => !named.some((x) => same(x, d)))]) {
 		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
-		// K94 (build 12): a recorded folder that is gone holds no guard file to protect, so a command naming it is not held
-		// for it (a deleted probe held every command naming it, forget included). Back with other files, it is held again.
-		// A command that writes its .claude or .githooks folder is held: the project would come back with guards no
-		// install wrote (the build 12 sweep).
+		// K94 (build 12): a recorded folder that is gone held every command naming it, the forget that clears it included,
+		// with a reason that sent the owner to reinstall it. Now forget, alone, passes; anything else naming it is held
+		// with the way out, since a command could make it again with guards no install wrote (the build 12 sweep: any
+		// reading of which commands write is a parser the shell can differ from, so none is kept).
 		if (gone(dir)) {
-			if (refills(input, dir)) answers.push(deny(`Held: ${posix(dir)} is a kit project that was deleted; its guard files are written only by install. Clear its record first, alone: node "<kit folder>/scripts/kit.mjs" forget "${posix(dir)}".`));
+			if (!forgets(input, dir)) answers.push(deny(`Held: ${posix(dir)} is a kit project that was deleted, and its guard record is still kept. Clear it first, alone: node "<kit folder>/scripts/kit.mjs" forget "${posix(dir)}" (or ask the owner to).`));
 			continue;
 		}
 		answers.push(projectCheck({ ...fanned, cwd: dir }, true));

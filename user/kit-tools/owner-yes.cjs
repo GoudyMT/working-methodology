@@ -64,7 +64,9 @@ function tailLines(file, cap = TAIL_BYTES) {
 const spans = (question) => [...String(question).matchAll(/`([^`]+)`/g)].map((m) => squash(m[1]));
 
 // Every accepted Yes in a transcript, oldest first: { at, acts, line, id } for each pop-up a person answered Yes to.
-function yeses(lines) {
+// With all, every answer a person gave, each with yes true or false: the owner's latest word on an act is the one
+// that counts (the build 12 sweep: a later No took nothing back).
+function yeses(lines, { all = false } = {}) {
 	const asked = new Map();
 	const out = [];
 	for (let n = 0; n < lines.length; n++) {
@@ -86,7 +88,8 @@ function yeses(lines) {
 			for (const q of asked.get(b.tool_use_id).questions) {
 				const answer = String(r.answers[q.question] ?? '');
 				const labels = (q.options || []).map((o) => String(o.label || ''));
-				if (YES_LABEL.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l))) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id: String(b.tool_use_id) });
+				const yes = YES_LABEL.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l));
+				if (yes || all) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id: String(b.tool_use_id), yes });
 			}
 		}
 	}
@@ -108,12 +111,13 @@ function ownerYes(input, now = Date.now()) {
 	if (!act || !ownTranscript(input)) return null;
 	let lines;
 	try { lines = tailLines(String(input.transcript_path)); } catch { return null; }
-	const yes = yeses(lines).filter((y) => y.acts.includes(act)).pop();
-	if (!yes || now - yes.at < 0 || now - yes.at > FRESH_MS) return null;
+	// The owner's latest answer to a question quoting this act decides, and a yes counts only for a question that quotes
+	// one act (the build 12 sweep: a later No took nothing back, and a question quoting two acts was a yes to both).
+	const yes = yeses(lines, { all: true }).filter((y) => y.acts.includes(act)).pop();
+	if (!yes || !yes.yes || yes.acts.length !== 1 || now - yes.at < 0 || now - yes.at > FRESH_MS) return null;
 	// The yes is for the shell the held call ran in: Bash and PowerShell read the same text differently (the 1.25.0
-	// sweep, R1.6). The last call of this act before the pop-up names it. A shell act asked with no held call before it
-	// is bound by its first run after the pop-up (K97 and New 6, build 12): the owner read the same text either way,
-	// and the loop below finds the yes spent by that run, so no second run, in either shell, uses it.
+	// sweep, R1.6). The last call of this act before the pop-up names it. With no held call before it, a question that
+	// names one shell binds it (K97 and New 6, build 12: asking first cost a second tap); one naming none binds nothing.
 	let tried = '';
 	for (const raw of lines.slice(0, yes.asked)) {
 		let e;
@@ -123,7 +127,10 @@ function ownerYes(input, now = Date.now()) {
 			if (b && b.type === 'tool_use' && actText({ tool_name: b.name, tool_input: b.input }) === act) tried = String(b.name);
 		}
 	}
-	if (tried && tried !== String(input.tool_name)) return null;
+	const named = ['Bash', 'PowerShell'].filter((s) => new RegExp(`\\b${s}\\b`, 'i').test(yes.text.replace(/`[^`]*`/g, ' ')));
+	if (!tried && named.length === 1) tried = named[0];
+	const shell = ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(String(input.tool_name));
+	if ((shell && !tried) || (tried && tried !== String(input.tool_name))) return null;
 	// Spent by any run of the act after the pop-up was asked, the answer's own line or not: Claude Code writes every
 	// tool call of a message before their results, so an act sent beside the pop-up sits above the answer (the 1.25.0
 	// sweep: one tap ran it twice).
@@ -135,7 +142,23 @@ function ownerYes(input, now = Date.now()) {
 			if (b && b.type === 'tool_use' && b.id !== input.tool_use_id && actText({ tool_name: b.name, tool_input: b.input }) === act) return null;
 		}
 	}
-	return yes.at;
+	return spend(yes.id, input.tool_use_id) ? yes.at : null;
+}
+
+// One tap runs one call, across every session (the build 12 sweep: a forked session copies the transcript, tap and
+// all, and each copy read it unspent). The first call a yes lets through is written in the Claude folder under the
+// pop-up's id, made whole or not at all; another call finds it there. The same call asked again (each guard asks) passes.
+function spend(popUp, call) {
+	if (!call) return true;
+	const dir = path.join(home(), 'kit-yes-spent');
+	const file = path.join(dir, String(popUp).replace(/[^A-Za-z0-9_-]/g, '_'));
+	try {
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(file, String(call), { flag: 'wx' });
+		return true;
+	} catch {
+		try { return fs.readFileSync(file, 'utf8') === String(call); } catch { return false; }
+	}
 }
 
 // What Claude is told when an act is held: how to get the owner's yes, or, in a subagent, to hand it back.

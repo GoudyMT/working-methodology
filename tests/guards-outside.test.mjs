@@ -1216,11 +1216,11 @@ test('K81 a record whose folder is gone is named by install and removed only by 
 
 // K94, K90 and New 5 (build 12, reproduced live on 1.37.0): a deleted probe folder's record held every command that
 // named it, the forget command for it included, and forget refused a record whose parent folder was gone too, so the
-// record could not be cleared at all. A folder that is not there holds no guard file to protect: a command naming it
-// is not held for it, and forget clears it while the drive or share it was on answers. Recreated with other files,
+// record could not be cleared at all. The forget, alone, now passes, and clears it while the drive or share it was on
+// answers. Recreated with other files,
 // the folder is held again, as any changed project is.
 // why: guards rule:security-standards (a project's guards are never dropped because its drive was away)
-test('K94 a deleted project holds no command that names it, and forget clears it when its parent is gone too', () => {
+test('K94 the forget of a deleted project runs, anything else naming it names that way out, and forget clears it with its parent gone', () => {
 	const { home, proj, session: s } = setup();
 	const parent = path.join(path.dirname(proj), 'gone-parent');
 	const deleted = path.join(parent, 'work');
@@ -1228,8 +1228,12 @@ test('K94 a deleted project holds no command that names it, and forget clears it
 	install({ kit: KIT, home, target: 'project', projectDir: deleted });
 	const fwd = deleted.split(path.sep).join('/');
 	fs.rmSync(parent, { recursive: true, force: true });
-	assert.equal(bash(s, `ls ${fwd}`).decision, 'allow', 'a deleted project held a command that names it');
-	assert.equal(bash(s, `node forget.mjs "${fwd}"`).decision, 'allow', 'the forget command was held');
+	// The forget that clears it, alone, passes; anything else naming it is held with that way out (the build 12 sweep).
+	assert.equal(bash(s, `node "${KIT.split(path.sep).join('/')}/scripts/kit.mjs" forget "${fwd}"`).decision, 'allow', 'the forget command was held');
+	const other = bash(s, `ls ${fwd}`);
+	assert.equal(other.decision, 'deny');
+	assert.match(other.reason, /kit\.mjs" forget/, 'the hold does not name the way out');
+	assert.equal(bash(s, `node "${KIT.split(path.sep).join('/')}/scripts/kit.mjs" forget "${fwd}"; ls`).decision, 'deny', 'a forget with a second command');
 	const r = forget({ home, dir: deleted });
 	assert.equal(r.removed.length, 1, r.why);
 	assert.equal(fs.existsSync(guardDir(home, deleted)), false);
@@ -1275,7 +1279,7 @@ test('K94 a project that only looks missing is still checked, and a gone one can
 	const g = gone.split(path.sep).join('/');
 	assert.equal(bash(s, `mkdir -p ${g}/.claude && echo x > ${g}/.claude/guard.cjs`).decision, 'deny', 'a gone project refilled in one command');
 	assert.equal(s.decide('Write', { file_path: path.join(gone, '.claude', 'guard.cjs'), content: 'x' }).decision, 'deny');
-	assert.equal(bash(s, `ls ${g}`).decision, 'allow', 'a plain command naming it');
+	assert.equal(bash(s, `ls ${g}`).decision, 'deny', 'a gone project named before its record is cleared');
 	// Another case of a live folder's name is that folder, on a file system that keeps case.
 	const L = createRequire(import.meta.url)('../user/kit-tools/kit-launch.cjs');
 	assert.equal(L.gone(path.join(root, 'LIVE')), false, 'a case spelling read as gone');

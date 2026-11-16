@@ -323,9 +323,9 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT }) {
+function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT, ask = null }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
-	const question = `May I run \`${act}\`?`;
+	const question = ask || `May I run \`${act}\`?`;
 	const input = { questions: [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }] };
 	if (filled) input.answers = { [question]: answer };
 	const lines = [
@@ -537,6 +537,32 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
 });
 
+// The build 12 sweep, on the owner's yes: a later No to the same act took nothing back; a question quoting two acts
+// was a yes to both; and a forked session, which copies the transcript, could spend one tap a second time.
+// why: guards rule:outward-acts (a yes answers the one act the owner read, once)
+test('the owner\'s latest answer counts, a yes is for a question quoting one act, and one tap runs once across sessions', () => {
+	const act = 'gh pr merge 9 --squash';
+	popUp({ act });
+	const later = new Date().toISOString();
+	const q = `May I run \`${act}\`?`;
+	const questions = [{ question: q, header: 'Owner yes', multiSelect: false, options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }];
+	fs.appendFileSync(TRANSCRIPT, [
+		{ type: 'assistant', isSidechain: false, timestamp: later, message: { content: [{ type: 'tool_use', id: 'toolu_ask2', name: 'AskUserQuestion', input: { questions } }] } },
+		{ type: 'user', isSidechain: false, timestamp: later, permissionDecision: { decision: 'accept', source: 'user_temporary' }, toolUseResult: { questions, answers: { [q]: 'No' } }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask2', content: 'answered' }] } },
+	].map((l) => JSON.stringify(l)).join('\n') + '\n');
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a later No was overridden by an earlier Yes');
+	popUp({ act, ask: `May I run \`git status\`? I will not run \`${act}\`.` });
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a question quoting two acts');
+	// A fork copies the transcript, tap and all, into a new session: the tap runs once, in one of them.
+	popUp({ act: 'gh pr merge 10 --squash' });
+	const SID2 = '99999999-2222-3333-4444-555555555555';
+	const fork = path.join(path.dirname(TRANSCRIPT), `${SID2}.jsonl`);
+	fs.copyFileSync(TRANSCRIPT, fork);
+	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }), 'allow');
+	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }), 'allow', 'the same call, asked again by another guard');
+	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }, { transcript_path: fork, session_id: SID2, tool_use_id: 'toolu_fork' }), 'deny', 'a forked session ran the tap again');
+});
+
 // why: guards rule:outward-acts (a yes answers the one act the owner read). The 1.25.0 carry-overs: an edit whose text
 // holds the quote's own separators reads as another edit (R1.5); a yes given after a held call in one shell let the
 // same text run in another, which reads it differently (R1.6); a yes to push a branch let a tag of that name go
@@ -549,16 +575,18 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 	popUp({ act, tried: { tool: 'Bash', input: { command: act } } });
 	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes after a Bash call ran in PowerShell');
 	assert.equal(withYes('Bash', { command: act }), 'allow');
-	// The review on ceecedd: a shell act asked with no held call before it bound to no shell, so any shell could use it.
-	// K97 and New 6 (build 12, the build 11 closeout transcript): that cost the owner a second tap whenever the pop-up
-	// came first. Its first run after the pop-up binds the shell now, as a held call before it would: the owner saw the
-	// same text either way, and any later run, in either shell, finds the yes spent. An edit with a semicolon (the
+	// The review on ceecedd: a shell act asked with no held call before it has no shell to bind to. K97 and New 6
+	// (build 12, the build 11 closeout transcript): that cost the owner a second tap whenever the pop-up came first. A
+	// question that names the shell binds it now, with no try; one that names none still binds nothing, since the same
+	// text does other things in each shell (the build 12 sweep: git rm -r *.log). An edit with a semicolon (the
 	// MultiEdit separator) has no act.
 	popUp({ act, tried: null });
-	assert.equal(withYes('Bash', { command: act }), 'allow', 'a yes asked before the act was tried cost a second tap');
-	popUp({ act, tried: null, then: [act] });
-	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes ran again in another shell');
-	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes ran twice');
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a yes with no held call before it and no shell named');
+	popUp({ act, tried: null, ask: `May I run this in Bash: \`${act}\`?` });
+	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes for Bash ran in PowerShell');
+	assert.equal(withYes('Bash', { command: act }), 'allow', 'a yes that names its shell cost a second tap');
+	popUp({ act, tried: null, ask: `In Bash or PowerShell: \`${act}\`?` });
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a question that names both shells');
 	popUp({ act: `Edit ${file}: x; => y` });
 	assert.equal(withYes('Edit', { file_path: file, old_string: 'x;', new_string: 'y' }), 'deny', 'an edit holding a separator');
 	const { grantsRef } = await import('file:///' + path.resolve('project/.claude/owner-yes.cjs').split(path.sep).join('/'));
