@@ -3,7 +3,7 @@
  "date": "2026-11-16",
  "level": "patch",
  "area": "Lists",
- "title": "fix: a checkbox roadmap imports into a list that already has rows",
+ "title": "fix: a checkbox roadmap imports into a list that has rows",
  "headline": "A project whose improvement list is already data can now move its checkbox roadmap in, so the 1.36.0 use check has a way out. Install no longer merges a project's own state, list and decisions, and the guards close a way past them that bracketed PowerShell arguments opened.",
  "alignment": "v1.36.1 fixes what verifying 1.36.0 in the workbench found, so every kit project can finish the move to a roadmap kept as data.",
  "items": [
