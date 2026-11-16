@@ -112,6 +112,8 @@ const START_DRIFT = 1.1;
 const CONTENT_PCT = 0.95;
 const STOPPED_SHARE = 1 / 3;
 const REWRITES_TRIP = 2;
+// The prompt cache lives 5 minutes; a shorter gap between two calls cannot have let it expire.
+const REWRITE_GAP_MS = 5 * 60 * 1000;
 const TRIAL_EVERY = 10;
 const TRIAL_EVERY_EARNED = 20;
 // Two questions sharing this much of their words are one question asked twice. Rewording beats a word count, so the
@@ -972,10 +974,19 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 		const started = (parsed.find((e) => e && e.timestamp) || {}).timestamp;
 		if (!started || !(started >= since)) { bad.push(`${id} (started ${started || 'at no recorded time'}, before this sweep was cleared at ${since})`); return null; }
 		const seen = new Map();
+		// When each call began (its first line) and ended (its last), for the gap the cache outlives.
+		const began = new Map();
+		const ended = new Map();
 		for (const e of parsed) {
 			const m = e && e.message;
-			if (m && m.role === 'assistant' && m.usage) seen.set(m.id || e.uuid, m);
+			if (!(m && m.role === 'assistant' && m.usage)) continue;
+			const key = m.id || e.uuid;
+			seen.set(key, m);
+			const at = Date.parse(e && e.timestamp);
+			if (!began.has(key)) began.set(key, at);
+			ended.set(key, at);
 		}
+		const keys = [...seen.keys()];
 		const u = (m, k) => Number(m.usage[k]) || 0;
 		const calls = [...seen.values()];
 		const per = (m) => u(m, 'input_tokens') + u(m, 'cache_read_input_tokens') + u(m, 'cache_creation_input_tokens') + u(m, 'output_tokens');
@@ -992,7 +1003,12 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 			firstCall: calls.length ? per(calls[0]) - u(calls[0], 'output_tokens') : 0,
 			maxCall: Math.max(0, ...calls.map(per)),
 			lastCall: calls.length ? per(calls[calls.length - 1]) : 0,
-			rewrites: calls.slice(1).filter((m, i) => u(m, 'cache_read_input_tokens') * 2 < per(calls[i]) - u(calls[i], 'output_tokens')).length,
+			// Only after a gap the cache can expire in (5 minutes): a call soon after the last that reads back less is a
+			// context the model trimmed, not an expired cache (the build 11 sweep). With no times it counts.
+			rewrites: calls.slice(1).filter((m, i) => {
+				const gap = began.get(keys[i + 1]) - ended.get(keys[i]);
+				return u(m, 'cache_read_input_tokens') * 2 < per(calls[i]) - u(calls[i], 'output_tokens') && !(gap < REWRITE_GAP_MS);
+			}).length,
 			// Stopped: the call-cap hook refused a tool at the ceiling. Its own words in the transcript say so; the spend
 			// alone cannot tell a role that was stopped from one that was done.
 			// Only a refusal counts, with the hook's numbers in it: a reviewer that read the hook's source or this script
