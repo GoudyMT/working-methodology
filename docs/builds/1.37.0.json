@@ -1,0 +1,117 @@
+{
+ "version": "1.37.0",
+ "date": "2026-11-16",
+ "level": "minor",
+ "area": "Sweeps",
+ "title": "feat: sweep briefs come from the contract; the meter holds",
+ "headline": "A sweep's briefs are written from its cleared contract, each reviewer's report is checked for shape, and the findings are counted from the reports. The call cap and token ceiling now stop a reviewer in time, the cache trip counts only expired cache, and install keeps files it used to lose.",
+ "alignment": "v1.37.0 is step T6 of the v2.0 plan, one checked hand-back shape for every sweep report, with the carry-overs of builds 10 and 10-fix closed in the same release.",
+ "items": [
+  {
+   "id": "BRIEFS",
+   "kind": "added",
+   "text": "A cleared sweep contract writes each role's brief beside it: the rules block by line range, the sweep, cap and ceiling lines, the role's diff, a scratch folder of its own and the report shape.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "Starting a sweep's reviewers",
+   "before": "Briefs written by hand",
+   "after": "Written from the contract"
+  },
+  {
+   "id": "SHAPE",
+   "kind": "added",
+   "text": "A reviewer's hand-back is checked once for its report shape (a role line, one five-field line per finding or No findings, and what it did not check); the second try goes through.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "LEDGER",
+   "kind": "added",
+   "text": "A sweep's outcome counts the findings from the reviewers' reports, writes a ledger beside the contract, and refuses a typed count that differs.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "Logging a sweep's outcome",
+   "before": "Counts typed by hand",
+   "after": "Counted from the reports"
+  },
+  {
+   "id": "J1",
+   "kind": "added",
+   "text": "The release check can read a verify's result file, and passes only when one number it recorded was run again and matched.",
+   "evidence": "tests/release-check.test.mjs"
+  },
+  {
+   "id": "METER",
+   "kind": "fixed",
+   "text": "The call-cap hook stops a reviewer while the refused call and the report still fit under its call cap and token ceiling; a reviewer the hook stopped late is named so, not as unhooked.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "A reviewer at its ceiling",
+   "before": "Up to 18% past it",
+   "after": "Stopped under it"
+  },
+  {
+   "id": "REWRITES",
+   "kind": "fixed",
+   "text": "The cache re-write trip counts only a call that read back under half of the context before it; a large batch of new results is no re-write.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K87",
+   "kind": "fixed",
+   "text": "A kit script followed by another command (`&& ls`, `; git status`, `; Get-ChildItem`) is no longer held as a write to a protected file; only what runs before a program can stand in for it.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "K81",
+   "kind": "fixed",
+   "text": "install user drops the guard record of a project folder that no longer exists, so the guard reads only the projects that exist.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "M13",
+   "kind": "fixed",
+   "text": "Status and session start name a newer release on GitHub, and a file kept from an unreleased build with the step that clears it; the install user fix line quotes the kit folder.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "M13B",
+   "kind": "fixed",
+   "text": "Install keeps a memory file the owner's MEMORY.md still links, keeps a file the kit renamed by case alone, and never removes a file outside its folder.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "LSREMOTE",
+   "kind": "security",
+   "text": "The release check lists the remote's tags only at a GitHub https address and from outside the kit folder, so no program the kit folder's git config names can run.",
+   "evidence": "tests/kit.test.mjs"
+  }
+ ],
+ "verification": [
+  "Each fix has a test that fails on 1.36.1 and passes here.",
+  "Replayed on a real 1.36.0 reviewer's call sizes, the hook stops it where the refused call and the report land under its ceiling.",
+  "Read against the 1.36.0 and 1.36.1 reviewer transcripts, the new re-write count finds no expired cache in 13 roles."
+ ],
+ "decisions": [
+  {
+   "decision": "The rules block is read by line range, not moved to a file of its own",
+   "why": "Moving it would make every kit project move its filled block by hand; the brief's line range gives the same smaller read with no change to any project."
+  },
+  {
+   "decision": "The release check lists tags, it does not fetch",
+   "why": "A fetch inside the kit folder ran a program its git config named (the push security review); a listing of a GitHub https address reads no repo config and writes nothing."
+  }
+ ],
+ "sweep": {
+  "tier": "Feature",
+  "commit": "pending",
+  "dimensions": [],
+  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "fixed": [],
+  "deferred": [],
+  "accepted": []
+ },
+ "upgrading": "Run `install user` first, then `install project` in each project. A sweep cleared on 1.37.0 writes its briefs beside its contract: pass each as written.",
+ "limits": "The report shape and the ledger hold only where the canary runs (a project with a confirmation phrase); a sweep in the kit source counts findings by hand as before.",
+ "tests": {
+  "before": 793,
+  "after": 807,
+  "flips": "declared tests on v1.36.1 and on this branch; the PR run gives the final count"
+ }
+}
