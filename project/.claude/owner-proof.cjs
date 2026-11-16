@@ -535,16 +535,22 @@ function shellWritesFrom(command, tool, start, names) {
 	// In PowerShell a backslash is the path separator, not a quote (K32), so a folder may hold one.
 	// A new line ends a folder change as ; does (the 1.36.1 sweep).
 	const DEFINITION = /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i;
-	// K87 (build 11): only what runs before a program can stand in for it, so a program's exemption asks of the
-	// commands before it alone: a plain reader, a folder change or a plain assignment defines nothing, and anything else
-	// may. A command after it is read on its own, as every command is. A substitution anywhere keeps the whole reading.
+	// K87 (build 11): a kit script followed by another command was held as a write. A program's exemption holds when
+	// every OTHER command beside it is plain: a reader, a folder change, a plain assignment or a git read. Those define
+	// nothing before it, and after it they cannot write what it was handed. Anything else beside it may: a definition, a
+	// script block run later, bash's $_ (the last word of the command before) or PowerShell's -OutVariable handed to a
+	// writer (the build 11 sweep). A substitution anywhere, or a definition anywhere in the text, keeps the strict reading.
 	const plainStep = (g) => {
 		const w = g.filter((x) => !x.redirect).map((x) => x.value);
 		const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
-		return (!/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p))) || CHANGERS.has(p) || printSed(w) || (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
+		const onPath = !/[\\/]/.test(w[0] || '');
+		return (onPath && (READERS.has(p) || PIPE_READERS.has(p) || (p === 'out-null' && w.length === 1))) || CHANGERS.has(p) || printSed(w)
+			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
+			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
 	};
 	const substituted = /[`]|\$\(|<\(/.test(text);
-	const definesBefore = (s) => (s > 0 && (substituted || !segments.slice(0, s).every(plainStep))) || DEFINITION.test(segments.slice(0, s + 1).map((g) => g.map((x) => x.value).join(' ')).join(' ; '));
+	const defined = DEFINITION.test(text);
+	const definesBefore = (s) => defined || (segments.length > 1 && (substituted || !segments.every((g, k) => k === s || (plainStep(g) && !g.some((x) => x.redirect && !/^(\d|\/dev\/null|\$null|nul)$/i.test(x.value))))));
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';

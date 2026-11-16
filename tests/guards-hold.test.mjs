@@ -215,6 +215,13 @@ test('a kit script followed by other commands passes; a write after it or a defi
 	// A write after the script is read on its own; a definition, a sourced file or a substitution before it still stands in.
 	for (const c of ['node .claude/state.mjs view && cp x .claude/guard.cjs', 'node .claude/state.mjs view; echo x > .claude/settings.json', 'source x.sh; node .claude/settings.json && ls', 'alias node=cp; node x .claude/guard.cjs && ls', 'PATH=/tmp/x; node .claude/settings.json && ls', 'f=$(cp x y); node .claude/settings.json && ls', 'false || node .claude/settings.json && ls']) assert.equal(bash(c), 'deny', c);
 	for (const c of ['Set-Alias node Copy-Item; node x .claude/guard.cjs; Get-ChildItem', 'node .claude/state.mjs view; Copy-Item x .claude/guard.cjs']) assert.equal(ps(c), 'deny', c);
+	// The build 11 sweep: a command after the program can still use what it was handed. Bash's $_ is the last word of
+	// the command before; PowerShell's -OutVariable keeps the item a reader read; a script block runs after a function
+	// defined later in the text. Only plain commands may sit beside an exempt program.
+	for (const c of ['node .claude/guard.cjs </dev/null; cp /tmp/evil "$_"', 'git diff .git/config; cp /tmp/evil "$_"', 'cat .claude/settings.json; cp /tmp/evil "$_"', 'ls .githooks/pre-push && cp /tmp/evil "$_"', 'cat .claude/guard.cjs; cat /tmp/evil > "$_"']) assert.equal(bash(c), 'deny', c);
+	for (const c of ['gi .claude/guard.cjs -ov g; Set-Content -Path $g.FullName -Value x', 'gi .claude/settings.json -ov g; Copy-Item x $g.FullName', '{ get-content .claude/guard.cjs } | select -ov f; function get-content { Copy-Item x $args[0] }; & $f[0]']) assert.equal(ps(c), 'deny', c);
+	// Plain commands beside it still pass, a git read and a dropped output among them.
+	for (const c of ['node .claude/state.mjs view 2>&1; git status', 'node .claude/state.mjs view; ls > /dev/null']) assert.equal(bash(c), 'allow', c);
 });
 
 // why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
