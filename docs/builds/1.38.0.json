@@ -1,0 +1,117 @@
+{
+ "version": "1.38.0",
+ "date": "2026-11-16",
+ "level": "minor",
+ "area": "Loop",
+ "title": "feat: a loop driver keeps the build loop's steps and stops",
+ "headline": "A build loop now runs under a script that keeps its steps in order, counts the stops that have a number, and halts with a triage card only the owner's Yes clears, within a bounds file the owner signs. Chained kit scripts run, a deleted project holds nothing, and a Yes asked before the act was tried counts.",
+ "alignment": "v1.38.0 is step T7 of the v2.0 plan, slice 1: the loop driver and the bounds file, with the carry-overs of build 11 closed in the same release.",
+ "items": [
+  {
+   "id": "LOOP",
+   "kind": "added",
+   "text": "`node .claude/loop.mjs` keeps a build loop's state in the git folder, says the one next step, refuses a step out of order or with no evidence, and needs the owner's Yes after an owner's step opened.",
+   "evidence": "tests/loop.test.mjs",
+   "where": "Running a build loop",
+   "before": "Steps kept from memory",
+   "after": "Kept by a script"
+  },
+  {
+   "id": "STOPS",
+   "kind": "added",
+   "text": "Fix rounds and canary misses per unit, visual increments and CI fixes are counted; at a bounds limit the run halts with a triage card (why, the data, the options), and only the owner's Yes to `loop resume <code>` clears it.",
+   "evidence": "tests/loop.test.mjs",
+   "where": "Stop rules held by code",
+   "before": "6 of 26",
+   "after": "11 of 26"
+  },
+  {
+   "id": "BOUNDS",
+   "kind": "added",
+   "text": "`.claude/bounds.json` lists the loop's steps, which are the owner's, and its limits; install seeds it once, and a tool writes it only on the owner's pop-up Yes to that exact edit.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "MODE",
+   "kind": "changed",
+   "text": "Loop mode arms only when the owner's latest message is exactly the phrase; the hooks halt it on any other owner message and turn it off at session start and a compact.",
+   "evidence": "tests/loop.test.mjs"
+  },
+  {
+   "id": "KILL",
+   "kind": "changed",
+   "text": "The kill switch `autonomy-off` now makes every loop step the owner's, as it does every merge.",
+   "evidence": "tests/loop.test.mjs"
+  },
+  {
+   "id": "K93",
+   "kind": "fixed",
+   "text": "Two kit scripts in one command (render, then check) are no longer held as a write to a protected file; node with inline code or an option beside one still is.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "K94",
+   "kind": "fixed",
+   "text": "A deleted kit project no longer holds every command that names it, and `kit.mjs forget` clears its record when the folder above it is gone too, while its drive answers.",
+   "evidence": "tests/guards-outside.test.mjs",
+   "where": "A deleted probe folder",
+   "before": "Every command held",
+   "after": "Nothing held"
+  },
+  {
+   "id": "K97",
+   "kind": "fixed",
+   "text": "An owner's Yes asked before the act was tried now counts for its first run, in the shell that runs it, so it no longer costs a second tap.",
+   "evidence": "tests/guards-hold.test.mjs"
+  },
+  {
+   "id": "NEW2",
+   "kind": "fixed",
+   "text": "A refused resume or yes says when no session id is set, or when no transcript of that session is kept for the repository.",
+   "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "K96",
+   "kind": "fixed",
+   "text": "The release notes audit reads a double hyphen only in prose, so a command quoted with a flag no longer fails a draft the build record wrote.",
+   "evidence": "tests/build-record.test.mjs"
+  },
+  {
+   "id": "K95",
+   "reach": "kit",
+   "kind": "fixed",
+   "text": "The CI test check keeps to a time budget, says each step as it starts, and names each test it could not check instead of being cancelled with no report.",
+   "evidence": "tests/test-check.test.mjs"
+  },
+  {
+   "id": "K98",
+   "reach": "kit",
+   "kind": "changed",
+   "text": "Recall v12: key 4 says an answer that first notes there is nothing to push yet still scores when it states the rule (the owner's ruling).",
+   "evidence": "docs/evals/recall-questions.md"
+  },
+  {
+   "id": "RETIRE",
+   "kind": "added",
+   "text": "The README says how to retire a kit project: delete its folder, then clear its record with `kit.mjs forget`.",
+   "evidence": "README.md"
+  }
+ ],
+ "verification": [
+  "Each fix has a test that fails on 1.37.0 and passes here.",
+  "K93, K94 and K96 were reproduced on the released 1.37.0 before the fix; K97's cause was read from the build 11 transcript."
+ ],
+ "decisions": [
+  {
+   "decision": "The loop driver is a kit script, not a native workflow or the built-in loop",
+   "why": "Workflows and /loop keep no counters and hold no stop across a compaction; a script both can call keeps the state in the git folder."
+  },
+  {
+   "decision": "A Yes asked before the act was tried binds to its first run",
+   "why": "The owner reads the same text either way, and any later run spends it, so the second tap bought nothing."
+  }
+ ],
+ "upgrading": "Run `install user` first, then `install project` in each project. A project gets `.claude/bounds.json` once; edit it only through a pop-up Yes to the exact edit.",
+ "limits": "The driver counts what it is told: a session that never runs `count` is not stopped by a counter. Watchers, plan self-approval and thread chaining are T7's second slice.",
+ "tests": { "before": 807, "after": 0, "flips": "declared tests on v1.37.0 and on this branch; the PR run gives the final count" }
+}
