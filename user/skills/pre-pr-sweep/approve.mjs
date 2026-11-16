@@ -691,6 +691,36 @@ function writeBriefs(c, hash, ceilings, facts) {
 	return out;
 }
 
+// T6 (build 11): the findings in a reviewer's report, read from its last hand-back in the shape its brief gives (the
+// canary checks it): [{ severity, verdict, claim, where, evidence }], or null when no report in that shape is there.
+function reportRows(parsed) {
+	let message = null;
+	for (const e of parsed) {
+		const content = e && e.message && e.message.role === 'assistant' && Array.isArray(e.message.content) ? e.message.content : [];
+		const h = content.find((b) => b && b.type === 'tool_use' && b.name === 'SubagentHandback' && b.input && typeof b.input.message === 'string');
+		if (h) message = h.input.message;
+	}
+	if (message === null) return null;
+	const lines = message.split(/\r?\n/);
+	if (!lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) return null;
+	const rows = [];
+	for (const l of lines) {
+		if (!/^\s*(critical|high|medium|low)\s*\|/i.test(l)) continue;
+		const f = l.split('|').map((x) => x.trim());
+		if (f.length < 5 || !/^(CONFIRMED|PLAUSIBLE)$/i.test(f[1])) return null;
+		rows.push({ severity: f[0].toLowerCase(), verdict: f[1].toUpperCase(), claim: f[2], where: f[3], evidence: f.slice(4).join(' | ') });
+	}
+	return rows;
+}
+// The ledger beside the contract, one row per finding, so a count the outcome logs can be read back to its reports.
+function writeLedger(rows) {
+	const f = `${contractFile.replace(/\.json$/i, '')}-ledger.md`;
+	const cell = (s) => String(s).replace(/\|/g, '/').replace(/\s+/g, ' ');
+	fs.writeFileSync(f, [`# Findings ledger: ${path.basename(contractFile)}`, '', 'Written by approve.mjs --outcome from the reviewers\' hand-backs.', '', '| Role | Severity | Verdict | Claim | Where |', '|---|---|---|---|---|',
+		...rows.map((x) => `| ${x.role} | ${x.severity} | ${x.verdict} | ${cell(x.claim)} | ${cell(x.where)} |`), ''].join('\n'));
+	return rel(f);
+}
+
 // The last approved sweep is reported once any outcome for its contract follows it, even one logged after a later
 // ask on the same contract. It is stuck once the lead says it was cut short: only the owner gets past that.
 // A round's clearings and the reviewers the guard started under them; a reviewer run with no guard counts none.
@@ -936,7 +966,7 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
 		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
 		toolIds.set(id, String(meta.toolUseId || ''));
-		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, ...shape, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp) };
+		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, ...shape, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp), ledger: reportRows(parsed) };
 	});
 	// A crash and its retry name one role by design.
 	const own = roles.filter((x) => x && !crashed.has(x.agent));
@@ -1072,7 +1102,16 @@ function outcome() {
 	}
 	let roles = [];
 	try { roles = JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []; } catch { /* labels only */ }
-	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, lastCall: _l, ...x }, i) => {
+	// T6 (build 11): when every role handed back a report in its shape, the findings are counted from the reports, and a
+	// typed count that differs is refused; the ledger is written either way, so the count can be read back.
+	const ledgers = read.roles.filter((x) => !isLost(x.agent)).map((x) => x.ledger);
+	if (ledgers.length && ledgers.every(Array.isArray)) {
+		const rows = ledgers.flatMap((l, i) => l.map((x) => ({ role: i + 1, ...x })));
+		const where = writeLedger(rows);
+		if (rows.length !== nums.findings) { console.log(`--findings ${nums.findings} does not match the ${rows.length} finding(s) the reviewers' reports hold (ledger: ${where}). Pass --findings ${rows.length}. Nothing logged.`); return 1; }
+		nums.sameLine = rows.filter((x) => x.where && rows.some((y) => y !== x && y.role !== x.role && y.where === x.where)).length;
+	}
+	const per = read.roles.filter((x) => !isLost(x.agent)).map(({ index, finished: _f, lastWrite: _w, lastCall: _l, ledger: _g, ...x }, i) => {
 		const c = read.roles.find((y) => isLost(y.agent) && y.index === index);
 		return { ...x, ...(c ? { tokens: x.tokens + c.tokens, calls: x.calls + c.calls, crashed: c.agent, crashedCalls: c.calls, crashedTokens: c.tokens } : {}), role: (roles[i] && roles[i].role) || `role ${i + 1}`, kind: (roles[i] && roles[i].kind) || null, cap: (decision.calls || [])[i] ?? null, budget: (decision.budgets || [])[i] ?? null, ceiling: (decision.ceilings || [])[i] ?? null };
 	});

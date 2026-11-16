@@ -2748,6 +2748,8 @@ function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session
     const lines = calls.map((c, i) => {
       // { refused: text } is a hook's refusal of a tool call, as Claude Code writes it into the transcript.
       if (c && c.refused) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, is_error: true, content: c.refused }] } });
+      // { handback: text } is the reviewer's report, handed back through the hand-back tool.
+      if (c && c.handback) return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: `msg_${id}_${i}`, role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'tool_use', id: `toolu_h${i}`, name: 'SubagentHandback', input: { message: c.handback } }], usage: { input_tokens: 0, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0, output_tokens: 0 } } });
       // { read: text } is a tool's plain answer, such as a file the reviewer read.
       if (c && c.read) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, content: c.read }] } });
       const { id: mid = `msg_${id}_${i}`, u = c, model: m = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
@@ -5243,6 +5245,35 @@ test('the drift signals pause a sweep, each by name', () => {
   assert.doesNotMatch(driftSweep([batch(), batch(), usual(), usual(), usual()]).o.stdout, /cache re-writes/);
   const heavy = Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 60000, 0, 0], [0, 60000, 0, 0]]);
   assert.match(driftSweep(heavy).o.stdout, /paused: .*content per call .*over its p95 of 33,333/);
+});
+
+// T6 (build 11): the finding counts were typed by the lead. The reports are now in a checked shape, so the outcome
+// counts the findings from them, writes the ledger beside the contract, and refuses a typed count that differs.
+// why: guards rule:finding-pipeline
+test('the outcome counts the findings from the reviewers\' reports, writes the ledger, and refuses a typed count that differs', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const report = (rows) => ({ handback: ['P', 'ROLE: a role', ...rows, 'Not checked: nothing'].join('\n') });
+  const two = report(['high | CONFIRMED | an import writes outside | src/import.ts:12 | ran it', 'low | PLAUSIBLE | a log names a path | src/routes.ts:4 | read it']);
+  const same = report(['medium | CONFIRMED | the same import write | src/import.ts:12 | ran it too']);
+  const none = report(['No findings']);
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const cfg = transcripts({ [ids[0]]: [[10000, 0, 0, 0], two], [ids[1]]: [[10000, 0, 0, 0], same], [ids[2]]: [[10000, 0, 0, 0], none], [ids[3]]: [[10000, 0, 0, 0], none], [ids[4]]: [[10000, 0, 0, 0], none] });
+  const run = (findings) => approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', String(findings), '--real', '2', '--duplicates', '1'], { CLAUDE_CONFIG_DIR: cfg });
+  const wrong = run(4);
+  assert.equal(wrong.status, 1);
+  assert.match(wrong.stdout, /--findings 4 does not match the 3 finding\(s\) the reviewers' reports hold[\s\S]*--findings 3/);
+  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').length, 0, 'nothing logged');
+  const ok = run(3);
+  assert.equal(ok.status, 0, ok.stdout);
+  const line = approvalLog(dir).filter((e) => e.kind === 'outcome').pop();
+  assert.equal(line.findings, 3);
+  assert.equal(line.sameLine, 2, 'two roles named src/import.ts:12');
+  const ledger = read(path.join(dir, 'sweeps', 'contract-ledger.md'));
+  assert.match(ledger, /\| 1 \| high \| CONFIRMED \| an import writes outside \| src\/import\.ts:12 \|/);
+  assert.match(ledger, /\| 2 \| medium \| CONFIRMED \| the same import write \| src\/import\.ts:12 \|/);
+  assert.equal(ledger.split('\n').filter((l) => /^\| \d/.test(l)).length, 3);
 });
 
 // The 1.23.0 sweep's findings on the drift signals.
