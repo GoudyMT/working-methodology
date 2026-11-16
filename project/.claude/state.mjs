@@ -692,10 +692,18 @@ function listCommand(cmd, rest, { fail, usage }) {
 		try { text = fs.readFileSync(src, 'utf8'); } catch { return fail(`${clean(rest[1])} could not be read`); }
 		// An id the list holds, or one an import mark still names (a row taken out by hand), is never given again.
 		const p = list.parseMarkdown(text, { taken: [...held.map((r) => r.id), ...Object.keys(s.list_import || {})] });
-		// A list's tables move once, into an empty list (the template's, 1.36.0): their rows would stand for rows the data
-		// holds. Checkbox rows only add (1.36.1: a project that moved its list in 1.35.0 keeps its roadmap as boxes).
-		if (held.length && p.tableRows) return fail(`${list.LIST} already holds rows; an import would drop what was changed in the data since. Change rows with item set.`);
 		if (p.faults.length) return fail([`Nothing written: ${p.faults.length} row(s) or table(s) cannot be moved whole.`, ...p.faults.map(clean)].join('\n'));
+		// A list's tables move once, into an empty list (the template's, 1.36.0): their rows would stand for rows the data
+		// holds. Checkbox rows only add (1.36.1: a project that moved its list in 1.35.0 keeps its roadmap as boxes), so
+		// beside a list with rows the tables stay in the file as they are and only its boxes move.
+		let leftTables = 0;
+		if (held.length && p.tableRows) {
+			if (p.rows.length === p.tableRows) return fail(`${list.LIST} already holds rows; an import would drop what was changed in the data since. Change rows with item set.`);
+			leftTables = p.tableRows;
+			p.rows = p.rows.slice(p.tableRows);
+			p.steps = p.steps.filter((x) => !x.table);
+			p.tableRows = 0;
+		}
 		// A box the list already holds (the same title in the same section) is a second import of the same lines, from the
 		// kept copy or a retry: refused, so no row comes in twice (the 1.36.1 sweep).
 		const twice = p.rows.filter((r) => held.some((h) => h.title === r.title && (h.section || '') === (r.section || '')));
@@ -733,7 +741,7 @@ function listCommand(cmd, rest, { fail, usage }) {
 		const made = p.tableRows ? p.steps : newSteps;
 		try { saveState(s, { touch: false }); write(list.LIST, list.serialize(all)); } catch (e) { undo(); return fail(`Nothing written: ${clean(e.message)}`); }
 		const lf = list.faultsOf(all, s.list_import);
-		console.log(`PASS ${p.rows.length} row(s) and ${made.length} roadmap step(s) moved into ${list.LIST} and ${STATE};${moved || ' the markdown is unchanged.'}`);
+		console.log(`PASS ${p.rows.length} row(s) and ${made.length} roadmap step(s) moved into ${list.LIST} and ${STATE};${moved || ' the markdown is unchanged.'}${leftTables ? ` ${leftTables} table row(s) stay in ${rel} as they were: ${list.LIST} already holds its rows.` : ''}`);
 		// What the import decided for the owner to look over: the steps it made and the short names it clipped.
 		if (made.length) console.log(`roadmap step(s) made: ${made.map((x) => clean(x.step)).join(', ')} (rename one with step rename <step> <new>)`);
 		const clipped = p.rows.filter((r) => r.short?.endsWith('...'));

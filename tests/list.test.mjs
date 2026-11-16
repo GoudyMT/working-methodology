@@ -530,6 +530,14 @@ test('a checkbox roadmap moves into a list that already holds rows, with new ids
 	put(dir, 'new.md', '## Later\n\n- [ ] A later box\n');
 	assert.equal(st(dir, 'list', 'import', 'new.md').status, 0);
 	assert.notEqual(rows(dir).find((x) => x.title === 'A later box').id, 'R2');
+	// A roadmap holding a table beside its boxes: the boxes move, the table stays as it was (the 1.36.1 sweep: the use
+	// check's one way out must work for it too).
+	put(dir, 'mixed.md', `${LIST}\n## Tasks\n\n- [ ] A mixed box\n`);
+	const mixed = st(dir, 'list', 'import', 'mixed.md');
+	assert.equal(mixed.status, 0, mixed.stdout);
+	assert.match(mixed.stdout, /4 table row\(s\) stay in mixed\.md/);
+	assert.ok(read(dir, 'mixed.md').includes('| A1 | The closeout deleted 480 items |'));
+	assert.equal(rows(dir).filter((x) => x.title === 'A mixed box').length, 1);
 	// A file of tables still needs an empty list: its rows would replace what the list holds.
 	put(dir, 'more.md', LIST);
 	const t = st(dir, 'list', 'import', 'more.md');

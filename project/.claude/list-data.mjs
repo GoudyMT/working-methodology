@@ -215,7 +215,7 @@ export function parseMarkdown(text, { taken = [] } = {}) {
 				if (steps.some((s) => s.step === c[0] && s.release === (c[1] || ''))) { faults.push(`roadmap step ${c[0]} ${c[1] || ''} is given twice (line ${lineNo[n]})`); return; }
 				// The first other column is what the step carries; any further one is kept in it, named.
 				const carries = rest.map(([name, k], j) => (j === 0 ? c[k] : c[k] ? `${name}: ${c[k]}` : '')).filter(Boolean).join('; ');
-				steps.push({ step: c[0], release: c[1] || '', carries, state: st >= 0 ? c[st] || '' : '' });
+				steps.push({ step: c[0], release: c[1] || '', carries, state: st >= 0 ? c[st] || '' : '', table: true });
 			});
 			continue;
 		}
