@@ -287,7 +287,9 @@ export function guardDir(home, projectDir) {
  * K81 (build 11): forget the guard record of a project folder the owner deleted, so the launcher stops reading it on
  * every call. Only when the folder is gone and the drive or share it was on answers: a project on an unplugged drive
  * or an offline share keeps its record, its git hook shims and the owner's accepted files. K94 (build 12): the folder
- * above it may be gone too (a deleted probe folder held its records for good), so only the root is asked.
+ * above it may be gone too (a deleted probe folder held its records for good), so only the root is asked. A drive
+ * mounted on a folder that answers looks deleted (the parent check missed that as well); its project then comes back
+ * with no record, and the launcher holds every call there until install project runs again: closed, not open.
  *
  * Args:
  *     home: the Claude folder that holds kit-guard
