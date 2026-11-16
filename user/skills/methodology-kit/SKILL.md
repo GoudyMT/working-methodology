@@ -22,7 +22,7 @@ Arguments: $ARGUMENTS
 - **`snapshot`** - refresh the credited backups of third-party plugins and skills: `node <kitDir>/scripts/kit.mjs
   snapshot`, then review the diff in `vendor/` (read any new community skill) before the kit commit.
 - **`update`** - pull the latest kit into this project: `node <kitDir>/scripts/kit.mjs install project .`
-  It runs only when `<kitDir>` sits on its newest release tag. A refusal names why: show it to the owner and stop;
+  It runs only when `<kitDir>` sits, clean, on the release tag its VERSION names (`v<VERSION>`). A refusal names why: show it to the owner and stop;
   never add `--unreleased` to a real project (that flag is for throwaway test installs only).
   Report what was created, updated, merged with the owner's edits (each by name) and skipped; for each skipped file, show the kit's change and merge by hand
   only on the owner's yes. Once a file carries the kit's changes, record it: `node <kitDir>/scripts/kit.mjs install

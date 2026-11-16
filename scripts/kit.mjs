@@ -146,6 +146,10 @@ function unreleasedText(stamp) {
   return `unreleased ${stamp.describe || 'build'}${extra.length ? ` with ${extra.join(' and ')}` : ''}`;
 }
 
+// M13 (b) (build 11): a file only an unreleased build installed, changed here, is kept, and the install stays
+// unreleased until it is gone; a reinstall keeps it again, so the line names it and the step that clears it.
+const keptText = (stamp, fix) => ((stamp.leftover || []).length ? ` Kept from an unreleased build: ${stamp.leftover.join(', ')}. Keep what you need, remove it by hand, then run ${fix}.` : '');
+
 // A git pull moves the kit folder onto main, off every release tag, so every fix line names a tag instead: one line
 // that runs as typed in PowerShell and bash.
 const releaseCheckout = (kit, tag) => `git -C "${toPosix(kit)}" fetch --tags; git -C "${toPosix(kit)}" checkout ${tag || '<newest v tag>'}`;
@@ -703,13 +707,28 @@ export function install(ctx) {
   for (const key of [...retiredKeys, ...branchOnly]) {
     const base = stamp.files[key];
     const heir = [].concat(replacedBy[key] || []).find((h) => skipped.some((s) => s.file === h));
-    const dest = key.startsWith('memory/') && memoryDir ? path.join(memoryDir, key.slice(7))
-      : path.join(ctx.target === 'user' ? ctx.home : ctx.projectDir, key);
+    const root = key.startsWith('memory/') && memoryDir ? memoryDir : ctx.target === 'user' ? ctx.home : ctx.projectDir;
+    const dest = path.join(root, key.startsWith('memory/') && memoryDir ? key.slice(7) : key);
+    // M13 (g) (build 11): a key that climbs out of its folder (a hand-edited stamp) names a file install never wrote.
+    const rel = path.relative(root, dest);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) { delete files[key]; continue; }
+    // M13 (f) (build 11): on a case-folding file system a key the kit renamed by case alone is the shipped file itself.
+    if ((process.platform === 'win32' || process.platform === 'darwin') && [...planned].some((k) => k !== key && k.toLowerCase() === key.toLowerCase())) { delete files[key]; continue; }
     if (heir && base && fs.existsSync(dest)) {
       skipped.push({ file: key, reason: `retired by the kit, but kept while ${heir} is skipped: merge ${heir}, then remove this file by hand` });
       continue;
     }
     if (!base || !fs.existsSync(dest)) { if (!fs.existsSync(dest)) delete files[key]; continue; }
+    // M13 (c) (build 11): a memory file the owner's own MEMORY.md (skipped, so not rewritten) still links stays until
+    // the link goes; removed, it leaves the index pointing at nothing.
+    if (key.startsWith('memory/') && memoryDir && skipped.some((s) => s.file === 'memory/MEMORY.md')) {
+      let index = '';
+      try { index = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf8'); } catch { /* none */ }
+      if (index.includes(`(${key.slice(7)})`)) {
+        skipped.push({ file: key, reason: 'only an unreleased build installed it, and your MEMORY.md still links it (install leaves your changed copy as it is): remove the link, then remove this file by hand' });
+        continue;
+      }
+    }
     if (sha(fs.readFileSync(dest, 'utf8')) !== base) {
       if (branchOnly.includes(key)) {
         skipped.push({ file: key, reason: 'only an unreleased build installed it, and it changed here - keep what you need, then remove it by hand' });
@@ -1255,7 +1274,7 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   lines.push(...doubleRunLines(projectDir));
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
   const ahead = remoteKitAhead(kit);
-  if (ahead > 0) lines.push(`The kit on GitHub is ${ahead} commit(s) ahead of the kit folder. Check out its newest release tag (${releaseCheckout(kit, newestTag(kit))}), then run /methodology-kit update.`);
+  if (ahead > 0) lines.push(`GitHub has ${ahead} newer kit release(s), newest ${newestTag(kit) || 'unknown'}. Check out its newest release tag (${releaseCheckout(kit, newestTag(kit))}), then run /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.
@@ -1275,7 +1294,7 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   // session start said only that an update was there): the skew is named for what it breaks.
   if (stamp.version && userStamp.version && semverAbove(userStamp.version, stamp.version)) lines.push(`~/.claude runs kit ${userStamp.version}, this project ${stamp.version}: the user layer's skills and hooks can need project files this install lacks, so a sweep or a build may stop on a missing hook. Run /methodology-kit update before either.`);
   if (userStamp.release === false) lines.push(`~/.claude runs an unreleased kit build (${userStamp.describe || 'no git history'}). ${checkout}, then run node "${toPosix(kit)}/scripts/kit.mjs" install user.`);
-  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.`);
+  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.${keptText(stamp, '/methodology-kit update')}`);
   if (stamp.version) {
     const r = foldBack({ kit, home, target: 'project', projectDir });
     // Only a file changed here and in the kit owes work; one changed only here holds the project's own values.
@@ -1372,11 +1391,11 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
   if (channel) lines.push(channel);
   const n = ahead(kit);
   if (n > 0) {
-    lines.push(`    GitHub has ${n} newer kit commit(s): check out its newest release tag (${releaseCheckout(kit, newest(kit))}), then update both below.`);
+    lines.push(`    GitHub has ${n} newer kit release(s), newest ${newest(kit) || 'unknown'}: check out its newest release tag (${releaseCheckout(kit, newest(kit))}), then update both below.`);
     gaps.push('the kit folder is behind GitHub');
   }
   const where = [
-    { name: '~/.claude', target: 'user', stampPath: path.join(home, STAMP_USER), fix: `node ${toPosix(kit)}/scripts/kit.mjs install user` },
+    { name: '~/.claude', target: 'user', stampPath: path.join(home, STAMP_USER), fix: `node "${toPosix(kit)}/scripts/kit.mjs" install user` },
     { name: 'This project', target: 'project', stampPath: path.join(projectDir, STAMP_PROJECT), fix: '/methodology-kit update' },
   ];
   for (const w of where) {
@@ -1396,7 +1415,7 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     const parts = [unreleased || (semverAbove(version, stamp.version) ? `behind kit ${version}` : 'current')];
     if (waiting) parts.push(`${waiting} file(s) waiting`);
     const ok = parts[0] === 'current' && !waiting && !held.length;
-    const fix = unreleased ? ` Check out the kit's newest release tag (${releaseCheckout(kit, newest(kit))}), then run ${w.fix}.` : ` Run ${w.fix}.`;
+    const fix = (unreleased ? ` Check out the kit's newest release tag (${releaseCheckout(kit, newest(kit))}), then run ${w.fix}.` : ` Run ${w.fix}.`) + keptText(stamp, w.fix);
     lines.push(`${w.name}: ${stamp.version}, ${parts.join('; ')}.${ok ? '' : fix}`);
     if (held.length) lines.push(`    ${held.length} file(s) changed here and in the kit: ${held.join(', ')}. Run kit.mjs install ${w.target === 'user' ? 'user' : 'project <folder>'} from the release copy: it merges each line by line, and names any it cannot (a clash), to merge by hand and record with --merged <file>,<file>.`);
     if (w.target === 'project') for (const l of doubleRunLines(projectDir)) lines.push(`    ${l}`);
@@ -1541,12 +1560,18 @@ function writeNotice(projectDir, version) {
  * How many commits the kit's upstream (its GitHub repo) has that the kit folder lacks. A fetch that fails or
  * takes too long counts as 0: an offline machine must still start its session.
  */
+// M13 (a) (build 11): the kit folder sits on a release tag, detached, so commits past an upstream branch never
+// counted; what the owner needs is a newer release. The tags are fetched first, so the tag a fix line names after this
+// is the newest the remote has.
 function remoteKitAhead(kit) {
-  const git = (...a) => spawnSync('git', ['-C', kit, ...a], { encoding: 'utf8', timeout: 8000 });
-  if (git('rev-parse', '--abbrev-ref', '@{u}').status !== 0) return 0;
-  if (git('fetch', '--quiet').status !== 0) return 0;
-  const n = Number(git('rev-list', '--count', 'HEAD..@{u}').stdout.trim());
-  return Number.isFinite(n) ? n : 0;
+  const git = (...a) => spawnSync('git', ['-C', kit, ...NO_PROGRAMS, ...a], { encoding: 'utf8', timeout: 8000, cwd: SAFE_CWD });
+  if (git('remote').stdout.trim() === '') return 0;
+  // The fetch alone may reach the remote, over https or a local path only: no transport that runs a program (ext, ssh).
+  if (git('-c', 'protocol.https.allow=always', '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--tags').status !== 0) return 0;
+  let version = '';
+  try { version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim(); } catch { return 0; }
+  const tags = git('tag', '--list', 'v*').stdout.split(/\r?\n/).filter((t) => /^v\d+\.\d+\.\d+$/.test(t));
+  return tags.filter((t) => semverAbove(t.slice(1), version)).length;
 }
 
 /**

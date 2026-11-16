@@ -390,6 +390,41 @@ test('the Claude Code version read never runs a claude program planted in the cu
   assert.equal(r.stdout.trim(), 'null');
 });
 
+// M13 (a) (build 11, real on 1.36.1): the kit folder sits on a release tag, detached, so the old check of commits
+// past its upstream branch never fired, and the tag its fix named was read before the fetch. A newer release on the
+// remote is what the owner needs to hear, named after the fetch.
+// why: guards rule:owners-rules (install only from a release)
+test('a kit folder on a release tag hears of a newer release on the remote, named after the fetch', () => {
+  const { kit, home, proj } = makeKit();
+  const g = (cwd, ...a) => { const r = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
+  const origin = path.join(path.dirname(kit), 'origin.git');
+  g(kit, 'init', '-q', '-b', 'main'); g(kit, 'add', '-A'); g(kit, 'commit', '-q', '-m', 'one'); g(kit, 'tag', 'v1.0.0');
+  g(path.dirname(kit), 'clone', '-q', '--bare', kit, origin);
+  g(kit, 'remote', 'add', 'origin', origin); g(kit, 'fetch', '-q', 'origin');
+  const other = path.join(path.dirname(kit), 'other');
+  g(path.dirname(kit), 'clone', '-q', origin, other);
+  fs.writeFileSync(path.join(other, 'VERSION'), '1.1.0\n');
+  g(other, 'commit', '-q', '-am', 'two'); g(other, 'tag', 'v1.1.0'); g(other, 'push', '-q', 'origin', 'main', 'v1.1.0');
+  g(kit, 'checkout', '-q', '--detach', 'v1.0.0');
+  const r = kitStatus({ kit, home, projectDir: proj, protection: () => null, inodes: () => ({ level: 'ok', pct: 1, text: '' }), claudeVersion: () => null });
+  assert.match(r.text, /1 newer kit release[^\n]*v1\.1\.0/);
+  assert.match(r.text, /checkout v1\.1\.0/, 'the fix names the tag the fetch brought');
+  assert.match(kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null }), /newer kit release[^\n]*checkout v1\.1\.0/);
+});
+
+// M13 (b) (build 11, real on 1.36.1): a file only an unreleased build installed, changed here, is kept and the install
+// stays unreleased; the fix line said to check out a release and reinstall, which keeps it again. The line names the
+// file and the step that clears it, at status and at session start.
+// why: guards rule:owners-rules (a fix line that cannot fix wastes the owner's turn)
+test('a kept file from an unreleased build is named with the step that clears it', () => {
+  const { kit, home, proj } = makeKit();
+  fs.mkdirSync(path.join(proj, '.kit'), { recursive: true });
+  fs.writeFileSync(path.join(proj, '.kit', 'kit-version.json'), JSON.stringify({ version: '1.0.0', release: false, describe: 'v1.0.0-2-gabc', leftover: ['.claude/extra.mjs'], files: {} }));
+  const r = kitStatus({ kit, home, projectDir: proj, ahead: () => 0, protection: () => null, inodes: () => ({ level: 'ok', pct: 1, text: '' }), claudeVersion: () => null });
+  assert.match(r.text, /\.claude\/extra\.mjs[^\n]*remove it by hand[^\n]*then run \/methodology-kit update/);
+  assert.match(kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null }), /\.claude\/extra\.mjs[^\n]*remove it by hand/);
+});
+
 // why: guards rule:owners-rules
 test('status reports a project or ~/.claude with no install record, and writes nothing', () => {
   const { kit, home, proj } = makeKit();
@@ -657,7 +692,7 @@ test('session start says when the kit on GitHub is ahead of the kit folder', () 
   git(other, 'commit', '-q', '-am', 'release'); git(other, 'tag', 'v1.2.0'); git(other, 'push', '-q', 'origin', 'main', 'v1.2.0');
   // A pull would move the kit folder onto main, off every release tag, so the line names the newest tag instead.
   const say = sessionStartReport({ kit, home, projectDir: proj });
-  assert.match(say, /1 commit\(s\) ahead[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.2\.0\)[\s\S]*\/methodology-kit update/);
+  assert.match(say, /1 newer kit release\(s\), newest v1\.2\.0[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.2\.0\)[\s\S]*\/methodology-kit update/);
   assert.doesNotMatch(say, /git pull/);
 });
 
@@ -904,7 +939,7 @@ test('status and session start show an unreleased install as a gap; an older sta
   // ~/.claude carries the rules of every project, so its unreleased build is named too.
   install({ kit, home, target: 'user', release: unreleased });
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
-  assert.match(r.text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*node .*kit\.mjs install user/);
+  assert.match(r.text, /~\/\.claude: 1\.0\.0, unreleased v1\.0\.0-3-gabc1234 with 1 uncommitted file\(s\)[\s\S]*node "[^"\n]*kit\.mjs" install user/);
   assert.match(r.text, /^Not current: ~\/\.claude .*unreleased build; This project .*unreleased build\.$/m);
   assert.match(sessionStartReport({ kit, home, projectDir: proj }), /~\/\.claude runs an unreleased kit build[\s\S]*v1\.0\.0-3-gabc1234[\s\S]*newest release tag[\s\S]*kit\.mjs" install user/);
   // Reinstalled from the release: the gap closes.
@@ -913,6 +948,64 @@ test('status and session start show an unreleased install as a gap; an older sta
   r = status({ kit, home, projectDir: proj, ahead: () => 0 });
   assert.equal(r.current, true, r.text);
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj }), /unreleased/);
+});
+
+// M13 (c) (build 11, real on 1.36.1): a memory file only an unreleased build had was removed while the owner's
+// changed MEMORY.md, which install skips, still linked it. It stays, named, until the link goes.
+// why: guards rule:tracking-file-functions (a memory index that links a missing file misleads every session)
+test('a branch-only memory file that a changed MEMORY.md still links is kept and named', () => {
+  const { kit, home, proj } = makeKit();
+  fs.writeFileSync(path.join(kit, 'memory/branch.md'), 'branch rule\n');
+  fs.writeFileSync(path.join(kit, 'memory/MEMORY.md'), '- [Style](style.md)\n- [Branch](branch.md)\n');
+  install({ kit, home, target: 'project', projectDir: proj, release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const memory = path.join(home, 'projects', projectSlug(proj), 'memory');
+  fs.rmSync(path.join(kit, 'memory/branch.md'));
+  fs.writeFileSync(path.join(kit, 'memory/MEMORY.md'), '- [Style](style.md)\n');
+  // The owner added a line of their own, so install skips MEMORY.md, and their copy still links branch.md.
+  fs.appendFileSync(path.join(memory, 'MEMORY.md'), '- [Mine](mine.md)\n');
+  const r = install({ kit, home, target: 'project', projectDir: proj, release: released(kit, 'v1.0.0') });
+  assert.ok(fs.existsSync(path.join(memory, 'branch.md')), 'removed while MEMORY.md still links it');
+  assert.ok(r.skipped.some((s) => s.file === 'memory/branch.md' && /MEMORY\.md still links it/.test(s.reason)), JSON.stringify(r.skipped));
+});
+
+// M13 (f) (build 11): on a file system that folds case, a file the kit renamed by case alone is the same file under its
+// old name, so removing the old name removed the shipped file until the next install.
+// why: guards rule:owners-rules (an install never loses a shipped file)
+test('a file renamed by case alone survives the install that retires its old name', { windows: true }, () => {
+  const { kit, home, proj } = makeKit();
+  // A rename by case alone goes through a third name, as git does on a case-folding file system.
+  const skill = (from, to) => { const d = path.join(kit, 'user/skills/human-factor'); fs.renameSync(path.join(d, from), path.join(d, 'tmp.md')); fs.renameSync(path.join(d, 'tmp.md'), path.join(d, to)); };
+  skill('SKILL.md', 'skill.md');
+  install({ kit, home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  skill('skill.md', 'SKILL.md');
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
+  assert.ok(fs.existsSync(path.join(home, 'skills/human-factor/SKILL.md')), 'the shipped file was removed under its old name');
+});
+
+// M13 (g) (build 11): a record key in the install stamp that climbs out of its folder (a hand-edited stamp) names a
+// file install never wrote, and the clean-up must not touch it.
+// why: guards rule:security-standards (install removes only what it put there)
+test('the clean-up never removes a file outside its folder, whatever the stamp says', () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  const outside = path.join(path.dirname(home), 'outside.txt');
+  fs.writeFileSync(outside, 'owner file\n');
+  const stampFile = path.join(home, 'kit-install.json');
+  const stamp = JSON.parse(read(stampFile));
+  stamp.files['../outside.txt'] = crypto.createHash('sha256').update('owner file\n').digest('hex');
+  fs.writeFileSync(stampFile, JSON.stringify(stamp));
+  install({ kit, home, target: 'user', release: released(kit, 'v1.0.0') });
+  assert.ok(fs.existsSync(outside), 'a file outside ~/.claude was removed');
+});
+
+// M13 (g) (build 11): status's fix line for ~/.claude named the kit folder unquoted, so a folder with a space broke it.
+// why: guards rule:owners-rules (a fix line runs as typed)
+test('status names the kit folder in quotes in the install user line', () => {
+  const { kit, home, proj } = makeKit();
+  const spaced = path.join(path.dirname(kit), 'my kit');
+  fs.renameSync(kit, spaced);
+  install({ kit: spaced, home, target: 'user', release: { release: false, describe: 'v1.0.0-1-gabc1234' } });
+  assert.match(status({ kit: spaced, home, projectDir: proj, ahead: () => 0 }).text, /node "[^"\n]*my kit\/scripts\/kit\.mjs" install user/);
 });
 
 // why: catches a break at scripts/kit.mjs:594 that no other test catches
@@ -8201,7 +8294,7 @@ test('status says current only when the kit folder, ~/.claude and the project al
   assert.match(r.text, /~\/\.claude: 1\.0\.0, behind kit 1\.0\.1/);
   assert.match(r.text, /This project: 1\.0\.0, behind kit 1\.0\.1; 1 file\(s\) waiting/);
   assert.match(r.text, /Run \/methodology-kit update\./);
-  assert.match(r.text, /kit\.mjs install user\./);
+  assert.match(r.text, /kit\.mjs" install user\./);
   assert.match(r.text, /^Not current: /m);
 
   // Same version, a file carrying this project's own values on top of the current kit copy (a filled adapter row, a
@@ -8243,7 +8336,7 @@ test('status says current only when the kit folder, ~/.claude and the project al
   fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'rules, newer\n');
   r = status({ kit, home, projectDir: proj, ahead: () => 2, newest: () => 'v1.0.3' });
   assert.equal(r.current, false);
-  assert.match(r.text, /GitHub has 2 newer kit commit[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
+  assert.match(r.text, /GitHub has 2 newer kit release\(s\), newest v1\.0\.3[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.0\.3/);
   assert.doesNotMatch(r.text, /git pull/);
 });
 
