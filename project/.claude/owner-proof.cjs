@@ -544,12 +544,14 @@ function shellWritesFrom(command, tool, start, names) {
 		const w = g.filter((x) => !x.redirect).map((x) => x.value);
 		const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
 		const onPath = !/[\\/]/.test(w[0] || '');
-		return (onPath && (READERS.has(p) || PIPE_READERS.has(p) || (p === 'out-null' && w.length === 1))) || CHANGERS.has(p) || printSed(w)
+		// sort -o and uniq's second name write a file, so neither is plain here (the push security review of build 11).
+		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && p !== 'sort' && p !== 'uniq' || (p === 'out-null' && w.length === 1))) || CHANGERS.has(p) || printSed(w)
 			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
 			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
 	};
 	const substituted = /[`]|\$\(|<\(/.test(text);
-	const defined = DEFINITION.test(text);
+	// $_, ${_} and !$ hand the last word of the command before to the next one, whatever that command is.
+	const defined = DEFINITION.test(text) || /\$\{?_(?!\w)|!\$/.test(String(command || ''));
 	const definesBefore = (s) => defined || (segments.length > 1 && (substituted || !segments.every((g, k) => k === s || (plainStep(g) && !g.some((x) => x.redirect && !/^(\d|\/dev\/null|\$null|nul)$/i.test(x.value))))));
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
