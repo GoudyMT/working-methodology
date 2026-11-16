@@ -20,6 +20,8 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
 | U1 | | | | | parallel / alone / after Ux | builder / lead |
 
 - **Runs:** "parallel" only when the unit shares no file, port, server or fixture with another parallel unit.
+  `node .claude/plan-graph.mjs <this plan>` names every pair that may run at once and shares a file (files in
+  backticks); ports, servers and fixtures are still checked by hand.
 - **Built by:** "lead" for a small or tightly coupled unit; a split costs more than it saves there.
 - **Done when** names the unit's size-budget share (below), or "no size budget touched".
 

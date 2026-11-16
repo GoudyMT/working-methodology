@@ -198,6 +198,14 @@ const PARTS = [
 		},
 		used: () => (has('.git/kit-loop.jsonl') ? [true, 'a run or loop mode was recorded'] : [null, 'no loop run yet']),
 	},
+	{
+		// T8 (build 14): a batch plan's units read as a graph, so shared files between units that run at once are found.
+		name: 'plan graph',
+		what: 'the plan graph: units of a batch plan that may run at once and share a file (T8)',
+		present: () => (has('.claude/plan-graph.mjs') ? [true, 'plan-graph.mjs'] : [false, 'missing .claude/plan-graph.mjs (run kit.mjs install project)']),
+		wired: () => [true, 'run by the lead on a batch plan (agent-team-build)'],
+		used: () => (has('.git/kit-plan-graph.jsonl') ? [true, 'a plan was checked'] : [null, 'no plan checked yet']),
+	},
 ];
 
 function run() {
