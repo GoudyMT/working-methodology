@@ -852,7 +852,9 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 		const tokens = calls.reduce((t, m) => t + per(m), 0);
 		// The split by kind (for a dollar ceiling later: cache reads are most of the meter and few of the dollars), the
 		// starting context, the largest and last call (the ceiling's margin), and the cache re-writes after the first
-		// call (a call that wrote over half of what it processed: the cache had expired).
+		// call: a call that read back under half of the context the call before it held, so the cache had expired. A call
+		// that reads the whole cache and writes a large batch of new results is no re-write (build 11: every role of the
+		// 1.36.1 sweep had one, and the sweep paused on 7 re-writes that were none).
 		const split = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
 		for (const m of calls) { split.input += u(m, 'input_tokens'); split.cacheRead += u(m, 'cache_read_input_tokens'); split.cacheWrite += u(m, 'cache_creation_input_tokens'); split.output += u(m, 'output_tokens'); }
 		const shape = {
@@ -860,7 +862,7 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 			firstCall: calls.length ? per(calls[0]) - u(calls[0], 'output_tokens') : 0,
 			maxCall: Math.max(0, ...calls.map(per)),
 			lastCall: calls.length ? per(calls[calls.length - 1]) : 0,
-			rewrites: calls.slice(1).filter((m) => u(m, 'cache_creation_input_tokens') * 2 > per(m)).length,
+			rewrites: calls.slice(1).filter((m, i) => u(m, 'cache_read_input_tokens') * 2 < per(calls[i]) - u(calls[i], 'output_tokens')).length,
 			// Stopped: the call-cap hook refused a tool at the ceiling. Its own words in the transcript say so; the spend
 			// alone cannot tell a role that was stopped from one that was done.
 			// Only a refusal counts, with the hook's numbers in it: a reviewer that read the hook's source or this script
@@ -1025,7 +1027,7 @@ function outcome() {
 	if (!bounded && decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
 	const n = (x) => Math.round(x).toLocaleString('en-US');
 	// A crash and its retry each had the whole ceiling, so the check reads the retry alone, as the call check does.
-	for (const x of per) { const own = x.tokens - (x.crashedTokens || 0); if (x.ceiling && own > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(own)} against ${n(x.ceiling)} (the hook is missing or did not fire)`); }
+	for (const x of per) { const own = x.tokens - (x.crashedTokens || 0); if (x.ceiling && own > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(own)} against ${n(x.ceiling)} (${x.stopped ? 'the hook stopped it too late' : 'the hook is missing or did not fire'})`); }
 	// Past the cap's own stop (one call over is the hook's margin): the hook is missing or did not hold. Without a
 	// baseline the whole-sweep trip covers it and this is a note; under the bound nothing else would, so it trips (the
 	// 1.23.0 sweep).

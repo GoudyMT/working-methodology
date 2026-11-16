@@ -4912,8 +4912,11 @@ test('no agent may log the owner\'s yes or a resume, in any shell', () => {
 // why: guards rule:sweep-auto-approval
 test('the call-cap hook counts real calls and refuses tools near the cap, but never the report', () => {
   const dir = makeTemp('cap-');
-  assert.equal(capHook(dir, 10, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
-  const stop = capHook(dir, 11, 12);
+  // The hook sees the calls before the one it is asked about, and that one is spent already: refused, it still costs a
+  // call, and the report is one more. So the cap's last two calls are the refused one and the report (build 11: the
+  // 1.36.1 sweep's role 6 ran 16 calls against 15, refused at its 16th).
+  assert.equal(capHook(dir, 9, 12).permissionDecision, 'allow', 'each message id counts once, however many lines it wrote');
+  const stop = capHook(dir, 10, 12);
   assert.equal(stop.permissionDecision, 'deny');
   assert.match(stop.permissionDecisionReason, /hand in your report/);
   assert.equal(capHook(dir, 11, 12, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow');
@@ -5010,20 +5013,29 @@ test('the call-cap hook stops a reviewer before a call would take it past its to
   const dir = makeTemp('ceil-');
   const session = path.join(dir, 'session-1');
   fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
-  const hook = (calls, extra = {}) => {
-    const lines = [{ message: { role: 'user', content: 'a brief. Call cap: 12. Token ceiling: 100000.' } }];
+  const hook = (calls, extra = {}, sizes = Array(calls).fill(30000), ceiling = 200000) => {
+    const lines = [{ message: { role: 'user', content: `a brief. Call cap: 40. Token ceiling: ${ceiling}.` } }];
     // Streaming writes a message's id on several lines; it counts once, at its last line.
-    for (let i = 0; i < calls; i++) for (const part of [1, 30000]) lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 0, cache_read_input_tokens: part, cache_creation_input_tokens: 0, output_tokens: 0 } } });
+    for (let i = 0; i < calls; i++) for (const part of [1, sizes[i]]) lines.push({ message: { role: 'assistant', id: `m${i}`, usage: { input_tokens: 0, cache_read_input_tokens: part, cache_creation_input_tokens: 0, output_tokens: 0 } } });
     fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
     const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 }, ...extra });
     return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
   };
-  assert.equal(hook(2).permissionDecision, 'allow', '60,000 spent; one more call of 30,000 stays under 100,000');
-  const stop = hook(3);
-  assert.equal(stop.permissionDecision, 'deny', '90,000 spent; one more call would pass 100,000');
-  assert.match(stop.permissionDecisionReason, /token ceiling reached \(90,000 of 100,000\)[\s\S]*hand in your report/i);
-  assert.equal(hook(3, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow', 'the report always goes');
-  assert.equal(hook(3, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers');
+  // The call asked about is spent already; refused, the report follows it. Allowed, one more call and then the report.
+  assert.equal(hook(3).permissionDecision, 'allow', '90,000 spent; this call, one more and the report: 180,000');
+  const stop = hook(4);
+  assert.equal(stop.permissionDecision, 'deny', '120,000 spent; this call, one more and the report would pass 200,000');
+  assert.match(stop.permissionDecisionReason, /token ceiling reached \(120,000 of 200,000\)[\s\S]*hand in your report/i);
+  assert.equal(hook(4, { tool_name: 'SubagentHandback' }).permissionDecision, 'allow', 'the report always goes');
+  assert.equal(hook(4, { agent_type: 'builder' }).permissionDecision, 'allow', 'only reviewers');
+  // Build 11: a real role of the 1.36.0 sweep (its call sizes, in order) ran to 974,950 against 827,461. Replayed, the
+  // hook stops it where the call it refuses and the report still land under the ceiling.
+  const real = [14198, 17438, 21162, 43440, 46640, 71479, 73781, 80176, 80788, 83380, 85567, 86987, 87435, 89919, 92561];
+  let n = 1;
+  while (n < real.length && hook(n, {}, real, 827461).permissionDecision === 'allow') n++;
+  const spent = real.slice(0, n + 2).reduce((t, x) => t + x, 0);
+  assert.ok(n < real.length - 2, `stopped at call ${n + 1}`);
+  assert.ok(spent <= 827461, `the refused call and the report end at ${spent}, under 827,461`);
 });
 
 // Each sweep below runs on a log of 25 measured roles of 200,000 tokens over 6 calls, starting at 10,000: the
@@ -5068,6 +5080,10 @@ test('the drift signals pause a sweep, each by name', () => {
   assert.match(driftSweep(start).o.stdout, /paused: .*the starting context .*15% over its median of 10,000/);
   const rewrite = [[[10000, 0, 0, 0], [0, 28000, 0, 0], [0, 0, 30000, 0]], [[10000, 0, 0, 0], [0, 0, 30000, 0]], usual(), usual(), usual()];
   assert.match(driftSweep(rewrite).o.stdout, /paused: .*2 cache re-writes after the first call/);
+  // Build 11: a call that reads the whole cache and writes a large batch of new results (a dozen reads at once) is no
+  // expired cache. Every role of the 1.36.1 sweep had one such call, and the sweep paused on 7 re-writes that were none.
+  const batch = () => [[2, 0, 13600, 323], [2, 13600, 22659, 828], [2, 36259, 2506, 674], ...Array(3).fill([0, 40000, 0, 0])];
+  assert.doesNotMatch(driftSweep([batch(), batch(), usual(), usual(), usual()]).o.stdout, /cache re-writes/);
   const heavy = Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 60000, 0, 0], [0, 60000, 0, 0]]);
   assert.match(driftSweep(heavy).o.stdout, /paused: .*content per call .*over its p95 of 33,333/);
 });
@@ -5086,6 +5102,15 @@ test('the ceiling\'s check allows one call past it, the margin the hook works wi
   // 10,000 + 4 x 28,000 + 100,000 = 222,000: past the 200,000 ceiling by less than its largest call.
   const margin = driftSweep([[[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), [0, 100000, 0, 0]], usual(), usual(), usual(), usual()]);
   assert.doesNotMatch(margin.o.stdout, /did not hold/);
+});
+// Build 11: the 1.36.0 triage said "the hook is missing or did not fire" for roles whose transcripts held the hook's
+// own refusal. A role the hook did stop is named as stopped too late, which points at the hook's margin, not its wiring.
+// why: guards rule:sweep-auto-approval
+test('a role past its ceiling that the hook did stop is named as stopped too late, not as unhooked', () => {
+  const late = [[10000, 0, 0, 0], ...Array(4).fill([0, 50000, 0, 0]), { refused: 'Token ceiling reached (210,000 of 200,000): one more call would pass it.' }, [0, 60000, 0, 0], [0, 70000, 0, 0]];
+  const { o } = driftSweep([late, usual(), usual(), usual(), usual()]);
+  assert.match(o.stdout, /ceiling did not hold[^\n]*340,000 against 200,000 \(the hook stopped it too late\)/);
+  assert.doesNotMatch(o.stdout, /340,000 against 200,000 \(the hook is missing/);
 });
 // why: guards rule:sweep-auto-approval
 test('a role past its call cap pauses the sweep under ceilings too: the cap did not hold', () => {

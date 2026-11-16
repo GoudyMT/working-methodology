@@ -70,15 +70,19 @@ function check(input) {
 		}
 		if (m.role === 'assistant' && m.usage && m.id) calls.set(m.id, m.usage);
 	}
-	if (cap !== null && calls.size >= cap - 1) return deny(`Call cap reached (${calls.size} of ${cap}). Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
+	// The transcript holds the calls before this one, and this one is spent already: refused, it still counts, and the
+	// report is one call more (build 11: the 1.36.0 and 1.36.1 sweeps each ran a stopped role two calls past its stop).
+	// So the cap's last two calls are this refused one and the report.
+	if (cap !== null && calls.size >= cap - 2) return deny(`Call cap reached (${calls.size} of ${cap}). Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
 	// The token ceiling (M22 C): every call re-reads the context, so the next call costs about what the last one did.
-	// The reviewer is stopped while one more call still fits, so its hand-back lands near the ceiling, not past it.
+	// Allowed, this call is followed by one more and the report; refused, by the report alone. The reviewer is stopped
+	// while all three still fit, so its report lands under the ceiling.
 	if (ceiling === null) return;
 	const size = (u) => ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens'].reduce((t, k) => t + (Number(u[k]) || 0), 0);
 	const used = [...calls.values()].reduce((t, u) => t + size(u), 0);
 	const last = calls.size ? size([...calls.values()].pop()) : 0;
 	const n = (x) => x.toLocaleString('en-US');
-	if (used + last >= ceiling) return deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): one more call would pass it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
+	if (used + 3 * last >= ceiling) return deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): more work would take your report past it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
 }
 
 // Anything unexpected lets the call through.
