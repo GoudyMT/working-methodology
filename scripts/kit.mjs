@@ -1264,7 +1264,7 @@ function doubleRunLines(projectDir) {
  * Returns:
  *     the message text (one or more lines)
  */
-export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion }) {
+export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
   const lines = [];
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old.line);
@@ -1273,8 +1273,8 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
-  const ahead = remoteKitAhead(kit);
-  if (ahead > 0) lines.push(`GitHub has ${ahead} newer kit release(s), newest ${newestTag(kit) || 'unknown'}. Check out its newest release tag (${releaseCheckout(kit, newestTag(kit))}), then run /methodology-kit update.`);
+  const ahead = remote(kit);
+  if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.
@@ -1389,9 +1389,11 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
   }
   const channel = stableChannelLine(home);
   if (channel) lines.push(channel);
-  const n = ahead(kit);
+  const a = ahead(kit);
+  const n = typeof a === 'number' ? a : a.count;
   if (n > 0) {
-    lines.push(`    GitHub has ${n} newer kit release(s), newest ${newest(kit) || 'unknown'}: check out its newest release tag (${releaseCheckout(kit, newest(kit))}), then update both below.`);
+    const tag = (a && a.newest) || newest(kit);
+    lines.push(`    GitHub has ${n} newer kit release(s), newest ${tag || 'unknown'}: check out its newest release tag (${releaseCheckout(kit, tag)}), then update both below.`);
     gaps.push('the kit folder is behind GitHub');
   }
   const where = [
@@ -1557,21 +1559,28 @@ function writeNotice(projectDir, version) {
 }
 
 /**
- * How many commits the kit's upstream (its GitHub repo) has that the kit folder lacks. A fetch that fails or
- * takes too long counts as 0: an offline machine must still start its session.
+ * The kit releases on GitHub newer than the kit folder's VERSION: { count, newest }. A listing that fails or takes
+ * too long counts as none: an offline machine must still start its session.
  */
 // M13 (a) (build 11): the kit folder sits on a release tag, detached, so commits past an upstream branch never
-// counted; what the owner needs is a newer release. The tags are fetched first, so the tag a fix line names after this
-// is the newest the remote has.
+// counted; what the owner needs is a newer release, named from the remote itself rather than from local tags. The
+// remote is only listed, never fetched, and only at a GitHub https address, from outside the kit folder: the folder's
+// own git config (an upload-pack program, hooks, a credential helper) is never read, and nothing is written to it.
+export function newerReleases(tags, version) {
+  const newer = tags.filter((t) => /^v\d+\.\d+\.\d+$/.test(t) && semverAbove(t.slice(1), version));
+  const newest = newer.reduce((best, t) => (!best || semverAbove(t.slice(1), best.slice(1)) ? t : best), null);
+  return { count: newer.length, newest };
+}
 function remoteKitAhead(kit) {
-  const git = (...a) => spawnSync('git', ['-C', kit, ...NO_PROGRAMS, ...a], { encoding: 'utf8', timeout: 8000, cwd: SAFE_CWD });
-  if (git('remote').stdout.trim() === '') return 0;
-  // The fetch alone may reach the remote, over https or a local path only: no transport that runs a program (ext, ssh).
-  if (git('-c', 'protocol.https.allow=always', '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--tags').status !== 0) return 0;
+  const none = { count: 0, newest: null };
+  const url = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'config', '--get', 'remote.origin.url'], { encoding: 'utf8', cwd: SAFE_CWD }).stdout.trim();
+  if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+?(\.git)?\/?$/.test(url)) return none;
   let version = '';
-  try { version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim(); } catch { return 0; }
-  const tags = git('tag', '--list', 'v*').stdout.split(/\r?\n/).filter((t) => /^v\d+\.\d+\.\d+$/.test(t));
-  return tags.filter((t) => semverAbove(t.slice(1), version)).length;
+  try { version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim(); } catch { return none; }
+  const r = spawnSync('git', [...NO_PROGRAMS, '-c', 'protocol.https.allow=always', '-c', 'credential.helper=', '-c', 'core.askPass=', 'ls-remote', '--tags', '--refs', url],
+    { encoding: 'utf8', timeout: 8000, cwd: SAFE_CWD, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '' } });
+  if (r.status !== 0) return none;
+  return newerReleases(r.stdout.split(/\r?\n/).map((l) => l.split('refs/tags/')[1]).filter(Boolean), version);
 }
 
 /**

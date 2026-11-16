@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 // The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
 // suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
 const status = (o) => kitStatus({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
@@ -392,24 +392,32 @@ test('the Claude Code version read never runs a claude program planted in the cu
 
 // M13 (a) (build 11, real on 1.36.1): the kit folder sits on a release tag, detached, so the old check of commits
 // past its upstream branch never fired, and the tag its fix named was read before the fetch. A newer release on the
-// remote is what the owner needs to hear, named after the fetch.
+// remote is what the owner needs to hear, counted from the remote's own release tags and named from them.
 // why: guards rule:owners-rules (install only from a release)
-test('a kit folder on a release tag hears of a newer release on the remote, named after the fetch', () => {
+test('the release check counts and names the remote\'s newer release tags only', () => {
+  assert.deepEqual(newerReleases(['v1.0.0', 'v1.1.0', 'v1.10.0', 'v1.2.0', 'v2.0.0-beta.1', 'latest'], '1.1.0'), { count: 2, newest: 'v1.10.0' });
+  assert.deepEqual(newerReleases(['v1.0.0'], '1.0.0'), { count: 0, newest: null });
   const { kit, home, proj } = makeKit();
-  const g = (cwd, ...a) => { const r = spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
-  const origin = path.join(path.dirname(kit), 'origin.git');
-  g(kit, 'init', '-q', '-b', 'main'); g(kit, 'add', '-A'); g(kit, 'commit', '-q', '-m', 'one'); g(kit, 'tag', 'v1.0.0');
-  g(path.dirname(kit), 'clone', '-q', '--bare', kit, origin);
-  g(kit, 'remote', 'add', 'origin', origin); g(kit, 'fetch', '-q', 'origin');
-  const other = path.join(path.dirname(kit), 'other');
-  g(path.dirname(kit), 'clone', '-q', origin, other);
-  fs.writeFileSync(path.join(other, 'VERSION'), '1.1.0\n');
-  g(other, 'commit', '-q', '-am', 'two'); g(other, 'tag', 'v1.1.0'); g(other, 'push', '-q', 'origin', 'main', 'v1.1.0');
-  g(kit, 'checkout', '-q', '--detach', 'v1.0.0');
-  const r = kitStatus({ kit, home, projectDir: proj, protection: () => null, inodes: () => ({ level: 'ok', pct: 1, text: '' }), claudeVersion: () => null });
-  assert.match(r.text, /1 newer kit release[^\n]*v1\.1\.0/);
-  assert.match(r.text, /checkout v1\.1\.0/, 'the fix names the tag the fetch brought');
-  assert.match(kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null }), /newer kit release[^\n]*checkout v1\.1\.0/);
+  const ahead = () => ({ count: 1, newest: 'v1.1.0' });
+  assert.match(status({ kit, home, projectDir: proj, ahead }).text, /1 newer kit release\(s\), newest v1\.1\.0[^\n]*checkout v1\.1\.0/);
+  assert.match(kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null, ahead }), /1 newer kit release\(s\), newest v1\.1\.0[^\n]*checkout v1\.1\.0/);
+});
+
+// The security review of M13 (a): a fetch inside the kit folder ran with that folder's own git config, which can name
+// a program (an upload-pack, a hook). The check only lists a GitHub https remote, from outside the folder.
+// why: guards rule:security-standards (no kit check runs a program a repo's config names)
+test('the release check never runs a program the kit folder\'s git config names, and asks no remote but GitHub https', () => {
+  const { kit, home, proj } = makeKit();
+  const g = (...a) => { const r = spawnSync('git', ['-C', kit, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); };
+  g('init', '-q', '-b', 'main'); g('add', '-A'); g('commit', '-q', '-m', 'one'); g('tag', 'v1.0.0');
+  const marker = path.join(path.dirname(kit), 'ran.txt');
+  const prog = path.join(path.dirname(kit), 'up.sh');
+  fs.writeFileSync(prog, `#!/bin/sh\necho ran > "${marker.split(path.sep).join('/')}"\nexec git-upload-pack "$@"\n`, { mode: 0o755 });
+  g('remote', 'add', 'origin', path.dirname(kit));
+  g('config', 'remote.origin.uploadpack', prog.split(path.sep).join('/'));
+  const say = kitSessionStart({ kit, home, projectDir: proj, claudeVersion: () => null });
+  assert.doesNotMatch(say, /newer kit release/);
+  assert.equal(fs.existsSync(marker), false, 'a program the kit folder\'s config named ran');
 });
 
 // M13 (b) (build 11, real on 1.36.1): a file only an unreleased build installed, changed here, is kept and the install
@@ -690,8 +698,9 @@ test('session start says when the kit on GitHub is ahead of the kit folder', () 
   spawnSync('git', ['clone', '-q', remote, other]);
   fs.writeFileSync(path.join(other, 'VERSION'), '1.2.0\n');
   git(other, 'commit', '-q', '-am', 'release'); git(other, 'tag', 'v1.2.0'); git(other, 'push', '-q', 'origin', 'main', 'v1.2.0');
-  // A pull would move the kit folder onto main, off every release tag, so the line names the newest tag instead.
-  const say = sessionStartReport({ kit, home, projectDir: proj });
+  // A pull would move the kit folder onto main, off every release tag, so the line names the newest tag instead. The
+  // check lists only a GitHub https remote (the security review of build 11), so this local one stands in for it.
+  const say = sessionStartReport({ kit, home, projectDir: proj, ahead: () => ({ count: 1, newest: 'v1.2.0' }) });
   assert.match(say, /1 newer kit release\(s\), newest v1\.2\.0[\s\S]*git -C ".*" fetch --tags; git -C ".*" checkout v1\.2\.0\)[\s\S]*\/methodology-kit update/);
   assert.doesNotMatch(say, /git pull/);
 });
