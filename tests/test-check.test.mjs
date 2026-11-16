@@ -1,4 +1,4 @@
-﻿// T15 Part A (the owner, 2026-11-10): the bar for a new test is checked by a script, not left as one line of rule
+// T15 Part A (the owner, 2026-11-10): the bar for a new test is checked by a script, not left as one line of rule
 // text: it fails first, earns its place, sits in the right lane, and is owed at all.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
