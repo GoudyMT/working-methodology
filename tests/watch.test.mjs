@@ -59,11 +59,14 @@ test('the watcher reads only with the fixed gh command, and refuses a repo or nu
 test('the watcher finds gh only in absolute PATH folders, never the current folder, and PowerShell in the system folder', () => {
 	const clone = kitTemp.makeTemp('watch-clone-');
 	const real = kitTemp.makeTemp('watch-bin-');
-	for (const d of [clone, real]) fs.writeFileSync(path.join(d, 'gh.exe'), '');
-	const find = (pathVar) => program('gh', { pathVar, cwd: clone, platform: 'win32' });
-	assert.equal(find(`.;${clone};${real}`), path.join(real, 'gh.exe'));
-	assert.equal(find(`sub;${real}`), path.join(real, 'gh.exe'), 'a relative PATH folder');
-	assert.throws(() => find(`.;${clone}`), /not in any absolute PATH folder/);
+	// The host's own program name and PATH separator: CI runs this on Linux and Windows.
+	const exe = process.platform === 'win32' ? 'gh.exe' : 'gh';
+	const sep = process.platform === 'win32' ? ';' : ':';
+	for (const d of [clone, real]) fs.writeFileSync(path.join(d, exe), '');
+	const find = (pathVar) => program('gh', { pathVar, cwd: clone });
+	assert.equal(find(['.', clone, real].join(sep)), path.join(real, exe));
+	assert.equal(find(['sub', real].join(sep)), path.join(real, exe), 'a relative PATH folder');
+	assert.throws(() => find(['.', clone].join(sep)), /not in any absolute PATH folder/);
 	assert.equal(program('powershell', { platform: 'win32', systemRoot: 'C:\\Windows', pathVar: clone, cwd: clone }), 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
 });
 

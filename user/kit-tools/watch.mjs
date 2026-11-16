@@ -52,7 +52,7 @@ export function verdict(p) {
  * folders count, the current folder never; PowerShell comes from the system folder.
  */
 export function program(name, { pathVar = process.env.PATH, cwd = process.cwd(), platform = process.platform, systemRoot = process.env.SystemRoot } = {}) {
-	if (platform === 'win32' && name === 'powershell') return path.join(systemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+	if (platform === 'win32' && name === 'powershell') return path.win32.join(systemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 	const file = platform === 'win32' ? `${name}.exe` : name;
 	for (const d of String(pathVar || '').split(platform === 'win32' ? ';' : ':')) {
 		if (!d || !path.isAbsolute(d) || path.resolve(d).toLowerCase() === path.resolve(cwd).toLowerCase()) continue;
