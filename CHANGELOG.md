@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.39.0 - 2026-11-16
+
+A watcher tells the owner when a pull request turns ready, each plan now says whether it would approve itself and the loop keeps score from the owner's own answers, and one check says whether the next thread may open.
+
+### Added
+- The kit tools' `watch.mjs` shows a desktop alert when a pull request you added turns green, fails, conflicts, merges or closes; it only reads, each entry expires, and you register it once with the line it prints.
+- Each plan records whether it would approve itself before the owner is asked; the loop counts, from the owner's own answers, how many such plans in a row they passed as they were, against a bar of 10. Self-approval stays off.
+- `loop.mjs chain <handoff>` says GO only when the handoff passes the closeout audit, no run is open, the kill switch is off and today's thread cap is not reached; with no cap in the bounds file it says STOP.
+
+### Changed
+- Both PR body audits now require the sweep tier: the Standard review line starts with it, and a lean body opens a gate with it or with a stated exemption.
+- The kill switch holds by any spelling a person makes, such as `autonomy-off.txt` from a new text file, in the merge gate and the loop.
+
+### Fixed
+- The release notes audit reads a path such as `.claude/loop.mjs` as a file name, so a draft the build record wrote no longer fails on it; a tool named in code still does.
+- The merge gate audits a published PR body with the audit its shape calls for, as CI does, so a Standard body no longer meets the Lean audit.
+- A loop step reads the owner's latest answer to its act, and only from a question that quotes that act alone.
+
 ## 1.38.0 - 2026-11-16
 
 A build loop now runs under a script that keeps its steps in order, counts the stops that have a number and halts until the owner says go on, within a bounds file the owner signs.
