@@ -452,7 +452,8 @@ function namedProjects(input) {
 	const NAMES_MAX = 4096;
 	const made = [];
 	let unreadable = '';
-	const RANGE = /^(?:(-?\d+)\.\.(-?\d+)|([A-Za-z])\.\.([A-Za-z]))(?:\.\.(-?\d+))?$/;
+	// bash takes a sign on either end and on the step ({+7..7}, {1..3..+1}); the build 11 repro of the MC3 trial.
+	const RANGE = /^(?:([-+]?\d+)\.\.([-+]?\d+)|([A-Za-z])\.\.([A-Za-z]))(?:\.\.([-+]?\d+))?$/;
 	const rangeOf = (body) => {
 		const m = RANGE.exec(body);
 		if (!m) return null;
@@ -462,7 +463,7 @@ function namedProjects(input) {
 			// Ends past a safe whole number cannot be counted exactly: held (the 1.33.1 review).
 			if (![a, b, step].every(Number.isSafeInteger) || Math.floor(Math.abs(b - a) / step) + 1 > NAMES_MAX) return { count: Infinity };
 			// bash pads to the longer end when either end starts with a 0.
-			const width = /^-?0\d/.test(m[1]) || /^-?0\d/.test(m[2]) ? Math.max(m[1].length, m[2].length) : 0;
+			const width = /^[-+]?0\d/.test(m[1]) || /^[-+]?0\d/.test(m[2]) ? Math.max(m[1].length, m[2].length) : 0;
 			const pad = (n) => (n < 0 ? '-' + String(-n).padStart(width - 1, '0') : String(n).padStart(width, '0'));
 			const out = [];
 			const n = Math.floor(Math.abs(b - a) / step) + 1;
@@ -474,18 +475,40 @@ function namedProjects(input) {
 		for (let i = a; a <= b ? i <= b : i >= b; i += a <= b ? step : -step) out.push(String.fromCharCode(i));
 		return { alts: out };
 	};
+	// The first group bash expands in a word, read as bash does (build 11, the MC3 trial's repro: a{p,{z}}p built app
+	// unread): a brace and its matching close, with a comma at its own level (a list, whose items may hold braces of
+	// their own) or a range; any other brace is text, and the search goes on inside it.
+	const firstGroup = (w) => {
+		for (let i = w.indexOf('{'); i >= 0; i = w.indexOf('{', i + 1)) {
+			let depth = 0;
+			const cuts = [];
+			let end = -1;
+			for (let j = i; j < w.length; j++) {
+				if (w[j] === '{') depth++;
+				else if (w[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
+				else if (w[j] === ',' && depth === 1) cuts.push(j);
+			}
+			if (end < 0) return null;
+			if (cuts.length) {
+				const alts = [];
+				let from = i + 1;
+				for (const c of [...cuts, end]) { alts.push(w.slice(from, c)); from = c + 1; }
+				return { start: i, end, alts };
+			}
+			const r = rangeOf(w.slice(i + 1, end));
+			if (r) return { start: i, end, ...r };
+		}
+		return null;
+	};
 	const expandWord = (w, depth = 0) => {
 		if (unreadable) return;
-		const groups = [...w.matchAll(/\{([^{}]*)\}/g)];
-		const g = groups.find((x) => x[1].includes(',') || RANGE.test(x[1]));
+		const g = firstGroup(w);
 		if (!g) { if (made.length >= NAMES_MAX) unreadable = `more than ${NAMES_MAX} names from its braces`; else made.push(w); return; }
 		if (depth > 16) { unreadable = 'braces nested deeper than the guard reads'; return; }
-		const r = !g[1].includes(',') ? rangeOf(g[1]) : null;
-		if (r && r.count === Infinity) { unreadable = `more than ${NAMES_MAX} names from its braces`; return; }
-		const alts = r ? r.alts : g[1].split(',');
-		for (const alt of alts) expandWord(w.slice(0, g.index) + alt + w.slice(g.index + g[0].length), depth + 1);
+		if (g.count === Infinity) { unreadable = `more than ${NAMES_MAX} names from its braces`; return; }
+		for (const alt of g.alts) expandWord(w.slice(0, g.start) + alt + w.slice(g.end + 1), depth + 1);
 	};
-	for (const w of decoded.split(/\s+/)) if (/\{[^{}]*(,|\.\.)[^{}]*\}/.test(w)) expandWord(w);
+	for (const w of decoded.split(/\s+/)) if (/\{.*(,|\.\.).*\}/.test(w)) expandWord(w);
 	// A backslash is a separator on Windows and an escape in a POSIX shell (my\ app is "my app"): both readings count.
 	const spelled = `${decoded} ${made.join(' ')}`;
 	let text = `${norm(spelled)} ${norm(spelled.replace(/\\(.)/g, '$1'))}`;
