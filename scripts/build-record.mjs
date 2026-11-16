@@ -9,6 +9,7 @@
 // With no record named, the one for the version in VERSION is read.
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,7 +18,13 @@ const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 export const NO_TEST = 'no test: no real input';
 export const TEST_KEY = /^tests\/[^:\s]+\.test\.mjs::\S/;
 // A hand-typed claim that every fix or finding has its test (PR 49's line 1), which no check read.
-const FIX_CLAIM = /\b(each|every|all)\b[^.]*\b(findings?|fix(es)?)\b[^.]*\btests?\b/i;
+// The quantifier names the fixes or findings themselves, so a line about the auto-fix push is not one (the build 14 sweep).
+const FIX_CLAIM = /\b(each|every|all)\s+(of\s+the\s+)?(sweep\s+|high\s+|other\s+)?(findings?|fix(es)?)\b[^.]*\btests?\b/i;
+// A fix row's line in the PR body: its text, its commit and whether it names a test. The key itself stays in the record:
+// test names hold words the body audit reads as prose (the build 14 sweep).
+export const fixLine = (f) => `${String(f.text).trim().replace(/\.$/, '')}. Fixed in ${f.commit}, ${f.test === NO_TEST ? NO_TEST : 'with a named test'}.`;
+// The files whose fix owes a test whatever its severity: the guards, the hooks, the owner's yes and the gates.
+export const GUARDED = /^(project\/\.claude\/[^/]+\.cjs$|project\/\.githooks\/|user\/kit-hooks\/|user\/kit-tools\/(owner-yes\.cjs|merge-gate\.mjs|kit-launch\.cjs)$|user\/skills\/pre-pr-sweep\/approve\.mjs$|\.github\/)/;
 
 /** The problems with a record, as plain lines; none when it is whole. */
 export function problems(rec) {
@@ -60,13 +67,17 @@ export function problems(rec) {
 			if (!f) return;
 			const key = TEST_KEY.test(f.test || '');
 			need(key || f.test === NO_TEST, `fix ${id} test "${f.test}" is not a test key or "${NO_TEST}"`);
+			for (const flag of ['security', 'owner']) need(f[flag] === undefined || typeof f[flag] === 'boolean', `fix ${id} ${flag} is not true or false`);
+			need(!text(f.text) || !text(f.commit) || fixLine(f).length <= 240, `fix ${id} writes a body line over 240 characters`);
 			const owed = ['critical', 'high'].includes(f.severity) || f.security === true || f.owner === true;
 			const why = [f.severity, f.security === true && 'security', f.owner === true && 'owner rule'].filter(Boolean).join(', ');
 			need(!owed || key, `fix ${id} (${why}) names no test: a high, critical, security or owner-rule fix keeps a test that fails first`);
 		});
 		const hcRows = (Array.isArray(s.fixes) ? s.fixes : []).filter((f) => f && ['critical', 'high'].includes(f.severity)).length;
 		const hcFound = ((s.findings || {}).critical || 0) + ((s.findings || {}).high || 0);
-		need(!Array.isArray(s.fixes) || hcRows >= hcFound - (s.accepted || []).length, `sweep has ${hcFound} high or critical finding(s) but ${hcRows} high or critical fix row(s)`);
+		// Only an accepted line that names a high or critical stands in for its fix row (the build 14 sweep).
+		const hcAccepted = (s.accepted || []).filter((a) => /^(high|critical)\b/i.test(String(a))).length;
+		need(!Array.isArray(s.fixes) || hcRows + hcAccepted >= hcFound,`sweep has ${hcFound} high or critical finding(s) but ${hcRows} high or critical fix row(s)`);
 	}
 	need(!(rec.verification || []).some((v) => FIX_CLAIM.test(String(v))), 'a verification line states the fix-test claim: it is written from sweep.fixes, never typed');
 	need(rec.tests && Number.isInteger(rec.tests.before) && Number.isInteger(rec.tests.after), 'tests has no before and after count');
@@ -76,7 +87,7 @@ export function problems(rec) {
 	// What the PR body audit would fail in the text the body is written from, named here (K15): the same words, the
 	// same dash rule, the same bullet size; the body adds one Tests bullet to at most 3 verification lines.
 	const prose = [rec.headline, rec.alignment, ...(rec.items || []).flatMap((it) => [it.text, it.before, it.after]),
-		...(rec.decisions || []).flatMap((d) => [d.decision, d.why]), ...(rec.verification || []), rec.upgrading, rec.limits, ...((s && [(s.fixes || []).map((f) => f && f.text), s.deferred, s.accepted].flat()) || [])].filter(text);
+		...(rec.decisions || []).flatMap((d) => [d.decision, d.why]), ...(rec.verification || []), rec.upgrading, rec.limits, ...((s && [(s.fixes || []).map((f) => f && text(f.text) && fixLine(f)), s.deferred, s.accepted].flat()) || [])].filter(text);
 	for (const p of prose) {
 		const plain = p.replace(/`[^`]*`/g, '');
 		const word = BANNED.find((re) => re.test(plain));
@@ -133,12 +144,12 @@ export function prBody(rec) {
 	out.push('### Review', '', `${s.tier} review of \`${s.commit}\`.`, '', '| Dimension | Result |', '|---|---|', ...s.dimensions.map((d) => `| ${d.name} | ${d.result} |`), '');
 	const hc = (s.findings.critical || 0) + (s.findings.high || 0);
 	const fixes = s.fixes || [];
-	const fixLine = (f) => `${f.text.trim().replace(/\.$/, '')}. Fixed in ${f.commit}; ${f.test === NO_TEST ? NO_TEST : `test \`${f.test}\``}.`;
 	const hcFixes = fixes.filter((f) => ['critical', 'high'].includes(f.severity)).map(fixLine);
-	out.push(`- **High and critical findings:** ${hc ? `${hc}, each fixed here or accepted by the owner:\n${count(hcFixes) || ''}` : 'none.'}`);
-	// K105: the claim is counted from the ledger rows, and CI's test check states each named test's verdict.
+	const hcAccepted = (s.accepted || []).filter((a) => /^(high|critical)\b/i.test(String(a)));
+	out.push(`- **High and critical findings:** ${hc ? `${hc}, each fixed here or accepted by the owner:\n${count([...hcFixes, ...hcAccepted]) || ''}` : 'none.'}`);
+	// K105: the line says only what the rows hold; the verdict of each named test is CI's test check's to state.
 	const tested = fixes.filter((f) => f.test !== NO_TEST).length;
-	out.push(`- **Fix tests:** ${tested} with a test that fails first, checked in CI; ${fixes.length - tested} with ${NO_TEST}.`);
+	out.push(`- **Fix tests:** ${tested} ${tested === 1 ? 'names' : 'name'} a test, its verdict in CI's test check; ${fixes.length - tested} with ${NO_TEST}.`);
 	out.push(`- **Deferred:** ${count(s.deferred) ? `\n${count(s.deferred)}` : 'none.'}`);
 	out.push(`- **Accepted risks:** ${count(s.accepted) ? `\n${count(s.accepted)}` : 'none.'}`);
 	out.push('- **Secrets:** no secrets or account information in the diff.', '', `Version alignment: YES. ${rec.alignment || `v${rec.version} is the ${rec.level} release this build plans.`}`, '');
@@ -172,6 +183,16 @@ export function checkRepo(root, file) {
 	try { rec = JSON.parse(fs.readFileSync(at, 'utf8')); } catch (e) { return { at, rec: null, problems: [`cannot read ${path.relative(root, at)}: ${e.message.split('\n')[0]}`] }; }
 	const found = problems(rec);
 	if (rec.version !== version) found.push(`the record is for ${rec.version}, VERSION says ${version}`);
+	// The build 14 sweep: a row's severity and flags are typed, so a guard fix typed medium shipped with no test. In a
+	// repo, each row's commit must resolve, and a row with no test may not change a guard or gate file.
+	const inRepo = spawnSync('git', ['rev-parse', '--git-dir'], { cwd: root, encoding: 'utf8' }).status === 0;
+	for (const f of (inRepo && rec.sweep && Array.isArray(rec.sweep.fixes) ? rec.sweep.fixes : [])) {
+		if (!f || typeof f.commit !== 'string' || !f.commit.trim()) continue;
+		const shown = spawnSync('git', ['show', '--name-only', '--format=', '--end-of-options', `${f.commit}^{commit}`], { cwd: root, encoding: 'utf8' });
+		if (shown.status !== 0) { found.push(`fix ${f.id} commit ${f.commit} is not a commit here`); continue; }
+		const guarded = shown.stdout.split('\n').filter((p) => GUARDED.test(p));
+		if (f.test === NO_TEST && guarded.length) found.push(`fix ${f.id} changes ${guarded.join(', ')}, a guard or gate file: mark it security and name its test`);
+	}
 	const log = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').replace(/\r\n/g, '\n');
 	const top = (log.split(/^(?=## \d)/m).find((part) => part.startsWith('## ')) || '').trimEnd();
 	if (!found.length && top !== changelog(rec).trimEnd()) found.push(`the top CHANGELOG.md entry is not the one the record writes (run: node scripts/build-record.mjs changelog)`);

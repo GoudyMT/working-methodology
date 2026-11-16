@@ -220,8 +220,7 @@ test('build-record notes prints the draft, and the upgrading and limits lines ar
 test('the fix ledger needs a test for a high, critical, security or owner fix, and the body counts it from the rows', () => {
 	assert.deepEqual(problems(record()), []);
 	const body = prBody(record());
-	assert.match(body, /\*\*Fix tests:\*\* 1 with a test that fails first, checked in CI; 1 with no test: no real input\./);
-	assert.match(body, /one high, fixed here\. Fixed in abc1234; test `tests\/x\.test\.mjs::a`\./);
+	assert.match(body, /one high, fixed here\. Fixed in abc1234, with a named test\./);
 	const gap = (edit) => { const r = record(); edit(r); return problems(r).join('\n'); };
 	assert.match(gap((r) => { r.sweep.fixes[0].test = 'no test: no real input'; }), /fix F1 \(high\) names no test/);
 	assert.match(gap((r) => { r.sweep.fixes[1].security = true; }), /fix F2 \(low, security\) names no test/);
@@ -229,4 +228,43 @@ test('the fix ledger needs a test for a high, critical, security or owner fix, a
 	assert.match(gap((r) => { r.verification = ['Each sweep finding has a test that fails first.']; }), /fix-test claim.*written from sweep\.fixes/);
 	assert.match(gap((r) => { delete r.sweep.fixes; }), /sweep has no fixes list/);
 	assert.match(gap((r) => { r.sweep.fixes = []; }), /1 high or critical finding\(s\) but 0 high or critical fix row\(s\)/);
+});
+
+// The build 14 sweep: an accepted line of any severity hid a high fix row, a flag typed as a string read as false, a
+// guard-file fix could be typed medium with no test, the body named test keys the PR body audit then failed, and a
+// line about the auto-fix push read as a typed fix-test claim.
+// why: guards rule:test-value
+test('the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes', () => {
+	const gap = (edit) => { const r = record(); edit(r); return problems(r).join('\n'); };
+	assert.match(gap((r) => { r.sweep.fixes[0].severity = 'medium'; r.sweep.fixes[0].test = 'no test: no real input'; r.sweep.accepted = ['A low wording nit, accepted by the owner']; }), /1 high or critical finding\(s\) but 0 high or critical fix row\(s\)/);
+	assert.equal(gap((r) => { r.sweep.fixes.shift(); r.sweep.accepted = ['High: the probe log keeps a path; accepted by the owner']; }), '');
+	assert.match(gap((r) => { r.sweep.fixes[1].security = 'true'; }), /fix F2 security is not true or false/);
+	assert.match(gap((r) => { r.sweep.fixes[0].text = 'x'.repeat(220); }), /fix F1 writes a body line over 240 characters/);
+	assert.match(gap((r) => { r.sweep.fixes[1].text = 'the checker brief was wrong'; }), /mechanism or AI word/);
+	assert.equal(gap((r) => { r.verification = ['CI is green; the auto-fix run re-ran the covering tests and pushed once.']; }), '');
+	const body = prBody(record());
+	assert.doesNotMatch(body, /tests\/x\.test\.mjs::a/, 'the body names a test key the audit reads as prose');
+	assert.match(body, /\*\*Fix tests:\*\* 1 names? a test, its verdict in CI's test check; 1 with no test: no real input\./);
+});
+
+// why: guards rule:test-value (the build 14 sweep: a fix row's commit was never read, so a guard fix typed as medium
+// shipped with no test).
+test('the repo check reads each fix commit and names a guard file fixed with no test', () => {
+	const dir = kitTemp.makeTemp('record-git-');
+	const git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir, encoding: 'utf8' });
+	git('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(dir, 'project', '.claude'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'project', '.claude', 'guard.cjs'), 'x\n');
+	git('add', '.'); git('commit', '-qm', 'guard');
+	const sha = git('rev-parse', 'HEAD').stdout.trim();
+	const rec = record();
+	rec.sweep.fixes[1].commit = sha.slice(0, 7);
+	rec.sweep.fixes[0].commit = 'deadbee';
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'VERSION'), '1.2.0\n');
+	fs.writeFileSync(path.join(dir, 'docs', 'builds', '1.2.0.json'), JSON.stringify(rec));
+	fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), `# Changelog\n\n${changelog(rec)}`);
+	const found = checkRepo(dir).problems.join('\n');
+	assert.match(found, /fix F2 changes project\/\.claude\/guard\.cjs, a guard or gate file: mark it security and name its test/);
+	assert.match(found, /fix F1 commit deadbee is not a commit here/);
 });
