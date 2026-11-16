@@ -104,6 +104,9 @@ const review = section('Review');
 const order = ['review of `', '| Dimension | Result |', '**High and critical findings:**', '**Deferred:**', '**Accepted risks:**', 'Version alignment: YES.'];
 const at = order.map((s) => review.indexOf(s));
 row('Review parts in order', at.every((n, i) => n > 0 && (i === 0 || n > at[i - 1])), JSON.stringify(at));
+// The template's line is "<Tier> review of `<commit>`" (rule:sweep-tiers): a named tier is one the owner can correct.
+const tierLine = /^(Feature|Fix|Triage|First push|Launch gate)\b[^\n`]*review of `/im.exec(review);
+row('Review names the sweep tier', Boolean(tierLine), tierLine ? tierLine[1] : 'start the review line with the tier: Feature, Fix, Triage, First push or Launch gate');
 const dimRows = review.split('\n').filter((l) => l.startsWith('| ') && !/^\| *(Dimension|-+) *\|/.test(l)).map((l) => l.toLowerCase());
 const missingDims = DIMENSIONS.filter((d) => !dimRows.some((l) => l.startsWith(`| ${d.toLowerCase()}`)));
 row('Review has a row for each project dimension', missingDims.length === 0, missingDims.length ? `missing ${missingDims.join(', ')}` : `all ${DIMENSIONS.length}`);

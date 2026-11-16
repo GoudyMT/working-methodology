@@ -24,7 +24,7 @@ const sh = (cwd, ...a) => {
 	return r.stdout.trim();
 };
 const TITLE = 'feat: add a subtract function';
-const BODY = '## Math: add a subtract function\n\nThe math module can now subtract.\n\n**Changes**\n- New `sub(a, b)` export.\n\n**Gates**\n- [x] The test passes.\n- [x] Full local gate green.\n- [x] Sweep by dimension: privacy, supply chain, legal, code security; no secrets or account information.\n\n**Notes** - none.\n';
+const BODY = '## Math: add a subtract function\n\nThe math module can now subtract.\n\n**Changes**\n- New `sub(a, b)` export.\n\n**Gates**\n- [x] The test passes.\n- [x] Full local gate green.\n- [x] Triage tier: privacy, supply chain, legal, code security; no secrets or account information.\n\n**Notes** - none.\n';
 const report = (branch, sha, extra = '') => `# Sweep: subtract\n\n- **Tier:** feature\n- **Date:** 2026-11-05\n- **Branch:** ${branch} at ${sha.slice(0, 7)}\n- **Covers:** ${sha}\n- **Layers:** plan 0, CI 0, sweep 0, escaped 0\n\n## Result\nPrivacy: clean. Supply chain: clean. Legal: clean. Security: clean. Gaps and scaling: clean.\nVersion goal alignment: YES\n${extra}`;
 
 // approve.mjs's log: each line chained to the one before, in the repo's git folder.

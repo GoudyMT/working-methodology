@@ -12,7 +12,7 @@ runs only the tests related to the staged code; CI still runs everything.
 **Gates**
 - [x] The covering tests 18/18 green; CI green on the head.
 - [x] A one-file commit took 38 s, down from about 2 to 3 minutes.
-- [x] Reviewed for privacy, supply chain, legal and licensing, and code security; no secrets or account
+- [x] Fix tier review: privacy, supply chain, legal and licensing, and code security; no secrets or account
   information; the gaps the review found (tests that read source as text, deletions) are fixed.
 
 **Notes** - Tooling only; the app does not change.

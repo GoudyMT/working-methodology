@@ -20,7 +20,7 @@ for (const f of fs.readdirSync(path.resolve('user/kit-tools/audits'))) fs.copyFi
 const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs'];
 const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
 	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
-	'- [x] Settings only; CI green on the head.', '- [x] Reviewed for privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');
+	'- [x] Settings only; CI green on the head.', '- [x] Triage tier review: privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');
 const proj = kitTemp.makeTemp('proj-');
 fs.mkdirSync(path.join(proj, '.claude'));
 fs.mkdirSync(path.join(proj, '.githooks'));
