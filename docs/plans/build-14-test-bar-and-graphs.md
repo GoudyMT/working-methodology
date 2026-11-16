@@ -40,7 +40,7 @@ item 10 "Required if clean here"; beads "Read-only desk trial"; the per-test aud
    selection, so each runs once; ci.yml's separate security step goes. When the selection is over half the suite,
    `--changed` runs the whole suite and says why.
 6. **Per-test audit on 1.39.0.** Coverage map plus the mutation check on a clean 1.39.0 copy under
-   `C:\Users\Max\kit-probes\b14-audit`, then `test-value.mjs`. The cut list goes to the owner; nothing is deleted here
+   a probe folder outside the repo, then `test-value.mjs`. The cut list goes to the owner; nothing is deleted here
    without that yes.
 
 ## T8 (desk trial of beads first)

@@ -62,7 +62,9 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    the owner's call: `approve.mjs` asks for any contract after a sweep that ran on this branch (a rebase or a new file
    name does not hide it), and for a re-sweep contract (`"resweepOf"`, `"fixed"`; its roles are one blast-radius, one per
    fixed kind and one `dimension`). After a re-sweep, what is left is fixed in this build; only a low or medium the owner says yes to (never a high or critical) is logged with `--carried <n>` and goes to the handoff. The report's Covers line stays the
-   commit the sweep read, and each fix is listed by its commit. Summarize the result in the PR body by dimension and verdict, never by agent
+   commit the sweep read, and each fix is listed by its commit. In a project with a build record, each fix is
+   a `sweep.fixes` row (id, severity, text, commit, test): the test that fails first, or `no test: no real input` for
+   a low or medium no real input shows; CI's test check states each named test's verdict, and the PR claims only that. Summarize the result in the PR body by dimension and verdict, never by agent
    (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents auto` finds each reviewer from its brief's Sweep tag, so ids lost to a compaction do not end a sweep; or each reviewer's agent id, one per
