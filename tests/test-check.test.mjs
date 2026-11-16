@@ -164,6 +164,8 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	assert.equal(r.status, 0, r.stdout + r.stderr);
 	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::a hollow loop: \$\{n\}: passes on the base commit/);
 	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::not positive/, 'a loop that fails first was named');
+	// Its flips are caught under the names the loop made (the build 14 sweep: the A2 match had no test).
+	assert.doesNotMatch(r.stdout, /A2 tests\/a\.test\.mjs::not positive/, 'a loop that catches a flip was named');
 	// A file the base has, changed to read a module only the change adds: its red on the base proves nothing.
 	const lead = ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';"];
 	const old = path.join(dir, 'tests', 'old.test.mjs');
@@ -202,4 +204,41 @@ test('the test check states the verdict of each test the fix ledger names', () =
 	assert.match(r.stdout, /A5 F3: the test it names is not one this change adds or changes/);
 	assert.doesNotMatch(r.stdout, /A5 F1|A5 F4/);
 	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--record', path.join(dir, 'none.json')], { cwd: dir, encoding: 'utf8' }).status, 2, 'a record it cannot read');
+});
+
+// The build 14 sweep (role 2): results were keyed by bare name across every file run, so a passing test took the red
+// result of a same-named test in another file, and a loop took one whose name fit its pattern; a new file that only
+// exited non-zero, or was made unable to load on purpose, read as failing first for a fix.
+// why: guards rule:test-value
+test('the test check keys each result by its file, and a fix test red only because its file cannot load is named', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD~1');
+	const lead = ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';", "import fs from 'node:fs';", "import { createRequire } from 'node:module';", "const a = createRequire(import.meta.url)('../src/a.cjs');"];
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		"test('same name', () => { assert.equal(a.isPos(5), true); });",
+		"for (const n of [7, 8]) test(`zero check ${n}`, () => { assert.equal(a.isPos(n), true); });",
+		''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), [...lead,
+		"test('same name', () => { assert.equal(a.isPos(0), false); });",
+		"test('zero check fails', () => { assert.equal(a.isPos(0), false); });",
+		''].join('\n'));
+	// Passes on the base, but the file ends non-zero there.
+	fs.writeFileSync(path.join(dir, 'tests', 'd.test.mjs'), [...lead,
+		"process.on('exit', () => { if (!fs.existsSync('src/b.cjs')) process.exitCode = 1; });",
+		"test('d passes', () => { assert.equal(a.isPos(5), true); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'more');
+	const rec = path.join(dir, 'record.json');
+	const fix = (id, test) => ({ id, severity: 'high', text: id, commit: 'abc1234', test });
+	fs.writeFileSync(rec, JSON.stringify({ sweep: { fixes: [fix('F1', 'tests/a.test.mjs::same name'), fix('F2', 'tests/a.test.mjs::zero check ${n}'), fix('F3', 'tests/d.test.mjs::d passes'), fix('F4', 'tests/b.test.mjs::two is two'), fix('F5', 'no test: no real input')] } }));
+	const r = spawnSync(process.execPath, [CHECK, base, '--record', rec], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::same name: passes on the base commit/);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::zero check \$\{n\}: passes on the base commit/);
+	assert.match(r.stdout, /A1 tests\/d\.test\.mjs::d passes: passes on the base commit/);
+	assert.match(r.stdout, /A5 F4: the test it names fails on the base commit only because its file cannot load there/);
+	assert.doesNotMatch(r.stdout, /A1 tests\/c\.test\.mjs::same name/, 'the real red test was named');
+	// Split over two slices, each row is stated once, by the slice that holds its test, and the rest by the first.
+	const rows = [0, 1].flatMap((i) => spawnSync(process.execPath, [CHECK, base, '--record', rec, '--slice', `${i}/2`], { cwd: dir, encoding: 'utf8' }).stdout.split('\n').filter((l) => /^ {4}F\d /.test(l)));
+	assert.deepEqual(rows.map((l) => l.trim().split(' ')[0]).sort(), ['F1', 'F2', 'F3', 'F4', 'F5']);
 });

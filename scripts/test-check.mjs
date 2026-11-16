@@ -58,28 +58,39 @@ function tests(text) {
 	return out;
 }
 
-// Run some tests of some files in a folder; the names that went red on an assertion, and those that went red otherwise.
-function run(dir, keys, env = {}, timeout = 600000) {
-	const only = path.join(dir, '.test-check-only.json');
-	fs.writeFileSync(only, JSON.stringify(keys));
-	const files = [...new Set(keys.map((k) => k.slice(0, k.indexOf('::'))))].map((f) => path.join(dir, f));
-	const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...base } = process.env;
-	const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: dir, encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: { ...base, ...env, KIT_ONLY: only, KIT_REPO: dir, KIT_MAP_OFF: '1' } });
-	const out = String(r.stdout || '');
+// Run some tests of some files in a folder, one file at a time, so every result is keyed by its own file ("<file>::
+// <name>"): the build 14 sweep found a passing test that took a red result of the same name from another file. Returns
+// the keys that went red (true on an assertion), .seen (every key with a result) and, when a file ran past the time
+// left or never started, .cut (the keys that have a result). A file that could not load is keyed "file:<file>".
+function run(dir, keys, env, left) {
 	const red = new Map();
-	// Stopped early (the budget, or output past the buffer): the tests with a result keep it, the rest are named as not
-	// checked (the K95 sweep: every test was named so, and the finished ones' findings were lost).
-	// Every result's name, so a loop's tests are found by its pattern.
-	red.seen = new Set([...out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
-	if (r.error) red.cut = red.seen;
-	// Each top-level "not ok <n> - <name>" with its YAML block up to the next result line.
-	for (const m of out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?\n([\s\S]*?)(?=^(?:ok|not ok) \d+ - |^1\.\.|(?![\s\S]))/gm)) red.set(m[1], /ERR_ASSERTION|AssertionError/.test(m[2]));
-	// A file that could not load (an import the base lacks) fails as a whole, under its own path: each of its tests
-	// went red, and not on an assertion.
+	red.seen = new Set();
+	let cut = false;
+	const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...base } = process.env;
 	// TAP writes a Windows path with each backslash doubled.
 	const slash = (s) => s.replace(/\\\\/g, '\\').replace(/\\/g, '/');
-	const failedFiles = new Set([...red.keys()].map(slash));
-	for (const f of files) if (failedFiles.has(slash(f))) red.set(`file:${path.relative(dir, f).replace(/\\/g, '/')}`, false);
+	for (const f of [...new Set(keys.map((k) => k.slice(0, k.indexOf('::'))))]) {
+		// One read of the time left: a second could land on 0, which spawnSync reads as no limit (the K95 sweep).
+		const ms = Math.min(600000, left());
+		if (ms <= 0) { cut = true; continue; }
+		const only = path.join(dir, '.test-check-only.json');
+		fs.writeFileSync(only, JSON.stringify(keys.filter((k) => k.startsWith(`${f}::`))));
+		const abs = path.join(dir, f);
+		const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', abs], { cwd: dir, encoding: 'utf8', timeout: ms, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: { ...base, ...env, KIT_ONLY: only, KIT_REPO: dir, KIT_MAP_OFF: '1' } });
+		const out = String(r.stdout || '');
+		// Stopped early (the budget, or output past the buffer): the tests with a result keep it, the rest are named as
+		// not checked (the K95 sweep: every test was named so, and the finished ones' findings were lost).
+		if (r.error) cut = true;
+		const isFile = (name) => slash(name) === slash(abs);
+		for (const m of out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)) if (!isFile(m[1])) red.seen.add(`${f}::${m[1]}`);
+		// Each top-level "not ok <n> - <name>" with its YAML block up to the next result line.
+		for (const m of out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?\n([\s\S]*?)(?=^(?:ok|not ok) \d+ - |^1\.\.|(?![\s\S]))/gm)) {
+			// A file that could not load (an import the base lacks), or ended non-zero, fails as a whole under its own path.
+			if (isFile(m[1])) red.set(`file:${f}`, false);
+			else red.set(`${f}::${m[1]}`, /ERR_ASSERTION|AssertionError/.test(m[2]));
+		}
+	}
+	if (cut) red.cut = new Set(red.seen);
 	return red;
 }
 
@@ -106,8 +117,12 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			newOrChanged.push({ key: `${f}::${name}`, file: f, name, body, isNew: !was.has(name), newFile: !onBase, loop });
 		}
 	}
-	// The names a run gave this test: its own, or each name its loop made.
-	const namesOf = (t, seen) => (t.loop ? [...seen].filter((n) => t.loop.test(n)) : [t.name]);
+	// The keys a run gave this test: its own, or each name its loop made in its own file, less the names a plain test of
+	// that file has (the build 14 sweep: a loop's pattern took another test's red result).
+	const plainNames = new Map(testFiles.map((f) => [f, new Set([...tests(fs.readFileSync(path.join(root, f), 'utf8')).keys()])]));
+	const namesOf = (t, seen) => (t.loop
+		? [...seen].filter((k) => k.startsWith(`${t.file}::`) && t.loop.test(k.slice(t.file.length + 2)) && !plainNames.get(t.file).has(k.slice(t.file.length + 2)))
+		: [t.key].filter((k) => seen.has(k)));
 	// A slice (i/n) takes every n-th changed test, in key order, so a PR that changes many tests is checked on several
 	// machines at once instead of timing out on one (K13, the 1.27.0 build: 616 changed tests ran past 15 minutes).
 	const allKeys = new Set(newOrChanged.map((t) => t.key));
@@ -131,18 +146,19 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 				fs.mkdirSync(path.dirname(path.join(copy, f)), { recursive: true });
 				fs.copyFileSync(path.join(root, f), path.join(copy, f));
 			}
-			// One read of the time left: a second could land on 0, which spawnSync reads as no limit (the K95 sweep).
-			const ms = Math.min(600000, left());
 			// A loop is run by its whole file: the harness takes exact names, and a loop's names exist only at run time.
 			const keys = [...new Set(newOrChanged.map((t) => (t.loop ? `${t.file}::*` : t.key)))];
-			const red = ms > 0 ? run(copy, keys, { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home }, ms) : Object.assign(new Map(), { cut: new Set(), seen: new Set() });
+			const red = run(copy, keys, { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home }, left);
 			for (const t of newOrChanged) {
 				const names = namesOf(t, red.seen);
 				const reds = names.filter((n) => red.has(n));
-				if (red.cut && !names.some((n) => red.cut.has(n))) note(t.key, 'A1', 'not checked: the time budget ran out');
-				// K105: a new test in a file the base does not have fails first when that file cannot load there; a file the
+				// A loop named only by placeholders would match every test of its file.
+				if (t.loop && !t.name.replace(/\$\{[^}]*\}/g, '').trim()) note(t.key, 'A1', 'not checked: a loop named only by placeholders');
+				else if (red.cut && !names.length) note(t.key, 'A1', 'not checked: the time budget ran out');
+				// K105: a new test in a file the base does not have, with no result of its own because that file cannot load
+				// there, fails first; the fix ledger still names it (a fix's test should load on the code it fixes). A file the
 				// base has that cannot load proves nothing about the test (N12: still named).
-				else if (!reds.length && red.has(`file:${t.file}`)) { if (!t.newFile) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)'); }
+				else if (!names.length && red.has(`file:${t.file}`)) { if (t.newFile) t.loadOnly = true; else note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)'); }
 				else if (!reds.length) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
 				else if (!reds.some((n) => red.get(n))) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (a crash or a missing file)');
 			}
@@ -189,7 +205,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// holding the test states its verdict, and the first slice names a test no slice holds.
 	const ledger = [];
 	if (record) {
-		const mine = new Set(newOrChanged.map((t) => t.key));
+		const mine = new Map(newOrChanged.map((t) => [t.key, t]));
 		for (const f of record) {
 			const head = `${f.id} (${f.severity})`;
 			if (f.test === 'no test: no real input') { if (!slice || slice.i === 0) ledger.push(`    ${head} no test: no real input`); continue; }
@@ -198,9 +214,12 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 				continue;
 			}
 			if (!mine.has(f.test)) continue;
+			// A fix's test runs against the code it fixes, so a test that is red there only because its file cannot load
+			// proves nothing about the fix (the build 14 sweep: a file made unloadable on purpose read "fails first").
 			const a1 = findings.find((x) => x.rule === 'A1' && x.key === f.test);
-			ledger.push(`    ${head} ${f.test}: ${a1 ? a1.text : 'fails first'}`);
-			if (a1) note(f.id, 'A5', `the test it names ${a1.text}`);
+			const why = a1 ? a1.text : mine.get(f.test).loadOnly ? 'fails on the base commit only because its file cannot load there' : null;
+			ledger.push(`    ${head} ${f.test}: ${why || 'fails first'}`);
+			if (why) note(f.id, 'A5', `the test it names ${why}`);
 		}
 	}
 	const lines = [`Test check: ${newOrChanged.length} new or changed test(s) since ${baseSha.slice(0, 9)}, ${findings.length} finding(s)`];
