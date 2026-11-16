@@ -1234,6 +1234,12 @@ test('K94 the forget of a deleted project runs, anything else naming it names th
 	assert.equal(other.decision, 'deny');
 	assert.match(other.reason, /kit\.mjs" forget/, 'the hold does not name the way out');
 	assert.equal(bash(s, `node "${KIT.split(path.sep).join('/')}/scripts/kit.mjs" forget "${fwd}"; ls`).decision, 'deny', 'a forget with a second command');
+	// Only the installed kit's own kit.mjs, run by node (the push security review: any script of that name passed).
+	const fake = path.join(path.dirname(proj), 'fake', 'kit.mjs');
+	fs.mkdirSync(path.dirname(fake), { recursive: true });
+	fs.writeFileSync(fake, '');
+	assert.equal(bash(s, `node "${fake.split(path.sep).join('/')}" forget "${fwd}"`).decision, 'deny', 'another kit.mjs');
+	assert.equal(bash(s, `/tmp/node "${KIT.split(path.sep).join('/')}/scripts/kit.mjs" forget "${fwd}"`).decision, 'deny', 'another node');
 	const r = forget({ home, dir: deleted });
 	assert.equal(r.removed.length, 1, r.why);
 	assert.equal(fs.existsSync(guardDir(home, deleted)), false);

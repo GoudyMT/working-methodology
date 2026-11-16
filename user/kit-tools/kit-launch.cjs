@@ -743,10 +743,22 @@ function forgets(input, dir) {
 	if (!SHELLS.includes(input && input.tool_name)) return false;
 	const command = String(((input && input.tool_input) || {}).command ?? '').trim();
 	if (/[;&|<>`$()\n{}]/.test(command.replace(/^&\s+/, ''))) return false;
-	const m = /^(?:&\s+)?(?:"[^"]*node(?:\.exe)?"|[^"\s]*node(?:\.exe)?)\s+(?:"[^"]*kit\.mjs"|[^"\s]*kit\.mjs)\s+forget\s+(?:"([^"]+)"|([^"\s]+))$/i.exec(command);
+	const m = /^(?:&\s+)?(?:"([^"]+)"|(\S+))\s+(?:"([^"]+)"|(\S+))\s+forget\s+(?:"([^"]+)"|([^"\s]+))$/i.exec(command);
 	if (!m) return false;
 	const fold = (s) => (WIN ? s.toLowerCase() : s);
-	return fold(posix(path.resolve(m[1] || m[2]))) === fold(posix(path.resolve(dir)));
+	const same = (a, b) => fold(posix(a)) === fold(posix(b));
+	const cwd = String(input.cwd || process.cwd());
+	// The program is node by name or the node that runs this launcher, and the script is the installed kit's own
+	// kit.mjs, by its real path (the push security review: any script named kit.mjs passed).
+	const program = m[1] || m[2];
+	if (!(program === 'node' || same(path.resolve(cwd, program), process.execPath) || same(path.resolve(cwd, program), process.execPath.replace(/\.exe$/i, '')))) return false;
+	let kitDir = null;
+	try { kitDir = JSON.parse(fs.readFileSync(path.join(HOME, 'kit-install.json'), 'utf8')).kitDir || null; } catch { return false; }
+	const real = (p) => { try { return fs.realpathSync.native(p); } catch { return null; } };
+	const script = real(path.resolve(cwd, m[3] || m[4]));
+	const kitScript = kitDir && real(path.join(kitDir, 'scripts', 'kit.mjs'));
+	if (!script || !kitScript || !same(script, kitScript)) return false;
+	return same(path.resolve(cwd, m[5] || m[6]), path.resolve(dir));
 }
 
 function preToolUse(input) {
