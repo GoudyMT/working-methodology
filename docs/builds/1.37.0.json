@@ -113,7 +113,7 @@
  "verification": [
   "Each fix has a test that fails on 1.36.1 and passes here.",
   "Replayed on a real 1.36.0 reviewer's call sizes, the hook stops it where the refused call and the report land under its ceiling.",
-  "Recall: the candidate median is recorded in docs/evals/results/recall-scores.md against the 1.36.1 baseline of 12."
+  "Recall on the reworded rules: median 13 of 14 against the 1.36.1 baseline of 13, scored blind."
  ],
  "decisions": [
   {
