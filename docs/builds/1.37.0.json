@@ -3,7 +3,7 @@
  "date": "2026-11-16",
  "level": "minor",
  "area": "Sweeps",
- "title": "feat: sweep briefs come from the contract; the meter holds",
+ "title": "feat: briefs come from the contract; the meter holds",
  "headline": "A sweep's briefs are written from its cleared contract, each reviewer's report is checked for shape, and the findings are counted from the reports. The call cap and token ceiling now stop a reviewer in time, the cache trip counts only expired cache, and install keeps files it used to lose.",
  "alignment": "v1.37.0 is step T6 of the v2.0 plan, one checked hand-back shape for every sweep report, with the carry-overs of builds 10 and 10-fix closed in the same release.",
  "items": [
@@ -126,7 +126,7 @@
   },
   {
    "decision": "A record of a missing project folder is named, never removed by install",
-   "why": "A folder on an unplugged drive is missing too; removing its record lost the owner's accept history (the sweep). Removal is a separate forget step, run once the folder is truly gone."
+   "why": "A folder on an unplugged drive is missing too, and removing its record lost the owner's accept history. A forget step removes it once the folder is gone."
   }
  ],
  "sweep": {
