@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { main, readArgs, verdict } from '../user/kit-tools/watch.mjs';
+import { main, program, readArgs, scheduleLines, verdict } from '../user/kit-tools/watch.mjs';
 
 kitTemp.sessionRoot();
 const REPO = 'someone/app';
@@ -49,8 +49,62 @@ test('the watcher reads only with the fixed gh command, and refuses a repo or nu
 	assert.ok(r.log().some((e) => e.event === 'triage' && /not a repo/.test(e.why)), JSON.stringify(r.log()));
 	// The module runs no program but gh and the alert's PowerShell (a new call site shows here).
 	const src = fs.readFileSync(path.resolve('user/kit-tools/watch.mjs'), 'utf8');
-	assert.deepEqual(src.match(/execFileSync\('[^']+'/g), ["execFileSync('gh'", "execFileSync('powershell.exe'"]);
+	assert.deepEqual(src.match(/execFileSync\([^,]+/g), ["execFileSync(program('gh')", "execFileSync(program('powershell')"]);
 	assert.doesNotMatch(src, /\b(exec|spawn|spawnSync|execSync|fork)\(/);
+});
+
+// The build 13 sweep: on Windows a program in the current folder runs before PATH, so a pass started by hand inside an
+// untrusted clone ran the clone's gh.exe.
+// why: guards the owner's lock A: the read is the real gh, whatever folder the pass starts in
+test('the watcher finds gh only in absolute PATH folders, never the current folder, and PowerShell in the system folder', () => {
+	const clone = kitTemp.makeTemp('watch-clone-');
+	const real = kitTemp.makeTemp('watch-bin-');
+	for (const d of [clone, real]) fs.writeFileSync(path.join(d, 'gh.exe'), '');
+	const find = (pathVar) => program('gh', { pathVar, cwd: clone, platform: 'win32' });
+	assert.equal(find(`.;${clone};${real}`), path.join(real, 'gh.exe'));
+	assert.equal(find(`sub;${real}`), path.join(real, 'gh.exe'), 'a relative PATH folder');
+	assert.throws(() => find(`.;${clone}`), /not in any absolute PATH folder/);
+	assert.equal(program('powershell', { platform: 'win32', systemRoot: 'C:\\Windows', pathVar: clone, cwd: clone }), 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+});
+
+// The build 13 sweep: the bounds were checked only at add, so a hand-edited list read 60 PRs every pass, forever.
+// why: guards the owner's lock A: the list's size, each entry's expiry and the stop after failed reads hold at each pass
+test('a hand-edited list is held to the bounds at each pass: 20 entries, the expiry limit and three failed reads', () => {
+	const r = rig();
+	const file = path.join(r.dir, 'watch.json');
+	const entry = (pr, extra = {}) => ({ repo: REPO, pr, expires: new Date(NOW + HOUR).toISOString(), last: null, fails: 0, stopped: false, ...extra });
+	fs.mkdirSync(r.dir, { recursive: true });
+	fs.writeFileSync(file, JSON.stringify({ entries: Array.from({ length: 60 }, (_, i) => entry(i + 1)) }));
+	for (let i = 1; i <= 60; i++) r.states[i] = pr('OPEN', []);
+	r.run(['once']);
+	assert.equal(r.reads.length, 20);
+	fs.writeFileSync(file, JSON.stringify({ entries: [entry(1, { expires: '9999-12-31T00:00:00Z' }), entry(2, { fails: -1000000 })] }));
+	r.reads.length = 0;
+	r.fail.add(2);
+	for (let n = 0; n < 4; n++) r.run(['once']);
+	assert.equal(r.reads.filter((a) => a[2] === '1').length, 0, 'an expiry past the limit is dropped');
+	assert.equal(r.reads.filter((a) => a[2] === '2').length, 3, 'a negative failure count still stops after three');
+	assert.equal(r.alerts.length, 1);
+	// A log planted as a link to a file outside the folder is dropped, not written through.
+	const outside = path.join(kitTemp.makeTemp('watch-out-'), 'outside.txt');
+	fs.writeFileSync(outside, 'ORIGINAL');
+	fs.rmSync(path.join(r.dir, 'watch.log'), { force: true });
+	fs.linkSync(outside, path.join(r.dir, 'watch.log'));
+	r.run(['once']);
+	assert.equal(fs.readFileSync(outside, 'utf8'), 'ORIGINAL');
+	assert.ok(r.log().length > 0, 'the watcher logs to its own file again');
+});
+
+// The build 13 sweep: the printed line runs in PowerShell, where a $ or a backtick in a path runs as script, and a
+// quote breaks the /TR quoting.
+// why: guards the owner's lock A: the schedule line the owner pastes runs one pass, and nothing else
+test('the schedule line refuses a path its quoting cannot carry', () => {
+	assert.equal(scheduleLines('C:/Program Files/nodejs/node.exe', 'C:/Users/a/.claude/kit-tools/watch.mjs', '').ok, true);
+	for (const bad of ['C:/u$(ni x)/watch.mjs', "C:/Users/O'Brien/watch.mjs", 'C:/u`x/watch.mjs', 'C:/u"x/watch.mjs']) {
+		const s = scheduleLines('C:/Program Files/nodejs/node.exe', bad, '');
+		assert.equal(s.ok, false, bad);
+		assert.doesNotMatch(s.text, /schtasks/);
+	}
 });
 
 // why: guards E13's purpose: the owner hears when a PR turns ready, once per change, never for "still the same"

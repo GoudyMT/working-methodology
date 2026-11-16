@@ -46,18 +46,47 @@ export function verdict(p) {
 	return checks.every((c) => ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(c.conclusion || c.state)) ? 'green' : 'failed';
 }
 
+/**
+ * A program by its full path, never by a bare name: on Windows a program in the current folder runs before PATH, so a
+ * pass started by hand inside an untrusted clone ran that clone's gh.exe (the build 13 sweep). Only absolute PATH
+ * folders count, the current folder never; PowerShell comes from the system folder.
+ */
+export function program(name, { pathVar = process.env.PATH, cwd = process.cwd(), platform = process.platform, systemRoot = process.env.SystemRoot } = {}) {
+	if (platform === 'win32' && name === 'powershell') return path.join(systemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+	const file = platform === 'win32' ? `${name}.exe` : name;
+	for (const d of String(pathVar || '').split(platform === 'win32' ? ';' : ':')) {
+		if (!d || !path.isAbsolute(d) || path.resolve(d).toLowerCase() === path.resolve(cwd).toLowerCase()) continue;
+		const p = path.join(d, file);
+		if (fs.existsSync(p)) return p;
+	}
+	throw new Error(`${name} is not in any absolute PATH folder`);
+}
+
 function ghRead(repo, pr) {
-	return JSON.parse(execFileSync('gh', readArgs(repo, pr), { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000, windowsHide: true }));
+	return JSON.parse(execFileSync(program('gh'), readArgs(repo, pr), { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000, windowsHide: true }));
 }
 
 // A Windows desktop alert; the text goes in as an argument, never as script. Elsewhere the log is the alert.
 function toast(text) {
 	if (process.platform !== 'win32') return;
-	execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(path.dirname(SELF), 'watch-toast.ps1'), 'Kit watcher', text], { stdio: 'ignore', timeout: 30000, windowsHide: true });
+	execFileSync(program('powershell'), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(path.dirname(SELF), 'watch-toast.ps1'), 'Kit watcher', text], { stdio: 'ignore', timeout: 30000, windowsHide: true });
 }
 
+// A relative CLAUDE_CONFIG_DIR would put the watch folder wherever the command runs (the build 13 sweep).
 function home() {
-	return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+	const set = process.env.CLAUDE_CONFIG_DIR;
+	return set && path.isAbsolute(set) ? set : path.join(os.homedir(), '.claude');
+}
+
+/** The Task Scheduler lines, or a refusal for a path the quoting cannot carry ($, a backtick or a quote). */
+export function scheduleLines(node, script, configDir = process.env.CLAUDE_CONFIG_DIR) {
+	const bad = [node, script].find((p) => !/^[A-Za-z0-9 _.:/\\()-]+$/.test(p));
+	if (bad) return { ok: false, text: `watch: ${bad} holds a character the schedule line cannot quote safely (a $, a backtick or a quote); move the kit or node to a plain path first. Nothing printed to run.` };
+	const lines = [`schtasks /Create /SC MINUTE /MO 5 /TN "Kit watcher" /TR "conhost.exe --headless '${node}' '${script}' once" /F`,
+		'Runs every 5 minutes while you are logged on; it only reads PRs you added and shows a desktop alert. To stop it:',
+		'schtasks /Delete /TN "Kit watcher" /F'];
+	if (configDir) lines.push(`CLAUDE_CONFIG_DIR is set in this shell (${configDir}): the task reads it only if it is set for your account, not just this shell.`);
+	return { ok: true, text: lines.join('\n') };
 }
 
 /** The command line, with the read, the alert, the clock and the folder injectable for tests. */
@@ -66,7 +95,16 @@ export function main(argv, { dir = path.join(home(), 'kit-watch'), read = ghRead
 	const file = path.join(dir, 'watch.json');
 	const load = () => { try { const j = JSON.parse(fs.readFileSync(file, 'utf8')); return Array.isArray(j.entries) ? j.entries : []; } catch { return []; } };
 	const save = (entries) => { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(`${file}.tmp`, JSON.stringify({ entries }, null, 1)); fs.renameSync(`${file}.tmp`, file); };
-	const log = (o) => { fs.mkdirSync(dir, { recursive: true }); fs.appendFileSync(path.join(dir, 'watch.log'), JSON.stringify({ at: new Date(now()).toISOString(), ...o }) + '\n'); };
+	// A log that is a link (a hard link or a symlink planted in the folder) is dropped, not followed: the watcher
+	// writes inside its own folder only (the build 13 sweep).
+	const log = (o) => {
+		fs.mkdirSync(dir, { recursive: true });
+		const at = path.join(dir, 'watch.log');
+		try { const st = fs.lstatSync(at); if (st.isSymbolicLink() || st.nlink > 1 || !st.isFile()) fs.rmSync(at, { force: true }); } catch { /* none yet */ }
+		fs.appendFileSync(at, JSON.stringify({ at: new Date(now()).toISOString(), ...o }) + '\n');
+	};
+	// What a hand-edited entry carries goes into the log cut short.
+	const shown = (v) => JSON.stringify(v ?? null).slice(0, 120);
 	const usage = () => { print(`usage: node ${posix(SELF)} add <owner/repo> <pr> [--hours <n>] | remove <owner/repo> <pr> | list | once | schedule`); return 2; };
 	const target = () => {
 		const [repo, n] = rest;
@@ -101,9 +139,17 @@ export function main(argv, { dir = path.join(home(), 'kit-watch'), read = ghRead
 	if (cmd === 'once') {
 		if (fs.existsSync(path.join(dir, 'watch-off'))) { log({ event: 'killed' }); return 0; }
 		const keep = [];
-		for (const e of load()) {
-			if (!e || Date.parse(e.expires) <= now() || !Number.isFinite(Date.parse(e.expires))) { log({ event: 'expired', repo: e && e.repo, pr: e && e.pr }); continue; }
-			if (!validRepo(e.repo) || !validPr(e.pr)) { log({ event: 'triage', pr: e.pr, why: `not a repo and PR number the watcher can read safely: ${JSON.stringify([e.repo, e.pr]).slice(0, 120)}` }); continue; }
+		// The bounds hold at the pass too, not only at add: watch.json is a plain file, so a hand-edited list past the
+		// cap, an expiry past the limit or a negative failure count is cut back here (the build 13 sweep).
+		const all = load();
+		if (all.length > MAX_ENTRIES) log({ event: 'triage', why: `the list holds ${all.length} entries; only the first ${MAX_ENTRIES} are read and kept` });
+		for (const e of all.slice(0, MAX_ENTRIES)) {
+			const expires = Date.parse(e && e.expires);
+			if (!e || !Number.isFinite(expires) || expires <= now()) { log({ event: 'expired', repo: validRepo(e && e.repo) ? e.repo : shown(e && e.repo), pr: validPr(e && e.pr) ? e.pr : shown(e && e.pr) }); continue; }
+			if (expires > now() + MAX_HOURS * HOUR) { log({ event: 'triage', why: `an expiry past ${MAX_HOURS} hours: ${shown([e.repo, e.pr, e.expires])}; dropped` }); continue; }
+			if (!validRepo(e.repo) || !validPr(e.pr)) { log({ event: 'triage', why: `not a repo and PR number the watcher can read safely: ${shown([e.repo, e.pr])}` }); continue; }
+			e.fails = Number.isInteger(e.fails) && e.fails > 0 ? e.fails : 0;
+			e.stopped = e.stopped === true || e.fails >= STOP_AFTER;
 			if (e.stopped) { keep.push(e); continue; }
 			let p;
 			try { p = read(e.repo, e.pr); } catch (err) {
@@ -132,10 +178,9 @@ export function main(argv, { dir = path.join(home(), 'kit-watch'), read = ghRead
 	if (cmd === 'schedule') {
 		// Both paths in single quotes inside /TR: schtasks turns them into double quotes, so a path with spaces holds.
 		// conhost --headless runs node with no console window, so a pass every 5 minutes does not flash one.
-		print([`schtasks /Create /SC MINUTE /MO 5 /TN "Kit watcher" /TR "conhost.exe --headless '${posix(process.execPath)}' '${posix(SELF)}' once" /F`,
-			'Runs every 5 minutes while you are logged on; it only reads PRs you added and shows a desktop alert. To stop it:',
-			'schtasks /Delete /TN "Kit watcher" /F'].join('\n'));
-		return 0;
+		const s = scheduleLines(posix(process.execPath), posix(SELF));
+		print(s.text);
+		return s.ok ? 0 : 1;
 	}
 	return usage();
 }
