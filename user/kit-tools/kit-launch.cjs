@@ -743,6 +743,9 @@ function preToolUse(input) {
 	if (files.held) answers.push(deny(`Held: this tool ${files.held}, so the kit cannot tell which of its projects it reaches. Use the file's own path on its drive.`));
 	for (const dir of [...named, ...files.filter((d) => !named.some((x) => same(x, d)))]) {
 		if (mine && !mine.ambiguous && same(mine.dir, dir)) continue;
+		// K94 (build 12): a recorded folder that is not there holds no guard file to protect, so it holds nothing (a
+		// deleted probe held every command naming it, forget included). Back with other files, it is held again.
+		if (!fs.existsSync(dir)) continue;
 		answers.push(projectCheck({ ...fanned, cwd: dir }, true));
 	}
 	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };

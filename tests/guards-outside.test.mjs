@@ -1206,15 +1206,49 @@ test('K81 a record whose folder is gone is named by install and removed only by 
 	const r = install({ kit: KIT, home, target: 'user' });
 	assert.ok(fs.existsSync(rec), 'install removed a record');
 	assert.ok(r.skipped.some((x) => /gone-probe is not there[\s\S]*kit\.mjs" forget/.test(x.reason)), JSON.stringify(r.skipped));
-	// A folder whose drive is away: the folder above it is missing too, so forget keeps it.
-	const offline = forget({ home, dir: path.join(path.dirname(proj), 'no-such-drive', 'app') });
-	assert.deepEqual(offline.removed, []);
-	assert.match(offline.why, /offline/);
+	// A folder whose drive is away keeps its record: since K94 that is read from the drive's root (the test below).
 	assert.match(forget({ home, dir: proj }).why, /is there/, 'a live project is never forgotten');
 	assert.deepEqual(forget({ home, dir: deleted }).removed.length, 1);
 	assert.equal(fs.existsSync(rec), false);
 	assert.ok(fs.existsSync(path.join(guardDir(home, proj), 'record.json')), 'a live project lost its record');
 	assert.equal(bash(s, 'git status').decision, 'allow');
+});
+
+// K94, K90 and New 5 (build 12, reproduced live on 1.37.0): a deleted probe folder's record held every command that
+// named it, the forget command for it included, and forget refused a record whose parent folder was gone too, so the
+// record could not be cleared at all. A folder that is not there holds no guard file to protect: a command naming it
+// is not held for it, and forget clears it while the drive or share it was on answers. Recreated with other files,
+// the folder is held again, as any changed project is.
+// why: guards rule:security-standards (a project's guards are never dropped because its drive was away)
+test('K94 a deleted project holds no command that names it, and forget clears it when its parent is gone too', () => {
+	const { home, proj, session: s } = setup();
+	const parent = path.join(path.dirname(proj), 'gone-parent');
+	const deleted = path.join(parent, 'work');
+	fs.mkdirSync(deleted, { recursive: true });
+	install({ kit: KIT, home, target: 'project', projectDir: deleted });
+	const fwd = deleted.split(path.sep).join('/');
+	fs.rmSync(parent, { recursive: true, force: true });
+	assert.equal(bash(s, `ls ${fwd}`).decision, 'allow', 'a deleted project held a command that names it');
+	assert.equal(bash(s, `node forget.mjs "${fwd}"`).decision, 'allow', 'the forget command was held');
+	const r = forget({ home, dir: deleted });
+	assert.equal(r.removed.length, 1, r.why);
+	assert.equal(fs.existsSync(guardDir(home, deleted)), false);
+	// A record whose folder comes back with other guard files is held again.
+	fs.mkdirSync(parent);
+	install({ kit: KIT, home, target: 'project', projectDir: parent });
+	fs.writeFileSync(path.join(parent, '.claude', 'guard.cjs'), EVIL_GUARD);
+	assert.equal(bash(s, `ls ${parent.split(path.sep).join('/')}`).decision, 'deny', 'a changed project that is there was not held');
+});
+
+// A drive or share that does not answer keeps its records: only its root is asked, never a folder on it.
+// why: guards rule:security-standards
+test('K94 forget keeps the record of a folder whose drive or share does not answer', () => {
+	const { home } = setup();
+	const gone = process.platform === 'win32' ? 'Q:\\no-such-drive\\app' : '//no-such-server/share/app';
+	const exists = (p) => !/^(Q:\\|\/\/no-such-server)/i.test(p) && fs.existsSync(p);
+	const r = forget({ home, dir: gone, exists });
+	assert.deepEqual(r.removed, []);
+	assert.match(r.why, /offline/);
 });
 
 // why: guards rule:first-push-gate (the 1.27.0 sweep, high): the new shims run a project's hooks from the launcher's

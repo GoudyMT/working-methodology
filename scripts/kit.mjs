@@ -285,16 +285,23 @@ export function guardDir(home, projectDir) {
 
 /**
  * K81 (build 11): forget the guard record of a project folder the owner deleted, so the launcher stops reading it on
- * every call. Only when the folder is gone and the folder above it is there: a project on an unplugged drive or an
- * offline share keeps its record, its git hook shims and the owner's accepted files.
+ * every call. Only when the folder is gone and the drive or share it was on answers: a project on an unplugged drive
+ * or an offline share keeps its record, its git hook shims and the owner's accepted files. K94 (build 12): the folder
+ * above it may be gone too (a deleted probe folder held its records for good), so only the root is asked.
+ *
+ * Args:
+ *     home: the Claude folder that holds kit-guard
+ *     dir: the deleted project folder
+ *     exists: the existence check (a test stands in a drive that does not answer)
  *
  * Returns:
  *     { removed: [record folders], why: '' } or { removed: [], why } when nothing is removed
  */
-export function forget({ home, dir }) {
+export function forget({ home, dir, exists = fs.existsSync }) {
   const abs = path.resolve(String(dir || ''));
-  if (!dir || fs.existsSync(abs)) return { removed: [], why: `${toPosix(abs)} is there: forget is only for a project folder that was deleted` };
-  if (!fs.existsSync(path.dirname(abs))) return { removed: [], why: `the folder above it (${toPosix(path.dirname(abs))}) cannot be found either, so its drive or share may only be offline; its record stays` };
+  if (!dir || exists(abs)) return { removed: [], why: `${toPosix(abs)} is there: forget is only for a project folder that was deleted` };
+  const root = path.parse(abs).root;
+  if (!exists(root)) return { removed: [], why: `its drive or share (${toPosix(root)}) does not answer, so it may only be offline; its record stays` };
   const removed = [];
   for (const d of [guardDir(home, abs), legacyGuardDir(home, abs)].filter(Boolean)) {
     if (!fs.existsSync(d)) continue;
