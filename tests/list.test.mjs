@@ -345,6 +345,8 @@ test('step rename renames one roadmap step by its name or release, and refuses a
 	assert.equal(st(dir, 'step', 'move', 'Z', 'before', 'nope').status, 1);
 	assert.equal(st(dir, 'step', 'move', '9a', 'before', 'Z').status, 1, 'a name for two steps is refused');
 	assert.equal(st(dir, 'step', 'move', 'Z', 'beside', '1.34.0').status, 2);
+	// A move is no session's update: the state's date stays, as for step set and step rename.
+	assert.equal(JSON.parse(read(dir, '_State.json')).updated, '<YYYY-MM-DD>');
 	// A step moved beside itself is refused, and the order stays.
 	assert.equal(st(dir, 'step', 'move', 'Z', 'before', 'Z').status, 1);
 	assert.deepEqual(JSON.parse(read(dir, '_State.json')).roadmap.map((x) => x.step), ['9a', 'Z', '9a']);
@@ -536,6 +538,9 @@ test('a checkbox roadmap moves into a list that already holds rows, with new ids
 	put(dir, 'new.md', '## Later\n\n- [ ] A later box\n');
 	assert.equal(st(dir, 'list', 'import', 'new.md').status, 0);
 	assert.notEqual(rows(dir).find((x) => x.title === 'A later box').id, 'R2');
+	// A new box in a section the list already holds is no second import: it comes in.
+	put(dir, 'new2.md', '## Later\n\n- [ ] Another later box\n');
+	assert.equal(st(dir, 'list', 'import', 'new2.md').status, 0);
 	// A roadmap holding a table beside its boxes: the boxes move, the table stays as it was (the 1.36.1 sweep: the use
 	// check's one way out must work for it too).
 	put(dir, 'mixed.md', `${LIST}\n## Tasks\n\n- [ ] A mixed box\n`);
