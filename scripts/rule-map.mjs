@@ -8,6 +8,7 @@
 // A name is not proof the code holds the rule; it is where to look. Rule prose (rules/, the built copies) never counts.
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 const OUT = 'docs/rule-map.json';
@@ -36,7 +37,12 @@ export function build(root) {
 	const index = fs.readFileSync(path.join(root, 'project', 'standards', 'INDEX.md'), 'utf8');
 	const ids = [...index.matchAll(/^\| ([a-z0-9-]+) \|/gm)].map((m) => m[1]);
 	const rules = Object.fromEntries(ids.map((id) => [id, { guards: [], scripts: [], tests: [], workflows: [] }]));
-	for (const f of walk(root).sort()) {
+	// The files git tracks, as CI's checkout has them; an untracked or ignored file never counts (the build 14 sweep).
+	// Outside a repo, every file on disk.
+	const listed = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' });
+	const files = listed.status === 0 ? listed.stdout.split('\0').filter(Boolean) : walk(root);
+	for (const f of files.sort()) {
+		if (!fs.existsSync(path.join(root, f))) continue;
 		if (!CODE.test(f) || f === OUT) continue;
 		const kind = (KINDS.find(([, re]) => re.test(f)) || [])[0];
 		if (!kind) continue;

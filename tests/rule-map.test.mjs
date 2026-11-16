@@ -20,6 +20,10 @@ test('the rule map lists what holds each rule, names the rules nothing holds, an
 	put(dir, 'tests/a.test.mjs', '// why: guards rule:test-value\n// rule:outward-acts\n');
 	put(dir, '.github/workflows/ci.yml', '# rule:outward-acts\n');
 	put(dir, 'rules/x.md', 'rule:plain-words in prose does not hold it\n');
+	const git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir, encoding: 'utf8' });
+	git('init', '-q', '-b', 'main'); git('add', '.'); git('commit', '-qm', 'x');
+	// An untracked file is not in CI's checkout, so it never counts (the build 14 sweep).
+	put(dir, 'tests/wip.test.mjs', '// rule:plain-words\n');
 	const run = (...a) => spawnSync(process.execPath, [MAP, ...a], { cwd: dir, encoding: 'utf8' });
 	let r = run('write');
 	assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -30,6 +34,7 @@ test('the rule map lists what holds each rule, names the rules nothing holds, an
 	assert.match(r.stdout, /3 rules: 2 held by code, 1 by prose only/);
 	assert.equal(run('check').status, 0);
 	put(dir, 'scripts/plain.mjs', '// rule:plain-words\n');
+	git('add', 'scripts/plain.mjs');
 	r = run('check');
 	assert.equal(r.status, 1);
 	assert.match(r.stderr, /docs\/rule-map\.json is stale: run node scripts\/rule-map\.mjs write/);

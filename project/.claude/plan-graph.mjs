@@ -21,28 +21,48 @@ export function units(text) {
 	const rows = [];
 	let head = null;
 	for (const l of lines.slice(at + 1)) {
-		if (/^## /.test(l)) break;
-		if (!/^\|/.test(l)) continue;
-		const cells = l.split('|').slice(1, -1).map((c) => c.trim());
+		if (/^#{1,6} /.test(l)) break;
+		// The table ends at its first line that is not a row: a side table further down is not units (the build 14 sweep).
+		if (!/^\s*\|/.test(l)) { if (head) break; continue; }
+		// Split on pipes a backslash does not escape (markdown writes a pipe inside a cell as \|).
+		const cells = l.trim().split(/(?<!\\)\|/).slice(1, -1).map((c) => c.trim().replace(/\\\|/g, '|'));
 		if (!head) { head = cells.map((c) => c.toLowerCase()); continue; }
-		if (cells.every((c) => /^-+$/.test(c))) continue;
+		if (cells.every((c) => /^:?-+:?$/.test(c))) continue;
 		const col = (name) => cells[head.findIndex((h) => h.startsWith(name))] || '';
-		const runs = col('runs').toLowerCase();
+		const filesCell = col('files');
 		rows.push({
-			id: col('id'),
-			files: new Set([...col('files').matchAll(/`([^`]+)`/g)].map((m) => m[1].trim().replace(/\\/g, '/'))),
-			runs: /^alone\b/.test(runs) ? 'alone' : /^after\b/.test(runs) ? 'after' : 'parallel',
-			after: /^after\b/.test(runs) ? [...runs.matchAll(/\bu\w+/g)].map((m) => m[0].toUpperCase()) : [],
+			id: col('id').replace(/[*_`]/g, '').trim(),
+			files: new Set([...filesCell.matchAll(/`([^`]+)`/g)].map((m) => norm(m[1]))),
+			unread: filesCell.trim() !== '' && !/`[^`]+`/.test(filesCell),
+			runsCell: col('runs'),
 		});
 	}
-	return head ? rows.filter((u) => u.id) : null;
+	if (!head) return null;
+	const list = rows.filter((u) => u.id);
+	// "after" reads only the ids the table has, so "after U1 (uses its types)" orders U1 and nothing else.
+	const ids = new Map(list.map((u) => [u.id.toUpperCase(), u.id]));
+	for (const u of list) {
+		const runs = u.runsCell.toLowerCase();
+		u.runs = /^alone\b/.test(runs) ? 'alone' : /^after\b/.test(runs) ? 'after' : 'parallel';
+		u.after = u.runs === 'after' ? [...new Set([...u.runsCell.matchAll(/[A-Za-z][\w.-]*/g)].map((m) => m[0].toUpperCase()).filter((w) => ids.has(w) && w !== u.id.toUpperCase()))] : [];
+		u.unknownAfter = u.runs === 'after' && !u.after.length;
+	}
+	return list;
 }
+
+// One spelling per path: forward slashes, no ./, lower case (Windows and macOS fold case); a folder keeps its slash.
+const norm = (p) => p.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '').toLowerCase();
+// Two paths touch when they are the same, or one is a folder the other sits in.
+const touch = (a, b) => a === b || (a.endsWith('/') && b.startsWith(a)) || (b.endsWith('/') && a.startsWith(b));
 
 /** The faults of a plan's units, as plain lines. */
 export function faults(list) {
 	const out = [];
 	const byId = new Map(list.map((u) => [u.id.toUpperCase(), u]));
-	for (const u of list) for (const a of u.after) if (!byId.has(a)) out.push(`${u.id} runs after ${a}, which is not a unit`);
+	for (const u of list) {
+		if (u.unknownAfter) out.push(/^after\s+u\w+/i.test(u.runsCell) ? `${u.id} runs after ${/^after\s+(\S+)/i.exec(u.runsCell)[1].replace(/[,.;]$/, '')}, which is not a unit` : `${u.id} runs after no unit it names`);
+		if (u.unread) out.push(`${u.id} names no file in backticks, so its files cannot be read`);
+	}
 	// Everything a unit comes after, through any chain; a unit found in its own chain is in a cycle.
 	const before = new Map();
 	const reach = (id, seen = new Set()) => {
@@ -57,7 +77,7 @@ export function faults(list) {
 			const [a, b] = [list[i], list[j]];
 			if (a.runs === 'alone' || b.runs === 'alone') continue;
 			if (before.get(a.id.toUpperCase()).has(b.id.toUpperCase()) || before.get(b.id.toUpperCase()).has(a.id.toUpperCase())) continue;
-			const shared = [...a.files].filter((f) => b.files.has(f));
+			const shared = [...a.files].filter((f) => [...b.files].some((g) => touch(f, g)));
 			if (shared.length) out.push(`${a.id} and ${b.id} may run at once and both touch ${shared.join(', ')}: order them (after) or run one alone`);
 		}
 	}

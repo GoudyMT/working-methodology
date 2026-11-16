@@ -22,6 +22,9 @@ const has = (rel) => fs.existsSync(path.join(dir, rel));
 // git starts from Node's own folder, so a git.exe planted in the project is not the one found first on Windows.
 const git = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', cwd: path.dirname(process.execPath) });
 const isRepo = () => git('rev-parse', '--git-dir').status === 0;
+// A file the kit keeps in the git folder: in a worktree .git is a file, and the records sit in the common git folder (the
+// build 14 sweep: a plan checked in a worktree read as never checked).
+const hasGit = (name) => { const r = git('rev-parse', '--git-common-dir'); return r.status === 0 && fs.existsSync(path.join(path.resolve(dir, r.stdout.trim()), name)); };
 const toPosix = (p) => p.split(path.sep).join('/');
 // The Claude config folder: status passes it in; otherwise the one Claude Code uses.
 const HOME = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
@@ -196,7 +199,7 @@ const PARTS = [
 			try { b = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'bounds.json'), 'utf8')); } catch { return [false, '.claude/bounds.json is not JSON: the loop starts no run (the owner fixes it; a tool writes it only on the owner\'s pop-up Yes)']; }
 			return Array.isArray(b && b.steps) && b.steps.length ? [true, `${b.steps.length} steps, ${b.steps.filter((s) => s && s.who === 'owner').length} of them the owner's`] : [false, '.claude/bounds.json has no steps: the loop starts no run'];
 		},
-		used: () => (has('.git/kit-loop.jsonl') ? [true, 'a run or loop mode was recorded'] : [null, 'no loop run yet']),
+		used: () => (hasGit('kit-loop.jsonl') ? [true, 'a run or loop mode was recorded'] : [null, 'no loop run yet']),
 	},
 	{
 		// T8 (build 14): a batch plan's units read as a graph, so shared files between units that run at once are found.
@@ -204,7 +207,7 @@ const PARTS = [
 		what: 'the plan graph: units of a batch plan that may run at once and share a file (T8)',
 		present: () => (has('.claude/plan-graph.mjs') ? [true, 'plan-graph.mjs'] : [false, 'missing .claude/plan-graph.mjs (run kit.mjs install project)']),
 		wired: () => [true, 'run by the lead on a batch plan (agent-team-build)'],
-		used: () => (has('.git/kit-plan-graph.jsonl') ? [true, 'a plan was checked'] : [null, 'no plan checked yet']),
+		used: () => (hasGit('kit-plan-graph.jsonl') ? [true, 'a plan was checked'] : [null, 'no plan checked yet']),
 	},
 ];
 
