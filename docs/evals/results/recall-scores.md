@@ -803,6 +803,7 @@ Candidate: the branch at c2fb3d7 (1.40.0, the fix-test bar by severity in review
 - **Question 7 missed on both kits alike** (3 of 5 candidate runs, 2 of 3 baseline runs): answers offered the owner's yes in place of the ASK approve.mjs gives, the known reach of approve.mjs from the run folder. Not touched by this change.
 - **Question 10 missed once in five candidate runs**, for leaving out that the report is summarized in the PR; the changed lines do not touch that wording, and the other four runs and all three baseline runs named it.
 - **Borderline calls:** 10, spread across both kits.
+- **Owner-accepted** (the owner, 2026-11-16, by pop-up: "Yes, accept"): the baseline under 14 is accepted for this release; the next build is held to the baseline it measures.
 
 control: 0
-gate: b14-1.40.0 median 13 baseline 13 brief v2 keys v12
+gate: b14-1.40.0 median 13 baseline 13 brief v2 keys v12 owner-accepted
