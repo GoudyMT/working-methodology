@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.36.1 - 2026-11-16
+
+A project whose improvement list is already data can now move its checkbox roadmap in, so the 1.36.0 use check has a way out. Install no longer merges a project's own state, list and decisions, and the guards close a way past them that bracketed PowerShell arguments opened.
+
+### Added
+- step move places a roadmap step before or after another, by its name or release.
+
+### Fixed
+- `list import` of a checkbox roadmap adds its rows to a list that already holds rows, with new ids, all or nothing; a box already in the list is refused, and tables beside the boxes stay in the file.
+- Install seeds a project's state, list and decisions once and never merges, updates or folds them back, so a kit change to their templates never asks for a hand merge.
+- A folder change back after a kit script (Pop-Location, popd, after ; && or a new line) no longer makes the guards hold the script as a write to a protected file.
+- Import reads a heading step's spacing as one space, places its boxes at the step the state holds, and refuses two steps that differ only in spacing.
+
+### Security
+- A command with a bracket gets no read exemption from the guards: a PowerShell argument in brackets runs as code, and a protected path joined from pieces inside it was let through.
 ## 1.36.0 - 2026-11-15
 
 The list reads as one short line per row, and every kit project keeps its roadmap as data: a hand-kept checkbox roadmap moves in once. Install checks a hand merge before it records one, and the guards stop holding the kit's own scripts.
