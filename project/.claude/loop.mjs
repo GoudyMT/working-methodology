@@ -119,7 +119,8 @@ const checkAct = (s) => `loop visual-check ${code(s, `check:${s.checks}`)}`;
 const boundsAct = (s, b) => `loop bounds ${hash6(`${s.lastBounds}:${b.hash}`)}`;
 const killSwitch = () => fs.existsSync(path.join(yesReader.home(), 'autonomy-off'));
 const nextStep = (s, b) => b.steps.find((x) => !s.done.includes(x.step)) || null;
-const whoFor = (step) => (step.who === 'alone' && killSwitch() ? 'owner' : step.who);
+// The kill switch makes every step the owner's, a guard's step included (the build 12 sweep).
+const whoFor = (step) => (killSwitch() ? 'owner' : step.who);
 const unitKey = (u) => String(u).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 // E11: every stop says why, with the data, the options, and how the owner clears it.
@@ -220,7 +221,7 @@ function main(argv) {
 		const who = whoFor(step);
 		out(who === 'alone' ? `NEXT ${step.step}: alone`
 			: who === 'guard' ? `NEXT ${step.step}: the guard's; the act itself waits for the owner's yes where the guards hold it, then record its evidence`
-				: `NEXT ${step.step}: the owner's${step.who === 'alone' ? ' (the kill switch autonomy-off is on)' : ''}; ask in the pop-up, the question quoting \`loop ${step.step} ${code(s, step.step)}\``);
+				: `NEXT ${step.step}: the owner's${step.who !== 'owner' ? ' (the kill switch autonomy-off is on)' : ''}; ask in the pop-up, the question quoting \`loop ${step.step} ${code(s, step.step)}\``);
 		if (cmd === 'show') out(`Run ${s.run.item}: done ${s.done.join(', ') || 'nothing yet'}; counts ${Object.entries(s.counts).map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}; visual since the last check ${s.visualSince}, the owner's check: \`${checkAct(s)}\``);
 		return 0;
 	}

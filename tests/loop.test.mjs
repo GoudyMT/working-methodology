@@ -164,6 +164,14 @@ test('a changed bounds file, a hand edit of the log or the kill switch stops the
 	fs.writeFileSync(path.join(r4.cfg, 'autonomy-off'), '');
 	assert.match(loop(r4, ['next']).stdout, /^NEXT proof: the owner's/m);
 	assert.equal(loop(r4, ['done', 'proof', '--evidence', 'x']).status, 1, 'an alone step with the kill switch on');
+	// A guard's step too: with the switch on, its evidence alone is not enough (the build 12 sweep).
+	fs.rmSync(path.join(r4.cfg, 'autonomy-off'));
+	for (const s of ['proof', 'design', 'build', 'sweep', 'pr', 'ci']) {
+		if (s === 'design') ownerTaps(r4, `loop design ${code(loop(r4, ['next']).stdout, 'design')}`);
+		assert.equal(loop(r4, ['done', s, '--evidence', 'x']).status, 0, s);
+	}
+	fs.writeFileSync(path.join(r4.cfg, 'autonomy-off'), '');
+	assert.equal(loop(r4, ['done', 'merge', '--evidence', 'x']).status, 1, 'a guard step with the kill switch on');
 	const r5 = repo();
 	fs.rmSync(path.join(r5.dir, '.claude', 'bounds.json'));
 	assert.equal(loop(r5, ['start', 'K1']).status, 1, 'no bounds file');
@@ -215,4 +223,11 @@ test('the kit hook records the session, halts an armed loop on an owner message 
 	loop(r, ['mode', 'arm']);
 	hook('session-start', { source: 'resume', session_id: SID });
 	assert.equal(state().why, 'session start');
+	// With the kit missing, the hook still turns an armed loop off before its full stop (the build 12 sweep).
+	ownerSays(r, 'begin loop workflow');
+	loop(r, ['mode', 'arm']);
+	fs.writeFileSync(path.join(r.cfg, 'kit-install.json'), 'not json');
+	const stop = hook('prompt', { prompt: 'what now', session_id: SID });
+	assert.equal(state().state, 'off', 'a missing kit left the loop armed');
+	assert.equal(JSON.parse(stop.stdout).decision, 'block', 'a broken stamp did not reach the full stop');
 });

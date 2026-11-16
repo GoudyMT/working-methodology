@@ -61,9 +61,12 @@ function loopMode() {
 }
 
 async function main() {
+	// First, so a missing kit never leaves an armed loop on; its two calls are cut at 3 seconds each, inside the hook's 10.
+	loopMode();
 	const packet = MODE === 'pre-compact' ? writePacket() : '';
 	const stampPath = path.join(HOME, 'kit-install.json');
-	const kit = fs.existsSync(stampPath) ? JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir : null;
+	let kit = null;
+	try { kit = JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir || null; } catch { /* no stamp, or not JSON: the full stop below */ }
 	if (!kit || !fs.existsSync(path.join(kit, 'scripts', 'kit.mjs'))) {
 		// A missing kit is a full stop (the owner, 2026-10-31): every prompt is refused with the fix, except a prompt
 		// that installs it.
@@ -83,8 +86,6 @@ async function main() {
 		emit(`${packet ? `${packet}\n` : ''}Methodology kit not found in the Claude config folder ${HOME.split(path.sep).join('/')} (no kitDir in its kit-install.json). Run "node <kit>/scripts/kit.mjs install user" with CLAUDE_CONFIG_DIR set to that folder.`);
 		return;
 	}
-	// After the full stop above, so a slow git cannot keep the hook from printing it.
-	loopMode();
 	const lib = await import(pathToFileURL(path.join(kit, 'scripts', 'kit.mjs')).href);
 	// Claude Code passes the hook input on stdin; for SessionStart, source is startup, resume, clear or compact.
 	const ctx = { kit, home: HOME, projectDir: PROJECT, source: INPUT.source };
