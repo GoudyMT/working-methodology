@@ -166,8 +166,10 @@ function spend(popUp, call) {
 // 1.26.0 sweep, C7); `lead` opens the instruction ("To run it", or a condition such as "Only for a new repo's first push").
 function howToAsk(input, act = '', lead = 'To run it') {
 	if (input && input.agent_id) return ' A subagent cannot get that yes: leave this out and name it in your report, so the lead asks.';
-	if (act) return ` ${lead}: ask the owner with the AskUserQuestion pop-up, the question quoting this act exactly in one code span: \`${act}\`, one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run that act, once.`;
-	return ` ${lead}: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (\`<the exact command>\`, or for a file \`Edit <file>: <old text> => <new text>\`), one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run it again unchanged, once.`;
+	// A shell act's question names its shell, so a yes asked before any try binds it (K97, New 6, build 12).
+	const shellWords = ['Bash', 'PowerShell'].includes(String(input && input.tool_name)) ? ` and the words "in ${input.tool_name}"` : '';
+	if (act) return ` ${lead}: ask the owner with the AskUserQuestion pop-up, the question quoting this act exactly in one code span: \`${act}\`${shellWords}, one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run that act, once.`;
+	return ` ${lead}: ask the owner with the AskUserQuestion pop-up, the question quoting the act exactly in one code span (\`<the exact command>\`, or for a file \`Edit <file>: <old text> => <new text>\`)${shellWords}, one option labelled "Yes" and one starting "No", and nothing else in the same message; after the owner picks Yes, run it again unchanged, once.`;
 }
 
 // One voice for every refusal (T16a, the owner 2026-11-11): each opens with its kind, then the limit it hit, then what

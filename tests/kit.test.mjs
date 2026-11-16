@@ -3091,9 +3091,10 @@ test('a refused resume says when no session id is set, or when no transcript of 
   assert.match(none.stdout, /CLAUDE_CODE_SESSION_ID is not set/);
   const elsewhere = approveIn(r.dir, ['--resume'], tapEnv(cfg));
   assert.equal(elsewhere.status, 1);
-  assert.match(elsewhere.stdout, /no transcript of session [0-9a-f-]{36} is kept for this repository/);
+  assert.ok(elsewhere.stdout.includes(TAP_SID), 'the refusal does not name the session it looked for');
+  assert.match(elsewhere.stdout, /no transcript/);
   ownerTaps(cfg, r.dir, 'sweep resume 000000');
-  assert.doesNotMatch(approveIn(r.dir, ['--resume'], tapEnv(cfg)).stdout, /is not set|no transcript of session/, 'a session that is read was named as missing');
+  assert.doesNotMatch(approveIn(r.dir, ['--resume'], tapEnv(cfg)).stdout, /CLAUDE_CODE_SESSION_ID|no transcript/, 'a session that is read was named as missing');
 });
 
 // The installed approve.mjs reads the owner's taps in the Claude folder install user filled in, so a caller cannot
