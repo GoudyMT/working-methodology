@@ -62,7 +62,6 @@ export const KIT_SOURCE_PROTECTED = [/^user\//i, /^project\//i, /^rules\//i, /^s
 const NO_HOOKS = ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-c', 'diff.ignoreSubmodules=none', '-c', 'diff.relative=false'];
 // What may change after the swept commit: the release bump.
 export const AFTER_SWEEP = ['VERSION', 'CHANGELOG.md'];
-const CONVENTIONAL = /^[a-z]+(\([^)]*\))?!?: /;
 const SHA = /^[0-9a-f]{40}$/;
 // STALE: GitHub marks a result it no longer counts; it is not a pass.
 const BAD_CHECK = /^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE|STALE)$/;
@@ -469,7 +468,9 @@ function pinBase({ git, gh, repo, base, cwd }) {
 }
 
 function bodyFaults({ cwd, config, body, title, number = '', baseRef, git, run }) {
-	const name = CONVENTIONAL.test(title) ? 'pr-body-audit-lean.mjs' : 'pr-body-audit.mjs';
+	// Every title is type: subject since 1.25.0, so the body says its format, as CI's PR body job reads it: a Standard
+	// body has a "### Summary" section (the build 13 sweep: picked by its title, every Standard body met the Lean audit).
+	const name = /^### Summary$/m.test(body) ? 'pr-body-audit.mjs' : 'pr-body-audit-lean.mjs';
 	const found = baseAudit(git, baseRef, name, config);
 	if (!found) return [`${baseRef} has no ${name}, and no installed copy in ${path.join(config, 'kit-tools', 'audits')}: install the kit's user layer`];
 	try {

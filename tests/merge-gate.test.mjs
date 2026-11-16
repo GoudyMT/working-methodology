@@ -464,6 +464,12 @@ test('live body audit (I21): a published PR body is read back and audited by the
 	s.state.pr.body = BODY + '\nWritten with Claude.\n';
 	const r = live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run });
 	assert.equal(r.ok, false);
+	// The build 13 sweep: the audit was picked by the title, and every title is type: subject, so a Standard body met the
+	// Lean audit; it is picked by the body's shape, as CI's PR body job picks it.
+	s.state.pr.body = '## Math: add a subtract function\n\nThe math module can now subtract.\n\n### Summary\n\nx\n';
+	const std = live({ kind: 'pr', id: 7, cwd: s.work, config: s.config, run: s.run });
+	assert.match(std.faults.join('\n'), /pr-body-audit\.mjs/);
+	assert.doesNotMatch(std.faults.join('\n'), /pr-body-audit-lean\.mjs/);
 });
 
 // why: guards rule:standing-grants
@@ -724,7 +730,8 @@ test('merge gate: the audit is read from the kit\'s own layout on the base', () 
 test('merge gate: a squash-style title is read by the full audit, not the lean one', () => {
 	const s = setup();
 	s.state.pr.title = 'Add a subtract function';
-	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit\.mjs/);
+	// From build 13 the body's shape picks the audit, as CI does; a title that is not type: subject still fails it.
+	assert.match(check(s.opts).faults.join('\n'), /live PR body fails pr-body-audit-lean\.mjs.*FAIL\s+title is type: subject/s);
 });
 // why: guards rule:standing-grants. The 1.28.0 sweep: CI counts the squash suffix at the PR number's length and the gate
 // kept 8 for it, so a title CI passed (65 here: 70 with " (#7)") failed the gate and held the merge.
