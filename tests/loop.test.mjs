@@ -290,6 +290,24 @@ test('the chain check says GO only for a clean handoff, a closed run, the kill s
 	assert.equal(full.status, 1);
 	assert.match(full.stdout, /2 of 2 threads opened in the last 24 hours/);
 	assert.equal(log(r2).filter((e) => e.kind === 'chain').length, 2, 'a refused open is not recorded');
+	// A raised cap is a changed bounds file: it applies only on the owner's Yes to it, as a run's start asks (the build
+	// 13 review).
+	const b2 = path.join(r2.dir, '.claude', 'bounds.json');
+	fs.writeFileSync(b2, JSON.stringify({ ...JSON.parse(fs.readFileSync(b2, 'utf8')), limits: { ...JSON.parse(fs.readFileSync(b2, 'utf8')).limits, threadsPerDay: 3 } }));
+	const raised = chain2('--open');
+	assert.equal(raised.status, 1);
+	ownerTaps(r2, `loop bounds ${code(raised.stdout, 'bounds')}`);
+	assert.equal(chain2('--open').status, 0, 'the raised cap, on the owner\'s Yes');
+	// The count lives in the log, so a hand edit stops the check with no run open, until the owner accepts the log.
+	const f2 = path.join(r2.dir, '.git', 'kit-loop.jsonl');
+	fs.writeFileSync(f2, fs.readFileSync(f2, 'utf8').replace('K7, the export fix', 'K7'));
+	const broken = chain2();
+	assert.match(broken.stdout, /changed by hand/);
+	assert.equal(loop(r2, ['resume']).status, 1, 'accepted with no Yes');
+	ownerTaps(r2, `loop resume ${code(broken.stdout, 'resume')}`);
+	assert.equal(loop(r2, ['resume']).status, 0);
+	assert.doesNotMatch(chain2().stdout, /changed by hand/);
+	assert.match(chain2().stdout, /3 of 3 threads/);
 	// With no closeout audit installed there is nothing to check the handoff with.
 	fs.rmSync(path.join(r2.cfg, 'skills'), { recursive: true });
 	assert.match(chain2().stdout, /closeout audit is not installed/);

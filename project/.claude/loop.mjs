@@ -91,11 +91,12 @@ function read() {
 	lines.forEach((l, i) => {
 		let e;
 		try { e = JSON.parse(l); } catch { e = null; }
-		if (!e || typeof e !== 'object' || e.prev !== (i ? sha(lines[i - 1]) : '')) { if (s.run && !s.halt) s.halt = handEdit(i); return; }
+		if (!e || typeof e !== 'object' || e.prev !== (i ? sha(lines[i - 1]) : '')) { s.broken = { at: i }; if (s.run && !s.halt) s.halt = handEdit(i); if (e && e.kind === 'chain') s.chains.push(e.time); return; }
 		if (e.tap) s.taps.add(e.tap);
 		if (e.kind === 'mode') s.mode = { state: e.state, why: e.why || '', time: e.time };
 		else if (e.kind === 'start') { Object.assign(s, { run: { item: e.item, id: e.run, bounds: e.bounds }, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, opened: e.time, shadow: null }); s.lastBounds = e.bounds; }
-		else if (e.kind === 'chain') s.chains.push(e.time);
+		else if (e.kind === 'chain') { s.chains.push(e.time); if (e.bounds) s.lastBounds = e.bounds; }
+		else if (e.kind === 'accept') s.broken = null;
 		else if (!s.run) return;
 		else if (e.kind === 'done') {
 			s.done.push(e.step); s.opened = e.time; s.shadow = null;
@@ -107,12 +108,12 @@ function read() {
 		else if (e.kind === 'shadow') s.shadow = { would: e.would, step: e.step, time: e.time };
 		else if (e.kind === 'count') { s.counts[e.key] = (s.counts[e.key] || 0) + 1; if (e.counter === 'visual-check') { s.visualSince = 0; s.checks++; } else if (e.counter === 'visual') s.visualSince++; }
 		else if (e.kind === 'halt') s.halt = { why: e.why, at: i, time: e.time };
-		else if (e.kind === 'resume') { s.halt = null; s.run.bounds = e.bounds; s.lastBounds = e.bounds; s.opened = e.time; }
+		else if (e.kind === 'resume') { s.halt = null; s.broken = null; s.run.bounds = e.bounds; s.lastBounds = e.bounds; s.opened = e.time; }
 		else if (e.kind === 'close') s.run = null;
 	});
 	let head = '';
 	try { head = fs.readFileSync(HEAD, 'utf8').trim(); } catch { /* none yet */ }
-	if (lines.length && head !== sha(lines[lines.length - 1]) && s.run && !s.halt) s.halt = handEdit(lines.length - 1);
+	if (lines.length && head !== sha(lines[lines.length - 1])) { s.broken = { at: lines.length - 1 }; if (s.run && !s.halt) s.halt = handEdit(lines.length - 1); }
 	return s;
 }
 
@@ -132,6 +133,7 @@ function ownerYes(s, act, since) {
 const hash6 = (s) => sha(s).slice(0, 6);
 const code = (s, what) => hash6(`${s.run.id}:${what}`);
 const resumeAct = (s) => `loop resume ${code(s, `resume:${s.halt.at}`)}`;
+const brokenAct = (s) => `loop resume ${hash6(`log:${s.broken.at}`)}`;
 const checkAct = (s) => `loop visual-check ${code(s, `check:${s.checks}`)}`;
 const boundsAct = (s, b) => `loop bounds ${hash6(`${s.lastBounds}:${b.hash}`)}`;
 const killSwitch = () => fs.existsSync(path.join(yesReader.home(), 'autonomy-off'));
@@ -189,12 +191,23 @@ function chain(s, b, handoff, open) {
 	if (s.run && s.halt) stops.push(`run ${s.run.item} is halted: ${s.halt.why}`);
 	else if (s.run) stops.push(`run ${s.run.item} is still open; finish it first`);
 	if (killSwitch()) stops.push('the kill switch autonomy-off is on in the Claude folder');
+	// The count lives in the log, so a broken log is no count (the build 13 review): any break stops it, run or not.
+	if (s.broken) stops.push(`the loop log was changed by hand, so the day's count cannot be trusted: the owner looks first, then answers Yes in the pop-up quoting \`${brokenAct(s)}\`, and node .claude/loop.mjs resume accepts the log as it is`);
+	// A bounds file other than the one last used (a raised cap) applies only on the owner's Yes to it, as start asks.
+	let tap;
+	if (s.lastBounds && s.lastBounds !== b.hash) {
+		const act = boundsAct(s, b);
+		const yes = ownerYes(s, act, new Date(0).toISOString());
+		if (yes.tap) tap = yes.tap;
+		else stops.push(`.claude/bounds.json differs from the one last used, so the owner reads it first: ask in the pop-up, the question quoting \`${act}\` (${yes.why})`);
+	}
 	const cap = b.limits.threadsPerDay;
-	const today = s.chains.filter((t) => Date.now() - Date.parse(t) < 24 * 3600 * 1000).length;
+	// A time that does not read counts as today: an unreadable entry never frees a place under the cap.
+	const today = s.chains.filter((t) => !(Date.now() - Date.parse(t) >= 24 * 3600 * 1000)).length;
 	if (cap === undefined) stops.push('chaining is off: the owner sets limits.threadsPerDay in .claude/bounds.json (a pop-up Yes to that exact edit)');
 	else if (today >= cap) stops.push(`${today} of ${cap} threads opened in the last 24 hours`);
 	if (stops.length) { out(['STOP: the next thread waits for the owner.', ...stops.map((x) => `- ${x}`)].join('\n')); return 1; }
-	if (open) write({ kind: 'chain', next: next.slice(0, 200) });
+	if (open) write({ kind: 'chain', next: next.slice(0, 200), bounds: b.hash, ...(tap ? { tap } : {}) });
 	out(`GO: open the next thread for: ${next}${open ? ` (recorded: ${today + 1} of ${cap} in the last 24 hours)` : ''}`);
 	return 0;
 }
@@ -280,6 +293,13 @@ function main(argv) {
 				: `NEXT ${step.step}: the owner's${step.who !== 'owner' ? ' (the kill switch autonomy-off is on)' : ''}; ${stepAct(s, b, step) ? `ask in the pop-up, the question quoting \`${stepAct(s, b, step)}\`` : 'the plan lock: first record its self-approval line, node .claude/loop.mjs shadow --would yes|no --why "<why>"; then next prints the act to quote'}`);
 		if (cmd === 'show') out(shadowLine(s, b));
 		if (cmd === 'show') out(`Run ${s.run.item}: done ${s.done.join(', ') || 'nothing yet'}; counts ${Object.entries(s.counts).map(([k, n]) => `${k} ${n}`).join(', ') || 'none'}; visual since the last check ${s.visualSince}, the owner's check: \`${checkAct(s)}\``);
+		return 0;
+	}
+	if (cmd === 'resume' && !s.run && s.broken) {
+		const yes = ownerYes(s, brokenAct(s), new Date(0).toISOString());
+		if (!yes.tap) { out(`loop: refused: the log was changed by hand with no run open; the owner accepts it with a Yes quoting \`${brokenAct(s)}\` (${yes.why}). Nothing written.`); return 1; }
+		write({ kind: 'accept', tap: yes.tap });
+		out('loop: the owner accepted the log as it is.');
 		return 0;
 	}
 	if (cmd === 'resume') {
