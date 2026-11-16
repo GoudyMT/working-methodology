@@ -144,6 +144,26 @@ test('a record line that quotes a command with a --flag writes notes the audit p
 	assert.equal(dashes('~~~\nnode x --flag\n~~~\n'), 0, 'a flag in a tilde fence');
 });
 
+// K102 (build 13, reproduced on the installed 1.38.0 audit): the record check reads its tool words outside code
+// spans, but the notes audit read them everywhere, so a line naming `.claude/loop-state.json` passed the record and
+// failed the notes as "AI or tool reference"; the 1.38.0 line was reworded by hand. Same class as K96.
+// why: catches release notes the record writes that the notes audit then refuses on a path in code
+test('a record line that names a .claude path in code writes notes the audit passes; a tool word in prose still fails', () => {
+	const rec = record();
+	rec.items[0].text = 'The loop keeps its state in `.claude/loop-state.json`, beside the bounds file.';
+	assert.deepEqual(problems(rec), []);
+	const dir = kitTemp.makeTemp('notes-');
+	const audit = (text) => { const f = path.join(dir, 'notes.md'); fs.writeFileSync(f, text); return spawnSync(process.execPath, [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.2.0'], { encoding: 'utf8', cwd: dir }); };
+	const r = audit(notes(rec));
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.equal(audit(`${notes(rec)}\n\n\`\`\`bash\nnode ~/.claude/kit-tools/use-check.mjs\n\`\`\`\n`).status, 0, 'a .claude path in a code block failed');
+	const tools = (tail) => (audit(`${notes(rec)}\n${tail}`).stdout.match(/AI or tool reference/g) || []).length;
+	assert.equal(tools('Claude wrote the loop.\n'), 1, 'a tool word in prose passed');
+	assert.equal(tools('Run `install` with Claude beside it.\n'), 1, 'a tool word beside a span passed');
+	assert.equal(tools('This was drafted by an agent.\n'), 1, 'how-it-was-made phrasing passed');
+	assert.equal(tools('```x``` names it; Claude helped.\n'), 1, 'an inline span read as a fence hid prose');
+});
+
 // why: guards the owner's pick of E14, 2026-11-15: the notes command prints the draft, and its upgrading and limits
 // lines are held to the same prose rules as the rest of the record.
 test('build-record notes prints the draft, and the upgrading and limits lines are audited as prose', () => {

@@ -34,12 +34,15 @@ lines.forEach((l, i) => {
   }
   const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
   if (open && !(open[1][0] === '`' && open[2].includes('`'))) { fence = open[1]; return; }
-  if (/(^|[^-])--([^-]|$)/.test(spanless(l))) faults.push(`line ${i + 1}: double hyphen (public prose is dash-free)`);
+  const prose = spanless(l);
+  if (/(^|[^-])--([^-]|$)/.test(prose)) faults.push(`line ${i + 1}: double hyphen (public prose is dash-free)`);
+  // How the release was made is never public prose: tool names, agent words, and "written by AI" phrasing. A product
+  // feature that uses AI ("answers with your own AI key") is a claim about the product, so bare "AI" is not flagged.
+  // K102 (build 13): read in prose only, as the dash rule and the build record's word check read it, so a path in
+  // code such as `.claude/loop-state.json` is code, not a tool reference.
+  if (/\b(Claude|ChatGPT|GPT-?\d*|Copilot|subagents?|coding agents?|AI agents?|assistant model|language model)\b/i.test(prose)) faults.push(`line ${i + 1}: AI or tool reference`);
+  if (/\b(written|generated|built|reviewed|drafted|made|coded) (by|with) (an? )?(AI|LLM|model|agent)/i.test(prose)) faults.push(`line ${i + 1}: AI or tool reference (how it was made)`);
 });
-// How the release was made is never public prose: tool names, agent words, and "written by AI" phrasing. A product
-// feature that uses AI ("answers with your own AI key") is a claim about the product, so bare "AI" is not flagged.
-each(/\b(Claude|ChatGPT|GPT-?\d*|Copilot|subagents?|coding agents?|AI agents?|assistant model|language model)\b/i, 'AI or tool reference');
-each(/\b(written|generated|built|reviewed|drafted|made|coded) (by|with) (an? )?(AI|LLM|model|agent)/i, 'AI or tool reference (how it was made)');
 each(/\]\((?:\.\.?\/)*(?:_|docs\/(?:plans|sweeps|superpowers)\/)[^)]*\)/, 'link into gitignored notes');
 each(/\b\d[\d,]* (?:tests?|mutants?|findings?)\b|\b(?:fixed|closed|resolved) \d[\d,]* (?:bugs?|issues?|defects?)\b|\b(?:vitest|playwright|eslint|test suite|lint)\b/i, 'test or tooling tally (say what users get)');
 
