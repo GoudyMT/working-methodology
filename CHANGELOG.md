@@ -2,7 +2,7 @@
 
 ## 1.38.0 - 2026-11-16
 
-A build loop now runs under a script that keeps its steps in order, counts the stops that have a number, and halts with a triage card only the owner's Yes clears, within a bounds file the owner signs. Chained kit scripts run, a deleted project's record can be cleared, and a Yes whose question names its shell counts before any try.
+A build loop now runs under a script that keeps its steps in order, counts the stops that have a number and halts until the owner says go on, within a bounds file the owner signs.
 
 ### Added
 - `node .claude/loop.mjs` keeps a build loop's state in the git folder, says the one next step, refuses a step out of order or with no evidence, and needs the owner's Yes, in the session the hooks record, after an owner's step opened.

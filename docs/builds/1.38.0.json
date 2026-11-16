@@ -4,7 +4,7 @@
  "level": "minor",
  "area": "Loop",
  "title": "feat: a loop driver keeps the build loop's steps and stops",
- "headline": "A build loop now runs under a script that keeps its steps in order, counts the stops that have a number, and halts with a triage card only the owner's Yes clears, within a bounds file the owner signs. Chained kit scripts run, a deleted project's record can be cleared, and a Yes whose question names its shell counts before any try.",
+ "headline": "A build loop now runs under a script that keeps its steps in order, counts the stops that have a number and halts until the owner says go on, within a bounds file the owner signs.",
  "alignment": "v1.38.0 is step T7 of the v2.0 plan, slice 1: the loop driver and the bounds file, with the carry-overs of build 11 closed in the same release.",
  "items": [
   {
@@ -104,11 +104,11 @@
  "decisions": [
   {
    "decision": "The loop driver is a kit script, not a native workflow or the built-in loop",
-   "why": "Workflows and /loop keep no counters and hold no stop across a compaction; a script both can call keeps the state in the git folder."
+   "why": "Workflows and /loop keep no counters and hold no stop across a compaction; both can call a script."
   },
   {
    "decision": "A Yes asked before the act was tried binds only to a shell its question names",
-   "why": "The same text does other things in Bash and PowerShell (git rm -r *.log), so a Yes naming no shell still waits for a held try; naming the shell saves the second tap."
+   "why": "The same text does other things in Bash and PowerShell, so a Yes naming no shell still waits for a held try."
   }
  ],
  "upgrading": "Run `install user` first, then `install project` in each project. A project gets `.claude/bounds.json` once; edit it only through a pop-up Yes to the exact edit.",
