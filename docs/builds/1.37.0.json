@@ -40,7 +40,7 @@
   {
    "id": "METER",
    "kind": "fixed",
-   "text": "The call-cap hook stops a reviewer while the refused call and the report still fit under its call cap and token ceiling; a reviewer the hook stopped late is named so, not as unhooked.",
+   "text": "The call-cap hook stops a reviewer while the refused call and the report still fit under its cap and ceiling, counts only the calls before this one, and reserves for a growing context.",
    "evidence": "tests/kit.test.mjs",
    "where": "A reviewer at its ceiling",
    "before": "Up to 18% past it",
@@ -49,19 +49,19 @@
   {
    "id": "REWRITES",
    "kind": "fixed",
-   "text": "The cache re-write trip counts only a call that read back under half of the context before it; a large batch of new results is no re-write.",
+   "text": "The cache re-write trip counts only a call that read back less than the context before it after a gap of 5 minutes or more, the time the cache lives; a large batch of new results or a trimmed context is no re-write.",
    "evidence": "tests/kit.test.mjs"
   },
   {
    "id": "K87",
    "kind": "fixed",
-   "text": "A kit script followed by another command (`&& ls`, `; git status`, `; Get-ChildItem`) is no longer held as a write to a protected file; only what runs before a program can stand in for it.",
+   "text": "A kit script followed by another command (`&& ls`, `; git status`, `; Get-ChildItem`) is no longer held as a write to a protected file; a later command that reuses its path (`$_`, `-OutVariable`, a script block) still is.",
    "evidence": "tests/guards-hold.test.mjs"
   },
   {
    "id": "K81",
    "kind": "fixed",
-   "text": "install user drops the guard record of a project folder that no longer exists, so the guard reads only the projects that exist.",
+   "text": "install user names the guard record of a project folder that no longer exists, and `kit.mjs forget <folder>` removes it once the folder is gone; install never deletes a record itself.",
    "evidence": "tests/guards-outside.test.mjs"
   },
   {
@@ -81,12 +81,39 @@
    "kind": "security",
    "text": "The release check lists the remote's tags only at a GitHub https address and from outside the kit folder, so no program the kit folder's git config names can run.",
    "evidence": "tests/kit.test.mjs"
+  },
+  {
+   "id": "BRACES",
+   "kind": "security",
+   "text": "The guard reads a command's braces as bash does, nested lists, signed ranges, quotes and stray braces included, in one bounded pass, so a brace list cannot hide which kit project a command names.",
+   "evidence": "tests/guards-outside.test.mjs"
+  },
+  {
+   "id": "TAP",
+   "kind": "added",
+   "text": "A refused yes or resume says when the owner's Yes named the act without backticks, and `approve.mjs --tap \"<act>\"` checks a Yes before the owner is handed a command, without using it.",
+   "evidence": "tests/kit.test.mjs",
+   "where": "Resuming auto-approval",
+   "before": "A bare refusal",
+   "after": "The cause named"
+  },
+  {
+   "id": "CHECKER",
+   "kind": "changed",
+   "text": "The read-only unit review in a team build runs at high effort, not xhigh (the owner, 2026-11-16: twice the cost found under a quarter more).",
+   "evidence": "user/agents/checker.md"
+  },
+  {
+   "id": "PUSHBOUND",
+   "kind": "changed",
+   "text": "The push bound names opening the feature branch's PR in its own definition, and an answer about pushing or a PR names both acts and the four limits.",
+   "evidence": "docs/migrations/1.37.0-reworded.json"
   }
  ],
  "verification": [
   "Each fix has a test that fails on 1.36.1 and passes here.",
   "Replayed on a real 1.36.0 reviewer's call sizes, the hook stops it where the refused call and the report land under its ceiling.",
-  "Read against the 1.36.0 and 1.36.1 reviewer transcripts, the new re-write count finds no expired cache in 13 roles."
+  "Recall: the candidate median is recorded in docs/evals/results/recall-scores.md against the 1.36.1 baseline of 12."
  ],
  "decisions": [
   {
@@ -96,14 +123,54 @@
   {
    "decision": "The release check lists tags, it does not fetch",
    "why": "A fetch inside the kit folder ran a program its git config named (the push security review); a listing of a GitHub https address reads no repo config and writes nothing."
+  },
+  {
+   "decision": "A record of a missing project folder is named, never removed by install",
+   "why": "A folder on an unplugged drive is missing too; removing its record lost the owner's accept history (the sweep). Removal is a separate forget step, run once the folder is truly gone."
   }
  ],
  "sweep": {
-  "tier": "Feature",
-  "commit": "pending",
-  "dimensions": [],
-  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
-  "fixed": [],
+  "tier": "Feature (security-sensitive, user data)",
+  "commit": "161b296",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Records and memory stay on the machine; install names a missing record and never removes one"
+   },
+   {
+    "name": "Supply chain",
+    "result": "The release listing reads only a GitHub https address, with no git config, fixed"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Protected writes beside a kit script, brace reading, report forging, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "The meter margins, record loss, pins and test gaps, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 1,
+   "high": 9,
+   "medium": 9,
+   "low": 10
+  },
+  "fixed": [
+   "A later command could reuse an exempt kit script's protected path (`$_`, `-OutVariable`, a script block). Fixed in 5efed38 and 5085f64.",
+   "Install deleted the record, shims and accept history of a project folder it could not reach. Fixed in e0aee64.",
+   "A link inside a project let install remove a file outside it. Fixed in 3fa5876.",
+   "A refused report still counted, and one unreadable report switched off the count check for every role. Fixed in a96c323.",
+   "Six test lines pinned whole sentences, and the release listing test passed on the old kit. Fixed in a96c323 and 3f4c0dd."
+  ],
   "deferred": [],
   "accepted": []
  },

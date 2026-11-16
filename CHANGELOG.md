@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.37.0 - 2026-11-16
+
+A sweep's briefs are written from its cleared contract, each reviewer's report is checked for shape, and the findings are counted from the reports. The call cap and token ceiling now stop a reviewer in time, the cache trip counts only expired cache, and install keeps files it used to lose.
+
+### Added
+- A cleared sweep contract writes each role's brief beside it: the rules block by line range, the sweep, cap and ceiling lines, the role's diff, a scratch folder of its own and the report shape.
+- A reviewer's hand-back is checked once for its report shape (a role line, one five-field line per finding or No findings, and what it did not check); the second try goes through.
+- A sweep's outcome counts the findings from the reviewers' reports, writes a ledger beside the contract, and refuses a typed count that differs.
+- The release check can read a verify's result file, and passes only when one number it recorded was run again and matched.
+- A refused yes or resume says when the owner's Yes named the act without backticks, and `approve.mjs --tap "<act>"` checks a Yes before the owner is handed a command, without using it.
+
+### Changed
+- The read-only unit review in a team build runs at high effort, not xhigh (the owner, 2026-11-16: twice the cost found under a quarter more).
+- The push bound names opening the feature branch's PR in its own definition, and an answer about pushing or a PR names both acts and the four limits.
+
+### Fixed
+- The call-cap hook stops a reviewer while the refused call and the report still fit under its cap and ceiling, counts only the calls before this one, and reserves for a growing context.
+- The cache re-write trip counts only a call that read back less than the context before it after a gap of 5 minutes or more, the time the cache lives; a large batch of new results or a trimmed context is no re-write.
+- A kit script followed by another command (`&& ls`, `; git status`, `; Get-ChildItem`) is no longer held as a write to a protected file; a later command that reuses its path (`$_`, `-OutVariable`, a script block) still is.
+- install user names the guard record of a project folder that no longer exists, and `kit.mjs forget <folder>` removes it once the folder is gone; install never deletes a record itself.
+- Status and session start name a newer release on GitHub, and a file kept from an unreleased build with the step that clears it; the install user fix line quotes the kit folder.
+- Install keeps a memory file the owner's MEMORY.md still links, keeps a file the kit renamed by case alone, and never removes a file outside its folder.
+
+### Security
+- The release check lists the remote's tags only at a GitHub https address and from outside the kit folder, so no program the kit folder's git config names can run.
+- The guard reads a command's braces as bash does, nested lists, signed ranges, quotes and stray braces included, in one bounded pass, so a brace list cannot hide which kit project a command names.
+
 ## 1.36.1 - 2026-11-16
 
 A project whose improvement list is already data can now move its checkbox roadmap in, so the 1.36.0 use check has a way out. Install no longer merges a project's own state, list and decisions, and the guards close a way past them that bracketed PowerShell arguments opened.
