@@ -4534,7 +4534,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   };
   const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
     'H1 area does not repeat the subject', 'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
-    'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'review names the sweep tier', 'no spaced dashes in prose',
+    'Changes / Gates / Notes, in order', 'no Visuals section in a Lean body', 'every gate ticked', 'review names the dimensions', 'review names the sweep tier', 'no spaced dashes in prose',
     'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
   const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
   const NOTES = '**Notes** - Tooling only; the app does not change.';
@@ -8515,7 +8515,7 @@ test('install user lands the merge gate and its audits at the paths the rules gi
   const home = makeTemp('tools-home-');
   install({ kit: path.resolve('.'), home, target: 'user' });
   assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'merge-gate.mjs')));
-  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs']) {
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs']) {
     assert.equal(read(path.join(home, 'kit-tools', 'audits', f)), read(path.resolve('project/.claude', f)), f);
   }
   // The gate imports its temp helper from beside it: without the copy, the installed gate cannot start at all.

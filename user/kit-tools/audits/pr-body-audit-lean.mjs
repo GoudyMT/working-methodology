@@ -45,6 +45,8 @@ row('framing summary before Changes', framing.length > 0, `${framing.split('\n')
 
 const at = ['**Changes**', '**Gates**', '**Notes** - '].map((s) => body.indexOf(s));
 row('Changes / Gates / Notes, in order', at.every((n, i) => n > 0 && (i === 0 || n > at[i - 1])), JSON.stringify(at));
+// K125: a smaller PR that moves a number states it in its gate line; the Visuals section is the Standard body's.
+row('no Visuals section in a Lean body', !/^#{2,3} Visuals$|<summary>Visuals:/m.test(body), 'a moved number goes in its gate line');
 
 const gates = body.slice(at[1], at[2]).split('\n').filter((l) => l.startsWith('- ['));
 row('every gate ticked', gates.length > 0 && gates.every((l) => l.startsWith('- [x]')), `${gates.length} gates`);

@@ -1848,7 +1848,7 @@ export function build({ kit }) {
   const rows = mods.flatMap((m) => headings(m.body).map((h) => `| ${h.id} | ${h.title} | \`${where(m)}\` | ${(m.meta.tags[h.id] || []).join(', ')} |`));
   // The merge gate and the PR-text guard need the PR-body audits and the name check where no branch or session can edit
   // them: a kit-local project keeps .claude/ out of git, so its base holds none. An exact copy, so the two cannot drift.
-  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs']) {
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs']) {
     out.set(`user/kit-tools/audits/${f}`, fs.readFileSync(path.join(kit, 'project', '.claude', f), 'utf8'));
   }
   // The merge gate makes its temp folders through the one helper; the same exact-copy rule keeps them alike.

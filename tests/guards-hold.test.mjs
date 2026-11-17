@@ -17,7 +17,7 @@ const cfg = kitTemp.makeTemp('cfg-');
 // The PR-text guard reads the copy install user keeps in the Claude folder (user/kit-tools/audits).
 fs.mkdirSync(path.join(cfg, 'kit-tools', 'audits'), { recursive: true });
 for (const f of fs.readdirSync(path.resolve('user/kit-tools/audits'))) fs.copyFileSync(path.resolve('user/kit-tools/audits', f), path.join(cfg, 'kit-tools', 'audits', f));
-const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs'];
+const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs'];
 const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
 	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
 	'- [x] Settings only; CI green on the head.', '- [x] Triage tier review: privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');

@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { carriesPhrase } from './canary-phrase.mjs';
 import { versionBumpCheck } from './version-bump-check.mjs';
 import { attributionFaults, entities } from './no-attribution.mjs';
+import { checkSection } from './visuals.mjs';
 
 // The large-PR body audit: a feature or large PR body that is detailed but not a text wall. The
 // changes read as a before / after table; decisions and the review stay on screen. T13 (the owner, 2026-11-10): what
@@ -72,7 +73,8 @@ const stem = (w) => String(w || '').toLowerCase().replace(/[^a-z0-9]/g, '').repl
 const area = (/^## ([^:]+):/.exec(lines[0]) || [])[1] || '';
 row('H1 area does not repeat the subject', !area || stem(area.split(/\s+/).pop()) !== stem(subject.split(/\s+/)[0]), `${area} / ${subject.split(/\s+/)[0] || ''}`);
 
-const long = lines.map((l, i) => [i + 1, l]).filter(([, l]) => !isTable(l) && l.length > 110).map(([n, l]) => [n, l.length]);
+// A chart image line is a link, not prose (K125).
+const long = lines.map((l, i) => [i + 1, l]).filter(([, l]) => !isTable(l) && !/^!\[/.test(l) && l.length > 110).map(([n, l]) => [n, l.length]);
 row('every prose line <= 110 (tables exempt)', long.length === 0, long.length ? `over: ${JSON.stringify(long)}` : 'none over');
 
 const nonAscii = [...body].filter((c) => c.charCodeAt(0) > 0x7e || (c.charCodeAt(0) < 0x20 && c !== '\n' && c !== '\r'));
@@ -81,7 +83,9 @@ row('0 non-ASCII characters', nonAscii.length === 0, `found ${nonAscii.length}`)
 const banned = [/\bAI\b/, /\bagents?\b/i, /\bsubagents?\b/i, /\bclaude\b/i, /\banthropic\b/i, /\bswarm\b/i, /\bopus\b/i, /\bsonnet\b/i, /\bbuilders?\b/i, /\bcheckers?\b/i, /\bLLM\b/];
 // K115 (1.42.0): a code span that quotes a path or a command (it holds a slash, a dot, a space or a dash) is code, so
 // its words pass; a span of one bare word is still that word on the page.
-const prose = (l) => l.replace(/`[^`]*`/g, (s) => (/[/. -]/.test(s.slice(1, -1)) ? '``' : s));
+// K125 (1.42.0): a file named in prose (AGENTS.md, .claude/x) is a name, not a word, as the release audit reads it.
+const prose = (l) => l.replace(/`[^`]*`/g, (s) => (/[/. -]/.test(s.slice(1, -1)) ? '``' : s))
+	.replace(/[^\s`'"()<>]*[/\\][^\s`'"()<>]*|\b[\w-]+\.(md|mjs|cjs|js|json|ya?ml|txt|sh|ps1|py|ts)\b/g, ' ');
 const bannedHits = banned.flatMap((re) => lines.flatMap((l, i) => (re.test(prose(l)) ? [`${re} @${i + 1}`] : [])));
 row('no mechanism or AI words', bannedHits.length === 0, bannedHits.join(', ') || 'none');
 
@@ -91,7 +95,11 @@ row('no vault paths', vaultHits.length === 0, vaultHits.length ? `lines ${vaultH
 
 const sections = lines.filter((l) => l.startsWith('### ')).map((l) => l.slice(4));
 const wanted = ['Summary', 'Design decisions', 'Verification', 'Review'];
-row('the four ### sections, in order', JSON.stringify(sections) === JSON.stringify(wanted), sections.join(' / '));
+// K125: Visuals is the one optional fifth section, after Review, and its numbers are checked by the script that writes
+// it (rule:pr-body).
+row('the four ### sections, in order', [wanted, [...wanted, 'Visuals']].some((w) => JSON.stringify(sections) === JSON.stringify(w)), sections.join(' / '));
+const visualsFaults = checkSection(body, '###');
+row('Visuals: numbers, chart and why lines check out', visualsFaults.length === 0, visualsFaults.join('; ') || (sections.includes('Visuals') || /<summary>Visuals:/.test(body) ? 'checked' : 'no section'));
 
 const framing = body.slice(body.indexOf('\n') + 1, body.indexOf('### Summary')).trim();
 row('framing of 1-3 lines before Summary', framing.length > 0 && !framing.startsWith('#') && framing.split('\n').length <= 3, `${framing.split('\n').length} lines`);
@@ -150,8 +158,10 @@ row(`every bullet <= ${BULLET_MAX} chars`, longBullets.length === 0, longBullets
 // large PRs in a new project have measured.
 const TOTAL_MAX = 1550;
 const VISIBLE_MAX = 850;
-const total = wordCount(body);
-const visible = wordCount(visibleText(body));
+// The Visuals section has its own caps (6 rows, 3 bars, a why line per row), so it is left out of both ceilings.
+const counted = body.replace(/\n### Visuals\n[\s\S]*$/, '\n').replace(/<details>\n<summary>Visuals:[^\n]*<\/summary>\n[\s\S]*?\n<\/details>/g, '');
+const total = wordCount(counted);
+const visible = wordCount(visibleText(counted));
 row(`size: at most ${TOTAL_MAX} words in all`, total <= TOTAL_MAX, `${total} words`);
 row(`size: at most ${VISIBLE_MAX} words on screen`, visible <= VISIBLE_MAX, `${visible} words`);
 

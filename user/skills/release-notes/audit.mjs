@@ -111,6 +111,12 @@ function startsLine(body) {
   if (/claude-projects-attribution/i.test(body) || [prose, unbroken(prose)].some((p) => startsLine(p) || STYLED.test(p))) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
 }
 
+// K125: a Visuals section is checked by the script that writes it, kept beside the PR audits in the Claude folder.
+if (/^## Visuals$/m.test(text)) {
+  const { checkSection } = await import(new URL('../../kit-tools/audits/visuals.mjs', import.meta.url).href);
+  faults.push(...checkSection(text, '##'));
+}
+
 const pkg = path.join(process.cwd(), 'package.json');
 if (fs.existsSync(pkg)) {
   const want = JSON.parse(fs.readFileSync(pkg, 'utf8')).version;
