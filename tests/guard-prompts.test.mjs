@@ -77,7 +77,9 @@ test('a delete after a glued cd (cd.., cd\\) is read as outside the project; the
 // delete after a bare-name cd is read as after an unknown move; a ./ cd and no CDPATH read as before.
 // why: guards rule:outward-acts
 test('a bare-name cd beside CDPATH is an unknown move, so a delete after it waits', () => {
-	for (const c of ['CDPATH=.. cd project && rm -rf tmpx', 'export CDPATH=..; cd project; rm -rf tmpx']) assert.equal(hook('guard-delete.cjs', c), 'deny', c);
+	// The commit security review: a quoted or escaped spelling sets the same variable, and a drive or backslash name is
+	// still looked up in CDPATH by Git Bash.
+	for (const c of ['CDPATH=.. cd project && rm -rf tmpx', 'export CDPATH=..; cd project; rm -rf tmpx', 'export C"D"PATH=..; cd project; rm -rf tmpx', 'export CD\\PATH=..; cd project; rm -rf tmpx', 'CDPATH=.. cd C:project && rm -rf tmpx']) assert.equal(hook('guard-delete.cjs', c), 'deny', c);
 	assert.equal(hook('guard-delete.cjs', 'cd project && rm -rf tmpx'), 'pass');
 	assert.equal(hook('guard-delete.cjs', 'CDPATH=.. cd ./project && rm -rf tmpx'), 'pass');
 	const env = { ...process.env, CDPATH: '..' };
