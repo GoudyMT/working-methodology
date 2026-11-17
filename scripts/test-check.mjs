@@ -14,7 +14,8 @@
 //                       <the real failure> in six words or more (tests/test-format.test.mjs holds every test to it).
 //   A new test in a file the base lacks fails first when that file cannot load there; a loop that makes tests is one
 //   unit, run by its file.
-// It reports, and exits 0, until the owner makes it required (--strict: exit 1 on any finding). Exit 2: it could not run.
+// CI runs it with --strict (K24): exit 1 on any finding but a test the time budget left unmeasured, which is named
+// only. Without --strict it reports and exits 0. Exit 2: it could not run.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -272,7 +273,9 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	const lines = [`Test check: ${newOrChanged.length} new or changed test(s) since ${baseSha.slice(0, 9)}, ${findings.length} finding(s)`];
 	for (const f of findings) lines.push(`    ${f.rule} ${f.key}: ${f.text}`);
 	if (record && ledger.length) lines.push(`Fix ledger: ${record.length} fix(es)`, ...ledger);
-	return { code: strict && findings.length ? 1 : 0, text: lines.join('\n'), findings };
+	// K24 (the owner, 2026-11-17): strict fails on a real finding; a test the time budget left unmeasured is named only.
+	const real = findings.filter((f) => !/the time budget ran out$/.test(f.text));
+	return { code: strict && real.length ? 1 : 0, text: lines.join('\n'), findings };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

@@ -63,9 +63,11 @@ test('CI checks the build record on every PR that moves VERSION', () => {
 	assert.match(step, /git show "\$PR_BASE:scripts\/pr-scope\.mjs" > "\$RUNNER_TEMP\/pr-scope\.mjs"/);
 	assert.match(step, /node "\$RUNNER_TEMP\/pr-scope\.mjs" --install "\$PR_BASE"[^\n]*install=false[^\n]*exit 1/);
 	// K105: the same PR's fix ledger is read by the test check, which states each named test's verdict.
-	const check = ci.split('- name: Test check (report)\n')[1].split('- name:')[0];
+	const check = ci.split('- name: Test check\n')[1].split('- name:')[0];
 	assert.match(check, /if ! git diff --quiet "\$BASE_SHA" HEAD -- VERSION; then record=\(--record "docs\/builds\/\$\(tr -d '\\r\\n' < VERSION\)\.json"\); fi/); // pin: 1
 	assert.match(check, /test-check\.mjs "\$BASE_SHA" [^\n]*"\$\{record\[@\]\}"/);
+	// K24 (the owner, 2026-11-17): the check is a gate, so a finding fails the job.
+	assert.match(check, /test-check\.mjs "\$BASE_SHA" --strict /);
 });
 
 // why: guards rule:release-notes (the changelog a release ships is the one its record writes, for the version it names).

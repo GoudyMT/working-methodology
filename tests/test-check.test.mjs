@@ -278,3 +278,19 @@ test('a test whose only change is its comment lines gets the why line check only
 	const s = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~3')], { cwd: dir, encoding: 'utf8' });
 	assert.match(s.stdout, /A6 tests\/a\.test\.mjs::one is positive: /, 'a comment-only change to a bad why line was not named');
 });
+
+// why: guards the owner's K24 ruling (2026-11-17, "Required; unmeasured is named only"): the required check fails on
+// a real finding, while a test the time budget left unmeasured is named and does not fail it.
+test('strict mode fails on a finding but only names a test the time budget left unmeasured', () => {
+	const dir = repo();
+	fs.appendFileSync(path.join(dir, 'src', 'a.cjs'), 'exports.neg = (x) => x < 0;\n');
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "// why: catches minus one read as not negative, a real bug\ntest('minus one is negative', () => { assert.equal(a.neg(-1), true); });\n");
+	sh(dir, 'commit', '-qam', 'neg');
+	const base = sh(dir, 'rev-parse', 'HEAD~1');
+	const r = spawnSync(process.execPath, [CHECK, base, '--strict', '--budget', '0'], { cwd: dir, encoding: 'utf8' });
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: not checked: the time budget ran out/);
+	assert.equal(r.status, 0, `a budget-out alone failed strict: ${r.stdout}`);
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('an untagged one', () => { assert.equal(a.neg(-2), true); });\n");
+	sh(dir, 'commit', '-qam', 'untagged');
+	assert.equal(spawnSync(process.execPath, [CHECK, base, '--strict', '--budget', '0'], { cwd: dir, encoding: 'utf8' }).status, 1, 'a real finding beside a budget-out passed strict');
+});

@@ -103,8 +103,8 @@ jobs:
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
         run: node scripts/test-run.mjs --changed --shards 4 --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
 
-  # T15 Part A: each test the PR adds or changes, held to the bar for a new test. It reports to the run's summary and
-  # is not required until the owner locks it.
+  # T15 Part A: each test the PR adds or changes, held to the bar for a new test. Strict since K24 (the owner,
+  # 2026-11-17): a finding fails the job; a test the time budget left unmeasured is named only.
   test-check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -134,7 +134,7 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
-      - name: Test check (report)
+      - name: Test check
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -143,7 +143,7 @@ jobs:
         run: |
           record=()
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
-          node scripts/test-check.mjs "$BASE_SHA" --slice "$SLICE/4" --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          node scripts/test-check.mjs "$BASE_SHA" --strict --slice "$SLICE/4" --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.

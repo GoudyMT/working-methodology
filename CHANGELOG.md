@@ -14,6 +14,7 @@ A fix now needs a test that fails first when it is high, critical, security or a
 
 ### Changed
 - A high, critical, security or owner-rule fix ships with a test that fails before it; a low or medium one gets a test only when a real input shows the problem, and its ledger row says `no test: no real input`.
+- The kit's CI runs the test check strict: a finding fails the job, and a test its time budget left unmeasured is named only.
 - A PR's changed run adds the security tests itself, so each runs once, and runs the whole suite when the change reaches over half of it.
 
 ### Fixed
