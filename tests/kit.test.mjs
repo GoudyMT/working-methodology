@@ -1688,6 +1688,15 @@ test('session start on a resumed session whose task the closeout closed says to 
   fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T10:00:00.000Z\nsession: -\nclosed: 2026-11-17T10:00:00.000Z\n');
   assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'resume' }), /closed its task[\s\S]*\/clear/);
   for (const source of ['startup', 'clear', 'compact']) assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source }), /closed its task/, source);
+  // The build 16 sweep: the mark was tied to no session, so a session started after the close (on its own new task)
+  // was told to clear its open work when it was resumed. Only a session that began before the close is told.
+  fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T11:00:00.000Z\nsession: -\nclosed: 2026-11-17T11:00:00.000Z\n');
+  sessionStartReport({ kit, home, projectDir: proj, source: 'clear', session: 's2' });
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'resume', session: 's2' }), /closed its task/, 'a session begun after the close');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'resume', session: 's1' }), /closed its task/, 'the session that closed');
+  // A new close starts the list again.
+  fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T12:00:00.000Z\nsession: -\nclosed: 2026-11-17T12:00:00.000Z\n');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'resume', session: 's2' }), /closed its task/, 's2 closed its own task');
 });
 
 // The old single standards file is gone from the kit. A mention of it is allowed only where the kit speaks of a

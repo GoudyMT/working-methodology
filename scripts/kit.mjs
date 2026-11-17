@@ -1324,7 +1324,7 @@ function doubleRunLines(projectDir) {
  * Returns:
  *     the message text (one or more lines)
  */
-export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
+export function sessionStartReport({ kit, home, projectDir, source, session, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
   const lines = [];
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old.line);
@@ -1335,11 +1335,21 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
   // K112 (1.42.0): a resumed session re-reads its whole old context after each idle gap; once a closeout closed the
   // task, the next task starts fresh from the packet.
-  if (source === 'resume') {
+  // The build 16 sweep: the mark names no session, so each session that starts after the close (a fresh start or a
+  // /clear) is listed beside it, and a resumed session on that list began its own task and is told nothing.
+  if (['resume', 'startup', 'clear'].includes(source)) {
     let packet = '';
     try { packet = fs.readFileSync(path.join(projectDir, '.kit', 'resume-packet.md'), 'utf8'); } catch { /* none */ }
     const closed = /^closed: (\S+)$/m.exec(packet);
-    if (closed) lines.push(`The last closeout closed its task (${closed[1]}). A resumed session re-reads all of its old context: for the next task the owner types /clear (a CLI or Code session; a project thread closes when its work is done), then run node .claude/resume-packet.mjs check.`);
+    const listFile = path.join(projectDir, '.kit', 'after-close.json');
+    let after = { closed: '', sessions: [] };
+    try { after = JSON.parse(fs.readFileSync(listFile, 'utf8')); } catch { /* none yet */ }
+    const since = closed && after.closed === closed[1] ? after.sessions : [];
+    const sid = String(session || '').replace(/[^\w.-]/g, '').slice(0, 64);
+    if (closed && source !== 'resume' && sid && !since.includes(sid)) {
+      try { fs.writeFileSync(listFile, `${JSON.stringify({ closed: closed[1], sessions: [...since, sid].slice(-50) })}\n`); } catch { /* the note is only a hint */ }
+    }
+    if (closed && source === 'resume' && !since.includes(sid)) lines.push(`The last closeout closed its task (${closed[1]}). A resumed session re-reads all of its old context: for the next task the owner types /clear (a CLI or Code session; a project thread closes when its work is done), then run node .claude/resume-packet.mjs check.`);
   }
   const ahead = remote(kit);
   if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run /methodology-kit update.`);
