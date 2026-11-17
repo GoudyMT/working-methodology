@@ -7042,6 +7042,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   const dir = makeTemp('gate-');
   const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+  const headSha = () => spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
   git('init', '-q', '-b', 'main');
   put('rules/core.md', 'a\n');
   // The gate reads the ruler from the head commit, so the repo carries the kit's own.
@@ -7057,7 +7058,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   assert.equal(noScore.status, 1, noScore.stdout + noScore.stderr);
   const keys = read(path.resolve('docs/evals/recall-questions.md')).match(/^Current version: v(\d+)$/m)[1];
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md')).match(/^Current version: v(\d+)$/m)[1];
-  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys} control 0\n`);
+  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys} control 0\nscored: ${headSha()}\n`);
   git('commit', '-qam', 'scores');
   const scored = gate();
   assert.equal(scored.status, 0, scored.stdout + scored.stderr);
@@ -7077,8 +7078,9 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
     git('commit', '-qam', 'base of ' + name);
     git('tag', name + '-base');
     put('rules/core.md', name + '\n');
-    put(scores, `# Scores\n\n${base}\n${entry}\n`);
     git('commit', '-qam', name);
+    put(scores, `# Scores\n\n${base}\n${entry}\nscored: ${headSha()}\n`);
+    git('commit', '-qam', 'scores of ' + name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
   const second = round('two-baselines', `gate: a median 9 baseline 8 ${now}\ngate: b median 9 baseline 9 ${now}`, `gate: c median ${bar} baseline 8 ${now}`);
@@ -7103,8 +7105,9 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
     git('tag', name + '-base');
     put(rel, read(path.resolve(rel)));
     put('rules/core.md', name + '\n');
-    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median ${bar} baseline 9 ${now}\n`);
     git('commit', '-qam', name);
+    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median ${bar} baseline 9 ${now}\nscored: ${headSha()}\n`);
+    git('commit', '-qam', 'scores of ' + name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
   const older = onRuler('older-ruler', 'Current version: v1\n');
