@@ -208,9 +208,15 @@ function svg(title, rows) {
 		const d = m.after - m.before;
 		s += `<text x="${padL}" y="${y + 16}" font-size="14" font-weight="600" fill="${c.fg}">${esc(m.metric)}</text>`;
 		s += `<text x="${W - padL}" y="${y + 16}" font-size="14" font-weight="600" text-anchor="end" fill="${d < 0 ? c.good : c.limit}">${esc(changeText(m.before, m.after, m.unit))}</text>`;
-		if (m.limit) s += `<line x1="${x(m.limit).toFixed(1)}" y1="${y + 22}" x2="${x(m.limit).toFixed(1)}" y2="${y + 76}" stroke="${c.limit}" stroke-width="2" stroke-dasharray="4 3"/>`;
+		if (m.limit) {
+			const lx = x(m.limit).toFixed(1);
+			s += `<line x1="${lx}" y1="${y + 22}" x2="${lx}" y2="${y + 76}" stroke="${c.limit}" stroke-width="2" stroke-dasharray="4 3"/>`;
+			s += `<text x="${lx}" y="${y + 88}" font-size="11" text-anchor="middle" fill="${c.limit}">limit ${esc(fmt(m.limit, m.unit))}</text>`;
+		}
 		[['Before', m.before, c.before, 26], ['After', m.after, c.after, 52]].forEach(([lab, v, col, off]) => {
 			s += `<text x="${padL}" y="${y + off + 14}" font-size="12" fill="${c.muted}">${lab}</text><rect x="${barX}" y="${y + off}" width="${(x(v) - barX).toFixed(1)}" height="20" rx="3" fill="${col}"/>`;
+			// The value sits on a white band, so a limit line behind it never strikes through the number.
+			s += `<rect x="${(x(v) + 4).toFixed(1)}" y="${y + off}" width="${fmt(v, m.unit).length * 8 + 8}" height="20" fill="${c.bg}"/>`;
 			s += `<text x="${(x(v) + 8).toFixed(1)}" y="${y + off + 15}" font-size="13" fill="${c.fg}">${esc(fmt(v, m.unit))}</text>`;
 		});
 	});
