@@ -7425,6 +7425,26 @@ test('a recall run removes what it made, and nothing else', async () => {
   assert.throws(() => removeProbe({ dir: other, home, slug: 'x', osHome: root }), /not a probe folder/);
 });
 
+// The build 15 sweep: two templates still put the feature-branch push and its PR behind the owner's yes, against the
+// push bound (the owner, 2026-11-10 and 2026-11-15), so a session starting from either stopped where no stop is owed.
+// why: guards rule:outward-acts
+test('no rule, template or skill puts the feature-branch push or its PR behind the owner\'s yes', () => {
+  const files = [...ruleFiles(), ...fs.readdirSync(path.resolve('project/_Templates')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('project/_Templates', n)),
+    path.resolve('user/skills/agent-team-build/references/finishing-a-branch.md'), path.resolve('user/skills/pr-body/SKILL.md')];
+  const stops = [/to the owner BEFORE any push or PR/i, /owner's yes: push, PR/i, /only auto-fix's grant pushes/i, /\(the owner runs it\)/i];
+  const hits = files.flatMap((f) => read(f).split('\n').filter((l) => stops.some((s) => s.test(l))).map((l) => `${path.basename(f)}: ${l.slice(0, 80)}`));
+  assert.deepEqual(hits, []);
+});
+
+// The build 15 sweep: in an overlay the host repo owns CLAUDE.md, so "the project CLAUDE.md" read as text any committer
+// writes, ranked above the owner's global file. The order names the kit's own file and the rules no repo file loosens.
+// why: guards rule:instruction-priority
+test('the instruction order names the kit\'s CLAUDE.md and the rules no repo file loosens', () => {
+  const core = read(path.resolve('rules/core.md'));
+  const section = core.slice(core.indexOf('{#instruction-priority}'), core.indexOf('{#owners-rules}'));
+  for (const token of ['CLAUDE.local.md', 'rule:outward-acts', 'rule:security-standards', 'rule:test-integrity']) assert.ok(section.includes(token), token);
+});
+
 // K107 (build 14): removeProbe deleted the probe and its memory but not the guard record install project wrote, so
 // every recall run left one (13 after build 14), and the launcher reads every record on each shell call.
 // why: catches the recall probe's guard record left behind (K107)
