@@ -669,7 +669,8 @@
     "tests/mutation-check.test.mjs",
     "tests/pin-check.test.mjs",
     "tests/rule-map.test.mjs",
-    "tests/test-check.test.mjs"
+    "tests/test-check.test.mjs",
+    "tests/test-format.test.mjs"
    ],
    "workflows": []
   },
