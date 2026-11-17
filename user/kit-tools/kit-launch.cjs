@@ -548,7 +548,9 @@ function namedProjects(input) {
 	// A backslash is a separator on Windows and an escape in a POSIX shell (my\ app is "my app"): both readings count.
 	const spelled = `${decoded} ${made.join(' ')}`;
 	let text = `${norm(spelled)} ${norm(spelled.replace(/\\(.)/g, '$1'))}`;
-	const tokens = [...new Set(text.split(/[\s;&|(){}=,]+/).filter(Boolean))];
+	// A comma ends a word in a PowerShell list (a,b), and is a plain character inside a bracket set ([a,b]pp, K120):
+	// both readings count.
+	const tokens = [...new Set([...text.split(/[\s;&|(){}=,]+/), ...text.split(/[\s;&|(){}=]+/)].filter(Boolean))];
 	// A wildcard (*, ?, [set], [!set], [[:alpha:]]) is compiled once and matched without a regex, in time linear in the
 	// two lengths for each star (the third review). A [ with no ] after it is a plain character, as in the shell.
 	const POSIX = { alpha: /[A-Za-z]/, digit: /[0-9]/, alnum: /[A-Za-z0-9]/, upper: /[A-Z]/, lower: /[a-z]/, space: /\s/, blank: /[ \t]/,
@@ -608,20 +610,29 @@ function namedProjects(input) {
 		// A relative wildcard is read from the session's folder and from every folder the command names, since a cd before
 		// it may have moved there (the 1.33.1 review).
 		let bases = rootLen ? [t.slice(0, rootLen)] : [posix(cwd) + '/', ...dirs.map((d) => posix(d) + '/')];
+		// Every folder a wildcard part matched is named, not only the last part's: a file part after it (A*/x.tx?) matches
+		// no folder, and the project it sits in is still reached.
+		const found = [];
 		for (const seg of t.slice(rootLen).split('/').filter(Boolean)) {
 			if (!isGlob(seg)) { bases = bases.map((b) => b + seg + '/'); continue; }
+			// The folders read are named too (a link on the way, zz/.claude/g*, reaches the project it points into).
+			found.push(...bases);
 			const pat = compile(seg);
 			const next = [];
 			for (const b of bases) {
 				if (++reads > READS_MAX) { unreadable = 'more folder reads than the guard makes for its wildcards'; return []; }
 				let ents = [];
-				try { ents = fs.readdirSync(b); } catch { continue; }
-				for (const e of ents) if (globMatch(pat, fold(e))) next.push(b + e + '/');
+				try { ents = fs.readdirSync(b, { withFileTypes: true }); } catch { continue; }
+				// K120 (1.42.0): only a folder or a link can be or lead into a kit project, so a plain file match is no name
+				// (a wildcard over thousands of files was held). The name is matched as folded and as written: on Windows a
+				// capital class ([[:upper:]]pp) matches App, which the folded app never does.
+				for (const e of ents) if ((e.isDirectory() || e.isSymbolicLink()) && (globMatch(pat, fold(e.name)) || globMatch(pat, e.name))) next.push(b + e.name + '/');
 				if (next.length > GLOB_MAX) { unreadable = `more than ${GLOB_MAX} matches for its wildcards`; return []; }
 			}
 			bases = next;
+			found.push(...next);
 		}
-		return bases.map((b) => b.replace(/\/$/, ''));
+		return [...new Set([...found, ...bases])].map((b) => b.replace(/\/$/, ''));
 	};
 	// A relative path, an 8.3 short name or a wildcard's match: the folder it names, as the file system resolves it from
 	// the session. A kit project the launcher has no record for is found from these too, so it holds the call as it
@@ -629,9 +640,9 @@ function namedProjects(input) {
 	const unrec = [];
 	const seen = new Set();
 	const dirs = [];
-	const resolveTo = (t) => {
+	const resolveTo = (t, from = cwd) => {
 		let real = '';
-		try { real = fs.realpathSync.native(path.resolve(cwd, t)); } catch { return; }
+		try { real = fs.realpathSync.native(path.resolve(from, t)); } catch { return; }
 		if (seen.has(real)) return;
 		seen.add(real);
 		try {
@@ -647,18 +658,44 @@ function namedProjects(input) {
 	// Paths first, so a relative wildcard is also read from the folders they name. A bare name (cd app) is a folder too
 	// when it is one, from the session's folder or from a folder named before it (the review of c07f2bd); a command whose
 	// wildcards follow more folders than the guard reads is held.
-	const DIRS_MAX = 64;
+	// K120 (1.42.0): a command that names many folders and no wildcard (ls d0 ... d69) was held; with no wildcard to read
+	// from them, the cap is for the passes alone.
+	const DIRS_MAX = tokens.some(isGlob) ? 64 : 256;
+	// Each folder is listed once and its names looked up, not a stat per word and folder: 4,000 bare names beside 60
+	// folders took about 9 s of the hook's 10 s (K120).
+	const listed = new Map();
+	const namesIn = (base) => {
+		if (!listed.has(base)) {
+			const s = new Set();
+			try { for (const e of fs.readdirSync(base, { withFileTypes: true })) if (e.isDirectory() || e.isSymbolicLink()) s.add(fold(e.name)); } catch { /* unreadable: none */ }
+			listed.set(base, s);
+		}
+		return listed.get(base);
+	};
+	const rooted = (t) => /^([a-z]:)?[\\/]/i.test(t) || t.startsWith('~');
 	// Read again while a pass finds a new folder, so a name inside a folder found later in the pass is read from it too
-	// (cd a && cd b && cd a, the review of bfad509); DIRS_MAX bounds the passes.
+	// (cd a && cd b && cd a, the review of bfad509); DIRS_MAX bounds the passes. A relative path is read from every
+	// folder found as well, so a chain of moves (cd .. && cd .. && cd ..) is followed to its end (K120).
+	// A path that climbs (..) is read from a found folder only as many times as the command writes a climb, so it never
+	// walks on past what the moves could reach.
+	let climbs = (decoded.match(/(^|[\\/\s;&|(])\.\.(?=$|[\\/\s;&|)])/g) || []).length;
 	for (let before = -1; before !== dirs.length && !unreadable;) {
 		before = dirs.length;
 		for (const t of tokens) {
 			if (isGlob(t) || /\$/.test(t)) continue;
-			if (/[/~.]/.test(t)) { resolveTo(t); continue; }
-			for (const base of [cwd, ...dirs]) {
-				const at = path.join(base, t);
-				try { if (fs.statSync(at).isDirectory()) resolveTo(at); } catch { /* not a folder */ }
+			if (/[/~.]/.test(t)) {
+				if (rooted(t)) { resolveTo(t); continue; }
+				resolveTo(t);
+				const climb = /(^|[\\/])\.\.($|[\\/])/.test(t);
+				for (const base of dirs.slice()) {
+					if (climb && climbs <= 1) break;
+					const had = dirs.length;
+					resolveTo(t, base);
+					if (climb && dirs.length > had) climbs--;
+				}
+				continue;
 			}
+			for (const base of [cwd, ...dirs]) if (namesIn(base).has(fold(t))) resolveTo(path.join(base, t));
 		}
 	}
 	for (const t of tokens) {

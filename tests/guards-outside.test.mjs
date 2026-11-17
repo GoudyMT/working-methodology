@@ -1724,6 +1724,38 @@ test('a nested brace list or a range with a plus sign names the project bash bui
 	for (const word of ['v{0,{z}}8', 'v{+08..09}']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'runs', word);
 });
 
+// K120 (1.42.0, the MC3 reviewers' faults reproduced on 1.41.0): a wildcard of a capital-letter class ([[:upper:]]pp)
+// was matched against the folded name, so it missed App on Windows; a bracket set with a comma was cut at the comma;
+// a chain of cd .. moves was followed one step only. Each let a write into the project from outside it run none of
+// its guards. And ordinary commands were held: a wildcard over many files, many folders named, and a long list of
+// bare names that took about 9 s against the hook's 10 s.
+// why: guards rule:outward-acts
+test('a capital class, a bracket set with a comma and a chain of cd .. name the project; big ordinary commands run', () => {
+	const { home, proj } = setup({ projName: 'App' });
+	const outside = kitTemp.makeTemp('k120-out-');
+	const call = (command, cwd = outside) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: cwd, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const parent = path.dirname(proj).split(path.sep).join('/');
+	for (const word of ['[[:upper:]]pp', '[A,b]pp', '[,A]pp']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'deny', word);
+	const deep = path.join(path.dirname(proj), 'k120-a', 'b', 'c');
+	fs.mkdirSync(deep, { recursive: true });
+	assert.equal(call('cd .. && cd .. && cd .. && cp x A*/.claude/guard.cjs', deep), 'deny', 'a chain of cd ..');
+	// Ordinary commands that name no project run, at any size the reader takes.
+	const big = kitTemp.makeTemp('k120-big-');
+	for (let i = 0; i < 4200; i++) fs.writeFileSync(path.join(big, `f${i}.txt`), '');
+	for (let i = 0; i < 70; i++) fs.mkdirSync(path.join(big, `d${i}`));
+	assert.equal(call('ls *.txt | wc -l', big), 'runs', 'a wildcard over 4,200 files');
+	assert.equal(call('ls ' + Array.from({ length: 70 }, (_, i) => `d${i}`).join(' '), big), 'runs', '70 folders named');
+	const t0 = Date.now();
+	assert.equal(call('ls ' + Array.from({ length: 60 }, (_, i) => `d${i}`).join(' ') + ' ' + Array.from({ length: 4000 }, (_, i) => `n${i}`).join(' '), big), 'runs', 'many bare names');
+	assert.ok(Date.now() - t0 < 3000, `many bare names took ${Date.now() - t0} ms`);
+	// Quoted braces and a quoted space are also read as plain text, by design: the extra reading only runs the named
+	// project's guards too, which pass a plain command, so it is one more check and never a hold.
+	for (const c of [`echo '{A,b}pp' && git status`, `ls "my "{A,b}pp; git status`]) assert.equal(call(c), 'runs', c);
+});
+
 // why: guards rule:outward-acts. The third review (on cd0f9f5): a project whose folder name has a space is never one
 // word of the command, so a name check by words missed it.
 test('a kit project whose folder name has a space is named by the command too', () => {
