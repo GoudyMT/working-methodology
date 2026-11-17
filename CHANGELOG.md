@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.42.0 - 2026-11-17
+
+The recall gate also grades what sessions do, the always-loaded rules file is 14% smaller under a lower cap, a PR or release whose measured cost moved shows it in a checked Visuals section, a branch gets one sweep, and the guards hold destructive local git while passing plain reads.
+
+### Added
+- Behaviour recall: 14 tasks run in seeded throwaway folders, and a script grades what each session did (its tool calls, in order), beside the wording gate; a rule change records a behaviour line, and a run resumes after a crash.
+- The recall gate fails a rule change whose scored commit is missing, or whose graded text changed after the commit the run scored.
+- The guard holds a local git act that throws away uncommitted or unpushed work (a hard reset, a forced checkout, switch or branch delete, a restore over changes, a stash drop, a reflog expire) until the owner's yes.
+- A PR body or release note whose measured tokens, the file sizes behind them, or a measured wait moved carries a Visuals section: the outcome first (dollars, time or window room), a chart and a table the audits recompute.
+
+### Changed
+- Three sections of the always-loaded rules file moved word for word to the rule files that load when they apply, and the use check fails a filled `AGENTS.md` over the new 25,000-byte cap, counted on disk.
+- Sessions compact at 400K, set in the project settings; the use check fails a compact window outside 100K to 400K, and an automatic compact writes the resume packet in time.
+- A closeout that ends its task marks the resume packet closed and, in a command-line session, ends with the one command to type; a resumed session whose task is closed is told to start fresh.
+- Sweep reviewers run on the mid model unless a role names one; security and the novel lens stay on the top model, and every high finding is re-checked there.
+- One sweep per branch: a re-sweep contract is refused with no override, and the fix check is each fix's failing-first test plus CI's test check, defined once.
+
+### Fixed
+- The guards pass a simple loop of reads and a `sed` line range, and still hold a loop that could write a guarded file.
+- The PR body audits pass a tool word inside a path or command in a code span; a bare tool word in a code span still fails.
+- The project launcher reads capital classes, a bracket set with a comma, chained and quoted climbs and large globs within its time limit, and names the project each reaches.
+- A reinstall puts back a changed user tool with a backup instead of skipping it, a project's local overlay is merged once and then left alone, and the merge hint quotes a path with a space.
+- A delete after a glued climb (`cd..`, `cd\`) is read as outside the project.
+- A recall run names every read outside its probe and the user config folder, grades the kit scripts and the behaviour suite with the rules, and measures a candidate's own skills and role files.
+- A session whose folder is given by its short name holds a write through a link into `.claude` or `.git`, and a user config folder under its own name keeps its settings file behind the owner's yes.
+- A delete after a bare-name cd waits when CDPATH may be set, in the command, the environment or a sourced file.
+- The project launcher names the project a climb through a link reaches, where bash lands rather than where the link sits.
+- The kit's privacy scan reads a committed PNG by its text chunks instead of failing it as non-ASCII.
+
 ## 1.41.0 - 2026-11-17
 
 The rules keep what a session must do and the command to run where a script already checks the rest, say once which instructions win, and no longer assume the owner types the code; a recall run cleans up after itself and no test file can sit outside every test lane.

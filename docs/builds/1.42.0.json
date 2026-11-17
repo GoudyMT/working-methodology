@@ -1,0 +1,358 @@
+{
+ "version": "1.42.0",
+ "date": "2026-11-17",
+ "level": "minor",
+ "area": "Rules",
+ "title": "feat: behaviour recall, a smaller start file and a visuals section",
+ "headline": "The recall gate also grades what sessions do, the always-loaded rules file is 14% smaller under a lower cap, a PR or release whose measured cost moved shows it in a checked Visuals section, a branch gets one sweep, and the guards hold destructive local git while passing plain reads.",
+ "alignment": "v1.42.0 is build 16 of the v2.0 plan: step T10's recall part and the rest of T9's byte diet, with the open guard and audit rows.",
+ "items": [
+  {
+   "id": "BEHAVE",
+   "kind": "added",
+   "text": "Behaviour recall: 14 tasks run in seeded throwaway folders, and a script grades what each session did (its tool calls, in order), beside the wording gate; a rule change records a behaviour line, and a run resumes after a crash.",
+   "evidence": "scripts/recall-behave.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "SCORED",
+   "kind": "added",
+   "text": "The recall gate fails a rule change whose scored commit is missing, or whose graded text changed after the commit the run scored.",
+   "evidence": "scripts/recall.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "START-FILE",
+   "kind": "changed",
+   "text": "Three sections of the always-loaded rules file moved word for word to the rule files that load when they apply, and the use check fails a filled `AGENTS.md` over the new 25,000-byte cap, counted on disk.",
+   "evidence": "docs/evals/results/e4-start-load.md",
+   "reach": "projects",
+   "where": "The always-loaded rules file",
+   "before": "27,609 bytes, about 9.8k tokens",
+   "after": "23,834 bytes, about 8.5k tokens"
+  },
+  {
+   "id": "COMPACT",
+   "kind": "changed",
+   "text": "Sessions compact at 400K, set in the project settings; the use check fails a compact window outside 100K to 400K, and an automatic compact writes the resume packet in time.",
+   "evidence": "project/.claude/use-check.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "TASK-END",
+   "kind": "changed",
+   "text": "A closeout that ends its task marks the resume packet closed and, in a command-line session, ends with the one command to type; a resumed session whose task is closed is told to start fresh.",
+   "evidence": "user/skills/closeout/SKILL.md",
+   "reach": "projects"
+  },
+  {
+   "id": "REVIEWER-MODEL",
+   "kind": "changed",
+   "text": "Sweep reviewers run on the mid model unless a role names one; security and the novel lens stay on the top model, and every high finding is re-checked there.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "ONE-SWEEP",
+   "kind": "changed",
+   "text": "One sweep per branch: a re-sweep contract is refused with no override, and the fix check is each fix's failing-first test plus CI's test check, defined once.",
+   "evidence": "rules/reviews-and-findings.md",
+   "reach": "projects"
+  },
+  {
+   "id": "LOCAL-GIT-GUARD",
+   "kind": "added",
+   "text": "The guard holds a local git act that throws away uncommitted or unpushed work (a hard reset, a forced checkout, switch or branch delete, a restore over changes, a stash drop, a reflog expire) until the owner's yes.",
+   "evidence": "project/.claude/guard-delete.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "READ-LOOPS",
+   "kind": "fixed",
+   "text": "The guards pass a simple loop of reads and a `sed` line range, and still hold a loop that could write a guarded file.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "BODY-SPANS",
+   "kind": "fixed",
+   "text": "The PR body audits pass a tool word inside a path or command in a code span; a bare tool word in a code span still fails.",
+   "evidence": "project/.claude/pr-body-audit.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "LAUNCHER",
+   "kind": "fixed",
+   "text": "The project launcher reads capital classes, a bracket set with a comma, chained and quoted climbs and large globs within its time limit, and names the project each reaches.",
+   "evidence": "user/kit-tools/kit-launch.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "INSTALL",
+   "kind": "fixed",
+   "text": "A reinstall puts back a changed user tool with a backup instead of skipping it, a project's local overlay is merged once and then left alone, and the merge hint quotes a path with a space.",
+   "evidence": "scripts/kit.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "GLUED-CD",
+   "kind": "fixed",
+   "text": "A delete after a glued climb (`cd..`, `cd\\`) is read as outside the project.",
+   "evidence": "project/.claude/guard-delete.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "RECALL-READS",
+   "kind": "fixed",
+   "text": "A recall run names every read outside its probe and the user config folder, grades the kit scripts and the behaviour suite with the rules, and measures a candidate's own skills and role files.",
+   "evidence": "scripts/recall.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "VISUALS",
+   "kind": "added",
+   "text": "A PR body or release note whose measured tokens, the file sizes behind them, or a measured wait moved carries a Visuals section: the outcome first (dollars, time or window room), a chart and a table the audits recompute.",
+   "evidence": "project/.claude/visuals.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "PATH-READER",
+   "kind": "fixed",
+   "text": "A session whose folder is given by its short name holds a write through a link into `.claude` or `.git`, and a user config folder under its own name keeps its settings file behind the owner's yes.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "CDPATH",
+   "kind": "fixed",
+   "text": "A delete after a bare-name cd waits when CDPATH may be set, in the command, the environment or a sourced file.",
+   "evidence": "project/.claude/guard-delete.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "LINK-CLIMB",
+   "kind": "fixed",
+   "text": "The project launcher names the project a climb through a link reaches, where bash lands rather than where the link sits.",
+   "evidence": "user/kit-tools/kit-launch.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "SCRUB-PNG",
+   "kind": "fixed",
+   "text": "The kit's privacy scan reads a committed PNG by its text chunks instead of failing it as non-ASCII.",
+   "evidence": "scripts/kit.mjs",
+   "reach": "kit"
+  }
+ ],
+ "decisions": [
+  {
+   "decision": "Behaviour recall runs beside the wording gate, not in place of it",
+   "why": "The wording gate stays until the owner locks the behaviour suite as its replacement; both lines are recorded for every rule change."
+  },
+  {
+   "decision": "Behaviour sessions may only read and load skills",
+   "why": "An allowed interpreter beside an allowed write would run anything a session writes on the owner's PC; denied tool calls are still recorded and graded."
+  },
+  {
+   "decision": "The fix check is each fix's failing-first test plus CI, and no reviewer re-reads the fixes",
+   "why": "The owner's one-sweep ruling: the failing-first test catches a half-done fix, and a second pass is the owner's call."
+  },
+  {
+   "decision": "Visuals shows numbers now, with a chart image only once committed",
+   "why": "A typed number names the two commits it was measured at, so a later PR cannot repeat this one's saving; images follow in a later build."
+  }
+ ],
+ "verification": [
+  "Each code change was seen failing on the code before it and passing after.",
+  "The start-up load was measured by `/context` on fresh installs of 1.41.0 and this branch."
+ ],
+ "upgrading": "Run `install user` first, then `install project` in each project. A project's settings gain `autoCompactWindow: 400000`.",
+ "limits": "The behaviour suite runs beside the wording gate and grades the project rules only. The released 1.41.0 fails the closeout task: a session ran the closeout steps by hand and never loaded the closeout skill. The guards do not read git aliases already in the owner's own config, or a CDPATH set by an interactive shell's startup files. The scored and behaviour lines are the lead's record; the reports behind them stay local.",
+ "sweep": {
+  "tier": "Feature (security-sensitive, public text)",
+  "commit": "c2d949b, and 695546b for the Visuals files",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Config text and the committed chart are checked for home paths, emails and tokens"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency, no action pin changed"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Guards, the launcher, the recall gate and the two audits, all fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Wording, the cost story in Visuals and test gaps, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 1,
+   "high": 15,
+   "medium": 34,
+   "low": 24
+  },
+  "fixes": [
+   {
+    "id": "S1",
+    "severity": "critical",
+    "text": "A loop body that set its own loop variable was read with the loop value, so a guarded file could be written",
+    "commit": "85fd205",
+    "test": "tests/guards-hold.test.mjs::a loop of kit-script reads and a sed line range pass; a loop that could write a guard is still held",
+    "security": true
+   },
+   {
+    "id": "S2",
+    "severity": "high",
+    "text": "A checkout with a glob, magic or from-file pathspec was read as a branch and dropped work unheld",
+    "commit": "80d5d71",
+    "test": "tests/guard-prompts.test.mjs::a glob or magic pathspec, xargs, an alias on the spot, a path after a move and git plumbing that drop work wait for the owner",
+    "security": true
+   },
+   {
+    "id": "S3",
+    "severity": "high",
+    "text": "A checkout or restore run through xargs dropped work unheld",
+    "commit": "80d5d71",
+    "test": "tests/guard-prompts.test.mjs::a glob or magic pathspec, xargs, an alias on the spot, a path after a move and git plumbing that drop work wait for the owner",
+    "security": true
+   },
+   {
+    "id": "S4",
+    "severity": "high",
+    "text": "An alias made on the spot or set by git config dropped work unheld",
+    "commit": "8b2d271",
+    "test": "tests/guard-prompts.test.mjs::a glob or magic pathspec, xargs, an alias on the spot, a path after a move and git plumbing that drop work wait for the owner",
+    "security": true
+   },
+   {
+    "id": "L1",
+    "severity": "high",
+    "text": "The launcher lowercased a glob before matching, so a capital class missed the project it named",
+    "commit": "7c62784",
+    "test": "tests/guards-outside.test.mjs::a class with a capital later in the name names the project; dotted names beside 250 folders read in time",
+    "security": true
+   },
+   {
+    "id": "L2",
+    "severity": "high",
+    "text": "Dotted names beside 250 folders took longer than the hook limit",
+    "commit": "7c62784",
+    "test": "tests/guards-outside.test.mjs::a class with a capital later in the name names the project; dotted names beside 250 folders read in time",
+    "security": true
+   },
+   {
+    "id": "R1",
+    "severity": "high",
+    "text": "A behaviour scenario could seed a git hook that the runner's own git then ran",
+    "commit": "be0b35a",
+    "test": "tests/recall-behave.test.mjs::a behaviour run allows no edit or shell, and seeds no file outside its folder",
+    "security": true
+   },
+   {
+    "id": "R2",
+    "severity": "high",
+    "text": "The behaviour bar was read from the head suite, so a PR could lower it",
+    "commit": "abe5308",
+    "test": "tests/kit.test.mjs::recall gate (T10): a rule change needs a behaviour line on the current suite, at its bar and baseline",
+    "security": true
+   },
+   {
+    "id": "S8",
+    "severity": "low",
+    "text": "A cd steered by CDPATH moved a delete outside the project unheld",
+    "commit": "afa8c78",
+    "test": "tests/guard-prompts.test.mjs::a bare-name cd beside CDPATH is an unknown move, so a delete after it waits",
+    "security": true
+   },
+   {
+    "id": "L5",
+    "severity": "low",
+    "text": "A climb through a link was read where the link sits, not where bash lands",
+    "commit": "3549022",
+    "test": "tests/guards-outside.test.mjs::a climb through a link names the project beside where the link points",
+    "security": true
+   },
+   {
+    "id": "V1-1",
+    "severity": "high",
+    "text": "Any token with a slash was wiped before the banned-word check, so a credit line passed both PR audits",
+    "commit": "7a65ac1",
+    "test": "tests/visuals.test.mjs::the Standard PR audit takes a checked Visuals section after Review, and refuses one out of place or edited by hand"
+   },
+   {
+    "id": "V1-2",
+    "severity": "high",
+    "text": "The Visuals section and its folds left the word ceilings, with no cap on their prose",
+    "commit": "7a65ac1",
+    "test": "tests/visuals.test.mjs::the section check fails false outcome numbers, wrong derived rows, a decoy section, outside images and long prose"
+   },
+   {
+    "id": "V4-1",
+    "severity": "high",
+    "text": "The window share used one window for both runs while this branch cut it from 650K to 400K",
+    "commit": "7a65ac1",
+    "test": "tests/visuals.test.mjs::the window share uses each run's own window, and the lead names a metric that moved the other way"
+   },
+   {
+    "id": "V4-2",
+    "severity": "high",
+    "text": "Typed token numbers were not tied to the two commits, so a later PR would repeat this saving",
+    "commit": "7a65ac1",
+    "test": "tests/visuals.test.mjs::typed numbers count only for their commits, a crossed limit is kept, and a refused run writes nothing"
+   },
+   {
+    "id": "V4-3",
+    "severity": "high",
+    "text": "The lead came from the first metric only, so a later regression never reached it",
+    "commit": "7a65ac1",
+    "test": "tests/visuals.test.mjs::the window share uses each run's own window, and the lead names a metric that moved the other way"
+   },
+   {
+    "id": "V6-2",
+    "severity": "high",
+    "text": "Any token metric was written as a session-start load",
+    "commit": "7a65ac1",
+    "test": "tests/visuals.test.mjs::the section keeps what moved, derives tokens, dollars and window share, and leads with the outcome"
+   },
+   {
+    "id": "V7-1",
+    "severity": "high",
+    "text": "No test passed a valid pinned chart image",
+    "commit": "7a65ac1",
+    "test": "tests/visuals.test.mjs::the chart image is linked from origin at the commit that holds it, and only while it is unchanged"
+   },
+   {
+    "id": "K124",
+    "severity": "high",
+    "text": "Planted bugs in the shared path reader passed every test: a short-name session wrote through a link into `.claude`",
+    "commit": "9418d30",
+    "test": "tests/guards-hold.test.mjs::the path reader holds what its planted-bug sweep let through, and passes the reads it must not hold",
+    "security": true
+   }
+  ],
+  "deferred": [],
+  "accepted": []
+ },
+ "tests": {
+  "before": 870,
+  "after": 907,
+  "flips": "declared tests on v1.41.0 and on this branch; the PR run gives the final count"
+ },
+ "visuals": {
+  "summary": "Visuals: the always-loaded rules file 27,609 B to 23,834 B (cap 25,000 B)",
+  "fold": true,
+  "body": "<details>\n<summary>Visuals: Always-loaded rules file 27,609 B to 23,834 B (cap 25,000 B)</summary>\n\nEvery session starts with 1,100 fewer tokens: about $4.40 less per 1,000 sessions at the uncached input price,\nand 4.33 points more of the window used at start (the window went from 650,000 to 400,000 tokens).\n\n![Chart: Always-loaded rules file 27,609 B to 23,834 B; Always-loaded rules file: tokens read at each session start 9,800 to 8,500; Always-loaded rules file: cost per 1,000 sessions $39.20 to $34.00; Whole start-up load 47,900 to 46,800; Whole start-up load: cost per 1,000 sessions $191.60 to $187.20; Whole start-up load: share of the window used at start 7.37% to 11.70%](https://github.com/GoudyMT/working-methodology/raw/138edcbc2aef5d86f793b177ac2ef718bf8dda14/docs/visuals/feat/behaviour-recall-and-diet/chart.png)\n\n```text\nAlways-loaded rules file, bytes (| = limit 25,000)\nbefore  ####################################|###  27,609\nafter   ################################### |     23,834\n```\n\n| Metric | Before | After | Change | Limit | Source |\n|---|---|---|---|---|---|\n| Always-loaded rules file | 27,609 B | 23,834 B | -3,775 B (-13.7%) | 25,000 B | measured: bytes at 83ab095 and 8dc1583 |\n| Always-loaded rules file: tokens read at each session start | 9,800 | 8,500 | -1,300 (-13.3%) | none | measured: session context report, to 0.1k (docs/evals/results/e4-start-load.md) |\n| Always-loaded rules file: cost per 1,000 sessions | $39.20 | $34.00 | -$5.20 (-13.3%) | none | derived: tokens x $4 per million input tokens, uncached (2026-11-03) |\n| Whole start-up load | 47,900 | 46,800 | -1,100 (-2.3%) | none | measured: session context report, to 0.1k (docs/evals/results/e4-start-load.md) |\n| Whole start-up load: cost per 1,000 sessions | $191.60 | $187.20 | -$4.40 (-2.3%) | none | derived: tokens x $4 per million input tokens, uncached (2026-11-03) |\n| Whole start-up load: share of the window used at start | 7.37% | 11.70% | +4.33 points | none | derived: tokens / the window at each commit (650,000, then 400,000) |\n\n**Why each number moved**\n\n- **Always-loaded rules file:** three sections moved word for word to the rule files that load when their work\n  starts.\n- **Always-loaded rules file: tokens read at each session start:** follows from the Always-loaded rules file\n  size.\n- **Always-loaded rules file: cost per 1,000 sessions:** follows from tokens at the uncached input price;\n  cached reads cost less.\n- **Whole start-up load:** the rules file cut, offset in part by other start-up text; each count is rounded to\n  0.1k.\n- **Whole start-up load: cost per 1,000 sessions:** follows from tokens at the uncached input price; cached\n  reads cost less.\n- **Whole start-up load: share of the window used at start:** more of the window goes to the start, so less is\n  left for the work before the session compacts; the window itself went from 650,000 to 400,000 tokens.\n</details>\n"
+ }
+}
