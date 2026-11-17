@@ -92,21 +92,54 @@ export function grade(ev, checks) {
 	});
 }
 
-/** I17: the reads a run made outside the folders it may read (the probe, the Claude folder). */
-export function outsideReads(ev, roots) {
-	const norm = (p) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-	const inside = roots.map(norm);
-	return ev.calls.filter((c) => /^(Read|Grep|Glob|NotebookRead)$/.test(c.name)).map((c) => fileOf(c.input))
-		.filter((p) => p && /^([a-z]:)?[\\/]/i.test(p) && !inside.some((r) => norm(p) === r || norm(p).startsWith(r + '/')));
+/**
+ * I17: the reads a run made outside the folders it may read (the probe, the Claude folder). The build 16 sweep: a
+ * relative or ~ path and a Glob pattern count too, each read from the probe; a root ending in "-" is a name prefix
+ * (the system temp folder only for the scenario's kit-scratch- files), and a root ending in "/" is that folder alone.
+ */
+export function outsideReads(ev, roots, { cwd = '', home = os.homedir() } = {}) {
+	const norm = (p) => path.posix.normalize(p.replace(/\\/g, '/')).replace(/\/+$/, '').toLowerCase();
+	const full = (p) => (p.startsWith('~') ? path.join(home, p.slice(1)) : /^([a-z]:)?[\\/]/i.test(p) || !cwd ? p : path.resolve(cwd, p));
+	const allowed = (p) => roots.some((r) => {
+		const n = norm(r.replace(/[-/]$/, '')) + (r.endsWith('-') ? '-' : '');
+		if (r.endsWith('/')) return norm(p) === norm(r);
+		return r.endsWith('-') ? norm(p).startsWith(n) : norm(p) === n || norm(p).startsWith(n + '/');
+	});
+	const paths = (c) => [fileOf(c.input), c.name === 'Glob' ? String(c.input.pattern ?? '') : ''].filter(Boolean);
+	// A glob is read from the folder before its first wildcard.
+	const base = (p) => { const i = p.search(/[*?[]/); if (i < 0) return p; const h = p.slice(0, i); return /[\\/]$/.test(h) || !h ? h : path.dirname(h); };
+	return ev.calls.filter((c) => /^(Read|Grep|Glob|NotebookRead)$/.test(c.name)).flatMap(paths).map(base)
+		.filter((p) => p && (cwd || /^([a-z]:)?[\\/]|^~/i.test(p))).map(full)
+		.filter((p) => p && !allowed(p));
+}
+
+/**
+ * The build 16 sweep: the installed project settings allow a few shell reads (cat, grep, git diff, Get-Content), which
+ * a run's own allowed tools then added to. A probe is a throwaway copy, so its allow list keeps no shell or write tool:
+ * every shell call is refused and recorded, as the run's design says.
+ */
+export function readOnlyProbe(dir) {
+	const f = path.join(dir, '.claude', 'settings.json');
+	let s;
+	try { s = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return; }
+	if (s.permissions && Array.isArray(s.permissions.allow)) {
+		s.permissions.allow = s.permissions.allow.filter((p) => !/^(Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit)\b/.test(p));
+		fs.writeFileSync(f, JSON.stringify(s, null, 2) + '\n');
+	}
 }
 
 /** The folder each scenario starts from: the kit installed, a branch with one commit, a bare clone as origin. */
 export function seed(dir, files = {}, run, merged = false) {
-	const must = (cmd, args, opts = {}) => { const r = run(cmd, args, { cwd: dir, ...opts }); if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${(r.stderr || r.stdout || '').trim().slice(0, 200)}`); };
+	// The build 16 sweep (high): a scenario file in .git (a hook, a config with core.fsmonitor) ran on the owner's PC at
+	// the seed's own commit. Seeding runs git with no hooks and no file monitor, and a scenario may not write git's
+	// folders or the kit's own (.git, .githooks, .claude).
+	const SAFE = ['-c', `core.hooksPath=${os.devNull}`, '-c', 'core.fsmonitor=false'];
+	const must = (cmd, args, opts = {}) => { const r = run(cmd, cmd === 'git' ? [...SAFE, ...args] : args, { cwd: dir, ...opts }); if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${(r.stderr || r.stdout || '').trim().slice(0, 200)}`); };
 	const put = (rel, body) => {
 		const to = path.resolve(dir, rel);
 		const inside = path.relative(dir, to);
 		if (!inside || inside.startsWith('..') || path.isAbsolute(inside)) throw new Error(`a scenario file outside its folder: ${rel}`);
+		if (/^\.(git|githooks|claude)$/i.test(inside.split(/[\\/]/)[0].replace(/[. ]+$/, ''))) throw new Error(`a scenario file in a folder git or the kit runs from: ${rel}`);
 		fs.mkdirSync(path.dirname(to), { recursive: true });
 		fs.writeFileSync(to, body);
 	};
@@ -157,7 +190,7 @@ export function runScenario({ s, dir, home, run }) {
 	const ev = parseStream(r.stdout || '');
 	if (r.status !== 0 && !ev.calls.length && !ev.final) throw new Error(`${s.id}: no session (exit ${r.status}): ${(r.stderr || '').trim().slice(0, 200)}`);
 	// The probe's own parent (its bare origin sits there) and the system temp folder a scenario may name are its own too.
-	return { raw: r.stdout || '', ev, grades: grade(ev, s.checks), outside: outsideReads(ev, [path.dirname(dir), home, os.tmpdir()]) };
+	return { raw: r.stdout || '', ev, grades: grade(ev, s.checks), outside: outsideReads(ev, [path.dirname(dir), home, os.tmpdir() + '/', path.join(os.tmpdir(), 'kit-scratch-')], { cwd: dir }) };
 }
 
 /**
@@ -170,6 +203,25 @@ export function reusable(out, marker, ids) {
 	try { was = JSON.parse(fs.readFileSync(path.join(out, 'run.json'), 'utf8')); } catch { return []; }
 	if (JSON.stringify(was) !== JSON.stringify(marker)) return [];
 	return ids.filter((id) => fs.existsSync(path.join(out, `${id}.jsonl`)));
+}
+
+/**
+ * The records a run may grade without a session, and the label's folder made ready. The build 16 sweep: --only grades
+ * the other scenarios from records only when they were saved on this same kit commit, suite and side; a run that
+ * reuses nothing clears the label's old records before it writes its marker, so a crash never leaves another run's
+ * records under this run's marker for a resume to take.
+ */
+export function startRun(out, marker, ids, { only = null, resume = false, name = '' } = {}) {
+	const saved = reusable(out, marker, ids);
+	if (only) {
+		const missing = ids.filter((id) => !only.has(id) && !saved.includes(id));
+		if (missing.length) throw new Error(`--only: ${name} has no record of ${missing.join(', ')} saved on this kit commit, suite and side; run the label again`);
+		return new Set(saved.filter((id) => !only.has(id)));
+	}
+	const reuse = new Set(resume ? saved : []);
+	if (!reuse.size) for (const id of ids) fs.rmSync(path.join(out, `${id}.jsonl`), { force: true });
+	fs.writeFileSync(path.join(out, 'run.json'), JSON.stringify(marker));
+	return reuse;
 }
 
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : 0; };
@@ -220,8 +272,7 @@ async function main(argv) {
 	const before = (() => { try { return JSON.parse(fs.readFileSync(path.join(out, 'result.json'), 'utf8')); } catch { return null; } })();
 	const head = run('git', ['rev-parse', 'HEAD'], { cwd: kit }).stdout.trim();
 	const marker = { head, suite: suite.version, released, noKit: !!noKit };
-	const reuse = new Set(resume ? reusable(out, marker, suite.scenarios.map((s) => s.id)) : []);
-	if (!only) fs.writeFileSync(path.join(out, 'run.json'), JSON.stringify(marker));
+	const reuse = startRun(out, marker, suite.scenarios.map((s) => s.id), { only, resume, name });
 	if (resume) console.log(`--resume: ${reuse.size} scenario(s) saved on ${head.slice(0, 7)} are graded from their records`);
 	for (const s of suite.scenarios) {
 		if ((only && !only.has(s.id)) || reuse.has(s.id)) {
@@ -230,7 +281,7 @@ async function main(argv) {
 			const ev = parseStream(fs.readFileSync(saved, 'utf8'));
 			const grades = grade(ev, s.checks);
 			// The probe folder is gone: any probe under kit-probes stands for it.
-			const outside = outsideReads(ev, [path.join(os.homedir(), 'kit-probes'), home, os.tmpdir()]);
+			const outside = outsideReads(ev, [path.join(os.homedir(), 'kit-probes'), home, os.tmpdir() + '/', path.join(os.tmpdir(), 'kit-scratch-')]);
 			const passed = grades.every((g) => g.ok) && !outside.length;
 			rows.push({ id: s.id, passed, cost: ev.cost, grades, outside, regraded: true });
 			console.log(`[${rows.length}/${suite.scenarios.length}] ${s.id}: ${passed ? 'pass' : 'FAIL'} (graded again from the saved record)`);
@@ -240,6 +291,7 @@ async function main(argv) {
 		try {
 			setupProbe({ dir, kitDir: kit, noKit, released, run });
 			if (!noKit && !released) copyUserLayer(kit, dir);
+			readOnlyProbe(dir);
 			seed(dir, s.files, run, s.merged === true);
 			const r = runScenario({ s, dir, home, run });
 			fs.writeFileSync(path.join(out, `${s.id}.jsonl`), r.raw);

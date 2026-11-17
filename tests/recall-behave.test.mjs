@@ -6,8 +6,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { parseStream, grade, outsideReads, suiteVersion, seed, reusable, ALLOWED } from '../scripts/recall-behave.mjs';
+import { parseStream, grade, outsideReads, readOnlyProbe, suiteVersion, seed, reusable, startRun, runScenario, ALLOWED } from '../scripts/recall-behave.mjs';
 
 const { makeTemp } = kitTemp;
 const call = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: String(Math.random()), name, input }] } });
@@ -62,6 +63,18 @@ test('each check kind passes and fails on what the session did', () => {
 test('a read outside the probe folder and the Claude folder is named', () => {
 	const ev = parseStream(stream(call('Read', { file_path: 'C:/p/x/src/a.mjs' }), call('Grep', { pattern: 'x', path: 'C:/home/.claude/skills' }), call('Read', { file_path: 'C:/Users/o/Desktop/board.md' }), call('Glob', { pattern: '*.md' }), result('')));
 	assert.deepEqual(outsideReads(ev, ['C:/p/x', 'C:/home/.claude']), ['C:/Users/o/Desktop/board.md']);
+	// The build 16 sweep: a relative or ~ path and a Glob pattern are reads too, from the probe; the system temp folder
+	// is open only for the scenario's kit-scratch- files.
+	const more = parseStream(stream(call('Glob', { pattern: 'C:/Users/o/.ssh/*' }), call('Grep', { pattern: 'x', path: '../../../Desktop' }), call('Read', { file_path: '~/.ssh/id_rsa' }),
+		call('Read', { file_path: 'C:/tmp/kit-sweep-1/other/secret.txt' }), call('Glob', { pattern: 'C:/tmp/kit-scratch-*.txt' }), call('Read', { file_path: 'src/a.mjs' }), result('')));
+	const out = outsideReads(more, ['C:/p/x', 'C:/tmp/', 'C:/tmp/kit-scratch-'], { cwd: 'C:/p/x', home: 'C:/Users/o' }).map((p) => p.replace(/\\/g, '/'));
+	assert.deepEqual(out, ['C:/Users/o/.ssh/', 'C:/Desktop', 'C:/Users/o/.ssh/id_rsa', 'C:/tmp/kit-sweep-1/other/secret.txt']);
+	// The probe keeps no shell or write tool in its allow list, so each such call is refused and recorded.
+	const probe = makeTemp('behave-probe-');
+	fs.mkdirSync(path.join(probe, '.claude'));
+	fs.writeFileSync(path.join(probe, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash(cat *)', 'PowerShell(Get-Content *)', 'Read', 'Edit(src/**)'] }, hooks: {} }));
+	readOnlyProbe(probe);
+	assert.deepEqual(JSON.parse(fs.readFileSync(path.join(probe, '.claude', 'settings.json'), 'utf8')).permissions.allow, ['Read']);
 });
 
 // The commit security review: an allowed interpreter beside an allowed write runs anything the session writes, on the
@@ -69,9 +82,23 @@ test('a read outside the probe folder and the Claude folder is named', () => {
 // why: guards rule:security-standards
 test('a behaviour run allows no edit or shell, and seeds no file outside its folder', () => {
 	assert.deepEqual(ALLOWED.split(','), ['Read', 'Grep', 'Glob', 'Skill']);
+	// The build 16 sweep: the constant alone proved nothing; what a session is started with is what holds.
+	let argv = [];
+	runScenario({ s: { id: 'x', prompt: 'p', checks: [] }, dir: makeTemp('behave-'), home: makeTemp('behave-home-'), run: (cmd, args) => { argv = args; return { status: 0, stdout: result('done'), stderr: '' }; } });
+	const opt = (name) => argv[argv.indexOf(name) + 1];
+	assert.equal(opt('--allowedTools'), 'Read,Grep,Glob,Skill');
+	assert.equal(opt('--permission-mode'), 'default');
+	assert.equal(opt('--setting-sources'), 'project');
+	assert.ok(!argv.some((a) => /bypass|dangerously/i.test(a)), argv.join(' '));
 	const dir = makeTemp('behave-');
 	const run = () => ({ status: 0, stdout: '', stderr: '' });
 	assert.throws(() => seed(dir, { '../escape.txt': 'x' }, run), /outside its folder/);
+	// The build 16 sweep (high): a hook or config in .git ran at the seed's own commit. No scenario file goes in git's or
+	// the kit's folders, and every git call the seed makes runs with no hooks and no file monitor.
+	for (const rel of ['.git/hooks/pre-commit', '.git/config', '.GIT/config', '.git./hooks/x', '.githooks/commit-msg', '.claude/settings.json']) assert.throws(() => seed(dir, { [rel]: 'x' }, run), /a folder git or the kit runs from/, rel);
+	const calls = [];
+	seed(makeTemp('behave-'), {}, (cmd, args) => { calls.push(args); return { status: 0, stdout: '', stderr: '' }; });
+	assert.ok(calls.length && calls.every((a) => a.includes(`core.hooksPath=${os.devNull}`) && a.includes('core.fsmonitor=false')));
 	assert.equal(fs.existsSync(path.join(path.dirname(dir), 'escape.txt')), false);
 	fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -95,6 +122,15 @@ test('origin holds main alone, cloned after the seeding; a merged scenario is me
 	const merged = steps(true);
 	const at = (re) => merged.findIndex((s) => re.test(s));
 	assert.ok(at(/merge -q --ff-only feat\/greeting/) > 0 && at(/tag v1\.1\.0/) > at(/merge -q/) && at(/clone -q --bare/) > at(/tag v1\.1\.0/));
+	// The build 16 sweep: the order alone does not show what origin holds; real git does.
+	const real = makeTemp('behave-real-');
+	const dir = path.join(real, 'p');
+	fs.mkdirSync(dir);
+	const git = (args, opts = {}) => spawnSync('git', args, { encoding: 'utf8', cwd: dir, ...opts });
+	git(['init', '-q', '-b', 'main']);
+	seed(dir, {}, (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts }));
+	assert.equal(git(['--git-dir', path.join(real, 'origin.git'), 'branch', '--format=%(refname:short)']).stdout.trim(), 'main');
+	assert.equal(git(['branch', '--show-current']).stdout.trim(), 'feat/greeting');
 });
 
 // The owner (2026-11-17): a run survives a crash. A resumed run reuses only what a run of the same label saved on the
@@ -110,6 +146,17 @@ test('a resumed run reuses only the records saved on the same commit, suite and 
 	for (const other of [{ ...marker, head: 'b'.repeat(40) }, { ...marker, suite: 2 }, { ...marker, released: true }]) {
 		assert.deepEqual(reusable(out, other, ['1-one', '2-two']), [], JSON.stringify(other));
 	}
+	// The build 16 sweep: a run on another commit that crashed before its first scenario left the older records under
+	// its own marker, and a resume took them. A run that reuses nothing clears them first; --only needs records saved on
+	// this commit for every scenario it does not run.
+	const B = { ...marker, head: 'b'.repeat(40) };
+	fs.writeFileSync(path.join(out, '2-two.jsonl'), '{}\n');
+	startRun(out, B, ['1-one', '2-two'], { resume: true });
+	assert.deepEqual(reusable(out, B, ['1-one', '2-two']), [], 'the older records are gone');
+	assert.throws(() => startRun(out, B, ['1-one', '2-two'], { only: new Set(['1-one']) }), /no record of 2-two/);
+	fs.writeFileSync(path.join(out, '2-two.jsonl'), '{}\n');
+	assert.deepEqual([...startRun(out, B, ['1-one', '2-two'], { only: new Set(['1-one']) })], ['2-two']);
+	assert.deepEqual([...startRun(out, B, ['1-one', '2-two'], { resume: true })], ['2-two']);
 	fs.rmSync(out, { recursive: true, force: true });
 });
 
