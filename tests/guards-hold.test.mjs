@@ -254,7 +254,7 @@ test('a loop of kit-script reads and a sed line range pass; a loop that could wr
 	for (const c of [`cd ${proj}; foreach($id in 'T10','T9'){ node .claude/state.mjs item $id 2>$null | Out-String -Width 400 }`, "foreach ($id in 'K1') { node .claude/state.mjs item $id }"]) assert.equal(ps(c), 'allow', c);
 	// The loop's word is read where the variable stands; a variable that could move a program, a group in the body and
 	// a substitution keep the strict reading.
-	for (const c of ['for p in .claude/guard.cjs; do cp x $p; done', 'for p in a .claude/settings.json; do echo x > $p; done', 'for x in cp; do $x y .claude/guard.cjs; done', 'for PATH in /tmp/x; do node .claude/settings.json; done', 'for id in K1; do f() { cp x .claude/guard.cjs; }; node .claude/state.mjs item $id; done', 'for id in $(ls); do node .claude/settings.json; done']) assert.equal(bash(c), 'deny', c);
+	for (const c of ['for p in .claude/guard.cjs; do cp x $p; done', 'for p in a .claude/settings.json; do echo x > $p; done', 'for x in cp; do $x y .claude/guard.cjs; done', 'for PATH in /tmp/x; do node .claude/settings.json; done', 'for path in /tmp/x; do node .claude/settings.json; done','for id in K1; do f() { cp x .claude/guard.cjs; }; node .claude/state.mjs item $id; done', 'for id in $(ls); do node .claude/settings.json; done']) assert.equal(bash(c), 'deny', c);
 	for (const c of ["foreach ($p in '.claude/guard.cjs') { Copy-Item x $p }", "foreach ($id in 'K1') { function node { cp x $args[0] }; node .claude/settings.json }"]) assert.equal(ps(c), 'deny', c);
 });
 

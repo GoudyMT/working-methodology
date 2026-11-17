@@ -430,7 +430,9 @@ function loopBodies(command, tool) {
 	const m = tool === 'PowerShell'
 		? /^(\s*(?:(?:cd|sl|set-location)\s+[^;&|`$(){}]+;\s*)?)foreach\s*\(\s*\$([A-Za-z_]\w*)\s+in\s+([^()]+?)\s*\)\s*\{([\s\S]*)\}\s*$/i.exec(c)
 		: /^(\s*(?:cd\s+[^;&|`$(){}]+&&\s*)?)for\s+([a-z_][a-z0-9_]*)\s+in\s+([^;\n]+?)\s*[;\n]\s*do\s+([\s\S]*?)[;\n]?\s*done\s*$/.exec(c);
-	if (!m || !/^[a-z_][a-z0-9_]*$/.test(m[2])) return null;
+	// zsh ties lowercase path, cdpath, fpath and others to the environment (path is PATH as a list), so those stay strict
+	// (the commit security review); _ is the last word handed on.
+	if (!m || !/^[a-z_][a-z0-9_]*$/.test(m[2]) || /^(path|cdpath|fpath|module_path|manpath|mailpath|psvar|ifs|home|pwd|oldpwd|env|_)$/.test(m[2])) return null;
 	const [, before, name, words, body] = m;
 	if (!LOOP_WORDS.test(words) || !LOOP_BODY.test(body) || /\$\(|\b(for|foreach|do|done|while|until|function|eval|source)\b|(^|[\s;&|])\.\s/i.test(body)) return null;
 	const list = words.split(tool === 'PowerShell' ? /\s*,\s*/ : /\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
