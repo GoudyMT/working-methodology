@@ -138,6 +138,14 @@ test('the test check measures each test file\'s flips in one slice, and the slic
 	assert.deepEqual(s0.files, ['tests/a.test.mjs']);
 	assert.deepEqual(s1.files, ['tests/b.test.mjs']);
 	assert.deepEqual([...s0.notes, ...s1.notes].sort(), a2([base]).notes.sort(), 'the slices name what the whole run names');
+	// N12's third must-still-flag row (the owner's pick, 2026-11-17, folded here: a row alone passes on the old code by
+	// design, and the strict check refuses that). A test red on the base only by a crash proves no assertion.
+	const crashBase = sh(dir, 'rev-parse', 'HEAD');
+	fs.appendFileSync(path.join(dir, 'src', 'a.cjs'), 'exports.isNeg = (x) => x < 0;\n');
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('minus one is negative', () => { assert.equal(a.isNeg(-1), true); });\n");
+	sh(dir, 'commit', '-qam', 'isNeg');
+	const crash = spawnSync(process.execPath, [CHECK, crashBase], { cwd: dir, encoding: 'utf8' });
+	assert.match(crash.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: [^\n]*crash/);
 });
 
 // why: guards rule:test-value. K12, the 1.27.0 sweep: the check took any "why: guards" text, so a tag naming a rule
@@ -209,19 +217,6 @@ test('a test ends at its own closing line, so a test inserted after it leaves it
 	const head = base.replace("});\n\nconst FIXTURE", "});\n\ntest('inserted', () => {});\n\nconst FIXTURE");
 	assert.equal(tests(head).get('old'), tests(base).get('old'));
 	assert.ok(tests(head).has('inserted'));
-});
-
-// N12 (1.40.0 verify): the third must-still-flag row. A test that fails on the base only because it throws (a call to
-// a function the base lacks) proves no assertion; narrowing A1 must not let it pass as failing first.
-// why: guards rule:test-value
-test('the test check still names a test that fails on the base by a crash, not an assertion', () => {
-	const dir = repo();
-	const base = sh(dir, 'rev-parse', 'HEAD');
-	fs.appendFileSync(path.join(dir, 'src', 'a.cjs'), 'exports.isNeg = (x) => x < 0;\n');
-	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('minus one is negative', () => { assert.equal(a.isNeg(-1), true); });\n");
-	sh(dir, 'commit', '-qam', 'isNeg');
-	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
-	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: [^\n]*crash/);
 });
 
 // K105 (PR 49): the PR claimed each fix had a test that fails first, and nothing read the claim. With the record, the

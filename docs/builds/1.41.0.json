@@ -86,7 +86,7 @@
   {
    "id": "N12",
    "kind": "added",
-   "text": "The test check keeps naming a test that fails on the old code only by a crash, held by a test of its own.",
+   "text": "The test check keeps naming a test that fails on the old code only by a crash, now held by a test in CI.",
    "evidence": "tests/test-check.test.mjs",
    "reach": "kit"
   },

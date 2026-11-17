@@ -6,7 +6,7 @@ The rules keep what a session must do and the command to run where a script alre
 
 ### Added
 - A dense screen splits what the user acts on now from what opens on demand, and is seen with real data early; a third manual repeat becomes a script, and a patch script that matched nothing fails [trial].
-- The test check keeps naming a test that fails on the old code only by a crash, held by a test of its own.
+- The test check keeps naming a test that fails on the old code only by a crash, now held by a test in CI.
 
 ### Changed
 - Rule sections a script already enforces (the merge gate, the PR body and release audits, the first push check, the commit check, sweep approval, the hand-back canary) now state the duty and the command, not what the script checks.
