@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { checkSection } from '../project/.claude/visuals.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const KINDS = { added: 'Added', changed: 'Changed', fixed: 'Fixed', security: 'Security', removed: 'Removed' };
@@ -102,6 +103,13 @@ export function problems(rec) {
 	}
 	need(!Array.isArray(rec.verification) || rec.verification.length <= 3, 'verification has more than 3 lines (the body adds the tests line; the audit shows 4)');
 	need(!s || (s.dimensions || []).some((d) => /^code security$/i.test(d.name || '')), 'sweep has no Code security dimension');
+	// K125: the Visuals section the script wrote, checked as the PR and release audits check it.
+	const v = rec.visuals;
+	if (v !== undefined) {
+		need(v && text(v.body) && typeof v.fold === 'boolean', 'visuals needs a body (as visuals.mjs writes it) and fold true or false');
+		need(!v || !v.fold || /^Visuals: \S/.test(v.summary || ''), 'visuals summary starts "Visuals: " (the fold\'s one line on screen)');
+		if (v && text(v.body)) out.push(...checkSection(visualsBlock(rec, 'pr'), '###'));
+	}
 	return out;
 }
 
@@ -120,6 +128,16 @@ function wrap(line, width = 110) {
 	}
 	out.push((out.length ? pad : lead) + cur);
 	return out.join('\n');
+}
+
+// K125: the record's Visuals section, as the PR body carries it (a fold after the review, or the fifth section) and as
+// the notes carry it (after the known limits). Written by visuals.mjs; its lines are kept as written, never wrapped.
+export function visualsBlock(rec, where) {
+	const v = rec.visuals;
+	if (!v) return '';
+	const body = String(v.body).replace(/\r\n/g, '\n').trim();
+	if (where === 'notes') return `## Visuals\n\n${body}\n`;
+	return v.fold ? `<details>\n<summary>${v.summary}</summary>\n\n${body}\n</details>\n` : `### Visuals\n\n${body}\n`;
 }
 
 /** The CHANGELOG entry, items grouped by kind in a fixed order. */
@@ -157,7 +175,8 @@ export function prBody(rec) {
 	out.push(`- **Deferred:** ${count(s.deferred) ? `\n${count(s.deferred)}` : 'none.'}`);
 	out.push(`- **Accepted risks:** ${count(s.accepted) ? `\n${count(s.accepted)}` : 'none.'}`);
 	out.push('- **Secrets:** no secrets or account information in the diff.', '', `Version alignment: YES. ${rec.alignment || `v${rec.version} is the ${rec.level} release this build plans.`}`, '');
-	return out.map((l) => (l.startsWith('|') ? l : l.split('\n').map((x) => wrap(x)).join('\n'))).join('\n');
+	const text = out.map((l) => (l.startsWith('|') ? l : l.split('\n').map((x) => wrap(x)).join('\n'))).join('\n');
+	return rec.visuals ? `${text}\n${visualsBlock(rec, 'pr')}` : text;
 }
 
 /**
@@ -175,6 +194,7 @@ export function notes(rec) {
 	if (kit.length) out.push('## What changed in the kit itself', '', 'These stay in the kit and are not installed into projects.', '', ...kit.map(bullet), '');
 	out.push('## Upgrading', '', (rec.upgrading || 'Run `install user` first, then `install project` in each project.').trim(), '');
 	if (rec.limits) out.push(`Known limits: ${rec.limits.trim()}`, '');
+	if (rec.visuals) out.push(visualsBlock(rec, 'notes'));
 	// One line per paragraph and bullet, as the published notes are: GitHub keeps a wrapped line's breaks.
 	return out.join('\n');
 }
@@ -210,12 +230,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 	if (cmd === 'body') {
 		// The build 14 sweep: the published body's fix lines, from "High and critical findings" to "Deferred", must be the
 		// ones the record writes; a hand edit after the record wrote them is named.
+		const visualsOf = (t) => { const s = String(t).replace(/\r\n/g, '\n'); const a = s.search(/<details>\n<summary>Visuals:|\n### Visuals\n/); return a < 0 ? null : s.slice(a).replace(/\s+/g, ' ').trim(); };
 		const span = (t) => { const s = String(t).replace(/\r\n/g, '\n'); const a = s.indexOf('- **High and critical findings:**'); const b = s.indexOf('- **Deferred:**', a); return a < 0 || b < 0 ? null : s.slice(a, b).replace(/\s+/g, ' ').trim(); };
 		let body = null;
 		try { body = fs.readFileSync(file || '', 'utf8'); } catch { /* named below */ }
 		const want = r.rec && !problems(r.rec).length ? span(prBody(r.rec)) : null;
 		if (body === null || want === null) { process.stderr.write(`build record body: ${body === null ? `cannot read "${file || ''}"` : 'the record is not whole'}\n`); process.exitCode = 2; }
 		else if (span(body) !== want) { process.stderr.write(`build record body: the body's fix lines differ from the build record (run: node scripts/build-record.mjs pr)\n`); process.exitCode = 1; }
+		// K125: the Visuals section too, from its fold or heading to the end of the body.
+		else if (r.rec.visuals && visualsOf(body) !== visualsOf(prBody(r.rec))) { process.stderr.write(`build record body: the body's Visuals section differs from the build record (run: node scripts/build-record.mjs pr)\n`); process.exitCode = 1; }
 		else process.stdout.write('build record body: the fix lines match the record\n');
 	} else if (cmd === 'check') {
 		if (r.problems.length) { process.stderr.write(`Build record ${path.relative(root, r.at)}:\n${r.problems.map((p) => `    ${p}`).join('\n')}\n`); process.exitCode = 1; }

@@ -313,3 +313,47 @@ test('the body check holds the fix lines of a published body to the record', () 
 	assert.match(job, /fetch-depth: 0/);
 	assert.match(job, /if git diff --quiet "origin\/\$BASE_REF" HEAD -- VERSION; then [^\n]*; else node scripts\/build-record\.mjs body "\$RUNNER_TEMP\/pr-body\.md"; fi/); // pin: 1
 });
+
+// K125 (the owner, 2026-11-17): the build's PR body and its release notes carry the same Visuals section, written once
+// in the record by the Visuals script; the record check runs the section's own checks, and CI holds the body's copy to
+// the record as it holds the fix lines.
+const VISUALS = {
+	summary: 'Visuals: the always-loaded rules file 27,609 B to 23,834 B (cap 25,000 B)',
+	fold: true,
+	body: ['Every session starts with 1,300 fewer tokens: $5.20 less per 1,000 sessions.', '', '```text', 'Rules file, bytes (| = limit 25,000)',
+		`before  ${'#'.repeat(36)}|###  27,609`, `after   ${'#'.repeat(35)} |     23,834`, '```', '', '| Metric | Before | After | Change | Limit | Source |', '|---|---|---|---|---|---|',
+		'| Rules file | 27,609 B | 23,834 B | -3,775 B (-13.7%) | 25,000 B | measured: bytes at 83ab095 and 1a2b3c4 |',
+		'| Rules file: cost per 1,000 sessions | $39.20 | $34.00 | -$5.20 (-13.3%) | none | derived: tokens x $4/MTok input (2026-11-03) |',
+		'', '**Why each number moved**', '', '- **Rules file:** module text moved to the skills that use it.', '- **Rules file: cost per 1,000 sessions:** follows from the tokens it loads.'].join('\n'),
+};
+// why: guards rule:pr-body and rule:release-notes
+test('a record with Visuals writes them into the PR body and after the notes known limits, checked, and CI holds the copy', () => {
+	const rec = { ...record(), limits: 'One known limit.', visuals: VISUALS };
+	assert.deepEqual(problems(rec), []);
+	const body = prBody(rec);
+	assert.match(body, /Version alignment: YES\.[^\n]*\n\n<details>\n<summary>Visuals: the always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nEvery session starts/);
+	assert.ok(body.includes(`before  ${'#'.repeat(36)}|###  27,609`), 'the chart is not wrapped');
+	const std = path.join(kitTemp.makeTemp('vis-body-'), 'body.md');
+	fs.writeFileSync(std, body);
+	const audit = spawnSync(process.execPath, [path.resolve('project/.claude/pr-body-audit.mjs'), std, rec.title], { encoding: 'utf8', cwd: path.dirname(std) });
+	assert.match(audit.stdout, /PASS +Visuals: numbers, chart and why lines check out +checked/);
+	const text = notes(rec);
+	assert.ok(text.indexOf('Known limits:') < text.indexOf('## Visuals\n\nEvery session starts'), text);
+	const file = path.join(kitTemp.makeTemp('vis-notes-'), 'notes.md');
+	fs.writeFileSync(file, text);
+	const release = spawnSync(process.execPath, [path.resolve('user/skills/release-notes/audit.mjs'), file, '1.2.0'], { encoding: 'utf8', cwd: path.dirname(file) });
+	assert.equal(release.status, 0, release.stdout);
+	assert.match(problems({ ...rec, visuals: { ...VISUALS, body: VISUALS.body.replace('-3,775 B', '-3,000 B') } }).join('\n'), /Visuals: row 1 \(Rules file\): change is -3,775 B/);
+	assert.match(problems({ ...rec, visuals: { ...VISUALS, summary: 'Rules file shrank' } }).join('\n'), /visuals summary starts "Visuals: "/);
+	// CI: a body whose Visuals differ from the record's is named, as a fix line is.
+	const dir = kitTemp.makeTemp('record-vis-');
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'VERSION'), '1.2.0\n');
+	fs.writeFileSync(path.join(dir, 'docs', 'builds', '1.2.0.json'), JSON.stringify(rec));
+	fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), `# Changelog\n\n${changelog(rec)}`);
+	const run = (b) => { fs.writeFileSync(path.join(dir, 'body.md'), b); return spawnSync(process.execPath, [path.resolve('scripts/build-record.mjs'), 'body', path.join(dir, 'body.md')], { cwd: dir, encoding: 'utf8', env: { ...process.env, KIT_RECORD_ROOT: dir } }); };
+	assert.equal(run(body).status, 0, run(body).stderr);
+	const edited = run(body.replace('$5.20 less per 1,000', '$9.99 less per 1,000'));
+	assert.equal(edited.status, 1);
+	assert.match(edited.stderr, /Visuals section differs from the build record/);
+});
