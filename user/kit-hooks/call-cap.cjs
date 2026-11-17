@@ -6,7 +6,8 @@
 // PreToolUse on every tool; only the reviewer type is held to a cap and a ceiling (checkers and builders only to the
 // no-waiting rule below). The count is the message ids in the reviewer's own
 // transcript, the unit the budget uses; the cap is the "Call cap: N" line of its brief. The hand-back is never held.
-// A hook in the agent's own role file did not fire in the probe, so this one sits in the project's settings.
+// It sits in the project's settings, so it holds every reviewer, whatever its role file carries (role-file hooks
+// do fire: the v1.17.0 live run).
 // Anything unexpected lets the call through: the whole-sweep trip stands behind it.
 //
 // It also holds the two costs the token audit measured (workbench results/token-audit, W5 and W6). A whole file over

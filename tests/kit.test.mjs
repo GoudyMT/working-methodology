@@ -7090,7 +7090,7 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
     // pin: 2 (the lead's order when the tool is missing)
   assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }
-  assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\)[^\n]*to the owner/);
+  assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\)[^\n]*-> push \+ PR \(no yes needed/);
 });
 
 // why: guards rule:word-pins

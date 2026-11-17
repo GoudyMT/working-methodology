@@ -10,14 +10,14 @@
 
 ## Critical Hard Rules (Read First)
 
-1. **Default mode: Plan for design.** Lock A/B/C decisions with the owner before execution. Decisions the project's records already answer are delegated to Claude - impact test first, then a `Decided alone` report at the end of the workflow (rule:delegated-decisions). Once locked, edits proceed under Edit Discipline. Explicit per-file approval still required for high-stakes changes per Edit Discipline criteria.
-2. **One issue at a time.** Bulk instructions ("complete all todos") do NOT override per-issue locks.
+1. **Plan for design; the owner locks A/B/C decisions;** the records answer the rest (rule:collaborative-design-locks, rule:delegated-decisions).
+2. **One issue at a time;** bulk instructions never override per-issue locks (AGENTS.md Non-Negotiable 1).
 3. **Privacy and security ABOVE all else.** <!-- PROJECT ADAPTER A4/A5: the data boundary and product red lines, e.g. "Personal data never leaves the device by default. No third-party trackers. No ads, ever." -->
 4. **Domain hard boundaries:** <!-- PROJECT ADAPTER A2: the legal / licensing / product lines this project never crosses. Fill in or write "none beyond the general rules". -->
 5. **Content and data sourcing:** <!-- PROJECT ADAPTER A2: what may be collected or used, from where, under what license. Fill in or "n/a". -->
 6. **Security baseline:** <!-- PROJECT ADAPTER A3: e.g. OWASP ASVS Level 2 for all code. -->
 7. **TDD discipline.** Tests written before / alongside implementation; watch each fail first.
-8. **Edit Discipline gates all code writes.** Four-step checklist (think -> minimize -> confirm requirements -> confirm method) passes visibly before Edit / Write fires. Agents 1-3 only when genuine uncertainty exists. The owner can override with "type it yourself" any time.
+8. **Edit Discipline gates all code writes** (rule:edit-discipline).
 9. **Tracking files = pointers, not restatements.** Each tracking file (Session Log / Working Memory / Master Roadmap / Active Plan) has ONE unique function. Content in a source-of-truth file (spec / ADR / plan / git log / code) is referenced via pointer, never restated.
 10. **No proactive tracking-file updates after every small step.** Tracking files update at a real-value milestone, session end (the owner declares it, or the closeout starts on its own: rule:compact-ritual), or the owner's explicit request. Source-of-truth files update immediately on real work.
 11. **Post-compact / new session: orientation first.** First action: run `node .claude/resume-packet.mjs check`, then a fresh Read of `_Active Plan.md`, of every file its Resume Point names and of every file it marks CHANGED or missing, before any source-of-truth edit or agent dispatch; no verdict line from the check means the full reading. Visible `[x]` checklist with one line per file the check lists. The packet, system reminders, compaction summaries and memory are not reads. "I just re-read" a file is forbidden unless the Read tool ran on it this session.
@@ -64,4 +64,4 @@ See [`_Active Plan.md`](_Active Plan.md) for the current focus and the next conc
 
 ## Honoring the Global CLAUDE.md
 
-The owner's global CLAUDE.md (user level) defines global standards (communication style, coding conventions, naming, comment philosophy, decision-making, scope discipline). Those apply. This project CLAUDE.md adds project-specific rules on top. When global and project conflict, project wins for project-specific instructions; the global rules about honesty, never guessing and evidence-based work always apply.
+The owner's global CLAUDE.md (user level) defines global standards (communication style, coding conventions, naming, comment philosophy, decision-making, scope discipline). Those apply. This project CLAUDE.md adds project-specific rules on top. When global and project conflict, project wins for project-specific instructions; the global rules about honesty, never guessing and evidence-based work always apply. The one order: rule:instruction-priority.

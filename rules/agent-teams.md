@@ -15,7 +15,7 @@ tags:
 
 ## Multi-Agent Discipline {#multi-agent-discipline}
 
-**Scope before you fan out.** A mode signal ("begin loop workflow", "ultra", "token cost is not a constraint") authorizes the KIND of work, never its SIZE: state the count and what each layer buys, then stop for the owner's yes. "Exhaustive" means coverage (angles, files, risk classes), not re-litigating one finding. A mis-shaped run is stopped, reshaped, resumed from cache where possible. Why: orchestration gets the same gate code gets.
+**Scope before you fan out.** A mode signal ("begin loop workflow", "ultra", "token cost is not a constraint") authorizes the KIND of work, never its SIZE: state the count and what each layer buys; the Swarm Contract's approval is the yes (rule:swarm-contract), and a fan-out with no contract stops for the owner's yes. "Exhaustive" means coverage (angles, files, risk classes), not re-litigating one finding. A mis-shaped run is stopped, reshaped, resumed from cache where possible. Why: orchestration gets the same gate code gets.
 
 ### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
@@ -53,7 +53,7 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this
 
 ### Agent Role Table {#agent-role-table}
 
-Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that; each role file in `user/agents/` must match it (a test checks), and `kit.mjs build` writes each role's rules skill from the IDs in the last column. Why: access widened in one file without the table is invisible, and an agent that skips CLAUDE.md sees no rules but its brief and what is preloaded.
+Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that: a test holds each role file in `user/agents/` to it, and `kit.mjs build` writes each role's rules skill from the last column. Why: access widened in one file alone is invisible.
 
 | Role | Job | Tools | Denied tools | Rules at start |
 |---|---|---|---|---|
@@ -63,18 +63,18 @@ Each agent role gets only the tools its job needs and starts with the rules that
 | reviewer | Reviews one sweep role or dimension; never edits | Read, Grep, Glob, Bash, PowerShell, WebFetch, WebSearch | Edit, Write, Agent | anti-hallucination, enumerate-before-you-count |
 | orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |
 
-The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Guards back the table: the builder's edit fence and the checker's clean-tree stop are role-file hooks; the push guard is also a git pre-push hook (the kit's shims), so it holds for any AI tool that marks its shell. Role files stay in `~/.claude/agents/`: a project agent file's hooks wait for folder trust and never run in `-p`, so a project copy drops them. Only `Explore` (no hooks) installs per project, replacing the built-in in kit projects alone (MC5).
+The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Role-file hooks back the table (the builder's edit fence, the checker's clean-tree stop). Role files stay in `~/.claude/agents/`: a project copy's hooks never run in `-p`. Only `Explore` (no hooks) installs per project (MC5).
 
 ### Agent Canary {#agent-canary}
 
 Every kit-role agent opens each message to whoever started it with the phrase on the last line of field 8's block, which it finds only by opening that block with Read (role files and preloaded rules are injected, so never there). Why: an agent that skipped or lost its rules does not know it drifted.
 
-- **The tasker never asks for, writes or quotes the phrase**, anywhere. A guard refuses a brief or message carrying it; the PR body and release audits fail on it.
-- **The check is a hook:** `canary.cjs`, the Stop hook in every role file; a tool hand-back is checked at its call. A miss voids the run; the hook sends the close-out steps, never the phrase.
+- **The tasker never asks for, writes or quotes the phrase**, anywhere (a guard and the audits refuse it).
+- **A hook checks it** (`canary.cjs`). A miss voids the run, and the hook sends the close-out steps.
 - **Close-out (the agent):** stop editing; commit nothing half-done; leave the changes in place; reply "Closed out: <unit id>" with a note (done, half-done, next step, files touched, last test run). (An isolated agent cannot write elsewhere.)
 - **Pick-up (the lead):** save the note and the old worktree's unfinished work (`git -C <worktree> add -A -N`, then `diff HEAD --binary`) as `note.md` and `work.patch` in `<git common dir>/kit-handoff/<unit id>/`; start a fresh agent (same role and brief) plus: read `note.md`, `git apply` `work.patch`, check `git status` against the note, then continue. Nothing from a voided report is used unchecked.
 - **Two strikes:** a second failed cycle on one unit stops the run; the owner is told.
-- **Log:** each check is a line in `<git common dir>/kit-canary.log`; the lead copies the counts to the scoreboard; `unchecked` = the check did not run; find out why. False alarms (the checker shows the agent did read) above 1 in 10: fix the wording first.
+- **Log:** `<git common dir>/kit-canary.log`; the lead copies the counts to the scoreboard and finds out why any check shows `unchecked`. False alarms above 1 in 10: fix the wording first.
 - **Not checked:** built-in agent types (they never read the rule files); sweeps use the reviewer role.
 
 ### Agent-Team Build: Project Adapter (TEMPLATE) {#agent-team-adapter}

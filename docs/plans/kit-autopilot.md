@@ -1,6 +1,8 @@
 # Kit autopilot: review of design v3 and implementation plan
 
-Status: **plan, awaiting the owner's go.** Nothing is built yet. The kit repo isn't attached to this project, so file paths below are the ones the design names.
+> SUPERSEDED: the merge gate (1.21.1) and the loop driver (1.38.0, 1.39.0) replaced this plan; kept for the record.
+
+Status (when written): **plan, awaiting the owner's go.** Nothing was built from it. The kit repo isn't attached to this project, so file paths below are the ones the design names.
 
 ---
 

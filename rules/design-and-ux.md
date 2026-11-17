@@ -30,6 +30,7 @@ tags:
 
 For any screen, page or board, whatever the visual style:
 
+- **Dense screens split in two:** the front stage holds what the user acts on now; the rest opens on demand. Look at the screen with real data early, before the layout locks.
 - **Name the surface's job first:** *operate* (an app screen, dashboard, tracking board, settings: wins on clarity, consistency and familiar patterns), *read* (docs, guides, help: wins on structure), *persuade* (a landing page: one bold idea). Ambition follows the job, not the product. Why: a dashboard dressed as a landing page is slower to use.
 - **Floor check on the built screen, in one batched pass:** every state exists (hover, disabled, loading, error, empty, real content, visible keyboard focus); body text 65-75 characters wide; more space above a heading than below it; secondary text on a colored surface takes that hue's tint, never gray; icons are drawn icons in one stroke weight, never emoji or Unicode glyphs; numbers that line up use tabular figures.
 - **Refuse by default** (the owner's lock can overrule): cards inside cards; the big-number-small-label "hero metric" layout; a small label above every heading; gradient text; decorative blur or glass; a colored stripe thicker than 1px on one side of a card; progress rings, sparklines or blank rounded boxes standing in for real content - a board shows the real items and their evidence; military or other loaded emblems as decoration (seals and insignia are also protected marks).

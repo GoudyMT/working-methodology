@@ -78,6 +78,16 @@ by pop-up; nothing built without his pick.
 
 ## Plan check
 
-(The plan gap check's list and how each high was taken goes here.)
+One fresh read-only agent, the fixed brief, 2026-11-17: 10 findings (4 high). How each was taken:
+
+- **P1 high, owner text reworded without a pin:** the owner's call. Every changed rule line went to the owner in one file (before and after); his pop-up, 2026-11-17: "Yes, all of them".
+- **P2 high, E2 consumers:** acceptance. Edit Discipline ("the cell justification checklist", "type it yourself"), CLAUDE.md rule 8 and the global scope line changed; a grep for the four phrases over rules/, project/ and user/ is empty.
+- **P3 high, J-R3 drops unique text:** limit. Only hard rules 1, 2 and 8, whose every clause is in AGENTS.md, became pointers; 9 to 14 stay in full (rule 11 holds the Q3 key clause, rule 14 is pinned).
+- **P4 high, a cut sentence no script checks:** acceptance. Each cut is in docs/migrations/1.41.0-reworded.json; the duties the agent named ("Claude never writes them", "never delete it in the next commit", "made private first") are kept.
+- P5 medium: the ledger records every changed line, not only v1.1.0 lines. P6 medium: limit below. P7 medium: measured, see Result. P8 medium: the K108 check runs on full, --changed and --map runs (no file list); only tests/slow itself is exempt (test). P9 medium: a failed forget is named on stderr, never thrown; forget reaches removeProbe through kitTools. P10 low: any *.test.* file a lane skips is named (test).
+
+**Limits:** recall measures the project layer only; E2 (user/CLAUDE.md) and the M23 comment are unmeasured, and the owner read them line by line. Other AI tools read only AGENTS.md, so nothing moved into CLAUDE.md alone. Cap figures do not prove nothing was lost: the ledger does.
+
+**Owner calls, 2026-11-17 pop-up:** rule lines "Yes, all of them"; precedence "Project, for its own rules" (rule:instruction-priority rewritten, one order); faster CI "Yes, this build".
 
 Would self-approve: no (owner text changes: E2).
