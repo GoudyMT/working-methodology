@@ -77,7 +77,8 @@ const printSed = (w) => {
 	// The bare name, looked up on PATH: a path to a sed is any program a tool wrote there (the plan check's P4).
 	if (w.length < 4 || !/^sed(\.exe)?$/i.test(w[0] || '') || w[1] !== '-n') return false;
 	// Digits only: $p may be a variable holding any script (the 1.28.0 sweep), and quotes are gone by here.
-	const at = /^\d+p$/.test(w[2]) ? 3 : /^\d+$/.test(w[2]) && /^\d+p$/.test(w[3] || '') ? 4 : 0;
+	// K117 (1.42.0): a line range (1,40p) prints too; it was held as a write.
+	const at = /^\d+(,\d+)?p$/.test(w[2]) ? 3 : /^\d+$/.test(w[2]) && /^\d+p$/.test(w[3] || '') ? 4 : 0;
 	return at > 0 && w.length > at && w.slice(at).every((x) => !x.startsWith('-'));
 };
 
@@ -415,7 +416,31 @@ function filterFits(pattern, cwd, pathWord = false) {
 }
 
 // start: the folder the shell starts in (the hook's cwd), so a relative word is read from there too.
+// K117 (1.42.0, held live on 1.41.0): a loop over plain words that runs plain steps was held as a write, since its
+// for, do and done (or PowerShell's braces) read as a definition beside every step. A simple loop runs its body with
+// one plain variable set to each word in turn, so it is read as its body: for v in a b; do ...; done (Bash) or
+// foreach ($v in 'a','b') { ... } (PowerShell), with at most a plain folder change before it. The variable is lowercase,
+// so it is never PATH or another name that moves a program (Bash names are case-sensitive; a PowerShell $v is no
+// environment variable); the words hold no expansion, and the body no group, substitution or second loop. The body is
+// read once for each word, the variable written out as that word, so a word that names a guard is read as written.
+const LOOP_WORDS = /^[\w.,'" /-]+$/;
+const LOOP_BODY = /^[^{}()`]*$/;
+function loopBodies(command, tool) {
+	const c = String(command || '');
+	const m = tool === 'PowerShell'
+		? /^(\s*(?:(?:cd|sl|set-location)\s+[^;&|`$(){}]+;\s*)?)foreach\s*\(\s*\$([A-Za-z_]\w*)\s+in\s+([^()]+?)\s*\)\s*\{([\s\S]*)\}\s*$/i.exec(c)
+		: /^(\s*(?:cd\s+[^;&|`$(){}]+&&\s*)?)for\s+([a-z_][a-z0-9_]*)\s+in\s+([^;\n]+?)\s*[;\n]\s*do\s+([\s\S]*?)[;\n]?\s*done\s*$/.exec(c);
+	if (!m || !/^[a-z_][a-z0-9_]*$/.test(m[2])) return null;
+	const [, before, name, words, body] = m;
+	if (!LOOP_WORDS.test(words) || !LOOP_BODY.test(body) || /\$\(|\b(for|foreach|do|done|while|until|function|eval|source)\b|(^|[\s;&|])\.\s/i.test(body)) return null;
+	const list = words.split(tool === 'PowerShell' ? /\s*,\s*/ : /\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
+	if (!list.length || list.length > 64) return null;
+	const use = new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)`, tool === 'PowerShell' ? 'gi' : 'g');
+	return list.map((w) => before + body.trim().replace(use, () => w));
+}
 function shellWrites(command, tool, start, names = proofNames) {
+	const bodies = loopBodies(command, tool);
+	if (bodies) return bodies.some((b) => shellWrites(b, tool, start, names));
 	// Each reading has its own real folder: a reading nested in this one must not leave its own behind.
 	const outer = startNow;
 	startNow = start ? { dir: String(start), origin: String(start) } : null;
@@ -555,7 +580,8 @@ function shellWritesFrom(command, tool, start, names) {
 		// K93 (build 12): node running one of the project's kit scripts (.claude/<name>.mjs or .cjs, which only install
 		// writes) is a child process, so it defines nothing in this shell. Any other script may make a link a later copy
 		// reads through (the build 12 sweep), and with an option first (inline code, a file it writes) node is not plain.
-		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1))) || CHANGERS.has(p) || printSed(w)
+		// K117 (1.42.0): echo prints its words and defines nothing (its redirect is read below like any other).
+		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
 			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
 			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
 			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));

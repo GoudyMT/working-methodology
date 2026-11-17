@@ -243,6 +243,21 @@ test('two kit scripts in one command pass; node with inline code or an option be
 		'node mk.js && cp .claude/settings.json out.txt', 'node mk.js; cat .claude/guard.cjs > out.txt']) assert.equal(bash(c), 'deny', c);
 });
 
+// K117 (1.42.0, held live on 1.41.0 in the kit source and the workbench): a loop of kit-script reads, in Bash and in
+// PowerShell, and a sed print of a line range, were held as writes to a protected file. A simple loop is read as its
+// body, once per word; a loop whose word, variable or body could write a guard is still held.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('a loop of kit-script reads and a sed line range pass; a loop that could write a guard is still held', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	const fwd = proj.split(path.sep).join('/');
+	for (const c of [`cd ${fwd} && for id in T10 T9; do echo "=== $id"; node .claude/state.mjs item $id; done`, 'for id in K1 K2; do node .claude/state.mjs item $id; done', "sed -n '1,40p' .claude/guard.cjs | grep -n protected"]) assert.equal(bash(c), 'allow', c);
+	for (const c of [`cd ${proj}; foreach($id in 'T10','T9'){ node .claude/state.mjs item $id 2>$null | Out-String -Width 400 }`, "foreach ($id in 'K1') { node .claude/state.mjs item $id }"]) assert.equal(ps(c), 'allow', c);
+	// The loop's word is read where the variable stands; a variable that could move a program, a group in the body and
+	// a substitution keep the strict reading.
+	for (const c of ['for p in .claude/guard.cjs; do cp x $p; done', 'for p in a .claude/settings.json; do echo x > $p; done', 'for x in cp; do $x y .claude/guard.cjs; done', 'for PATH in /tmp/x; do node .claude/settings.json; done', 'for id in K1; do f() { cp x .claude/guard.cjs; }; node .claude/state.mjs item $id; done', 'for id in $(ls); do node .claude/settings.json; done']) assert.equal(bash(c), 'deny', c);
+	for (const c of ["foreach ($p in '.claude/guard.cjs') { Copy-Item x $p }", "foreach ($id in 'K1') { function node { cp x $args[0] }; node .claude/settings.json }"]) assert.equal(ps(c), 'deny', c);
+});
+
 // why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
 test('running a kit script with 2>&1, or after a plain Set-Location, passes; a write beside it is still held', () => {
 	const ps = (command) => decide('PowerShell', { command });
