@@ -1771,6 +1771,8 @@ test('a class with a capital later in the name names the project; dotted names b
 	};
 	const parent = path.dirname(proj).split(path.sep).join('/');
 	for (const word of ['[!a-z]yApp', '[[:upper:]]yA*']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'deny', word);
+	// The commit security review: on Windows a trailing dot is dropped, so MyApp. is MyApp.
+	if (process.platform === 'win32') for (const c of ['cd ' + parent + ' && rm -rf MyApp./.claude', `rm -rf ${parent}/MyApp./.claude`]) assert.equal(call(c), 'deny', c);
 	const big = kitTemp.makeTemp('k120b-big-');
 	for (let i = 0; i < 250; i++) fs.mkdirSync(path.join(big, `d${i}`));
 	const t0 = Date.now();

@@ -435,7 +435,9 @@ function namedProjects(input) {
 	const home = posix(require('os').homedir());
 	// One spelling for a path: home expanded, forward slashes, no quotes, the drive as c:/, no doubled slashes.
 	const norm = (s) => fold(String(s).replace(/(^|[\s=(:;&|"'])(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\\s"']|$)/gi, (m, a) => a + home))
-		.replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/');
+		.replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/')
+		// Windows drops a name's trailing dots (MyApp. is MyApp; the commit security review); . and .. stay.
+		.replace(WIN ? /([^\s/.])\.+(?=\/|\s|$|[;&|)])/g : /$^/, '$1');
 	// $'...' is read as the text bash makes of its escapes, and $"..." as the string itself (the third review, on cd0f9f5).
 	const ESC = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v' };
 	const decoded = command.replace(/\$'((?:[^'\\]|\\[\s\S])*)'/g, (m, body) => body.replace(/\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|c[\s\S]|[0-7]{1,3}|[\s\S])/g, (e, c) => {
@@ -698,7 +700,9 @@ function namedProjects(input) {
 				// folders). Only a first part that is a folder or link there can lead anywhere new; a plain file in a
 				// folder already read adds nothing, so it is looked up in the folder's listing first.
 				const head = t.split('/')[0];
-				const leads = (base) => climb || head === '.' || head === '' || namesIn(base).has(key(head));
+				// A name Windows reads as another (an 8.3 short name with ~, a trailing dot or space, a stream after :) is
+				// not in the listing as written, so it is resolved (the commit security review).
+				const leads = (base) => climb || head === '.' || head === '' || /[~:]|[. ]$/.test(head) || namesIn(base).has(key(head));
 				for (const base of dirs.slice()) {
 					if (climb && climbs <= 1) break;
 					if (!leads(base)) continue;
