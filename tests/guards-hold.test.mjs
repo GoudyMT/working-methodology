@@ -490,6 +490,9 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	const file = path.join(cfg, 'projects', fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`);
 	popUp({ act: 'git status', file });
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the marker alone');
+	// K124 (1.42.0): the owner's No to that push is no yes (a planted bug read every answer as one).
+	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', answer: 'No', file });
+	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the owner answered No');
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file });
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, { ...go, CLAUDE_CODE_SESSION_ID: '99999999-2222-3333-4444-555555555555' }).status, 0, 'another session\'s record');
 	assert.notEqual(push(`refs/tags/v1 ${main} refs/tags/v1 ${Z}`, go).status, 0, 'a yes for main is no yes for a tag');
@@ -748,6 +751,8 @@ test('each refusal names one act to quote, one kind, and a fix the hold lets thr
 	const feat = why('Bash', { command: 'git push --force origin feat/x' });
 	assert.equal((feat.match(/`[^`]+`/g) || []).filter((s) => !s.startsWith('`<')).length, 1, `two acts to quote: ${feat}`);
 	assert.ok(feat.includes('`KIT_PUSH_APPROVED=1 git push --force origin feat/x`'), feat); // pin: 1 the owner-yes matcher reads this act back
+	// K97: the question names its shell, so the yes binds it (K124, 1.42.0: a planted bug dropped the words).
+	assert.ok(feat.includes('"in Bash"'), feat);
 	const ps = why('PowerShell', { command: 'git push --force origin feat/x' });
 	assert.ok(ps.includes("`$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x`"), `PowerShell got no marker act: ${ps}`); // pin: 1
 	popUp({ act: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x", tried: { tool: 'PowerShell', input: { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" } } });
@@ -1009,6 +1014,8 @@ test('opening a PR from a feature branch runs without a yes; any other PR act as
 	// One that cannot be read is held by its text check: refused either way.
 	for (const f of ['.git/config', 'D:/keys/id_rsa', '/etc/passwd', 'missing.md']) assert.equal(ask(bodyFile(f)), 'deny', f);
 	assert.notEqual(ask('gh pr create ' + T), 'deny', 'the audited body file in the repo');
+	// K124 (1.42.0): on Windows the same file named in another letter case is that file.
+	if (process.platform === 'win32') assert.notEqual(ask(bodyFile('Good.md')), 'deny', 'the body file named in another case');
 	spawnSync('git', ['-C', repo, 'remote', 'add', 'upstream', 'https://github.com/someone/r.git']);
 	bound('gh pr create ' + T);
 	spawnSync('git', ['-C', repo, 'remote', 'remove', 'upstream']);
