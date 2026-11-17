@@ -72,8 +72,12 @@ const STANDARD_CALLS = 15;
 const MIN_CALLS = 5;
 const SPECIAL = 2;
 const budgetFor = (calls, growth) => PER_CALL * calls + growth * calls * calls / 2;
-// The reviewer role's own model (user/agents/reviewer.md), for a role that names none.
-const DEFAULT_MODEL = 'claude-opus-5-5';
+// The reviewer role's own model (user/agents/reviewer.md), for a role that names none. K114 (1.42.0): the mid model,
+// once MC3 showed mid-model reviewers find what top-model ones find at about half the cost (the trial's end).
+const DEFAULT_MODEL = 'claude-sonnet-5-5';
+// Security and the novel lens stay on the top model: a role of those kinds that names no model runs on it, and its
+// Agent call names it (the outcome refuses a reviewer that ran on another model than the contract's).
+const TOP_DEFAULT = 'claude-opus-5-5';
 const modelKey = (m) => { const s = String(m ?? DEFAULT_MODEL); return /opus/i.test(s) ? 'opus' : /sonnet/i.test(s) ? 'sonnet' : null; };
 // A re-sweep (the owner, 2026-11-03): one blast-radius role, one role per kind with a fixed finding, one alignment role.
 const RESWEEP_NEEDS = { 'blast-radius': 1, dimension: 1 };
@@ -96,6 +100,7 @@ const MODIFIER_NEEDS = {
 };
 const MAX_CONTEXT = 30;
 const TOP_ONLY = ['security', 'novel-lens'];
+const roleModel = (r) => r.model ?? (TOP_ONLY.includes(r.kind) ? TOP_DEFAULT : DEFAULT_MODEL);
 const TOP_MODEL = /opus/i;
 const OVERRUN = 1.25;
 // M22 option C (the owner, 2026-11-05; workbench results/m22-budget): no pre-run guess lands within 25%, so each role is
@@ -584,7 +589,7 @@ function decide() {
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
 	const { ceilings, from: ceilingFrom } = ceilingsFor(s.log, budgets);
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, patches: facts ? branchPatches(facts.base) : [], models: (c.roles || []).map((r) => r.model ?? DEFAULT_MODEL), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, patches: facts ? branchPatches(facts.base) : [], models: (c.roles || []).map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head, ...(first ? { resweepOf: first } : {}) };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -602,7 +607,7 @@ function decide() {
 		if (now.paused) for (const l of resumeHelp(now)) console.log(l);
 		const f = triage(`${c.tier} ${first ? 're-sweep' : 'sweep'} sent to the owner`, why, [
 			`${entry.agents} roles, budget ${entry.budget.toLocaleString('en-US')}${first ? `, a re-sweep of ${rel(first)}` : extras === undefined ? ', no floor counted (this tier always goes to the owner)' : `, ${extras} beyond the floor (cap ${cap.maxExtras})`}`,
-			...(c.roles || []).map((r, i) => `role ${i + 1}: ${r.role || r.kind} (${r.kind}, ${r.model || DEFAULT_MODEL})${budgets[i] === undefined ? '' : `, ${r.calls} calls, budget ${budgets[i]}`}${r.callsReason ? ` (${r.callsReason})` : ''}`),
+			...(c.roles || []).map((r, i) => `role ${i + 1}: ${r.role || r.kind} (${r.kind}, ${roleModel(r)})${budgets[i] === undefined ? '' : `, ${r.calls} calls, budget ${budgets[i]}`}${r.callsReason ? ` (${r.callsReason})` : ''}`),
 			...(now.paused ? [`paused since ${String(now.pausedAt || '').slice(0, 10)}: ${now.paused}`] : []),
 		]);
 		console.log(`    Triage report for the owner: ${f}`);
@@ -627,7 +632,7 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilin
 		`    ${c.tier} ${first ? 're-sweep' : 'sweep'}, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
 		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.baseName}`,
 		...(hookState(facts.base) === 'none' ? [HOOK_NONE] : []),
-		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${r.model || 'the reviewer default'}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}; brief: "Call cap: ${r.calls}. Token ceiling: ${ceilings[i]}."`),
+		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${roleModel(r)}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}; brief: "Call cap: ${r.calls}. Token ceiling: ${ceilings[i]}."`),
 		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason); expected, not a trip once the log has a baseline`,
 		`    Token ceiling per role: ${ceilingFrom}; the call-cap hook stops a reviewer there`,
 		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
@@ -1226,7 +1231,7 @@ function outcome() {
 	// The reviewer trial and the top-model rule rest on the model a role names, so a reviewer on another one is the owner's.
 	per.forEach((x, i) => {
 		// The model the decision cleared, so an edit to the contract after it hides nothing.
-		const named = (decision.models || [])[i] ?? (roles[i] ? (roles[i].model ?? DEFAULT_MODEL) : null);
+		const named = (decision.models || [])[i] ?? (roles[i] ? roleModel(roles[i]) : null);
 		if (named && (!x.model || !modelKey(x.model) || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });

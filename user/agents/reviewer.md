@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Read-only reviewer for ONE role of a sweep (a security angle, a dimension, test value, a novel lens) under an approved Swarm Contract or a sweep tier. Returns findings with evidence, never fixes. Use only when the lead hands over a complete reviewer brief (pre-pr-sweep skill).
-model: claude-opus-5-5
+model: claude-sonnet-5-5
 effort: high
 omitClaudeMd: true
 tools: Read, Grep, Glob, Bash, PowerShell, WebFetch, WebSearch
