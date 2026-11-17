@@ -202,8 +202,14 @@ export function removeProbe({ dir, home, slug, osHome = os.homedir(), forget }) 
   if (!/^[\w.-]+$/.test(slug || '') || /^\.+$/.test(slug)) throw new Error(`${JSON.stringify(slug)} is not a memory slug`);
   fs.rmSync(path.dirname(dir), { recursive: true, force: true });
   fs.rmSync(path.join(home, 'projects', slug), { recursive: true, force: true });
-  // Only once the folder is gone: forget refuses a project that is still there.
-  if (forget) forget({ home, dir });
+  // Only once the folder is gone: forget refuses a project that is still there. A failure here is named, never thrown:
+  // this runs in the run's finally, where a throw would hide the run's own error.
+  if (forget) {
+    try {
+      const r = forget({ home, dir });
+      if (!r.removed.length && !/no guard record names/.test(r.why)) process.stderr.write(`recall: the probe's guard record stays: ${r.why}\n`);
+    } catch (e) { process.stderr.write(`recall: the probe's guard record stays (${e.message}); run kit.mjs forget on ${dir}\n`); }
+  }
 }
 
 export function runHeader({ label, keys, facts, when, cli }) {

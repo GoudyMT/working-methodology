@@ -58,6 +58,14 @@ test('a full run refuses a test file in a tests/ subfolder no lane runs, and nam
 	assert.match(r.stderr, /tests\/unit\/lost\.test\.mjs/);
 	assert.doesNotMatch(r.stderr, /big\.test\.mjs/, 'the slow lane runs tests/slow');
 	fs.rmSync(lost);
+	// Only tests/slow itself is the slow lane: a slow folder deeper down runs nowhere; a top-level .test.js neither.
+	for (const f of [path.join('tests', 'unit', 'slow', 'deep.test.mjs'), path.join('tests', 'top2.test.js')]) {
+		fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+		fs.writeFileSync(path.join(dir, f), body('x'));
+		const r2 = run(dir, [], { CI: '1' });
+		assert.match(r2.stderr, new RegExp(f.split(path.sep).join('/').replace(/\./g, '\\.')), f);
+		fs.rmSync(path.join(dir, f));
+	}
 	assert.equal(run(dir, [], { CI: '1' }).status, 0, 'with no lost file the run passes');
 });
 

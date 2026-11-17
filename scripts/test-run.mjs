@@ -266,7 +266,8 @@ export async function main(argv) {
 		const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
 			const p = path.join(d, e.name);
 			if (e.isDirectory() && !(d === testsDir && (e.name === 'slow' || e.name === 'node_modules'))) walk(p);
-			else if (e.isFile() && d !== testsDir && e.name.endsWith('.test.mjs')) lost.push(path.relative(root, p).split(path.sep).join('/'));
+			// Any test-shaped file the run would skip: one in a subfolder, or one at the top with another extension or case.
+			else if (e.isFile() && /\.test\.[cm]?[jt]s$/i.test(e.name) && (d !== testsDir || !e.name.endsWith('.test.mjs'))) lost.push(path.relative(root, p).split(path.sep).join('/'));
 		} };
 		walk(testsDir);
 		if (lost.length) {
