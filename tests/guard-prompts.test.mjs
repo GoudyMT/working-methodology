@@ -46,6 +46,21 @@ test('a local git act that throws away work waits for the owner; reads and safe 
 	for (const c of ['git status', 'git stash list', 'git stash', 'git stash pop', 'git branch -d old', 'git branch -a', 'git restore --staged x', 'git reset --soft HEAD~1', 'git reset HEAD x', 'git checkout main', 'git checkout -b feat/x', 'git switch main', 'git reflog', 'git log --oneline']) assert.equal(hook('guard-delete.cjs', c), 'pass', c);
 });
 
+// The build 16 sweep (each put a changed file back in a real repo): a pathspec that is a glob, magic or a list file;
+// xargs feeding checkout; an alias set on the spot for checkout or restore; a path after a move the guard cannot
+// follow; and the plumbing that overwrites the work tree or drops a branch.
+// why: guards rule:outward-acts
+test('a glob or magic pathspec, xargs, an alias on the spot, a path after a move and git plumbing that drop work wait for the owner', () => {
+	for (const c of ['git checkout *.md', "git checkout '*.md'", "git checkout HEAD~1 '*.cjs'", 'git checkout :/', 'git checkout HEAD --pathspec-from-file=list.txt',
+		'git ls-files -m | xargs git checkout', 'echo . | xargs git checkout', 'echo . | xargs git restore',
+		'git -c alias.co=checkout co -- .', 'git -c alias.x=restore x .', "git config alias.discard 'checkout -- .'",
+		'git -C sub checkout Makefile', 'git -C .. checkout LICENSE',
+		'git checkout-index -f -a', 'git read-tree -u --reset HEAD', 'git update-ref -d refs/heads/side', 'git push . +HEAD~3:main']) {
+		assert.equal(hook('guard-delete.cjs', c), 'deny', c);
+	}
+	for (const c of ['git restore --help', 'git restore -h', 'git checkout --help', 'git checkout-index -a', 'git read-tree HEAD', 'git update-ref refs/heads/x HEAD', 'git config alias.st status']) assert.equal(hook('guard-delete.cjs', c), 'pass', c);
+});
+
 // K124 (1.42.0, Trial B): cmd and PowerShell read a cd with its folder glued on (cd.., cd\) as a move, so a delete after
 // it may reach outside the project. A planted flip of that check passed every test on 1.41.0.
 // why: guards rule:outward-acts

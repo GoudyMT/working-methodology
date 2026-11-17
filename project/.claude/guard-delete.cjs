@@ -97,8 +97,9 @@ const UNCLEAR_TEXT = /[,`$\x00-\x08\x0b-\x1f\u0080-\uffff]|\\[\s";&|()<>]|""|''/
 const CLEAN_SPAN = /\bclean\b(?:\\.|[^;|&\n])*/g;
 // A comma, escape, backtick or caret in git's own options makes the tokenizer lose the subcommand: git -c x.y=a,b clean.
 const LOST_CLEAN = /\bgit(\.exe)?\s+-[^;|&\n]*[,\\`^][^;|&\n]*\sclean\b/i;
-// What an alias may run that deletes, once its quoting is off.
-const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|rm\.exe|worktree)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha/;
+// What an alias may run that deletes, once its quoting is off. The build 16 sweep: an alias for checkout or restore (or
+// the plumbing under them), or a forced branch or switch, drops work as clean does.
+const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|rm\.exe|worktree|checkout|restore|checkout-index|read-tree|update-ref|stash|reflog)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha|(^|[\s!;&|(])(branch|switch)\s([\s\S]*\s)?-[A-Za-z]*[DfMCc]/;
 const GIT_CLEAN_TEXT = /\bgit(\.exe)?\s+clean(\s|$|`)/i;
 // robocopy takes / or - (Git Bash needs //), a word of its own or glued to the name; a job file can carry any of
 // these, so it asks unread. A path segment is not a switch.
@@ -259,11 +260,21 @@ function discardsWork(sub, own, ctx, state) {
 		}
 		return false;
 	});
-	const isPath = (w) => (state.moved ? /[./\\]/.test(w) : [ctx.cwd, ...(state.cwds || [])].some((d) => fs.existsSync(ctx.api.resolve(d, w))));
+	// The build 16 sweep: a glob (*.md) or pathspec magic (:/) is a path git expands itself, and after a move the guard
+	// cannot follow, any word may be a file there (Makefile has no dot), so it asks.
+	const isPath = (w) => /[*?[]|^:/.test(w) || state.moved || [ctx.cwd, ...(state.cwds || [])].some((d) => fs.existsSync(ctx.api.resolve(d, w)));
+	// A help read changes nothing.
+	if (/^(checkout|restore|switch|reset|branch|stash)$/.test(sub) && opts.some((w) => w === '--help' || w === '-h')) return '';
 	if (sub === 'reset' && long('hard')) return `${LOSES_WORK} git reset --hard`;
-	// -B resets a branch that exists to the start point.
-	if (sub === 'checkout' && (end < own.length || short('fB') || long('force') || opts.some((w) => w === '.' || (!w.startsWith('-') && isPath(w))))) return `${LOSES_WORK} git checkout over changes`;
+	// -B resets a branch that exists to the start point; a pathspec list file names paths the guard cannot see.
+	if (sub === 'checkout' && (end < own.length || short('fB') || long('force') || long('pathspec-from-file') || opts.some((w) => w === '.' || (!w.startsWith('-') && isPath(w))))) return `${LOSES_WORK} git checkout over changes`;
 	if (sub === 'restore' && (!(short('S') || long('staged')) || short('W') || long('worktree'))) return `${LOSES_WORK} git restore over changes`;
+	// The plumbing under them (the build 16 sweep): checkout-index -f and read-tree -u --reset overwrite the work tree,
+	// update-ref -d drops a branch, and a forced push into the repo itself moves one.
+	if (sub === 'checkout-index' && (short('f') || long('force'))) return `${LOSES_WORK} git checkout-index -f`;
+	if (sub === 'read-tree' && (short('u') || own.includes('-u')) && (long('reset') || short('m'))) return `${LOSES_WORK} git read-tree -u`;
+	if (sub === 'update-ref' && (short('d') || long('delete'))) return `${LOSES_WORK} git update-ref -d`;
+	if (sub === 'push' && own.filter((w) => !w.startsWith('-'))[0] === '.' && (short('f') || long('force') || own.some((w) => /^\+/.test(w)))) return `${LOSES_WORK} a forced push into this repo`;
 	if (sub === 'switch' && (short('fC') || long('force') || long('discard-changes') || long('force-create'))) return `${LOSES_WORK} git switch over changes`;
 	// -D, -f (with -d or alone, which moves a branch that exists), -M and -C overwrite or drop a branch.
 	if (sub === 'branch' && (short('DfMC') || long('force'))) return `${LOSES_WORK} git branch -D`;
@@ -727,6 +738,8 @@ function decide(input, where = {}) {
 		if (runsGit && ALIAS_ROUTE.test(flat)) return 'a git alias defined from outside the command';
 		const xg = flat.match(XARGS_GIT);
 		if (xg && !xg[2].split(/\s+/).some((w) => WRITTEN_SUB.test(w))) return 'git given its subcommand by xargs';
+		// The build 16 sweep: xargs appends its input as paths, so a checkout or restore it runs drops work it cannot name.
+		if (xg && /(^|\s)(checkout|restore|checkout-index)(\s|$)/.test(xg[2])) return `${LOSES_WORK} git checkout or restore given paths by xargs`;
 		if (XARGS_REPLACE.test(flat)) return 'git given its subcommand by xargs';
 		if (INTERPRETER.test(text) && runsGit && /\bclean\b/.test(text)) return 'inline code that may run git clean';
 		if (/\bxargs\b[^;|&\n]*\s(-I\S*|-i|--replace\S*)/.test(flat) && DELETE_WORD.test(flat)) return 'a delete given targets by xargs';
