@@ -1,0 +1,166 @@
+{
+ "version": "1.41.0",
+ "date": "2026-11-17",
+ "level": "minor",
+ "area": "Rules",
+ "title": "feat: shorter rules, one precedence order, no owner-typed code",
+ "headline": "The rules keep what a session must do and the command to run where a script already checks the rest, say once which instructions win, and no longer assume the owner types the code; a recall run cleans up after itself and no test file can sit outside every test lane.",
+ "alignment": "v1.41.0 is build 15 of the v2.0 plan: step T9, the rules diet, with the findings of the 1.40.0 install.",
+ "items": [
+  {
+   "id": "T9-CUT",
+   "kind": "changed",
+   "text": "Rule sections a script already enforces (the merge gate, the PR body and release audits, the first push check, the commit check, sweep approval, the hand-back canary) now state the duty and the command, not what the script checks.",
+   "evidence": "docs/migrations/1.41.0-reworded.json",
+   "reach": "projects",
+   "where": "The git and release rules",
+   "before": "13,995 bytes",
+   "after": "about 12,400 bytes"
+  },
+  {
+   "id": "PUSH-BOUND",
+   "kind": "fixed",
+   "text": "No rule, template or skill still asks the owner's yes before a feature-branch push or its PR; finishing a branch pushes and opens the PR by default.",
+   "evidence": "tests/kit.test.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "PRECEDENCE",
+   "kind": "changed",
+   "text": "One instruction order: the project's standards win for its own rules, the owner's global file for the rest, and no repo file loosens the outward-act, gate-bypass, delete or test-integrity rules.",
+   "evidence": "tests/kit.test.mjs",
+   "reach": "projects",
+   "where": "Global and project rules disagree",
+   "before": "Stated two ways",
+   "after": "One order"
+  },
+  {
+   "id": "E2",
+   "kind": "removed",
+   "text": "The owner's global standards no longer assume the owner types the code: the assistant writes and runs it, one verified step at a time.",
+   "evidence": "user/CLAUDE.md",
+   "reach": "projects"
+  },
+  {
+   "id": "LOCAL-GIT",
+   "kind": "changed",
+   "text": "A local git act that throws away uncommitted or unpushed work is named first and waits for the owner's yes.",
+   "evidence": "rules/core.md",
+   "reach": "projects"
+  },
+  {
+   "id": "ONE-HOME",
+   "kind": "changed",
+   "text": "Three project `CLAUDE.md` hard rules that repeated `AGENTS.md` now point to it; the rules with text found nowhere else stay in full.",
+   "evidence": "project/CLAUDE.md",
+   "reach": "projects"
+  },
+  {
+   "id": "SMALL-ROWS",
+   "kind": "added",
+   "text": "A dense screen splits what the user acts on now from what opens on demand, and is seen with real data early; a third manual repeat becomes a script, and a patch script that matched nothing fails [trial].",
+   "evidence": "rules/design-and-ux.md",
+   "reach": "projects"
+  },
+  {
+   "id": "K107",
+   "kind": "fixed",
+   "text": "A recall run forgets its probe folder's guard record when it ends, and a cleanup that fails is named instead of hiding the run's own error.",
+   "evidence": "tests/kit.test.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "K108",
+   "kind": "fixed",
+   "text": "A full or change-scoped test run refuses, and names, any test file no lane runs: one outside tests/ itself and tests/slow, one with another extension or case, or a linked folder.",
+   "evidence": "tests/harness.test.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "K109",
+   "kind": "fixed",
+   "text": "From 1.41.0 every build record item says whether it reaches projects or only the kit; the 1.40.0 why-line row now says kit.",
+   "evidence": "tests/build-record.test.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "N12",
+   "kind": "added",
+   "text": "The test check keeps naming a test that fails on the old code only by a crash, held by a test of its own.",
+   "evidence": "tests/test-check.test.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "CI-SPLIT",
+   "kind": "changed",
+   "text": "The test check measures each changed test file's flips in one CI slice, so the slow part spreads over the four slices with every check unchanged.",
+   "evidence": "tests/test-check.test.mjs",
+   "reach": "kit",
+   "where": "PR 50's test check",
+   "before": "One slice 11 min",
+   "after": "Split by file"
+  }
+ ],
+ "decisions": [
+  {
+   "decision": "Cut only prose a script or hook holds, and keep every duty no script checks",
+   "why": "The sweep traced each cut sentence to the script line that holds it; the duties with no check stayed."
+  },
+  {
+   "decision": "The owner approved every changed rule line by pop-up",
+   "why": "Text the owner approved changes only with the owner's yes; the full before and after went to the owner in one file."
+  },
+  {
+   "decision": "Flip measuring splits by test file, not by flip",
+   "why": "A file's tests stay in one slice, so each verdict still sees every flip it reaches, with no job to merge slices."
+  }
+ ],
+ "verification": [
+  "Each code change was seen failing on the code before it and passing after.",
+  "The rule lines were scored by the recall test against the released 1.40.0."
+ ],
+ "upgrading": "Run `install user` first, then `install project` in each project. The global `CLAUDE.md` loses its typed-code lines on `install user`; a copy you edited is merged line by line.",
+ "limits": "Recall reads the project rules only, so the global `CLAUDE.md` change was checked by the owner's read, not by recall. No guard holds destructive local git yet: the rule asks for the owner's yes. The CI split gives no gain when every changed test sits in one file.",
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "225454b",
+  "dimensions": [
+   { "name": "Privacy", "result": "Not touched: no new data leaves the machine" },
+   { "name": "Supply chain", "result": "Not touched: no dependency, no action pin changed" },
+   { "name": "Legal", "result": "Not touched" },
+   { "name": "Code security", "result": "Precedence in an overlay and destructive local git, fixed" },
+   { "name": "Gaps, scaling, test value", "result": "Two templates, lanes, cleanup and test gaps, all fixed" },
+   { "name": "Alignment", "result": "YES" }
+  ],
+  "findings": { "critical": 0, "high": 3, "medium": 9, "low": 10 },
+  "fixes": [
+   { "id": "F1", "severity": "high", "text": "The PR body template sent the body to the owner before any push; it now audits before the PR command", "commit": "ab36037", "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes", "owner": true },
+   { "id": "F2", "severity": "high", "text": "The ask-format template listed push and PR as needing a yes; it names acts outside the push bound", "commit": "ab36037", "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes", "owner": true },
+   { "id": "F4", "severity": "high", "text": "An overlay host's `CLAUDE.md` read as a standard above the owner's file; the kit's file is named and a floor holds", "commit": "97142de", "test": "tests/kit.test.mjs::the instruction order names the kit's CLAUDE.md and the rules no repo file loosens", "security": true },
+   { "id": "F3", "severity": "medium", "text": "The ledger missed the precedence lines; it is written after the last rule edit", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F5", "severity": "medium", "text": "Destructive local git ran with no stop; the rule names it and waits for the owner's yes", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F6", "severity": "medium", "text": "Remote mode said only auto-fix pushes without asking; it names the push bound too", "commit": "ab36037", "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes" },
+   { "id": "F7", "severity": "medium", "text": "Finishing a branch handed the owner commands; it pushes and opens the PR", "commit": "ab36037", "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes" },
+   { "id": "F8", "severity": "medium", "text": "A .js or .Test.mjs file in tests/slow ran nowhere; the slow lane is walked", "commit": "ab36037", "test": "tests/harness.test.mjs::a full run refuses a test file in a tests/ subfolder no lane runs, and names it" },
+   { "id": "F9", "severity": "medium", "text": "A linked folder under tests/ was followed by no lane; any link is named", "commit": "ab36037", "test": "tests/harness.test.mjs::a full run refuses a test file in a tests/ subfolder no lane runs, and names it" },
+   { "id": "F10", "severity": "medium", "text": "The run's hand-over of the probe to forget had no test; the whole-run test checks it", "commit": "ab36037", "test": "tests/kit.test.mjs::a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself" },
+   { "id": "F11", "severity": "medium", "text": "A test pinned the pipeline sentence; it reads the line's pointer", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F12", "severity": "low", "text": "A `CLAUDE.md` pointer was not a rule ID", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F13", "severity": "low", "text": "A changed `CLAUDE.md` line was not in the ledger", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F14", "severity": "low", "text": "The ledger test skipped a 2.x ledger", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F15", "severity": "low", "text": "A test comment misstated older records", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F16", "severity": "low", "text": "A probe folder that would not delete threw in the finally; each removal is named", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F17", "severity": "low", "text": "The crash row pinned a long message; it matches the key and the verdict word", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F18", "severity": "low", "text": "The slice test parsed a progress sentence; it reads the file paths", "commit": "ab36037", "test": "no test: no real input" },
+   { "id": "F19", "severity": "low", "text": "The 2.x half of the reach cut-off had no test", "commit": "ab36037", "test": "tests/build-record.test.mjs::from 1.41.0 every record item states its reach, projects or kit" },
+   { "id": "F22", "severity": "low", "text": "A future strict global outward rule could lose to the order; the floor holds it", "commit": "97142de", "test": "no test: no real input" }
+  ],
+  "deferred": [],
+  "accepted": []
+ },
+ "tests": {
+  "before": 863,
+  "after": 870,
+  "flips": "declared tests on v1.40.0 and on this branch; the PR run gives the final count"
+ }
+}

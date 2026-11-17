@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.41.0 - 2026-11-17
+
+The rules keep what a session must do and the command to run where a script already checks the rest, say once which instructions win, and no longer assume the owner types the code; a recall run cleans up after itself and no test file can sit outside every test lane.
+
+### Added
+- A dense screen splits what the user acts on now from what opens on demand, and is seen with real data early; a third manual repeat becomes a script, and a patch script that matched nothing fails [trial].
+- The test check keeps naming a test that fails on the old code only by a crash, held by a test of its own.
+
+### Changed
+- Rule sections a script already enforces (the merge gate, the PR body and release audits, the first push check, the commit check, sweep approval, the hand-back canary) now state the duty and the command, not what the script checks.
+- One instruction order: the project's standards win for its own rules, the owner's global file for the rest, and no repo file loosens the outward-act, gate-bypass, delete or test-integrity rules.
+- A local git act that throws away uncommitted or unpushed work is named first and waits for the owner's yes.
+- Three project `CLAUDE.md` hard rules that repeated `AGENTS.md` now point to it; the rules with text found nowhere else stay in full.
+- The test check measures each changed test file's flips in one CI slice, so the slow part spreads over the four slices with every check unchanged.
+
+### Fixed
+- No rule, template or skill still asks the owner's yes before a feature-branch push or its PR; finishing a branch pushes and opens the PR by default.
+- A recall run forgets its probe folder's guard record when it ends, and a cleanup that fails is named instead of hiding the run's own error.
+- A full or change-scoped test run refuses, and names, any test file no lane runs: one outside tests/ itself and tests/slow, one with another extension or case, or a linked folder.
+- From 1.41.0 every build record item says whether it reaches projects or only the kit; the 1.40.0 why-line row now says kit.
+
+### Removed
+- The owner's global standards no longer assume the owner types the code: the assistant writes and runs it, one verified step at a time.
+
 ## 1.40.0 - 2026-11-16
 
 A fix now needs a test that fails first when it is high, critical, security or an owner rule, and otherwise only when a real input shows the problem; CI states each fix test's verdict, runs the security tests once, and reads plans and rules as graphs.
