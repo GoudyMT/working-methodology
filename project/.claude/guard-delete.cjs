@@ -245,9 +245,20 @@ function discardsWork(sub, own, ctx, state) {
 	const end = own.includes('--') ? own.indexOf('--') : own.length;
 	const opts = own.slice(0, end);
 	const has = (re) => opts.some((w) => re.test(w));
-	// git takes any unique start of a long option (--ha is --hard; the commit security review), so a start counts.
-	const long = (name) => opts.some((w) => /^--[a-z-]{2,}$/.test(w) && `--${name}`.startsWith(w));
-	const short = (letters) => has(new RegExp(`^-[A-Za-z]*[${letters}]`));
+	// git takes any unique start of a long option (--ha is --hard) and a value after = (the commit security reviews), so
+	// any start counts, read without its value.
+	const long = (name) => opts.some((w) => { const o = w.split('=')[0]; return /^--[a-z-]+$/.test(o) && `--${name}`.startsWith(o); });
+	// A short group is read letter by letter up to a letter that takes a value: the rest is that value (restore
+	// -sSOME is the source SOME, not --staged).
+	const VALUE_LETTERS = { restore: 's', checkout: 'bBc', switch: 'cC', branch: 'tu', reset: '' };
+	const short = (letters) => opts.some((w) => {
+		if (!/^-[A-Za-z]/.test(w)) return false;
+		for (const ch of w.slice(1)) {
+			if (letters.includes(ch)) return true;
+			if ((VALUE_LETTERS[sub] || '').includes(ch) || !/[A-Za-z]/.test(ch)) return false;
+		}
+		return false;
+	});
 	const isPath = (w) => (state.moved ? /[./\\]/.test(w) : [ctx.cwd, ...(state.cwds || [])].some((d) => fs.existsSync(ctx.api.resolve(d, w))));
 	if (sub === 'reset' && long('hard')) return `${LOSES_WORK} git reset --hard`;
 	// -B resets a branch that exists to the start point.
