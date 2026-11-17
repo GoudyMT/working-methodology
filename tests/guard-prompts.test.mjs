@@ -44,6 +44,15 @@ test('a local git act that throws away work waits for the owner; reads and safe 
 	for (const c of ['git status', 'git stash list', 'git stash', 'git stash pop', 'git branch -d old', 'git branch -a', 'git restore --staged x', 'git reset --soft HEAD~1', 'git reset HEAD x', 'git checkout main', 'git checkout -b feat/x', 'git switch main', 'git reflog', 'git log --oneline']) assert.equal(hook('guard-delete.cjs', c), 'pass', c);
 });
 
+// K124 (1.42.0, Trial B): cmd and PowerShell read a cd with its folder glued on (cd.., cd\) as a move, so a delete after
+// it may reach outside the project. A planted flip of that check passed every test on 1.41.0.
+// why: guards rule:outward-acts
+test('a delete after a glued cd (cd.., cd\\) is read as outside the project; the same delete in place passes', () => {
+	for (const c of ['cd..; Remove-Item -Recurse -Force victim', 'cd.. ; rm -r victim', 'cd\\; Remove-Item -Recurse victim']) assert.equal(hook('guard-delete.cjs', c, { tool_name: 'PowerShell' }), 'deny', c);
+	assert.equal(hook('guard-delete.cjs', 'cd.. && rm -rf victim'), 'deny');
+	assert.equal(hook('guard-delete.cjs', 'rm -rf victim'), 'pass');
+});
+
 // N10: off a terminal, npm assumes yes, so `npx <name>` in an agent's shell fetched and ran any registry package.
 // why: guards rule:outward-acts
 test('the shipped project settings turn off npm and npx installing a missing package without a prompt', () => {
