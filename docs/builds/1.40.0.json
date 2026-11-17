@@ -44,7 +44,8 @@
    "evidence": "tests/test-format.test.mjs",
    "where": "A test with no why line",
    "before": "Passed unnoticed",
-   "after": "Named by CI"
+   "after": "Named by CI",
+   "reach": "kit"
   },
   {
    "id": "K24",

@@ -84,10 +84,13 @@ export function tests(text) {
 	const comment = (l) => /^\s*\/\//.test(l);
 	const out = new Map();
 	out.loops = new Set(starts.filter((s) => s[2]).map((s) => s[1]));
-	starts.forEach(([i, name], k) => {
+	starts.forEach(([i, name, loop], k) => {
 		let head = i;
 		while (head > 0 && comment(lines[head - 1])) head--;
 		let end = k + 1 < starts.length ? starts[k + 1][0] : lines.length;
+		// A plain test ends at its own closing line at the margin, so top-level code after it is not part of it (PR 51:
+		// a test inserted after one read the old one as changed). A loop keeps the reach above.
+		if (!loop) { const close = lines.slice(i + 1, end).findIndex((l) => /^\}\)/.test(l)); if (close >= 0) end = i + 1 + close + 1; }
 		while (end - 1 > i && comment(lines[end - 1])) end--;
 		out.set(name, lines.slice(head, end).join('\n').trimEnd());
 	});
@@ -167,6 +170,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// A slice (i/n) takes every n-th changed test, in key order, so a PR that changes many tests is checked on several
 	// machines at once instead of timing out on one (K13, the 1.27.0 build: 616 changed tests ran past 15 minutes).
 	const allKeys = new Set(newOrChanged.map((t) => t.key));
+	const allChanged = [...newOrChanged];
 	if (slice) newOrChanged = newOrChanged.sort((a, b) => (a.key < b.key ? -1 : 1)).filter((_, k) => k % slice.n === slice.i);
 	// A4: a change with no code in it, that still adds a test.
 	const code = changed.filter(([s, f]) => s !== 'D' && !TEST_FILE.test(f) && /\.(c?js|mjs|sh)$|^project\/\.githooks\//.test(f));
@@ -207,6 +211,8 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			removeTemp(copy);
 			removeTemp(home);
 		}
+	}
+	{
 		// A2: a reason tag, or a flip it catches in the lines the change made. A tag counts only when the rule it names is
 		// in the rule index, or it names the owner (K12, the 1.27.0 sweep: any "why: guards" text passed, so a tag naming
 		// no real rule kept a test in the never-cut group); a tag naming no known rule is named, and read as no tag.
@@ -226,9 +232,15 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			if (added.length) note(t.key, 'A2', `names rule:${added.join(', rule:')}, a rule this change itself adds to the rule index`);
 			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(head);
 		};
-		const untagged = newOrChanged.filter((t) => !tagged(t));
+		// A2 measures by test file, each file in one slice (its i-th place among the changed files, every n-th): the flip
+		// run is the slow part, and slicing it by test left one slice with every file (PR 50: 11 minutes, the others 9 s).
+		// A file's tests stay together, so each verdict still sees every flip its tests reach.
+		const a2Files = [...new Set(allChanged.map((x) => x.file))].sort();
+		const a2Pool = slice ? allChanged.filter((x) => a2Files.indexOf(x.file) % slice.n === slice.i) : newOrChanged;
+		const untagged = a2Pool.filter((t) => !tagged(t));
 		if (untagged.length) {
-			say(`A2: ${untagged.length} untagged test(s) measured against the flips of this change, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
+			kitTemp.sessionRoot();
+			say(`A2: ${untagged.length} untagged test(s) in ${[...new Set(untagged.map((x) => x.file))].join(', ')} measured against the flips of this change, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
 			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
 			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))]);
 			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');

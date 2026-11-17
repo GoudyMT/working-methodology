@@ -259,6 +259,27 @@ export async function main(argv) {
 	const testsDir = fs.existsSync(path.join(root, 'tests')) ? path.join(root, 'tests') : path.join(HERE, '..', 'tests');
 	// A notice only: a full run on the owner's machine costs minutes and finds what CI finds (K59). A map needs every test.
 	if (!o.changed && !o.map && !o.files.length && !process.env.CI) process.stdout.write('test-run: a full local run. CI runs the suite on every PR and push; for a change, use --changed.\n');
+	// K108: a full run reads tests/ at the top and CI's slow lane reads tests/slow, so a test file anywhere else under
+	// tests/ would run in no lane. Refuse the run and name it, rather than let its failures reach no one.
+	if (!o.files.length) {
+		const lost = [];
+		// lane: 'top' (tests/ itself: the full run), 'slow' (tests/slow at any depth: CI's slow lane, find -type f), or
+		// 'none'. A link is named wherever it sits: neither lane follows one (the build 15 sweep: tests/slow as a junction
+		// left the slow lane empty, and its required check read the skip as a pass).
+		const walk = (d, lane) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			const p = path.join(d, e.name);
+			const rel = path.relative(root, p).split(path.sep).join('/');
+			if (e.isSymbolicLink()) lost.push(`${rel} (a link)`);
+			else if (e.isDirectory()) { if (!(d === testsDir && e.name === 'node_modules')) walk(p, d === testsDir && e.name === 'slow' ? 'slow' : lane === 'slow' ? 'slow' : 'none'); }
+			// Any test-shaped file no lane runs: one outside both lanes, or one with another extension or case.
+			else if (e.isFile() && /\.test\.[cm]?[jt]s$/i.test(e.name) && !(lane !== 'none' && e.name.endsWith('.test.mjs'))) lost.push(rel);
+		} };
+		walk(testsDir, 'top');
+		if (lost.length) {
+			process.stderr.write(`test-run: these test files run in no lane (only *.test.mjs files in tests/ itself and under tests/slow run, and no lane follows a link); move them:\n${lost.map((f) => `  ${f}`).join('\n')}\n`);
+			return 2;
+		}
+	}
 	const files = o.files.length ? o.files : fs.readdirSync(testsDir).filter((f) => f.endsWith('.test.mjs')).map((f) => path.join(testsDir, f));
 	const harnessed = files.filter((f) => fs.readFileSync(f, 'utf8').includes('harness.mjs'));
 	const whole = files.filter((f) => !harnessed.includes(f));

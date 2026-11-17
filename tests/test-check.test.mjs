@@ -121,6 +121,33 @@ test('the test check splits the changed tests into slices that cover each once',
 	assert.equal(one + two, files([base]), 'the slices do not add up to the whole');
 	assert.equal(spawnSync(process.execPath, [CHECK, base, '--slice', '2/2'], { cwd: dir, encoding: 'utf8' }).status, 2, 'a slice past the count');
 });
+// The flip run is the slow part of the check (PR 50: one slice 11 minutes, three slices 9 s each), and slicing it by
+// test put every file's flip run in whichever slice drew its tests. Each test file now measures in one slice only.
+// why: catches one CI slice doing every test file's flip run while the others idle (PR 50)
+test('the test check measures each test file\'s flips in one slice, and the slices cover every file', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD~1');
+	const a2 = (args) => {
+		const r = spawnSync(process.execPath, [CHECK, ...args], { cwd: dir, encoding: 'utf8' });
+		assert.equal(r.status, 0, r.stdout + r.stderr);
+		const line = r.stderr.split('\n').find((l) => /A2: \d+/.test(l)) || '';
+		return { files: [...line.matchAll(/tests\/\S+?\.test\.mjs/g)].map((x) => x[0]), notes: r.stdout.split('\n').filter((l) => /^\s*A2 /.test(l)) };
+	};
+	const s0 = a2([base, '--slice', '0/2']);
+	const s1 = a2([base, '--slice', '1/2']);
+	assert.deepEqual(s0.files, ['tests/a.test.mjs']);
+	assert.deepEqual(s1.files, ['tests/b.test.mjs']);
+	assert.deepEqual([...s0.notes, ...s1.notes].sort(), a2([base]).notes.sort(), 'the slices name what the whole run names');
+	// N12's third must-still-flag row (the owner's pick, 2026-11-17, folded here: a row alone passes on the old code by
+	// design, and the strict check refuses that). A test red on the base only by a crash proves no assertion.
+	const crashBase = sh(dir, 'rev-parse', 'HEAD');
+	fs.appendFileSync(path.join(dir, 'src', 'a.cjs'), 'exports.isNeg = (x) => x < 0;\n');
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('minus one is negative', () => { assert.equal(a.isNeg(-1), true); });\n");
+	sh(dir, 'commit', '-qam', 'isNeg');
+	const crash = spawnSync(process.execPath, [CHECK, crashBase], { cwd: dir, encoding: 'utf8' });
+	assert.match(crash.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: [^\n]*crash/);
+});
+
 // why: guards rule:test-value. K12, the 1.27.0 sweep: the check took any "why: guards" text, so a tag naming a rule
 // that does not exist, or a made-up one, kept a test in the never-cut group unread.
 test('the test check takes a why tag only when it names a rule in the rule index or the owner', () => {
@@ -179,6 +206,17 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	sh(dir, 'commit', '-qm', 'the old file reads c');
 	const r2 = spawnSync(process.execPath, [CHECK, base2], { cwd: dir, encoding: 'utf8' });
 	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
+});
+
+// PR 51: a test's text ran on to the next test, so the top-level code after it (a fixture, a helper) was part of its
+// body, and a new test put between them made the old one read as changed, a false finding under --strict.
+// why: catches an unchanged test named as changed when a new test is inserted after it (PR 51)
+test('a test ends at its own closing line, so a test inserted after it leaves it unchanged', async () => {
+	const { tests } = await import(pathToFileURL(CHECK).href);
+	const base = ["test('old', () => {", '\tassert.ok(1);', '});', '', 'const FIXTURE = 1;', "test('next', () => {});", ''].join('\n');
+	const head = base.replace("});\n\nconst FIXTURE", "});\n\ntest('inserted', () => {});\n\nconst FIXTURE");
+	assert.equal(tests(head).get('old'), tests(base).get('old'));
+	assert.ok(tests(head).has('inserted'));
 });
 
 // K105 (PR 49): the PR claimed each fix had a test that fails first, and nothing read the claim. With the record, the

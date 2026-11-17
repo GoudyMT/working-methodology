@@ -39,12 +39,16 @@ export function problems(rec) {
 	for (const k of ['area', 'title', 'headline']) need(text(rec[k]), `${k} is missing`);
 	need(/^[a-z]+: \S/.test(rec.title || '') && (rec.title || '').length <= 72, 'title is not "type: subject" within 72 characters');
 	need(Array.isArray(rec.items) && rec.items.length > 0, 'items is empty');
+	const [maj, min] = String(rec.version || '').split('.').map(Number);
+	const from141 = maj > 1 || (maj === 1 && min >= 41);
 	(rec.items || []).forEach((it, i) => {
 		need(text(it.id), `item ${i + 1} has no id`);
 		need(Object.hasOwn(KINDS, it.kind), `item ${i + 1} kind "${it.kind}" is not one of ${Object.keys(KINDS).join(', ')}`);
 		for (const k of ['text', 'evidence']) need(text(it[k]), `item ${i + 1} (${it.id}) has no ${k}`);
 		need(!it.where || (text(it.before) && text(it.after)), `item ${i + 1} (${it.id}) names a where without its before and after`);
-		need(it.reach === undefined || ['projects', 'kit'].includes(it.reach), `item ${i + 1} (${it.id}) reach "${it.reach}" is not projects or kit`);
+		// K109: a missing reach read as projects and filed a kit-only item under projects; from 1.41.0 each item says it.
+		if (it.reach === undefined && from141) out.push(`item ${i + 1} (${it.id}) names no reach: projects or kit`);
+		else need(it.reach === undefined || ['projects', 'kit'].includes(it.reach), `item ${i + 1} (${it.id}) reach "${it.reach}" is not projects or kit`);
 	});
 	need(Array.isArray(rec.verification) && rec.verification.length > 0, 'verification is empty');
 	// The Standard body's four sections are all required, Design decisions among them (K15).

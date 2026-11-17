@@ -95,7 +95,9 @@
   "instruction-priority": {
    "guards": [],
    "scripts": [],
-   "tests": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
    "workflows": []
   },
   "owners-rules": {
@@ -655,7 +657,9 @@
   "test-integrity": {
    "guards": [],
    "scripts": [],
-   "tests": [],
+   "tests": [
+    "tests/kit.test.mjs"
+   ],
    "workflows": []
   },
   "test-value": {
@@ -775,7 +779,6 @@
   "patterns-and-dispatch",
   "code-standards",
   "critical-rules-priority-index",
-  "instruction-priority",
   "goal-before-mechanism",
   "edit-discipline",
   "session-workflow",
@@ -803,7 +806,6 @@
   "pre-push-op-test",
   "mid-design-red-team",
   "tdd",
-  "test-integrity",
   "session-log-compression",
   "status-files-rot-silently",
   "tracking-file-batching",

@@ -21,12 +21,10 @@ These standards apply to every project and conversation. They override defaults 
 - No filler phrases: "Great question!", "Absolutely!", "Sure thing!" - just answer
 
 ### Collaboration Workflow
-- One cell/step at a time - provide snippet, user types it manually, shares output, we adapt
+- Claude writes and runs the code, built small and modular, one step at a time: run it, read the real output, adapt
 - **Never one-shot an entire pipeline** - each output is valuable data that informs the next step
-- Always ask for the output after any cell/step that produces one - use actual results to adjust future code, plans, and decisions. Never assume output; always verify with real data
+- Use actual results to adjust future code, plans, and decisions. Never assume output; always verify with real data
 - New concepts get full explanation; repeated patterns get brief guidance
-- User types all code manually - Claude provides guidance/snippets, never runs code for the user
-- Claude CAN write .md and .txt files with permission
 
 ---
 
@@ -98,28 +96,6 @@ These standards apply to every project and conversation. They override defaults 
 
 ---
 
-## Cell Justification Checklist (MANDATORY)
-
-Every code cell Claude provides must include a short checklist explaining WHY each section exists:
-- `[x]` = included, with one-line reason it's necessary
-- `[ ] ~~removed~~` = considered but excluded, with reason
-
-This ensures:
-1. Nothing unnecessary ships - every line of code earns its place
-2. User understands the purpose before typing
-3. Industry alignment is verified (not just "it works" but "it's the right thing to do")
-4. Prevents scope creep - if it can't be justified, it doesn't belong in the cell
-
-Format:
-```
-**Why each part is here:**
-- [x] Load raw data - confirms path works, gets pair count
-- [x] Length stats - baseline for BPE comparison in next cell
-- [ ] ~~BPE training~~ - removed, belongs in preprocessing not EDA
-```
-
----
-
 ## Decision-Making Standards
 
 ### Always Verify Before Acting
@@ -139,7 +115,7 @@ Format:
 - Don't add error handling for scenarios that can't happen
 - Don't create abstractions for one-time operations
 - Three similar lines of code is better than a premature abstraction
-- If it can't be justified in the cell checklist, it doesn't belong
+- If it can't be justified, it doesn't belong
 
 ---
 

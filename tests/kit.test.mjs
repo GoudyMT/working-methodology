@@ -7090,7 +7090,9 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
     // pin: 2 (the lead's order when the tool is missing)
   assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }
-  assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\)[^\n]*to the owner/);
+  // The pipeline's PR step names the sweep summary and points to the push bound, not to an owner's stop (1.41.0).
+  const pipeline = read(path.resolve('rules/reviews-and-findings.md')).split('\n').find((l) => l.startsWith('**Pipeline:**')) || '';
+  assert.match(pipeline, /sweep summary[^\n]*rule:outward-acts/);
 });
 
 // why: guards rule:word-pins
@@ -7379,7 +7381,10 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   fs.mkdirSync(path.join(home, 'projects', 'other-project'), { recursive: true });
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const calls = [];
-  const kitTools = { releaseState: () => ({ problems: ['not a tag'] }), projectSlug: (d) => path.basename(d) };
+  // K107: the run hands its probe to forget, so the guard record install wrote goes with the folder (the sweep: only
+  // removeProbe was tested, and the run could drop the hand-over unseen).
+  const forgot = [];
+  const kitTools = { releaseState: () => ({ problems: ['not a tag'] }), projectSlug: (d) => path.basename(d), forget: ({ dir }) => { forgot.push(dir); return { removed: [dir], why: '' }; } };
   const go = (over = {}) => recallRun({ label: 'recall-cand-9', kitDir: kit, noKit: false, home, osHome, env: {}, text, when: 'w', outDir, kitTools,
     run: (cmd, args, opts) => { calls.push({ cmd, args, opts }); if (cmd === 'claude' && args[0] === 'auth') return { status: 0, stdout: JSON.stringify({ configDirectory: home }) }; if (cmd === 'claude' && args[0] === '-p') fs.mkdirSync(path.join(home, 'projects', path.basename(opts.cwd)), { recursive: true }); return { status: 0, stdout: 'an answer' }; }, ...over });
   assert.throws(() => go({ run: () => ({ status: 0, stdout: JSON.stringify({ configDirectory: osHome }) }) }), /sessions read/);
@@ -7392,6 +7397,7 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   assert.doesNotMatch(asks[0].opts.cwd, /recall|cand/, 'the label never reaches the path');
   assert.ok(calls.some((c) => c.args.includes('--unreleased') && c.args.includes(asks[0].opts.cwd)), 'the project layer goes into the run\'s folder');
   assert.deepEqual(fs.readdirSync(path.join(osHome, 'kit-probes')), [], 'the folder is gone');
+  assert.deepEqual(forgot, [asks[0].opts.cwd], 'its guard record is forgotten');
   assert.ok(fs.existsSync(path.join(home, 'projects', 'other-project')));
   assert.equal(fs.readdirSync(path.join(home, 'projects')).some((p) => /^p[0-9a-f]{6}$/.test(p)), false, 'its memory is gone');
   assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' } }), /KIT_CLAUDE_HOME/);
@@ -7417,6 +7423,47 @@ test('a recall run removes what it made, and nothing else', async () => {
   assert.ok(fs.existsSync(path.join(home, 'projects', 'slug-2')), 'another project\'s memory stays');
   assert.ok(fs.existsSync(other));
   assert.throws(() => removeProbe({ dir: other, home, slug: 'x', osHome: root }), /not a probe folder/);
+});
+
+// The build 15 sweep: two templates still put the feature-branch push and its PR behind the owner's yes, against the
+// push bound (the owner, 2026-11-10 and 2026-11-15), so a session starting from either stopped where no stop is owed.
+// why: guards rule:outward-acts
+test('no rule, template or skill puts the feature-branch push or its PR behind the owner\'s yes', () => {
+  const files = [...ruleFiles(), ...fs.readdirSync(path.resolve('project/_Templates')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('project/_Templates', n)),
+    path.resolve('user/skills/agent-team-build/references/finishing-a-branch.md'), path.resolve('user/skills/pr-body/SKILL.md')];
+  const stops = [/to the owner BEFORE any push or PR/i, /owner's yes: push, PR/i, /only auto-fix's grant pushes/i, /\(the owner runs it\)/i];
+  const hits = files.flatMap((f) => read(f).split('\n').filter((l) => stops.some((s) => s.test(l))).map((l) => `${path.basename(f)}: ${l.slice(0, 80)}`));
+  assert.deepEqual(hits, []);
+});
+
+// The build 15 sweep: in an overlay the host repo owns CLAUDE.md, so "the project CLAUDE.md" read as text any committer
+// writes, ranked above the owner's global file. The order names the kit's own file and the rules no repo file loosens.
+// why: guards rule:instruction-priority
+test('the instruction order names the kit\'s CLAUDE.md and the rules no repo file loosens', () => {
+  const core = read(path.resolve('rules/core.md'));
+  const section = core.slice(core.indexOf('{#instruction-priority}'), core.indexOf('{#owners-rules}'));
+  for (const token of ['CLAUDE.local.md', 'rule:outward-acts', 'rule:security-standards', 'rule:test-integrity']) assert.ok(section.includes(token), token);
+});
+
+// K107 (build 14): removeProbe deleted the probe and its memory but not the guard record install project wrote, so
+// every recall run left one (13 after build 14), and the launcher reads every record on each shell call.
+// why: catches the recall probe's guard record left behind (K107)
+test('a recall run forgets its probe\'s guard record, and only that one', async () => {
+  const { removeProbe, probePath } = await recallTools();
+  const kitTools = await import('../scripts/kit.mjs');
+  const root = makeTemp('forget-probe-');
+  const home = path.join(root, '.claude');
+  const dir = probePath(root);
+  const keep = path.join(root, 'live-project');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(keep, { recursive: true });
+  for (const d of [dir, keep]) {
+    fs.mkdirSync(kitTools.guardDir(home, d), { recursive: true });
+    fs.writeFileSync(path.join(kitTools.guardDir(home, d), 'record.json'), JSON.stringify({ projectDir: d }));
+  }
+  removeProbe({ dir, home, slug: 'slug-1', osHome: root, forget: kitTools.forget });
+  assert.equal(fs.existsSync(kitTools.guardDir(home, dir)), false, 'the probe\'s guard record is gone');
+  assert.ok(fs.existsSync(kitTools.guardDir(home, keep)), 'a live project\'s record stays');
 });
 
 // The brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.

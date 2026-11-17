@@ -28,3 +28,6 @@ is reworked or retired at the next kit release.
   questions; the project map; one kit skill per job (ui-craft, ui-review, debugging, plan-feature, tdd) and the
   checks as scripts (names, tracking caps, parking lot, plan evidence, suggested cases). The owner approved each
   on 2026-10-31; the first real use of each new skill is its proof.
+- 1.41.0: dense screens split front stage from on demand, seen with real data early (N13); kit-standards #6 lessons: a
+  third manual repeat becomes a script, a patch script that matched nothing fails, a welcome result is checked like any
+  other (J10). The owner approved each on 2026-11-17; a second project using each cleanly is its proof.
