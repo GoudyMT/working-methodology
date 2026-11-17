@@ -11,6 +11,7 @@
 // Needs tests/.map.json made at HEAD (node scripts/test-run.mjs --map, on a clean tree). Exit 0 none survived,
 // 1 some survived, 2 it could not run. The repo itself is never changed: every flip is made in the copy.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -130,11 +131,15 @@ export async function main(argv) {
 	// Every test and outside check runs with a throwaway Claude folder: a flip that drops a test's own one must land
 	// there, never in the owner's ~/.claude (the 1.24.0 build: a mutation run rewrote the owner's install record).
 	const claudeDir = makeTemp('claude-home-');
-	const home = { KIT_CLAUDE_HOME: claudeDir, CLAUDE_CONFIG_DIR: claudeDir };
+	// And a throwaway home folder: the build 14 audit found a flip in the kit's home lookup that skipped both Claude
+	// settings and fell back to the owner's home. Git's identity comes along, so a test that commits still can.
+	const userHome = makeTemp('user-home-');
+	try { fs.copyFileSync(path.join(os.homedir(), '.gitconfig'), path.join(userHome, '.gitconfig')); } catch { /* none */ }
+	const home = { KIT_CLAUDE_HOME: claudeDir, CLAUDE_CONFIG_DIR: claudeDir, HOME: userHome, USERPROFILE: userHome };
 	let caught = 0;
 	const survived = [];
 	const record = [];
-	if (o.slice === 'bad') { removeTemp(copy); removeTemp(claudeDir); process.stderr.write('mutation-check: --slice takes i/n with i below n\n'); return 2; }
+	if (o.slice === 'bad') { removeTemp(copy); removeTemp(claudeDir); removeTemp(userHome); process.stderr.write('mutation-check: --slice takes i/n with i below n\n'); return 2; }
 	try {
 		// Only lines that flip are counted, so the slices split the real work: slice i takes every n-th flip from i.
 		const every = [...byLine.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
@@ -168,6 +173,7 @@ export async function main(argv) {
 	} finally {
 		removeTemp(copy);
 		removeTemp(claudeDir);
+		removeTemp(userHome);
 	}
 	if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, ...(o.base ? { base: o.base } : {}), flips: record }, null, 1) + '\n');
 	process.stdout.write(`mutation check: ${caught + survived.length} flips, ${caught} caught, ${survived.length} survived\n`);
