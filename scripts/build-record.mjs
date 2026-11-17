@@ -106,9 +106,10 @@ export function problems(rec) {
 	// K125: the Visuals section the script wrote, checked as the PR and release audits check it.
 	const v = rec.visuals;
 	if (v !== undefined) {
-		need(v && text(v.body) && typeof v.fold === 'boolean', 'visuals needs a body (as visuals.mjs writes it) and fold true or false');
-		need(!v || !v.fold || /^Visuals: \S/.test(v.summary || ''), 'visuals summary starts "Visuals: " (the fold\'s one line on screen)');
-		if (v && text(v.body)) out.push(...checkSection(visualsBlock(rec, 'pr'), '###'));
+		need(v && text(v.body) && typeof v.fold === 'boolean', 'visuals needs a body (the section visuals.mjs writes, with or without its heading) and fold true or false');
+		// One line, no markup: a line break or a tag in the summary would hide the fold from every check (the Visuals sweep).
+		need(!v || !v.fold || /^Visuals: [^\n<>]+$/.test(v.summary || ''), 'visuals summary is one line starting "Visuals: ", with no < or >');
+		if (v && text(v.body)) out.push(...checkSection(visualsBlock(rec, 'pr'), '###', { require: true }));
 	}
 	return out;
 }
@@ -135,7 +136,9 @@ function wrap(line, width = 110) {
 export function visualsBlock(rec, where) {
 	const v = rec.visuals;
 	if (!v) return '';
-	const body = String(v.body).replace(/\r\n/g, '\n').trim();
+	// The section as visuals.mjs prints it, or its inner text: a heading or fold it was written with is taken off here.
+	const body = String(v.body).replace(/\r\n/g, '\n').trim()
+		.replace(/^<details>\s*\n\s*<summary>[^\n]*<\/summary>\n([\s\S]*?)\n<\/details>$/, '$1').replace(/^#{1,6}[ \t]*Visuals[ \t]*\n/, '').trim();
 	if (where === 'notes') return `## Visuals\n\n${body}\n`;
 	return v.fold ? `<details>\n<summary>${v.summary}</summary>\n\n${body}\n</details>\n` : `### Visuals\n\n${body}\n`;
 }

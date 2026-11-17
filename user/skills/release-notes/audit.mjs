@@ -112,9 +112,11 @@ function startsLine(body) {
 }
 
 // K125: a Visuals section is checked by the script that writes it, kept beside the PR audits in the Claude folder.
-if (/^## Visuals$/m.test(text)) {
-  const { checkSection } = await import(new URL('../../kit-tools/audits/visuals.mjs', import.meta.url).href);
-  faults.push(...checkSection(text, '##'));
+// Any heading named Visuals, or a Visuals fold, is checked, so a wrong level or form is named, never skipped.
+if (/^#{1,6}[ \t]*Visuals[ \t]*$|<summary>\s*Visuals:/im.test(text)) {
+  const { checkSection, repoOf } = await import(new URL('../../kit-tools/audits/visuals.mjs', import.meta.url).href);
+  const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' });
+  faults.push(...checkSection(text.replace(/\r\n/g, '\n'), '##', { repo: repoOf(origin.stdout) }));
 }
 
 const pkg = path.join(process.cwd(), 'package.json');

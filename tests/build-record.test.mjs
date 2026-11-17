@@ -320,31 +320,42 @@ test('the body check holds the fix lines of a published body to the record', () 
 const VISUALS = {
 	summary: 'Visuals: the always-loaded rules file 27,609 B to 23,834 B (cap 25,000 B)',
 	fold: true,
-	body: ['Every session starts with 1,300 fewer tokens: $5.20 less per 1,000 sessions.', '', '```text', 'Rules file, bytes (| = limit 25,000)',
+	body: ['Rules file loads 1,300 fewer tokens at each session start: about $5.20 less per 1,000 sessions at the uncached', 'input price.', '', '```text', 'Rules file, bytes (| = limit 25,000)',
 		`before  ${'#'.repeat(36)}|###  27,609`, `after   ${'#'.repeat(35)} |     23,834`, '```', '', '| Metric | Before | After | Change | Limit | Source |', '|---|---|---|---|---|---|',
 		'| Rules file | 27,609 B | 23,834 B | -3,775 B (-13.7%) | 25,000 B | measured: bytes at 83ab095 and 1a2b3c4 |',
-		'| Rules file: cost per 1,000 sessions | $39.20 | $34.00 | -$5.20 (-13.3%) | none | derived: tokens x $4/MTok input (2026-11-03) |',
-		'', '**Why each number moved**', '', '- **Rules file:** module text moved to the skills that use it.', '- **Rules file: cost per 1,000 sessions:** follows from the tokens it loads.'].join('\n'),
+		'| Rules file: tokens read at each session start | 9,800 | 8,500 | -1,300 (-13.3%) | none | measured: session context report |',
+		'| Rules file: cost per 1,000 sessions | $39.20 | $34.00 | -$5.20 (-13.3%) | none | derived: tokens x $4 per million input tokens, uncached (2026-11-03) |',
+		'', '**Why each number moved**', '', '- **Rules file:** module text moved to the skills that use it.', '- **Rules file: tokens read at each session start:** follows from the size.',
+		'- **Rules file: cost per 1,000 sessions:** follows from the tokens it loads.'].join('\n'),
 };
 // why: guards rule:pr-body and rule:release-notes
 test('a record with Visuals writes them into the PR body and after the notes known limits, checked, and CI holds the copy', () => {
 	const rec = { ...record(), limits: 'One known limit.', visuals: VISUALS };
 	assert.deepEqual(problems(rec), []);
 	const body = prBody(rec);
-	assert.match(body, /Version alignment: YES\.[^\n]*\n\n<details>\n<summary>Visuals: the always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nEvery session starts/); // pin: 1
+	assert.match(body, /Version alignment: YES\.[^\n]*\n\n<details>\n<summary>Visuals: the always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nRules file loads/); // pin: 1
 	assert.ok(body.includes(`before  ${'#'.repeat(36)}|###  27,609`), 'the chart is not wrapped');
 	const std = path.join(kitTemp.makeTemp('vis-body-'), 'body.md');
 	fs.writeFileSync(std, body);
 	const audit = spawnSync(process.execPath, [path.resolve('project/.claude/pr-body-audit.mjs'), std, rec.title], { encoding: 'utf8', cwd: path.dirname(std) });
 	assert.match(audit.stdout, /PASS +Visuals: numbers, chart and why lines check out +checked/); // pin: 1
 	const text = notes(rec);
-	assert.ok(text.indexOf('Known limits:') < text.indexOf('## Visuals\n\nEvery session starts'), text);
+	assert.ok(text.indexOf('Known limits:') < text.indexOf('## Visuals\n\nRules file loads'), text);
 	const file = path.join(kitTemp.makeTemp('vis-notes-'), 'notes.md');
 	fs.writeFileSync(file, text);
 	const release = spawnSync(process.execPath, [path.resolve('user/skills/release-notes/audit.mjs'), file, '1.2.0'], { encoding: 'utf8', cwd: path.dirname(file) });
 	assert.equal(release.status, 0, release.stdout);
 	assert.match(problems({ ...rec, visuals: { ...VISUALS, body: VISUALS.body.replace('-3,775 B', '-3,000 B') } }).join('\n'), /Visuals: row 1 \(Rules file\): change is -3,775 B/);
-	assert.match(problems({ ...rec, visuals: { ...VISUALS, summary: 'Rules file shrank' } }).join('\n'), /visuals summary starts "Visuals: "/);
+	assert.match(problems({ ...rec, visuals: { ...VISUALS, summary: 'Rules file shrank' } }).join('\n'), /visuals summary is one line/);
+	// The Visuals sweep: a summary with a line break hid the fold from every check; a section as visuals.mjs prints it, heading
+	// and all, is taken as is; fold false writes the fifth section; fold must be true or false.
+	assert.match(problems({ ...rec, visuals: { ...VISUALS, summary: 'Visuals: x\ny', body: 'anything | not checked\n- **x:** <why>' } }).join('\n'), /visuals summary is one line/);
+	assert.deepEqual(problems({ ...rec, visuals: { ...VISUALS, body: `<details>\n<summary>Visuals: x</summary>\n\n${VISUALS.body}\n</details>` } }), []);
+	assert.deepEqual(problems({ ...rec, visuals: { ...VISUALS, body: `### Visuals\n\n${VISUALS.body}` } }), []);
+	const open = { ...rec, visuals: { ...VISUALS, fold: false } };
+	assert.match(prBody(open), /Version alignment: YES\.[^\n]*\n\n### Visuals\n\nRules file loads/);
+	assert.match(problems({ ...rec, visuals: { ...VISUALS, fold: 'yes' } }).join('\n'), /fold true or false/);
+	assert.match(problems({ ...rec, visuals: { ...VISUALS, body: 'Rules file loads less.' } }).join('\n'), /no table with the header/);
 	// CI: a body whose Visuals differ from the record's is named, as a fix line is.
 	const dir = kitTemp.makeTemp('record-vis-');
 	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
@@ -356,4 +367,7 @@ test('a record with Visuals writes them into the PR body and after the notes kno
 	const edited = run(body.replace('$5.20 less per 1,000', '$9.99 less per 1,000'));
 	assert.equal(edited.status, 1);
 	assert.match(edited.stderr, /Visuals section differs from the build record/);
+	// A hand edit deep in the section (a table row, a why line) is caught too, not only in its first lines.
+	assert.equal(run(body.replace('| 9,800 | 8,500 |', '| 9,900 | 8,500 |')).status, 1, 'a table row edited by hand');
+	assert.equal(run(body.replace('follows from the tokens it loads.', 'follows from nothing.')).status, 1, 'a why line edited by hand');
 });

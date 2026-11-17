@@ -19,8 +19,9 @@ release format wins over anything here.
    and audit each claim to the file, test or measurement that proves it. The changelog entry follows
    `_Templates/_Changelog Entry Template.md`: grouped one-line changes, the detail left in the PR body.
    A merged PR with a Visuals section gives the notes the same one, after the known limits: run
-   `node .claude/visuals.mjs <base tag> <tag> --body <notes.md> --level ## --before "## Upgrading"` (or copy
-   the PR's section under `## Visuals`), keep its why lines, and the audit checks it.
+   `node .claude/visuals.mjs <base tag> <tag> --body <notes.md> --level ##` (the section goes last; add
+   `--before "<heading line>"` only when a later heading must stay below it), or copy the PR's section under
+   `## Visuals`; keep its why lines, and the audit checks it.
 5. **Hand off** the draft, its audit result and the sources to the owner. Create the tag and publish only on
    the owner's explicit go (rule:outward-acts); after publishing, read the live body back and diff it.
 6. **Check every step:** `node .claude/release-check.mjs <tag> --pr <n>` until it prints RELEASE COMPLETE (the
