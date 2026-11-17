@@ -81,7 +81,10 @@ test('a bare-name cd beside CDPATH is an unknown move, so a delete after it wait
 	// still looked up in CDPATH by Git Bash.
 	for (const c of ['CDPATH=.. cd project && rm -rf tmpx', 'export CDPATH=..; cd project; rm -rf tmpx', 'export C"D"PATH=..; cd project; rm -rf tmpx', 'export CD\\PATH=..; cd project; rm -rf tmpx', 'CDPATH=.. cd C:project && rm -rf tmpx',
 		// A name the guard cannot read, or a file sourced, may set it too (the second commit review).
-		'n=CD; export ${n}PATH=..; cd project; rm -rf tmpx', 'source ./env.sh; cd project; rm -rf tmpx', '. ./env.sh && cd project && rm -rf tmpx']) assert.equal(hook('guard-delete.cjs', c), 'deny', c);
+		'n=CD; export ${n}PATH=..; cd project; rm -rf tmpx', 'source ./env.sh; cd project; rm -rf tmpx', '. ./env.sh && cd project && rm -rf tmpx',
+		// The third commit review: a quoted or joined spelling of those, a read into a built name, and BASH_ENV set inline.
+		'"source" ./env.sh; cd project; rm -rf tmpx', 'sour\\\nce ./env.sh; cd project; rm -rf tmpx', 'read -r CDPA$x <<< ..; cd project; rm -rf tmpx',
+		'BASH_ENV=./env.sh bash -c "cd project && rm -rf tmpx"']) assert.equal(hook('guard-delete.cjs', c), 'deny', c);
 	assert.equal(hook('guard-delete.cjs', 'cd project && rm -rf tmpx'), 'pass');
 	assert.equal(hook('guard-delete.cjs', 'CDPATH=.. cd ./project && rm -rf tmpx'), 'pass');
 	const env = { ...process.env, CDPATH: '..' };
