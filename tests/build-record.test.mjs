@@ -132,7 +132,7 @@ test('the record writes release notes that split what projects get from what sta
 });
 
 // K109 (1.40.0 verify): an item with no reach was filed under projects, so the kit-only why-line format reached the
-// 1.40.0 notes as a project change. From 1.41.0 each item says its reach; older records stay as released.
+// 1.40.0 notes as a project change. From 1.41.0 each item says its reach; older records need not (1.40.0's why-line row was set by hand).
 // why: catches a build record item filed under projects by a missing reach (K109)
 test('from 1.41.0 every record item states its reach, projects or kit', () => {
 	const rec = record();
@@ -142,6 +142,8 @@ test('from 1.41.0 every record item states its reach, projects or kit', () => {
 	delete rec.items[2].reach;
 	assert.match(problems(rec).join('\n'), /item 3 \(T2\) names no reach/);
 	assert.deepEqual(problems(record()), [], 'a record before 1.41.0 may leave reach out');
+	rec.version = '2.0.0';
+	assert.match(problems(rec).join('\n'), /names no reach/, 'the series to 2.0.0 keeps the rule');
 });
 
 // K96 (build 12, reproduced on the 1.37.0 draft): the record check reads a dash only in prose, outside code spans, so

@@ -1261,7 +1261,7 @@ test('the format skills keep every 1.1.0 rule line exactly once', () => {
   const names = spawnSync('git', ['ls-tree', '--name-only', 'v1.1.0', 'rules/'], { encoding: 'utf8' });
   assert.equal(names.status, 0, 'the v1.1.0 tag must exist locally');
   // Every release since 1.1.0 records its reworded lines in its own file.
-  const reworded = fs.readdirSync(path.resolve('docs/migrations')).filter((n) => /^1\.(?:[2-9]|\d\d)\.\d+-reworded\.json$/.test(n))
+  const reworded = fs.readdirSync(path.resolve('docs/migrations')).filter((n) => /^(?!1\.[01]\.)\d+\.\d+\.\d+-reworded\.json$/.test(n))
     .flatMap((n) => JSON.parse(read(path.resolve('docs/migrations', n))).lines);
   const swap = new Map(reworded.map((r) => [r.before, r.after]));
   // A line reworded in more than one release follows its records to the latest wording.
@@ -7090,7 +7090,9 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
     // pin: 2 (the lead's order when the tool is missing)
   assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }
-  assert.match(read(path.resolve('rules/reviews-and-findings.md')), /PR body \(carrying the sweep summary\)[^\n]*-> push \+ PR \(no yes needed/);
+  // The pipeline's PR step names the sweep summary and points to the push bound, not to an owner's stop (1.41.0).
+  const pipeline = read(path.resolve('rules/reviews-and-findings.md')).split('\n').find((l) => l.startsWith('**Pipeline:**')) || '';
+  assert.match(pipeline, /sweep summary[^\n]*rule:outward-acts/);
 });
 
 // why: guards rule:word-pins
@@ -7379,7 +7381,10 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   fs.mkdirSync(path.join(home, 'projects', 'other-project'), { recursive: true });
   const text = read(path.resolve('docs/evals/recall-questions.md'));
   const calls = [];
-  const kitTools = { releaseState: () => ({ problems: ['not a tag'] }), projectSlug: (d) => path.basename(d) };
+  // K107: the run hands its probe to forget, so the guard record install wrote goes with the folder (the sweep: only
+  // removeProbe was tested, and the run could drop the hand-over unseen).
+  const forgot = [];
+  const kitTools = { releaseState: () => ({ problems: ['not a tag'] }), projectSlug: (d) => path.basename(d), forget: ({ dir }) => { forgot.push(dir); return { removed: [dir], why: '' }; } };
   const go = (over = {}) => recallRun({ label: 'recall-cand-9', kitDir: kit, noKit: false, home, osHome, env: {}, text, when: 'w', outDir, kitTools,
     run: (cmd, args, opts) => { calls.push({ cmd, args, opts }); if (cmd === 'claude' && args[0] === 'auth') return { status: 0, stdout: JSON.stringify({ configDirectory: home }) }; if (cmd === 'claude' && args[0] === '-p') fs.mkdirSync(path.join(home, 'projects', path.basename(opts.cwd)), { recursive: true }); return { status: 0, stdout: 'an answer' }; }, ...over });
   assert.throws(() => go({ run: () => ({ status: 0, stdout: JSON.stringify({ configDirectory: osHome }) }) }), /sessions read/);
@@ -7392,6 +7397,7 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   assert.doesNotMatch(asks[0].opts.cwd, /recall|cand/, 'the label never reaches the path');
   assert.ok(calls.some((c) => c.args.includes('--unreleased') && c.args.includes(asks[0].opts.cwd)), 'the project layer goes into the run\'s folder');
   assert.deepEqual(fs.readdirSync(path.join(osHome, 'kit-probes')), [], 'the folder is gone');
+  assert.deepEqual(forgot, [asks[0].opts.cwd], 'its guard record is forgotten');
   assert.ok(fs.existsSync(path.join(home, 'projects', 'other-project')));
   assert.equal(fs.readdirSync(path.join(home, 'projects')).some((p) => /^p[0-9a-f]{6}$/.test(p)), false, 'its memory is gone');
   assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' } }), /KIT_CLAUDE_HOME/);

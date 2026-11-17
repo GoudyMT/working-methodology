@@ -130,8 +130,8 @@ test('the test check measures each test file\'s flips in one slice, and the slic
 	const a2 = (args) => {
 		const r = spawnSync(process.execPath, [CHECK, ...args], { cwd: dir, encoding: 'utf8' });
 		assert.equal(r.status, 0, r.stdout + r.stderr);
-		const m = r.stderr.match(/A2: \d+ untagged test\(s\) in ([^\n]*?) measured/);
-		return { files: m ? m[1].split(', ') : [], notes: r.stdout.split('\n').filter((l) => /^\s*A2 /.test(l)) };
+		const line = r.stderr.split('\n').find((l) => /A2: \d+/.test(l)) || '';
+		return { files: [...line.matchAll(/tests\/\S+?\.test\.mjs/g)].map((x) => x[0]), notes: r.stdout.split('\n').filter((l) => /^\s*A2 /.test(l)) };
 	};
 	const s0 = a2([base, '--slice', '0/2']);
 	const s1 = a2([base, '--slice', '1/2']);
@@ -210,7 +210,7 @@ test('the test check still names a test that fails on the base by a crash, not a
 	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('minus one is negative', () => { assert.equal(a.isNeg(-1), true); });\n");
 	sh(dir, 'commit', '-qam', 'isNeg');
 	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
-	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: fails on the base commit, but not on an assertion \(a crash or a missing file\)/);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: [^\n]*crash/);
 });
 
 // K105 (PR 49): the PR claimed each fix had a test that fails first, and nothing read the claim. With the record, the

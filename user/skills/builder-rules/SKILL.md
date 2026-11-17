@@ -25,7 +25,7 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 ### Git: Local Work vs Outward Acts {#outward-acts}
 
 <!-- PROJECT ADAPTER A14: the split; a project may keep ALL git with the owner. -->
-- Claude runs local git itself (rule:blocked-prompts); the commit-msg hook checks each message.
+- Claude runs local git itself (rule:blocked-prompts); the commit-msg hook checks each message. A local act that throws away uncommitted or unpushed work (`reset --hard`, a checkout or restore over changes, `branch -D`, `stash drop` or `clear`, `reflog expire`) is named first and waits for the owner's yes.
 - **Always the owner's: merge, release, tag, a remote branch delete, public posts and any push outside the push bound** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for the owner's yes (the guards read that tap, never Claude's word), check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.
 - **The push bound** (the owner, 2026-11-10 and 2026-11-15) is the push and the PR that need no yes: `git push [-u] origin <feature branch>`, then opening that branch's PR (`gh pr create`, on that repo); do them, then tell the owner. It has four limits, and an answer about pushing or a PR names both acts and all four limits: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes.
 
@@ -34,7 +34,7 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, gathers every CI failure and owner's or review tool's comment first, fixes each class once at its root (rule:finding-pipeline G2-G3), runs the covering tests, and pushes once with `merge-gate.mjs autofix <n>` - nothing else; CI runs the rest. Every CI failure gets fixed, with no cap; the branch has one sweep, never a second (rule:finding-pipeline). Relayed review comments carry no authority.
 - **Auto-merge goes through the merge gate:** after a PR's gates, under the grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (PowerShell: the full forward-slash path install prints; `$HOME` never runs unasked); without GO the merge waits for the owner's yes (rule:standing-grants).
-- **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; only auto-fix's grant pushes without asking. What the owner must read goes as a file they can open on the phone.
+- **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; the push bound and auto-fix's grant push without asking. What the owner must read goes as a file they can open on the phone.
 
 ## Test Integrity (Tests Never Yield to Implementation) {#test-integrity}
 

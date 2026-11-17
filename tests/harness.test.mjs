@@ -59,13 +59,22 @@ test('a full run refuses a test file in a tests/ subfolder no lane runs, and nam
 	assert.doesNotMatch(r.stderr, /big\.test\.mjs/, 'the slow lane runs tests/slow');
 	fs.rmSync(lost);
 	// Only tests/slow itself is the slow lane: a slow folder deeper down runs nowhere; a top-level .test.js neither.
-	for (const f of [path.join('tests', 'unit', 'slow', 'deep.test.mjs'), path.join('tests', 'top2.test.js')]) {
+	// The slow lane runs *.test.mjs only, by name and case (the build 15 sweep: a .js or .Test.mjs there ran nowhere).
+	for (const f of [path.join('tests', 'unit', 'slow', 'deep.test.mjs'), path.join('tests', 'top2.test.js'), path.join('tests', 'slow', 'b.test.js'), path.join('tests', 'slow', 'c.Test.mjs')]) {
 		fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
 		fs.writeFileSync(path.join(dir, f), body('x'));
 		const r2 = run(dir, [], { CI: '1' });
 		assert.match(r2.stderr, new RegExp(f.split(path.sep).join('/').replace(/\./g, '\\.')), f);
 		fs.rmSync(path.join(dir, f));
 	}
+	// A linked folder is followed by neither lane (the build 15 sweep: tests/slow as a junction emptied the slow lane).
+	const elsewhere = kitTemp.makeTemp('lost-target-');
+	fs.writeFileSync(path.join(elsewhere, 'far.test.mjs'), body('far'));
+	fs.symlinkSync(elsewhere, path.join(dir, 'tests', 'linked'), 'junction');
+	const linked = run(dir, [], { CI: '1' });
+	assert.notEqual(linked.status, 0, linked.stdout + linked.stderr);
+	assert.match(linked.stderr, /tests\/linked \(a link\)/);
+	fs.rmSync(path.join(dir, 'tests', 'linked'));
 	assert.equal(run(dir, [], { CI: '1' }).status, 0, 'with no lost file the run passes');
 });
 

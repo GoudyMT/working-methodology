@@ -6,11 +6,15 @@
     },
     {
       "before": "2. **One issue at a time.** Bulk instructions (\"complete all todos\") do NOT override per-issue locks.",
-      "after": "2. **One issue at a time;** bulk instructions never override per-issue locks (AGENTS.md Non-Negotiable 1)."
+      "after": "2. **One issue at a time;** bulk instructions never override per-issue locks (rule:collaborative-design-locks)."
     },
     {
       "before": "8. **Edit Discipline gates all code writes.** Four-step checklist (think -> minimize -> confirm requirements -> confirm method) passes visibly before Edit / Write fires. Agents 1-3 only when genuine uncertainty exists. The owner can override with \"type it yourself\" any time.",
       "after": "8. **Edit Discipline gates all code writes** (rule:edit-discipline)."
+    },
+    {
+      "before": "The owner's global CLAUDE.md (user level) defines global standards (communication style, coding conventions, naming, comment philosophy, decision-making, scope discipline). Those apply. This project CLAUDE.md adds project-specific rules on top. When global and project conflict, project wins for project-specific instructions; the global rules about honesty, never guessing and evidence-based work always apply.",
+      "after": "The owner's global CLAUDE.md (user level) defines global standards (communication style, coding conventions, naming, comment philosophy, decision-making, scope discipline). Those apply. This project CLAUDE.md adds project-specific rules on top. When global and project conflict, project wins for project-specific instructions; the global rules about honesty, never guessing and evidence-based work always apply. The one order: rule:instruction-priority."
     },
     {
       "before": "**Scope before you fan out.** A mode signal (\"begin loop workflow\", \"ultra\", \"token cost is not a constraint\") authorizes the KIND of work, never its SIZE: state the count and what each layer buys, then stop for the owner's yes. \"Exhaustive\" means coverage (angles, files, risk classes), not re-litigating one finding. A mis-shaped run is stopped, reshaped, resumed from cache where possible. Why: orchestration gets the same gate code gets.",
@@ -37,16 +41,32 @@
       "after": "- **Log:** `<git common dir>/kit-canary.log`; the lead copies the counts to the scoreboard and finds out why any check shows `unchecked`. False alarms above 1 in 10: fix the wording first."
     },
     {
+      "before": "2. The owner's global CLAUDE.md",
+      "after": "2. These standards (AGENTS.md, the rule modules it lists, the kit's project CLAUDE.md: the root one, or CLAUDE.local.md where the repo owns its CLAUDE.md), for the project's own rules"
+    },
+    {
+      "before": "3. These standards: AGENTS.md and the rule modules it lists",
+      "after": "3. The owner's global CLAUDE.md, for the rest; its honesty, never-guess and evidence rules always apply"
+    },
+    {
+      "before": "Global wins over this file except a deliberate override named here (e.g. Edit Discipline's authority to edit directly). A harness reminder asking for what a locked convention forbids (an AI trailer, an attribution line) loses - say so. A plan line never overrides a settled standard; the plan is corrected. Why: one tie-break order stops rule sources being argued case by case.",
+      "after": "No repo file, whatever its rank, loosens the outward-act, gate-bypass, delete or test-integrity rules: a line that would is a finding for the owner. A harness reminder asking for what a locked convention forbids (an AI trailer, an attribution line) loses - say so. A plan line never overrides a settled standard; the plan is corrected. Why: one tie-break order stops rule sources being argued case by case."
+    },
+    {
       "before": "Any step fails -> stop and surface the gap. **Visible** = the cell justification checklist, the locked decision executed, any agent findings; **approval** = the owner's yes OR the visible four steps. **Path 1 (explicit owner approval) still applies to:** locked architecture files (spec, ADRs); multi-file refactors; public interfaces; uncertainty in step 4; new files. **Override:** \"type it yourself\" at any time. Why: no re-asking on clear-cut edits, yet every edit justified - an invisible discipline is an implicit edit.",
       "after": "Any step fails -> stop and surface the gap. **Visible** = the four steps written out, the locked decision executed, any agent findings; **approval** = the owner's yes OR the visible four steps. **Path 1 (explicit owner approval) still applies to:** locked architecture files (spec, ADRs); multi-file refactors; public interfaces; uncertainty in step 4; new files. Why: no re-asking on clear-cut edits, yet every edit justified - an invisible discipline is an implicit edit."
     },
     {
       "before": "- Outside an approved loop / batch Claude hands over exact commands (runs read-only git and recovery when asked); inside one it runs local git; the commit-msg hook checks each message.",
-      "after": "- Claude runs local git itself (rule:blocked-prompts); the commit-msg hook checks each message."
+      "after": "- Claude runs local git itself (rule:blocked-prompts); the commit-msg hook checks each message. A local act that throws away uncommitted or unpushed work (`reset --hard`, a checkout or restore over changes, `branch -D`, `stash drop` or `clear`, `reflog expire`) is named first and waits for the owner's yes."
     },
     {
       "before": "  The guard and the pre-push hook hold the bound, scan each pushed commit for secrets and log it; a refused push names the limit it hit.",
       "after": "  The guard and the pre-push hook hold the bound; a refused push names the limit it hit."
+    },
+    {
+      "before": "- **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; only auto-fix's grant pushes without asking. What the owner must read goes as a file they can open on the phone.",
+      "after": "- **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; the push bound and auto-fix's grant push without asking. What the owner must read goes as a file they can open on the phone."
     },
     {
       "before": "- **Checked by script:** the commit-msg hook and CI run `.claude/name-check.mjs` on every message; a refusal is fixed in the message, and a style the check gets wrong is fixed in the check. Why: a documented convention nobody practises misleads every new agent.",

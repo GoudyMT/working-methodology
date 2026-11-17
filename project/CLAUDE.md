@@ -11,7 +11,7 @@
 ## Critical Hard Rules (Read First)
 
 1. **Plan for design; the owner locks A/B/C decisions;** the records answer the rest (rule:collaborative-design-locks, rule:delegated-decisions).
-2. **One issue at a time;** bulk instructions never override per-issue locks (AGENTS.md Non-Negotiable 1).
+2. **One issue at a time;** bulk instructions never override per-issue locks (rule:collaborative-design-locks).
 3. **Privacy and security ABOVE all else.** <!-- PROJECT ADAPTER A4/A5: the data boundary and product red lines, e.g. "Personal data never leaves the device by default. No third-party trackers. No ads, ever." -->
 4. **Domain hard boundaries:** <!-- PROJECT ADAPTER A2: the legal / licensing / product lines this project never crosses. Fill in or write "none beyond the general rules". -->
 5. **Content and data sourcing:** <!-- PROJECT ADAPTER A2: what may be collected or used, from where, under what license. Fill in or "n/a". -->

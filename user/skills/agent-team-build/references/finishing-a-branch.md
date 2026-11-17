@@ -32,21 +32,20 @@ Use the checks in `worktrees.md` section 1.
 |---|---|
 | Ordinary checkout, named branch | the branch name, base, head |
 | Linked worktree, named branch | the same, plus the worktree path, kept in place |
-| Detached HEAD | no branch exists yet; give the owner the exact command to name one (`git switch -c <name>`, run at the head). The lead runs it only if the owner said so |
+| Detached HEAD | no branch exists yet; the lead names one (`git switch -c <type>/<plain-kebab-name>`, run at the head) and says so |
 
-## 4. Present the options, do not take them
+## 4. Push, or present the options
 
-Give the owner the real choices with exact commands in their shell dialect, then stop:
+The default is to push the branch and open its pull request (its body through the pr-body skill first): inside the
+push bound that needs no yes (rule:outward-acts); tell the owner after. The other choices go to the owner with a
+recommendation and why, and run only on a yes that names the act:
 
-1. Push the branch and open the pull request (its body goes through the pr-body skill first).
-2. Merge locally into the base (the owner runs it).
-3. Keep it as is.
-
-State a recommendation and why. Nothing in this list runs without a clear yes that names the act.
+1. Merge locally into the base.
+2. Keep it as is.
 Throwing the work away is never offered unprompted. If the owner asks for it, list what is lost (the branch, every
-commit with its hash, the worktree path), wait for the explicit word, then give the command for the owner to run.
+commit with its hash, the worktree path), wait for the explicit word naming it, then run it and report.
 
-Done when: the options and commands are in the rundown and the lead is waiting.
+Done when: the PR is open, or the options are in the rundown and the lead is waiting.
 
 ## 5. After the owner's yes
 

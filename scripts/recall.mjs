@@ -200,11 +200,14 @@ export function removeProbe({ dir, home, slug, osHome = os.homedir(), forget }) 
   if (!/kit-probes[\\/][0-9a-f]{6}[\\/]p[0-9a-f]{6}$/.test(dir) || !/^[0-9a-f]{6}[\\/]p[0-9a-f]{6}$/.test(inside) || !isThrowaway(dir, osHome)) throw new Error(`${dir} is not a probe folder`);
   // One plain folder name: "..", "" or a path would reach the Claude folder itself.
   if (!/^[\w.-]+$/.test(slug || '') || /^\.+$/.test(slug)) throw new Error(`${JSON.stringify(slug)} is not a memory slug`);
-  fs.rmSync(path.dirname(dir), { recursive: true, force: true });
-  fs.rmSync(path.join(home, 'projects', slug), { recursive: true, force: true });
-  // Only once the folder is gone: forget refuses a project that is still there. A failure here is named, never thrown:
-  // this runs in the run's finally, where a throw would hide the run's own error.
-  if (forget) {
+  // Every removal below is named when it fails, never thrown: this runs in the run's finally, where a throw would hide
+  // the run's own error (the build 15 sweep: a child process still in the folder made rmSync throw EPERM).
+  const tryRm = (p, what) => { try { fs.rmSync(p, { recursive: true, force: true }); return true; } catch (e) { process.stderr.write(`recall: ${what} stays (${e.code || e.message}): ${p}\n`); return false; } };
+  const gone = tryRm(path.dirname(dir), 'the probe folder');
+  tryRm(path.join(home, 'projects', slug), 'the probe memory');
+  // Only once the folder is gone: forget refuses a project that is still there.
+  if (forget && !gone) process.stderr.write(`recall: the probe's guard record stays with its folder; once that is gone, run kit.mjs forget on ${dir}\n`);
+  else if (forget) {
     try {
       const r = forget({ home, dir });
       if (!r.removed.length && !/no guard record names/.test(r.why)) process.stderr.write(`recall: the probe's guard record stays: ${r.why}\n`);

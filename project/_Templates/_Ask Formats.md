@@ -27,7 +27,7 @@ The block a coordinator attaches to every new thread of the project, copied from
 ```md
 Standing rules for this thread:
 - <the folder this thread works in, and its job>
-- <what needs the owner's yes: push, PR, merge, release, deleting outside scratch>
+- <what needs the owner's yes: merge, release, tag, any push outside the push bound, deleting outside scratch>
 - <how to ask: the choice pop-up, never a typed code>
 - <the branch and commit format: <type>/<plain-kebab-name>; `type: subject`, at most 72 characters>
 - <the project's own lines from its memory, one each>

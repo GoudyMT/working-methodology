@@ -263,15 +263,20 @@ export async function main(argv) {
 	// tests/ would run in no lane. Refuse the run and name it, rather than let its failures reach no one.
 	if (!o.files.length) {
 		const lost = [];
-		const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+		// lane: 'top' (tests/ itself: the full run), 'slow' (tests/slow at any depth: CI's slow lane, find -type f), or
+		// 'none'. A link is named wherever it sits: neither lane follows one (the build 15 sweep: tests/slow as a junction
+		// left the slow lane empty, and its required check read the skip as a pass).
+		const walk = (d, lane) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) {
 			const p = path.join(d, e.name);
-			if (e.isDirectory() && !(d === testsDir && (e.name === 'slow' || e.name === 'node_modules'))) walk(p);
-			// Any test-shaped file the run would skip: one in a subfolder, or one at the top with another extension or case.
-			else if (e.isFile() && /\.test\.[cm]?[jt]s$/i.test(e.name) && (d !== testsDir || !e.name.endsWith('.test.mjs'))) lost.push(path.relative(root, p).split(path.sep).join('/'));
+			const rel = path.relative(root, p).split(path.sep).join('/');
+			if (e.isSymbolicLink()) lost.push(`${rel} (a link)`);
+			else if (e.isDirectory()) { if (!(d === testsDir && e.name === 'node_modules')) walk(p, d === testsDir && e.name === 'slow' ? 'slow' : lane === 'slow' ? 'slow' : 'none'); }
+			// Any test-shaped file no lane runs: one outside both lanes, or one with another extension or case.
+			else if (e.isFile() && /\.test\.[cm]?[jt]s$/i.test(e.name) && !(lane !== 'none' && e.name.endsWith('.test.mjs'))) lost.push(rel);
 		} };
-		walk(testsDir);
+		walk(testsDir, 'top');
 		if (lost.length) {
-			process.stderr.write(`test-run: these test files run in no lane (only tests/ itself and tests/slow run); move them:\n${lost.map((f) => `  ${f}`).join('\n')}\n`);
+			process.stderr.write(`test-run: these test files run in no lane (only *.test.mjs files in tests/ itself and under tests/slow run, and no lane follows a link); move them:\n${lost.map((f) => `  ${f}`).join('\n')}\n`);
 			return 2;
 		}
 	}
