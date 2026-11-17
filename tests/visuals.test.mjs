@@ -116,6 +116,9 @@ test('the window share uses each run\'s own window, and the lead names a metric 
 	assert.match(share.source, /the window at each commit \(650,000, then 400,000\)/);
 	assert.match(share.why, /^more of the window goes to the start.*went from 650,000 to 400,000 tokens\.$/); // pin: 1
 	assert.match(b.sentence, /4\.33 points more of the window used at start \(the window went from 650,000 to 400,000 tokens\)\.$/); // pin: 1
+	// The window sizes the sentence names are in the share row's source, so the section passes its own check (this
+	// build's first real run refused it: a number read with its trailing comma matched nothing).
+	assert.deepEqual(checkSection(fillWhy(section(b)), '###'), []);
 	// The lead is the metric marked lead; another that moved the other way is named after it.
 	const file = { name: 'Rules file', unit: 'tokens', before: 9800, after: 8500, source: 'context report', measuredAt: AT, impact: ['cost'] };
 	const grew = { ...whole, after: 52900 };

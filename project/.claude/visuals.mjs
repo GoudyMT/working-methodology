@@ -234,7 +234,9 @@ export function checkSection(text, level = '###', opts = {}) {
 	const rows = lines.filter((l) => /^\s*\|/.test(l) && l.trim() !== HEADER && !/^\s*\|[\s|:-]+\|\s*$/.test(l)).map((l) => l.trim().split('|').slice(1, -1).map((c) => c.trim()));
 	if (rows.length > MAX_ROWS) faults.push(`Visuals: ${rows.length} rows, over ${MAX_ROWS}`);
 	const shown = new Set();
-	const add = (s) => { for (const n of String(s).match(/\$?\d[\d,]*(?:\.\d+)?%?/g) || []) shown.add(n.replace(/^\$|%$/g, '')); };
+	// A number ends at its last digit: "(650,000, then" names 650,000.
+	const NUM = /\$?\d(?:[\d,]*\d)?(?:\.\d+)?%?/g;
+	const add = (s) => { for (const n of String(s).match(NUM) || []) shown.add(n.replace(/^\$|%$/g, '')); };
 	rows.forEach(([metric, before, after, change, limit, source], i) => {
 		const b = parseValue(before);
 		const a = parseValue(after);
@@ -264,7 +266,7 @@ export function checkSection(text, level = '###', opts = {}) {
 		if ((cost || w) && !t) faults.push(`Visuals: row ${i + 1} (${metric}): a derived row with no tokens row above it`);
 	});
 	// The outcome sentence says only numbers the rows show (a value, a change, a limit, a price or a window).
-	const said = lead.join(' ').match(/\$?\d[\d,]*(?:\.\d+)?%?/g) || [];
+	const said = lead.join(' ').match(NUM) || [];
 	for (const s of said) if (!shown.has(s.replace(/^\$|%$/g, ''))) faults.push(`Visuals: the outcome sentence names ${s}, which no row shows`);
 	const fenceAt = lines.indexOf('```text');
 	if (fenceAt < 0) faults.push('Visuals: no chart (a ```text block of bars)');
