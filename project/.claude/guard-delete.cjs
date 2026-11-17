@@ -37,6 +37,9 @@ const DELETERS = new Set(['rm', 'rmdir', 'unlink', 'del', 'erase', 'rd', 'ri', '
 const CMD_DELETERS = new Set(['del', 'erase', 'rd', 'rmdir']);
 // rmdir, rd and unlink without a recursive switch remove a link itself, never what it points to.
 const LINK_SAFE = new Set(['rmdir', 'rd', 'unlink']);
+// What may set CDPATH where the guard cannot read the name: a sourced file, eval, or a setter whose name is built at
+// run time (the 1.42.0 commit review of S8).
+const CDPATH_MAYBE = /(^|[\s;&|(])(source|eval|\.)\s|\b(export|declare|typeset|readonly|local)\b[^;&|\n]*[$`]|\bprintf\s+-v|\$'/;
 const DIR_CHANGERS = new Set(['cd', 'chdir', 'pushd', 'sl', 'set-location', 'push-location']);
 // They go back to a folder the guard does not track.
 const DIR_RETURNS = new Set(['popd', 'pop-location']);
@@ -729,7 +732,7 @@ function decide(input, where = {}) {
 	const session = SESSION_ID.test(id) ? { id, claude: realOf(api.join(tmpdir, 'claude'), api) } : null;
 	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir(), powershell: input.tool_name === 'PowerShell',
 		// CDPATH, set in the command or in the shell's environment, sends a bare-name cd to a folder of that name elsewhere.
-		cdpath: Boolean(process.env.CDPATH) || strings.some((s) => /\bCDPATH\b/.test(s.replace(/["'\\`]/g, ''))) };
+		cdpath: Boolean(process.env.CDPATH || process.env.BASH_ENV) || strings.some((s) => /\bCDPATH\b/.test(s.replace(/["'\\`]/g, '')) || CDPATH_MAYBE.test(s)) };
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
 	const both = strings.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);
