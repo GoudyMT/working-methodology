@@ -275,8 +275,8 @@ function discardsWork(sub, own, ctx, state) {
 	if (sub === 'read-tree' && (short('u') || own.includes('-u')) && (long('reset') || short('m'))) return `${LOSES_WORK} git read-tree -u`;
 	if (sub === 'update-ref' && (short('d') || long('delete') || long('stdin'))) return `${LOSES_WORK} git update-ref -d`;
 	// A push to a folder (., ./, .., a path) lands in a repo on this machine, this one included; forced, it moves a branch.
-	const target = own.filter((w) => !w.startsWith('-'))[0] || '';
-	if (sub === 'push' && /^(\.{1,2}([\\/]|$)|[\\/]|[A-Za-z]:|~|file:)/.test(target) && (short('f') || opts.some((w) => /^--force/.test(w)) || own.some((w) => /^\+/.test(w)))) return `${LOSES_WORK} a forced push into a repo on this machine`;
+	// Any word may be the destination once an option's value is skipped, so any local path counts (the commit review).
+	if (sub === 'push' && own.some((w) => /^(\.{1,2}([\\/]|$)|[\\/]|[A-Za-z]:|~|file:)/.test(w.replace(/^--repo=/, ''))) &&(short('f') || opts.some((w) => /^--force/.test(w)) || own.some((w) => /^\+/.test(w)))) return `${LOSES_WORK} a forced push into a repo on this machine`;
 	if (sub === 'switch' && (short('fC') || long('force') || long('discard-changes') || long('force-create'))) return `${LOSES_WORK} git switch over changes`;
 	// -D, -f (with -d or alone, which moves a branch that exists), -M and -C overwrite or drop a branch.
 	if (sub === 'branch' && (short('DfMC') || long('force'))) return `${LOSES_WORK} git branch -D`;
