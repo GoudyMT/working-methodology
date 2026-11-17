@@ -156,8 +156,6 @@ const PARTS = [
 				if (s && s.autoCompactWindow !== undefined) set.push([`.claude/${name}`, s.autoCompactWindow]);
 				for (const [model, m] of Object.entries((s && s.modelSettings) || {})) if (m && m.autoCompactWindow !== undefined) set.push([`.claude/${name} (${model})`, m.autoCompactWindow]);
 			}
-			// A per-model window in the owner's own settings file can still win over the project's top-level one.
-			for (const [model, m] of Object.entries(readJson(path.join(HOME, 'settings.json'))?.modelSettings || {})) if (m && m.autoCompactWindow !== undefined) set.push([`${toPosix(path.join(HOME, 'settings.json'))} (${model})`, m.autoCompactWindow]);
 			if (settingsOf('settings.json')?.autoCompactWindow === undefined) return [false, `.claude/settings.json sets no autoCompactWindow: run kit.mjs install project`];
 			const bad = set.filter(([, v]) => !Number.isInteger(v) || v > WINDOW_MAX || v < WINDOW_MIN);
 			return bad.length ? [false, `${bad.map(([f, v]) => `${f} sets ${v}`).join('; ')}: keep it from ${WINDOW_MIN} to ${WINDOW_MAX} (under ${WINDOW_MIN} is ignored)`] : [true, `compacts at ${set.map(([, v]) => v).join(', ')}`];

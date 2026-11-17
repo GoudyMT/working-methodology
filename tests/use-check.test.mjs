@@ -185,19 +185,22 @@ test('the use check fails a filled AGENTS.md over the cap and a compact window o
 	assert.match(part(check(none).out, 'compact-window').wired.detail, /no autoCompactWindow/);
 });
 
-// why: guards rule:kit-standards (a per-model window in the owner's own settings file wins over the project's
-// top-level one, so a 1M window there left the check passing while sessions compacted far past 400K)
-test('the compact-window check fails a per-model window in the owner settings file, a text value and a BOM-led file', () => {
-	for (const value of [1000000, 'auto']) {
-		const w = project();
-		const file = path.join(homes.get(w), 'settings.json');
-		const s = JSON.parse(fs.readFileSync(file, 'utf8'));
-		s.modelSettings = { 'claude-opus-5-5': { autoCompactWindow: value } };
-		fs.writeFileSync(file, JSON.stringify(s));
-		const c = check(w);
-		assert.deepEqual(c.out.failing, ['compact-window'], String(value));
-		assert.match(part(c.out, 'compact-window').wired.detail, /settings\.json \(claude-opus-5-5\) sets/);
-	}
+// why: guards rule:kit-standards. The 1.42.0 sweep thought a per-model window in the owner's own settings file could
+// win over the project's; measured on 2026-11-17 it does not (a session in a project setting 400000 showed 400k with
+// the owner's opus window at 650000), and the check that failed on it stopped every install on such a machine. A
+// per-model window in the project's own files still counts, and a text value there fails.
+test('the compact-window check passes the owner\'s own per-model window, and fails a project text value and a BOM-led file', () => {
+	const w = project();
+	const file = path.join(homes.get(w), 'settings.json');
+	const s0 = JSON.parse(fs.readFileSync(file, 'utf8'));
+	s0.modelSettings = { 'claude-opus-5-5': { autoCompactWindow: 650000 } };
+	fs.writeFileSync(file, JSON.stringify(s0));
+	assert.deepEqual(check(w).out.failing, []);
+	const p = project();
+	const pf = path.join(p, '.claude', 'settings.json');
+	const ps = JSON.parse(fs.readFileSync(pf, 'utf8'));
+	fs.writeFileSync(pf, JSON.stringify({ ...ps, modelSettings: { 'claude-opus-5-5': { autoCompactWindow: 'auto' } } }));
+	assert.match(part(check(p).out, 'compact-window').wired.detail, /settings\.json \(claude-opus-5-5\) sets auto/);
 	const bom = project();
 	const f = path.join(bom, '.claude', 'settings.json');
 	const s = JSON.parse(fs.readFileSync(f, 'utf8'));
