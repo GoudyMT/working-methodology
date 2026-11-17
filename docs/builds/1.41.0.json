@@ -125,35 +125,188 @@
   "tier": "Feature (security-sensitive)",
   "commit": "225454b",
   "dimensions": [
-   { "name": "Privacy", "result": "Not touched: no new data leaves the machine" },
-   { "name": "Supply chain", "result": "Not touched: no dependency, no action pin changed" },
-   { "name": "Legal", "result": "Not touched" },
-   { "name": "Code security", "result": "Precedence in an overlay and destructive local git, fixed" },
-   { "name": "Gaps, scaling, test value", "result": "Two templates, lanes, cleanup and test gaps, all fixed" },
-   { "name": "Alignment", "result": "YES" }
+   {
+    "name": "Privacy",
+    "result": "Not touched: no new data leaves the machine"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency, no action pin changed"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Precedence in an overlay and destructive local git, fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Two templates, lanes, cleanup and test gaps, all fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
   ],
-  "findings": { "critical": 0, "high": 3, "medium": 9, "low": 10 },
+  "findings": {
+   "critical": 0,
+   "high": 3,
+   "medium": 9,
+   "low": 10
+  },
   "fixes": [
-   { "id": "F1", "severity": "high", "text": "The PR body template sent the body to the owner before any push; it now audits before the PR command", "commit": "ab36037", "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes", "owner": true },
-   { "id": "F2", "severity": "high", "text": "The ask-format template listed push and PR as needing a yes; it names acts outside the push bound", "commit": "ab36037", "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes", "owner": true },
-   { "id": "F4", "severity": "high", "text": "An overlay host repo's own rules file read as a standard above the owner's file; the kit's file is named and a floor holds", "commit": "97142de", "test": "tests/kit.test.mjs::the instruction order names the kit's CLAUDE.md and the rules no repo file loosens", "security": true },
-   { "id": "F3", "severity": "medium", "text": "The ledger missed the precedence lines; it is written after the last rule edit", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F5", "severity": "medium", "text": "Destructive local git ran with no stop; the rule names it and waits for the owner's yes", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F6", "severity": "medium", "text": "Remote mode said only auto-fix pushes without asking; it names the push bound too", "commit": "ab36037", "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes" },
-   { "id": "F7", "severity": "medium", "text": "Finishing a branch handed the owner commands; it pushes and opens the PR", "commit": "ab36037", "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes" },
-   { "id": "F8", "severity": "medium", "text": "A .js or .Test.mjs file in tests/slow ran nowhere; the slow lane is walked", "commit": "ab36037", "test": "tests/harness.test.mjs::a full run refuses a test file in a tests/ subfolder no lane runs, and names it" },
-   { "id": "F9", "severity": "medium", "text": "A linked folder under tests/ was followed by no lane; any link is named", "commit": "ab36037", "test": "tests/harness.test.mjs::a full run refuses a test file in a tests/ subfolder no lane runs, and names it" },
-   { "id": "F10", "severity": "medium", "text": "The run's hand-over of the probe to forget had no test; the whole-run test checks it", "commit": "ab36037", "test": "tests/kit.test.mjs::a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself" },
-   { "id": "F11", "severity": "medium", "text": "A test pinned the pipeline sentence; it reads the line's pointer", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F12", "severity": "low", "text": "A `CLAUDE.md` pointer was not a rule ID", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F13", "severity": "low", "text": "A changed `CLAUDE.md` line was not in the ledger", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F14", "severity": "low", "text": "The ledger test skipped a 2.x ledger", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F15", "severity": "low", "text": "A test comment misstated older records", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F16", "severity": "low", "text": "A probe folder that would not delete threw in the finally; each removal is named", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F17", "severity": "low", "text": "The crash row pinned a long message; it matches the key and the verdict word", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F18", "severity": "low", "text": "The slice test parsed a progress sentence; it reads the file paths", "commit": "ab36037", "test": "no test: no real input" },
-   { "id": "F19", "severity": "low", "text": "The 2.x half of the reach cut-off had no test", "commit": "ab36037", "test": "tests/build-record.test.mjs::from 1.41.0 every record item states its reach, projects or kit" },
-   { "id": "F22", "severity": "low", "text": "A future strict global outward rule could lose to the order; the floor holds it", "commit": "97142de", "test": "no test: no real input" }
+   {
+    "id": "F1",
+    "severity": "high",
+    "text": "The PR body template sent the body to the owner before any push; it now audits before the PR command",
+    "commit": "ab36037",
+    "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes",
+    "owner": true
+   },
+   {
+    "id": "F2",
+    "severity": "high",
+    "text": "The ask-format template listed push and PR as needing a yes; it names acts outside the push bound",
+    "commit": "ab36037",
+    "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes",
+    "owner": true
+   },
+   {
+    "id": "F4",
+    "severity": "high",
+    "text": "An overlay host repo's own rules file read as a standard above the owner's file; the kit's file is named and a floor holds",
+    "commit": "97142de",
+    "test": "tests/kit.test.mjs::the instruction order names the kit's CLAUDE.md and the rules no repo file loosens",
+    "security": true
+   },
+   {
+    "id": "F3",
+    "severity": "medium",
+    "text": "The ledger missed the precedence lines; it is written after the last rule edit",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F5",
+    "severity": "medium",
+    "text": "Destructive local git ran with no stop; the rule names it and waits for the owner's yes",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F6",
+    "severity": "medium",
+    "text": "Remote mode said only auto-fix pushes without asking; it names the push bound too",
+    "commit": "ab36037",
+    "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes"
+   },
+   {
+    "id": "F7",
+    "severity": "medium",
+    "text": "Finishing a branch handed the owner commands; it pushes and opens the PR",
+    "commit": "ab36037",
+    "test": "tests/kit.test.mjs::no rule, template or skill puts the feature-branch push or its PR behind the owner's yes"
+   },
+   {
+    "id": "F8",
+    "severity": "medium",
+    "text": "A .js or .Test.mjs file in tests/slow ran nowhere; the slow lane is walked",
+    "commit": "ab36037",
+    "test": "tests/harness.test.mjs::a full run refuses a test file in a tests/ subfolder no lane runs, and names it"
+   },
+   {
+    "id": "F9",
+    "severity": "medium",
+    "text": "A linked folder under tests/ was followed by no lane; any link is named",
+    "commit": "ab36037",
+    "test": "tests/harness.test.mjs::a full run refuses a test file in a tests/ subfolder no lane runs, and names it"
+   },
+   {
+    "id": "F10",
+    "severity": "medium",
+    "text": "The run's hand-over of the probe to forget had no test; the whole-run test checks it",
+    "commit": "ab36037",
+    "test": "tests/kit.test.mjs::a whole recall run asks in a neutral folder with the kit installed, saves the answers, and cleans up after itself"
+   },
+   {
+    "id": "F11",
+    "severity": "medium",
+    "text": "A test pinned the pipeline sentence; it reads the line's pointer",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F12",
+    "severity": "low",
+    "text": "A `CLAUDE.md` pointer was not a rule ID",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F13",
+    "severity": "low",
+    "text": "A changed `CLAUDE.md` line was not in the ledger",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F15",
+    "severity": "low",
+    "text": "A test comment misstated older records",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F16",
+    "severity": "low",
+    "text": "A probe folder that would not delete threw in the finally; each removal is named",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F17",
+    "severity": "low",
+    "text": "The crash row pinned a long message; it matches the key and the verdict word",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F18",
+    "severity": "low",
+    "text": "The slice test parsed a progress sentence; it reads the file paths",
+    "commit": "ab36037",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F19",
+    "severity": "low",
+    "text": "The 2.x half of the reach cut-off had no test",
+    "commit": "ab36037",
+    "test": "tests/build-record.test.mjs::from 1.41.0 every record item states its reach, projects or kit"
+   },
+   {
+    "id": "F22",
+    "severity": "low",
+    "text": "A future strict global outward rule could lose to the order; the floor holds it",
+    "commit": "97142de",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "C1",
+    "severity": "medium",
+    "text": "A generated role rules file went over its 8,000-byte cap; the local git line was trimmed",
+    "commit": "6f4c9ad",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "C2",
+    "severity": "medium",
+    "text": "The test check read top-level code after a test as part of it, so an inserted test made an old one changed; a test ends at its closing line",
+    "commit": "6f4c9ad",
+    "test": "tests/test-check.test.mjs::a test ends at its own closing line, so a test inserted after it leaves it unchanged"
+   }
   ],
   "deferred": [],
   "accepted": []
