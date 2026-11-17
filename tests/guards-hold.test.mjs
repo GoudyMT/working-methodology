@@ -1293,3 +1293,43 @@ test('the delete guard holds what its planted-bug sweep let through, and passes 
 	popUp({ act });
 	assert.match(ask(act, { extra: { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now' } }).reason, /^Owner's yes given in the pop-up/);
 });
+
+// K124 (1.42.0): the planted-bug sweep of the shared path reader (owner-proof.cjs) let nine changes through every
+// test. A session whose folder is given by its short name (as on the CI runners) had its links read from lower-case
+// parts that name no folder, so a write through a link into .claude or .git ran; a Claude folder under its own name
+// lost its settings file; and reads were held that must pass.
+// why: guards rule:outward-acts
+test('the path reader holds what its planted-bug sweep let through, and passes the reads it must not hold', () => {
+	const own = kitTemp.makeTemp('proj-longname-');
+	for (const d of ['.git', 'src', '.claude']) fs.mkdirSync(path.join(own, d));
+	fs.writeFileSync(path.join(own, '.git', 'config'), '[core]\n');
+	for (const f of ['settings.json', 'guard.cjs']) fs.writeFileSync(path.join(own, '.claude', f), '{}');
+	fs.writeFileSync(path.join(own, 'h1'), 'x');
+	fs.linkSync(path.join(own, 'h1'), path.join(own, 'h2'));
+	fs.symlinkSync(path.join(own, '.claude'), path.join(own, 'lk'), 'junction');
+	fs.symlinkSync(path.join(own, '.git'), path.join(own, 'gk'), 'junction');
+	const home = kitTemp.makeTemp('claudecfg-');
+	const ask = (command, { tool = 'Bash', cwd = own, from = own } = {}) => {
+		const r = spawnSync(process.execPath, [HOOKS[0]], { cwd: from, input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command }, cwd }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: home, CLAUDE_PROJECT_DIR: own } });
+		assert.equal(r.status, 0, r.stderr);
+		return (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {}).permissionDecision || 'allow';
+	};
+	const writes = ['echo x > gk/config', 'echo x > lk/settings.json', 'cd src && echo x > ../lk/guard.cjs', 'cd src && echo x > ../gk/config'];
+	for (const c of writes) assert.equal(ask(c), 'deny', c);
+	if (process.platform === 'win32') {
+		const short = spawnSync('powershell', ['-NoProfile', '-Command', `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${own}').ShortPath`], { encoding: 'utf8' }).stdout.trim();
+		if (short && short !== own) for (const c of writes) assert.equal(ask(c, { cwd: short }), 'deny', `${c} from ${short}`);
+	}
+	// The same file named again after a move into .claude is read from there, not from the first answer.
+	assert.equal(ask('cat settings.json && cd .claude && echo x > settings.json'), 'deny');
+	// A Claude folder under a name of its own: its settings file takes the owner's yes; a file below it does not.
+	const cfgDir = home.split(path.sep).join('/');
+	assert.equal(ask(`echo x > ${cfgDir}/settings.json`), 'deny');
+	assert.equal(ask(`echo x > ${cfgDir}/sub/settings.json`), 'allow');
+	// Reads and plain writes that must pass: a second name of a plain file, one link under two spellings, a read after
+	// a move the guard cannot follow from a hook started in another folder, and a listing of plain files.
+	assert.equal(ask('echo x > h1'), 'allow');
+	assert.equal(ask('cat gk/config; cat ./gk/config'), 'allow');
+	assert.equal(ask('cd "$D"; cat gk/config', { from: path.join(own, 'src') }), 'allow');
+	assert.equal(ask('Get-ChildItem src/no*.txt -Recurse | Remove-Item', { tool: 'PowerShell' }), 'allow');
+});
