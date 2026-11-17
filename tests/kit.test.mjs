@@ -774,7 +774,7 @@ test('install merges the owner\'s edits with the kit\'s changes line by line, an
   const c = cli('install', 'project', proj);
   assert.deepEqual(read(), ['one, filled in', 'owner Pat', 'three, mine', 'four', 'five, reworded again'], 'a clash writes nothing');
   assert.match(c.stdout, /skipped _Working Standards\.md: [^\n]*clash/);
-  assert.match(c.stdout, /--merged _Working Standards\.md/);
+  assert.match(c.stdout, /--merged "_Working Standards\.md"/);
 });
 
 // why: guards rule:kit-standards (the 1.33.1 sweep: a byte that is not UTF-8 came back replaced, and a file saved with
@@ -809,6 +809,68 @@ test('install never merges text that is not UTF-8, and keeps a file\'s Windows l
   const u = cli('install', 'project', proj, '--unreleased');
   assert.equal(fs.readFileSync(mine, 'utf8'), 'one, mine\r\ntwo\r\nthree\r\nfour\r\nfive, newer\r\n', 'nothing written');
   assert.match(u.stdout, /skipped _Working Standards\.md: [^\n]*no release/);
+});
+
+// K120 (1.42.0, reproduced on 1.41.0): a kit tool in the Claude folder changed by hand (the guard launcher itself) was
+// skipped as "changed here - run fold-back", so a tampered launcher survived every reinstall. A kit tool or hook there
+// is put back, as a project's guard files are, with the changed copy kept.
+// why: guards rule:outward-acts
+test('install user puts back a kit tool changed in the Claude folder and keeps the changed copy', () => {
+  const { home, cli } = releaseKit();
+  assert.equal(cli('install', 'user').status, 0);
+  const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
+  const kitText = read(launcher);
+  fs.appendFileSync(launcher, '// changed by hand\n');
+  const r = cli('install', 'user');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(read(launcher), kitText, 'the kit copy is back');
+  assert.match(r.stdout, /replaced: 1\b/);
+  const kept = fs.readdirSync(path.join(home, 'kit-backups'), { recursive: true }).filter((f) => /kit-launch\.cjs$/.test(f));
+  assert.equal(kept.length, 1, 'the changed copy is kept');
+});
+
+// K120 (1.42.0, reproduced on 1.41.0): an overlay's CLAUDE.local.md the owner edited was merged and backed up again
+// on every install, with nothing new from the kit, and --merged could not stop it. It merges once when the kit's text
+// changes, and is left alone otherwise.
+// why: guards rule:kit-stays-local
+test('an edited overlay CLAUDE.local.md is merged once when the kit changes, and left alone otherwise', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\none\ntwo\nthree\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n'); git('add', '-A'); git('commit', '-q', '-m', 'claude'); git('tag', 'v1.0.1');
+  g(proj, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), "# The team's own rules\n");
+  commitAll(proj, 'team', true);
+  assert.equal(cli('install', 'project', proj).status, 0);
+  const local = path.join(proj, 'CLAUDE.local.md');
+  fs.appendFileSync(local, '\n- My own local line.\n');
+  const backups = () => { try { return fs.readdirSync(path.join(proj, '.kit', 'kit-backups'), { recursive: true }).filter((f) => /CLAUDE\.local/.test(f)).length; } catch { return 0; } };
+  for (let i = 0; i < 2; i++) {
+    const r = cli('install', 'project', proj);
+    assert.doesNotMatch(r.stdout, /(merged with your edits|skipped): CLAUDE\.local\.md/, 'nothing new from the kit: nothing merged');
+  }
+  assert.equal(backups(), 0, 'no backup without a merge');
+  assert.match(read(local), /My own local line/);
+  // A kit change merges once, keeping the owner's line, and the next install is quiet again.
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\none, new\ntwo\nthree\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.2\n'); git('commit', '-q', '-am', 'v2'); git('tag', 'v1.0.2');
+  const merged = cli('install', 'project', proj).stdout;
+  assert.match(merged, /merged with your edits: CLAUDE\.local\.md/, merged);
+  assert.match(read(local), /one, new[\s\S]*My own local line/);
+  assert.doesNotMatch(cli('install', 'project', proj).stdout, /(merged with your edits|skipped): CLAUDE\.local\.md/);
+  assert.equal(backups(), 1);
+});
+
+// K120 (1.42.0): the hand-merge hint gave --merged a file name with a space unquoted, so the command it printed broke.
+// why: guards rule:kit-standards
+test('the hand-merge hint quotes a file name with a space', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  const rules = path.join(kit, 'project/_Working Standards.md');
+  fs.writeFileSync(rules, 'one\ntwo\n'); fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n'); git('commit', '-q', '-am', 'a'); git('tag', 'v1.0.1');
+  cli('install', 'project', proj);
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'one, mine\ntwo\n');
+  fs.writeFileSync(rules, 'one, kit\ntwo\n'); fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.2\n'); git('commit', '-q', '-am', 'b'); git('tag', 'v1.0.2');
+  const r = cli('install', 'project', proj);
+  assert.match(r.stdout, /--merged "_Working Standards\.md"/);
 });
 
 // K61 (the owner, 2026-11-15): merge on green had no exact steps; install prints them, each marked done or to do.

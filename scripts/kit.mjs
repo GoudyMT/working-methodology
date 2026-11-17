@@ -271,6 +271,9 @@ function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
 // T7 (build 12): the loop's bounds file too, the owner's from the first install, so no kit change loosens it.
 export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl', '.claude/bounds.json'];
 export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
+// K120 (1.42.0): in the Claude folder the kit's tools and hooks (the guard launcher among them) are its guard files: a
+// changed one is put back, never kept or merged.
+export const isUserTool = (key) => /^kit-(tools|hooks)\/.+\.(cjs|mjs)$/.test(key);
 // The kit's own git hooks, which the shims check the guard files before. Every other hook git knows gets a shim that
 // runs the project's own hook of that name, so a host that keeps its hooks in .githooks keeps every one (1.25.1 sweep).
 const GIT_HOOKS = ['pre-commit', 'commit-msg', 'pre-push'];
@@ -612,9 +615,10 @@ export function install(ctx) {
   // copy goes to the dated backup folder first. Returns { merged } or { why } it was not.
   const releaseKit = Boolean(ctx.release && ctx.release.release);
   const again = `install ${ctx.target === 'user' ? 'user' : 'project'} again`;
-  const handMerge = (key, why) => `changed here and in the kit, and ${why}, so nothing was written: merge the kit's copy into yours by hand, keeping your own lines, then run ${again} with --merged ${key}`;
+  // A name with a space is quoted, so the printed command runs as given (K120).
+  const handMerge = (key, why) => `changed here and in the kit, and ${why}, so nothing was written: merge the kit's copy into yours by hand, keeping your own lines, then run ${again} with --merged ${/\s/.test(key) ? `"${key}"` : key}`;
   const mergeInto = (key, dest, src, renderOld, base, want) => {
-    if (isGuarded(key)) return { why: 'it is a guard file, which install never merges' };
+    if (isGuarded(key) || (ctx.target === 'user' && isUserTool(key))) return { why: 'it is a guard file, which install never merges' };
     if (fs.lstatSync(dest).isSymbolicLink()) return { why: 'it is a link, which install never writes through' };
     if (!releaseKit) return { why: 'this kit folder is no release, so no tag holds its text for the next merge' };
     const m = threeWay({ ctx, src, renderOld, curBuf: fs.readFileSync(dest), base, want });
@@ -659,7 +663,7 @@ export function install(ctx) {
         kept = true;
       }
       write(); updated.push(entry.key); files[entry.key] = wantHash;
-    } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && !isHost(entry.key))) {
+    } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && !isHost(entry.key)) || (ctx.target === 'user' && isUserTool(entry.key))) {
       // A guard file the kit wrote and something else changed is put back (V3). One the kit never wrote (a host's own
       // tracked hook) is the host's: it is skipped below and recorded as it is (the 1.25.1 sweep).
       if (!ctx.dryRun) {
@@ -717,7 +721,13 @@ export function install(ctx) {
       if (!ctx.dryRun) fs.writeFileSync(local, text);
       (had ? updated : created).push('CLAUDE.local.md');
       files['CLAUDE.local.md'] = sha(text);
-    } else if (had !== sha(text) && had !== stamp.files['CLAUDE.local.md']) {
+    } else if (had === sha(text)) {
+      files['CLAUDE.local.md'] = had;
+    } else if (had !== stamp.files['CLAUDE.local.md'] && (sha(text) === stamp.files['CLAUDE.local.md'] || (ctx.merged || []).includes('CLAUDE.local.md'))) {
+      // K120 (1.42.0): the owner's edits with nothing new from the kit (or recorded as merged by hand) are left as they
+      // are; merging them again on every install made a backup each time.
+      files['CLAUDE.local.md'] = sha(text);
+    } else if (had !== stamp.files['CLAUDE.local.md']) {
       const claudeSrc = entries.find((e) => e.key === 'CLAUDE.md');
       const head = text.slice(0, text.length - kitClaude.length);
       const m = stamp.files['CLAUDE.local.md'] ? mergeInto('CLAUDE.local.md', local, claudeSrc.src, (t) => head + renderEntry(kitInfo, claudeSrc, ctx.projectDir, ctx.home, new Map([[claudeSrc.src, t]])), stamp.files['CLAUDE.local.md'], text) : { why: 'install has no record of the copy it wrote' };
