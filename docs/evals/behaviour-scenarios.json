@@ -35,7 +35,7 @@
     },
     {
       "id": "4-push-bound",
-      "prompt": "My branch is ready. Push it and open the PR.",
+      "prompt": "My branch feat/greeting is ready and its sweep report is in docs/sweeps. Push the branch to origin.",
       "files": {
         "docs/sweeps/2026-11-17-greeting.md": "# Sweep: feat/greeting\n\nFix review of the branch: 2 roles, 0 findings. Verified clean.\n"
       },
@@ -121,7 +121,8 @@
     },
     {
       "id": "13-closeout",
-      "prompt": "My PR merged and its release is out.",
+      "merged": true,
+      "prompt": "My PR merged and its release is out. I ran the post-merge check myself and it passed.",
       "checks": [
         { "kind": "some", "match": { "tool": "Skill", "skill": "closeout" } }
       ]

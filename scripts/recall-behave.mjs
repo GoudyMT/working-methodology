@@ -101,7 +101,7 @@ export function outsideReads(ev, roots) {
 }
 
 /** The folder each scenario starts from: the kit installed, a branch with one commit, a bare clone as origin. */
-export function seed(dir, files = {}, run) {
+export function seed(dir, files = {}, run, merged = false) {
 	const must = (cmd, args, opts = {}) => { const r = run(cmd, args, { cwd: dir, ...opts }); if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${(r.stderr || r.stdout || '').trim().slice(0, 200)}`); };
 	const put = (rel, body) => {
 		const to = path.resolve(dir, rel);
@@ -116,18 +116,25 @@ export function seed(dir, files = {}, run) {
 	put('src/greet.test.mjs', "import test from 'node:test';\nimport assert from 'node:assert';\nimport { greet } from './greet.mjs';\ntest('greets', () => assert.equal(greet('Ana'), 'Hello, Ana'));\n");
 	must('git', ['add', '-A']);
 	must('git', ['commit', '-qm', 'chore: start']);
-	// The remote is a bare clone, so seeding pushes nothing through the kit's push hook.
-	const bare = path.join(path.dirname(dir), 'origin.git');
-	must('git', ['clone', '-q', '--bare', dir, bare], { cwd: path.dirname(dir) });
-	must('git', ['remote', 'add', 'origin', bare]);
-	must('git', ['fetch', '-q', 'origin']);
-	must('git', ['branch', '-q', '-u', 'origin/main', 'main']);
 	must('git', ['switch', '-qc', 'feat/greeting']);
 	put('src/greet.mjs', 'export const greet = (n) => `Hello, ${n}!`;\n');
 	put('src/greet.test.mjs', "import test from 'node:test';\nimport assert from 'node:assert';\nimport { greet } from './greet.mjs';\ntest('greets', () => assert.equal(greet('Ana'), 'Hello, Ana!'));\n");
 	for (const [rel, body] of Object.entries(files)) put(rel, body);
 	must('git', ['add', '-A']);
 	must('git', ['commit', '-qm', 'feat: greet with an exclamation']);
+	// A scenario after the merge (13): the branch is merged into main and released, as the task says it is.
+	if (merged) {
+		must('git', ['switch', '-q', 'main']);
+		must('git', ['merge', '-q', '--ff-only', 'feat/greeting']);
+		must('git', ['tag', 'v1.1.0']);
+	}
+	// The remote is a bare clone of main (and its tags), made last, so seeding pushes nothing through the kit's push hook
+	// and the feature branch is not on it yet.
+	const bare = path.join(path.dirname(dir), 'origin.git');
+	must('git', ['clone', '-q', '--bare', '--single-branch', '--branch', 'main', dir, bare], { cwd: path.dirname(dir) });
+	must('git', ['remote', 'add', 'origin', bare]);
+	must('git', ['fetch', '-q', 'origin']);
+	must('git', ['branch', '-q', '-u', 'origin/main', 'main']);
 }
 
 /**
@@ -149,7 +156,8 @@ export function runScenario({ s, dir, home, run }) {
 	if (/Not logged in/i.test(r.stdout || '')) throw new Error(`${s.id}: Claude Code is not logged in for the sessions' config folder`);
 	const ev = parseStream(r.stdout || '');
 	if (r.status !== 0 && !ev.calls.length && !ev.final) throw new Error(`${s.id}: no session (exit ${r.status}): ${(r.stderr || '').trim().slice(0, 200)}`);
-	return { raw: r.stdout || '', ev, grades: grade(ev, s.checks), outside: outsideReads(ev, [dir, home]) };
+	// The probe's own parent (its bare origin sits there) and the system temp folder a scenario may name are its own too.
+	return { raw: r.stdout || '', ev, grades: grade(ev, s.checks), outside: outsideReads(ev, [path.dirname(dir), home, os.tmpdir()]) };
 }
 
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : 0; };
@@ -176,6 +184,11 @@ async function main(argv) {
 		console.log(behaviourLine({ label, cand: parts[0] || [], base: parts[1] || [], control: parts[2] || [] }));
 		return;
 	}
+	// --only <id,...>: run only those scenarios again; every other one is graded again, under the current checks, from the
+	// record the earlier run of this label saved (a fixed check never needs a session rerun).
+	const at = argv.indexOf('--only');
+	const only = at >= 0 ? new Set(String(argv[at + 1] || '').split(',').filter(Boolean)) : null;
+	if (at >= 0) argv = [...argv.slice(0, at), ...argv.slice(at + 2)];
 	const { label: name, kitDir, noKit } = parseRunArgs(argv);
 	const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 	checkUserLayer(home);
@@ -189,12 +202,25 @@ async function main(argv) {
 	const out = path.join(OUT_DIR, `${name}.behave`);
 	fs.mkdirSync(out, { recursive: true });
 	const rows = [];
+	const before = (() => { try { return JSON.parse(fs.readFileSync(path.join(out, 'result.json'), 'utf8')); } catch { return null; } })();
 	for (const s of suite.scenarios) {
+		if (only && !only.has(s.id)) {
+			const saved = path.join(out, `${s.id}.jsonl`);
+			if (!fs.existsSync(saved) || !before) throw new Error(`--only: no saved record of ${s.id} under ${name} to grade again`);
+			const ev = parseStream(fs.readFileSync(saved, 'utf8'));
+			const grades = grade(ev, s.checks);
+			// The probe folder is gone: any probe under kit-probes stands for it.
+			const outside = outsideReads(ev, [path.join(os.homedir(), 'kit-probes'), home, os.tmpdir()]);
+			const passed = grades.every((g) => g.ok) && !outside.length;
+			rows.push({ id: s.id, passed, cost: ev.cost, grades, outside, regraded: true });
+			console.log(`[${rows.length}/${suite.scenarios.length}] ${s.id}: ${passed ? 'pass' : 'FAIL'} (graded again from the saved record)`);
+			continue;
+		}
 		const dir = probePath(os.homedir());
 		try {
 			setupProbe({ dir, kitDir: kit, noKit, released, run });
 			if (!noKit && !released) copyUserLayer(kit, dir);
-			seed(dir, s.files, run);
+			seed(dir, s.files, run, s.merged === true);
 			const r = runScenario({ s, dir, home, run });
 			fs.writeFileSync(path.join(out, `${s.id}.jsonl`), r.raw);
 			const passed = r.grades.every((g) => g.ok) && !r.outside.length;
@@ -206,6 +232,7 @@ async function main(argv) {
 	}
 	const total = rows.filter((r) => r.passed).length;
 	const cost = rows.reduce((n, r) => n + r.cost, 0);
+	if (before && only && (before.released !== released || before.noKit !== noKit)) throw new Error(`--only: ${name} was run on another kit side; start a new label`);
 	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, total, cost, rows }, null, 1));
 	console.log(`${name}: ${total} of ${rows.length} on suite v${suite.version}, $${cost.toFixed(2)}`);
 }

@@ -74,6 +74,27 @@ test('a behaviour run allows no edit or shell, and seeds no file outside its fol
 	fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// The shake-out run (2026-11-17): origin held the feature branch, so "push the branch" had nothing to push, and the
+// after-the-merge scenario started on an unmerged branch. Origin is now main alone, cloned last; a merged scenario
+// merges and tags first.
+// why: guards rule:instruments-and-evals
+test('origin holds main alone, cloned after the seeding; a merged scenario is merged and tagged first', () => {
+	const steps = (merged) => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'behave-'));
+		const seen = [];
+		seed(dir, {}, (cmd, args) => { seen.push(`${cmd} ${args.join(' ')}`); return { status: 0, stdout: '', stderr: '' }; }, merged);
+		fs.rmSync(dir, { recursive: true, force: true });
+		return seen;
+	};
+	const plain = steps(false);
+	const clone = plain.findIndex((s) => /clone -q --bare --single-branch --branch main/.test(s));
+	assert.ok(clone > plain.findIndex((s) => /commit -qm feat: greet/.test(s)), 'origin is cloned after the feature commit');
+	assert.ok(!plain.some((s) => /merge|tag/.test(s)));
+	const merged = steps(true);
+	const at = (re) => merged.findIndex((s) => re.test(s));
+	assert.ok(at(/merge -q --ff-only feat\/greeting/) > 0 && at(/tag v1\.1\.0/) > at(/merge -q/) && at(/clone -q --bare/) > at(/tag v1\.1\.0/));
+});
+
 // why: guards rule:instruments-and-evals
 test('the suite names its version and every scenario a task and at least one check', () => {
 	const suite = suiteVersion();
