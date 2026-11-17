@@ -285,6 +285,7 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
     ].filter(Boolean);
   const faults = [
     ...behaviourFaults,
+    behaviour && behaviour.moved && changed.some((f) => GRADED.test(f)) && `this PR changes the behaviour suite it is graded on (suite v${behaviour.suite})`,
     graded && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
     graded && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
     dropped && 'this PR removes a recorded gate line',
@@ -335,7 +336,15 @@ function gate([base, head]) {
   const suiteText = at(head, SUITE_REL);
   // Removing the suite would turn its gate off: only a head that still has it, or a base that never had it, goes on.
   if (!suiteText && onBase(SUITE_REL)) { console.log(`this PR removes ${SUITE_REL}, the behaviour suite the gate reads`); process.exitCode = 1; return; }
-  const behaviour = suiteText ? (() => { const s = JSON.parse(suiteText); return { suite: s.version, bar: s.pass }; })() : undefined;
+  // The build 16 sweep: the head's suite is the PR's own text, so it cannot set its own bar. The bar is never under the
+  // base's, a head with no bar keeps the base's, and an edit at the same version moves the ruler (the owner's to accept).
+  const baseSuite = onBase(SUITE_REL);
+  const behaviour = suiteText ? (() => {
+    const s = JSON.parse(suiteText);
+    const b = baseSuite ? JSON.parse(baseSuite) : {};
+    const bar = Math.max(Number.isInteger(s.pass) ? s.pass : 0, Number.isInteger(b.pass) ? b.pass : 0);
+    return { suite: s.version, bar: bar || Infinity, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
+  })() : undefined;
   const r = checkGate({
     behaviour,
     scored,

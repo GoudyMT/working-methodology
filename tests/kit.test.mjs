@@ -7851,6 +7851,14 @@ test('recall gate (T10): a rule change needs a behaviour line on the current sui
   const out = gone.gate();
   assert.equal(out.status, 1);
   assert.match(out.stdout, /removes docs\/evals\/behaviour-scenarios\.json/);
+  // The build 16 sweep: the PR's own suite cannot lower or drop the bar, and an edit at the same version moves the ruler.
+  const edited = (next, behave) => { const r = gateRepo({ suite }); r.record(`${line}\n${behave}`, (put) => put('docs/evals/behaviour-scenarios.json', JSON.stringify(next))); return r.gate(); };
+  assert.match(edited({ version: 2, pass: 1, scenarios: [] }, 'behaviour: a median 1 baseline 1 suite v2 control 0').stdout, /under the suite's pass bar of 10/);
+  assert.match(edited({ version: 2, scenarios: [] }, 'behaviour: a median 1 baseline 1 suite v2 control 0').stdout, /under the suite's pass bar of 10/);
+  assert.match(edited({ version: 3, pass: 1, scenarios: [] }, 'behaviour: a median 1 baseline 1 suite v3 control 0').stdout, /under the suite's pass bar of 10/);
+  const moved = edited({ version: 2, pass: 10, scenarios: [{ id: 'x' }] }, 'behaviour: a median 12 baseline 11 suite v2 control 3');
+  assert.equal(moved.status, 1);
+  assert.match(moved.stdout, /changes the behaviour suite it is graded on/);
 });
 
 // why: guards rule:instruments-and-evals
