@@ -30,6 +30,18 @@ test('a guard in a subagent refuses instead of asking, so the agent hands the ac
 	assert.equal(hook('guard-delete.cjs', 'git status', sub), 'pass');
 });
 
+// K110 (1.42.0, reproduced on 1.41.0): rule:outward-acts asks the owner's yes before a local git act that throws away
+// uncommitted or unpushed work, but every guard let these through. Each one now waits for the yes (a subagent is
+// refused); the forms that keep the work, or only read, still pass.
+// why: guards rule:outward-acts
+test('a local git act that throws away work waits for the owner; reads and safe forms pass', () => {
+	for (const c of ['git reset --hard', 'git reset --hard HEAD~1', 'git checkout -- .', 'git checkout .', 'git checkout -f main', 'git checkout HEAD README.md', 'git restore .', 'git restore --worktree --staged x', 'git switch --discard-changes main', 'git branch -D old', 'git branch --delete --force old', 'git branch -df old', 'git stash drop', 'git stash clear', 'git reflog expire --expire=now --all', 'git reflog delete HEAD@{1}', 'git -C sub reset --hard']) {
+		assert.equal(hook('guard-delete.cjs', c), 'deny', c);
+		assert.equal(hook('guard-delete.cjs', c, { agent_id: 'a1' }), 'deny', c);
+	}
+	for (const c of ['git status', 'git stash list', 'git stash', 'git stash pop', 'git branch -d old', 'git branch -a', 'git restore --staged x', 'git reset --soft HEAD~1', 'git reset HEAD x', 'git checkout main', 'git checkout -b feat/x', 'git switch main', 'git reflog', 'git log --oneline']) assert.equal(hook('guard-delete.cjs', c), 'pass', c);
+});
+
 // N10: off a terminal, npm assumes yes, so `npx <name>` in an agent's shell fetched and ran any registry package.
 // why: guards rule:outward-acts
 test('the shipped project settings turn off npm and npx installing a missing package without a prompt', () => {

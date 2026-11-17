@@ -235,6 +235,28 @@ function cleanDryRun(own) {
 	return dry;
 }
 
+// K110 (1.42.0): a local git act that throws away uncommitted or unpushed work waits for the owner's yes
+// (rule:outward-acts). reset --hard, a checkout or restore of paths over the work tree, switch or checkout with -f,
+// branch -D, stash drop or clear, reflog expire or delete. A checkout word that is a path on disk (git checkout x.txt)
+// restores that file; one that is not is a branch, and changing branch keeps the work (git refuses over changes).
+const LOSES_WORK = 'work-loss:';
+// After a move the guard cannot follow, a word with a dot or a slash is read as a path.
+function discardsWork(sub, own, ctx, state) {
+	const end = own.includes('--') ? own.indexOf('--') : own.length;
+	const opts = own.slice(0, end);
+	const has = (re) => opts.some((w) => re.test(w));
+	const flag = (letter, long) => has(new RegExp(`^(-[A-Za-z]*${letter}[A-Za-z]*|--${long})$`));
+	const isPath = (w) => (state.moved ? /[./\\]/.test(w) : fs.existsSync(ctx.api.resolve(ctx.cwd, w)));
+	if (sub === 'reset' && has(/^--hard$/)) return `${LOSES_WORK} git reset --hard`;
+	if (sub === 'checkout' && (end < own.length || flag('f', 'force') || opts.some((w) => w === '.' || (!w.startsWith('-') && isPath(w))))) return `${LOSES_WORK} git checkout over changes`;
+	if (sub === 'restore' && (!has(/^(--staged|-S)$/) || has(/^(--worktree|-W)$/) || has(/^-[A-Za-z]*W/))) return `${LOSES_WORK} git restore over changes`;
+	if (sub === 'switch' && (flag('f', 'force') || has(/^--discard-changes$/))) return `${LOSES_WORK} git switch over changes`;
+	if (sub === 'branch' && (has(/^-[A-Za-z]*D/) || (flag('d', 'delete') && flag('f', 'force')))) return `${LOSES_WORK} git branch -D`;
+	if (sub === 'stash' && /^(drop|clear)$/.test(own[0] || '')) return `${LOSES_WORK} git stash ${own[0]}`;
+	if (sub === 'reflog' && /^(expire|delete)$/.test(own[0] || '')) return `${LOSES_WORK} git reflog ${own[0]}`;
+	return '';
+}
+
 // An alias set in the same command (git -c alias.x=..., git config alias.x ..., --config-env) hides its subcommand
 // behind a name the guard does not know, so one that runs clean, rm, worktree or reset --hard asks. git strips quotes
 // and backslashes from the value, so they come off first; a value held in a variable cannot be read, so it asks.
@@ -517,6 +539,8 @@ function findDelete(text, ctx, state, depth) {
 				if (MOVES_GIT.test(text) || words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
 				const cached = own.slice(0, own.includes('--') ? own.indexOf('--') : own.length).includes('--cached');
 				if (command === 'clean' && (ctx.unclear || !cleanDryRun(own))) return 'git clean';
+				const lost = discardsWork(command, own, ctx, state);
+				if (lost) return lost;
 				if (definesDeleteAlias(words.slice(p + 1))) return 'a git alias that deletes';
 				if (sub === 'worktree' && own[0] === 'remove') {
 					for (const target of targetsOf('', own, 1)) {
@@ -722,7 +746,9 @@ function check(input) {
 		reason = 'the guard could not read this command';
 	}
 	if (!reason) return null;
-	const what = 'a possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + ')';
+	const what = reason.startsWith(LOSES_WORK)
+		? 'a local git act that throws away uncommitted or unpushed work (' + reason.slice(LOSES_WORK.length).trim() + ')'
+		: 'a possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + ')';
 	return {
 		hookSpecificOutput: {
 			hookEventName: 'PreToolUse',
