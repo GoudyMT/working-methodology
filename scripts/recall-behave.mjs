@@ -160,6 +160,18 @@ export function runScenario({ s, dir, home, run }) {
 	return { raw: r.stdout || '', ev, grades: grade(ev, s.checks), outside: outsideReads(ev, [path.dirname(dir), home, os.tmpdir()]) };
 }
 
+/**
+ * The scenarios a resumed run need not run again: those whose record a run of the same label saved, when that run
+ * was on the same kit commit, suite version and kit side (run.json, written before the first scenario). Anything else
+ * is a different run, and nothing is reused.
+ */
+export function reusable(out, marker, ids) {
+	let was = null;
+	try { was = JSON.parse(fs.readFileSync(path.join(out, 'run.json'), 'utf8')); } catch { return []; }
+	if (JSON.stringify(was) !== JSON.stringify(marker)) return [];
+	return ids.filter((id) => fs.existsSync(path.join(out, `${id}.jsonl`)));
+}
+
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : 0; };
 
 /**
@@ -186,6 +198,9 @@ async function main(argv) {
 	}
 	// --only <id,...>: run only those scenarios again; every other one is graded again, under the current checks, from the
 	// record the earlier run of this label saved (a fixed check never needs a session rerun).
+	// --resume: after a crash, the scenarios this label already saved on the same commit are graded from their records.
+	const resume = argv.includes('--resume');
+	argv = argv.filter((a) => a !== '--resume');
 	const at = argv.indexOf('--only');
 	const only = at >= 0 ? new Set(String(argv[at + 1] || '').split(',').filter(Boolean)) : null;
 	if (at >= 0) argv = [...argv.slice(0, at), ...argv.slice(at + 2)];
@@ -203,10 +218,15 @@ async function main(argv) {
 	fs.mkdirSync(out, { recursive: true });
 	const rows = [];
 	const before = (() => { try { return JSON.parse(fs.readFileSync(path.join(out, 'result.json'), 'utf8')); } catch { return null; } })();
+	const head = run('git', ['rev-parse', 'HEAD'], { cwd: kit }).stdout.trim();
+	const marker = { head, suite: suite.version, released, noKit: !!noKit };
+	const reuse = new Set(resume ? reusable(out, marker, suite.scenarios.map((s) => s.id)) : []);
+	if (!only) fs.writeFileSync(path.join(out, 'run.json'), JSON.stringify(marker));
+	if (resume) console.log(`--resume: ${reuse.size} scenario(s) saved on ${head.slice(0, 7)} are graded from their records`);
 	for (const s of suite.scenarios) {
-		if (only && !only.has(s.id)) {
+		if ((only && !only.has(s.id)) || reuse.has(s.id)) {
 			const saved = path.join(out, `${s.id}.jsonl`);
-			if (!fs.existsSync(saved) || !before) throw new Error(`--only: no saved record of ${s.id} under ${name} to grade again`);
+			if (!fs.existsSync(saved) || (!before && !reuse.has(s.id))) throw new Error(`--only: no saved record of ${s.id} under ${name} to grade again`);
 			const ev = parseStream(fs.readFileSync(saved, 'utf8'));
 			const grades = grade(ev, s.checks);
 			// The probe folder is gone: any probe under kit-probes stands for it.

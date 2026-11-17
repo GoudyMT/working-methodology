@@ -6,8 +6,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { parseStream, grade, outsideReads, suiteVersion, seed, ALLOWED } from '../scripts/recall-behave.mjs';
+import kitTemp from '../project/.claude/kit-temp.cjs';
+import { parseStream, grade, outsideReads, suiteVersion, seed, reusable, ALLOWED } from '../scripts/recall-behave.mjs';
 
+const { makeTemp } = kitTemp;
 const call = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: String(Math.random()), name, input }] } });
 const result = (text) => JSON.stringify({ type: 'result', result: text, total_cost_usd: 0.5, num_turns: 4 });
 const stream = (...lines) => lines.join('\n');
@@ -67,7 +69,7 @@ test('a read outside the probe folder and the Claude folder is named', () => {
 // why: guards rule:security-standards
 test('a behaviour run allows no edit or shell, and seeds no file outside its folder', () => {
 	assert.deepEqual(ALLOWED.split(','), ['Read', 'Grep', 'Glob', 'Skill']);
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'behave-'));
+	const dir = makeTemp('behave-');
 	const run = () => ({ status: 0, stdout: '', stderr: '' });
 	assert.throws(() => seed(dir, { '../escape.txt': 'x' }, run), /outside its folder/);
 	assert.equal(fs.existsSync(path.join(path.dirname(dir), 'escape.txt')), false);
@@ -80,7 +82,7 @@ test('a behaviour run allows no edit or shell, and seeds no file outside its fol
 // why: guards rule:instruments-and-evals
 test('origin holds main alone, cloned after the seeding; a merged scenario is merged and tagged first', () => {
 	const steps = (merged) => {
-		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'behave-'));
+		const dir = makeTemp('behave-');
 		const seen = [];
 		seed(dir, {}, (cmd, args) => { seen.push(`${cmd} ${args.join(' ')}`); return { status: 0, stdout: '', stderr: '' }; }, merged);
 		fs.rmSync(dir, { recursive: true, force: true });
@@ -93,6 +95,22 @@ test('origin holds main alone, cloned after the seeding; a merged scenario is me
 	const merged = steps(true);
 	const at = (re) => merged.findIndex((s) => re.test(s));
 	assert.ok(at(/merge -q --ff-only feat\/greeting/) > 0 && at(/tag v1\.1\.0/) > at(/merge -q/) && at(/clone -q --bare/) > at(/tag v1\.1\.0/));
+});
+
+// The owner (2026-11-17): a run survives a crash. A resumed run reuses only what a run of the same label saved on the
+// same kit commit, suite and side; a record from any other run is run again.
+// why: guards rule:instruments-and-evals
+test('a resumed run reuses only the records saved on the same commit, suite and side', () => {
+	const out = makeTemp('behave-out-');
+	const marker = { head: 'a'.repeat(40), suite: 1, released: false, noKit: false };
+	assert.deepEqual(reusable(out, marker, ['1-one', '2-two']), [], 'no run.json: nothing is reused');
+	fs.writeFileSync(path.join(out, 'run.json'), JSON.stringify(marker));
+	fs.writeFileSync(path.join(out, '1-one.jsonl'), '{}\n');
+	assert.deepEqual(reusable(out, marker, ['1-one', '2-two']), ['1-one']);
+	for (const other of [{ ...marker, head: 'b'.repeat(40) }, { ...marker, suite: 2 }, { ...marker, released: true }]) {
+		assert.deepEqual(reusable(out, other, ['1-one', '2-two']), [], JSON.stringify(other));
+	}
+	fs.rmSync(out, { recursive: true, force: true });
 });
 
 // why: guards rule:instruments-and-evals
