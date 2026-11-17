@@ -79,7 +79,9 @@ test('the section keeps what moved, derives tokens, dollars and window room, and
 	assert.match(s, /\| Always-loaded rules file: window used at start \| 2\.45% \| 2\.13% \| -0\.32 pt \| none \| derived: tokens \/ 400,000-token window \|/); // pin: 1
 	// The outcome sentence opens the section, before the chart and the table.
 	const lead = s.split('### Visuals\n\n')[1].split('\n\n')[0].replace(/\n/g, ' ');
-	assert.equal(lead, 'Every session starts with 1,300 fewer tokens: $5.20 less per 1,000 sessions, and 0.32 points more of the window free.'); // pin: 4
+	// A file's tokens are that file's share of the start: the sentence names it, so it never claims the whole load fell.
+	assert.ok(lead.startsWith('Always-loaded rules file loads 1,300 fewer tokens'), lead);
+	assert.ok(lead.includes(': $5.20 less per 1,000 sessions') && lead.endsWith(', and 0.32 points more of the window free.'), lead);
 	assert.match(s, /```text\nAlways-loaded rules file, bytes \(\| = limit 25,000\)\nbefore +#+/);
 	assert.ok(fs.existsSync(path.join(r.dir, 'out', 'chart.svg')), 'the chart image source is written');
 	assert.match(res.stdout, /fill 1 <why> line/);
@@ -102,7 +104,7 @@ test('a second run replaces its own section, --before places it, and --fold writ
 	const notes = run(r, config(), '# v1.2.0\n\n## Changed\n\n- a\n\n## Known limits\n\n- b\n\n## Upgrading\n\nRun it.\n', '--level', '##', '--before', '## Upgrading').body;
 	assert.ok(notes.indexOf('## Known limits') < notes.indexOf('## Visuals') && notes.indexOf('## Visuals') < notes.indexOf('## Upgrading'), notes);
 	const fold = run(r, config(), '## Rules: a body\n\nVersion alignment: YES.\n', '--fold').body;
-	assert.match(fold, /Version alignment: YES\.\n\n<details>\n<summary>Visuals: Always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nEvery session starts/); // pin: 1
+	assert.match(fold, /Version alignment: YES\.\n\n<details>\n<summary>Visuals: Always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nAlways-loaded rules file loads/); // pin: 1
 	assert.match(fold, /\n<\/details>\n$/);
 	assert.doesNotMatch(fold, /### Visuals/);
 });
@@ -117,7 +119,7 @@ test('the section check fails a hand-edited change, a missing why, an unpinned i
 	assert.match(fault(/- \*\*Always-loaded rules file:\*\* [^\n]*\n/, ''), /no why line for Always-loaded rules file$/m);
 	assert.match(checkSection(run(r, config(), '## Rules: a body\n').body, '###').join('\n'), /a <why> line is still open/);
 	assert.match(fault('measured: session context report', 'guessed'), /source starts measured: or derived:/);
-	assert.match(fault(/\n\nEvery session starts[\s\S]*?(?=\n\n)/, ''), /opens with no outcome sentence/);
+	assert.match(fault(/\n\nAlways-loaded rules file loads[\s\S]*?(?=\n\n)/, ''), /opens with no outcome sentence/);
 	assert.match(fault('```text\n', '```text\nextra ' + '#'.repeat(41) + '\n'), /a chart bar runs past 40 columns/);
 	const image = '![Chart: x](https://github.com/o/r/raw/main/docs/visuals/b/chart.png)\n\n';
 	assert.match(fault('| Metric |', image + '| Metric |'), /chart image must link a full commit/);

@@ -91,7 +91,12 @@ export function buildRows(cfg, sizes, revs) {
 		if (t && m.paths) {
 			rows.push({ metric: `${m.name}: tokens per session start`, before: t.before, after: t.after, unit: '', limit: null, source: `measured: ${t.source}`, why: `follows from the ${m.name} size.` });
 		}
-		if (t) { const d = t.after - t.before; parts.push(`Every session starts with ${Math.abs(d).toLocaleString('en-US')} ${d < 0 ? 'fewer' : 'more'} tokens`); }
+		// A file's tokens are its share of the start, named as such: the whole start-up load can move less than one file.
+		if (t) {
+			const d = t.after - t.before;
+			const n = `${Math.abs(d).toLocaleString('en-US')} ${d < 0 ? 'fewer' : 'more'} tokens`;
+			parts.push(m.paths ? `${m.name} loads ${n} at each session start` : `Every session starts with ${n}`);
+		}
 		if (m.unit === 's') { const d = m.after - m.before; parts.push(`${m.name} takes ${Math.abs(d).toLocaleString('en-US')} s ${d < 0 ? 'less' : 'more'}`); }
 		if (m.impact.includes('cost')) {
 			const usd = (n) => round(n * sessions * cfg.price.perMTok / 1e6, 2);
