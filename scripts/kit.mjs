@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
@@ -1089,8 +1090,37 @@ export function bump({ kit, level, note, date = new Date().toISOString().slice(0
 }
 
 /**
+ * The text a PNG carries (tEXt, zTXt, iTXt chunks), one line per chunk. The pixels are binary and
+ * hold nothing a reader sees as words, so only the text chunks are scrubbed.
+ */
+function pngText(buf) {
+  const out = [];
+  for (let at = 8; at + 8 <= buf.length;) {
+    const len = buf.readUInt32BE(at);
+    const type = buf.toString('latin1', at + 4, at + 8);
+    const data = buf.subarray(at + 8, at + 8 + len);
+    if (type === 'tEXt') out.push(data.toString('latin1'));
+    else if (type === 'zTXt' || type === 'iTXt') {
+      const key = data.indexOf(0);
+      let body = data.subarray(key + 1);
+      // zTXt: method byte, then deflate; iTXt: flag, method, language, translated keyword, then text.
+      if (type === 'zTXt') body = zlib.inflateSync(body.subarray(1));
+      else {
+        const compressed = body[0] === 1;
+        let rest = body.subarray(2);
+        for (let n = 0; n < 2; n++) rest = rest.subarray(rest.indexOf(0) + 1);
+        body = compressed ? zlib.inflateSync(rest) : rest;
+      }
+      out.push(`${data.toString('latin1', 0, key)}\0${body.toString('utf8')}`);
+    }
+    at += 12 + len;
+  }
+  return out.join('\n');
+}
+
+/**
  * Find personal details in the kit: words from scrub.local.json (kept out of git), home-folder
- * paths, and any non-ASCII byte. One hit per file and kind.
+ * paths, and any non-ASCII byte. One hit per file and kind; a PNG is read by its text chunks.
  */
 export function scrub({ kit }) {
   const localPath = path.join(kit, 'scrub.local.json');
@@ -1099,7 +1129,7 @@ export function scrub({ kit }) {
   for (const file of walk(kit, SCRUB_SKIP_DIRS)) {
     const rel = toPosix(path.relative(kit, file));
     if (SCRUB_SKIP.has(rel)) continue;
-    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const lines = (/\.png$/i.test(rel) ? pngText(fs.readFileSync(file)) : fs.readFileSync(file, 'utf8')).split('\n');
     const seen = new Set();
     const hit = (kind, i) => { if (!seen.has(kind)) { seen.add(kind); hits.push({ file: rel, line: i + 1, kind }); } };
     lines.forEach((line, i) => {

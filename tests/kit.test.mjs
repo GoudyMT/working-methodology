@@ -155,6 +155,30 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   assert.deepEqual(scrub({ kit }), []);
 });
 
+// why: a committed chart is binary; scrub must read its text chunks, not fail every PNG as non-ASCII
+test('scrub reads a PNG by its text chunks: a clean chart passes, a home path in its metadata is held', () => {
+  const { kit } = makeKit();
+  const crc = (buf) => { let c = ~0; for (const b of buf) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const sum = Buffer.alloc(4); sum.writeUInt32BE(crc(body));
+    return Buffer.concat([len, body, sum]);
+  };
+  const png = (text) => Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0])),
+    chunk('IDAT', Buffer.from([0x78, 0x9c, 0xff, 0xfe, 0x80, 0x00])),
+    ...(text ? [chunk('tEXt', Buffer.from(text, 'latin1'))] : []),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+  const file = path.join(kit, 'project/chart.png');
+  fs.writeFileSync(file, png('Software\0drawn by the kit'));
+  assert.deepEqual(scrub({ kit }), []);
+  fs.writeFileSync(file, png('Source\0' + 'C:\\' + 'Users\\pat\\chart.svg'));
+  assert.deepEqual(scrub({ kit }).map((h) => `${h.file} ${h.kind}`), ['project/chart.png path']);
+});
+
 // Snapshot fixtures: a fake installed plugin and a fake third-party skill, laid out the way
 // Claude Code stores them (plugins/installed_plugins.json -> installPath; skills/<name>/).
 function addThirdParty({ kit, home }) {
