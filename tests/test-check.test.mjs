@@ -260,3 +260,21 @@ test('the test check names a new test with no why line, or one of no known shape
 	assert.doesNotMatch(r.stdout, new RegExp(`A6 ${k('zero is not positive')}`), 'a catches line that names the failure');
 	assert.doesNotMatch(r.stdout, new RegExp(`A6 ${k('a guarded one')}`), 'a guards line naming a known rule');
 });
+
+// why: catches false flags the build 14 PR raised: a why line added to an old test read as a changed test that must
+// fail first again, and a sample tag inside a string read as the test's own tag.
+test('a test whose only change is its comment lines gets the why line check only, and a tag is read above the test', () => {
+	const dir = repo();
+	const file = path.join(dir, 'tests', 'a.test.mjs');
+	fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
+		.replace("test('one is positive'", "// why: catches one read as not positive, a real bug\ntest('one is positive'")
+		.replace("test('a guarded one', () => {", "test('a guarded one', () => { const sample = '// why: guards rule:no-such-rule';"));
+	sh(dir, 'commit', '-qam', 'retag');
+	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(r.stdout, /A[12] tests\/a\.test\.mjs::one is positive/, 'a comment-only change was held to fail first');
+	assert.doesNotMatch(r.stdout, /rule:no-such-rule/, 'a tag inside a string was read as the test\'s tag');
+	fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('// why: catches one read as not positive, a real bug', '// why: catches it'));
+	sh(dir, 'commit', '-qam', 'short');
+	const s = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~3')], { cwd: dir, encoding: 'utf8' });
+	assert.match(s.stdout, /A6 tests\/a\.test\.mjs::one is positive: /, 'a comment-only change to a bad why line was not named');
+});

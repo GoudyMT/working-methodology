@@ -35,6 +35,14 @@ const LARGE = /\b(fetch|https?\.(get|request)|goto)\(\s*['"`]https?:\/\/(?!127\.
 const NAMED = /\btest\((['"`])((?:\\.|(?!\1).)*)\1/;
 const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|Object\.(entries|keys|values)\([^\n]*\)\.forEach\()/;
 
+// A test's tags: the comment lines above it, never a line inside its body (the build 14 PR: a sample tag in a string
+// was read as the test's own).
+const headOf = (body) => {
+	const lines = String(body).split('\n');
+	const end = lines.findIndex((l) => !/^\s*\/\//.test(l));
+	return lines.slice(0, end < 0 ? lines.length : end).join('\n');
+};
+
 /**
  * A6: what is wrong with a test's why line, or null when it has one of the kit's shapes (rule:test-value; the owner,
  * 2026-11-17: "we have the standard, now we just need to enforce it").
@@ -47,7 +55,7 @@ const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|Object\.(entries|keys|values)\([^
  *     null, or the fault in words
  */
 export function whyFault(body, known = null) {
-	const why = (/^\s*\/\/ why: (.*)$/m.exec(String(body)) || [])[1];
+	const why = (/^\s*\/\/ why: (.*)$/m.exec(headOf(body)) || [])[1];
 	if (why === undefined) return 'no why line: name the real use or failure it guards (// why: guards rule:<id>, or catches <the failure>)';
 	if (/^guards\b/.test(why)) {
 		const rules = [...why.matchAll(/\brule:([a-z0-9-]+)/g)].map((m) => m[1]);
@@ -133,12 +141,17 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	const changed = git(root, 'diff', '--name-status', '--no-renames', `${baseSha}...HEAD`).stdout.split('\n').filter(Boolean).map((l) => l.split('\t'));
 	const testFiles = changed.filter(([s, f]) => s !== 'D' && TEST_FILE.test(f)).map(([, f]) => f);
 	let newOrChanged = [];
+	// A test whose only change is its comment lines (a why line added) adds no catch to prove: it gets A6 only (the
+	// build 14 PR: 38 retagged tests were held to fail first again).
+	const retagged = [];
+	const codeOf = (b) => b.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
 	for (const f of testFiles) {
 		const now = tests(fs.readFileSync(path.join(root, f), 'utf8'));
 		const onBase = git(root, 'cat-file', '-e', `${baseSha}:${f}`).status === 0;
 		const was = tests(onBase ? git(root, 'show', `${baseSha}:${f}`).stdout : '');
 		for (const [name, body] of now) {
 			if (was.get(name) === body) continue;
+			if (was.has(name) && codeOf(was.get(name)) === codeOf(body)) { retagged.push({ key: `${f}::${name}`, body }); continue; }
 			// A loop's tests are named at run time: its pattern, the written name with each ${...} read as any text.
 			const loop = now.loops.has(name) ? new RegExp(`^${name.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`) : null;
 			newOrChanged.push({ key: `${f}::${name}`, file: f, name, body, isNew: !was.has(name), newFile: !onBase, loop });
@@ -204,12 +217,13 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 		// counts, and is named so the owner reads the new rule beside the test it keeps.
 		const before = ids(git(root, 'show', `${baseSha}:project/standards/INDEX.md`).stdout || '');
 		const tagged = (t) => {
-			const rules = [...t.body.matchAll(/\/\/ why: guards\b.*?\brule:([a-z0-9-]+)/g)].map((m) => m[1]);
+			const head = headOf(t.body);
+			const rules = [...head.matchAll(/\/\/ why: guards\b.*?\brule:([a-z0-9-]+)/g)].map((m) => m[1]);
 			const unknown = rules.filter((r) => !known.has(r));
 			if (unknown.length) note(t.key, 'A2', `names rule:${unknown.join(', rule:')}, which is not in the rule index`);
 			const added = rules.filter((r) => known.has(r) && !before.has(r));
 			if (added.length) note(t.key, 'A2', `names rule:${added.join(', rule:')}, a rule this change itself adds to the rule index`);
-			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(t.body);
+			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(head);
 		};
 		const untagged = newOrChanged.filter((t) => !tagged(t));
 		if (untagged.length) {
@@ -228,7 +242,8 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 		}
 	}
 	// A6: each new or changed test names what it guards in a why line of the kit's shape; A2 names an unknown rule.
-	for (const t of newOrChanged) {
+	// A comment-only change is checked once, by the first slice.
+	for (const t of [...newOrChanged, ...(!slice || slice.i === 0 ? retagged : [])]) {
 		const fault = whyFault(t.body);
 		if (fault) note(t.key, 'A6', fault);
 	}
