@@ -1436,7 +1436,7 @@ test('findings are fixed in their build and only what the owner accepts carries,
   const findings = rule('rules/reviews-and-findings.md');
   // pin: 4 the owner's carry wording (2026-11-14), both lines
   assert.match(findings, /Findings are fixed in the build that finds them\. A low or medium that cannot be finished carries only on the owner's yes, first next build\. A high or critical never carries: it is fixed before the PR[^\n]*or the owner accepts it/);
-  assert.match(findings, /the small ones too; what carries \(the rule above\) goes to the handoff's carry-overs/);
+  assert.match(findings, /the small ones too, each through the fix check \(rule:finding-pipeline\); what carries \(the rule above\) goes to the handoff's carry-overs/);
   assert.match(findings, /in a known area \(one component, one flow\)/);
   // pin: 1 (the sweep report audit reads these dispositions)
   assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);

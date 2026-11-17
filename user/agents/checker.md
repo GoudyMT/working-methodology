@@ -74,9 +74,6 @@ and switched off its hooks. These steps make that impossible:
    No leftover debug code, temporary files or commented-out code. Every commit message matches the brief's
    commit format exactly, trailers included: read `git log --format=%B <base>..<head>`.
 
-**A fix check** (after the review; your brief is the checker brief's fix-check variant): run the same checks on the
-fix commits, and for each fix confirm it answers its finding and keeps what the brief says it must preserve.
-
 ## Verdict (your final message)
 
 Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then:

@@ -14,7 +14,7 @@ which reports completion back to the main session (never several prongs in one s
 | Overseer | the main session | Opus | briefs each orchestrator; checks its plan before the user sees it; checks every sweep contract and report for legitimacy and gaps before it reaches the user; runs the shared machine; relays questions; opens pull requests and merges with the user; writes the run record and the decision log | builds a prong's units |
 | Orchestrator | the `orchestrator` role | Opus, 1-hour cache | plans its team and stops; after approval runs its phase through the team | pushes; touches the main checkout or the tracking files |
 | Builder | the `builder` role | Sonnet | one unit, test-first, in its own worktree | design, copy, files off its list |
-| Checker | the `checker` role | Opus | read-only review of one high-risk unit, or one fix check | edits |
+| Checker | the `checker` role | Opus | read-only review of one high-risk unit | edits |
 | Scanner | the `scanner` role | Haiku | read-only lists, counts and locations; a first pass the requester re-checks | judgment, writes, shell |
 
 The overseer is the only one who talks to the user, pushes, opens pull requests or merges. An optional Teacher (its
@@ -59,7 +59,7 @@ rule inside a phase: on the measured runs a mid-phase replacement would have sav
 
 ## Sweeps go through the overseer
 
-No sweep or re-sweep starts until its Swarm Contract is cleared (rule:sweep-auto-approval). The orchestrator writes it
+No sweep starts until its Swarm Contract is cleared (rule:sweep-auto-approval). The orchestrator writes it
 (what it holds: `SKILL.md` "The flow", step 6), runs `~/.claude/skills/pre-pr-sweep/approve.mjs` on it, sends the contract and the script's output
 to the overseer and stops. The overseer checks both for legitimacy and gaps: APPROVED and sound, it posts the start
 notice and the orchestrator goes on; FIX THE CONTRACT, the orchestrator fixes what it named and reruns, with no user step; ASK, it takes the table and the script's reasons to the user, and logs their

@@ -2,10 +2,10 @@
 
 > Adapted from a report older than the current sweep. Read its shape, not its numbers: today each role sets a call cap
 > (15, up to 30 with a reason), the script computes the budget, spend comes from the reviewers transcripts at `--outcome`,
-> and the re-sweep is its own contract with `resweepOf`.
+> and there is no re-sweep: the fix check is each fix's failing-first test and CI's test check.
 
 - **Tier:** feature, with the security-sensitive modifier (a lock over personal data).
-- **Covers:** 9e41c7d2b05a83f6c1d29e7b40a5f8c3d6e1b2a4 (the re-sweep's HEAD)
+- **Covers:** 9e41c7d2b05a83f6c1d29e7b40a5f8c3d6e1b2a4 (the commit the sweep read)
 - **Layers:** plan 0, CI 0, sweep 0, escaped 0 (this sweep's findings were mediums and lows; the plan check came later)
 - **Scope:** `feature/journal-lock-pin` at `4be71c09` (diff base `a03d5e12`, main merged; 118 files). The owner approved
   the Swarm Contract on 2026-05-14 18:10 UTC ("go ahead"): S1-S7 as drafted plus S8 (an attacker holding the phone; the
@@ -52,7 +52,7 @@ Every finding below was re-read in the code by the lead (G1). The owner approved
 UTC ("go with your recommendation and continue"): all 11 roots fixed in this PR, C1 (a), G1 (a), the W2 wait id.
 **Final dispositions:** W1 FIXED `b2e81c07`; W2 FIXED `5d93a1f6`; W3 FIXED `e07c4b19` (+ the fix check's test `9a1d6e20`);
 U1 FIXED `3f6a0b85`; N1 FIXED `c18e72d4`; F1 FIXED `6ab90e13`; A1 FIXED `d42f8c71`; Q1 FIXED `81e3b5a0` (no test: no seam
-shows it, the fix check agreed); D1 FIXED `0c7d2e9`; T1 FIXED `fa31b6c`, `27e9d0a4`; X1 FIXED `e95b13c`; C1 ACCEPTED as a
+shows it); D1 FIXED `0c7d2e9`; T1 FIXED `fa31b6c`, `27e9d0a4`; X1 FIXED `e95b13c`; C1 ACCEPTED as a
 named residual `4d0a7e2` (docs "does not cover"); G1 ACCEPTED and documented `b81f3c6`. No high or critical finding
 stands (S8.1 was re-graded to medium by the refute re-check and is C1).
 
@@ -67,7 +67,7 @@ stands (S8.1 was re-graded to medium by the refute re-check and is C1).
 
 (9 more root rows of the same shape: W2, W3, N1, F1, A1, Q1, T1, X1, G1.)
 
-## Fixes, fix check, re-sweep
+## Fixes and the fix check
 
 - **Lead:** X1, C1, G1 (docs), D1 and the restore test row, each red first (or red on the mutant for a test of existing
   code) and break-checked.
@@ -77,36 +77,13 @@ stands (S8.1 was re-graded to medium by the refute re-check and is C1).
 - **Integration notes:** three hook runs failed with no code cause (a lint spawn failure, a 5-minute hang, one node
   crash); each was retried once alone and landed. One lead slip: after a failed retry the same command ran the next pick,
   which committed two roots together; it was undone at once (local reset of that one commit) and re-committed as two.
-- **Fix check** (one Opus checker, 22 mutants): 15 of 16 PASS; one FIX (low): W3's new mount guard
+- **Fix check** (each fix's test red on the code before it, then CI's test check): one gap (low): W3's new mount guard
   (`PinUnlock.svelte:124`) had no test (its mutant survived 176 rows) -> `9a1d6e20` adds the row, red on that mutant.
 
-## Re-sweep (the short one, 3 roles, the owner's yes 2026-05-14 21:05 UTC; head `9a1d6e20`)
-
-| Role | Question | Calls | Findings |
-|---|---|---|---|
-| R1 the wait and tries | can the wait still be skipped, lowered or lost after W1-W3, D1? | 40 (meter) | R1.1 medium, R1.2 low |
-| R2 unlock, relock, privacy | does any way back keep or show what it must drop after U1, N1, Q1, A1? | 41 | R2.1 low, R2.2 low |
-| R3 focus and announcements | does every closed control hand focus on; every line announced once? | 45 | R3.1 low (= R2.1) |
-
-All three inside the 60-call ceiling. Findings (each re-read in the code by the lead):
-
-- **R1.1 (medium) - W1 half done.** `wait-countdown.ts:63-68`: when the on-screen count reaches zero it writes nothing; the
-  stored wait reaches zero only at the clock's next 5 s write. A press in that gap (up to 5 s) is refused and restarts the
-  count from the stale remainder. Proposed: at zero, call the clock's `writeNow()` (the same compare-and-set, only lowers)
-  + the probe as a red test.
-- **R2.1 / R3.1 (low) - N1 half done.** `PinUnlock.svelte:226-229`: a Lock that lands during `await unlockStores()` still
-  calls `onunlocked`, so the tries notice shows above the locked card.
-- **R2.2 (low) - a side effect of U1.** A good PIN that a lock drops has already reset the tries row, so its "N wrong PIN
-  tries" notice is never shown. Proposed with R2.1 as one root ("a dropped unlock loses or misplaces its notice").
-- **R1.2 (low)** - two comments still describe the per-screen count (`LockRow.svelte:136-137`, `BackupCard.svelte:244`).
-- Doubts recorded: a restore that lands during the derive relocks as hygiene (not caught by the watch; the load then fails
-  closed).
-
-Per the cadence (two passes only), the re-sweep's findings are fixed in this PR (three small roots, then the gate; no third
-sweep); anything left is fixed in this build, and only what cannot be finished and the owner accepts carries.
+One sweep per branch: the findings are fixed in this PR, anything left is fixed in this build, and only what cannot be
+finished and the owner accepts carries.
 
 ## Post-run yield check
 
 Findings per role, main sweep: S1 2, S2 1, S3 2, S4 4, S5 5, S6 5, S7 4, S8 2 (+ the novel lens's plant analysis). Every
-role yielded. The fix check found one gap; the re-sweep found three roots, two of them halves of a fix (W1, N1) and one a
-fix's own side effect (U1) - the fix check's per-fix mutants did not ask "what does this fix newly allow".
+role yielded. The fix check found one gap: a fix with no test of its own.
