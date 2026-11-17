@@ -201,6 +201,6 @@ test('the compact-window check fails a per-model window in the owner settings fi
 	const bom = project();
 	const f = path.join(bom, '.claude', 'settings.json');
 	const s = JSON.parse(fs.readFileSync(f, 'utf8'));
-	fs.writeFileSync(f, '﻿' + JSON.stringify({ ...s, autoCompactWindow: 900000 }));
+	fs.writeFileSync(f, '\uFEFF' + JSON.stringify({ ...s, autoCompactWindow: 900000 }));
 	assert.match(part(check(bom).out, 'compact-window').wired.detail, /settings.json sets 900000/);
 });

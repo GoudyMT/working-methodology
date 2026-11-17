@@ -38,7 +38,7 @@ const AGENTS_CAP = 25000;
 // K111 (1.42.0): the compact window the kit sets, and Claude Code's floor (a value under it is ignored, not raised).
 const WINDOW_MAX = 400000;
 const WINDOW_MIN = 100000;
-const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch { return null; } };
+const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; } };
 const settingsOf = (name) => readJson(path.join(dir, '.claude', name));
 
 // Each check returns [ok, detail]; ok null means the level does not apply here (said why, and never a fault).
