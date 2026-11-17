@@ -723,6 +723,10 @@ export function install(ctx) {
       files['CLAUDE.local.md'] = sha(text);
     } else if (had === sha(text)) {
       files['CLAUDE.local.md'] = had;
+    } else if ((ctx.merged || []).includes('CLAUDE.local.md') && (stamp.owed || {})['CLAUDE.local.md'] === had) {
+      // T5's owed check, for the overlay too (the 1.42.0 sweep): the file as it was when install named the merge.
+      skipped.push({ file: 'CLAUDE.local.md', reason: 'recorded as merged, but the file is unchanged since install named the merge: merge the kit\'s copy into it first, or run the same command again to keep it as it is' });
+      owed['CLAUDE.local.md'] = `kept ${had}`;
     } else if (had !== stamp.files['CLAUDE.local.md'] && (sha(text) === stamp.files['CLAUDE.local.md'] || (ctx.merged || []).includes('CLAUDE.local.md'))) {
       // K120 (1.42.0): the owner's edits with nothing new from the kit (or recorded as merged by hand) are left as they
       // are; merging them again on every install made a backup each time.
@@ -732,7 +736,7 @@ export function install(ctx) {
       const head = text.slice(0, text.length - kitClaude.length);
       const m = stamp.files['CLAUDE.local.md'] ? mergeInto('CLAUDE.local.md', local, claudeSrc.src, (t) => head + renderEntry(kitInfo, claudeSrc, ctx.projectDir, ctx.home, new Map([[claudeSrc.src, t]])), stamp.files['CLAUDE.local.md'], text) : { why: 'install has no record of the copy it wrote' };
       if (m.merged) files['CLAUDE.local.md'] = sha(text);
-      else skipped.push({ file: 'CLAUDE.local.md', reason: handMerge('CLAUDE.local.md', m.why) });
+      else { skipped.push({ file: 'CLAUDE.local.md', reason: handMerge('CLAUDE.local.md', m.why) }); owed['CLAUDE.local.md'] = had; }
     }
   } else if (claudeEntry) {
     claudeEntry.reason += '; if another repo or team owns this file, run install with --overlay';

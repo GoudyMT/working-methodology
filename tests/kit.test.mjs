@@ -863,6 +863,28 @@ test('an edited overlay CLAUDE.local.md is merged once when the kit changes, and
   assert.equal(backups(), 1);
 });
 
+// why: guards rule:kit-stays-local. The 1.42.0 sweep: --merged on an overlay CLAUDE.local.md left as it was when
+// install named the merge was recorded as merged, and the kit's new lines were lost for good.
+test('--merged on an overlay CLAUDE.local.md left unchanged since the merge was named is refused once', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\none\ntwo\nthree\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n'); git('add', '-A'); git('commit', '-q', '-m', 'claude'); git('tag', 'v1.0.1');
+  g(proj, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), "# The team's own rules\n");
+  commitAll(proj, 'team', true);
+  assert.equal(cli('install', 'project', proj).status, 0);
+  const local = path.join(proj, 'CLAUDE.local.md');
+  fs.writeFileSync(local, read(local).replace('one\n', 'one, mine\n'));
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\none, kit\ntwo\nthree\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.2\n'); git('commit', '-q', '-am', 'v2'); git('tag', 'v1.0.2');
+  assert.match(cli('install', 'project', proj).stdout, /skipped CLAUDE\.local\.md: changed here and in the kit[\s\S]*--merged CLAUDE\.local\.md/);
+  const first = cli('install', 'project', proj, '--merged', 'CLAUDE.local.md').stdout;
+  assert.match(first, /skipped CLAUDE\.local\.md: recorded as merged, but the file is unchanged since install named the merge/, first);
+  const again = cli('install', 'project', proj, '--merged', 'CLAUDE.local.md').stdout;
+  assert.doesNotMatch(again, /: CLAUDE\.local\.md\b/, 'the same command again keeps it as it is');
+  assert.match(read(local), /one, mine/);
+});
+
 // K120 (1.42.0): the hand-merge hint gave --merged a file name with a space unquoted, so the command it printed broke.
 // why: guards rule:kit-standards
 test('the hand-merge hint quotes a file name with a space', () => {
