@@ -273,7 +273,8 @@ export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl', '.c
 export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
 // K120 (1.42.0): in the Claude folder the kit's tools and hooks (the guard launcher among them) are its guard files: a
 // changed one is put back, never kept or merged.
-export const isUserTool = (key) => /^kit-(tools|hooks)\/.+\.(cjs|mjs)$/.test(key);
+// The 1.42.0 sweep: every script the kit runs from there, a PowerShell one and a skill's own scripts included.
+export const isUserTool = (key) => /^(kit-(tools|hooks)|skills\/[^/]+)\/.+\.(cjs|mjs|js|ps1|sh)$/.test(key);
 // The kit's own git hooks, which the shims check the guard files before. Every other hook git knows gets a shim that
 // runs the project's own hook of that name, so a host that keeps its hooks in .githooks keeps every one (1.25.1 sweep).
 const GIT_HOOKS = ['pre-commit', 'commit-msg', 'pre-push'];
@@ -670,6 +671,8 @@ export function install(ctx) {
         const keep = path.join(backupDir, entry.key);
         fs.mkdirSync(path.dirname(keep), { recursive: true });
         fs.copyFileSync(entry.dest, keep);
+        // A link is replaced, never written through (the 1.42.0 sweep): the kit's text would land in the file it names.
+        if (fs.lstatSync(entry.dest).isSymbolicLink()) fs.rmSync(entry.dest);
       }
       write(); replaced.push(entry.key); files[entry.key] = wantHash;
     } else if ((ctx.merged || []).includes(entry.key) && (stamp.owed || {})[entry.key] === cur) {

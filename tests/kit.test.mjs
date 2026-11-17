@@ -831,6 +831,36 @@ test('install user puts back a kit tool changed in the Claude folder and keeps t
   assert.equal(kept.length, 1, 'the changed copy is kept');
 });
 
+// why: guards rule:outward-acts. The 1.42.0 sweep: only .cjs and .mjs files in kit-tools and kit-hooks were put back,
+// so a changed toast script (run with its policy bypassed) or sweep approval script survived every reinstall; and a
+// tool replaced by a link had the kit's text written through it, into whatever file the link named.
+test('install user puts back a changed toast script and skill script, and replaces a link without writing through it', () => {
+  const { kit, home, git, cli } = releaseKit();
+  for (const rel of ['kit-tools/watch-toast.ps1', 'skills/pre-pr-sweep/approve.mjs']) {
+    fs.mkdirSync(path.dirname(path.join(kit, 'user', rel)), { recursive: true });
+    fs.copyFileSync(path.resolve('user', rel), path.join(kit, 'user', rel));
+  }
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n'); git('add', '-A'); git('commit', '-q', '-m', 'tools'); git('tag', 'v1.0.1');
+  assert.equal(cli('install', 'user').status, 0);
+  for (const rel of ['kit-tools/watch-toast.ps1', 'skills/pre-pr-sweep/approve.mjs']) {
+    const file = path.join(home, rel);
+    const kitText = read(file);
+    fs.appendFileSync(file, '\n# changed by hand\n');
+    const r = cli('install', 'user');
+    assert.equal(read(file), kitText, `${rel}: the kit copy is back`);
+    assert.match(r.stdout, /replaced: 1\b/, rel);
+  }
+  const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
+  const outside = path.join(home, 'outside.txt');
+  fs.writeFileSync(outside, 'not the kit\n');
+  fs.rmSync(launcher);
+  try { fs.symlinkSync(outside, launcher, 'file'); } catch { return; } // no link rights on this machine
+  const r = cli('install', 'user');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(read(outside), 'not the kit\n', 'nothing written through the link');
+  assert.equal(fs.lstatSync(launcher).isSymbolicLink(), false, 'the link is replaced by the kit copy');
+});
+
 // K120 (1.42.0, reproduced on 1.41.0): an overlay's CLAUDE.local.md the owner edited was merged and backed up again
 // on every install, with nothing new from the kit, and --merged could not stop it. It merges once when the kit's text
 // changes, and is left alone otherwise.
