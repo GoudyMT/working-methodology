@@ -663,11 +663,14 @@ function namedProjects(input) {
 	const DIRS_MAX = tokens.some(isGlob) ? 64 : 256;
 	// Each folder is listed once and its names looked up, not a stat per word and folder: 4,000 bare names beside 60
 	// folders took about 9 s of the hook's 10 s (K120).
+	// The names are compared without case or Unicode form on every platform (a file system that ignores them, as on
+	// macOS, finds App for app; the commit security review); a name that does not exist as written fails at resolveTo.
+	const key = (s) => String(s).normalize('NFC').toLowerCase();
 	const listed = new Map();
 	const namesIn = (base) => {
 		if (!listed.has(base)) {
 			const s = new Set();
-			try { for (const e of fs.readdirSync(base, { withFileTypes: true })) if (e.isDirectory() || e.isSymbolicLink()) s.add(fold(e.name)); } catch { /* unreadable: none */ }
+			try { for (const e of fs.readdirSync(base, { withFileTypes: true })) if (e.isDirectory() || e.isSymbolicLink()) s.add(key(e.name)); } catch { /* unreadable: none */ }
 			listed.set(base, s);
 		}
 		return listed.get(base);
@@ -678,7 +681,9 @@ function namedProjects(input) {
 	// folder found as well, so a chain of moves (cd .. && cd .. && cd ..) is followed to its end (K120).
 	// A path that climbs (..) is read from a found folder only as many times as the command writes a climb, so it never
 	// walks on past what the moves could reach.
-	let climbs = (decoded.match(/(^|[\\/\s;&|(])\.\.(?=$|[\\/\s;&|)])/g) || []).length;
+	// Counted on the text the tokens come from (quotes gone, braces made), so a quoted ".." counts (the commit security
+	// review); each reading of the command counts, which can only read further.
+	let climbs = (text.match(/(^|[/\s;&|(=])\.\.(?=$|[/\s;&|)])/g) || []).length;
 	for (let before = -1; before !== dirs.length && !unreadable;) {
 		before = dirs.length;
 		for (const t of tokens) {
@@ -695,7 +700,7 @@ function namedProjects(input) {
 				}
 				continue;
 			}
-			for (const base of [cwd, ...dirs]) if (namesIn(base).has(fold(t))) resolveTo(path.join(base, t));
+			for (const base of [cwd, ...dirs]) if (namesIn(base).has(key(t))) resolveTo(path.join(base, t));
 		}
 	}
 	for (const t of tokens) {

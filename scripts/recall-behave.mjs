@@ -26,10 +26,11 @@ const OUT_DIR = path.join(KIT, 'reports', 'evals');
 const MODEL = 'claude-opus-5-5';
 const EFFORT = 'medium';
 const MAX_TURNS = '12';
-// What a session's shell may run without a prompt: reads, the kit's own scripts and the tests. Every other command is
-// refused by Claude Code and stays in the record as an attempt.
-const SHELL_READS = ['git status', 'git log', 'git diff', 'git branch', 'git show', 'git remote', 'node .claude/', 'node --test'];
-const ALLOWED = ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Skill', ...SHELL_READS.flatMap((c) => [`Bash(${c}:*)`, `PowerShell(${c}:*)`])].join(',');
+// What a session may do without a prompt: read, and load a skill. Every edit and every shell command is refused by
+// Claude Code and stays in the record as an attempt, which is what the checks grade. Nothing that runs code or writes a
+// file is allowed (the commit security review: a written script run by an allowed node, or a git config edit run by an
+// allowed git read, would run anything on the owner's machine).
+export const ALLOWED = 'Read,Grep,Glob,Skill';
 const SHELLS = /^(Bash|PowerShell)$/;
 const EDITS = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
 
@@ -102,7 +103,13 @@ export function outsideReads(ev, roots) {
 /** The folder each scenario starts from: the kit installed, a branch with one commit, a bare clone as origin. */
 export function seed(dir, files = {}, run) {
 	const must = (cmd, args, opts = {}) => { const r = run(cmd, args, { cwd: dir, ...opts }); if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${(r.stderr || r.stdout || '').trim().slice(0, 200)}`); };
-	const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+	const put = (rel, body) => {
+		const to = path.resolve(dir, rel);
+		const inside = path.relative(dir, to);
+		if (!inside || inside.startsWith('..') || path.isAbsolute(inside)) throw new Error(`a scenario file outside its folder: ${rel}`);
+		fs.mkdirSync(path.dirname(to), { recursive: true });
+		fs.writeFileSync(to, body);
+	};
 	must('git', ['config', 'user.email', 'probe@example.invalid']);
 	must('git', ['config', 'user.name', 'probe']);
 	put('src/greet.mjs', 'export const greet = (n) => `Hello, ${n}`;\n');
@@ -137,7 +144,7 @@ export function copyUserLayer(kitDir, dir) {
 /** One session on one scenario: the record, the grades and the reads outside. */
 export function runScenario({ s, dir, home, run }) {
 	const r = run('claude', ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL, '--effort', EFFORT,
-		'--setting-sources', 'project', '--allowedTools', ALLOWED, '--disallowedTools', 'WebFetch,WebSearch',
+		'--setting-sources', 'project', '--permission-mode', 'default', '--allowedTools', ALLOWED, '--disallowedTools', 'WebFetch,WebSearch',
 		'--max-turns', MAX_TURNS, '--no-session-persistence'], { cwd: dir, input: s.prompt, encoding: 'utf8', timeout: 900000, maxBuffer: 1 << 28 });
 	if (/Not logged in/i.test(r.stdout || '')) throw new Error(`${s.id}: Claude Code is not logged in for the sessions' config folder`);
 	const ev = parseStream(r.stdout || '');

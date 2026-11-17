@@ -1742,6 +1742,8 @@ test('a capital class, a bracket set with a comma and a chain of cd .. name the 
 	const deep = path.join(path.dirname(proj), 'k120-a', 'b', 'c');
 	fs.mkdirSync(deep, { recursive: true });
 	assert.equal(call('cd .. && cd .. && cd .. && cp x A*/.claude/guard.cjs', deep), 'deny', 'a chain of cd ..');
+	// The commit security review: a quoted climb is the same climb to the shell.
+	assert.equal(call(`cd ".." && cd '..' && cd ".." && cp x A*/.claude/guard.cjs`, deep), 'deny', 'a chain of quoted cd ..');
 	// Ordinary commands that name no project run, at any size the reader takes.
 	const big = kitTemp.makeTemp('k120-big-');
 	for (let i = 0; i < 4200; i++) fs.writeFileSync(path.join(big, `f${i}.txt`), '');

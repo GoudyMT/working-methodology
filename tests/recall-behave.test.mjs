@@ -3,7 +3,10 @@
 // to the lines the grader reads.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
-import { parseStream, grade, outsideReads, suiteVersion } from '../scripts/recall-behave.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { parseStream, grade, outsideReads, suiteVersion, seed, ALLOWED } from '../scripts/recall-behave.mjs';
 
 const call = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: String(Math.random()), name, input }] } });
 const result = (text) => JSON.stringify({ type: 'result', result: text, total_cost_usd: 0.5, num_turns: 4 });
@@ -57,6 +60,18 @@ test('each check kind passes and fails on what the session did', () => {
 test('a read outside the probe folder and the Claude folder is named', () => {
 	const ev = parseStream(stream(call('Read', { file_path: 'C:/p/x/src/a.mjs' }), call('Grep', { pattern: 'x', path: 'C:/home/.claude/skills' }), call('Read', { file_path: 'C:/Users/o/Desktop/board.md' }), call('Glob', { pattern: '*.md' }), result('')));
 	assert.deepEqual(outsideReads(ev, ['C:/p/x', 'C:/home/.claude']), ['C:/Users/o/Desktop/board.md']);
+});
+
+// The commit security review: an allowed interpreter beside an allowed write runs anything the session writes, on the
+// owner's machine. A run may only read and load skills; a scenario's files land only in its own folder.
+// why: guards rule:security-standards
+test('a behaviour run allows no edit or shell, and seeds no file outside its folder', () => {
+	assert.deepEqual(ALLOWED.split(','), ['Read', 'Grep', 'Glob', 'Skill']);
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'behave-'));
+	const run = () => ({ status: 0, stdout: '', stderr: '' });
+	assert.throws(() => seed(dir, { '../escape.txt': 'x' }, run), /outside its folder/);
+	assert.equal(fs.existsSync(path.join(path.dirname(dir), 'escape.txt')), false);
+	fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // why: guards rule:instruments-and-evals
