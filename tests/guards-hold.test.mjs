@@ -1262,3 +1262,34 @@ test('a feature push is inside the bound only while origin pushes to where it fe
 	git('remote', 'remove', 'origin');
 	assert.match(push(), /somewhere other than it fetches from/, 'no origin');
 });
+
+// K124 (1.42.0): a planted-bug sweep flipped one operator at a time in the delete guard, and these flips passed every
+// test. Each case below fails on its flip: a link packed by tar, a move by cmake -E chdir, rsync's options read on
+// other programs, a brace outside find, the folder find names, a find-style -ok on another program, PowerShell's
+// -Force:$true, a -Force that must not outlive its command, case on a case-sensitive disk, and the owner's yes text.
+// The delete guard is asked on its own where the protected-files guard would hold the same command first.
+// why: guards rule:outward-acts
+test('the delete guard holds what its planted-bug sweep let through, and passes the reads and packs it must not hold', () => {
+	const outside = kitTemp.makeTemp('elsewhere-');
+	const own = kitTemp.makeTemp('proj-');
+	fs.mkdirSync(path.join(own, '.git'));
+	fs.symlinkSync(outside, path.join(own, 'lnk'), 'junction');
+	const ask = (command, { tool = 'Bash', extra = {}, guard = HOOKS[0] } = {}) => {
+		const r = spawnSync(process.execPath, [guard], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command }, cwd: own, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: own } });
+		assert.equal(r.status, 0, r.stderr);
+		const out = r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
+		return { verdict: out.permissionDecision || 'allow', reason: out.permissionDecisionReason || '' };
+	};
+	const out = outside.split(path.sep).join('/');
+	for (const command of ['tar --remove-files -cf a.tar lnk', 'cmake -E chdir src rm -f x', `time -ok rm -rf ${out}/x`]) assert.equal(ask(command).verdict, 'deny', command);
+	for (const command of ['git branch --delete old', 'ls {a,b}', 'echo {a,b}', 'rm -f a.txt; tar --remove-files -cf a.tar *']) assert.equal(ask(command).verdict, 'allow', command);
+	const deleteGuard = path.resolve('project/.claude/guard-delete.cjs');
+	assert.equal(ask('Remove-Item -Recurse -Force:$true *', { tool: 'PowerShell', guard: deleteGuard }).verdict, 'deny', '-Force:$true reaches .git');
+	const found = ask(`find ${out}/x -name y -delete`).reason;
+	assert.ok(found.includes(`${out}/x)`), found);
+	// A disk that tells case apart: the same letters in other case are another folder, outside the project.
+	if (process.platform === 'linux') assert.equal(ask(`rm -rf ${own.toUpperCase()}/x`).verdict, 'deny');
+	const act = `rm -rf ${out}/x`;
+	popUp({ act });
+	assert.match(ask(act, { extra: { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now' } }).reason, /^Owner's yes given in the pop-up/);
+});
