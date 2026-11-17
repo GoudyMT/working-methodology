@@ -326,7 +326,10 @@ function check() {
 
 const [cmd, ...rest] = process.argv.slice(2);
 try {
-	if (cmd === 'write') write(rest[0] === '--session' ? String(rest[1] || '').replace(/[^\w.-]/g, '').slice(0, 64) : '', rest.includes('--closed'));
+	// The options in any order (the build 16 sweep: --closed first dropped the session; --session --closed recorded it).
+	const at = rest.indexOf('--session');
+	const id = at >= 0 && rest[at + 1] && !rest[at + 1].startsWith('--') ? rest[at + 1] : '';
+	if (cmd === 'write') write(String(id).replace(/[^\w.-]/g, '').slice(0, 64), rest.includes('--closed'));
 	else if (cmd === 'check') check();
 	else console.log('usage: node .claude/resume-packet.mjs write [--session <id>] [--closed] | check');
 } catch (e) {

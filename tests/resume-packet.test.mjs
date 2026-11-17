@@ -353,6 +353,11 @@ test('write --closed marks the packet closed, and a plain write does not', () =>
 	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^closed: \d{4}-\d\d-\d\dT/m);
 	write('--session', 'abc-123', '--closed');
 	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^session: abc-123$[\s\S]*^closed: /m);
+	// The build 16 sweep: the options in any order.
+	write('--closed', '--session', 'xyz');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^session: xyz$[\s\S]*^closed: /m);
+	write('--session', '--closed');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^session: -$[\s\S]*^closed: /m);
 });
 
 // K111 (1.42.0): sessions now compact on their own at 400K, so the packet must come from an automatic compact too.
