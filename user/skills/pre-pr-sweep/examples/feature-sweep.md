@@ -2,7 +2,8 @@
 
 > Adapted from a report older than the current sweep. Read its shape, not its numbers: today each role sets a call cap
 > (15, up to 30 with a reason), the script computes the budget, spend comes from the reviewers transcripts at `--outcome`,
-> and there is no re-sweep: the fix check is each fix's failing-first test and CI's test check.
+> there is no re-sweep (the fix check is each fix's failing-first test and CI's test check), and every role
+> but security and the novel lens runs on the mid model unless its contract names another.
 
 - **Tier:** feature, with the security-sensitive modifier (a lock over personal data).
 - **Covers:** 9e41c7d2b05a83f6c1d29e7b40a5f8c3d6e1b2a4 (the commit the sweep read)

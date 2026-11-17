@@ -5703,13 +5703,13 @@ test('an owner tier gets a real budget, its trip fires, and its call caps are ch
   assert.match(b.stdout, /no call cap[\s\S]*owner decides: the launch gate tier/);
 });
 // why: guards rule:sweep-auto-approval
-test('a model outside the reviewer trial asks the owner, and an unknown model at the outcome pauses', () => {
+test('a model outside the reviewer model rule asks the owner, and an unknown model at the outcome pauses', () => {
   for (const model of ['claude-haiku-5-5', '']) {
     const c = featureContract();
     c.roles[3].model = model;
     const r = approveRun(c);
     assert.equal(r.status, 1, `${model}: ${r.stdout}`);
-    assert.match(r.stdout, /ASK THE OWNER[\s\S]*outside the reviewer trial/);
+    assert.match(r.stdout, /ASK THE OWNER[\s\S]*outside the reviewer model rule/);
   }
   const r = approveRun(featureContract());
   const ids = cheapRoles(5);

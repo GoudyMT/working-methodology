@@ -4,7 +4,7 @@
 - [Testing discipline](testing-discipline.md) - pointers: test-first, tests never yield, test value, fixtures, failure paths
 - [Verification and evidence](verification-and-evidence.md) - pointers: guess vs proven, data before fixing, output artifacts
 - [Measurement and evals](measurement-and-evals.md) - pointers: instrument first, controls, held-out splits, user-first eval questions
-- [Review and sweeps](review-and-sweeps.md) - pointers: pre-PR sweep, the swarm contract, two passes, op-test, device test
+- [Review and sweeps](review-and-sweeps.md) - pointers: pre-PR sweep, the swarm contract, one sweep per branch, op-test, device test
 - [Findings pipeline](findings-pipeline.md) - pointers: a finding is a hypothesis, truth bar, root fixes, findings ride in the PR
 - [Scope and value](scope-and-value.md) - pointers: whole-cycle planning, parking lot, value tiers, size budgets
 - [Quality gates](quality-gates.md) - pointers: green means every CI step, full gate before every PR, cadence

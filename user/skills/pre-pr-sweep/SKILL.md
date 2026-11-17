@@ -69,7 +69,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents auto` finds each reviewer from its brief's Sweep tag, so ids lost to a compaction do not end a sweep; or each reviewer's agent id, one per
    role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a reviewer that crashed (no report, not finished, its transcript quiet for 10 minutes): `node approve.mjs <contract.json> --retry <n> --crashed <id>` gives role n one more start with the same brief, and `--agents` names the retry. A crash's tokens count against its role's budget; a sweep cut short, where none of these works (a role's second crash, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a sweep that fixes
    carried findings adds `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
-   the mid model, for the reviewer model trial). When every role handed back a report in its shape, the script
+   the mid model, for the reviewer model rule). When every role handed back a report in its shape, the script
    counts `--findings` from the reports, writes `<contract>-ledger.md` (one row per finding) and refuses a count
    that differs; `--real` and `--duplicates` stay the lead's triage, and the ledger marks findings two roles placed
    on the same line. A bug later found in code the

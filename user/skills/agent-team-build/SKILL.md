@@ -72,7 +72,7 @@ unmarked.
 |---|---|---|---|
 | **Lead** | the main session (Opus) in batch mode; an `orchestrator` agent in orchestrated mode | writes the plan; briefs builders, checkers and scanners; judges findings on evidence; integrates units; runs the full gate; reports | builds units a builder should build; calls anything done without the gate |
 | **Builder** | the `builder` agent (Sonnet, its own worktree) | one unit: a failing test first, the least code, a break check, a local commit, an evidence report | edits outside its file list; lowers a test; pushes; starts agents |
-| **Checker** | the `checker` agent (Opus, read-only) | reviews one high-risk unit, or the fix commits: plan fit, goals, rules, test strength, claims vs evidence | edits files; passes a unit on the builder's word |
+| **Checker** | the `checker` agent (Opus, read-only) | reviews one high-risk unit: plan fit, goals, rules, test strength, claims vs evidence | edits files; passes a unit on the builder's word |
 | **Scanner** | the `scanner` agent (Haiku, read-only) | lists, counts and locations across many files: a first pass the requester re-checks | judgment, design, code, writes |
 
 In orchestrated mode the main session is the **overseer** above the lead (`orchestrated.md`, "The layers").

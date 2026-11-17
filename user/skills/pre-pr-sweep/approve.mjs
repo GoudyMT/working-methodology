@@ -421,10 +421,10 @@ function check(c, facts, log = []) {
 		if (!Array.isArray(r.context) || !r.context.length || !r.context.every((x) => filled(x, 2))) fix.push(`${name}: no context (the files, rule and spec its lens needs)`);
 		else if (r.context.length > MAX_CONTEXT) why.push(`${name}: ${r.context.length} context entries, over ${MAX_CONTEXT}: a role's context is what its lens needs`);
 		if (!filled(r.finding, 8)) fix.push(`${name}: no finding shape`);
-		// The reviewer model trial (rule:test-and-review-cadence): security and the novel lens stay on the top model.
+		// The reviewer model rule (rule:test-and-review-cadence): security and the novel lens stay on the top model.
 		if (TOP_ONLY.includes(r.kind) && r.model !== undefined && !TOP_MODEL.test(String(r.model))) fix.push(`${name}: a ${r.kind} role stays on the top model, not "${r.model}"`);
-		// The reviewer trial covers these two; the budget formula was fit on them.
-		if (r.model !== undefined && !modelKey(r.model)) why.push(`${name}: model "${r.model}" is outside the reviewer trial (opus, sonnet)`);
+		// The reviewer model rule names these two; the budget formula was fit on them.
+		if (r.model !== undefined && !modelKey(r.model)) why.push(`${name}: model "${r.model}" is outside the reviewer model rule (opus, sonnet)`);
 	});
 	const { budgets, total } = callBudgets(roles, cap, why, fix);
 	if (total > cap.maxTotalBudget) why.push(`total budget ${total} over the project's ${tier} cap of ${cap.maxTotalBudget}`);
@@ -434,7 +434,7 @@ function check(c, facts, log = []) {
 	return { why, fix, need, extras, cap, first, budgets, total };
 }
 
-// Findings a re-sweep left unfixed, still open until a later outcome closes them.
+// Findings carried from an earlier sweep, still open until a later outcome closes them.
 const openCarries = (log) => log.filter((e) => e.kind === 'outcome').reduce((t, e) => t + (Number(e.carried) || 0) - (Number(e.closedCarries) || 0), 0);
 
 // What the owner reads at a stop: what tripped, the numbers, the log lines and the ways forward.
@@ -446,7 +446,7 @@ const FIXES = [
 	[/call cap \(|\d calls, over/, `Set each role's "calls" at ${STANDARD_CALLS} or under, or up to ${SPECIAL}x with a callsReason; the budget is computed from it.`],
 	[/per-role cap|total budget/, 'Lower the roles\' "calls" until the computed budget fits the project\'s cap, or the owner decides.'],
 	[/went lighter/, 'Put back what the stop named and run approve.mjs again, or the owner agrees the lighter sweep.'],
-	[/outside the reviewer trial/, 'Name opus or sonnet for the role, or the owner agrees the model.'],
+	[/outside the reviewer model rule/, 'Name opus or sonnet for the role, or the owner agrees the model.'],
 	[/was cut short/, 'The owner\'s yes on this contract closes that sweep unmeasured; list any findings left unfixed in the handoff by hand.'],
 	[/call-cap hook/, 'Merge the PreToolUse entry for kit-hooks/call-cap.cjs into the project\'s .claude/settings.json.'],
 	[/question|context|finding shape|unknown|no roles|top model/, 'Fix the named role in the contract and run approve.mjs again.'],
@@ -1051,7 +1051,7 @@ function outcome() {
 		if (v === null) { console.log(`--${k} needs a whole number of 0 or more; nothing logged.`); return 1; }
 		nums[k] = v;
 	}
-	// Real findings from roles on the mid model, for the reviewer model trial; optional.
+	// Real findings from roles on the mid model, for the reviewer model rule; optional.
 	if (opt('--real-mid') !== undefined) {
 		const v = count('real-mid', nums.real);
 		if (v === null) { console.log('--real-mid needs a number from 0 to --real; nothing logged.'); return 1; }
@@ -1145,7 +1145,7 @@ function outcome() {
 		if (rewrites >= REWRITES_TRIP) trips.push(`${rewrites} cache re-writes after the first call (the cache expired between calls)`);
 	}
 	if (nums.findings > 0 && nums.duplicates * 3 >= nums.findings) trips.push(`${nums.duplicates} of ${nums.findings} findings repeated between roles`);
-	// The reviewer trial and the top-model rule rest on the model a role names, so a reviewer on another one is the owner's.
+	// The reviewer model rule rests on the model a role names, so a reviewer on another one is the owner's.
 	per.forEach((x, i) => {
 		// The model the decision cleared, so an edit to the contract after it hides nothing.
 		const named = (decision.models || [])[i] ?? (roles[i] ? roleModel(roles[i]) : null);

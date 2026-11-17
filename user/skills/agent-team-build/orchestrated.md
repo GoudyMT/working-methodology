@@ -51,10 +51,10 @@ much work left).
 
 ## The lead ceiling
 
-Past about 450K tokens of context (the meter's latest context for the lead: one call's input, cache writes and cache
-reads together), the overseer replaces the lead at its next stop with a fresh one from the plan file. 450K is the
-largest a lead has been seen to work at; nearer the context's limit (a compaction, a lost working state) was never
-observed, so the method stays inside what was measured. A fresh lead's start-up costs about $1-1.50. There is no cost
+Past about 350K tokens of context (the meter's latest context for the lead: one call's input, cache writes and cache
+reads together), the overseer replaces the lead at its next stop with a fresh one from the plan file. A session
+compacts on its own at 400K (rule:compact-ritual), so the swap comes first: a lead that compacts mid-phase loses its
+working state. Leads have been seen to work well up to 450K, so 350K costs no measured quality. A fresh lead's start-up costs about $1-1.50. There is no cost
 rule inside a phase: on the measured runs a mid-phase replacement would have saved at most about $0.40.
 
 ## Sweeps go through the overseer
