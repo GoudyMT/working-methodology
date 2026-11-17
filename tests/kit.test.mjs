@@ -1675,6 +1675,21 @@ test('session start after a compact names the orientation rule and where it live
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'startup' }), /post-compact-orientation/);
 });
 
+// K112 (1.42.0, the token proof: idle gaps over an hour were 86% of cache rebuild cost): one session carried many
+// tasks for days. A closeout marks its task closed in the resume packet; a session resumed after that is told to start
+// fresh, since a resumed session re-reads its whole old context. Nothing is said on a fresh start or with no mark.
+// why: guards rule:compact-ritual
+test('session start on a resumed session whose task the closeout closed says to start fresh', () => {
+  const { kit, home, proj } = caseKit();
+  fs.mkdirSync(path.join(proj, '.kit'), { recursive: true });
+  const packet = path.join(proj, '.kit', 'resume-packet.md');
+  fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T10:00:00.000Z\nsession: -\n');
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'resume' }), /closed its task/, 'no mark');
+  fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T10:00:00.000Z\nsession: -\nclosed: 2026-11-17T10:00:00.000Z\n');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'resume' }), /closed its task[\s\S]*\/clear/);
+  for (const source of ['startup', 'clear', 'compact']) assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source }), /closed its task/, source);
+});
+
 // The old single standards file is gone from the kit. A mention of it is allowed only where the kit speaks of a
 // project still on that file (the old-layout fold-back and the brief fallback).
 // why: guards rule:kit-standards

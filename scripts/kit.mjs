@@ -1333,6 +1333,14 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
+  // K112 (1.42.0): a resumed session re-reads its whole old context after each idle gap; once a closeout closed the
+  // task, the next task starts fresh from the packet.
+  if (source === 'resume') {
+    let packet = '';
+    try { packet = fs.readFileSync(path.join(projectDir, '.kit', 'resume-packet.md'), 'utf8'); } catch { /* none */ }
+    const closed = /^closed: (\S+)$/m.exec(packet);
+    if (closed) lines.push(`The last closeout closed its task (${closed[1]}). A resumed session re-reads all of its old context: for the next task the owner types /clear (a CLI or Code session; a project thread closes when its work is done), then run node .claude/resume-packet.mjs check.`);
+  }
   const ahead = remote(kit);
   if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();

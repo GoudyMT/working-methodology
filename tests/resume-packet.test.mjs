@@ -340,6 +340,21 @@ test('the pre-compact hook writes the packet first, even with the kit missing or
 	}
 });
 
+// K112 (1.42.0): the closeout that ends a task marks the packet closed; a compact mid-task does not.
+// why: guards rule:compact-ritual
+test('write --closed marks the packet closed, and a plain write does not', () => {
+	const dir = project();
+	fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+	fs.copyFileSync(path.join(KIT, 'project', '.claude', 'resume-packet.mjs'), path.join(dir, '.claude', 'resume-packet.mjs'));
+	const write = (...a) => spawnSync(process.execPath, [path.join(dir, '.claude', 'resume-packet.mjs'), 'write', ...a], { cwd: dir, encoding: 'utf8' });
+	write();
+	assert.doesNotMatch(fs.readFileSync(packet(dir), 'utf8'), /^closed: /m);
+	write('--closed');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^closed: \d{4}-\d\d-\d\dT/m);
+	write('--session', 'abc-123', '--closed');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^session: abc-123$[\s\S]*^closed: /m);
+});
+
 // K111 (1.42.0): sessions now compact on their own at 400K, so the packet must come from an automatic compact too.
 // Claude Code fires PreCompact with trigger "auto" then (proven on 2.1.318); the shipped entry has no matcher that
 // would limit it to "manual", and the hook writes the packet well inside its time limit.
