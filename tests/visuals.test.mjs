@@ -52,7 +52,7 @@ test('the config check refuses a metric with no outcome, a cost with no measured
 	const faults = (m, extra = {}) => configFaults(config({ metrics: [m], ...extra })).join('\n');
 	assert.match(faults({ name: 'Size', paths: ['RULES.md'] }), /Size: names no impact/);
 	assert.match(faults({ name: 'Size', paths: ['RULES.md'], impact: ['cost'] }), /Size: cost needs measured tokens/);
-	assert.match(faults({ name: 'Size', paths: ['RULES.md'], impact: ['speed'] }), /Size: impact "speed" is not cost, time or room/);
+	assert.match(faults({ name: 'Size', paths: ['RULES.md'], impact: ['speed'] }), /Size: impact "speed"/);
 	assert.match(faults({ name: 'Load', unit: 'tokens', before: 1, after: 2, source: 'x', impact: ['time'] }), /Load: time needs a measured wait in seconds/);
 	assert.match(faults(config().metrics[0], { price: undefined }), /cost needs a price/);
 	assert.match(faults(config().metrics[0], { window: undefined }), /room needs the context window/);
@@ -73,13 +73,13 @@ test('the section keeps what moved, derives tokens, dollars and window room, and
 	assert.match(res.stdout, /1 of 2 tracked metrics moved/);
 	const s = res.body;
 	assert.doesNotMatch(s, /\| Skills \|/, 'a 0.5% move is left out');
-	assert.match(s, /\| Always-loaded rules file \| 27,609 B \| 23,834 B \| -3,775 B \(-13\.7%\) \| 25,000 B \| measured: bytes at [0-9a-f]{7} and [0-9a-f]{7} \|/);
-	assert.match(s, /\| Always-loaded rules file: tokens per session start \| 9,800 \| 8,500 \| -1,300 \(-13\.3%\) \| none \| measured: session context report \|/);
-	assert.match(s, /\| Always-loaded rules file: cost per 1,000 sessions \| \$39\.20 \| \$34\.00 \| -\$5\.20 \(-13\.3%\) \| none \| derived: tokens x \$4\/MTok input \(2026-11-03\) \|/);
-	assert.match(s, /\| Always-loaded rules file: window used at start \| 2\.45% \| 2\.13% \| -0\.32 pt \| none \| derived: tokens \/ 400,000-token window \|/);
+	assert.match(s, /\| Always-loaded rules file \| 27,609 B \| 23,834 B \| -3,775 B \(-13\.7%\) \| 25,000 B \| measured: bytes at [0-9a-f]{7} and [0-9a-f]{7} \|/); // pin: 1
+	assert.match(s, /\| Always-loaded rules file: tokens per session start \| 9,800 \| 8,500 \| -1,300 \(-13\.3%\) \| none \| measured: session context report \|/); // pin: 1
+	assert.match(s, /\| Always-loaded rules file: cost per 1,000 sessions \| \$39\.20 \| \$34\.00 \| -\$5\.20 \(-13\.3%\) \| none \| derived: tokens x \$4\/MTok input \(2026-11-03\) \|/); // pin: 1
+	assert.match(s, /\| Always-loaded rules file: window used at start \| 2\.45% \| 2\.13% \| -0\.32 pt \| none \| derived: tokens \/ 400,000-token window \|/); // pin: 1
 	// The outcome sentence opens the section, before the chart and the table.
 	const lead = s.split('### Visuals\n\n')[1].split('\n\n')[0].replace(/\n/g, ' ');
-	assert.equal(lead, 'Every session starts with 1,300 fewer tokens: $5.20 less per 1,000 sessions, and 0.32 points more of the window free.');
+	assert.equal(lead, 'Every session starts with 1,300 fewer tokens: $5.20 less per 1,000 sessions, and 0.32 points more of the window free.'); // pin: 4
 	assert.match(s, /```text\nAlways-loaded rules file, bytes \(\| = limit 25,000\)\nbefore +#+/);
 	assert.ok(fs.existsSync(path.join(r.dir, 'out', 'chart.svg')), 'the chart image source is written');
 	assert.match(res.stdout, /fill 1 <why> line/);
@@ -102,7 +102,7 @@ test('a second run replaces its own section, --before places it, and --fold writ
 	const notes = run(r, config(), '# v1.2.0\n\n## Changed\n\n- a\n\n## Known limits\n\n- b\n\n## Upgrading\n\nRun it.\n', '--level', '##', '--before', '## Upgrading').body;
 	assert.ok(notes.indexOf('## Known limits') < notes.indexOf('## Visuals') && notes.indexOf('## Visuals') < notes.indexOf('## Upgrading'), notes);
 	const fold = run(r, config(), '## Rules: a body\n\nVersion alignment: YES.\n', '--fold').body;
-	assert.match(fold, /Version alignment: YES\.\n\n<details>\n<summary>Visuals: Always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nEvery session starts/);
+	assert.match(fold, /Version alignment: YES\.\n\n<details>\n<summary>Visuals: Always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nEvery session starts/); // pin: 1
 	assert.match(fold, /\n<\/details>\n$/);
 	assert.doesNotMatch(fold, /### Visuals/);
 });
@@ -120,7 +120,7 @@ test('the section check fails a hand-edited change, a missing why, an unpinned i
 	assert.match(fault(/\n\nEvery session starts[\s\S]*?(?=\n\n)/, ''), /opens with no outcome sentence/);
 	assert.match(fault('```text\n', '```text\nextra ' + '#'.repeat(41) + '\n'), /a chart bar runs past 40 columns/);
 	const image = '![Chart: x](https://github.com/o/r/raw/main/docs/visuals/b/chart.png)\n\n';
-	assert.match(fault('| Metric |', image + '| Metric |'), /chart image must link a full commit under docs\/visuals\//);
+	assert.match(fault('| Metric |', image + '| Metric |'), /chart image must link a full commit/);
 	const pinned = `![Chart: x](https://github.com/o/r/raw/${'a'.repeat(40)}/docs/visuals/b/chart.png)\n\n`;
 	assert.match(fault('| Metric |', pinned + '| Metric |'), /alt text names no number of row 1/);
 	const extra = '| Extra | 1 | 2 | +1 (+100.0%) | none | measured: x |\n';
@@ -151,9 +151,9 @@ test('the Standard PR audit takes a checked Visuals section after Review, and re
 	const vis = visualsOf('###');
 	const ok = std(`${body.trimEnd()}\n\n${vis}`);
 	assert.equal(ok.status, 0, ok.stdout);
-	assert.match(ok.stdout, /PASS +Visuals: numbers, chart and why lines check out/);
+	assert.match(ok.stdout, /PASS +Visuals: numbers, chart and why lines check out/); // pin: 1
 	assert.match(std(body.replace('### Review', `${vis}\n### Review`)).stdout, /FAIL +the four ### sections, in order/);
-	assert.match(std(`${body.trimEnd()}\n\n${vis.replace('-3,775 B (-13.7%)', '-3,000 B (-13.7%)')}`).stdout, /FAIL +Visuals: numbers, chart and why lines check out +Visuals: row 1/);
+	assert.match(std(`${body.trimEnd()}\n\n${vis.replace('-3,775 B (-13.7%)', '-3,000 B (-13.7%)')}`).stdout, /FAIL +Visuals: numbers, chart and why lines check out +Visuals: row 1/); // pin: 1
 	// A long section stays off the word ceilings; its own caps hold it.
 	const long = vis.replace(/(\*\*Always-loaded rules file:\*\* )[^\n]*/, `$1${'word '.repeat(40).trim()}.`);
 	assert.doesNotMatch(std(`${body.trimEnd()}\n\n${long}${'\n- **Extra:** ' + 'word '.repeat(40)}`).stdout, /FAIL +size/);

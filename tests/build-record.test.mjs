@@ -331,12 +331,12 @@ test('a record with Visuals writes them into the PR body and after the notes kno
 	const rec = { ...record(), limits: 'One known limit.', visuals: VISUALS };
 	assert.deepEqual(problems(rec), []);
 	const body = prBody(rec);
-	assert.match(body, /Version alignment: YES\.[^\n]*\n\n<details>\n<summary>Visuals: the always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nEvery session starts/);
+	assert.match(body, /Version alignment: YES\.[^\n]*\n\n<details>\n<summary>Visuals: the always-loaded rules file 27,609 B to 23,834 B \(cap 25,000 B\)<\/summary>\n\nEvery session starts/); // pin: 1
 	assert.ok(body.includes(`before  ${'#'.repeat(36)}|###  27,609`), 'the chart is not wrapped');
 	const std = path.join(kitTemp.makeTemp('vis-body-'), 'body.md');
 	fs.writeFileSync(std, body);
 	const audit = spawnSync(process.execPath, [path.resolve('project/.claude/pr-body-audit.mjs'), std, rec.title], { encoding: 'utf8', cwd: path.dirname(std) });
-	assert.match(audit.stdout, /PASS +Visuals: numbers, chart and why lines check out +checked/);
+	assert.match(audit.stdout, /PASS +Visuals: numbers, chart and why lines check out +checked/); // pin: 1
 	const text = notes(rec);
 	assert.ok(text.indexOf('Known limits:') < text.indexOf('## Visuals\n\nEvery session starts'), text);
 	const file = path.join(kitTemp.makeTemp('vis-notes-'), 'notes.md');

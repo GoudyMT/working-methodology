@@ -57,6 +57,12 @@ Version alignment: YES. <one line>.
 A row, fold or line that would say "not touched" or "not applicable" is left out: the project lists its review
 dimensions in `.kit/pr-body.json` (adapter A16), and GitHub already shows the files and every check.
 
+**Visuals (an optional fifth section, after Review):** only when the body says a measured number moved that a
+reader acts on or a limit governs. `node .claude/visuals.mjs <base> <head> --body <body.md>` writes it from
+`.kit/visuals.json`: the outcome sentence (dollars, time waited, or window room), a chart, the table
+`| Metric | Before | After | Change | Limit | Source |`, and one why line per row for you to fill. The audit
+recomputes every change and refuses an open `<why>`. A Lean body never carries one.
+
 
 ---
 
