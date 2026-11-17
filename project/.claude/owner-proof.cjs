@@ -441,6 +441,9 @@ function loopBodies(command, tool) {
 	// The build 16 sweep (critical): a body that sets the variable again (f=, export f, read f, printf -v f, a PowerShell
 	// $f = or Set-Variable f) writes where the new value points. Only plain reads are read as the word; any other use of
 	// the name keeps the strict reading.
+	// The commit security review: a setter can name the variable in a spelling no pattern lists (printf -vf, read -a f,
+	// $'f', f\=), so a body with any setter word, a backslash or ANSI quoting keeps the strict reading whatever it names.
+	if (/\\|\$['"]|(^|[\s;&|!])(read|mapfile|readarray|declare|typeset|local|export|readonly|let|getopts|printf|unset|set|eval|source|set-variable|new-variable|sv|nv|clear-variable|remove-variable)(?![\w-])|\[ref\]/i.test(body)) return null;
 	const flags = tool === 'PowerShell' ? 'i' : '';
 	const reads = body.replace(new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)(?!\\s*(?:[-+*/%]?=(?!=)|\\+\\+|--|\\[))`, `g${flags}`), ' ');
 	if (new RegExp(`(^|[^\\w$-])${name}(?![\\w-])|\\$${name}(?!\\w)`, flags).test(reads)) return null;

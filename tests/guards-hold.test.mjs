@@ -258,7 +258,7 @@ test('a loop of kit-script reads and a sed line range pass; a loop that could wr
 	for (const c of ["foreach ($p in '.claude/guard.cjs') { Copy-Item x $p }", "foreach ($id in 'K1') { function node { cp x $args[0] }; node .claude/settings.json }"]) assert.equal(ps(c), 'deny', c);
 	// The build 16 sweep (critical, written live): a body that sets the loop variable again writes where the new value
 	// points, not where the loop word does, so any name of the variable other than a plain read keeps the strict reading.
-	for (const c of ['for f in a; do f=.git/config; echo x > $f; done', 'for f in a; do export f=.claude/settings.json; cp evil "$f"; done', 'for f in a; do printf -v f %s .claude/guard.cjs; cp evil $f; done', 'for f in .claude/guard; do f+=.cjs; cp evil $f; done']) assert.equal(bash(c), 'deny', c);
+	for (const c of ['for f in a; do f=.git/config; echo x > $f; done', 'for f in a; do export f=.claude/settings.json; cp evil "$f"; done', 'for f in a; do printf -v f %s .claude/guard.cjs; cp evil $f; done', 'for f in a; do printf -vf %s .claude/guard.cjs; cp evil $f; done', "for f in a; do declare $'f'=.git/config; cp evil $f; done", 'for f in .claude/guard; do f+=.cjs; cp evil $f; done']) assert.equal(bash(c), 'deny', c);
 	for (const c of ["foreach ($f in 'a') { $f = '.git/config'; Set-Content $f x }", "foreach ($f in 'a') { Set-Variable f .claude/guard.cjs; Copy-Item evil $f }", "foreach ($f in '.claude') { $f += '/guard.cjs'; Copy-Item evil $f }"]) assert.equal(ps(c), 'deny', c);
 });
 
