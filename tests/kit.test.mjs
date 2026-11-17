@@ -7829,6 +7829,20 @@ test('recall gate (K116): rule text changed after the scored commit, or no score
   assert.equal(accepted.gate().status, 0, accepted.gate().stdout);
 });
 
+// The build 16 sweep: a rule file under a case-changed folder (Rules/, NOTE.MD) or with a tab in its name was not
+// graded, so the gate said no rule text changed; on Windows the file lands in rules/, where the build reads it.
+// why: guards rule:instruments-and-evals
+test('recall gate: a graded file named in another case or with a tab still needs a recall run', () => {
+  // Windows cannot name a file with a tab; CI's Linux runner checks that one.
+  for (const rel of ['project/NOTE.MD', 'Memory/x.md', ...(process.platform === 'win32' ? [] : ['project/a\tb.md'])]) {
+    const r = gateRepo();
+    r.put(rel, 'unscored rule\n');
+    r.git('add', '.'); r.git('commit', '-qm', 'rule only');
+    const out = r.gate();
+    assert.equal(out.status, 1, `${rel}: ${out.stdout}`);
+  }
+});
+
 // T10 (1.42.0): beside the wording line, a rule change records the behaviour suite's line. It is held to the suite's
 // version and pass bar, to its baseline, and to a control under that baseline; the suite cannot be removed to skip it.
 // why: guards rule:instruments-and-evals

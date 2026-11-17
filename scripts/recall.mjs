@@ -50,7 +50,7 @@ const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 // What the gate guards: the rule text, and the keys, brief and harness that grade it.
 // I19 (1.42.0): also what renders or ships text a session reads - the project layer's own text, the memory, kit.mjs that
 // renders them - and the behaviour suite and its runner. The project layer's code (the guards) is graded by its tests.
-const GRADED = /^(rules\/|project\/.*\.md$|memory\/|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/;
+const GRADED = /^(rules\/|project\/.*\.md$|memory\/|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/i;
 // T10 (1.42.0): beside the wording gate line, a rule change records the behaviour suite's line, written by
 // recall-behave.mjs line from the saved runs. The base branch's gate reads only the gate line, so this sits apart.
 const BEHAVE_LINE = /^behaviour: (\S+) median (\d+) baseline (\d+) suite v(\d+) control (\d+)( owner-accepted)?$/;
@@ -306,6 +306,12 @@ function gate([base, head]) {
     if (g.status !== 0) throw new Error(`git ${a.join(' ')}: ${(g.stderr || String(g.error)).trim()}`);
     return g.stdout.split('\n');
   };
+  // Changed names, read with -z (the build 16 sweep: a quoted name with a tab in it was never graded).
+  const names = (...a) => {
+    const g = spawnSync('git', ['diff', '-z', '--no-renames', '--name-only', ...a], opts);
+    if (g.status !== 0) throw new Error(`git diff ${a.join(' ')}: ${(g.stderr || String(g.error)).trim()}`);
+    return g.stdout.split('\0').filter(Boolean);
+  };
   // A file at a commit, or '' when that commit has none; any other failure stops the gate.
   const at = (ref, rel) => {
     const g = spawnSync('git', ['show', `${ref}:${rel}`], opts);
@@ -327,10 +333,10 @@ function gate([base, head]) {
   // branch scored other text, so every graded file the PR changes counts.
   const recordAdded = record.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1).trim());
   const scored = recordAdded.map((l) => l.match(SCORED_LINE)).filter(Boolean).pop()?.[1] ?? null;
-  const prChanged = git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', `${base}...${head}`).filter(Boolean);
+  const prChanged = names(`${base}...${head}`);
   const onBranch = scored && spawnSync('git', ['merge-base', '--is-ancestor', scored, head], opts).status === 0;
   const after = !scored ? [] : onBranch
-    ? git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', scored, head).filter((f) => f && GRADED.test(f))
+    ? names(scored, head).filter((f) => GRADED.test(f))
     : prChanged.filter((f) => GRADED.test(f));
   // The behaviour suite is the head's, as the ruler is; a head with no suite file asks for no behaviour line.
   const suiteText = at(head, SUITE_REL);
@@ -350,7 +356,7 @@ function gate([base, head]) {
     scored,
     after,
     // Each side of a rename counts, and a name stays plain: a rule file moved away is rule text changed.
-    changed: git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', `${base}...${head}`),
+    changed: names(`${base}...${head}`),
     added: record.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)),
     removed: record.filter((l) => l.startsWith('-') && !l.startsWith('---')).map((l) => l.slice(1)),
     brief,
