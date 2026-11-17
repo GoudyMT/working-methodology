@@ -86,7 +86,7 @@ test('projectSlug matches the folder name Claude Code uses for project memory', 
   );
 });
 
-// why: catches a break at scripts/kit.mjs:628 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('install user writes rendered files into ~/.claude and stamps the version', () => {
   const { kit, home } = makeKit();
   const r = install({ kit, home, target: 'user' });
@@ -216,7 +216,7 @@ test('restore brings a lost skill back from the snapshot and never overwrites on
   assert.equal(read(path.join(ctx.home, 'skills/sharpen/SKILL.md')), 'mine\n');
 });
 
-// why: catches a break at scripts/kit.mjs:45 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('scrub leaves the third-party snapshot alone', () => {
   const ctx = makeKit();
   fs.mkdirSync(path.join(ctx.kit, 'vendor/plugins/x'), { recursive: true });
@@ -310,7 +310,7 @@ test('a remote whose push URL names another repo names no repo', async () => {
   assert.equal(githubSlug(dir), null);
 });
 
-// why: catches a break at scripts/kit.mjs:1213 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('status warns when the temp disk runs low on inodes, and is silent when it has room or cannot tell', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -324,7 +324,7 @@ test('status warns when the temp disk runs low on inodes, and is silent when it 
 });
 
 // S22-3: before 2.1.295 Claude Code ignores onFailure, so a guard that crashes or times out lets the command run.
-// why: catches a break at scripts/kit.mjs:1056 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('status and session start flag a Claude Code too old for onFailure, and stay quiet when new or unknown', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -695,7 +695,7 @@ test('a running session hears about a new kit release once, at the next message'
   assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
 });
 
-// why: catches a break at scripts/kit.mjs:1328 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('session start says when the kit on GitHub is ahead of the kit folder', () => {
   const { kit, home, proj } = caseKit();
   const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' });
@@ -1054,7 +1054,7 @@ test('status names the kit folder in quotes in the install user line', () => {
   assert.match(status({ kit: spaced, home, projectDir: proj, ahead: () => 0 }).text, /node "[^"\n]*my kit\/scripts\/kit\.mjs" install user/);
 });
 
-// why: catches a break at scripts/kit.mjs:594 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a release install over an unreleased one removes the files only that build had, and keeps a changed one as a gap', () => {
   const { kit, home, proj } = makeKit();
   const extra = ['user/skills/branch-only/SKILL.md', 'user/agents/branch-only.md'];
@@ -1145,7 +1145,7 @@ test('the load guard defaults to 40% over a 3-second average', async () => {
 
 // measure models how Claude Code loads a project at session start (memory docs): CLAUDE.md, its @imports up to
 // four hops, and rules with no paths field. A path in an import ends at the first unescaped space.
-// why: catches a break at scripts/kit.mjs:1598 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('measure counts what a session loads at start, the way Claude Code reads imports', () => {
   const proj = makeTemp('measure-');
   const w = (rel, body) => { fs.mkdirSync(path.dirname(path.join(proj, rel)), { recursive: true }); fs.writeFileSync(path.join(proj, rel), body); };
@@ -1669,6 +1669,7 @@ test('every agent role file the kit ships names its model', () => {
 // N14 (1.36.0, reproduced on AI Essentials' memory 2026-11-15): Claude Code's memory writes metadata into a memory
 // file's frontmatter (node_type, originSessionId, modified) and quotes its description; fold-back then showed the file
 // as the project's own change, and install skipped it, with no real edit in it.
+// why: catches a real fold-back fault (N14): memory metadata read as the project's own edit, so install skipped the file
 test('memory metadata the memory service adds is not a change to fold back or a reason to skip an update', () => {
   const kit = path.resolve('.');
   const home = makeTemp('n14-home-');
@@ -1691,6 +1692,7 @@ test('memory metadata the memory service adds is not a change to fold back or a 
 
 // 1.36.0 sweep (data loss): the install half. An update over a file whose only change is the memory service's metadata
 // goes ahead, and the file as it was is kept first; a real top-level key named like the metadata is a real edit.
+// why: catches a real data loss (the 1.36.0 sweep): an update over a metadata-only memory file did not keep the file first
 test('an update over a memory file with only metadata keeps the file as it was', () => {
   const { kit, home, proj } = makeKit();
   const front = (body) => `---\nname: style\ndescription: the style rule\nmetadata:\n  type: feedback\n---\n\n${body}\n`;
@@ -1758,6 +1760,7 @@ test('install seeds the loop bounds file once and never changes the owner\'s', (
 
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
 // session start said only that an update was there.
+// why: catches a real gap (N5): session start never said a newer user layer can break an older project
 test('session start names a user layer newer than the project for what it can break', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -1775,6 +1778,7 @@ test('session start names a user layer newer than the project for what it can br
 // N8 (1.36.0; real by quote on 1.25.0: `cd src && ls` passed the installed guard, and a text rule against a lasting cd
 // failed twice in AI Essentials): Claude Code returns the shell to the project after each Bash or PowerShell command
 // when this is set (env-vars docs, read 2026-11-15), so a cd cannot carry into the next command.
+// why: catches a real failure (N8): a cd in one shell command carried into the next command
 test('the project settings keep each shell command starting in the project folder', () => {
   const s = JSON.parse(read(path.resolve('project/.claude/settings.json')));
   assert.equal(s.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR, '1');
@@ -1784,6 +1788,7 @@ test('the project settings keep each shell command starting in the project folde
 // the session's model (Opus); a project agent named Explore overrides it (Claude Code sub-agents docs, read
 // 2026-11-15). It installs into kit projects only, so a project without the kit keeps the built-in; it carries no
 // hook, so the trust a project agent file's hooks need does not touch it. The five roles stay user level for theirs.
+// why: guards the owner's pick "Roles user, Explore per project" (MC2, MC5)
 test('the kit ships a read-only Explore on Sonnet into each kit project, and none into the Claude folder', () => {
   const fm = front(path.resolve('project/.claude/agents/Explore.md'));
   assert.equal(fm.name, 'Explore');
@@ -3683,7 +3688,7 @@ const stdAudit = (dir, text, title = STD_TITLE) => {
 };
 const honestBody = () => read(path.resolve('user/skills/pr-body/examples/standard.md'))
   .replace('; the corpus and the served documents are unchanged', '');
-// why: catches a break at project/.claude/pr-body-audit.mjs:64 that no other test catches
+// why: catches a break in project/.claude/pr-body-audit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('the Standard PR audit passes an honest body for a project with no corpus, no scoped ignores and no web gates', () => {
   const dir = makeTemp('prb-');
   const ok = stdAudit(dir, honestBody());
@@ -3770,7 +3775,7 @@ test('the handoff audit prints the full text to send, and only for a clean hando
 
 // From a project's gap report (2026-10-30): a version-only package.json change was read as a new dependency, a
 // pause stayed silent after the session that tripped it, and an owner-decided sweep could not log its outcome.
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:216 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a version-only package.json change is not a new dependency; a dependency change still is', () => {
   const pkg = (v, deps = '{}') => `{\n  "name": "app",\n  "version": "${v}",\n  "dependencies": ${deps}\n}\n`;
   const repo = (head) => {
@@ -3790,7 +3795,7 @@ test('a version-only package.json change is not a new dependency; a dependency c
   assert.match(approveRun(featureContract(), repo(pkg('1.1.0', '{ "left-pad": "1" }'))).stdout, /supply-chain/i, 'a new dependency');
   assert.match(approveRun(featureContract(), repo('{ not json')).stdout, /supply-chain/i, 'an unreadable package file counts as a change');
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:697 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('while paused, every ask says how the owner resumes and what to review first', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -4306,7 +4311,7 @@ test('a modifiers value that is not a list goes back to be fixed; the fix option
   budget.roles[0].calls = 0;
   assert.match(approveRun(budget).stdout, /How: Set each role's "calls"/);
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:829 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a transcript whose last model is synthetic is read by its real model; one with no model pauses', () => {
   const r = approveRun(featureContract());
   const cfg = transcripts({ y1: [[1, 1, 1, 1], { model: '<synthetic>', u: [0, 0, 0, 0] }], y2: [[1, 1, 1, 1]], y3: [[1, 1, 1, 1]], y4: [[1, 1, 1, 1]], y5: [[1, 1, 1, 1]] });
@@ -4953,7 +4958,7 @@ test('session start suggests skill cases from the repo when none are chosen', ()
   assert.deepEqual(msg.match(/Suggested from this repo: ([^.]*)\./)[1].split(', '), ['feature-build', 'debugging', 'review', 'ml-data', 'data-pipelines']);
 });
 
-// why: catches a break at scripts/kit.mjs:1220 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('status names a memory index past 6,000 B, which loads in every session', () => {
   const { kit, home, proj } = makeKit();
   const cfg = path.join(kit, 'kit.config.json');
@@ -5605,7 +5610,7 @@ test('a round starts at its clearing, so a reviewer started before it is not thi
   const o = logOutcome(r, ids, cfg);
   assert.match(o.stdout, /ASK THE OWNER[\s\S]*before this sweep was cleared/);
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:1007 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('the model check reads what the decision cleared, in both directions', () => {
   const c = featureContract();
   const r = approveRun(c);
@@ -6050,7 +6055,7 @@ test('a reviewer past its cap is named at the outcome, and the notice shows modi
   k.roles.push(role('astrology', 'What do the stars say about this diff?'));
   assert.match(approveRun(k).stdout, /one of: security, test-value/);
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:787 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a removed worktree is read from its nearest folder, and the shell\'s GIT_DIR does not answer for another repo', () => {
   const r = approveRun(featureContract());
   const other = sweepRepo();
@@ -6104,7 +6109,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
   assert.equal(w.status, 0, w.stdout);
   assert.doesNotMatch(w.stdout, /no call-cap hook/);
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:344 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a rebased HEAD asks the owner', () => {
   const first = firstSweep();
   g(first.dir, 'reset', '-q', '--soft', 'HEAD~2');
@@ -6911,8 +6916,10 @@ test('a PR runs the reached tests and the security set, or every test; main save
   assert.match(step('Every test'), /steps\.scope\.outputs\.scope != 'changed'/);
   assert.match(step('The tests the change reaches'), /steps\.scope\.outputs\.scope == 'changed'[\s\S]*--changed/);
   const { SECURITY_FILES } = await import(pathToFileURL(path.resolve('scripts/test-value.mjs')).href);
-  const security = step('The security set');
-  for (const f of SECURITY_FILES) assert.ok(security.includes(f), `${f} left out of the security set`);
+  // K105: the security set joins the changed run (--always), so a security test the change reaches runs once.
+  const security = step('The tests the change reaches');
+  for (const f of SECURITY_FILES) assert.ok(security.includes(`--always ${f}`), `${f} left out of the security set`);
+  assert.doesNotMatch(ci, /- name: The security set\n/, 'the security set runs a second time');
   // The map is kept by main's push run only, and a PR takes it from main's own push run of its base commit, never from
   // the Actions cache, which a PR's earlier run can write (the security review of this build).
   const keep = ci.split('- name: Keep the coverage map\n')[1].split('- name:')[0];
@@ -7150,7 +7157,7 @@ test('probePath cannot take a label, so no label can appear in the path', async 
   }
 });
 
-// why: catches a break at scripts/recall.mjs:120 that no other test catches
+// why: catches a break in scripts/recall.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('parseRunArgs accepts [label], [label, kitFolder] and [label, --no-kit] and returns exactly label, kitDir, noKit', async () => {
   const { parseRunArgs } = await recallTools();
   assert.deepEqual(parseRunArgs(['cand-1']), { label: 'cand-1', kitDir: null, noKit: false });
@@ -8469,6 +8476,7 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
 });
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
 // The kit source holds its own pushes the same way (.githooks/pre-push), so the gate can arm a PR there too.
+// why: guards rule:standing-grants
 for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, { windows: true }, () => {
   const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);

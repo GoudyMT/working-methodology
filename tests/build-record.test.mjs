@@ -19,7 +19,8 @@ const record = () => ({
 	],
 	decisions: [{ decision: 'One record', why: 'the changelog and the body never differ' }],
 	verification: ['Every test passed in CI.'],
-	sweep: { tier: 'Feature', commit: 'abc1234', dimensions: [{ name: 'Code security', result: 'clean' }], findings: { critical: 0, high: 1, medium: 2, low: 0 }, fixed: ['one high, fixed here'] },
+	sweep: { tier: 'Feature', commit: 'abc1234', dimensions: [{ name: 'Code security', result: 'clean' }], findings: { critical: 0, high: 1, medium: 2, low: 0 },
+		fixes: [{ id: 'F1', severity: 'high', text: 'one high, fixed here', commit: 'abc1234', test: 'tests/x.test.mjs::a' }, { id: 'F2', severity: 'low', text: 'one low, a parser edge', commit: 'abc1235', test: 'no test: no real input' }] },
 	tests: { before: 10, after: 8 },
 });
 
@@ -56,6 +57,17 @@ test('CI checks the build record on every PR that moves VERSION', () => {
 	const ci = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
 	const step = ci.split('- name: Build record\n')[1].split('- name:')[0];
 	assert.match(step, /if git diff --quiet "\$PR_BASE" HEAD -- VERSION; then .*; else node scripts\/build-record\.mjs check; fi/); // pin: 1
+	// The build 14 sweep: a PR that left VERSION alone had no fix ledger read, so a guard fix could ship with no row. A
+	// change install reads now owes the bump, by the base's own rule.
+	// pin: 1 (GitHub runs these lines)
+	assert.match(step, /git show "\$PR_BASE:scripts\/pr-scope\.mjs" > "\$RUNNER_TEMP\/pr-scope\.mjs"/);
+	assert.match(step, /node "\$RUNNER_TEMP\/pr-scope\.mjs" --install "\$PR_BASE"[^\n]*install=false[^\n]*exit 1/);
+	// K105: the same PR's fix ledger is read by the test check, which states each named test's verdict.
+	const check = ci.split('- name: Test check\n')[1].split('- name:')[0];
+	assert.match(check, /if ! git diff --quiet "\$BASE_SHA" HEAD -- VERSION; then record=\(--record "docs\/builds\/\$\(tr -d '\\r\\n' < VERSION\)\.json"\); fi/); // pin: 1
+	assert.match(check, /test-check\.mjs "\$BASE_SHA" [^\n]*"\$\{record\[@\]\}"/);
+	// K24 (the owner, 2026-11-17): the check is a gate, so a finding fails the job.
+	assert.match(check, /test-check\.mjs "\$BASE_SHA" --strict /);
 });
 
 // why: guards rule:release-notes (the changelog a release ships is the one its record writes, for the version it names).
@@ -205,4 +217,84 @@ test('build-record notes prints the draft, and the upgrading and limits lines ar
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.stdout, notes(rec));
 	assert.match(r.stdout, /^## Upgrading\n\nRun `install user` first/m, 'the default upgrading line');
+});
+
+// K105 (build 13, PR 49): the PR said each finding had a test that fails first, and nothing checked it; six low or
+// medium parser edges got tests only because every fix needed one. The fix ledger is now rows in the record: a high,
+// critical, security or owner-rule fix names its test, a low or medium may say no real input shows it, and the body's
+// fix line is written from the rows, never typed.
+// why: guards rule:test-value
+test('the fix ledger needs a test for a high, critical, security or owner fix, and the body counts it from the rows', () => {
+	assert.deepEqual(problems(record()), []);
+	const body = prBody(record());
+	assert.match(body, /one high, fixed here\..*abc1234, with a named test\./);
+	const gap = (edit) => { const r = record(); edit(r); return problems(r).join('\n'); };
+	assert.match(gap((r) => { r.sweep.fixes[0].test = 'no test: no real input'; }), /fix F1 \(high\) names no test/);
+	assert.match(gap((r) => { r.sweep.fixes[1].security = true; }), /fix F2 \(low, security\) names no test/);
+	assert.match(gap((r) => { r.sweep.fixes[1].test = 'none'; }), /fix F2 test "none".*not a test key.*"no test: no real input"/);
+	assert.match(gap((r) => { r.verification = ['Each sweep finding has a test that fails first.']; }), /fix-test claim.*written from sweep\.fixes/);
+	assert.match(gap((r) => { delete r.sweep.fixes; }), /sweep has no fixes list/);
+	assert.match(gap((r) => { r.sweep.fixes = []; }), /1 high or critical finding\(s\).*0 high or critical fix row/);
+});
+
+// The build 14 sweep: an accepted line of any severity hid a high fix row, a flag typed as a string read as false, a
+// guard-file fix could be typed medium with no test, the body named test keys the PR body audit then failed, and a
+// line about the auto-fix push read as a typed fix-test claim.
+// why: guards rule:test-value
+test('the fix ledger counts only accepted highs, takes flags as booleans, and writes body lines the audit passes', () => {
+	const gap = (edit) => { const r = record(); edit(r); return problems(r).join('\n'); };
+	assert.match(gap((r) => { r.sweep.fixes[0].severity = 'medium'; r.sweep.fixes[0].test = 'no test: no real input'; r.sweep.accepted = ['A low wording nit, accepted by the owner']; }), /1 high or critical finding\(s\).*0 high or critical fix row/);
+	assert.equal(gap((r) => { r.sweep.fixes.shift(); r.sweep.accepted = ['High: the probe log keeps a path; accepted by the owner']; }), '');
+	assert.match(gap((r) => { r.sweep.fixes[1].security = 'true'; }), /fix F2 security is not true or false/);
+	assert.match(gap((r) => { r.sweep.fixes[0].text = 'x'.repeat(220); }), /fix F1 writes a body line over 240 characters/);
+	assert.match(gap((r) => { r.sweep.fixes[1].text = 'the checker brief was wrong'; }), /mechanism or AI word/);
+	assert.equal(gap((r) => { r.verification = ['CI is green; the auto-fix run re-ran the covering tests and pushed once.']; }), '');
+	const body = prBody(record());
+	assert.doesNotMatch(body, /tests\/x\.test\.mjs::a/, 'the body names a test key the audit reads as prose');
+	assert.match(body, /Fix tests:\*\* 1 names? a test.*CI's test check.*1 with no test: no real input/);
+});
+
+// why: guards rule:test-value (the build 14 sweep: a fix row's commit was never read, so a guard fix typed as medium
+// shipped with no test).
+test('the repo check reads each fix commit and names a guard file fixed with no test', () => {
+	const dir = kitTemp.makeTemp('record-git-');
+	const git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir, encoding: 'utf8' });
+	git('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(dir, 'project', '.claude'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'project', '.claude', 'guard.cjs'), 'x\n');
+	git('add', '.'); git('commit', '-qm', 'guard');
+	const sha = git('rev-parse', 'HEAD').stdout.trim();
+	const rec = record();
+	rec.sweep.fixes[1].commit = sha.slice(0, 7);
+	rec.sweep.fixes[0].commit = 'deadbee';
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'VERSION'), '1.2.0\n');
+	fs.writeFileSync(path.join(dir, 'docs', 'builds', '1.2.0.json'), JSON.stringify(rec));
+	fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), `# Changelog\n\n${changelog(rec)}`);
+	const found = checkRepo(dir).problems.join('\n');
+	assert.match(found, /fix F2 changes project\/\.claude\/guard\.cjs.*a guard or gate file.*mark it security and name its test/);
+	assert.match(found, /fix F1 commit deadbee is not a commit here/);
+});
+
+// The build 14 sweep: the body's fix lines were written from the record, but a hand edit after that was read by no
+// check. CI's body job now holds them to the record when VERSION moves.
+// why: guards rule:pr-body
+test('the body check holds the fix lines of a published body to the record', () => {
+	const dir = kitTemp.makeTemp('record-body-');
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'VERSION'), '1.2.0\n');
+	fs.writeFileSync(path.join(dir, 'docs', 'builds', '1.2.0.json'), JSON.stringify(record()));
+	fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), `# Changelog\n\n${changelog(record())}`);
+	const body = path.join(dir, 'body.md');
+	const run = () => spawnSync(process.execPath, [path.resolve('scripts/build-record.mjs'), 'body', body], { cwd: dir, encoding: 'utf8', env: { ...process.env, KIT_RECORD_ROOT: dir } });
+	fs.writeFileSync(body, prBody(record()).replace(/\n/g, '\r\n'));
+	assert.equal(run().status, 0, run().stdout + run().stderr);
+	fs.writeFileSync(body, prBody(record()).replace('1 with no test', '0 with no test'));
+	const r = run();
+	assert.equal(r.status, 1);
+	assert.match(r.stderr, /fix lines differ.*build record/);
+	// pin: 1 (GitHub runs these lines)
+	const job = fs.readFileSync(path.resolve('.github/workflows/pr-body.yml'), 'utf8');
+	assert.match(job, /fetch-depth: 0/);
+	assert.match(job, /if git diff --quiet "origin\/\$BASE_REF" HEAD -- VERSION; then [^\n]*; else node scripts\/build-record\.mjs body "\$RUNNER_TEMP\/pr-body\.md"; fi/); // pin: 1
 });

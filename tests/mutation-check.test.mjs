@@ -146,3 +146,21 @@ test('the mutation check scoped to a base flips only the changed lines, and says
 	assert.match(none.stdout, /nothing measured[^\n]*HEAD/);
 	assert.doesNotMatch(none.stdout, /0 flips, 0 caught/);
 });
+
+// The build 14 audit (2026-11-16): a flip in the kit's home lookup skipped the two Claude-folder settings and a test
+// rewrote the owner's real install record. Every run now also gets a throwaway home folder, so a code path that falls
+// back to the user's home lands there too.
+// why: guards the owner's rule that the kit installs into ~/.claude only from the release copy
+test('a mutation run gives its tests a throwaway home folder, never the owner\'s', () => {
+	const { dir } = repo();
+	const seen = path.join(kitTemp.makeTemp('mut-home-'), 'home.txt');
+	const t = path.join(dir, 'tests', 'a.test.mjs');
+	fs.writeFileSync(t, fs.readFileSync(t, 'utf8').replace("test('pos', () => {", `test('pos', () => { require('node:fs').appendFileSync(${JSON.stringify(seen)}, require('node:os').homedir() + '\\n');`).replace("import assert from 'node:assert/strict';", "import assert from 'node:assert/strict';\nimport { createRequire as cr } from 'node:module';\nconst require = cr(import.meta.url);"));
+	sh(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'home');
+	assert.equal(spawnSync(process.execPath, [RUNNER, '--map', '--shards', '1', t], { cwd: dir, encoding: 'utf8' }).status, 0);
+	fs.rmSync(seen, { force: true });
+	check(dir, ['src/a.cjs']);
+	const homes = fs.readFileSync(seen, 'utf8').split('\n').filter(Boolean);
+	assert.ok(homes.length > 0, 'the flipped runs never ran the test');
+	for (const h of homes) assert.notEqual(path.resolve(h), path.resolve(os.homedir()), `a flipped run saw the real home: ${h}`);
+});

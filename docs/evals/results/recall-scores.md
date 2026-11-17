@@ -776,3 +776,64 @@ Candidate: the branch at 0e4cc45 (1.38.0, the loop driver and the build 11 carry
 
 control: 0
 gate: b12-1.38.0 median 14 baseline 14 brief v2 keys v12 owner-accepted
+
+## Recall v12 - 1.40.0 against the 1.39.0 baseline (2026-11-16)
+
+Candidate: the branch at c2fb3d7 (1.40.0, the fix-test bar by severity in reviews-and-findings and testing), five runs (the median of three sat on the bar); baseline: v1.39.0 from the release copy, three runs; control: no kit, one run. Opus 5.5 at medium, CLI 2.1.318, brief v2, keys v12. One fresh blind scorer over all nine runs (reports/evals/blind-1.40.0-5).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 0, 1, 0, 1, 1 | 0, 0, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 0 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 13, 14, 13, 14, 13 | 13, 13, 14 | 0 |
+
+- **Scored: median 13 of 14, baseline 13, control 0.** The bar of 13 holds.
+- **Question 7 missed on both kits alike** (3 of 5 candidate runs, 2 of 3 baseline runs): answers offered the owner's yes in place of the ASK approve.mjs gives, the known reach of approve.mjs from the run folder. Not touched by this change.
+- **Question 10 missed once in five candidate runs**, for leaving out that the report is summarized in the PR; the changed lines do not touch that wording, and the other four runs and all three baseline runs named it.
+- **Borderline calls:** 10, spread across both kits.
+- **Owner-accepted** (the owner, 2026-11-16, by pop-up: "Yes, accept"): the baseline under 14 is accepted for this release; the next build is held to the baseline it measures.
+
+control: 0
+gate: b14-1.40.0 median 13 baseline 13 brief v2 keys v12 owner-accepted
+
+## Recall v12 - 1.40.0 final wording against the 1.39.0 baseline (2026-11-16)
+
+Candidate: the branch at db6485d, after the owner's carry sentence was restored to the reviews rule (a sweep fix had cut it) and the new words were trimmed to fit the cap; five runs (the median of three sat on the bar). Baseline and control: the same 1.39.0 and no-kit runs as the entry above. Opus 5.5 at medium, CLI 2.1.318, brief v2, keys v12. One fresh blind scorer over all nine runs (reports/evals/blind-1.40.0-r5).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 0, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 0, 0, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 14, 13, 14, 14 | 13, 13, 14 | 0 |
+
+- **Scored: median 14 of 14, baseline 13, control 0.** The bar of 13 holds.
+- **Question 4 missed once in five candidate runs** (only main named of the four push limits); the push lines are not touched by this change.
+- **Borderline calls:** 13, spread across both kits.
+- **Owner-accepted:** the same three baseline runs the owner accepted above (2026-11-16, by pop-up: "Yes, accept"), so the baseline under 14 stays accepted for this release.
+
+control: 0
+gate: b14-1.40.0 median 14 baseline 13 brief v2 keys v12 owner-accepted

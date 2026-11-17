@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.40.0 - 2026-11-16
+
+A fix now needs a test that fails first when it is high, critical, security or an owner rule, and otherwise only when a real input shows the problem; CI states each fix test's verdict, runs the security tests once, and reads plans and rules as graphs.
+
+### Added
+- The build record keeps one row per sweep fix (severity, commit and its test), refuses a high, critical, security or owner-rule row with no test, and writes the PR's fix-test line from the rows.
+- The test check states, for each test the fix rows name, whether it fails first on the code before the change, and names a fix whose test does not.
+- Every test names what it guards in one why line (guards a rule, guards the owner's decision, or catches a named failure); the test check names a new test without one, and a kit test holds every test to it.
+- `node .claude/plan-graph.mjs <plan>` names every pair of batch-plan units that may run at once and touch the same file, an order naming no unit, and an order cycle.
+- `scripts/rule-map.mjs` lists, for each rule, the guards, scripts, tests and workflows whose code names it, and the rules only prose holds; CI fails a stale map.
+- `test-run.mjs --changed --pick` prints the tests a change reaches without running them, and a unit brief takes its covering tests from it.
+
+### Changed
+- A high, critical, security or owner-rule fix ships with a test that fails before it; a low or medium one gets a test only when a real input shows the problem, and its ledger row says `no test: no real input`.
+- The kit's CI runs the test check strict: a finding fails the job, and a test its time budget left unmeasured is named only.
+- A PR's changed run adds the security tests itself, so each runs once, and runs the whole suite when the change reaches over half of it.
+
+### Fixed
+- The test check reads tests made in a loop, and counts a new test in a file the old code cannot load as failing first; a changed file that cannot load is still named.
+- The test sort reads the tags above a loop for each test the loop makes, so the 69 merge-gate refusal tests sort as guards, not as repeats.
+- A mutation run gives its tests a throwaway home folder, so a flipped line can no longer rewrite the owner's install record.
+
 ## 1.39.0 - 2026-11-16
 
 A watcher tells the owner when a pull request turns ready, each plan now says whether it would approve itself and the loop keeps score from the owner's own answers, and one check says whether the next thread may open.

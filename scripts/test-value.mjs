@@ -34,12 +34,19 @@ function bodies(root, file) {
 	});
 	// A test's tags are the comment lines right above it; the comment above the next test is that test's.
 	const comment = (l) => /^\s*\/\//.test(l);
-	starts.forEach(([i, name], k) => {
+	// A test inside a top-level loop takes the comment lines above its loop (the build 14 audit).
+	const heads = starts.map(([i]) => {
 		let head = i;
 		while (head > 0 && comment(lines[head - 1])) head--;
-		let end = k + 1 < starts.length ? starts[k + 1][0] : lines.length;
-		while (end - 1 > i && comment(lines[end - 1])) end--;
-		out.set(name, lines.slice(head, end).join('\n'));
+		if (head > 0 && /^(for\s*\(|\[.*\]\.forEach\(|Object\.(entries|keys|values)\(.*\)\.forEach\()/.test(lines[head - 1])) {
+			head--;
+			while (head > 0 && comment(lines[head - 1])) head--;
+		}
+		return head;
+	});
+	starts.forEach(([i, name], k) => {
+		const end = k + 1 < starts.length ? Math.max(heads[k + 1], i + 1) : lines.length;
+		out.set(name, lines.slice(heads[k], end).join('\n'));
 	});
 	return out;
 }
@@ -74,7 +81,10 @@ export function sortTests(root, map, flips) {
 		const file = key.slice(0, at);
 		const name = key.slice(at + 2);
 		if (!cache.has(file)) cache.set(file, bodies(root, file));
-		const body = cache.get(file).get(name) || '';
+		const own = cache.get(file);
+		// A loop's test is named at run time: match the written name, each ${...} read as any text (the build 14 audit:
+		// 69 merge-gate refusals made in loops never got the guards tag above their loop).
+		const body = own.get(name) ?? [...own].find(([n]) => n.includes('${') && new RegExp(`^${n.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`).test(name))?.[1] ?? '';
 		const pins = [...body.matchAll(/pin: ([1-4])/g)].map((m) => Number(m[1]));
 		const why = (/\/\/ why: (.*)/.exec(body) || [])[1] || '';
 		// Size by what the test needs (rule:test-lanes): another process or a git repo is medium; the slow-lane folder

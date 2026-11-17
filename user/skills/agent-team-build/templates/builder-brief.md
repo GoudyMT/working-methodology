@@ -35,7 +35,8 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 
 ## Commands (exact)
 
-- Unit tests: <...>
+- Unit tests: <the covering tests, by lookup where the runner has a coverage map (the kit's: `node scripts/test-run.mjs
+  --changed --pick` prints them, `--changed` runs them); else the touched files' tests and their callers'; CI runs the rest>
 - Type-check: <...>
 - Lint: <...>
 - Commit format: <format and one example>

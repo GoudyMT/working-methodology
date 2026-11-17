@@ -96,17 +96,15 @@ jobs:
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
         run: node scripts/test-run.mjs --shards 4
 
+      # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
+      # It joins the changed run (--always), so a security test the change reaches runs once (K105); over half the suite
+      # reached, the runner runs every test.
       - name: The tests the change reaches
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
-        run: node scripts/test-run.mjs --changed --shards 4
+        run: node scripts/test-run.mjs --changed --shards 4 --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
 
-      # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
-      - name: The security set
-        if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
-        run: node scripts/test-run.mjs --shards 4 tests/guards-hold.test.mjs tests/guards-outside.test.mjs tests/owner-proof.test.mjs tests/task-gate.test.mjs tests/guard-dispatch.test.mjs tests/guard-prompts.test.mjs
-
-  # T15 Part A: each test the PR adds or changes, held to the bar for a new test. It reports to the run's summary and
-  # is not required until the owner locks it.
+  # T15 Part A: each test the PR adds or changes, held to the bar for a new test. Strict since K24 (the owner,
+  # 2026-11-17): a finding fails the job; a test the time budget left unmeasured is named only.
   test-check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -136,13 +134,16 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
-      - name: Test check (report)
+      - name: Test check
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SLICE: ${{ matrix.slice }}
+        # K105: a PR that moves VERSION carries its build record; each test its fix ledger names gets a verdict here.
         run: |
-          node scripts/test-check.mjs "$BASE_SHA" --slice "$SLICE/4" --budget 720 | tee -a "$GITHUB_STEP_SUMMARY"
+          record=()
+          if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
+          node scripts/test-check.mjs "$BASE_SHA" --strict --slice "$SLICE/4" --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.
@@ -332,6 +333,10 @@ jobs:
       - name: Project map
         run: node project/.claude/project-map.mjs check
 
+      # T8: which rule each guard, script, test and workflow names; the rules diet reads it, so a stale map fails here.
+      - name: Rule map is fresh
+        run: node scripts/rule-map.mjs check
+
       # No symlink or junction in the repo points outside it. The scan only reports, so the count decides here.
       - name: Link scan
         shell: bash
@@ -353,8 +358,11 @@ jobs:
         shell: bash
         env:
           PR_BASE: origin/${{ github.base_ref }}
+        # K105 (the build 14 sweep): a change install reads moves VERSION, so its fix ledger is read; the base's own rule
+        # says which changes those are (K9).
         run: |
-          if git diff --quiet "$PR_BASE" HEAD -- VERSION; then echo "VERSION unchanged: no build record owed"; else node scripts/build-record.mjs check; fi
+          git show "$PR_BASE:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || printf '%s\n' 'process.stdout.write("install=true\n")' > "$RUNNER_TEMP/pr-scope.mjs"
+          if git diff --quiet "$PR_BASE" HEAD -- VERSION; then node "$RUNNER_TEMP/pr-scope.mjs" --install "$PR_BASE" | grep -qx 'install=false' || { echo "This PR changes what install reads: move VERSION and add its build record"; exit 1; }; echo "VERSION unchanged: no build record owed"; else node scripts/build-record.mjs check; fi
 
       # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
       # a replaced download fails here before it runs.

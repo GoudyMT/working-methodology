@@ -228,6 +228,65 @@ test('a changed run picks only the tests that reach the changed lines or files, 
 	assert.deepEqual(changed(() => {}), [], 'nothing changed, nothing runs');
 });
 
+// K105 (PR 49): CI ran the security files again after the changed run had run the ones it reached, and a change
+// reaching 556 of 921 tests took longer than the whole suite. --always adds files to the selection, so each test runs
+// once; a selection over half the suite runs it all; --pick names the selection and runs nothing (T8, test pick).
+// why: guards rule:test-and-review-cadence
+test('a changed run adds the always files once, runs everything above half, and --pick only names the tests', () => {
+	const { repo, log, test: file } = fixtureRepo();
+	const sec = path.join(repo, 'tests', 'sec.test.mjs');
+	fs.writeFileSync(sec, [`import { test } from ${HARNESS};`, "import fs from 'node:fs';", `test('sec', () => { fs.appendFileSync(${JSON.stringify(log)}, 'sec\\n'); });`, ''].join('\n'));
+	sh(repo, 'add', '.'); sh(repo, 'commit', '-qm', 'sec');
+	assert.equal(run(repo, ['--map', file, sec]).status, 0);
+	const sub = (rel, from, to) => { const p = path.join(repo, rel); fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace(from, to)); };
+	fs.rmSync(log, { force: true });
+	sub('src/a.mjs', 'return 2;', 'return 1 + 1;');
+	let r = run(repo, ['--changed', '--always', sec, file, sec]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.deepEqual(ran(log), ['g', 'sec'], 'the always file ran twice, or not at all');
+	fs.rmSync(log, { force: true });
+	r = run(repo, ['--changed', '--pick', file, sec]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /^tests\/x\.test\.mjs::g$/m);
+	assert.ok(!fs.existsSync(log), '--pick ran a test');
+	// 4 of 6 tests reached: over half, so every test runs, and the run says why.
+	sub('src/b.cjs', "'b'", "'bb'");
+	sub('notes.md', '# Notes', '# Notes, changed');
+	r = run(repo, ['--changed', file, sec]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /4 of 6 tests.*over half.*running every test/);
+	assert.equal(ran(log).length, 6);
+});
+
+// The build 14 sweep: a file git shows as binary, a path with a space, a test named at run time and a test written
+// `test (` each kept a reached test from running. Each now runs it, or runs its whole file.
+// why: guards rule:test-and-review-cadence
+test('a changed run still picks the tests a binary diff, a spaced path or an odd test start reaches', () => {
+	const { repo, log, test: file } = fixtureRepo();
+	const p = (rel) => path.join(repo, rel);
+	fs.writeFileSync(p('a b.md'), 'spaced\n');
+	fs.appendFileSync(file, [
+		"test('reads spaced', () => { mark('reads spaced'); fs.readFileSync('a b.md', 'utf8'); });",
+		"test('first ' + 'second', () => { mark('built'); });",
+		"test ('spaced start', () => { mark('spaced start'); });", ''].join('\n'));
+	sh(repo, 'add', '.'); sh(repo, 'commit', '-qm', 'more');
+	assert.equal(run(repo, ['--map', file]).status, 0);
+	const pick = (edit) => {
+		sh(repo, 'checkout', '-q', '--', '.');
+		edit();
+		const r = run(repo, ['--changed', '--pick', file]);
+		assert.equal(r.status, 0, r.stdout + r.stderr);
+		return r.stdout;
+	};
+	const sub = (rel, from, to) => fs.writeFileSync(p(rel), fs.readFileSync(p(rel), 'utf8').replace(from, to));
+	// A local attributes file (left untracked by checkout) makes git show src/a.mjs as binary, with no line numbers.
+	assert.match(pick(() => { fs.writeFileSync(p('src/.gitattributes'), '*.mjs -diff\n'); sub('src/a.mjs', 'return 2;', 'return 5;'); }), /tests\/x\.test\.mjs::(g|\*)$/m);
+	fs.rmSync(p('src/.gitattributes'));
+	assert.match(pick(() => sub('a b.md', 'spaced', 'changed')), /tests\/x\.test\.mjs::(reads spaced|\*)$/m);
+	assert.match(pick(() => sub('tests/x.test.mjs', "mark('built');", "mark('built'); void 0;")), /^tests\/x\.test\.mjs::\*$/m);
+	assert.match(pick(() => sub('tests/x.test.mjs', "mark('spaced start');", "mark('spaced start'); void 0;")), /tests\/x\.test\.mjs::(spaced start|\*)$/m);
+});
+
 // why: guards rule:test-and-review-cadence
 // 1.35.0: a PR that changed test files ran only those tests, so the pin check, which reads every test file as data,
 // was skipped, and main went red on the merge.

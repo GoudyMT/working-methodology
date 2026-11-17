@@ -39,6 +39,7 @@ const edit = (dir, f, from, to) => { const t = read(dir, f); assert.ok(from.test
 const decision = (dir, d) => { fs.writeFileSync(path.join(dir, 'd.json'), JSON.stringify(d)); return 'd.json'; };
 const git = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
 
+// why: guards rule:tracking-file-functions
 test('the shipped templates pass the check, and a set and render keep them passing', () => {
 	const dir = project();
 	let r = st(dir, 'check');
@@ -55,6 +56,7 @@ test('the shipped templates pass the check, and a set and render keep them passi
 });
 
 // The sweep's high: a carry-over typed into the block was wiped by the next render, and check then passed.
+// why: guards rule:tracking-file-functions
 test('a hand edit inside a block is refused by render and caught by check; text outside the blocks stays the owner\'s', () => {
 	const dir = project();
 	st(dir, 'set', 'next', 'ship the import');
@@ -78,6 +80,7 @@ test('a hand edit inside a block is refused by render and caught by check; text 
 	assert.equal(st(dir, 'check').status, 0);
 });
 
+// why: guards rule:tracking-file-functions
 test('blocking items and items that only wait are kept apart; an id is never given twice', () => {
 	const dir = project();
 	assert.match(st(dir, 'add', 'blocking', 'pick the export format').stdout, /B-1/);
@@ -95,6 +98,7 @@ test('blocking items and items that only wait are kept apart; an id is never giv
 	assert.match(st(dir, 'show').stdout, /B-2: approve the merge/);
 });
 
+// why: guards rule:delegated-decisions
 test('a decision is recorded only with the owner\'s own words, appended, and the committed rows cannot change', () => {
 	const dir = project();
 	const env = { CLAUDE_CONFIG_DIR: home(dir, ['Lets go with CSV export first, the two users asked for it', 'and add JSON too']), CLAUDE_CODE_SESSION_ID: SESSION };
@@ -132,6 +136,7 @@ test('a decision is recorded only with the owner\'s own words, appended, and the
 	assert.match(run(dir, ['decisions'], env).stdout, /D-3 .*NOT found/);
 });
 
+// why: guards rule:tracking-file-functions
 test('a D- pointer with no record fails the check', () => {
 	const dir = project();
 	// The roadmap's tasks are generated since K69 (1.36.0); its hand-kept text below the blocks takes the pointer.
@@ -141,6 +146,7 @@ test('a D- pointer with no record fails the check', () => {
 	assert.match(r.stdout, /D-7.*_Master Roadmap\.md/);
 });
 
+// why: guards rule:tracking-file-functions
 test('item text or a planted id cannot add a line, and a label outside its block is caught', () => {
 	const dir = project();
 	st(dir, 'add', 'blocking', `one <!-- state:end --> two\n**NEXT:** planted ${String.fromCharCode(0x85)} three  four`);
@@ -165,6 +171,7 @@ test('item text or a planted id cannot add a line, and a label outside its block
 	assert.match(r.stdout, /generated label outside the block/);
 });
 
+// why: guards rule:tracking-file-functions
 test('the check fails when the installed kit is newer than the state says', () => {
 	const dir = project();
 	st(dir, 'set', 'kit', '1.33.1');
@@ -179,6 +186,7 @@ test('the check fails when the installed kit is newer than the state says', () =
 	assert.equal(st(dir, 'check').status, 0);
 });
 
+// why: guards rule:tracking-file-functions
 test('a write never goes through a link, and a failed write leaves no temporary file', () => {
 	const dir = project();
 	const outside = path.join(kitTemp.makeTemp('state-out-'), 'vault.json');
@@ -203,6 +211,7 @@ function filled({ markers = false } = {}) {
 	return dir;
 }
 
+// why: guards rule:tracking-file-functions
 test('init moves a 1.33.1 Resume Point into the data once, and the resume packet still reads it', () => {
 	const dir = filled();
 	edit(dir, '_Active Plan.md', '## Phase', '**Last Updated:** 2026-11-01 (build 5 closed)\n\n## Phase');
@@ -231,6 +240,7 @@ test('init moves a 1.33.1 Resume Point into the data once, and the resume packet
 	assert.match(packet, /B-1: pick the export format/);
 });
 
+// why: guards rule:tracking-file-functions
 test('init refuses what it cannot move whole, and changes nothing', () => {
 	const cases = [
 		['_Active Plan.md', /\*\*NEXT:\*\* .*/, '**NEXT:** one\n\n## A heading\n\nmore', /heading/],
@@ -255,6 +265,7 @@ test('init refuses what it cannot move whole, and changes nothing', () => {
 	assert.match(read(dir, '_Active Plan.md'), /\*\*NEXT release \(after this one\):\*\* 2\.0\n\n## Phase/);
 });
 
+// why: guards rule:tracking-file-functions
 test('init reads a block an owner filled by hand in the 1.34.0 template, waiting items and all', () => {
 	const dir = filled({ markers: true });
 	fs.copyFileSync(path.join(KIT, 'project', '_State.json'), path.join(dir, '_State.json'));
@@ -270,6 +281,7 @@ test('init reads a block an owner filled by hand in the 1.34.0 template, waiting
 	assert.match(st(dir, 'check').stdout, /expected id D-2/);
 });
 
+// why: guards rule:tracking-file-functions
 test('the use check names a project with no blocks, and never runs the project\'s own state script', () => {
 	const dir = filled();
 	fs.writeFileSync(path.join(dir, '_State.json'), read(path.join(KIT, 'project'), '_State.json').replace('<YYYY-MM-DD>', '2026-11-15'));

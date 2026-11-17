@@ -3,6 +3,9 @@
 //   node scripts/test-run.mjs [files...]            every test, in shards (no files: every tests/*.test.mjs)
 //   node scripts/test-run.mjs --changed [files...]  only the tests that reach what changed since the map's commit
 //   node scripts/test-run.mjs --map [files...]      every test, recording the coverage map (needs a clean tree)
+//   --always <file>    with --changed: this file's tests run whatever the change reaches (CI's security set), once
+//   --pick             with --changed: print the tests it would run, one per line, and run none (a builder's pick)
+//                      Over half the suite reached, --changed runs every test and says so.
 //   --shards <n>                                     processes to split the tests over (default: CPUs, at most 8)
 //   --slice <i>/<n>                                  run only slice i (from 0) of n: CI splits the suite over n jobs,
 //                                                    each running its own shards; files outside the harness run in slice 0.
@@ -36,9 +39,11 @@ const real = (p) => {
 const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
 
 function parseArgs(args) {
-	const o = { shards: Math.min(8, os.availableParallelism()), map: false, changed: false, files: [], slice: null };
+	const o = { shards: Math.min(8, os.availableParallelism()), map: false, changed: false, files: [], slice: null, always: [], pick: false };
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === '--shards') { o.shards = Math.max(1, Number(args[++i]) || 1); o.shardsGiven = true; }
+		else if (args[i] === '--always') o.always.push(path.resolve(args[++i] || ''));
+		else if (args[i] === '--pick') o.pick = true;
 		else if (args[i] === '--slice') {
 			const m = /^(\d+)\/(\d+)$/.exec(args[++i] || '');
 			// A slice out of range would run nothing and pass, so a bad one stops the run.
@@ -100,8 +105,10 @@ function buildMap(mapDir, root, sha) {
 function testRanges(text) {
 	const starts = [];
 	text.split('\n').forEach((l, i) => {
-		const m = /^\s*test\(\s*(['"`])((?:\\.|(?!\1).)*)\1/.exec(l);
-		if (/^\s*test\(/.test(l)) starts.push({ line: i + 1, name: m && !(m[1] === '`' && m[2].includes('${')) ? m[2].replace(/\\(.)/g, '$1') : null });
+		// A name counts only as one whole literal before the next argument; `'a' + 'b'` or `test (` read as unknown, so the
+		// whole file runs (the build 14 sweep: both kept an edited test from running).
+		const m = /^\s*test\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1\s*[,)]/.exec(l);
+		if (/^\s*test\s*\(/.test(l)) starts.push({ line: i + 1, name: m && !(m[1] === '`' && m[2].includes('${')) ? m[2].replace(/\\(.)/g, '$1') : null });
 	});
 	return starts.map((s, i) => ({ ...s, end: i + 1 < starts.length ? starts[i + 1].line - 1 : Infinity }));
 }
@@ -111,9 +118,13 @@ function changes(root, sha) {
 	const out = {};
 	const at = (f) => (out[f] ||= { old: new Set(), now: new Set(), whole: false });
 	let file = null;
-	for (const l of git(root, 'diff', '-U0', '--no-color', '--no-renames', sha, '--').stdout.split('\n')) {
-		if (l.startsWith('--- ')) file = l === '--- /dev/null' ? null : l.slice(6);
-		else if (l.startsWith('+++ ')) { if (l !== '+++ /dev/null') file = l.slice(6); at(file); }
+	// Text diffs whatever an attributes file says, and paths unquoted; git ends a path holding a space with a tab. Any
+	// changed file the hunks did not place (binary, or a name git still quotes) runs every test that reaches it (the
+	// build 14 sweep).
+	const diff = git(root, '-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-renames', '--text', '--no-ext-diff', '--no-textconv', sha, '--').stdout;
+	for (const l of diff.split('\n')) {
+		if (l.startsWith('--- ')) file = l === '--- /dev/null' ? null : l.slice(6).replace(/\t$/, '');
+		else if (l.startsWith('+++ ')) { if (l !== '+++ /dev/null') file = l.slice(6).replace(/\t$/, ''); at(file); }
 		else if (l.startsWith('@@') && file) {
 			const [, a, b = '1', c, d = '1'] = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(l);
 			const span = (start, n, set) => {
@@ -124,6 +135,7 @@ function changes(root, sha) {
 		}
 	}
 	for (const f of git(root, 'ls-files', '--others', '--exclude-standard').stdout.split('\n').filter(Boolean)) at(f).whole = true;
+	for (const f of git(root, 'diff', '-z', '--name-only', '--no-renames', sha, '--').stdout.split('\0').filter(Boolean)) if (!out[f] || (!out[f].old.size && !out[f].now.size)) at(f).whole = true;
 	return out;
 }
 
@@ -262,6 +274,21 @@ export async function main(argv) {
 		let shards = o.shards;
 		if (o.changed) {
 			const pick = select(root, harnessed);
+			if (!pick.why) {
+				// --always: files that run whatever the change reaches (CI's security set), added here so each test runs once.
+				for (const f of o.always) pick.only.push(`${posix(path.relative(root, real(f)))}::*`);
+				pick.only = [...new Set(pick.only)].sort();
+				// Over half the suite, the selection costs more than it saves (PR 49: 556 of 921 took 235 s, the whole 209 s).
+				const all = harnessed.map((f) => posix(path.relative(root, real(f))));
+				const keys = new Set(Object.keys(JSON.parse(fs.readFileSync(path.join(root, MAP_FILE), 'utf8')).tests).filter((k) => all.includes(k.slice(0, k.indexOf('::')))));
+				for (const k of pick.only) if (!k.endsWith('::*')) keys.add(k);
+				const n = [...keys].filter((k) => pick.only.includes(k) || pick.only.includes(`${k.slice(0, k.indexOf('::'))}::*`)).length;
+				if (n * 2 > keys.size && !o.pick) pick.why = `${n} of ${keys.size} tests reach what changed, over half`;
+			}
+			if (o.pick) {
+				process.stdout.write(pick.why ? `test-run: ${pick.why}; every test\n` : `${pick.only.join('\n')}\n`);
+				return 0;
+			}
 			if (pick.why) process.stdout.write(`test-run: ${pick.why}; running every test.\n`);
 			else {
 				shardFiles = harnessed.filter((f) => pick.only.some((k) => k.startsWith(posix(path.relative(root, real(f))) + '::')));

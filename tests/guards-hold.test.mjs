@@ -400,6 +400,7 @@ test('the bounds file takes the owner\'s yes for the exact edit, and no shell wr
 	assert.equal(bash('cat .claude/bounds.json'), 'allow', 'a read');
 });
 
+// why: guards rule:outward-acts
 test('the settings take the owner\'s yes for the exact edit; the guards and hooks never do', () => {
 	const settings = path.join(proj, '.claude', 'settings.json');
 	popUp({ act: `Edit ${settings}: "deny": [] => "deny": ["Bash(x)"]` });

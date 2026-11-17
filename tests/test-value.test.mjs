@@ -57,3 +57,26 @@ test('the test sort refuses the flips of a scoped measure', async () => {
 	assert.equal(main([path.join(dir, 'map.json'), path.join(dir, 'whole.json')]), 0);
 	assert.equal(main([path.join(dir, 'map.json'), path.join(dir, 'whole.json'), path.join(dir, 'scoped.json')]), 2);
 });
+
+// why: catches a false cut list (the build 14 audit): 69 merge-gate refusals made in a loop sorted as repeats, because
+// the sort looked each test up by its run-time name and never read the guards tag above its loop.
+test('a test made in a loop takes the tags above its loop', () => {
+	const root = kitTemp.makeTemp('value-');
+	fs.mkdirSync(path.join(root, 'tests'));
+	fs.writeFileSync(path.join(root, 'tests', 'a.test.mjs'), [
+		"test('plain', () => {});",
+		'// why: guards rule:standing-grants',
+		"for (const n of ['x', 'y']) {",
+		'\ttest(`gate: ${n} is refused`, () => {});',
+		'}',
+		'',
+	].join('\n'));
+	const k = (n) => `tests/a.test.mjs::${n}`;
+	const map = { tests: Object.fromEntries(['plain', 'gate: x is refused', 'gate: y is refused'].map((n) => [k(n), { lines: {}, reads: [] }])) };
+	const flips = [{ file: 's.cjs', line: 1, tests: Object.keys(map.tests), caughtBy: Object.keys(map.tests) }];
+	const { rows } = sortTests(root, map, flips);
+	const group = (key) => rows.find((r) => r.key === key).group;
+	assert.equal(group(k('gate: x is refused')), 'guards');
+	assert.equal(group(k('gate: y is refused')), 'guards');
+	assert.equal(group(k('plain')), 'repeat');
+});
