@@ -21,3 +21,14 @@ The methodology kit is the baseline every project starts from. These rules keep 
 13. **A missing kit is a full stop** (the owner, 2026-10-31). `kit.mjs install user` wires a gate (`kit-gate.cjs`) into the Claude config folder's `settings.json`: in a folder with no kit install record, every prompt is refused with the fix, except a prompt that installs it; a folder may opt out with `.kit/no-kit`. A project's own hook refuses every prompt when the active config folder (`CLAUDE_CONFIG_DIR`, else `~/.claude`) has no kit. A config folder with no kit at all runs no gate, so each new one gets `install user` first. Why: the kit flow is how all work here is done; a session that runs without it believes it is covered. *Check: tests run both gates.*
 14. **Context budget.** Two costs are weighed for every addition: *context load* (text in every session - the core, memory index, global CLAUDE.md, skill and plugin listings) and *cognitive load* (what the owner must remember). Every always-loaded line earns its place or moves to an on-demand module, a script or a pointer; a pointer names its trigger first ("before a PR: rule:pr-body"); each plan step ends on a done-condition that can be checked; one term per idea, listed once in the project glossary when a project keeps one. `kit.mjs measure --real` counts what actually loads, and `/methodology-kit status` shows it against its cap. Why: a kit that only grows costs every session more and is followed less. *Check: tests run measure --real.*
 15. **Team decisions go out as a questionnaire.** When a decision needs people beyond the owner, it goes as `.claude/kit/team-questions.md`: most important question first, each answerable in a word with one short line per option and a recommendation, the deadline and who decides on a tie. Why: async teams answer a short ranked list; they skip a long thread.
+
+## Context Engineering Discipline {#context-engineering}
+
+| Failure mode | Mitigation |
+|---|---|
+| **Poisoning** - an error enters context and is reused | hygiene rituals; direct-read verification of agent claims |
+| **Distraction** - context so long it dominates | size caps; earn-their-words edits; just-in-time loading |
+| **Confusion** - superfluous context lowers quality | depth in source files; tracking files SHORT + LINK |
+| **Clash** - new information conflicts with old | Re-Plan on Failure; ADR supersession (link both ways, never delete) |
+
+**Tool loadout:** past ~20 active tools / skills / servers, curate per task; load deferred tools only when about to use them; child agents get only their narrow toolset. Why: everything unneeded dilutes what matters.

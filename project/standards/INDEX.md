@@ -26,14 +26,11 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | session-workflow | Session Workflow | `AGENTS.md` | session, start, end, workflow |
 | recovery-protocol | Recovery Protocol | `AGENTS.md` | lost context, new chat, recover |
 | what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
-| context-engineering | Context Engineering Discipline | `AGENTS.md` | context window, tokens, load, size |
-| anti-hallucination | Anti-Hallucination Discipline (Standing) | `AGENTS.md` | guess, verify, invented, made up, re-read claims |
 | correction-loop | Correction & Learning Loop | `AGENTS.md` | corrections, feedback, mistakes, learn |
 | autonomous-fixes | Autonomous Fixes | `AGENTS.md` | fix without asking, small fixes |
 | direction-changes | Justify Every Direction Change | `AGENTS.md` | pivot, change direction, justify |
 | re-plan-on-failure | Re-Plan on Failure | `AGENTS.md` | plan failed, replan |
 | simplicity-lens | Simplicity Lens | `AGENTS.md` | simple, simpler, over-engineering |
-| dual-horizon | Dual-Horizon Recommendations | `AGENTS.md` | short term, long term, rework cost |
 | success-charter | Success Charter (Define Success Before Building) | `AGENTS.md` | success criteria, define done, measurable |
 | visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
 | craft-floor | Craft Floor | `.claude/rules/design-and-ux.md` | states, empty state, heuristics, design review score, dashboard, board, anti-patterns, slop |
@@ -47,6 +44,8 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | blocked-prompts | Blocked on a Prompt or a Permission | `standards/evidence-and-failures.md` | permission prompt, permission block, waiting on a prompt, owner command, hung |
 | cost-first | Cost Before a Heavy Run | `standards/evidence-and-failures.md` | cost, money, CI minutes, quota, paid run, budget, heavy run, API spend |
 | fact-check | Fact-Check Before Handing Over | `standards/evidence-and-failures.md` | fact check, verify a document, claims, report, explainer, diagram accuracy |
+| anti-hallucination | Anti-Hallucination Discipline (Standing) | `standards/evidence-and-failures.md` | guess, verify, invented, made up, re-read claims |
+| dual-horizon | Dual-Horizon Recommendations | `standards/evidence-and-failures.md` | short term, long term, rework cost |
 | pre-commit | Pre-Commit Discipline | `.claude/rules/git-and-release.md` | before commit, commit checks, staged |
 | commit-message-format | Commit Message Format | `.claude/rules/git-and-release.md` | commit message, subject line, type |
 | branching | Branching | `.claude/rules/git-and-release.md` | branch name, naming, git branch |
@@ -57,6 +56,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | first-push-gate | First Push Gate | `.claude/rules/git-and-release.md` | first push, new remote, initial push, tracked files check, history |
 | standing-grants | Standing Grants | `.claude/rules/git-and-release.md` | grant, autonomy, autopilot, kill switch, act without asking, automatic release |
 | kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` | kit, methodology, change a rule, briefs, one home, improvement report, process gap, kit gap, missing kit, kit gate |
+| context-engineering | Context Engineering Discipline | `standards/kit-standards.md` | context window, tokens, load, size |
 | loop-workflow-mode | Loop Workflow Mode (Keyword-Gated TDD Loop) | `standards/loop-mode.md` | loop, autonomous, keyword |
 | graduated-loop-lessons | Graduated loop lessons | `standards/loop-mode.md` | lessons, learned, regression |
 | loop-driver | The Loop Driver | `standards/loop-mode.md` | loop, bounds, stop, counter, triage |

@@ -31,7 +31,9 @@ const nonAscii = [...body].filter((c) => c.charCodeAt(0) > 0x7e || (c.charCodeAt
 row('0 non-ASCII characters', nonAscii.length === 0, `found ${nonAscii.length}`);
 
 const banned = [/\bAI\b/, /\bagents?\b/i, /\bsubagents?\b/i, /\bclaude\b/i, /\banthropic\b/i, /\bswarm\b/i, /\bopus\b/i, /\bsonnet\b/i, /\bbuilders?\b/i, /\bcheckers?\b/i];
-const bannedHits = banned.flatMap((re) => lines.flatMap((l, i) => (re.test(l) ? [`${re} @${i + 1}`] : [])));
+// K115 (1.42.0): a code span quoting a path or a command is code; a span of one bare word is still that word.
+const prose = (l) => l.replace(/`[^`]*`/g, (s) => (/[/. -]/.test(s.slice(1, -1)) ? '``' : s));
+const bannedHits = banned.flatMap((re) => lines.flatMap((l, i) => (re.test(prose(l)) ? [`${re} @${i + 1}`] : [])));
 row('no mechanism or AI words', bannedHits.length === 0, bannedHits.join(', ') || 'none');
 
 const vault = /docs\/sweeps|docs\/superpowers|docs\/decisions|_Master|_Working|_Active|_Session|_Loop|\.claude\//;

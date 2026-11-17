@@ -154,3 +154,33 @@ test('the guards part reports whether the newest pop-up answer carries the field
 	assert.equal(used.ok, false);
 	assert.match(used.detail, /permissionDecision/);
 });
+
+// T9 (1.42.0, D-2): AGENTS.md is measured as the project has it, filled in and as written on disk, never the kit's
+// template: the template stayed under its cap while a filled copy on the owner's PC was over it (28,354 B).
+// K111 (1.42.0): sessions ran past 400K tokens; the installed project settings compact at 400K, and the use check names
+// any window in force over that, or under the 100K Claude Code ignores.
+// why: guards rule:kit-standards
+test('the use check fails a filled AGENTS.md over the cap and a compact window outside 100K to 400K', () => {
+	const ok = project();
+	assert.deepEqual(check(ok).out.failing, []);
+	assert.equal(part(check(ok).out, 'start-load').wired.ok, true);
+	assert.equal(part(check(ok).out, 'compact-window').wired.ok, true);
+	const big = project();
+	fs.appendFileSync(path.join(big, 'AGENTS.md'), 'x'.repeat(26000));
+	const b = check(big);
+	assert.deepEqual(b.out.failing, ['start-load']);
+	assert.match(part(b.out, 'start-load').wired.detail, /over the 25,000 B cap/);
+	for (const [file, settings] of [['settings.json', { autoCompactWindow: 650000 }], ['settings.local.json', { modelSettings: { 'claude-opus-5-5': { autoCompactWindow: 900000 } } }], ['settings.json', { autoCompactWindow: 40000 }]]) {
+		const w = project();
+		const f = path.join(w, '.claude', file);
+		const s = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {};
+		fs.writeFileSync(f, JSON.stringify({ ...s, ...settings }));
+		assert.deepEqual(check(w).out.failing, ['compact-window'], `${file} ${JSON.stringify(settings)}`);
+	}
+	const none = project();
+	const f = path.join(none, '.claude', 'settings.json');
+	const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+	delete s.autoCompactWindow;
+	fs.writeFileSync(f, JSON.stringify(s));
+	assert.match(part(check(none).out, 'compact-window').wired.detail, /no autoCompactWindow/);
+});

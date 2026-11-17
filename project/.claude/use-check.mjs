@@ -33,6 +33,13 @@ const launcher = () => { try { return createRequire(import.meta.url)(path.join(H
 // Where install keeps this project's guard record and hook shims, named as the launcher names it.
 const guardDir = () => { const L = launcher(); return L ? path.join(HOME, 'kit-guard', L.recordName(dir)) : path.join(HOME, 'kit-guard', '-'); };
 
+// T9 (1.42.0, D-2): the cap on AGENTS.md, which every session loads at start, read as the project has it on disk.
+const AGENTS_CAP = 25000;
+// K111 (1.42.0): the compact window the kit sets, and Claude Code's floor (a value under it is ignored, not raised).
+const WINDOW_MAX = 400000;
+const WINDOW_MIN = 100000;
+const settingsOf = (name) => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.claude', name), 'utf8').replace(/^﻿/, '')); } catch { return null; } };
+
 // Each check returns [ok, detail]; ok null means the level does not apply here (said why, and never a fault).
 const PARTS = [
 	{
@@ -122,6 +129,37 @@ const PARTS = [
 			return [true, 'git does not track it'];
 		},
 		used: () => [null, 'nothing to trace'],
+	},
+	{
+		name: 'start-load',
+		what: 'AGENTS.md, which every session loads at start, under its cap as filled in here (T9)',
+		present: () => [has('AGENTS.md'), has('AGENTS.md') ? 'AGENTS.md' : 'missing AGENTS.md'],
+		wired: () => {
+			if (!has('AGENTS.md')) return [null, 'no AGENTS.md here'];
+			const bytes = fs.statSync(path.join(dir, 'AGENTS.md')).size;
+			const n = (x) => x.toLocaleString('en-US');
+			return bytes <= AGENTS_CAP ? [true, `${n(bytes)} B of ${n(AGENTS_CAP)}`] : [false, `AGENTS.md is ${n(bytes)} B, over the ${n(AGENTS_CAP)} B cap: move a section to a rule module, or cut prose a script enforces (rule:kit-standards)`];
+		},
+		used: () => [null, 'nothing to trace'],
+	},
+	{
+		name: 'compact-window',
+		what: 'a session compacts on its own at 400K tokens (K111)',
+		present: () => [null, 'a setting, not a file'],
+		// The project file beats the owner's own saved window (proven on 2.1.318), and the local file beats the project's;
+		// every window set in either, top-level or per model, must sit inside the range.
+		wired: () => {
+			const set = [];
+			for (const name of ['settings.json', 'settings.local.json']) {
+				const s = settingsOf(name);
+				if (s && s.autoCompactWindow !== undefined) set.push([`.claude/${name}`, s.autoCompactWindow]);
+				for (const [model, m] of Object.entries((s && s.modelSettings) || {})) if (m && m.autoCompactWindow !== undefined) set.push([`.claude/${name} (${model})`, m.autoCompactWindow]);
+			}
+			if (settingsOf('settings.json')?.autoCompactWindow === undefined) return [false, `.claude/settings.json sets no autoCompactWindow: run kit.mjs install project`];
+			const bad = set.filter(([, v]) => !Number.isInteger(v) || v > WINDOW_MAX || v < WINDOW_MIN);
+			return bad.length ? [false, `${bad.map(([f, v]) => `${f} sets ${v}`).join('; ')}: keep it from ${WINDOW_MIN} to ${WINDOW_MAX} (under ${WINDOW_MIN} is ignored)`] : [true, `compacts at ${set.map(([, v]) => v).join(', ')}`];
+		},
+		used: () => [null, 'a compact leaves the resume packet (the resume-packet part)'],
 	},
 	{
 		name: 'test-lanes',

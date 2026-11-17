@@ -673,6 +673,8 @@ test('the rules stay under their size caps and every start import resolves', () 
   }
   const agents = Buffer.byteLength(read(path.resolve('project/AGENTS.md')));
   if (agents > caps.agentsMd) over.push(`AGENTS.md: ${agents} > ${caps.agentsMd}`);
+  // T9 (1.42.0): a project's use check holds its filled copy to the same cap, so the two numbers are one.
+  assert.equal(Number(/const AGENTS_CAP = (\d+);/.exec(read(path.resolve('project/.claude/use-check.mjs')))?.[1]), caps.agentsMd);
   const start = measure({ projectDir: path.resolve('project') });
   if (start.total > caps.sessionStart) over.push(`session start: ${start.total} > ${caps.sessionStart}`);
   assert.deepEqual(over, []);

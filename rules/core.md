@@ -12,14 +12,11 @@ tags:
   edit-discipline: edit, write code, change files, approval before writing
   outward-acts: push, pull request, merge, release, tag, publish, remote
   session-workflow: session, start, end, workflow
-  context-engineering: context window, tokens, load, size
-  anti-hallucination: guess, verify, invented, made up, re-read claims
   correction-loop: corrections, feedback, mistakes, learn
   autonomous-fixes: fix without asking, small fixes
   direction-changes: pivot, change direction, justify
   re-plan-on-failure: plan failed, replan
   simplicity-lens: simple, simpler, over-engineering
-  dual-horizon: short term, long term, rework cost
   success-charter: success criteria, define done, measurable
   recovery-protocol: lost context, new chat, recover
   what-this-file-is-not: scope of standards
@@ -156,32 +153,6 @@ Lost context mid-session: the Start reads above, then the first OPEN issue; re-r
 
 Not the design spec (A22), the roadmap or the history: it is HOW we work; the modules hold the depth.
 
-## Context Engineering Discipline {#context-engineering}
-
-| Failure mode | Mitigation |
-|---|---|
-| **Poisoning** - an error enters context and is reused | hygiene rituals; direct-read verification of agent claims |
-| **Distraction** - context so long it dominates | size caps; earn-their-words edits; just-in-time loading |
-| **Confusion** - superfluous context lowers quality | depth in source files; tracking files SHORT + LINK |
-| **Clash** - new information conflicts with old | Re-Plan on Failure; ADR supersession (link both ways, never delete) |
-
-**Tool loadout:** past ~20 active tools / skills / servers, curate per task; load deferred tools only when about to use them; child agents get only their narrow toolset. Why: everything unneeded dilutes what matters.
-
-## Anti-Hallucination Discipline (Standing) {#anti-hallucination}
-
-- **Verify load-bearing facts before locking; label guess vs proven** (proven = a quoted source, a run, a checked config; forecasts labelled). Check cheap facts first; docs describing an intended end state are not the current state.
-- **Everything handed over is a claim** (rule:fact-check): run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told ("landed"); attach a library or uploaded file by the exact path its upload reported, never a guessed name.
-- **Compute or quote** every number or rule in a brief, decision or spec (run it, or cite file:line), else mark it UNVERIFIED; safety-critical constants (crisis numbers, official links) come from the official source.
-- **No rate or "more often" without the measurement.** One direction observed is not the rule - test the other before an outward change rests on it.
-- **Read the docblock, not just the body** - from its top; grep "Do NOT" / "measured" / "ruled out" before changing code; read a number's label before quoting it.
-- **Derived copies:** fix a value feeding several artifacts at the source and regenerate, or grep every twin before quoting scope.
-- **Adding a claim raises the bar:** quotation marks, "verified" or a badge assert things about the whole pipeline; test each on real data, prefer the weaker frame for machine-derived text, make the honesty property a test.
-- **Search tools honor ignore files:** a directory search's "no matches" means nothing; pass a glob or exact path.
-- **Use the owner as the highest-bandwidth tool** - ask for a value from their machine or a device test instead of looping on workarounds (two loops is the signal); a device test beats a docs reading; an untestable platform claim is vendor-sourced or marked NOT VERIFIED.
-- **Know the machine:** check the clock's timezone before dating anything; give commands in the owner's shell dialect. <!-- PROJECT ADAPTER A23 -->
-
-Why: an unverified fact handed on is inherited by every reader.
-
 ## Correction & Learning Loop {#correction-loop}
 
 On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in its rule module the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.
@@ -201,12 +172,6 @@ When work shows a locked decision is wrong: **STOP**; flag "this conflicts with 
 ## Simplicity Lens {#simplicity-lens}
 
 Before locking: *"Is there a simpler version with the same outcome?"* Complexity is earned; 3 lines beat 30; no over-engineering for under-1% edge cases or problems users won't meet - but never simplify away depth that creates real capability. Why: every piece of complexity is paid for in every later change.
-
-## Dual-Horizon Recommendations {#dual-horizon}
-
-Judge every recommendation on **current-version fit** (scope, locked architecture, Simplicity Lens) and **end-state fit** (the finished product per roadmap and spec): what it commits us to; which horizon it wins; the **rework cost** if they differ; **accepted debt** (documented, or a compounding trap); impact now and later. Agreed horizons -> one line. A pick a future version will FORCE to change is TEMPORARY; "durable" is defended by its mechanism.
-
-**Temporary-fix gate:** name the robust built-once option and quantify the delta (work now vs the later forced change + risk); temporary only when robustness is disproportionate AND the later change cheap, isolated and non-compounding - recorded as debt with its retirement trigger; otherwise robust. **Build seam-first:** inject the dependency a later mode will swap (local vs server), so the later arc is additive. Why: the cheap-now pick, taken by reflex, is paid repeatedly.
 
 ## Success Charter (Define Success Before Building) {#success-charter}
 
