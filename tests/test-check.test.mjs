@@ -121,6 +121,25 @@ test('the test check splits the changed tests into slices that cover each once',
 	assert.equal(one + two, files([base]), 'the slices do not add up to the whole');
 	assert.equal(spawnSync(process.execPath, [CHECK, base, '--slice', '2/2'], { cwd: dir, encoding: 'utf8' }).status, 2, 'a slice past the count');
 });
+// The flip run is the slow part of the check (PR 50: one slice 11 minutes, three slices 9 s each), and slicing it by
+// test put every file's flip run in whichever slice drew its tests. Each test file now measures in one slice only.
+// why: catches one CI slice doing every test file's flip run while the others idle (PR 50)
+test('the test check measures each test file\'s flips in one slice, and the slices cover every file', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD~1');
+	const a2 = (args) => {
+		const r = spawnSync(process.execPath, [CHECK, ...args], { cwd: dir, encoding: 'utf8' });
+		assert.equal(r.status, 0, r.stdout + r.stderr);
+		const m = r.stderr.match(/A2: \d+ untagged test\(s\) in ([^\n]*?) measured/);
+		return { files: m ? m[1].split(', ') : [], notes: r.stdout.split('\n').filter((l) => /^\s*A2 /.test(l)) };
+	};
+	const s0 = a2([base, '--slice', '0/2']);
+	const s1 = a2([base, '--slice', '1/2']);
+	assert.deepEqual(s0.files, ['tests/a.test.mjs']);
+	assert.deepEqual(s1.files, ['tests/b.test.mjs']);
+	assert.deepEqual([...s0.notes, ...s1.notes].sort(), a2([base]).notes.sort(), 'the slices name what the whole run names');
+});
+
 // why: guards rule:test-value. K12, the 1.27.0 sweep: the check took any "why: guards" text, so a tag naming a rule
 // that does not exist, or a made-up one, kept a test in the never-cut group unread.
 test('the test check takes a why tag only when it names a rule in the rule index or the owner', () => {
