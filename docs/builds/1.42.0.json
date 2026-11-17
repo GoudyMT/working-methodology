@@ -3,7 +3,7 @@
  "date": "2026-11-17",
  "level": "minor",
  "area": "Rules",
- "title": "feat: behaviour recall, a smaller start file and a visuals section",
+ "title": "feat: behaviour recall, a smaller start file and visuals",
  "headline": "The recall gate also grades what sessions do, the always-loaded rules file is 14% smaller under a lower cap, a PR or release whose measured cost moved shows it in a checked Visuals section, a branch gets one sweep, and the guards hold destructive local git while passing plain reads.",
  "alignment": "v1.42.0 is build 16 of the v2.0 plan: step T10's recall part and the rest of T9's byte diet, with the open guard and audit rows.",
  "items": [
