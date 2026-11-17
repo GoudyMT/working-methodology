@@ -245,13 +245,17 @@ function discardsWork(sub, own, ctx, state) {
 	const end = own.includes('--') ? own.indexOf('--') : own.length;
 	const opts = own.slice(0, end);
 	const has = (re) => opts.some((w) => re.test(w));
-	const flag = (letter, long) => has(new RegExp(`^(-[A-Za-z]*${letter}[A-Za-z]*|--${long})$`));
-	const isPath = (w) => (state.moved ? /[./\\]/.test(w) : fs.existsSync(ctx.api.resolve(ctx.cwd, w)));
-	if (sub === 'reset' && has(/^--hard$/)) return `${LOSES_WORK} git reset --hard`;
-	if (sub === 'checkout' && (end < own.length || flag('f', 'force') || opts.some((w) => w === '.' || (!w.startsWith('-') && isPath(w))))) return `${LOSES_WORK} git checkout over changes`;
-	if (sub === 'restore' && (!has(/^(--staged|-S)$/) || has(/^(--worktree|-W)$/) || has(/^-[A-Za-z]*W/))) return `${LOSES_WORK} git restore over changes`;
-	if (sub === 'switch' && (flag('f', 'force') || has(/^--discard-changes$/))) return `${LOSES_WORK} git switch over changes`;
-	if (sub === 'branch' && (has(/^-[A-Za-z]*D/) || (flag('d', 'delete') && flag('f', 'force')))) return `${LOSES_WORK} git branch -D`;
+	// git takes any unique start of a long option (--ha is --hard; the commit security review), so a start counts.
+	const long = (name) => opts.some((w) => /^--[a-z-]{2,}$/.test(w) && `--${name}`.startsWith(w));
+	const short = (letters) => has(new RegExp(`^-[A-Za-z]*[${letters}]`));
+	const isPath = (w) => (state.moved ? /[./\\]/.test(w) : [ctx.cwd, ...(state.cwds || [])].some((d) => fs.existsSync(ctx.api.resolve(d, w))));
+	if (sub === 'reset' && long('hard')) return `${LOSES_WORK} git reset --hard`;
+	// -B resets a branch that exists to the start point.
+	if (sub === 'checkout' && (end < own.length || short('fB') || long('force') || opts.some((w) => w === '.' || (!w.startsWith('-') && isPath(w))))) return `${LOSES_WORK} git checkout over changes`;
+	if (sub === 'restore' && (!(short('S') || long('staged')) || short('W') || long('worktree'))) return `${LOSES_WORK} git restore over changes`;
+	if (sub === 'switch' && (short('fC') || long('force') || long('discard-changes') || long('force-create'))) return `${LOSES_WORK} git switch over changes`;
+	// -D, -f (with -d or alone, which moves a branch that exists), -M and -C overwrite or drop a branch.
+	if (sub === 'branch' && (short('DfMC') || long('force'))) return `${LOSES_WORK} git branch -D`;
 	if (sub === 'stash' && /^(drop|clear)$/.test(own[0] || '')) return `${LOSES_WORK} git stash ${own[0]}`;
 	if (sub === 'reflog' && /^(expire|delete)$/.test(own[0] || '')) return `${LOSES_WORK} git reflog ${own[0]}`;
 	return '';

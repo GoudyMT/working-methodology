@@ -35,7 +35,9 @@ test('a guard in a subagent refuses instead of asking, so the agent hands the ac
 // refused); the forms that keep the work, or only read, still pass.
 // why: guards rule:outward-acts
 test('a local git act that throws away work waits for the owner; reads and safe forms pass', () => {
-	for (const c of ['git reset --hard', 'git reset --hard HEAD~1', 'git checkout -- .', 'git checkout .', 'git checkout -f main', 'git checkout HEAD README.md', 'git restore .', 'git restore --worktree --staged x', 'git switch --discard-changes main', 'git branch -D old', 'git branch --delete --force old', 'git branch -df old', 'git stash drop', 'git stash clear', 'git reflog expire --expire=now --all', 'git reflog delete HEAD@{1}', 'git -C sub reset --hard']) {
+	for (const c of ['git reset --hard', 'git reset --hard HEAD~1', 'git checkout -- .', 'git checkout .', 'git checkout -f main', 'git checkout HEAD README.md', 'git restore .', 'git restore --worktree --staged x', 'git switch --discard-changes main', 'git branch -D old', 'git branch --delete --force old', 'git branch -df old', 'git stash drop', 'git stash clear', 'git reflog expire --expire=now --all', 'git reflog delete HEAD@{1}', 'git -C sub reset --hard',
+		// The commit security review: a start of a long option, and the forms that overwrite or move a branch.
+		'git reset --ha', 'git switch --disc main', 'git restore --work x', 'git branch -f main HEAD~3', 'git branch -M old new', 'git branch -C a b', 'git checkout -B main', 'git switch -C main', 'git switch --force-create main']) {
 		assert.equal(hook('guard-delete.cjs', c), 'deny', c);
 		assert.equal(hook('guard-delete.cjs', c, { agent_id: 'a1' }), 'deny', c);
 	}
