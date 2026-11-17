@@ -7880,10 +7880,16 @@ test('recall gate (K116): rule text changed after the scored commit, or no score
   // A commit that is not on the branch scored other text.
   const off = gateRepo();
   off.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0', () => {}, false);
-  const other = off.git('rev-parse', 'base').trim();
-  off.put('docs/evals/results/recall-scores.md', read(path.join(off.dir, 'docs/evals/results/recall-scores.md')) + `scored: ${'a'.repeat(40)}\n`);
+  // A real side commit holding the head's very rule text: a diff from it would show nothing, yet it is not this branch.
+  const ruleText = read(path.join(off.dir, 'rules/core.md'));
+  off.git('switch', '-q', '-c', 'side', 'base');
+  off.put('rules/core.md', ruleText);
+  off.git('add', '.'); off.git('commit', '-qm', 'side');
+  const other = off.git('rev-parse', 'HEAD').trim();
+  off.git('switch', '-q', 'main');
+  off.put('docs/evals/results/recall-scores.md', read(path.join(off.dir, 'docs/evals/results/recall-scores.md')) + `scored: ${other}\n`);
   off.git('commit', '-qam', 'not on the branch');
-  assert.match(off.gate().stdout, /rule text changed.*the scored commit aaaaaaa: rules\/core\.md/, other);
+  assert.match(off.gate().stdout, new RegExp(`rule text changed.*the scored commit ${other.slice(0, 7)}: rules/core\\.md`), other);
   // The owner may accept it, as any other fault.
   const accepted = gateRepo();
   accepted.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0 owner-accepted', () => {}, false);
