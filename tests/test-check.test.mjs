@@ -181,6 +181,19 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
 });
 
+// N12 (1.40.0 verify): the third must-still-flag row. A test that fails on the base only because it throws (a call to
+// a function the base lacks) proves no assertion; narrowing A1 must not let it pass as failing first.
+// why: guards rule:test-value
+test('the test check still names a test that fails on the base by a crash, not an assertion', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	fs.appendFileSync(path.join(dir, 'src', 'a.cjs'), 'exports.isNeg = (x) => x < 0;\n');
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('minus one is negative', () => { assert.equal(a.isNeg(-1), true); });\n");
+	sh(dir, 'commit', '-qam', 'isNeg');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: fails on the base commit, but not on an assertion \(a crash or a missing file\)/);
+});
+
 // K105 (PR 49): the PR claimed each fix had a test that fails first, and nothing read the claim. With the record, the
 // check states the verdict of each test the fix ledger names, and names a fix whose test does not fail first or is
 // not one this change adds or changes.

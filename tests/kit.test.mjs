@@ -7419,6 +7419,27 @@ test('a recall run removes what it made, and nothing else', async () => {
   assert.throws(() => removeProbe({ dir: other, home, slug: 'x', osHome: root }), /not a probe folder/);
 });
 
+// K107 (build 14): removeProbe deleted the probe and its memory but not the guard record install project wrote, so
+// every recall run left one (13 after build 14), and the launcher reads every record on each shell call.
+// why: catches the recall probe's guard record left behind (K107)
+test('a recall run forgets its probe\'s guard record, and only that one', async () => {
+  const { removeProbe, probePath } = await recallTools();
+  const kitTools = await import('../scripts/kit.mjs');
+  const root = makeTemp('forget-probe-');
+  const home = path.join(root, '.claude');
+  const dir = probePath(root);
+  const keep = path.join(root, 'live-project');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(keep, { recursive: true });
+  for (const d of [dir, keep]) {
+    fs.mkdirSync(kitTools.guardDir(home, d), { recursive: true });
+    fs.writeFileSync(path.join(kitTools.guardDir(home, d), 'record.json'), JSON.stringify({ projectDir: d }));
+  }
+  removeProbe({ dir, home, slug: 'slug-1', osHome: root, forget: kitTools.forget });
+  assert.equal(fs.existsSync(kitTools.guardDir(home, dir)), false, 'the probe\'s guard record is gone');
+  assert.ok(fs.existsSync(kitTools.guardDir(home, keep)), 'a live project\'s record stays');
+});
+
 // The brainstorm skill. The sheet file is the one truth; the record copies the owner's words exactly.
 const sheetTools = () => import('../user/skills/brainstorm/sheet.mjs');
 const compileTools = () => import('../user/skills/brainstorm/compile-record.mjs');

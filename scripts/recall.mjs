@@ -190,8 +190,11 @@ export function setupProbe({ dir, kitDir, noKit, released, run }) {
   must(process.execPath, [path.join(kitDir, 'scripts', 'kit.mjs'), 'install', 'project', dir, ...(released ? [] : ['--unreleased'])], { cwd: kitDir });
 }
 
-/** What the run made: its folder and the memory install wrote for it. Nothing a later run can read is left behind. */
-export function removeProbe({ dir, home, slug, osHome = os.homedir() }) {
+/**
+ * What the run made: its folder, the memory install wrote for it and its guard record. Nothing a later run can read
+ * is left behind (K107: the guard record stayed, and the launcher reads every record on each shell call).
+ */
+export function removeProbe({ dir, home, slug, osHome = os.homedir(), forget }) {
   // The probe's shape, under this home's own kit-probes, links followed: a probe-shaped folder anywhere else stays.
   const inside = path.relative(path.join(osHome, 'kit-probes'), path.resolve(dir));
   if (!/kit-probes[\\/][0-9a-f]{6}[\\/]p[0-9a-f]{6}$/.test(dir) || !/^[0-9a-f]{6}[\\/]p[0-9a-f]{6}$/.test(inside) || !isThrowaway(dir, osHome)) throw new Error(`${dir} is not a probe folder`);
@@ -199,6 +202,8 @@ export function removeProbe({ dir, home, slug, osHome = os.homedir() }) {
   if (!/^[\w.-]+$/.test(slug || '') || /^\.+$/.test(slug)) throw new Error(`${JSON.stringify(slug)} is not a memory slug`);
   fs.rmSync(path.dirname(dir), { recursive: true, force: true });
   fs.rmSync(path.join(home, 'projects', slug), { recursive: true, force: true });
+  // Only once the folder is gone: forget refuses a project that is still there.
+  if (forget) forget({ home, dir });
 }
 
 export function runHeader({ label, keys, facts, when, cli }) {
@@ -337,7 +342,7 @@ export function askAll({ qs, projectDir, run }) {
  *
  * Args:
  *     ctx: { label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools } - kitTools is kit.mjs's
- *         { releaseState, projectSlug }, and run(cmd, args, opts) returns { status, stdout, stderr }
+ *         { releaseState, projectSlug, forget }, and run(cmd, args, opts) returns { status, stdout, stderr }
  *
  * Returns:
  *     the path of the saved run
@@ -358,7 +363,7 @@ export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when,
     fs.writeFileSync(out, lines.join('\n'));
     return out;
   } finally {
-    removeProbe({ dir: projectDir, home, slug: kitTools.projectSlug(projectDir), osHome });
+    removeProbe({ dir: projectDir, home, slug: kitTools.projectSlug(projectDir), osHome, forget: kitTools.forget });
   }
 }
 

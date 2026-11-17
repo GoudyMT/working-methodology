@@ -40,6 +40,27 @@ test('the runner splits a harness file into shards that together run every test 
 	assert.match(r.stdout, /pass 7, fail 0/);
 });
 
+// K108 (1.40.0 verify): a full run read only tests/*.test.mjs and CI's slow lane only tests/slow, so a test file in any
+// other tests/ subfolder ran in no lane and its failures reached no one.
+// why: catches a test file in a tests/ subfolder that runs in no lane (K108)
+test('a full run refuses a test file in a tests/ subfolder no lane runs, and names it', () => {
+	const dir = kitTemp.makeTemp('lost-');
+	const log = path.join(dir, 'ran.log');
+	fs.mkdirSync(path.join(dir, 'tests', 'unit'), { recursive: true });
+	fs.mkdirSync(path.join(dir, 'tests', 'slow'), { recursive: true });
+	const body = (n) => `import { test } from ${HARNESS}; import fs from 'node:fs';\ntest('${n}', () => { fs.appendFileSync(${JSON.stringify(log)}, '${n}\\n'); });\n`;
+	fs.writeFileSync(path.join(dir, 'tests', 'top.test.mjs'), body('top'));
+	fs.writeFileSync(path.join(dir, 'tests', 'slow', 'big.test.mjs'), body('big'));
+	const lost = path.join(dir, 'tests', 'unit', 'lost.test.mjs');
+	fs.writeFileSync(lost, body('lost'));
+	const r = run(dir, [], { CI: '1' });
+	assert.notEqual(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stderr, /tests\/unit\/lost\.test\.mjs/);
+	assert.doesNotMatch(r.stderr, /big\.test\.mjs/, 'the slow lane runs tests/slow');
+	fs.rmSync(lost);
+	assert.equal(run(dir, [], { CI: '1' }).status, 0, 'with no lost file the run passes');
+});
+
 // E31: Linux runs the suite and Windows the tests marked { windows: true }; together every test runs, and each one
 // marked runs on Windows (off Windows it is skipped and reported, never dropped silently, F20). { windows: 'also' }
 // runs everywhere and in the slice (F16). Both platforms are checked on either, through KIT_TEST_PLATFORM.
