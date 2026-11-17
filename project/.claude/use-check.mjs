@@ -38,7 +38,8 @@ const AGENTS_CAP = 25000;
 // K111 (1.42.0): the compact window the kit sets, and Claude Code's floor (a value under it is ignored, not raised).
 const WINDOW_MAX = 400000;
 const WINDOW_MIN = 100000;
-const settingsOf = (name) => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.claude', name), 'utf8').replace(/^﻿/, '')); } catch { return null; } };
+const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch { return null; } };
+const settingsOf = (name) => readJson(path.join(dir, '.claude', name));
 
 // Each check returns [ok, detail]; ok null means the level does not apply here (said why, and never a fault).
 const PARTS = [
@@ -155,6 +156,8 @@ const PARTS = [
 				if (s && s.autoCompactWindow !== undefined) set.push([`.claude/${name}`, s.autoCompactWindow]);
 				for (const [model, m] of Object.entries((s && s.modelSettings) || {})) if (m && m.autoCompactWindow !== undefined) set.push([`.claude/${name} (${model})`, m.autoCompactWindow]);
 			}
+			// A per-model window in the owner's own settings file can still win over the project's top-level one.
+			for (const [model, m] of Object.entries(readJson(path.join(HOME, 'settings.json'))?.modelSettings || {})) if (m && m.autoCompactWindow !== undefined) set.push([`${toPosix(path.join(HOME, 'settings.json'))} (${model})`, m.autoCompactWindow]);
 			if (settingsOf('settings.json')?.autoCompactWindow === undefined) return [false, `.claude/settings.json sets no autoCompactWindow: run kit.mjs install project`];
 			const bad = set.filter(([, v]) => !Number.isInteger(v) || v > WINDOW_MAX || v < WINDOW_MIN);
 			return bad.length ? [false, `${bad.map(([f, v]) => `${f} sets ${v}`).join('; ')}: keep it from ${WINDOW_MIN} to ${WINDOW_MAX} (under ${WINDOW_MIN} is ignored)`] : [true, `compacts at ${set.map(([, v]) => v).join(', ')}`];
