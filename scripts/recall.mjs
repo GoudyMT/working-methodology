@@ -52,6 +52,9 @@ const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall(-score)?\.mjs$|do
 // From keys v4 a line names the control's median too (S18-7), so CI can see the control sits clearly under the kit.
 const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)(?: control (\d+))?( owner-accepted)?$/;
 const CONTROL_LINE = /^control: (\d+)$/;
+// K116 (1.42.0): the commit a run scored, on its own line beside the gate line (the base branch's gate reads only the
+// gate line). Rule text changed after it ships unscored, so the gate refuses it.
+const SCORED_LINE = /^scored: ([0-9a-f]{40})$/;
 const CONTROL_FROM = 4;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
@@ -232,7 +235,9 @@ export function runHeader({ label, keys, facts, when, cli }) {
  * Returns:
  *     { ok, detail }
  */
-export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {} }) {
+// scored is the commit the run measured (null when the PR names none); left out, the caller read no scored line and
+// the K116 check is not asked for (the gate command always reads it).
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [] }) {
   const all = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   // A file with no newline at its end shows its last line removed and added back unchanged when an entry is
   // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no drop, and
@@ -261,7 +266,10 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   if (control != null && Number(control) >= Number(baseline)) return { ok: false, detail: `${label}: control ${control} is not under the baseline ${baseline}, so the score does not show the rules` };
   if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
+  const graded = scored !== undefined && changed.some((f) => GRADED.test(f));
   const faults = [
+    graded && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
+    graded && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
     dropped && 'this PR removes a recorded gate line',
     moved && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
     !moved && was.baseline != null && Number(baseline) < was.baseline && `baseline ${baseline} is under the last recorded baseline ${was.baseline}`,
@@ -297,7 +305,18 @@ function gate([base, head]) {
   const recorded = onBase(SCORES).split('\n').map((l) => l.trim().match(GATE_LINE)).filter((m) => m && Number(m[4]) === brief && Number(m[5]) === keys);
   // --text: an attribute or a NUL byte must not hide the record from the check.
   const record = git('diff', '--text', '-U0', `${base}...${head}`, '--', SCORES);
+  // K116: the graded files that differ between the commit the run scored and the head. A commit that is not on the
+  // branch scored other text, so every graded file the PR changes counts.
+  const recordAdded = record.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1).trim());
+  const scored = recordAdded.map((l) => l.match(SCORED_LINE)).filter(Boolean).pop()?.[1] ?? null;
+  const prChanged = git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', `${base}...${head}`).filter(Boolean);
+  const onBranch = scored && spawnSync('git', ['merge-base', '--is-ancestor', scored, head], opts).status === 0;
+  const after = !scored ? [] : onBranch
+    ? git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', scored, head).filter((f) => f && GRADED.test(f))
+    : prChanged.filter((f) => GRADED.test(f));
   const r = checkGate({
+    scored,
+    after,
     // Each side of a rename counts, and a name stays plain: a rule file moved away is rule text changed.
     changed: git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', `${base}...${head}`),
     added: record.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)),

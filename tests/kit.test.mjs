@@ -7928,15 +7928,48 @@ function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: med
   put('docs/evals/recall-questions.md', keys);
   put('docs/evals/results/recall-scores.md', scores);
   git('add', '.'); git('commit', '-qm', 'base'); git('tag', 'base');
-  const record = (line, extra = () => {}) => {
-    put('docs/evals/results/recall-scores.md', scores + '\n' + line + '\n');
+  // The rule edit, then the score of that commit (K116: a gate line names the commit it scored), as a real run goes.
+  const record = (line, extra = () => {}, scored = true) => {
     put('rules/core.md', 'a rule ' + Math.random() + '\n');
     extra(put);
+    git('add', '.'); git('commit', '-qm', 'rules');
+    const at = git('rev-parse', 'HEAD').trim();
+    put('docs/evals/results/recall-scores.md', scores + '\n' + line + '\n' + (scored ? `scored: ${at}\n` : ''));
     git('add', '.'); git('commit', '-qm', 'record');
   };
   const gate = (script = path.join(dir, 'scripts/recall.mjs')) => spawnSync('node', [script, 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   return { dir, put, git, record, gate };
 }
+
+// K116 (1.42.0, reproduced on 1.41.0): the gate passed rule text edited after the commit its run scored. A gate line
+// now names that commit, and rule text that differs from it at the head is refused unless the owner accepts it.
+// why: guards rule:instruments-and-evals
+test('recall gate (K116): rule text changed after the scored commit, or no scored commit, is refused', () => {
+  const ok = gateRepo();
+  ok.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0');
+  assert.equal(ok.gate().status, 0, ok.gate().stdout);
+  // A later rule edit is unscored.
+  ok.put('rules/core.md', 'edited after the run\n');
+  ok.git('commit', '-qam', 'later');
+  const late = ok.gate();
+  assert.equal(late.status, 1, late.stdout);
+  assert.match(late.stdout, /rule text changed after the scored commit [0-9a-f]{7}: rules\/core\.md/);
+  // No scored line at all.
+  const none = gateRepo();
+  none.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0', () => {}, false);
+  assert.match(none.gate().stdout, /names no scored commit/);
+  // A commit that is not on the branch scored other text.
+  const off = gateRepo();
+  off.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0', () => {}, false);
+  const other = off.git('rev-parse', 'base').trim();
+  off.put('docs/evals/results/recall-scores.md', read(path.join(off.dir, 'docs/evals/results/recall-scores.md')) + `scored: ${'a'.repeat(40)}\n`);
+  off.git('commit', '-qam', 'not on the branch');
+  assert.match(off.gate().stdout, /rule text changed after the scored commit aaaaaaa: rules\/core\.md/, other);
+  // The owner may accept it, as any other fault.
+  const accepted = gateRepo();
+  accepted.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0 owner-accepted', () => {}, false);
+  assert.equal(accepted.gate().status, 0, accepted.gate().stdout);
+});
 
 // why: guards rule:instruments-and-evals
 test('recall gate (B7): current keys with no Pass line cannot pass, since recall cannot run them', () => {
