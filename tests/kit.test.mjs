@@ -1669,6 +1669,7 @@ test('every agent role file the kit ships names its model', () => {
 // N14 (1.36.0, reproduced on AI Essentials' memory 2026-11-15): Claude Code's memory writes metadata into a memory
 // file's frontmatter (node_type, originSessionId, modified) and quotes its description; fold-back then showed the file
 // as the project's own change, and install skipped it, with no real edit in it.
+// why: catches a real fold-back fault (N14): memory metadata read as the project's own edit, so install skipped the file
 test('memory metadata the memory service adds is not a change to fold back or a reason to skip an update', () => {
   const kit = path.resolve('.');
   const home = makeTemp('n14-home-');
@@ -1691,6 +1692,7 @@ test('memory metadata the memory service adds is not a change to fold back or a 
 
 // 1.36.0 sweep (data loss): the install half. An update over a file whose only change is the memory service's metadata
 // goes ahead, and the file as it was is kept first; a real top-level key named like the metadata is a real edit.
+// why: catches a real data loss (the 1.36.0 sweep): an update over a metadata-only memory file did not keep the file first
 test('an update over a memory file with only metadata keeps the file as it was', () => {
   const { kit, home, proj } = makeKit();
   const front = (body) => `---\nname: style\ndescription: the style rule\nmetadata:\n  type: feedback\n---\n\n${body}\n`;
@@ -1758,6 +1760,7 @@ test('install seeds the loop bounds file once and never changes the owner\'s', (
 
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
 // session start said only that an update was there.
+// why: catches a real gap (N5): session start never said a newer user layer can break an older project
 test('session start names a user layer newer than the project for what it can break', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -1775,6 +1778,7 @@ test('session start names a user layer newer than the project for what it can br
 // N8 (1.36.0; real by quote on 1.25.0: `cd src && ls` passed the installed guard, and a text rule against a lasting cd
 // failed twice in AI Essentials): Claude Code returns the shell to the project after each Bash or PowerShell command
 // when this is set (env-vars docs, read 2026-11-15), so a cd cannot carry into the next command.
+// why: catches a real failure (N8): a cd in one shell command carried into the next command
 test('the project settings keep each shell command starting in the project folder', () => {
   const s = JSON.parse(read(path.resolve('project/.claude/settings.json')));
   assert.equal(s.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR, '1');
@@ -1784,6 +1788,7 @@ test('the project settings keep each shell command starting in the project folde
 // the session's model (Opus); a project agent named Explore overrides it (Claude Code sub-agents docs, read
 // 2026-11-15). It installs into kit projects only, so a project without the kit keeps the built-in; it carries no
 // hook, so the trust a project agent file's hooks need does not touch it. The five roles stay user level for theirs.
+// why: guards the owner's pick "Roles user, Explore per project" (MC2, MC5)
 test('the kit ships a read-only Explore on Sonnet into each kit project, and none into the Claude folder', () => {
   const fm = front(path.resolve('project/.claude/agents/Explore.md'));
   assert.equal(fm.name, 'Explore');
@@ -8471,6 +8476,7 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
 });
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
 // The kit source holds its own pushes the same way (.githooks/pre-push), so the gate can arm a PR there too.
+// why: guards rule:standing-grants
 for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, { windows: true }, () => {
   const dir = makeTemp('armed-');
   assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);

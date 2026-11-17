@@ -38,6 +38,15 @@
    "evidence": "tests/test-check.test.mjs"
   },
   {
+   "id": "WHY-LINE",
+   "kind": "added",
+   "text": "Every test names what it guards in one why line (guards a rule, guards the owner's decision, or catches a named failure); the test check names a new test without one, and a kit test holds every test to it.",
+   "evidence": "tests/test-format.test.mjs",
+   "where": "A test with no why line",
+   "before": "Passed unnoticed",
+   "after": "Named by CI"
+  },
+  {
    "id": "AUDIT-LOOPS",
    "kind": "fixed",
    "text": "The test sort reads the tags above a loop for each test the loop makes, so the 69 merge-gate refusal tests sort as guards, not as repeats.",
@@ -379,7 +388,7 @@
  },
  "tests": {
   "before": 843,
-  "after": 850,
+  "after": 853,
   "flips": "declared tests on v1.39.0 and on this branch; the PR run gives the final count"
  }
 }

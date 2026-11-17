@@ -138,7 +138,7 @@ test('the watcher alerts on each change to green, failed, conflict, merged or cl
 	assert.equal(verdict(pr('OPEN', [done('CANCELLED')])), 'failed');
 });
 
-// why: guards the bounds of lock A: an entry expires, the list has a size, failures stop with a triage line, and a
+// why: guards the owner's lock A, its bounds: an entry expires, the list has a size, failures stop with a triage line, and a
 // kill switch stops every pass
 test('the watcher drops an expired entry, caps the list, stops an entry after three failed reads, and halts on watch-off', () => {
 	const r = rig({ 7: pr('OPEN', []), 8: pr('OPEN', []) });

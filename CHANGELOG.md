@@ -7,6 +7,7 @@ A fix now needs a test that fails first when it is high, critical, security or a
 ### Added
 - The build record keeps one row per sweep fix (severity, commit and its test), refuses a high, critical, security or owner-rule row with no test, and writes the PR's fix-test line from the rows.
 - The test check states, for each test the fix rows name, whether it fails first on the code before the change, and names a fix whose test does not.
+- Every test names what it guards in one why line (guards a rule, guards the owner's decision, or catches a named failure); the test check names a new test without one, and a kit test holds every test to it.
 - `node .claude/plan-graph.mjs <plan>` names every pair of batch-plan units that may run at once and touch the same file, an order naming no unit, and an order cycle.
 - `scripts/rule-map.mjs` lists, for each rule, the guards, scripts, tests and workflows whose code names it, and the rules only prose holds; CI fails a stale map.
 - `test-run.mjs --changed --pick` prints the tests a change reaches without running them, and a unit brief takes its covering tests from it.

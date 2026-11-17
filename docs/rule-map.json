@@ -124,7 +124,8 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit.test.mjs",
+    "tests/state.test.mjs"
    ],
    "workflows": []
   },
@@ -433,7 +434,8 @@
    "tests": [
     "tests/kit.test.mjs",
     "tests/merge-gate.test.mjs",
-    "tests/merge-on-green.test.mjs"
+    "tests/merge-on-green.test.mjs",
+    "tests/test-value.test.mjs"
    ],
    "workflows": []
   },
@@ -708,7 +710,8 @@
     "project/.claude/tracking-check.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit.test.mjs",
+    "tests/state.test.mjs"
    ],
    "workflows": []
   },

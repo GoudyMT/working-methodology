@@ -53,6 +53,13 @@ Then the next failing test. Code written before its test: set it aside, write th
 the code from the test. Keeping it "as reference" is writing tests after.
 Done when: the suite is still green and no step added behaviour.
 
+### 5b. Name what each test guards
+Each test carries one `// why:` line right above it (above its loop, for a loop of tests), in one of three shapes:
+`guards rule:<id>` (a rule in the index), `guards the owner's <decision>`, or `catches <the real failure>` in six
+words or more. The test check (A6) names a new test without one, and `tests/test-format.test.mjs` holds every test
+in the kit to it. A low or medium finding gets a test only when a real input shows it (rule:test-value).
+Done when: every test you added or changed has its why line.
+
 ### 6. Bugs: reproduce first
 A bug gets a failing test that reproduces it, named for the bug, before any fix. The same test then proves the fix
 and guards against return. If you cannot reproduce it, get data first (rule:failure-response); do not guess a fix.

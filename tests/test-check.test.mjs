@@ -242,3 +242,21 @@ test('the test check keys each result by its file, and a fix test red only becau
 	const rows = [0, 1].flatMap((i) => spawnSync(process.execPath, [CHECK, base, '--record', rec, '--slice', `${i}/2`], { cwd: dir, encoding: 'utf8' }).stdout.split('\n').filter((l) => /^ {4}F\d /.test(l)));
 	assert.deepEqual(rows.map((l) => l.trim().split(' ')[0]).sort(), ['F1', 'F2', 'F3', 'F4', 'F5']);
 });
+
+// why: guards the owner's ruling (2026-11-17, "we have the standard, now we just need to enforce it"): a new test
+// names the real use or failure it guards in a why line of the kit's shape, or the check names it.
+test('the test check names a new test with no why line, or one of no known shape', () => {
+	const dir = repo();
+	const file = path.join(dir, 'tests', 'a.test.mjs');
+	fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace("test('zero is not positive'", "// why: catches zero read as positive, a real bug\ntest('zero is not positive'")
+		.replace("test('a browser one'", "// why: catches it\ntest('a browser one'")
+		.replace("test('a pattern one'", "// why: guards the lane\ntest('a pattern one'"));
+	sh(dir, 'commit', '-qam', 'tags');
+	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
+	const k = (n) => `tests/a.test.mjs::${n}`;
+	assert.match(r.stdout, new RegExp(`A6 ${k('a hollow one')}: `), 'no why line');
+	assert.match(r.stdout, new RegExp(`A6 ${k('a browser one')}: `), 'a catches line too short to name a failure');
+	assert.match(r.stdout, new RegExp(`A6 ${k('a pattern one')}: `), 'a guards line naming no rule and not the owner');
+	assert.doesNotMatch(r.stdout, new RegExp(`A6 ${k('zero is not positive')}`), 'a catches line that names the failure');
+	assert.doesNotMatch(r.stdout, new RegExp(`A6 ${k('a guarded one')}`), 'a guards line naming a known rule');
+});

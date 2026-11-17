@@ -10,6 +10,8 @@
 //   A4 owed             a change of prose, wiring or removals only, that adds a test, is named.
 //   A5 fix ledger       with --record <build record>: each test the record's sweep.fixes names gets its A1 verdict; a
 //                       fix whose test does not fail first, or is not added or changed here, is named (K105).
+//   A6 names its use    the test carries one why line: guards rule:<id>, guards the owner's <decision>, or catches
+//                       <the real failure> in six words or more (tests/test-format.test.mjs holds every test to it).
 //   A new test in a file the base lacks fails first when that file cannot load there; a loop that makes tests is one
 //   unit, run by its file.
 // It reports, and exits 0, until the owner makes it required (--strict: exit 1 on any finding). Exit 2: it could not run.
@@ -32,7 +34,32 @@ const LARGE = /\b(fetch|https?\.(get|request)|goto)\(\s*['"`]https?:\/\/(?!127\.
 // of PR 49 were never read).
 const NAMED = /\btest\((['"`])((?:\\.|(?!\1).)*)\1/;
 const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|Object\.(entries|keys|values)\([^\n]*\)\.forEach\()/;
-function tests(text) {
+
+/**
+ * A6: what is wrong with a test's why line, or null when it has one of the kit's shapes (rule:test-value; the owner,
+ * 2026-11-17: "we have the standard, now we just need to enforce it").
+ *
+ * Args:
+ *     body: the test's text with the comment lines above it
+ *     known: the rule ids of the rule index, or null to leave a rule's existence to A2
+ *
+ * Returns:
+ *     null, or the fault in words
+ */
+export function whyFault(body, known = null) {
+	const why = (/^\s*\/\/ why: (.*)$/m.exec(String(body)) || [])[1];
+	if (why === undefined) return 'no why line: name the real use or failure it guards (// why: guards rule:<id>, or catches <the failure>)';
+	if (/^guards\b/.test(why)) {
+		const rules = [...why.matchAll(/\brule:([a-z0-9-]+)/g)].map((m) => m[1]);
+		const unknown = known ? rules.filter((r) => !known.has(r)) : [];
+		if (unknown.length) return `its why line names rule:${unknown.join(', rule:')}, which is not in the rule index`;
+		return rules.length || /\bthe owner/.test(why) ? null : 'its why line says guards but names no rule (rule:<id>) and not the owner';
+	}
+	if (/^catches\b/.test(why)) return why.trim().split(/\s+/).length >= 6 ? null : 'its why line is too short to name the failure it catches (6 words or more)';
+	return 'its why line starts with neither guards nor catches';
+}
+
+export function tests(text) {
 	const lines = String(text).split('\n');
 	const starts = [];
 	lines.forEach((l, i) => {
@@ -199,6 +226,11 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 				else if (!flips.some((f) => (f.caughtBy || []).some((k) => k === t.key || (t.loop && k.startsWith(`${t.file}::`) && t.loop.test(k.slice(t.file.length + 2)))))) note(t.key, 'A2', 'catches no flip in the lines this change made, and names no rule it guards (// why: guards <rule>)');
 			}
 		}
+	}
+	// A6: each new or changed test names what it guards in a why line of the kit's shape; A2 names an unknown rule.
+	for (const t of newOrChanged) {
+		const fault = whyFault(t.body);
+		if (fault) note(t.key, 'A6', fault);
 	}
 	// A5 (K105): each test the fix ledger names gets its A1 verdict, and the PR's fix line may claim only that. A fix
 	// whose test does not fail first, or is not one this change adds or changes, is a finding. With slices, the slice
