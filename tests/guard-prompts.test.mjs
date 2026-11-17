@@ -55,7 +55,10 @@ test('a glob or magic pathspec, xargs, an alias on the spot, a path after a move
 		'git ls-files -m | xargs git checkout', 'echo . | xargs git checkout', 'echo . | xargs git restore',
 		'git -c alias.co=checkout co -- .', 'git -c alias.x=restore x .', "git config alias.discard 'checkout -- .'",
 		'git -C sub checkout Makefile', 'git -C .. checkout LICENSE',
-		'git checkout-index -f -a', 'git read-tree -u --reset HEAD', 'git update-ref -d refs/heads/side', 'git push . +HEAD~3:main']) {
+		'git checkout-index -f -a', 'git read-tree -u --reset HEAD', 'git update-ref -d refs/heads/side', 'git push . +HEAD~3:main',
+		// The commit security review: help beside other words, other local paths and force spellings, update-ref --stdin,
+		// and an alias for branch, switch, reset or push whatever its flags.
+		'git checkout --pathspec-from-file list -h', 'git push ./ +HEAD~3:main', 'git push --force-with-lease .. main', 'git update-ref --stdin', "git -c alias.b='branch --delete --force' b old", 'git -c alias.r=reset r --keep HEAD~1']) {
 		assert.equal(hook('guard-delete.cjs', c), 'deny', c);
 	}
 	for (const c of ['git restore --help', 'git restore -h', 'git checkout --help', 'git checkout-index -a', 'git read-tree HEAD', 'git update-ref refs/heads/x HEAD', 'git config alias.st status']) assert.equal(hook('guard-delete.cjs', c), 'pass', c);

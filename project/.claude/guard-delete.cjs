@@ -99,7 +99,7 @@ const CLEAN_SPAN = /\bclean\b(?:\\.|[^;|&\n])*/g;
 const LOST_CLEAN = /\bgit(\.exe)?\s+-[^;|&\n]*[,\\`^][^;|&\n]*\sclean\b/i;
 // What an alias may run that deletes, once its quoting is off. The build 16 sweep: an alias for checkout or restore (or
 // the plumbing under them), or a forced branch or switch, drops work as clean does.
-const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|rm\.exe|worktree|checkout|restore|checkout-index|read-tree|update-ref|stash|reflog)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha|(^|[\s!;&|(])(branch|switch)\s([\s\S]*\s)?-[A-Za-z]*[DfMCc]/;
+const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|rm\.exe|worktree|checkout|restore|checkout-index|read-tree|update-ref|stash|reflog)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha|(^|[\s!;&|(])(branch|switch|reset|push)(\s|$)/;
 const GIT_CLEAN_TEXT = /\bgit(\.exe)?\s+clean(\s|$|`)/i;
 // robocopy takes / or - (Git Bash needs //), a word of its own or glued to the name; a job file can carry any of
 // these, so it asks unread. A path segment is not a switch.
@@ -263,8 +263,8 @@ function discardsWork(sub, own, ctx, state) {
 	// The build 16 sweep: a glob (*.md) or pathspec magic (:/) is a path git expands itself, and after a move the guard
 	// cannot follow, any word may be a file there (Makefile has no dot), so it asks.
 	const isPath = (w) => /[*?[]|^:/.test(w) || state.moved || [ctx.cwd, ...(state.cwds || [])].some((d) => fs.existsSync(ctx.api.resolve(d, w)));
-	// A help read changes nothing.
-	if (/^(checkout|restore|switch|reset|branch|stash)$/.test(sub) && opts.some((w) => w === '--help' || w === '-h')) return '';
+	// A help read alone changes nothing; beside other words it may be an option's value, so it proves nothing.
+	if (/^(checkout|restore|switch|reset|branch|stash)$/.test(sub) && own.length === 1 && (own[0] === '--help' || own[0] === '-h')) return '';
 	if (sub === 'reset' && long('hard')) return `${LOSES_WORK} git reset --hard`;
 	// -B resets a branch that exists to the start point; a pathspec list file names paths the guard cannot see.
 	if (sub === 'checkout' && (end < own.length || short('fB') || long('force') || long('pathspec-from-file') || opts.some((w) => w === '.' || (!w.startsWith('-') && isPath(w))))) return `${LOSES_WORK} git checkout over changes`;
@@ -273,8 +273,10 @@ function discardsWork(sub, own, ctx, state) {
 	// update-ref -d drops a branch, and a forced push into the repo itself moves one.
 	if (sub === 'checkout-index' && (short('f') || long('force'))) return `${LOSES_WORK} git checkout-index -f`;
 	if (sub === 'read-tree' && (short('u') || own.includes('-u')) && (long('reset') || short('m'))) return `${LOSES_WORK} git read-tree -u`;
-	if (sub === 'update-ref' && (short('d') || long('delete'))) return `${LOSES_WORK} git update-ref -d`;
-	if (sub === 'push' && own.filter((w) => !w.startsWith('-'))[0] === '.' && (short('f') || long('force') || own.some((w) => /^\+/.test(w)))) return `${LOSES_WORK} a forced push into this repo`;
+	if (sub === 'update-ref' && (short('d') || long('delete') || long('stdin'))) return `${LOSES_WORK} git update-ref -d`;
+	// A push to a folder (., ./, .., a path) lands in a repo on this machine, this one included; forced, it moves a branch.
+	const target = own.filter((w) => !w.startsWith('-'))[0] || '';
+	if (sub === 'push' && /^(\.{1,2}([\\/]|$)|[\\/]|[A-Za-z]:|~|file:)/.test(target) && (short('f') || opts.some((w) => /^--force/.test(w)) || own.some((w) => /^\+/.test(w)))) return `${LOSES_WORK} a forced push into a repo on this machine`;
 	if (sub === 'switch' && (short('fC') || long('force') || long('discard-changes') || long('force-create'))) return `${LOSES_WORK} git switch over changes`;
 	// -D, -f (with -d or alone, which moves a branch that exists), -M and -C overwrite or drop a branch.
 	if (sub === 'branch' && (short('DfMC') || long('force'))) return `${LOSES_WORK} git branch -D`;
