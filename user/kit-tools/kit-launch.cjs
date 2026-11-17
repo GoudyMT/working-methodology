@@ -34,6 +34,9 @@ const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 // another project with no record, and every read in it was held).
 const real = (p) => { try { return fs.realpathSync.native(path.resolve(p)); } catch { return path.resolve(p); } };
 const same = (a, b) => (WIN ? real(a).toLowerCase() === real(b).toLowerCase() : real(a) === real(b));
+// The parent bash climbs to from a folder: the parent of where it really is, past any link on the way (the 1.42.0 sweep,
+// L5). Empty when the folder is gone or is a root.
+const physicalUp = (p) => { try { const r = fs.realpathSync.native(p); const up = path.dirname(r); return up === r ? '' : posix(up) + '/'; } catch { return ''; } };
 
 /**
  * The record folder's name for a project: Claude Code's folder name for it, plus a short hash of the full path, so two
@@ -618,6 +621,8 @@ function namedProjects(input) {
 		// no folder, and the project it sits in is still reached.
 		const found = [];
 		for (const seg of t.slice(rootLen).split('/').filter(Boolean)) {
+			// bash climbs out of a link where it points (the 1.42.0 sweep, L5): both parents are read.
+			if (seg === '..') { bases = [...new Set(bases.flatMap((b) => [b + '../', physicalUp(b)].filter(Boolean)))]; continue; }
 			if (!isGlob(seg)) { bases = bases.map((b) => b + seg + '/'); continue; }
 			// The folders read are named too (a link on the way, zz/.claude/g*, reaches the project it points into).
 			found.push(...bases);
@@ -645,8 +650,21 @@ function namedProjects(input) {
 	const seen = new Set();
 	const dirs = [];
 	const resolveTo = (t, from = cwd) => {
+		// A climb through a link also names where bash lands: the link target's parent (L5).
+		if (/(^|[\\/])\.\.($|[\\/])/.test(t)) {
+			const rooted = path.isAbsolute(t) || /^[A-Za-z]:/.test(t);
+			let p = rooted ? path.parse(path.resolve(from, t)).root : path.resolve(from);
+			for (const part of t.split(/[\\/]/).slice(/^[A-Za-z]:/.test(t) ? 1 : 0)) {
+				if (part === '..') p = physicalUp(p) || path.dirname(p);
+				else if (part && part !== '.') p = path.join(p, part);
+			}
+			if (!same(p, path.resolve(from, t))) resolveOnce(p);
+		}
+		resolveOnce(path.resolve(from, t));
+	};
+	const resolveOnce = (abs) => {
 		let real = '';
-		try { real = fs.realpathSync.native(path.resolve(from, t)); } catch { return; }
+		try { real = fs.realpathSync.native(abs); } catch { return; }
 		if (seen.has(real)) return;
 		seen.add(real);
 		try {

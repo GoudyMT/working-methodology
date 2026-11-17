@@ -1780,6 +1780,24 @@ test('a class with a capital later in the name names the project; dotted names b
 	assert.ok(Date.now() - t0 < 5000, `dotted names beside 250 folders took ${Date.now() - t0} ms`);
 });
 
+// The 1.42.0 sweep (L5): bash climbs out of a link where it points (lnk/.. is the target's parent), while a path
+// resolver climbs where the link sits, so a climb through a link named no project. Git Bash on Windows does the same.
+// why: guards rule:outward-acts
+test('a climb through a link names the project beside where the link points', () => {
+	const { home, proj } = setup({ projName: 'MyApp' });
+	const outside = kitTemp.makeTemp('l5-out-');
+	const side = path.join(path.dirname(proj), 'side');
+	fs.mkdirSync(side, { recursive: true });
+	fs.symlinkSync(side, path.join(outside, 'lnk'), 'junction');
+	const call = (command) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: outside, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: outside, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	assert.equal(call('rm -rf lnk/../MyApp/.claude'), 'deny');
+	assert.equal(call('rm -rf lnk/../M?App/.claude'), 'deny', 'a wildcard after the climb');
+	assert.equal(call('ls lnk/../side'), 'runs');
+});
+
 // why: guards rule:outward-acts. The third review (on cd0f9f5): a project whose folder name has a space is never one
 // word of the command, so a name check by words missed it.
 test('a kit project whose folder name has a space is named by the command too', () => {
