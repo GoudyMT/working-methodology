@@ -407,6 +407,11 @@ function changeFolder(words, p, ctx, state, after) {
 		state.moved = true;
 		return;
 	}
+	// A bare name under CDPATH (the 1.42.0 sweep, S8): the shell may move to that name in a CDPATH folder.
+	if (ctx.cdpath && !ctx.powershell && !/^(\.{1,2}([\\/]|$)|[\\/]|[A-Za-z]:)/.test(next)) {
+		state.moved = true;
+		return;
+	}
 	let t = next;
 	if (ctx.windows) t = t.replace(/^\/tmp(\/|$)/, ctx.tmpdir + '/').replace(/^\/([A-Za-z])(\/|$)/, '$1:/');
 	const moved = state.cwds.map((cwd) => ctx.api.resolve(cwd, t));
@@ -721,7 +726,9 @@ function decide(input, where = {}) {
 	const roots = [realOf(api.resolve(projectDir), api)];
 	const id = String(input.session_id ?? '');
 	const session = SESSION_ID.test(id) ? { id, claude: realOf(api.join(tmpdir, 'claude'), api) } : null;
-	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir(), powershell: input.tool_name === 'PowerShell' };
+	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir(), powershell: input.tool_name === 'PowerShell',
+		// CDPATH, set in the command or in the shell's environment, sends a bare-name cd to a folder of that name elsewhere.
+		cdpath: Boolean(process.env.CDPATH) || strings.some((s) => /\bCDPATH\b/.test(s)) };
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
 	const both = strings.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);

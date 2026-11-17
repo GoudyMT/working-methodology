@@ -73,6 +73,18 @@ test('a delete after a glued cd (cd.., cd\\) is read as outside the project; the
 	assert.equal(hook('guard-delete.cjs', 'rm -rf victim'), 'pass');
 });
 
+// The 1.42.0 sweep (S8): with CDPATH set, `cd project` may land in a folder of that name outside the project, so a
+// delete after a bare-name cd is read as after an unknown move; a ./ cd and no CDPATH read as before.
+// why: guards rule:outward-acts
+test('a bare-name cd beside CDPATH is an unknown move, so a delete after it waits', () => {
+	for (const c of ['CDPATH=.. cd project && rm -rf tmpx', 'export CDPATH=..; cd project; rm -rf tmpx']) assert.equal(hook('guard-delete.cjs', c), 'deny', c);
+	assert.equal(hook('guard-delete.cjs', 'cd project && rm -rf tmpx'), 'pass');
+	assert.equal(hook('guard-delete.cjs', 'CDPATH=.. cd ./project && rm -rf tmpx'), 'pass');
+	const env = { ...process.env, CDPATH: '..' };
+	const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-delete.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'cd project && rm -rf tmpx' }, cwd: process.cwd() }), encoding: 'utf8', env });
+	assert.equal(JSON.parse(r.stdout || '{"hookSpecificOutput":{}}').hookSpecificOutput.permissionDecision, 'deny');
+});
+
 // N10: off a terminal, npm assumes yes, so `npx <name>` in an agent's shell fetched and ran any registry package.
 // why: guards rule:outward-acts
 test('the shipped project settings turn off npm and npx installing a missing package without a prompt', () => {
