@@ -848,7 +848,8 @@ test('an edited overlay CLAUDE.local.md is merged once when the kit changes, and
   const backups = () => { try { return fs.readdirSync(path.join(proj, '.kit', 'kit-backups'), { recursive: true }).filter((f) => /CLAUDE\.local/.test(f)).length; } catch { return 0; } };
   for (let i = 0; i < 2; i++) {
     const r = cli('install', 'project', proj);
-    assert.doesNotMatch(r.stdout, /(merged with your edits|skipped): CLAUDE\.local\.md/, 'nothing new from the kit: nothing merged');
+    assert.match(r.stdout, /merged: 0,/, 'nothing new from the kit: nothing merged');
+    assert.doesNotMatch(r.stdout, /: CLAUDE\.local\.md\b/, 'nor skipped');
   }
   assert.equal(backups(), 0, 'no backup without a merge');
   assert.match(read(local), /My own local line/);
@@ -858,7 +859,7 @@ test('an edited overlay CLAUDE.local.md is merged once when the kit changes, and
   const merged = cli('install', 'project', proj).stdout;
   assert.match(merged, /merged with your edits: CLAUDE\.local\.md/, merged);
   assert.match(read(local), /one, new[\s\S]*My own local line/);
-  assert.doesNotMatch(cli('install', 'project', proj).stdout, /(merged with your edits|skipped): CLAUDE\.local\.md/);
+  assert.doesNotMatch(cli('install', 'project', proj).stdout, /: CLAUDE\.local\.md\b/);
   assert.equal(backups(), 1);
 });
 
@@ -7810,7 +7811,7 @@ test('recall gate (K116): rule text changed after the scored commit, or no score
   ok.git('commit', '-qam', 'later');
   const late = ok.gate();
   assert.equal(late.status, 1, late.stdout);
-  assert.match(late.stdout, /rule text changed after the scored commit [0-9a-f]{7}: rules\/core\.md/);
+  assert.match(late.stdout, /rule text changed.*the scored commit [0-9a-f]{7}: rules\/core\.md/);
   // No scored line at all.
   const none = gateRepo();
   none.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0', () => {}, false);
@@ -7821,7 +7822,7 @@ test('recall gate (K116): rule text changed after the scored commit, or no score
   const other = off.git('rev-parse', 'base').trim();
   off.put('docs/evals/results/recall-scores.md', read(path.join(off.dir, 'docs/evals/results/recall-scores.md')) + `scored: ${'a'.repeat(40)}\n`);
   off.git('commit', '-qam', 'not on the branch');
-  assert.match(off.gate().stdout, /rule text changed after the scored commit aaaaaaa: rules\/core\.md/, other);
+  assert.match(off.gate().stdout, /rule text changed.*the scored commit aaaaaaa: rules\/core\.md/, other);
   // The owner may accept it, as any other fault.
   const accepted = gateRepo();
   accepted.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0 owner-accepted', () => {}, false);
