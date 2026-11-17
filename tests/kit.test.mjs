@@ -4573,6 +4573,11 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
   }
   for (const word of ['AIR', 'reagents', 'checkerboard']) cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, []]);
+  // K115 (1.42.0, reproduced on 1.41.0): a body quoting a command or a file name in a code span was refused for the tool
+  // word inside it. A tool word in a code span passes only as part of a path or command; a bare one, or one beside a
+  // span, is still the word on the page.
+  for (const span of ['`claude -p`', '`subagents.md`', '`tools/agent-roles.json`', '`agents --list`']) cases.push([`a code span ${span}`, sub('the app does not change.', `the app runs ${span} as before.`), title, []]);
+  for (const text of ['the app runs `claude` as before.', 'the `-p` claude flag stays.', 'the `x` and `Opus` stay.']) cases.push([`a bare tool word: ${text}`, sub('the app does not change.', text), title, ['no mechanism or AI words']]);
   // Handoff item 15: the page shows an entity as its character, so the audit reads it that way.
   for (const word of ['&#65;I', '&#x41;I', '&#65I', 'sub&#97;gent']) cases.push([`${word} as written`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
   cases.push(['an em dash as an entity', sub('Tooling only;', 'Tooling only&#8212;'), title, ['0 non-ASCII characters']]);
@@ -4630,6 +4635,9 @@ test('the Standard PR-body audit reads an entity as the character the page shows
   assert.ok(line, 'the example has a prose line to change');
   assert.match(fails(line, line.replace(' the ', ' the &#67;laude ')).join('\n'), /no mechanism or AI words/);
   assert.match(fails(line, line.replace(' the ', ' the &#8212; ')).join('\n'), /0 non-ASCII characters/);
+  // K115: a tool word inside a quoted command passes; a bare one in a code span still fails.
+  assert.doesNotMatch(fails(line, line.replace(' the ', ' the `claude -p` ')).join('\n'), /no mechanism or AI words/);
+  assert.match(fails(line, line.replace(' the ', ' the `claude` ')).join('\n'), /no mechanism or AI words/);
 });
 
 // why: guards rule:pr-body
