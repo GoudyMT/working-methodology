@@ -585,7 +585,9 @@ function namedProjects(input) {
 	};
 	const one = (p, c) => {
 		if (p === '?') return true;
-		if (typeof p === 'string') return p === c;
+		// The pattern was folded with the command on Windows, so its letters match either case there; a class still reads
+		// the name as written (the build 16 sweep: [!a-z]yApp is MyApp).
+		if (typeof p === 'string') return p === c || (WIN && p.toLowerCase() === c.toLowerCase());
 		const hit = p.items.some((x) => (x instanceof RegExp ? x.test(c) : Array.isArray(x) ? c >= x[0] && c <= x[1] : x === c));
 		return hit !== p.neg;
 	};
@@ -692,8 +694,14 @@ function namedProjects(input) {
 				if (rooted(t)) { resolveTo(t); continue; }
 				resolveTo(t);
 				const climb = /(^|[\\/])\.\.($|[\\/])/.test(t);
+				// The build 16 sweep: a dotted name was resolved from every folder found (28 s for 1,800 names beside 250
+				// folders). Only a first part that is a folder or link there can lead anywhere new; a plain file in a
+				// folder already read adds nothing, so it is looked up in the folder's listing first.
+				const head = t.split('/')[0];
+				const leads = (base) => climb || head === '.' || head === '' || namesIn(base).has(key(head));
 				for (const base of dirs.slice()) {
 					if (climb && climbs <= 1) break;
+					if (!leads(base)) continue;
 					const had = dirs.length;
 					resolveTo(t, base);
 					if (climb && dirs.length > had) climbs--;

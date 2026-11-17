@@ -1758,6 +1758,26 @@ test('a capital class, a bracket set with a comma and a chain of cd .. name the 
 	for (const c of [`echo '{A,b}pp' && git status`, `ls "my "{A,b}pp; git status`]) assert.equal(call(c), 'runs', c);
 });
 
+// The build 16 sweep: the wildcard was matched as folded text, so a class that needs the capital (M of MyApp) and a
+// later capital in the name (A) could not both match; and a dotted name beside many folders was looked up in each,
+// 28 s against the hook's 10.
+// why: guards rule:outward-acts
+test('a class with a capital later in the name names the project; dotted names beside 250 folders read in time', () => {
+	const { home, proj } = setup({ projName: 'MyApp' });
+	const outside = kitTemp.makeTemp('k120b-out-');
+	const call = (command, cwd = outside) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: cwd, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const parent = path.dirname(proj).split(path.sep).join('/');
+	for (const word of ['[!a-z]yApp', '[[:upper:]]yA*']) assert.equal(call(`cp x ${parent}/${word}/.claude/guard.cjs`), 'deny', word);
+	const big = kitTemp.makeTemp('k120b-big-');
+	for (let i = 0; i < 250; i++) fs.mkdirSync(path.join(big, `d${i}`));
+	const t0 = Date.now();
+	assert.equal(call('ls d{0..249} f{0..1790}.x', big), 'runs');
+	assert.ok(Date.now() - t0 < 5000, `dotted names beside 250 folders took ${Date.now() - t0} ms`);
+});
+
 // why: guards rule:outward-acts. The third review (on cd0f9f5): a project whose folder name has a space is never one
 // word of the command, so a name check by words missed it.
 test('a kit project whose folder name has a space is named by the command too', () => {
