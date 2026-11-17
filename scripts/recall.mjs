@@ -48,7 +48,13 @@ const SCORES = 'docs/evals/results/recall-scores.md';
 const BRIEF = 'docs/evals/recall-scorer-brief.md';
 const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 // What the gate guards: the rule text, and the keys, brief and harness that grade it.
-const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall(-score)?\.mjs$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
+// I19 (1.42.0): also what renders or ships text a session reads - the project layer's own text, the memory, kit.mjs that
+// renders them - and the behaviour suite and its runner. The project layer's code (the guards) is graded by its tests.
+const GRADED = /^(rules\/|project\/.*\.md$|memory\/|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/;
+// T10 (1.42.0): beside the wording gate line, a rule change records the behaviour suite's line, written by
+// recall-behave.mjs line from the saved runs. The base branch's gate reads only the gate line, so this sits apart.
+const BEHAVE_LINE = /^behaviour: (\S+) median (\d+) baseline (\d+) suite v(\d+) control (\d+)( owner-accepted)?$/;
+const SUITE_REL = 'docs/evals/behaviour-scenarios.json';
 // From keys v4 a line names the control's median too (S18-7), so CI can see the control sits clearly under the kit.
 const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)(?: control (\d+))?( owner-accepted)?$/;
 const CONTROL_LINE = /^control: (\d+)$/;
@@ -237,7 +243,8 @@ export function runHeader({ label, keys, facts, when, cli }) {
  */
 // scored is the commit the run measured (null when the PR names none); left out, the caller read no scored line and
 // the K116 check is not asked for (the gate command always reads it).
-export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [] }) {
+// behaviour is { suite, bar } from the head's suite when the caller reads the behaviour line; left out, it is not asked.
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour }) {
   const all = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   // A file with no newline at its end shows its last line removed and added back unchanged when an entry is
   // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no drop, and
@@ -267,7 +274,17 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
   const graded = scored !== undefined && changed.some((f) => GRADED.test(f));
+  const behave = behaviour && changed.some((f) => GRADED.test(f)) ? added.map((l) => l.trim().match(BEHAVE_LINE)).filter(Boolean).pop() : null;
+  if (behave && Number(behave[2]) < behaviour.bar) return { ok: false, detail: `${behave[1]}: behaviour median ${behave[2]} is under the suite's pass bar of ${behaviour.bar}, and owner-accepted does not pass it` };
+  const behaviourFaults = !behaviour || !changed.some((f) => GRADED.test(f)) ? [] : !behave
+    ? ['it records no behaviour line: add the line recall-behave.mjs line prints for the candidate, baseline and control runs']
+    : [
+      Number(behave[4]) !== behaviour.suite && `the behaviour runs were on suite v${behave[4]}; the current suite is v${behaviour.suite}`,
+      Number(behave[2]) < Number(behave[3]) && `behaviour median ${behave[2]} is under its baseline ${behave[3]}`,
+      Number(behave[5]) >= Number(behave[3]) && `behaviour control ${behave[5]} is not under its baseline ${behave[3]}`,
+    ].filter(Boolean);
   const faults = [
+    ...behaviourFaults,
     graded && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
     graded && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
     dropped && 'this PR removes a recorded gate line',
@@ -276,7 +293,7 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
     Number(median) < Number(baseline) && `median ${median} is under the baseline ${baseline}`,
   ].filter(Boolean);
   if (!faults.length) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
-  return accepted ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}. Only the owner may pass this: the gate line ends in owner-accepted` };
+  return accepted || (behave && behave[6]) ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}. Only the owner may pass this: the gate line ends in owner-accepted` };
 }
 
 function gate([base, head]) {
@@ -314,7 +331,13 @@ function gate([base, head]) {
   const after = !scored ? [] : onBranch
     ? git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', scored, head).filter((f) => f && GRADED.test(f))
     : prChanged.filter((f) => GRADED.test(f));
+  // The behaviour suite is the head's, as the ruler is; a head with no suite file asks for no behaviour line.
+  const suiteText = at(head, SUITE_REL);
+  // Removing the suite would turn its gate off: only a head that still has it, or a base that never had it, goes on.
+  if (!suiteText && onBase(SUITE_REL)) { console.log(`this PR removes ${SUITE_REL}, the behaviour suite the gate reads`); process.exitCode = 1; return; }
+  const behaviour = suiteText ? (() => { const s = JSON.parse(suiteText); return { suite: s.version, bar: s.pass }; })() : undefined;
   const r = checkGate({
+    behaviour,
     scored,
     after,
     // Each side of a rename counts, and a name stays plain: a rule file moved away is rule text changed.

@@ -6922,8 +6922,11 @@ test('a PR that moves the ruler it is graded on needs the owner\'s marker', asyn
 // why: guards rule:ci-gate
 test('recall gate leaves a PR alone only when it touches no rule text, no ruler and no gate line', async () => {
   const { checkGate } = await recallTools();
-  assert.equal(checkGate(gateFacts({ changed: ['scripts/kit.mjs'], added: [] })).ok, true);
+  assert.equal(checkGate(gateFacts({ changed: ['scripts/test-run.mjs'], added: [] })).ok, true);
   assert.equal(checkGate(gateFacts({ changed: ['docs/rules/x.md'], added: [] })).ok, true);
+  // I19 (1.42.0): what renders or ships text a session reads is graded too; the project layer's guard code is not.
+  for (const f of ['scripts/kit.mjs', 'project/AGENTS.md', 'project/standards/testing.md', 'memory/style.md', 'scripts/recall-behave.mjs', 'docs/evals/behaviour-scenarios.json']) assert.equal(checkGate(gateFacts({ changed: [f], added: [] })).ok, false, f);
+  assert.equal(checkGate(gateFacts({ changed: ['project/.claude/guard.cjs'], added: [] })).ok, true);
   for (const ruler of ['docs/evals/recall-questions.md', 'docs/evals/recall-scorer-brief.md']) {
     assert.equal(checkGate(gateFacts({ changed: [ruler], added: [] })).ok, false, ruler);
   }
@@ -7918,7 +7921,7 @@ test('the sweep audit reads an indented findings table as it reads a flat one', 
 
 // Carry-overs closed in 1.21.0 for the recall gate and runs (S18-2, S18-3, S18-5, S18-6, S18-7, B7, I20, I27).
 // A small repo with recall.mjs, a ruler and a scores file, gated base..HEAD as CI does.
-function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: median 9 of 13.\n\n', scores = '# Scores\n' } = {}) {
+function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: median 9 of 13.\n\n', scores = '# Scores\n', suite = null } = {}) {
   const dir = makeTemp('gate11-');
   const git = (...a) => { const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, a.join(' ') + r.stderr); return r.stdout; };
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
@@ -7927,6 +7930,7 @@ function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: med
   put('docs/evals/recall-scorer-brief.md', 'Current version: v1\n');
   put('docs/evals/recall-questions.md', keys);
   put('docs/evals/results/recall-scores.md', scores);
+  if (suite) put('docs/evals/behaviour-scenarios.json', suite);
   git('add', '.'); git('commit', '-qm', 'base'); git('tag', 'base');
   // The rule edit, then the score of that commit (K116: a gate line names the commit it scored), as a real run goes.
   const record = (line, extra = () => {}, scored = true) => {
@@ -7969,6 +7973,30 @@ test('recall gate (K116): rule text changed after the scored commit, or no score
   const accepted = gateRepo();
   accepted.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0 owner-accepted', () => {}, false);
   assert.equal(accepted.gate().status, 0, accepted.gate().stdout);
+});
+
+// T10 (1.42.0): beside the wording line, a rule change records the behaviour suite's line. It is held to the suite's
+// version and pass bar, to its baseline, and to a control under that baseline; the suite cannot be removed to skip it.
+// why: guards rule:instruments-and-evals
+test('recall gate (T10): a rule change needs a behaviour line on the current suite, at its bar and baseline', () => {
+  const suite = JSON.stringify({ version: 2, pass: 10, scenarios: [] });
+  const line = 'gate: a median 12 baseline 9 brief v1 keys v4 control 0';
+  const run = (behave) => { const r = gateRepo({ suite }); r.record(behave ? `${line}\n${behave}` : line); return r.gate(); };
+  assert.match(run(null).stdout, /records no behaviour line/);
+  assert.equal(run('behaviour: a median 12 baseline 11 suite v2 control 3').status, 0);
+  const under = run('behaviour: a median 9 baseline 8 suite v2 control 3');
+  assert.equal(under.status, 1);
+  assert.match(under.stdout, /under the suite's pass bar of 10/);
+  assert.match(run('behaviour: a median 11 baseline 12 suite v2 control 3').stdout, /behaviour median 11 is under its baseline 12/);
+  assert.match(run('behaviour: a median 12 baseline 11 suite v2 control 11').stdout, /behaviour control 11 is not under its baseline 11/);
+  assert.match(run('behaviour: a median 12 baseline 11 suite v1 control 3').stdout, /suite v1; the current suite is v2/);
+  // Removing the suite does not turn the gate off.
+  const gone = gateRepo({ suite });
+  gone.record(`${line}\nbehaviour: a median 12 baseline 11 suite v2 control 3`, (put) => put('docs/evals/behaviour-scenarios.json', ''));
+  gone.git('rm', '-q', 'docs/evals/behaviour-scenarios.json'); gone.git('commit', '-qm', 'drop the suite');
+  const out = gone.gate();
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /removes docs\/evals\/behaviour-scenarios\.json/);
 });
 
 // why: guards rule:instruments-and-evals
