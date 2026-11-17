@@ -837,3 +837,32 @@ Candidate: the branch at db6485d, after the owner's carry sentence was restored 
 
 control: 0
 gate: b14-1.40.0 median 14 baseline 13 brief v2 keys v12 owner-accepted
+
+## Recall v12 - 1.41.0 rules diet against the 1.40.0 text (2026-11-17)
+
+Candidate: the branch at 97142de, the final rule text with the sweep's fixes; three runs. Baseline: three runs of the released 1.40.0 rule text (build 14's candidate runs, the same text word for word as tag v1.40.0) and its control, scored again here beside the candidate. Opus 5.5 at medium, brief v2, keys v12. One fresh blind scorer over all seven runs (reports/evals/blind-1.41.0).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 0, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 0, 1, 0 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 14, 14 | 12, 14, 13 | 0 |
+
+- **Scored: median 14 of 14, baseline 13, control 0.** The bar of 13 holds; no question fails more on the candidate.
+- **Borderline calls:** 6, three on each side (Q10 twice and Q6 on baseline runs scored 0; Q5 once and Q1 twice on candidate runs scored 1).
+- **Not measured:** the global CLAUDE.md change (E2) is in the user layer, which recall does not install; the owner read it line by line.
+
+control: 0
+gate: b15-1.41.0 median 14 baseline 13 brief v2 keys v12
