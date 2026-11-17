@@ -438,6 +438,12 @@ function loopBodies(command, tool) {
 	const list = words.split(tool === 'PowerShell' ? /\s*,\s*/ : /\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
 	if (!list.length || list.length > 64) return null;
 	const use = new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)`, tool === 'PowerShell' ? 'gi' : 'g');
+	// The build 16 sweep (critical): a body that sets the variable again (f=, export f, read f, printf -v f, a PowerShell
+	// $f = or Set-Variable f) writes where the new value points. Only plain reads are read as the word; any other use of
+	// the name keeps the strict reading.
+	const flags = tool === 'PowerShell' ? 'i' : '';
+	const reads = body.replace(new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)(?!\\s*(?:[-+*/%]?=(?!=)|\\+\\+|--|\\[))`, `g${flags}`), ' ');
+	if (new RegExp(`(^|[^\\w$-])${name}(?![\\w-])|\\$${name}(?!\\w)`, flags).test(reads)) return null;
 	return list.map((w) => before + body.trim().replace(use, () => w));
 }
 function shellWrites(command, tool, start, names = proofNames) {
