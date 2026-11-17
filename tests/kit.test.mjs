@@ -86,7 +86,7 @@ test('projectSlug matches the folder name Claude Code uses for project memory', 
   );
 });
 
-// why: catches a break at scripts/kit.mjs:628 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('install user writes rendered files into ~/.claude and stamps the version', () => {
   const { kit, home } = makeKit();
   const r = install({ kit, home, target: 'user' });
@@ -216,7 +216,7 @@ test('restore brings a lost skill back from the snapshot and never overwrites on
   assert.equal(read(path.join(ctx.home, 'skills/sharpen/SKILL.md')), 'mine\n');
 });
 
-// why: catches a break at scripts/kit.mjs:45 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('scrub leaves the third-party snapshot alone', () => {
   const ctx = makeKit();
   fs.mkdirSync(path.join(ctx.kit, 'vendor/plugins/x'), { recursive: true });
@@ -310,7 +310,7 @@ test('a remote whose push URL names another repo names no repo', async () => {
   assert.equal(githubSlug(dir), null);
 });
 
-// why: catches a break at scripts/kit.mjs:1213 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('status warns when the temp disk runs low on inodes, and is silent when it has room or cannot tell', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -324,7 +324,7 @@ test('status warns when the temp disk runs low on inodes, and is silent when it 
 });
 
 // S22-3: before 2.1.295 Claude Code ignores onFailure, so a guard that crashes or times out lets the command run.
-// why: catches a break at scripts/kit.mjs:1056 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('status and session start flag a Claude Code too old for onFailure, and stay quiet when new or unknown', () => {
   const { kit, home, proj } = makeKit();
   install({ kit, home, target: 'user' });
@@ -695,7 +695,7 @@ test('a running session hears about a new kit release once, at the next message'
   assert.equal(promptCheckReport({ kit, projectDir: proj }), '');
 });
 
-// why: catches a break at scripts/kit.mjs:1328 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('session start says when the kit on GitHub is ahead of the kit folder', () => {
   const { kit, home, proj } = caseKit();
   const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { encoding: 'utf8' });
@@ -1054,7 +1054,7 @@ test('status names the kit folder in quotes in the install user line', () => {
   assert.match(status({ kit: spaced, home, projectDir: proj, ahead: () => 0 }).text, /node "[^"\n]*my kit\/scripts\/kit\.mjs" install user/);
 });
 
-// why: catches a break at scripts/kit.mjs:594 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a release install over an unreleased one removes the files only that build had, and keeps a changed one as a gap', () => {
   const { kit, home, proj } = makeKit();
   const extra = ['user/skills/branch-only/SKILL.md', 'user/agents/branch-only.md'];
@@ -1145,7 +1145,7 @@ test('the load guard defaults to 40% over a 3-second average', async () => {
 
 // measure models how Claude Code loads a project at session start (memory docs): CLAUDE.md, its @imports up to
 // four hops, and rules with no paths field. A path in an import ends at the first unescaped space.
-// why: catches a break at scripts/kit.mjs:1598 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('measure counts what a session loads at start, the way Claude Code reads imports', () => {
   const proj = makeTemp('measure-');
   const w = (rel, body) => { fs.mkdirSync(path.dirname(path.join(proj, rel)), { recursive: true }); fs.writeFileSync(path.join(proj, rel), body); };
@@ -3683,7 +3683,7 @@ const stdAudit = (dir, text, title = STD_TITLE) => {
 };
 const honestBody = () => read(path.resolve('user/skills/pr-body/examples/standard.md'))
   .replace('; the corpus and the served documents are unchanged', '');
-// why: catches a break at project/.claude/pr-body-audit.mjs:64 that no other test catches
+// why: catches a break in project/.claude/pr-body-audit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('the Standard PR audit passes an honest body for a project with no corpus, no scoped ignores and no web gates', () => {
   const dir = makeTemp('prb-');
   const ok = stdAudit(dir, honestBody());
@@ -3770,7 +3770,7 @@ test('the handoff audit prints the full text to send, and only for a clean hando
 
 // From a project's gap report (2026-10-30): a version-only package.json change was read as a new dependency, a
 // pause stayed silent after the session that tripped it, and an owner-decided sweep could not log its outcome.
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:216 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a version-only package.json change is not a new dependency; a dependency change still is', () => {
   const pkg = (v, deps = '{}') => `{\n  "name": "app",\n  "version": "${v}",\n  "dependencies": ${deps}\n}\n`;
   const repo = (head) => {
@@ -3790,7 +3790,7 @@ test('a version-only package.json change is not a new dependency; a dependency c
   assert.match(approveRun(featureContract(), repo(pkg('1.1.0', '{ "left-pad": "1" }'))).stdout, /supply-chain/i, 'a new dependency');
   assert.match(approveRun(featureContract(), repo('{ not json')).stdout, /supply-chain/i, 'an unreadable package file counts as a change');
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:697 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('while paused, every ask says how the owner resumes and what to review first', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));
@@ -4306,7 +4306,7 @@ test('a modifiers value that is not a list goes back to be fixed; the fix option
   budget.roles[0].calls = 0;
   assert.match(approveRun(budget).stdout, /How: Set each role's "calls"/);
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:829 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a transcript whose last model is synthetic is read by its real model; one with no model pauses', () => {
   const r = approveRun(featureContract());
   const cfg = transcripts({ y1: [[1, 1, 1, 1], { model: '<synthetic>', u: [0, 0, 0, 0] }], y2: [[1, 1, 1, 1]], y3: [[1, 1, 1, 1]], y4: [[1, 1, 1, 1]], y5: [[1, 1, 1, 1]] });
@@ -4953,7 +4953,7 @@ test('session start suggests skill cases from the repo when none are chosen', ()
   assert.deepEqual(msg.match(/Suggested from this repo: ([^.]*)\./)[1].split(', '), ['feature-build', 'debugging', 'review', 'ml-data', 'data-pipelines']);
 });
 
-// why: catches a break at scripts/kit.mjs:1220 that no other test catches
+// why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('status names a memory index past 6,000 B, which loads in every session', () => {
   const { kit, home, proj } = makeKit();
   const cfg = path.join(kit, 'kit.config.json');
@@ -5605,7 +5605,7 @@ test('a round starts at its clearing, so a reviewer started before it is not thi
   const o = logOutcome(r, ids, cfg);
   assert.match(o.stdout, /ASK THE OWNER[\s\S]*before this sweep was cleared/);
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:1007 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('the model check reads what the decision cleared, in both directions', () => {
   const c = featureContract();
   const r = approveRun(c);
@@ -6050,7 +6050,7 @@ test('a reviewer past its cap is named at the outcome, and the notice shows modi
   k.roles.push(role('astrology', 'What do the stars say about this diff?'));
   assert.match(approveRun(k).stdout, /one of: security, test-value/);
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:787 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a removed worktree is read from its nearest folder, and the shell\'s GIT_DIR does not answer for another repo', () => {
   const r = approveRun(featureContract());
   const other = sweepRepo();
@@ -6104,7 +6104,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
   assert.equal(w.status, 0, w.stdout);
   assert.doesNotMatch(w.stdout, /no call-cap hook/);
 });
-// why: catches a break at user/skills/pre-pr-sweep/approve.mjs:344 that no other test catches
+// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a rebased HEAD asks the owner', () => {
   const first = firstSweep();
   g(first.dir, 'reset', '-q', '--soft', 'HEAD~2');
@@ -7152,7 +7152,7 @@ test('probePath cannot take a label, so no label can appear in the path', async 
   }
 });
 
-// why: catches a break at scripts/recall.mjs:120 that no other test catches
+// why: catches a break in scripts/recall.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('parseRunArgs accepts [label], [label, kitFolder] and [label, --no-kit] and returns exactly label, kitDir, noKit', async () => {
   const { parseRunArgs } = await recallTools();
   assert.deepEqual(parseRunArgs(['cand-1']), { label: 'cand-1', kitDir: null, noKit: false });

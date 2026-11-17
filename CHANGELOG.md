@@ -17,6 +17,8 @@ A fix now needs a test that fails first when it is high, critical, security or a
 
 ### Fixed
 - The test check reads tests made in a loop, and counts a new test in a file the old code cannot load as failing first; a changed file that cannot load is still named.
+- The test sort reads the tags above a loop for each test the loop makes, so the 69 merge-gate refusal tests sort as guards, not as repeats.
+- A mutation run gives its tests a throwaway home folder, so a flipped line can no longer rewrite the owner's install record.
 
 ## 1.39.0 - 2026-11-16
 

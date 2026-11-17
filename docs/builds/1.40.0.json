@@ -38,6 +38,20 @@
    "evidence": "tests/test-check.test.mjs"
   },
   {
+   "id": "AUDIT-LOOPS",
+   "kind": "fixed",
+   "text": "The test sort reads the tags above a loop for each test the loop makes, so the 69 merge-gate refusal tests sort as guards, not as repeats.",
+   "evidence": "tests/test-value.test.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "AUDIT-HOME",
+   "kind": "fixed",
+   "text": "A mutation run gives its tests a throwaway home folder, so a flipped line can no longer rewrite the owner's install record.",
+   "evidence": "tests/mutation-check.test.mjs",
+   "reach": "kit"
+  },
+  {
    "id": "K105-LANE",
    "kind": "changed",
    "text": "A PR's changed run adds the security tests itself, so each runs once, and runs the whole suite when the change reaches over half of it.",
@@ -365,7 +379,7 @@
  },
  "tests": {
   "before": 843,
-  "after": 849,
+  "after": 850,
   "flips": "declared tests on v1.39.0 and on this branch; the PR run gives the final count"
  }
 }

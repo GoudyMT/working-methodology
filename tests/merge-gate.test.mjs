@@ -379,6 +379,7 @@ test('merge gate: a hooks folder set through the environment is NO GO, as a push
 	}
 });
 
+// why: guards rule:standing-grants. Each case is one input the merge gate must refuse before it arms a merge.
 for (const [name, breakIt, want] of CASES) {
 	test(`merge gate: ${name} is NO GO, with a triage report, and nothing is armed`, () => {
 		const s = setup();
@@ -615,6 +616,7 @@ const NO_GO = [
 	['a fetch that fails', (s) => sh(s.work, 'remote', 'set-url', 'origin', path.join(s.root, 'gone.git')), /could not fetch/],
 	['an untracked audit setting', (s) => { fs.mkdirSync(path.join(s.work, '.kit')); fs.writeFileSync(path.join(s.work, '.kit/version-bump.json'), '{"shipped":[]}\n'); }, /not on the base/],
 ];
+// why: guards rule:standing-grants. Each case is one input the merge gate must refuse before it arms a merge.
 for (const [name, breakIt, want] of NO_GO) {
 	test(`merge gate: ${name} is NO GO`, () => {
 		const s = setup();

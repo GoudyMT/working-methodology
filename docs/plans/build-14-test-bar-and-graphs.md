@@ -80,3 +80,11 @@ the kit's guards. Verdict: no fit for T8; the kit's own check below. Not run, so
 The `no test: no real input` call is the lead's; the record shows it to the reviewer of the PR and to the owner, and
 no script can tell whether a real input exists. The rule map counts a name, not whether the script truly holds the
 rule.
+
+## Test audit (whole kit, 2026-11-16)
+
+913 tests, 3,584 flips, 2,902 caught. Sorted: guards 835, unique 47, machine 2, repeat 27, text 1, nothing 1. The one
+"nothing" is a fixture a test writes for itself, not a kit test. The first sort put 96 in repeat: the sorter never read
+the tag above a test loop, so the two merge-gate refusal loops (69 tests) sorted as repeats. The sorter now reads it,
+and both loops are tagged. The owner chose to cut no test: each of the 27 repeats holds a behaviour a real report
+broke once. Of the 46 tags that claimed no other test catches a break, 16 were no longer true and were reworded.
