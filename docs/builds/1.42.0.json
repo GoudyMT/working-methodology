@@ -200,7 +200,7 @@
   "findings": {
    "critical": 1,
    "high": 15,
-   "medium": 34,
+   "medium": 33,
    "low": 24
   },
   "fixes": [
