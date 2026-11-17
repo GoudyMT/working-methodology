@@ -288,7 +288,7 @@ test('strict mode fails on a finding but only names a test the time budget left 
 	sh(dir, 'commit', '-qam', 'neg');
 	const base = sh(dir, 'rev-parse', 'HEAD~1');
 	const r = spawnSync(process.execPath, [CHECK, base, '--strict', '--budget', '0'], { cwd: dir, encoding: 'utf8' });
-	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: not checked: the time budget ran out/);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::minus one is negative: not checked: the time budget ran out/); // pin: 1 (strict mode keys on these words)
 	assert.equal(r.status, 0, `a budget-out alone failed strict: ${r.stdout}`);
 	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('an untagged one', () => { assert.equal(a.neg(-2), true); });\n");
 	sh(dir, 'commit', '-qam', 'untagged');
