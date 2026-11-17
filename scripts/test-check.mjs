@@ -84,10 +84,13 @@ export function tests(text) {
 	const comment = (l) => /^\s*\/\//.test(l);
 	const out = new Map();
 	out.loops = new Set(starts.filter((s) => s[2]).map((s) => s[1]));
-	starts.forEach(([i, name], k) => {
+	starts.forEach(([i, name, loop], k) => {
 		let head = i;
 		while (head > 0 && comment(lines[head - 1])) head--;
 		let end = k + 1 < starts.length ? starts[k + 1][0] : lines.length;
+		// A plain test ends at its own closing line at the margin, so top-level code after it is not part of it (PR 51:
+		// a test inserted after one read the old one as changed). A loop keeps the reach above.
+		if (!loop) { const close = lines.slice(i + 1, end).findIndex((l) => /^\}\)/.test(l)); if (close >= 0) end = i + 1 + close + 1; }
 		while (end - 1 > i && comment(lines[end - 1])) end--;
 		out.set(name, lines.slice(head, end).join('\n').trimEnd());
 	});

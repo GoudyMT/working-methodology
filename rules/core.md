@@ -129,7 +129,7 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 ### Git: Local Work vs Outward Acts {#outward-acts}
 
 <!-- PROJECT ADAPTER A14: the split; a project may keep ALL git with the owner. -->
-- Claude runs local git itself (rule:blocked-prompts); the commit-msg hook checks each message. A local act that throws away uncommitted or unpushed work (`reset --hard`, a checkout or restore over changes, `branch -D`, `stash drop` or `clear`, `reflog expire`) is named first and waits for the owner's yes.
+- Claude runs local git (rule:blocked-prompts); the commit-msg hook checks each message. A local act that throws away uncommitted or unpushed work (`reset --hard`, `checkout`/`restore` over changes, `branch -D`, `stash drop`/`clear`, `reflog expire`) waits for the owner's yes.
 - **Always the owner's: merge, release, tag, a remote branch delete, public posts and any push outside the push bound** - for Claude and every agent it dispatches, unless a standing grant covers the act (A27, rule:standing-grants). Name the act, wait for the owner's yes (the guards read that tap, never Claude's word), check the live state first, report after with proof. Why: history and the public surface stay under the owner's control.
 - **The push bound** (the owner, 2026-11-10 and 2026-11-15) is the push and the PR that need no yes: `git push [-u] origin <feature branch>`, then opening that branch's PR (`gh pr create`, on that repo); do them, then tell the owner. It has four limits, and an answer about pushing or a PR names both acts and all four limits: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes.
 

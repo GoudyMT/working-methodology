@@ -58,7 +58,7 @@
     },
     {
       "before": "- Outside an approved loop / batch Claude hands over exact commands (runs read-only git and recovery when asked); inside one it runs local git; the commit-msg hook checks each message.",
-      "after": "- Claude runs local git itself (rule:blocked-prompts); the commit-msg hook checks each message. A local act that throws away uncommitted or unpushed work (`reset --hard`, a checkout or restore over changes, `branch -D`, `stash drop` or `clear`, `reflog expire`) is named first and waits for the owner's yes."
+      "after": "- Claude runs local git (rule:blocked-prompts); the commit-msg hook checks each message. A local act that throws away uncommitted or unpushed work (`reset --hard`, `checkout`/`restore` over changes, `branch -D`, `stash drop`/`clear`, `reflog expire`) waits for the owner's yes."
     },
     {
       "before": "  The guard and the pre-push hook hold the bound, scan each pushed commit for secrets and log it; a refused push names the limit it hit.",

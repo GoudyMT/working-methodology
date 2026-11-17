@@ -200,6 +200,17 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
 });
 
+// PR 51: a test's text ran on to the next test, so the top-level code after it (a fixture, a helper) was part of its
+// body, and a new test put between them made the old one read as changed, a false finding under --strict.
+// why: catches an unchanged test named as changed when a new test is inserted after it (PR 51)
+test('a test ends at its own closing line, so a test inserted after it leaves it unchanged', async () => {
+	const { tests } = await import(pathToFileURL(CHECK).href);
+	const base = ["test('old', () => {", '\tassert.ok(1);', '});', '', 'const FIXTURE = 1;', "test('next', () => {});", ''].join('\n');
+	const head = base.replace("});\n\nconst FIXTURE", "});\n\ntest('inserted', () => {});\n\nconst FIXTURE");
+	assert.equal(tests(head).get('old'), tests(base).get('old'));
+	assert.ok(tests(head).has('inserted'));
+});
+
 // N12 (1.40.0 verify): the third must-still-flag row. A test that fails on the base only because it throws (a call to
 // a function the base lacks) proves no assertion; narrowing A1 must not let it pass as failing first.
 // why: guards rule:test-value
