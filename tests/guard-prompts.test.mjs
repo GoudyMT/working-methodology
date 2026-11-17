@@ -92,6 +92,18 @@ test('a bare-name cd beside CDPATH is an unknown move, so a delete after it wait
 	assert.equal(JSON.parse(r.stdout || '{"hookSpecificOutput":{}}').hookSpecificOutput.permissionDecision, 'deny');
 });
 
+// K124 (1.42.0): the planted-bug sweep of the shared reader. Past its cap of brace groups the rest of a command is
+// unread, so it asks: a push behind 500 groups went out unread when only plain braces were left, and with no cap on
+// groups a long run of them read one at a time for minutes, past the hook's time.
+// why: guards rule:outward-acts
+test('past the brace-group cap the rest of a command asks, and a long run of groups answers in time', () => {
+	assert.equal(hook('guard-outward.cjs', 'echo ' + '{1..1}'.repeat(500) + ' ; git {push,status} origin main'), 'deny');
+	const t0 = Date.now();
+	assert.equal(hook('guard-outward.cjs', 'echo ' + 'x{1..1} '.repeat(12000)), 'deny');
+	assert.ok(Date.now() - t0 < 5000, `12,000 groups took ${Date.now() - t0} ms`);
+	assert.equal(hook('guard-outward.cjs', 'echo ' + 'x{1..1} '.repeat(20)), 'pass');
+});
+
 // N10: off a terminal, npm assumes yes, so `npx <name>` in an agent's shell fetched and ran any registry package.
 // why: guards rule:outward-acts
 test('the shipped project settings turn off npm and npx installing a missing package without a prompt', () => {
