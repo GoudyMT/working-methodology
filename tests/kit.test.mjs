@@ -155,7 +155,7 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   assert.deepEqual(scrub({ kit }), []);
 });
 
-// why: a committed chart is binary; scrub must read its text chunks, not fail every PNG as non-ASCII
+// why: guards rule:security-standards; a committed chart is binary, so scrub reads its text chunks
 test('scrub reads a PNG by its text chunks: a clean chart passes, a home path in its metadata is held', () => {
   const { kit } = makeKit();
   const crc = (buf) => { let c = ~0; for (const b of buf) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
@@ -3615,6 +3615,8 @@ test('the canary checks a hand-back at the call, refuses a miss once, and lets t
 // line, one line per finding in the five fields (or "No findings"), and what it did not check. A report out of shape
 // is refused once with what is missing; the second goes through, logged, so a role never loops on its report.
 // why: guards rule:sweep-auto-approval
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"return f.length < 5 ||","to":"return f.length < 5 &&"}
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"return run(input).out || null","to":"return run(input).out && null"}
 test('a reviewer\'s hand-back is checked for the report shape once, and the second try goes through', () => {
   const dir = canaryRepo();
   const handback = (id, message, type = 'reviewer') => {
@@ -4100,6 +4102,7 @@ function firstSweep(contract = featureContract(), dir = sweepRepo()) {
 // hide the branch's first sweep.
 const ownerYes = (r) => { const y = approveIn(r.dir, [r.f, '--owner-yes', 'yes, run that second pass']); assert.equal(y.status, 0, y.stdout); return r; };
 // why: guards rule:sweep-auto-approval
+// renamed from: the one-sweep loop: a re-sweep or a second sweep on the branch asks the owner, and a rebase does not hide the first
 test('the one-sweep loop: a second sweep on the branch asks the owner, and a rebase does not hide the first', () => {
   const first = firstSweep();
   const second = path.join(first.dir, 'sweeps', 'second.json');
@@ -4772,6 +4775,10 @@ test('both stop messages name the kit folder and the exact steps to install it',
 // no variable names one; reads a kit project from its top folder; takes a folder with only rules/ as no kit; and
 // calls the launcher broken only when the settings run it.
 // why: guards rule:outward-acts
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"(s && s.hooks && s.hooks.PreToolUse)","to":"(s || s.hooks && s.hooks.PreToolUse)"}
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"const gateHome = process.env.KIT_CLAUDE_HOME || path.dirname","to":"const gateHome = process.env.KIT_CLAUDE_HOME && path.dirname"}
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"top.status === 0 ? top.stdout.trim() : cwd","to":"top.status !== 0 ? top.stdout.trim() : cwd"}
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"has('scripts/kit.mjs') && has('rules')","to":"has('scripts/kit.mjs') || has('rules')"}
 test('the folder gate finds its own config folder, reads a project from its top, and names a broken launcher only when wired', () => {
   const home = makeTemp('cfg-');
   fs.mkdirSync(path.join(home, 'kit-hooks'));
@@ -6056,6 +6063,7 @@ test('a reviewer started before the owner\'s yes is not this round\'s, and a sec
   assert.match(logOutcome(r, old, oldCfg).stdout, /before this sweep was cleared/, 'the first clearing after the last outcome');
 });
 // why: guards rule:sweep-auto-approval
+// renamed from: what the rules bound stays with the owner: a re-sweep that grows, a rebased HEAD, project caps, a big triage
 test('what the rules bound stays with the owner: context over the limit, project caps, a big triage', () => {
   const c = featureContract();
   c.roles[2].context = Array.from({ length: 31 }, (_, i) => `f${i}.ts`);
@@ -8575,6 +8583,7 @@ test('install user lands the merge gate and its audits at the paths the rules gi
   install({ kit: path.resolve('.'), home, target: 'user' });
   assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'merge-gate.mjs')));
   for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs']) {
+    assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'audits', f)), `${f} is installed beside the gate`);
     assert.equal(read(path.join(home, 'kit-tools', 'audits', f)), read(path.resolve('project/.claude', f)), f);
   }
   // The gate imports its temp helper from beside it: without the copy, the installed gate cannot start at all.

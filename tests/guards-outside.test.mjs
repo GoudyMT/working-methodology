@@ -210,6 +210,7 @@ test('V3 script: a refusal after a script deletes a guard file names the file', 
 });
 
 // why: guards rule:outward-acts
+// planted: {"file":"user/kit-tools/kit-launch.cjs","was":"typeof s !== 'object') {","to":"typeof s === 'object') {"}
 test('V3 settings: disableAllHooks written mid-session is refused, and every call is held while it is there', () => {
 	const { proj, session: s } = setup();
 	const local = path.join(proj, '.claude', 'settings.local.json');
@@ -704,6 +705,9 @@ test('V3 settings: a settings file with a byte-order mark is read, not skipped',
 });
 
 // why: guards rule:outward-acts
+// planted: {"file":"user/kit-tools/kit-launch.cjs","was":"r.status !== 0 && r.status !== 1","to":"r.status === 0 && r.status !== 1"}
+// planted: {"file":"user/kit-tools/kit-launch.cjs","was":"String(r.stdout || '').split","to":"String(r.stdout && '').split"}
+// planted: {"file":"user/kit-tools/kit-launch.cjs","was":"normPath(all[all.length - 1] || '')","to":"normPath(all[all.length - 1] && '')"}
 test('V3 hooksPath: every way git can take another hooks path is held, not just the first line of .git/config', () => {
 	const evil = (proj) => posix(path.join(proj, '..', 'evil-hooks'));
 	const NL = String.fromCharCode(10), TAB = String.fromCharCode(9);

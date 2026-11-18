@@ -26,7 +26,8 @@ const check = (dir) => {
 	const r = spawnSync(process.execPath, [path.join(dir, '.claude', 'use-check.mjs'), '--json'], { cwd: dir, encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: homes.get(dir) } });
 	return { code: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, err: r.stderr };
 };
-const part = (out, name) => out.parts.find((p) => p.name === name);
+// A part the check does not have is a failed assertion, not a crash on reading its fields.
+const part = (out, name) => { const p = out.parts.find((x) => x.name === name); assert.ok(p, `the use check has a ${name} part`); return p; };
 
 // why: guards rule:outward-acts
 test('an unwired part fails the check by name: the guard entry gone, git hooks not set, a guard file missing', () => {

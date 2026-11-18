@@ -364,6 +364,7 @@ test('write --closed marks the packet closed, and a plain write does not', () =>
 // Claude Code fires PreCompact with trigger "auto" then (proven on 2.1.318); the shipped entry has no matcher that
 // would limit it to "manual", and the hook writes the packet well inside its time limit.
 // why: guards rule:post-compact-orientation
+// planted: {"file":"project/.claude/settings.json","was":"\"PreCompact\": [\n      {\n","to":"\"PreCompact\": [\n      {\n        \"matcher\": \"manual\",\n"}
 test('an automatic compact writes the resume packet, inside the hook time limit', () => {
 	const settings = JSON.parse(fs.readFileSync(path.join(KIT, 'project/.claude/settings.json'), 'utf8'));
 	const entries = settings.hooks.PreCompact.filter((e) => JSON.stringify(e).includes('pre-compact'));

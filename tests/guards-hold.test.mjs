@@ -458,6 +458,7 @@ test('a feature-branch push goes without a yes only inside the owner\'s bounds',
 
 // The pre-push hook, run as git runs it: the other half of the owner's bounds.
 // why: guards rule:outward-acts
+// planted: {"file":"project/.claude/owner-yes.cjs","was":"function yeses(lines, { all = false }","to":"function yeses(lines, { all = true }"}
 test('the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest', { windows: true }, () => {
 	const dir = kitTemp.makeTemp('push-');
 	const g = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
@@ -746,6 +747,7 @@ test('a gate bypass is never allowed by a tool, even with the owner\'s pop-up ye
 });
 // why: guards rule:outward-acts (a refusal's opening and act are the order a session acts on; T16a, the owner
 // 2026-11-11). The 1.26.0 carry-overs C7, C14, C15, C16 and C18.
+// planted: {"file":"project/.claude/owner-yes.cjs","was":"String(input && input.tool_name)","to":"String(input || input.tool_name)"}
 test('each refusal names one act to quote, one kind, and a fix the hold lets through', () => {
 	// C7: a held push names one act to quote, in the shell that runs it; for main it says the act is for a new repo only.
 	const feat = why('Bash', { command: 'git push --force origin feat/x' });
@@ -966,6 +968,7 @@ test('a feature push from another repo runs only where the kit\'s own hooks will
 // The owner, 2026-11-15: opening a PR from a pushed feature branch needs no yes, like the push. It is free only as one
 // plain gh pr create, on a feature branch, in a repo whose one remote is origin; anything else still asks.
 // why: guards rule:outward-acts
+// planted: {"file":"project/.claude/guard-outward.cjs","was":"\t\t\tconst fold = (p) => (process.platform === 'win32'","to":"\t\t\tconst fold = (p) => (process.platform !== 'win32'"}
 test('opening a PR from a feature branch runs without a yes; any other PR act asks', () => {
 	const repo = kitTemp.makeTemp('prbound-');
 	spawnSync('git', ['init', '-q', '-b', 'main', repo]);
@@ -1016,6 +1019,13 @@ test('opening a PR from a feature branch runs without a yes; any other PR act as
 	assert.notEqual(ask('gh pr create ' + T), 'deny', 'the audited body file in the repo');
 	// K124 (1.42.0): on Windows the same file named in another letter case is that file.
 	if (process.platform === 'win32') assert.notEqual(ask(bodyFile('Good.md')), 'deny', 'the body file named in another case');
+	else {
+		// Elsewhere a name in another case is another path: a folder link that differs only in case is still a link.
+		fs.mkdirSync(path.join(repo, 'docs'));
+		fs.writeFileSync(path.join(repo, 'docs', 'b.md'), GOOD_BODY);
+		fs.symlinkSync('docs', path.join(repo, 'Docs'));
+		assert.equal(ask(bodyFile('Docs/b.md')), 'deny', 'a folder link that differs only in case');
+	}
 	spawnSync('git', ['-C', repo, 'remote', 'add', 'upstream', 'https://github.com/someone/r.git']);
 	bound('gh pr create ' + T);
 	spawnSync('git', ['-C', repo, 'remote', 'remove', 'upstream']);
@@ -1276,6 +1286,14 @@ test('a feature push is inside the bound only while origin pushes to where it fe
 // -Force:$true, a -Force that must not outlive its command, case on a case-sensitive disk, and the owner's yes text.
 // The delete guard is asked on its own where the protected-files guard would hold the same command first.
 // why: guards rule:outward-acts
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"function placeOf(target, ctx, state, keepLast = false)","to":"function placeOf(target, ctx, state, keepLast = true)"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"else if (name === 'rsync' && rest.some","to":"else if (name !== 'rsync' && rest.some"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"else if ((name === 'cmake' || name === 'cmake.exe') && rest[rest.indexOf('-E') + 1] === 'chdir'","to":"else if ((name !== 'cmake' || name === 'cmake.exe') && rest[rest.indexOf('-E') + 1] === 'chdir'"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"else if (name === 'find' && BRACE_EXPANSION.test(text))","to":"else if (name !== 'find' && BRACE_EXPANSION.test(text))"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"programName(w) === 'find') && words.slice(0, p)","to":"programName(w) !== 'find') && words.slice(0, p)"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"ctx.hidden = rest.some((w) => /^-fo(r(ce?)?)?(:\\$true)?$/i","to":"ctx.hidden = rest.some((w) => /^-fo(r(ce?)?)?(:\\$false)?$/i"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"permissionDecisionReason: verdict === 'allow' ? yesText(what)","to":"permissionDecisionReason: verdict !== 'allow' ? yesText(what)"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"if (hit) return hit === start + '/*' ? start : hit","to":"if (hit) return hit !== start + '/*' ? start : hit"}
 test('the delete guard holds what its planted-bug sweep let through, and passes the reads and packs it must not hold', () => {
 	const outside = kitTemp.makeTemp('elsewhere-');
 	const own = kitTemp.makeTemp('proj-');
@@ -1306,6 +1324,11 @@ test('the delete guard holds what its planted-bug sweep let through, and passes 
 // parts that name no folder, so a write through a link into .claude or .git ran; a Claude folder under its own name
 // lost its settings file; and reads were held that must pass.
 // why: guards rule:outward-acts
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"p.length === h.length + 1","to":"p.length !== h.length + 1"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"o.ino === st.ino","to":"o.ino !== st.ino"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR || process.cwd()","to":"const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR && process.cwd()"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"; return linkSeen.get(abs); }","to":"; return void linkSeen.get(abs); }"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"/[*?[]/.test(p) && named.some","to":"/[*?[]/.test(p) || named.some"}
 test('the path reader holds what its planted-bug sweep let through, and passes the reads it must not hold', () => {
 	const own = kitTemp.makeTemp('proj-longname-');
 	for (const d of ['.git', 'src', '.claude']) fs.mkdirSync(path.join(own, d));

@@ -67,6 +67,7 @@ test('a glob or magic pathspec, xargs, an alias on the spot, a path after a move
 // K124 (1.42.0, Trial B): cmd and PowerShell read a cd with its folder glued on (cd.., cd\) as a move, so a delete after
 // it may reach outside the project. A planted flip of that check passed every test on 1.41.0.
 // why: guards rule:outward-acts
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"test(words[p]) || /^(cd|chdir|pushd)$/i.test(lead)) state.moved = true","to":"test(words[p]) && /^(cd|chdir|pushd)$/i.test(lead)) state.moved = true"}
 test('a delete after a glued cd (cd.., cd\\) is read as outside the project; the same delete in place passes', () => {
 	for (const c of ['cd..; Remove-Item -Recurse -Force victim', 'cd.. ; rm -r victim', 'cd\\; Remove-Item -Recurse victim']) assert.equal(hook('guard-delete.cjs', c, { tool_name: 'PowerShell' }), 'deny', c);
 	assert.equal(hook('guard-delete.cjs', 'cd.. && rm -rf victim'), 'deny');
@@ -96,6 +97,8 @@ test('a bare-name cd beside CDPATH is an unknown move, so a delete after it wait
 // unread, so it asks: a push behind 500 groups went out unread when only plain braces were left, and with no cap on
 // groups a long run of them read one at a time for minutes, past the hook's time.
 // why: guards rule:outward-acts
+// planted: {"file":"project/.claude/guard-read.cjs","was":"pass < MAX_GROUPS && (brace","to":"pass < MAX_GROUPS || (brace"}
+// planted: {"file":"project/.claude/guard-read.cjs","was":"if (brace.test(s) || sequence.test(s) || s.includes","to":"if (brace.test(s) && sequence.test(s) || s.includes"}
 test('past the brace-group cap the rest of a command asks, and a long run of groups answers in time', () => {
 	assert.equal(hook('guard-outward.cjs', 'echo ' + '{1..1}'.repeat(500) + ' ; git {push,status} origin main'), 'deny');
 	const t0 = Date.now();
