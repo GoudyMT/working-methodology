@@ -144,8 +144,10 @@ jobs:
           # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
           GIT_NO_REPLACE_OBJECTS: '1'
         run: |
-          mkdir -p "$RUNNER_TEMP/base"
-          git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
+          # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
+          B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
+          mkdir -p "$B"
+          git archive "$BASE_SHA" scripts project tests | tar -x -C "$B"
 
       - name: Test check
         shell: bash
@@ -201,8 +203,10 @@ jobs:
           # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
           GIT_NO_REPLACE_OBJECTS: '1'
         run: |
-          mkdir -p "$RUNNER_TEMP/base"
-          git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
+          # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
+          B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
+          mkdir -p "$B"
+          git archive "$BASE_SHA" scripts project tests | tar -x -C "$B"
 
       - name: Test check, Windows part
         if: github.event_name == 'pull_request'
@@ -376,8 +380,10 @@ jobs:
           # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
           GIT_NO_REPLACE_OBJECTS: '1'
         run: |
-          mkdir -p "$RUNNER_TEMP/base"
-          git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
+          # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
+          B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
+          mkdir -p "$B"
+          git archive "$BASE_SHA" scripts project tests | tar -x -C "$B"
 
       # The local hooks check names at commit and push; a commit made elsewhere (the web, a cloud session) skips
       # them, so the PR's branch and every commit on it are checked here too.

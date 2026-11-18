@@ -38,8 +38,11 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 		const unpack = text.indexOf("- name: The base commit's scripts\n");
 		assert.ok(unpack >= 0 && unpack < at, `${name}: no base unpacked before it`);
 		const u = step(text, "The base commit's scripts");
-		assert.match(u, /git archive "\$BASE_SHA" scripts project tests \| tar -x -C "\$RUNNER_TEMP\/base"/);
-		assert.match(u, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+		// PR 53's first run: Git for Windows' tar read "D:" in the temp path as a remote host, so it gets the path in its
+		// own form (cygpath, where there is one).
+		assert.match(u, /B="\$RUNNER_TEMP\/base"; command -v cygpath > \/dev\/null && B="\$\(cygpath -u "\$B"\)"/); // pin: 1 (GitHub runs it)
+		assert.match(u, /git archive "\$BASE_SHA" scripts project tests \| tar -x -C "\$B"/); // pin: 1 (GitHub runs these lines)
+		assert.match(u, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/); // pin: 1 (GitHub reads it)
 		assert.match(u, /GIT_NO_REPLACE_OBJECTS: '1'/, `${name}: the unpack reads replace refs`);
 		for (const [, kind, what] of text.slice(0, at).matchAll(/^\s+- (name|uses|run): (.+)$/gm)) {
 			if (kind === 'uses') assert.match(what, /^actions\/(checkout|setup-node)@/, `${name}: ${what} runs before it`);
@@ -55,7 +58,7 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 		const lines = run.split('\n').filter((l) => /\bnode\s/.test(l) && !/^\s*#/.test(l) && !/\bnode -e\b/.test(l));
 		assert.ok(lines.length > 0, `${name} runs nothing`);
 		for (const l of lines) {
-			if (l.includes('node "$RUNNER_TEMP/pr-scope.mjs"')) { assert.match(run, /git show "\$PR_BASE:scripts\/pr-scope\.mjs" > "\$RUNNER_TEMP\/pr-scope\.mjs"/); continue; }
+			if (l.includes('node "$RUNNER_TEMP/pr-scope.mjs"')) { assert.match(run, /git show "\$PR_BASE:scripts\/pr-scope\.mjs" > "\$RUNNER_TEMP\/pr-scope\.mjs"/); continue; } // pin: 1 (GitHub runs it)
 			const m = /\bnode\s+"\$(\w+)/.exec(l);
 			assert.ok(m, `${name} runs a script by its own path: ${l.trim()}`);
 			assert.match(run, new RegExp(`(^|[\\s;])${m[1]}="\\$RUNNER_TEMP/base[/"]`), `${name}: $${m[1]} is not set from the base copy`);
