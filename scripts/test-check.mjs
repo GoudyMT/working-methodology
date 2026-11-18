@@ -8,7 +8,8 @@
 //                       "to"}" fails on each bug it names, planted there; a changed test (or one tagged "// renamed
 //                       from: <old name>") whose old version fails there was edited because the code changed, and is
 //                       listed for the owner as trimmed or adapted. A5 measures a fix test whose file the base lacks on
-//                       the commit before its fix.
+//                       the commit before its fix. Off Windows, a test marked { windows: true } and a planted bug
+//                       tagged "os": "win32" are left to the Windows job, whose part (--windows) measures only those.
 //   A2 earns its place  the test carries "// why: guards <rule or the owner's decision>", or catches a flip in the
 //                       lines the change made (the mutation check, with a map of only these tests).
 //   A3 right lane       a test that needs another machine, a real service, a browser or a live model sits in tests/slow.
@@ -159,7 +160,7 @@ function run(dir, keys, env, left) {
 	return red;
 }
 
-export function check(root, base, { strict = false, slice = null, budget = null, record = null } = {}) {
+export function check(root, base, { strict = false, slice = null, budget = null, record = null, windowsPart = false } = {}) {
 	// K95 (build 12): a step that would run past the budget is not started or is stopped, and its tests are named.
 	const deadline = budget === null ? Infinity : Date.now() + budget;
 	const left = () => Math.max(0, deadline - Date.now());
@@ -217,11 +218,29 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	const allKeys = new Set(newOrChanged.map((t) => t.key));
 	const allChanged = [...newOrChanged];
 	if (slice) newOrChanged = newOrChanged.sort((a, b) => (a.key < b.key ? -1 : 1)).filter((_, k) => k % slice.n === slice.i);
-	// A4: a change with no code in it, that still adds a test.
-	const code = changed.filter(([s, f]) => s !== 'D' && !TEST_FILE.test(f) && /\.(c?js|mjs|sh)$|^project\/\.githooks\//.test(f));
-	if (!code.length) for (const t of newOrChanged.filter((x) => x.isNew)) note(t.key, 'A4', 'a test added by a change of prose, wiring or removals only: is it owed?');
-	// A3: the right lane, by what the test needs.
-	for (const t of newOrChanged) if (LARGE.test(t.body) && !t.file.startsWith('tests/slow/')) note(t.key, 'A3', 'needs another machine, a real service, a browser or a model: it belongs in tests/slow');
+	// The owner, 2026-11-18: what only Windows can show is measured on Windows. A test marked { windows: true } is
+	// skipped elsewhere, and a planted bug tagged "os": "win32" shows only there. Off Windows each is left to the Windows
+	// job and named; that job's part (--windows) measures them and nothing else.
+	const plantsOf = (t) => [...headOf(t.body).matchAll(/^\s*\/\/ planted: (.*)$/gm)].map((m) => {
+		try { const p = JSON.parse(m[1]); if (p && [p.file, p.was, p.to].every((x) => typeof x === 'string' && x)) return p; } catch { /* named below */ }
+		return null;
+	});
+	const onWindows = process.platform === 'win32';
+	const windowsOnly = (t) => /^test\((['"`])(?:\\.|(?!\1).)*\1,\s*\{[^}\n]*\bwindows:\s*true\b/m.test(t.body);
+	const forWindows = (t) => windowsOnly(t) || plantsOf(t).some((p) => p && p.os === 'win32');
+	const leftToWindows = [];
+	if (windowsPart) newOrChanged = newOrChanged.filter(forWindows);
+	else if (!onWindows) {
+		for (const t of newOrChanged.filter(windowsOnly)) leftToWindows.push(`    left to the Windows job ${t.key}: it runs only on Windows`);
+		newOrChanged = newOrChanged.filter((t) => !windowsOnly(t));
+	}
+	if (!windowsPart) {
+		// A4: a change with no code in it, that still adds a test.
+		const code = changed.filter(([s, f]) => s !== 'D' && !TEST_FILE.test(f) && /\.(c?js|mjs|sh)$|^project\/\.githooks\//.test(f));
+		if (!code.length) for (const t of newOrChanged.filter((x) => x.isNew)) note(t.key, 'A4', 'a test added by a change of prose, wiring or removals only: is it owed?');
+		// A3: the right lane, by what the test needs.
+		for (const t of newOrChanged) if (LARGE.test(t.body) && !t.file.startsWith('tests/slow/')) note(t.key, 'A3', 'needs another machine, a real service, a browser or a model: it belongs in tests/slow');
+	}
 	if (newOrChanged.length) {
 		// A1: the change's test files on the base commit's code.
 		say(`A1: ${newOrChanged.length} test(s) on the base commit, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
@@ -257,10 +276,6 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 		// A changed (or renamed) test whose old version fails on the new code was edited because the code changed. The
 		// check cannot tell a forced edit from a weakened one, so each is listed for the owner: trimmed (only lines lost,
 		// no looser than deleting the test, which the check never sees) or adapted.
-		const plantsOf = (t) => [...headOf(t.body).matchAll(/^\s*\/\/ planted: (.*)$/gm)].map((m) => {
-			try { const p = JSON.parse(m[1]); if (p && [p.file, p.was, p.to].every((x) => typeof x === 'string' && x)) return p; } catch { /* named below */ }
-			return null;
-		});
 		const provable = pending.filter((t) => !t.loop && (plantsOf(t).length || t.old));
 		const fail = (t, why) => note(t.key, 'A1', `${t.isNew ? 'passes on the base commit' : 'changed, and passes on the base commit'}${why}`);
 		for (const t of pending.filter((x) => !provable.includes(x))) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
@@ -272,7 +287,11 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 				const co = checkoutAt(at, 'HEAD');
 				for (const t of provable) {
 					if (co.status !== 0) { fail(t, ': its proof on the new code could not run'); continue; }
-					const plants = plantsOf(t);
+					const all = plantsOf(t);
+					// Off Windows a planted bug tagged for Windows is left to the Windows job; the rest are measured here.
+					const plants = onWindows ? all : all.filter((p) => !p || p.os !== 'win32');
+					if (all.length > plants.length) leftToWindows.push(`    left to the Windows job ${t.key}: ${all.length - plants.length} planted bug(s) show only on Windows`);
+					if (all.length && !plants.length) { t.proof = 'left to the Windows job'; continue; }
 					if (plants.length) {
 						let why = null;
 						for (const p of plants) {
@@ -285,7 +304,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 							fs.writeFileSync(src, text);
 							if (red.cut && !red.seen.has(t.key)) { why = ': not checked: the time budget ran out'; break; }
 							if (!red.seen.has(t.key)) { why = `, and it did not run with its planted bug in ${p.file}`; break; }
-							if (red.get(t.key) !== true) { why = `, and passes with its planted bug in ${p.file}`; break; }
+							if (red.get(t.key) !== true) { why = `, and passes with its planted bug in ${p.file} (${JSON.stringify(p.was.slice(0, 60))})`; break; }
 						}
 						if (why) fail(t, why);
 						else proven.push(`    planted ${t.key}: fails on each of its ${plants.length} planted bug(s)`), t.proof = 'fails on its planted bug(s)';
@@ -319,6 +338,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	if (record) {
 		const mine = new Map(newOrChanged.map((t) => [t.key, t]));
 		for (const f of record) {
+			if (windowsPart && !mine.has(f.test)) continue;
 			const head = `${f.id} (${f.severity})`;
 			if (f.test === 'no test: no real input') { if (!slice || slice.i === 0) ledger.push(`    ${head} no test: no real input`); continue; }
 			if (!allKeys.has(f.test)) {
@@ -388,7 +408,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 		// run is the slow part, and slicing it by test left one slice with every file (PR 50: 11 minutes, the others 9 s).
 		// A file's tests stay together, so each verdict still sees every flip its tests reach.
 		const a2Files = [...new Set(allChanged.map((x) => x.file))].sort();
-		const a2Pool = slice ? allChanged.filter((x) => a2Files.indexOf(x.file) % slice.n === slice.i) : newOrChanged;
+		const a2Pool = windowsPart ? [] : slice ? allChanged.filter((x) => a2Files.indexOf(x.file) % slice.n === slice.i) : newOrChanged;
 		const untagged = a2Pool.filter((t) => !tagged(t));
 		if (untagged.length) {
 			kitTemp.sessionRoot();
@@ -408,13 +428,14 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	}
 	// A6: each new or changed test names what it guards in a why line of the kit's shape; A2 names an unknown rule.
 	// A comment-only change is checked once, by the first slice.
-	for (const t of [...newOrChanged, ...(!slice || slice.i === 0 ? retagged : [])]) {
+	for (const t of windowsPart ? [] : [...newOrChanged, ...(!slice || slice.i === 0 ? retagged : [])]) {
 		const fault = whyFault(t.body);
 		if (fault) note(t.key, 'A6', fault);
 	}
 	const lines = [`Test check: ${newOrChanged.length} new or changed test(s) since ${baseSha.slice(0, 9)}, ${findings.length} finding(s)`];
 	for (const f of findings) lines.push(`    ${f.rule} ${f.key}: ${f.text}`);
 	if (proven.length) lines.push(`Proven on the new code instead of the base: ${proven.length}`, ...proven);
+	if (leftToWindows.length) lines.push(`Left to the Windows job (its test check part runs them): ${leftToWindows.length}`, ...leftToWindows);
 	if (record && ledger.length) lines.push(`Fix ledger: ${record.length} fix(es)`, ...ledger);
 	// K24 (the owner, 2026-11-17): strict fails on a real finding; a test the time budget left unmeasured is named only.
 	const real = findings.filter((f) => !/the time budget ran out$/.test(f.text));
@@ -443,7 +464,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 		const r = at >= 0 && !slice ? { code: 2, text: 'test check: --slice takes i/n, with i under n' }
 			: bt >= 0 && secs === null ? { code: 2, text: 'test check: --budget takes whole seconds' }
 				: bad ? { code: 2, text: bad }
-					: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000, record });
+					: args.includes('--windows') && process.platform !== 'win32' ? { code: 2, text: 'test check: --windows measures what only Windows shows, so it runs on Windows' }
+							: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000, record, windowsPart: args.includes('--windows') });
 		process.stdout.write(r.text + '\n');
 		process.exitCode = r.code;
 	}

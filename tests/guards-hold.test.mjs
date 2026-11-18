@@ -1326,7 +1326,7 @@ test('the delete guard holds what its planted-bug sweep let through, and passes 
 // why: guards rule:outward-acts
 // planted: {"file":"project/.claude/owner-proof.cjs","was":"p.length === h.length + 1","to":"p.length !== h.length + 1"}
 // planted: {"file":"project/.claude/owner-proof.cjs","was":"o.ino === st.ino","to":"o.ino !== st.ino"}
-// planted: {"file":"project/.claude/owner-proof.cjs","was":"const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR || process.cwd()","to":"const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR && process.cwd()"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR || process.cwd()","to":"const from = Array.isArray(cwd) ? diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR && process.cwd()","os":"win32"}
 // planted: {"file":"project/.claude/owner-proof.cjs","was":"; return linkSeen.get(abs); }","to":"; return void linkSeen.get(abs); }"}
 // planted: {"file":"project/.claude/owner-proof.cjs","was":"/[*?[]/.test(p) && named.some","to":"/[*?[]/.test(p) || named.some"}
 test('the path reader holds what its planted-bug sweep let through, and passes the reads it must not hold', () => {

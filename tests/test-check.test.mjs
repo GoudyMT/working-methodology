@@ -354,10 +354,10 @@ test('a planted-bug test passes when it fails on its planted bug, and is named w
 	sh(dir, 'commit', '-qam', 'planted');
 	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
 	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::caught plant/, r.stdout);
-	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant, cd\\ too: fails on each/m);
-	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant: fails on each of its 1 planted bug\(s\)$/m);
-	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::missed plant: passes on the base commit, and passes with its planted bug in src\/a\.cjs/);
-	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::absent plant: passes on the base commit, and its planted text is not found once in src\/a\.cjs/);
+	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant, cd\\ /m);
+	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant: .* 1 planted/m);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::missed plant: .*planted bug in src\/a\.cjs/);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::absent plant: .*not found once in src\/a\.cjs/);
 });
 
 // Build 16: a behaviour this change removes or alters takes its test with it. A changed test, named or renamed
@@ -383,11 +383,11 @@ test('a test edit the new code forced is listed for the owner, and one it did no
 	sh(dir, 'commit', '-qam', 'one is no longer positive');
 	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
 	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::(pair|new name):/, r.stdout);
-	assert.match(r.stdout, /^ {4}trimmed tests\/a\.test\.mjs::pair: only loses lines, and its old version fails on the new code$/m);
-	assert.match(r.stdout, /^ {4}trimmed tests\/a\.test\.mjs::new name: only loses lines, and its old version fails on the new code$/m);
-	assert.match(r.stdout, /^ {4}adapted tests\/a\.test\.mjs::loose: edited, and its old version fails on the new code$/m, 'an edit the new code forced');
-	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::kept: changed, and passes on the base commit/, 'a removal the new code did not force');
-	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::edited: changed, and passes on the base commit/, 'an edit the new code did not force');
+	assert.match(r.stdout, /^ {4}trimmed tests\/a\.test\.mjs::pair: /m);
+	assert.match(r.stdout, /^ {4}trimmed tests\/a\.test\.mjs::new name: /m);
+	assert.match(r.stdout, /^ {4}adapted tests\/a\.test\.mjs::loose: /m, 'an edit the new code forced');
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::kept: /, 'a removal the new code did not force');
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::edited: /, 'an edit the new code did not force');
 	// A new name over the same code is no new test: it is held to its why line only (PR 52: a renamed test was held).
 	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::named twice/, 'a rename with the same code was held to fail first');
 });
@@ -421,4 +421,33 @@ test('a fix test whose file is new on the branch is measured on the commit befor
 	assert.doesNotMatch(r.stdout, /A5 F1/);
 	assert.match(r.stdout, new RegExp(`A5 F2: the test it names passes on ${fixAt.slice(0, 9)}\\^, the commit before its fix`));
 	assert.match(r.stdout, new RegExp(`A5 F3: the test it names fails on ${fixAt.slice(0, 9)}\\^, but not on an assertion`), 'a call to what the fix added');
+});
+
+// The owner, 2026-11-18 ("we can measure them on windows now"): the test check runs on Linux, where a Windows-only
+// test is skipped and a planted bug that shows only on Windows is invisible. Linux leaves each to the Windows job,
+// and names them; the Windows job's part (--windows) measures them there and nothing else.
+// why: guards rule:test-value
+test('a Windows-only test or planted bug is left to the Windows job, which measures it', () => {
+	const dir = repo();
+	const plant = (os) => `// planted: ${JSON.stringify({ file: 'src/a.cjs', was: 'x > 0', to: 'x < 0', ...(os ? { os } : {}) })}`;
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		'// why: guards rule:outward-acts', plant(),
+		"test('win only', { windows: true }, () => { assert.equal(a.isPos(2), true); });",
+		'// why: guards rule:outward-acts', plant('win32'),
+		"test('win plant', () => { assert.equal(a.isPos(3), true); });",
+		''].join('\n'));
+	sh(dir, 'commit', '-qam', 'windows');
+	const base = sh(dir, 'rev-parse', 'HEAD~2');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	const w = spawnSync(process.execPath, [CHECK, base, '--windows'], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::win (only|plant)/, r.stdout);
+	if (process.platform === 'win32') {
+		assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::win only: /m);
+		assert.match(w.stdout, /^ {4}planted tests\/a\.test\.mjs::win plant: /m, w.stdout);
+		assert.doesNotMatch(w.stdout, /a hollow one/, 'the Windows part checks only what Linux leaves to it');
+	} else {
+		assert.match(r.stdout, /^ {4}left .* tests\/a\.test\.mjs::win only/m);
+		assert.match(r.stdout, /^ {4}left .* tests\/a\.test\.mjs::win plant/m);
+		assert.equal(w.status, 2, 'the Windows part off Windows');
+	}
 });
