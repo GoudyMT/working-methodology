@@ -56,6 +56,26 @@ test('a map run given a list maps the listed tests alone', () => {
 	assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(repo, 'tests', '.map.json'), 'utf8')).tests), ['tests/x.test.mjs::one']);
 });
 
+// The build 17 sweep: each slice packed by its own machine's map, so a slice with a map and one without (or with
+// another commit's) split the tests two ways: one ran twice, three never. Slices split by name alone.
+// why: guards rule:test-and-review-cadence (a sliced run that skips tests reports green)
+test('slices split the tests the same way whatever map each machine holds, so each test runs once', () => {
+	const repo = kitTemp.makeTemp('slice-');
+	const log = path.join(repo, 'ran.log');
+	fs.mkdirSync(path.join(repo, 'tests'));
+	fs.writeFileSync(path.join(repo, '.gitignore'), 'tests/.map.json\nran.log\n');
+	const body = (n, ms) => `test('${n}', async () => { await new Promise((r) => setTimeout(r, ${ms})); fs.appendFileSync(${JSON.stringify(log)}, '${n}\\n'); });`;
+	fs.writeFileSync(path.join(repo, 'tests', 'x.test.mjs'), [`import { test } from ${HARNESS}; import fs from 'node:fs';`, body('a', 5), body('slow', 600), body('b', 5), body('c', 5), body('d', 5), ''].join('\n'));
+	sh(repo, 'init', '-q', '-b', 'main'); sh(repo, 'add', '.'); sh(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fixture');
+	const file = path.join(repo, 'tests', 'x.test.mjs');
+	assert.equal(run(repo, ['--map', '--shards', '1', file]).status, 0);
+	fs.rmSync(log, { force: true });
+	assert.equal(run(repo, ['--slice', '0/2', '--shards', '1', file]).status, 0);
+	fs.rmSync(path.join(repo, 'tests', '.map.json'));
+	assert.equal(run(repo, ['--slice', '1/2', '--shards', '1', file]).status, 0);
+	assert.deepEqual(ran(log).sort(), ['a', 'b', 'c', 'd', 'slow']);
+});
+
 // K123 (build 17, the owner's fast-CI standard): shards split by count finished unevenly (main's run of 1.42.0: 140 s
 // to 180 s). The map run keeps each test's time, and a run with a map packs the tests over the shards by it, longest
 // first onto the least loaded, so the shards finish together; a test the map has no time for goes round robin.

@@ -330,10 +330,11 @@ export async function main(argv) {
 			fs.mkdirSync(env.KIT_MAP_DIR);
 			env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --import ${pathToFileURL(TRACE).href}`.trim(); // a URL: --require would first read the package.json in the child's folder
 		}
-		// K123 (build 17): with a map that kept each test's time, the tests are packed over every shard of every slice,
+		// K123 (build 17): with a map that kept each test's time, the tests are packed over every shard,
 		// longest first onto the least loaded, so the shards finish together; a test with no time goes round robin.
 		const totalShards = shards * (o.slice ? o.slice[1] : 1);
-		if (!o.map && shardFiles.length && totalShards > 1 && fs.existsSync(path.join(root, MAP_FILE))) {
+		// The build 17 sweep: slices run on other machines, each with its own map (or none), so they split by name alone.
+		if (!o.map && !o.slice && shardFiles.length && totalShards > 1 && fs.existsSync(path.join(root, MAP_FILE))) {
 			let times = {};
 			try { times = JSON.parse(fs.readFileSync(path.join(root, MAP_FILE), 'utf8')).tests || {}; } catch { /* no map to pack by */ }
 			const files = new Set(shardFiles.map((f) => posix(path.relative(root, real(f)))));
