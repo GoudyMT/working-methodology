@@ -279,7 +279,10 @@ test('a bracket in a quoted note, a read loop then a sed range, and three PowerS
 		'(Copy-Item x .claude/guard.cjs).Length', '(Set-Content .claude/settings.json x)', '(& { Copy-Item x .claude/guard.cjs }).Length', '$s = Get-Content x; $s | Set-Content .claude/settings.json',
 		// Get-Item's answer used as a path, a method or a property set on a bracketed read, and a gated loop body that writes.
 		'$p = Get-Item .claude/guard.cjs; Set-Content $p x', '$p = Get-Item .claude/guard.cjs; $p | Remove-Item', '$p = Get-Item .claude/guard.cjs; $p.Delete()', "(Get-Item .claude/guard.cjs).Attributes = 'Normal'", '(Get-Item .claude/guard.cjs).Delete()',
-		"foreach ($f in '.claude/guard.cjs') { if (Test-Path $f) { Remove-Item $f } }"]) assert.equal(ps(c), 'deny', c);
+		"foreach ($f in '.claude/guard.cjs') { if (Test-Path $f) { Remove-Item $f } }",
+		// The commit security review: PowerShell closes a quote at a typographic one, so text past any non-ASCII sign keeps
+		// the strict reading of brackets.
+		"node .claude/state.mjs item K1 'a\u2019 (Copy-Item x ('.cl'+'aude/settings.json')) \u2019b'", "node .claude/state.mjs item K1 \"a\u201d (Copy-Item x ('.cl'+'aude/settings.json')) \u201cb\""]) assert.equal(ps(c), 'deny', c);
 	// A quote the shell reads as text (an escaped one, ANSI quoting) never hides a bracket that runs.
 	for (const c of ["node .claude/state.mjs item K1 \\' ; (cp x .claude/guard.cjs) \\'", "node .claude/state.mjs item K1 $'\\'' ; (cp x .claude/guard.cjs) ;'", 'for f in a; do cat $f; done; echo x > .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
 });
