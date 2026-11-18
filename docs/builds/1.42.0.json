@@ -142,6 +142,13 @@
    "text": "The kit's privacy scan reads a committed PNG by its text chunks instead of failing it as non-ASCII.",
    "evidence": "scripts/kit.mjs",
    "reach": "kit"
+  },
+  {
+   "id": "GIT-VAR",
+   "kind": "fixed",
+   "text": "A destructive git command whose subcommand is held in a variable waits behind a shell keyword (then, do, else, if, while, until, coproc) or an assignment, as it already did when it came first.",
+   "evidence": "project/.claude/guard-delete.cjs",
+   "reach": "projects"
   }
  ],
  "decisions": [
@@ -340,6 +347,14 @@
     "commit": "9418d30",
     "test": "tests/guards-hold.test.mjs::the path reader holds what its planted-bug sweep let through, and passes the reads it must not hold",
     "security": true
+   },
+   {
+    "id": "LEAD-1",
+    "severity": "medium",
+    "text": "A git subcommand held in a variable passed the delete guard behind a shell keyword",
+    "commit": "4f6b370",
+    "test": "tests/guard-prompts.test.mjs::a git subcommand held in a variable waits behind a shell keyword or an assignment too",
+    "security": true
    }
   ],
   "deferred": [],
@@ -347,7 +362,7 @@
  },
  "tests": {
   "before": 870,
-  "after": 907,
+  "after": 909,
   "flips": "declared tests on v1.41.0 and on this branch; the PR run gives the final count"
  },
  "visuals": {

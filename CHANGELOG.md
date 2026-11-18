@@ -28,6 +28,7 @@ The recall gate also grades what sessions do, the always-loaded rules file is 14
 - A delete after a bare-name cd waits when CDPATH may be set, in the command, the environment or a sourced file.
 - The project launcher names the project a climb through a link reaches, where bash lands rather than where the link sits.
 - The kit's privacy scan reads a committed PNG by its text chunks instead of failing it as non-ASCII.
+- A destructive git command whose subcommand is held in a variable waits behind a shell keyword (then, do, else, if, while, until, coproc) or an assignment, as it already did when it came first.
 
 ## 1.41.0 - 2026-11-17
 
