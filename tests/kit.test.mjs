@@ -3913,6 +3913,23 @@ test('the version bump check fails shipped code with no bump, unless the body sa
     assert.match(out, /FAIL\s+version bumped, or no user-facing change/, audit);
   }
 });
+// The build 17 sweep: a PR could add .kit/version-bump.json naming no shipped files, and pass its own bump check.
+// why: guards rule:pr-body (a PR that empties its shipped list ships code with no version bump)
+test('judging a PR, the version bump check reads its settings from the base', async () => {
+  const { versionBumpCheck } = await import(pathToFileURL(BUMP).href);
+  const loosened = bumpRepo((d) => {
+    fs.writeFileSync(path.join(d, 'src', 'a.js'), 'export const a = 2;\n');
+    fs.mkdirSync(path.join(d, '.kit'));
+    fs.writeFileSync(path.join(d, '.kit', 'version-bump.json'), '{"shipped":[]}\n');
+  });
+  const was = process.env.PR_BASE;
+  try {
+    process.env.PR_BASE = 'main';
+    assert.equal(versionBumpCheck('Fixes a.', loosened).ok, false, 'the base names no settings file: the defaults hold');
+    delete process.env.PR_BASE;
+    assert.equal(versionBumpCheck('Fixes a.', loosened).ok, true, 'before a PR, the working tree\'s settings are the project\'s');
+  } finally { if (was === undefined) delete process.env.PR_BASE; else process.env.PR_BASE = was; }
+});
 
 // Improvement report IR-2026-10-30-pr-body-audit-holds-checks-from-another-project: the Standard audit held one
 // project's facts (its dependency-audit wording, a corpus line, web gates), so an honest body elsewhere could only
@@ -3970,6 +3987,26 @@ test('a project\'s .kit/pr-body.json sets its own review dimensions, audit line 
   const oneRow = honestBody().replace(/\| (Privacy|Supply|Legal|Test value).*\n/g, '');
   assert.equal(stdAudit(plain, oneRow).status, 0, stdAudit(plain, oneRow).stdout);
   assert.match(stdAudit(plain, oneRow.replace(/\| Code security.*\n/, '')).stdout, /missing Code security/);
+});
+// The build 17 sweep: CI runs the base copy of the audit, but it read .kit/pr-body.json from the PR's own tree, so a
+// PR could name the rows its body is held to. Judging a PR (PR_BASE set), the file is read from the base.
+// why: guards rule:pr-body (a PR that sets its own review rows passes a body with no security row)
+test('judging a PR, the audit reads the project\'s review rows from the base, not the PR', () => {
+  const dir = makeTemp('prb-');
+  const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', `core.hooksPath=${os.devNull}`, ...a], { cwd: dir, encoding: 'utf8' });
+  g('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n'); g('add', '.'); g('commit', '-qm', 'base');
+  const base = g('rev-parse', 'HEAD').stdout.trim();
+  fs.mkdirSync(path.join(dir, '.kit'));
+  fs.writeFileSync(path.join(dir, '.kit', 'pr-body.json'), JSON.stringify({ dimensions: ['Style'] }));
+  g('add', '.'); g('commit', '-qm', 'pr');
+  const noSecurity = honestBody().replace(/\| (Privacy|Supply|Legal|Test value|Code security).*\n/g, '| Style | PASS | fine |\n');
+  const f = path.join(dir, 'body.md');
+  fs.writeFileSync(f, noSecurity);
+  const judged = spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, STD_TITLE], { encoding: 'utf8', cwd: dir, env: { ...process.env, PR_BASE: base } });
+  assert.match(judged.stdout, /missing Code security/, judged.stdout);
+  // On the owner's machine, before a PR (no PR_BASE), the working tree's file is the project's.
+  const { PR_BASE, ...env } = process.env;
+  assert.doesNotMatch(spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, STD_TITLE], { encoding: 'utf8', cwd: dir, env }).stdout, /missing Code security/);
 });
 
 // The Review section carries the sweep summary a reviewer needs (the commit covered, a result per dimension, high and

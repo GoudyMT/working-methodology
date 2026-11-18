@@ -48,6 +48,8 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # The base the audit reads the project's settings and the canary phrase from (the build 17 sweep).
+          PR_BASE: origin/${{ github.base_ref }}
         run: |
           node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/pr-body.md', process.env.PR_BODY || '')"
           # Every title is type: subject now (1.25.0), so the body says which format it is: a Standard body has a
