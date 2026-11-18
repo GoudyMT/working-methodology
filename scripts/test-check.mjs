@@ -145,12 +145,14 @@ function run(dir, keys, env, left) {
 		// not checked (the K95 sweep: every test was named so, and the finished ones' findings were lost).
 		if (r.error) cut = true;
 		const isFile = (name) => slash(name) === slash(abs);
-		for (const m of out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)) if (!isFile(m[1])) red.seen.add(`${f}::${m[1]}`);
+		// TAP writes a backslash or # in a test's name with a backslash before it (PR 52: "cd\" read as never run).
+		const plain = (name) => name.replace(/\\([\\#])/g, '$1');
+		for (const m of out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)) if (!isFile(m[1])) red.seen.add(`${f}::${plain(m[1])}`);
 		// Each top-level "not ok <n> - <name>" with its YAML block up to the next result line.
 		for (const m of out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?\n([\s\S]*?)(?=^(?:ok|not ok) \d+ - |^1\.\.|(?![\s\S]))/gm)) {
 			// A file that could not load (an import the base lacks), or ended non-zero, fails as a whole under its own path.
 			if (isFile(m[1])) red.set(`file:${f}`, false);
-			else red.set(`${f}::${m[1]}`, /ERR_ASSERTION|AssertionError/.test(m[2]));
+			else red.set(`${f}::${plain(m[1])}`, /ERR_ASSERTION|AssertionError/.test(m[2]));
 		}
 	}
 	if (cut) red.cut = new Set(red.seen);
@@ -279,20 +281,24 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 							const red = run(at, [t.key], env, left);
 							fs.writeFileSync(src, text);
 							if (red.cut && !red.seen.has(t.key)) { why = ': not checked: the time budget ran out'; break; }
+							if (!red.seen.has(t.key)) { why = `, and it did not run with its planted bug in ${p.file}`; break; }
 							if (red.get(t.key) !== true) { why = `, and passes with its planted bug in ${p.file}`; break; }
 						}
 						if (why) fail(t, why);
 						else proven.push(`    planted ${t.key}: fails on each of its ${plants.length} planted bug(s)`), t.proof = 'fails on its planted bug(s)';
 						continue;
 					}
+					// The old test in its own file, with the helpers it had, on the new code.
 					const file = path.join(at, t.file);
 					const text = fs.readFileSync(file, 'utf8');
-					fs.writeFileSync(file, text.replace(t.body, () => t.old.body));
+					fs.writeFileSync(file, git(root, 'show', `${baseSha}:${t.file}`).stdout);
 					const key = `${t.file}::${t.old.name}`;
 					const red = run(at, [key], env, left);
 					fs.writeFileSync(file, text);
 					if (red.cut && !red.seen.has(key)) fail(t, ': not checked: the time budget ran out');
-					else if (red.get(key) !== true) fail(t, ': it adds no catch, and its old version passes on the new code');
+					else if (!red.seen.has(key)) fail(t, ': it adds no catch, and its old version does not run on the new code');
+					else if (!red.has(key)) fail(t, ': it adds no catch, and its old version passes on the new code');
+					else if (red.get(key) !== true) fail(t, ': it adds no catch, and its old version fails on the new code only by a crash');
 					else if (removedOnly(t.old.body, t.body)) proven.push(`    trimmed ${t.key}: only loses lines, and its old version fails on the new code`), t.proof = 'only loses lines the new code forced';
 					else proven.push(`    adapted ${t.key}: edited, and its old version fails on the new code`), t.proof = 'an edit the new code forced';
 				}
@@ -378,6 +384,14 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 				const home3 = makeTemp('test-check-home-');
 				try {
 					const co = checkoutAt(at, before);
+					// A fix often adds the function its test imports, and a missing named import stops the whole file
+					// loading. Read each local module whole there, so a test that calls what the fix added fails on that
+					// call (not an assertion: still named), and the rest run on the code before the fix.
+					if (co.status === 0) {
+						const tf = path.join(at, f.test.slice(0, f.test.indexOf('::')));
+						let k = 0;
+						fs.writeFileSync(tf, fs.readFileSync(tf, 'utf8').replace(/^import \{([^}]*)\} from (['"])(\.{1,2}\/[^'"]+)\2;$/gm, (_, names, q, from) => { k++; return `import * as fixBefore${k} from ${q}${from}${q};\nconst {${names.replace(/\bas\b/g, ':')}} = fixBefore${k};`; }));
+					}
 					const red = co.status === 0 ? run(at, [f.test], { KIT_CLAUDE_HOME: home3, CLAUDE_CONFIG_DIR: home3 }, left) : null;
 					const on = `${fixSha.slice(0, 9)}^`;
 					if (!red || red.has(`file:${f.test.slice(0, f.test.indexOf('::'))}`) && !red.seen.has(f.test)) why = `cannot load on ${on}, the commit before its fix, either`;

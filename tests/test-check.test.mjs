@@ -347,10 +347,14 @@ test('a planted-bug test passes when it fails on its planted bug, and is named w
 		"test('missed plant', () => { assert.equal(a.isPos(2), true); });",
 		'// why: guards rule:outward-acts', plant('x > 9', 'x < 9'),
 		"test('absent plant', () => { assert.equal(a.isPos(2), true); });",
+		// A name with a backslash, as TAP writes it doubled (PR 52: the glued-cd test, cd\\, read as never run).
+		'// why: guards rule:outward-acts', plant('x > 0', 'x < 0'),
+		"test('caught plant, cd\\\\ too', () => { assert.equal(a.isPos(2), true); });",
 		''].join('\n'));
 	sh(dir, 'commit', '-qam', 'planted');
 	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
 	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::caught plant/, r.stdout);
+	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant, cd\\ too: fails on each/m);
 	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant: fails on each of its 1 planted bug\(s\)$/m);
 	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::missed plant: passes on the base commit, and passes with its planted bug in src\/a\.cjs/);
 	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::absent plant: passes on the base commit, and its planted text is not found once in src\/a\.cjs/);
@@ -391,13 +395,15 @@ test('a test edit the new code forced is listed for the owner, and one it did no
 test('a fix test whose file is new on the branch is measured on the commit before its fix', () => {
 	const dir = repo();
 	const base = sh(dir, 'rev-parse', 'HEAD');
-	fs.writeFileSync(path.join(dir, 'src', 'c.cjs'), 'exports.three = () => 4;\n');
+	fs.writeFileSync(path.join(dir, 'src', 'c.mjs'), 'export const three = () => 4;\n');
 	sh(dir, 'add', '.');
 	sh(dir, 'commit', '-qm', 'three, wrong');
-	fs.writeFileSync(path.join(dir, 'src', 'c.cjs'), 'exports.three = () => 3;\n');
-	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';", "import { createRequire } from 'node:module';", "const c = createRequire(import.meta.url)('../src/c.cjs');",
-		'// why: guards rule:outward-acts', "test('three is three', () => { assert.equal(c.three(), 3); });",
-		'// why: guards rule:outward-acts', "test('three is a number', () => { assert.equal(typeof c.three(), 'number'); });", ''].join('\n'));
+	// The fix also adds a function the test file imports, so the file as written cannot load on the commit before it.
+	fs.writeFileSync(path.join(dir, 'src', 'c.mjs'), 'export const three = () => 3;\nexport const extra = () => 1;\n');
+	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';", "import { three, extra as more } from '../src/c.mjs';",
+		'// why: guards rule:outward-acts', "test('three is three', () => { assert.equal(three(), 3); });",
+		'// why: guards rule:outward-acts', "test('three is a number', () => { assert.equal(typeof three(), 'number'); });",
+		'// why: guards rule:outward-acts', "test('extra is one', () => { assert.equal(more(), 1); });", ''].join('\n'));
 	sh(dir, 'add', '.');
 	sh(dir, 'commit', '-qm', 'three fixed');
 	const fixAt = sh(dir, 'rev-parse', 'HEAD');
@@ -405,9 +411,11 @@ test('a fix test whose file is new on the branch is measured on the commit befor
 	fs.writeFileSync(rec, JSON.stringify({ sweep: { fixes: [
 		{ id: 'F1', severity: 'high', text: 'F1', commit: fixAt.slice(0, 7), test: 'tests/c.test.mjs::three is three' },
 		{ id: 'F2', severity: 'high', text: 'F2', commit: fixAt.slice(0, 7), test: 'tests/c.test.mjs::three is a number' },
+		{ id: 'F3', severity: 'high', text: 'F3', commit: fixAt.slice(0, 7), test: 'tests/c.test.mjs::extra is one' },
 	] } }));
 	const r = spawnSync(process.execPath, [CHECK, base, '--record', rec], { cwd: dir, encoding: 'utf8' });
 	assert.match(r.stdout, new RegExp(`^ {4}F1 \\(high\\) tests/c\\.test\\.mjs::three is three: fails first on ${fixAt.slice(0, 9)}\\^$`, 'm'), r.stdout);
 	assert.doesNotMatch(r.stdout, /A5 F1/);
 	assert.match(r.stdout, new RegExp(`A5 F2: the test it names passes on ${fixAt.slice(0, 9)}\\^, the commit before its fix`));
+	assert.match(r.stdout, new RegExp(`A5 F3: the test it names fails on ${fixAt.slice(0, 9)}\\^, but not on an assertion`), 'a call to what the fix added');
 });
