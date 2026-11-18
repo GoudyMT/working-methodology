@@ -297,10 +297,12 @@ test('a bracket in a quoted note, a read loop then a sed range, and three PowerS
 	for (const c of ['for d in .claude agents; do cd $d; done && echo x > ../guard.cjs', 'for d in .git hooks; do cd $d; done && echo x > pre-push', 'for d in .githooks .; do cd $d; done && echo x > pre-commit',
 		'for d in .claude agents; do cd $d; echo x > ../guard.cjs; done', 'for d in .claude agents; do pushd $d; done; echo x > ../guard.cjs', 'for d in .claude; do builtin cd $d; done; echo x > guard.cjs',
 		// The commit security review: a quoted name, or a name the shell runs from a variable, changes folder too.
+		'for d in .claude agents; do \\cd $d; done && echo x > ../guard.cjs', 'for d in .claude agents; do c\\d $d; done && echo x > ../guard.cjs',
 		'for d in .claude agents; do "cd" $d; done && echo x > ../guard.cjs', "for d in .claude agents; do 'cd' $d; done && echo x > ../guard.cjs", 'for d in .claude agents; do c""d $d; done && echo x > ../guard.cjs']) assert.equal(bash(c), 'deny', c);
 	for (const c of ["foreach ($d in '.claude','agents') { Set-Location $d; Set-Content ../guard.cjs x }", "foreach ($d in '.claude','agents') { sl $d; Set-Content ../guard.cjs x }", "foreach ($d in '.claude','agents') { Push-Location $d; Set-Content ../guard.cjs x }",
 		"foreach ($d in '.claude','agents') { & 'Set-Location' $d; Set-Content ../guard.cjs x }", "foreach ($d in '.claude','agents') { iex \"cd $d\"; Set-Content ../guard.cjs x }", "foreach ($d in '.claude','agents') { Invoke-Expression \"sl $d\"; Set-Content ../guard.cjs x }", "foreach ($d in 'a') { D:; Set-Content .claude/guard.cjs x }",
-		"foreach ($d in '.claude','agents') { .'Set-Location' $d; Set-Content ../guard.cjs x }", `foreach ($d in '.claude','agents') { .${String.fromCharCode(0x2018)}sl${String.fromCharCode(0x2019)} $d; Set-Content ../guard.cjs x }`]) assert.equal(ps(c), 'deny', c);
+		"foreach ($d in '.claude','agents') { .'Set-Location' $d; Set-Content ../guard.cjs x }", "foreach ($d in '.claude','agents') { Set-Loc`ation $d; Set-Content ../guard.cjs x }",
+		"foreach ($d in '.claude','agents') { s`l $d; Set-Content ../guard.cjs x }", "foreach ($d in '.claude','agents') { (Set-Location $d); Set-Content ../guard.cjs x }", `foreach ($d in '.claude','agents') { .${String.fromCharCode(0x2018)}sl${String.fromCharCode(0x2019)} $d; Set-Content ../guard.cjs x }`]) assert.equal(ps(c), 'deny', c);
 });
 
 // why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
