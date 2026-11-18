@@ -48,6 +48,8 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 		}
 		const run = step(text, name);
 		assert.ok(run.includes('the base has no '), `${name} does not say when the base has no copy`);
+		// The audits read the project's settings and the canary phrase from PR_BASE (the build 17 sweep).
+		if (name === 'PR body audit') assert.match(run, /PR_BASE: origin\/\$\{\{ github\.base_ref \}\}/);
 		// Every node line runs a script named by a variable set from the base copy (the PR's copy only in the fallback),
 		// or the base's pr-scope.mjs; node -e runs no file.
 		const lines = run.split('\n').filter((l) => /\bnode\s/.test(l) && !/^\s*#/.test(l) && !/\bnode -e\b/.test(l));
