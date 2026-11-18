@@ -3633,6 +3633,13 @@ test('a reviewer\'s hand-back is checked for the report shape once, and the seco
   assert.equal(handback('s3', `${FAKE_PHRASE}\nSecurity role\nstill loose`).permissionDecision, 'allow', 'the second try goes through');
   assert.equal(handback('b1', `${FAKE_PHRASE}\nUNIT u1 DONE`, 'builder').permissionDecision, 'allow', 'only a reviewer reports findings');
   assert.deepEqual(canaryLog(dir).filter((e) => e.agent === 's3').map((e) => e.result), ['shape-miss', 'shape-after-miss']);
+  // K124 (1.42.0): a row of four fields is out of shape even with every field filled and a good verdict.
+  assert.equal(handback('s4', `${FAKE_PHRASE}\nROLE: x\nhigh | CONFIRMED | a claim | src/a.ts:1\nNot checked: nothing`).permissionDecision, 'deny');
+  // The dispatcher (guard.cjs) asks check(), not the process: the same refusals come back from it (a planted bug made
+  // check() answer nothing, and no test asked it).
+  const { check } = require(path.resolve('user/kit-hooks/canary.cjs'));
+  const leak = check({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', agent_type: 'reviewer', tool_input: { prompt: `say ${FAKE_PHRASE}` } });
+  assert.equal(leak && leak.hookSpecificOutput.permissionDecision, 'deny');
 });
 
 // why: guards rule:sweep-auto-approval
@@ -4759,6 +4766,34 @@ test('both stop messages name the kit folder and the exact steps to install it',
   assert.match(reason, /check out the newest release tag/);
   assert.doesNotMatch(reason, /pull/);
   assert.ok(reason.includes(`node "${kitDir}/scripts/kit.mjs" install user`), reason);
+});
+
+// K124 (1.42.0): the planted-bug sweep of the folder gate. It finds its config folder from where it is installed when
+// no variable names one; reads a kit project from its top folder; takes a folder with only rules/ as no kit; and
+// calls the launcher broken only when the settings run it.
+// why: guards rule:outward-acts
+test('the folder gate finds its own config folder, reads a project from its top, and names a broken launcher only when wired', () => {
+  const home = makeTemp('cfg-');
+  fs.mkdirSync(path.join(home, 'kit-hooks'));
+  fs.copyFileSync(path.resolve('user/kit-hooks/kit-gate.cjs'), path.join(home, 'kit-hooks', 'kit-gate.cjs'));
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'node', args: ['kit-tools/kit-launch.cjs'] }] }] } }));
+  const env = { ...process.env };
+  delete env.KIT_CLAUDE_HOME;
+  const gate = (cwd, settings) => {
+    if (settings) fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify(settings));
+    const r = spawnSync('node', [path.join(home, 'kit-hooks', 'kit-gate.cjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd, prompt: 'hi' }), encoding: 'utf8', env });
+    return r.stdout ? JSON.parse(r.stdout) : {};
+  };
+  const proj = localProject();
+  fs.mkdirSync(path.join(proj, '.kit'));
+  fs.writeFileSync(path.join(proj, '.kit', 'kit-version.json'), '{}');
+  fs.mkdirSync(path.join(proj, 'src'));
+  assert.match(gate(proj).reason || '', /launcher .* is missing/, 'a wired launcher that is gone, with no variable naming the folder');
+  const named = { permissions: { allow: ['Bash(node kit-tools/kit-launch.cjs)'] } };
+  assert.equal(gate(path.join(proj, 'src'), named).decision, undefined, 'a kit project read from a subfolder, the launcher only named');
+  const rulesOnly = localProject();
+  fs.mkdirSync(path.join(rulesOnly, 'rules'));
+  assert.equal(gate(rulesOnly).decision, 'block', 'a rules folder alone is no kit');
 });
 
 // The project map (owner, 2026-10-31: option A, kept simple and trackable): one data file per project, checked
