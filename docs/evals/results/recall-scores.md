@@ -895,3 +895,35 @@ Candidate: the branch at 3aaa8c8 (the entry above was scored at 97142de; two wor
 
 control: 0
 gate: b15-1.41.0-final median 14 baseline 13 brief v2 keys v12
+
+## Recall v12 - 1.42.0, the start file diet and behaviour recall (2026-11-17)
+
+Candidate: the branch at 0fb40ff (the project layer from this branch, the user layer the released 1.41.0). Baseline and control: the 1.41.0 final runs and control above, scored again here. Opus 5.5 at medium, brief v2, keys v12. The first three candidate runs gave a median of 13, on the bar, so two more ran and one fresh blind scorer read all nine runs (reports/evals/blind-1.42.0-5). The owner approved both spends by pop-up.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 0, 1, 1, 1, 1 | 0, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 0, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 0, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 0, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 12, 14, 14, 13, 14 | 12, 14, 14 | 0 |
+
+- **Scored: median 14 of 14, baseline 14, control 0.** The bar of 13 holds.
+- **Q7 missed once on the candidate** (approve.mjs read as optional): the question known to swing with whether approve.mjs is reachable. Q9 missed once (the idea filed in the backlog, not the plan's parking lot). Q4 missed once on each side.
+- **Behaviour (suite v1, pass 11):** the release scored 13, 13, 13 (each missed the closeout task); the branch 13, 13, 12 (the closeout task passes every time; the layout task failed twice, the sessions writing the page before a test, which the release's sessions also did after a blocked test; the open-PR task failed twice on the grade's last-message check, one session out of turns while it ran the sweep). Control 6.
+- **Not measured:** the user layer's changes (skills and the global file), as before.
+
+control: 0
+gate: b16-1.42.0 median 14 baseline 14 brief v2 keys v12
+behaviour: b16-1.42.0 median 13 baseline 13 suite v1 control 6
+scored: 0fb40ff950dcf5fe84c3b7b3c485d89627873e19
