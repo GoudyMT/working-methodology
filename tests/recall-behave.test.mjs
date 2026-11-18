@@ -11,6 +11,8 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 import { parseStream, grade, outsideReads, readOnlyProbe, suiteVersion, seed, reusable, startRun, runScenario, ALLOWED } from '../scripts/recall-behave.mjs';
 
 const { makeTemp } = kitTemp;
+// Each temp folder sits under this run's own session folder, removed when the run ends (CI counts what is left).
+kitTemp.sessionRoot();
 const call = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: String(Math.random()), name, input }] } });
 const result = (text) => JSON.stringify({ type: 'result', result: text, total_cost_usd: 0.5, num_turns: 4 });
 const stream = (...lines) => lines.join('\n');
