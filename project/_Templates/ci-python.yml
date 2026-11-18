@@ -33,6 +33,9 @@ jobs:
       # A PR may narrow this run to what the change reaches (pytest --testmon) once the narrowed run has missed
       # nothing beside the whole suite; main always runs it whole. Lanes go by folder: a conftest.py hook marks each
       # test in the slow-lane folder "slow", the markers are registered, and --strict-markers fails an unknown one.
+      # One lane until the tests take about 2 to 3 minutes; then shards (pytest-xdist --dist loadgroup, or pytest-split
+      # with its stored durations) packed by each test's last run time, so they finish together (K123). On a private repo
+      # each shard is a billed job.
       - run: <pytest -m "not slow" --strict-markers>
   lanes:
     # A job-level if cannot read files, so this job looks for a slow test and says so (as the kit's own CI does).
