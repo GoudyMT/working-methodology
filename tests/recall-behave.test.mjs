@@ -35,6 +35,7 @@ test('a shell check reads Bash and PowerShell alike', () => {
 });
 
 // why: guards rule:instruments-and-evals
+// planted: {"file":"scripts/recall-behave.mjs","was":"ok = grade(ev, c.of).some((g) => g.ok);","to":"ok = grade(ev, c.of).every((g) => g.ok);"}
 test('each check kind passes and fails on what the session did', () => {
 	const ev = parseStream(stream(
 		call('Bash', { command: 'node .claude/resume-packet.mjs check' }),

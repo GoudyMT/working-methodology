@@ -259,7 +259,7 @@
     "severity": "low",
     "text": "The workflow test and the PR body pin passed a base path named only in a message, or pieces from different steps",
     "commit": "1e50f3d",
-    "test": "tests/kit.test.mjs::CI runs the suite on Linux and the Windows slice on Windows, and the required check fails unless both passed",
+    "test": "tests/ci-workflows.test.mjs::every step that judges a PR runs the base commit's copy of its script, before any of the PR's code runs",
     "security": true
    },
    {

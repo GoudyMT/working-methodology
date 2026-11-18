@@ -59,6 +59,7 @@ test('a map run given a list maps the listed tests alone', () => {
 // The build 17 sweep: each slice packed by its own machine's map, so a slice with a map and one without (or with
 // another commit's) split the tests two ways: one ran twice, three never. Slices split by name alone.
 // why: guards rule:test-and-review-cadence (a sliced run that skips tests reports green)
+// planted: {"file":"scripts/test-run.mjs","was":"if (!o.map && !o.slice && shardFiles.length","to":"if (!o.map && shardFiles.length"}
 test('slices split the tests the same way whatever map each machine holds, so each test runs once', () => {
 	const repo = kitTemp.makeTemp('slice-');
 	const log = path.join(repo, 'ran.log');
