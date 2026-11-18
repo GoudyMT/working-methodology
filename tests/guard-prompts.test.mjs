@@ -104,6 +104,14 @@ test('past the brace-group cap the rest of a command asks, and a long run of gro
 	assert.equal(hook('guard-outward.cjs', 'echo ' + 'x{1..1} '.repeat(20)), 'pass');
 });
 
+// A review lead (2026-11-18): a git subcommand held in a variable was held only where git came first, so behind a
+// shell keyword (then, do, else, !) or an assignment it was read as a plain git call.
+// why: guards rule:outward-acts
+test('a git subcommand held in a variable waits behind a shell keyword or an assignment too', () => {
+	for (const c of ['if true; then git $c --hard; fi', 'for i in 1; do git $c --hard; done', 'if false; then :; else git $c --hard; fi', '! git $c --hard', 'X=1 git $c --hard']) assert.equal(hook('guard-delete.cjs', c), 'deny', c);
+	assert.equal(hook('guard-delete.cjs', 'if true; then git status; fi'), 'pass');
+});
+
 // N10: off a terminal, npm assumes yes, so `npx <name>` in an agent's shell fetched and ran any registry package.
 // why: guards rule:outward-acts
 test('the shipped project settings turn off npm and npx installing a missing package without a prompt', () => {
