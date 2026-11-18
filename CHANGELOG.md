@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.43.0 - 2026-11-18
+
+The guards pass the reads they held from the workbench and still hold every write twin, CI judges a PR with the base commit's checks before any of its own code runs, the test check's planted-bug part measures only the tests it must, and behaviour recall grades scenarios 5 and 10 on what the session did.
+
+### Added
+- The test check reads a test moved word for word out of another test file as moved, not new, unless its new file brings code of its own; it names two tests of one name and a describe block it cannot read.
+- The test runner packs tests over its shards by each test's last run time from the coverage map, so the shards finish together; slices split by name.
+- The planted-bug check gains `--until-caught` (a test that caught a flip runs on no later one) and `--whole` (a survivor runs once more against every test of its files, credited to the test that went red, never to a timeout).
+
+### Changed
+- The testing rule and the CI templates: workers inside the job first, then shards once a lane's tests take over about 2 to 3 minutes, packed by each test's last run time; a runner that splits by file count needs a duration-sorted list.
+- The test check's planted-bug part maps only the untagged tests it must measure, stops running a test once it has caught a flip, and is sliced by test, so it fits CI's budget on a large PR.
+- Behaviour suite v2: scenario 5 passes only with no edit of the page and an ask about the layout, and scenario 10 only when the sweep skill starts and no PR command runs; the PR and merge checks read `gh.exe`, `gh -R` and `gh api` too.
+
+### Fixed
+- The guards pass a kit script given a quoted note with a bracket, a read loop then a command, and three PowerShell read shapes; each write twin, and any loop whose body changes folder, is still held.
+- A hook given no folder places a command's words from the project folder, so a write through a link into `.claude` is held wherever the hook process runs.
+
+### Security
+- Judging a PR, the PR body audit and the version bump check read the project's settings from the base, so a PR cannot set the rows its own body is held to.
+- CI runs the base commit's copy of every check that judges a PR (the test check, names, secrets, the build record, the PR body audits), unpacked before any of the PR's code runs and with git's replace refs off.
+
 ## 1.42.0 - 2026-11-17
 
 The recall gate also grades what sessions do, the always-loaded rules file is 14% smaller under a lower cap, a PR or release whose measured cost moved shows it in a checked Visuals section, a branch gets one sweep, and the guards hold destructive local git while passing plain reads.
