@@ -7,7 +7,7 @@ the kit. Not in scope (build 18): the sweep floor by diff risk, `vendor/` out, o
 
 ## 1. Proof on the released 1.42.0 (done before this plan, $0)
 
-Run in `C:\Users\Max\kit-probes\b17-*` against the release copy (tag v1.42.0) and, read-only, the installed launcher.
+Run in the owner's kit-probes folder (`b17-*`) against the release copy (tag v1.42.0) and, read-only, the installed launcher.
 
 | Row | Result | How |
 |---|---|---|
