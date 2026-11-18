@@ -3644,6 +3644,28 @@ test('a reviewer\'s hand-back is checked for the report shape once, and the seco
   assert.equal(leak && leak.hookSpecificOutput.permissionDecision, 'deny');
 });
 
+// A phrase line that holds only punctuation has no words to open a message with, so the check is off: with the line
+// read as a phrase, every real message would be blocked as a miss. A stop whose transcript holds no report to read
+// (nothing, or a text reply with only blanks) is logged unchecked and let through, never blocked as a miss.
+// why: guards rule:test-value (a blank phrase line or an empty transcript blocking every stop)
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"return m && words(m[1]).trim()","to":"return m || words(m[1]).trim()"}
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"return text.trim() ? text : null;","to":"return void (text.trim() ? text : null);"}
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"\t}\n\treturn null;\n}","to":"\t}\n\treturn void null;\n}"}
+test('the canary is off for a phrase line of only punctuation, and unchecked when the transcript holds no report', () => {
+  const blank = canaryRepo('---');
+  assert.equal(canary({ cwd: blank, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'bp', last_assistant_message: 'done' }).status, 0);
+  assert.deepEqual(canaryLog(blank), []);
+  const dir = canaryRepo();
+  const stopWith = (id, entries) => {
+    const t = path.join(dir, `${id}.jsonl`);
+    fs.writeFileSync(t, entries.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    return canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, agent_transcript_path: t }).status;
+  };
+  assert.equal(stopWith('e1', []), 0, 'an empty transcript');
+  assert.equal(stopWith('e2', [{ type: 'assistant', message: { content: [{ type: 'text', text: '  ' }] } }]), 0, 'a blank text reply');
+  assert.deepEqual(canaryLog(dir).map((e) => e.result), ['unchecked', 'unchecked']);
+});
+
 // why: guards rule:sweep-auto-approval
 test('every kit role checks its hand-back call', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
