@@ -223,6 +223,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 		const onBase = git(root, 'cat-file', '-e', `${baseSha}:${f}`).status === 0;
 		const was = tests(onBase ? git(root, 'show', `${baseSha}:${f}`).stdout : '');
 		for (const name of now.twice) note(`${f}::${name}`, 'A1', 'two tests in this file share the name: the check reads only the last, so give each its own');
+		if (/^\s*(describe|suite|it)\(/m.test(fs.readFileSync(path.join(root, f), 'utf8'))) note(f, 'A1', 'a describe, suite or it block: the check reads only test() at the margin, so the tests inside go unchecked');
 		for (const [name, body] of now) {
 			if (was.get(name) === body) continue;
 			if (!was.has(name)) { const g = movedFrom(f, name, body); if (g) { moved.push(`    moved ${f}::${name}: from ${g}`); continue; } }

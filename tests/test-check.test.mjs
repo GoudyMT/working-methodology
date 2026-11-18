@@ -245,13 +245,14 @@ test('a moved test whose new file brings code of its own is checked, and two tes
 	const moved = a.find((l) => l.startsWith("test('a hollow one'"));
 	fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), a.filter((l) => l !== moved).join('\n'));
 	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), [...a.slice(0, 4), 'const assert = { equal() {}, ok() {} };', moved, ''].join('\n'));
-	fs.writeFileSync(path.join(dir, 'tests', 'd.test.mjs'), [...a.slice(0, 4), "test('twice', () => { assert.ok(true); });", "test('twice', () => { assert.ok(1); });", ''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'd.test.mjs'), [...a.slice(0, 4), "test('twice', () => { assert.ok(true); });", "test('twice', () => { assert.ok(1); });", "describe('hidden', () => {", "\ttest('inside', () => { assert.ok(true); });", '});', ''].join('\n'));
 	sh(dir, 'add', '.');
 	sh(dir, 'commit', '-qm', 'split with a stand-in');
 	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
 	assert.doesNotMatch(r.stdout, /moved tests\/c\.test\.mjs::a hollow one/, r.stdout);
 	assert.match(r.stdout, /A6 tests\/c\.test\.mjs::a hollow one/, 'held to the bar as a new test');
 	assert.match(r.stdout, /tests\/d\.test\.mjs::twice: two tests in this file share the name/);
+	assert.match(r.stdout, /A1 tests\/d\.test\.mjs: a describe, suite or it block/);
 });
 
 // PR 51: a test's text ran on to the next test, so the top-level code after it (a fixture, a helper) was part of its
