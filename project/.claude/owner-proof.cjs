@@ -870,7 +870,8 @@ const inFoldersAsWritten = (folders) => (raw, cwd) => {
 
 function answer(input) {
 	const t = input.tool_input || {};
-	const cwd = input.cwd || process.cwd();
+	// K133 (build 17): with no folder given, the shell starts in the project, as the word placing below reads it.
+	const cwd = input.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 	const folders = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name) ? listedFolders(cwd) : [];
 	if (folders === null) return deny('Held: .claude/protected-folders.json cannot be read, so no write tool or shell call runs. The owner fixes it in their own editor.');
 	// The settings take the owner's pop-up yes for this exact act; a subagent never has one.

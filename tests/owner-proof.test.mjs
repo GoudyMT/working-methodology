@@ -461,6 +461,33 @@ test('a write into .git, a device or share path, a word through a junction and a
 	for (const [tool, command] of [['Bash', 'mv pay/config pay/config.bak'], ['Bash', 'tar --exclude=.git -cf x.tar pay'], ['PowerShell', 'Get-ChildItem .git'], ['Bash', 'git status']]) assert.equal(ask(tool, { command }), 'allow', `${tool} ${command}`);
 });
 
+// K133 (build 17): when the hook is given no folder, the shell is placed in the project folder (CLAUDE_PROJECT_DIR),
+// and a word after a cd the guard cannot follow is placed there too; with no project named, the hook's own folder.
+// The planted bug at that line (|| to &&) passed CI, since every other test gave the hook a folder or ran it in the
+// project; here the hook runs somewhere else, so each swap is seen.
+// why: guards rule:security-standards (a write through a link into .claude must hold wherever the hook process runs)
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR || process.cwd();","to":"diskBase(cwd) : process.env.CLAUDE_PROJECT_DIR && process.cwd();"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"const cwd = input.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();","to":"const cwd = input.cwd || process.env.CLAUDE_PROJECT_DIR && process.cwd();"}
+test('with no folder given, words are placed from the project folder, or the hook folder when none is named', { windows: 'also' }, () => {
+	const proj = kitTemp.makeTemp('k133-');
+	const elsewhere = kitTemp.makeTemp('k133-other-');
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.claude', 'settings.json'), '{}');
+	fs.symlinkSync(path.join(proj, '.claude'), path.join(proj, 'lnk'), 'junction');
+	const ask = (command, hookDir, projectDir) => {
+		const { CLAUDE_PROJECT_DIR: _drop, ...env } = process.env;
+		const r = spawnSync(process.execPath, [HOOK], { cwd: hookDir, input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8', env: { ...env, CLAUDE_CONFIG_DIR: cfg, ...(projectDir ? { CLAUDE_PROJECT_DIR: projectDir } : {}) } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? 'deny' : 'allow';
+	};
+	// The project named, the hook started somewhere else: the word is the project's link, after a cd or with none.
+	for (const c of ['cd "$X" && echo x > lnk/settings.json', 'echo x > lnk/settings.json']) assert.equal(ask(c, elsewhere, proj), 'deny', c);
+	// No project named, the hook started in the project: the same.
+	for (const c of ['cd "$X" && echo x > lnk/settings.json', 'echo x > lnk/settings.json']) assert.equal(ask(c, proj, null), 'deny', c);
+	// A word that reaches no protected file still runs from either place.
+	for (const [dir, named] of [[elsewhere, proj], [proj, null]]) assert.equal(ask('cd "$X" && echo x > notes.txt', dir, named), 'allow');
+});
+
 // why: guards rule:security-standards. The 1.29.0 sweep: a PowerShell filter names files at any depth with no path word,
 // so a pipeline into a writer deleted the folder list and the guards unseen; a filter that is only read from stays free.
 test('a PowerShell filter piped into a writer is read as naming the files of the guards', () => {
