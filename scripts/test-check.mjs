@@ -109,6 +109,7 @@ export function tests(text) {
 	const comment = (l) => /^\s*\/\//.test(l);
 	const out = new Map();
 	out.loops = new Set(starts.filter((s) => s[2]).map((s) => s[1]));
+	out.twice = new Set();
 	starts.forEach(([i, name, loop], k) => {
 		let head = i;
 		while (head > 0 && comment(lines[head - 1])) head--;
@@ -117,6 +118,8 @@ export function tests(text) {
 		// a test inserted after one read the old one as changed). A loop keeps the reach above.
 		if (!loop) { const close = lines.slice(i + 1, end).findIndex((l) => /^\}\)/.test(l)); if (close >= 0) end = i + 1 + close + 1; }
 		while (end - 1 > i && comment(lines[end - 1])) end--;
+		// The build 17 sweep: a second test of the same name is named, never read over in silence.
+		if (out.has(name)) out.twice.add(name);
 		out.set(name, lines.slice(head, end).join('\n').trimEnd());
 	});
 	return out;
@@ -193,14 +196,22 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// moved only when that file held it on the base and holds it no more; a copy left in both is new.
 	const moved = [];
 	let baseTests = null;
+	// The build 17 sweep: and only when every line of its new file outside the tests (imports, helpers, stand-ins) is a
+	// line of the old one, so a copy whose file makes it run differently is checked as new.
+	const outside = (text, found) => { let t = String(text); for (const b of found.values()) t = t.replace(b, ''); return new Set(t.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//'))); };
+	const baseText = new Map();
 	const movedFrom = (f, name, body) => {
 		if (!baseTests) {
 			baseTests = new Map();
 			const listed = git(root, 'ls-tree', '-r', '--name-only', baseSha, '--', 'tests').stdout.split('\n').filter((x) => TEST_FILE.test(x));
-			for (const g of listed) baseTests.set(g, tests(git(root, 'show', `${baseSha}:${g}`).stdout));
+			for (const g of listed) { const t = git(root, 'show', `${baseSha}:${g}`).stdout; baseText.set(g, t); baseTests.set(g, tests(t)); }
 		}
+		const text = fs.readFileSync(path.join(root, f), 'utf8');
+		const mine = outside(text, tests(text));
 		for (const [g, was] of baseTests) {
 			if (g === f || was.get(name) !== body) continue;
+			const theirs = outside(baseText.get(g), was);
+			if ([...mine].some((l) => !theirs.has(l))) continue;
 			let now = '';
 			try { now = fs.readFileSync(path.join(root, g), 'utf8'); } catch { /* the file is gone */ }
 			if (!tests(now).has(name)) return g;
@@ -211,6 +222,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 		const now = tests(fs.readFileSync(path.join(root, f), 'utf8'));
 		const onBase = git(root, 'cat-file', '-e', `${baseSha}:${f}`).status === 0;
 		const was = tests(onBase ? git(root, 'show', `${baseSha}:${f}`).stdout : '');
+		for (const name of now.twice) note(`${f}::${name}`, 'A1', 'two tests in this file share the name: the check reads only the last, so give each its own');
 		for (const [name, body] of now) {
 			if (was.get(name) === body) continue;
 			if (!was.has(name)) { const g = movedFrom(f, name, body); if (g) { moved.push(`    moved ${f}::${name}: from ${g}`); continue; } }

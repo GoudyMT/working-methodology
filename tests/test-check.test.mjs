@@ -139,6 +139,9 @@ test('the test check slices its flip run by test, and the slices name what the w
 	const s1 = a2([base, '--slice', '1/2']);
 	assert.deepEqual([...new Set([...s0.files, ...s1.files])].sort(), ['tests/a.test.mjs', 'tests/b.test.mjs']);
 	assert.deepEqual([...s0.notes, ...s1.notes].sort(), a2([base]).notes.sort(), 'the slices name what the whole run names');
+	// The build 17 sweep: and no test is measured by both slices.
+	const keysOf = (notes) => notes.map((l) => l.trim().split(/\s+/)[1].replace(/:$/, ''));
+	assert.deepEqual(keysOf(s0.notes).filter((k) => keysOf(s1.notes).includes(k)), [], 'a test in both slices');
 	// N12's third must-still-flag row (the owner's pick, 2026-11-17, folded here: a row alone passes on the old code by
 	// design, and the strict check refuses that). A test red on the base only by a crash proves no assertion.
 	const crashBase = sh(dir, 'rev-parse', 'HEAD');
@@ -229,6 +232,26 @@ test('a test moved unchanged from another file is not new; a copy left in both f
 	assert.match(r.stdout, /moved tests\/c\.test\.mjs::a hollow one: from tests\/a\.test\.mjs/);
 	assert.doesNotMatch(r.stdout, /A\d tests\/c\.test\.mjs::a hollow one/);
 	assert.match(r.stdout, /A1 tests\/c\.test\.mjs::zero is not positive/);
+});
+
+// The build 17 sweep: a test copied word for word into a new file whose own code (a stand-in assert, a helper) makes it
+// run differently passed as moved, checked by nothing; and of two tests with one name in a file the check read only
+// the last. A test is moved only when every line of its new file outside the tests is a line of the old one.
+// why: guards rule:test-value (a neutered copy of a test merges with no check run on it)
+test('a moved test whose new file brings code of its own is checked, and two tests of one name are named', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	const a = fs.readFileSync(path.join(dir, 'tests', 'a.test.mjs'), 'utf8').split('\n');
+	const moved = a.find((l) => l.startsWith("test('a hollow one'"));
+	fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), a.filter((l) => l !== moved).join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), [...a.slice(0, 4), 'const assert = { equal() {}, ok() {} };', moved, ''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'd.test.mjs'), [...a.slice(0, 4), "test('twice', () => { assert.ok(true); });", "test('twice', () => { assert.ok(1); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'split with a stand-in');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(r.stdout, /moved tests\/c\.test\.mjs::a hollow one/, r.stdout);
+	assert.match(r.stdout, /A6 tests\/c\.test\.mjs::a hollow one/, 'held to the bar as a new test');
+	assert.match(r.stdout, /tests\/d\.test\.mjs::twice: two tests in this file share the name/);
 });
 
 // PR 51: a test's text ran on to the next test, so the top-level code after it (a fixture, a helper) was part of its
