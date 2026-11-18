@@ -200,6 +200,9 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			// The version this test replaces: its own on the base, or the one it names as renamed from (gone from the file now).
 			const from = (/^\s*\/\/ renamed from: (.+?)\s*$/m.exec(headOf(body)) || [])[1];
 			const old = was.has(name) ? { name, body: was.get(name) } : from && was.has(from) && !now.has(from) ? { name: from, body: was.get(from) } : null;
+			// A new name over the same code is no new test (PR 52): its why line is all there is to check.
+			const untitled = (b) => codeOf(b).replace(NAMED, 'test(""');
+			if (old && untitled(old.body) === untitled(body)) { retagged.push({ key: `${f}::${name}`, body }); continue; }
 			newOrChanged.push({ key: `${f}::${name}`, file: f, name, body, isNew: !was.has(name), newFile: !onBase, loop, old });
 		}
 	}
@@ -308,54 +311,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			}
 		}
 	}
-	{
-		// A2: a reason tag, or a flip it catches in the lines the change made. A tag counts only when the rule it names is
-		// in the rule index, or it names the owner (K12, the 1.27.0 sweep: any "why: guards" text passed, so a tag naming
-		// no real rule kept a test in the never-cut group); a tag naming no known rule is named, and read as no tag.
-		let index = '';
-		try { index = fs.readFileSync(path.join(root, 'project', 'standards', 'INDEX.md'), 'utf8'); } catch { /* none: no rule counts */ }
-		const ids = (text) => new Set([...text.matchAll(/^\| ([a-z0-9-]+) \|/gm)].map((m) => m[1]));
-		const known = ids(index);
-		// The index read is the change's own copy, so a change could add a row and tag a test with it (K36). Such a rule
-		// counts, and is named so the owner reads the new rule beside the test it keeps.
-		const before = ids(git(root, 'show', `${baseSha}:project/standards/INDEX.md`).stdout || '');
-		const tagged = (t) => {
-			const head = headOf(t.body);
-			const rules = [...head.matchAll(/\/\/ why: guards\b.*?\brule:([a-z0-9-]+)/g)].map((m) => m[1]);
-			const unknown = rules.filter((r) => !known.has(r));
-			if (unknown.length) note(t.key, 'A2', `names rule:${unknown.join(', rule:')}, which is not in the rule index`);
-			const added = rules.filter((r) => known.has(r) && !before.has(r));
-			if (added.length) note(t.key, 'A2', `names rule:${added.join(', rule:')}, a rule this change itself adds to the rule index`);
-			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(head);
-		};
-		// A2 measures by test file, each file in one slice (its i-th place among the changed files, every n-th): the flip
-		// run is the slow part, and slicing it by test left one slice with every file (PR 50: 11 minutes, the others 9 s).
-		// A file's tests stay together, so each verdict still sees every flip its tests reach.
-		const a2Files = [...new Set(allChanged.map((x) => x.file))].sort();
-		const a2Pool = slice ? allChanged.filter((x) => a2Files.indexOf(x.file) % slice.n === slice.i) : newOrChanged;
-		const untagged = a2Pool.filter((t) => !tagged(t));
-		if (untagged.length) {
-			kitTemp.sessionRoot();
-			say(`A2: ${untagged.length} untagged test(s) in ${[...new Set(untagged.map((x) => x.file))].join(', ')} measured against the flips of this change, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
-			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
-			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))]);
-			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');
-			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000']) : mapped;
-			const outOfTime = (m.error && m.error.code === 'ETIMEDOUT') || (mapped.error && mapped.error.code === 'ETIMEDOUT');
-			const flips = !outOfTime && fs.existsSync(flipsFile) ? JSON.parse(fs.readFileSync(flipsFile, 'utf8')).flips : null;
-			for (const t of untagged) {
-				if (outOfTime) note(t.key, 'A2', 'not measured: the time budget ran out');
-				else if (!flips) note(t.key, 'A2', `not measured (${String(m.stderr || m.stdout).trim().split('\n').pop() || 'the mutation check could not run'})`);
-				else if (!flips.some((f) => (f.caughtBy || []).some((k) => k === t.key || (t.loop && k.startsWith(`${t.file}::`) && t.loop.test(k.slice(t.file.length + 2)))))) note(t.key, 'A2', 'catches no flip in the lines this change made, and names no rule it guards (// why: guards <rule>)');
-			}
-		}
-	}
-	// A6: each new or changed test names what it guards in a why line of the kit's shape; A2 names an unknown rule.
-	// A comment-only change is checked once, by the first slice.
-	for (const t of [...newOrChanged, ...(!slice || slice.i === 0 ? retagged : [])]) {
-		const fault = whyFault(t.body);
-		if (fault) note(t.key, 'A6', fault);
-	}
+	// A5 runs before the A2 flip run, the slow step, so a time budget spent on flips still leaves the ledger its proof.
 	// A5 (K105): each test the fix ledger names gets its A1 verdict, and the PR's fix line may claim only that. A fix
 	// whose test does not fail first, or is not one this change adds or changes, is a finding. With slices, the slice
 	// holding the test states its verdict, and the first slice names a test no slice holds.
@@ -407,6 +363,54 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			ledger.push(`    ${head} ${f.test}: ${why || ok}`);
 			if (why) note(f.id, 'A5', `the test it names ${why}`);
 		}
+	}
+	{
+		// A2: a reason tag, or a flip it catches in the lines the change made. A tag counts only when the rule it names is
+		// in the rule index, or it names the owner (K12, the 1.27.0 sweep: any "why: guards" text passed, so a tag naming
+		// no real rule kept a test in the never-cut group); a tag naming no known rule is named, and read as no tag.
+		let index = '';
+		try { index = fs.readFileSync(path.join(root, 'project', 'standards', 'INDEX.md'), 'utf8'); } catch { /* none: no rule counts */ }
+		const ids = (text) => new Set([...text.matchAll(/^\| ([a-z0-9-]+) \|/gm)].map((m) => m[1]));
+		const known = ids(index);
+		// The index read is the change's own copy, so a change could add a row and tag a test with it (K36). Such a rule
+		// counts, and is named so the owner reads the new rule beside the test it keeps.
+		const before = ids(git(root, 'show', `${baseSha}:project/standards/INDEX.md`).stdout || '');
+		const tagged = (t) => {
+			const head = headOf(t.body);
+			const rules = [...head.matchAll(/\/\/ why: guards\b.*?\brule:([a-z0-9-]+)/g)].map((m) => m[1]);
+			const unknown = rules.filter((r) => !known.has(r));
+			if (unknown.length) note(t.key, 'A2', `names rule:${unknown.join(', rule:')}, which is not in the rule index`);
+			const added = rules.filter((r) => known.has(r) && !before.has(r));
+			if (added.length) note(t.key, 'A2', `names rule:${added.join(', rule:')}, a rule this change itself adds to the rule index`);
+			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(head);
+		};
+		// A2 measures by test file, each file in one slice (its i-th place among the changed files, every n-th): the flip
+		// run is the slow part, and slicing it by test left one slice with every file (PR 50: 11 minutes, the others 9 s).
+		// A file's tests stay together, so each verdict still sees every flip its tests reach.
+		const a2Files = [...new Set(allChanged.map((x) => x.file))].sort();
+		const a2Pool = slice ? allChanged.filter((x) => a2Files.indexOf(x.file) % slice.n === slice.i) : newOrChanged;
+		const untagged = a2Pool.filter((t) => !tagged(t));
+		if (untagged.length) {
+			kitTemp.sessionRoot();
+			say(`A2: ${untagged.length} untagged test(s) in ${[...new Set(untagged.map((x) => x.file))].join(', ')} measured against the flips of this change, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
+			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
+			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))]);
+			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');
+			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000']) : mapped;
+			const outOfTime = (m.error && m.error.code === 'ETIMEDOUT') || (mapped.error && mapped.error.code === 'ETIMEDOUT');
+			const flips = !outOfTime && fs.existsSync(flipsFile) ? JSON.parse(fs.readFileSync(flipsFile, 'utf8')).flips : null;
+			for (const t of untagged) {
+				if (outOfTime) note(t.key, 'A2', 'not measured: the time budget ran out');
+				else if (!flips) note(t.key, 'A2', `not measured (${String(m.stderr || m.stdout).trim().split('\n').pop() || 'the mutation check could not run'})`);
+				else if (!flips.some((f) => (f.caughtBy || []).some((k) => k === t.key || (t.loop && k.startsWith(`${t.file}::`) && t.loop.test(k.slice(t.file.length + 2)))))) note(t.key, 'A2', 'catches no flip in the lines this change made, and names no rule it guards (// why: guards <rule>)');
+			}
+		}
+	}
+	// A6: each new or changed test names what it guards in a why line of the kit's shape; A2 names an unknown rule.
+	// A comment-only change is checked once, by the first slice.
+	for (const t of [...newOrChanged, ...(!slice || slice.i === 0 ? retagged : [])]) {
+		const fault = whyFault(t.body);
+		if (fault) note(t.key, 'A6', fault);
 	}
 	const lines = [`Test check: ${newOrChanged.length} new or changed test(s) since ${baseSha.slice(0, 9)}, ${findings.length} finding(s)`];
 	for (const f of findings) lines.push(`    ${f.rule} ${f.key}: ${f.text}`);

@@ -369,7 +369,7 @@ test('a test edit the new code forced is listed for the owner, and one it did no
 	const dir = repo();
 	const file = path.join(dir, 'tests', 'a.test.mjs');
 	const two = (name, x, y) => [`test('${name}', () => {`, `\tassert.equal(a.isPos(${x}), true);`, `\tassert.equal(a.isPos(${y}), true);`, '});'];
-	fs.appendFileSync(file, [...two('pair', 1, 5), ...two('old name', 1, 6), "test('loose', () => {", '\tassert.equal(a.isPos(1), true);', '});', ...two('kept', 3, 5), "test('edited', () => {", '\tassert.equal(a.isPos(4), true);', '});', ''].join('\n'));
+	fs.appendFileSync(file, [...two('pair', 1, 5), ...two('old name', 1, 6), "test('loose', () => {", '\tassert.equal(a.isPos(1), true);', '});', ...two('kept', 3, 5), "test('edited', () => {", '\tassert.equal(a.isPos(4), true);', '});', "test('named once', () => {", '\tassert.equal(a.isPos(7), true);', '});', ''].join('\n'));
 	sh(dir, 'commit', '-qam', 'more tests');
 	const base = sh(dir, 'rev-parse', 'HEAD');
 	fs.writeFileSync(path.join(dir, 'src', 'a.cjs'), 'exports.isPos = (x) => x > 1;\n');
@@ -378,7 +378,8 @@ test('a test edit the new code forced is listed for the owner, and one it did no
 		.replace("test('old name', () => {\n\tassert.equal(a.isPos(1), true);\n", "// renamed from: old name\ntest('new name', () => {\n")
 		.replace("test('loose', () => {\n\tassert.equal(a.isPos(1), true);", "test('loose', () => {\n\tassert.equal(typeof a.isPos(1), 'boolean');")
 		.replace("test('kept', () => {\n\tassert.equal(a.isPos(3), true);\n", "test('kept', () => {\n")
-		.replace("test('edited', () => {\n\tassert.equal(a.isPos(4), true);", "test('edited', () => {\n\tassert.equal(typeof a.isPos(4), 'boolean');"));
+		.replace("test('edited', () => {\n\tassert.equal(a.isPos(4), true);", "test('edited', () => {\n\tassert.equal(typeof a.isPos(4), 'boolean');")
+		.replace("test('named once', () => {", "// renamed from: named once\ntest('named twice', () => {"));
 	sh(dir, 'commit', '-qam', 'one is no longer positive');
 	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
 	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::(pair|new name):/, r.stdout);
@@ -387,6 +388,8 @@ test('a test edit the new code forced is listed for the owner, and one it did no
 	assert.match(r.stdout, /^ {4}adapted tests\/a\.test\.mjs::loose: edited, and its old version fails on the new code$/m, 'an edit the new code forced');
 	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::kept: changed, and passes on the base commit/, 'a removal the new code did not force');
 	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::edited: changed, and passes on the base commit/, 'an edit the new code did not force');
+	// A new name over the same code is no new test: it is held to its why line only (PR 52: a renamed test was held).
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::named twice/, 'a rename with the same code was held to fail first');
 });
 
 // Build 16: a fix's test in a file the branch adds cannot load on the base, so the base proves nothing about it. The
