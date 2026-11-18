@@ -450,8 +450,11 @@ function loopBodies(command, tool) {
 	// the loop, which reading each body from the start folder misses, so a body that changes folder keeps the strict reading.
 	// The commit security review: read with its quotes taken out (a quoted "cd" is cd), and a command the shell runs from
 	// text (&, iex, Invoke-Expression, a drive name like D:) or from a variable keeps the strict reading too.
+	// The second commit review: a sign past ASCII (PowerShell's typographic quotes and dashes) keeps the strict reading,
+	// and a name dot-sourced with no space (.'sl') is a name too.
+	if (/[^\x20-\x7e\t\r\n]/.test(body)) return null;
 	const flat = body.replace(/['"]/g, '');
-	if (/(^|[\s;&|!])(cd|pushd|popd|chdir|set-location|sl|push-location|pop-location|iex|invoke-expression|invoke-command|icm)(?![\w-])|(^|[;|!]|&&)\s*&|(^|[\s;&|!])[a-z]:(?=\s|;|$)|(^|[;&|!])\s*\$\w/i.test(flat)) return null;
+	if (/(^|[\s;&|!.])(cd|pushd|popd|chdir|set-location|sl|push-location|pop-location|iex|invoke-expression|invoke-command|icm)(?![\w-])|(^|[;|!]|&&)\s*&|(^|[\s;&|!])[a-z]:(?=\s|;|$)|(^|[;&|!])\s*\$\w/i.test(flat)) return null;
 	const list = words.split(tool === 'PowerShell' ? /\s*,\s*/ : /\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
 	if (!list.length || list.length > 64) return null;
 	const use = new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)`, tool === 'PowerShell' ? 'gi' : 'g');
