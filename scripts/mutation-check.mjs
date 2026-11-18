@@ -8,6 +8,8 @@
 //   --json <file>       also write every flip, the tests that reach it and the tests that caught it (T15 Part B)
 //   --slice <i>/<n>     only every n-th flip from the i-th, so CI can split the run over n jobs
 //   --count             only say how many flips the run would make ("flips: <n>"), and run nothing (K41)
+//   --until-caught      a test that caught one flip runs on no later flip, and the run ends once every test has caught
+//                       one: for a check that asks only whether each test catches some flip (the test check's A2, K131)
 // Needs tests/.map.json made at HEAD (node scripts/test-run.mjs --map, on a clean tree). Exit 0 none survived,
 // 1 some survived, 2 it could not run. The repo itself is never changed: every flip is made in the copy.
 import fs from 'node:fs';
@@ -36,7 +38,7 @@ function flip(line) {
 }
 
 function parseArgs(argv) {
-	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false };
+	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false, untilCaught: false };
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--base') o.base = argv[++i];
 		else if (argv[i] === '--json') o.json = argv[++i];
@@ -45,6 +47,7 @@ function parseArgs(argv) {
 			o.slice = m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : 'bad';
 		}
 		else if (argv[i] === '--count') o.count = true;
+		else if (argv[i] === '--until-caught') o.untilCaught = true;
 		else if (argv[i] === '--also') o.also.push(argv[++i]);
 		else if (argv[i] === '--timeout') o.timeout = Number(argv[++i]) || o.timeout;
 		else o.files.push(posix(argv[i]));
@@ -152,7 +155,13 @@ export async function main(argv) {
 			process.stdout.write(every.length ? `mutation check: no flip in this slice (${every.length} in the whole run)\n` : `mutation check: nothing measured: no line changed since ${o.base} has a flip a test reaches\n`);
 			return 0;
 		}
+		const done = new Set();
+		const everyTest = new Set(spots.flatMap((s) => s.tests));
 		for (const s of spots) {
+			// K131: with --until-caught, only the tests that have caught nothing yet run, and none left ends the run.
+			const tests = o.untilCaught ? s.tests.filter((k) => !done.has(k)) : s.tests;
+			if (o.untilCaught && done.size === everyTest.size) break;
+			if (!tests.length) continue;
 			const file = path.join(copy, s.file);
 			const original = fs.readFileSync(file, 'utf8');
 			const lines = original.split('\n');
@@ -161,9 +170,10 @@ export async function main(argv) {
 			lines[s.line - 1] = f.text;
 			fs.writeFileSync(file, lines.join('\n'));
 			try {
-				let r = await runTests(copy, s.tests, o.timeout, home);
+				let r = await runTests(copy, tests, o.timeout, home);
 				for (const cmd of o.also) if (!r.caught) r = { caught: spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout, env: { ...process.env, ...home } }).status !== 0, caughtBy: [] };
-				record.push({ file: s.file, line: s.line, op: f.op, tests: s.tests, caughtBy: r.caughtBy || [], caught: r.caught });
+				record.push({ file: s.file, line: s.line, op: f.op, tests, caughtBy: r.caughtBy || [], caught: r.caught });
+				for (const k of r.caughtBy || []) done.add(k);
 				if (r.caught) { caught++; process.stdout.write(`caught ${s.file}:${s.line} ${f.op}${r.timedOut ? ' (timed out)' : ''}\n`); }
 				else { survived.push(s); process.stdout.write(`SURVIVED ${s.file}:${s.line} ${f.op}: ${lines[s.line - 1].trim()} was ${original.split('\n')[s.line - 1].trim()} (tests: ${s.tests.join(', ')})\n`); }
 			} finally {

@@ -216,7 +216,6 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// A slice (i/n) takes every n-th changed test, in key order, so a PR that changes many tests is checked on several
 	// machines at once instead of timing out on one (K13, the 1.27.0 build: 616 changed tests ran past 15 minutes).
 	const allKeys = new Set(newOrChanged.map((t) => t.key));
-	const allChanged = [...newOrChanged];
 	if (slice) newOrChanged = newOrChanged.sort((a, b) => (a.key < b.key ? -1 : 1)).filter((_, k) => k % slice.n === slice.i);
 	// The owner, 2026-11-18: what only Windows can show is measured on Windows. A test marked { windows: true } is
 	// skipped elsewhere, and a planted bug tagged "os": "win32" shows only there. Off Windows each is left to the Windows
@@ -404,19 +403,22 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			if (added.length) note(t.key, 'A2', `names rule:${added.join(', rule:')}, a rule this change itself adds to the rule index`);
 			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(head);
 		};
-		// A2 measures by test file, each file in one slice (its i-th place among the changed files, every n-th): the flip
-		// run is the slow part, and slicing it by test left one slice with every file (PR 50: 11 minutes, the others 9 s).
-		// A file's tests stay together, so each verdict still sees every flip its tests reach.
-		const a2Files = [...new Set(allChanged.map((x) => x.file))].sort();
-		const a2Pool = windowsPart ? [] : slice ? allChanged.filter((x) => a2Files.indexOf(x.file) % slice.n === slice.i) : newOrChanged;
+		// K131 (build 17): A2 asks only whether each untagged test catches some flip, so the map is made of those tests
+		// alone and each stops running once it has caught one (--until-caught): the same verdict per test, without the
+		// whole file's tests on every flip (PR 52: part 0 spent 11 of its 11.5 minutes here). A2 is then sliced by test, as
+		// A1 is, since no slice maps a whole file.
+		const a2Pool = windowsPart ? [] : newOrChanged;
 		const untagged = a2Pool.filter((t) => !tagged(t));
 		if (untagged.length) {
 			kitTemp.sessionRoot();
 			say(`A2: ${untagged.length} untagged test(s) in ${[...new Set(untagged.map((x) => x.file))].join(', ')} measured against the flips of this change, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
-			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
-			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))]);
+			// A loop's names are made at run time, so its whole file is mapped (KIT_ONLY reads <file>::* for that).
+			const onlyFile = path.join(makeTemp('test-check-only-'), 'only.json');
+			fs.writeFileSync(onlyFile, JSON.stringify([...new Set(untagged.map((t) => (t.loop ? `${t.file}::*` : t.key)))]));
+			const step = (args, env = {}) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...env }, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
+			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))], { KIT_ONLY: onlyFile });
 			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');
-			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000']) : mapped;
+			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000', '--until-caught']) : mapped;
 			const outOfTime = (m.error && m.error.code === 'ETIMEDOUT') || (mapped.error && mapped.error.code === 'ETIMEDOUT');
 			const flips = !outOfTime && fs.existsSync(flipsFile) ? JSON.parse(fs.readFileSync(flipsFile, 'utf8')).flips : null;
 			for (const t of untagged) {

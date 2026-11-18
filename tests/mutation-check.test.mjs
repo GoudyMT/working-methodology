@@ -119,6 +119,27 @@ test('the mutation check records which tests caught each flip, and its slices co
 	assert.deepEqual(seen.sort(), ['src/a.cjs:1', 'src/a.cjs:2']);
 });
 
+// K131 (build 17): the test check's A2 asks only whether each test catches some flip, and re-running every test on
+// every flip took part 0 of PR 52 eleven minutes. With --until-caught a test that has caught one flip runs on no
+// later one, and the run ends once every test has caught one; without it every flip still runs every test it reaches.
+// why: guards rule:test-value (A2's verdict per test, at a cost CI can carry)
+test('with --until-caught a test that caught a flip runs on no later flip, and the run ends when all have caught one', () => {
+	const { dir } = repo();
+	fs.writeFileSync(path.join(dir, 'src', 'a.cjs'), ['exports.isPos = (x) => x > 0;', 'exports.isNeg = (x) => x < 0;', 'exports.isBig = (x) => x > 10;', ''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		`import { test } from ${HARNESS};`, "import assert from 'node:assert/strict';", "import { createRequire } from 'node:module';",
+		"const a = createRequire(import.meta.url)('../src/a.cjs');",
+		"test('signs', () => { assert.equal(a.isPos(1), true); assert.equal(a.isNeg(-1), true); assert.equal(a.isPos(-1), false); assert.equal(a.isNeg(1), false); });", '',
+	].join('\n'));
+	sh(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'two lines one test');
+	assert.equal(spawnSync(process.execPath, [RUNNER, '--map', '--shards', '1', path.join(dir, 'tests', 'a.test.mjs')], { cwd: dir, encoding: 'utf8' }).status, 0);
+	const flipsOf = (args) => { const out = path.join(dir, `f-${args.length}.json`); check(dir, ['src/a.cjs', '--json', out, ...args]); return JSON.parse(fs.readFileSync(out, 'utf8')).flips; };
+	const every = flipsOf([]);
+	assert.deepEqual(every.map((f) => [f.line, f.caught]), [[1, true], [2, true]]);
+	const until = flipsOf(['--until-caught']);
+	assert.deepEqual(until.map((f) => [f.line, f.caughtBy]), [[1, ['tests/a.test.mjs::signs']]], 'the second flip ran no test');
+});
+
 // why: catches a measure that costs 600 CI minutes for a one-line change, or passes green having measured nothing
 // (K41, the owner 2026-11-13; the plan check's P5 and P13). Scoped to a base, only the changed lines are flipped; a
 // base that is no commit stops the run; no flip in scope is said as nothing measured; --count costs no test run.

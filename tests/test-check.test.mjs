@@ -121,10 +121,12 @@ test('the test check splits the changed tests into slices that cover each once',
 	assert.equal(one + two, files([base]), 'the slices do not add up to the whole');
 	assert.equal(spawnSync(process.execPath, [CHECK, base, '--slice', '2/2'], { cwd: dir, encoding: 'utf8' }).status, 2, 'a slice past the count');
 });
-// The flip run is the slow part of the check (PR 50: one slice 11 minutes, three slices 9 s each), and slicing it by
-// test put every file's flip run in whichever slice drew its tests. Each test file now measures in one slice only.
-// why: catches one CI slice doing every test file's flip run while the others idle (PR 50)
-test('the test check measures each test file\'s flips in one slice, and the slices cover every file', () => {
+// The flip run is the slow part of the check (PR 50: one slice 11 minutes, three slices 9 s each). K131 (build 17):
+// the map is made of the untagged tests alone, so A2 is sliced by test as A1 is, and the slices together name what
+// the whole run names (PR 52's part 0 spent 11 minutes mapping and flipping one whole file).
+// why: catches one CI slice doing every test file's flip run while the others idle (PR 50, PR 52)
+// renamed from: the test check measures each test file's flips in one slice, and the slices cover every file
+test('the test check slices its flip run by test, and the slices name what the whole run names', () => {
 	const dir = repo();
 	const base = sh(dir, 'rev-parse', 'HEAD~1');
 	const a2 = (args) => {
@@ -135,8 +137,7 @@ test('the test check measures each test file\'s flips in one slice, and the slic
 	};
 	const s0 = a2([base, '--slice', '0/2']);
 	const s1 = a2([base, '--slice', '1/2']);
-	assert.deepEqual(s0.files, ['tests/a.test.mjs']);
-	assert.deepEqual(s1.files, ['tests/b.test.mjs']);
+	assert.deepEqual([...new Set([...s0.files, ...s1.files])].sort(), ['tests/a.test.mjs', 'tests/b.test.mjs']);
 	assert.deepEqual([...s0.notes, ...s1.notes].sort(), a2([base]).notes.sort(), 'the slices name what the whole run names');
 	// N12's third must-still-flag row (the owner's pick, 2026-11-17, folded here: a row alone passes on the old code by
 	// design, and the strict check refuses that). A test red on the base only by a crash proves no assertion.
