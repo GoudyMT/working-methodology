@@ -56,7 +56,9 @@ test('the record writes the changelog in kind order and the PR body with its sum
 test('CI checks the build record on every PR that moves VERSION', () => {
 	const ci = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
 	const step = ci.split('- name: Build record\n')[1].split('- name:')[0];
-	assert.match(step, /if git diff --quiet "\$PR_BASE" HEAD -- VERSION; then .*; else node scripts\/build-record\.mjs check; fi/); // pin: 1
+	// The build 17 sweep: the base commit's copy of the record check runs, reading this PR's tree.
+	assert.match(step, /if git diff --quiet "\$PR_BASE" HEAD -- VERSION; then .*; else KIT_RECORD_ROOT=\. node "\$B" check; fi/); // pin: 1
+	assert.match(step, /B="\$RUNNER_TEMP\/base\/scripts\/build-record\.mjs"/);
 	// The build 14 sweep: a PR that left VERSION alone had no fix ledger read, so a guard fix could ship with no row. A
 	// change install reads now owes the bump, by the base's own rule.
 	// pin: 1 (GitHub runs these lines)

@@ -7159,7 +7159,9 @@ test('a PR runs the reached tests and the security set, or every test; main save
   assert.doesNotMatch(ci, /actions\/cache/, 'the Actions cache holds entries a PR wrote');
   const body = read(path.resolve('.github/workflows/pr-body.yml'));
   assert.match(body, /types: \[[^\]]*edited[^\]]*\]/);
-  assert.ok(body.includes('A=pr-body-audit.mjs') && body.includes('node "$P" "$RUNNER_TEMP/pr-body.md"') && body.includes('PR_BODY: ${{ github.event.pull_request.body }}'));
+  // The build 17 sweep: all three in the one audit step, so pieces from different steps cannot pass it.
+  const audit = body.split('- name: PR body audit\n')[1].split(/\n\s+- (?:name|uses):/)[0];
+  assert.ok(audit.includes('A=pr-body-audit.mjs') && audit.includes('node "$P" "$RUNNER_TEMP/pr-body.md"') && audit.includes('PR_BODY: ${{ github.event.pull_request.body }}'));
 });
 
 // why: guards rule:instruments-and-evals

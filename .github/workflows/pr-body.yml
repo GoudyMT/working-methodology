@@ -37,6 +37,8 @@ jobs:
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
         run: |
           mkdir -p "$RUNNER_TEMP/base"
           git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"

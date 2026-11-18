@@ -134,13 +134,15 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
-      # K128 (build 17): every step below that judges this PR runs the base commit's copy of its script, so a PR cannot
-      # change the check that grades it (the recall gate already did). The workflow file itself still comes from the PR;
-      # the ruleset that stops that is the owner's (K31).
+      # K128 (build 17): the test check runs the base commit's copy, unpacked before any of the PR's code runs. It runs
+      # the PR's tests itself, which then share its machine: that limit is named in the build record. The workflow file
+      # itself still comes from the PR; the ruleset that stops that is the owner's (K31).
       - name: The base commit's scripts
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
         run: |
           mkdir -p "$RUNNER_TEMP/base"
           git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
@@ -186,29 +188,18 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
-      - name: Windows tests
-        env:
-          KIT_WINDOWS_SLICE: '1'
-        run: node scripts/test-run.mjs --shards 2
-
-      # The push guard's own proof: every command that must ask asks, every safe one passes.
-      - name: Push guard proof
-        run: node project/.claude/guard-outward-check.cjs
-
-      # The delete guard's own proof: every delete outside the session's folder and the project asks.
-      - name: Delete guard proof
-        run: node project/.claude/guard-delete-check.cjs
-
       # The test check's Windows part (the owner, 2026-11-18): the Linux test check leaves the Windows-only tests and the
       # planted bugs that show only on Windows to this job, which measures them here, strict.
-      # K128 (build 17): every step below that judges this PR runs the base commit's copy of its script, so a PR cannot
-      # change the check that grades it (the recall gate already did). The workflow file itself still comes from the PR;
-      # the ruleset that stops that is the owner's (K31).
+      # K128 (build 17): the test check runs the base commit's copy, unpacked before any of the PR's code runs. It runs
+      # the PR's tests itself, which then share its machine: that limit is named in the build record. The workflow file
+      # itself still comes from the PR; the ruleset that stops that is the owner's (K31).
       - name: The base commit's scripts
         if: github.event_name == 'pull_request'
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
         run: |
           mkdir -p "$RUNNER_TEMP/base"
           git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
@@ -223,6 +214,19 @@ jobs:
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
           G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
           node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --windows --budget 600 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Windows tests
+        env:
+          KIT_WINDOWS_SLICE: '1'
+        run: node scripts/test-run.mjs --shards 2
+
+      # The push guard's own proof: every command that must ask asks, every safe one passes.
+      - name: Push guard proof
+        run: node project/.claude/guard-outward-check.cjs
+
+      # The delete guard's own proof: every delete outside the session's folder and the project asks.
+      - name: Delete guard proof
+        run: node project/.claude/guard-delete-check.cjs
 
   # E32 (option C, the owner 2026-11-10): two lanes on the same PR. The fast lane is unit-tests above; large tests
   # (another machine, a real service, a browser, a live model) live in tests/slow and run here, beside it. The slow
@@ -359,66 +363,18 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
-      - name: Scrub
-        run: node scripts/kit.mjs scrub
-
-      # One name for each thing the guards and rules talk about (T16a): a banned variant fails here.
-      - name: Word check
-        run: node scripts/word-check.mjs
-
-      # Every part the map names exists, every link joins known parts, every "done" has evidence.
-      - name: Project map
-        run: node project/.claude/project-map.mjs check
-
-      # T8: which rule each guard, script, test and workflow names; the rules diet reads it, so a stale map fails here.
-      - name: Rule map is fresh
-        run: node scripts/rule-map.mjs check
-
-      # No symlink or junction in the repo points outside it. The scan only reports, so the count decides here.
-      - name: Link scan
-        shell: bash
-        run: |
-          out="$(node project/.claude/link-scan.cjs .)"
-          echo "$out"
-          echo "$out" | grep -q 'links OUTSIDE: 0$'
-
-      # The built copies (AGENTS.md, the project rule files) must match their sources.
-      - name: Build is fresh
-        shell: bash
-        run: |
-          node scripts/kit.mjs build
-          git diff --exit-code
-
-      # T15 D5: a PR that moves VERSION carries its build record, whole, and the changelog entry it writes.
-      - name: Build record
-        if: github.event_name == 'pull_request'
-        shell: bash
-        env:
-          PR_BASE: origin/${{ github.base_ref }}
-        # K105 (the build 14 sweep): a change install reads moves VERSION, so its fix ledger is read; the base's own rule
-        # says which changes those are (K9).
-        run: |
-          git show "$PR_BASE:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || printf '%s\n' 'process.stdout.write("install=true\n")' > "$RUNNER_TEMP/pr-scope.mjs"
-          if git diff --quiet "$PR_BASE" HEAD -- VERSION; then node "$RUNNER_TEMP/pr-scope.mjs" --install "$PR_BASE" | grep -qx 'install=false' || { echo "This PR changes what install reads: move VERSION and add its build record"; exit 1; }; echo "VERSION unchanged: no build record owed"; else node scripts/build-record.mjs check; fi
-
-      # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
-      # a replaced download fails here before it runs.
-      - name: Workflow lint
-        shell: bash
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
-          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
-          "$RUNNER_TEMP/actionlint"
-
-      # K128 (build 17): every step below that judges this PR runs the base commit's copy of its script, so a PR cannot
-      # change the check that grades it (the recall gate already did). The workflow file itself still comes from the PR;
-      # the ruleset that stops that is the owner's (K31).
+      # K128 (build 17): the steps that judge this PR run the base commit's copy of their script, so a PR cannot change
+      # the check that grades it (the recall gate already did). They come before any step that runs the PR's own code,
+      # which could swap the unpacked copy or the tools (the build 17 sweep). The checks after them (scrub, words, maps,
+      # links, the build) read the PR's content with its own tools; a change to those is in the diff, as the workflow is,
+      # and the ruleset that stops a PR changing the workflow is the owner's (K31).
       - name: The base commit's scripts
         if: github.event_name == 'pull_request'
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
         run: |
           mkdir -p "$RUNNER_TEMP/base"
           git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
@@ -454,6 +410,59 @@ jobs:
         run: |
           S="$RUNNER_TEMP/base/project/.claude/secret-shapes.mjs"; [ -f "$S" ] || { echo "the base has no secret-shapes.mjs: this PR's copy runs"; S=project/.claude/secret-shapes.mjs; }
           node "$S" "$PR_BASE"
+
+      # T15 D5: a PR that moves VERSION carries its build record, whole, and the changelog entry it writes.
+      - name: Build record
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE: origin/${{ github.base_ref }}
+        # K105 (the build 14 sweep): a change install reads moves VERSION, so its fix ledger is read; the base's own rule
+        # says which changes those are (K9).
+        run: |
+          git show "$PR_BASE:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || printf '%s\n' 'process.stdout.write("install=true\n")' > "$RUNNER_TEMP/pr-scope.mjs"
+          B="$RUNNER_TEMP/base/scripts/build-record.mjs"; [ -f "$B" ] || { echo "the base has no build-record.mjs: this PR's copy runs"; B=scripts/build-record.mjs; }
+          if git diff --quiet "$PR_BASE" HEAD -- VERSION; then node "$RUNNER_TEMP/pr-scope.mjs" --install "$PR_BASE" | grep -qx 'install=false' || { echo "This PR changes what install reads: move VERSION and add its build record"; exit 1; }; echo "VERSION unchanged: no build record owed"; else KIT_RECORD_ROOT=. node "$B" check; fi
+
+      - name: Scrub
+        run: node scripts/kit.mjs scrub
+
+      # One name for each thing the guards and rules talk about (T16a): a banned variant fails here.
+      - name: Word check
+        run: node scripts/word-check.mjs
+
+      # Every part the map names exists, every link joins known parts, every "done" has evidence.
+      - name: Project map
+        run: node project/.claude/project-map.mjs check
+
+      # T8: which rule each guard, script, test and workflow names; the rules diet reads it, so a stale map fails here.
+      - name: Rule map is fresh
+        run: node scripts/rule-map.mjs check
+
+      # No symlink or junction in the repo points outside it. The scan only reports, so the count decides here.
+      - name: Link scan
+        shell: bash
+        run: |
+          out="$(node project/.claude/link-scan.cjs .)"
+          echo "$out"
+          echo "$out" | grep -q 'links OUTSIDE: 0$'
+
+      # The built copies (AGENTS.md, the project rule files) must match their sources.
+      - name: Build is fresh
+        shell: bash
+        run: |
+          node scripts/kit.mjs build
+          git diff --exit-code
+
+      # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
+      # a replaced download fails here before it runs.
+      - name: Workflow lint
+        shell: bash
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
 
       # Rule text is graded by the recall test, which needs a signed-in session and is run by hand; a PR that
       # changes the rules, the keys, the brief or the harness must record a median no lower than the released baseline or the keys' pass bar.
