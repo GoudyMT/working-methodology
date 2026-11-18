@@ -283,6 +283,9 @@ test('a bracket in a quoted note, a read loop then a sed range, and three PowerS
 		// The commit security review: PowerShell closes a quote at a typographic one, so text past any non-ASCII sign keeps
 		// the strict reading of brackets.
 		"node .claude/state.mjs item K1 'a\u2019 (Copy-Item x ('.cl'+'aude/settings.json')) \u2019b'", "node .claude/state.mjs item K1 \"a\u201d (Copy-Item x ('.cl'+'aude/settings.json')) \u201cb\""]) assert.equal(ps(c), 'deny', c);
+	// A quote inside a comment opens nothing, so it never hides a bracket that runs (the second commit review).
+	assert.equal(ps("node .claude/state.mjs item K1 <#'#> (Copy-Item x ('.cl'+'aude/settings.json')) <#'#>"), 'deny');
+	assert.equal(bash("node .claude/state.mjs item K1 #'\n(cp x .cl\"aude\"/settings.json) #'"), 'deny');
 	// A quote the shell reads as text (an escaped one, ANSI quoting) never hides a bracket that runs.
 	for (const c of ["node .claude/state.mjs item K1 \\' ; (cp x .claude/guard.cjs) \\'", "node .claude/state.mjs item K1 $'\\'' ; (cp x .claude/guard.cjs) ;'", 'for f in a; do cat $f; done; echo x > .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
 });
