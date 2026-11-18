@@ -448,9 +448,19 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			const onlyFile = path.join(makeTemp('test-check-only-'), 'only.json');
 			fs.writeFileSync(onlyFile, JSON.stringify([...new Set(untagged.map((t) => (t.loop ? `${t.file}::*` : t.key)))]));
 			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: process.env, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
-			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', '--only', onlyFile, ...new Set(untagged.map((t) => t.file))]);
+			// The build 17 sweep: the map made here covers these tests alone, so the tree's own map is put back after, for the
+			// packed and --changed runs that read it.
+			const mapPath = path.join(root, 'tests', '.map.json');
+			let keptMap = null;
+			try { keptMap = fs.readFileSync(mapPath); } catch { /* none to keep */ }
 			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');
-			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000', '--until-caught']) : mapped;
+			let mapped, m;
+			try {
+				mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', '--only', onlyFile, ...new Set(untagged.map((t) => t.file))]);
+				m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000', '--until-caught']) : mapped;
+			} finally {
+				if (keptMap) fs.writeFileSync(mapPath, keptMap); else fs.rmSync(mapPath, { force: true });
+			}
 			const outOfTime = (m.error && m.error.code === 'ETIMEDOUT') || (mapped.error && mapped.error.code === 'ETIMEDOUT');
 			const flips = !outOfTime && fs.existsSync(flipsFile) ? JSON.parse(fs.readFileSync(flipsFile, 'utf8')).flips : null;
 			for (const t of untagged) {

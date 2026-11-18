@@ -248,7 +248,10 @@ test('a moved test whose new file brings code of its own is checked, and two tes
 	fs.writeFileSync(path.join(dir, 'tests', 'd.test.mjs'), [...a.slice(0, 4), "test('twice', () => { assert.ok(true); });", "test('twice', () => { assert.ok(1); });", "describe('hidden', () => {", "\ttest('inside', () => { assert.ok(true); });", '});', ''].join('\n'));
 	sh(dir, 'add', '.');
 	sh(dir, 'commit', '-qm', 'split with a stand-in');
+	// The tree's own map is put back after the check's partial one (the build 17 sweep).
+	fs.writeFileSync(path.join(dir, 'tests', '.map.json'), '{"kept":1}');
 	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.equal(fs.readFileSync(path.join(dir, 'tests', '.map.json'), 'utf8'), '{"kept":1}');
 	assert.doesNotMatch(r.stdout, /moved tests\/c\.test\.mjs::a hollow one/, r.stdout);
 	assert.match(r.stdout, /A6 tests\/c\.test\.mjs::a hollow one/, 'held to the bar as a new test');
 	assert.match(r.stdout, /tests\/d\.test\.mjs::twice: two tests in this file share the name/);
