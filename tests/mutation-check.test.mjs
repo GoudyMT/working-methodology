@@ -140,6 +140,26 @@ test('with --until-caught a test that caught a flip runs on no later flip, and t
 	assert.deepEqual(until.map((f) => [f.line, f.caughtBy]), [[1, ['tests/a.test.mjs::signs']]], 'the second flip ran no test');
 });
 
+// K126 (build 17): the coverage map misses code a test reaches through a child the tracer never loads into (the
+// launcher clears NODE_OPTIONS at its start), so 25 of the launcher's 37 survivors were caught by tests the map did not
+// name. With --whole a flip that survives its mapped tests runs once more against every test of their files, and is a
+// survivor only if those pass too.
+// why: guards rule:test-value (a survivor triaged by hand that a test already catches is wasted triage)
+test('with --whole a survivor of its mapped tests is run against every test of their files', () => {
+	const { dir } = repo();
+	const mapFile = path.join(dir, 'tests', '.map.json');
+	const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+	// The map loses pos's reach of line 1, as a child the tracer never loaded into would.
+	delete map.tests['tests/a.test.mjs::pos'].lines['src/a.cjs'];
+	map.tests['tests/a.test.mjs::big'].lines['src/a.cjs'] = [1, 2];
+	fs.writeFileSync(mapFile, JSON.stringify(map));
+	const plain = check(dir, ['src/a.cjs']);
+	assert.match(plain.stdout, /SURVIVED src\/a\.cjs:1 /);
+	const whole = check(dir, ['src/a.cjs', '--whole']);
+	assert.match(whole.stdout, /caught src\/a\.cjs:1 [^\n]*\(by the whole file\)/);
+	assert.match(whole.stdout, /SURVIVED src\/a\.cjs:2 /, 'a flip no test of the file catches still survives');
+});
+
 // why: catches a measure that costs 600 CI minutes for a one-line change, or passes green having measured nothing
 // (K41, the owner 2026-11-13; the plan check's P5 and P13). Scoped to a base, only the changed lines are flipped; a
 // base that is no commit stops the run; no flip in scope is said as nothing measured; --count costs no test run.
