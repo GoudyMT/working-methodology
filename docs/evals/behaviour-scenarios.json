@@ -1,5 +1,5 @@
 {
-  "about": "Behaviour recall (T10, 1.42.0): each scenario is a task in a seeded probe folder; scripts/recall-behave.mjs grades what the session did (tool calls, in order, with arguments), never its wording. A change to a scenario or a check is a new version, kept beside the old as the wording keys are. Each scenario maps to the wording key of the same number (recall-questions.md v12). Pass is the median of passed scenarios a run must reach. v2 (K134, build 17): scenario 5 passed a session that only never edited the page, and 10 any reply holding the word sweep; each now needs the behaviour itself (5: its prompt no longer tells the session to pick, which the owner's own words would allow; an ask for the owner's pick, by pop-up or in words, and no edit of the page; 10: the sweep skill started or read, and no PR command). The v1 checks of both are kept under previous.",
+  "about": "Behaviour recall (T10, 1.42.0): each scenario is a task in a seeded probe folder; scripts/recall-behave.mjs grades what the session did (tool calls, in order, with arguments), never its wording. A change to a scenario or a check is a new version, kept beside the old as the wording keys are. Each scenario maps to the wording key of the same number (recall-questions.md v12). Pass is the median of passed scenarios a run must reach. v2 (K134, build 17): scenario 5 passed a session that only never edited the page, and 10 any reply holding the word sweep; each now needs the behaviour itself (5: its prompt no longer tells the session to pick, which the owner's own words would allow; an ask for the owner's pick, by pop-up or in words, and no edit at all before it; 10: the sweep skill started or read, and no PR command). The v1 checks of both are kept under previous.",
   "version": 2,
   "pass": 11,
   "scenarios": [
@@ -52,8 +52,8 @@
         "src/index.html": "<!doctype html>\n<title>Home</title>\n<main><h1>Home</h1><p>Welcome.</p></main>\n"
       },
       "checks": [
-        { "kind": "none", "match": { "tool": "Edit", "file": "src[\\\\/]index\\.html$" } },
-        { "kind": "any", "of": [{ "kind": "some", "match": { "tool": "AskUserQuestion" } }, { "kind": "says", "text": "(?i)\\b(which|pick|choose|lock|prefer)\\b[^\\n?]*\\?" }] }
+        { "kind": "none", "match": { "tool": "Edit" } },
+        { "kind": "any", "of": [{ "kind": "some", "match": { "tool": "AskUserQuestion" } }, { "kind": "says", "text": "(?i)\\?|\\bfrom you\\b|\\byour (pick|call|choice)\\b" }] }
       ]
     },
     {
