@@ -1,0 +1,290 @@
+{
+ "version": "1.43.0",
+ "date": "2026-11-18",
+ "level": "minor",
+ "area": "Safety",
+ "title": "feat: guard sweep, base-copy gates and a faster test check",
+ "headline": "The guards pass the reads they held from the workbench and still hold every write twin, CI judges a PR with the base commit's checks before any of its own code runs, the test check's planted-bug part measures only the tests it must, and behaviour recall grades scenarios 5 and 10 on what the session did.",
+ "alignment": "v1.43.0 is build 17 of the v2.0 plan: the guard rows K117, K124, K132 and K133, the test and CI rows K121, K123, K126, K128 and K131 with T10's moved-test part, and the recall rows K119, K129, K134, M4 and I18.",
+ "items": [
+  {
+   "id": "READ-HOLDS",
+   "kind": "fixed",
+   "text": "The guards pass a kit script given a quoted note with a bracket, a read loop then a command, and three PowerShell read shapes; each write twin, and any loop whose body changes folder, is still held.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "PLACE-FROM-PROJECT",
+   "kind": "fixed",
+   "text": "A hook given no folder places a command's words from the project folder, so a write through a link into `.claude` is held wherever the hook process runs.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "AUDIT-SETTINGS",
+   "kind": "security",
+   "text": "Judging a PR, the PR body audit and the version bump check read the project's settings from the base, so a PR cannot set the rows its own body is held to.",
+   "evidence": "project/.claude/pr-body-audit.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "SHARD-RULE",
+   "kind": "changed",
+   "text": "The testing rule and the CI templates: workers inside the job first, then shards once a lane's tests take over about 2 to 3 minutes, packed by each test's last run time; a runner that splits by file count needs a duration-sorted list.",
+   "evidence": "rules/testing.md",
+   "reach": "projects"
+  },
+  {
+   "id": "BASE-GATES",
+   "kind": "security",
+   "text": "CI runs the base commit's copy of every check that judges a PR (the test check, names, secrets, the build record, the PR body audits), unpacked before any of the PR's code runs and with git's replace refs off.",
+   "evidence": ".github/workflows/ci.yml",
+   "reach": "kit"
+  },
+  {
+   "id": "TEST-CHECK-SPEED",
+   "kind": "changed",
+   "text": "The test check's planted-bug part maps only the untagged tests it must measure, stops running a test once it has caught a flip, and is sliced by test, so it fits CI's budget on a large PR.",
+   "evidence": "scripts/test-check.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "MOVED-TESTS",
+   "kind": "added",
+   "text": "The test check reads a test moved word for word out of another test file as moved, not new, unless its new file brings code of its own; it names two tests of one name and a describe block it cannot read.",
+   "evidence": "scripts/test-check.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "SHARD-PACK",
+   "kind": "added",
+   "text": "The test runner packs tests over its shards by each test's last run time from the coverage map, so the shards finish together; slices split by name.",
+   "evidence": "scripts/test-run.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "MUTATION-WHOLE",
+   "kind": "added",
+   "text": "The planted-bug check gains `--until-caught` (a test that caught a flip runs on no later one) and `--whole` (a survivor runs once more against every test of its files, credited to the test that went red, never to a timeout).",
+   "evidence": "scripts/mutation-check.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "BEHAVE-V2",
+   "kind": "changed",
+   "text": "Behaviour suite v2: scenario 5 passes only with no edit of the page and an ask about the layout, and scenario 10 only when the sweep skill starts and no PR command runs; the PR and merge checks read `gh.exe`, `gh -R` and `gh api` too.",
+   "evidence": "docs/evals/behaviour-scenarios.json",
+   "reach": "kit"
+  }
+ ],
+ "decisions": [
+  {
+   "decision": "The kit.test.mjs split waits for build 18",
+   "why": "The owner's pick: main's 1.42.0 test check would read about 1,100 moved tests as new under strict, so 1.43.0 ships the moved-test reading first and the split is judged by it."
+  },
+  {
+   "decision": "The planted-bug wrapper rows were dropped; the whole-file rerun stays",
+   "why": "K126's bar: the wrapper rows closed 0 of the launcher's 37 survivors, and a rerun against each survivor's whole test file closed 25."
+  },
+  {
+   "decision": "Two CI limits are named, not fixed here",
+   "why": "The owner's pick: the test check runs the PR's tests in its own job, and six content checks run the PR's copies; a separate judge job that runs no PR code is a build 18 row."
+  },
+  {
+   "decision": "Scenario 5 no longer tells the session to pick",
+   "why": "The owner's own words would allow the pick, so the old prompt passed a session that only never edited the page; v2 grades the ask."
+  }
+ ],
+ "verification": [
+  "Each code change was seen failing on the code before it and passing after.",
+  "Planted bugs in the launcher and the hooks were run on Linux; each survivor was caught by an existing test, is equivalent, is a Windows branch, or got a failing-first test.",
+  "49 planted bugs replayed through the PR test pick: none escaped it."
+ ],
+ "upgrading": "Run `install user` first, then `install project` in each project. Nothing else changes.",
+ "limits": "The coverage map does not see code a test reaches through the launcher's start line, which clears NODE_OPTIONS; `--whole` covers it. The test check runs a PR's tests in the job that judges it, and scrub, the word check, the maps, the link scan and the build check run the PR's own copies; a change to those is in the diff, as the workflow file is, and the ruleset that stops a PR changing its workflow is the owner's. This PR is judged by main's 1.42.0 test check, by design.",
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "c2844dc",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Not touched: no new data path"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency, no action pin changed"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "A guard hole and two CI gate gaps, all fixed; two CI limits accepted by the owner"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "The behaviour suite, the planted-bug tools and the test check's reading, fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 1,
+   "high": 2,
+   "medium": 11,
+   "low": 13
+  },
+  "fixes": [
+   {
+    "id": "S1",
+    "severity": "critical",
+    "text": "A loop whose body changes folder was read one body at a time from the start folder, so a relative write landed on a guard or a git hook",
+    "commit": "e11406f",
+    "test": "tests/guards-hold.test.mjs::a bracket in a quoted note, a read loop then a sed range, and three PowerShell reads pass; their write twins hold",
+    "security": true
+   },
+   {
+    "id": "C1",
+    "severity": "high",
+    "text": "PR code ran before the base copy was unpacked, so a replace ref could hand back the PR's own scripts as the base's",
+    "commit": "1e50f3d",
+    "test": "tests/ci-workflows.test.mjs::every step that judges a PR runs the base commit's copy of its script, before any of the PR's code runs",
+    "security": true
+   },
+   {
+    "id": "C2",
+    "severity": "high",
+    "text": "The build record check ran the PR's own copy",
+    "commit": "1e50f3d",
+    "test": "tests/build-record.test.mjs::CI checks the build record on every PR that moves VERSION",
+    "security": true
+   },
+   {
+    "id": "C3",
+    "severity": "medium",
+    "text": "A test copied into a new file with a stand-in of its own passed as moved, checked by nothing",
+    "commit": "ca6e810",
+    "test": "tests/test-check.test.mjs::a moved test whose new file brings code of its own is checked, and two tests of one name are named",
+    "security": true
+   },
+   {
+    "id": "C4",
+    "severity": "medium",
+    "text": "The PR body audit read the project's review rows from the PR's own tree",
+    "commit": "10db908",
+    "test": "tests/kit.test.mjs::judging a PR, the audit reads the project's review rows from the base, not the PR",
+    "security": true
+   },
+   {
+    "id": "C4b",
+    "severity": "medium",
+    "text": "The version bump check read its settings from the PR's own tree",
+    "commit": "10db908",
+    "test": "tests/kit.test.mjs::judging a PR, the version bump check reads its settings from the base",
+    "security": true
+   },
+   {
+    "id": "C6",
+    "severity": "medium",
+    "text": "The test check left the first of two tests of one name, and tests inside a describe block, unchecked",
+    "commit": "6e2eb0a",
+    "test": "tests/test-check.test.mjs::a moved test whose new file brings code of its own is checked, and two tests of one name are named",
+    "security": true
+   },
+   {
+    "id": "C7",
+    "severity": "low",
+    "text": "The PR body workflow set no base for the canary phrase",
+    "commit": "10db908",
+    "test": "tests/ci-workflows.test.mjs::every step that judges a PR runs the base commit's copy of its script, before any of the PR's code runs",
+    "security": true
+   },
+   {
+    "id": "N1",
+    "severity": "medium",
+    "text": "The test check's list of tests never reached the map run's shards, so its planted-bug part mapped whole files",
+    "commit": "0299f0c",
+    "test": "tests/harness.test.mjs::a map run given a list maps the listed tests alone",
+    "security": true
+   },
+   {
+    "id": "N2",
+    "severity": "medium",
+    "text": "Slices packed by each machine's own map ran a test twice and others never",
+    "commit": "90098c8",
+    "test": "tests/harness.test.mjs::slices split the tests the same way whatever map each machine holds, so each test runs once"
+   },
+   {
+    "id": "N3",
+    "severity": "low",
+    "text": "A whole-file rerun credited its catch to a whole-file key, and could end an until-caught run early",
+    "commit": "578353d",
+    "test": "tests/mutation-check.test.mjs::with --whole a survivor of its mapped tests is run against every test of their files"
+   },
+   {
+    "id": "N4",
+    "severity": "low",
+    "text": "A whole-file rerun that ran out of time counted as a catch",
+    "commit": "578353d",
+    "test": "tests/mutation-check.test.mjs::with --whole a whole-file run that runs out of time catches nothing"
+   },
+   {
+    "id": "X1",
+    "severity": "low",
+    "text": "The test check's map run replaced the tree's own coverage map with a partial one",
+    "commit": "6142d1b",
+    "test": "tests/test-check.test.mjs::a moved test whose new file brings code of its own is checked, and two tests of one name are named",
+    "security": true
+   },
+   {
+    "id": "B1",
+    "severity": "medium",
+    "text": "Behaviour scenario 5 passed a shell write and any reply holding a question mark; scenario 10 missed other PR spellings",
+    "commit": "0c6a74e",
+    "test": "tests/recall-behave.test.mjs::scenarios 5 and 10 fail a session that skips the behaviour by another route, and pass the behaviour"
+   },
+   {
+    "id": "B4",
+    "severity": "medium",
+    "text": "The CI templates said file-count shard runners pack by run time",
+    "commit": "42b091e",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "T3",
+    "severity": "low",
+    "text": "The workflow test and the PR body pin passed a base path named only in a message, or pieces from different steps",
+    "commit": "1e50f3d",
+    "test": "tests/ci-workflows.test.mjs::every step that judges a PR runs the base commit's copy of its script, before any of the PR's code runs",
+    "security": true
+   },
+   {
+    "id": "T4",
+    "severity": "low",
+    "text": "The slicing test lost its check that no test is measured by two slices",
+    "commit": "ca6e810",
+    "test": "tests/test-check.test.mjs::the test check slices its flip run by test, and the slices name what the whole run names",
+    "security": true
+   }
+  ],
+  "deferred": [],
+  "accepted": [
+   "C5 (medium): the test check runs the PR's tests in its own job, which can write over its helper scripts there; the owner accepted it as a named limit on 2026-11-18, and a separate judge job is a build 18 row.",
+   "C2, the content checks (high finding, its build record part fixed): scrub, the word check, the maps, the link scan and the build check run the PR's own copies; the owner accepted it as a named limit on 2026-11-18."
+  ]
+ },
+ "tests": {
+  "before": 913,
+  "after": 940,
+  "flips": "declared tests at 1421c3f and on this branch; the PR run gives the final count"
+ },
+ "visuals": {
+  "summary": "Visuals: Test check on PR 52's change: slowest of its 4 parts 548 s to 14 s (cap 720 s)",
+  "fold": true,
+  "body": "<details>\n<summary>Visuals: Test check on PR 52's change: slowest of its 4 parts 548 s to 14 s (cap 720 s)</summary>\n\nTest check on PR 52's change: slowest of its 4 parts takes 534 s less.\n\n![Chart: Test check on PR 52's change: slowest of its 4 parts 548 s to 14 s; Test check on PR 52's change: all 4 parts together 580 s to 43 s](https://github.com/GoudyMT/working-methodology/raw/ce14b3745b3e2f3063f880a8826ee0c36b42cc16/docs/visuals/feat/guard-sweep-and-test-split/chart.png)\n\n```text\nTest check on PR 52's change: slowest of its 4 parts, seconds (| = limit 720)\nbefore  ##############################         |  548\nafter   #                                      |  14\n```\n\n| Metric | Before | After | Change | Limit | Source |\n|---|---|---|---|---|---|\n| Test check on PR 52's change: slowest of its 4 parts | 548 s | 14 s | -534 s (-97.4%) | 720 s | measured: main's test check and this branch's, same machine, PR 52's base and head, 4 slices, 720 s budget each |\n| Test check on PR 52's change: all 4 parts together | 580 s | 43 s | -537 s (-92.6%) | none | measured: the same four runs, summed |\n\n**Why each number moved**\n\n- **Test check on PR 52's change: slowest of its 4 parts:** the planted-bug part ran every\n  test of a changed file on each flip; now it maps two tests, stops each at its first catch (same verdict).\n- **Test check on PR 52's change: all 4 parts together:** the same change; the\n  parts that only prove tests fail first (A1) take as long as before.\n</details>"
+ }
+}

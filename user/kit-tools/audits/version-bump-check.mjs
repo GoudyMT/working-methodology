@@ -34,7 +34,9 @@ export function versionBumpCheck(body, cwd = process.cwd()) {
 	if (top.status !== 0) return { ok: true, detail: 'not a git repository' };
 	const root = top.stdout.trim();
 	let cfg = DEFAULTS;
-	try { cfg = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(path.join(root, '.kit', 'version-bump.json'), 'utf8')) }; } catch { /* the defaults */ }
+	// The build 17 sweep: judging a PR (PR_BASE set), the settings are the base's, so a PR cannot loosen its own check.
+	const shown = process.env.PR_BASE ? git('show', `${process.env.PR_BASE}:.kit/version-bump.json`) : null;
+	try { cfg = { ...DEFAULTS, ...JSON.parse(shown ? (shown.status === 0 ? shown.stdout : '{}') : fs.readFileSync(path.join(root, '.kit', 'version-bump.json'), 'utf8')) }; } catch { /* the defaults */ }
 	if (!fs.existsSync(path.join(root, cfg.versionFile))) return { ok: true, detail: `no ${cfg.versionFile}` };
 	const base = [process.env.PR_BASE, 'origin/main', 'main', 'origin/master', 'master'].filter(Boolean)
 		.find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);

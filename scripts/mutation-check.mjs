@@ -8,6 +8,10 @@
 //   --json <file>       also write every flip, the tests that reach it and the tests that caught it (T15 Part B)
 //   --slice <i>/<n>     only every n-th flip from the i-th, so CI can split the run over n jobs
 //   --count             only say how many flips the run would make ("flips: <n>"), and run nothing (K41)
+//   --until-caught      a test that caught one flip runs on no later flip, and the run ends once every test has caught
+//                       one: for a check that asks only whether each test catches some flip (the test check's A2, K131)
+//   --whole             a flip that survives its mapped tests runs once more against every test of their files: the map
+//                       misses code reached through a child it never traced (K126)
 // Needs tests/.map.json made at HEAD (node scripts/test-run.mjs --map, on a clean tree). Exit 0 none survived,
 // 1 some survived, 2 it could not run. The repo itself is never changed: every flip is made in the copy.
 import fs from 'node:fs';
@@ -36,7 +40,7 @@ function flip(line) {
 }
 
 function parseArgs(argv) {
-	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false };
+	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false, untilCaught: false, whole: false };
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--base') o.base = argv[++i];
 		else if (argv[i] === '--json') o.json = argv[++i];
@@ -45,6 +49,8 @@ function parseArgs(argv) {
 			o.slice = m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : 'bad';
 		}
 		else if (argv[i] === '--count') o.count = true;
+		else if (argv[i] === '--until-caught') o.untilCaught = true;
+		else if (argv[i] === '--whole') o.whole = true;
 		else if (argv[i] === '--also') o.also.push(argv[++i]);
 		else if (argv[i] === '--timeout') o.timeout = Number(argv[++i]) || o.timeout;
 		else o.files.push(posix(argv[i]));
@@ -75,7 +81,7 @@ function runTests(copy, keys, timeout, home) {
 		const only = path.join(copy, '.mutation-only.json');
 		fs.writeFileSync(only, JSON.stringify(keys));
 		const files = [...new Set(keys.map((k) => k.slice(0, k.indexOf('::'))))].map((f) => path.join(copy, f));
-		const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...env } = process.env;
+		const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_PACK: _p, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...env } = process.env;
 		const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: copy, env: { ...env, ...home, KIT_ONLY: only, KIT_REPO: copy, KIT_MAP_OFF: '1' } });
 		let out = '';
 		child.stdout.on('data', (d) => { out += d; });
@@ -87,7 +93,8 @@ function runTests(copy, keys, timeout, home) {
 			// Which tests went red, by name (TAP's "not ok <n> - <name>", top level only); a run that died or timed out
 			// cannot say, so every test it ran is named.
 			const red = new Set([...out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
-			const named = keys.filter((k) => red.has(k.slice(k.indexOf('::') + 2)));
+			// A whole-file key (<file>::*, one file per run) names each test of that file that went red (the build 17 sweep).
+			const named = keys.flatMap((k) => (k.endsWith('::*') ? [...red].map((n) => `${k.slice(0, -1)}${n}`) : red.has(k.slice(k.indexOf('::') + 2)) ? [k] : []));
 			const caught = code !== 0 || fail > 0;
 			resolve({ caught, ran: pass + fail, timedOut: code === null, caughtBy: caught ? (named.length ? named : keys) : [] });
 		});
@@ -152,7 +159,13 @@ export async function main(argv) {
 			process.stdout.write(every.length ? `mutation check: no flip in this slice (${every.length} in the whole run)\n` : `mutation check: nothing measured: no line changed since ${o.base} has a flip a test reaches\n`);
 			return 0;
 		}
+		const done = new Set();
+		const everyTest = new Set(spots.flatMap((s) => s.tests));
 		for (const s of spots) {
+			// K131: with --until-caught, only the tests that have caught nothing yet run, and none left ends the run.
+			const tests = o.untilCaught ? s.tests.filter((k) => !done.has(k)) : s.tests;
+			if (o.untilCaught && [...everyTest].every((k) => done.has(k))) break;
+			if (!tests.length) continue;
 			const file = path.join(copy, s.file);
 			const original = fs.readFileSync(file, 'utf8');
 			const lines = original.split('\n');
@@ -161,10 +174,20 @@ export async function main(argv) {
 			lines[s.line - 1] = f.text;
 			fs.writeFileSync(file, lines.join('\n'));
 			try {
-				let r = await runTests(copy, s.tests, o.timeout, home);
+				let r = await runTests(copy, tests, o.timeout, home);
+				let byWhole = false;
+				// The build 17 sweep: one file per run, so each red test is named; a run out of time catches nothing.
+				if (!r.caught && o.whole) {
+					for (const wf of new Set(tests.map((k) => k.slice(0, k.indexOf('::'))))) {
+						const w = await runTests(copy, [`${wf}::*`], o.timeout, home);
+						if (w.timedOut) { r = { ...r, timedOut: true }; continue; }
+						if (w.caught) { r = w; byWhole = true; break; }
+					}
+				}
 				for (const cmd of o.also) if (!r.caught) r = { caught: spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout, env: { ...process.env, ...home } }).status !== 0, caughtBy: [] };
-				record.push({ file: s.file, line: s.line, op: f.op, tests: s.tests, caughtBy: r.caughtBy || [], caught: r.caught });
-				if (r.caught) { caught++; process.stdout.write(`caught ${s.file}:${s.line} ${f.op}${r.timedOut ? ' (timed out)' : ''}\n`); }
+				record.push({ file: s.file, line: s.line, op: f.op, tests, caughtBy: r.caughtBy || [], caught: r.caught, ...(r.timedOut && !r.caught ? { timedOut: true } : {}) });
+				for (const k of r.caughtBy || []) done.add(k);
+				if (r.caught) { caught++; process.stdout.write(`caught ${s.file}:${s.line} ${f.op}${r.timedOut ? ' (timed out)' : ''}${byWhole ? ' (by the whole file)' : ''}\n`); }
 				else { survived.push(s); process.stdout.write(`SURVIVED ${s.file}:${s.line} ${f.op}: ${lines[s.line - 1].trim()} was ${original.split('\n')[s.line - 1].trim()} (tests: ${s.tests.join(', ')})\n`); }
 			} finally {
 				fs.writeFileSync(file, original);

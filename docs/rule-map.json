@@ -146,12 +146,14 @@
    "scripts": [],
    "tests": [
     "tests/ci-install-check.test.mjs",
+    "tests/ci-workflows.test.mjs",
     "tests/guard-dispatch.test.mjs",
     "tests/guard-prompts.test.mjs",
     "tests/guards-hold.test.mjs",
     "tests/guards-outside.test.mjs",
     "tests/kit.test.mjs",
     "tests/lane-state.test.mjs",
+    "tests/launcher-verify.test.mjs",
     "tests/owner-proof.test.mjs",
     "tests/recall-ci.test.mjs",
     "tests/release-verify.test.mjs",
@@ -682,6 +684,7 @@
    ],
    "tests": [
     "tests/build-record.test.mjs",
+    "tests/kit.test.mjs",
     "tests/mutation-check.test.mjs",
     "tests/pin-check.test.mjs",
     "tests/rule-map.test.mjs",

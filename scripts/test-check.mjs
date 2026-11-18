@@ -109,6 +109,7 @@ export function tests(text) {
 	const comment = (l) => /^\s*\/\//.test(l);
 	const out = new Map();
 	out.loops = new Set(starts.filter((s) => s[2]).map((s) => s[1]));
+	out.twice = new Set();
 	starts.forEach(([i, name, loop], k) => {
 		let head = i;
 		while (head > 0 && comment(lines[head - 1])) head--;
@@ -117,6 +118,8 @@ export function tests(text) {
 		// a test inserted after one read the old one as changed). A loop keeps the reach above.
 		if (!loop) { const close = lines.slice(i + 1, end).findIndex((l) => /^\}\)/.test(l)); if (close >= 0) end = i + 1 + close + 1; }
 		while (end - 1 > i && comment(lines[end - 1])) end--;
+		// The build 17 sweep: a second test of the same name is named, never read over in silence.
+		if (out.has(name)) out.twice.add(name);
 		out.set(name, lines.slice(head, end).join('\n').trimEnd());
 	});
 	return out;
@@ -189,12 +192,41 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// build 14 PR: 38 retagged tests were held to fail first again).
 	const retagged = [];
 	const codeOf = (b) => b.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+	// T10 (build 17): a test moved word for word out of another test file (a file split) is no new test. It counts as
+	// moved only when that file held it on the base and holds it no more; a copy left in both is new.
+	const moved = [];
+	let baseTests = null;
+	// The build 17 sweep: and only when every line of its new file outside the tests (imports, helpers, stand-ins) is a
+	// line of the old one, so a copy whose file makes it run differently is checked as new.
+	const outside = (text, found) => { let t = String(text); for (const b of found.values()) t = t.replace(b, ''); return new Set(t.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//'))); };
+	const baseText = new Map();
+	const movedFrom = (f, name, body) => {
+		if (!baseTests) {
+			baseTests = new Map();
+			const listed = git(root, 'ls-tree', '-r', '--name-only', baseSha, '--', 'tests').stdout.split('\n').filter((x) => TEST_FILE.test(x));
+			for (const g of listed) { const t = git(root, 'show', `${baseSha}:${g}`).stdout; baseText.set(g, t); baseTests.set(g, tests(t)); }
+		}
+		const text = fs.readFileSync(path.join(root, f), 'utf8');
+		const mine = outside(text, tests(text));
+		for (const [g, was] of baseTests) {
+			if (g === f || was.get(name) !== body) continue;
+			const theirs = outside(baseText.get(g), was);
+			if ([...mine].some((l) => !theirs.has(l))) continue;
+			let now = '';
+			try { now = fs.readFileSync(path.join(root, g), 'utf8'); } catch { /* the file is gone */ }
+			if (!tests(now).has(name)) return g;
+		}
+		return null;
+	};
 	for (const f of testFiles) {
 		const now = tests(fs.readFileSync(path.join(root, f), 'utf8'));
 		const onBase = git(root, 'cat-file', '-e', `${baseSha}:${f}`).status === 0;
 		const was = tests(onBase ? git(root, 'show', `${baseSha}:${f}`).stdout : '');
+		for (const name of now.twice) note(`${f}::${name}`, 'A1', 'two tests in this file share the name: the check reads only the last, so give each its own');
+		if (/^\s*(describe|suite|it)\(/m.test(fs.readFileSync(path.join(root, f), 'utf8'))) note(f, 'A1', 'a describe, suite or it block: the check reads only test() at the margin, so the tests inside go unchecked');
 		for (const [name, body] of now) {
 			if (was.get(name) === body) continue;
+			if (!was.has(name)) { const g = movedFrom(f, name, body); if (g) { moved.push(`    moved ${f}::${name}: from ${g}`); continue; } }
 			if (was.has(name) && codeOf(was.get(name)) === codeOf(body)) { retagged.push({ key: `${f}::${name}`, body }); continue; }
 			// A loop's tests are named at run time: its pattern, the written name with each ${...} read as any text.
 			const loop = now.loops.has(name) ? new RegExp(`^${name.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`) : null;
@@ -216,7 +248,6 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// A slice (i/n) takes every n-th changed test, in key order, so a PR that changes many tests is checked on several
 	// machines at once instead of timing out on one (K13, the 1.27.0 build: 616 changed tests ran past 15 minutes).
 	const allKeys = new Set(newOrChanged.map((t) => t.key));
-	const allChanged = [...newOrChanged];
 	if (slice) newOrChanged = newOrChanged.sort((a, b) => (a.key < b.key ? -1 : 1)).filter((_, k) => k % slice.n === slice.i);
 	// The owner, 2026-11-18: what only Windows can show is measured on Windows. A test marked { windows: true } is
 	// skipped elsewhere, and a planted bug tagged "os": "win32" shows only there. Off Windows each is left to the Windows
@@ -404,19 +435,32 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			if (added.length) note(t.key, 'A2', `names rule:${added.join(', rule:')}, a rule this change itself adds to the rule index`);
 			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(head);
 		};
-		// A2 measures by test file, each file in one slice (its i-th place among the changed files, every n-th): the flip
-		// run is the slow part, and slicing it by test left one slice with every file (PR 50: 11 minutes, the others 9 s).
-		// A file's tests stay together, so each verdict still sees every flip its tests reach.
-		const a2Files = [...new Set(allChanged.map((x) => x.file))].sort();
-		const a2Pool = windowsPart ? [] : slice ? allChanged.filter((x) => a2Files.indexOf(x.file) % slice.n === slice.i) : newOrChanged;
+		// K131 (build 17): A2 asks only whether each untagged test catches some flip, so the map is made of those tests
+		// alone and each stops running once it has caught one (--until-caught): the same verdict per test, without the
+		// whole file's tests on every flip (PR 52: part 0 spent 11 of its 11.5 minutes here). A2 is then sliced by test, as
+		// A1 is, since no slice maps a whole file.
+		const a2Pool = windowsPart ? [] : newOrChanged;
 		const untagged = a2Pool.filter((t) => !tagged(t));
 		if (untagged.length) {
 			kitTemp.sessionRoot();
 			say(`A2: ${untagged.length} untagged test(s) in ${[...new Set(untagged.map((x) => x.file))].join(', ')} measured against the flips of this change, ${budget === null ? 'no time budget' : `${Math.round(left() / 1000)} s of the budget left`}`);
-			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
-			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))]);
+			// A loop's names are made at run time, so its whole file is mapped (KIT_ONLY reads <file>::* for that).
+			const onlyFile = path.join(makeTemp('test-check-only-'), 'only.json');
+			fs.writeFileSync(onlyFile, JSON.stringify([...new Set(untagged.map((t) => (t.loop ? `${t.file}::*` : t.key)))]));
+			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: process.env, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
+			// The build 17 sweep: the map made here covers these tests alone, so the tree's own map is put back after, for the
+			// packed and --changed runs that read it.
+			const mapPath = path.join(root, 'tests', '.map.json');
+			let keptMap = null;
+			try { keptMap = fs.readFileSync(mapPath); } catch { /* none to keep */ }
 			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');
-			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000']) : mapped;
+			let mapped, m;
+			try {
+				mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', '--only', onlyFile, ...new Set(untagged.map((t) => t.file))]);
+				m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000', '--until-caught']) : mapped;
+			} finally {
+				if (keptMap) fs.writeFileSync(mapPath, keptMap); else fs.rmSync(mapPath, { force: true });
+			}
 			const outOfTime = (m.error && m.error.code === 'ETIMEDOUT') || (mapped.error && mapped.error.code === 'ETIMEDOUT');
 			const flips = !outOfTime && fs.existsSync(flipsFile) ? JSON.parse(fs.readFileSync(flipsFile, 'utf8')).flips : null;
 			for (const t of untagged) {
@@ -435,6 +479,8 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	const lines = [`Test check: ${newOrChanged.length} new or changed test(s) since ${baseSha.slice(0, 9)}, ${findings.length} finding(s)`];
 	for (const f of findings) lines.push(`    ${f.rule} ${f.key}: ${f.text}`);
 	if (proven.length) lines.push(`Proven on the new code instead of the base: ${proven.length}`, ...proven);
+	// Named by count only past 20: a file split moves hundreds.
+	if (moved.length) lines.push(`Moved unchanged from another file: ${moved.length}`, ...(moved.length <= 20 ? moved : []));
 	if (leftToWindows.length) lines.push(`Left to the Windows job (its test check part runs them): ${leftToWindows.length}`, ...leftToWindows);
 	if (record && ledger.length) lines.push(`Fix ledger: ${record.length} fix(es)`, ...ledger);
 	// K24 (the owner, 2026-11-17): strict fails on a real finding; a test the time budget left unmeasured is named only.

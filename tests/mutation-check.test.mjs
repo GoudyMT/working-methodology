@@ -119,6 +119,70 @@ test('the mutation check records which tests caught each flip, and its slices co
 	assert.deepEqual(seen.sort(), ['src/a.cjs:1', 'src/a.cjs:2']);
 });
 
+// K131 (build 17): the test check's A2 asks only whether each test catches some flip, and re-running every test on
+// every flip took part 0 of PR 52 eleven minutes. With --until-caught a test that has caught one flip runs on no
+// later one, and the run ends once every test has caught one; without it every flip still runs every test it reaches.
+// why: guards rule:test-value (A2's verdict per test, at a cost CI can carry)
+test('with --until-caught a test that caught a flip runs on no later flip, and the run ends when all have caught one', () => {
+	const { dir } = repo();
+	fs.writeFileSync(path.join(dir, 'src', 'a.cjs'), ['exports.isPos = (x) => x > 0;', 'exports.isNeg = (x) => x < 0;', 'exports.isBig = (x) => x > 10;', ''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		`import { test } from ${HARNESS};`, "import assert from 'node:assert/strict';", "import { createRequire } from 'node:module';",
+		"const a = createRequire(import.meta.url)('../src/a.cjs');",
+		"test('signs', () => { assert.equal(a.isPos(1), true); assert.equal(a.isNeg(-1), true); assert.equal(a.isPos(-1), false); assert.equal(a.isNeg(1), false); });", '',
+	].join('\n'));
+	sh(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'two lines one test');
+	assert.equal(spawnSync(process.execPath, [RUNNER, '--map', '--shards', '1', path.join(dir, 'tests', 'a.test.mjs')], { cwd: dir, encoding: 'utf8' }).status, 0);
+	const flipsOf = (args) => { const out = path.join(dir, `f-${args.length}.json`); check(dir, ['src/a.cjs', '--json', out, ...args]); return JSON.parse(fs.readFileSync(out, 'utf8')).flips; };
+	const every = flipsOf([]);
+	assert.deepEqual(every.map((f) => [f.line, f.caught]), [[1, true], [2, true]]);
+	const until = flipsOf(['--until-caught']);
+	assert.deepEqual(until.map((f) => [f.line, f.caughtBy]), [[1, ['tests/a.test.mjs::signs']]], 'the second flip ran no test');
+});
+
+// K126 (build 17): the coverage map misses code a test reaches through a child the tracer never loads into (the
+// launcher clears NODE_OPTIONS at its start), so 25 of the launcher's 37 survivors were caught by tests the map did not
+// name. With --whole a flip that survives its mapped tests runs once more against every test of their files, and is a
+// survivor only if those pass too.
+// why: guards rule:test-value (a survivor triaged by hand that a test already catches is wasted triage)
+test('with --whole a survivor of its mapped tests is run against every test of their files', () => {
+	const { dir } = repo();
+	const mapFile = path.join(dir, 'tests', '.map.json');
+	const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+	// The map loses pos's reach of line 1, as a child the tracer never loaded into would.
+	delete map.tests['tests/a.test.mjs::pos'].lines['src/a.cjs'];
+	map.tests['tests/a.test.mjs::big'].lines['src/a.cjs'] = [1, 2];
+	fs.writeFileSync(mapFile, JSON.stringify(map));
+	const plain = check(dir, ['src/a.cjs']);
+	assert.match(plain.stdout, /SURVIVED src\/a\.cjs:1 /);
+	const whole = check(dir, ['src/a.cjs', '--whole']);
+	assert.match(whole.stdout, /caught src\/a\.cjs:1 [^\n]*\(by the whole file\)/);
+	assert.match(whole.stdout, /SURVIVED src\/a\.cjs:2 /, 'a flip no test of the file catches still survives');
+	// The build 17 sweep: the catch is credited to the test that went red, never to a whole-file key; and with
+	// --until-caught a test the map does not name for any flip (pos) cannot end the run before big has had line 2.
+	const out = path.join(dir, 'w.json');
+	check(dir, ['src/a.cjs', '--whole', '--json', out]);
+	assert.deepEqual(JSON.parse(fs.readFileSync(out, 'utf8')).flips.find((f) => f.line === 1).caughtBy, ['tests/a.test.mjs::pos']);
+	const both = path.join(dir, 'b.json');
+	check(dir, ['src/a.cjs', '--whole', '--until-caught', '--json', both]);
+	assert.deepEqual(JSON.parse(fs.readFileSync(both, 'utf8')).flips.map((f) => [f.line, f.caught]), [[1, true], [2, false]]);
+});
+
+// The build 17 sweep: the whole-file rerun has the per-flip time limit, and a file whose whole run takes longer was
+// killed and counted as catching the flip.
+// why: guards rule:test-value (a survivor called caught because its file is slow)
+test('with --whole a whole-file run that runs out of time catches nothing', () => {
+	const { dir } = repo();
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('wait', async () => { await new Promise((r) => setTimeout(r, 6000)); });\n");
+	sh(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'a slow test');
+	assert.equal(spawnSync(process.execPath, [RUNNER, '--map', '--shards', '1', path.join(dir, 'tests', 'a.test.mjs')], { cwd: dir, encoding: 'utf8' }).status, 0);
+	const out = path.join(dir, 't.json');
+	const r = check(dir, ['src/a.cjs', '--whole', '--timeout', '3000', '--json', out]);
+	assert.match(r.stdout, /SURVIVED src\/a\.cjs:2 /, r.stdout);
+	const f2 = JSON.parse(fs.readFileSync(out, 'utf8')).flips.find((f) => f.line === 2);
+	assert.deepEqual([f2.caught, f2.timedOut], [false, true]);
+});
+
 // why: catches a measure that costs 600 CI minutes for a one-line change, or passes green having measured nothing
 // (K41, the owner 2026-11-13; the plan check's P5 and P13). Scoped to a base, only the changed lines are flipped; a
 // base that is no commit stops the run; no flip in scope is said as nothing measured; --count costs no test run.

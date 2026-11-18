@@ -32,6 +32,9 @@ jobs:
           done
       # A PR may narrow this run to what the change reaches (vitest related, jest --findRelatedTests) once the
       # narrowed run has missed nothing beside the whole suite; main always runs it whole.
+      # One lane until the tests take about 2 to 3 minutes; then shards (a matrix with jest --shard or vitest --shard).
+      # Both split by file count, so to finish together pack the files by last run time: a jest testSequencer with a
+      # shard method, or a duration-sorted file list (K123). On a private repo each shard is a billed job.
       - run: <npm test>
   lanes:
     # A job-level if cannot read files, so this job looks for a slow test and says so (as the kit's own CI does).

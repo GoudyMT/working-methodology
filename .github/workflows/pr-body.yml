@@ -30,6 +30,21 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
+      # K128 (build 17): every step below that judges this PR runs the base commit's copy of its script, so a PR cannot
+      # change the check that grades it (the recall gate already did). The workflow file itself still comes from the PR;
+      # the ruleset that stops that is the owner's (K31).
+      - name: The base commit's scripts
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
+        run: |
+          # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
+          B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
+          mkdir -p "$B"
+          git archive "$BASE_SHA" scripts project tests | tar -x -C "$B"
+
       # The body and title come in through env, never into the script text, so a PR cannot inject commands.
       - name: PR body audit
         shell: bash
@@ -37,14 +52,19 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # The base the audit reads the project's settings and the canary phrase from (the build 17 sweep).
+          PR_BASE: origin/${{ github.base_ref }}
         run: |
           node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/pr-body.md', process.env.PR_BODY || '')"
           # Every title is type: subject now (1.25.0), so the body says which format it is: a Standard body has a
           # "### Summary" section, a Lean one does not.
           if grep -q '^### Summary$' "$RUNNER_TEMP/pr-body.md"; then
-            node project/.claude/pr-body-audit.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE" "$PR_NUMBER"
+            A=pr-body-audit.mjs
           else
-            node project/.claude/pr-body-audit-lean.mjs "$RUNNER_TEMP/pr-body.md" "$PR_TITLE" "$PR_NUMBER"
+            A=pr-body-audit-lean.mjs
+          fi
+          P="$RUNNER_TEMP/base/project/.claude/$A"; [ -f "$P" ] || { echo "the base has no $A: this PR's copy runs"; P="project/.claude/$A"; }
+          if node "$P" "$RUNNER_TEMP/pr-body.md" "$PR_TITLE" "$PR_NUMBER"; then :; else exit 1
           fi
 
       # K105 (the build 14 sweep): a PR that moves VERSION carries its build record; the body's fix lines must be the
@@ -54,4 +74,4 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          if git diff --quiet "origin/$BASE_REF" HEAD -- VERSION; then echo "VERSION unchanged: no build record to match"; else node scripts/build-record.mjs body "$RUNNER_TEMP/pr-body.md"; fi
+          if git diff --quiet "origin/$BASE_REF" HEAD -- VERSION; then echo "VERSION unchanged: no build record to match"; else B="$RUNNER_TEMP/base/scripts/build-record.mjs"; [ -f "$B" ] || { echo "the base has no build-record.mjs: this PR's copy runs"; B=scripts/build-record.mjs; }; KIT_RECORD_ROOT=. node "$B" body "$RUNNER_TEMP/pr-body.md"; fi

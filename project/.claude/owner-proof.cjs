@@ -53,7 +53,7 @@ function homeParts() {
 	return homeMemo[1];
 }
 // Plain readers only: rg (--pre) and less (LESSOPEN) can run another program.
-const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'get-item', 'gi', 'jq', 'wc', 'stat', 'test-path', 'file']);
+const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'get-item', 'gi', 'jq', 'wc', 'stat', 'test-path', 'file', 'get-filehash']);
 // Copiers: a transcript copied out is a read; one copied in is a write.
 const COPIERS = new Set(['cp', 'copy', 'copy-item', 'cpi']);
 // Programs that move a shell into a folder: a relative word after one is read from there.
@@ -429,12 +429,32 @@ function loopBodies(command, tool) {
 	const c = String(command || '');
 	const m = tool === 'PowerShell'
 		? /^(\s*(?:(?:cd|sl|set-location)\s+[^;&|`$(){}]+;\s*)?)foreach\s*\(\s*\$([A-Za-z_]\w*)\s+in\s+([^()]+?)\s*\)\s*\{([\s\S]*)\}\s*$/i.exec(c)
-		: /^(\s*(?:cd\s+[^;&|`$(){}]+&&\s*)?)for\s+([a-z_][a-z0-9_]*)\s+in\s+([^;\n]+?)\s*[;\n]\s*do\s+([\s\S]*?)[;\n]?\s*done\s*$/.exec(c);
+		: /^(\s*(?:cd\s+[^;&|`$(){}]+&&\s*)?)for\s+([a-z_][a-z0-9_]*)\s+in\s+([^;\n]+?)\s*[;\n]\s*do\s+([\s\S]*?)[;\n]?\s*done(?:\s*(;|&&)\s*([^\n]+?))?\s*$/.exec(c);
 	// zsh ties lowercase path, cdpath, fpath and others to the environment (path is PATH as a list), so those stay strict
 	// (the commit security review); _ is the last word handed on.
 	if (!m || !/^[a-z_][a-z0-9_]*$/.test(m[2]) || /^(path|cdpath|fpath|module_path|manpath|mailpath|psvar|ifs|home|pwd|oldpwd|env|_)$/.test(m[2])) return null;
-	const [, before, name, words, body] = m;
+	const [, before, name, words] = m;
+	let body = m[4];
+	// K117 rest (build 17): a command after the loop (for ...; done; sed -n '1,40p' x) is read after each body, with
+	// every rule a plain command meets; one that holds a second loop or names the variable keeps the strict reading.
+	const after = m[5] ? ` ${m[5]} ${m[6]}` : '';
+	if (after && (/\b(for|do|done|while|until)\b/.test(m[6]) || new RegExp(`\\$\\{?${name}\\b`).test(m[6]))) return null;
+	// K117 rest: a PowerShell body that only reads when the file is there (if (Test-Path $f) { Get-Content $f }) is read
+	// as the read inside it, under the same rules as any loop body.
+	if (tool === 'PowerShell') {
+		const gate = new RegExp(`^\\s*if\\s*\\(\\s*test-path\\s+(?:-(?:literal)?path\\s+)?\\$${name}\\s*\\)\\s*\\{([^{}]*)\\}\\s*$`, 'i').exec(body);
+		if (gate) body = gate[1];
+	}
 	if (!LOOP_WORDS.test(words) || !LOOP_BODY.test(body) || /\$\(|\b(for|foreach|do|done|while|until|function|eval|source)\b|(^|[\s;&|])\.\s/i.test(body)) return null;
+	// The build 17 sweep (critical): the shell keeps a body's folder change for the next body and for the command after
+	// the loop, which reading each body from the start folder misses, so a body that changes folder keeps the strict reading.
+	// The commit security review: read with its quotes taken out (a quoted "cd" is cd), and a command the shell runs from
+	// text (&, iex, Invoke-Expression, a drive name like D:) or from a variable keeps the strict reading too.
+	// The second commit review: a sign past ASCII (PowerShell's typographic quotes and dashes) keeps the strict reading,
+	// and a name dot-sourced with no space (.'sl') is a name too.
+	if (/[^\x20-\x7e\t\r\n]/.test(body)) return null;
+	const flat = body.replace(/['"]/g, '');
+	if (/(^|[\s;&|!.])(cd|pushd|popd|chdir|set-location|sl|push-location|pop-location|iex|invoke-expression|invoke-command|icm)(?![\w-])|(^|[;|!]|&&)\s*&|(^|[\s;&|!])[a-z]:(?=\s|;|$)|(^|[;&|!])\s*\$\w/i.test(flat)) return null;
 	const list = words.split(tool === 'PowerShell' ? /\s*,\s*/ : /\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
 	if (!list.length || list.length > 64) return null;
 	const use = new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)`, tool === 'PowerShell' ? 'gi' : 'g');
@@ -447,9 +467,65 @@ function loopBodies(command, tool) {
 	const flags = tool === 'PowerShell' ? 'i' : '';
 	const reads = body.replace(new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)(?!\\s*(?:[-+*/%]?=(?!=)|\\+\\+|--|\\[))`, `g${flags}`), ' ');
 	if (new RegExp(`(^|[^\\w$-])${name}(?![\\w-])|\\$${name}(?!\\w)`, flags).test(reads)) return null;
-	return list.map((w) => before + body.trim().replace(use, () => w));
+	return list.map((w) => before + body.trim().replace(use, () => w) + after);
+}
+// K117 rest (build 17, held live on 1.42.0): whether a bracket stands outside quotes, read as the shell reads quotes.
+// In single quotes nothing is code; in double quotes $( is (and a backquote in Bash), so it counts as a bracket. A
+// backslash (Bash) or backquote (PowerShell) escapes the next sign, which is then never a quote. ANSI quoting ($'),
+// whose escaped quotes this reading does not follow, and a quote left open count as a bracket: the strict side.
+function unquotedGroup(text, tool) {
+	const t = String(text || '');
+	const esc = tool === 'PowerShell' ? '`' : '\\';
+	if (tool !== 'PowerShell' && /\$'/.test(t)) return true;
+	let q = null;
+	for (let i = 0; i < t.length; i++) {
+		const c = t[i];
+		if (q === "'") { if (c === "'") q = null; continue; }
+		if (q === '"') {
+			if (c === esc) i++;
+			else if (c === '"') q = null;
+			else if ((c === '$' && t[i + 1] === '(') || (c === '`' && tool !== 'PowerShell')) return true;
+			continue;
+		}
+		if (c === esc) { i++; continue; }
+		if (c === "'" || c === '"') q = c;
+		else if ('(){}'.includes(c)) return true;
+	}
+	return q !== null;
+}
+// K117 rest: PowerShell reads in the shapes held live on 1.42.0, rewritten to the plain read they are. A bracketed read
+// whose property is taken at the end of a statement ((Get-Item x).Length) is that read; anything after the property
+// (an assignment, a method call) keeps the brackets and the strict reading.
+const READ_CMDLETS = 'get-item|gi|get-filehash|get-content|gc|get-childitem|gci|test-path';
+const BRACKET_READ = new RegExp(`(^|[;\\n]\\s*)\\(\\s*((?:${READ_CMDLETS})\\s[^()$\`;|&{}"\\n]*?)\\s*\\)(?:\\.[A-Za-z_]\\w*)+(?=\\s*(?:[;\\n]|$))`, 'gi');
+// A variable set from a read pipeline and then only shown ($s = Get-Content x | ConvertFrom-Json; $s.a.b) is that
+// read: the value is shown, never used as a path. A variable used any other way (handed to a cmdlet, piped on, set
+// again) keeps the strict reading, since Get-Item's answer used as a path writes the file it names. Names PowerShell
+// gives a meaning (automatic and preference variables, a drive like env: or function:) stay strict.
+const PS_RESERVED = /^(ps\w*|_|args|input|this|null|true|false|host|error|ofs|home|pwd|profile|executioncontext|matches|myinvocation|stacktrace|sender|event\w*|lastexitcode|env|function|alias|variable|\w*preference)$/i;
+function psShown(command) {
+	const statements = String(command || '').split(/\s*[;\n]\s*/);
+	// A quote split by the cut (a ; inside quotes) is no statement this reading knows.
+	if (statements.some((x) => (x.split("'").length - 1) % 2 || (x.split('"').length - 1) % 2)) return null;
+	const m =/^\s*\$([A-Za-z_]\w*)\s*=\s*([^$(){}`;&\n]+)$/.exec(statements[0] || '');
+	if (!m || PS_RESERVED.test(m[1])) return null;
+	const stages = m[2].split('|').map((x) => x.trim());
+	const head = (x) => x.split(/\s+/)[0].toLowerCase();
+	if (!READERS.has(head(stages[0])) || !stages.slice(1).every((x) => PIPE_READERS.has(head(x)))) return null;
+	const shown = new RegExp(`^\\$${m[1]}(?:\\.[A-Za-z_]\\w*)*$`, 'i');
+	const rest = statements.slice(1).filter(Boolean);
+	if (rest.some((x) => !shown.test(x) && new RegExp(`\\$\\{?${m[1]}\\b`, 'i').test(x))) return null;
+	return [m[2], ...rest.filter((x) => !shown.test(x))].join('; ');
+}
+function psReads(command) {
+	const plain = String(command || '').replace(BRACKET_READ, (m, lead, read) => `${lead}${read}`);
+	return psShown(plain) ?? plain;
 }
 function shellWrites(command, tool, start, names = proofNames) {
+	if (tool === 'PowerShell') {
+		const plain = psReads(command);
+		if (plain !== String(command || '')) return shellWrites(plain, tool, start, names);
+	}
 	const bodies = loopBodies(command, tool);
 	if (bodies) return bodies.some((b) => shellWrites(b, tool, start, names));
 	// Each reading has its own real folder: a reading nested in this one must not leave its own behind.
@@ -561,6 +637,12 @@ function shellWritesFrom(command, tool, start, names) {
 	// pipeline, the background or after || may not move the shell the later commands run in, so the folder is then
 	// unknown, the safe side.
 	const grouped = /[(){}]/.test(text);
+	// K117 rest (build 17): a bracket inside quotes is text, so a kit script's quoted note may hold one; the exemptions
+	// below read the brackets outside quotes only. That reading models plain quotes and escapes and nothing else, so a
+	// command holding anything it does not model keeps the strict reading: a sign past plain ASCII (PowerShell closes
+	// quotes at typographic ones), a comment (#, <#), a here-document or here-string (<<, @' or @"), or input from a file
+	// (<). The commit security reviews found each of the first three.
+	const bracketed = /[^\x20-\x7e\t\r\n]|[#<]|@['"]/.test(source) ? grouped : unquotedGroup(joinContinuations(source), tool);
 	// A function or alias the command defines can stand in for any program name, so no program's exemption holds
 	// (the 1.25.0 sweep: git() { cp x "$2"; }; git add .claude/guard.cjs overwrote the guard).
 	// So can a name looked up somewhere else (hash -p, a new PATH, a sourced file, eval, PowerShell's function: drive),
@@ -711,10 +793,10 @@ function shellWritesFrom(command, tool, start, names) {
 		// --diagnostic-dir, --heap-prof-name; the 1.36.0 sweep).
 		// Never with a bracket in the command: a PowerShell argument in brackets runs as code, and a path it joins from
 		// pieces ('.cl'+'aude/...') is no word the reader sees (the 1.36.1 sweep).
-		if (names !== proofNames && !definesBefore(s) && !grouped && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
+		if (names !== proofNames && !definesBefore(s) && !bracketed && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
 		// Only the subcommand right after git (no global option, which can move git or run a program), no option that runs
 		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
-		if (names !== proofNames && !definesBefore(s) && !grouped && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
+		if (names !== proofNames && !definesBefore(s) && !bracketed && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.
@@ -800,7 +882,8 @@ const inFoldersAsWritten = (folders) => (raw, cwd) => {
 
 function answer(input) {
 	const t = input.tool_input || {};
-	const cwd = input.cwd || process.cwd();
+	// K133 (build 17): with no folder given, the shell starts in the project, as the word placing below reads it.
+	const cwd = input.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 	const folders = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name) ? listedFolders(cwd) : [];
 	if (folders === null) return deny('Held: .claude/protected-folders.json cannot be read, so no write tool or shell call runs. The owner fixes it in their own editor.');
 	// The settings take the owner's pop-up yes for this exact act; a subagent never has one.

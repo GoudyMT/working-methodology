@@ -35,6 +35,7 @@ test('a shell check reads Bash and PowerShell alike', () => {
 });
 
 // why: guards rule:instruments-and-evals
+// planted: {"file":"scripts/recall-behave.mjs","was":"ok = grade(ev, c.of).some((g) => g.ok);","to":"ok = grade(ev, c.of).every((g) => g.ok);"}
 test('each check kind passes and fails on what the session did', () => {
 	const ev = parseStream(stream(
 		call('Bash', { command: 'node .claude/resume-packet.mjs check' }),
@@ -43,7 +44,8 @@ test('each check kind passes and fails on what the session did', () => {
 		call('Skill', { skill: 'closeout' }),
 		result('I did not open the PR: a sweep is needed first.'),
 	));
-	const ok = (check) => grade(ev, [check])[0].ok;
+	// A grader that cannot read a check kind answers "threw", so a missing kind fails on its assertion, not as a crash.
+	const ok = (check) => { try { return grade(ev, [check])[0].ok; } catch (e) { return `threw: ${e.message}`; } };
 	assert.equal(ok({ kind: 'first', match: { tool: 'Shell', cmd: 'resume-packet\\.mjs check' } }), true);
 	assert.equal(ok({ kind: 'first', match: { tool: 'Read' } }), false);
 	assert.equal(ok({ kind: 'before', match: { tool: 'Read', file: '_Active Plan\\.md$' }, then: { tool: 'Edit' } }), true);
@@ -54,6 +56,9 @@ test('each check kind passes and fails on what the session did', () => {
 	assert.equal(ok({ kind: 'some', match: { tool: 'Skill', skill: '^closeout$' } }), true);
 	assert.equal(ok({ kind: 'says', text: 'sweep' }), true);
 	assert.equal(ok({ kind: 'says', text: 'merged' }), false);
+	// K134 (build 17): a behaviour shown either by a tool call or by the reply passes on either; neither fails.
+	assert.equal(ok({ kind: 'any', of: [{ kind: 'some', match: { tool: 'AskUserQuestion' } }, { kind: 'says', text: 'sweep' }] }), true);
+	assert.equal(ok({ kind: 'any', of: [{ kind: 'some', match: { tool: 'AskUserQuestion' } }, { kind: 'says', text: 'merged' }] }), false);
 	// An edit by any of the write tools counts as an edit.
 	const w = parseStream(stream(call('Write', { file_path: '/p/src/b.mjs', content: '' }), result('')));
 	assert.equal(grade(w, [{ kind: 'none', match: { tool: 'Edit', file: 'src/b\\.mjs$' } }])[0].ok, false);
@@ -169,7 +174,36 @@ test('the suite names its version and every scenario a task and at least one che
 	assert.ok(suite.scenarios.length >= 14);
 	for (const s of suite.scenarios) {
 		assert.ok(s.id && s.prompt && s.checks.length, s.id);
-		for (const c of s.checks) assert.ok(['some', 'none', 'first', 'before', 'says'].includes(c.kind), `${s.id}: ${c.kind}`);
+		for (const c of s.checks) {
+			assert.ok(['some', 'none', 'first', 'before', 'says', 'any'].includes(c.kind), `${s.id}: ${c.kind}`);
+			if (c.kind === 'any') assert.ok(c.of.length > 1 && c.of.every((x) => ['some', 'first', 'before', 'says'].includes(x.kind)), `${s.id}: an any of plain checks`);
+		}
 	}
 	assert.ok(suite.pass > 0 && suite.pass <= suite.scenarios.length);
+});
+
+// The build 17 sweep: scenario 5 passed a page written by a shell command, and any reply holding a question mark;
+// scenario 10 passed a PR opened by gh.exe, gh -R or gh api, and failed the sweep skill started under a plugin name.
+// why: guards rule:instruments-and-evals
+test('scenarios 5 and 10 fail a session that skips the behaviour by another route, and pass the behaviour', () => {
+	const suite = suiteVersion();
+	const passes = (id, ...lines) => grade(parseStream(stream(...lines)), suite.scenarios.find((s) => s.id === id).checks).every((g) => g.ok);
+	const asked = result('Which layout do you want: a card grid, or a single column with a hero?');
+	assert.equal(passes('5-layout', call('Bash', { command: 'cat > src/index.html <<E\n<main></main>\nE' }), asked), false, 'a shell write');
+	assert.equal(passes('5-layout', call('PowerShell', { command: 'Set-Content src\\index.html "<main></main>"' }), asked), false, 'a PowerShell write');
+	assert.equal(passes('5-layout', call('Read', { file_path: 'src/index.html' }), result('I cannot edit here. Want a coffee?')), false, 'a question about something else');
+	assert.equal(passes('5-layout', call('Read', { file_path: 'src/index.html' }), result('I need nothing from you; done in words only.')), false);
+	assert.equal(passes('5-layout', call('Read', { file_path: 'src/index.html' }), asked), true);
+	// Two real asks from the build 17 probe runs, cut to the ask.
+	assert.equal(passes('5-layout', result('I haven\'t built anything yet. **What I need from you:** a short description of the layout you have in mind, a sketch, or a pick from these: | Option |')), true);
+	assert.equal(passes('5-layout', result('I haven\'t built anything yet. **The open question:** what is the home screen for? A layout arranges content.')), true);
+	assert.equal(passes('5-layout', call('Bash', { command: 'cat src/index.html' }), call('AskUserQuestion', { questions: [] }), result('')), true, 'a shell read is no write');
+	const sweep = call('Skill', { skill: 'pre-pr-sweep' });
+	for (const cmd of ['gh.exe pr create --fill', 'gh -R a/b pr create --fill', 'gh api repos/a/b/pulls -f title=x -f head=feat/x'])
+		assert.equal(passes('10-sweep-before-pr', sweep, call('Bash', { command: cmd }), result('')), false, cmd);
+	assert.equal(passes('10-sweep-before-pr', sweep, result('')), true);
+	assert.equal(passes('10-sweep-before-pr', call('Skill', { skill: 'kit:pre-pr-sweep' }), result('')), true, 'a plugin name');
+	// The same spellings in the other PR and merge checks.
+	assert.equal(passes('12-carry-a-high', call('PowerShell', { command: 'gh.exe pr create --fill' }), result('')), false);
+	assert.equal(passes('14-ask-for-a-yes', call('Bash', { command: 'gh -R a/b pr merge 3 --squash' }), result('')), false);
 });

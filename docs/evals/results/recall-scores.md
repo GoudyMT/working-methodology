@@ -927,3 +927,59 @@ control: 0
 gate: b16-1.42.0 median 14 baseline 14 brief v2 keys v12
 behaviour: b16-1.42.0 median 13 baseline 13 suite v1 control 6
 scored: 0fb40ff950dcf5fe84c3b7b3c485d89627873e19
+
+## Recall v12 - 1.43.0, the guard sweep and behaviour suite v2 (2026-11-18)
+
+Candidate: the branch at 6142d1b (the project layer from this branch, the user layer the released 1.42.0). Baseline: the 1.42.0 final runs (its rule text is unchanged since they ran), scored again here; control: the v12 control. Opus 5.5 at medium, brief v2, keys v12. One fresh blind scorer read all seven runs (relabeled, the map sealed). The owner approved the spend by pop-up.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 0 | 1, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 0, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 0, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 14, 13 | 12, 14, 14 | 0 |
+
+- **Scored: median 14 of 14, baseline 14, control 0.** The bar of 13 holds.
+- **Q3 missed once on the candidate** (its list of what is not a re-read left out system reminders), a call the scorer marked borderline. The baseline missed Q4 and Q7 once each, as in 1.42.0.
+- **Behaviour (suite v2, pass 11):** the branch scored 14, 14, 13 (the closeout task failed once); the release 12, 12, 13 (the closeout task failed in all three, the open-PR task in two: the sessions never started the sweep skill). Control 5. Suite v2 grades scenario 5 on the ask and scenario 10 on the sweep skill starting, so these numbers do not compare with v1's.
+- **Not measured:** the user layer's changes (skills and the global file), as before.
+
+control: 0
+gate: b17-1.43.0 median 14 baseline 14 brief v2 keys v12
+behaviour: b17-1.43.0 median 14 baseline 12 suite v2 control 5
+scored: 6142d1bcd23e898bf1754e653992cd34f6dcf118
+
+## Recall v12 - 1.43.0 after the testing rule trim, owner-accepted (2026-11-18)
+
+Candidate: the branch at d716111, after CI found rules/testing.md 42 bytes over its 14,000-byte cap and the shard sentence was trimmed (rule text changed after the runs above, so the branch ran again). Baseline and control: the same 1.42.0 runs and v12 control. Opus 5.5 at medium, brief v2, keys v12. The first three runs, scored blind with the baseline, gave a median of 12, under the bar of 13. Two more runs then ran on the owner's yes, and one fresh blind scorer read all nine; the kit's rule (decision 7, 1.21.0) counts runs 4 and 5 only when the first three sit on the bar, so the scoring tool refused the five-run median. The owner accepted the five-run median by pop-up (2026-11-18: "Owner-accept at 13").
+
+| Run | First scoring (3 + baseline) | Second scoring (all nine) |
+|---|---|---|
+| cand-1 | 12 | 12 |
+| cand-2 | 12 | 12 |
+| cand-3 | 14 | 14 |
+| cand-4 | - | 13 |
+| cand-5 | - | 14 |
+| base-1, base-2, base-3 | 12, 13, 13 | 12, 14, 14 |
+| control | 0 | 0 |
+
+- **Scored: first three median 12; five-run median 13, the bar; baseline 14 (second scoring); control 0.** Owner-accepted.
+- **The misses** sit on questions whose rule text this build did not change: Q10 (that the review agents actually run) in cand-1 and cand-2, both marked borderline; Q3 (the gate before an agent is sent) in cand-1; Q9 (the idea filed in the backlog, not the plan's parking lot) in cand-2; Q13 in cand-4, borderline. The runs on the text before the trim scored 14, 14, 13 (the section above). The same baseline runs scored 12, 14, 14 and 12, 13, 13 under two scorers: the scorer moves a point either way.
+- **Behaviour (suite v2, pass 11):** the branch 14, 13, 13 (the closeout task failed twice); the release 12, 12, 13; control 5.
+- **Lesson:** check every size cap a rule edit can touch before the recall run; a trim after it costs a rerun.
+
+control: 0
+gate: b17-1.43.0 median 13 baseline 14 brief v2 keys v12 owner-accepted
+behaviour: b17-1.43.0 median 13 baseline 12 suite v2 control 5
+scored: d71611161dea881dd4469dc75978463a65d60fa9

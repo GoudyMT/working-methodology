@@ -44,6 +44,9 @@ function parseArgs(args) {
 		if (args[i] === '--shards') { o.shards = Math.max(1, Number(args[++i]) || 1); o.shardsGiven = true; }
 		else if (args[i] === '--always') o.always.push(path.resolve(args[++i] || ''));
 		else if (args[i] === '--pick') o.pick = true;
+		// The build 17 sweep: a list of test keys (as KIT_ONLY reads them) given by name, since the runner takes KIT_ONLY
+		// out of its shards' environment.
+		else if (args[i] === '--only') o.only = path.resolve(args[++i] || '');
 		else if (args[i] === '--slice') {
 			const m = /^(\d+)\/(\d+)$/.exec(args[++i] || '');
 			// A slice out of range would run nothing and pass, so a bad one stops the run.
@@ -86,8 +89,10 @@ function buildMap(mapDir, root, sha) {
 		const dir = path.join(mapDir, entry.id);
 		const lines = {};
 		const reads = new Set();
+		let ms = null;
 		for (const f of fs.readdirSync(dir)) {
 			const p = path.join(dir, f);
+			if (f === 'ms') { ms = Number(fs.readFileSync(p, 'utf8')) || 0; continue; }
 			if (f.endsWith('.json')) ranLines(JSON.parse(fs.readFileSync(p, 'utf8')).result, root, lines);
 			else if (f.startsWith('reads-')) {
 				for (const abs of fs.readFileSync(p, 'utf8').split('\n').filter(Boolean)) {
@@ -96,7 +101,7 @@ function buildMap(mapDir, root, sha) {
 				}
 			}
 		}
-		tests[`${entry.file}::${entry.name}`] = { lines: Object.fromEntries(Object.entries(lines).map(([k, v]) => [k, [...v].sort((a, b) => a - b)])), reads: [...reads].sort() };
+		tests[`${entry.file}::${entry.name}`] = { lines: Object.fromEntries(Object.entries(lines).map(([k, v]) => [k, [...v].sort((a, b) => a - b)])), reads: [...reads].sort(), ...(ms === null ? {} : { ms }) };
 	}
 	return { sha, made: new Date().toISOString(), tests };
 }
@@ -188,7 +193,7 @@ function runOne(args, env, label, atFile) {
 	return new Promise((resolve) => {
 		// Run from inside a test, node:test's own context variable would make the child report in its binary protocol.
 		// A run inside a run (the runner's own tests) must not inherit the outer run's shard, selection or map.
-		const { NODE_TEST_CONTEXT, KIT_SHARD, KIT_ONLY, KIT_MAP_DIR, KIT_MAP_TEST, KIT_MAP_OFF, KIT_RUN_AT, ...base } = process.env;
+		const { NODE_TEST_CONTEXT, KIT_SHARD, KIT_PACK, KIT_ONLY, KIT_MAP_DIR, KIT_MAP_TEST, KIT_MAP_OFF, KIT_RUN_AT, ...base } = process.env;
 		const child = spawn(process.execPath, args, { env: { ...base, ...(env.KIT_MAP_DIR ? {} : { KIT_MAP_OFF: '1' }), ...env, KIT_RUN_AT: atFile } });
 		let out = '';
 		child.stdout.on('data', (d) => { out += d; });
@@ -293,6 +298,7 @@ export async function main(argv) {
 		const env = { KIT_REPO: root, KIT_CLAUDE_HOME: claudeDir, CLAUDE_CONFIG_DIR: claudeDir };
 		let shardFiles = harnessed;
 		let shards = o.shards;
+		if (o.only) env.KIT_ONLY = o.only;
 		if (o.changed) {
 			const pick = select(root, harnessed);
 			if (!pick.why) {
@@ -323,6 +329,26 @@ export async function main(argv) {
 			env.KIT_MAP_DIR = path.join(work, 'map');
 			fs.mkdirSync(env.KIT_MAP_DIR);
 			env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --import ${pathToFileURL(TRACE).href}`.trim(); // a URL: --require would first read the package.json in the child's folder
+		}
+		// K123 (build 17): with a map that kept each test's time, the tests are packed over every shard,
+		// longest first onto the least loaded, so the shards finish together; a test with no time goes round robin.
+		const totalShards = shards * (o.slice ? o.slice[1] : 1);
+		// The build 17 sweep: slices run on other machines, each with its own map (or none), so they split by name alone.
+		if (!o.map && !o.slice && shardFiles.length && totalShards > 1 && fs.existsSync(path.join(root, MAP_FILE))) {
+			let times = {};
+			try { times = JSON.parse(fs.readFileSync(path.join(root, MAP_FILE), 'utf8')).tests || {}; } catch { /* no map to pack by */ }
+			const files = new Set(shardFiles.map((f) => posix(path.relative(root, real(f)))));
+			const only = env.KIT_ONLY ? JSON.parse(fs.readFileSync(env.KIT_ONLY, 'utf8')) : null;
+			const runs = (k) => !only || only.includes(k) || only.includes(`${k.slice(0, k.indexOf('::'))}::*`);
+			const timed = Object.entries(times).filter(([k, t]) => typeof t.ms === 'number' && files.has(k.slice(0, k.indexOf('::'))) && runs(k)).sort((a, b) => b[1].ms - a[1].ms || (a[0] < b[0] ? -1 : 1));
+			if (timed.length) {
+				const load = new Array(totalShards).fill(0);
+				const pack = {};
+				for (const [k, t] of timed) { const s = load.indexOf(Math.min(...load)); pack[k] = s; load[s] += t.ms; }
+				fs.writeFileSync(path.join(work, 'pack.json'), JSON.stringify(pack));
+				env.KIT_PACK = path.join(work, 'pack.json');
+				process.stdout.write(`test-run: ${timed.length} test(s) packed by last run time over ${totalShards} shard(s)\n`);
+			}
 		}
 		const t0 = Date.now();
 		const jobs = [];

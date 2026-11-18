@@ -121,10 +121,12 @@ test('the test check splits the changed tests into slices that cover each once',
 	assert.equal(one + two, files([base]), 'the slices do not add up to the whole');
 	assert.equal(spawnSync(process.execPath, [CHECK, base, '--slice', '2/2'], { cwd: dir, encoding: 'utf8' }).status, 2, 'a slice past the count');
 });
-// The flip run is the slow part of the check (PR 50: one slice 11 minutes, three slices 9 s each), and slicing it by
-// test put every file's flip run in whichever slice drew its tests. Each test file now measures in one slice only.
-// why: catches one CI slice doing every test file's flip run while the others idle (PR 50)
-test('the test check measures each test file\'s flips in one slice, and the slices cover every file', () => {
+// The flip run is the slow part of the check (PR 50: one slice 11 minutes, three slices 9 s each). K131 (build 17):
+// the map is made of the untagged tests alone, so A2 is sliced by test as A1 is, and the slices together name what
+// the whole run names (PR 52's part 0 spent 11 minutes mapping and flipping one whole file).
+// why: catches one CI slice doing every test file's flip run while the others idle (PR 50, PR 52)
+// renamed from: the test check measures each test file's flips in one slice, and the slices cover every file
+test('the test check slices its flip run by test, and the slices name what the whole run names', () => {
 	const dir = repo();
 	const base = sh(dir, 'rev-parse', 'HEAD~1');
 	const a2 = (args) => {
@@ -135,9 +137,11 @@ test('the test check measures each test file\'s flips in one slice, and the slic
 	};
 	const s0 = a2([base, '--slice', '0/2']);
 	const s1 = a2([base, '--slice', '1/2']);
-	assert.deepEqual(s0.files, ['tests/a.test.mjs']);
-	assert.deepEqual(s1.files, ['tests/b.test.mjs']);
+	assert.deepEqual([...new Set([...s0.files, ...s1.files])].sort(), ['tests/a.test.mjs', 'tests/b.test.mjs']);
 	assert.deepEqual([...s0.notes, ...s1.notes].sort(), a2([base]).notes.sort(), 'the slices name what the whole run names');
+	// The build 17 sweep: and no test is measured by both slices.
+	const keysOf = (notes) => notes.map((l) => l.trim().split(/\s+/)[1].replace(/:$/, ''));
+	assert.deepEqual(keysOf(s0.notes).filter((k) => keysOf(s1.notes).includes(k)), [], 'a test in both slices');
 	// N12's third must-still-flag row (the owner's pick, 2026-11-17, folded here: a row alone passes on the old code by
 	// design, and the strict check refuses that). A test red on the base only by a crash proves no assertion.
 	const crashBase = sh(dir, 'rev-parse', 'HEAD');
@@ -206,6 +210,52 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	sh(dir, 'commit', '-qm', 'the old file reads c');
 	const r2 = spawnSync(process.execPath, [CHECK, base2], { cwd: dir, encoding: 'utf8' });
 	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
+});
+
+// T10 (build 17): splitting a test file moves each test word for word into a new file. A test whose name and code
+// sit unchanged in another file on the base, and no longer there, is moved: no new test, nothing to prove. A copy left
+// in both files is still a new test.
+// why: catches a file split held to the bar for a thousand new tests it does not add (T10)
+test('a test moved unchanged from another file is not new; a copy left in both files still is', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	const a = fs.readFileSync(path.join(dir, 'tests', 'a.test.mjs'), 'utf8').split('\n');
+	const moved = a.find((l) => l.startsWith("test('a hollow one'"));
+	const copied = a.find((l) => l.startsWith("test('zero is not positive'"));
+	fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), a.filter((l) => l !== moved).join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), [...a.slice(0, 4), moved, copied, ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'split');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.match(r.stdout, /^Test check: 1 new or changed test\(s\)/m, r.stdout);
+	assert.match(r.stdout, /Moved unchanged from another file: 1/);
+	assert.match(r.stdout, /moved tests\/c\.test\.mjs::a hollow one: from tests\/a\.test\.mjs/); // pin: 1 (the build record and the PR read these lines)
+	assert.doesNotMatch(r.stdout, /A\d tests\/c\.test\.mjs::a hollow one/);
+	assert.match(r.stdout, /A1 tests\/c\.test\.mjs::zero is not positive/);
+});
+
+// The build 17 sweep: a test copied word for word into a new file whose own code (a stand-in assert, a helper) makes it
+// run differently passed as moved, checked by nothing; and of two tests with one name in a file the check read only
+// the last. A test is moved only when every line of its new file outside the tests is a line of the old one.
+// why: guards rule:test-value (a neutered copy of a test merges with no check run on it)
+test('a moved test whose new file brings code of its own is checked, and two tests of one name are named', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	const a = fs.readFileSync(path.join(dir, 'tests', 'a.test.mjs'), 'utf8').split('\n');
+	const moved = a.find((l) => l.startsWith("test('a hollow one'"));
+	fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), a.filter((l) => l !== moved).join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), [...a.slice(0, 4), 'const assert = { equal() {}, ok() {} };', moved, ''].join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'd.test.mjs'), [...a.slice(0, 4), "test('twice', () => { assert.ok(true); });", "test('twice', () => { assert.ok(1); });", "describe('hidden', () => {", "\ttest('inside', () => { assert.ok(true); });", '});', ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'split with a stand-in');
+	// The tree's own map is put back after the check's partial one (the build 17 sweep).
+	fs.writeFileSync(path.join(dir, 'tests', '.map.json'), '{"kept":1}');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.equal(fs.readFileSync(path.join(dir, 'tests', '.map.json'), 'utf8'), '{"kept":1}');
+	assert.doesNotMatch(r.stdout, /moved tests\/c\.test\.mjs::a hollow one/, r.stdout);
+	assert.match(r.stdout, /A6 tests\/c\.test\.mjs::a hollow one/, 'held to the bar as a new test');
+	assert.match(r.stdout, /tests\/d\.test\.mjs::twice: two tests in this file share the name/); // pin: 1 (the PR reads the finding)
+	assert.match(r.stdout, /A1 tests\/d\.test\.mjs: a describe, suite or it block/); // pin: 1 (the PR reads the finding)
 });
 
 // PR 51: a test's text ran on to the next test, so the top-level code after it (a fixture, a helper) was part of its

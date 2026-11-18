@@ -2138,6 +2138,47 @@ test('two checkers in one session keep separate snapshots', () => {
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-b', hook_event_name: 'SubagentStop' }).status, 0);
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: sid, agent_id: 'checker-a', hook_event_name: 'SubagentStop' }).status, 2);
 });
+// Two sessions at once, each with a checker of the same name: a snapshot keyed by the agent alone lets the second
+// session's checker start from the first one's tree and take its changes for its own.
+// why: guards rule:test-value (a checker of one session blamed for another session's change)
+// planted: {"file":"user/kit-hooks/clean-tree.cjs","was":"input.session_id || 'none'","to":"input.session_id && 'none'"}
+test('two sessions with a checker of the same name keep separate snapshots', () => {
+  const dir = gitTree();
+  const base = `t-${Date.now()}-${Math.random()}`;
+  const hook = (session, event) => runHook('user/kit-hooks/clean-tree.cjs', { cwd: dir, session_id: `${base}-${session}`, agent_id: 'checker', hook_event_name: event });
+  hook('one', 'PreToolUse');
+  fs.writeFileSync(path.join(dir, 'a.js'), 'changed while the first session ran\n');
+  hook('two', 'PreToolUse');
+  assert.equal(hook('two', 'SubagentStop').status, 0, 'the second session saw no change of its own');
+  assert.equal(hook('one', 'SubagentStop').status, 2);
+});
+// A worktree gone between the first command and the stop is a change the checker must report, and the stop message
+// has to name it: a blank line would tell the checker nothing to report.
+// why: guards rule:test-value (a removed worktree stopped the checker with no word of what changed)
+// planted: {"file":"user/kit-hooks/clean-tree.cjs","was":"if (!(t in now)) return `${t}\\n  (worktree removed)`;","to":"if (!(t in now)) return void `${t}\\n  (worktree removed)`;"}
+test('the checker clean-tree stop names a worktree that was removed while it ran', () => {
+  const dir = gitTree();
+  const other = path.join(path.dirname(dir), `${path.basename(dir)}-gone`);
+  spawnSync('git', ['-C', dir, 'worktree', 'add', '-q', other], { encoding: 'utf8' });
+  const s = { cwd: dir, session_id: `t-${Date.now()}-${Math.random()}` };
+  runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'PreToolUse' });
+  spawnSync('git', ['-C', dir, 'worktree', 'remove', '--force', other], { encoding: 'utf8' });
+  const out = runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /-gone\n {2}\(worktree removed\)/);
+});
+// Paths are matched without case on Windows only: on Linux and macOS, SRC/B.js is another file than src/b.js, so
+// a list naming one must not let the other through.
+// why: guards rule:test-value (a builder edits a file whose name differs from the list's only by case)
+// planted: {"file":"user/kit-hooks/edit-fence.cjs","was":"process.platform === 'win32' ? s.toLowerCase() : s","to":"process.platform !== 'win32' ? s.toLowerCase() : s"}
+test('the builder edit fence ignores path case on Windows and only there', () => {
+  const dir = gitTree();
+  const listPath = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(listPath, 'src/b.js\n');
+  const upper = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'SRC', 'B.js') } });
+  assert.equal(upper.status, process.platform === 'win32' ? 0 : 2, upper.stderr);
+  assert.equal(runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_input: { file_path: path.join(dir, 'src', 'b.js') } }).status, 0);
+});
 // why: guards rule:agent-team-adapter
 test('the builder edit fence follows a symlinked or junctioned worktree path', { windows: true }, () => {
   const dir = gitTree();
@@ -3644,6 +3685,28 @@ test('a reviewer\'s hand-back is checked for the report shape once, and the seco
   assert.equal(leak && leak.hookSpecificOutput.permissionDecision, 'deny');
 });
 
+// A phrase line that holds only punctuation has no words to open a message with, so the check is off: with the line
+// read as a phrase, every real message would be blocked as a miss. A stop whose transcript holds no report to read
+// (nothing, or a text reply with only blanks) is logged unchecked and let through, never blocked as a miss.
+// why: guards rule:test-value (a blank phrase line or an empty transcript blocking every stop)
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"return m && words(m[1]).trim()","to":"return m || words(m[1]).trim()"}
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"return text.trim() ? text : null;","to":"return void (text.trim() ? text : null);"}
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"\t}\n\treturn null;\n}","to":"\t}\n\treturn void null;\n}"}
+test('the canary is off for a phrase line of only punctuation, and unchecked when the transcript holds no report', () => {
+  const blank = canaryRepo('---');
+  assert.equal(canary({ cwd: blank, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'bp', last_assistant_message: 'done' }).status, 0);
+  assert.deepEqual(canaryLog(blank), []);
+  const dir = canaryRepo();
+  const stopWith = (id, entries) => {
+    const t = path.join(dir, `${id}.jsonl`);
+    fs.writeFileSync(t, entries.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    return canary({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: id, agent_transcript_path: t }).status;
+  };
+  assert.equal(stopWith('e1', []), 0, 'an empty transcript');
+  assert.equal(stopWith('e2', [{ type: 'assistant', message: { content: [{ type: 'text', text: '  ' }] } }]), 0, 'a blank text reply');
+  assert.deepEqual(canaryLog(dir).map((e) => e.result), ['unchecked', 'unchecked']);
+});
+
 // why: guards rule:sweep-auto-approval
 test('every kit role checks its hand-back call', () => {
   for (const role of ['builder', 'checker', 'scanner', 'orchestrator', 'reviewer']) {
@@ -3850,6 +3913,23 @@ test('the version bump check fails shipped code with no bump, unless the body sa
     assert.match(out, /FAIL\s+version bumped, or no user-facing change/, audit);
   }
 });
+// The build 17 sweep: a PR could add .kit/version-bump.json naming no shipped files, and pass its own bump check.
+// why: guards rule:pr-body (a PR that empties its shipped list ships code with no version bump)
+test('judging a PR, the version bump check reads its settings from the base', async () => {
+  const { versionBumpCheck } = await import(pathToFileURL(BUMP).href);
+  const loosened = bumpRepo((d) => {
+    fs.writeFileSync(path.join(d, 'src', 'a.js'), 'export const a = 2;\n');
+    fs.mkdirSync(path.join(d, '.kit'));
+    fs.writeFileSync(path.join(d, '.kit', 'version-bump.json'), '{"shipped":[]}\n');
+  });
+  const was = process.env.PR_BASE;
+  try {
+    process.env.PR_BASE = 'main';
+    assert.equal(versionBumpCheck('Fixes a.', loosened).ok, false, 'the base names no settings file: the defaults hold');
+    delete process.env.PR_BASE;
+    assert.equal(versionBumpCheck('Fixes a.', loosened).ok, true, 'before a PR, the working tree\'s settings are the project\'s');
+  } finally { if (was === undefined) delete process.env.PR_BASE; else process.env.PR_BASE = was; }
+});
 
 // Improvement report IR-2026-10-30-pr-body-audit-holds-checks-from-another-project: the Standard audit held one
 // project's facts (its dependency-audit wording, a corpus line, web gates), so an honest body elsewhere could only
@@ -3907,6 +3987,26 @@ test('a project\'s .kit/pr-body.json sets its own review dimensions, audit line 
   const oneRow = honestBody().replace(/\| (Privacy|Supply|Legal|Test value).*\n/g, '');
   assert.equal(stdAudit(plain, oneRow).status, 0, stdAudit(plain, oneRow).stdout);
   assert.match(stdAudit(plain, oneRow.replace(/\| Code security.*\n/, '')).stdout, /missing Code security/);
+});
+// The build 17 sweep: CI runs the base copy of the audit, but it read .kit/pr-body.json from the PR's own tree, so a
+// PR could name the rows its body is held to. Judging a PR (PR_BASE set), the file is read from the base.
+// why: guards rule:pr-body (a PR that sets its own review rows passes a body with no security row)
+test('judging a PR, the audit reads the project\'s review rows from the base, not the PR', () => {
+  const dir = makeTemp('prb-');
+  const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', `core.hooksPath=${os.devNull}`, ...a], { cwd: dir, encoding: 'utf8' });
+  g('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n'); g('add', '.'); g('commit', '-qm', 'base');
+  const base = g('rev-parse', 'HEAD').stdout.trim();
+  fs.mkdirSync(path.join(dir, '.kit'));
+  fs.writeFileSync(path.join(dir, '.kit', 'pr-body.json'), JSON.stringify({ dimensions: ['Style'] }));
+  g('add', '.'); g('commit', '-qm', 'pr');
+  const noSecurity = honestBody().replace(/\| (Privacy|Supply|Legal|Test value|Code security).*\n/g, '| Style | PASS | fine |\n');
+  const f = path.join(dir, 'body.md');
+  fs.writeFileSync(f, noSecurity);
+  const judged = spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, STD_TITLE], { encoding: 'utf8', cwd: dir, env: { ...process.env, PR_BASE: base } });
+  assert.match(judged.stdout, /missing Code security/, judged.stdout);
+  // On the owner's machine, before a PR (no PR_BASE), the working tree's file is the project's.
+  const { PR_BASE, ...env } = process.env;
+  assert.doesNotMatch(spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, STD_TITLE], { encoding: 'utf8', cwd: dir, env }).stdout, /missing Code security/);
 });
 
 // The Review section carries the sweep summary a reviewer needs (the commit covered, a result per dimension, high and
@@ -4802,6 +4902,40 @@ test('the folder gate finds its own config folder, reads a project from its top,
   fs.mkdirSync(path.join(rulesOnly, 'rules'));
   assert.equal(gate(rulesOnly).decision, 'block', 'a rules folder alone is no kit');
 });
+// The launcher's entry names node by the path install user recorded: a node moved away breaks every tool call, so the
+// gate says so; with no record, or a node that is there, it says nothing. And settings with no hooks block at all
+// are no reason to let a kit-less folder through.
+// why: guards rule:test-value (a gone node goes unnamed, or a healthy install is called broken, or a folder slips the gate)
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":".node || null","to":".node && null"}
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"if (node && !fs.existsSync(node))","to":"if (node || !fs.existsSync(node))"}
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"s.hooks && s.hooks.PreToolUse","to":"s.hooks || s.hooks.PreToolUse"}
+test('the folder gate names a launcher node that is gone, and only that', () => {
+  const home = makeTemp('cfg-');
+  fs.mkdirSync(path.join(home, 'kit-hooks'));
+  fs.mkdirSync(path.join(home, 'kit-tools'));
+  fs.copyFileSync(path.resolve('user/kit-hooks/kit-gate.cjs'), path.join(home, 'kit-hooks', 'kit-gate.cjs'));
+  fs.writeFileSync(path.join(home, 'kit-tools', 'kit-launch.cjs'), 'module.exports = 1;\n');
+  const wired = { hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'node', args: ['kit-tools/kit-launch.cjs'] }] }] } };
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify(wired));
+  const env = { ...process.env };
+  delete env.KIT_CLAUDE_HOME;
+  const gate = (cwd) => {
+    const r = spawnSync('node', [path.join(home, 'kit-hooks', 'kit-gate.cjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd, prompt: 'hi' }), encoding: 'utf8', env });
+    return r.stdout ? JSON.parse(r.stdout) : {};
+  };
+  const proj = localProject();
+  fs.mkdirSync(path.join(proj, '.kit'));
+  fs.writeFileSync(path.join(proj, '.kit', 'kit-version.json'), '{}');
+  assert.equal(gate(proj).decision, undefined, 'no install record: nothing to check');
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ node: process.execPath }));
+  assert.equal(gate(proj).decision, undefined, 'the recorded node is there');
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ node: path.join(home, 'no-such-node') }));
+  const gone = gate(proj);
+  assert.equal(gone.decision, 'block');
+  assert.match(gone.reason, /started by a node that is no longer there \(.*no-such-node/); // pin: 3 (the reason the verify prints)
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ model: 'x' }));
+  assert.equal(gate(localProject()).decision, 'block', 'settings with no hooks: a folder without the kit is still stopped');
+});
 
 // The project map (owner, 2026-10-31: option A, kept simple and trackable): one data file per project, checked
 // against the repo, drawn as one plain page - the goal, progress with evidence, and how the parts connect.
@@ -5427,6 +5561,31 @@ test('a sweep the owner cleared in the pop-up starts its reviewers under the ask
   assert.equal(run(brief(` Token ceiling: ${d.ceilings[0] * 10}.`)).permissionDecision, 'deny', 'a ceiling the ask never set');
   assert.equal(run(brief(` Token ceiling: ${d.ceilings[0]}.`)).permissionDecision, 'allow');
 });
+// A yes line written without ceilings (an older approve.mjs) still has them: the guard reads them from the ask's
+// decision line before it, so a brief with a ceiling the ask never set is still refused.
+// why: guards rule:test-value (a reviewer started under no ceiling because the owner's yes line carried none)
+// planted: {"file":"user/kit-hooks/sweep-guard.cjs","was":"!Array.isArray(ceilings) && e.kind === 'owner-yes'","to":"!Array.isArray(ceilings) && e.kind !== 'owner-yes'"}
+test('a pop-up yes line with no ceilings of its own still holds its reviewers to the ask\'s ceilings', () => {
+  const r = approveRun(askContract());
+  const code = r.stdout.match(/`sweep yes ([0-9a-f]{6})`/)[1];
+  const cfg = makeTemp('cfg-');
+  ownerTaps(cfg, r.dir, `sweep yes ${code}`);
+  assert.equal(approveIn(r.dir, [r.f, '--owner-yes'], tapEnv(cfg)).status, 0);
+  const logFile = path.join(r.dir, '.git', 'kit-sweep-approvals.jsonl');
+  const lines = read(logFile).trim().split('\n');
+  const yes = JSON.parse(lines[lines.length - 1]);
+  assert.equal(yes.kind, 'owner-yes');
+  delete yes.ceilings;
+  lines[lines.length - 1] = JSON.stringify(yes);
+  fs.writeFileSync(logFile, lines.join('\n') + '\n');
+  const d = approvalLog(r.dir).filter((e) => e.kind === 'decision').pop();
+  const c = JSON.parse(read(r.f));
+  const brief = (ceiling) => `review. Call cap: ${d.calls[0]}. Sweep: ${d.hash} role 1.${ceiling} ${c.roles[0].question}`;
+  const run = (prompt) => sweepGuard(r.dir, { raw: true, noCeiling: true, tool_input: { subagent_type: 'reviewer', prompt } });
+  assert.equal(run(brief('')).permissionDecision, 'deny', 'no ceiling in the brief');
+  assert.equal(run(brief(` Token ceiling: ${d.ceilings[0] * 10}.`)).permissionDecision, 'deny', 'a ceiling the ask never set');
+  assert.equal(run(brief(` Token ceiling: ${d.ceilings[0]}.`)).permissionDecision, 'allow');
+});
 
 // why: guards rule:sweep-auto-approval
 test('the call-cap hook stops a reviewer before a call would take it past its token ceiling', () => {
@@ -5486,6 +5645,23 @@ test('the call cap counts the calls before this one, whether or not this one is 
     assert.equal(hook(10, current), 'deny', `ten before it, this one ${current ? '' : 'not '}written`);
   }
   assert.equal(hook(9, true, { tool_use_id: undefined }), 'allow', 'with no call id, the last call still waiting is this one');
+});
+// Calls started together are written before any answer: the call asked about is then not the last message, and it
+// is found by its own id. Counted instead as "the last one", a later answered call would be left out and this one
+// counted, a call too many against the cap.
+// why: guards rule:test-value (a reviewer stopped one call early when the call asked about is not the last message)
+// planted: {"file":"user/kit-hooks/call-cap.cjs","was":"input.tool_use_id || ''","to":"input.tool_use_id && ''"}
+test('the call cap leaves out the call asked about by its id, even when a later call is already answered', () => {
+  const dir = makeTemp('cap-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  const call = (id) => ({ message: { role: 'assistant', id: `m-${id}`, usage: { input_tokens: 1 }, content: [{ type: 'tool_use', id, name: 'Read', input: {} }] } });
+  const answer = (id) => ({ message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] } });
+  // Cap 5 stops at 3 calls counted. Two answered calls and the one asked about make three written; it is left out.
+  const lines = [{ message: { role: 'user', content: 'a brief. Call cap: 5.' } }, call('t1'), answer('t1'), call('t2'), call('t3'), answer('t3')];
+  fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Bash', tool_input: {}, tool_use_id: 't2' });
+  assert.equal(r.stdout, '', 'two calls before this one, under the cap');
 });
 
 // Each sweep below runs on a log of 25 measured roles of 200,000 tokens over 6 calls, starting at 10,000: the
@@ -6983,7 +7159,9 @@ test('a PR runs the reached tests and the security set, or every test; main save
   assert.doesNotMatch(ci, /actions\/cache/, 'the Actions cache holds entries a PR wrote');
   const body = read(path.resolve('.github/workflows/pr-body.yml'));
   assert.match(body, /types: \[[^\]]*edited[^\]]*\]/);
-  assert.ok(body.includes('node project/.claude/pr-body-audit.mjs') && body.includes('PR_BODY: ${{ github.event.pull_request.body }}'));
+  // The build 17 sweep: all three in the one audit step, so pieces from different steps cannot pass it.
+  const audit = body.split('- name: PR body audit\n')[1].split(/\n\s+- (?:name|uses):/)[0];
+  assert.ok(audit.includes('A=pr-body-audit.mjs') && audit.includes('node "$P" "$RUNNER_TEMP/pr-body.md"') && audit.includes('PR_BODY: ${{ github.event.pull_request.body }}'));
 });
 
 // why: guards rule:instruments-and-evals
