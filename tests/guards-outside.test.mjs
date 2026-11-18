@@ -219,6 +219,12 @@ test('V3 settings: disableAllHooks written mid-session is refused, and every cal
 	assert.equal(d.decision, 'deny');
 	assert.equal(bash(s, 'git status').decision, 'deny');
 	assert.match(bash(s, 'git status').reason, /disableAllHooks/);
+	// K124 (1.42.0): the key spelled with a JSON escape is the same key; only the parsed file shows it.
+	const { proj: p2, session: s2 } = setup();
+	const local2 = path.join(p2, '.claude', 'settings.local.json');
+	fs.writeFileSync(local2, '{"\\u0064isableAllHooks": true}');
+	assert.equal(s2.changed(local2, 'local_settings'), 'blocked');
+	assert.equal(bash(s2, 'git status').decision, 'deny');
 });
 
 // why: guards rule:outward-acts
