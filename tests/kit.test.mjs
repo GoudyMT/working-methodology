@@ -4932,7 +4932,7 @@ test('the folder gate names a launcher node that is gone, and only that', () => 
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ node: path.join(home, 'no-such-node') }));
   const gone = gate(proj);
   assert.equal(gone.decision, 'block');
-  assert.match(gone.reason, /started by a node that is no longer there \(.*no-such-node/);
+  assert.match(gone.reason, /started by a node that is no longer there \(.*no-such-node/); // pin: 3 (the reason the verify prints)
   fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ model: 'x' }));
   assert.equal(gate(localProject()).decision, 'block', 'settings with no hooks: a folder without the kit is still stopped');
 });

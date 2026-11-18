@@ -229,7 +229,7 @@ test('a test moved unchanged from another file is not new; a copy left in both f
 	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
 	assert.match(r.stdout, /^Test check: 1 new or changed test\(s\)/m, r.stdout);
 	assert.match(r.stdout, /Moved unchanged from another file: 1/);
-	assert.match(r.stdout, /moved tests\/c\.test\.mjs::a hollow one: from tests\/a\.test\.mjs/);
+	assert.match(r.stdout, /moved tests\/c\.test\.mjs::a hollow one: from tests\/a\.test\.mjs/); // pin: 1 (the build record and the PR read these lines)
 	assert.doesNotMatch(r.stdout, /A\d tests\/c\.test\.mjs::a hollow one/);
 	assert.match(r.stdout, /A1 tests\/c\.test\.mjs::zero is not positive/);
 });
@@ -254,8 +254,8 @@ test('a moved test whose new file brings code of its own is checked, and two tes
 	assert.equal(fs.readFileSync(path.join(dir, 'tests', '.map.json'), 'utf8'), '{"kept":1}');
 	assert.doesNotMatch(r.stdout, /moved tests\/c\.test\.mjs::a hollow one/, r.stdout);
 	assert.match(r.stdout, /A6 tests\/c\.test\.mjs::a hollow one/, 'held to the bar as a new test');
-	assert.match(r.stdout, /tests\/d\.test\.mjs::twice: two tests in this file share the name/);
-	assert.match(r.stdout, /A1 tests\/d\.test\.mjs: a describe, suite or it block/);
+	assert.match(r.stdout, /tests\/d\.test\.mjs::twice: two tests in this file share the name/); // pin: 1 (the PR reads the finding)
+	assert.match(r.stdout, /A1 tests\/d\.test\.mjs: a describe, suite or it block/); // pin: 1 (the PR reads the finding)
 });
 
 // PR 51: a test's text ran on to the next test, so the top-level code after it (a fixture, a helper) was part of its

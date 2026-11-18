@@ -69,7 +69,7 @@ test('a project as install left it verifies clean, and only what changed is name
 test('a settings env that moves the guards is named in every folder that holds one', () => {
 	const { L } = launcher();
 	const { dir, shims, rec } = project();
-	assert.equal(L.settingsProblem('{"env":{"NODE_OPTIONS":"--require x"}}'), 'its env sets NODE_OPTIONS, which changes how the guards start or where they look');
+	assert.equal(L.settingsProblem('{"env":{"NODE_OPTIONS":"--require x"}}'), 'its env sets NODE_OPTIONS, which changes how the guards start or where they look'); // pin: 3 (the reason the verify prints)
 	assert.equal(L.settingsProblem('{"env":{"EDITOR":"vi"}}'), '');
 	const other = kitTemp.makeTemp('lv-other-');
 	fs.mkdirSync(path.join(other, '.claude'));
