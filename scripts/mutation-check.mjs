@@ -93,7 +93,8 @@ function runTests(copy, keys, timeout, home) {
 			// Which tests went red, by name (TAP's "not ok <n> - <name>", top level only); a run that died or timed out
 			// cannot say, so every test it ran is named.
 			const red = new Set([...out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
-			const named = keys.filter((k) => red.has(k.slice(k.indexOf('::') + 2)));
+			// A whole-file key (<file>::*, one file per run) names each test of that file that went red (the build 17 sweep).
+			const named = keys.flatMap((k) => (k.endsWith('::*') ? [...red].map((n) => `${k.slice(0, -1)}${n}`) : red.has(k.slice(k.indexOf('::') + 2)) ? [k] : []));
 			const caught = code !== 0 || fail > 0;
 			resolve({ caught, ran: pass + fail, timedOut: code === null, caughtBy: caught ? (named.length ? named : keys) : [] });
 		});
@@ -163,7 +164,7 @@ export async function main(argv) {
 		for (const s of spots) {
 			// K131: with --until-caught, only the tests that have caught nothing yet run, and none left ends the run.
 			const tests = o.untilCaught ? s.tests.filter((k) => !done.has(k)) : s.tests;
-			if (o.untilCaught && done.size === everyTest.size) break;
+			if (o.untilCaught && [...everyTest].every((k) => done.has(k))) break;
 			if (!tests.length) continue;
 			const file = path.join(copy, s.file);
 			const original = fs.readFileSync(file, 'utf8');
@@ -175,9 +176,16 @@ export async function main(argv) {
 			try {
 				let r = await runTests(copy, tests, o.timeout, home);
 				let byWhole = false;
-				if (!r.caught && o.whole) { r = await runTests(copy, [...new Set(tests.map((k) => `${k.slice(0, k.indexOf('::'))}::*`))], o.timeout, home); byWhole = r.caught; }
+				// The build 17 sweep: one file per run, so each red test is named; a run out of time catches nothing.
+				if (!r.caught && o.whole) {
+					for (const wf of new Set(tests.map((k) => k.slice(0, k.indexOf('::'))))) {
+						const w = await runTests(copy, [`${wf}::*`], o.timeout, home);
+						if (w.timedOut) { r = { ...r, timedOut: true }; continue; }
+						if (w.caught) { r = w; byWhole = true; break; }
+					}
+				}
 				for (const cmd of o.also) if (!r.caught) r = { caught: spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout, env: { ...process.env, ...home } }).status !== 0, caughtBy: [] };
-				record.push({ file: s.file, line: s.line, op: f.op, tests, caughtBy: r.caughtBy || [], caught: r.caught });
+				record.push({ file: s.file, line: s.line, op: f.op, tests, caughtBy: r.caughtBy || [], caught: r.caught, ...(r.timedOut && !r.caught ? { timedOut: true } : {}) });
 				for (const k of r.caughtBy || []) done.add(k);
 				if (r.caught) { caught++; process.stdout.write(`caught ${s.file}:${s.line} ${f.op}${r.timedOut ? ' (timed out)' : ''}${byWhole ? ' (by the whole file)' : ''}\n`); }
 				else { survived.push(s); process.stdout.write(`SURVIVED ${s.file}:${s.line} ${f.op}: ${lines[s.line - 1].trim()} was ${original.split('\n')[s.line - 1].trim()} (tests: ${s.tests.join(', ')})\n`); }

@@ -158,6 +158,29 @@ test('with --whole a survivor of its mapped tests is run against every test of t
 	const whole = check(dir, ['src/a.cjs', '--whole']);
 	assert.match(whole.stdout, /caught src\/a\.cjs:1 [^\n]*\(by the whole file\)/);
 	assert.match(whole.stdout, /SURVIVED src\/a\.cjs:2 /, 'a flip no test of the file catches still survives');
+	// The build 17 sweep: the catch is credited to the test that went red, never to a whole-file key; and with
+	// --until-caught a test the map does not name for any flip (pos) cannot end the run before big has had line 2.
+	const out = path.join(dir, 'w.json');
+	check(dir, ['src/a.cjs', '--whole', '--json', out]);
+	assert.deepEqual(JSON.parse(fs.readFileSync(out, 'utf8')).flips.find((f) => f.line === 1).caughtBy, ['tests/a.test.mjs::pos']);
+	const both = path.join(dir, 'b.json');
+	check(dir, ['src/a.cjs', '--whole', '--until-caught', '--json', both]);
+	assert.deepEqual(JSON.parse(fs.readFileSync(both, 'utf8')).flips.map((f) => [f.line, f.caught]), [[1, true], [2, false]]);
+});
+
+// The build 17 sweep: the whole-file rerun has the per-flip time limit, and a file whose whole run takes longer was
+// killed and counted as catching the flip.
+// why: guards rule:test-value (a survivor called caught because its file is slow)
+test('with --whole a whole-file run that runs out of time catches nothing', () => {
+	const { dir } = repo();
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('wait', async () => { await new Promise((r) => setTimeout(r, 6000)); });\n");
+	sh(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'a slow test');
+	assert.equal(spawnSync(process.execPath, [RUNNER, '--map', '--shards', '1', path.join(dir, 'tests', 'a.test.mjs')], { cwd: dir, encoding: 'utf8' }).status, 0);
+	const out = path.join(dir, 't.json');
+	const r = check(dir, ['src/a.cjs', '--whole', '--timeout', '3000', '--json', out]);
+	assert.match(r.stdout, /SURVIVED src\/a\.cjs:2 /, r.stdout);
+	const f2 = JSON.parse(fs.readFileSync(out, 'utf8')).flips.find((f) => f.line === 2);
+	assert.deepEqual([f2.caught, f2.timedOut], [false, true]);
 });
 
 // why: catches a measure that costs 600 CI minutes for a one-line change, or passes green having measured nothing
