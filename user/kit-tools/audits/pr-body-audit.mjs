@@ -24,8 +24,16 @@ const squash = title.length + (/^\d+$/.test(number || '') ? number.length + 4 : 
 // No program the repo's git config names runs here (the K61 sweep).
 const top = spawnSync('git', ['-c', 'core.fsmonitor=false', 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 const root = top.status === 0 ? top.stdout.trim() : process.cwd();
+// The build 17 sweep: judging a PR (PR_BASE set, in CI), the file is read from the base, so a PR cannot set the rows
+// its own body is held to.
+const base = process.env.PR_BASE;
 let project = {};
-try { project = JSON.parse(readFileSync(path.join(root, '.kit', 'pr-body.json'), 'utf8')); } catch { /* the defaults */ }
+try {
+	const raw = base
+		? spawnSync('git', ['-c', 'core.fsmonitor=false', 'show', `${base}:.kit/pr-body.json`], { cwd: root, encoding: 'utf8' })
+		: { status: 0, stdout: readFileSync(path.join(root, '.kit', 'pr-body.json'), 'utf8') };
+	if (raw.status === 0) project = JSON.parse(raw.stdout) || {};
+} catch { /* the defaults */ }
 const DIMENSIONS = Array.isArray(project.dimensions) && project.dimensions.length ? project.dimensions : ['Code security'];
 const AUDIT_LINE = typeof project.auditLine === 'string' && project.auditLine ? project.auditLine : null;
 const CLEAN = ['secrets or account information in the diff', ...(Array.isArray(project.verifiedClean) ? project.verifiedClean : [])];
