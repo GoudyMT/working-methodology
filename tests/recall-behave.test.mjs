@@ -54,6 +54,9 @@ test('each check kind passes and fails on what the session did', () => {
 	assert.equal(ok({ kind: 'some', match: { tool: 'Skill', skill: '^closeout$' } }), true);
 	assert.equal(ok({ kind: 'says', text: 'sweep' }), true);
 	assert.equal(ok({ kind: 'says', text: 'merged' }), false);
+	// K134 (build 17): a behaviour shown either by a tool call or by the reply passes on either; neither fails.
+	assert.equal(ok({ kind: 'any', of: [{ kind: 'some', match: { tool: 'AskUserQuestion' } }, { kind: 'says', text: 'sweep' }] }), true);
+	assert.equal(ok({ kind: 'any', of: [{ kind: 'some', match: { tool: 'AskUserQuestion' } }, { kind: 'says', text: 'merged' }] }), false);
 	// An edit by any of the write tools counts as an edit.
 	const w = parseStream(stream(call('Write', { file_path: '/p/src/b.mjs', content: '' }), result('')));
 	assert.equal(grade(w, [{ kind: 'none', match: { tool: 'Edit', file: 'src/b\\.mjs$' } }])[0].ok, false);
@@ -169,7 +172,10 @@ test('the suite names its version and every scenario a task and at least one che
 	assert.ok(suite.scenarios.length >= 14);
 	for (const s of suite.scenarios) {
 		assert.ok(s.id && s.prompt && s.checks.length, s.id);
-		for (const c of s.checks) assert.ok(['some', 'none', 'first', 'before', 'says'].includes(c.kind), `${s.id}: ${c.kind}`);
+		for (const c of s.checks) {
+			assert.ok(['some', 'none', 'first', 'before', 'says', 'any'].includes(c.kind), `${s.id}: ${c.kind}`);
+			if (c.kind === 'any') assert.ok(c.of.length > 1 && c.of.every((x) => ['some', 'first', 'before', 'says'].includes(x.kind)), `${s.id}: an any of plain checks`);
+		}
 	}
 	assert.ok(suite.pass > 0 && suite.pass <= suite.scenarios.length);
 });

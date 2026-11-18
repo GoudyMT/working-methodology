@@ -74,7 +74,7 @@ function matches(call, m) {
 	return read.length > 0 && read.every(([k, v]) => re(m[k]).test(v));
 }
 
-const label = (c) => `${c.kind} ${JSON.stringify(c.match || c.text)}${c.then ? ` then ${JSON.stringify(c.then)}` : ''}`;
+const label = (c) => (c.kind === 'any' ? `any of (${c.of.map(label).join('; ')})` : `${c.kind} ${JSON.stringify(c.match || c.text)}${c.then ? ` then ${JSON.stringify(c.then)}` : ''}`);
 
 /** Each check against a record: { ok, check }. */
 export function grade(ev, checks) {
@@ -87,6 +87,8 @@ export function grade(ev, checks) {
 		// What must come first: once the later act happens, the first one has happened before it.
 		else if (c.kind === 'before') { const later = at(c.then); const first = at(c.match); ok = later < 0 || (first >= 0 && first < later); }
 		else if (c.kind === 'says') ok = re(c.text).test(ev.final);
+		// K134 (build 17): a behaviour a session may show by a tool call or in its reply (an ask by pop-up, or in words).
+		else if (c.kind === 'any') ok = grade(ev, c.of).some((g) => g.ok);
 		else throw new Error(`unknown check kind ${c.kind}`);
 		return { ok, check: label(c) };
 	});
