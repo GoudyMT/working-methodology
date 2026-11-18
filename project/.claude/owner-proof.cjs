@@ -446,6 +446,9 @@ function loopBodies(command, tool) {
 		if (gate) body = gate[1];
 	}
 	if (!LOOP_WORDS.test(words) || !LOOP_BODY.test(body) || /\$\(|\b(for|foreach|do|done|while|until|function|eval|source)\b|(^|[\s;&|])\.\s/i.test(body)) return null;
+	// The build 17 sweep (critical): the shell keeps a body's folder change for the next body and for the command after
+	// the loop, which reading each body from the start folder misses, so a body that changes folder keeps the strict reading.
+	if (/(^|[\s;&|!])(cd|pushd|popd|chdir|set-location|sl|push-location|pop-location)(?![\w-])/i.test(body)) return null;
 	const list = words.split(tool === 'PowerShell' ? /\s*,\s*/ : /\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
 	if (!list.length || list.length > 64) return null;
 	const use = new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)`, tool === 'PowerShell' ? 'gi' : 'g');
