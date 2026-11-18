@@ -262,6 +262,28 @@ test('a loop of kit-script reads and a sed line range pass; a loop that could wr
 	for (const c of ["foreach ($f in 'a') { $f = '.git/config'; Set-Content $f x }", "foreach ($f in 'a') { Set-Variable f .claude/guard.cjs; Copy-Item evil $f }", "foreach ($f in '.claude') { $f += '/guard.cjs'; Copy-Item evil $f }"]) assert.equal(ps(c), 'deny', c);
 });
 
+// K117 rest (build 17, held live on 1.42.0 from the workbench): a kit script given a quoted note with a bracket in it,
+// a read loop followed by a sed line range, and three PowerShell reads (a variable set from a read, a Test-Path guard
+// in a loop, a property of a bracketed read) were held as writes to a protected file. Quoted text holds no code but
+// $( and a backquote, so a bracket in it is text; each widening keeps its held twin beside it.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('a bracket in a quoted note, a read loop then a sed range, and three PowerShell reads pass; their write twins hold', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	for (const c of ['node .claude/state.mjs item set K128 note "approved by the owner 2026-11-18 02:15Z (review thread)"', "node .claude/state.mjs item set K128 note 'a (b) c'", 'node .claude/state.mjs item K128 "(x"',
+		"for id in K1 K2; do node .claude/state.mjs item $id; done; sed -n '1,40p' .claude/guard.cjs", "for id in K1 K2; do node .claude/state.mjs item $id; done && sed -n '1,40p' .claude/settings.json"]) assert.equal(bash(c), 'allow', c);
+	for (const c of ['node .claude/state.mjs item set K1 note "$(cp x .claude/guard.cjs)"', 'node .claude/state.mjs item set K1 note "`cp x .claude/guard.cjs`"', 'node .claude/state.mjs item set K1 note "(a)" > .claude/guard.cjs', 'node .claude/state.mjs item K1; (cp x .claude/guard.cjs)',
+		'for id in K1; do node .claude/state.mjs item $id; done; sed -i 1d .claude/guard.cjs', "for id in K1; do node .claude/state.mjs item $id; done; sed -n '1,40w .claude/guard.cjs' x"]) assert.equal(bash(c), 'deny', c);
+	for (const c of ["foreach ($f in '.claude/settings.json','.claude/settings.local.json') { if (Test-Path $f) { Get-Content $f } }", '$s = Get-Content .claude/settings.json -Raw | ConvertFrom-Json; $s.permissions.allow',
+		'(Get-Item .claude/guard.cjs).Length; (Get-FileHash .claude/guard.cjs).Hash']) assert.equal(ps(c), 'allow', c);
+	for (const c of ["foreach ($f in '.claude/settings.json') { if (Test-Path $f) { Set-Content $f x } }", '$s = Get-Content .claude/settings.json -Raw; Set-Content .claude/guard.cjs $s', "$s = '.claude/guard.cjs'; Copy-Item x $s",
+		'(Copy-Item x .claude/guard.cjs).Length', '(Set-Content .claude/settings.json x)', '(& { Copy-Item x .claude/guard.cjs }).Length', '$s = Get-Content x; $s | Set-Content .claude/settings.json',
+		// Get-Item's answer used as a path, a method or a property set on a bracketed read, and a gated loop body that writes.
+		'$p = Get-Item .claude/guard.cjs; Set-Content $p x', '$p = Get-Item .claude/guard.cjs; $p | Remove-Item', '$p = Get-Item .claude/guard.cjs; $p.Delete()', "(Get-Item .claude/guard.cjs).Attributes = 'Normal'", '(Get-Item .claude/guard.cjs).Delete()',
+		"foreach ($f in '.claude/guard.cjs') { if (Test-Path $f) { Remove-Item $f } }"]) assert.equal(ps(c), 'deny', c);
+	// A quote the shell reads as text (an escaped one, ANSI quoting) never hides a bracket that runs.
+	for (const c of ["node .claude/state.mjs item K1 \\' ; (cp x .claude/guard.cjs) \\'", "node .claude/state.mjs item K1 $'\\'' ; (cp x .claude/guard.cjs) ;'", 'for f in a; do cat $f; done; echo x > .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+});
+
 // why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
 test('running a kit script with 2>&1, or after a plain Set-Location, passes; a write beside it is still held', () => {
 	const ps = (command) => decide('PowerShell', { command });
