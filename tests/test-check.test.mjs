@@ -209,6 +209,28 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
 });
 
+// T10 (build 17): splitting a test file moves each test word for word into a new file. A test whose name and code
+// sit unchanged in another file on the base, and no longer there, is moved: no new test, nothing to prove. A copy left
+// in both files is still a new test.
+// why: catches a file split held to the bar for a thousand new tests it does not add (T10)
+test('a test moved unchanged from another file is not new; a copy left in both files still is', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	const a = fs.readFileSync(path.join(dir, 'tests', 'a.test.mjs'), 'utf8').split('\n');
+	const moved = a.find((l) => l.startsWith("test('a hollow one'"));
+	const copied = a.find((l) => l.startsWith("test('zero is not positive'"));
+	fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), a.filter((l) => l !== moved).join('\n'));
+	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), [...a.slice(0, 4), moved, copied, ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'split');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.match(r.stdout, /^Test check: 1 new or changed test\(s\)/m, r.stdout);
+	assert.match(r.stdout, /Moved unchanged from another file: 1/);
+	assert.match(r.stdout, /moved tests\/c\.test\.mjs::a hollow one: from tests\/a\.test\.mjs/);
+	assert.doesNotMatch(r.stdout, /A\d tests\/c\.test\.mjs::a hollow one/);
+	assert.match(r.stdout, /A1 tests\/c\.test\.mjs::zero is not positive/);
+});
+
 // PR 51: a test's text ran on to the next test, so the top-level code after it (a fixture, a helper) was part of its
 // body, and a new test put between them made the old one read as changed, a false finding under --strict.
 // why: catches an unchanged test named as changed when a new test is inserted after it (PR 51)

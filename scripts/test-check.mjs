@@ -189,12 +189,31 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// build 14 PR: 38 retagged tests were held to fail first again).
 	const retagged = [];
 	const codeOf = (b) => b.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+	// T10 (build 17): a test moved word for word out of another test file (a file split) is no new test. It counts as
+	// moved only when that file held it on the base and holds it no more; a copy left in both is new.
+	const moved = [];
+	let baseTests = null;
+	const movedFrom = (f, name, body) => {
+		if (!baseTests) {
+			baseTests = new Map();
+			const listed = git(root, 'ls-tree', '-r', '--name-only', baseSha, '--', 'tests').stdout.split('\n').filter((x) => TEST_FILE.test(x));
+			for (const g of listed) baseTests.set(g, tests(git(root, 'show', `${baseSha}:${g}`).stdout));
+		}
+		for (const [g, was] of baseTests) {
+			if (g === f || was.get(name) !== body) continue;
+			let now = '';
+			try { now = fs.readFileSync(path.join(root, g), 'utf8'); } catch { /* the file is gone */ }
+			if (!tests(now).has(name)) return g;
+		}
+		return null;
+	};
 	for (const f of testFiles) {
 		const now = tests(fs.readFileSync(path.join(root, f), 'utf8'));
 		const onBase = git(root, 'cat-file', '-e', `${baseSha}:${f}`).status === 0;
 		const was = tests(onBase ? git(root, 'show', `${baseSha}:${f}`).stdout : '');
 		for (const [name, body] of now) {
 			if (was.get(name) === body) continue;
+			if (!was.has(name)) { const g = movedFrom(f, name, body); if (g) { moved.push(`    moved ${f}::${name}: from ${g}`); continue; } }
 			if (was.has(name) && codeOf(was.get(name)) === codeOf(body)) { retagged.push({ key: `${f}::${name}`, body }); continue; }
 			// A loop's tests are named at run time: its pattern, the written name with each ${...} read as any text.
 			const loop = now.loops.has(name) ? new RegExp(`^${name.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`) : null;
@@ -437,6 +456,8 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	const lines = [`Test check: ${newOrChanged.length} new or changed test(s) since ${baseSha.slice(0, 9)}, ${findings.length} finding(s)`];
 	for (const f of findings) lines.push(`    ${f.rule} ${f.key}: ${f.text}`);
 	if (proven.length) lines.push(`Proven on the new code instead of the base: ${proven.length}`, ...proven);
+	// Named by count only past 20: a file split moves hundreds.
+	if (moved.length) lines.push(`Moved unchanged from another file: ${moved.length}`, ...(moved.length <= 20 ? moved : []));
 	if (leftToWindows.length) lines.push(`Left to the Windows job (its test check part runs them): ${leftToWindows.length}`, ...leftToWindows);
 	if (record && ledger.length) lines.push(`Fix ledger: ${record.length} fix(es)`, ...ledger);
 	// K24 (the owner, 2026-11-17): strict fails on a real finding; a test the time budget left unmeasured is named only.
