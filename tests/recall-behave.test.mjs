@@ -44,7 +44,8 @@ test('each check kind passes and fails on what the session did', () => {
 		call('Skill', { skill: 'closeout' }),
 		result('I did not open the PR: a sweep is needed first.'),
 	));
-	const ok = (check) => grade(ev, [check])[0].ok;
+	// A grader that cannot read a check kind answers "threw", so a missing kind fails on its assertion, not as a crash.
+	const ok = (check) => { try { return grade(ev, [check])[0].ok; } catch (e) { return `threw: ${e.message}`; } };
 	assert.equal(ok({ kind: 'first', match: { tool: 'Shell', cmd: 'resume-packet\\.mjs check' } }), true);
 	assert.equal(ok({ kind: 'first', match: { tool: 'Read' } }), false);
 	assert.equal(ok({ kind: 'before', match: { tool: 'Read', file: '_Active Plan\\.md$' }, then: { tool: 'Edit' } }), true);
