@@ -286,6 +286,9 @@ test('a bracket in a quoted note, a read loop then a sed range, and three PowerS
 	// A quote inside a comment opens nothing, so it never hides a bracket that runs (the second commit review).
 	assert.equal(ps("node .claude/state.mjs item K1 <#'#> (Copy-Item x ('.cl'+'aude/settings.json')) <#'#>"), 'deny');
 	assert.equal(bash("node .claude/state.mjs item K1 #'\n(cp x .cl\"aude\"/settings.json) #'"), 'deny');
+	// Nor does a quote inside a here-document or a here-string (the third commit review).
+	assert.equal(bash("node .claude/state.mjs item K1 <<'E'\n'\nE\n(cp x .cl\"aude\"/settings.json) '"), 'deny');
+	assert.equal(ps("node .claude/state.mjs item K1 @'\n'\n'@ (Copy-Item x ('.cl'+'aude/settings.json')) '"), 'deny');
 	// A quote the shell reads as text (an escaped one, ANSI quoting) never hides a bracket that runs.
 	for (const c of ["node .claude/state.mjs item K1 \\' ; (cp x .claude/guard.cjs) \\'", "node .claude/state.mjs item K1 $'\\'' ; (cp x .claude/guard.cjs) ;'", 'for f in a; do cat $f; done; echo x > .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
 });

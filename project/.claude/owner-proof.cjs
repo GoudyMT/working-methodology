@@ -629,10 +629,11 @@ function shellWritesFrom(command, tool, start, names) {
 	// unknown, the safe side.
 	const grouped = /[(){}]/.test(text);
 	// K117 rest (build 17): a bracket inside quotes is text, so a kit script's quoted note may hold one; the exemptions
-	// below read the brackets outside quotes only. PowerShell also opens and closes quotes at typographic ones, so a
-	// command with any sign past plain ASCII keeps the strict reading (the commit security review), and so does one with a
-	// # anywhere: a quote inside a comment opens nothing, and this reading does not follow comments (the second review).
-	const bracketed = /[^\x20-\x7e\t\r\n]|#/.test(source) ? grouped : unquotedGroup(joinContinuations(source), tool);
+	// below read the brackets outside quotes only. That reading models plain quotes and escapes and nothing else, so a
+	// command holding anything it does not model keeps the strict reading: a sign past plain ASCII (PowerShell closes
+	// quotes at typographic ones), a comment (#, <#), a here-document or here-string (<<, @' or @"), or input from a file
+	// (<). The commit security reviews found each of the first three.
+	const bracketed = /[^\x20-\x7e\t\r\n]|[#<]|@['"]/.test(source) ? grouped : unquotedGroup(joinContinuations(source), tool);
 	// A function or alias the command defines can stand in for any program name, so no program's exemption holds
 	// (the 1.25.0 sweep: git() { cp x "$2"; }; git add .claude/guard.cjs overwrote the guard).
 	// So can a name looked up somewhere else (hash -p, a new PATH, a sourced file, eval, PowerShell's function: drive),
