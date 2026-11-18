@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
@@ -271,6 +272,10 @@ function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
 // T7 (build 12): the loop's bounds file too, the owner's from the first install, so no kit change loosens it.
 export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl', '.claude/bounds.json'];
 export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
+// K120 (1.42.0): in the Claude folder the kit's tools and hooks (the guard launcher among them) are its guard files: a
+// changed one is put back, never kept or merged.
+// The 1.42.0 sweep: every script the kit runs from there, a PowerShell one and a skill's own scripts included.
+export const isUserTool = (key) => /^(kit-(tools|hooks)|skills\/[^/]+)\/.+\.(cjs|mjs|js|ps1|sh)$/.test(key);
 // The kit's own git hooks, which the shims check the guard files before. Every other hook git knows gets a shim that
 // runs the project's own hook of that name, so a host that keeps its hooks in .githooks keeps every one (1.25.1 sweep).
 const GIT_HOOKS = ['pre-commit', 'commit-msg', 'pre-push'];
@@ -612,9 +617,10 @@ export function install(ctx) {
   // copy goes to the dated backup folder first. Returns { merged } or { why } it was not.
   const releaseKit = Boolean(ctx.release && ctx.release.release);
   const again = `install ${ctx.target === 'user' ? 'user' : 'project'} again`;
-  const handMerge = (key, why) => `changed here and in the kit, and ${why}, so nothing was written: merge the kit's copy into yours by hand, keeping your own lines, then run ${again} with --merged ${key}`;
+  // A name with a space is quoted, so the printed command runs as given (K120).
+  const handMerge = (key, why) => `changed here and in the kit, and ${why}, so nothing was written: merge the kit's copy into yours by hand, keeping your own lines, then run ${again} with --merged ${/\s/.test(key) ? `"${key}"` : key}`;
   const mergeInto = (key, dest, src, renderOld, base, want) => {
-    if (isGuarded(key)) return { why: 'it is a guard file, which install never merges' };
+    if (isGuarded(key) || (ctx.target === 'user' && isUserTool(key))) return { why: 'it is a guard file, which install never merges' };
     if (fs.lstatSync(dest).isSymbolicLink()) return { why: 'it is a link, which install never writes through' };
     if (!releaseKit) return { why: 'this kit folder is no release, so no tag holds its text for the next merge' };
     const m = threeWay({ ctx, src, renderOld, curBuf: fs.readFileSync(dest), base, want });
@@ -659,13 +665,15 @@ export function install(ctx) {
         kept = true;
       }
       write(); updated.push(entry.key); files[entry.key] = wantHash;
-    } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && !isHost(entry.key))) {
+    } else if (ctx.force || (ctx.target === 'project' && isGuarded(entry.key) && !isHost(entry.key)) || (ctx.target === 'user' && isUserTool(entry.key))) {
       // A guard file the kit wrote and something else changed is put back (V3). One the kit never wrote (a host's own
       // tracked hook) is the host's: it is skipped below and recorded as it is (the 1.25.1 sweep).
       if (!ctx.dryRun) {
         const keep = path.join(backupDir, entry.key);
         fs.mkdirSync(path.dirname(keep), { recursive: true });
         fs.copyFileSync(entry.dest, keep);
+        // A link is replaced, never written through (the 1.42.0 sweep): the kit's text would land in the file it names.
+        if (fs.lstatSync(entry.dest).isSymbolicLink()) fs.rmSync(entry.dest);
       }
       write(); replaced.push(entry.key); files[entry.key] = wantHash;
     } else if ((ctx.merged || []).includes(entry.key) && (stamp.owed || {})[entry.key] === cur) {
@@ -717,12 +725,22 @@ export function install(ctx) {
       if (!ctx.dryRun) fs.writeFileSync(local, text);
       (had ? updated : created).push('CLAUDE.local.md');
       files['CLAUDE.local.md'] = sha(text);
-    } else if (had !== sha(text) && had !== stamp.files['CLAUDE.local.md']) {
+    } else if (had === sha(text)) {
+      files['CLAUDE.local.md'] = had;
+    } else if ((ctx.merged || []).includes('CLAUDE.local.md') && (stamp.owed || {})['CLAUDE.local.md'] === had) {
+      // T5's owed check, for the overlay too (the 1.42.0 sweep): the file as it was when install named the merge.
+      skipped.push({ file: 'CLAUDE.local.md', reason: 'recorded as merged, but the file is unchanged since install named the merge: merge the kit\'s copy into it first, or run the same command again to keep it as it is' });
+      owed['CLAUDE.local.md'] = `kept ${had}`;
+    } else if (had !== stamp.files['CLAUDE.local.md'] && (sha(text) === stamp.files['CLAUDE.local.md'] || (ctx.merged || []).includes('CLAUDE.local.md'))) {
+      // K120 (1.42.0): the owner's edits with nothing new from the kit (or recorded as merged by hand) are left as they
+      // are; merging them again on every install made a backup each time.
+      files['CLAUDE.local.md'] = sha(text);
+    } else if (had !== stamp.files['CLAUDE.local.md']) {
       const claudeSrc = entries.find((e) => e.key === 'CLAUDE.md');
       const head = text.slice(0, text.length - kitClaude.length);
       const m = stamp.files['CLAUDE.local.md'] ? mergeInto('CLAUDE.local.md', local, claudeSrc.src, (t) => head + renderEntry(kitInfo, claudeSrc, ctx.projectDir, ctx.home, new Map([[claudeSrc.src, t]])), stamp.files['CLAUDE.local.md'], text) : { why: 'install has no record of the copy it wrote' };
       if (m.merged) files['CLAUDE.local.md'] = sha(text);
-      else skipped.push({ file: 'CLAUDE.local.md', reason: handMerge('CLAUDE.local.md', m.why) });
+      else { skipped.push({ file: 'CLAUDE.local.md', reason: handMerge('CLAUDE.local.md', m.why) }); owed['CLAUDE.local.md'] = had; }
     }
   } else if (claudeEntry) {
     claudeEntry.reason += '; if another repo or team owns this file, run install with --overlay';
@@ -1072,8 +1090,37 @@ export function bump({ kit, level, note, date = new Date().toISOString().slice(0
 }
 
 /**
+ * The text a PNG carries (tEXt, zTXt, iTXt chunks), one line per chunk. The pixels are binary and
+ * hold nothing a reader sees as words, so only the text chunks are scrubbed.
+ */
+function pngText(buf) {
+  const out = [];
+  for (let at = 8; at + 8 <= buf.length;) {
+    const len = buf.readUInt32BE(at);
+    const type = buf.toString('latin1', at + 4, at + 8);
+    const data = buf.subarray(at + 8, at + 8 + len);
+    if (type === 'tEXt') out.push(data.toString('latin1'));
+    else if (type === 'zTXt' || type === 'iTXt') {
+      const key = data.indexOf(0);
+      let body = data.subarray(key + 1);
+      // zTXt: method byte, then deflate; iTXt: flag, method, language, translated keyword, then text.
+      if (type === 'zTXt') body = zlib.inflateSync(body.subarray(1));
+      else {
+        const compressed = body[0] === 1;
+        let rest = body.subarray(2);
+        for (let n = 0; n < 2; n++) rest = rest.subarray(rest.indexOf(0) + 1);
+        body = compressed ? zlib.inflateSync(rest) : rest;
+      }
+      out.push(`${data.toString('latin1', 0, key)}\0${body.toString('utf8')}`);
+    }
+    at += 12 + len;
+  }
+  return out.join('\n');
+}
+
+/**
  * Find personal details in the kit: words from scrub.local.json (kept out of git), home-folder
- * paths, and any non-ASCII byte. One hit per file and kind.
+ * paths, and any non-ASCII byte. One hit per file and kind; a PNG is read by its text chunks.
  */
 export function scrub({ kit }) {
   const localPath = path.join(kit, 'scrub.local.json');
@@ -1082,7 +1129,7 @@ export function scrub({ kit }) {
   for (const file of walk(kit, SCRUB_SKIP_DIRS)) {
     const rel = toPosix(path.relative(kit, file));
     if (SCRUB_SKIP.has(rel)) continue;
-    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const lines = (/\.png$/i.test(rel) ? pngText(fs.readFileSync(file)) : fs.readFileSync(file, 'utf8')).split('\n');
     const seen = new Set();
     const hit = (kind, i) => { if (!seen.has(kind)) { seen.add(kind); hits.push({ file: rel, line: i + 1, kind }); } };
     lines.forEach((line, i) => {
@@ -1314,7 +1361,7 @@ function doubleRunLines(projectDir) {
  * Returns:
  *     the message text (one or more lines)
  */
-export function sessionStartReport({ kit, home, projectDir, source, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
+export function sessionStartReport({ kit, home, projectDir, source, session, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
   const lines = [];
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old.line);
@@ -1323,6 +1370,24 @@ export function sessionStartReport({ kit, home, projectDir, source, claudeVersio
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
+  // K112 (1.42.0): a resumed session re-reads its whole old context after each idle gap; once a closeout closed the
+  // task, the next task starts fresh from the packet.
+  // The build 16 sweep: the mark names no session, so each session that starts after the close (a fresh start or a
+  // /clear) is listed beside it, and a resumed session on that list began its own task and is told nothing.
+  if (['resume', 'startup', 'clear'].includes(source)) {
+    let packet = '';
+    try { packet = fs.readFileSync(path.join(projectDir, '.kit', 'resume-packet.md'), 'utf8'); } catch { /* none */ }
+    const closed = /^closed: (\S+)$/m.exec(packet);
+    const listFile = path.join(projectDir, '.kit', 'after-close.json');
+    let after = { closed: '', sessions: [] };
+    try { after = JSON.parse(fs.readFileSync(listFile, 'utf8')); } catch { /* none yet */ }
+    const since = closed && after.closed === closed[1] ? after.sessions : [];
+    const sid = String(session || '').replace(/[^\w.-]/g, '').slice(0, 64);
+    if (closed && source !== 'resume' && sid && !since.includes(sid)) {
+      try { fs.writeFileSync(listFile, `${JSON.stringify({ closed: closed[1], sessions: [...since, sid].slice(-50) })}\n`); } catch { /* the note is only a hint */ }
+    }
+    if (closed && source === 'resume' && !since.includes(sid)) lines.push(`The last closeout closed its task (${closed[1]}). A resumed session re-reads all of its old context: for the next task the owner types /clear (a CLI or Code session; a project thread closes when its work is done), then run node .claude/resume-packet.mjs check.`);
+  }
   const ahead = remote(kit);
   if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run /methodology-kit update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
@@ -1813,7 +1878,7 @@ export function build({ kit }) {
   const rows = mods.flatMap((m) => headings(m.body).map((h) => `| ${h.id} | ${h.title} | \`${where(m)}\` | ${(m.meta.tags[h.id] || []).join(', ')} |`));
   // The merge gate and the PR-text guard need the PR-body audits and the name check where no branch or session can edit
   // them: a kit-local project keeps .claude/ out of git, so its base holds none. An exact copy, so the two cannot drift.
-  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs']) {
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs']) {
     out.set(`user/kit-tools/audits/${f}`, fs.readFileSync(path.join(kit, 'project', '.claude', f), 'utf8'));
   }
   // The merge gate makes its temp folders through the one helper; the same exact-copy rule keeps them alike.

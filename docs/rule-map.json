@@ -139,6 +139,7 @@
   },
   "outward-acts": {
    "guards": [
+    "project/.claude/guard-delete.cjs",
     "project/.claude/guard-outward.cjs",
     "project/.githooks/pre-push"
    ],
@@ -179,20 +180,6 @@
    "tests": [],
    "workflows": []
   },
-  "context-engineering": {
-   "guards": [],
-   "scripts": [],
-   "tests": [
-    "tests/task-gate.test.mjs"
-   ],
-   "workflows": []
-  },
-  "anti-hallucination": {
-   "guards": [],
-   "scripts": [],
-   "tests": [],
-   "workflows": []
-  },
   "correction-loop": {
    "guards": [],
    "scripts": [],
@@ -218,12 +205,6 @@
    "workflows": []
   },
   "simplicity-lens": {
-   "guards": [],
-   "scripts": [],
-   "tests": [],
-   "workflows": []
-  },
-  "dual-horizon": {
    "guards": [],
    "scripts": [],
    "tests": [],
@@ -279,7 +260,8 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit.test.mjs",
+    "tests/recall-behave.test.mjs"
    ],
    "workflows": []
   },
@@ -316,6 +298,18 @@
    "tests": [
     "tests/release-check.test.mjs"
    ],
+   "workflows": []
+  },
+  "anti-hallucination": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
+  "dual-horizon": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
    "workflows": []
   },
   "pre-commit": {
@@ -357,15 +351,18 @@
    "scripts": [
     "project/.claude/pr-body-audit-lean.mjs",
     "project/.claude/pr-body-audit.mjs",
+    "project/.claude/visuals.mjs",
     "scripts/build-record.mjs",
     "user/kit-tools/audits/pr-body-audit-lean.mjs",
     "user/kit-tools/audits/pr-body-audit.mjs",
+    "user/kit-tools/audits/visuals.mjs",
     "user/skills/release-notes/audit.mjs"
    ],
    "tests": [
     "tests/build-record.test.mjs",
     "tests/guards-hold.test.mjs",
-    "tests/kit.test.mjs"
+    "tests/kit.test.mjs",
+    "tests/visuals.test.mjs"
    ],
    "workflows": []
   },
@@ -375,13 +372,16 @@
     "project/.claude/pr-body-audit-lean.mjs",
     "project/.claude/pr-body-audit.mjs",
     "project/.claude/release-check.mjs",
+    "project/.claude/visuals.mjs",
     "user/kit-tools/audits/pr-body-audit-lean.mjs",
     "user/kit-tools/audits/pr-body-audit.mjs",
+    "user/kit-tools/audits/visuals.mjs",
     "user/kit-tools/merge-gate.mjs",
     "user/skills/release-notes/audit.mjs"
    ],
    "tests": [
-    "tests/build-record.test.mjs"
+    "tests/build-record.test.mjs",
+    "tests/visuals.test.mjs"
    ],
    "workflows": []
   },
@@ -447,10 +447,20 @@
    ],
    "scripts": [
     "project/.claude/improvement-report.mjs",
+    "project/.claude/use-check.mjs",
     "scripts/kit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit.test.mjs",
+    "tests/use-check.test.mjs"
+   ],
+   "workflows": []
+  },
+  "context-engineering": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/task-gate.test.mjs"
    ],
    "workflows": []
   },
@@ -495,7 +505,9 @@
    "workflows": []
   },
   "finding-pipeline": {
-   "guards": [],
+   "guards": [
+    "user/kit-hooks/sweep-guard.cjs"
+   ],
    "scripts": [
     "user/skills/pre-pr-sweep/approve.mjs",
     "user/skills/pre-pr-sweep/audit.mjs"
@@ -527,7 +539,6 @@
     "scripts/kit.mjs",
     "user/kit-tools/audits/pr-body-audit-lean.mjs",
     "user/kit-tools/audits/pr-body-audit.mjs",
-    "user/skills/pre-pr-sweep/approve.mjs",
     "user/skills/pre-pr-sweep/audit.mjs"
    ],
    "tests": [
@@ -597,6 +608,7 @@
     "tests/kit.test.mjs",
     "tests/link-scan.test.mjs",
     "tests/owner-proof.test.mjs",
+    "tests/recall-behave.test.mjs",
     "tests/recall-ci.test.mjs",
     "tests/resume-packet.test.mjs"
    ],
@@ -742,7 +754,8 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit.test.mjs",
+    "tests/resume-packet.test.mjs"
    ],
    "workflows": []
   },
@@ -784,13 +797,11 @@
   "session-workflow",
   "recovery-protocol",
   "what-this-file-is-not",
-  "anti-hallucination",
   "correction-loop",
   "autonomous-fixes",
   "direction-changes",
   "re-plan-on-failure",
   "simplicity-lens",
-  "dual-horizon",
   "success-charter",
   "visual-design-collaboration",
   "craft-floor",
@@ -799,6 +810,8 @@
   "snag-response",
   "blocked-prompts",
   "cost-first",
+  "anti-hallucination",
+  "dual-horizon",
   "pre-commit",
   "post-merge-check",
   "graduated-loop-lessons",

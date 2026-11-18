@@ -26,7 +26,8 @@ const check = (dir) => {
 	const r = spawnSync(process.execPath, [path.join(dir, '.claude', 'use-check.mjs'), '--json'], { cwd: dir, encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: homes.get(dir) } });
 	return { code: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, err: r.stderr };
 };
-const part = (out, name) => out.parts.find((p) => p.name === name);
+// A part the check does not have is a failed assertion, not a crash on reading its fields.
+const part = (out, name) => { const p = out.parts.find((x) => x.name === name); assert.ok(p, `the use check has a ${name} part`); return p; };
 
 // why: guards rule:outward-acts
 test('an unwired part fails the check by name: the guard entry gone, git hooks not set, a guard file missing', () => {
@@ -153,4 +154,57 @@ test('the guards part reports whether the newest pop-up answer carries the field
 	const used = part(check(dir).out, 'guards').used;
 	assert.equal(used.ok, false);
 	assert.match(used.detail, /permissionDecision/);
+});
+
+// T9 (1.42.0, D-2): AGENTS.md is measured as the project has it, filled in and as written on disk, never the kit's
+// template: the template stayed under its cap while a filled copy on the owner's PC was over it (28,354 B).
+// K111 (1.42.0): sessions ran past 400K tokens; the installed project settings compact at 400K, and the use check names
+// any window in force over that, or under the 100K Claude Code ignores.
+// why: guards rule:kit-standards
+test('the use check fails a filled AGENTS.md over the cap and a compact window outside 100K to 400K', () => {
+	const ok = project();
+	assert.deepEqual(check(ok).out.failing, []);
+	assert.equal(part(check(ok).out, 'start-load').wired.ok, true);
+	assert.equal(part(check(ok).out, 'compact-window').wired.ok, true);
+	const big = project();
+	fs.appendFileSync(path.join(big, 'AGENTS.md'), 'x'.repeat(26000));
+	const b = check(big);
+	assert.deepEqual(b.out.failing, ['start-load']);
+	assert.match(part(b.out, 'start-load').wired.detail, /over the 25,000 B cap/);
+	for (const [file, settings] of [['settings.json', { autoCompactWindow: 650000 }], ['settings.local.json', { modelSettings: { 'claude-opus-5-5': { autoCompactWindow: 900000 } } }], ['settings.json', { autoCompactWindow: 40000 }]]) {
+		const w = project();
+		const f = path.join(w, '.claude', file);
+		const s = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {};
+		fs.writeFileSync(f, JSON.stringify({ ...s, ...settings }));
+		assert.deepEqual(check(w).out.failing, ['compact-window'], `${file} ${JSON.stringify(settings)}`);
+	}
+	const none = project();
+	const f = path.join(none, '.claude', 'settings.json');
+	const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+	delete s.autoCompactWindow;
+	fs.writeFileSync(f, JSON.stringify(s));
+	assert.match(part(check(none).out, 'compact-window').wired.detail, /no autoCompactWindow/);
+});
+
+// why: guards rule:kit-standards. The 1.42.0 sweep thought a per-model window in the owner's own settings file could
+// win over the project's; measured on 2026-11-17 it does not (a session in a project setting 400000 showed 400k with
+// the owner's opus window at 650000), and the check that failed on it stopped every install on such a machine. A
+// per-model window in the project's own files still counts, and a text value there fails.
+test('the compact-window check passes the owner\'s own per-model window, and fails a project text value and a BOM-led file', () => {
+	const w = project();
+	const file = path.join(homes.get(w), 'settings.json');
+	const s0 = JSON.parse(fs.readFileSync(file, 'utf8'));
+	s0.modelSettings = { 'claude-opus-5-5': { autoCompactWindow: 650000 } };
+	fs.writeFileSync(file, JSON.stringify(s0));
+	assert.deepEqual(check(w).out.failing, []);
+	const p = project();
+	const pf = path.join(p, '.claude', 'settings.json');
+	const ps = JSON.parse(fs.readFileSync(pf, 'utf8'));
+	fs.writeFileSync(pf, JSON.stringify({ ...ps, modelSettings: { 'claude-opus-5-5': { autoCompactWindow: 'auto' } } }));
+	assert.match(part(check(p).out, 'compact-window').wired.detail, /settings\.json \(claude-opus-5-5\) sets auto/);
+	const bom = project();
+	const f = path.join(bom, '.claude', 'settings.json');
+	const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+	fs.writeFileSync(f, '\uFEFF' + JSON.stringify({ ...s, autoCompactWindow: 900000 }));
+	assert.match(part(check(bom).out, 'compact-window').wired.detail, /settings.json sets 900000/);
 });

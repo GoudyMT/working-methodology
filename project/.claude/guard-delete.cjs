@@ -37,6 +37,11 @@ const DELETERS = new Set(['rm', 'rmdir', 'unlink', 'del', 'erase', 'rd', 'ri', '
 const CMD_DELETERS = new Set(['del', 'erase', 'rd', 'rmdir']);
 // rmdir, rd and unlink without a recursive switch remove a link itself, never what it points to.
 const LINK_SAFE = new Set(['rmdir', 'rd', 'unlink']);
+// What may set CDPATH where the guard cannot read the name: a sourced file, eval, or a setter whose name is built at
+// run time (the 1.42.0 commit review of S8).
+const CDPATH_MAYBE = /(^|[\s;&|(])(source|eval|\.)\s|\b(export|declare|typeset|readonly|local|read|mapfile|readarray|getopts)\b[^;&|\n]*[$`]|\bprintf\s+-v|\$'|\b(BASH_ENV|ENV)\s*=/;
+// The forms a shell may read a word in: as written, with backslash-newlines dropped, and with quotes and escapes gone.
+const shellForms = (s) => [s, s.replace(/\\\r?\n/g, ''), s.replace(/\\\r?\n/g, '').replace(/["'\\`]/g, '')];
 const DIR_CHANGERS = new Set(['cd', 'chdir', 'pushd', 'sl', 'set-location', 'push-location']);
 // They go back to a folder the guard does not track.
 const DIR_RETURNS = new Set(['popd', 'pop-location']);
@@ -97,8 +102,9 @@ const UNCLEAR_TEXT = /[,`$\x00-\x08\x0b-\x1f\u0080-\uffff]|\\[\s";&|()<>]|""|''/
 const CLEAN_SPAN = /\bclean\b(?:\\.|[^;|&\n])*/g;
 // A comma, escape, backtick or caret in git's own options makes the tokenizer lose the subcommand: git -c x.y=a,b clean.
 const LOST_CLEAN = /\bgit(\.exe)?\s+-[^;|&\n]*[,\\`^][^;|&\n]*\sclean\b/i;
-// What an alias may run that deletes, once its quoting is off.
-const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|rm\.exe|worktree)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha/;
+// What an alias may run that deletes, once its quoting is off. The build 16 sweep: an alias for checkout or restore (or
+// the plumbing under them), or a forced branch or switch, drops work as clean does.
+const DELETE_ALIAS = /(^|[\s!;&|(])(clean|rm|rm\.exe|worktree|checkout|restore|checkout-index|read-tree|update-ref|stash|reflog)(\s|$)|(^|[\s!;&|(])reset\s([\s\S]*\s)?--ha|(^|[\s!;&|(])(branch|switch|reset|push)(\s|$)/;
 const GIT_CLEAN_TEXT = /\bgit(\.exe)?\s+clean(\s|$|`)/i;
 // robocopy takes / or - (Git Bash needs //), a word of its own or glued to the name; a job file can carry any of
 // these, so it asks unread. A path segment is not a switch.
@@ -235,6 +241,55 @@ function cleanDryRun(own) {
 	return dry;
 }
 
+// K110 (1.42.0): a local git act that throws away uncommitted or unpushed work waits for the owner's yes
+// (rule:outward-acts). reset --hard, a checkout or restore of paths over the work tree, switch or checkout with -f,
+// branch -D, stash drop or clear, reflog expire or delete. A checkout word that is a path on disk (git checkout x.txt)
+// restores that file; one that is not is a branch, and changing branch keeps the work (git refuses over changes).
+const LOSES_WORK = 'work-loss:';
+// After a move the guard cannot follow, a word with a dot or a slash is read as a path.
+function discardsWork(sub, own, ctx, state) {
+	const end = own.includes('--') ? own.indexOf('--') : own.length;
+	const opts = own.slice(0, end);
+	const has = (re) => opts.some((w) => re.test(w));
+	// git takes any unique start of a long option (--ha is --hard) and a value after = (the commit security reviews), so
+	// any start counts, read without its value.
+	const long = (name) => opts.some((w) => { const o = w.split('=')[0]; return /^--[a-z-]+$/.test(o) && `--${name}`.startsWith(o); });
+	// A short group is read letter by letter up to a letter that takes a value: the rest is that value (restore
+	// -sSOME is the source SOME, not --staged).
+	const VALUE_LETTERS = { restore: 's', checkout: 'bBc', switch: 'cC', branch: 'tu', reset: '' };
+	const short = (letters) => opts.some((w) => {
+		if (!/^-[A-Za-z]/.test(w)) return false;
+		for (const ch of w.slice(1)) {
+			if (letters.includes(ch)) return true;
+			if ((VALUE_LETTERS[sub] || '').includes(ch) || !/[A-Za-z]/.test(ch)) return false;
+		}
+		return false;
+	});
+	// The build 16 sweep: a glob (*.md) or pathspec magic (:/) is a path git expands itself, and after a move the guard
+	// cannot follow, any word may be a file there (Makefile has no dot), so it asks.
+	const isPath = (w) => /[*?[]|^:/.test(w) || state.moved || [ctx.cwd, ...(state.cwds || [])].some((d) => fs.existsSync(ctx.api.resolve(d, w)));
+	// A help read alone changes nothing; beside other words it may be an option's value, so it proves nothing.
+	if (/^(checkout|restore|switch|reset|branch|stash)$/.test(sub) && own.length === 1 && (own[0] === '--help' || own[0] === '-h')) return '';
+	if (sub === 'reset' && long('hard')) return `${LOSES_WORK} git reset --hard`;
+	// -B resets a branch that exists to the start point; a pathspec list file names paths the guard cannot see.
+	if (sub === 'checkout' && (end < own.length || short('fB') || long('force') || long('pathspec-from-file') || opts.some((w) => w === '.' || (!w.startsWith('-') && isPath(w))))) return `${LOSES_WORK} git checkout over changes`;
+	if (sub === 'restore' && (!(short('S') || long('staged')) || short('W') || long('worktree'))) return `${LOSES_WORK} git restore over changes`;
+	// The plumbing under them (the build 16 sweep): checkout-index -f and read-tree -u --reset overwrite the work tree,
+	// update-ref -d drops a branch, and a forced push into the repo itself moves one.
+	if (sub === 'checkout-index' && (short('f') || long('force'))) return `${LOSES_WORK} git checkout-index -f`;
+	if (sub === 'read-tree' && (short('u') || own.includes('-u')) && (long('reset') || short('m'))) return `${LOSES_WORK} git read-tree -u`;
+	if (sub === 'update-ref' && (short('d') || long('delete') || long('stdin'))) return `${LOSES_WORK} git update-ref -d`;
+	// A push to a folder (., ./, .., a path) lands in a repo on this machine, this one included; forced, it moves a branch.
+	// Any word may be the destination once an option's value is skipped, so any local path counts (the commit review).
+	if (sub === 'push' && own.some((w) => /^(\.{1,2}([\\/]|$)|[\\/]|[A-Za-z]:|~|file:)/.test(w.replace(/^--repo=/, ''))) &&(short('f') || opts.some((w) => /^--force/.test(w)) || own.some((w) => /^\+/.test(w)))) return `${LOSES_WORK} a forced push into a repo on this machine`;
+	if (sub === 'switch' && (short('fC') || long('force') || long('discard-changes') || long('force-create'))) return `${LOSES_WORK} git switch over changes`;
+	// -D, -f (with -d or alone, which moves a branch that exists), -M and -C overwrite or drop a branch.
+	if (sub === 'branch' && (short('DfMC') || long('force'))) return `${LOSES_WORK} git branch -D`;
+	if (sub === 'stash' && /^(drop|clear)$/.test(own[0] || '')) return `${LOSES_WORK} git stash ${own[0]}`;
+	if (sub === 'reflog' && /^(expire|delete)$/.test(own[0] || '')) return `${LOSES_WORK} git reflog ${own[0]}`;
+	return '';
+}
+
 // An alias set in the same command (git -c alias.x=..., git config alias.x ..., --config-env) hides its subcommand
 // behind a name the guard does not know, so one that runs clean, rm, worktree or reset --hard asks. git strips quotes
 // and backslashes from the value, so they come off first; a value held in a variable cannot be read, so it asks.
@@ -354,6 +409,12 @@ function changeFolder(words, p, ctx, state, after) {
 	const drive = /^\/d$/i.test(words[p + 1] ?? '');
 	const next = words[p + (drive ? 2 : 1)];
 	if (next === undefined || /[$%`~@]/.test(next) || next.startsWith('-')) {
+		state.moved = true;
+		return;
+	}
+	// A name under CDPATH (the 1.42.0 sweep, S8): bash looks it up in each CDPATH folder unless it starts with /, ./ or
+	// ../ (a drive letter or a backslash is no exception in Git Bash).
+	if (ctx.cdpath && !ctx.powershell && !/^(\.{1,2}(\/|$)|\/)/.test(next)) {
 		state.moved = true;
 		return;
 	}
@@ -509,7 +570,9 @@ function findDelete(text, ctx, state, depth) {
 				const command = String(sub ?? '').replace(/[\\`^'"]/g, '');
 				// Where git runs as the program: first in a command, nested ones included, or behind a wrapper (timeout 5,
 				// sudo, env). Words in a message or an echo's text are not run.
-				if (/[$%]|^@/.test(command) && (p === 0 || WRAPPERS.has(first))) return 'a git subcommand held in a variable';
+				// A shell keyword (then, do, else, !) or an assignment before git leaves git the program (a review lead, 1.42.0).
+				const leadIn = words.slice(0, p).every((w) => WRAPPERS.has(w.toLowerCase()) || /^(if|elif|while|until|then|do|else|coproc|time|!|\{|\(|\w+=.*)$/.test(w));
+				if (/[$%]|^@/.test(command) && (p === 0 || WRAPPERS.has(first) || leadIn)) return 'a git subcommand held in a variable';
 				// A PowerShell ( ) list or expression after git is cut off by the tokenizer, so its subcommand is unread.
 				if (sub === undefined && segment.end === '(') return 'a git subcommand in parentheses';
 				// git's subcommand word (rm) is not the rm program; -C and the tree options move where paths are read.
@@ -517,6 +580,8 @@ function findDelete(text, ctx, state, depth) {
 				if (MOVES_GIT.test(text) || words.slice(p + 1, at).some((w) => /^(-C|--work-tree|--git-dir)(=|$)/.test(w))) state.moved = true;
 				const cached = own.slice(0, own.includes('--') ? own.indexOf('--') : own.length).includes('--cached');
 				if (command === 'clean' && (ctx.unclear || !cleanDryRun(own))) return 'git clean';
+				const lost = discardsWork(command, own, ctx, state);
+				if (lost) return lost;
 				if (definesDeleteAlias(words.slice(p + 1))) return 'a git alias that deletes';
 				if (sub === 'worktree' && own[0] === 'remove') {
 					for (const target of targetsOf('', own, 1)) {
@@ -669,7 +734,9 @@ function decide(input, where = {}) {
 	const roots = [realOf(api.resolve(projectDir), api)];
 	const id = String(input.session_id ?? '');
 	const session = SESSION_ID.test(id) ? { id, claude: realOf(api.join(tmpdir, 'claude'), api) } : null;
-	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir(), powershell: input.tool_name === 'PowerShell' };
+	const ctx = { api, windows, roots, session, tmpdir, cwd: api.resolve(input.cwd ?? projectDir), home: os.homedir(), powershell: input.tool_name === 'PowerShell',
+		// CDPATH, set in the command or in the shell's environment, sends a bare-name cd to a folder of that name elsewhere.
+		cdpath: Boolean(process.env.CDPATH || process.env.BASH_ENV) || strings.some((s) => shellForms(s).some((x) => /\bCDPATH\b/.test(x) || CDPATH_MAYBE.test(x))) };
 	// bash drops a backslash-newline with nothing in its place, even inside a word (r\<LF>m), while the reads below
 	// join it with a space: each string is read both ways, and either reading may ask.
 	const both = strings.flatMap((s) => [...new Set([s, s.replace(/\\\r?\n/g, ''), plainText(s, input.tool_name)])]);
@@ -688,6 +755,8 @@ function decide(input, where = {}) {
 		if (runsGit && ALIAS_ROUTE.test(flat)) return 'a git alias defined from outside the command';
 		const xg = flat.match(XARGS_GIT);
 		if (xg && !xg[2].split(/\s+/).some((w) => WRITTEN_SUB.test(w))) return 'git given its subcommand by xargs';
+		// The build 16 sweep: xargs appends its input as paths, so a checkout or restore it runs drops work it cannot name.
+		if (xg && /(^|\s)(checkout|restore|checkout-index)(\s|$)/.test(xg[2])) return `${LOSES_WORK} git checkout or restore given paths by xargs`;
 		if (XARGS_REPLACE.test(flat)) return 'git given its subcommand by xargs';
 		if (INTERPRETER.test(text) && runsGit && /\bclean\b/.test(text)) return 'inline code that may run git clean';
 		if (/\bxargs\b[^;|&\n]*\s(-I\S*|-i|--replace\S*)/.test(flat) && DELETE_WORD.test(flat)) return 'a delete given targets by xargs';
@@ -722,7 +791,9 @@ function check(input) {
 		reason = 'the guard could not read this command';
 	}
 	if (!reason) return null;
-	const what = 'a possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + ')';
+	const what = reason.startsWith(LOSES_WORK)
+		? 'a local git act that throws away uncommitted or unpushed work (' + reason.slice(LOSES_WORK.length).trim() + ')'
+		: 'a possible delete outside this session\'s folder and the project (' + reason.slice(0, 200) + ')';
 	return {
 		hookSpecificOutput: {
 			hookEventName: 'PreToolUse',

@@ -1,7 +1,7 @@
 ---
 id: evidence-and-failures
 load: on-demand
-when: When something fails, a number surprises, or a probe is planned.
+when: When something fails, a number surprises, a probe is planned, a fact is handed on, or a choice is recommended.
 tags:
   failure-response: failure, error, broken, triage, debug, kit status, stale kit, troubleshooting
   enumerate-before-you-count: numbers, counts, metrics, surprising results
@@ -10,6 +10,8 @@ tags:
   snag-response: stuck, blocker, workaround, snag
   blocked-prompts: permission prompt, permission block, waiting on a prompt, owner command, hung
   cost-first: cost, money, CI minutes, quota, paid run, budget, heavy run, API spend
+  anti-hallucination: guess, verify, invented, made up, re-read claims
+  dual-horizon: short term, long term, rework cost
   fact-check: fact check, verify a document, claims, report, explainer, diagram accuracy
 ---
 
@@ -62,3 +64,24 @@ Before a run that spends the owner's money or a shared quota (CI minutes, paid A
 ## Fact-Check Before Handing Over {#fact-check}
 
 Before a report, guide, explainer, diagram or summary goes to the owner or anyone else: list every claim a reader could check (a path, a name, a number, a behaviour, a command, a date, a git fact), check each against the code, a command or `git show`, and mark it **verified**, **corrected**, **unsupported** (removed or reworded) or **unverifiable** (labelled so in the text). A wrong label, arrow or number in a figure is a wrong claim. Put the counts at the top as one line, with the corrected ones listed. Release notes and PR bodies have their own audits; this covers the rest. Why: a confident document carries every error in it to each reader.
+
+## Anti-Hallucination Discipline (Standing) {#anti-hallucination}
+
+- **Verify load-bearing facts before locking; label guess vs proven** (proven = a quoted source, a run, a checked config; forecasts labelled). Check cheap facts first; docs describing an intended end state are not the current state.
+- **Everything handed over is a claim** (rule:fact-check): run a command before writing it down; open a curated link first (real domain, current path, alive); grep a test file's skips before naming it as proof; verify state you were told ("landed"); attach a library or uploaded file by the exact path its upload reported, never a guessed name.
+- **Compute or quote** every number or rule in a brief, decision or spec (run it, or cite file:line), else mark it UNVERIFIED; safety-critical constants (crisis numbers, official links) come from the official source.
+- **No rate or "more often" without the measurement.** One direction observed is not the rule - test the other before an outward change rests on it.
+- **Read the docblock, not just the body** - from its top; grep "Do NOT" / "measured" / "ruled out" before changing code; read a number's label before quoting it.
+- **Derived copies:** fix a value feeding several artifacts at the source and regenerate, or grep every twin before quoting scope.
+- **Adding a claim raises the bar:** quotation marks, "verified" or a badge assert things about the whole pipeline; test each on real data, prefer the weaker frame for machine-derived text, make the honesty property a test.
+- **Search tools honor ignore files:** a directory search's "no matches" means nothing; pass a glob or exact path.
+- **Use the owner as the highest-bandwidth tool** - ask for a value from their machine or a device test instead of looping on workarounds (two loops is the signal); a device test beats a docs reading; an untestable platform claim is vendor-sourced or marked NOT VERIFIED.
+- **Know the machine:** check the clock's timezone before dating anything; give commands in the owner's shell dialect. <!-- PROJECT ADAPTER A23 -->
+
+Why: an unverified fact handed on is inherited by every reader.
+
+## Dual-Horizon Recommendations {#dual-horizon}
+
+Judge every recommendation on **current-version fit** (scope, locked architecture, Simplicity Lens) and **end-state fit** (the finished product per roadmap and spec): what it commits us to; which horizon it wins; the **rework cost** if they differ; **accepted debt** (documented, or a compounding trap); impact now and later. Agreed horizons -> one line. A pick a future version will FORCE to change is TEMPORARY; "durable" is defended by its mechanism.
+
+**Temporary-fix gate:** name the robust built-once option and quantify the delta (work now vs the later forced change + risk); temporary only when robustness is disproportionate AND the later change cheap, isolated and non-compounding - recorded as debt with its retirement trigger; otherwise robust. **Build seam-first:** inject the dependency a later mode will swap (local vs server), so the later arc is additive. Why: the cheap-now pick, taken by reflex, is paid repeatedly.

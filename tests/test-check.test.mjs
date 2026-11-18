@@ -332,3 +332,122 @@ test('strict mode fails on a finding but only names a test the time budget left 
 	sh(dir, 'commit', '-qam', 'untagged');
 	assert.equal(spawnSync(process.execPath, [CHECK, base, '--strict', '--budget', '0'], { cwd: dir, encoding: 'utf8' }).status, 1, 'a real finding beside a budget-out passed strict');
 });
+
+// Build 16 (PR 52, the owner 2026-11-18: "Teach it 3 proofs"): a planted-bug test guards code that was already right,
+// so it cannot fail on the base. It names the bug it catches, and the check plants that bug in the new code: the test
+// must fail there on an assertion. A plant the test does not catch, or a planted text not found once, is named.
+// why: guards rule:test-value
+test('a planted-bug test passes when it fails on its planted bug, and is named when it does not', () => {
+	const dir = repo();
+	const plant = (was, to) => `// planted: ${JSON.stringify({ file: 'src/a.cjs', was, to })}`;
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		'// why: guards rule:outward-acts', plant('x > 0', 'x < 0'),
+		"test('caught plant', () => { assert.equal(a.isPos(2), true); });",
+		'// why: guards rule:outward-acts', plant('x > 0', 'x >= 0'),
+		"test('missed plant', () => { assert.equal(a.isPos(2), true); });",
+		'// why: guards rule:outward-acts', plant('x > 9', 'x < 9'),
+		"test('absent plant', () => { assert.equal(a.isPos(2), true); });",
+		// A name with a backslash, as TAP writes it doubled (PR 52: the glued-cd test, cd\\, read as never run).
+		'// why: guards rule:outward-acts', plant('x > 0', 'x < 0'),
+		"test('caught plant, cd\\\\ too', () => { assert.equal(a.isPos(2), true); });",
+		''].join('\n'));
+	sh(dir, 'commit', '-qam', 'planted');
+	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::caught plant/, r.stdout);
+	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant, cd\\ /m);
+	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant: .* 1 planted/m);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::missed plant: .*planted bug in src\/a\.cjs/);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::absent plant: .*not found once in src\/a\.cjs/);
+});
+
+// Build 16: a behaviour this change removes or alters takes its test with it. A changed test, named or renamed
+// ("// renamed from: <old name>"), passes when its old version fails on the new code: the edit was forced. The check
+// cannot tell a forced edit from a weakened one, so each is listed for the owner, a loss of lines as trimmed and any
+// other edit as adapted. An edit the new code did not force still must add a catch.
+// why: guards rule:test-value
+test('a test edit the new code forced is listed for the owner, and one it did not force still must fail first', () => {
+	const dir = repo();
+	const file = path.join(dir, 'tests', 'a.test.mjs');
+	const two = (name, x, y) => [`test('${name}', () => {`, `\tassert.equal(a.isPos(${x}), true);`, `\tassert.equal(a.isPos(${y}), true);`, '});'];
+	fs.appendFileSync(file, [...two('pair', 1, 5), ...two('old name', 1, 6), "test('loose', () => {", '\tassert.equal(a.isPos(1), true);', '});', ...two('kept', 3, 5), "test('edited', () => {", '\tassert.equal(a.isPos(4), true);', '});', "test('named once', () => {", '\tassert.equal(a.isPos(7), true);', '});', ''].join('\n'));
+	sh(dir, 'commit', '-qam', 'more tests');
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	fs.writeFileSync(path.join(dir, 'src', 'a.cjs'), 'exports.isPos = (x) => x > 1;\n');
+	fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
+		.replace("test('pair', () => {\n\tassert.equal(a.isPos(1), true);\n", "test('pair', () => {\n")
+		.replace("test('old name', () => {\n\tassert.equal(a.isPos(1), true);\n", "// renamed from: old name\ntest('new name', () => {\n")
+		.replace("test('loose', () => {\n\tassert.equal(a.isPos(1), true);", "test('loose', () => {\n\tassert.equal(typeof a.isPos(1), 'boolean');")
+		.replace("test('kept', () => {\n\tassert.equal(a.isPos(3), true);\n", "test('kept', () => {\n")
+		.replace("test('edited', () => {\n\tassert.equal(a.isPos(4), true);", "test('edited', () => {\n\tassert.equal(typeof a.isPos(4), 'boolean');")
+		.replace("test('named once', () => {", "// renamed from: named once\ntest('named twice', () => {"));
+	sh(dir, 'commit', '-qam', 'one is no longer positive');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::(pair|new name):/, r.stdout);
+	assert.match(r.stdout, /^ {4}trimmed tests\/a\.test\.mjs::pair: /m);
+	assert.match(r.stdout, /^ {4}trimmed tests\/a\.test\.mjs::new name: /m);
+	assert.match(r.stdout, /^ {4}adapted tests\/a\.test\.mjs::loose: /m, 'an edit the new code forced');
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::kept: /, 'a removal the new code did not force');
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::edited: /, 'an edit the new code did not force');
+	// A new name over the same code is no new test: it is held to its why line only (PR 52: a renamed test was held).
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::named twice/, 'a rename with the same code was held to fail first');
+});
+
+// Build 16: a fix's test in a file the branch adds cannot load on the base, so the base proves nothing about it. The
+// fix row names its commit: the test is measured on the commit before the fix, where its file loads.
+// why: guards rule:test-value
+test('a fix test whose file is new on the branch is measured on the commit before its fix', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	fs.writeFileSync(path.join(dir, 'src', 'c.mjs'), 'export const three = () => 4;\n');
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'three, wrong');
+	// The fix also adds a function the test file imports, so the file as written cannot load on the commit before it.
+	fs.writeFileSync(path.join(dir, 'src', 'c.mjs'), 'export const three = () => 3;\nexport const extra = () => 1;\n');
+	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';", "import { three, extra as more } from '../src/c.mjs';",
+		'// why: guards rule:outward-acts', "test('three is three', () => { assert.equal(three(), 3); });",
+		'// why: guards rule:outward-acts', "test('three is a number', () => { assert.equal(typeof three(), 'number'); });",
+		'// why: guards rule:outward-acts', "test('extra is one', () => { assert.equal(more(), 1); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'three fixed');
+	const fixAt = sh(dir, 'rev-parse', 'HEAD');
+	const rec = path.join(dir, 'record.json');
+	fs.writeFileSync(rec, JSON.stringify({ sweep: { fixes: [
+		{ id: 'F1', severity: 'high', text: 'F1', commit: fixAt.slice(0, 7), test: 'tests/c.test.mjs::three is three' },
+		{ id: 'F2', severity: 'high', text: 'F2', commit: fixAt.slice(0, 7), test: 'tests/c.test.mjs::three is a number' },
+		{ id: 'F3', severity: 'high', text: 'F3', commit: fixAt.slice(0, 7), test: 'tests/c.test.mjs::extra is one' },
+	] } }));
+	const r = spawnSync(process.execPath, [CHECK, base, '--record', rec], { cwd: dir, encoding: 'utf8' });
+	assert.match(r.stdout, new RegExp(`^ {4}F1 \\(high\\) tests/c\\.test\\.mjs::three is three: fails first on ${fixAt.slice(0, 9)}\\^$`, 'm'), r.stdout);
+	assert.doesNotMatch(r.stdout, /A5 F1/);
+	assert.match(r.stdout, new RegExp(`A5 F2: the test it names passes on ${fixAt.slice(0, 9)}\\^, the commit before its fix`));
+	assert.match(r.stdout, new RegExp(`A5 F3: the test it names fails on ${fixAt.slice(0, 9)}\\^, but not on an assertion`), 'a call to what the fix added');
+});
+
+// The owner, 2026-11-18 ("we can measure them on windows now"): the test check runs on Linux, where a Windows-only
+// test is skipped and a planted bug that shows only on Windows is invisible. Linux leaves each to the Windows job,
+// and names them; the Windows job's part (--windows) measures them there and nothing else.
+// why: guards rule:test-value
+test('a Windows-only test or planted bug is left to the Windows job, which measures it', () => {
+	const dir = repo();
+	const plant = (os) => `// planted: ${JSON.stringify({ file: 'src/a.cjs', was: 'x > 0', to: 'x < 0', ...(os ? { os } : {}) })}`;
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		'// why: guards rule:outward-acts', plant(),
+		"test('win only', { windows: true }, () => { assert.equal(a.isPos(2), true); });",
+		'// why: guards rule:outward-acts', plant('win32'),
+		"test('win plant', () => { assert.equal(a.isPos(3), true); });",
+		''].join('\n'));
+	sh(dir, 'commit', '-qam', 'windows');
+	const base = sh(dir, 'rev-parse', 'HEAD~2');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	const w = spawnSync(process.execPath, [CHECK, base, '--windows'], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::win (only|plant)/, r.stdout);
+	if (process.platform === 'win32') {
+		assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::win only: /m);
+		assert.match(w.stdout, /^ {4}planted tests\/a\.test\.mjs::win plant: /m, w.stdout);
+		assert.doesNotMatch(w.stdout, /a hollow one/, 'the Windows part checks only what Linux leaves to it');
+	} else {
+		assert.match(r.stdout, /^ {4}left .* tests\/a\.test\.mjs::win only/m);
+		assert.match(r.stdout, /^ {4}left .* tests\/a\.test\.mjs::win plant/m);
+		assert.equal(w.status, 2, 'the Windows part off Windows');
+	}
+});

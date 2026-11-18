@@ -111,6 +111,14 @@ function startsLine(body) {
   if (/claude-projects-attribution/i.test(body) || [prose, unbroken(prose)].some((p) => startsLine(p) || STYLED.test(p))) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
 }
 
+// K125: a Visuals section is checked by the script that writes it, kept beside the PR audits in the Claude folder.
+// Any heading named Visuals, or a Visuals fold, is checked, so a wrong level or form is named, never skipped.
+if (/^#{1,6}[ \t]*Visuals[ \t]*$|<summary>\s*Visuals:/im.test(text)) {
+  const { checkSection, repoOf } = await import(new URL('../../kit-tools/audits/visuals.mjs', import.meta.url).href);
+  const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' });
+  faults.push(...checkSection(text.replace(/\r\n/g, '\n'), '##', { repo: repoOf(origin.stdout) }));
+}
+
 const pkg = path.join(process.cwd(), 'package.json');
 if (fs.existsSync(pkg)) {
   const want = JSON.parse(fs.readFileSync(pkg, 'utf8')).version;

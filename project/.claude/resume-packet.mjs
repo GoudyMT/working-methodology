@@ -241,9 +241,11 @@ function save(file, text) {
 	fs.renameSync(tmp, file);
 }
 
-function write(session) {
+// closed (K112, 1.42.0): the closeout ended its task, so a session resumed later is told to start fresh.
+function write(session, closed = false) {
 	const g = gitState();
-	const head = ['# Resume packet', 'Start a session with: node .claude/resume-packet.mjs check', `written: ${new Date().toISOString()}`, `session: ${session || '-'}`, gitLine(g), '', ''].join('\n');
+	const at = new Date().toISOString();
+	const head = ['# Resume packet', 'Start a session with: node .claude/resume-packet.mjs check', `written: ${at}`, `session: ${session || '-'}`, ...(closed ? [`closed: ${at}`] : []), gitLine(g), '', ''].join('\n');
 	const { s, files, missing, reads, lost } = sections();
 	fit(s, MAX - Buffer.byteLength(head) - files.length * 40);
 	const hashes = files.map((f) => `${open(f)?.hash ?? 'missing'} ${f}`);
@@ -324,9 +326,12 @@ function check() {
 
 const [cmd, ...rest] = process.argv.slice(2);
 try {
-	if (cmd === 'write') write(rest[0] === '--session' ? String(rest[1] || '').replace(/[^\w.-]/g, '').slice(0, 64) : '');
+	// The options in any order (the build 16 sweep: --closed first dropped the session; --session --closed recorded it).
+	const at = rest.indexOf('--session');
+	const id = at >= 0 && rest[at + 1] && !rest[at + 1].startsWith('--') ? rest[at + 1] : '';
+	if (cmd === 'write') write(String(id).replace(/[^\w.-]/g, '').slice(0, 64), rest.includes('--closed'));
 	else if (cmd === 'check') check();
-	else console.log('usage: node .claude/resume-packet.mjs write [--session <id>] | check');
+	else console.log('usage: node .claude/resume-packet.mjs write [--session <id>] [--closed] | check');
 } catch (e) {
 	// A check that throws still ends in a verdict: the full reading.
 	if (cmd === 'check') full(`The check could not run (${String(e.message).slice(0, 120)}).`);

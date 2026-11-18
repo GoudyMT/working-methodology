@@ -49,7 +49,8 @@ It starts on its own only as rule:compact-ritual says.
    <command>", in every handoff until the owner resumes it. A "carried open" above 0 means findings still sit in the
    handoff's "Carry-overs from the last PR": add each with `state.mjs add carry`, then render again.
 5. **Write the resume packet:** `node .claude/resume-packet.mjs write` after the batch, so its hashes are of the final
-   files; the next session starts from `check`. A line starting "fix before the next session" names a label or file
+   files; the next session starts from `check`. When the closeout ends the task (not a compact mid-task), write it
+   with `--closed`, so a session resumed later is told to start fresh. A line starting "fix before the next session" names a label or file
    name the check cannot read: fix that line in the tracking file and write again.
 6. **Write the handoff** in the shape below, run `node <this skill's folder>/audit.mjs <handoff.md> --send`, and fix
    every fault. In a project with several sessions, send the full text it prints as ONE message to the coordinating
@@ -57,6 +58,11 @@ It starts on its own only as rule:compact-ritual says.
    project thread, `send_message` to `@parent`; elsewhere, the one the project names. The closeout is done only
    when the coordinator confirms it received the text; then close the thread. The text ends with the next item from
    `node .claude/state.mjs show`, so the coordinator can open the next thread for it at once.
+7. **End the session** (K112: a session kept open across tasks re-reads its whole context after each idle gap). In a
+   CLI or Code tab session, the last line to the owner is the one command to type: `/clear` when the task is done
+   (the next session starts from the packet), or `/compact` when the same task goes on. A project thread (the session
+   has the project's thread tools, such as a reply or progress tool) gives no such line: the thread closes when its
+   work is complete.
 
 ## The scan
 

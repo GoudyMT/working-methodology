@@ -149,7 +149,7 @@ jobs:
   # guards' own proofs, since the guards guard a Windows machine.
   windows-tests:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       # Vendor paths are long; without this a deep checkout can pass the 260-character Windows limit.
       - run: git config --global core.longpaths true
@@ -186,6 +186,18 @@ jobs:
       # The delete guard's own proof: every delete outside the session's folder and the project asks.
       - name: Delete guard proof
         run: node project/.claude/guard-delete-check.cjs
+
+      # The test check's Windows part (the owner, 2026-11-18): the Linux test check leaves the Windows-only tests and the
+      # planted bugs that show only on Windows to this job, which measures them here, strict.
+      - name: Test check, Windows part
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          record=()
+          if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
+          node scripts/test-check.mjs "$BASE_SHA" --strict --windows --budget 600 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # E32 (option C, the owner 2026-11-10): two lanes on the same PR. The fast lane is unit-tests above; large tests
   # (another machine, a real service, a browser, a live model) live in tests/slow and run here, beside it. The slow

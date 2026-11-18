@@ -30,8 +30,8 @@
   | Medium | Network-first files on a connection that is up but silent | FIXED f62b8c3 (the owner's yes) |
   | Low | A cache read error after the wait, a dead line, test gaps, a weak E2E, comments | FIXED 1d07e5a, a5c3e90, 6e1f7b2, c08d4a9 |
 
-- **Fix check** (the fix tier's re-sweep): each root closed; its lows fixed (the version file never served early; unread bodies
-  let go) `9b3e6d1`, `e41a7c0`, `2f8d5b3`, `d76c0e8`. Every fix red first or by a planted break.
+- **Fix check** (each fix's test red first, then CI's test check): each root closed; its lows fixed (the version file
+  never served early; unread bodies let go) `9b3e6d1`, `e41a7c0`, `2f8d5b3`, `d76c0e8`.
 - **Gate:** 18/18 on `5a9e2c4` and again on `8d1f3b7`.
 - **Sizes:** raise approved by the owner ("yes approved") `5a9e2c4`; end check trim `0c6b9e1`, limits `8d1f3b7` +
   `e2a4d90` (four builds).

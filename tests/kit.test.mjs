@@ -155,6 +155,30 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   assert.deepEqual(scrub({ kit }), []);
 });
 
+// why: guards rule:security-standards; a committed chart is binary, so scrub reads its text chunks
+test('scrub reads a PNG by its text chunks: a clean chart passes, a home path in its metadata is held', () => {
+  const { kit } = makeKit();
+  const crc = (buf) => { let c = ~0; for (const b of buf) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const sum = Buffer.alloc(4); sum.writeUInt32BE(crc(body));
+    return Buffer.concat([len, body, sum]);
+  };
+  const png = (text) => Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0])),
+    chunk('IDAT', Buffer.from([0x78, 0x9c, 0xff, 0xfe, 0x80, 0x00])),
+    ...(text ? [chunk('tEXt', Buffer.from(text, 'latin1'))] : []),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+  const file = path.join(kit, 'project/chart.png');
+  fs.writeFileSync(file, png('Software\0drawn by the kit'));
+  assert.deepEqual(scrub({ kit }), []);
+  fs.writeFileSync(file, png('Source\0' + 'C:\\' + 'Users\\pat\\chart.svg'));
+  assert.deepEqual(scrub({ kit }).map((h) => `${h.file} ${h.kind}`), ['project/chart.png path']);
+});
+
 // Snapshot fixtures: a fake installed plugin and a fake third-party skill, laid out the way
 // Claude Code stores them (plugins/installed_plugins.json -> installPath; skills/<name>/).
 function addThirdParty({ kit, home }) {
@@ -673,6 +697,8 @@ test('the rules stay under their size caps and every start import resolves', () 
   }
   const agents = Buffer.byteLength(read(path.resolve('project/AGENTS.md')));
   if (agents > caps.agentsMd) over.push(`AGENTS.md: ${agents} > ${caps.agentsMd}`);
+  // T9 (1.42.0): a project's use check holds its filled copy to the same cap, so the two numbers are one.
+  assert.equal(Number(/const AGENTS_CAP = (\d+);/.exec(read(path.resolve('project/.claude/use-check.mjs')))?.[1]), caps.agentsMd);
   const start = measure({ projectDir: path.resolve('project') });
   if (start.total > caps.sessionStart) over.push(`session start: ${start.total} > ${caps.sessionStart}`);
   assert.deepEqual(over, []);
@@ -774,7 +800,7 @@ test('install merges the owner\'s edits with the kit\'s changes line by line, an
   const c = cli('install', 'project', proj);
   assert.deepEqual(read(), ['one, filled in', 'owner Pat', 'three, mine', 'four', 'five, reworded again'], 'a clash writes nothing');
   assert.match(c.stdout, /skipped _Working Standards\.md: [^\n]*clash/);
-  assert.match(c.stdout, /--merged _Working Standards\.md/);
+  assert.match(c.stdout, /--merged "_Working Standards\.md"/);
 });
 
 // why: guards rule:kit-standards (the 1.33.1 sweep: a byte that is not UTF-8 came back replaced, and a file saved with
@@ -809,6 +835,121 @@ test('install never merges text that is not UTF-8, and keeps a file\'s Windows l
   const u = cli('install', 'project', proj, '--unreleased');
   assert.equal(fs.readFileSync(mine, 'utf8'), 'one, mine\r\ntwo\r\nthree\r\nfour\r\nfive, newer\r\n', 'nothing written');
   assert.match(u.stdout, /skipped _Working Standards\.md: [^\n]*no release/);
+});
+
+// K120 (1.42.0, reproduced on 1.41.0): a kit tool in the Claude folder changed by hand (the guard launcher itself) was
+// skipped as "changed here - run fold-back", so a tampered launcher survived every reinstall. A kit tool or hook there
+// is put back, as a project's guard files are, with the changed copy kept.
+// why: guards rule:outward-acts
+test('install user puts back a kit tool changed in the Claude folder and keeps the changed copy', () => {
+  const { home, cli } = releaseKit();
+  assert.equal(cli('install', 'user').status, 0);
+  const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
+  const kitText = read(launcher);
+  fs.appendFileSync(launcher, '// changed by hand\n');
+  const r = cli('install', 'user');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(read(launcher), kitText, 'the kit copy is back');
+  assert.match(r.stdout, /replaced: 1\b/);
+  const kept = fs.readdirSync(path.join(home, 'kit-backups'), { recursive: true }).filter((f) => /kit-launch\.cjs$/.test(f));
+  assert.equal(kept.length, 1, 'the changed copy is kept');
+});
+
+// why: guards rule:outward-acts. The 1.42.0 sweep: only .cjs and .mjs files in kit-tools and kit-hooks were put back,
+// so a changed toast script (run with its policy bypassed) or sweep approval script survived every reinstall; and a
+// tool replaced by a link had the kit's text written through it, into whatever file the link named.
+test('install user puts back a changed toast script and skill script, and replaces a link without writing through it', () => {
+  const { kit, home, git, cli } = releaseKit();
+  for (const rel of ['kit-tools/watch-toast.ps1', 'skills/pre-pr-sweep/approve.mjs']) {
+    fs.mkdirSync(path.dirname(path.join(kit, 'user', rel)), { recursive: true });
+    fs.copyFileSync(path.resolve('user', rel), path.join(kit, 'user', rel));
+  }
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n'); git('add', '-A'); git('commit', '-q', '-m', 'tools'); git('tag', 'v1.0.1');
+  assert.equal(cli('install', 'user').status, 0);
+  for (const rel of ['kit-tools/watch-toast.ps1', 'skills/pre-pr-sweep/approve.mjs']) {
+    const file = path.join(home, rel);
+    const kitText = read(file);
+    fs.appendFileSync(file, '\n# changed by hand\n');
+    const r = cli('install', 'user');
+    assert.equal(read(file), kitText, `${rel}: the kit copy is back`);
+    assert.match(r.stdout, /replaced: 1\b/, rel);
+  }
+  const launcher = path.join(home, 'kit-tools', 'kit-launch.cjs');
+  const outside = path.join(home, 'outside.txt');
+  fs.writeFileSync(outside, 'not the kit\n');
+  fs.rmSync(launcher);
+  try { fs.symlinkSync(outside, launcher, 'file'); } catch { return; } // no link rights on this machine
+  const r = cli('install', 'user');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(read(outside), 'not the kit\n', 'nothing written through the link');
+  assert.equal(fs.lstatSync(launcher).isSymbolicLink(), false, 'the link is replaced by the kit copy');
+});
+
+// K120 (1.42.0, reproduced on 1.41.0): an overlay's CLAUDE.local.md the owner edited was merged and backed up again
+// on every install, with nothing new from the kit, and --merged could not stop it. It merges once when the kit's text
+// changes, and is left alone otherwise.
+// why: guards rule:kit-stays-local
+test('an edited overlay CLAUDE.local.md is merged once when the kit changes, and left alone otherwise', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\none\ntwo\nthree\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n'); git('add', '-A'); git('commit', '-q', '-m', 'claude'); git('tag', 'v1.0.1');
+  g(proj, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), "# The team's own rules\n");
+  commitAll(proj, 'team', true);
+  assert.equal(cli('install', 'project', proj).status, 0);
+  const local = path.join(proj, 'CLAUDE.local.md');
+  fs.appendFileSync(local, '\n- My own local line.\n');
+  const backups = () => { try { return fs.readdirSync(path.join(proj, '.kit', 'kit-backups'), { recursive: true }).filter((f) => /CLAUDE\.local/.test(f)).length; } catch { return 0; } };
+  for (let i = 0; i < 2; i++) {
+    const r = cli('install', 'project', proj);
+    assert.match(r.stdout, /merged: 0,/, 'nothing new from the kit: nothing merged');
+    assert.doesNotMatch(r.stdout, /: CLAUDE\.local\.md\b/, 'nor skipped');
+  }
+  assert.equal(backups(), 0, 'no backup without a merge');
+  assert.match(read(local), /My own local line/);
+  // A kit change merges once, keeping the owner's line, and the next install is quiet again.
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\none, new\ntwo\nthree\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.2\n'); git('commit', '-q', '-am', 'v2'); git('tag', 'v1.0.2');
+  const merged = cli('install', 'project', proj).stdout;
+  assert.match(merged, /merged with your edits: CLAUDE\.local\.md/, merged);
+  assert.match(read(local), /one, new[\s\S]*My own local line/);
+  assert.doesNotMatch(cli('install', 'project', proj).stdout, /: CLAUDE\.local\.md\b/);
+  assert.equal(backups(), 1);
+});
+
+// why: guards rule:kit-stays-local. The 1.42.0 sweep: --merged on an overlay CLAUDE.local.md left as it was when
+// install named the merge was recorded as merged, and the kit's new lines were lost for good.
+test('--merged on an overlay CLAUDE.local.md left unchanged since the merge was named is refused once', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\none\ntwo\nthree\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n'); git('add', '-A'); git('commit', '-q', '-m', 'claude'); git('tag', 'v1.0.1');
+  g(proj, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), "# The team's own rules\n");
+  commitAll(proj, 'team', true);
+  assert.equal(cli('install', 'project', proj).status, 0);
+  const local = path.join(proj, 'CLAUDE.local.md');
+  fs.writeFileSync(local, read(local).replace('one\n', 'one, mine\n'));
+  fs.writeFileSync(path.join(kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\none, kit\ntwo\nthree\n');
+  fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.2\n'); git('commit', '-q', '-am', 'v2'); git('tag', 'v1.0.2');
+  assert.match(cli('install', 'project', proj).stdout, /skipped CLAUDE\.local\.md:[\s\S]*--merged CLAUDE\.local\.md/);
+  const first = cli('install', 'project', proj, '--merged', 'CLAUDE.local.md').stdout;
+  assert.match(first, /skipped CLAUDE\.local\.md: recorded as merged/, first);
+  const again = cli('install', 'project', proj, '--merged', 'CLAUDE.local.md').stdout;
+  assert.doesNotMatch(again, /: CLAUDE\.local\.md\b/, 'the same command again keeps it as it is');
+  assert.match(read(local), /one, mine/);
+});
+
+// K120 (1.42.0): the hand-merge hint gave --merged a file name with a space unquoted, so the command it printed broke.
+// why: guards rule:kit-standards
+test('the hand-merge hint quotes a file name with a space', () => {
+  const { kit, proj, git, cli } = releaseKit();
+  const rules = path.join(kit, 'project/_Working Standards.md');
+  fs.writeFileSync(rules, 'one\ntwo\n'); fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.1\n'); git('commit', '-q', '-am', 'a'); git('tag', 'v1.0.1');
+  cli('install', 'project', proj);
+  fs.writeFileSync(path.join(proj, '_Working Standards.md'), 'one, mine\ntwo\n');
+  fs.writeFileSync(rules, 'one, kit\ntwo\n'); fs.writeFileSync(path.join(kit, 'VERSION'), '1.0.2\n'); git('commit', '-q', '-am', 'b'); git('tag', 'v1.0.2');
+  const r = cli('install', 'project', proj);
+  assert.match(r.stdout, /--merged "_Working Standards\.md"/);
 });
 
 // K61 (the owner, 2026-11-15): merge on green had no exact steps; install prints them, each marked done or to do.
@@ -1372,20 +1513,19 @@ test('findings are fixed in their build and only what the owner accepts carries,
   const findings = rule('rules/reviews-and-findings.md');
   // pin: 4 the owner's carry wording (2026-11-14), both lines
   assert.match(findings, /Findings are fixed in the build that finds them\. A low or medium that cannot be finished carries only on the owner's yes, first next build\. A high or critical never carries: it is fixed before the PR[^\n]*or the owner accepts it/);
-  assert.match(findings, /the small ones too; what carries \(the rule above\) goes to the handoff's carry-overs/);
+  assert.match(findings, /the small ones too, each through the fix check \(rule:finding-pipeline\); what carries \(the rule above\) goes to the handoff's carry-overs/);
   assert.match(findings, /in a known area \(one component, one flow\)/);
   // pin: 1 (the sweep report audit reads these dispositions)
   assert.match(findings, /every high \/ critical `FIXED <commit>` or `ACCEPTED owner <why>`/);
   // Comments off: what counts is the text the lead is shown.
   const shown = (f) => rule(f).replace(/^\s*\/\/.*$/gm, '');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What it left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) goes to the handoff\\'s carry-overs/);
+  assert.match(shown('user/kit-hooks/sweep-guard.cjs'), /What the sweep found is fixed in this build, each fix with a failing-first test; only a low or medium the owner says yes to \(never a high or critical\) goes to the handoff\\'s carry-overs/);
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /what is left is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) is logged with `--carried <n>` and goes to the handoff/);
+  assert.match(rule('user/skills/pre-pr-sweep/SKILL.md'), /refuses a re-sweep contract \(`"resweepOf"`\) flat\. What the sweep found is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) goes to the handoff/);
   const approve = shown('user/skills/pre-pr-sweep/approve.mjs');
   // pin: 2 (the order the lead is given at the stop)
-  assert.match(approve, /What the re-sweep left unfixed is fixed in this build; only a low or medium the owner says yes to \(never a high or critical\) goes to \$\{CARRY_HOME\}/);
-  assert.match(approve, /findings left unfixed after it[^\n]*each a low or medium the owner said yes to/);
+  assert.match(approve, /there is no re-sweep: one sweep per branch[^\n]*failing-first test, and CI is the gate/);
   assert.match(rule('project/_Templates/_PR Body Template.md'), /fixed here or\s+accepted by the owner/);
   assert.match(rule('user/skills/pre-pr-sweep/examples/feature-sweep.md'), /findings are fixed in this PR/);
 });
@@ -1609,6 +1749,30 @@ test('session start after a compact names the orientation rule and where it live
   const { kit, home, proj } = caseKit();
   assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'compact' }), /rule:post-compact-orientation/);
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'startup' }), /post-compact-orientation/);
+});
+
+// K112 (1.42.0, the token proof: idle gaps over an hour were 86% of cache rebuild cost): one session carried many
+// tasks for days. A closeout marks its task closed in the resume packet; a session resumed after that is told to start
+// fresh, since a resumed session re-reads its whole old context. Nothing is said on a fresh start or with no mark.
+// why: guards rule:compact-ritual
+test('session start on a resumed session whose task the closeout closed says to start fresh', () => {
+  const { kit, home, proj } = caseKit();
+  fs.mkdirSync(path.join(proj, '.kit'), { recursive: true });
+  const packet = path.join(proj, '.kit', 'resume-packet.md');
+  fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T10:00:00.000Z\nsession: -\n');
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'resume' }), /closed its task/, 'no mark');
+  fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T10:00:00.000Z\nsession: -\nclosed: 2026-11-17T10:00:00.000Z\n');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'resume' }), /closed its task[\s\S]*\/clear/);
+  for (const source of ['startup', 'clear', 'compact']) assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source }), /closed its task/, source);
+  // The build 16 sweep: the mark was tied to no session, so a session started after the close (on its own new task)
+  // was told to clear its open work when it was resumed. Only a session that began before the close is told.
+  fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T11:00:00.000Z\nsession: -\nclosed: 2026-11-17T11:00:00.000Z\n');
+  sessionStartReport({ kit, home, projectDir: proj, source: 'clear', session: 's2' });
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'resume', session: 's2' }), /closed its task/, 'a session begun after the close');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'resume', session: 's1' }), /closed its task/, 'the session that closed');
+  // A new close starts the list again.
+  fs.writeFileSync(packet, '# Resume packet\nwritten: 2026-11-17T12:00:00.000Z\nsession: -\nclosed: 2026-11-17T12:00:00.000Z\n');
+  assert.match(sessionStartReport({ kit, home, projectDir: proj, source: 'resume', session: 's2' }), /closed its task/, 's2 closed its own task');
 });
 
 // The old single standards file is gone from the kit. A mention of it is allowed only where the kit speaks of a
@@ -2841,12 +3005,13 @@ const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.js
 // write, output]; a call given as { id, u } keeps its message id, so streaming's repeated lines can be written.
 // Beside each transcript sits Claude Code's agent-<id>.meta.json (agent type, finished); `meta` overrides it per id,
 // and `cfg` adds to an existing folder.
-function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session-1') {
+// `models` gives an id's calls a model other than the top one (roleModels(contract) maps ids to their roles' models).
+function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session-1', models = {}) {
   const dir = path.join(cfg, 'projects', 'C--repo', session, 'subagents');
   fs.mkdirSync(dir, { recursive: true });
   const base = Date.now();
   for (const [id, calls] of Object.entries(spec)) {
-    let model = 'claude-opus-5-5';
+    let model = models[id] || 'claude-opus-5-5';
     // A call given as { u, gap } starts gap ms after the line before it (the cache outlives a short gap only).
     let shift = 0;
     const at0 = new Date(base).toISOString();
@@ -2862,7 +3027,7 @@ function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session
       if (c && c.handback) return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: `msg_${id}_${i}`, role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'tool_use', id: `toolu_h${i}`, name: 'SubagentHandback', input: { message: c.handback } }], usage: { input_tokens: 0, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0, output_tokens: 0 } } });
       // { read: text } is a tool's plain answer, such as a file the reviewer read.
       if (c && c.read) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, content: c.read }] } });
-      const { id: mid = `msg_${id}_${i}`, u = c, model: m = 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
+      const { id: mid = `msg_${id}_${i}`, u = c, model: m = models[id] || 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
       model = m;
       return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
     });
@@ -2872,6 +3037,8 @@ function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session
   return cfg;
 }
 let agentSeq = 0;
+const roleModel = (r) => r.model ?? (['security', 'novel-lens'].includes(r.kind) ? 'claude-opus-5-5' : 'claude-sonnet-5-5');
+const roleModels = (ids, roles) => Object.fromEntries(ids.map((id, i) => [id, roleModel(roles[i])]));
 // Logs a sweep's outcome with one transcript per role, the given total split across them.
 function outcome(r, tokens = '200000', findings = '6', real = '5', dup = '0', extra = []) {
   const roles = JSON.parse(read(r.f)).roles || [];
@@ -2879,7 +3046,7 @@ function outcome(r, tokens = '200000', findings = '6', real = '5', dup = '0', ex
   const ids = Array.from({ length: n }, () => `t${++agentSeq}`);
   const each = Math.floor(Number(tokens) / n);
   // Each transcript runs on the model its role names, as a real reviewer does.
-  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: /sonnet/.test(roles[i].model || '') ? 'claude-sonnet-5-5' : 'claude-opus-5-5', u: [0, each + (i ? 0 : Number(tokens) - each * n), 0, 0] }]])));
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: roleModel(roles[i]), u: [0, each + (i ? 0 : Number(tokens) - each * n), 0, 0] }]])));
   return approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', findings, '--real', real, '--duplicates', dup, ...extra], { CLAUDE_CONFIG_DIR: cfg });
 }
 // E24 option C (the owner, 2026-11-07): a cloud thread loads no repo hooks, so no call-cap hook or sweep guard holds
@@ -3223,7 +3390,7 @@ test('an approval prints the owner\'s start notice from checked data, not a hand
   assert.match(r.stdout, /Start notice/);
   assert.match(r.stdout, /security x3/);
   assert.match(r.stdout, /test-value reviewer \(test-value, sonnet\)/);
-  assert.match(r.stdout, /security reviewer \(security, the reviewer default\)/);
+  assert.match(r.stdout, /security reviewer \(security, claude-opus-5-5\)/);
   assert.match(r.stdout, /Budget: 537,500 processed tokens/);
   assert.match(r.stdout, /Extras: 0 of 5 allowed/);
   assert.match(r.stdout, /security 3 of 3 needed/);
@@ -3448,6 +3615,8 @@ test('the canary checks a hand-back at the call, refuses a miss once, and lets t
 // line, one line per finding in the five fields (or "No findings"), and what it did not check. A report out of shape
 // is refused once with what is missing; the second goes through, logged, so a role never loops on its report.
 // why: guards rule:sweep-auto-approval
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"return f.length < 5 ||","to":"return f.length < 5 &&"}
+// planted: {"file":"user/kit-hooks/canary.cjs","was":"return run(input).out || null","to":"return run(input).out && null"}
 test('a reviewer\'s hand-back is checked for the report shape once, and the second try goes through', () => {
   const dir = canaryRepo();
   const handback = (id, message, type = 'reviewer') => {
@@ -3466,6 +3635,13 @@ test('a reviewer\'s hand-back is checked for the report shape once, and the seco
   assert.equal(handback('s3', `${FAKE_PHRASE}\nSecurity role\nstill loose`).permissionDecision, 'allow', 'the second try goes through');
   assert.equal(handback('b1', `${FAKE_PHRASE}\nUNIT u1 DONE`, 'builder').permissionDecision, 'allow', 'only a reviewer reports findings');
   assert.deepEqual(canaryLog(dir).filter((e) => e.agent === 's3').map((e) => e.result), ['shape-miss', 'shape-after-miss']);
+  // K124 (1.42.0): a row of four fields is out of shape even with every field filled and a good verdict.
+  assert.equal(handback('s4', `${FAKE_PHRASE}\nROLE: x\nhigh | CONFIRMED | a claim | src/a.ts:1\nNot checked: nothing`).permissionDecision, 'deny');
+  // The dispatcher (guard.cjs) asks check(), not the process: the same refusals come back from it (a planted bug made
+  // check() answer nothing, and no test asked it).
+  const { check } = require(path.resolve('user/kit-hooks/canary.cjs'));
+  const leak = check({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', agent_type: 'reviewer', tool_input: { prompt: `say ${FAKE_PHRASE}` } });
+  assert.equal(leak && leak.hookSpecificOutput.permissionDecision, 'deny');
 });
 
 // why: guards rule:sweep-auto-approval
@@ -3912,13 +4088,6 @@ test('a cap counts the roles beyond the floor: a security fix with tests approve
   assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, ...extras(6)] }).stdout, /6 roles beyond the feature floor[\s\S]*cap of 5/);
 });
 
-// The owner, 2026-11-03: one sweep, one focused re-sweep (blast radius, one role per fixed kind, alignment),
-// then what is left goes to the handoff. A second re-sweep is refused, not paused.
-const resweepRoles = (kinds = ['security']) => [
-  role('blast-radius', 'What else do the fixes reach, and did any of them break it?', { model: 'claude-sonnet-5-5' }),
-  ...kinds.map((k) => role(k, `Does the ${k} fix close the finding without opening another?`)),
-  role('dimension', 'Does the change still match its locks and the version goal?', { model: 'claude-sonnet-5-5' }),
-];
 // A first sweep approved and its outcome logged, then a fix committed on top.
 function firstSweep(contract = featureContract(), dir = sweepRepo()) {
   const r = approveRun(contract, dir);
@@ -3928,19 +4097,13 @@ function firstSweep(contract = featureContract(), dir = sweepRepo()) {
   commitAll(dir, 'fix the sweep findings', true);
   return r;
 }
-function resweep(first, extra = {}, name = 'resweep.json') {
-  const f = path.join(first.dir, 'sweeps', name);
-  fs.writeFileSync(f, JSON.stringify({ tier: 'feature', modifiers: [], resweepOf: first.f, fixed: [{ finding: 'S2: the error path logs the token', kind: 'security' }], roles: resweepRoles(), ...extra }));
-  return { ...approveIn(first.dir, [f]), dir: first.dir, f };
-}
-// The one-sweep loop (the owner, 2026-11-07 05:06): one full sweep per branch, then CI. A re-sweep, or a second sweep
-// however it is named, is the owner's call; their yes clears it as any ask. Handoff item 32: a rebase or a fresh
-// contract name does not hide the branch's first sweep.
-// Under the one-sweep loop a re-sweep inside its focus asks the owner for that reason alone; their yes clears it.
-const ownerAsked = (r) => { assert.equal(r.status, 1, r.stdout); assert.match(r.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/); assert.doesNotMatch(r.stdout, /FIX THE CONTRACT/); assert.equal(r.stdout.match(/^    \S.*$/gm).filter((l) => !/No project settings|Triage report|answers in the pop-up/.test(l)).length, 1, r.stdout); return ownerYes(r); };
+// The one-sweep loop (the owner, 2026-11-07 05:06): one full sweep per branch, then CI. A second sweep however it is
+// named is the owner's call; their yes clears it as any ask. Handoff item 32: a rebase or a fresh contract name does not
+// hide the branch's first sweep.
 const ownerYes = (r) => { const y = approveIn(r.dir, [r.f, '--owner-yes', 'yes, run that second pass']); assert.equal(y.status, 0, y.stdout); return r; };
 // why: guards rule:sweep-auto-approval
-test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the owner, and a rebase does not hide the first', () => {
+// renamed from: the one-sweep loop: a re-sweep or a second sweep on the branch asks the owner, and a rebase does not hide the first
+test('the one-sweep loop: a second sweep on the branch asks the owner, and a rebase does not hide the first', () => {
   const first = firstSweep();
   const second = path.join(first.dir, 'sweeps', 'second.json');
   fs.writeFileSync(second, JSON.stringify(featureContract()));
@@ -3971,88 +4134,10 @@ test('the one-sweep loop: a re-sweep or a second sweep on the branch asks the ow
   }
 });
 // why: guards rule:sweep-auto-approval
-test('a re-sweep asks the owner; on their yes it runs once, and a second, or a re-sweep of it, is refused with the carry-over pointer and no pause', () => {
+test('a carry already in the log shows at each sweep start until a later outcome closes it', () => {
   const first = firstSweep();
-  const re = resweep(first);
-  assert.equal(re.status, 1, re.stdout);
-  assert.match(re.stdout, /ASK THE OWNER[\s\S]*a re-sweep is a second pass/);
-  ownerYes(re);
-  assert.notEqual(outcome(re).status, 0, 'a re-sweep outcome needs --carried');
-  assert.equal(outcome(re, '200000', '2', '2', '0', ['--carried', '0']).status, 0);
-  for (const extra of [{}, { resweepOf: re.f }]) {
-    const again = resweep(first, extra, 'resweep2.json');
-    assert.equal(again.status, 1, again.stdout);
-    assert.match(again.stdout, /REFUSED[\s\S]*one re-sweep[\s\S]*Carry-overs from the last PR/);
-    assert.doesNotMatch(again.stdout, /paused/i);
-    assert.ok(!fs.existsSync(again.f.replace(/\.json$/, '.triage.md')), 'a refusal is the rule working: no triage report');
-  }
-  assert.ok(!approvalLog(first.dir).some((e) => e.kind === 'pause'), 'no pause');
-  // C8: a plain contract after the sweep and its re-sweep is another pass, the owner's.
-  const third = approveIn(first.dir, [first.f]);
-  assert.equal(third.status, 1, third.stdout);
-  assert.match(third.stdout, /ASK THE OWNER[\s\S]*second sweep on this branch/);
-});
-// why: guards rule:sweep-auto-approval
-test('a re-sweep that loses focus goes back to be fixed; a new risk asks the owner', () => {
-  const cases = [
-    [{ roles: [...resweepRoles(), role('novel-lens', 'What did every other role structurally miss?')] }, /novel-lens/],
-    [{ roles: resweepRoles().slice(0, 2) }, /dimension/],
-    [{ fixed: [] }, /no fixed findings listed/],
-    [{ fixed: [{ finding: '', kind: 'security' }] }, /no finding named/],
-    [{ tier: 'fix' }, /keeps its sweep's tier/],
-    [{ roles: [...resweepRoles(), role('blast-radius', 'Which configs load the patched module at start?', { model: 'claude-sonnet-5-5' })] }, /2 blast-radius roles/],
-    [{ modifiers: ['user-data'] }, /modifier "user-data"/],
-    [{ fixed: [{ finding: 'S9: an invented finding', kind: 'privacy' }], roles: resweepRoles(['privacy']) }, /privacy/],
-  ];
-  for (const [extra, why] of cases) {
-    const r = resweep(firstSweep(), extra);
-    const owner = /modifier/.test(why.source);
-    assert.equal(r.status, owner ? 1 : FIX_EXIT, `${why}: ${r.stdout}`);
-    assert.match(r.stdout, owner ? /ASK THE OWNER/ : /FIX THE CONTRACT/);
-    assert.match(r.stdout, why);
-  }
-  // C6: the re-sweep's own floor is always allowed, even past the first sweep's role count.
-  const small = { tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) };
-  const fr = firstSweep(small, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
-  const grow = resweep(fr, { tier: 'fix', fixed: [{ finding: 'F1: the clamp still lets 0 through', kind: 'fix-root' }], roles: resweepRoles(['fix-root']) });
-  ownerAsked(grow);
-  // The first sweep's outcome comes first.
-  const open = approveRun(featureContract());
-  fs.writeFileSync(path.join(open.dir, 'src', 'fixed.ts'), 'fixed\n');
-  commitAll(open.dir, 'fix', true);
-  assert.match(resweep(open).stdout, /FIX THE CONTRACT[\s\S]*outcome/);
-  // HEAD must descend from the first sweep's HEAD.
-  const moved = firstSweep();
-  g(moved.dir, 'checkout', '-q', '-b', 'other', 'main');
-  fs.writeFileSync(path.join(moved.dir, 'other.ts'), 'x\n');
-  fs.mkdirSync(path.join(moved.dir, 'sweeps'), { recursive: true });
-  commitAll(moved.dir, 'other work', true);
-  assert.match(resweep(moved).stdout, /does not descend/);
-  // Found by the commit security review: the re-sweep floor skips the diff's modifiers, so fixes that add a
-  // dependency or new source go to the owner.
-  for (const [file, text, why] of [['package.json', '{"dependencies":{"left-pad":"1"}}\n', /package file/], ['src/helper.ts', 'x\n', /add a source file/], ['sweeps/helper.mjs', 'x\n', /add a source file/]]) {
-    const dep = firstSweep();
-    fs.writeFileSync(path.join(dep.dir, file), text);
-    commitAll(dep.dir, 'fix with more', true);
-    assert.match(resweep(dep).stdout, new RegExp(`ASK THE OWNER[\\s\\S]*${why.source}`), file);
-  }
-  // A doc moved to a source path is new source, not a rename.
-  const moved2 = firstSweep();
-  fs.mkdirSync(path.join(moved2.dir, 'lib'));
-  g(moved2.dir, 'mv', 'README.md', 'lib/readme.mjs');
-  commitAll(moved2.dir, 'move', true);
-  assert.match(resweep(moved2).stdout, /ASK THE OWNER[\s\S]*add a source file \(lib\/readme\.mjs\)/);
-});
-// why: guards rule:sweep-auto-approval
-test('what a re-sweep leaves is carried: logged, printed, shown at each sweep start until a later outcome closes it', () => {
-  const first = firstSweep();
-  const re = resweep(first);
-  ownerAsked(re);
-  assert.notEqual(outcome(re, '200000', '3', '3', '0', ['--carried', 'x']).status, 0);
-  const o = outcome(re, '200000', '3', '3', '0', ['--carried', '2']);
-  assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /CARRY-OVER[\s\S]*2 finding\(s\)[\s\S]*the owner said yes to; never a high or critical[\s\S]*Carry-overs from the last PR/); // pin: 4 the owner's carry wording
-  assert.equal(approvalLog(first.dir).pop().carried, 2);
+  const logFile = path.join(first.dir, '.git', 'kit-sweep-approvals.jsonl');
+  fs.appendFileSync(logFile, JSON.stringify({ ...approvalLog(first.dir).pop(), carried: 2 }) + '\n');
   const next = approveIn(first.dir, [first.f]);
   assert.equal(next.status, 1, `a third pass on this branch asks the owner: ${next.stdout}`);
   assert.match(next.stdout, /2 carried finding\(s\) open/);
@@ -4110,7 +4195,7 @@ test('a tier that is an object\'s built-in name is unknown, and goes back to be 
 });
 // why: guards rule:sweep-auto-approval
 test('the outcome reads only this sweep\'s finished reviewers, each once in the log', () => {
-  const r = approveRun({ tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] }, sweepRepo({ 'README.md': 'y\n' }));
+  const r = approveRun({ tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?', { model: 'claude-opus-5-5' })] }, sweepRepo({ 'README.md': 'y\n' }));
   assert.equal(r.status, 0, r.stdout);
   const log = (id, cfg) => approveIn(r.dir, [r.f, '--outcome', '--agents', id, '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   const asks = (id, cfg, why) => { const o = log(id, cfg); assert.equal(o.status, 1, `${why}: ${o.stdout}`); assert.match(o.stdout, /ASK THE OWNER/); assert.match(o.stdout, why); };
@@ -4192,44 +4277,6 @@ test('--none-ran closes a round only on proof that its recorded starts were refu
   assert.match(measured.stdout, /started/);
 });
 // why: guards rule:sweep-auto-approval
-test('a re-sweep is one per sweep however the first is re-run, and a re-run of the same re-sweep before it ran is fine', () => {
-  const first = firstSweep();
-  const re = resweep(first);
-  ownerAsked(re);
-  const rerun = approveIn(first.dir, [re.f]);
-  assert.match(rerun.stdout, /outcome of the last approved sweep first/, 're-deciding before its outcome asks, as any contract does');
-  assert.doesNotMatch(rerun.stdout, /REFUSED/, 'it is not a second re-sweep');
-  assert.equal(outcome(re, '200000', '1', '1', '0', ['--carried', '1']).status, 0);
-  assert.match(approveIn(first.dir, [re.f]).stdout, /REFUSED/, 'after its outcome it has run');
-  assert.match(approveIn(first.dir, [first.f]).stdout, /second sweep on this branch[\s\S]*owner's/);
-  assert.equal(approveIn(first.dir, [first.f, '--owner-yes', 'yes, a third pass']).status, 0);
-  assert.equal(outcome(first).status, 0);
-  assert.match(resweep(first, {}, 'resweep2.json').stdout, /REFUSED[\s\S]*already had its re-sweep/, 'clearing the first sweep again does not buy a second');
-});
-// why: guards rule:sweep-auto-approval
-test('a re-sweep reads the first sweep as it was cleared, carries leftovers from either pass, and keeps contracts and reports out of the new-source check', () => {
-  const first = firstSweep();
-  const edited = JSON.parse(read(first.f));
-  edited.roles.push(role('privacy', 'Which fields leave the device now?'));
-  fs.writeFileSync(first.f, JSON.stringify(edited));
-  assert.match(resweep(first).stdout, /FIX THE CONTRACT[\s\S]*changed since it was cleared/);
-  const f2 = firstSweep();
-  const re = resweep(f2);
-  ownerAsked(re);
-  assert.equal(outcome(re, '200000', '0', '0', '0', ['--carried', '2']).status, 0, 'first-sweep findings left unfixed carry too');
-  // Contracts committed in the sweep folder are not new source; a script there is.
-  const f3 = firstSweep();
-  fs.writeFileSync(path.join(f3.dir, 'sweeps', 'helper.json'), '{"x":1}\n');
-  commitAll(f3.dir, 'a data file in the sweep folder', true);
-  assert.match(resweep(f3).stdout, /add a source file \(sweeps\/helper\.json\)/);
-  const f4 = firstSweep();
-  fs.writeFileSync(path.join(f4.dir, 'src', 'sync.test.ts'), 'more test\n');
-  fs.writeFileSync(path.join(f4.dir, 'src', 'extra.test.ts'), 'new test\n');
-  commitAll(f4.dir, 'a test for the fix', true);
-  const withTests = resweep(f4, { roles: [...resweepRoles(), role('test-value', 'Does each new test fail without the fix?')] });
-  ownerAsked(withTests);
-});
-// why: guards rule:sweep-auto-approval
 test('project caps lower every limit', () => {
   const lowered = (capsFor) => { const d = sweepRepo(); fs.mkdirSync(path.join(d, '.kit')); fs.writeFileSync(path.join(d, '.kit', 'sweep-approval.json'), JSON.stringify({ caps: { feature: capsFor } })); return d; };
   const plusOne = { ...featureContract(), roles: [...featureContract().roles, role('privacy', 'Which fields leave the device now?')] };
@@ -4240,18 +4287,43 @@ test('project caps lower every limit', () => {
   assert.match(approveRun(featureContract(), lowered({ maxAgents: 4 })).stdout, /cap of 4/);
   assert.match(approveRun({ ...featureContract(), roles: [...featureContract().roles, role('security', 'Can a replayed token reach the import queue?')] }, lowered({ maxExtras: 0 })).stdout, /1 roles beyond the feature floor/, 'a fourth security role is an extra');
 });
+// K114 (1.42.0, the token proof: 92 of 119 reviewer runs since 1.31.0 were on the top model, while MC3 found mid-model
+// reviewers equal): a role that names no model runs on the mid model, except security and the novel lens, which stay on
+// the top model with no model named; a reviewer that ran on another model than its role's is caught at the outcome.
+// why: guards rule:sweep-auto-approval
+test('a sweep role with no model runs on the mid model; security and the novel lens on the top model', () => {
+  const ok = approveRun(featureContract());
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.deepEqual(approvalLog(ok.dir).pop().models, ['claude-opus-5-5', 'claude-opus-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5']);
+  assert.match(ok.stdout, /test-value, claude-sonnet-5-5/);
+  assert.match(ok.stdout, /novel-lens, claude-opus-5-5/);
+});
 // why: guards rule:sweep-auto-approval
 test('the default reviewer model in approve.mjs is the reviewer role\'s own model', () => {
   const m = read('user/agents/reviewer.md').match(/^model:\s*(\S+)/m)[1];
   assert.match(read(APPROVE), new RegExp(`DEFAULT_MODEL = '${m}'`));
 });
-// why: guards rule:sweep-auto-approval
-test('the sweep guard says a refused re-sweep has no owner override', () => {
+// A2 (the owner, 2026-11-17, D-3): one sweep per branch, and no re-sweep. Each fix after the sweep carries a
+// failing-first test, and CI's test check is the gate.
+// why: guards rule:finding-pipeline
+test('a re-sweep contract is refused flat with no owner override, and --carried is refused', () => {
   const first = firstSweep();
-  const re = ownerYes(resweep(first));
-  outcome(re, '200000', '1', '1', '0', ['--carried', '0']);
-  const r2 = resweep(first, {}, 'resweep2.json');
-  assert.match(r2.stdout, /REFUSED/);
+  const f = path.join(first.dir, 'sweeps', 'resweep.json');
+  fs.writeFileSync(f, JSON.stringify({ ...featureContract(), resweepOf: first.f, fixed: [{ finding: 'S2: the error path logs the token', kind: 'security' }] }));
+  const r2 = approveIn(first.dir, [f]);
+  assert.equal(r2.status, 1, r2.stdout);
+  assert.match(r2.stdout, /REFUSED - one sweep per branch[\s\S]*there is no re-sweep[\s\S]*failing-first test/);
+  assert.ok(!fs.existsSync(f.replace(/\.json$/, '.triage.md')), 'a refusal is the rule working: no triage report');
+  assert.ok(!approvalLog(first.dir).some((e) => e.kind === 'pause'), 'no pause');
+  assert.notEqual(approveIn(first.dir, [f, '--owner-yes', 'yes, re-sweep']).status, 0, 'no yes clears it');
+  const again = approveIn(first.dir, [first.f]);
+  assert.match(again.stdout, /ASK THE OWNER[\s\S]*second sweep on this branch/, 'a plain second pass is still the owner\'s');
+  assert.equal(approveIn(first.dir, [first.f, '--owner-yes', 'yes, a second pass']).status, 0);
+  const carried = outcome(first, '200000', '1', '1', '0', ['--carried', '0']);
+  assert.notEqual(carried.status, 0, carried.stdout);
+  assert.match(carried.stdout, /there is no re-sweep now/);
+  fs.writeFileSync(f, JSON.stringify({ ...featureContract(), resweepOf: first.f }));
+  assert.match(approveIn(first.dir, [f]).stdout, /REFUSED/);
   const g = sweepGuard(first.dir);
   assert.equal(g.permissionDecision, 'deny');
   assert.match(g.permissionDecisionReason, /refused/i);
@@ -4259,27 +4331,6 @@ test('the sweep guard says a refused re-sweep has no owner override', () => {
 });
 
 // Found by the 1.16.0 branch's re-sweep (2026-11-03): an approval closed with --none-ran is not a sweep that ran.
-// why: guards rule:sweep-auto-approval
-test('a sweep closed with --none-ran is neither a base for a re-sweep nor a used re-sweep', () => {
-  const dir = sweepRepo();
-  const f = approveRun(featureContract(), dir);
-  assert.equal(approveIn(dir, [f.f, '--outcome', '--none-ran']).status, 0);
-  fs.writeFileSync(path.join(dir, 'README.md'), 'fixed\n');
-  commitAll(dir, 'fix', true);
-  assert.match(resweep(f).stdout, /FIX THE CONTRACT[\s\S]*outcome of the sweep it re-checks/, 'a first sweep nobody ran has nothing to re-check');
-  const first = firstSweep();
-  const re = resweep(first);
-  ownerAsked(re);
-  fs.writeFileSync(path.join(first.dir, 'src', 'sync.ts'), 'moved on\n');
-  commitAll(first.dir, 'another fix before the reviewers', true);
-  assert.equal(approveIn(first.dir, [re.f, '--outcome', '--none-ran']).status, 0);
-  const again = resweep(first);
-  ownerAsked(again);
-  // Two different re-sweep contracts cleared back to back: the second is refused before either runs.
-  const two = firstSweep();
-  ownerAsked(resweep(two));
-  assert.match(resweep(two, {}, 'resweep2.json').stdout, /REFUSED/);
-});
 // why: guards rule:sweep-tiers
 test('--none-ran reads every clearing of this round, and only an approved contract has one', () => {
   const dir = sweepRepo();
@@ -4299,14 +4350,6 @@ test('a modifiers value that is not a list goes back to be fixed; the fix option
   const r = approveRun({ tier: 'fix', modifiers: 'security-sensitive', roles: fixFloor() }, fixRepo());
   assert.equal(r.status, FIX_EXIT, r.stdout);
   assert.match(r.stdout, /modifiers must be a list/);
-  const moved = firstSweep();
-  g(moved.dir, 'checkout', '-q', '-b', 'other', 'main');
-  fs.writeFileSync(path.join(moved.dir, 'other.ts'), 'x\n');
-  fs.mkdirSync(path.join(moved.dir, 'sweeps'), { recursive: true });
-  commitAll(moved.dir, 'other work', true);
-  const ask = resweep(moved);
-  assert.match(ask.stdout, /How: Focus the re-sweep/);
-  assert.doesNotMatch(ask.stdout, /decides whether the trip was a real failure/, 'a HEAD that does not descend is not a spend trip');
   const budget = featureContract();
   budget.roles[0].calls = 0;
   assert.match(approveRun(budget).stdout, /How: Set each role's "calls"/);
@@ -4314,12 +4357,12 @@ test('a modifiers value that is not a list goes back to be fixed; the fix option
 // why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('a transcript whose last model is synthetic is read by its real model; one with no model pauses', () => {
   const r = approveRun(featureContract());
-  const cfg = transcripts({ y1: [[1, 1, 1, 1], { model: '<synthetic>', u: [0, 0, 0, 0] }], y2: [[1, 1, 1, 1]], y3: [[1, 1, 1, 1]], y4: [[1, 1, 1, 1]], y5: [[1, 1, 1, 1]] });
+  const cfg = transcripts({ y1: [[1, 1, 1, 1], { model: '<synthetic>', u: [0, 0, 0, 0] }], y2: [[1, 1, 1, 1]], y3: [[1, 1, 1, 1]], y4: [[1, 1, 1, 1]], y5: [[1, 1, 1, 1]] }, {}, undefined, undefined, { y4: 'claude-sonnet-5-5' });
   const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'y1,y2,y3,y4,y5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(o.status, 0, o.stdout);
   assert.doesNotMatch(o.stdout, /paused/);
   const n = approveRun(featureContract());
-  const cfg2 = transcripts({ z1: [{ model: null, u: [1, 1, 1, 1] }], z2: [[1, 1, 1, 1]], z3: [[1, 1, 1, 1]], z4: [[1, 1, 1, 1]], z5: [[1, 1, 1, 1]] });
+  const cfg2 = transcripts({ z1: [{ model: null, u: [1, 1, 1, 1] }], z2: [[1, 1, 1, 1]], z3: [[1, 1, 1, 1]], z4: [[1, 1, 1, 1]], z5: [[1, 1, 1, 1]] }, {}, undefined, undefined, { z4: 'claude-sonnet-5-5' });
   assert.match(approveIn(n.dir, [n.f, '--outcome', '--agents', 'z1,z2,z3,z4,z5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg2 }).stdout, /paused[\s\S]*ran on no recorded model/);
 });
 
@@ -4525,7 +4568,7 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   };
   const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
     'H1 area does not repeat the subject', 'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
-    'Changes / Gates / Notes, in order', 'every gate ticked', 'review names the dimensions', 'review names the sweep tier', 'no spaced dashes in prose',
+    'Changes / Gates / Notes, in order', 'no Visuals section in a Lean body', 'every gate ticked', 'review names the dimensions', 'review names the sweep tier', 'no spaced dashes in prose',
     'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
   const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
   const NOTES = '**Notes** - Tooling only; the app does not change.';
@@ -4573,6 +4616,11 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
     cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
   }
   for (const word of ['AIR', 'reagents', 'checkerboard']) cases.push([`the word ${word}`, sub('the app does not change.', `the ${word} does not change.`), title, []]);
+  // K115 (1.42.0, reproduced on 1.41.0): a body quoting a command or a file name in a code span was refused for the tool
+  // word inside it. A tool word in a code span passes only as part of a path or command; a bare one, or one beside a
+  // span, is still the word on the page.
+  for (const span of ['`claude -p`', '`subagents.md`', '`tools/agent-roles.json`', '`agents --list`']) cases.push([`a code span ${span}`, sub('the app does not change.', `the app runs ${span} as before.`), title, []]);
+  for (const text of ['the app runs `claude` as before.', 'the `-p` claude flag stays.', 'the `x` and `Opus` stay.']) cases.push([`a bare tool word: ${text}`, sub('the app does not change.', text), title, ['no mechanism or AI words']]);
   // Handoff item 15: the page shows an entity as its character, so the audit reads it that way.
   for (const word of ['&#65;I', '&#x41;I', '&#65I', 'sub&#97;gent']) cases.push([`${word} as written`, sub('the app does not change.', `the ${word} does not change.`), title, ['no mechanism or AI words']]);
   cases.push(['an em dash as an entity', sub('Tooling only;', 'Tooling only&#8212;'), title, ['0 non-ASCII characters']]);
@@ -4630,6 +4678,9 @@ test('the Standard PR-body audit reads an entity as the character the page shows
   assert.ok(line, 'the example has a prose line to change');
   assert.match(fails(line, line.replace(' the ', ' the &#67;laude ')).join('\n'), /no mechanism or AI words/);
   assert.match(fails(line, line.replace(' the ', ' the &#8212; ')).join('\n'), /0 non-ASCII characters/);
+  // K115: a tool word inside a quoted command passes; a bare one in a code span still fails.
+  assert.doesNotMatch(fails(line, line.replace(' the ', ' the `claude -p` ')).join('\n'), /no mechanism or AI words/);
+  assert.match(fails(line, line.replace(' the ', ' the `claude` ')).join('\n'), /no mechanism or AI words/);
 });
 
 // why: guards rule:pr-body
@@ -4718,6 +4769,38 @@ test('both stop messages name the kit folder and the exact steps to install it',
   assert.match(reason, /check out the newest release tag/);
   assert.doesNotMatch(reason, /pull/);
   assert.ok(reason.includes(`node "${kitDir}/scripts/kit.mjs" install user`), reason);
+});
+
+// K124 (1.42.0): the planted-bug sweep of the folder gate. It finds its config folder from where it is installed when
+// no variable names one; reads a kit project from its top folder; takes a folder with only rules/ as no kit; and
+// calls the launcher broken only when the settings run it.
+// why: guards rule:outward-acts
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"(s && s.hooks && s.hooks.PreToolUse)","to":"(s || s.hooks && s.hooks.PreToolUse)"}
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"const gateHome = process.env.KIT_CLAUDE_HOME || path.dirname","to":"const gateHome = process.env.KIT_CLAUDE_HOME && path.dirname"}
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"top.status === 0 ? top.stdout.trim() : cwd","to":"top.status !== 0 ? top.stdout.trim() : cwd"}
+// planted: {"file":"user/kit-hooks/kit-gate.cjs","was":"has('scripts/kit.mjs') && has('rules')","to":"has('scripts/kit.mjs') || has('rules')"}
+test('the folder gate finds its own config folder, reads a project from its top, and names a broken launcher only when wired', () => {
+  const home = makeTemp('cfg-');
+  fs.mkdirSync(path.join(home, 'kit-hooks'));
+  fs.copyFileSync(path.resolve('user/kit-hooks/kit-gate.cjs'), path.join(home, 'kit-hooks', 'kit-gate.cjs'));
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'node', args: ['kit-tools/kit-launch.cjs'] }] }] } }));
+  const env = { ...process.env };
+  delete env.KIT_CLAUDE_HOME;
+  const gate = (cwd, settings) => {
+    if (settings) fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify(settings));
+    const r = spawnSync('node', [path.join(home, 'kit-hooks', 'kit-gate.cjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd, prompt: 'hi' }), encoding: 'utf8', env });
+    return r.stdout ? JSON.parse(r.stdout) : {};
+  };
+  const proj = localProject();
+  fs.mkdirSync(path.join(proj, '.kit'));
+  fs.writeFileSync(path.join(proj, '.kit', 'kit-version.json'), '{}');
+  fs.mkdirSync(path.join(proj, 'src'));
+  assert.match(gate(proj).reason || '', /launcher .* is missing/, 'a wired launcher that is gone, with no variable naming the folder');
+  const named = { permissions: { allow: ['Bash(node kit-tools/kit-launch.cjs)'] } };
+  assert.equal(gate(path.join(proj, 'src'), named).decision, undefined, 'a kit project read from a subfolder, the launcher only named');
+  const rulesOnly = localProject();
+  fs.mkdirSync(path.join(rulesOnly, 'rules'));
+  assert.equal(gate(rulesOnly).decision, 'block', 'a rules folder alone is no kit');
 });
 
 // The project map (owner, 2026-10-31: option A, kept simple and trackable): one data file per project, checked
@@ -5150,7 +5233,7 @@ test('the 25% trip stays on the whole sweep: one role over its own budget does n
   const budget = approvalLog(r.dir).pop().budget;
   const roles = JSON.parse(read(r.f)).roles;
   const ids = roles.map(() => `t${++agentSeq}`);
-  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [[0, i ? 1000 : Math.floor(budget * 0.9), 0, 0], [0, 1, 0, 0]]])));
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [[0, i ? 1000 : Math.floor(budget * 0.9), 0, 0], [0, 1, 0, 0]]])), {}, undefined, undefined, roleModels(ids, roles));
   const o = approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(o.status, 0, o.stdout);
   assert.doesNotMatch(o.stdout, /paused/);
@@ -5413,7 +5496,7 @@ function driftSweep(spec) {
   const r = approveRun(featureContract(), dir);
   assert.equal(r.status, 0, r.stdout);
   const ids = spec.map(() => `t${++agentSeq}`);
-  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, spec[i]])));
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, spec[i]])), {}, undefined, undefined, roleModels(ids, featureContract().roles));
   const o = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(o.status, 0, o.stdout);
   return { o, line: approvalLog(dir).filter((e) => e.kind === 'outcome').pop() };
@@ -5615,10 +5698,10 @@ test('the model check reads what the decision cleared, in both directions', () =
   const c = featureContract();
   const r = approveRun(c);
   const edited = JSON.parse(read(r.f));
-  edited.roles[3].model = 'claude-sonnet-5-5';
+  edited.roles[0].model = 'claude-sonnet-5-5';
   fs.writeFileSync(r.f, JSON.stringify(edited));
   const ids = cheapRoles(5);
-  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 3 ? 'claude-sonnet-5-5' : 'claude-opus-5-5', u: [0, 100, 0, 0] }]])));
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 0 ? 'claude-sonnet-5-5' : roleModel(c.roles[i]), u: [0, 100, 0, 0] }]])));
   assert.match(logOutcome(r, ids, cfg).stdout, /ran on claude-sonnet-5-5; the contract named claude-opus-5-5/, 'an edit after approval hides nothing');
   const named = featureContract();
   named.roles[3].model = 'claude-sonnet-5-5';
@@ -5631,7 +5714,7 @@ test('the model check reads what the decision cleared, in both directions', () =
 test('outcome numbers are whole and not negative; a reused id is caught in any case', () => {
   const r = approveRun(featureContract());
   const ids = cheapRoles(5);
-  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[0, 100, 0, 0]]])));
+  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[0, 100, 0, 0]]])), {}, undefined, undefined, roleModels(ids, featureContract().roles));
   for (const bad of ['-1', '1.5']) {
     const o = approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', bad, '--real', '0', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
     assert.equal(o.status, 1, bad);
@@ -5686,13 +5769,13 @@ test('an owner tier gets a real budget, its trip fires, and its call caps are ch
   assert.match(b.stdout, /no call cap[\s\S]*owner decides: the launch gate tier/);
 });
 // why: guards rule:sweep-auto-approval
-test('a model outside the reviewer trial asks the owner, and an unknown model at the outcome pauses', () => {
+test('a model outside the reviewer model rule asks the owner, and an unknown model at the outcome pauses', () => {
   for (const model of ['claude-haiku-5-5', '']) {
     const c = featureContract();
     c.roles[3].model = model;
     const r = approveRun(c);
     assert.equal(r.status, 1, `${model}: ${r.stdout}`);
-    assert.match(r.stdout, /ASK THE OWNER[\s\S]*outside the reviewer trial/);
+    assert.match(r.stdout, /ASK THE OWNER[\s\S]*outside the reviewer model rule/);
   }
   const r = approveRun(featureContract());
   const ids = cheapRoles(5);
@@ -5777,7 +5860,7 @@ function ageTranscript(cfg, id, { stamps, file }) {
 function crashedSweep() {
   const early = transcripts({ early: [[0, 100, 0, 0]] }, { early: { finished: false } });
   const dir = sweepRepo({ 'README.md': 'z\n' });
-  const r = approveRun({ tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root cause, and does it hold?'), role('blast-radius', 'Which callers and copies of this code does the change reach?')] }, dir);
+  const r = approveRun({ tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root cause, and does it hold?', { model: 'claude-opus-5-5' }), role('blast-radius', 'Which callers and copies of this code does the change reach?', { model: 'claude-opus-5-5' })] }, dir);
   assert.equal(r.status, 0, r.stdout);
   const { hash } = approvalLog(dir).pop();
   // Cleared half an hour ago, so a crash can have gone quiet since and still have started after the clearance.
@@ -5980,15 +6063,8 @@ test('a reviewer started before the owner\'s yes is not this round\'s, and a sec
   assert.match(logOutcome(r, old, oldCfg).stdout, /before this sweep was cleared/, 'the first clearing after the last outcome');
 });
 // why: guards rule:sweep-auto-approval
-test('what the rules bound stays with the owner: a re-sweep that grows, a rebased HEAD, project caps, a big triage', () => {
-  const small = { tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) };
-  const fr = firstSweep(small, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
-  const big = fs.readFileSync(path.join(fr.dir, 'src', 'page.ts'), 'utf8') + Array.from({ length: 60 }, (_, i) => `export const x${i} = ${i};`).join('\n') + '\n';
-  fs.writeFileSync(path.join(fr.dir, 'src', 'page.ts'), big);
-  commitAll(fr.dir, 'a large fix', true);
-  const grow = resweep(fr, { tier: 'fix', fixed: [{ finding: 'F1: the clamp still lets 0 through', kind: 'fix-root' }], roles: resweepRoles(['fix-root']) });
-  assert.equal(grow.status, 1, grow.stdout);
-  assert.match(grow.stdout, /the fixes change 6\d lines[\s\S]*over max\(50, 25% of its \d+-line diff\)/);
+// renamed from: what the rules bound stays with the owner: a re-sweep that grows, a rebased HEAD, project caps, a big triage
+test('what the rules bound stays with the owner: context over the limit, project caps, a big triage', () => {
   const c = featureContract();
   c.roles[2].context = Array.from({ length: 31 }, (_, i) => `f${i}.ts`);
   assert.equal(approveRun(c).status, 1, 'context over the limit');
@@ -6047,7 +6123,7 @@ test('a reviewer past its cap is named at the outcome, and the notice shows modi
   const r = approveRun(featureContract());
   assert.match(r.stdout, /Modifiers: none; diff against main/);
   const ids = cheapRoles(5);
-  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, Array.from({ length: i ? 1 : 7 }, () => [0, 10, 0, 0])])));
+  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, Array.from({ length: i ? 1 : 7 }, () => [0, 10, 0, 0])])), {}, undefined, undefined, roleModels(ids, featureContract().roles));
   const o = logOutcome(r, ids, cfg);
   assert.match(o.stdout, /ran 7 calls against its cap of 5[^\n]*no call-cap hook/);
   assert.doesNotMatch(o.stdout, /paused/, 'the trip stays on the whole sweep');
@@ -6108,15 +6184,6 @@ test('with no project settings the notice says the cap has no hook; a hook in th
   const w = approveRun(featureContract(), dir);
   assert.equal(w.status, 0, w.stdout);
   assert.doesNotMatch(w.stdout, /no call-cap hook/);
-});
-// why: catches a break in user/skills/pre-pr-sweep/approve.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
-test('a rebased HEAD asks the owner', () => {
-  const first = firstSweep();
-  g(first.dir, 'reset', '-q', '--soft', 'HEAD~2');
-  commitAll(first.dir, 'rebased', true);
-  const r = resweep(first);
-  assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stdout, /ASK THE OWNER[\s\S]*does not descend/);
 });
 // why: guards rule:sweep-auto-approval
 test('an out-of-trial model cleared by the owner still pauses at the outcome', () => {
@@ -6217,24 +6284,6 @@ test('closing a sweep cut short says what started, and a sweep that ran is not l
   assert.match(approveIn(paused.dir, [n2]).stdout, /cut short/, 'a pause does not hide it');
   const other = approveRun(askContract());
   assert.equal(approveIn(other.dir, [other.f, '--outcome', '--cut-short']).status, 1, 'only the open approved sweep can be marked');
-});
-// why: guards rule:sweep-tiers
-test('a re-sweep after a first sweep cut short asks the owner, not a loop; an unused re-sweep leaves a new name free', () => {
-  const dir = sweepRepo();
-  const r = approveRun(featureContract(), dir);
-  sweepGuard(dir);
-  approveIn(dir, [r.f, '--outcome', '--cut-short']);
-  fs.writeFileSync(path.join(dir, 'README.md'), 'fixed\n');
-  commitAll(dir, 'fix', true);
-  const re = resweep({ dir, f: r.f });
-  assert.equal(re.status, 1, re.stdout);
-  assert.match(re.stdout, /ASK THE OWNER[\s\S]*cut short/);
-  assert.equal(approveIn(dir, [re.f, '--owner-yes', 'yes go']).status, 0);
-  const first = firstSweep();
-  const one = resweep(first);
-  ownerAsked(one);
-  assert.equal(approveIn(first.dir, [one.f, '--outcome', '--none-ran']).status, 0);
-  ownerAsked(resweep(first, {}, 'second.json'));
 });
 // 1.21.0 handoff item 28: the sweep guard must be wired beside the call cap, and no settings layer may turn hooks off.
 // 1.21.0 handoff item 29: an outcome named any reviewer transcript whose brief carried the tag, so a cheap decoy
@@ -6852,8 +6901,11 @@ test('a PR that moves the ruler it is graded on needs the owner\'s marker', asyn
 // why: guards rule:ci-gate
 test('recall gate leaves a PR alone only when it touches no rule text, no ruler and no gate line', async () => {
   const { checkGate } = await recallTools();
-  assert.equal(checkGate(gateFacts({ changed: ['scripts/kit.mjs'], added: [] })).ok, true);
+  assert.equal(checkGate(gateFacts({ changed: ['scripts/test-run.mjs'], added: [] })).ok, true);
   assert.equal(checkGate(gateFacts({ changed: ['docs/rules/x.md'], added: [] })).ok, true);
+  // I19 (1.42.0): what renders or ships text a session reads is graded too; the project layer's guard code is not.
+  for (const f of ['scripts/kit.mjs', 'project/AGENTS.md', 'project/standards/testing.md', 'memory/style.md', 'scripts/recall-behave.mjs', 'docs/evals/behaviour-scenarios.json']) assert.equal(checkGate(gateFacts({ changed: [f], added: [] })).ok, false, f);
+  assert.equal(checkGate(gateFacts({ changed: ['project/.claude/guard.cjs'], added: [] })).ok, true);
   for (const ruler of ['docs/evals/recall-questions.md', 'docs/evals/recall-scorer-brief.md']) {
     assert.equal(checkGate(gateFacts({ changed: [ruler], added: [] })).ok, false, ruler);
   }
@@ -6952,6 +7004,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   const dir = makeTemp('gate-');
   const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+  const headSha = () => spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
   git('init', '-q', '-b', 'main');
   put('rules/core.md', 'a\n');
   // The gate reads the ruler from the head commit, so the repo carries the kit's own.
@@ -6967,7 +7020,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   assert.equal(noScore.status, 1, noScore.stdout + noScore.stderr);
   const keys = read(path.resolve('docs/evals/recall-questions.md')).match(/^Current version: v(\d+)$/m)[1];
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md')).match(/^Current version: v(\d+)$/m)[1];
-  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys} control 0\n`);
+  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys} control 0\nscored: ${headSha()}\n`);
   git('commit', '-qam', 'scores');
   const scored = gate();
   assert.equal(scored.status, 0, scored.stdout + scored.stderr);
@@ -6987,8 +7040,9 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
     git('commit', '-qam', 'base of ' + name);
     git('tag', name + '-base');
     put('rules/core.md', name + '\n');
-    put(scores, `# Scores\n\n${base}\n${entry}\n`);
     git('commit', '-qam', name);
+    put(scores, `# Scores\n\n${base}\n${entry}\nscored: ${headSha()}\n`);
+    git('commit', '-qam', 'scores of ' + name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
   const second = round('two-baselines', `gate: a median 9 baseline 8 ${now}\ngate: b median 9 baseline 9 ${now}`, `gate: c median ${bar} baseline 8 ${now}`);
@@ -7013,8 +7067,9 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
     git('tag', name + '-base');
     put(rel, read(path.resolve(rel)));
     put('rules/core.md', name + '\n');
-    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median ${bar} baseline 9 ${now}\n`);
     git('commit', '-qam', name);
+    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median ${bar} baseline 9 ${now}\nscored: ${headSha()}\n`);
+    git('commit', '-qam', 'scores of ' + name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
   const older = onRuler('older-ruler', 'Current version: v1\n');
@@ -7848,7 +7903,7 @@ test('the sweep audit reads an indented findings table as it reads a flat one', 
 
 // Carry-overs closed in 1.21.0 for the recall gate and runs (S18-2, S18-3, S18-5, S18-6, S18-7, B7, I20, I27).
 // A small repo with recall.mjs, a ruler and a scores file, gated base..HEAD as CI does.
-function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: median 9 of 13.\n\n', scores = '# Scores\n' } = {}) {
+function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: median 9 of 13.\n\n', scores = '# Scores\n', suite = null } = {}) {
   const dir = makeTemp('gate11-');
   const git = (...a) => { const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, a.join(' ') + r.stderr); return r.stdout; };
   const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
@@ -7857,16 +7912,102 @@ function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: med
   put('docs/evals/recall-scorer-brief.md', 'Current version: v1\n');
   put('docs/evals/recall-questions.md', keys);
   put('docs/evals/results/recall-scores.md', scores);
+  if (suite) put('docs/evals/behaviour-scenarios.json', suite);
   git('add', '.'); git('commit', '-qm', 'base'); git('tag', 'base');
-  const record = (line, extra = () => {}) => {
-    put('docs/evals/results/recall-scores.md', scores + '\n' + line + '\n');
+  // The rule edit, then the score of that commit (K116: a gate line names the commit it scored), as a real run goes.
+  const record = (line, extra = () => {}, scored = true) => {
     put('rules/core.md', 'a rule ' + Math.random() + '\n');
     extra(put);
+    git('add', '.'); git('commit', '-qm', 'rules');
+    const at = git('rev-parse', 'HEAD').trim();
+    put('docs/evals/results/recall-scores.md', scores + '\n' + line + '\n' + (scored ? `scored: ${at}\n` : ''));
     git('add', '.'); git('commit', '-qm', 'record');
   };
   const gate = (script = path.join(dir, 'scripts/recall.mjs')) => spawnSync('node', [script, 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   return { dir, put, git, record, gate };
 }
+
+// K116 (1.42.0, reproduced on 1.41.0): the gate passed rule text edited after the commit its run scored. A gate line
+// now names that commit, and rule text that differs from it at the head is refused unless the owner accepts it.
+// why: guards rule:instruments-and-evals
+test('recall gate (K116): rule text changed after the scored commit, or no scored commit, is refused', () => {
+  const ok = gateRepo();
+  ok.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0');
+  assert.equal(ok.gate().status, 0, ok.gate().stdout);
+  // A later rule edit is unscored.
+  ok.put('rules/core.md', 'edited after the run\n');
+  ok.git('commit', '-qam', 'later');
+  const late = ok.gate();
+  assert.equal(late.status, 1, late.stdout);
+  assert.match(late.stdout, /rule text changed.*the scored commit [0-9a-f]{7}: rules\/core\.md/);
+  // No scored line at all.
+  const none = gateRepo();
+  none.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0', () => {}, false);
+  assert.match(none.gate().stdout, /names no scored commit/);
+  // A commit that is not on the branch scored other text.
+  const off = gateRepo();
+  off.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0', () => {}, false);
+  // A real side commit holding the head's very rule text: a diff from it would show nothing, yet it is not this branch.
+  const ruleText = read(path.join(off.dir, 'rules/core.md'));
+  off.git('switch', '-q', '-c', 'side', 'base');
+  off.put('rules/core.md', ruleText);
+  off.git('add', '.'); off.git('commit', '-qm', 'side');
+  const other = off.git('rev-parse', 'HEAD').trim();
+  off.git('switch', '-q', 'main');
+  off.put('docs/evals/results/recall-scores.md', read(path.join(off.dir, 'docs/evals/results/recall-scores.md')) + `scored: ${other}\n`);
+  off.git('commit', '-qam', 'not on the branch');
+  assert.match(off.gate().stdout, new RegExp(`rule text changed.*the scored commit ${other.slice(0, 7)}: rules/core\\.md`), other);
+  // The owner may accept it, as any other fault.
+  const accepted = gateRepo();
+  accepted.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0 owner-accepted', () => {}, false);
+  assert.equal(accepted.gate().status, 0, accepted.gate().stdout);
+});
+
+// The build 16 sweep: a rule file under a case-changed folder (Rules/, NOTE.MD) or with a tab in its name was not
+// graded, so the gate said no rule text changed; on Windows the file lands in rules/, where the build reads it.
+// why: guards rule:instruments-and-evals
+test('recall gate: a graded file named in another case or with a tab still needs a recall run', () => {
+  // Windows cannot name a file with a tab; CI's Linux runner checks that one.
+  for (const rel of ['project/NOTE.MD', 'Memory/x.md', ...(process.platform === 'win32' ? [] : ['project/a\tb.md'])]) {
+    const r = gateRepo();
+    r.put(rel, 'unscored rule\n');
+    r.git('add', '.'); r.git('commit', '-qm', 'rule only');
+    const out = r.gate();
+    assert.equal(out.status, 1, `${rel}: ${out.stdout}`);
+  }
+});
+
+// T10 (1.42.0): beside the wording line, a rule change records the behaviour suite's line. It is held to the suite's
+// version and pass bar, to its baseline, and to a control under that baseline; the suite cannot be removed to skip it.
+// why: guards rule:instruments-and-evals
+test('recall gate (T10): a rule change needs a behaviour line on the current suite, at its bar and baseline', () => {
+  const suite = JSON.stringify({ version: 2, pass: 10, scenarios: [] });
+  const line = 'gate: a median 12 baseline 9 brief v1 keys v4 control 0';
+  const run = (behave) => { const r = gateRepo({ suite }); r.record(behave ? `${line}\n${behave}` : line); return r.gate(); };
+  assert.match(run(null).stdout, /records no behaviour line/);
+  assert.equal(run('behaviour: a median 12 baseline 11 suite v2 control 3').status, 0);
+  const under = run('behaviour: a median 9 baseline 8 suite v2 control 3');
+  assert.equal(under.status, 1);
+  assert.match(under.stdout, /under the suite's pass bar of 10/);
+  assert.match(run('behaviour: a median 11 baseline 12 suite v2 control 3').stdout, /behaviour median 11 is under its baseline 12/);
+  assert.match(run('behaviour: a median 12 baseline 11 suite v2 control 11').stdout, /behaviour control 11 is not under its baseline 11/);
+  assert.match(run('behaviour: a median 12 baseline 11 suite v1 control 3').stdout, /suite v1; the current suite is v2/);
+  // Removing the suite does not turn the gate off.
+  const gone = gateRepo({ suite });
+  gone.record(`${line}\nbehaviour: a median 12 baseline 11 suite v2 control 3`, (put) => put('docs/evals/behaviour-scenarios.json', ''));
+  gone.git('rm', '-q', 'docs/evals/behaviour-scenarios.json'); gone.git('commit', '-qm', 'drop the suite');
+  const out = gone.gate();
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /removes docs\/evals\/behaviour-scenarios\.json/);
+  // The build 16 sweep: the PR's own suite cannot lower or drop the bar, and an edit at the same version moves the ruler.
+  const edited = (next, behave) => { const r = gateRepo({ suite }); r.record(`${line}\n${behave}`, (put) => put('docs/evals/behaviour-scenarios.json', JSON.stringify(next))); return r.gate(); };
+  assert.match(edited({ version: 2, pass: 1, scenarios: [] }, 'behaviour: a median 1 baseline 1 suite v2 control 0').stdout, /under the suite's pass bar of 10/);
+  assert.match(edited({ version: 2, scenarios: [] }, 'behaviour: a median 1 baseline 1 suite v2 control 0').stdout, /under the suite's pass bar of 10/);
+  assert.match(edited({ version: 3, pass: 1, scenarios: [] }, 'behaviour: a median 1 baseline 1 suite v3 control 0').stdout, /under the suite's pass bar of 10/);
+  const moved = edited({ version: 2, pass: 10, scenarios: [{ id: 'x' }] }, 'behaviour: a median 12 baseline 11 suite v2 control 3');
+  assert.equal(moved.status, 1);
+  assert.match(moved.stdout, /changes the behaviour suite/);
+});
 
 // why: guards rule:instruments-and-evals
 test('recall gate (B7): current keys with no Pass line cannot pass, since recall cannot run them', () => {
@@ -8178,21 +8319,6 @@ test('C10: one owner yes answers one ask, so a second cannot open a second team'
   for (let i = 0; i < 3; i++) assert.equal(sweepGuard(a.dir).permissionDecision, 'allow');
   assert.equal(sweepGuard(a.dir).permissionDecision, 'deny');
 });
-// why: guards rule:sweep-auto-approval
-test('C11: a re-sweep reviews the tests its fixes change', () => {
-  const fr = firstSweep({ tier: 'fix', modifiers: [], roles: fixFloor().slice(0, 2) }, fixRepo({ 'src/page.test.ts': 'test 1\n' }));
-  fs.writeFileSync(path.join(fr.dir, 'src', 'page.test.ts'), 'test 3\n');
-  commitAll(fr.dir, 'a test for the fix', true);
-  const fixed = [{ finding: 'B1: the caller in list.ts still passes 0', kind: 'blast-radius' }];
-  const br = role('blast-radius', 'What else do the fixes reach, and did any of them break it?');
-  const dim = role('dimension', 'Does the change still match its locks and the version goal?');
-  const tv = role('test-value', 'Does the changed test fail without the fix?');
-  const without = resweep(fr, { tier: 'fix', fixed, roles: [br, dim] });
-  assert.equal(without.status, FIX_EXIT, without.stdout);
-  assert.match(without.stdout, /needs 1 test-value/);
-  const withTv = resweep(fr, { tier: 'fix', fixed, roles: [br, dim, tv] });
-  ownerAsked(withTv);
-});
 // why: guards rule:sweep-tiers
 test('C9c: a --base off the default branch asks the owner', () => {
   const dir = sweepRepo();
@@ -8456,7 +8582,8 @@ test('install user lands the merge gate and its audits at the paths the rules gi
   const home = makeTemp('tools-home-');
   install({ kit: path.resolve('.'), home, target: 'user' });
   assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'merge-gate.mjs')));
-  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs']) {
+  for (const f of ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs']) {
+    assert.ok(fs.existsSync(path.join(home, 'kit-tools', 'audits', f)), `${f} is installed beside the gate`);
     assert.equal(read(path.join(home, 'kit-tools', 'audits', f)), read(path.resolve('project/.claude', f)), f);
   }
   // The gate imports its temp helper from beside it: without the copy, the installed gate cannot start at all.
@@ -8470,7 +8597,7 @@ function autoSweep(extra = () => {}) {
   const n = JSON.parse(read(r.f)).roles.length;
   const hash = approvalLog(r.dir).pop().hash;
   const ids = Array.from({ length: n }, (_, i) => `au${++agentSeq}x${i}`);
-  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[0, 1000, 0, 0]]])));
+  const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[0, 1000, 0, 0]]])), {}, undefined, undefined, roleModels(ids, featureContract().roles));
   ids.forEach((id, i) => setBrief(cfg, id, (b) => `${b} Sweep: ${hash} role ${i + 1}`));
   extra({ cfg, hash, ids });
   const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'auto', '--findings', '6', '--real', '5', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });

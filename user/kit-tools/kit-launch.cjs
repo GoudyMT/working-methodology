@@ -34,6 +34,9 @@ const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 // another project with no record, and every read in it was held).
 const real = (p) => { try { return fs.realpathSync.native(path.resolve(p)); } catch { return path.resolve(p); } };
 const same = (a, b) => (WIN ? real(a).toLowerCase() === real(b).toLowerCase() : real(a) === real(b));
+// The parent bash climbs to from a folder: the parent of where it really is, past any link on the way (the 1.42.0 sweep,
+// L5). Empty when the folder is gone or is a root.
+const physicalUp = (p) => { try { const r = fs.realpathSync.native(p); const up = path.dirname(r); return up === r ? '' : posix(up) + '/'; } catch { return ''; } };
 
 /**
  * The record folder's name for a project: Claude Code's folder name for it, plus a short hash of the full path, so two
@@ -435,7 +438,9 @@ function namedProjects(input) {
 	const home = posix(require('os').homedir());
 	// One spelling for a path: home expanded, forward slashes, no quotes, the drive as c:/, no doubled slashes.
 	const norm = (s) => fold(String(s).replace(/(^|[\s=(:;&|"'])(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\\s"']|$)/gi, (m, a) => a + home))
-		.replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/');
+		.replace(/\\/g, '/').replace(/["'`]/g, '').replace(/(^|[\s=(:;&|])\/([a-zA-Z])\//g, (m, a, d) => `${a}${d}:/`).replace(/\/{2,}/g, '/')
+		// Windows drops a name's trailing dots (MyApp. is MyApp; the commit security review); . and .. stay.
+		.replace(WIN ? /([^\s/.])\.+(?=\/|\s|$|[;&|)])/g : /$^/, '$1');
 	// $'...' is read as the text bash makes of its escapes, and $"..." as the string itself (the third review, on cd0f9f5).
 	const ESC = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v' };
 	const decoded = command.replace(/\$'((?:[^'\\]|\\[\s\S])*)'/g, (m, body) => body.replace(/\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|c[\s\S]|[0-7]{1,3}|[\s\S])/g, (e, c) => {
@@ -548,7 +553,9 @@ function namedProjects(input) {
 	// A backslash is a separator on Windows and an escape in a POSIX shell (my\ app is "my app"): both readings count.
 	const spelled = `${decoded} ${made.join(' ')}`;
 	let text = `${norm(spelled)} ${norm(spelled.replace(/\\(.)/g, '$1'))}`;
-	const tokens = [...new Set(text.split(/[\s;&|(){}=,]+/).filter(Boolean))];
+	// A comma ends a word in a PowerShell list (a,b), and is a plain character inside a bracket set ([a,b]pp, K120):
+	// both readings count.
+	const tokens = [...new Set([...text.split(/[\s;&|(){}=,]+/), ...text.split(/[\s;&|(){}=]+/)].filter(Boolean))];
 	// A wildcard (*, ?, [set], [!set], [[:alpha:]]) is compiled once and matched without a regex, in time linear in the
 	// two lengths for each star (the third review). A [ with no ] after it is a plain character, as in the shell.
 	const POSIX = { alpha: /[A-Za-z]/, digit: /[0-9]/, alnum: /[A-Za-z0-9]/, upper: /[A-Z]/, lower: /[a-z]/, space: /\s/, blank: /[ \t]/,
@@ -583,7 +590,9 @@ function namedProjects(input) {
 	};
 	const one = (p, c) => {
 		if (p === '?') return true;
-		if (typeof p === 'string') return p === c;
+		// The pattern was folded with the command on Windows, so its letters match either case there; a class still reads
+		// the name as written (the build 16 sweep: [!a-z]yApp is MyApp).
+		if (typeof p === 'string') return p === c || (WIN && p.toLowerCase() === c.toLowerCase());
 		const hit = p.items.some((x) => (x instanceof RegExp ? x.test(c) : Array.isArray(x) ? c >= x[0] && c <= x[1] : x === c));
 		return hit !== p.neg;
 	};
@@ -608,20 +617,31 @@ function namedProjects(input) {
 		// A relative wildcard is read from the session's folder and from every folder the command names, since a cd before
 		// it may have moved there (the 1.33.1 review).
 		let bases = rootLen ? [t.slice(0, rootLen)] : [posix(cwd) + '/', ...dirs.map((d) => posix(d) + '/')];
+		// Every folder a wildcard part matched is named, not only the last part's: a file part after it (A*/x.tx?) matches
+		// no folder, and the project it sits in is still reached.
+		const found = [];
 		for (const seg of t.slice(rootLen).split('/').filter(Boolean)) {
+			// bash climbs out of a link where it points (the 1.42.0 sweep, L5): both parents are read.
+			if (seg === '..') { bases = [...new Set(bases.flatMap((b) => [b + '../', physicalUp(b)].filter(Boolean)))]; continue; }
 			if (!isGlob(seg)) { bases = bases.map((b) => b + seg + '/'); continue; }
+			// The folders read are named too (a link on the way, zz/.claude/g*, reaches the project it points into).
+			found.push(...bases);
 			const pat = compile(seg);
 			const next = [];
 			for (const b of bases) {
 				if (++reads > READS_MAX) { unreadable = 'more folder reads than the guard makes for its wildcards'; return []; }
 				let ents = [];
-				try { ents = fs.readdirSync(b); } catch { continue; }
-				for (const e of ents) if (globMatch(pat, fold(e))) next.push(b + e + '/');
+				try { ents = fs.readdirSync(b, { withFileTypes: true }); } catch { continue; }
+				// K120 (1.42.0): only a folder or a link can be or lead into a kit project, so a plain file match is no name
+				// (a wildcard over thousands of files was held). The name is matched as folded and as written: on Windows a
+				// capital class ([[:upper:]]pp) matches App, which the folded app never does.
+				for (const e of ents) if ((e.isDirectory() || e.isSymbolicLink()) && (globMatch(pat, fold(e.name)) || globMatch(pat, e.name))) next.push(b + e.name + '/');
 				if (next.length > GLOB_MAX) { unreadable = `more than ${GLOB_MAX} matches for its wildcards`; return []; }
 			}
 			bases = next;
+			found.push(...next);
 		}
-		return bases.map((b) => b.replace(/\/$/, ''));
+		return [...new Set([...found, ...bases])].map((b) => b.replace(/\/$/, ''));
 	};
 	// A relative path, an 8.3 short name or a wildcard's match: the folder it names, as the file system resolves it from
 	// the session. A kit project the launcher has no record for is found from these too, so it holds the call as it
@@ -629,9 +649,22 @@ function namedProjects(input) {
 	const unrec = [];
 	const seen = new Set();
 	const dirs = [];
-	const resolveTo = (t) => {
+	const resolveTo = (t, from = cwd) => {
+		// A climb through a link also names where bash lands: the link target's parent (L5).
+		if (/(^|[\\/])\.\.($|[\\/])/.test(t)) {
+			const rooted = path.isAbsolute(t) || /^[A-Za-z]:/.test(t);
+			let p = rooted ? path.parse(path.resolve(from, t)).root : path.resolve(from);
+			for (const part of t.split(/[\\/]/).slice(/^[A-Za-z]:/.test(t) ? 1 : 0)) {
+				if (part === '..') p = physicalUp(p) || path.dirname(p);
+				else if (part && part !== '.') p = path.join(p, part);
+			}
+			if (!same(p, path.resolve(from, t))) resolveOnce(p);
+		}
+		resolveOnce(path.resolve(from, t));
+	};
+	const resolveOnce = (abs) => {
 		let real = '';
-		try { real = fs.realpathSync.native(path.resolve(cwd, t)); } catch { return; }
+		try { real = fs.realpathSync.native(abs); } catch { return; }
 		if (seen.has(real)) return;
 		seen.add(real);
 		try {
@@ -647,18 +680,57 @@ function namedProjects(input) {
 	// Paths first, so a relative wildcard is also read from the folders they name. A bare name (cd app) is a folder too
 	// when it is one, from the session's folder or from a folder named before it (the review of c07f2bd); a command whose
 	// wildcards follow more folders than the guard reads is held.
-	const DIRS_MAX = 64;
+	// K120 (1.42.0): a command that names many folders and no wildcard (ls d0 ... d69) was held; with no wildcard to read
+	// from them, the cap is for the passes alone.
+	const DIRS_MAX = tokens.some(isGlob) ? 64 : 256;
+	// Each folder is listed once and its names looked up, not a stat per word and folder: 4,000 bare names beside 60
+	// folders took about 9 s of the hook's 10 s (K120).
+	// The names are compared without case or Unicode form on every platform (a file system that ignores them, as on
+	// macOS, finds App for app; the commit security review); a name that does not exist as written fails at resolveTo.
+	const key = (s) => String(s).normalize('NFC').toLowerCase();
+	const listed = new Map();
+	const namesIn = (base) => {
+		if (!listed.has(base)) {
+			const s = new Set();
+			try { for (const e of fs.readdirSync(base, { withFileTypes: true })) if (e.isDirectory() || e.isSymbolicLink()) s.add(key(e.name)); } catch { /* unreadable: none */ }
+			listed.set(base, s);
+		}
+		return listed.get(base);
+	};
+	const rooted = (t) => /^([a-z]:)?[\\/]/i.test(t) || t.startsWith('~');
 	// Read again while a pass finds a new folder, so a name inside a folder found later in the pass is read from it too
-	// (cd a && cd b && cd a, the review of bfad509); DIRS_MAX bounds the passes.
+	// (cd a && cd b && cd a, the review of bfad509); DIRS_MAX bounds the passes. A relative path is read from every
+	// folder found as well, so a chain of moves (cd .. && cd .. && cd ..) is followed to its end (K120).
+	// A path that climbs (..) is read from a found folder only as many times as the command writes a climb, so it never
+	// walks on past what the moves could reach.
+	// Counted on the text the tokens come from (quotes gone, braces made), so a quoted ".." counts (the commit security
+	// review); each reading of the command counts, which can only read further.
+	let climbs = (text.match(/(^|[/\s;&|(=])\.\.(?=$|[/\s;&|)])/g) || []).length;
 	for (let before = -1; before !== dirs.length && !unreadable;) {
 		before = dirs.length;
 		for (const t of tokens) {
 			if (isGlob(t) || /\$/.test(t)) continue;
-			if (/[/~.]/.test(t)) { resolveTo(t); continue; }
-			for (const base of [cwd, ...dirs]) {
-				const at = path.join(base, t);
-				try { if (fs.statSync(at).isDirectory()) resolveTo(at); } catch { /* not a folder */ }
+			if (/[/~.]/.test(t)) {
+				if (rooted(t)) { resolveTo(t); continue; }
+				resolveTo(t);
+				const climb = /(^|[\\/])\.\.($|[\\/])/.test(t);
+				// The build 16 sweep: a dotted name was resolved from every folder found (28 s for 1,800 names beside 250
+				// folders). Only a first part that is a folder or link there can lead anywhere new; a plain file in a
+				// folder already read adds nothing, so it is looked up in the folder's listing first.
+				const head = t.split('/')[0];
+				// A name Windows reads as another (an 8.3 short name with ~, a trailing dot or space, a stream after :) is
+				// not in the listing as written, so it is resolved (the commit security review).
+				const leads = (base) => climb || head === '.' || head === '' || /[~:]|[. ]$/.test(head) || namesIn(base).has(key(head));
+				for (const base of dirs.slice()) {
+					if (climb && climbs <= 1) break;
+					if (!leads(base)) continue;
+					const had = dirs.length;
+					resolveTo(t, base);
+					if (climb && dirs.length > had) climbs--;
+				}
+				continue;
 			}
+			for (const base of [cwd, ...dirs]) if (namesIn(base).has(key(t))) resolveTo(path.join(base, t));
 		}
 	}
 	for (const t of tokens) {

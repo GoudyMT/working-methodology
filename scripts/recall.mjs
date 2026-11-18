@@ -48,10 +48,19 @@ const SCORES = 'docs/evals/results/recall-scores.md';
 const BRIEF = 'docs/evals/recall-scorer-brief.md';
 const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 // What the gate guards: the rule text, and the keys, brief and harness that grade it.
-const GRADED = /^(rules\/|project\/CLAUDE\.md$|scripts\/recall(-score)?\.mjs$|docs\/evals\/recall-(questions|scorer-brief)\.md$)/;
+// I19 (1.42.0): also what renders or ships text a session reads - the project layer's own text, the memory, kit.mjs that
+// renders them - and the behaviour suite and its runner. The project layer's code (the guards) is graded by its tests.
+const GRADED = /^(rules\/|project\/.*\.md$|memory\/|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/i;
+// T10 (1.42.0): beside the wording gate line, a rule change records the behaviour suite's line, written by
+// recall-behave.mjs line from the saved runs. The base branch's gate reads only the gate line, so this sits apart.
+const BEHAVE_LINE = /^behaviour: (\S+) median (\d+) baseline (\d+) suite v(\d+) control (\d+)( owner-accepted)?$/;
+const SUITE_REL = 'docs/evals/behaviour-scenarios.json';
 // From keys v4 a line names the control's median too (S18-7), so CI can see the control sits clearly under the kit.
 const GATE_LINE = /^gate: (\S+) median (\d+) baseline (\d+) brief v(\d+) keys v(\d+)(?: control (\d+))?( owner-accepted)?$/;
 const CONTROL_LINE = /^control: (\d+)$/;
+// K116 (1.42.0): the commit a run scored, on its own line beside the gate line (the base branch's gate reads only the
+// gate line). Rule text changed after it ships unscored, so the gate refuses it.
+const SCORED_LINE = /^scored: ([0-9a-f]{40})$/;
 const CONTROL_FROM = 4;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
@@ -232,7 +241,10 @@ export function runHeader({ label, keys, facts, when, cli }) {
  * Returns:
  *     { ok, detail }
  */
-export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {} }) {
+// scored is the commit the run measured (null when the PR names none); left out, the caller read no scored line and
+// the K116 check is not asked for (the gate command always reads it).
+// behaviour is { suite, bar } from the head's suite when the caller reads the behaviour line; left out, it is not asked.
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour }) {
   const all = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   // A file with no newline at its end shows its last line removed and added back unchanged when an entry is
   // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no drop, and
@@ -261,14 +273,28 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   if (control != null && Number(control) >= Number(baseline)) return { ok: false, detail: `${label}: control ${control} is not under the baseline ${baseline}, so the score does not show the rules` };
   if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
+  const graded = scored !== undefined && changed.some((f) => GRADED.test(f));
+  const behave = behaviour && changed.some((f) => GRADED.test(f)) ? added.map((l) => l.trim().match(BEHAVE_LINE)).filter(Boolean).pop() : null;
+  if (behave && Number(behave[2]) < behaviour.bar) return { ok: false, detail: `${behave[1]}: behaviour median ${behave[2]} is under the suite's pass bar of ${behaviour.bar}, and owner-accepted does not pass it` };
+  const behaviourFaults = !behaviour || !changed.some((f) => GRADED.test(f)) ? [] : !behave
+    ? ['it records no behaviour line: add the line recall-behave.mjs line prints for the candidate, baseline and control runs']
+    : [
+      Number(behave[4]) !== behaviour.suite && `the behaviour runs were on suite v${behave[4]}; the current suite is v${behaviour.suite}`,
+      Number(behave[2]) < Number(behave[3]) && `behaviour median ${behave[2]} is under its baseline ${behave[3]}`,
+      Number(behave[5]) >= Number(behave[3]) && `behaviour control ${behave[5]} is not under its baseline ${behave[3]}`,
+    ].filter(Boolean);
   const faults = [
+    ...behaviourFaults,
+    behaviour && behaviour.moved && changed.some((f) => GRADED.test(f)) && `this PR changes the behaviour suite it is graded on (suite v${behaviour.suite})`,
+    graded && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
+    graded && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
     dropped && 'this PR removes a recorded gate line',
     moved && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
     !moved && was.baseline != null && Number(baseline) < was.baseline && `baseline ${baseline} is under the last recorded baseline ${was.baseline}`,
     Number(median) < Number(baseline) && `median ${median} is under the baseline ${baseline}`,
   ].filter(Boolean);
   if (!faults.length) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
-  return accepted ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}. Only the owner may pass this: the gate line ends in owner-accepted` };
+  return accepted || (behave && behave[6]) ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}. Only the owner may pass this: the gate line ends in owner-accepted` };
 }
 
 function gate([base, head]) {
@@ -279,6 +305,12 @@ function gate([base, head]) {
     const g = spawnSync('git', a, opts);
     if (g.status !== 0) throw new Error(`git ${a.join(' ')}: ${(g.stderr || String(g.error)).trim()}`);
     return g.stdout.split('\n');
+  };
+  // Changed names, read with -z (the build 16 sweep: a quoted name with a tab in it was never graded).
+  const names = (...a) => {
+    const g = spawnSync('git', ['diff', '-z', '--no-renames', '--name-only', ...a], opts);
+    if (g.status !== 0) throw new Error(`git diff ${a.join(' ')}: ${(g.stderr || String(g.error)).trim()}`);
+    return g.stdout.split('\0').filter(Boolean);
   };
   // A file at a commit, or '' when that commit has none; any other failure stops the gate.
   const at = (ref, rel) => {
@@ -297,9 +329,34 @@ function gate([base, head]) {
   const recorded = onBase(SCORES).split('\n').map((l) => l.trim().match(GATE_LINE)).filter((m) => m && Number(m[4]) === brief && Number(m[5]) === keys);
   // --text: an attribute or a NUL byte must not hide the record from the check.
   const record = git('diff', '--text', '-U0', `${base}...${head}`, '--', SCORES);
+  // K116: the graded files that differ between the commit the run scored and the head. A commit that is not on the
+  // branch scored other text, so every graded file the PR changes counts.
+  const recordAdded = record.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1).trim());
+  const scored = recordAdded.map((l) => l.match(SCORED_LINE)).filter(Boolean).pop()?.[1] ?? null;
+  const prChanged = names(`${base}...${head}`);
+  const onBranch = scored && spawnSync('git', ['merge-base', '--is-ancestor', scored, head], opts).status === 0;
+  const after = !scored ? [] : onBranch
+    ? names(scored, head).filter((f) => GRADED.test(f))
+    : prChanged.filter((f) => GRADED.test(f));
+  // The behaviour suite is the head's, as the ruler is; a head with no suite file asks for no behaviour line.
+  const suiteText = at(head, SUITE_REL);
+  // Removing the suite would turn its gate off: only a head that still has it, or a base that never had it, goes on.
+  if (!suiteText && onBase(SUITE_REL)) { console.log(`this PR removes ${SUITE_REL}, the behaviour suite the gate reads`); process.exitCode = 1; return; }
+  // The build 16 sweep: the head's suite is the PR's own text, so it cannot set its own bar. The bar is never under the
+  // base's, a head with no bar keeps the base's, and an edit at the same version moves the ruler (the owner's to accept).
+  const baseSuite = onBase(SUITE_REL);
+  const behaviour = suiteText ? (() => {
+    const s = JSON.parse(suiteText);
+    const b = baseSuite ? JSON.parse(baseSuite) : {};
+    const bar = Math.max(Number.isInteger(s.pass) ? s.pass : 0, Number.isInteger(b.pass) ? b.pass : 0);
+    return { suite: s.version, bar: bar || Infinity, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
+  })() : undefined;
   const r = checkGate({
+    behaviour,
+    scored,
+    after,
     // Each side of a rename counts, and a name stays plain: a rule file moved away is rule text changed.
-    changed: git('-c', 'core.quotepath=off', 'diff', '--no-renames', '--name-only', `${base}...${head}`),
+    changed: names(`${base}...${head}`),
     added: record.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)),
     removed: record.filter((l) => l.startsWith('-') && !l.startsWith('---')).map((l) => l.slice(1)),
     brief,

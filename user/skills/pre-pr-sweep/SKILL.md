@@ -60,17 +60,16 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    adds no test (a removed behaviour's tests go with it); then push, and CI runs the
    full suite with auto-fix on red. Log the sweep's outcome (step 6) once its reviewers hand back. A second pass is
    the owner's call: `approve.mjs` asks for any contract after a sweep that ran on this branch (a rebase or a new file
-   name does not hide it), and for a re-sweep contract (`"resweepOf"`, `"fixed"`; its roles are one blast-radius, one per
-   fixed kind and one `dimension`). After a re-sweep, what is left is fixed in this build; only a low or medium the owner says yes to (never a high or critical) is logged with `--carried <n>` and goes to the handoff. The report's Covers line stays the
+   name does not hide it), and refuses a re-sweep contract (`"resweepOf"`) flat. What the sweep found is fixed in this build; only a low or medium the owner says yes to (never a high or critical) goes to the handoff. The report's Covers line stays the
    commit the sweep read, and each fix is listed by its commit. In a project with a build record, each fix is
    a `sweep.fixes` row (id, severity, text, commit, test): the test that fails first, or `no test: no real input` for
    a low or medium no real input shows; CI's test check states each named test's verdict, and the PR claims only that. Summarize the result in the PR body by dimension and verdict, never by agent
    (rule:pr-body).
 6. **Log the outcome** for the trial: `node approve.mjs <contract.json> --outcome --agents <id,...> --findings <n>
    --real <n after triage> --duplicates <n repeated between roles>` (`--agents auto` finds each reviewer from its brief's Sweep tag, so ids lost to a compaction do not end a sweep; or each reviewer's agent id, one per
-   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a reviewer that crashed (no report, not finished, its transcript quiet for 10 minutes): `node approve.mjs <contract.json> --retry <n> --crashed <id>` gives role n one more start with the same brief, and `--agents` names the retry. A crash's tokens count against its role's budget; a sweep cut short, where none of these works (a role's second crash, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a re-sweep adds
-   `--carried <n>`, a sweep that fixes carried findings `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
-   the mid model, for the reviewer model trial). When every role handed back a report in its shape, the script
+   role in the contract's order, from each Agent result, noted as they finish; the script reads each finished reviewer's processed tokens from its transcript; an approval no reviewer started under: `--outcome --none-ran`; a reviewer that crashed (no report, not finished, its transcript quiet for 10 minutes): `node approve.mjs <contract.json> --retry <n> --crashed <id>` gives role n one more start with the same brief, and `--agents` names the retry. A crash's tokens count against its role's budget; a sweep cut short, where none of these works (a role's second crash, the ids were lost): `--outcome --cut-short`, then the next contract asks the owner, whose yes closes it unmeasured; a sweep that fixes
+   carried findings adds `--closed-carries <n>`; add `--real-mid <n>`: real findings from roles on
+   the mid model, for the reviewer model rule). When every role handed back a report in its shape, the script
    counts `--findings` from the reports, writes `<contract>-ledger.md` (one row per finding) and refuses a count
    that differs; `--real` and `--duplicates` stay the lead's triage, and the ledger marks findings two roles placed
    on the same line. A bug later found in code the

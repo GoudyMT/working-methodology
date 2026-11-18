@@ -11,7 +11,7 @@ The findings rules live in the standards; this file points to them.
 - Truth bar: reproduce it or quote it -> rule:finding-pipeline
 - A fix is new code; shape changes -> rule:finding-pipeline
 - Fix shared findings at the root -> rule:finding-pipeline
-- Re-sweep once; two passes only -> rule:finding-pipeline
+- One sweep per branch; no re-sweep -> rule:finding-pipeline
 - Findings ride inside their PR -> rule:features-first
 - Small and easy findings fixed now -> rule:autonomous-fixes
 

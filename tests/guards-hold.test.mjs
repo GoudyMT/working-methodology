@@ -17,7 +17,7 @@ const cfg = kitTemp.makeTemp('cfg-');
 // The PR-text guard reads the copy install user keeps in the Claude folder (user/kit-tools/audits).
 fs.mkdirSync(path.join(cfg, 'kit-tools', 'audits'), { recursive: true });
 for (const f of fs.readdirSync(path.resolve('user/kit-tools/audits'))) fs.copyFileSync(path.resolve('user/kit-tools/audits', f), path.join(cfg, 'kit-tools', 'audits', f));
-const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs'];
+const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs'];
 const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
 	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
 	'- [x] Settings only; CI green on the head.', '- [x] Triage tier review: privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');
@@ -243,6 +243,25 @@ test('two kit scripts in one command pass; node with inline code or an option be
 		'node mk.js && cp .claude/settings.json out.txt', 'node mk.js; cat .claude/guard.cjs > out.txt']) assert.equal(bash(c), 'deny', c);
 });
 
+// K117 (1.42.0, held live on 1.41.0 in the kit source and the workbench): a loop of kit-script reads, in Bash and in
+// PowerShell, and a sed print of a line range, were held as writes to a protected file. A simple loop is read as its
+// body, once per word; a loop whose word, variable or body could write a guard is still held.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('a loop of kit-script reads and a sed line range pass; a loop that could write a guard is still held', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	const fwd = proj.split(path.sep).join('/');
+	for (const c of [`cd ${fwd} && for id in T10 T9; do echo "=== $id"; node .claude/state.mjs item $id; done`, 'for id in K1 K2; do node .claude/state.mjs item $id; done', "sed -n '1,40p' .claude/guard.cjs | grep -n protected"]) assert.equal(bash(c), 'allow', c);
+	for (const c of [`cd ${proj}; foreach($id in 'T10','T9'){ node .claude/state.mjs item $id 2>$null | Out-String -Width 400 }`, "foreach ($id in 'K1') { node .claude/state.mjs item $id }"]) assert.equal(ps(c), 'allow', c);
+	// The loop's word is read where the variable stands; a variable that could move a program, a group in the body and
+	// a substitution keep the strict reading.
+	for (const c of ['for p in .claude/guard.cjs; do cp x $p; done', 'for p in a .claude/settings.json; do echo x > $p; done', 'for x in cp; do $x y .claude/guard.cjs; done', 'for PATH in /tmp/x; do node .claude/settings.json; done', 'for path in /tmp/x; do node .claude/settings.json; done','for id in K1; do f() { cp x .claude/guard.cjs; }; node .claude/state.mjs item $id; done', 'for id in $(ls); do node .claude/settings.json; done']) assert.equal(bash(c), 'deny', c);
+	for (const c of ["foreach ($p in '.claude/guard.cjs') { Copy-Item x $p }", "foreach ($id in 'K1') { function node { cp x $args[0] }; node .claude/settings.json }"]) assert.equal(ps(c), 'deny', c);
+	// The build 16 sweep (critical, written live): a body that sets the loop variable again writes where the new value
+	// points, not where the loop word does, so any name of the variable other than a plain read keeps the strict reading.
+	for (const c of ['for f in a; do f=.git/config; echo x > $f; done', 'for f in a; do export f=.claude/settings.json; cp evil "$f"; done', 'for f in a; do printf -v f %s .claude/guard.cjs; cp evil $f; done', 'for f in a; do printf -vf %s .claude/guard.cjs; cp evil $f; done', "for f in a; do declare $'f'=.git/config; cp evil $f; done", 'for f in .claude/guard; do f+=.cjs; cp evil $f; done']) assert.equal(bash(c), 'deny', c);
+	for (const c of ["foreach ($f in 'a') { $f = '.git/config'; Set-Content $f x }", "foreach ($f in 'a') { Set-Variable f .claude/guard.cjs; Copy-Item evil $f }", "foreach ($f in '.claude') { $f += '/guard.cjs'; Copy-Item evil $f }"]) assert.equal(ps(c), 'deny', c);
+});
+
 // why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
 test('running a kit script with 2>&1, or after a plain Set-Location, passes; a write beside it is still held', () => {
 	const ps = (command) => decide('PowerShell', { command });
@@ -439,6 +458,7 @@ test('a feature-branch push goes without a yes only inside the owner\'s bounds',
 
 // The pre-push hook, run as git runs it: the other half of the owner's bounds.
 // why: guards rule:outward-acts
+// planted: {"file":"project/.claude/owner-yes.cjs","was":"function yeses(lines, { all = false }","to":"function yeses(lines, { all = true }"}
 test('the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest', { windows: true }, () => {
 	const dir = kitTemp.makeTemp('push-');
 	const g = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
@@ -471,6 +491,9 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	const file = path.join(cfg, 'projects', fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`);
 	popUp({ act: 'git status', file });
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the marker alone');
+	// K124 (1.42.0): the owner's No to that push is no yes (a planted bug read every answer as one).
+	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', answer: 'No', file });
+	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the owner answered No');
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file });
 	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, { ...go, CLAUDE_CODE_SESSION_ID: '99999999-2222-3333-4444-555555555555' }).status, 0, 'another session\'s record');
 	assert.notEqual(push(`refs/tags/v1 ${main} refs/tags/v1 ${Z}`, go).status, 0, 'a yes for main is no yes for a tag');
@@ -724,11 +747,14 @@ test('a gate bypass is never allowed by a tool, even with the owner\'s pop-up ye
 });
 // why: guards rule:outward-acts (a refusal's opening and act are the order a session acts on; T16a, the owner
 // 2026-11-11). The 1.26.0 carry-overs C7, C14, C15, C16 and C18.
+// planted: {"file":"project/.claude/owner-yes.cjs","was":"String(input && input.tool_name)","to":"String(input || input.tool_name)"}
 test('each refusal names one act to quote, one kind, and a fix the hold lets through', () => {
 	// C7: a held push names one act to quote, in the shell that runs it; for main it says the act is for a new repo only.
 	const feat = why('Bash', { command: 'git push --force origin feat/x' });
 	assert.equal((feat.match(/`[^`]+`/g) || []).filter((s) => !s.startsWith('`<')).length, 1, `two acts to quote: ${feat}`);
 	assert.ok(feat.includes('`KIT_PUSH_APPROVED=1 git push --force origin feat/x`'), feat); // pin: 1 the owner-yes matcher reads this act back
+	// K97: the question names its shell, so the yes binds it (K124, 1.42.0: a planted bug dropped the words).
+	assert.ok(feat.includes('"in Bash"'), feat);
 	const ps = why('PowerShell', { command: 'git push --force origin feat/x' });
 	assert.ok(ps.includes("`$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x`"), `PowerShell got no marker act: ${ps}`); // pin: 1
 	popUp({ act: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x", tried: { tool: 'PowerShell', input: { command: "$env:KIT_PUSH_APPROVED='1'; git push --force origin feat/x" } } });
@@ -942,6 +968,7 @@ test('a feature push from another repo runs only where the kit\'s own hooks will
 // The owner, 2026-11-15: opening a PR from a pushed feature branch needs no yes, like the push. It is free only as one
 // plain gh pr create, on a feature branch, in a repo whose one remote is origin; anything else still asks.
 // why: guards rule:outward-acts
+// planted: {"file":"project/.claude/guard-outward.cjs","was":"\t\t\tconst fold = (p) => (process.platform === 'win32'","to":"\t\t\tconst fold = (p) => (process.platform !== 'win32'"}
 test('opening a PR from a feature branch runs without a yes; any other PR act asks', () => {
 	const repo = kitTemp.makeTemp('prbound-');
 	spawnSync('git', ['init', '-q', '-b', 'main', repo]);
@@ -990,6 +1017,15 @@ test('opening a PR from a feature branch runs without a yes; any other PR act as
 	// One that cannot be read is held by its text check: refused either way.
 	for (const f of ['.git/config', 'D:/keys/id_rsa', '/etc/passwd', 'missing.md']) assert.equal(ask(bodyFile(f)), 'deny', f);
 	assert.notEqual(ask('gh pr create ' + T), 'deny', 'the audited body file in the repo');
+	// K124 (1.42.0): on Windows the same file named in another letter case is that file.
+	if (process.platform === 'win32') assert.notEqual(ask(bodyFile('Good.md')), 'deny', 'the body file named in another case');
+	else {
+		// Elsewhere a name in another case is another path: a folder link that differs only in case is still a link.
+		fs.mkdirSync(path.join(repo, 'docs'));
+		fs.writeFileSync(path.join(repo, 'docs', 'b.md'), GOOD_BODY);
+		fs.symlinkSync('docs', path.join(repo, 'Docs'));
+		assert.equal(ask(bodyFile('Docs/b.md')), 'deny', 'a folder link that differs only in case');
+	}
 	spawnSync('git', ['-C', repo, 'remote', 'add', 'upstream', 'https://github.com/someone/r.git']);
 	bound('gh pr create ' + T);
 	spawnSync('git', ['-C', repo, 'remote', 'remove', 'upstream']);
@@ -1242,4 +1278,87 @@ test('a feature push is inside the bound only while origin pushes to where it fe
 	git('config', '--unset-all', 'url.https://elsewhere.invalid/.insteadOf');
 	git('remote', 'remove', 'origin');
 	assert.match(push(), /somewhere other than it fetches from/, 'no origin');
+});
+
+// K124 (1.42.0): a planted-bug sweep flipped one operator at a time in the delete guard, and these flips passed every
+// test. Each case below fails on its flip: a link packed by tar, a move by cmake -E chdir, rsync's options read on
+// other programs, a brace outside find, the folder find names, a find-style -ok on another program, PowerShell's
+// -Force:$true, a -Force that must not outlive its command, case on a case-sensitive disk, and the owner's yes text.
+// The delete guard is asked on its own where the protected-files guard would hold the same command first.
+// why: guards rule:outward-acts
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"function placeOf(target, ctx, state, keepLast = false)","to":"function placeOf(target, ctx, state, keepLast = true)"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"else if (name === 'rsync' && rest.some","to":"else if (name !== 'rsync' && rest.some"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"else if ((name === 'cmake' || name === 'cmake.exe') && rest[rest.indexOf('-E') + 1] === 'chdir'","to":"else if ((name !== 'cmake' || name === 'cmake.exe') && rest[rest.indexOf('-E') + 1] === 'chdir'"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"else if (name === 'find' && BRACE_EXPANSION.test(text))","to":"else if (name !== 'find' && BRACE_EXPANSION.test(text))"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"programName(w) === 'find') && words.slice(0, p)","to":"programName(w) !== 'find') && words.slice(0, p)"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"ctx.hidden = rest.some((w) => /^-fo(r(ce?)?)?(:\\$true)?$/i","to":"ctx.hidden = rest.some((w) => /^-fo(r(ce?)?)?(:\\$false)?$/i"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"permissionDecisionReason: verdict === 'allow' ? yesText(what)","to":"permissionDecisionReason: verdict !== 'allow' ? yesText(what)"}
+// planted: {"file":"project/.claude/guard-delete.cjs","was":"if (hit) return hit === start + '/*' ? start : hit","to":"if (hit) return hit !== start + '/*' ? start : hit"}
+test('the delete guard holds what its planted-bug sweep let through, and passes the reads and packs it must not hold', () => {
+	const outside = kitTemp.makeTemp('elsewhere-');
+	const own = kitTemp.makeTemp('proj-');
+	fs.mkdirSync(path.join(own, '.git'));
+	fs.symlinkSync(outside, path.join(own, 'lnk'), 'junction');
+	const ask = (command, { tool = 'Bash', extra = {}, guard = HOOKS[0] } = {}) => {
+		const r = spawnSync(process.execPath, [guard], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command }, cwd: own, ...extra }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: own } });
+		assert.equal(r.status, 0, r.stderr);
+		const out = r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
+		return { verdict: out.permissionDecision || 'allow', reason: out.permissionDecisionReason || '' };
+	};
+	const out = outside.split(path.sep).join('/');
+	for (const command of ['tar --remove-files -cf a.tar lnk', 'cmake -E chdir src rm -f x', `time -ok rm -rf ${out}/x`]) assert.equal(ask(command).verdict, 'deny', command);
+	for (const command of ['git branch --delete old', 'ls {a,b}', 'echo {a,b}', 'rm -f a.txt; tar --remove-files -cf a.tar *']) assert.equal(ask(command).verdict, 'allow', command);
+	const deleteGuard = path.resolve('project/.claude/guard-delete.cjs');
+	assert.equal(ask('Remove-Item -Recurse -Force:$true *', { tool: 'PowerShell', guard: deleteGuard }).verdict, 'deny', '-Force:$true reaches .git');
+	const found = ask(`find ${out}/x -name y -delete`).reason;
+	assert.ok(found.includes(`${out}/x)`), found);
+	// A disk that tells case apart: the same letters in other case are another folder, outside the project.
+	if (process.platform === 'linux') assert.equal(ask(`rm -rf ${own.toUpperCase()}/x`).verdict, 'deny');
+	const act = `rm -rf ${out}/x`;
+	popUp({ act });
+	assert.match(ask(act, { extra: { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now' } }).reason, /^Owner's yes given in the pop-up/);
+});
+
+// K124 (1.42.0): the planted-bug sweep of the shared path reader (owner-proof.cjs) let nine changes through every
+// test. A session whose folder is given by its short name (as on the CI runners) had its links read from lower-case
+// parts that name no folder, so a write through a link into .claude or .git ran; a Claude folder under its own name
+// lost its settings file; and reads were held that must pass.
+// why: guards rule:outward-acts
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"p.length === h.length + 1","to":"p.length !== h.length + 1"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"o.ino === st.ino","to":"o.ino !== st.ino"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"; return linkSeen.get(abs); }","to":"; return void linkSeen.get(abs); }"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"/[*?[]/.test(p) && named.some","to":"/[*?[]/.test(p) || named.some"}
+test('the path reader holds what its planted-bug sweep let through, and passes the reads it must not hold', () => {
+	const own = kitTemp.makeTemp('proj-longname-');
+	for (const d of ['.git', 'src', '.claude']) fs.mkdirSync(path.join(own, d));
+	fs.writeFileSync(path.join(own, '.git', 'config'), '[core]\n');
+	for (const f of ['settings.json', 'guard.cjs']) fs.writeFileSync(path.join(own, '.claude', f), '{}');
+	fs.writeFileSync(path.join(own, 'h1'), 'x');
+	fs.linkSync(path.join(own, 'h1'), path.join(own, 'h2'));
+	fs.symlinkSync(path.join(own, '.claude'), path.join(own, 'lk'), 'junction');
+	fs.symlinkSync(path.join(own, '.git'), path.join(own, 'gk'), 'junction');
+	const home = kitTemp.makeTemp('claudecfg-');
+	const ask = (command, { tool = 'Bash', cwd = own, from = own } = {}) => {
+		const r = spawnSync(process.execPath, [HOOKS[0]], { cwd: from, input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command }, cwd }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: home, CLAUDE_PROJECT_DIR: own } });
+		assert.equal(r.status, 0, r.stderr);
+		return (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {}).permissionDecision || 'allow';
+	};
+	const writes = ['echo x > gk/config', 'echo x > lk/settings.json', 'cd src && echo x > ../lk/guard.cjs', 'cd src && echo x > ../gk/config'];
+	for (const c of writes) assert.equal(ask(c), 'deny', c);
+	if (process.platform === 'win32') {
+		const short = spawnSync('powershell', ['-NoProfile', '-Command', `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${own}').ShortPath`], { encoding: 'utf8' }).stdout.trim();
+		if (short && short !== own) for (const c of writes) assert.equal(ask(c, { cwd: short }), 'deny', `${c} from ${short}`);
+	}
+	// The same file named again after a move into .claude is read from there, not from the first answer.
+	assert.equal(ask('cat settings.json && cd .claude && echo x > settings.json'), 'deny');
+	// A Claude folder under a name of its own: its settings file takes the owner's yes; a file below it does not.
+	const cfgDir = home.split(path.sep).join('/');
+	assert.equal(ask(`echo x > ${cfgDir}/settings.json`), 'deny');
+	assert.equal(ask(`echo x > ${cfgDir}/sub/settings.json`), 'allow');
+	// Reads and plain writes that must pass: a second name of a plain file, one link under two spellings, a read after
+	// a move the guard cannot follow from a hook started in another folder, and a listing of plain files.
+	assert.equal(ask('echo x > h1'), 'allow');
+	assert.equal(ask('cat gk/config; cat ./gk/config'), 'allow');
+	assert.equal(ask('cd "$D"; cat gk/config', { from: path.join(own, 'src') }), 'allow');
+	assert.equal(ask('Get-ChildItem src/no*.txt -Recurse | Remove-Item', { tool: 'PowerShell' }), 'allow');
 });

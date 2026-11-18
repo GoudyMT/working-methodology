@@ -20,6 +20,13 @@ template and audit scripts win over anything here.
    its report: the commit it covered, the result per dimension, each high or critical finding and how it was
    handled, deferred items with where they are tracked, accepted risks, and the verdict. Never link the report
    or any private file; an unfixed security finding gets its severity and tracker, never its detail.
+   **Measured tokens, the file sizes behind them, or a measured wait moved:** run
+   `node .claude/visuals.mjs <base> <head> --body <body.md>` (`--fold` while the audits in force predate the
+   section). It reads `.kit/visuals.json` (its shape is in the script's header: each metric names its impact, cost,
+   time or room, and a typed number the two commits it was measured at), keeps what moved, writes the section with
+   the outcome first, and leaves one `<why>` per row: replace each with what moved it and why. Commit the chart it
+   draws and run it again to link the image. Nothing moved: no section. Never tallies; a Lean body puts its number
+   in the gate line.
 4. **Audit:** `node .claude/pr-body-audit.mjs <body.md> "<title>" [<PR number>]` (Lean: `.claude/pr-body-audit-lean.mjs`); with no number it keeps 8 characters for the " (#n)" suffix.
    Fix every failure; then reread for flow.
 5. **Open and hand off:** a PR from a feature branch opens with no yes (rule:outward-acts); then give the owner the

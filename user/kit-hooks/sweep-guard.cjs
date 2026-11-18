@@ -119,7 +119,7 @@ function check(input) {
 			if (!x || x.prev !== sha(lines[j - 1])) return deny(`The approval log was changed by hand at line ${j + 1}, after this clearing. The owner resumes the sweep tools (approve.mjs --resume), then ${RUN_FIRST}`);
 		}
 		if (e.kind === 'decision' && e.decision === 'refused') {
-			return deny('approve.mjs refused this contract: a re-sweep the owner allowed is the last pass, and a further one is the owner\'s (a plain contract on this branch asks them). What it left unfixed is fixed in this build; only a low or medium the owner says yes to (never a high or critical) goes to the handoff\'s carry-overs, first next build; log the re-sweep\'s outcome with --carried <n>.');
+			return deny('approve.mjs refused this contract: there is no re-sweep, one sweep per branch (rule:finding-pipeline), and no yes changes that. What the sweep found is fixed in this build, each fix with a failing-first test; only a low or medium the owner says yes to (never a high or critical) goes to the handoff\'s carry-overs, first next build.');
 		}
 		// A rerun on the same contract, unchanged at the same HEAD, while its clearing stands open (no outcome yet) is told
 		// to log that outcome first; its line does not shut the clearing on the roles still to start (1.21.0 item 35).

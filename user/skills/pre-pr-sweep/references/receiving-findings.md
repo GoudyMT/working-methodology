@@ -62,5 +62,5 @@ Why: the record should show what was checked and what changed, not how agreeable
 ## After the ruling
 
 Fixing follows rule:finding-pipeline from G2 on (diagnose, cluster, method, blast radius, one root per commit)
-and the re-sweep rules there; dispositions go in the sweep report. Replying to a review thread on the forge is an
+and its one-sweep rule (no re-sweep); dispositions go in the sweep report. Replying to a review thread on the forge is an
 outward act: draft it, and the owner posts or approves it (rule:outward-acts).

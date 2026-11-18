@@ -64,7 +64,7 @@ The lead asked the owner to approve a 6-role sweep team before running `approve.
 
 ## Decisions for the owner
 
-- Reviewer model: all reviewers run on the top model today ("Keep the top model as reviewer until the scoreboard shows a cheaper one holds", `.claude/rules/testing.md:37`). Proposal: keep the 3 security roles and the novel lens on the top model, run supply chain, privacy, data validity and test value on the mid model as a logged trial, and re-check every high finding on the top model. This changes a kit rule, so it is the owner's call.
+- Reviewer model: every role but security and the novel lens runs on the mid model unless its contract names another (`.claude/rules/testing.md`, "Reviewer models"). Proposal: name the top model for the data validity role in this project, where the mid model missed two high findings the top-model re-check caught. This sets a role's model against the default, so it is the owner's call.
 
 ## Proof
 

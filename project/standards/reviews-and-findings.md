@@ -14,12 +14,12 @@
 - **G5 Blast radius:** files, shipped vs new, public interfaces, other callers, the revert story, in the report; the owner's yes only for shipped code outside the branch's scope or a public interface.
 - **G6 Fix** - TDD, **one ROOT per commit.**
 
-**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **One sweep** per branch; a high, critical, security or owner-rule fix ships with a failing-first test, a low or medium only if a real input shows it (else `no test: no real input`; rule:test-value); CI runs the full suite and auto-fix handles red. A second pass is the owner's call; escapes are measured next build. Findings are fixed in the build that finds them. A low or medium that cannot be finished carries only on the owner's yes, first next build. A high or critical never carries: it is fixed before the PR (found after it: on its PR), or the owner accepts it.
+**Hard rules:** batch at G3 (triage and diagnose everything, then fix roots). **One sweep** per branch; a high, critical, security or owner-rule fix ships with a failing-first test, a low or medium only if a real input shows it (else `no test: no real input`; rule:test-value); CI runs the full suite and auto-fix handles red. **The fix check** is that test, failing on the code before its fix, and CI's test check stating its verdict; no agent re-reviews the fixes, and there is no re-sweep. A second sweep is the owner's call; escapes are measured next build. Findings are fixed in the build that finds them. A low or medium that cannot be finished carries only on the owner's yes, first next build. A high or critical never carries: it is fixed before the PR (found after it: on its PR), or the owner accepts it.
 
 ### Features First; Findings Ride Inside the PR {#features-first}
 
 1. **A standalone fix PR only for harm:** data loss, a stuck user, a silent outage.
-2. **Sweep findings are fixed in their PR**, the small ones too; what carries (the rule above) goes to the handoff's carry-overs.
+2. **Sweep findings are fixed in their PR**, the small ones too, each through the fix check (rule:finding-pipeline); what carries (the rule above) goes to the handoff's carry-overs.
 3. **Then features;** roadmap fixes ride a feature PR that touches their code; folded-in findings go in the before / after table.
 4. **A run's order:** the feature comes FIRST (a fix first only when high or critical): the confirmed work order's next, else the owner's pick; leftovers and the carry-overs the owner said yes to ride on its branch; ONE large sweep after both, CI, one PR. The Resume Point names the feature pick first.
 
@@ -49,7 +49,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 **Modifiers add roles at any tier, and never lower one:** security-sensitive code (auth, locks, crypto, permissions, secrets, personal data) gets the security swarm of >= 3 distinct angles; a new dependency or external data flow gets a supply-chain role and a privacy role (trigger 2); public, legal or cited text gets a content role that checks each claim against its source and license; data the user keeps (storage formats, migrations, deletion) gets a role on data loss and the upgrade path from the last release.
 
-**After the sweep:** each fix meets rule:test-value and CI runs the full suite (rule:finding-pipeline); a fix tier keeps its fix check. A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**
+**After the sweep:** each fix meets rule:test-value and CI runs the full suite: that is the fix check (rule:finding-pipeline). A stated exemption is left only for a PR that changes no code and no public text. **How: the pre-pr-sweep skill.**
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 

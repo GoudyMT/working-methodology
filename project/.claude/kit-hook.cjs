@@ -88,7 +88,7 @@ async function main() {
 	}
 	const lib = await import(pathToFileURL(path.join(kit, 'scripts', 'kit.mjs')).href);
 	// Claude Code passes the hook input on stdin; for SessionStart, source is startup, resume, clear or compact.
-	const ctx = { kit, home: HOME, projectDir: PROJECT, source: INPUT.source };
+	const ctx = { kit, home: HOME, projectDir: PROJECT, source: INPUT.source, session: INPUT.session_id };
 	if (MODE === 'session-start') {
 		const text = lib.sessionStartReport(ctx);
 		if (text) emit(text);

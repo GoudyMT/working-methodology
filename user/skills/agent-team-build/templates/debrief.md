@@ -5,7 +5,7 @@ not a win: record its cost, and mark any comparison with it as `SKILL.md` "Trust
 
 ## 1. Quality
 
-- Escapes, counted as roots, by stage (the unit's check, the gate, the review, the re-sweep, the pre-push test, CI,
+- Escapes, counted as roots, by stage (the unit's check, the gate, the review, the pre-push test, CI,
   after merge), each with its severity.
 - First-pass PASS and FIX rounds.
 - Repeats of a fixed class (`orchestrated.md`, "Fixed classes").

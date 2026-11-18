@@ -14,7 +14,7 @@ which reports completion back to the main session (never several prongs in one s
 | Overseer | the main session | Opus | briefs each orchestrator; checks its plan before the user sees it; checks every sweep contract and report for legitimacy and gaps before it reaches the user; runs the shared machine; relays questions; opens pull requests and merges with the user; writes the run record and the decision log | builds a prong's units |
 | Orchestrator | the `orchestrator` role | Opus, 1-hour cache | plans its team and stops; after approval runs its phase through the team | pushes; touches the main checkout or the tracking files |
 | Builder | the `builder` role | Sonnet | one unit, test-first, in its own worktree | design, copy, files off its list |
-| Checker | the `checker` role | Opus | read-only review of one high-risk unit, or one fix check | edits |
+| Checker | the `checker` role | Opus | read-only review of one high-risk unit | edits |
 | Scanner | the `scanner` role | Haiku | read-only lists, counts and locations; a first pass the requester re-checks | judgment, writes, shell |
 
 The overseer is the only one who talks to the user, pushes, opens pull requests or merges. An optional Teacher (its
@@ -51,15 +51,15 @@ much work left).
 
 ## The lead ceiling
 
-Past about 450K tokens of context (the meter's latest context for the lead: one call's input, cache writes and cache
-reads together), the overseer replaces the lead at its next stop with a fresh one from the plan file. 450K is the
-largest a lead has been seen to work at; nearer the context's limit (a compaction, a lost working state) was never
-observed, so the method stays inside what was measured. A fresh lead's start-up costs about $1-1.50. There is no cost
+Past about 350K tokens of context (the meter's latest context for the lead: one call's input, cache writes and cache
+reads together), the overseer replaces the lead at its next stop with a fresh one from the plan file. A session
+compacts on its own at 400K (rule:compact-ritual), so the swap comes first: a lead that compacts mid-phase loses its
+working state. Leads have been seen to work well up to 450K, so 350K costs no measured quality. A fresh lead's start-up costs about $1-1.50. There is no cost
 rule inside a phase: on the measured runs a mid-phase replacement would have saved at most about $0.40.
 
 ## Sweeps go through the overseer
 
-No sweep or re-sweep starts until its Swarm Contract is cleared (rule:sweep-auto-approval). The orchestrator writes it
+No sweep starts until its Swarm Contract is cleared (rule:sweep-auto-approval). The orchestrator writes it
 (what it holds: `SKILL.md` "The flow", step 6), runs `~/.claude/skills/pre-pr-sweep/approve.mjs` on it, sends the contract and the script's output
 to the overseer and stops. The overseer checks both for legitimacy and gaps: APPROVED and sound, it posts the start
 notice and the orchestrator goes on; FIX THE CONTRACT, the orchestrator fixes what it named and reruns, with no user step; ASK, it takes the table and the script's reasons to the user, and logs their

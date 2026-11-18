@@ -340,6 +340,46 @@ test('the pre-compact hook writes the packet first, even with the kit missing or
 	}
 });
 
+// K112 (1.42.0): the closeout that ends a task marks the packet closed; a compact mid-task does not.
+// why: guards rule:compact-ritual
+test('write --closed marks the packet closed, and a plain write does not', () => {
+	const dir = project();
+	fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+	fs.copyFileSync(path.join(KIT, 'project', '.claude', 'resume-packet.mjs'), path.join(dir, '.claude', 'resume-packet.mjs'));
+	const write = (...a) => spawnSync(process.execPath, [path.join(dir, '.claude', 'resume-packet.mjs'), 'write', ...a], { cwd: dir, encoding: 'utf8' });
+	write();
+	assert.doesNotMatch(fs.readFileSync(packet(dir), 'utf8'), /^closed: /m);
+	write('--closed');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^closed: \d{4}-\d\d-\d\dT/m);
+	write('--session', 'abc-123', '--closed');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^session: abc-123$[\s\S]*^closed: /m);
+	// The build 16 sweep: the options in any order.
+	write('--closed', '--session', 'xyz');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^session: xyz$[\s\S]*^closed: /m);
+	write('--session', '--closed');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^session: -$[\s\S]*^closed: /m);
+});
+
+// K111 (1.42.0): sessions now compact on their own at 400K, so the packet must come from an automatic compact too.
+// Claude Code fires PreCompact with trigger "auto" then (proven on 2.1.318); the shipped entry has no matcher that
+// would limit it to "manual", and the hook writes the packet well inside its time limit.
+// why: guards rule:post-compact-orientation
+// planted: {"file":"project/.claude/settings.json","was":"\"PreCompact\": [\n      {\n","to":"\"PreCompact\": [\n      {\n        \"matcher\": \"manual\",\n"}
+test('an automatic compact writes the resume packet, inside the hook time limit', () => {
+	const settings = JSON.parse(fs.readFileSync(path.join(KIT, 'project/.claude/settings.json'), 'utf8'));
+	const entries = settings.hooks.PreCompact.filter((e) => JSON.stringify(e).includes('pre-compact'));
+	assert.ok(entries.length && entries.every((e) => e.matcher === undefined || e.matcher === '' || e.matcher === '*' || /\bauto\b/.test(e.matcher)), 'the entry runs on an automatic compact');
+	const limit = entries[0].hooks[0].timeout * 1000;
+	const dir = project();
+	fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+	for (const f of ['kit-hook.cjs', 'resume-packet.mjs']) fs.copyFileSync(path.join(KIT, 'project', '.claude', f), path.join(dir, '.claude', f));
+	const t0 = Date.now();
+	const r = spawnSync(process.execPath, [path.join(dir, '.claude', 'kit-hook.cjs'), 'pre-compact'], { cwd: dir, encoding: 'utf8', input: JSON.stringify({ session_id: 'auto-1', hook_event_name: 'PreCompact', trigger: 'auto', custom_instructions: '' }), env: { ...process.env, KIT_CLAUDE_HOME: kitTemp.makeTemp('packet-home-'), CLAUDE_PROJECT_DIR: dir } });
+	assert.equal(r.status, 0, r.stderr);
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^session: auto-1$/m);
+	assert.ok(Date.now() - t0 < limit / 2, `took ${Date.now() - t0} ms of ${limit}`);
+});
+
 // why: guards rule:post-compact-orientation
 test('install wires the packet; a project whose settings lack the hook is named, and status names the old start lines', async () => {
 	const { install, status } = await import('../scripts/kit.mjs');
