@@ -149,6 +149,13 @@
    "text": "A destructive git command whose subcommand is held in a variable waits behind a shell keyword (then, do, else, if, while, until, coproc) or an assignment, as it already did when it came first.",
    "evidence": "project/.claude/guard-delete.cjs",
    "reach": "projects"
+  },
+  {
+   "id": "TEST-PROOFS",
+   "kind": "added",
+   "text": "The test check proves tests that pass on the base by design: a planted-bug test fails on each bug it names, a forced edit's old version fails now, and a new file's fix test runs on the commit before its fix.",
+   "evidence": "scripts/test-check.mjs",
+   "reach": "kit"
   }
  ],
  "decisions": [
@@ -362,7 +369,7 @@
  },
  "tests": {
   "before": 870,
-  "after": 909,
+  "after": 912,
   "flips": "declared tests on v1.41.0 and on this branch; the PR run gives the final count"
  },
  "visuals": {

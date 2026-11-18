@@ -9,6 +9,7 @@ The recall gate also grades what sessions do, the always-loaded rules file is 14
 - The recall gate fails a rule change whose scored commit is missing, or whose graded text changed after the commit the run scored.
 - The guard holds a local git act that throws away uncommitted or unpushed work (a hard reset, a forced checkout, switch or branch delete, a restore over changes, a stash drop, a reflog expire) until the owner's yes.
 - A PR body or release note whose measured tokens, the file sizes behind them, or a measured wait moved carries a Visuals section: the outcome first (dollars, time or window room), a chart and a table the audits recompute.
+- The test check proves tests that pass on the base by design: a planted-bug test fails on each bug it names, a forced edit's old version fails now, and a new file's fix test runs on the commit before its fix.
 
 ### Changed
 - Three sections of the always-loaded rules file moved word for word to the rule files that load when they apply, and the use check fails a filled `AGENTS.md` over the new 25,000-byte cap, counted on disk.
