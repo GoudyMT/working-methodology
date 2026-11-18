@@ -959,3 +959,27 @@ control: 0
 gate: b17-1.43.0 median 14 baseline 14 brief v2 keys v12
 behaviour: b17-1.43.0 median 14 baseline 12 suite v2 control 5
 scored: 6142d1bcd23e898bf1754e653992cd34f6dcf118
+
+## Recall v12 - 1.43.0 after the testing rule trim, owner-accepted (2026-11-18)
+
+Candidate: the branch at d716111, after CI found rules/testing.md 42 bytes over its 14,000-byte cap and the shard sentence was trimmed (rule text changed after the runs above, so the branch ran again). Baseline and control: the same 1.42.0 runs and v12 control. Opus 5.5 at medium, brief v2, keys v12. The first three runs, scored blind with the baseline, gave a median of 12, under the bar of 13. Two more runs then ran on the owner's yes, and one fresh blind scorer read all nine; the kit's rule (decision 7, 1.21.0) counts runs 4 and 5 only when the first three sit on the bar, so the scoring tool refused the five-run median. The owner accepted the five-run median by pop-up (2026-11-18: "Owner-accept at 13").
+
+| Run | First scoring (3 + baseline) | Second scoring (all nine) |
+|---|---|---|
+| cand-1 | 12 | 12 |
+| cand-2 | 12 | 12 |
+| cand-3 | 14 | 14 |
+| cand-4 | - | 13 |
+| cand-5 | - | 14 |
+| base-1, base-2, base-3 | 12, 13, 13 | 12, 14, 14 |
+| control | 0 | 0 |
+
+- **Scored: first three median 12; five-run median 13, the bar; baseline 14 (second scoring); control 0.** Owner-accepted.
+- **The misses** sit on questions whose rule text this build did not change: Q10 (that the review agents actually run) in cand-1 and cand-2, both marked borderline; Q3 (the gate before an agent is sent) in cand-1; Q9 (the idea filed in the backlog, not the plan's parking lot) in cand-2; Q13 in cand-4, borderline. The runs on the text before the trim scored 14, 14, 13 (the section above). The same baseline runs scored 12, 14, 14 and 12, 13, 13 under two scorers: the scorer moves a point either way.
+- **Behaviour (suite v2, pass 11):** the branch 14, 13, 13 (the closeout task failed twice); the release 12, 12, 13; control 5.
+- **Lesson:** check every size cap a rule edit can touch before the recall run; a trim after it costs a rerun.
+
+control: 0
+gate: b17-1.43.0 median 13 baseline 14 brief v2 keys v12 owner-accepted
+behaviour: b17-1.43.0 median 13 baseline 12 suite v2 control 5
+scored: d71611161dea881dd4469dc75978463a65d60fa9
