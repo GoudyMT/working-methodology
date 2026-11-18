@@ -3,7 +3,12 @@
 // test (rule:test-value): it fails first, it earns its place, it sits in the right lane, and it is owed at all.
 //   node scripts/test-check.mjs <base> [--strict] [--slice i/n] [--budget <seconds>] [--record <build record>]
 //   A1 fails first      the change's test files run against the base commit's code: a new test must fail there, on an
-//                       assertion. A changed test that passes there adds no catch, and is named.
+//                       assertion. A changed test that passes there adds no catch, and is named. Two pass on the base
+//                       by design and are proven on the new code (build 16): a test tagged "// planted: {"file", "was",
+//                       "to"}" fails on each bug it names, planted there; a changed test (or one tagged "// renamed
+//                       from: <old name>") whose old version fails there was edited because the code changed, and is
+//                       listed for the owner as trimmed or adapted. A5 measures a fix test whose file the base lacks on
+//                       the commit before its fix.
 //   A2 earns its place  the test carries "// why: guards <rule or the owner's decision>", or catches a flip in the
 //                       lines the change made (the mutation check, with a map of only these tests).
 //   A3 right lane       a test that needs another machine, a real service, a browser or a live model sits in tests/slow.
@@ -66,6 +71,25 @@ export function whyFault(body, known = null) {
 	}
 	if (/^catches\b/.test(why)) return why.trim().split(/\s+/).length >= 6 ? null : 'its why line is too short to name the failure it catches (6 words or more)';
 	return 'its why line starts with neither guards nor catches';
+}
+
+/**
+ * Whether a test's new version only loses lines of its old one (its name aside): each code line it keeps is an old
+ * line, in the old order, and at least one is gone. A line edited in place is not a loss.
+ *
+ * Args:
+ *     oldBody: the test's text on the base
+ *     newBody: its text now
+ *
+ * Returns:
+ *     true when the new version is the old one less some lines
+ */
+export function removedOnly(oldBody, newBody) {
+	const lines = (b) => b.split('\n').filter((l) => !/^\s*\/\//.test(l)).map((l) => l.trim().replace(NAMED, 'test(""')).filter(Boolean);
+	const [was, now] = [lines(oldBody), lines(newBody)];
+	let i = 0;
+	for (const l of now) { while (i < was.length && was[i] !== l) i++; if (i === was.length) return false; i++; }
+	return now.length < was.length;
 }
 
 export function tests(text) {
@@ -144,6 +168,19 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	if (!/^[0-9a-f]{40,64}$/.test(baseSha)) return { code: 2, text: `test check: base "${base}" is not a commit` };
 	const changed = git(root, 'diff', '--name-status', '--no-renames', `${baseSha}...HEAD`).stdout.split('\n').filter(Boolean).map((l) => l.split('\t'));
 	const testFiles = changed.filter(([s, f]) => s !== 'D' && TEST_FILE.test(f)).map(([, f]) => f);
+	// A copy of the repo at a commit, with this change's test files and the harness laid over it.
+	const checkoutAt = (dir, sha) => {
+		const c = git(path.dirname(dir), 'clone', '--quiet', '--no-hardlinks', '--no-checkout', root, dir);
+		const co = c.status === 0 ? git(dir, '-c', 'advice.detachedHead=false', 'checkout', '--quiet', sha === 'HEAD' ? git(root, 'rev-parse', 'HEAD').stdout.trim() : sha) : c;
+		if (co.status === 0) {
+			for (const f of new Set([...testFiles, 'tests/harness.mjs'])) {
+				fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+				fs.copyFileSync(path.join(root, f), path.join(dir, f));
+			}
+		}
+		return co;
+	};
+	const proven = [];
 	let newOrChanged = [];
 	// A test whose only change is its comment lines (a why line added) adds no catch to prove: it gets A6 only (the
 	// build 14 PR: 38 retagged tests were held to fail first again).
@@ -158,7 +195,10 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			if (was.has(name) && codeOf(was.get(name)) === codeOf(body)) { retagged.push({ key: `${f}::${name}`, body }); continue; }
 			// A loop's tests are named at run time: its pattern, the written name with each ${...} read as any text.
 			const loop = now.loops.has(name) ? new RegExp(`^${name.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`) : null;
-			newOrChanged.push({ key: `${f}::${name}`, file: f, name, body, isNew: !was.has(name), newFile: !onBase, loop });
+			// The version this test replaces: its own on the base, or the one it names as renamed from (gone from the file now).
+			const from = (/^\s*\/\/ renamed from: (.+?)\s*$/m.exec(headOf(body)) || [])[1];
+			const old = was.has(name) ? { name, body: was.get(name) } : from && was.has(from) && !now.has(from) ? { name: from, body: was.get(from) } : null;
+			newOrChanged.push({ key: `${f}::${name}`, file: f, name, body, isNew: !was.has(name), newFile: !onBase, loop, old });
 		}
 	}
 	// The keys a run gave this test: its own, or each name its loop made in its own file, less the names a plain test of
@@ -183,14 +223,10 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 		kitTemp.sessionRoot();
 		const copy = makeTemp('test-check-');
 		const home = makeTemp('test-check-home-');
+		const pending = [];
 		try {
-			const c = git(path.dirname(copy), 'clone', '--quiet', '--no-hardlinks', '--no-checkout', root, copy);
-			const co = c.status === 0 ? git(copy, '-c', 'advice.detachedHead=false', 'checkout', '--quiet', baseSha) : c;
+			const co = checkoutAt(copy, baseSha);
 			if (co.status !== 0) return { code: 2, text: `test check: could not make the base copy: ${co.stderr}` };
-			for (const f of new Set([...testFiles, 'tests/harness.mjs'])) {
-				fs.mkdirSync(path.dirname(path.join(copy, f)), { recursive: true });
-				fs.copyFileSync(path.join(root, f), path.join(copy, f));
-			}
 			// A loop is run by its whole file: the harness takes exact names, and a loop's names exist only at run time.
 			const keys = [...new Set(newOrChanged.map((t) => (t.loop ? `${t.file}::*` : t.key)))];
 			const red = run(copy, keys, { KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home }, left);
@@ -204,12 +240,66 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 				// there, fails first; the fix ledger still names it (a fix's test should load on the code it fixes). A file the
 				// base has that cannot load proves nothing about the test (N12: still named).
 				else if (!names.length && red.has(`file:${t.file}`)) { if (t.newFile) t.loadOnly = true; else note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)'); }
-				else if (!reds.length) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
+				else if (!reds.length) pending.push(t);
 				else if (!reds.some((n) => red.get(n))) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (a crash or a missing file)');
 			}
 		} finally {
 			removeTemp(copy);
 			removeTemp(home);
+		}
+		// Build 16 (the owner, 2026-11-18): two tests pass on the base by design, each proven on the new code instead.
+		// A planted-bug test guards code that was already right: it fails on each bug it names, planted in the new code.
+		// A changed (or renamed) test whose old version fails on the new code was edited because the code changed. The
+		// check cannot tell a forced edit from a weakened one, so each is listed for the owner: trimmed (only lines lost,
+		// no looser than deleting the test, which the check never sees) or adapted.
+		const plantsOf = (t) => [...headOf(t.body).matchAll(/^\s*\/\/ planted: (.*)$/gm)].map((m) => {
+			try { const p = JSON.parse(m[1]); if (p && [p.file, p.was, p.to].every((x) => typeof x === 'string' && x)) return p; } catch { /* named below */ }
+			return null;
+		});
+		const provable = pending.filter((t) => !t.loop && (plantsOf(t).length || t.old));
+		const fail = (t, why) => note(t.key, 'A1', `${t.isNew ? 'passes on the base commit' : 'changed, and passes on the base commit'}${why}`);
+		for (const t of pending.filter((x) => !provable.includes(x))) note(t.key, 'A1', t.isNew ? 'passes on the base commit: it does not fail first' : 'changed, and passes on the base commit: it adds no catch');
+		if (provable.length) {
+			const at = makeTemp('test-check-head-');
+			const home2 = makeTemp('test-check-home-');
+			const env = { KIT_CLAUDE_HOME: home2, CLAUDE_CONFIG_DIR: home2 };
+			try {
+				const co = checkoutAt(at, 'HEAD');
+				for (const t of provable) {
+					if (co.status !== 0) { fail(t, ': its proof on the new code could not run'); continue; }
+					const plants = plantsOf(t);
+					if (plants.length) {
+						let why = null;
+						for (const p of plants) {
+							if (!p) { why = ', and a planted tag is not JSON naming its file, was and to'; break; }
+							const src = path.join(at, p.file);
+							const text = fs.existsSync(src) ? fs.readFileSync(src, 'utf8') : '';
+							if (text.split(p.was).length !== 2) { why = `, and its planted text is not found once in ${p.file}`; break; }
+							fs.writeFileSync(src, text.replace(p.was, () => p.to));
+							const red = run(at, [t.key], env, left);
+							fs.writeFileSync(src, text);
+							if (red.cut && !red.seen.has(t.key)) { why = ': not checked: the time budget ran out'; break; }
+							if (red.get(t.key) !== true) { why = `, and passes with its planted bug in ${p.file}`; break; }
+						}
+						if (why) fail(t, why);
+						else proven.push(`    planted ${t.key}: fails on each of its ${plants.length} planted bug(s)`), t.proof = 'fails on its planted bug(s)';
+						continue;
+					}
+					const file = path.join(at, t.file);
+					const text = fs.readFileSync(file, 'utf8');
+					fs.writeFileSync(file, text.replace(t.body, () => t.old.body));
+					const key = `${t.file}::${t.old.name}`;
+					const red = run(at, [key], env, left);
+					fs.writeFileSync(file, text);
+					if (red.cut && !red.seen.has(key)) fail(t, ': not checked: the time budget ran out');
+					else if (red.get(key) !== true) fail(t, ': it adds no catch, and its old version passes on the new code');
+					else if (removedOnly(t.old.body, t.body)) proven.push(`    trimmed ${t.key}: only loses lines, and its old version fails on the new code`), t.proof = 'only loses lines the new code forced';
+					else proven.push(`    adapted ${t.key}: edited, and its old version fails on the new code`), t.proof = 'an edit the new code forced';
+				}
+			} finally {
+				removeTemp(at);
+				removeTemp(home2);
+			}
 		}
 	}
 	{
@@ -277,13 +367,36 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			// A fix's test runs against the code it fixes, so a test that is red there only because its file cannot load
 			// proves nothing about the fix (the build 14 sweep: a file made unloadable on purpose read "fails first").
 			const a1 = findings.find((x) => x.rule === 'A1' && x.key === f.test);
-			const why = a1 ? a1.text : mine.get(f.test).loadOnly ? 'fails on the base commit only because its file cannot load there' : null;
-			ledger.push(`    ${head} ${f.test}: ${why || 'fails first'}`);
+			const t = mine.get(f.test);
+			let why = a1 ? a1.text : t.loadOnly ? 'fails on the base commit only because its file cannot load there' : null;
+			let ok = t.proof || 'fails first';
+			// Build 16: a test whose file is new on the branch is measured on the commit before its fix, where it loads.
+			const fixSha = !a1 && t.loadOnly && f.commit ? git(root, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${f.commit}^{commit}`).stdout.trim() : '';
+			const before = fixSha ? git(root, 'rev-parse', '--verify', '--quiet', `${fixSha}^`).stdout.trim() : '';
+			if (before) {
+				const at = makeTemp('test-check-fix-');
+				const home3 = makeTemp('test-check-home-');
+				try {
+					const co = checkoutAt(at, before);
+					const red = co.status === 0 ? run(at, [f.test], { KIT_CLAUDE_HOME: home3, CLAUDE_CONFIG_DIR: home3 }, left) : null;
+					const on = `${fixSha.slice(0, 9)}^`;
+					if (!red || red.has(`file:${f.test.slice(0, f.test.indexOf('::'))}`) && !red.seen.has(f.test)) why = `cannot load on ${on}, the commit before its fix, either`;
+					else if (red.cut && !red.seen.has(f.test)) why = 'not checked on the commit before its fix: the time budget ran out';
+					else if (!red.has(f.test)) why = `passes on ${on}, the commit before its fix`;
+					else if (red.get(f.test) !== true) why = `fails on ${on}, but not on an assertion (a crash or a missing file)`;
+					else { why = null; ok = `fails first on ${on}`; }
+				} finally {
+					removeTemp(at);
+					removeTemp(home3);
+				}
+			}
+			ledger.push(`    ${head} ${f.test}: ${why || ok}`);
 			if (why) note(f.id, 'A5', `the test it names ${why}`);
 		}
 	}
 	const lines = [`Test check: ${newOrChanged.length} new or changed test(s) since ${baseSha.slice(0, 9)}, ${findings.length} finding(s)`];
 	for (const f of findings) lines.push(`    ${f.rule} ${f.key}: ${f.text}`);
+	if (proven.length) lines.push(`Proven on the new code instead of the base: ${proven.length}`, ...proven);
 	if (record && ledger.length) lines.push(`Fix ledger: ${record.length} fix(es)`, ...ledger);
 	// K24 (the owner, 2026-11-17): strict fails on a real finding; a test the time budget left unmeasured is named only.
 	const real = findings.filter((f) => !/the time budget ran out$/.test(f.text));

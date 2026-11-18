@@ -332,3 +332,82 @@ test('strict mode fails on a finding but only names a test the time budget left 
 	sh(dir, 'commit', '-qam', 'untagged');
 	assert.equal(spawnSync(process.execPath, [CHECK, base, '--strict', '--budget', '0'], { cwd: dir, encoding: 'utf8' }).status, 1, 'a real finding beside a budget-out passed strict');
 });
+
+// Build 16 (PR 52, the owner 2026-11-18: "Teach it 3 proofs"): a planted-bug test guards code that was already right,
+// so it cannot fail on the base. It names the bug it catches, and the check plants that bug in the new code: the test
+// must fail there on an assertion. A plant the test does not catch, or a planted text not found once, is named.
+// why: guards rule:test-value
+test('a planted-bug test passes when it fails on its planted bug, and is named when it does not', () => {
+	const dir = repo();
+	const plant = (was, to) => `// planted: ${JSON.stringify({ file: 'src/a.cjs', was, to })}`;
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		'// why: guards rule:outward-acts', plant('x > 0', 'x < 0'),
+		"test('caught plant', () => { assert.equal(a.isPos(2), true); });",
+		'// why: guards rule:outward-acts', plant('x > 0', 'x >= 0'),
+		"test('missed plant', () => { assert.equal(a.isPos(2), true); });",
+		'// why: guards rule:outward-acts', plant('x > 9', 'x < 9'),
+		"test('absent plant', () => { assert.equal(a.isPos(2), true); });",
+		''].join('\n'));
+	sh(dir, 'commit', '-qam', 'planted');
+	const r = spawnSync(process.execPath, [CHECK, sh(dir, 'rev-parse', 'HEAD~2')], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::caught plant/, r.stdout);
+	assert.match(r.stdout, /^ {4}planted tests\/a\.test\.mjs::caught plant: fails on each of its 1 planted bug\(s\)$/m);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::missed plant: passes on the base commit, and passes with its planted bug in src\/a\.cjs/);
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::absent plant: passes on the base commit, and its planted text is not found once in src\/a\.cjs/);
+});
+
+// Build 16: a behaviour this change removes or alters takes its test with it. A changed test, named or renamed
+// ("// renamed from: <old name>"), passes when its old version fails on the new code: the edit was forced. The check
+// cannot tell a forced edit from a weakened one, so each is listed for the owner, a loss of lines as trimmed and any
+// other edit as adapted. An edit the new code did not force still must add a catch.
+// why: guards rule:test-value
+test('a test edit the new code forced is listed for the owner, and one it did not force still must fail first', () => {
+	const dir = repo();
+	const file = path.join(dir, 'tests', 'a.test.mjs');
+	const two = (name, x, y) => [`test('${name}', () => {`, `\tassert.equal(a.isPos(${x}), true);`, `\tassert.equal(a.isPos(${y}), true);`, '});'];
+	fs.appendFileSync(file, [...two('pair', 1, 5), ...two('old name', 1, 6), "test('loose', () => {", '\tassert.equal(a.isPos(1), true);', '});', ...two('kept', 3, 5), "test('edited', () => {", '\tassert.equal(a.isPos(4), true);', '});', ''].join('\n'));
+	sh(dir, 'commit', '-qam', 'more tests');
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	fs.writeFileSync(path.join(dir, 'src', 'a.cjs'), 'exports.isPos = (x) => x > 1;\n');
+	fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
+		.replace("test('pair', () => {\n\tassert.equal(a.isPos(1), true);\n", "test('pair', () => {\n")
+		.replace("test('old name', () => {\n\tassert.equal(a.isPos(1), true);\n", "// renamed from: old name\ntest('new name', () => {\n")
+		.replace("test('loose', () => {\n\tassert.equal(a.isPos(1), true);", "test('loose', () => {\n\tassert.equal(typeof a.isPos(1), 'boolean');")
+		.replace("test('kept', () => {\n\tassert.equal(a.isPos(3), true);\n", "test('kept', () => {\n")
+		.replace("test('edited', () => {\n\tassert.equal(a.isPos(4), true);", "test('edited', () => {\n\tassert.equal(typeof a.isPos(4), 'boolean');"));
+	sh(dir, 'commit', '-qam', 'one is no longer positive');
+	const r = spawnSync(process.execPath, [CHECK, base], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(r.stdout, /A1 tests\/a\.test\.mjs::(pair|new name):/, r.stdout);
+	assert.match(r.stdout, /^ {4}trimmed tests\/a\.test\.mjs::pair: only loses lines, and its old version fails on the new code$/m);
+	assert.match(r.stdout, /^ {4}trimmed tests\/a\.test\.mjs::new name: only loses lines, and its old version fails on the new code$/m);
+	assert.match(r.stdout, /^ {4}adapted tests\/a\.test\.mjs::loose: edited, and its old version fails on the new code$/m, 'an edit the new code forced');
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::kept: changed, and passes on the base commit/, 'a removal the new code did not force');
+	assert.match(r.stdout, /A1 tests\/a\.test\.mjs::edited: changed, and passes on the base commit/, 'an edit the new code did not force');
+});
+
+// Build 16: a fix's test in a file the branch adds cannot load on the base, so the base proves nothing about it. The
+// fix row names its commit: the test is measured on the commit before the fix, where its file loads.
+// why: guards rule:test-value
+test('a fix test whose file is new on the branch is measured on the commit before its fix', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD');
+	fs.writeFileSync(path.join(dir, 'src', 'c.cjs'), 'exports.three = () => 4;\n');
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'three, wrong');
+	fs.writeFileSync(path.join(dir, 'src', 'c.cjs'), 'exports.three = () => 3;\n');
+	fs.writeFileSync(path.join(dir, 'tests', 'c.test.mjs'), ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';", "import { createRequire } from 'node:module';", "const c = createRequire(import.meta.url)('../src/c.cjs');",
+		'// why: guards rule:outward-acts', "test('three is three', () => { assert.equal(c.three(), 3); });",
+		'// why: guards rule:outward-acts', "test('three is a number', () => { assert.equal(typeof c.three(), 'number'); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'three fixed');
+	const fixAt = sh(dir, 'rev-parse', 'HEAD');
+	const rec = path.join(dir, 'record.json');
+	fs.writeFileSync(rec, JSON.stringify({ sweep: { fixes: [
+		{ id: 'F1', severity: 'high', text: 'F1', commit: fixAt.slice(0, 7), test: 'tests/c.test.mjs::three is three' },
+		{ id: 'F2', severity: 'high', text: 'F2', commit: fixAt.slice(0, 7), test: 'tests/c.test.mjs::three is a number' },
+	] } }));
+	const r = spawnSync(process.execPath, [CHECK, base, '--record', rec], { cwd: dir, encoding: 'utf8' });
+	assert.match(r.stdout, new RegExp(`^ {4}F1 \\(high\\) tests/c\\.test\\.mjs::three is three: fails first on ${fixAt.slice(0, 9)}\\^$`, 'm'), r.stdout);
+	assert.doesNotMatch(r.stdout, /A5 F1/);
+	assert.match(r.stdout, new RegExp(`A5 F2: the test it names passes on ${fixAt.slice(0, 9)}\\^, the commit before its fix`));
+});
