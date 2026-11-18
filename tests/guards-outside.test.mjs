@@ -728,6 +728,12 @@ test('V3 hooksPath: every way git can take another hooks path is held, not just 
 	}
 	const { proj, session: s } = setup();
 	assert.equal(s.decide('Write', { file_path: path.join(proj, '.git', 'config.worktree'), content: '[core]' }).decision, 'deny', 'a tool writes .git/config.worktree');
+	// K124 (1.42.0): where git itself is asked (a worktree config is there) and it names the kit's own hooks, the call
+	// runs: three planted bugs in reading git's answer held every call.
+	const { proj: p4, session: s4 } = setup();
+	ok(git(p4, ['config', 'extensions.worktreeConfig', 'true']));
+	fs.writeFileSync(path.join(p4, '.git', 'config.worktree'), `[user]${NL}${TAB}name = someone${NL}`);
+	assert.notEqual(bash(s4, 'git status').decision, 'deny', 'git names the kit hooks');
 });
 
 // why: guards rule:outward-acts
