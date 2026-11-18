@@ -69,7 +69,7 @@ test('the config check refuses a metric with no outcome, unmeasured tokens, a wr
 	assert.match(faults({ name: 'Load', ...typed, measuredAt: undefined, impact: ['cost'] }), /Load: a typed metric names no measuredAt/);
 	assert.match(faults(config().metrics[0], { sessions: '1000' }), /sessions is not a whole number above 0/);
 	assert.match(faults({ name: 'Prompt', ...typed, per: 'request', impact: ['room'] }), /Prompt: room is the share/);
-	for (const leak of ['context report, C:/' + 'Users/jdoe/notes.md', 'by jane.doe@example.com', 'ghp_abcdefghijklmnopqrstuvwxyz0123']) {
+	for (const leak of ['context report, C:/' + 'Users/jdoe/notes.md', 'by jane.doe@example.com', 'ghp_' + 'abcdefghijklmnopqrstuvwxyz0123']) {
 		assert.match(faults({ ...config().metrics[0], tokens: { ...config().metrics[0].tokens, source: leak } }), /holds a home folder, an email or a token/, leak);
 	}
 	// The CLI refuses the same config before measuring anything.
