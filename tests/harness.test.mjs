@@ -40,6 +40,38 @@ test('the runner splits a harness file into shards that together run every test 
 	assert.match(r.stdout, /pass 7, fail 0/);
 });
 
+// K123 (build 17, the owner's fast-CI standard): shards split by count finished unevenly (main's run of 1.42.0: 140 s
+// to 180 s). The map run keeps each test's time, and a run with a map packs the tests over the shards by it, longest
+// first onto the least loaded, so the shards finish together; a test the map has no time for goes round robin.
+// why: guards rule:test-and-review-cadence (a shard left with the slow tests holds every PR's wait)
+test('a run with a map packs the tests over the shards by their last run time, each test once', () => {
+	const repo = kitTemp.makeTemp('pack-');
+	const log = path.join(repo, 'ran.log');
+	fs.mkdirSync(path.join(repo, 'tests'));
+	fs.writeFileSync(path.join(repo, '.gitignore'), 'tests/.map.json\nran.log\n');
+	const body = (n, ms) => `test('${n}', async () => { await new Promise((r) => setTimeout(r, ${ms})); fs.appendFileSync(${JSON.stringify(log)}, '${n} ' + process.env.KIT_SHARD + '\\n'); });`;
+	fs.writeFileSync(path.join(repo, 'tests', 'x.test.mjs'), [`import { test } from ${HARNESS}; import fs from 'node:fs';`, body('a', 5), body('slow', 900), body('b', 5), body('c', 5), body('d', 5), ''].join('\n'));
+	sh(repo, 'init', '-q', '-b', 'main'); sh(repo, 'add', '.'); sh(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fixture');
+	const file = path.join(repo, 'tests', 'x.test.mjs');
+	assert.equal(run(repo, ['--map', '--shards', '1', file]).status, 0);
+	const map = JSON.parse(fs.readFileSync(path.join(repo, 'tests', '.map.json'), 'utf8'));
+	assert.ok(map.tests['tests/x.test.mjs::slow'].ms >= 800, JSON.stringify(map.tests['tests/x.test.mjs::slow']));
+	assert.ok(map.tests['tests/x.test.mjs::a'].ms < 800);
+	fs.rmSync(log, { force: true });
+	const r = run(repo, ['--shards', '2', file]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /packed by last run time/);
+	const seen = ran(log).map((l) => l.split(' '));
+	assert.deepEqual(seen.map(([n]) => n).sort(), ['a', 'b', 'c', 'd', 'slow'], 'each test once');
+	const shardOf = Object.fromEntries(seen);
+	assert.deepEqual(seen.filter(([n]) => n !== 'slow').map(([, s]) => s).filter((s) => s === shardOf.slow), [], 'the slow test runs alone in its shard');
+	// A test the map has no time for still runs, once.
+	fs.appendFileSync(file, body('new', 5) + '\n');
+	fs.rmSync(log, { force: true });
+	assert.equal(run(repo, ['--shards', '2', file]).status, 0);
+	assert.deepEqual(ran(log).map((l) => l.split(' ')[0]).sort(), ['a', 'b', 'c', 'd', 'new', 'slow']);
+});
+
 // K108 (1.40.0 verify): a full run read only tests/*.test.mjs and CI's slow lane only tests/slow, so a test file in any
 // other tests/ subfolder ran in no lane and its failures reached no one.
 // why: catches a test file in a tests/ subfolder that runs in no lane (K108)

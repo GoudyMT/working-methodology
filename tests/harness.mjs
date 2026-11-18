@@ -4,6 +4,7 @@
 //   KIT_ONLY=<file>  register only the tests the JSON list names ("<test file>::<name>", or "<test file>::*")
 //   KIT_MAP_DIR=dir  record, per test, the source lines it runs (here and in child processes) for the coverage map
 //   KIT_RUN_AT=file  write each test's file and name there as it starts, so the runner can say where a shard is
+//   KIT_PACK=<file>  with KIT_SHARD: the shard each named test ("<test file>::<name>") runs in; any other goes round robin
 // With none of them set it is node:test's test(), unchanged.
 import { test as nodeTest } from 'node:test';
 import fs from 'node:fs';
@@ -14,6 +15,7 @@ const [SHARD, SHARDS] = (process.env.KIT_SHARD || '0/1').split('/').map(Number);
 const ONLY = process.env.KIT_ONLY ? new Set(JSON.parse(fs.readFileSync(process.env.KIT_ONLY, 'utf8'))) : null;
 const MAP = process.env.KIT_MAP_OFF ? '' : process.env.KIT_MAP_DIR || '';
 const AT = process.env.KIT_RUN_AT || '';
+const PACK = process.env.KIT_PACK && process.env.KIT_SHARD ? JSON.parse(fs.readFileSync(process.env.KIT_PACK, 'utf8')) : null;
 // node --test runs each file in its own process, as `node <file>`. Both sides are read by the folder's real name: a
 // short name (CI's RUNNER~1) or a junction would otherwise key the test outside the repo.
 const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
@@ -51,9 +53,12 @@ function mapped(name, idx, fn) {
 		// A child process started by the test writes its coverage and its reads into the test's own folder.
 		process.env.NODE_V8_COVERAGE = dir;
 		process.env.KIT_MAP_TEST = id;
+		const t0 = Date.now();
 		try {
 			return await fn(t);
 		} finally {
+			// K123: the test's time, which the runner packs the next run's shards by.
+			fs.writeFileSync(path.join(dir, 'ms'), String(Date.now() - t0));
 			fs.writeFileSync(path.join(dir, 'inproc.json'), JSON.stringify(post('Profiler.takePreciseCoverage')));
 			for (const [k, v] of [['NODE_V8_COVERAGE', saved.cov], ['KIT_MAP_TEST', saved.test]]) {
 				if (v === undefined) delete process.env[k];
@@ -84,7 +89,9 @@ export function test(name, ...rest) {
 		rest[0] = windows === true && PLATFORM !== 'win32' ? { ...own, skip: 'Windows only: the Windows slice runs it' } : own;
 	}
 	const idx = count++;
-	if (idx % SHARDS !== SHARD) return undefined;
+	// K123: a packed test runs in the shard the runner gave it; one it has no time for, round robin.
+	const packed = PACK && Object.prototype.hasOwnProperty.call(PACK, `${FILE}::${name}`) ? PACK[`${FILE}::${name}`] : null;
+	if (packed === null ? idx % SHARDS !== SHARD : packed !== SHARD) return undefined;
 	if (ONLY && !ONLY.has(`${FILE}::${name}`) && !ONLY.has(`${FILE}::*`)) return undefined;
 	if (!MAP && !AT) return nodeTest(name, ...rest);
 	let fn = rest.pop();

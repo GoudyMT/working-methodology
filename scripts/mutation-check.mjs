@@ -78,7 +78,7 @@ function runTests(copy, keys, timeout, home) {
 		const only = path.join(copy, '.mutation-only.json');
 		fs.writeFileSync(only, JSON.stringify(keys));
 		const files = [...new Set(keys.map((k) => k.slice(0, k.indexOf('::'))))].map((f) => path.join(copy, f));
-		const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...env } = process.env;
+		const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_PACK: _p, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...env } = process.env;
 		const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], { cwd: copy, env: { ...env, ...home, KIT_ONLY: only, KIT_REPO: copy, KIT_MAP_OFF: '1' } });
 		let out = '';
 		child.stdout.on('data', (d) => { out += d; });
