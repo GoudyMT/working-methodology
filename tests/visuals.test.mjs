@@ -112,6 +112,7 @@ test('the window share uses each run\'s own window, and the lead names a metric 
 	const whole = { name: 'Whole start-up load', unit: 'tokens', before: 47900, after: 46800, source: 'context report', measuredAt: AT, impact: ['cost', 'room'], lead: true };
 	const b = buildRows(config(null, { window: { before: 650000, after: 400000 }, metrics: [whole] }), [new Map(), new Map()], AT);
 	const share = b.rows.find((x) => /share of the window/.test(x.metric));
+	assert.ok(share, 'the section has a share-of-the-window row');
 	assert.deepEqual([share.before, share.after], [7.37, 11.7]);
 	assert.match(share.source, /the window at each commit \(650,000, then 400,000\)/);
 	assert.match(share.why, /^more of the window goes to the start.*went from 650,000 to 400,000 tokens\.$/); // pin: 1
