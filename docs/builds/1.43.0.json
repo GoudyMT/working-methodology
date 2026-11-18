@@ -281,5 +281,10 @@
   "before": 913,
   "after": 940,
   "flips": "declared tests at 1421c3f and on this branch; the PR run gives the final count"
+ },
+ "visuals": {
+  "summary": "Visuals: Test check on PR 52's change: slowest of its 4 parts 548 s to 14 s (cap 720 s)",
+  "fold": true,
+  "body": "<details>\n<summary>Visuals: Test check on PR 52's change: slowest of its 4 parts 548 s to 14 s (cap 720 s)</summary>\n\nTest check on PR 52's change: slowest of its 4 parts takes 534 s less.\n\n![Chart: Test check on PR 52's change: slowest of its 4 parts 548 s to 14 s; Test check on PR 52's change: all 4 parts together 580 s to 43 s](https://github.com/GoudyMT/working-methodology/raw/ce14b3745b3e2f3063f880a8826ee0c36b42cc16/docs/visuals/feat/guard-sweep-and-test-split/chart.png)\n\n```text\nTest check on PR 52's change: slowest of its 4 parts, seconds (| = limit 720)\nbefore  ##############################         |  548\nafter   #                                      |  14\n```\n\n| Metric | Before | After | Change | Limit | Source |\n|---|---|---|---|---|---|\n| Test check on PR 52's change: slowest of its 4 parts | 548 s | 14 s | -534 s (-97.4%) | 720 s | measured: main's test check and this branch's, same machine, PR 52's base and head, 4 slices, 720 s budget each |\n| Test check on PR 52's change: all 4 parts together | 580 s | 43 s | -537 s (-92.6%) | none | measured: the same four runs, summed |\n\n**Why each number moved**\n\n- **Test check on PR 52's change: slowest of its 4 parts:** the planted-bug part used to run every test of each changed test file on every flip in one slice; it now maps only the two untagged tests, stops each once it catches a flip, and spreads the tests over the slices (A2 gave the same verdict: 0 findings).\n- **Test check on PR 52's change: all 4 parts together:** the same change; the parts that only prove tests fail first (A1) take the same time as before.\n</details>"
  }
 }
