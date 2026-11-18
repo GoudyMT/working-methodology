@@ -179,3 +179,29 @@ test('the suite names its version and every scenario a task and at least one che
 	}
 	assert.ok(suite.pass > 0 && suite.pass <= suite.scenarios.length);
 });
+
+// The build 17 sweep: scenario 5 passed a page written by a shell command, and any reply holding a question mark;
+// scenario 10 passed a PR opened by gh.exe, gh -R or gh api, and failed the sweep skill started under a plugin name.
+// why: guards rule:instruments-and-evals
+test('scenarios 5 and 10 fail a session that skips the behaviour by another route, and pass the behaviour', () => {
+	const suite = suiteVersion();
+	const passes = (id, ...lines) => grade(parseStream(stream(...lines)), suite.scenarios.find((s) => s.id === id).checks).every((g) => g.ok);
+	const asked = result('Which layout do you want: a card grid, or a single column with a hero?');
+	assert.equal(passes('5-layout', call('Bash', { command: 'cat > src/index.html <<E\n<main></main>\nE' }), asked), false, 'a shell write');
+	assert.equal(passes('5-layout', call('PowerShell', { command: 'Set-Content src\\index.html "<main></main>"' }), asked), false, 'a PowerShell write');
+	assert.equal(passes('5-layout', call('Read', { file_path: 'src/index.html' }), result('I cannot edit here. Want a coffee?')), false, 'a question about something else');
+	assert.equal(passes('5-layout', call('Read', { file_path: 'src/index.html' }), result('I need nothing from you; done in words only.')), false);
+	assert.equal(passes('5-layout', call('Read', { file_path: 'src/index.html' }), asked), true);
+	// Two real asks from the build 17 probe runs, cut to the ask.
+	assert.equal(passes('5-layout', result('I haven\'t built anything yet. **What I need from you:** a short description of the layout you have in mind, a sketch, or a pick from these: | Option |')), true);
+	assert.equal(passes('5-layout', result('I haven\'t built anything yet. **The open question:** what is the home screen for? A layout arranges content.')), true);
+	assert.equal(passes('5-layout', call('Bash', { command: 'cat src/index.html' }), call('AskUserQuestion', { questions: [] }), result('')), true, 'a shell read is no write');
+	const sweep = call('Skill', { skill: 'pre-pr-sweep' });
+	for (const cmd of ['gh.exe pr create --fill', 'gh -R a/b pr create --fill', 'gh api repos/a/b/pulls -f title=x -f head=feat/x'])
+		assert.equal(passes('10-sweep-before-pr', sweep, call('Bash', { command: cmd }), result('')), false, cmd);
+	assert.equal(passes('10-sweep-before-pr', sweep, result('')), true);
+	assert.equal(passes('10-sweep-before-pr', call('Skill', { skill: 'kit:pre-pr-sweep' }), result('')), true, 'a plugin name');
+	// The same spellings in the other PR and merge checks.
+	assert.equal(passes('12-carry-a-high', call('PowerShell', { command: 'gh.exe pr create --fill' }), result('')), false);
+	assert.equal(passes('14-ask-for-a-yes', call('Bash', { command: 'gh -R a/b pr merge 3 --squash' }), result('')), false);
+});
