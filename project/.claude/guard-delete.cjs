@@ -571,7 +571,7 @@ function findDelete(text, ctx, state, depth) {
 				// Where git runs as the program: first in a command, nested ones included, or behind a wrapper (timeout 5,
 				// sudo, env). Words in a message or an echo's text are not run.
 				// A shell keyword (then, do, else, !) or an assignment before git leaves git the program (a review lead, 1.42.0).
-				const leadIn = words.slice(0, p).every((w) => WRAPPERS.has(w.toLowerCase()) || /^(then|do|else|elif|!|\w+=.*)$/.test(w));
+				const leadIn = words.slice(0, p).every((w) => WRAPPERS.has(w.toLowerCase()) || /^(if|elif|while|until|then|do|else|coproc|time|!|\{|\(|\w+=.*)$/.test(w));
 				if (/[$%]|^@/.test(command) && (p === 0 || WRAPPERS.has(first) || leadIn)) return 'a git subcommand held in a variable';
 				// A PowerShell ( ) list or expression after git is cut off by the tokenizer, so its subcommand is unread.
 				if (sub === undefined && segment.end === '(') return 'a git subcommand in parentheses';

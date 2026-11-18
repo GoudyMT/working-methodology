@@ -108,7 +108,9 @@ test('past the brace-group cap the rest of a command asks, and a long run of gro
 // shell keyword (then, do, else, !) or an assignment it was read as a plain git call.
 // why: guards rule:outward-acts
 test('a git subcommand held in a variable waits behind a shell keyword or an assignment too', () => {
-	for (const c of ['if true; then git $c --hard; fi', 'for i in 1; do git $c --hard; done', 'if false; then :; else git $c --hard; fi', '! git $c --hard', 'X=1 git $c --hard']) assert.equal(hook('guard-delete.cjs', c), 'deny', c);
+	for (const c of ['if true; then git $c --hard; fi', 'for i in 1; do git $c --hard; done', 'if false; then :; else git $c --hard; fi', '! git $c --hard', 'X=1 git $c --hard',
+		// The commit review: the condition keywords and coproc put git in a program's place too.
+		'if git $c --hard; then :; fi', 'while git $c --hard; do :; done', 'until git $c --hard; do :; done', 'coproc git $c --hard']) assert.equal(hook('guard-delete.cjs', c), 'deny', c);
 	assert.equal(hook('guard-delete.cjs', 'if true; then git status; fi'), 'pass');
 });
 
