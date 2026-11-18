@@ -44,6 +44,9 @@ function parseArgs(args) {
 		if (args[i] === '--shards') { o.shards = Math.max(1, Number(args[++i]) || 1); o.shardsGiven = true; }
 		else if (args[i] === '--always') o.always.push(path.resolve(args[++i] || ''));
 		else if (args[i] === '--pick') o.pick = true;
+		// The build 17 sweep: a list of test keys (as KIT_ONLY reads them) given by name, since the runner takes KIT_ONLY
+		// out of its shards' environment.
+		else if (args[i] === '--only') o.only = path.resolve(args[++i] || '');
 		else if (args[i] === '--slice') {
 			const m = /^(\d+)\/(\d+)$/.exec(args[++i] || '');
 			// A slice out of range would run nothing and pass, so a bad one stops the run.
@@ -295,6 +298,7 @@ export async function main(argv) {
 		const env = { KIT_REPO: root, KIT_CLAUDE_HOME: claudeDir, CLAUDE_CONFIG_DIR: claudeDir };
 		let shardFiles = harnessed;
 		let shards = o.shards;
+		if (o.only) env.KIT_ONLY = o.only;
 		if (o.changed) {
 			const pick = select(root, harnessed);
 			if (!pick.why) {

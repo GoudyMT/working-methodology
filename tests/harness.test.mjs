@@ -40,6 +40,22 @@ test('the runner splits a harness file into shards that together run every test 
 	assert.match(r.stdout, /pass 7, fail 0/);
 });
 
+// The build 17 sweep: the test check handed its list of tests to the map run as KIT_ONLY, which the runner takes out
+// of every shard's environment (a run inside a run must not inherit it), so the map ran every test of each file.
+// why: guards rule:test-and-review-cadence (the test check's planted-bug part ran whole files, the time K131 cut)
+test('a map run given a list maps the listed tests alone', () => {
+	const repo = kitTemp.makeTemp('only-');
+	fs.mkdirSync(path.join(repo, 'tests'));
+	fs.writeFileSync(path.join(repo, '.gitignore'), 'tests/.map.json\nonly.json\n');
+	fs.writeFileSync(path.join(repo, 'tests', 'x.test.mjs'), `import { test } from ${HARNESS};\ntest('one', () => {});\ntest('two', () => {});\n`);
+	sh(repo, 'init', '-q', '-b', 'main'); sh(repo, 'add', '.'); sh(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fixture');
+	const list = path.join(repo, 'only.json');
+	fs.writeFileSync(list, JSON.stringify(['tests/x.test.mjs::one']));
+	const r = run(repo, ['--map', '--shards', '1', '--only', list, path.join(repo, 'tests', 'x.test.mjs')]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(repo, 'tests', '.map.json'), 'utf8')).tests), ['tests/x.test.mjs::one']);
+});
+
 // K123 (build 17, the owner's fast-CI standard): shards split by count finished unevenly (main's run of 1.42.0: 140 s
 // to 180 s). The map run keeps each test's time, and a run with a map packs the tests over the shards by it, longest
 // first onto the least loaded, so the shards finish together; a test the map has no time for goes round robin.

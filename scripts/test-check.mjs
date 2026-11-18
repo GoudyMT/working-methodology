@@ -434,8 +434,8 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			// A loop's names are made at run time, so its whole file is mapped (KIT_ONLY reads <file>::* for that).
 			const onlyFile = path.join(makeTemp('test-check-only-'), 'only.json');
 			fs.writeFileSync(onlyFile, JSON.stringify([...new Set(untagged.map((t) => (t.loop ? `${t.file}::*` : t.key)))]));
-			const step = (args, env = {}) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...env }, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
-			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', ...new Set(untagged.map((t) => t.file))], { KIT_ONLY: onlyFile });
+			const step = (args) => { const ms = left(); return ms > 0 ? spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', killSignal: 'SIGKILL', maxBuffer: 64 * 1024 * 1024, env: process.env, ...(budget === null ? {} : { timeout: ms }) }) : { status: null, error: { code: 'ETIMEDOUT' } }; };
+			const mapped = step([path.join(HERE, 'test-run.mjs'), '--map', '--shards', '1', '--only', onlyFile, ...new Set(untagged.map((t) => t.file))]);
 			const flipsFile = path.join(makeTemp('test-check-flips-'), 'flips.json');
 			const m = mapped.status === 0 ? step([path.join(HERE, 'mutation-check.mjs'), '--base', baseSha, '--json', flipsFile, '--timeout', '60000', '--until-caught']) : mapped;
 			const outOfTime = (m.error && m.error.code === 'ETIMEDOUT') || (mapped.error && mapped.error.code === 'ETIMEDOUT');
