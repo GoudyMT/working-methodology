@@ -99,7 +99,9 @@ export function grade(ev, checks) {
  */
 export function outsideReads(ev, roots, { cwd = '', home = os.homedir() } = {}) {
 	const norm = (p) => path.posix.normalize(p.replace(/\\/g, '/')).replace(/\/+$/, '').toLowerCase();
-	const full = (p) => (p.startsWith('~') ? path.join(home, p.slice(1)) : /^([a-z]:)?[\\/]/i.test(p) || !cwd ? p : path.resolve(cwd, p));
+	// A record from a Windows run keeps Windows path rules on any machine, so a regrade on Linux names the same reads.
+	const P = /^[a-z]:/i.test(cwd || home) ? path.win32 : path;
+	const full = (p) => (p.startsWith('~') ? P.join(home, p.slice(1)) : /^([a-z]:)?[\\/]/i.test(p) || !cwd ? p : P.resolve(cwd, p));
 	const allowed = (p) => roots.some((r) => {
 		const n = norm(r.replace(/[-/]$/, '')) + (r.endsWith('-') ? '-' : '');
 		if (r.endsWith('/')) return norm(p) === norm(r);
