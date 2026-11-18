@@ -134,6 +134,17 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
+      # K128 (build 17): every step below that judges this PR runs the base commit's copy of its script, so a PR cannot
+      # change the check that grades it (the recall gate already did). The workflow file itself still comes from the PR;
+      # the ruleset that stops that is the owner's (K31).
+      - name: The base commit's scripts
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
+
       - name: Test check
         shell: bash
         env:
@@ -143,7 +154,8 @@ jobs:
         run: |
           record=()
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
-          node scripts/test-check.mjs "$BASE_SHA" --strict --slice "$SLICE/4" --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
+          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --slice "$SLICE/4" --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.
@@ -189,6 +201,18 @@ jobs:
 
       # The test check's Windows part (the owner, 2026-11-18): the Linux test check leaves the Windows-only tests and the
       # planted bugs that show only on Windows to this job, which measures them here, strict.
+      # K128 (build 17): every step below that judges this PR runs the base commit's copy of its script, so a PR cannot
+      # change the check that grades it (the recall gate already did). The workflow file itself still comes from the PR;
+      # the ruleset that stops that is the owner's (K31).
+      - name: The base commit's scripts
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
+
       - name: Test check, Windows part
         if: github.event_name == 'pull_request'
         shell: bash
@@ -197,7 +221,8 @@ jobs:
         run: |
           record=()
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
-          node scripts/test-check.mjs "$BASE_SHA" --strict --windows --budget 600 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
+          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --windows --budget 600 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # E32 (option C, the owner 2026-11-10): two lanes on the same PR. The fast lane is unit-tests above; large tests
   # (another machine, a real service, a browser, a live model) live in tests/slow and run here, beside it. The slow
@@ -386,6 +411,18 @@ jobs:
           tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint"
 
+      # K128 (build 17): every step below that judges this PR runs the base commit's copy of its script, so a PR cannot
+      # change the check that grades it (the recall gate already did). The workflow file itself still comes from the PR;
+      # the ruleset that stops that is the owner's (K31).
+      - name: The base commit's scripts
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive "$BASE_SHA" scripts project tests | tar -x -C "$RUNNER_TEMP/base"
+
       # The local hooks check names at commit and push; a commit made elsewhere (the web, a cloud session) skips
       # them, so the PR's branch and every commit on it are checked here too.
       - name: Branch and commit names
@@ -398,12 +435,13 @@ jobs:
           PR_BASE: origin/${{ github.base_ref }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          node project/.claude/name-check.mjs branch "$HEAD_REF"
+          N="$RUNNER_TEMP/base/project/.claude/name-check.mjs"; [ -f "$N" ] || { echo "the base has no name-check.mjs: this PR's copy runs"; N=project/.claude/name-check.mjs; }
+          node "$N" branch "$HEAD_REF"
           # The squash subject is the title with " (#n)" added: that whole line is held to the limit.
-          node project/.claude/name-check.mjs title "$PR_TITLE (#$PR_NUMBER)"
+          node "$N" title "$PR_TITLE (#$PR_NUMBER)"
           for c in $(git rev-list --no-merges "$PR_BASE..$PR_HEAD"); do
             git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg.txt"
-            node project/.claude/name-check.mjs message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
+            node "$N" message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
           done
 
       # The pre-commit secret check runs only on the owner's machine; this scans every line and file the PR adds with
@@ -413,7 +451,9 @@ jobs:
         shell: bash
         env:
           PR_BASE: origin/${{ github.base_ref }}
-        run: node project/.claude/secret-shapes.mjs "$PR_BASE"
+        run: |
+          S="$RUNNER_TEMP/base/project/.claude/secret-shapes.mjs"; [ -f "$S" ] || { echo "the base has no secret-shapes.mjs: this PR's copy runs"; S=project/.claude/secret-shapes.mjs; }
+          node "$S" "$PR_BASE"
 
       # Rule text is graded by the recall test, which needs a signed-in session and is run by hand; a PR that
       # changes the rules, the keys, the brief or the harness must record a median no lower than the released baseline or the keys' pass bar.

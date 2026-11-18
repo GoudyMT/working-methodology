@@ -65,9 +65,10 @@ test('CI checks the build record on every PR that moves VERSION', () => {
 	// K105: the same PR's fix ledger is read by the test check, which states each named test's verdict.
 	const check = ci.split('- name: Test check\n')[1].split('- name:')[0];
 	assert.match(check, /if ! git diff --quiet "\$BASE_SHA" HEAD -- VERSION; then record=\(--record "docs\/builds\/\$\(tr -d '\\r\\n' < VERSION\)\.json"\); fi/); // pin: 1
-	assert.match(check, /test-check\.mjs "\$BASE_SHA" [^\n]*"\$\{record\[@\]\}"/);
+	// K128 (build 17): the base commit's copy of the check runs.
+	assert.match(check, /test-check\.mjs" "\$BASE_SHA" [^\n]*"\$\{record\[@\]\}"/);
 	// K24 (the owner, 2026-11-17): the check is a gate, so a finding fails the job.
-	assert.match(check, /test-check\.mjs "\$BASE_SHA" --strict /);
+	assert.match(check, /test-check\.mjs" "\$BASE_SHA" --strict /);
 });
 
 // why: guards rule:release-notes (the changelog a release ships is the one its record writes, for the version it names).
@@ -311,7 +312,8 @@ test('the body check holds the fix lines of a published body to the record', () 
 	// pin: 1 (GitHub runs these lines)
 	const job = fs.readFileSync(path.resolve('.github/workflows/pr-body.yml'), 'utf8');
 	assert.match(job, /fetch-depth: 0/);
-	assert.match(job, /if git diff --quiet "origin\/\$BASE_REF" HEAD -- VERSION; then [^\n]*; else node scripts\/build-record\.mjs body "\$RUNNER_TEMP\/pr-body\.md"; fi/); // pin: 1
+	// K128 (build 17): the base commit's copy matches the body, reading this PR's record.
+	assert.match(job, /if git diff --quiet "origin\/\$BASE_REF" HEAD -- VERSION; then [^\n]*; else B="\$RUNNER_TEMP\/base\/scripts\/build-record\.mjs"; [^\n]*KIT_RECORD_ROOT=\. node "\$B" body "\$RUNNER_TEMP\/pr-body\.md"; fi/); // pin: 1
 });
 
 // K125 (the owner, 2026-11-17): the build's PR body and its release notes carry the same Visuals section, written once
