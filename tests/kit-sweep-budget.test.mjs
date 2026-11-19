@@ -1522,8 +1522,12 @@ test('a reviewer writes only inside its sweep scratch folder; reads and other ag
     // Flag clusters, glued and shortened flags, code from stdin, and paths the shell expands past what the hook read.
     `node -pe "require('fs').rmSync('x')"`, `node --eval=x`, `echo "rm x" | bash`, `bash <<EOF`, `pwsh -Co Remove-Item x`, `pwsh -ec AAAA`,
     `iex 'rm x'`, 'find . -name x -delete', 'ls | xargs rm', `echo x > ${scratch}/$HOME`, `echo x > ${scratch}/*`, 'echo x > ~/x',
-    `echo x > ${scratch}/\${HOME}`, `cmd /c del x`]) assert.equal(run(c), 'deny', c);
-  for (const c of ['grep -rn bash src', 'node --test tests/a.test.mjs', 'bash scripts/check.sh']) assert.equal(run(c), 'allow', c);
+    `echo x > ${scratch}/\${HOME}`, `cmd /c del x`,
+    // Wrappers with flags, a path to the interpreter, a lone & between commands, code-loading flags and cmd's other switches.
+    `timeout 5 node -e "x"`, `env -i node -e "x"`, `nice -n 5 bash -c 'rm x'`, `/usr/bin/node -e "x"`, `busybox sh -c 'rm x'`,
+    `ls & node -e "x"`, `node --import=data:text/javascript,x x.mjs`, `node --require ./evil.cjs x.mjs`, `node data:text/javascript,x`,
+    `cmd /k del x`, `cmd.exe /r del x`, `pwsh /Command Remove-Item x`]) assert.equal(run(c), 'deny', c);
+  for (const c of ['grep -rn bash src', 'node --test tests/a.test.mjs', 'bash scripts/check.sh', `node scripts/x.mjs ${scratch}/out.txt`]) assert.equal(run(c), 'allow', c);
   for (const c of ['Set-Content x.txt y', 'Remove-Item -Recurse reports', 'echo x > out.txt', 'Copy-Item a b']) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
   for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -n x a.txt 2>/dev/null', 'node scripts/test-check.mjs main 2>&1 | tail -3',
     'git diff main...HEAD -- a.txt', 'git log --oneline -3', 'ls -la > /dev/null']) assert.equal(run(c), 'allow', c);

@@ -43,20 +43,28 @@ const SCRATCH = { test: (w) => {
 const SINK = /^(\/dev\/null|nul|\$null|&\d|&-)$/i;
 const UNREADABLE = /\$\(|\$\{|`|>\||<\(|\beval\b|\biex\b|invoke-expression|invoke-command|start-process|\bxargs\b|\bfind\b[^;&|\n]*\s-(delete|exec|execdir|ok|okdir|fprint\w*|fls)\b|\bawk\b[^;&|\n]*system\s*\(/i;
 const INTERPRETER = /^(node|nodejs|bun|deno|python[\d.]*|py|perl|ruby|php|bash|sh|zsh|dash|ksh|fish|pwsh|powershell|cmd|osascript|wscript|cscript)(\.exe)?$/i;
+const NAMES = 'node|nodejs|bun|deno|python[\\d.]*|py|perl|ruby|php|bash|sh|zsh|dash|ksh|fish|pwsh|powershell|cmd|osascript|wscript|cscript';
+// The backstop, read across the whole line whatever runs the interpreter (a wrapper with flags, a path, busybox): an
+// interpreter word followed in its command by a short flag, a slash switch, a code-loading long flag or a data: URL.
+const INLINE_ANYWHERE = new RegExp(`(^|[\\s;&|(){}"'\\\\/])((${NAMES})(\\.exe)?(?=[\\s"']|$)[^;&|\\n\\r]*?\\s["']?(-[a-z]|--(eval|print|command|encodedcommand|input-type|import|require|loader|experimental-loader)\\b|data:)|(pwsh|powershell|cmd)(\\.exe)?(?=[\\s"']|$)[^;&|\\n\\r]*?\\s["']?\\/[a-z?])`, 'i');
 // An interpreter runs a script file it is named, after long flags only; code on its line, a short flag (-c, -e, -p,
-// a cluster such as -ec, -Command and its shortenings), an --eval or --print, or no file at all (stdin, a here-doc or
-// a pipe into it) is code the hook cannot read.
+// a cluster such as -ec, -Command and its shortenings), a code-loading long flag, or no file at all (stdin, a here-doc
+// or a pipe into it) is code the hook cannot read. cmd is refused whole: its switches have no one reading.
 function inlineCode(c) {
-	for (const seg of c.split(/;|&&|\|\||\||\n|\(|\)|\{|\}/)) {
+	if (INLINE_ANYWHERE.test(c)) return true;
+	for (const seg of c.split(/;|&&|\|\||\||&|\n|\r|\(|\)|\{|\}/)) {
 		const words = seg.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
-		// The command word: past assignments and the wrappers that run the next word (env, exec, PowerShell's &).
+		// The command word: past assignments and the wrappers that run the next word (env, exec, timeout and the like).
 		let at = 0;
-		while (at < words.length && (/^\w+=/.test(words[at]) || /^(env|exec|time|nohup|sudo|command|nice|&|\.)$/i.test(words[at]))) at++;
-		if (at >= words.length || !INTERPRETER.test(words[at].split(/[\\/]/).pop())) continue;
+		const base = (w) => w.split(/[\\/]/).pop();
+		while (at < words.length && (/^\w+=/.test(words[at]) || /^(env|exec|time|timeout|nohup|sudo|command|nice|stdbuf|busybox|\.)(\.exe)?$/i.test(base(words[at])) || /^-/.test(words[at]) || /^\d+[smhd]?$/.test(words[at]))) at++;
+		if (at >= words.length || !INTERPRETER.test(base(words[at]))) continue;
+		if (/^cmd(\.exe)?$/i.test(base(words[at]))) return true;
 		const rest = words.slice(at + 1);
-		const file = rest.findIndex((w) => !w.startsWith('-') && !/^\/c$/i.test(w));
+		const ps = /^(pwsh|powershell)/i.test(base(words[at]));
+		const file = rest.findIndex((w) => !w.startsWith('-') && !(ps && w.startsWith('/')));
 		const flags = file < 0 ? rest : rest.slice(0, file);
-		if (file < 0 || /^<</.test(rest[file]) || flags.some((f) => !/^--[\w-]+$/.test(f) || /^--(eval|print|command|encodedcommand|input-type)\b/i.test(f))) return true;
+		if (file < 0 || /^<</.test(rest[file]) || /^data:/i.test(rest[file]) || flags.some((f) => !/^--[\w-]+$/.test(f) || /^--(eval|print|command|encodedcommand|input-type|import|require|loader|experimental-loader)\b/i.test(f))) return true;
 	}
 	return false;
 }
