@@ -47,6 +47,10 @@ function walk(dir, skipDirs = new Set()) {
   });
 }
 
+// K135 (build 18): CI runs the base commit's kit.mjs over the PR's tree for scrub and build only, so the PR's own copy
+// never judges its content. No other command reads it: install and the rest keep the kit folder this file sits in.
+export const checkRoot = (kit) => (process.env.KIT_CHECK_ROOT ? path.resolve(process.env.KIT_CHECK_ROOT) : kit);
+
 /** Claude Code's per-project folder name: every non-alphanumeric character becomes a dash. */
 export function projectSlug(projectDir) {
   return path.resolve(projectDir).replace(/[^A-Za-z0-9]/g, '-');
@@ -2264,10 +2268,11 @@ function main(argv) {
     for (const h of hits) console.log(`rule:${h.id}  ${h.title}  (${h.module})`);
     if (!hits.length) console.log('No rule matched. Try other words, or read project/standards/INDEX.md.');
   } else if (cmd === 'build') {
-    const out = build({ kit });
+    const tree = checkRoot(kit);
+    const out = build({ kit: tree });
     for (const [rel, text] of out) {
-      fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
-      fs.writeFileSync(path.join(kit, rel), text);
+      fs.mkdirSync(path.dirname(path.join(tree, rel)), { recursive: true });
+      fs.writeFileSync(path.join(tree, rel), text);
     }
     console.log(`build: wrote ${out.size} file(s) from rules/; commit-msg hook: ${sourceHooks(kit)}`);
   } else if (cmd === 'forget') {
@@ -2291,7 +2296,7 @@ function main(argv) {
       process.exitCode = 1;
     }
   } else if (cmd === 'scrub') {
-    const hits = scrub({ kit });
+    const hits = scrub({ kit: checkRoot(kit) });
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.kind}`);
     console.log(hits.length ? `${hits.length} hit(s)` : 'Scrub clean');
     process.exitCode = hits.length ? 1 : 0;

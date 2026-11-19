@@ -28,6 +28,13 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 		[job(ci, 'kit-tests'), 'Branch and commit names'],
 		[job(ci, 'kit-tests'), 'Secret scan'],
 		[job(ci, 'kit-tests'), 'Build record'],
+		// K135 (build 18): the six content checks ran the PR's own copies, so a PR could switch off the check of its content.
+		[job(ci, 'kit-tests'), 'Scrub'],
+		[job(ci, 'kit-tests'), 'Word check'],
+		[job(ci, 'kit-tests'), 'Project map'],
+		[job(ci, 'kit-tests'), 'Rule map is fresh'],
+		[job(ci, 'kit-tests'), 'Link scan'],
+		[job(ci, 'kit-tests'), 'Build is fresh'],
 		[job(body, 'pr-body'), 'PR body audit'],
 		[job(body, 'pr-body'), 'The fix lines match the build record'],
 	];
@@ -41,7 +48,8 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 		// PR 53's first run: Git for Windows' tar read "D:" in the temp path as a remote host, so it gets the path in its
 		// own form (cygpath, where there is one).
 		assert.match(u, /B="\$RUNNER_TEMP\/base"; command -v cygpath > \/dev\/null && B="\$\(cygpath -u "\$B"\)"/); // pin: 1 (GitHub runs it)
-		assert.match(u, /git archive "\$BASE_SHA" scripts project tests \| tar -x -C "\$B"/); // pin: 1 (GitHub runs these lines)
+		// K135: kit.mjs, which scrub and build run, loads the launcher from user/kit-tools, so the base copy carries user/.
+		assert.match(u, /git archive "\$BASE_SHA" scripts project tests user \| tar -x -C "\$B"/); // pin: 1 (GitHub runs these lines)
 		assert.match(u, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/); // pin: 1 (GitHub reads it)
 		assert.match(u, /GIT_NO_REPLACE_OBJECTS: '1'/, `${name}: the unpack reads replace refs`);
 		for (const [, kind, what] of text.slice(0, at).matchAll(/^\s+- (name|uses|run): (.+)$/gm)) {

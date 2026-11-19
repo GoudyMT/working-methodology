@@ -147,7 +147,7 @@ jobs:
           # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
           B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
           mkdir -p "$B"
-          git archive "$BASE_SHA" scripts project tests | tar -x -C "$B"
+          git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
 
       - name: Test check
         shell: bash
@@ -206,7 +206,7 @@ jobs:
           # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
           B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
           mkdir -p "$B"
-          git archive "$BASE_SHA" scripts project tests | tar -x -C "$B"
+          git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
 
       - name: Test check, Windows part
         if: github.event_name == 'pull_request'
@@ -383,7 +383,7 @@ jobs:
           # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
           B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
           mkdir -p "$B"
-          git archive "$BASE_SHA" scripts project tests | tar -x -C "$B"
+          git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
 
       # The local hooks check names at commit and push; a commit made elsewhere (the web, a cloud session) skips
       # them, so the PR's branch and every commit on it are checked here too.
@@ -430,26 +430,42 @@ jobs:
           B="$RUNNER_TEMP/base/scripts/build-record.mjs"; [ -f "$B" ] || { echo "the base has no build-record.mjs: this PR's copy runs"; B=scripts/build-record.mjs; }
           if git diff --quiet "$PR_BASE" HEAD -- VERSION; then node "$RUNNER_TEMP/pr-scope.mjs" --install "$PR_BASE" | grep -qx 'install=false' || { echo "This PR changes what install reads: move VERSION and add its build record"; exit 1; }; echo "VERSION unchanged: no build record owed"; else KIT_RECORD_ROOT=. node "$B" check; fi
 
+      # K135 (build 18): the six content checks below run the base commit's copies too, over the PR's tree, so this job
+      # runs none of the PR's code (on a push to main, each runs its own copy). The test check, which must run the PR's
+      # tests, stays in its own job: a results file from that job could be forged by those tests, a limit the owner named.
       - name: Scrub
-        run: node scripts/kit.mjs scrub
+        shell: bash
+        run: |
+          K="$RUNNER_TEMP/base/scripts/kit.mjs"; grep -qs KIT_CHECK_ROOT "$K" || { echo "the base has no kit.mjs that reads another tree: this PR's copy runs"; K=scripts/kit.mjs; }
+          KIT_CHECK_ROOT=. node "$K" scrub
 
       # One name for each thing the guards and rules talk about (T16a): a banned variant fails here.
       - name: Word check
-        run: node scripts/word-check.mjs
+        shell: bash
+        run: |
+          W="$RUNNER_TEMP/base/scripts/word-check.mjs"; [ -f "$W" ] || { echo "the base has no word-check.mjs: this PR's copy runs"; W=scripts/word-check.mjs; }
+          node "$W" .
 
       # Every part the map names exists, every link joins known parts, every "done" has evidence.
       - name: Project map
-        run: node project/.claude/project-map.mjs check
+        shell: bash
+        run: |
+          P="$RUNNER_TEMP/base/project/.claude/project-map.mjs"; [ -f "$P" ] || { echo "the base has no project-map.mjs: this PR's copy runs"; P=project/.claude/project-map.mjs; }
+          node "$P" check
 
       # T8: which rule each guard, script, test and workflow names; the rules diet reads it, so a stale map fails here.
       - name: Rule map is fresh
-        run: node scripts/rule-map.mjs check
+        shell: bash
+        run: |
+          M="$RUNNER_TEMP/base/scripts/rule-map.mjs"; [ -f "$M" ] || { echo "the base has no rule-map.mjs: this PR's copy runs"; M=scripts/rule-map.mjs; }
+          node "$M" check
 
       # No symlink or junction in the repo points outside it. The scan only reports, so the count decides here.
       - name: Link scan
         shell: bash
         run: |
-          out="$(node project/.claude/link-scan.cjs .)"
+          L="$RUNNER_TEMP/base/project/.claude/link-scan.cjs"; [ -f "$L" ] || { echo "the base has no link-scan.cjs: this PR's copy runs"; L=project/.claude/link-scan.cjs; }
+          out="$(node "$L" .)"
           echo "$out"
           echo "$out" | grep -q 'links OUTSIDE: 0$'
 
@@ -457,7 +473,8 @@ jobs:
       - name: Build is fresh
         shell: bash
         run: |
-          node scripts/kit.mjs build
+          K="$RUNNER_TEMP/base/scripts/kit.mjs"; grep -qs KIT_CHECK_ROOT "$K" || { echo "the base has no kit.mjs that reads another tree: this PR's copy runs"; K=scripts/kit.mjs; }
+          KIT_CHECK_ROOT=. node "$K" build
           git diff --exit-code
 
       # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
