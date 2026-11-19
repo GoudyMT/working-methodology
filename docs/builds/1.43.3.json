@@ -1,0 +1,57 @@
+{
+ "version": "1.43.3",
+ "date": "2026-11-19",
+ "level": "patch",
+ "area": "Tests",
+ "title": "fix: read a scoped mutation base past a large deleted file",
+ "headline": "The planted-bug check reads a branch that deletes a large file as the commits they are, so a PR that removes many megabytes still has its new tests measured. Nothing a project installs changes.",
+ "alignment": "v1.43.3 is the third pull request of build 18: PR 55 deletes 10 MB of backups, and main's copy of this check, which judges it, measured none of its new tests.",
+ "items": [
+  {
+   "id": "MUTATION-BIG-DIFF",
+   "kind": "fixed",
+   "text": "A scoped mutation run leaves deleted files out of the diff it reads and gives git's output room, so a large deletion no longer reads as a base that is no commit.",
+   "evidence": "scripts/mutation-check.mjs",
+   "reach": "kit",
+   "where": "CI's test check on a PR that deletes a large file",
+   "before": "New tests not measured",
+   "after": "New tests measured"
+  }
+ ],
+ "verification": [
+  "The new test deletes a 2 MB file and changes one line; the scoped count finds the one flip.",
+  "The other scoped-run test still refuses a base that is no commit or reads as a git option.",
+  "The rule map is unchanged."
+ ],
+ "decisions": [
+  {
+   "decision": "Its own pull request, ahead of PR 55",
+   "why": "CI judges a PR with main's copy of this check, so the fix must be on main before PR 55's tests can be measured."
+  },
+  {
+   "decision": "Leave deletions out rather than only raise the buffer",
+   "why": "A deleted file adds no line to flip, so reading it costs memory for nothing; the larger buffer covers a large addition."
+  }
+ ],
+ "upgrading": "Nothing to do: install copies none of these files.",
+ "limits": "None new.",
+ "sweep": {
+  "tier": "Fix",
+  "commit": "305c029",
+  "dimensions": [
+   { "name": "Privacy", "result": "Not touched" },
+   { "name": "Supply chain", "result": "Not touched: no dependency" },
+   { "name": "Legal", "result": "Not touched" },
+   { "name": "Code security", "result": "Not touched: the base is still read as a commit, never as an option" },
+   { "name": "Gaps, scaling, test value", "result": "See the review" },
+   { "name": "Alignment", "result": "YES" }
+  ],
+  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "fixes": []
+ },
+ "tests": {
+  "before": 941,
+  "after": 942,
+  "flips": "declared tests at 2d5c73a and on this branch; the PR run gives the final count"
+ }
+}
