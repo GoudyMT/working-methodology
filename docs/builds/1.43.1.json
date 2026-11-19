@@ -1,0 +1,57 @@
+{
+ "version": "1.43.1",
+ "date": "2026-11-19",
+ "level": "patch",
+ "area": "Tests",
+ "title": "refactor: split kit.test.mjs into seven area test files",
+ "headline": "The kit's largest test file is split into seven files, one per area, with every test moved word for word, so a change to one area reads and edits a file about a fifth the size. Nothing a project installs changes.",
+ "alignment": "v1.43.1 is the first pull request of build 18, the test file split the owner placed ahead of the rest so main's moved-test reading judges it on its own.",
+ "items": [
+  {
+   "id": "T10-SPLIT",
+   "kind": "changed",
+   "text": "`tests/kit.test.mjs` is split into seven area files (install, rules, hooks, sweep, sweep outcome, sweep budget, recall). Each test keeps its exact text, and each file keeps only the old helper lines its tests use.",
+   "evidence": "tests/kit-install.test.mjs",
+   "reach": "kit",
+   "where": "Reading or editing a kit test",
+   "before": "One file holding all 478 kit tests",
+   "after": "Seven files, one per area"
+  }
+ ],
+ "verification": [
+  "Main's test check reads all 478 tests as moved unchanged from tests/kit.test.mjs, with no new or changed test.",
+  "Every moved test parses back with its exact old text, and every line outside the tests in a new file is a line of the old file.",
+  "The rule map and the project map are written fresh for the new file names."
+ ],
+ "decisions": [
+  {
+   "decision": "Helpers are copied into each file, not shared",
+   "why": "A test counts as moved only when its new file brings no code of its own, so a shared helper module now would read every test as new; a later pull request in this build moves the helpers into one module."
+  },
+  {
+   "decision": "A patch release",
+   "why": "The split moves the version because the rule map and the project map change, and CI holds any change outside the install-safe paths to a version and a build record; nothing installed changes."
+  }
+ ],
+ "upgrading": "Nothing to do: install copies none of the moved files. The workbench install of this version can wait for 1.44.0.",
+ "limits": "The seven files repeat the helper code their tests share, so the test folder grows by about a tenth until the shared helpers move into one module later in build 18.",
+ "sweep": {
+  "tier": "Triage",
+  "commit": "87170ad",
+  "dimensions": [
+   { "name": "Privacy", "result": "Not touched: test text moved as is" },
+   { "name": "Supply chain", "result": "Not touched: no dependency" },
+   { "name": "Legal", "result": "Not touched" },
+   { "name": "Code security", "result": "Not touched: no shipped code changed" },
+   { "name": "Gaps, scaling, test value", "result": "Every test moved with its exact text" },
+   { "name": "Alignment", "result": "YES" }
+  ],
+  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "fixes": []
+ },
+ "tests": {
+  "before": 941,
+  "after": 941,
+  "flips": "declared tests at 1ca7bb0 and on this branch; the PR run gives the final count"
+ }
+}
