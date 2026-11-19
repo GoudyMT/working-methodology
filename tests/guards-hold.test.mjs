@@ -278,7 +278,10 @@ test('a loop over a glob of guard files that only reads, cmp against a guard and
 	assert.equal(bash('for f in *.txt; do cp $f b; done'), 'allow', 'no name the glob matches splits');
 	fs.writeFileSync(path.join(proj, 'x .claude'), '');
 	try {
-		for (const c of ['for f in x*; do cp a.txt $f/guard.cjs; done', 'for f in x*; do rm -rf ${f}; done', 'for f in */x*; do cp a.txt $f; done']) assert.equal(bash(c), 'deny', c);
+		for (const c of ['for f in x*; do cp a.txt $f/guard.cjs; done', 'for f in x*; do rm -rf ${f}; done', 'for f in */x*; do cp a.txt $f; done',
+			// The second commit review: a reader that writes through a split name, IFS, a folder change first, an unlistable folder.
+			'for f in x*; do sort a.txt -o $f/guard.cjs; done', 'IFS=.; for f in *.txt; do cp a.txt $f; done', 'cd sub && for f in x*; do cp a.txt "$f"; done',
+			'for f in /c/nowhere/x*; do cp a.txt $f; done']) assert.equal(bash(c), 'deny', c);
 		assert.equal(bash('for f in x*; do cp a.txt "$f"/guard.cjs; done'), 'allow', 'quoted, the name stays one word');
 	} finally { fs.rmSync(path.join(proj, 'x .claude')); }
 });

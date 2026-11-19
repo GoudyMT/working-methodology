@@ -439,8 +439,9 @@ function globNamesSplit(words, from) {
 		const dir = path.dirname(w);
 		// A wildcard in a folder part or a bracket class is more than this reading follows: held.
 		if (/[*?[]/.test(dir) || /\[/.test(w)) return true;
+		// The second commit review: a folder the guard cannot list (an MSYS /c/ path, a missing one) is held, not passed.
 		let names;
-		try { names = fs.readdirSync(path.resolve(from, dir)); } catch { continue; }
+		try { names = fs.readdirSync(path.resolve(from, dir)); } catch { return true; }
 		if (names.length > 4096) return true;
 		const re = globRe(path.basename(w));
 		if (names.some((n) => re.test(n) && /[\s*?[\]'"\\$`]/.test(n))) return true;
@@ -452,9 +453,10 @@ function globSplits(command, tool, start) {
 	const m = /(?:^|[;&|\n(]\s*|\s)for\s+([A-Za-z_]\w*)\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b([\s\S]*?)\bdone\b/.exec(String(command || ''));
 	if (!m || !/[*?[]/.test(m[2])) return false;
 	const body = m[3];
-	// A body of reads only (readers, echo, sed -n, no redirect) cannot write, split names or not: it stays read.
-	const heads = body.split(/[;&|\n]+/).map((x) => x.trim()).filter(Boolean);
-	if (!/[<>]/.test(body) && heads.every((x) => { const w = x.split(/\s+/); return PIPE_READERS.has(w[0]) || /^(echo|printf)$/.test(w[0]) || (w[0] === 'sed' && w[1] === '-n' && !/[wWe]\s*$|[wW]\s+\S/.test(w[2] || '')); })) return false;
+	// The second commit review: a reader can write through a split name too (sort -o, uniq's second file), so no body is
+	// exempt; IFS set anywhere splits names on any sign, and a folder change before the loop moves where the glob is read
+	// from, so either holds the loop whole.
+	if (/\bIFS\b/.test(command) || /(^|[\s;&|(!])(cd|pushd|popd|chdir|builtin)(?![\w-])/.test(String(command).slice(0, m.index + m[0].indexOf('for')))) return true;
 	const use = new RegExp(`^\\$(\\{${m[1]}\\b|${m[1]}(?!\\w))`);
 	let q = null;
 	for (let i = 0; i < body.length; i++) {
