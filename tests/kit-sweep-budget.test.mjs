@@ -1498,3 +1498,21 @@ test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s q
   assert.match(v2[6].key, /approve\.mjs/);
   assert.match(v2[6].key, /ASK goes to the owner/);
 });
+
+// I10 (build 18, real on 1.43.0): a reviewer's brief names its scratch folder, but nothing held a Bash or PowerShell
+// write outside it; one reviewer once removed another's folder. A reviewer's write now lands in a sweep scratch folder
+// or is held; a write the hook cannot place (no path, a command it cannot read) is held too.
+// why: catches a sweep reviewer writing into the repo or outside its own scratch folder
+test('a reviewer writes only inside its sweep scratch folder; reads and other agents are left alone', () => {
+  const dir = makeTemp('cap-');
+  const scratch = path.join(os.tmpdir(), 'kit-sweep-0123abcd', 'role-1').split(path.sep).join('/');
+  const run = (command, extra = {}, tool = 'Bash') => capHook(dir, 1, 12, { tool_name: tool, tool_input: { command }, ...extra }).permissionDecision;
+  for (const c of ['echo x > notes.txt', 'echo x >> /tmp/x.txt', 'cp a.txt b.txt', 'rm -rf reports', 'mkdir out', `cp a.txt ${scratch}/a.txt && rm b.txt`,
+    "sed -i 's/a/b/' x.mjs", 'git commit -qm x', 'git checkout -- x.mjs', 'touch x', 'tee out.txt < a.txt', 'echo x | tee -a log.md']) assert.equal(run(c), 'deny', c);
+  for (const c of ['Set-Content x.txt y', 'Remove-Item -Recurse reports', 'echo x > out.txt', 'Copy-Item a b']) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
+  for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -n x a.txt 2>/dev/null', 'node scripts/test-check.mjs main 2>&1 | tail -3',
+    'git diff main...HEAD -- a.txt', 'git log --oneline -3', 'ls -la > /dev/null']) assert.equal(run(c), 'allow', c);
+  assert.equal(run(`'y' | Out-File ${scratch}/x.txt`, {}, 'PowerShell'), 'allow', 'PowerShell inside the scratch folder');
+  assert.equal(run('Get-Content a.txt 2>$null', {}, 'PowerShell'), 'allow', 'a PowerShell read');
+  assert.equal(run('echo x > notes.txt', { agent_type: 'builder' }), 'allow', 'only reviewers');
+});

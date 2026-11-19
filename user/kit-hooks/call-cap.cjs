@@ -22,6 +22,31 @@ const IDLE_MS = 5 * 60 * 1000;
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 
 // The hook's answer for one tool call: a refusal, or nothing. The dispatcher (guard.cjs) calls this.
+// I10 (build 18): a reviewer is read-only but for its scratch folder (the brief's kit-sweep-<8 hex>/role-<n>), and the
+// brief alone never held it: a Bash or PowerShell write outside a sweep scratch folder is refused. A write sign whose
+// targets the hook cannot place (no path named, or a path outside scratch) is refused too; a write made by a script
+// the reviewer runs (node x.mjs) is past what a command line shows, a limit of this fence.
+const SCRATCH = /kit-sweep-[0-9a-f]{8}[\\/]role-\d+([\\/]|$)/i;
+const SINK = /^(\/dev\/null|nul|\$null|&\d|&-)$/i;
+const WRITERS = /(^|[\s;&|(!{])(cp|mv|rm|rmdir|mkdir|touch|tee|dd|install|ln|chmod|chown|truncate|unlink|shred|rsync|out-file|set-content|sc|add-content|ac|new-item|ni|md|remove-item|ri|rd|del|erase|copy-item|cpi|copy|move-item|mi|move|rename-item|rni|ren|mklink|tar|unzip|curl|wget|invoke-webrequest|iwr)(?![\w.-])|\bsed\s+(-\w*i|--in-place)|\bsort\b[^;&|]*\s-o\b|\bgit\s+(-C\s+\S+\s+)?(commit|checkout|reset|restore|stash|clean|switch|merge|rebase|apply|am|add|rm|mv|worktree|branch|tag|push|pull|fetch|config|init|clone|cherry-pick|revert|notes|update-ref|gc|prune)\b/i;
+function writesOutsideScratch(command) {
+	const c = String(command || '');
+	for (const m of c.matchAll(/(?:^|[^<>&\d-])(?:\d?>>?|&>>?)\s*("[^"]*"|'[^']*'|[^\s;&|)]+)/g)) {
+		const t = m[1].replace(/^['"]|['"]$/g, '');
+		if (!SINK.test(t) && !SCRATCH.test(t)) return true;
+	}
+	// Each command of the line on its own: one that can write may name only scratch paths (its sources too, since a
+	// name with no folder is read from the repo), so cp a scratch/b, and a write beside a scratch one, are both held.
+	for (const seg of c.split(/;|&&|\|\||\||\n/)) {
+		if (!WRITERS.test(seg)) continue;
+		const words = seg.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
+		const at = words.findIndex((w) => WRITERS.test(` ${w}`));
+		const args = words.slice(at + 1).filter((w) => !/^-/.test(w) && !/^\d?[<>]/.test(w));
+		if (!args.length || args.some((w) => !SCRATCH.test(w) && !SINK.test(w))) return true;
+	}
+	return false;
+}
+
 function check(input) {
 	if (!input.agent_id || input.tool_name === 'SubagentHandback') return;
 	const t = input.tool_input || {};
@@ -48,6 +73,9 @@ function check(input) {
 	}
 	if (input.tool_name === 'Monitor' || ((input.tool_name === 'Bash' || input.tool_name === 'PowerShell') && (t.run_in_background || Number(t.timeout) > IDLE_MS))) {
 		return deny('A reviewer runs nothing that waits past 5 minutes (a background run, a monitor, a longer timeout): an idle reviewer has its whole context written to cache again. Run a targeted check instead; CI runs the full suite.');
+	}
+	if ((input.tool_name === 'Bash' || input.tool_name === 'PowerShell') && writesOutsideScratch(t.command)) {
+		return deny('A reviewer writes only in its scratch folder (the Scratch line of your brief): name that folder in full as the target, or read instead. Nothing in the repository or another role\'s folder is written.');
 	}
 	const file = path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents', `agent-${input.agent_id}.jsonl`);
 	// Each message id once, at its last line (streaming writes one line per content block), in the order calls began.
