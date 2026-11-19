@@ -15,6 +15,7 @@
 // reviewer reads the lines it needs. And nothing that waits past 5 minutes (a background run, a monitor, a longer
 // timeout): a reviewer idle that long had its whole cache written again, 50 times, 7% of dollars.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const LARGE_READ = 40 * 1024;
@@ -25,12 +26,24 @@ const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', p
 // I10 (build 18): a reviewer is read-only but for its scratch folder (the brief's kit-sweep-<8 hex>/role-<n>), and the
 // brief alone never held it: a Bash or PowerShell write outside a sweep scratch folder is refused. A write sign whose
 // targets the hook cannot place (no path named, or a path outside scratch) is refused too; a write made by a script
-// the reviewer runs (node x.mjs) is past what a command line shows, a limit of this fence.
-const SCRATCH = /kit-sweep-[0-9a-f]{8}[\\/]role-\d+([\\/]|$)/i;
+// the reviewer runs (node x.mjs) is past what a command line shows, a limit of this fence. A scratch path is the brief's
+// own form, absolute under this machine's temp folder with no `..` step; which role's folder it is goes unchecked, a
+// limit too. A line the hook cannot read the way the shell will (a substitution, an eval, an inline interpreter, `>|`)
+// is refused whole.
+const TMP = os.tmpdir().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+const SCRATCH_TAIL = /^\/kit-sweep-[0-9a-f]{8}\/role-\d+(\/|$)/;
+const SCRATCH = { test: (w) => {
+	const p = String(w).replace(/\\/g, '/');
+	if (p.split('/').includes('..')) return false;
+	const low = p.toLowerCase();
+	return low.startsWith(TMP) && SCRATCH_TAIL.test(low.slice(TMP.length));
+} };
 const SINK = /^(\/dev\/null|nul|\$null|&\d|&-)$/i;
-const WRITERS = /(^|[\s;&|(!{])(cp|mv|rm|rmdir|mkdir|touch|tee|dd|install|ln|chmod|chown|truncate|unlink|shred|rsync|out-file|set-content|sc|add-content|ac|new-item|ni|md|remove-item|ri|rd|del|erase|copy-item|cpi|copy|move-item|mi|move|rename-item|rni|ren|mklink|tar|unzip|curl|wget|invoke-webrequest|iwr)(?![\w.-])|\bsed\s+(-\w*i|--in-place)|\bsort\b[^;&|]*\s-o\b|\bgit\s+(-C\s+\S+\s+)?(commit|checkout|reset|restore|stash|clean|switch|merge|rebase|apply|am|add|rm|mv|worktree|branch|tag|push|pull|fetch|config|init|clone|cherry-pick|revert|notes|update-ref|gc|prune)\b/i;
+const UNREADABLE = /\$\(|`|>\||<\(|\beval\b|\b(node|bun|deno|python[\d.]*|py|perl|ruby|php|bash|sh|zsh|dash|pwsh|powershell|cmd)(\.exe)?\b[^;&|\n]*?\s(-e|-c|-p|--eval|--print|-command|-encodedcommand|-ec|\/c)(\s|$)/i;
+const WRITERS = /(^|[\s;&|(!{"'])(cp|mv|rm|rmdir|mkdir|touch|tee|dd|install|ln|chmod|chown|truncate|unlink|shred|rsync|out-file|set-content|sc|add-content|ac|new-item|ni|md|remove-item|ri|rd|del|erase|copy-item|cpi|copy|move-item|mi|move|rename-item|rni|ren|mklink|tar|unzip|curl|wget|invoke-webrequest|iwr)(?![\w.-])|\bsed\s+(-\w*i|--in-place)|\bsort\b[^;&|]*\s-o\b|\bgit\s+(-C\s+\S+\s+)?(commit|checkout|reset|restore|stash|clean|switch|merge|rebase|apply|am|add|rm|mv|worktree|branch|tag|push|pull|fetch|config|init|clone|cherry-pick|revert|notes|update-ref|gc|prune)\b/i;
 function writesOutsideScratch(command) {
 	const c = String(command || '');
+	if (UNREADABLE.test(c)) return true;
 	for (const m of c.matchAll(/(?:^|[^<>&\d-])(?:\d?>>?|&>>?)\s*("[^"]*"|'[^']*'|[^\s;&|)]+)/g)) {
 		const t = m[1].replace(/^['"]|['"]$/g, '');
 		if (!SINK.test(t) && !SCRATCH.test(t)) return true;

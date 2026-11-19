@@ -1508,7 +1508,11 @@ test('a reviewer writes only inside its sweep scratch folder; reads and other ag
   const scratch = path.join(os.tmpdir(), 'kit-sweep-0123abcd', 'role-1').split(path.sep).join('/');
   const run = (command, extra = {}, tool = 'Bash') => capHook(dir, 1, 12, { tool_name: tool, tool_input: { command }, ...extra }).permissionDecision;
   for (const c of ['echo x > notes.txt', 'echo x >> /tmp/x.txt', 'cp a.txt b.txt', 'rm -rf reports', 'mkdir out', `cp a.txt ${scratch}/a.txt && rm b.txt`,
-    "sed -i 's/a/b/' x.mjs", 'git commit -qm x', 'git checkout -- x.mjs', 'touch x', 'tee out.txt < a.txt', 'echo x | tee -a log.md']) assert.equal(run(c), 'deny', c);
+    "sed -i 's/a/b/' x.mjs", 'git commit -qm x', 'git checkout -- x.mjs', 'touch x', 'tee out.txt < a.txt', 'echo x | tee -a log.md',
+    // A scratch name is not enough: traversal out of it, the name under another folder, and lines the hook cannot read.
+    `echo x > ${scratch}/../../../x.txt`, `cp a ${scratch}/../../x`, 'echo x > /elsewhere/kit-sweep-0123abcd/role-1/x.txt', 'rm -rf repo/kit-sweep-0123abcd/role-1/',
+    `echo x >| notes.txt`, `echo $(rm notes.txt) > ${scratch}/x`, 'echo `rm notes.txt`', `bash -c 'rm notes.txt'`, `node -e "require('fs').rmSync('x')"`,
+    `python3 -c "open('x','w')"`, `eval "rm notes.txt"`, `pwsh -Command Remove-Item x`]) assert.equal(run(c), 'deny', c);
   for (const c of ['Set-Content x.txt y', 'Remove-Item -Recurse reports', 'echo x > out.txt', 'Copy-Item a b']) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
   for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -n x a.txt 2>/dev/null', 'node scripts/test-check.mjs main 2>&1 | tail -3',
     'git diff main...HEAD -- a.txt', 'git log --oneline -3', 'ls -la > /dev/null']) assert.equal(run(c), 'allow', c);
