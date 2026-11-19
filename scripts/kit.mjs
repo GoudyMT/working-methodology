@@ -29,7 +29,7 @@ import { NO_PROGRAMS, SAFE_CWD, safeGh, githubSlug } from './safe-git.mjs';
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
 // Files that hold the owner's details on purpose, and folders that are not kit content.
-const SCRUB_SKIP = new Set(['kit.config.json', 'owner-profile.md', 'scrub.local.json']);
+const SCRUB_SKIP = new Set(['kit.config.json', 'scrub.local.json']);
 // vendor/ holds third-party work kept as-is, with its own credits; it is not the owner's content.
 const SCRUB_SKIP_DIRS = new Set(['.git', 'node_modules', 'reports', 'vendor']);
 const SNAPSHOT_SKIP = new Set(['.git', 'node_modules', '.in_use']);
@@ -71,18 +71,23 @@ const thirdPartySkills = (config) => [
 // checked against the release tag, like the files it copies (the 1.26.0 sweep, C4).
 const kitInputs = (kit) => {
   const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
-  return ['kit.config.json', config.ownerProfileFile || 'owner-profile.md', 'VERSION'].map((f) => ({ src: path.join(kit, f) })).filter((e) => fs.existsSync(e.src));
+  return ['kit.config.json', 'VERSION'].map((f) => ({ src: path.join(kit, f) })).filter((e) => fs.existsSync(e.src));
 };
 
-function loadKit(kit, checked = null) {
+// The owner's profile (K141): the kit repo is public, so it lives in the Claude folder as kit-owner-profile.md, the
+// owner's own file, and never in the kit folder. Missing, it renders as nothing and install says where it goes.
+export const PROFILE_FILE = 'kit-owner-profile.md';
+
+function loadKit(kit, checked = null, home = null) {
   const read = (p) => (checked && checked.has(p) ? checked.get(p) : fs.readFileSync(p, 'utf8'));
   const config = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  const profilePath = path.join(kit, config.ownerProfileFile || 'owner-profile.md');
-  const ownerProfile = (checked && checked.has(profilePath)) || fs.existsSync(profilePath) ? read(profilePath).trimEnd() : '';
+  const profilePath = home ? path.join(home, PROFILE_FILE) : null;
+  const found = Boolean(profilePath) && fs.existsSync(profilePath);
+  const ownerProfile = found ? fs.readFileSync(profilePath, 'utf8').trimEnd() : '';
   const version = read(path.join(kit, 'VERSION')).trim();
   const git = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8', cwd: SAFE_CWD });
   const commit = git.status === 0 ? git.stdout.trim() : null;
-  return { config, ownerProfile, version, commit };
+  return { config, ownerProfile, profile: { path: profilePath, found }, version, commit };
 }
 
 // What install copies or reads: a change to any of these ships text no release holds (the owner, 2026-11-02). The
@@ -99,7 +104,7 @@ const RELEASE_PATHS = ['user', 'project', 'memory', 'scripts', 'VERSION', 'kit.c
 export function releaseState(kit) {
   const tag = 'v' + fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
-  const paths = [...RELEASE_PATHS, config.ownerProfileFile || 'owner-profile.md'];
+  const paths = [...RELEASE_PATHS];
   // git status runs a program the config names: core.fsmonitor (off for every git install runs), or a filter that a
   // .gitattributes file names. The kit folder's own attributes and git config are in the fingerprint the held fix line
   // checks; the user's global attributes file is not read here. The rest of the global config stays (core.autocrlf
@@ -600,7 +605,7 @@ export function install(ctx) {
   const releaseRun = Boolean(ctx.release && ctx.release.release);
   if (releaseRun && !ctx.release.tree) throw new Error('Install refused: the release check found no tree for the release tag, so no kit file can be checked against it. Check out the release tag again, then rerun install.');
   const checked = releaseRun ? releaseBytes(ctx.kit, ctx.release.tree, [...entries, ...kitInputs(ctx.kit)]) : null;
-  const kitInfo = loadKit(ctx.kit, checked);
+  const kitInfo = loadKit(ctx.kit, checked, ctx.home);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
   // Which guard files are a host's own (the review of 670b3a2): read from the record outside the project, never from
@@ -885,7 +890,7 @@ export function install(ctx) {
       }
     }
   }
-  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: kept || replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: kept || replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version, ownerProfile: kitInfo.profile };
 }
 
 /**
@@ -1008,7 +1013,7 @@ function memoryCore(text) {
 const compared = (key, text) => (key.startsWith('memory/') ? memoryCore(text) : text);
 
 export function foldBack(ctx) {
-  const kitInfo = loadKit(ctx.kit);
+  const kitInfo = loadKit(ctx.kit, null, ctx.home);
   const { entries, stampPath, memoryDir } = plan(ctx);
   const stamp = readStamp(stampPath);
   const out = { foldBack: [], update: [], conflict: [], added: [], missing: [], guarded: [] };
@@ -2208,6 +2213,7 @@ function main(argv) {
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
+    if (target === 'user' && !r.ownerProfile.found) console.log(`    no owner profile at ${toPosix(r.ownerProfile.path)}: the Owner Context in CLAUDE.md lists the name only. Write your lines there (owner-profile.example.md shows the shape), then install user again.`);
     console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, merged: ${(r.threeWayMerged || []).length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
     for (const f of r.merged) console.log(`    recorded as merged by hand: ${f}`);
     for (const f of r.threeWayMerged || []) console.log(`    ${dryRun ? "would merge" : "merged"} with your edits: ${f} (your lines and the kit's changes, line by line${dryRun ? "" : "; your copy is in the backup folder"})`);

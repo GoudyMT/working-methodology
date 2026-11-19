@@ -68,4 +68,4 @@ Arguments: $ARGUMENTS
   step 5b). When adopting a project that keeps its own standards, add the step there.
 - Never overwrite a file the owner changed; the tool skips it, and so do you, unless the owner says so.
 - Never push, publish or make the kit's repository public without the owner's explicit go.
-- Nothing personal leaves the kit's private files (`kit.config.json`, `owner-profile.md`, `scrub.local.json`).
+- Nothing personal leaves the owner's private files (`~/.claude/kit-owner-profile.md`, `scrub.local.json`); `kit.config.json` holds the first name only.

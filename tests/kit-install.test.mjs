@@ -35,6 +35,23 @@ test('install user writes rendered files into ~/.claude and stamps the version',
   assert.deepEqual(r.skipped, []);
 });
 
+// K141: the kit repo is public, so the owner's profile is read from the Claude folder, never from the kit folder.
+// why: catches the owner's profile being read from the public kit repo, or lost without a word when missing
+test('install user takes the owner profile from the Claude folder, never the kit folder, and says when there is none', () => {
+  const { kit, home } = makeKit();
+  fs.writeFileSync(path.join(kit, 'owner-profile.md'), '- From the public repo\n');
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ownerName: 'Pat', ownerProfileFile: 'owner-profile.md' }));
+  const r = install({ kit, home, target: 'user' });
+  assert.equal(read(path.join(home, 'CLAUDE.md')), '# Global\nOwner: Pat\n- Likes tests\n');
+  assert.equal(r.ownerProfile.found, true);
+  const bare = makeKit();
+  fs.rmSync(path.join(bare.home, 'kit-owner-profile.md'));
+  const none = install({ kit: bare.kit, home: bare.home, target: 'user' });
+  assert.equal(read(path.join(bare.home, 'CLAUDE.md')), '# Global\nOwner: Pat\n\n');
+  assert.equal(none.ownerProfile.found, false);
+  assert.equal(none.ownerProfile.path, path.join(bare.home, 'kit-owner-profile.md'));
+});
+
 // why: guards rule:owners-rules
 test('install never overwrites a file the owner changed, and says so', () => {
   const { kit, home, proj } = makeKit();
@@ -854,8 +871,8 @@ test('install runs from a clean release tag and stamps it as a release', () => {
 // why: guards rule:outward-acts
 test('install on the release tag itself refuses an uncommitted edit to anything it copies or reads', () => {
   const { kit, proj, git, cli } = releaseKit();
-  // The owner config and profile are rendered into the installed files, and the script decides what install does.
-  for (const f of ['project/_Working Standards.md', 'kit.config.json', 'owner-profile.md', 'scripts/kit.mjs']) {
+  // The owner config is rendered into the installed files, and the script decides what install does.
+  for (const f of ['project/_Working Standards.md', 'kit.config.json', 'scripts/kit.mjs']) {
     fs.appendFileSync(path.join(kit, f), '\n');
     const r = cli('install', 'project', proj);
     assert.equal(r.status, 1, f);
@@ -1067,13 +1084,13 @@ test('a release install over an unreleased one removes the files only that build
 // why: guards rule:outward-acts
 test('install refuses when git cannot say what changed, rather than calling the folder clean', () => {
   const { kit, proj, cli } = releaseKit();
-  // A profile path outside the repo makes git status fail; that must not read as "nothing changed".
-  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, ownerProfileFile: '../outside.md' }));
+  // A corrupt index makes git status fail; that must not read as "nothing changed". (K141: the profile path that made
+  // it fail before is no longer read from the kit folder.)
+  fs.writeFileSync(path.join(kit, '.git', 'index'), 'not an index');
   fs.appendFileSync(path.join(kit, 'user/CLAUDE.md'), 'INJECTED\n');
   const r = cli('install', 'user');
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stderr, /git status failed in the kit folder[\s\S]*unknown: .*outside/);
+  assert.match(r.stderr, /git status failed in the kit folder[\s\S]*unknown: .*index/);
   assert.equal(fs.existsSync(path.join(path.dirname(kit), 'home', 'kit-install.json')), false);
 });
 

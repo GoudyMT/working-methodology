@@ -1,0 +1,3 @@
+- Role: <what you do, or are training for>
+- Machine: <OS, shell, GPU if it matters>
+- Values: <how you like to work>

@@ -45,8 +45,7 @@ export function makeKit() {
   const files = {
     'VERSION': '1.0.0\n',
     'CHANGELOG.md': '# Changelog\n',
-    'kit.config.json': JSON.stringify({ ownerName: 'Pat', ownerProfileFile: 'owner-profile.md', thirdPartySkills: ['vendor-skill'] }),
-    'owner-profile.md': '- Likes tests\n',
+    'kit.config.json': JSON.stringify({ ownerName: 'Pat', thirdPartySkills: ['vendor-skill'] }),
     'user/CLAUDE.md': '# Global\nOwner: {{OWNER_NAME}}\n{{OWNER_PROFILE}}\n',
     'user/agents/builder.md': 'builder role\n',
     'user/skills/human-factor/SKILL.md': 'skill\n',
@@ -60,6 +59,9 @@ export function makeKit() {
     fs.writeFileSync(path.join(kit, rel), body);
   }
   fs.mkdirSync(proj);
+  // K141: the owner's profile lives in the Claude folder, outside the kit repo, which is public.
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, 'kit-owner-profile.md'), '- Likes tests\n');
   return { kit, home, proj };
 }
 
