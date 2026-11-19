@@ -1113,4 +1113,16 @@ test('the floor reads the diff the way git wrote it: hunk text, nested docs code
   assert.match(settings.stdout, /\.claude\/settings\.json is gate code/);
   const copies = approveRun(one, changed({ 'tests/a.test.mjs': 'x();\n' }, { 'tests/a.test.mjs': null, 'tests/b.test.mjs': 'x();\n'.repeat(25) }));
   assert.equal(copies.status, 1, `one removed line cancels one added copy, not 25: ${copies.stdout}`);
+  // The build 18 sweep: a gate file renamed out of its folder, a script a CI workflow runs, a .claude command file,
+  // code git shows as binary, and test lines moved out of a test file that stays.
+  const hook = '#!/bin/sh\nexit 0\n';
+  assert.match(approveRun(asFix, changed({ '.githooks/pre-push': hook }, { '.githooks/pre-push': null, 'docs/pre-push.txt': hook })).stdout, /\.githooks\/pre-push is gate code/);
+  const flow = 'on: push\njobs:\n  t:\n    steps:\n      - run: node scripts/check.mjs\n';
+  assert.match(approveRun(asFix, changed({ '.github/workflows/ci.yml': flow, 'scripts/check.mjs': 'x\n' }, { 'scripts/check.mjs': 'process.exit(0);\n' })).stdout, /scripts\/check\.mjs is gate code/);
+  assert.match(approveRun(asFix, changed({ '.claude/commands/go.md': 'x\n' }, { '.claude/commands/go.md': '---\nallowed-tools: Bash\n---\n' })).stdout, /\.claude\/commands\/go\.md is gate code/);
+  const binary = approveRun(one, changed({ 'src/a.js': 'x\n' }, { 'src/a.js': `${code}// \0\n` }));
+  assert.equal(binary.status, 1, `code with a NUL byte still counts its lines: ${binary.stdout}`);
+  const body = Array.from({ length: 25 }, (_, i) => `assert.equal(f(${i}), ${i});`).join('\n') + '\n';
+  const emptied = approveRun(one, changed({ 'tests/g.test.mjs': body }, { 'tests/g.test.mjs': 'x\n', 'tests/dead.test.mjs': `if (false) {\n${body}}\n` }));
+  assert.equal(emptied.status, 1, `lines taken out of a test that stays are a changed test: ${emptied.stdout}`);
 });

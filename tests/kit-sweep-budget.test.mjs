@@ -1180,6 +1180,7 @@ test('the notice prints the real modifiers, M14 leaves no docs code out, and a q
   const sec = { ...featureContract(), modifiers: ['security-sensitive'] };
   assert.match(approveRun(sec).stdout, /Modifiers: security-sensitive; diff against main/);
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  assert.equal(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.json': '{}\n' })).status, 0, 'docs data in a nested folder is data');
   assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.mjs': 'export {};\n' })).stdout, /ASK THE OWNER/);
   assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/migrations/old/1.mjs': 'export {};\n' })).stdout, /ASK THE OWNER/);
   const dep = fixRepo({ [`pk${String.fromCharCode(233)}/yarn.lock`]: 'x\n' });
@@ -1533,7 +1534,7 @@ test('a reviewer writes only inside its sweep scratch folder; reads and other ag
     "sed -n 's/a/b/w out.txt' x.mjs", // a command off the read list (sed can write with w)
     'find . -name x -delete', // find told to write
   ]) assert.equal(run(c), 'deny', c);
-  for (const c of ['Set-Content x.txt y', `& ('Remove-'+'Item') x`, `[IO.File]::WriteAllText('x','y')`]) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
+  for (const c of ['Set-Content x.txt y', `& ('Remove-'+'Item') x`, `[IO.File]::WriteAllText('x','y')`, `git diff --out'put'=x.patch`]) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
   for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -rn x src 2>/dev/null',
     'node scripts/test-check.mjs main 2>&1 | tail -3', 'git -C . diff main...HEAD -- a.txt']) assert.equal(run(c), 'allow', c);
   assert.equal(run(`'y' | Out-File ${scratch}/x.txt`, {}, 'PowerShell'), 'allow', 'PowerShell inside the scratch folder');

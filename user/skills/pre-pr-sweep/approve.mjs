@@ -121,28 +121,32 @@ const TRIAL_EVERY_EARNED = 20;
 // outcome's repeated-findings trip is the real backstop for clones.
 const CLONE = 0.5;
 // The changed lines a triage sweep may cover: every line of code, but none of docs or data, and none a test file
-// gains that a test file of the same change lost (a test moved unchanged).
+// gains that a deleted test file lost (a test file split or moved unchanged). A line taken out of a test file that
+// stays is a test changed, so it counts.
 function triageLines(base) {
 	// The whole diff, renames off: a test split reads as a rename of one file, which hides the other side's lines.
-	const d = git('diff', '-U0', '--no-color', '--no-renames', '--no-ext-diff', '--no-textconv', `${base}...HEAD`);
+	// --text: a file git would show as binary (a NUL byte, a -diff attribute) is read line by line, never as 0 lines.
+	const d = git('diff', '-U0', '--no-color', '--no-renames', '--no-ext-diff', '--no-textconv', '--text', `${base}...HEAD`);
 	if (d.status !== 0) return Infinity;
 	// The file a hunk belongs to is read from its own header: "--- a/x" names a removed file, "+++ b/x" any other. A
 	// header is read only before a file's first @@, since a removed line "-- x" shows as "--- x" inside a hunk. A quoted
 	// name (git quotes odd characters) is not read at all: its lines count as code.
 	let file = '';
+	let gone = false;
 	let hunk = false;
 	let other = 0;
 	const moved = new Map();
 	for (const l of d.stdout.split('\n')) {
-		if (l.startsWith('diff --git ')) { file = ''; hunk = false; continue; }
+		if (l.startsWith('diff --git ')) { file = ''; gone = false; hunk = false; continue; }
 		if (!hunk && l.startsWith('@@')) { hunk = true; continue; }
 		if (!hunk && (l.startsWith('--- ') || l.startsWith('+++ '))) {
-			if (!/^(---|\+\+\+) \/dev\/null$/.test(l)) file = l[4] === '"' ? '"' : l.slice(6);
+			if (l === '+++ /dev/null') gone = true;
+			else if (l !== '--- /dev/null') file = l[4] === '"' ? '"' : l.slice(6);
 			continue;
 		}
 		if (!hunk || !/^[-+]/.test(l)) continue;
 		if (file !== '"' && (DOC_FILE.test(file) || DATA_FILE.test(file) || sweepOwned(file))) continue;
-		if (file === '"' || !TEST_FILE.test(file)) { other++; continue; }
+		if (file === '"' || !TEST_FILE.test(file) || (l[0] === '-' && !gone)) { other++; continue; }
 		// A moved test line cancels one of its twin on the other side, counted, so ten copies do not hide behind one.
 		const t = l.slice(1).trim();
 		moved.set(t, (moved.get(t) || 0) + (l[0] === '-' ? 1 : -1));
@@ -158,8 +162,10 @@ const TRIAGE_MAX_LINES = 20;
 const DEP_FILE = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt|pyproject\.toml|poetry\.lock|Pipfile(\.lock)?|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(\.lock)?|pom\.xml|(build|settings)\.gradle(\.kts)?|gradle\.lockfile|[^/]+\.csproj|packages\.lock\.json|Directory\.Packages\.props|composer\.(json|lock))$/;
 // T10 (build 18): the floor comes from what the diff touches. Gate code (CI, git hooks, a guard or hook of the project's
 // .claude folder, the kit's own hooks, tools and install, this script) is feature work with the security modifier.
-// Any .claude file but its markdown counts: settings, bounds and kit json steer the guards as much as their code.
-const GATE_FILE = /(^|\/)\.(github|githooks)\/|(^|\/)\.claude\/(?!.*\.md$)|^user\/(kit-hooks|kit-tools)\/|^scripts\/kit\.mjs$|(^|\/)approve\.mjs$/;
+// Any .claude file counts: settings, bounds and kit json steer the guards, and a command or agent file's front matter
+// grants tools. So do the CI templates a project installs, the skills' own scripts, and any script a CI workflow runs
+// (read from the workflows on both sides of the diff, ciRuns below).
+const GATE_FILE = /(^|\/)\.(github|githooks|claude)\/|(^|\/)_Templates\/ci-[^/]*\.ya?ml$|^user\/(kit-hooks|kit-tools)\/|^user\/skills\/[^/]+\/[^/]+\.(c?js|mjs)$|^scripts\/kit\.mjs$|(^|\/)approve\.mjs$/;
 // I9 (build 18): a release's record, its changelog and version, and the root docs/ folder's prose, data and pictures
 // are not source, however long. Code under docs/ (a migration script, a page) still counts.
 const DATA_FILE = /^docs\/.*\.(md|json|txt|png|svg|jpe?g|gif|csv)$|^(VERSION|CHANGELOG\.md)$|^\.kit\/[^/]+\.json$/;
@@ -276,6 +282,15 @@ function sweepOwned(f) {
 	return KIT_JSON.test(f) || Boolean(own && f.startsWith(own) && !f.slice(own.length).includes('/') && /\.json$/i.test(f) && isContract(f));
 }
 
+// The script files a CI workflow names, at one commit: a gate runs them, so a change to one is gate code.
+function ciRuns(ref) {
+	const out = new Set();
+	for (const f of git('ls-tree', '-r', '--name-only', '--full-name', ref, '--', ':(top).github/workflows').stdout.split('\n').filter(Boolean)) {
+		for (const m of git('show', `${ref}:${f}`).stdout.matchAll(/(?:^|[\s"'=(])(?:\.\/)?([\w.-]+(?:\/[\w.-]+)*\.(?:mjs|cjs|js|ts|py|sh|ps1))\b/g)) out.add(m[1]);
+	}
+	return out;
+}
+
 // What the branch's diff against its base says, or null when it cannot be read.
 function diffFacts() {
 	const want = opt('--base');
@@ -292,10 +307,11 @@ function diffFacts() {
 	// An older commit of the default branch is on it, yet hides what the branch took from it: its caps and its hooks.
 	const left = home ? git('merge-base', home, 'HEAD').stdout.trim() : '';
 	const staleBase = !offBase && left && git('merge-base', '--is-ancestor', left, base).status !== 0 ? short(home) : null;
-	const names = (filter) => git('diff', '--name-only', '-z', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\0').filter(Boolean);
+	// Renames off: a gate file moved out of its folder must still read as the gate file it was.
+	const names = (filter) => git('diff', '--name-only', '-z', '--no-renames', `--diff-filter=${filter}`, `${base}...HEAD`).stdout.split('\0').filter(Boolean);
 	const all = names('ACDMRT');
 	const added = names('A').filter((f) => !sweepOwned(f));
-	const lines = git('diff', '--numstat', `${base}...HEAD`).stdout.split('\n').filter(Boolean).filter((l) => !sweepOwned(l.split('\t')[2])).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
+	const lines = git('diff', '--numstat', '--text', '--no-renames', `${base}...HEAD`).stdout.split('\n').filter(Boolean).filter((l) => !sweepOwned(l.split('\t')[2])).reduce((t, l) => t + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
 	// Work not yet committed would not be in the diff the floor reads; the sweep's own files are left out.
 	const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ':(top)').stdout.split('\n').filter(Boolean).filter((l) => !sweepPaper(l.slice(3)));
 	return {
@@ -312,7 +328,7 @@ function diffFacts() {
 		addedSource: added.filter((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f) && !DATA_FILE.test(f)),
 		added,
 		lines,
-		gate: all.filter((f) => GATE_FILE.test(f)),
+		gate: (() => { const ci = new Set([...ciRuns(base), ...ciRuns('HEAD')]); return all.filter((f) => GATE_FILE.test(f) || ci.has(f)); })(),
 		// Triage reads the lines that can change behaviour: not docs, records or maps, and not a test line the same
 		// change removed from another test file (a split or a move).
 		triageLines: triageLines(base),
