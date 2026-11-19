@@ -42,6 +42,8 @@ export function problems(rec) {
 	need(Array.isArray(rec.items) && rec.items.length > 0, 'items is empty');
 	const [maj, min] = String(rec.version || '').split('.').map(Number);
 	const from141 = maj > 1 || (maj === 1 && min >= 41);
+	// K139 (PR 53): the Summary table is written from the items that name a where; with none it is a header and no rows.
+	if (maj > 1 || (maj === 1 && min >= 44)) need((rec.items || []).some((it) => it && text(it.where)), 'no item names a where: the Summary table needs at least one row saying what a person meets now');
 	(rec.items || []).forEach((it, i) => {
 		need(text(it.id), `item ${i + 1} has no id`);
 		need(Object.hasOwn(KINDS, it.kind), `item ${i + 1} kind "${it.kind}" is not one of ${Object.keys(KINDS).join(', ')}`);

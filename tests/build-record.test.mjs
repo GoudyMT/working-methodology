@@ -149,6 +149,28 @@ test('from 1.41.0 every record item states its reach, projects or kit', () => {
 	assert.match(problems(rec).join('\n'), /names no reach/, 'the series to 2.0.0 keeps the rule');
 });
 
+// K139 (build 18, seen on PR 53): a record with no item naming a where wrote a Summary of a header and no rows, and
+// both the record check and the PR body audit passed it.
+// why: catches a PR body whose Summary table is empty passing the record check and the PR body audit
+test('from 1.44.0 a record needs a Where row, and the PR body audit refuses a Summary with no rows', () => {
+	const rec = record();
+	rec.version = '1.44.0';
+	rec.items.forEach((it) => { it.reach = 'kit'; });
+	assert.deepEqual(problems(rec), []);
+	delete rec.items[0].where;
+	assert.match(problems(rec).join('\n'), /no item names a where/);
+	const old = record();
+	delete old.items[0].where;
+	assert.deepEqual(problems(old), [], 'a record before 1.44.0 keeps its old rule');
+	const dir = kitTemp.makeTemp('recsummary-');
+	const f = path.join(dir, 'body.md');
+	fs.writeFileSync(f, prBody(old));
+	for (const audit of ['project/.claude/pr-body-audit.mjs', 'user/kit-tools/audits/pr-body-audit.mjs']) {
+		const r = spawnSync(process.execPath, [path.resolve(audit), f, old.title, '31'], { encoding: 'utf8', cwd: dir });
+		assert.match(r.stdout, /FAIL\s+Summary is a before \/ after table/, audit);
+	}
+});
+
 // K96 (build 12, reproduced on the 1.37.0 draft): the record check reads a dash only in prose, outside code spans, so
 // it passed a line quoting `approve.mjs --tap "<act>"`, and the notes audit then failed that draft on its double
 // hyphen; the live line was reworded by hand. A flag in code is code, in the notes as in the record; prose is still held.

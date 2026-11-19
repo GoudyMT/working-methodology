@@ -117,7 +117,9 @@ row('Visuals: numbers, chart and why lines check out', visualsFaults.length === 
 const framing = body.slice(body.indexOf('\n') + 1, body.indexOf('### Summary')).trim();
 row('framing of 1-3 lines before Summary', framing.length > 0 && !framing.startsWith('#') && framing.split('\n').length <= 3, `${framing.split('\n').length} lines`);
 
-row('Summary is a before / after table', /\n\| *Where *\| *Before *\| *After *\|/.test(section('Summary')), 'header | Where | Before | After |');
+// K139 (PR 53): a header with no rows passed; the table needs at least one row under its separator.
+const summaryRows = (/\n\| *Where *\| *Before *\| *After *\| *\n\|[-| :]+\|\n((?:\|.*\|\n?)+)/.exec(section('Summary') + '\n') || [])[1];
+row('Summary is a before / after table', Boolean(summaryRows && summaryRows.trim()), summaryRows ? `${summaryRows.trim().split('\n').length} row(s)` : 'header | Where | Before | After | and at least one row');
 
 const verification = section('Verification');
 const verificationBullets = visibleText(verification).split('\n').filter((l) => l.startsWith('- ')).length;
