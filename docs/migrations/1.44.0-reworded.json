@@ -1,0 +1,8 @@
+{
+  "lines": [
+    {
+      "before": "9. **Credit and keep a safe copy.** Each third-party plugin or skill is credited (author, source, license) in `vendor/CREDITS.md` and kept as a pinned backup once its license allows. Read a community skill before first use. Upstream changes enter only through a reviewed `snapshot` and kit bump. Why: credit is owed, and a skill gone upstream must not take the method with it. *Check: tests confirm every backup is credited.*",
+      "after": "9. **Credit and keep a safe copy.** Each third-party plugin or skill is credited (author, source, license) and kept as a pinned backup once its license allows, in the private backup repo `vendor.dir` names (the kit keeps `vendor-index.json`). Process skills have one home, the kit's own; a third-party copy stays a backup. Read a community skill before first use. Upstream changes enter only through a reviewed `snapshot` and kit bump. Why: credit is owed, and a skill gone upstream must not take the method with it. *Check: tests confirm every backup is credited.*"
+    }
+  ]
+}
