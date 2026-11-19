@@ -30,7 +30,7 @@ const plain = (text) => entities(text)
 	.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
 	.replace(/<!-{2,}|-{2,}>|^\[[^\]\n]*\]:\s*(?:#|<>)\s*[("']/gm, '\n');
 // Markup inside a word hides it from the reader of the source, not the page: Re**quested**, Req<b></b>uested.
-const unbroken = (text) => text.replace(/<[^>\n]*>/g, '').replace(/(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\w)|(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\s+by\b)/gi, '');
+const unbroken = (text) => text.replace(/<[^>\n]*>/g, '').replace(/!?\[\]\([^)\n]*\)/g, '').replace(/(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\w)|(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\s+by\b)/gi, '');
 
 // A code span in a sentence is prose about the line; one alone on its line is the line.
 const noSpans = (body) => body.replace(/\[[xX]\]/g, ' ').replace(/(?<!\\)`[^`\n]*(?<!\\)`(?=[^\n]*\w)/g, ' ');
@@ -58,13 +58,14 @@ function startsLine(body) {
  */
 // K143 (build 18): a comment inside a line is hidden on the page (Re<!---->quested by), so the text is also read with
 // each one taken out, again until none is left (Re<!-<!---->->quested leaves Re<!-->quested, itself an empty comment).
-const uncommented = (text) => { let t = String(text), was; do { was = t; t = t.replace(/<!--(?:>|->|[^\n]*?-->)/g, ''); } while (t !== was); return t; };
+const uncommented = (text) => { let t = String(text), was; do { was = t; t = t.replace(/<!--(?:>|->|[\s\S]*?-->)/g, ''); } while (t !== was); return t; };
 export function attributionFaults(text) {
 	const body = plain(text);
 	const faults = [];
-	if (/claude-projects-attribution/i.test(body)) faults.push('a claude-projects-attribution marker');
 	const prose = noSpans(body);
 	const joined = noSpans(plain(uncommented(text)));
+	// The marker word is read with comments, tags and empty links taken out too (claude-projects-<!---->attribution).
+	if ([body, unbroken(body), joined, unbroken(joined)].some((p) => /claude-projects-attribution/i.test(p))) faults.push('a claude-projects-attribution marker');
 	if ([prose, unbroken(prose), joined, unbroken(joined)].some((p) => startsLine(p) || STYLED.test(p))) faults.push('a Requested by line');
 	return faults;
 }

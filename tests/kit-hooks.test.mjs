@@ -683,7 +683,9 @@ test('the attribution check refuses every disguise in the corpus and passes pros
 // comment inside a word, which the page hides (Re<!---->quested by), passed the PR check and the release notes audit.
 // why: catches a Requested by line split by an HTML comment passing the PR and release attribution checks
 test('a comment inside a word cannot hide a Requested by line from the PR or release notes check', async () => {
-  const bodies = ['Text\n\nRe<!---->quested by Pat\n', 'Text\n\nRequ<!-- x -->ested by **Pat**\n', 'Text\n\nRe<!-<!---->->quested by Pat\n'];
+  // The build 18 sweep: a comment over a line break, an empty link inside the word, and the marker split by a comment.
+  const bodies = ['Text\n\nRe<!---->quested by Pat\n', 'Text\n\nRequ<!-- x -->ested by **Pat**\n', 'Text\n\nRe<!-<!---->->quested by Pat\n',
+    'Text\n\nRe<!--\n-->quested by Pat\n', 'Text\n\nRe[](#)quested by Pat\n', 'Text\n\nclaude-projects-<!---->attribution\n'];
   for (const file of ['../project/.claude/no-attribution.mjs', '../user/kit-tools/audits/no-attribution.mjs']) {
     const { attributionFaults } = await import(file);
     for (const b of bodies) assert.notDeepEqual(attributionFaults(b), [], `${file}: ${JSON.stringify(b)}`);
