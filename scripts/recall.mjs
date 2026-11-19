@@ -135,6 +135,31 @@ export function parseRunArgs(argv) {
   return { label, kitDir: second && !noKit ? second : null, noKit };
 }
 
+/**
+ * K137 (build 18): the rule files of a kit folder over their size caps (kit.config.json caps), as lines. The 1.43.0
+ * recall rounds ran on text over a cap, which CI then failed, so every paid session of that run was wasted.
+ *
+ * Args:
+ *     kitDir: the kit folder the run installs
+ *
+ * Returns:
+ *     one line per file over its cap; none when all fit or the folder sets no caps
+ */
+export function capFaults(kitDir) {
+  let caps;
+  try { caps = JSON.parse(fs.readFileSync(path.join(kitDir, 'kit.config.json'), 'utf8')).caps || {}; } catch { return []; }
+  const out = [];
+  const size = (p) => { try { return fs.statSync(p).size; } catch { return null; } };
+  if (caps.module > 0) {
+    let names = [];
+    try { names = fs.readdirSync(path.join(kitDir, 'rules')).filter((n) => n.endsWith('.md') && n !== 'core.md'); } catch { /* no rules */ }
+    for (const n of names.sort()) { const b = size(path.join(kitDir, 'rules', n)); if (b > caps.module) out.push(`rules/${n}: ${b} B, over its cap of ${caps.module} B`); }
+  }
+  const agents = size(path.join(kitDir, 'project', 'AGENTS.md'));
+  if (caps.agentsMd > 0 && agents > caps.agentsMd) out.push(`project/AGENTS.md: ${agents} B, over its cap of ${caps.agentsMd} B`);
+  return out;
+}
+
 /** A fresh random folder. It takes no label, so a label can never reach the path a session sees. */
 export function probePath(osHome) {
   const hex = () => crypto.randomBytes(3).toString('hex');
@@ -433,8 +458,18 @@ export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when,
   }
 }
 
+// K137: checked before anything else a run does, so no session is paid for on text CI would refuse.
+export function refuseOverCap(kitDir, noKit) {
+  if (noKit) return;
+  const over = capFaults(kitDir || KIT);
+  if (!over.length) return;
+  process.stderr.write(`Refused: rule text over its size cap, which CI fails, so a recall run on it would be wasted. Trim it first:\n${over.map((l) => `  ${l}`).join('\n')}\n`);
+  process.exit(1);
+}
+
 async function main(argv) {
   const { label, kitDir, noKit } = parseRunArgs(argv);
+  refuseOverCap(kitDir, noKit);
   // The Claude config folder, found the way kit.mjs finds it.
   const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
   checkUserLayer(home);

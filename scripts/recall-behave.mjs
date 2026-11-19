@@ -17,7 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkUserLayer, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe } from './recall.mjs';
+import { checkUserLayer, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITE = path.join(KIT, 'docs', 'evals', 'behaviour-scenarios.json');
@@ -261,6 +261,7 @@ async function main(argv) {
 	const only = at >= 0 ? new Set(String(argv[at + 1] || '').split(',').filter(Boolean)) : null;
 	if (at >= 0) argv = [...argv.slice(0, at), ...argv.slice(at + 2)];
 	const { label: name, kitDir, noKit } = parseRunArgs(argv);
+	refuseOverCap(kitDir, noKit);
 	const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 	checkUserLayer(home);
 	checkHome(process.env);
