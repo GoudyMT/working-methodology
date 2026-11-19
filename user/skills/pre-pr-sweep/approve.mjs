@@ -120,9 +120,39 @@ const TRIAL_EVERY_EARNED = 20;
 // Two questions sharing this much of their words are one question asked twice. Rewording beats a word count, so the
 // outcome's repeated-findings trip is the real backstop for clones.
 const CLONE = 0.5;
+// The changed lines a triage sweep may cover: every line of code, but none of docs or data, and none a test file
+// gains that a test file of the same change lost (a test moved unchanged).
+function triageLines(base) {
+	// The whole diff, renames off: a test split reads as a rename of one file, which hides the other side's lines.
+	const d = git('diff', '-U0', '--no-color', '--no-renames', '--no-ext-diff', '--no-textconv', `${base}...HEAD`);
+	if (d.status !== 0) return Infinity;
+	// The file a hunk belongs to is read from its own header: "--- a/x" names a removed file, "+++ b/x" any other.
+	let file = '';
+	let other = 0;
+	const gone = [];
+	const came = [];
+	for (const l of d.stdout.split('\n')) {
+		if (l.startsWith('diff --git ')) { file = ''; continue; }
+		if (l.startsWith('--- ')) { if (l !== '--- /dev/null') file = l.slice(6); continue; }
+		if (l.startsWith('+++ ')) { if (l !== '+++ /dev/null') file = l.slice(6); continue; }
+		if (!/^[-+]/.test(l) || !file || DOC_FILE.test(file) || DATA_FILE.test(file) || sweepOwned(file)) continue;
+		if (!TEST_FILE.test(file)) { other++; continue; }
+		(l[0] === '-' ? gone : came).push(l.slice(1).trim());
+	}
+	const goneSet = new Set(gone);
+	const cameSet = new Set(came);
+	return other + gone.filter((t) => !cameSet.has(t)).length + came.filter((t) => !goneSet.has(t)).length;
+}
+
 // What the diff shows. Triage is at most this many changed lines with no new file (a starting value, like the caps).
 const TRIAGE_MAX_LINES = 20;
-const DEP_FILE = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt|pyproject\.toml|poetry\.lock|Pipfile(\.lock)?|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(\.lock)?)$/;
+// I7 (build 18): Maven, Gradle, .NET and PHP dependency files too.
+const DEP_FILE = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt|pyproject\.toml|poetry\.lock|Pipfile(\.lock)?|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(\.lock)?|pom\.xml|(build|settings)\.gradle(\.kts)?|gradle\.lockfile|[^/]+\.csproj|packages\.lock\.json|Directory\.Packages\.props|composer\.(json|lock))$/;
+// T10 (build 18): the floor comes from what the diff touches. Gate code (CI, git hooks, a guard or hook of the project's
+// .claude folder, the kit's own hooks, tools and install, this script) is feature work with the security modifier.
+const GATE_FILE = /(^|\/)\.(github|githooks)\/|(^|\/)\.claude\/[^/]+\.(c?js|mjs)$|^user\/(kit-hooks|kit-tools)\/|^scripts\/kit\.mjs$|(^|\/)approve\.mjs$/;
+// I9 (build 18): a release's record, its changelog and version, and anything under docs/ are not source, however long.
+const DATA_FILE = /(^|\/)docs\/|^(VERSION|CHANGELOG\.md)$|^\.kit\/[^/]+\.json$/;
 const TEST_FILE = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$|_test\.[a-z]+$/;
 const DOC_FILE = /\.(md|txt|rst)$/i;
 // What a sweep or a release commits about itself is not source: a committed contract, the project's caps file
@@ -269,9 +299,13 @@ function diffFacts() {
 		changed: all.length,
 		deps: all.filter((f) => DEP_FILE.test(f)).some((f) => depsChanged(base, f)),
 		tests: all.some((f) => TEST_FILE.test(f)),
-		addedSource: added.filter((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f)),
+		addedSource: added.filter((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f) && !DATA_FILE.test(f)),
 		added,
 		lines,
+		gate: all.filter((f) => GATE_FILE.test(f)),
+		// Triage reads the lines that can change behaviour: not docs, records or maps, and not a test line the same
+		// change removed from another test file (a split or a move).
+		triageLines: triageLines(base),
 	};
 }
 
@@ -384,8 +418,10 @@ function check(c, facts, log = []) {
 		if (facts.offBase) why.push(`--base ${facts.baseName} is not on ${facts.offBase}: a base off the default branch can shrink the diff the tier is read from`);
 		if (facts.staleBase) why.push(`--base ${facts.baseName} is older than where this branch left ${facts.staleBase}: it hides the caps and hooks the branch took from there`);
 		if (facts.noHome) why.push(`--base ${facts.baseName} cannot be checked: this repo has no default branch the script knows (main or master)`);
+		if (facts.gate.length && TIER_RANK[tier] < TIER_RANK.feature) why.push(`${facts.gate[0]} is gate code (CI, a git hook, a guard, the kit's hooks, tools or install): feature work with the security-sensitive modifier, not ${tier}`);
 		if (tier !== 'feature' && facts.addedSource.length) why.push(`an added source file (${facts.addedSource[0]}) is feature work, not ${tier}`);
-		if (tier === 'triage' && (facts.added.length || facts.lines > TRIAGE_MAX_LINES)) why.push(`${facts.lines} changed lines, ${facts.added.length} added files: more than a triage change`);
+		const addedCode = facts.added.filter((f) => !DOC_FILE.test(f) && !DATA_FILE.test(f) && !TEST_FILE.test(f));
+		if (tier === 'triage' && (addedCode.length || facts.triageLines > TRIAGE_MAX_LINES)) why.push(`${facts.triageLines} changed lines that are not docs, records or moved tests, ${addedCode.length} added files: more than a triage change`);
 	}
 	const roles = Array.isArray(c.roles) ? c.roles : [];
 	const cap = caps(tier, facts && facts.base);
@@ -403,6 +439,7 @@ function check(c, facts, log = []) {
 		if (c.modifiers !== undefined && !(Array.isArray(c.modifiers) && c.modifiers.every((m) => typeof m === 'string'))) fix.push('modifiers must be a list of names, like ["security-sensitive"]');
 		const modifiers = new Set(Array.isArray(c.modifiers) ? c.modifiers : []);
 		if (facts && facts.deps) modifiers.add('new-dependency');
+		if (facts && facts.gate.length) modifiers.add('security-sensitive');
 		if (tier === 'fix' && (c.testsChanged || (facts && facts.tests))) need['test-value'] = 1;
 		for (const m of modifiers) {
 			if (!Object.hasOwn(MODIFIER_NEEDS, m)) { fix.push(`unknown modifier "${m}"`); continue; }

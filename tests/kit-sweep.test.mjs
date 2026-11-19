@@ -1028,3 +1028,55 @@ test('R6.2: a pop-up Yes that answered one ask does not answer the next ask of t
   assert.match(second.stdout, /that Yes already answered an ask/, again.stdout);
   assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'owner-yes').length, 1);
 });
+
+// T10 sweep floor (build 18, with I9, I7 and J-R1): the floor read line counts and added files, so the 1.43.1 test
+// split (20,801 moved lines, a build record) went to the owner, and a one-line CI change could pass as a fix. The
+// floor now comes from what the diff touches: gate code (CI, git hooks, a guard, the kit's hooks and tools, install,
+// this script) is feature work with the security modifier; docs, records, maps and tests moved unchanged stay triage
+// at any size; a dependency file in any ecosystem adds the supply-chain role.
+// why: guards rule:sweep-tiers (the tier follows what the change can break, not its length)
+test('the floor comes from what the diff touches: gate code is a secured feature, records and moved tests stay triage', () => {
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  const asFix = { tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root, and does it hold?'), role('blast-radius', 'Which callers does the change reach?')] };
+  // Gate code: a fix contract asks, and a feature contract without the security roles is sent back.
+  const ci = sweepRepo({ '.github/workflows/ci.yml': 'on: push\n' });
+  const asked = approveRun(asFix, ci);
+  assert.notEqual(asked.status, 0, asked.stdout);
+  assert.match(asked.stdout, /needs 3 security role/, 'and the security roles the modifier brings');
+  assert.match(asked.stdout, /\.github\/workflows\/ci\.yml is gate code/);
+  const plain = featureContract();
+  plain.roles = plain.roles.filter((r) => r.kind !== 'security');
+  const thin = approveRun(plain, sweepRepo({ '.githooks/pre-push': 'exit 0\n' }));
+  assert.equal(thin.status, FIX_EXIT, thin.stdout);
+  assert.match(thin.stdout, /needs 3 security role/);
+  // A release's record, changelog and version, however long, are triage (I9: a json under docs/ is no source file).
+  const record = sweepRepo({ 'docs/builds/1.0.1.json': `${JSON.stringify({ lines: Array.from({ length: 80 }, (_, i) => `line ${i}`) }, null, 1)}\n`, 'CHANGELOG.md': '## 1.0.1\n', VERSION: '1.0.1\n' });
+  const rec = approveRun(one, record);
+  assert.equal(rec.status, 0, rec.stdout);
+  // A test file moved unchanged is triage at any length; a test that gains 21 new lines is not.
+  const moved = makeTemp('approve-');
+  g(moved, 'init', '-q', '-b', 'main');
+  const body = Array.from({ length: 40 }, (_, i) => `test('t${i}', () => {});`).join('\n') + '\n';
+  fs.mkdirSync(path.join(moved, 'tests'));
+  fs.writeFileSync(path.join(moved, 'tests', 'all.test.mjs'), `import { test } from 'node:test';\n${body}`);
+  commitAll(moved, 'base', true);
+  g(moved, 'checkout', '-q', '-b', 'refactor/split');
+  fs.rmSync(path.join(moved, 'tests', 'all.test.mjs'));
+  const lines = body.split('\n').filter(Boolean);
+  fs.writeFileSync(path.join(moved, 'tests', 'a.test.mjs'), `import { test } from 'node:test';\n${lines.slice(0, 20).join('\n')}\n`);
+  fs.writeFileSync(path.join(moved, 'tests', 'b.test.mjs'), `import { test } from 'node:test';\n${lines.slice(20).join('\n')}\n`);
+  commitAll(moved, 'split', true);
+  fs.mkdirSync(path.join(moved, 'sweeps'));
+  const split = approveRun(one, moved);
+  assert.equal(split.status, 0, split.stdout);
+  approveIn(moved, [split.f, '--outcome', '--none-ran']);
+  fs.appendFileSync(path.join(moved, 'tests', 'b.test.mjs'), Array.from({ length: 21 }, (_, i) => `test('new ${i}', () => {});`).join('\n') + '\n');
+  commitAll(moved, 'more', true);
+  const grown = approveRun(one, moved);
+  assert.equal(grown.status, 1, grown.stdout);
+  assert.match(grown.stdout, /more than a triage change/);
+  // I7: a Maven, Gradle, .NET or PHP dependency file needs the supply-chain role too.
+  for (const f of ['pom.xml', 'build.gradle.kts', 'src/App.csproj', 'composer.json']) {
+    assert.match(approveRun(featureContract(), sweepRepo({ 'src/sync.ts': 'x\n', [f]: '<x/>\n' })).stdout, /supply-chain/i, f);
+  }
+});
