@@ -295,6 +295,44 @@ function fixtureRepo() {
 	return { repo, log, test: path.join(repo, 'tests', 'x.test.mjs') };
 }
 
+// K136 (build 18): a test that installs the kit runs the guards from the installed copies, in a temp project or Claude
+// folder outside the repo, under the launcher's start line (NODE_OPTIONS cleared), so the map dropped every line they
+// ran and the PR test pick could miss the tests of guard code. An installed copy now counts as the repo file it came
+// from: project/.claude, and user/kit-tools, kit-hooks and skills, by its path below that folder.
+// why: catches the PR test pick missing tests that reach guard code through an installed copy
+test('the coverage map credits lines run from an installed copy outside the repo to the repo file it came from', () => {
+	const repo = kitTemp.makeTemp('maprepo-');
+	const files = {
+		'project/.claude/hook.cjs': "const x = 1;\nif (process.argv[2] === 'go') process.stdout.write('go');\nelse process.stdout.write('no');\n",
+		'user/kit-tools/tool.cjs': "process.stdout.write('t');\n",
+		'tests/x.test.mjs': [
+			`import { test } from ${HARNESS};`,
+			"import fs from 'node:fs';",
+			"import os from 'node:os';",
+			"import path from 'node:path';",
+			"import { spawnSync } from 'node:child_process';",
+			"test('installed', () => {",
+			"  const at = fs.mkdtempSync(path.join(os.tmpdir(), 'inst-'));",
+			"  for (const [from, to] of [['project/.claude/hook.cjs', 'proj/.claude/hook.cjs'], ['user/kit-tools/tool.cjs', 'home/kit-tools/tool.cjs']]) { fs.mkdirSync(path.dirname(path.join(at, to)), { recursive: true }); fs.copyFileSync(from, path.join(at, to)); }",
+			"  spawnSync(process.execPath, [path.join(at, 'proj/.claude/hook.cjs'), 'go'], { env: { ...process.env, NODE_OPTIONS: '' } });",
+			"  spawnSync(process.execPath, [path.join(at, 'home/kit-tools/tool.cjs')], { env: { ...process.env, NODE_OPTIONS: '' } });",
+			"  fs.rmSync(at, { recursive: true, force: true });",
+			'});',
+			'',
+		].join('\n'),
+	};
+	for (const [rel, body] of Object.entries(files)) {
+		fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+		fs.writeFileSync(path.join(repo, rel), body);
+	}
+	sh(repo, 'init', '-q', '-b', 'main'); sh(repo, 'add', '.'); sh(repo, 'commit', '-qm', 'fixture');
+	const r = run(repo, ['--map', path.join(repo, 'tests', 'x.test.mjs')]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	const t = JSON.parse(fs.readFileSync(path.join(repo, 'tests', '.map.json'), 'utf8')).tests['tests/x.test.mjs::installed'];
+	assert.deepEqual(t.lines['project/.claude/hook.cjs'], [1, 2], 'the installed guard copy ran lines 1 and 2, never 3');
+	assert.deepEqual(t.lines['user/kit-tools/tool.cjs'], [1]);
+});
+
 // why: guards rule:test-and-review-cadence
 test('the coverage map records the lines each test runs, in its own process and in children, and the files it reads', () => {
 	const { repo, test: file } = fixtureRepo();
