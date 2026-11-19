@@ -89,6 +89,11 @@ function main(argv) {
 			const home2 = path.join(root, 'home-upgrade');
 			const proj2 = newRepo(path.join(root, 'proj-upgrade'));
 			installBoth(prevKit, home2, proj2, `release ${prev}`);
+			// The README's upgrade step from a release that kept the profile in the kit folder (before 1.44.0): move it
+			// to the config folder first, or install user refuses rather than blank its lines.
+			const oldProfile = path.join(prevKit, 'owner-profile.md');
+			const homeProfile = path.join(home2, 'kit-owner-profile.md');
+			if (fs.existsSync(oldProfile) && !fs.existsSync(homeProfile)) fs.copyFileSync(oldProfile, homeProfile);
 			installBoth(KIT, home2, proj2, `upgrade ${prev} to this build`, ['--unreleased']);
 			const s = kit(KIT, home2, 'status', proj2);
 			const gaps = s.out.split('\n').filter((l) => /differs from the kit|behind kit|not wired|missing/i.test(l));
