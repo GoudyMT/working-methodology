@@ -1234,7 +1234,7 @@ function treeHash(dir) {
     for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const p = path.join(d, e.name);
       const r = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isSymbolicLink()) { h.update(`link\0${r}\0`); continue; }
+      if (e.isSymbolicLink()) { h.update(`link\0${r}\0${fs.readlinkSync(p)}\0`); continue; }
       if (e.isDirectory()) walkIn(p, r);
       else { h.update(`file\0${r}\0`); h.update(fs.readFileSync(p)); h.update('\0'); }
     }
@@ -1382,17 +1382,32 @@ export function restore({ kit, home, name }) {
   // a backup the kit's index names, with the same files it indexed, comes back.
   let index = {};
   try { index = JSON.parse(fs.readFileSync(path.join(kit, 'vendor-index.json'), 'utf8')); } catch { /* none: nothing is trusted */ }
-  const kind = (index.plugins || {})[name] ? 'plugins' : (index.skillGroups || {})[name] ? 'skills' : null;
+  const has = (k) => Boolean(index[k]) && Object.hasOwn(index[k], name);
+  const kind = has('plugins') ? 'plugins' : has('skillGroups') ? 'skills' : null;
   if (!kind) throw new Error(`${name} is not in vendor-index.json, so its backup is not restored`);
   const folder = path.join(vendor, kind, name);
   if (!fs.existsSync(folder) || treeHash(folder) !== index[kind === 'plugins' ? 'plugins' : 'skillGroups'][name].hash) throw new Error(`the backup of ${name} at ${toPosix(folder)} differs from what vendor-index.json recorded: check it, then run vendor-index again`);
+  // A link would copy whatever it points at now, which no hash covers.
+  const linkIn = (d) => fs.readdirSync(d, { withFileTypes: true }).some((e) => e.isSymbolicLink() || (e.isDirectory() && linkIn(path.join(d, e.name))));
+  if (linkIn(folder)) throw new Error(`the backup of ${name} at ${toPosix(folder)} holds a link, which restore never follows`);
+  // The copy comes only from the folder the index check read: a plugin's from plugins/, a skill group's from skills/.
+  if (kind === 'skills') {
+    for (const e of fs.readdirSync(group, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const dest = path.join(home, 'skills', e.name);
+      if (fs.existsSync(dest)) { out.kept.push(e.name); continue; }
+      fs.cpSync(path.join(group, e.name), dest, { recursive: true });
+      out.restored.push(e.name);
+    }
+    return out;
+  }
   if (!fs.existsSync(plugin) && fs.existsSync(path.join(single, 'SKILL.md'))) {
     const dest = path.join(home, 'skills', name);
     if (fs.existsSync(dest)) out.kept.push(name);
     else { fs.cpSync(single, dest, { recursive: true }); out.restored.push(name); }
     return out;
   }
-  const root = fs.existsSync(plugin) ? plugin : fs.existsSync(group) ? group : null;
+  const root = fs.existsSync(plugin) ? plugin : null;
   if (!root) throw new Error(`no snapshot named ${name} in ${toPosix(vendor)}`);
   for (const e of fs.readdirSync(root, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;

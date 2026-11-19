@@ -209,6 +209,15 @@ test('snapshot and restore use the backup folder the config names, and the kit k
   fs.rmSync(path.join(ctx.home, 'skills/vendor-skill'), { recursive: true });
   assert.throws(() => restore({ kit: ctx.kit, home: ctx.home, name: 'vendor-pack' }), /differs from what vendor-index\.json recorded/);
   assert.equal(fs.existsSync(path.join(ctx.home, 'skills/vendor-skill')), false, 'nothing restored');
+  // A plugin's restore copies from its own folder only, never a skill group's folder of the same name.
+  fs.mkdirSync(path.join(backups, 'plugins/ghost'), { recursive: true });
+  fs.writeFileSync(path.join(backups, 'plugins/ghost/README.md'), 'x\n');
+  fs.mkdirSync(path.join(backups, 'skills/ghost/evil'), { recursive: true });
+  fs.writeFileSync(path.join(backups, 'skills/ghost/evil/SKILL.md'), 'evil\n');
+  fs.writeFileSync(path.join(backups, 'skills/vendor-pack/vendor-skill/SKILL.md'), 'vendor\n');
+  snapshot({ kit: ctx.kit, home: ctx.home });
+  assert.throws(() => restore({ kit: ctx.kit, home: ctx.home, name: 'ghost' }), /no snapshot named ghost/);
+  assert.equal(fs.existsSync(path.join(ctx.home, 'skills/evil')), false);
   // Where the backups are cloned, their own SOURCE.json is read: an index left behind is named, not trusted.
   const src = path.join(backups, 'plugins/toolbox/SOURCE.json');
   fs.writeFileSync(src, JSON.stringify({ ...JSON.parse(read(src)), version: '9.9.9' }));
