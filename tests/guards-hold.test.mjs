@@ -274,6 +274,13 @@ test('a loop over a glob of guard files that only reads, cmp against a guard and
 	for (const c of ['for f in .claude/guard*.cjs; do sed -i 1d "$f"; done', 'for f in .claude/guard*.cjs; do cp a.txt "$f"; done', 'for f in .claude/*; do rm $f; done',
 		'for f in .cl*; do rm -rf "$f"/guard.cjs; done', 'for f in .cl?ude; do echo x > "$f"/guard.cjs; done', 'for f in .*/guard.cjs; do rm "$f"; done', 'for f in .git/hooks/*; do cp a.txt "$f"; done', 'cmp a.txt .claude/guard.cjs > .claude/guard.cjs',
 		'du -sh tests && rm .claude/guard.cjs', 'du -sh tests > .claude/guard.cjs', `node -e "require('fs').readFileSync('.claude/guard.cjs')"`]) assert.equal(bash(c), 'deny', c);
+	// The commit review: the glob hands the body real names, and an unquoted $f splits one with a space ("x .claude").
+	assert.equal(bash('for f in *.txt; do cp $f b; done'), 'allow', 'no name the glob matches splits');
+	fs.writeFileSync(path.join(proj, 'x .claude'), '');
+	try {
+		for (const c of ['for f in x*; do cp a.txt $f/guard.cjs; done', 'for f in x*; do rm -rf ${f}; done', 'for f in */x*; do cp a.txt $f; done']) assert.equal(bash(c), 'deny', c);
+		assert.equal(bash('for f in x*; do cp a.txt "$f"/guard.cjs; done'), 'allow', 'quoted, the name stays one word');
+	} finally { fs.rmSync(path.join(proj, 'x .claude')); }
 });
 
 // K117 rest (build 17, held live on 1.42.0 from the workbench): a kit script given a quoted note with a bracket in it,
