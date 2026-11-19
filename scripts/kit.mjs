@@ -1169,7 +1169,46 @@ function licenseName(dir) {
 }
 
 /**
- * Keep a credited copy of each third-party plugin and skill in vendor/, so the kit can still
+ * T10 (build 18): where the third-party backups live. The kit repo is public and the copies are other people's work,
+ * so they moved to a private repo cloned beside the kit; kit.config.json "vendor.dir" names it, relative to the kit
+ * folder. With no dir it is the kit's own vendor/, as before.
+ *
+ * Args:
+ *     kit: the kit folder
+ *     config: its kit.config.json
+ *
+ * Returns:
+ *     the backup folder's absolute path
+ */
+export function vendorRoot(kit, config) {
+  const dir = config && config.vendor && config.vendor.dir;
+  return typeof dir === 'string' && dir ? path.resolve(kit, dir) : path.join(kit, 'vendor');
+}
+
+/**
+ * What the kit keeps of its backups when they live elsewhere: vendor-index.json, one entry per plugin and skill
+ * group with its credit and the skill names it holds, so the kit's own checks (every backup credited, every skill the
+ * case map names exists) run where the backups are not, as in CI.
+ *
+ * Args:
+ *     vendor: the backup folder
+ *
+ * Returns:
+ *     { plugins, skillGroups }, each keyed by name
+ */
+export function vendorIndex(vendor) {
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return {}; } };
+  const skillsIn = (d) => { const names = []; const look = (x) => { let es = []; try { es = fs.readdirSync(x, { withFileTypes: true }); } catch { return; } for (const e of es) { if (!e.isDirectory()) continue; if (fs.existsSync(path.join(x, e.name, 'SKILL.md'))) names.push(e.name); look(path.join(x, e.name)); } }; look(d); return names.sort(); };
+  const entry = (dir, extra) => { const src = read(path.join(dir, 'SOURCE.json')); return { version: src.version || null, author: src.author || 'unknown', license: src.license || 'unknown', repository: src.repository || 'unknown', licenseFile: fs.existsSync(path.join(dir, 'LICENSE')), ...(src.licenseNote ? { licenseNote: src.licenseNote } : {}), ...extra }; };
+  const list = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch { return []; } };
+  const plugins = Object.fromEntries(list(path.join(vendor, 'plugins')).map((n) => { const dir = path.join(vendor, 'plugins', n); return [n, entry(dir, { skills: skillsIn(path.join(dir, 'skills')), rootSkill: fs.existsSync(path.join(dir, 'SKILL.md')) })]; }));
+  const skillGroups = Object.fromEntries(list(path.join(vendor, 'skills')).map((n) => { const dir = path.join(vendor, 'skills', n); return [n, entry(dir, { skills: skillsIn(dir) })]; }));
+  return { plugins, skillGroups };
+}
+const writeVendorIndex = (kit, vendor) => fs.writeFileSync(path.join(kit, 'vendor-index.json'), JSON.stringify(vendorIndex(vendor), null, 1) + '\n');
+
+/**
+ * Keep a credited copy of each third-party plugin and skill in the backup folder, so the kit can still
  * restore them if a source is deleted or unreachable. Each copy carries its LICENSE and a
  * SOURCE.json (version, commit, author, license, where it came from); vendor/CREDITS.md lists all.
  *
@@ -1182,7 +1221,7 @@ function licenseName(dir) {
 export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 10) }) {
   const { config } = loadKit(kit);
   const want = config.vendor || {};
-  const vendor = path.join(kit, 'vendor');
+  const vendor = vendorRoot(kit, config);
   const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
   const installed = fs.existsSync(installedPath) ? JSON.parse(fs.readFileSync(installedPath, 'utf8')).plugins || {} : {};
   const marketsPath = path.join(home, 'plugins', 'known_marketplaces.json');
@@ -1271,6 +1310,7 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
     ...rows,
     '',
   ].join('\n'));
+  writeVendorIndex(kit, vendor);
   return out;
 }
 
@@ -1283,7 +1323,7 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
  *     { restored, kept } - skill names
  */
 export function restore({ kit, home, name }) {
-  const vendor = path.join(kit, 'vendor');
+  const vendor = vendorRoot(kit, loadKit(kit).config);
   const plugin = path.join(vendor, 'plugins', name, 'skills');
   const group = path.join(vendor, 'skills', name);
   const out = { restored: [], kept: [] };
@@ -1295,7 +1335,7 @@ export function restore({ kit, home, name }) {
     return out;
   }
   const root = fs.existsSync(plugin) ? plugin : fs.existsSync(group) ? group : null;
-  if (!root) throw new Error(`no snapshot named ${name} in vendor/`);
+  if (!root) throw new Error(`no snapshot named ${name} in ${toPosix(vendor)}`);
   for (const e of fs.readdirSync(root, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;
     const dest = path.join(home, 'skills', e.name);
@@ -1617,13 +1657,19 @@ export function vendorDrift({ kit, home }) {
   const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
   if (!fs.existsSync(installedPath)) return [];
   const installed = JSON.parse(fs.readFileSync(installedPath, 'utf8')).plugins || {};
+  let vendorIdx = null;
+  try { vendorIdx = JSON.parse(fs.readFileSync(path.join(kit, 'vendor-index.json'), 'utf8')); } catch { /* none: the backups' own files */ }
+  let vendorDir = path.join(kit, 'vendor');
+  try { vendorDir = vendorRoot(kit, loadKit(kit).config); } catch { /* no config: the kit's own vendor/ */ }
   const out = [];
   for (const [key, entries] of Object.entries(installed)) {
     const name = key.split('@')[0];
-    const sourcePath = path.join(kit, 'vendor', 'plugins', name, 'SOURCE.json');
-    if (!fs.existsSync(sourcePath)) continue;
+    // T10: the version comes from the kit's index, so the check works where the backups are not cloned.
+    const indexed = ((vendorIdx || {}).plugins || {})[name];
+    const sourcePath = path.join(vendorDir, 'plugins', name, 'SOURCE.json');
+    if (!indexed && !fs.existsSync(sourcePath)) continue;
     const newest = [...entries].sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)))[0];
-    const backup = JSON.parse(fs.readFileSync(sourcePath, 'utf8')).version;
+    const backup = indexed ? indexed.version : JSON.parse(fs.readFileSync(sourcePath, 'utf8')).version;
     if (newest.version && backup && newest.version !== backup) out.push({ name, backup, installed: newest.version });
   }
   return out;
@@ -2248,8 +2294,14 @@ function main(argv) {
     console.log(`Kit is now ${bump({ kit, level: target, note: arg })}`);
   } else if (cmd === 'snapshot') {
     const r = snapshot({ kit, home });
-    console.log(`Snapshot: ${r.plugins.length} plugin(s), ${r.skills.length} skill(s) -> vendor/`);
+    console.log(`Snapshot: ${r.plugins.length} plugin(s), ${r.skills.length} skill(s) -> ${toPosix(vendorRoot(kit, loadKit(kit).config))}; vendor-index.json written`);
     if (r.missing.length) console.log(`    not found on this machine: ${r.missing.join(', ')}`);
+  } else if (cmd === 'vendor-index') {
+    // T10: write the kit's index from the backup folder as it is, with no plugin cache needed.
+    const vendor = vendorRoot(kit, loadKit(kit).config);
+    if (!fs.existsSync(vendor)) throw new Error(`no backup folder at ${toPosix(vendor)}: clone the backups there first`);
+    writeVendorIndex(kit, vendor);
+    console.log(`vendor-index.json written from ${toPosix(vendor)}`);
   } else if (cmd === 'restore') {
     const r = restore({ kit, home, name: target });
     console.log(`restored: ${r.restored.join(', ') || 'none'}; kept (already there): ${r.kept.join(', ') || 'none'}`);

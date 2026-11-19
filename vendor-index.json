@@ -1,0 +1,245 @@
+{
+ "plugins": {
+  "audit-suite": {
+   "version": "1.1.0",
+   "author": "Orbit",
+   "license": "MIT",
+   "repository": "https://github.com/Recusive/Orbit-plugin",
+   "licenseFile": false,
+   "licenseNote": "MIT is stated in its README; its repository has no LICENSE file. It bundles skills credited to Vercel (vercel-react-best-practices) and to Emil Kowalski (emil-design-engineering).",
+   "skills": [
+    "audit-as-a11y-eng",
+    "audit-as-backend-eng",
+    "audit-as-design-eng",
+    "audit-as-dx-eng",
+    "audit-as-frontend-eng",
+    "audit-as-perf-eng",
+    "audit-as-prod-readiness",
+    "audit-as-repo-maintainer",
+    "audit-as-structural-eng",
+    "audit-as-ux-eng",
+    "emil-design-engineering",
+    "full-audit",
+    "make-interfaces-feel-better",
+    "vercel-react-best-practices",
+    "web-animation-design",
+    "web-design-guidelines"
+   ],
+   "rootSkill": false
+  },
+  "claude-code-setup": {
+   "version": "1.0.0",
+   "author": "Anthropic",
+   "license": "Apache-2.0",
+   "repository": "https://github.com/anthropics/claude-plugins-official",
+   "licenseFile": true,
+   "skills": [
+    "claude-automation-recommender"
+   ],
+   "rootSkill": false
+  },
+  "data-engineering": {
+   "version": "0.1.0",
+   "author": "Astronomer",
+   "license": "Apache-2.0",
+   "repository": "https://github.com/astronomer/agents",
+   "licenseFile": true,
+   "skills": [
+    "airflow",
+    "airflow-hitl",
+    "airflow-plugins",
+    "analyzing-data",
+    "annotating-task-lineage",
+    "authoring-dags",
+    "checking-freshness",
+    "cosmos-dbt-core",
+    "cosmos-dbt-fusion",
+    "creating-openlineage-extractors",
+    "debugging-dags",
+    "deploying-airflow",
+    "managing-astro-deployments",
+    "managing-astro-local-env",
+    "migrating-airflow-2-to-3",
+    "profiling-tables",
+    "setting-up-astro-project",
+    "testing-dags",
+    "tracing-downstream-lineage",
+    "tracing-upstream-lineage",
+    "troubleshooting-astro-deployments",
+    "warehouse-init"
+   ],
+   "rootSkill": false
+  },
+  "design": {
+   "version": "1.2.0",
+   "author": "Anthropic",
+   "license": "Apache-2.0",
+   "repository": "https://github.com/anthropics/knowledge-work-plugins",
+   "licenseFile": true,
+   "licenseNote": "No LICENSE file ships with the plugin; the Apache-2.0 text comes from its source repository license.",
+   "skills": [
+    "accessibility-review",
+    "design-critique",
+    "design-handoff",
+    "design-system",
+    "research-synthesis",
+    "user-research",
+    "ux-copy"
+   ],
+   "rootSkill": false
+  },
+  "frontend-design": {
+   "version": "41f619d61b99",
+   "author": "Anthropic",
+   "license": "Apache-2.0",
+   "repository": "https://github.com/anthropics/claude-plugins-official",
+   "licenseFile": true,
+   "skills": [
+    "frontend-design"
+   ],
+   "rootSkill": false
+  },
+  "huggingface-skills": {
+   "version": "1.0.35",
+   "author": "Hugging Face",
+   "license": "Apache-2.0",
+   "repository": "https://github.com/huggingface/skills",
+   "licenseFile": true,
+   "skills": [
+    "hf-cli",
+    "hf-cloud-aws-context-discovery",
+    "hf-cloud-python-env-setup",
+    "hf-cloud-sagemaker-deployment-planner",
+    "hf-cloud-sagemaker-iam-preflight",
+    "hf-cloud-sagemaker-production-defaults",
+    "hf-cloud-serving-image-selection",
+    "hf-mem",
+    "huggingface-best",
+    "huggingface-community-evals",
+    "huggingface-datasets",
+    "huggingface-gradio",
+    "huggingface-llm-trainer",
+    "huggingface-local-models",
+    "huggingface-lora-space-builder",
+    "huggingface-paper-publisher",
+    "huggingface-papers",
+    "huggingface-spaces",
+    "huggingface-tool-builder",
+    "huggingface-trackio",
+    "huggingface-vision-trainer",
+    "huggingface-zerogpu",
+    "train-sentence-transformers",
+    "transformers-js",
+    "trl-training"
+   ],
+   "rootSkill": false
+  },
+  "security-guidance": {
+   "version": "2.0.17",
+   "author": "David Dworken",
+   "license": "Apache-2.0",
+   "repository": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/security-guidance",
+   "licenseFile": true,
+   "skills": [],
+   "rootSkill": false
+  },
+  "skill-creator": {
+   "version": "41f619d61b99",
+   "author": "Anthropic",
+   "license": "Apache-2.0",
+   "repository": "https://github.com/anthropics/claude-plugins-official",
+   "licenseFile": true,
+   "skills": [
+    "skill-creator"
+   ],
+   "rootSkill": false
+  },
+  "superpowers": {
+   "version": "7.0.0",
+   "author": "Jesse Vincent",
+   "license": "MIT",
+   "repository": "https://github.com/obra/superpowers",
+   "licenseFile": true,
+   "skills": [
+    "brainstorming",
+    "diagnosing-superpowers",
+    "dispatching-parallel-agents",
+    "executing-plans",
+    "finishing-a-development-branch",
+    "receiving-code-review",
+    "requesting-code-review",
+    "subagent-driven-development",
+    "systematic-debugging",
+    "test-driven-development",
+    "using-git-worktrees",
+    "using-superpowers",
+    "verification-before-completion",
+    "writing-plans",
+    "writing-skills"
+   ],
+   "rootSkill": false
+  },
+  "ux-ui-audit": {
+   "version": "1.0.0",
+   "author": "UXBYISSA",
+   "license": "MIT",
+   "repository": "https://github.com/uxbyissa/ux-ui-audit",
+   "licenseFile": true,
+   "skills": [],
+   "rootSkill": true
+  },
+  "vectorlab-ux-skills": {
+   "version": "1.0.0",
+   "author": "VectorLab",
+   "license": "MIT",
+   "repository": "https://github.com/VectorLabAU/skills",
+   "licenseFile": true,
+   "skills": [
+    "anti-slop",
+    "colour-palette",
+    "defaults",
+    "empty-states",
+    "errors",
+    "forms",
+    "icon-buttons",
+    "keyboard",
+    "labels",
+    "loaders",
+    "motion",
+    "page-patterns",
+    "reduced-motion",
+    "setup-ui-ux-skills",
+    "spacing",
+    "surfaces",
+    "transitions",
+    "typography",
+    "ux-audit",
+    "verbs",
+    "viewports"
+   ],
+   "rootSkill": false
+  }
+ },
+ "skillGroups": {
+  "cloudflare-skills": {
+   "version": null,
+   "author": "Cloudflare, Inc.",
+   "license": "Apache-2.0",
+   "repository": "https://github.com/cloudflare/skills",
+   "licenseFile": true,
+   "skills": [
+    "agents-sdk",
+    "cloudflare",
+    "cloudflare-email-service",
+    "cloudflare-one",
+    "cloudflare-one-migrations",
+    "durable-objects",
+    "sandbox-sdk",
+    "turnstile-spin",
+    "web-perf",
+    "workers-best-practices",
+    "wrangler"
+   ]
+  }
+ }
+}

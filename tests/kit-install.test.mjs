@@ -163,6 +163,27 @@ test('restore brings a lost skill back from the snapshot and never overwrites on
   assert.equal(read(path.join(ctx.home, 'skills/sharpen/SKILL.md')), 'mine\n');
 });
 
+// T10 (build 18): the 13 MB of backups left the public kit repo for a private repo cloned beside the kit, which
+// kit.config.json names; the kit keeps an index of them for its own checks.
+// why: catches snapshot or restore still using the kit's own vendor folder once the config names the backup folder
+test('snapshot and restore use the backup folder the config names, and the kit keeps an index of what it holds', () => {
+  const ctx = makeKit();
+  addThirdParty(ctx);
+  const config = JSON.parse(read(path.join(ctx.kit, 'kit.config.json')));
+  config.vendor.dir = '../kit-vendor';
+  fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify(config));
+  snapshot({ kit: ctx.kit, home: ctx.home });
+  const backups = path.join(path.dirname(ctx.kit), 'kit-vendor');
+  assert.ok(fs.existsSync(path.join(backups, 'skills/vendor-pack/vendor-skill/SKILL.md')), 'the copy lands in the named folder');
+  assert.equal(fs.existsSync(path.join(ctx.kit, 'vendor')), false, 'nothing lands in the kit');
+  const index = JSON.parse(read(path.join(ctx.kit, 'vendor-index.json')));
+  assert.deepEqual(index.skillGroups['vendor-pack'].skills, ['vendor-skill']);
+  assert.equal(index.skillGroups['vendor-pack'].license, 'Apache-2.0');
+  assert.ok(index.plugins.toolbox, 'the plugin is indexed');
+  fs.rmSync(path.join(ctx.home, 'skills/vendor-skill'), { recursive: true });
+  assert.deepEqual(restore({ kit: ctx.kit, home: ctx.home, name: 'vendor-pack' }), { restored: ['vendor-skill'], kept: [] });
+});
+
 // why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
 test('scrub leaves the third-party snapshot alone', () => {
   const ctx = makeKit();
@@ -426,19 +447,19 @@ test('the hook script prints a user message and context for Claude, and never fa
 });
 
 // why: guards rule:kit-standards
+// T10 (build 18): the backups left the public repo for a private one; the kit's index of them is what CI can read.
 test('every backup in the real kit credits its source', () => {
-  const vendor = path.resolve('vendor');
-  const credits = read(path.join(vendor, 'CREDITS.md'));
-  const dirs = ['plugins', 'skills'].flatMap((d) => fs.readdirSync(path.join(vendor, d)).map((n) => path.join(vendor, d, n)));
-  assert.ok(dirs.length > 0);
-  for (const dir of dirs) {
-    const name = path.basename(dir);
-    const src = JSON.parse(read(path.join(dir, 'SOURCE.json')));
+  const index = JSON.parse(read(path.resolve('vendor-index.json')));
+  const config = JSON.parse(read(path.resolve('kit.config.json'))).vendor;
+  const entries = [...Object.entries(index.plugins), ...Object.entries(index.skillGroups)];
+  assert.ok(entries.length > 0);
+  assert.deepEqual(Object.keys(index.plugins).sort(), [...config.plugins].sort(), 'the index holds every plugin the config backs up');
+  assert.deepEqual(Object.keys(index.skillGroups).sort(), config.skillGroups.map((g) => g.name).sort());
+  for (const [name, src] of entries) {
     for (const field of ['author', 'license', 'repository']) {
       assert.ok(src[field] && src[field] !== 'unknown', `${name}: ${field} is missing`);
     }
-    assert.ok(fs.existsSync(path.join(dir, 'LICENSE')) || src.licenseNote, `${name}: no LICENSE file and no licenseNote`);
-    assert.match(credits, new RegExp(`\\| ${name} \\|`), `${name}: not in CREDITS.md`);
+    assert.ok(src.licenseFile || src.licenseNote, `${name}: no LICENSE file and no licenseNote`);
   }
 });
 
@@ -457,13 +478,15 @@ test('every skill the case map names exists in the kit, its backups or Claude Co
     return names;
   };
   const own = skillDirs(path.resolve('user/skills'));
-  const groups = skillDirs(path.resolve('vendor/skills'));
+  // T10 (build 18): the backups' skills are read from the kit's index of them.
+  const index = JSON.parse(read(path.resolve('vendor-index.json')));
+  const groups = new Set(Object.values(index.skillGroups).flatMap((g) => g.skills));
   for (const c of cases) {
     for (const s of c.skills) {
       const [plugin, skill] = s.includes(':') ? s.split(':') : [null, s];
       // A one-skill plugin may keep its SKILL.md at the plugin root instead of under skills/.
-      const pluginRoot = plugin && path.resolve('vendor/plugins', plugin);
-      const found = plugin ? skillDirs(path.join(pluginRoot, 'skills')).has(skill) || (skill === plugin && fs.existsSync(path.join(pluginRoot, 'SKILL.md')))
+      const p = plugin && index.plugins[plugin];
+      const found = plugin ? Boolean(p) && (p.skills.includes(skill) || (skill === plugin && p.rootSkill))
         : own.has(skill) || groups.has(skill) || BUILT_IN.has(skill);
       assert.ok(found, `case ${c.id}: skill ${s} not found`);
     }
