@@ -1,174 +1,17 @@
 // Tests for git hooks, the first push check, the folder gate, commit and attribution checks: moved word for word from tests/kit.test.mjs (T10, build 18).
 
-// Tests for scripts/kit.mjs - each one drives the CLI functions the way the owner does:
-// a fake kit, a fake ~/.claude and a fake project in a temp folder.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
-// The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
-// suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
-const status = (o) => kitStatus({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
-const sessionStartReport = (o) => kitSessionStart({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
-
-// Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
-// kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
-const tmpRoot = kitTemp.sessionRoot();
-const { makeTemp } = kitTemp;
-
-// A kit folder's CLI is scripts/kit.mjs with the temp helper it imports, as in every real kit folder.
-function copyKitCli(kit) {
-  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.mkdirSync(path.join(kit, 'project/.claude'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
-  fs.copyFileSync(path.resolve('project/.claude/kit-temp.cjs'), path.join(kit, 'project/.claude/kit-temp.cjs'));
-  // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
-  fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
-  fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
-  // The merge-on-green steps install prints (K61), which read row A27 as the merge gate does.
-  for (const f of ['merge-on-green.mjs', 'safe-git.mjs']) fs.copyFileSync(path.resolve('scripts', f), path.join(kit, 'scripts', f));
-  for (const f of ['merge-gate.mjs', 'kit-temp.cjs']) fs.copyFileSync(path.resolve('user/kit-tools', f), path.join(kit, 'user/kit-tools', f));
-}
-
-function makeKit() {
-  const root = makeTemp('kit-');
-  const kit = path.join(root, 'kit');
-  const home = path.join(root, 'home');
-  const proj = path.join(root, 'My App');
-  const files = {
-    'VERSION': '1.0.0\n',
-    'CHANGELOG.md': '# Changelog\n',
-    'kit.config.json': JSON.stringify({ ownerName: 'Pat', ownerProfileFile: 'owner-profile.md', thirdPartySkills: ['vendor-skill'] }),
-    'owner-profile.md': '- Likes tests\n',
-    'user/CLAUDE.md': '# Global\nOwner: {{OWNER_NAME}}\n{{OWNER_PROFILE}}\n',
-    'user/agents/builder.md': 'builder role\n',
-    'user/skills/human-factor/SKILL.md': 'skill\n',
-    'project/_Working Standards.md': 'rules\n',
-    'project/.claude/settings.json': '{"hook":"{{PROJECT_DIR}}/.claude/guard.cjs"}\n',
-    'memory/MEMORY.md': '- [Style](style.md)\n',
-    'memory/style.md': 'style rule\n',
-  };
-  for (const [rel, body] of Object.entries(files)) {
-    fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
-    fs.writeFileSync(path.join(kit, rel), body);
-  }
-  fs.mkdirSync(proj);
-  return { kit, home, proj };
-}
-
-const read = (p) => fs.readFileSync(p, 'utf8');
-
-// A release install checks every byte against the release tag's tree (the 1.26.0 security review, S4), so a fixture
-// that installs as a release commits its kit folder and hands over that commit's tree.
-function released(kit, describe) {
-  const g = (...a) => {
-    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-C', kit, ...a], { encoding: 'utf8' });
-    if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
-    return r.stdout.trim();
-  };
-  if (!fs.existsSync(path.join(kit, '.git'))) g('init', '-q', '-b', 'main');
-  g('add', '-A');
-  g('commit', '-q', '--allow-empty', '-m', describe);
-  return { release: true, describe, tree: g('rev-parse', 'HEAD^{tree}') };
-}
-
-// Snapshot fixtures: a fake installed plugin and a fake third-party skill, laid out the way
-// Claude Code stores them (plugins/installed_plugins.json -> installPath; skills/<name>/).
-function addThirdParty({ kit, home }) {
-  const pluginDir = path.join(home, 'plugins/cache/market/toolbox/2.0.0');
-  const put = (p, body) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, body); };
-  put(path.join(pluginDir, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'toolbox', version: '2.0.0', author: { name: 'Jo Smith' } }));
-  put(path.join(pluginDir, 'LICENSE'), 'MIT License\n\nCopyright (c) Jo Smith\n');
-  put(path.join(pluginDir, 'skills/sharpen/SKILL.md'), 'sharpen\n');
-  put(path.join(pluginDir, '.in_use'), 'lock\n');
-  put(path.join(home, 'plugins/installed_plugins.json'), JSON.stringify({ version: 2, plugins: {
-    // Claude Code keeps one entry per scope; the newest one is the copy in use.
-    'toolbox@market': [
-      { scope: 'user', installPath: pluginDir, version: '2.0.0', gitCommitSha: 'abc123', lastUpdated: '2026-10-20T00:00:00Z' },
-      { scope: 'project', installPath: pluginDir, version: '1.0.0', gitCommitSha: 'old', lastUpdated: '2026-01-01T00:00:00Z' },
-    ],
-  } }));
-  put(path.join(home, 'plugins/known_marketplaces.json'), JSON.stringify({ market: { source: { source: 'github', repo: 'owner/market' } } }));
-  put(path.join(home, 'skills/vendor-skill/SKILL.md'), 'vendor\n');
-  const config = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  config.vendor = {
-    plugins: ['toolbox', 'gone-plugin'],
-    skillGroups: [{ name: 'vendor-pack', source: 'https://example.com/pack', license: 'Apache-2.0',
-      copyright: 'Pack Authors', licenseFrom: 'plugin:toolbox', skills: ['vendor-skill'] }],
-    // A plugin whose metadata leaves out its maker gets the credit written in by hand.
-    credits: { toolbox: { author: 'Jo Smith and Co' } },
-  };
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify(config));
-}
-
-function caseKit() {
-  const ctx = makeKit();
-  const catalog = { cases: [
-    { id: 'ui-ux', name: 'UI/UX design or review', when: 'a screen, flow or copy changes', skills: ['design:design-critique', 'human-factor'] },
-    { id: 'debugging', name: 'Debugging', when: 'a bug or failing test', skills: ['superpowers:systematic-debugging'] },
-  ] };
-  fs.mkdirSync(path.join(ctx.kit, 'project/.claude/kit'), { recursive: true });
-  fs.writeFileSync(path.join(ctx.kit, 'project/.claude/kit/skill-cases.json'), JSON.stringify(catalog));
-  fs.writeFileSync(path.join(ctx.kit, 'CHANGELOG.md'), '# Changelog\n\n## 1.0.0 - 2026-01-01\n- first\n');
-  install({ kit: ctx.kit, home: ctx.home, target: 'project', projectDir: ctx.proj });
-  return ctx;
-}
-
-// The kit's own standards, checked the way Kit Standards #3 and #5 say: one home per rule, a why in every rule
-// section, and size caps. These read the real rule modules in rules/, not a fixture.
-const STANDARDS = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).sort()
-  .map((n) => read(path.resolve('rules', n)).replace(/^---\n[\s\S]*?\n---\n/, '')).join('\n');
-const words = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean);
-const shingles = (w, n = 8) => { const s = new Set(); for (let i = 0; i + n <= w.length; i++) s.add(w.slice(i, i + n).join(' ')); return s; };
-
-// Plan rule-modules, Phase 1: every rule heading carries a fixed ID, so pointers survive renames and moves.
-// Headings inside code blocks (the handoff template) are examples, not rules, and carry none.
-const ruleFiles = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('rules', n));
-const moduleFiles = ruleFiles;
-
-// Plan rule-modules, Phase 2: one role table (rule:agent-role-table) says what each agent may use and which rules
-// it starts with; the role files must match it, so access is never widened by an edit to one file alone.
-const roleTable = () => {
-  const text = read(path.resolve('rules/agent-teams.md'));
-  const sec = text.slice(text.indexOf('{#agent-role-table}'));
-  return [...sec.matchAll(/^\| (builder|checker|scanner|orchestrator|reviewer) \| [^|]+ \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
-    .map(([, role, tools, denied, rules]) => ({ role, tools: tools.trim(), denied: denied.trim(), rules: rules.trim() }));
-};
-const front = (f) => Object.fromEntries([...read(f).match(/^---\n([\s\S]*?)\n---/)[1].matchAll(/^(\w+):\s*(.*)$/gm)].map(([, k, v]) => [k, v.trim()]));
-
-// Plan rule-modules, Phase 2 guards. Each is driven the way Claude Code runs it (hook input as JSON on stdin) and
-// proved with a known-good and a known-bad case.
-const runHook = (script, input, env = {}) => spawnSync('node', [path.resolve(script)], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, ...env } });
-function gitTree() {
-  const dir = makeTemp('fence-');
-  const g = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
-  g('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(dir, 'a.js'), 'a\n'); g('add', '-A'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
-  return dir;
-}
-
-// Plan agent-canary: each kit agent opens every message to its tasker with a phrase it can only learn by reading
-// the project's rules block itself. The fixtures use a made-up phrase; the real one has a single home in the kit.
-const FAKE_PHRASE = 'Tango Lima Seven Delta';
-const phraseLine = (p) => `Confirmation phrase: open your first message to whoever started you, and every message after it, with: ${p}\n`;
-function canaryRepo(phrase = FAKE_PHRASE) {
-  const dir = gitTree();
-  fs.mkdirSync(path.join(dir, 'standards'));
-  if (phrase) fs.writeFileSync(path.join(dir, 'standards', 'agent-teams.md'), `# Rules\n\n\`\`\`\nRULES EVERY AGENT FOLLOWS\n${phraseLine(phrase)}\`\`\`\n`);
-  return dir;
-}
-const canary = (input) => runHook('user/kit-hooks/canary.cjs', input);
-const canaryLog = (dir) => {
-  const f = path.join(spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).stdout.trim(), 'kit-canary.log');
-  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
-};
+import { ATTRIBUTION, CORPUS, FAKE_PHRASE, GOOD_MAP, NAMES, ROWS, addThirdParty, canary, canaryLog, canaryRepo, caseKit, commitAll, excludeFile, firstPush, front, g, gitTree, honestBody, kitInstall, leanAudit, localProject, makeKit, makeTemp, mapRepo, mapRun, msgFile, nameRun, notesAudit, overlayKit, phraseLine, promptGate, read, readyProject, released, require, role, ruleFiles, runHook, sessionStartReport, status, stdAudit, trackRun, words } from './kit-helpers.mjs';
 
 // why: guards rule:outward-acts
 test('the git pre-push hook is executable, in the kit and where install writes it', { windows: true }, () => {
@@ -190,21 +33,6 @@ test('the checker clean-tree stop sees a change in another worktree of the same 
   fs.writeFileSync(path.join(other, 'a.js'), 'changed in the builder worktree\n');
   assert.equal(runHook('user/kit-hooks/clean-tree.cjs', { ...s, hook_event_name: 'Stop' }).status, 2);
 });
-
-// The kit stays local (rule:kit-stays-local): the install keeps every kit path out of git in the folder's own
-// exclude file, so the kit is there to use but never committed unless the owner tracks a file on purpose.
-const g = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
-// noVerify stands for a tool that skips the git hooks, so a slip still reaches history and the first push check must find it.
-// Test commits use the house style, so the kit's commit-msg hook (rule:commit-message-format) lets them through.
-const commitAll = (dir, msg, noVerify) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', /^[a-z]+: /.test(msg) ? msg : `chore: ${msg}`, ...(noVerify ? ['--no-verify'] : [])); };
-function localProject() {
-  const dir = makeTemp('local-');
-  g(dir, 'init', '-q', '-b', 'main');
-  fs.writeFileSync(path.join(dir, 'main.py'), 'print(1)\n');
-  return dir;
-}
-const excludeFile = (dir) => path.join(dir, '.git', 'info', 'exclude');
-const kitInstall = (dir) => install({ kit: path.resolve('.'), target: 'project', projectDir: dir, home: makeTemp('home-') });
 
 // why: guards rule:kit-stays-local
 test('the install keeps every kit file out of git, and git status shows only the project', () => {
@@ -234,16 +62,6 @@ test('the owner can choose to track the kit, and a folder without git is left al
   kitInstall(plain);
   assert.ok(!fs.existsSync(path.join(plain, '.git')), 'the install never makes a repo');
 });
-
-// The first push gate (rule:first-push-gate): one strict check before the first push to a remote.
-const firstPush = (dir) => spawnSync('node', [path.join(dir, '.claude', 'first-push-check.mjs')], { encoding: 'utf8', cwd: dir });
-function readyProject(tracking) {
-  const dir = localProject();
-  kitInstall(dir);
-  if (tracking) fs.writeFileSync(path.join(dir, '.kit', 'tracking.json'), JSON.stringify(tracking));
-  commitAll(dir, 'init');
-  return dir;
-}
 
 // why: guards rule:first-push-gate
 test('the first push check passes a clean history and records the commit it checked', () => {
@@ -617,229 +435,6 @@ test('the canary reads a report handed back through a tool, from the agent trans
   assert.deepEqual(canaryLog(dir).map((e) => e.result), ['hit', 'miss', 'unchecked']);
 });
 
-// Sweep auto-approval (rule:sweep-auto-approval): a script approves a Swarm Contract that stays inside the tier's
-// rules, at no token cost, logs every decision, and hands back to the owner on anything outside them. The review of
-// its first version showed an agent could clear its own pause, raise its own caps and pick a lighter tier, so the
-// log has a fixed home, the caps only go down, the diff sets the floor, and only the owner's own terminal resumes.
-const APPROVE = path.resolve('user/skills/pre-pr-sweep/approve.mjs');
-const FIX_EXIT = 3;
-const role = (kind, question, extra = {}) => ({ role: `${kind} reviewer`, kind, question, context: [`src/${kind}.ts`, 'rule:pre-pr-deep-sweep'], finding: 'file:line, the scenario, the proof', calls: 5, ...extra });
-const featureContract = () => ({ tier: 'feature', modifiers: [], roles: [
-  role('security', 'Can a crafted import file reach storage without validation?', { context: ['src/import.ts'] }),
-  role('security', 'Does any new route leak personal data in logs or errors?', { context: ['src/routes.ts'] }),
-  role('security', 'Is the lock screen bypassable by restoring an old backup?', { context: ['src/lock.ts'] }),
-  role('test-value', 'Does each new test guard a real use through its real seam?'),
-  role('novel-lens', 'What did every other role structurally miss?'),
-] });
-// A contract the script sends to the owner on sweepRepo's branch: a fix tier on a change that adds source.
-const askContract = () => ({ tier: 'fix', modifiers: [], roles: [
-  role('fix-root', 'Does the fix remove the root cause, and does it hold?'),
-  role('blast-radius', 'Which callers and copies of this code does the change reach?'),
-  role('test-value', 'Does each changed test fail without the fix?'),
-] });
-// A branch with one feature commit on top of main: a new source file and a test.
-function sweepRepo(files = { 'src/sync.ts': 'export const sync = 1;\n', 'src/sync.test.ts': 'test\n' }) {
-  const dir = makeTemp('approve-');
-  g(dir, 'init', '-q', '-b', 'main');
-  fs.writeFileSync(path.join(dir, 'README.md'), 'x\n');
-  commitAll(dir, 'base', true);
-  g(dir, 'checkout', '-q', '-b', 'feat/sync');
-  for (const [f, text] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); }
-  commitAll(dir, 'feature', true);
-  fs.mkdirSync(path.join(dir, 'sweeps'));
-  return dir;
-}
-// T2 (the owner 2026-11-10: "Pop-up record"): the owner's yes and resume are their tap on a Claude Code choice pop-up,
-// read from the session's own transcript. Where a test stands for the owner saying yes or resuming, the owner taps Yes
-// on the pop-up that quotes the ask's or the pause's act, and the call runs in that session.
-const TAP_SID = '0aaaaaaa-1bbb-2ccc-3ddd-4eeeeeeeeeee';
-// One answered pop-up, as Claude Code writes it in the session's transcript (shape read from a live record).
-function ownerTaps(cfg, dir, act, { answer = 'Yes', labels = ['Yes', 'No'], at = new Date(Date.now() + 1000).toISOString(), source = 'user_temporary', sid = TAP_SID, folder, bare = false } = {}) {
-  const where = path.join(cfg, 'projects', folder || fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'));
-  fs.mkdirSync(where, { recursive: true });
-  const id = `toolu_${crypto.randomBytes(6).toString('hex')}`;
-  // bare: the question names the act without backticks, as build 11's first resume pop-ups did.
-  const question = bare ? `May I go on? ${act}` : `May I go on? \`${act}\``;
-  const questions = [{ question, header: 'Owner yes', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) }];
-  fs.appendFileSync(path.join(where, `${sid}.jsonl`), [
-    { type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions } }] } },
-    { type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'answered' }] } },
-  ].map((l) => JSON.stringify(l)).join('\n') + '\n');
-}
-const tapEnv = (cfg) => ({ CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID, CLAUDECODE: '1' });
-function asOwner(dir, args, env) {
-  const owner = !('CLAUDECODE' in env) && !('AI_AGENT' in env) && !('CLAUDE_CODE_SESSION_ID' in env);
-  const yes = owner && args.includes('--owner-yes') && filledWords(args[args.indexOf('--owner-yes') + 1]);
-  const resume = owner && args.includes('--resume') && env.KIT_OWNER_RESUME === '1';
-  if (!yes && !resume) return null;
-  const log = sweepLog(dir);
-  let act;
-  if (yes) {
-    const f = path.resolve(dir, args[0]);
-    const ask = log.map((l) => JSON.parse(l)).filter((e) => e.kind === 'decision' && path.resolve(e.contract) === f).pop();
-    if (!ask) return null;
-    act = `sweep yes ${String(ask.hash).slice(0, 6)}`;
-  } else {
-    const i = log.map((l) => JSON.parse(l).kind).lastIndexOf('pause');
-    if (i < 0) return null;
-    act = `sweep resume ${crypto.createHash('sha256').update(log[i]).digest('hex').slice(0, 6)}`;
-  }
-  const cfg = env.CLAUDE_CONFIG_DIR || makeTemp('cfg-');
-  ownerTaps(cfg, dir, act);
-  const out = yes ? [...args.slice(0, args.indexOf('--owner-yes')), '--owner-yes', ...args.slice(args.indexOf('--owner-yes') + 2)] : ['--resume'];
-  const { KIT_OWNER_RESUME: _r, ...rest } = env;
-  return spawnSync('node', [APPROVE, ...out], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...rest, ...tapEnv(cfg) } });
-}
-const filledWords = (w) => typeof w === 'string' && w.trim().split(/\s+/).filter(Boolean).length >= 1 && w.trim().length > 1;
-const approveIn = (dir, args, env = {}) => {
-  const owner = asOwner(dir, args, env);
-  if (owner) return owner;
-  if (args.includes('--outcome') && env.CLAUDE_CONFIG_DIR) leadBriefs(dir, args, env.CLAUDE_CONFIG_DIR);
-  // A crashed reviewer was started by the guard too.
-  const crashed = args.includes('--retry') && args[args.indexOf('--crashed') + 1];
-  if (crashed && env.CLAUDE_CONFIG_DIR) startedByBrief(dir, env.CLAUDE_CONFIG_DIR, crashed);
-  return spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env } });
-};
-// What a lead does: each reviewer's brief carries "Sweep: <hash> role <n>" for the contract cleared last, n in the
-// order --agents lists them. A brief that already names a sweep is left as the test wrote it.
-const sweepLog = (dir) => { try { return read(path.join(dir, '.git', 'kit-sweep-approvals.jsonl')).split('\n').filter(Boolean); } catch { return []; } };
-const lastClearing = (dir, contract) => {
-  const lines = sweepLog(dir).map((l) => [l, JSON.parse(l)]).filter(([, e]) => (e.kind === 'decision' || e.kind === 'owner-yes') && (!contract || path.resolve(e.contract) === path.resolve(contract)));
-  // For an outcome, the reviewers ran under the last clearing (an approval or the owner's yes), not a later ask.
-  return (contract && lines.filter(([, e]) => e.kind === 'owner-yes' || e.decision === 'approved').pop()) || lines.pop();
-};
-function setBrief(cfg, id, text) {
-  for (const p of fs.readdirSync(path.join(cfg, 'projects'))) for (const s of fs.readdirSync(path.join(cfg, 'projects', p))) {
-    const f = path.join(cfg, 'projects', p, s, 'subagents', `agent-${id}.jsonl`);
-    if (!fs.existsSync(f)) continue;
-    const lines = read(f).split('\n');
-    const first = JSON.parse(lines[0]);
-    if (!first.message || first.message.role !== 'user' || typeof first.message.content !== 'string' || first.message.content.includes('Sweep:')) continue;
-    first.message.content = text(first.message.content);
-    lines[0] = JSON.stringify(first);
-    fs.writeFileSync(f, lines.join('\n'));
-  }
-}
-function leadBriefs(dir, args, cfg) {
-  const at = lastClearing(dir, args[0]);
-  const ids = String(args[args.indexOf('--agents') + 1] || '').split(',');
-  if (!at || !args.includes('--agents') || !fs.existsSync(path.join(cfg, 'projects'))) return;
-  ids.forEach((id, i) => { if (/^[\w-]+$/.test(id)) setBrief(cfg, id, (b) => `${b} Sweep: ${at[1].hash} role ${i + 1}`); });
-  // --agents auto: the lead started every reviewer whose brief it wrote.
-  const all = ids[0] === 'auto' ? fs.readdirSync(path.join(cfg, 'projects')).flatMap((p) => fs.readdirSync(path.join(cfg, 'projects', p)).flatMap((s) => { try { return fs.readdirSync(path.join(cfg, 'projects', p, s, 'subagents')); } catch { return []; } })).map((n) => (n.match(/^agent-(.+)\.jsonl$/) || [])[1]).filter(Boolean) : ids;
-  for (const id of all) startedByBrief(dir, cfg, id);
-}
-// The guard started a reviewer under the clearing and role its brief names.
-function startedByBrief(dir, cfg, id) {
-  let f = /^[\w-]+$/.test(id) && fs.existsSync(path.join(cfg, 'projects')) && transcriptOf(cfg, id);
-  // The guard starts only the reviewer type; another type with a sweep's brief is refused.
-  try { if (f && !/reviewer$/i.test(JSON.parse(read(f.replace(/\.jsonl$/, '.meta.json'))).agentType)) f = null; } catch { f = null; }
-  const content = f && JSON.parse(read(f).split('\n')[0]).message?.content;
-  const tag = f && (Array.isArray(content) ? content.map((x) => (x && x.text) || '').join('\n') : String(content || '')).match(/Sweep: ([0-9a-f]{16}) role (\d+)/);
-  const clearing = tag && sweepLog(dir).filter((l) => { const e = JSON.parse(l); return e.hash === tag[1] && (e.kind === 'owner-yes' || e.decision === 'approved'); }).pop();
-  if (clearing) guardStart(dir, clearing, Number(tag[2]), id);
-}
-const transcriptOf = (cfg, id) => {
-  for (const p of fs.readdirSync(path.join(cfg, 'projects'))) for (const s of fs.readdirSync(path.join(cfg, 'projects', p))) {
-    const f = path.join(cfg, 'projects', p, s, 'subagents', `agent-${id}.jsonl`);
-    if (fs.existsSync(f)) return f;
-  }
-  return null;
-};
-// What the guard does at each start: the role's slot under the clearing records the start's tool id, which Claude
-// Code also writes into the reviewer's meta file (toolu_lead_<id> in these transcripts). Tests try several reviewers
-// for one role in turn, so a start this helper wrote gives way to the next; one the real guard wrote stays. A
-// reviewer other than the crashed one, after a logged retry for its role, takes the retry slot.
-function guardStart(dir, clearingLine, role, id) {
-  const slots = path.join(dir, '.git', 'kit-sweep-starts', crypto.createHash('sha256').update(clearingLine).digest('hex').slice(0, 16));
-  fs.mkdirSync(slots, { recursive: true });
-  const retried = sweepLog(dir).some((l) => { const e = JSON.parse(l); return e.kind === 'retry' && e.role === role && e.crashed !== id; });
-  const f = path.join(slots, retried ? `${role - 1}.retry` : String(role - 1));
-  if (!fs.existsSync(f) || !read(f) || read(f).startsWith('toolu_lead_')) fs.writeFileSync(f, `toolu_lead_${id}`);
-}
-
-function approveRun(contract, dir = sweepRepo()) {
-  const f = path.join(dir, 'sweeps', 'contract.json');
-  fs.writeFileSync(f, JSON.stringify(contract));
-  return { ...approveIn(dir, [f]), dir, f };
-}
-const approvalLog = (dir) => read(path.join(dir, '.git', 'kit-sweep-approvals.jsonl')).trim().split('\n').map((l) => JSON.parse(l));
-// A fake Claude config folder holding one reviewer transcript per agent id, where approve.mjs reads what each role
-// spent (the meter is processed tokens from the role's own transcript). Each call is [input, cache read, cache
-// write, output]; a call given as { id, u } keeps its message id, so streaming's repeated lines can be written.
-// Beside each transcript sits Claude Code's agent-<id>.meta.json (agent type, finished); `meta` overrides it per id,
-// and `cfg` adds to an existing folder.
-// `models` gives an id's calls a model other than the top one (roleModels(contract) maps ids to their roles' models).
-function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = 'session-1', models = {}) {
-  const dir = path.join(cfg, 'projects', 'C--repo', session, 'subagents');
-  fs.mkdirSync(dir, { recursive: true });
-  const base = Date.now();
-  for (const [id, calls] of Object.entries(spec)) {
-    let model = models[id] || 'claude-opus-5-5';
-    // A call given as { u, gap } starts gap ms after the line before it (the cache outlives a short gap only).
-    let shift = 0;
-    const at0 = new Date(base).toISOString();
-    const lines = calls.map((c, i) => {
-      if (c && c.gap) shift += c.gap;
-      const at = new Date(base + shift).toISOString();
-      // { refused: text } is a hook's refusal of a tool call, as Claude Code writes it into the transcript.
-      if (c && c.refused) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, is_error: true, content: c.refused }] } });
-      // { handback: text } is the reviewer's report, handed back through the hand-back tool.
-      // { handback, refusedWith } is a hand-back the canary refused: the call and its error result.
-      if (c && c.handback && c.refusedWith) return [JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: `msg_${id}_${i}`, role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'tool_use', id: `toolu_r${i}`, name: 'SubagentHandback', input: { message: c.handback } }], usage: { input_tokens: 0, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0, output_tokens: 0 } } }),
-        JSON.stringify({ type: 'user', uuid: `${id}-${i}r`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_r${i}`, is_error: true, content: c.refusedWith }] } })].join('\n');
-      if (c && c.handback) return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: `msg_${id}_${i}`, role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'tool_use', id: `toolu_h${i}`, name: 'SubagentHandback', input: { message: c.handback } }], usage: { input_tokens: 0, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0, output_tokens: 0 } } });
-      // { read: text } is a tool's plain answer, such as a file the reviewer read.
-      if (c && c.read) return JSON.stringify({ type: 'user', uuid: `${id}-${i}`, timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, content: c.read }] } });
-      const { id: mid = `msg_${id}_${i}`, u = c, model: m = models[id] || 'claude-opus-5-5' } = Array.isArray(c) ? { u: c } : c;
-      model = m;
-      return JSON.stringify({ type: 'assistant', uuid: `${id}-${i}`, timestamp: at, message: { id: mid, role: 'assistant', model: m, usage: { input_tokens: u[0], cache_read_input_tokens: u[1], cache_creation_input_tokens: u[2], output_tokens: u[3] } } });
-    });
-    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), [JSON.stringify({ type: 'user', timestamp: at0, message: { role: 'user', content: 'brief' } }), ...lines].join('\n') + '\n');
-    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'reviewer', toolUseId: `toolu_lead_${id}`, model: /sonnet/.test(model) ? 'sonnet' : 'opus', finished: true, ...(meta[id] || {}) }));
-  }
-  return cfg;
-}
-let agentSeq = 0;
-const roleModel = (r) => r.model ?? (['security', 'novel-lens'].includes(r.kind) ? 'claude-opus-5-5' : 'claude-sonnet-5-5');
-const roleModels = (ids, roles) => Object.fromEntries(ids.map((id, i) => [id, roleModel(roles[i])]));
-// Logs a sweep's outcome with one transcript per role, the given total split across them.
-function outcome(r, tokens = '200000', findings = '6', real = '5', dup = '0', extra = []) {
-  const roles = JSON.parse(read(r.f)).roles || [];
-  const n = roles.length;
-  const ids = Array.from({ length: n }, () => `t${++agentSeq}`);
-  const each = Math.floor(Number(tokens) / n);
-  // Each transcript runs on the model its role names, as a real reviewer does.
-  const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: roleModel(roles[i]), u: [0, each + (i ? 0 : Number(tokens) - each * n), 0, 0] }]])));
-  return approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', findings, '--real', real, '--duplicates', dup, ...extra], { CLAUDE_CONFIG_DIR: cfg });
-}
-
-// Improvement report IR-2026-10-30-pr-body-audit-holds-checks-from-another-project: the Standard audit held one
-// project's facts (its dependency-audit wording, a corpus line, web gates), so an honest body elsewhere could only
-// fail or lie. Those checks now come from the project's .kit/pr-body.json; the secrets line stays fixed for all.
-// T13 (the owner, 2026-11-10): the title is the squash subject (`type: subject`), the review rows are the project's
-// own, and what GitHub shows (files, gates) is not repeated.
-const STD_TITLE = 'feat: an alarm for online search and a data date on About';
-const stdAudit = (dir, text, title = STD_TITLE) => {
-  const f = path.join(dir, 'body.md');
-  fs.writeFileSync(f, text);
-  return spawnSync('node', [path.resolve('project/.claude/pr-body-audit.mjs'), f, title], { encoding: 'utf8', cwd: dir });
-};
-const honestBody = () => read(path.resolve('user/skills/pr-body/examples/standard.md'))
-  .replace('; the corpus and the served documents are unchanged', '');
-
-// IR-2026-10-31-overlay-on-team-repo: a team repo keeps its tracked CLAUDE.md; the kit's own CLAUDE.md goes to a
-// personal CLAUDE.local.md with a header saying the host file wins, the host file is recorded as host-owned so no
-// check flags it, and the kit's local files stay out of git.
-function overlayKit() {
-  const ctx = makeKit();
-  fs.writeFileSync(path.join(ctx.kit, 'project/CLAUDE.md'), '# Kit CLAUDE\n\n@AGENTS.md\n');
-  fs.writeFileSync(path.join(ctx.kit, 'project/AGENTS.md'), '# Kit AGENTS\n');
-  g(ctx.proj, 'init', '-q', '-b', 'main');
-  fs.writeFileSync(path.join(ctx.proj, 'CLAUDE.md'), "# The team's own rules\n");
-  return ctx;
-}
-
 // why: guards rule:kit-stays-local
 test('a team repo with a tracked CLAUDE.md gets the kit as an overlay: CLAUDE.local.md, host-owned, nothing flagged or untracked', () => {
   const { kit, home, proj } = overlayKit();
@@ -918,13 +513,6 @@ test("a host-owned CLAUDE.md is the host's to track", () => {
   assert.equal(g(proj, 'check-ignore', '-q', 'CLAUDE.local.md').status, 0);
 });
 
-// The owner, 2026-10-31: a missing kit is a full stop. Each prompt in a folder without the kit, or in a session whose
-// Claude config folder has no kit, is refused with the fix, until the latest kit is installed.
-const promptGate = (script, input, env) => {
-  const r = spawnSync('node', [script], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', ...input }), encoding: 'utf8', env: { ...process.env, ...env } });
-  return r.stdout ? JSON.parse(r.stdout) : {};
-};
-
 // why: guards rule:outward-acts
 test('the project hook stops every prompt when the Claude config folder has no kit, and lets the install through', () => {
   const proj = makeTemp('gate-');
@@ -989,18 +577,6 @@ test('the commit check runs in an agent worktree and reads that worktree\'s stag
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(ok.stdout + ok.stderr, /Commit check: PASS/, 'a run is visible');
 });
-
-// The owner removed the PR attribution standard, so a host's two-line block fails every body audit, wherever it
-// sits. The corpus came from a separate writer who never saw the check; "unclear" cases fail closed.
-const ATTRIBUTION = '<!-- claude-projects-attribution: {"github_login":"someone"} -->\n_Requested by **Pat**_\n\n';
-const CORPUS = JSON.parse(read(path.resolve('tests/attribution-corpus.json')));
-const leanAudit = (dir, text) => {
-  const lean = read(path.resolve('user/skills/pr-body/examples/lean.md'));
-  const f = path.join(dir, 'lean.md');
-  fs.writeFileSync(f, text(lean));
-  const title = lean.split('\n')[0].replace(/^## /, '').replace(/^[A-Za-z ]+: /, 'feat: ');
-  return spawnSync('node', [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, title], { encoding: 'utf8', cwd: dir });
-};
 
 // M28: CI runs this audit on every PR, and it caught 1 of 13 logic breaks. Each case is a slip a writer really makes,
 // and must fail exactly its own row: a row that stops failing, or starts failing a good body, shows here.
@@ -1095,12 +671,6 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   fails(sub('the app does not change.', 'see docs/sweeps/x.md.'));
   assert.match(last, new RegExp(`lines ${at}\\b`));
 });
-
-const notesAudit = (dir, text) => {
-  const f = path.join(dir, 'notes.md');
-  fs.writeFileSync(f, text);
-  return spawnSync('node', [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.0.0'], { encoding: 'utf8', cwd: dir });
-};
 
 // why: guards rule:pr-body
 test('the attribution check refuses every disguise in the corpus and passes prose about it', async () => {
@@ -1294,26 +864,6 @@ test('the folder gate names a launcher node that is gone, and only that', () => 
   assert.equal(gate(localProject()).decision, 'block', 'settings with no hooks: a folder without the kit is still stopped');
 });
 
-// The project map (owner, 2026-10-31: option A, kept simple and trackable): one data file per project, checked
-// against the repo, drawn as one plain page - the goal, progress with evidence, and how the parts connect.
-const MAP = path.resolve('project/.claude/project-map.mjs');
-const mapRun = (dir, args) => spawnSync('node', [MAP, ...args], { encoding: 'utf8', cwd: dir });
-function mapRepo(map) {
-  const dir = makeTemp('map-');
-  fs.mkdirSync(path.join(dir, 'src', 'ask'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'src', 'ask', 'index.ts'), 'x\n');
-  fs.mkdirSync(path.join(dir, '.kit'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify(map));
-  return dir;
-}
-const GOOD_MAP = {
-  project: 'Demo', goal: 'Answer a service member\'s question offline.', successBar: ['Answers cite a public source'],
-  parts: [{ id: 'ask', name: 'Ask', does: 'answers questions on the device', files: ['src/ask'] },
-    { id: 'corpus', name: 'Corpus', does: 'public US-gov text', files: [] }],
-  links: [{ from: 'ask', to: 'corpus', verb: 'searches' }],
-  progress: [{ item: 'Offline answers', state: 'done', evidence: 'PR #12' }, { item: 'Citations', state: 'doing' }, { item: 'Voice', state: 'next' }],
-};
-
 // why: catches a break at project/.claude/project-map.mjs:25 that no other test catches
 test('the project map check passes a sound map and names every fault in a bad one', () => {
   assert.equal(mapRun(mapRepo(GOOD_MAP), ['check']).status, 0);
@@ -1355,12 +905,6 @@ test('the project map can be checked from a draft file outside the project, with
   assert.equal(r.status, 1);
   assert.match(r.stdout, /part ask: src\/nope does not exist/);
 });
-
-// rule:commit-message-format and rule:branching as scripts: one line, a known type, no AI or tool trailer; a branch is
-// <type>/<plain-kebab> with no tool prefix or internal code.
-const NAMES = path.resolve('project/.claude/name-check.mjs');
-const nameRun = (args) => spawnSync('node', [NAMES, ...args], { encoding: 'utf8' });
-const msgFile = (text) => { const f = path.join(makeTemp('msg-'), 'MSG'); fs.writeFileSync(f, text); return f; };
 
 // why: guards rule:commit-message-format
 test('the commit message check passes the house style and names each fault', () => {
@@ -1472,11 +1016,6 @@ test('snapshot keeps the vendor copy of a skill that is on standby (not on this 
   assert.ok(r.missing.includes('vendor-skill'));
 });
 
-// Tracking checks as a script (the owner, 2026-10-31): the whole-file caps, an empty parking lot before a sweep, and
-// evidence on every done line of a plan's Progress block.
-const TRACK = path.resolve('project/.claude/tracking-check.mjs');
-const trackRun = (dir, args) => spawnSync('node', [TRACK, ...args], { encoding: 'utf8', cwd: dir });
-
 // why: guards rule:sweep-auto-approval
 test('the tracking check measures the whole-file caps and names each file over its cap', () => {
   const dir = makeTemp('track-');
@@ -1576,16 +1115,6 @@ test('Rule 14, non-negotiable 6 and rule:outward-acts all name the standing gran
   const ids = new Set(ruleFiles().flatMap((f) => headings(read(f)).map((h) => h.id)));
   assert.ok(ids.has('standing-grants'), 'rule:standing-grants has its one home');
   assert.match(read(path.resolve('rules/project-adapter.md')), /^\| A27 \| .*standing grant/im);
-});
-
-const ROWS = () => ({
-  sheet: { id: 's1', title: 'One', grounding: 'Line one.\n\nLine two.' },
-  questions: [
-    { id: 'q2', sheet: 's1', section: 1, order: 2, sectionTitle: 'A', text: 'Second?', why: 'w2', options: [{ key: 'a', label: 'Yes', detail: 'more' }, { key: 'b', label: 'No' }], rec: 'b', recWhy: 'because' },
-    { id: 'q1', sheet: 's1', section: 1, order: 1, sectionTitle: 'A', text: 'First?', options: [{ key: 'a', label: 'Up' }], rec: 'a' },
-    { id: 'q3', sheet: 's1', section: 2, order: 1, sectionTitle: 'B', text: 'Third?' },
-  ],
-  answers: { q1: { choice: 'a' }, q2: { own: 'my   own\nwords ', thought: 'odd spelng' }, s1__finish: { missed: 'tell me more', submitted: '2026-11-04T17:52:08.656Z' } },
 });
 
 // M21: the kit source installs no kit, so before 1.21.0 nothing checked its commit messages until CI did, and the fix
