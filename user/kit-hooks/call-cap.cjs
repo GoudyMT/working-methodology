@@ -65,6 +65,8 @@ const base = (w) => w.replace(/^['"]|['"]$/g, '').split(/[\\/]/).pop().replace(/
 function fenceFault(command, tool) {
 	const c = String(command || '');
 	if (UNREADABLE.test(c)) return 'a part the hook cannot read the way the shell will (a substitution, an expansion, an eval, a here-doc)';
+	// Bash expands braces inside a word (a{,b}) and groups commands with them; the split below reads neither.
+	if (tool === 'Bash' && /[{}]/.test(c)) return 'a brace, which Bash expands or groups past what the hook reads';
 	for (const seg of c.split(/;|&&|\|\||\||&(?![>\d-])|\n|\r|\(|\)|\{|\}/)) {
 		const raw = seg.trim().split(/\s+/).filter(Boolean);
 		if (!raw.length) continue;

@@ -1517,6 +1517,7 @@ test('a reviewer writes only inside its sweep scratch folder; reads and other ag
   const run = (command, extra = {}, tool = 'Bash') => capHook(dir, 1, 12, { tool_name: tool, tool_input: { command }, ...extra }).permissionDecision;
   for (const c of [
     'echo $(rm notes.txt)', // a substitution the hook cannot read
+    `rm -rf ${scratch}/a{,/../../../reports}`, // a Bash brace expansion
     'echo x > notes.txt', // a redirect outside scratch
     'true <>notes.txt', // a redirect it cannot place
     'c=rm; $c -rf x', // a command word built at run time
