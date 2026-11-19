@@ -211,8 +211,8 @@ test('the mutation check scoped to a base flips only the changed lines, and says
 	assert.doesNotMatch(none.stdout, /0 flips, 0 caught/);
 });
 
-// Build 18 (PR 55's CI): the branch deleted 10 MB of third-party backups, the diff overflowed git's output buffer,
-// and every scoped run said its base was no commit, so no new test was measured.
+// A branch that deletes megabytes of files overflowed git's output buffer, and every scoped run said its base was
+// no commit, so no new test was measured.
 // why: catches a scoped run that measures nothing when the branch also deletes a large file
 test('a scoped mutation run reads a branch that deletes a large file as the commits they are', () => {
 	const { dir } = repo();

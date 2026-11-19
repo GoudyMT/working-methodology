@@ -64,7 +64,7 @@ function parseArgs(argv) {
 function changedLines(root, base) {
 	const sha = git(root, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${base}^{commit}`).stdout.trim();
 	if (!/^[0-9a-f]{40,64}$/.test(sha)) return null;
-	// Build 18: a branch that deletes 10 MB of files overflowed the output buffer, which read as no commit. A deleted
+	// A branch that deletes many megabytes of files can overflow the output buffer, which read as no commit. A deleted
 	// file adds no line to flip, so deletions are left out, and the buffer has room for a large change.
 	// Names are read plain (no quoting, the usual a/ and b/ prefixes, whatever the user's config says); a diff past
 	// the buffer says so rather than reading as no commit.
