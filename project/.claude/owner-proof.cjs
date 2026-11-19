@@ -53,7 +53,9 @@ function homeParts() {
 	return homeMemo[1];
 }
 // Plain readers only: rg (--pre) and less (LESSOPEN) can run another program.
-const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'get-item', 'gi', 'jq', 'wc', 'stat', 'test-path', 'file', 'get-filehash']);
+const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'get-item', 'gi', 'jq', 'wc', 'stat', 'test-path', 'file', 'get-filehash',
+	// K138 (build 18): cmp compares and du counts; neither has a way to write but a redirect, which is read as a write.
+	'cmp', 'du']);
 // Copiers: a transcript copied out is a read; one copied in is a write.
 const COPIERS = new Set(['cp', 'copy', 'copy-item', 'cpi']);
 // Programs that move a shell into a folder: a relative word after one is read from there.
@@ -423,7 +425,8 @@ function filterFits(pattern, cwd, pathWord = false) {
 // so it is never PATH or another name that moves a program (Bash names are case-sensitive; a PowerShell $v is no
 // environment variable); the words hold no expansion, and the body no group, substitution or second loop. The body is
 // read once for each word, the variable written out as that word, so a word that names a guard is read as written.
-const LOOP_WORDS = /^[\w.,'" /-]+$/;
+// K138 (build 18): a list word may hold a glob (* ?): each body is read with the glob in place of the name.
+const LOOP_WORDS = /^[\w.,'" /*?-]+$/;
 const LOOP_BODY = /^[^{}()`]*$/;
 function loopBodies(command, tool) {
 	const c = String(command || '');

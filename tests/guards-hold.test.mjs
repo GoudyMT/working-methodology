@@ -262,6 +262,20 @@ test('a loop of kit-script reads and a sed line range pass; a loop that could wr
 	for (const c of ["foreach ($f in 'a') { $f = '.git/config'; Set-Content $f x }", "foreach ($f in 'a') { Set-Variable f .claude/guard.cjs; Copy-Item evil $f }", "foreach ($f in '.claude') { $f += '/guard.cjs'; Copy-Item evil $f }"]) assert.equal(ps(c), 'deny', c);
 });
 
+// K138 (build 18, held live on 1.43.0 from the workbench): a loop over a glob of guard files running sed -n, cmp of a
+// file against a guard, and du on another folder joined to an ls of .claude were held as writes. node -e stays strict:
+// it can write, and the owner's row leaves it so. Each widening keeps its write twin held beside it.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('a loop over a glob of guard files that only reads, cmp against a guard and du then ls pass; their write twins hold', () => {
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x\n');
+	fs.writeFileSync(path.join(proj, '.claude', 'guard-read.cjs'), 'x\n');
+	fs.writeFileSync(path.join(proj, 'a.txt'), 'x\n');
+	for (const c of ['for f in .claude/guard*.cjs; do sed -n 1,3p "$f"; done', 'cmp a.txt .claude/guard.cjs', 'du -sh tests && ls .claude', 'du -sh tests; ls .claude']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['for f in .claude/guard*.cjs; do sed -i 1d "$f"; done', 'for f in .claude/guard*.cjs; do cp a.txt "$f"; done', 'for f in .claude/*; do rm $f; done',
+		'for f in .cl*; do rm -rf "$f"/guard.cjs; done', 'for f in .cl?ude; do echo x > "$f"/guard.cjs; done', 'for f in .*/guard.cjs; do rm "$f"; done', 'for f in .git/hooks/*; do cp a.txt "$f"; done', 'cmp a.txt .claude/guard.cjs > .claude/guard.cjs',
+		'du -sh tests && rm .claude/guard.cjs', 'du -sh tests > .claude/guard.cjs', `node -e "require('fs').readFileSync('.claude/guard.cjs')"`]) assert.equal(bash(c), 'deny', c);
+});
+
 // K117 rest (build 17, held live on 1.42.0 from the workbench): a kit script given a quoted note with a bracket in it,
 // a read loop followed by a sed line range, and three PowerShell reads (a variable set from a read, a Test-Path guard
 // in a loop, a property of a bracketed read) were held as writes to a protected file. Quoted text holds no code but
