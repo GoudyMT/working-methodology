@@ -75,9 +75,18 @@ Needs Node 20 or later and git. From a Claude Code session, say "/methodology-ki
 existing" (after the first `install user`), or follow the entry-point files by hand.
 
 Install runs only from a release: the kit folder's HEAD must be exactly at tag `v<VERSION>`, with nothing
-changed or new in what install copies or reads (`user/`, `project/`, `memory/`, `scripts/`, `VERSION`, the
-config and the owner profile); otherwise it is refused, `--dry-run` too, and names why. So check out the newest
-release tag first (`git tag --sort=-v:refname` lists it first), never `git pull`, which moves the folder onto main:
+changed or new in what install copies or reads (`user/`, `project/`, `memory/`, `scripts/`, `VERSION` and the
+config); otherwise it is refused, `--dry-run` too, and names why. So check out the newest release tag first
+(`git tag --sort=-v:refname` lists it first), never `git pull`, which moves the folder onto main.
+
+Upgrading from 1.43.x or older: the profile left the kit folder in 1.44.0, so move it before the checkout, which
+deletes it. Install user refuses rather than blank the Owner Context lines it finds with no profile:
+
+```bash
+cp owner-profile.md ~/.claude/kit-owner-profile.md
+```
+
+Already checked out? `git show v1.43.1:owner-profile.md > ~/.claude/kit-owner-profile.md` prints the last copy.
 
 ```bash
 git fetch --tags; git checkout <newest v tag>

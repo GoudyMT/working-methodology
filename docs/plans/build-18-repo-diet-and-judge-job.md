@@ -81,7 +81,9 @@ reached through the launcher, and `--whole` is no longer needed there.
 ## 7. Privacy (K141, K140)
 
 K141: install reads your profile from `~/.claude/kit-owner-profile.md`, outside the repo; the repo keeps a blank
-example and scrub stops skipping the file. Step 6 copies your current profile there before installing (your yes).
+example and scrub stops skipping the file. The release's install into the workbench (the last step of the release
+order, after the tag) first copies your current profile there, before the new tag is checked out (your yes);
+install user refuses rather than blank Owner Context lines it finds with no profile.
 History keeps the old file, as you chose. K140: README and recall.yml say the repo is public.
 
 ## 8. Audits and guards (K139, K143, K138, K144, K137)

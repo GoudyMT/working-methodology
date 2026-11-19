@@ -116,7 +116,7 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   const hits = scrub({ kit });
   const kinds = hits.filter((h) => h.file === 'project/leak.md').map((h) => h.kind).sort();
   assert.deepEqual(kinds, ['non-ascii', 'path', 'word:Pat', 'word:pat@example.com']);
-  // kit.config.json and owner-profile.md hold the owner's details on purpose.
+  // kit.config.json holds the owner's name on purpose.
   assert.equal(hits.filter((h) => h.file === 'kit.config.json' || h.file === 'owner-profile.md').length, 0);
   fs.rmSync(path.join(kit, 'project/leak.md'));
   assert.deepEqual(scrub({ kit }), []);

@@ -8,3 +8,6 @@ tests/.map.json
 
 # A session's own Claude Code settings: personal, never committed.
 .claude/settings.local.json
+
+# The owner profile lives in the Claude folder (K141); a copy here would be public.
+owner-profile.md

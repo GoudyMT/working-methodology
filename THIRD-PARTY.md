@@ -17,7 +17,6 @@ terminal, run `/plugin` and install, or add each one under `enabledPlugins` in `
 
 | Plugin | Made by | License | Why the owner uses it |
 |---|---|---|---|
-| `superpowers` | Jesse Vincent | MIT | Kept off, as a credited backup only: the kit's own skills (brainstorm, plan-feature, tdd, debugging) are the one home for process skills. |
 | `frontend-design` | Anthropic | Apache-2.0 | Front-end design guidance. |
 | `skill-creator` | Anthropic | Apache-2.0 | Writing and testing new skills. |
 | `security-guidance` | David Dworken | Apache-2.0 | Security review guidance (also enabled per project in `.claude/settings.json`). |
@@ -29,6 +28,22 @@ terminal, run `/plugin` and install, or add each one under `enabledPlugins` in `
 `cloudflare-email-service`, `cloudflare-one`, `cloudflare-one-migrations`, `durable-objects`, `sandbox-sdk`,
 `turnstile-spin`, `web-perf`, `workers-best-practices`, `wrangler`. Source: https://github.com/cloudflare/skills
 (follow its README to install into `~/.claude/skills/`).
+
+**Also kept in the backup**, credited the same way (`vendor-index.json` holds every entry):
+
+| Plugin | Made by | License | Note |
+|---|---|---|---|
+| `superpowers` | Jesse Vincent | MIT | Kept off, as a credited backup only: the kit's own skills (brainstorm, plan-feature, tdd, debugging) are the one home for process skills. |
+| `audit-suite` | Orbit | MIT | MIT is stated in its README, and its repository has no LICENSE file. It bundles skills credited to Vercel (vercel-react-best-practices) and Emil Kowalski (emil-design-engineering). |
+| `design` | Anthropic | Apache-2.0 | No LICENSE file ships with it; the text comes from its source repository. |
+| `ux-ui-audit` | UXBYISSA | MIT | https://github.com/uxbyissa/ux-ui-audit |
+| `vectorlab-ux-skills` | VectorLab | MIT | https://github.com/VectorLabAU/skills |
+
+## Get the backup
+
+The backup repo is the owner's and private. Clone it beside the kit, into the folder `vendor.dir` names, before a
+snapshot or a restore; snapshot refuses with no folder there, so it never writes an index of one machine's copies.
+Without it, install from the sources above as usual.
 
 ## If a source is lost: restore from the backup
 

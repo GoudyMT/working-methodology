@@ -92,7 +92,7 @@
       "when": "an HTTP API is designed, mocked, tested or monitored with Postman",
       "plugin": "postman@claude-plugins-official",
       "skills": [],
-      "notes": "The plugin brings its own entry skill, postman:api-engineer; it is not kept in vendor/, so it is named here, not listed."
+      "notes": "The plugin brings its own entry skill, postman:api-engineer; it is not kept in the backup folder, so it is named here, not listed."
     },
     {
       "id": "cloudflare",

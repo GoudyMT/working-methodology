@@ -30,7 +30,7 @@ const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
 // Files that hold the owner's details on purpose, and folders that are not kit content.
 const SCRUB_SKIP = new Set(['kit.config.json', 'scrub.local.json']);
-// vendor/ holds third-party work kept as-is, with its own credits; it is not the owner's content.
+// The backup folder (vendor.dir) holds third-party work kept as-is, with its own credits; it is not the owner's content.
 const SCRUB_SKIP_DIRS = new Set(['.git', 'node_modules', 'reports', 'vendor']);
 const SNAPSHOT_SKIP = new Set(['.git', 'node_modules', '.in_use']);
 const PATH_PATTERN = /[A-Za-z]:\\+Users\\+|\/Users\/[^/\s]+|\/home\/[^/\s]+/;
@@ -124,7 +124,7 @@ function guardProfile(ctx, kitInfo) {
 }
 
 // What install copies or reads: a change to any of these ships text no release holds (the owner, 2026-11-02). The
-// config and owner profile are rendered into the installed files, and the script decides what install does.
+// config is rendered into the installed files, and the script decides what install does.
 const RELEASE_PATHS = ['user', 'project', 'memory', 'scripts', 'VERSION', 'kit.config.json'];
 
 /**
@@ -1257,7 +1257,7 @@ const writeVendorIndex = (kit, vendor) => fs.writeFileSync(path.join(kit, 'vendo
 /**
  * Keep a credited copy of each third-party plugin and skill in the backup folder, so the kit can still
  * restore them if a source is deleted or unreachable. Each copy carries its LICENSE and a
- * SOURCE.json (version, commit, author, license, where it came from); vendor/CREDITS.md lists all.
+ * SOURCE.json (version, commit, author, license, where it came from); CREDITS.md in the backup folder lists all.
  *
  * Args:
  *     ctx: { kit, home, date } - what to copy comes from kit.config.json "vendor"
@@ -1365,8 +1365,8 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
 }
 
 /**
- * Bring a lost third-party skill back from vendor/ into ~/.claude/skills. For a plugin, its
- * skills come back as plain skills (its hooks and commands stay in vendor/plugins/<name>).
+ * Bring a lost third-party skill back from the backup folder (vendor.dir) into ~/.claude/skills. For a plugin, its
+ * skills come back as plain skills (its hooks and commands stay in the backup folder, plugins/<name>).
  * A skill folder that already exists is kept, never overwritten.
  *
  * Returns:
@@ -1725,7 +1725,7 @@ function useCheck(kit, projectDir, home) {
   return { code: r.status, text: String(r.stdout || r.stderr || '').trim() || 'Use check: no output' };
 }
 
-/** Installed plugins whose version differs from the backup copy in vendor/. */
+/** Installed plugins whose version differs from the backup copy in the backup folder (vendor.dir). */
 export function vendorDrift({ kit, home }) {
   const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
   if (!fs.existsSync(installedPath)) return [];
