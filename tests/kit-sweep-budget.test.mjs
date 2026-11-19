@@ -11,7 +11,10 @@ import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
-import { APPROVE, FIX_EXIT, ageTranscript, agentSeq, approvalLog, approveIn, approveRun, askContract, canary, capHook, cheapRoles, commitAll, crashedSweep, driftSweep, featureContract, fixContract, fixFloor, fixRepo, g, lastClearing, leadQuestion, leadTag, logOutcome, makeTemp, nextBranch, outcome, ownerTaps, pastRole, read, recallTools, require, role, roleModel, roleModels, runHook, seedOutcomes, setBrief, status, sweepGuard, sweepLog, sweepRepo, tapEnv, threeSecurity, transcripts, usual, words } from './kit-helpers.mjs';
+import { APPROVE, FIX_EXIT, ageTranscript, approvalLog, approveIn, approveRun, askContract, canary, capHook, cheapRoles, commitAll, crashedSweep, driftSweep, featureContract, fixContract, fixFloor, fixRepo, g, lastClearing, leadQuestion, leadTag, logOutcome, makeTemp, nextBranch, outcome, ownerTaps, pastRole, read, recallTools, require, role, roleModel, roleModels, runHook, seedOutcomes, setBrief, status, sweepGuard, sweepLog, sweepRepo, tapEnv, threeSecurity, transcripts, usual, words } from './kit-helpers.mjs';
+// The four tests below number their own agents: an imported counter cannot be bumped, so this file keeps its own,
+// started far from the shared one so no id repeats.
+let agentSeq = 100000;
 
 // why: guards rule:sweep-tiers
 test('a committed contract, the caps file and a docs json do not move a fix or triage sweep up a tier', () => {
