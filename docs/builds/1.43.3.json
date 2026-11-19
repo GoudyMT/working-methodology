@@ -39,15 +39,67 @@
   "tier": "Fix",
   "commit": "305c029",
   "dimensions": [
-   { "name": "Privacy", "result": "Not touched" },
-   { "name": "Supply chain", "result": "Not touched: no dependency" },
-   { "name": "Legal", "result": "Not touched" },
-   { "name": "Code security", "result": "Not touched: the base is still read as a commit, never as an option" },
-   { "name": "Gaps, scaling, test value", "result": "See the review" },
-   { "name": "Alignment", "result": "YES" }
+   {
+    "name": "Privacy",
+    "result": "Not touched"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Not touched: the base is still read as a commit, never as an option"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "See the review"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
   ],
-  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
-  "fixes": []
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 2,
+   "low": 2
+  },
+  "fixes": [
+   {
+    "id": "R1-1",
+    "severity": "medium",
+    "text": "A diff past the buffer said the base was no commit; it now says the diff is too large",
+    "commit": "da6ff19",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "R3-1",
+    "severity": "medium",
+    "text": "The new test now adds a large file too, so dropping the larger buffer fails it",
+    "commit": "da6ff19",
+    "test": "tests/mutation-check.test.mjs::a scoped mutation run reads a branch that deletes a large file as the commits they are"
+   },
+   {
+    "id": "R1-2",
+    "severity": "low",
+    "text": "File names are read plain whatever the user git config says about quoting and prefixes",
+    "commit": "da6ff19",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "R2-3",
+    "severity": "low",
+    "text": "Comments no longer carry build and PR labels",
+    "commit": "09dedb9",
+    "test": "no test: no real input"
+   }
+  ]
  },
  "tests": {
   "before": 941,
