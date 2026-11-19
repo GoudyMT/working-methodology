@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.43.1 - 2026-11-19
+
+The kit's largest test file is split into seven files, one per area, with every test moved word for word, so a change to one area reads and edits a file about a fifth the size. Nothing a project installs changes.
+
+### Changed
+- `tests/kit.test.mjs` is split into seven area files (install, rules, hooks, sweep, sweep outcome, sweep budget, recall). Each test keeps its exact text, and each file keeps only the old helper lines its tests use.
+
 ## 1.43.0 - 2026-11-18
 
 The guards pass the reads they held from the workbench and still hold every write twin, CI judges a PR with the base commit's checks before any of its own code runs, the test check's planted-bug part measures only the tests it must, and behaviour recall grades scenarios 5 and 10 on what the session did.
