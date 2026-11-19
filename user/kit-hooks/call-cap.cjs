@@ -95,7 +95,8 @@ function fenceFault(command, tool) {
 		if (cmd === 'git') {
 			// A glob could expand to a file named like an option (--output=x), and a quote or escape joins one: git's
 			// words are plain in every shell.
-			const unplain = rest.find((w) => /[*?[\]'"\\{}~$`]/.test(w));
+			// A comma makes a PowerShell list and @ splats one, so neither is plain either.
+			const unplain = rest.find((w) => /[*?[\]'"\\{}~$`,@()]/.test(w));
 			if (unplain) return `a git word the hook cannot read as written (${unplain})`;
 			let k = 0;
 			while (k < rest.length && /^-/.test(rest[k])) { if (/^-C$/.test(rest[k])) k++; else if (!/^--no-pager$/.test(rest[k])) return `git option ${rest[k]} before the subcommand`; k++; }

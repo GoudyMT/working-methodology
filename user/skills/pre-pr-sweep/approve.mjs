@@ -328,7 +328,9 @@ function diffFacts() {
 		addedSource: added.filter((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f) && !DATA_FILE.test(f)),
 		added,
 		lines,
-		gate: (() => { const ci = new Set([...ciRuns(base), ...ciRuns('HEAD')]); return all.filter((f) => GATE_FILE.test(f) || ci.has(f)); })(),
+		// A workflow may run a script from another folder (working-directory, cd), so a file whose name a workflow names
+		// counts by its name alone: reading too much as gate code costs a heavier sweep, too little a lighter one.
+		gate: (() => { const ci = new Set([...ciRuns(base), ...ciRuns('HEAD')].map((f) => f.split('/').pop())); return all.filter((f) => GATE_FILE.test(f) || ci.has(f.split('/').pop())); })(),
 		// Triage reads the lines that can change behaviour: not docs, records or maps, and not a test line the same
 		// change removed from another test file (a split or a move).
 		triageLines: triageLines(base),
