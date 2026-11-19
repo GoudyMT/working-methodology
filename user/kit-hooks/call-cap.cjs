@@ -51,7 +51,7 @@ const READERS = new Set(['cat', 'head', 'tail', 'wc', 'ls', 'dir', 'grep', 'egre
 	'measure-object', 'measure', 'select-object', 'select', 'where-object', 'where', '?', 'sort-object', 'format-table', 'ft',
 	'format-list', 'fl', 'out-string', 'write-output', 'write-host', 'get-filehash', 'compare-object', 'resolve-path', 'split-path',
 	'join-path', 'get-location', 'set-location', 'sl', 'group-object', 'convertfrom-json', 'convertto-json', 'get-command', 'gcm']);
-const GIT_READS = new Set(['log', 'diff', 'show', 'status', 'blame', 'ls-files', 'ls-tree', 'rev-parse', 'cat-file', 'grep', 'merge-base',
+const GIT_READS = new Set(['log', 'diff', 'show', 'status', 'blame', 'ls-files', 'ls-tree', 'rev-parse', 'cat-file', 'merge-base',
 	'rev-list', 'shortlog', 'describe', 'name-rev', 'for-each-ref', 'show-ref', 'diff-tree', 'diff-index', 'whatchanged', 'version']);
 // Writes allowed only into scratch: every word after the command is a bare flag or a scratch path.
 const SCRATCH_WRITERS = new Set(['cp', 'mv', 'rm', 'mkdir', 'touch', 'tee', 'out-file', 'set-content', 'add-content', 'copy-item', 'remove-item']);
@@ -86,15 +86,19 @@ function fenceFault(command, tool) {
 		// A quoted literal alone (PowerShell's 'text' | Out-File ...) runs nothing.
 		if (!words.length || (words.length === 1 && /^['"]/.test(raw[0]))) continue;
 		const [first, ...rest] = words;
-		// In Bash a backslash is an escape, not a folder sign, so r\m runs rm: a Bash command word holds none.
-		if (/^[$&.]$|^[$&]|[('"]/.test(first) || /^\w+=/.test(first) || (tool === 'Bash' && first.includes('\\'))) return `a command word the hook cannot name (${first})`;
+		// In Bash a backslash is an escape and a quote inside a word joins its parts, so r\m runs rm and --out'put' is
+		// --output: no Bash word holds either (the brief's paths use forward slashes).
+		if (tool === 'Bash') { const odd = words.find((w) => /[\\'"]/.test(w)); if (odd) return `a word the hook cannot read the way Bash will (${odd})`; }
+		if (/^[$&.]$|^[$&]|[('"]/.test(first) || /^\w+=/.test(first)) return `a command word the hook cannot name (${first})`;
 		const cmd = base(first);
 		const valued = rest.find((w) => /^-[^=:]*[=:]/.test(w) && !/^-\w$/.test(w));
 		if (cmd === 'git') {
 			let k = 0;
 			while (k < rest.length && /^-/.test(rest[k])) { if (/^-C$/.test(rest[k])) k++; else if (!/^--no-pager$/.test(rest[k])) return `git option ${rest[k]} before the subcommand`; k++; }
 			if (!GIT_READS.has(rest[k])) return `git ${rest[k] || ''} is not a read`;
-			if (rest.slice(k + 1).some((w) => /^(--output\b|-o$|--ext-diff$|--textconv$|-O|--open-files-in-pager)/.test(w))) return 'a git read told to write a file or run a program';
+			// git takes any unique start of a long option (--out is --output) and bundles short ones (-po), so both are read.
+			const runs = (w) => (/^--./.test(w) && ['output', 'output-directory', 'ext-diff', 'textconv', 'open-files-in-pager'].some((o) => o.startsWith(w.slice(2).split('=')[0].toLowerCase()))) || /^-[^-]*[oO]/.test(w);
+			if (rest.slice(k + 1).some(runs)) return 'a git read told to write a file or run a program';
 			continue;
 		}
 		if (SCRATCH_WRITERS.has(cmd)) {

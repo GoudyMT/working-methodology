@@ -1521,9 +1521,9 @@ test('a reviewer writes only inside its sweep scratch folder; reads and other ag
     'c=rm; $c -rf x', // a command word built at run time
     'git -c a=b reset --hard', // a git option before the subcommand
     'git checkout -- x.mjs', // a git subcommand that writes
-    'git diff --output=x.patch', // a git read told to write
-    'git grep -O x', // a git read told to run a pager program
-    'r\\m -rf reports', // a Bash escape inside the command word
+    'git diff --out=x.patch', // a git read told to write, by the start of --output
+    'git log -po x.patch', // the same, by a bundled short flag
+    'r\\m -rf reports', // a Bash escape inside a word
     `cp --target-directory=reports ${scratch}/a`, // a flag with its value attached
     '/usr/bin/rm.exe -rf reports', // a write outside scratch, the command named by path and .exe
     `cp a ${scratch}/../../x`, // traversal out of scratch
