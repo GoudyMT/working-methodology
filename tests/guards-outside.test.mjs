@@ -555,6 +555,9 @@ test('B20 release install: no tree id is a refusal, and the config and VERSION a
 			assert.throws(() => install({ kit, home: kitTemp.makeTemp('b20home-'), target: 'user', release: { release: true, tree } }), /changed since the release check/, file);
 		} finally { fs.writeFileSync(at, was); }
 	}
+	// A profile left in the kit folder is never read from there: a release install refuses until it moves.
+	fs.writeFileSync(path.join(kit, 'owner-profile.md'), '- Left behind\n');
+	assert.throws(() => install({ kit, home: kitTemp.makeTemp('b20home-'), target: 'user', release: { release: true, tree } }), /the kit folder still holds/);
 });
 
 // The security review on c453ec1: core.fsmonitor names a program git runs on git status and git ls-files (proven on

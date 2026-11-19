@@ -53,9 +53,10 @@ test('install user takes the owner profile from the Claude folder, never the kit
   // The build 18 sweep: the upgrade deletes the kit-folder file, so install refuses to blank lines the owner has.
   const kept = makeKit();
   fs.rmSync(path.join(kept.home, 'kit-owner-profile.md'));
-  fs.writeFileSync(path.join(kept.home, 'CLAUDE.md'), '## Owner Context\n\n- Owner: Pat\n- Likes tests\n');
+  const owned = '## Owner Context\n\n- Owner: Pat\n- Likes tests\n';
+  fs.writeFileSync(path.join(kept.home, 'CLAUDE.md'), owned);
   assert.throws(() => install({ kit: kept.kit, home: kept.home, target: 'user' }), /Install refused: no owner profile[\s\S]*still holds Owner Context lines/);
-  assert.equal(read(path.join(kept.home, 'CLAUDE.md')), '## Owner Context\n\n- Owner: Pat\n- Likes tests\n', 'nothing was written');
+  assert.equal(read(path.join(kept.home, 'CLAUDE.md')), owned, 'nothing was written');
   const left = makeKit();
   fs.rmSync(path.join(left.home, 'kit-owner-profile.md'));
   fs.writeFileSync(path.join(left.kit, 'owner-profile.md'), '- Likes tests\n');
@@ -489,6 +490,7 @@ test('the hook script prints a user message and context for Claude, and never fa
 // why: guards rule:kit-standards
 // T10 (build 18): the backups left the public repo for a private one; the kit's index of them is what CI can read.
 test('every backup in the real kit credits its source', () => {
+  assert.ok(fs.existsSync(path.resolve('vendor-index.json')), 'the kit keeps an index of its backups');
   const index = JSON.parse(read(path.resolve('vendor-index.json')));
   const config = JSON.parse(read(path.resolve('kit.config.json'))).vendor;
   const entries = [...Object.entries(index.plugins), ...Object.entries(index.skillGroups)];
@@ -519,6 +521,7 @@ test('every skill the case map names exists in the kit, its backups or Claude Co
   };
   const own = skillDirs(path.resolve('user/skills'));
   // T10 (build 18): the backups' skills are read from the kit's index of them.
+  assert.ok(fs.existsSync(path.resolve('vendor-index.json')), 'the kit keeps an index of its backups');
   const index = JSON.parse(read(path.resolve('vendor-index.json')));
   const groups = new Set(Object.values(index.skillGroups).flatMap((g) => g.skills));
   for (const c of cases) {
