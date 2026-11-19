@@ -30,8 +30,9 @@ const plain = (text) => entities(text)
 	.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
 	.replace(/<!-{2,}|-{2,}>|^\[[^\]\n]*\]:\s*(?:#|<>)\s*[("']/gm, '\n');
 // Markup inside a word hides it from the reader of the source, not the page: Re**quested**, Req<b></b>uested.
-// Tags and empty links come out until none is left, as uncommented() does for comments, so no removal can join a new one.
-const untagged = (text) => { let t = String(text), was; do { was = t; t = t.replace(/<[^>\n]*>/g, '').replace(/!?\[\]\([^)\n]*\)/g, ''); } while (t !== was); return t; };
+// Tags and empty links come out until none is left, as uncommented() does for comments, so no removal can join a new one;
+// a lone angle bracket left over goes too, so no part of a tag survives.
+const untagged = (text) => { let t = String(text), was; do { was = t; t = t.replace(/<[^>\n]*>/g, '').replace(/!?\[\]\([^)\n]*\)/g, ''); } while (t !== was); return t.replace(/[<>]/g, ''); };
 const unbroken = (text) => untagged(text).replace(/(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\w)|(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\s+by\b)/gi, '');
 
 // A code span in a sentence is prose about the line; one alone on its line is the line.
