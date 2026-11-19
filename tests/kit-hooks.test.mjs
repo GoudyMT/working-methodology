@@ -679,6 +679,25 @@ test('the attribution check refuses every disguise in the corpus and passes pros
   for (const body of CORPUS.mustPass) assert.deepEqual(attributionFaults(body), [], JSON.stringify(body));
 });
 
+// K143 (build 18, checking CodeQL's sanitizing alerts on these audits): the alerts' nested markers were caught, but a
+// comment inside a word, which the page hides (Re<!---->quested by), passed the PR check and the release notes audit.
+// why: catches a Requested by line split by an HTML comment passing the PR and release attribution checks
+test('a comment inside a word cannot hide a Requested by line from the PR or release notes check', async () => {
+  const bodies = ['Text\n\nRe<!---->quested by Max\n', 'Text\n\nRequ<!-- x -->ested by **Max**\n', 'Text\n\nRe<!-<!---->->quested by Max\n'];
+  for (const file of ['../project/.claude/no-attribution.mjs', '../user/kit-tools/audits/no-attribution.mjs']) {
+    const { attributionFaults } = await import(file);
+    for (const b of bodies) assert.notDeepEqual(attributionFaults(b), [], `${file}: ${JSON.stringify(b)}`);
+    assert.deepEqual(attributionFaults('Text\n\nThe <!-- note --> fix was requested by the owner in the thread.\n'), [], 'prose about a request still passes');
+  }
+  const dir = makeTemp('k143-');
+  for (const b of bodies) {
+    const f = path.join(dir, 'notes.md');
+    fs.writeFileSync(f, `# Methodology Kit v1.2.0\n\n${b}`);
+    const r = spawnSync(process.execPath, [path.resolve('user/skills/release-notes/audit.mjs'), f, '1.2.0'], { encoding: 'utf8', cwd: dir });
+    assert.match(r.stdout + r.stderr, /attribution block/, JSON.stringify(b));
+  }
+});
+
 // Handoff item 10: judged against a base, the phrase comes from the base, so a branch cannot change it.
 // why: guards rule:agent-canary
 test('the PR-body canary reads the phrase from PR_BASE when one is set, and from disk when not', async () => {

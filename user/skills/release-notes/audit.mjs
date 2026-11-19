@@ -105,10 +105,14 @@ function startsLine(body) {
 	}
 	return false;
 }
+// K143 (build 18): a comment inside a line is hidden on the page (Re<!---->quested by), so the text is also read with
+// each one taken out, again until none is left (Re<!-<!---->->quested leaves Re<!-->quested, itself an empty comment).
+const uncommented = (text) => { let t = String(text), was; do { was = t; t = t.replace(/<!--(?:>|->|[^\n]*?-->)/g, ''); } while (t !== was); return t; };
 {
   const body = plain(text);
   const prose = noSpans(body);
-  if (/claude-projects-attribution/i.test(body) || [prose, unbroken(prose)].some((p) => startsLine(p) || STYLED.test(p))) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
+  const joined = noSpans(plain(uncommented(text)));
+  if (/claude-projects-attribution/i.test(body) || [prose, unbroken(prose), joined, unbroken(joined)].some((p) => startsLine(p) || STYLED.test(p))) faults.push('an attribution block: no such marker or Requested by line goes in a release body');
 }
 
 // K125: a Visuals section is checked by the script that writes it, kept beside the PR audits in the Claude folder.

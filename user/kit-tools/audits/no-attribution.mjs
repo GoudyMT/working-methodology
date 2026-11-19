@@ -56,11 +56,15 @@ function startsLine(body) {
  * Returns:
  *     a list of the faults found; empty when the body is clean
  */
+// K143 (build 18): a comment inside a line is hidden on the page (Re<!---->quested by), so the text is also read with
+// each one taken out, again until none is left (Re<!-<!---->->quested leaves Re<!-->quested, itself an empty comment).
+const uncommented = (text) => { let t = String(text), was; do { was = t; t = t.replace(/<!--(?:>|->|[^\n]*?-->)/g, ''); } while (t !== was); return t; };
 export function attributionFaults(text) {
 	const body = plain(text);
 	const faults = [];
 	if (/claude-projects-attribution/i.test(body)) faults.push('a claude-projects-attribution marker');
 	const prose = noSpans(body);
-	if ([prose, unbroken(prose)].some((p) => startsLine(p) || STYLED.test(p))) faults.push('a Requested by line');
+	const joined = noSpans(plain(uncommented(text)));
+	if ([prose, unbroken(prose), joined, unbroken(joined)].some((p) => startsLine(p) || STYLED.test(p))) faults.push('a Requested by line');
 	return faults;
 }
