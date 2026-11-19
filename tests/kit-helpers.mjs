@@ -478,7 +478,6 @@ export function transcripts(spec, meta = {}, cfg = makeTemp('cfg-'), session = '
   return cfg;
 }
 export let agentSeq = 0;
-export const nextAgentId = () => ++agentSeq;
 export const roleModel = (r) => r.model ?? (['security', 'novel-lens'].includes(r.kind) ? 'claude-opus-5-5' : 'claude-sonnet-5-5');
 export const roleModels = (ids, roles) => Object.fromEntries(ids.map((id, i) => [id, roleModel(roles[i])]));
 // Logs a sweep's outcome with one transcript per role, the given total split across them.

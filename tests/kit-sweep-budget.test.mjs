@@ -11,7 +11,10 @@ import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
-import { APPROVE, FIX_EXIT, ageTranscript, nextAgentId, approvalLog, approveIn, approveRun, askContract, canary, capHook, cheapRoles, commitAll, crashedSweep, driftSweep, featureContract, fixContract, fixFloor, fixRepo, g, lastClearing, leadQuestion, leadTag, logOutcome, makeTemp, nextBranch, outcome, ownerTaps, pastRole, read, recallTools, require, role, roleModel, roleModels, runHook, seedOutcomes, setBrief, status, sweepGuard, sweepLog, sweepRepo, tapEnv, threeSecurity, transcripts, usual, words } from './kit-helpers.mjs';
+import { APPROVE, FIX_EXIT, ageTranscript, approvalLog, approveIn, approveRun, askContract, canary, capHook, cheapRoles, commitAll, crashedSweep, driftSweep, featureContract, fixContract, fixFloor, fixRepo, g, lastClearing, leadQuestion, leadTag, logOutcome, makeTemp, nextBranch, outcome, ownerTaps, pastRole, read, recallTools, require, role, roleModel, roleModels, runHook, seedOutcomes, setBrief, status, sweepGuard, sweepLog, sweepRepo, tapEnv, threeSecurity, transcripts, usual, words } from './kit-helpers.mjs';
+// The four tests below number their own agents: an imported counter cannot be bumped, so this file keeps its own,
+// started far from the shared one so no id repeats.
+let agentSeq = 100000;
 
 // why: guards rule:sweep-tiers
 test('a committed contract, the caps file and a docs json do not move a fix or triage sweep up a tier', () => {
@@ -173,7 +176,7 @@ test('the 25% trip stays on the whole sweep: one role over its own budget does n
   const r = approveRun(featureContract());
   const budget = approvalLog(r.dir).pop().budget;
   const roles = JSON.parse(read(r.f)).roles;
-  const ids = roles.map(() => `t${nextAgentId()}`);
+  const ids = roles.map(() => `t${++agentSeq}`);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [[0, i ? 1000 : Math.floor(budget * 0.9), 0, 0], [0, 1, 0, 0]]])), {}, undefined, undefined, roleModels(ids, roles));
   const o = approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(o.status, 0, o.stdout);
@@ -506,7 +509,7 @@ test('the outcome counts the findings from the reviewers\' reports, writes the l
   const two = report(['high | CONFIRMED | an import writes outside | src/import.ts:12 | ran it', 'low | PLAUSIBLE | a log names a path | src/routes.ts:4 | read it']);
   const same = report(['medium | CONFIRMED | the same import write | src/import.ts:12 | ran it too']);
   const none = report(['No findings']);
-  const ids = Array(5).fill(0).map(() => `t${nextAgentId()}`);
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
   const cfg = transcripts({ [ids[0]]: [[10000, 0, 0, 0], two], [ids[1]]: [[10000, 0, 0, 0], same], [ids[2]]: [[10000, 0, 0, 0], none], [ids[3]]: [[10000, 0, 0, 0], none], [ids[4]]: [[10000, 0, 0, 0], none] });
   const run = (findings) => approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', String(findings), '--real', '2', '--duplicates', '1'], { CLAUDE_CONFIG_DIR: cfg });
   const wrong = run(4);
@@ -533,7 +536,7 @@ test('the findings count reads only delivered reports, skips out-of-role notes, 
   assert.equal(r.status, 0, r.stdout);
   const shaped = (rows) => ['P', 'ROLE: a role', ...rows, 'Not checked: nothing'].join('\n');
   const one = 'high | CONFIRMED | a write outside | src/import.ts:12 | ran it';
-  const ids = Array(5).fill(0).map(() => `t${nextAgentId()}`);
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
   const spec = {
     // Refused (no Not checked line), then a plain reply: nothing was delivered as a report.
     [ids[0]]: [[10000, 0, 0, 0], { handback: ['P', 'ROLE: a role', one, one, one].join('\n'), refusedWith: 'Your report is out of the shape your brief gives' }, { handback: shaped(['No findings']) }],
@@ -595,7 +598,7 @@ test('ceilings set from the budgets keep the whole-sweep trip, however many role
   assert.match(approvalLog(dir).pop().ceilingFrom, /x each role's budget/);
   // Twenty-five roles are measured after this decision and before its outcome.
   seedOutcomes(dir, Array.from({ length: 25 }, () => pastRole(200000)));
-  const ids = Array(5).fill(0).map(() => `t${nextAgentId()}`);
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
   const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[10000, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]])));
   const o = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.match(o.stdout, /paused: .*tokens 750000 ran 40% over the budget/);
