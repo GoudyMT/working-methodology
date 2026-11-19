@@ -11,7 +11,6 @@ The owner's profile and the third-party backups leave the public kit repo, a swe
 - Install reads the owner's profile from `~/.claude/kit-owner-profile.md`, outside the public repo; the repo keeps a blank example, and install refuses rather than blank Owner Context lines it finds with no profile.
 - The sweep floor follows what the diff touches: gate code (CI and the scripts it runs, hooks, guards, the kit's install) is a feature sweep with security roles; docs, records and moved tests stay triage.
 - [trial] One home for process skills: the kit's own skills; a third-party process skill set stays off, as a credited backup only.
-- The kit's test files share one helper module, `tests/kit-helpers.mjs`, in place of the copies the 1.43.1 split left in each.
 - README and the recall workflow say the kit repo is public.
 
 ### Fixed
