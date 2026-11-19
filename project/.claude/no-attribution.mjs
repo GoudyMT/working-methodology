@@ -30,7 +30,9 @@ const plain = (text) => entities(text)
 	.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
 	.replace(/<!-{2,}|-{2,}>|^\[[^\]\n]*\]:\s*(?:#|<>)\s*[("']/gm, '\n');
 // Markup inside a word hides it from the reader of the source, not the page: Re**quested**, Req<b></b>uested.
-const unbroken = (text) => text.replace(/<[^>\n]*>/g, '').replace(/!?\[\]\([^)\n]*\)/g, '').replace(/(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\w)|(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\s+by\b)/gi, '');
+// Tags and empty links come out until none is left, as uncommented() does for comments, so no removal can join a new one.
+const untagged = (text) => { let t = String(text), was; do { was = t; t = t.replace(/<[^>\n]*>/g, '').replace(/!?\[\]\([^)\n]*\)/g, ''); } while (t !== was); return t; };
+const unbroken = (text) => untagged(text).replace(/(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\w)|(?<=\w)(\*{1,2}|_{1,2}|~~)(?=\s+by\b)/gi, '');
 
 // A code span in a sentence is prose about the line; one alone on its line is the line.
 const noSpans = (body) => body.replace(/\[[xX]\]/g, ' ').replace(/(?<!\\)`[^`\n]*(?<!\\)`(?=[^\n]*\w)/g, ' ');
