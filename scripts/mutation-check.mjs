@@ -64,12 +64,18 @@ function parseArgs(argv) {
 function changedLines(root, base) {
 	const sha = git(root, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${base}^{commit}`).stdout.trim();
 	if (!/^[0-9a-f]{40,64}$/.test(sha)) return null;
-	const diff = git(root, 'diff', '-U0', `${sha}...HEAD`);
+	// A branch that deletes many megabytes of files can overflow the output buffer, which read as no commit. A deleted
+	// file adds no line to flip, so deletions are left out, and the buffer has room for a large change.
+	// Names are read plain (no quoting, the usual a/ and b/ prefixes, whatever the user's config says); a diff past
+	// the buffer says so rather than reading as no commit.
+	const diff = spawnSync('git', ['-c', 'core.quotePath=false', '-c', 'diff.noprefix=false', 'diff', '-U0', '--no-color', '--src-prefix=a/', '--dst-prefix=b/', '--diff-filter=d', `${sha}...HEAD`], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
+	if (diff.error && diff.error.code === 'ENOBUFS') return { overflow: true };
 	if (diff.status !== 0) return null;
 	const out = {};
 	let file = null;
 	for (const l of diff.stdout.split('\n')) {
-		if (l.startsWith('+++ ')) file = l === '+++ /dev/null' ? null : l.slice(6);
+		// git ends a name holding a space with a tab; a name git still quotes (a tab or newline in it) is not read.
+		if (l.startsWith('+++ ')) file = l === '+++ /dev/null' || l[4] === '"' ? null : l.slice(6).replace(/\t$/, '');
 		const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(l);
 		if (m && file) for (let k = 0; k < Number(m[2] ?? 1); k++) (out[file] ||= new Set()).add(Number(m[1]) + k);
 	}
@@ -115,6 +121,7 @@ export async function main(argv) {
 	if (map.sha !== head) { process.stderr.write(`mutation-check: the map is for ${String(map.sha).slice(0, 12)}, not HEAD ${head.slice(0, 12)}: ${make}\n`); return 2; }
 	const scope = o.base ? changedLines(root, o.base) : null;
 	if (o.base && !scope) { process.stderr.write(`mutation-check: base "${o.base}" is not a commit this repo can diff against HEAD\n`); return 2; }
+	if (scope && scope.overflow) { process.stderr.write(`mutation-check: the diff from "${o.base}" adds more than 256 MB of lines, past what it reads; measure fewer files by name\n`); return 2; }
 	const byLine = new Map();
 	for (const [key, t] of Object.entries(map.tests || {})) {
 		for (const [file, lines] of Object.entries(t.lines || {})) {
