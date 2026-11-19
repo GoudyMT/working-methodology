@@ -1522,22 +1522,20 @@ test('a reviewer writes only inside its sweep scratch folder; reads and other ag
     'git -c a=b reset --hard', // a git option before the subcommand
     'git checkout -- x.mjs', // a git subcommand that writes
     'git diff --output=x.patch', // a git read told to write
+    'git grep -O x', // a git read told to run a pager program
+    'r\\m -rf reports', // a Bash escape inside the command word
     `cp --target-directory=reports ${scratch}/a`, // a flag with its value attached
     '/usr/bin/rm.exe -rf reports', // a write outside scratch, the command named by path and .exe
     `cp a ${scratch}/../../x`, // traversal out of scratch
     'rm -rf /elsewhere/kit-sweep-0123abcd/role-1/x', // the scratch name under another folder
     `echo x > ${scratch}/*`, // a path the shell expands
     'node -e "x"', // an interpreter given code
-    'ls | xargs rm', // a command off the read list
+    "sed -n 's/a/b/w out.txt' x.mjs", // a command off the read list (sed can write with w)
     'find . -name x -delete', // find told to write
-    'sort -o a.txt a.txt', // sort told to write
-    'uniq a.txt b.txt', // uniq told to write
-    "sed -i 's/a/b/' x.mjs", // sed in place
-    "sed -n 's/a/b/w out.txt' x.mjs", // sed's own write command
   ]) assert.equal(run(c), 'deny', c);
   for (const c of ['Set-Content x.txt y', `& ('Remove-'+'Item') x`, `[IO.File]::WriteAllText('x','y')`]) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
   for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -rn x src 2>/dev/null',
-    'node scripts/test-check.mjs main 2>&1 | tail -3', 'git -C . diff main...HEAD -- a.txt', "sed -n '1,5p' a.txt"]) assert.equal(run(c), 'allow', c);
+    'node scripts/test-check.mjs main 2>&1 | tail -3', 'git -C . diff main...HEAD -- a.txt']) assert.equal(run(c), 'allow', c);
   assert.equal(run(`'y' | Out-File ${scratch}/x.txt`, {}, 'PowerShell'), 'allow', 'PowerShell inside the scratch folder');
   assert.equal(run('Get-Content a.txt 2>$null', {}, 'PowerShell'), 'allow', 'a PowerShell read');
   assert.equal(run('echo x > notes.txt', { agent_type: 'builder' }), 'allow', 'only reviewers');

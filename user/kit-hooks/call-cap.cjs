@@ -43,24 +43,26 @@ const SINK = /^(\/dev\/null|nul|\$null)$/i;
 // here-doc, a process substitution, a call operator on a built name.
 const UNREADABLE = /\$\(|\$\{|`|<<|<\(|>\(|(^|[;|{(\s])[&.]\s*[('"$]|\beval\b|\biex\b|invoke-expression|invoke-command|start-process|\[[\w.]*(io\.)?(file|directory|path)\]::/i;
 // Reads: the command word (its folder and .exe dropped) and, for git, the subcommand.
-const READERS = new Set(['cat', 'head', 'tail', 'wc', 'ls', 'dir', 'grep', 'egrep', 'fgrep', 'rg', 'find', 'sort', 'uniq', 'cut', 'tr',
-	'echo', 'printf', 'pwd', 'cd', 'diff', 'cmp', 'du', 'stat', 'file', 'which', 'type', 'test', 'true', 'false', 'basename',
-	'dirname', 'realpath', 'readlink', 'sha256sum', 'md5sum', 'jq', 'column', 'nl', 'od', 'xxd', 'hexdump', 'date', 'sed',
-	'get-content', 'gc', 'select-string', 'sls', 'get-childitem', 'gci', 'get-item', 'gi', 'test-path', 'measure-object', 'measure',
-	'select-object', 'select', 'where-object', 'where', '?', 'sort-object', 'format-table', 'ft', 'format-list', 'fl', 'out-string',
-	'write-output', 'write-host', 'get-filehash', 'compare-object', 'resolve-path', 'split-path', 'join-path', 'get-location',
-	'set-location', 'sl', 'foreach-object', '%', 'group-object', 'convertfrom-json', 'convertto-json', 'get-command', 'gcm']);
+// Kept short on purpose: a reader with a flag that writes or runs a program (sed's w and e, sort's -o and
+// --compress-program, rg's --pre, ForEach-Object's member call) is left off; the Read and Grep tools cover the rest.
+const READERS = new Set(['cat', 'head', 'tail', 'wc', 'ls', 'dir', 'grep', 'egrep', 'fgrep', 'find', 'echo', 'printf', 'pwd', 'cd',
+	'diff', 'cmp', 'du', 'stat', 'file', 'which', 'type', 'test', 'true', 'false', 'basename', 'dirname', 'realpath', 'readlink',
+	'sha256sum', 'md5sum', 'date', 'get-content', 'gc', 'select-string', 'sls', 'get-childitem', 'gci', 'get-item', 'gi', 'test-path',
+	'measure-object', 'measure', 'select-object', 'select', 'where-object', 'where', '?', 'sort-object', 'format-table', 'ft',
+	'format-list', 'fl', 'out-string', 'write-output', 'write-host', 'get-filehash', 'compare-object', 'resolve-path', 'split-path',
+	'join-path', 'get-location', 'set-location', 'sl', 'group-object', 'convertfrom-json', 'convertto-json', 'get-command', 'gcm']);
 const GIT_READS = new Set(['log', 'diff', 'show', 'status', 'blame', 'ls-files', 'ls-tree', 'rev-parse', 'cat-file', 'grep', 'merge-base',
 	'rev-list', 'shortlog', 'describe', 'name-rev', 'for-each-ref', 'show-ref', 'diff-tree', 'diff-index', 'whatchanged', 'version']);
 // Writes allowed only into scratch: every word after the command is a bare flag or a scratch path.
 const SCRATCH_WRITERS = new Set(['cp', 'mv', 'rm', 'mkdir', 'touch', 'tee', 'out-file', 'set-content', 'add-content', 'copy-item', 'remove-item']);
-// An interpreter runs a script file it is named, after bare long flags only.
+// An interpreter runs a script file it is named, after bare long flags only. A probe script the reviewer wrote in its
+// scratch folder is how a sweep proves a finding, so it runs; what that script writes is the limit named above.
 const INTERPRETERS = new Set(['node', 'bash', 'sh', 'python', 'python3', 'py']);
 const CODE_FLAG = /^--(eval|print|import|require|loader|experimental-loader|input-type)\b/i;
 const base = (w) => w.replace(/^['"]|['"]$/g, '').split(/[\\/]/).pop().replace(/\.exe$/i, '').toLowerCase();
 
 // The reason a reviewer's command is refused, or '' when every command in it is a read or a scratch write.
-function fenceFault(command) {
+function fenceFault(command, tool) {
 	const c = String(command || '');
 	if (UNREADABLE.test(c)) return 'a part the hook cannot read the way the shell will (a substitution, an expansion, an eval, a here-doc)';
 	for (const seg of c.split(/;|&&|\|\||\||&(?![>\d-])|\n|\r|\(|\)|\{|\}/)) {
@@ -84,14 +86,15 @@ function fenceFault(command) {
 		// A quoted literal alone (PowerShell's 'text' | Out-File ...) runs nothing.
 		if (!words.length || (words.length === 1 && /^['"]/.test(raw[0]))) continue;
 		const [first, ...rest] = words;
-		if (/^[$&.]$|^[$&]|[('"]/.test(first) || /^\w+=/.test(first)) return `a command word the hook cannot name (${first})`;
+		// In Bash a backslash is an escape, not a folder sign, so r\m runs rm: a Bash command word holds none.
+		if (/^[$&.]$|^[$&]|[('"]/.test(first) || /^\w+=/.test(first) || (tool === 'Bash' && first.includes('\\'))) return `a command word the hook cannot name (${first})`;
 		const cmd = base(first);
 		const valued = rest.find((w) => /^-[^=:]*[=:]/.test(w) && !/^-\w$/.test(w));
 		if (cmd === 'git') {
 			let k = 0;
 			while (k < rest.length && /^-/.test(rest[k])) { if (/^-C$/.test(rest[k])) k++; else if (!/^--no-pager$/.test(rest[k])) return `git option ${rest[k]} before the subcommand`; k++; }
 			if (!GIT_READS.has(rest[k])) return `git ${rest[k] || ''} is not a read`;
-			if (rest.slice(k + 1).some((w) => /^(--output\b|-o$|--ext-diff$|--textconv$)/.test(w))) return 'a git read told to write a file or run a program';
+			if (rest.slice(k + 1).some((w) => /^(--output\b|-o$|--ext-diff$|--textconv$|-O|--open-files-in-pager)/.test(w))) return 'a git read told to write a file or run a program';
 			continue;
 		}
 		if (SCRATCH_WRITERS.has(cmd)) {
@@ -109,10 +112,6 @@ function fenceFault(command) {
 		if (cmd === 'npm' && ['test', 't', 'run', 'ls'].includes(rest.find((w) => !w.startsWith('-')))) continue;
 		if (!READERS.has(cmd)) return `${cmd} is not on the reviewer's read list`;
 		if (cmd === 'find' && rest.some((w) => /^-(delete|exec|execdir|ok|okdir|fprint\w*|fls)$/.test(w))) return 'find told to write or run';
-		if (cmd === 'sort' && rest.some((w) => /^(-o|--output)/.test(w))) return 'sort told to write a file';
-		if (cmd === 'uniq' && rest.filter((w) => !/^-/.test(w)).length > 1) return 'uniq told to write a file';
-		// sed's own w, W and e commands write or run; read in the segment's text, since a quoted script splits on spaces.
-		if (cmd === 'sed' && (rest.some((w) => /^(-\w*i|--in-place)/.test(w)) || /\/[gpI\d]*w\s|(^|[\s;{}'"])[wWe](\s|['";}]|$)/.test(seg.slice(seg.indexOf(first) + first.length)))) return 'sed told to write a file or run one';
 	}
 	return '';
 }
@@ -144,7 +143,7 @@ function check(input) {
 	if (input.tool_name === 'Monitor' || ((input.tool_name === 'Bash' || input.tool_name === 'PowerShell') && (t.run_in_background || Number(t.timeout) > IDLE_MS))) {
 		return deny('A reviewer runs nothing that waits past 5 minutes (a background run, a monitor, a longer timeout): an idle reviewer has its whole context written to cache again. Run a targeted check instead; CI runs the full suite.');
 	}
-	const fault = (input.tool_name === 'Bash' || input.tool_name === 'PowerShell') ? fenceFault(t.command) : '';
+	const fault = (input.tool_name === 'Bash' || input.tool_name === 'PowerShell') ? fenceFault(t.command, input.tool_name) : '';
 	if (fault) {
 		return deny(`A reviewer's shell runs reads, and writes only in its scratch folder (the Scratch line of your brief); this line has ${fault}. Read with the Read or Grep tool instead, or name your scratch folder in full as the only path.`);
 	}
