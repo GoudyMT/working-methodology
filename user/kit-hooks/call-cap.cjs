@@ -23,15 +23,13 @@ const IDLE_MS = 5 * 60 * 1000;
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 
 // The hook's answer for one tool call: a refusal, or nothing. The dispatcher (guard.cjs) calls this.
-// I10 (build 18): a reviewer is read-only but for its scratch folder (the brief's kit-sweep-<8 hex>/role-<n>), and the
-// brief alone never held it: a Bash or PowerShell write outside a sweep scratch folder is refused. A write sign whose
-// targets the hook cannot place (no path named, or a path outside scratch) is refused too; a write made by a script
-// the reviewer runs (node x.mjs) is past what a command line shows, a limit of this fence. A scratch path is the brief's
-// own form, absolute under this machine's temp folder with no `..` step; which role's folder it is goes unchecked, a
-// limit too. A scratch path is plain characters only: a `$`, `~`, brace or glob could expand past what the hook read.
-// A line the hook cannot read the way the shell will (a substitution, an eval, `>|`, an interpreter given code
-// rather than a script file, find's writes, xargs) is refused whole. This is a slip net for a reviewer that drifts,
-// not a sandbox: a command that writes by a path no line names (sed's w, an awk print) is the limit it names.
+// I10 (build 18, the owner's pop-up 2026-11-19: "Read-only allowlist"): a reviewer is read-only but for its scratch
+// folder (the brief's kit-sweep-<8 hex>/role-<n>). A list of write commands kept leaking new spellings (rm.exe, a path
+// to rm, --target-directory=, git -c -c, >&file), so the fence reads the other way: each command of a reviewer's shell
+// line must be a known read, or a known write whose every path is in a scratch folder; anything else is refused.
+// A scratch path is the brief's own form, absolute under this machine's temp folder, plain characters only (a `$`,
+// `~`, brace or glob could expand past what the hook read) and no `..` step. Limits it names: a script the reviewer
+// runs (node x.mjs) writes past what a command line shows, and which role's scratch folder it is goes unchecked.
 const TMP = os.tmpdir().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 const SCRATCH_TAIL = /^\/kit-sweep-[0-9a-f]{8}\/role-\d+(\/|$)/;
 const SCRATCH = { test: (w) => {
@@ -40,52 +38,83 @@ const SCRATCH = { test: (w) => {
 	const low = path.posix.normalize(p).toLowerCase();
 	return low.startsWith(TMP) && SCRATCH_TAIL.test(low.slice(TMP.length));
 } };
-const SINK = /^(\/dev\/null|nul|\$null|&\d|&-)$/i;
-const UNREADABLE = /\$\(|\$\{|`|>\||<\(|\beval\b|\biex\b|invoke-expression|invoke-command|start-process|\bxargs\b|\bfind\b[^;&|\n]*\s-(delete|exec|execdir|ok|okdir|fprint\w*|fls)\b|\bawk\b[^;&|\n]*system\s*\(/i;
-const INTERPRETER = /^(node|nodejs|bun|deno|python[\d.]*|py|perl|ruby|php|bash|sh|zsh|dash|ksh|fish|pwsh|powershell|cmd|osascript|wscript|cscript)(\.exe)?$/i;
-const NAMES = 'node|nodejs|bun|deno|python[\\d.]*|py|perl|ruby|php|bash|sh|zsh|dash|ksh|fish|pwsh|powershell|cmd|osascript|wscript|cscript';
-// The backstop, read across the whole line whatever runs the interpreter (a wrapper with flags, a path, busybox): an
-// interpreter word followed in its command by a short flag, a slash switch, a code-loading long flag or a data: URL.
-const INLINE_ANYWHERE = new RegExp(`(^|[\\s;&|(){}"'\\\\/])((${NAMES})(\\.exe)?(?=[\\s"']|$)[^;&|\\n\\r]*?\\s["']?(-[a-z]|--(eval|print|command|encodedcommand|input-type|import|require|loader|experimental-loader)\\b|data:)|(pwsh|powershell|cmd)(\\.exe)?(?=[\\s"']|$)[^;&|\\n\\r]*?\\s["']?\\/[a-z?])`, 'i');
-// An interpreter runs a script file it is named, after long flags only; code on its line, a short flag (-c, -e, -p,
-// a cluster such as -ec, -Command and its shortenings), a code-loading long flag, or no file at all (stdin, a here-doc
-// or a pipe into it) is code the hook cannot read. cmd is refused whole: its switches have no one reading.
-function inlineCode(c) {
-	if (INLINE_ANYWHERE.test(c)) return true;
-	for (const seg of c.split(/;|&&|\|\||\||&|\n|\r|\(|\)|\{|\}/)) {
-		const words = seg.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
-		// The command word: past assignments and the wrappers that run the next word (env, exec, timeout and the like).
-		let at = 0;
-		const base = (w) => w.split(/[\\/]/).pop();
-		while (at < words.length && (/^\w+=/.test(words[at]) || /^(env|exec|time|timeout|nohup|sudo|command|nice|stdbuf|busybox|\.)(\.exe)?$/i.test(base(words[at])) || /^-/.test(words[at]) || /^\d+[smhd]?$/.test(words[at]))) at++;
-		if (at >= words.length || !INTERPRETER.test(base(words[at]))) continue;
-		if (/^cmd(\.exe)?$/i.test(base(words[at]))) return true;
-		const rest = words.slice(at + 1);
-		const ps = /^(pwsh|powershell)/i.test(base(words[at]));
-		const file = rest.findIndex((w) => !w.startsWith('-') && !(ps && w.startsWith('/')));
-		const flags = file < 0 ? rest : rest.slice(0, file);
-		if (file < 0 || /^<</.test(rest[file]) || /^data:/i.test(rest[file]) || flags.some((f) => !/^--[\w-]+$/.test(f) || /^--(eval|print|command|encodedcommand|input-type|import|require|loader|experimental-loader)\b/i.test(f))) return true;
-	}
-	return false;
-}
-const WRITERS = /(^|[\s;&|(!{"'])(cp|mv|rm|rmdir|mkdir|touch|tee|dd|install|ln|chmod|chown|truncate|unlink|shred|rsync|out-file|set-content|sc|add-content|ac|new-item|ni|md|remove-item|ri|rd|del|erase|copy-item|cpi|copy|move-item|mi|move|rename-item|rni|ren|mklink|tar|unzip|curl|wget|invoke-webrequest|iwr)(?![\w.-])|\bsed\s+(-\w*i|--in-place)|\bsort\b[^;&|]*\s-o\b|\bgit\s+(-C\s+\S+\s+)?(commit|checkout|reset|restore|stash|clean|switch|merge|rebase|apply|am|add|rm|mv|worktree|branch|tag|push|pull|fetch|config|init|clone|cherry-pick|revert|notes|update-ref|gc|prune)\b/i;
-function writesOutsideScratch(command) {
+const SINK = /^(\/dev\/null|nul|\$null)$/i;
+// A line the hook cannot read the way the shell will is refused whole: a substitution, an expansion, an eval, a
+// here-doc, a process substitution, a call operator on a built name.
+const UNREADABLE = /\$\(|\$\{|`|<<|<\(|>\(|(^|[;|{(\s])[&.]\s*[('"$]|\beval\b|\biex\b|invoke-expression|invoke-command|start-process|\[[\w.]*(io\.)?(file|directory|path)\]::/i;
+// Reads: the command word (its folder and .exe dropped) and, for git, the subcommand.
+const READERS = new Set(['cat', 'head', 'tail', 'wc', 'ls', 'dir', 'grep', 'egrep', 'fgrep', 'rg', 'find', 'sort', 'uniq', 'cut', 'tr',
+	'echo', 'printf', 'pwd', 'cd', 'diff', 'cmp', 'du', 'stat', 'file', 'which', 'type', 'test', 'true', 'false', 'basename',
+	'dirname', 'realpath', 'readlink', 'sha256sum', 'md5sum', 'jq', 'column', 'nl', 'od', 'xxd', 'hexdump', 'date', 'sed',
+	'get-content', 'gc', 'select-string', 'sls', 'get-childitem', 'gci', 'get-item', 'gi', 'test-path', 'measure-object', 'measure',
+	'select-object', 'select', 'where-object', 'where', '?', 'sort-object', 'format-table', 'ft', 'format-list', 'fl', 'out-string',
+	'write-output', 'write-host', 'get-filehash', 'compare-object', 'resolve-path', 'split-path', 'join-path', 'get-location',
+	'set-location', 'sl', 'foreach-object', '%', 'group-object', 'convertfrom-json', 'convertto-json', 'get-command', 'gcm']);
+const GIT_READS = new Set(['log', 'diff', 'show', 'status', 'blame', 'ls-files', 'ls-tree', 'rev-parse', 'cat-file', 'grep', 'merge-base',
+	'rev-list', 'shortlog', 'describe', 'name-rev', 'for-each-ref', 'show-ref', 'diff-tree', 'diff-index', 'whatchanged', 'version']);
+// Writes allowed only into scratch: every word after the command is a bare flag or a scratch path.
+const SCRATCH_WRITERS = new Set(['cp', 'mv', 'rm', 'mkdir', 'touch', 'tee', 'out-file', 'set-content', 'add-content', 'copy-item', 'remove-item']);
+// An interpreter runs a script file it is named, after bare long flags only.
+const INTERPRETERS = new Set(['node', 'bash', 'sh', 'python', 'python3', 'py']);
+const CODE_FLAG = /^--(eval|print|import|require|loader|experimental-loader|input-type)\b/i;
+const base = (w) => w.replace(/^['"]|['"]$/g, '').split(/[\\/]/).pop().replace(/\.exe$/i, '').toLowerCase();
+
+// The reason a reviewer's command is refused, or '' when every command in it is a read or a scratch write.
+function fenceFault(command) {
 	const c = String(command || '');
-	if (UNREADABLE.test(c) || inlineCode(c)) return true;
-	for (const m of c.matchAll(/(?:^|[^<>&\d-])(?:\d?>>?|&>>?)\s*("[^"]*"|'[^']*'|[^\s;&|)]+)/g)) {
-		const t = m[1].replace(/^['"]|['"]$/g, '');
-		if (!SINK.test(t) && !SCRATCH.test(t)) return true;
+	if (UNREADABLE.test(c)) return 'a part the hook cannot read the way the shell will (a substitution, an expansion, an eval, a here-doc)';
+	for (const seg of c.split(/;|&&|\|\||\||&(?![>\d-])|\n|\r|\(|\)|\{|\}/)) {
+		const raw = seg.trim().split(/\s+/).filter(Boolean);
+		if (!raw.length) continue;
+		// Redirections: a write goes only to scratch or a sink; 2>&1 and the like are fine; any other shape is refused.
+		const words = [];
+		for (let i = 0; i < raw.length; i++) {
+			const w = raw[i].replace(/^['"]|['"]$/g, '');
+			if (/^\d?>&\d$|^>&2$/.test(w)) continue;
+			const m = /^(\d?>>?|&>>?)(.*)$/.exec(w);
+			if (m) {
+				const target = (m[2] || (raw[++i] || '')).replace(/^['"]|['"]$/g, '');
+				if (!SCRATCH.test(target) && !SINK.test(target)) return `a write to ${target || 'nowhere named'} outside your scratch folder`;
+				continue;
+			}
+			if (/[<>]/.test(w) && !/^<$/.test(w)) return `a redirection the hook cannot place (${w})`;
+			if (w === '<') { i++; continue; }
+			words.push(w);
+		}
+		// A quoted literal alone (PowerShell's 'text' | Out-File ...) runs nothing.
+		if (!words.length || (words.length === 1 && /^['"]/.test(raw[0]))) continue;
+		const [first, ...rest] = words;
+		if (/^[$&.]$|^[$&]|[('"]/.test(first) || /^\w+=/.test(first)) return `a command word the hook cannot name (${first})`;
+		const cmd = base(first);
+		const valued = rest.find((w) => /^-[^=:]*[=:]/.test(w) && !/^-\w$/.test(w));
+		if (cmd === 'git') {
+			let k = 0;
+			while (k < rest.length && /^-/.test(rest[k])) { if (/^-C$/.test(rest[k])) k++; else if (!/^--no-pager$/.test(rest[k])) return `git option ${rest[k]} before the subcommand`; k++; }
+			if (!GIT_READS.has(rest[k])) return `git ${rest[k] || ''} is not a read`;
+			if (rest.slice(k + 1).some((w) => /^(--output\b|-o$|--ext-diff$|--textconv$)/.test(w))) return 'a git read told to write a file or run a program';
+			continue;
+		}
+		if (SCRATCH_WRITERS.has(cmd)) {
+			if (valued) return `a flag with its value attached (${valued}); name scratch paths as plain words`;
+			const paths = rest.filter((w) => !/^-/.test(w));
+			if (!paths.length || paths.some((w) => !SCRATCH.test(w))) return `${cmd} names a path outside your scratch folder`;
+			continue;
+		}
+		if (INTERPRETERS.has(cmd)) {
+			const file = rest.findIndex((w) => !w.startsWith('-'));
+			if (file < 0 || /^data:/i.test(rest[file]) || rest.slice(0, file).some((f) => !/^--[\w-]+$/.test(f) || CODE_FLAG.test(f))) return `${cmd} given code rather than a script file`;
+			continue;
+		}
+		// The project's own test or script run is a script the reviewer runs, the limit named above; nothing else of npm.
+		if (cmd === 'npm' && ['test', 't', 'run', 'ls'].includes(rest.find((w) => !w.startsWith('-')))) continue;
+		if (!READERS.has(cmd)) return `${cmd} is not on the reviewer's read list`;
+		if (cmd === 'find' && rest.some((w) => /^-(delete|exec|execdir|ok|okdir|fprint\w*|fls)$/.test(w))) return 'find told to write or run';
+		if (cmd === 'sort' && rest.some((w) => /^(-o|--output)/.test(w))) return 'sort told to write a file';
+		if (cmd === 'uniq' && rest.filter((w) => !/^-/.test(w)).length > 1) return 'uniq told to write a file';
+		// sed's own w, W and e commands write or run; read in the segment's text, since a quoted script splits on spaces.
+		if (cmd === 'sed' && (rest.some((w) => /^(-\w*i|--in-place)/.test(w)) || /\/[gpI\d]*w\s|(^|[\s;{}'"])[wWe](\s|['";}]|$)/.test(seg.slice(seg.indexOf(first) + first.length)))) return 'sed told to write a file or run one';
 	}
-	// Each command of the line on its own: one that can write may name only scratch paths (its sources too, since a
-	// name with no folder is read from the repo), so cp a scratch/b, and a write beside a scratch one, are both held.
-	for (const seg of c.split(/;|&&|\|\||\||\n/)) {
-		if (!WRITERS.test(seg)) continue;
-		const words = seg.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
-		const at = words.findIndex((w) => WRITERS.test(` ${w}`));
-		const args = words.slice(at + 1).filter((w) => !/^-/.test(w) && !/^\d?[<>]/.test(w));
-		if (!args.length || args.some((w) => !SCRATCH.test(w) && !SINK.test(w))) return true;
-	}
-	return false;
+	return '';
 }
 
 function check(input) {
@@ -115,8 +144,9 @@ function check(input) {
 	if (input.tool_name === 'Monitor' || ((input.tool_name === 'Bash' || input.tool_name === 'PowerShell') && (t.run_in_background || Number(t.timeout) > IDLE_MS))) {
 		return deny('A reviewer runs nothing that waits past 5 minutes (a background run, a monitor, a longer timeout): an idle reviewer has its whole context written to cache again. Run a targeted check instead; CI runs the full suite.');
 	}
-	if ((input.tool_name === 'Bash' || input.tool_name === 'PowerShell') && writesOutsideScratch(t.command)) {
-		return deny('A reviewer writes only in its scratch folder (the Scratch line of your brief): name that folder in full as the target, or read instead. Nothing in the repository or another role\'s folder is written.');
+	const fault = (input.tool_name === 'Bash' || input.tool_name === 'PowerShell') ? fenceFault(t.command) : '';
+	if (fault) {
+		return deny(`A reviewer's shell runs reads, and writes only in its scratch folder (the Scratch line of your brief); this line has ${fault}. Read with the Read or Grep tool instead, or name your scratch folder in full as the only path.`);
 	}
 	const file = path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents', `agent-${input.agent_id}.jsonl`);
 	// Each message id once, at its last line (streaming writes one line per content block), in the order calls began.

@@ -1507,30 +1507,37 @@ test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s q
 
 // I10 (build 18, real on 1.43.0): a reviewer's brief names its scratch folder, but nothing held a Bash or PowerShell
 // write outside it; one reviewer once removed another's folder. A reviewer's write now lands in a sweep scratch folder
-// or is held; a write the hook cannot place (no path, a command it cannot read) is held too.
+// or is held; a write the hook cannot place (no path, a command it cannot read) is held too. From the owner's pop-up
+// (2026-11-19) the fence is an allowlist: one row per way a line is refused, and one per kind of line it passes.
 // why: catches a sweep reviewer writing into the repo or outside its own scratch folder
 test('a reviewer writes only inside its sweep scratch folder; reads and other agents are left alone', () => {
   const dir = makeTemp('cap-');
   const scratch = path.join(os.tmpdir(), 'kit-sweep-0123abcd', 'role-1').split(path.sep).join('/');
   const run = (command, extra = {}, tool = 'Bash') => capHook(dir, 1, 12, { tool_name: tool, tool_input: { command }, ...extra }).permissionDecision;
-  for (const c of ['echo x > notes.txt', 'echo x >> /tmp/x.txt', 'cp a.txt b.txt', 'rm -rf reports', 'mkdir out', `cp a.txt ${scratch}/a.txt && rm b.txt`,
-    "sed -i 's/a/b/' x.mjs", 'git commit -qm x', 'git checkout -- x.mjs', 'touch x', 'tee out.txt < a.txt', 'echo x | tee -a log.md',
-    // A scratch name is not enough: traversal out of it, the name under another folder, and lines the hook cannot read.
-    `echo x > ${scratch}/../../../x.txt`, `cp a ${scratch}/../../x`, 'echo x > /elsewhere/kit-sweep-0123abcd/role-1/x.txt', 'rm -rf repo/kit-sweep-0123abcd/role-1/',
-    `echo x >| notes.txt`, `echo $(rm notes.txt) > ${scratch}/x`, 'echo `rm notes.txt`', `bash -c 'rm notes.txt'`, `node -e "require('fs').rmSync('x')"`,
-    `python3 -c "open('x','w')"`, `eval "rm notes.txt"`, `pwsh -Command Remove-Item x`,
-    // Flag clusters, glued and shortened flags, code from stdin, and paths the shell expands past what the hook read.
-    `node -pe "require('fs').rmSync('x')"`, `node --eval=x`, `echo "rm x" | bash`, `bash <<EOF`, `pwsh -Co Remove-Item x`, `pwsh -ec AAAA`,
-    `iex 'rm x'`, 'find . -name x -delete', 'ls | xargs rm', `echo x > ${scratch}/$HOME`, `echo x > ${scratch}/*`, 'echo x > ~/x',
-    `echo x > ${scratch}/\${HOME}`, `cmd /c del x`,
-    // Wrappers with flags, a path to the interpreter, a lone & between commands, code-loading flags and cmd's other switches.
-    `timeout 5 node -e "x"`, `env -i node -e "x"`, `nice -n 5 bash -c 'rm x'`, `/usr/bin/node -e "x"`, `busybox sh -c 'rm x'`,
-    `ls & node -e "x"`, `node --import=data:text/javascript,x x.mjs`, `node --require ./evil.cjs x.mjs`, `node data:text/javascript,x`,
-    `cmd /k del x`, `cmd.exe /r del x`, `pwsh /Command Remove-Item x`]) assert.equal(run(c), 'deny', c);
-  for (const c of ['grep -rn bash src', 'node --test tests/a.test.mjs', 'bash scripts/check.sh', `node scripts/x.mjs ${scratch}/out.txt`]) assert.equal(run(c), 'allow', c);
-  for (const c of ['Set-Content x.txt y', 'Remove-Item -Recurse reports', 'echo x > out.txt', 'Copy-Item a b']) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
-  for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -n x a.txt 2>/dev/null', 'node scripts/test-check.mjs main 2>&1 | tail -3',
-    'git diff main...HEAD -- a.txt', 'git log --oneline -3', 'ls -la > /dev/null']) assert.equal(run(c), 'allow', c);
+  for (const c of [
+    'echo $(rm notes.txt)', // a substitution the hook cannot read
+    'echo x > notes.txt', // a redirect outside scratch
+    'true <>notes.txt', // a redirect it cannot place
+    'c=rm; $c -rf x', // a command word built at run time
+    'git -c a=b reset --hard', // a git option before the subcommand
+    'git checkout -- x.mjs', // a git subcommand that writes
+    'git diff --output=x.patch', // a git read told to write
+    `cp --target-directory=reports ${scratch}/a`, // a flag with its value attached
+    '/usr/bin/rm.exe -rf reports', // a write outside scratch, the command named by path and .exe
+    `cp a ${scratch}/../../x`, // traversal out of scratch
+    'rm -rf /elsewhere/kit-sweep-0123abcd/role-1/x', // the scratch name under another folder
+    `echo x > ${scratch}/*`, // a path the shell expands
+    'node -e "x"', // an interpreter given code
+    'ls | xargs rm', // a command off the read list
+    'find . -name x -delete', // find told to write
+    'sort -o a.txt a.txt', // sort told to write
+    'uniq a.txt b.txt', // uniq told to write
+    "sed -i 's/a/b/' x.mjs", // sed in place
+    "sed -n 's/a/b/w out.txt' x.mjs", // sed's own write command
+  ]) assert.equal(run(c), 'deny', c);
+  for (const c of ['Set-Content x.txt y', `& ('Remove-'+'Item') x`, `[IO.File]::WriteAllText('x','y')`]) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
+  for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -rn x src 2>/dev/null',
+    'node scripts/test-check.mjs main 2>&1 | tail -3', 'git -C . diff main...HEAD -- a.txt', "sed -n '1,5p' a.txt"]) assert.equal(run(c), 'allow', c);
   assert.equal(run(`'y' | Out-File ${scratch}/x.txt`, {}, 'PowerShell'), 'allow', 'PowerShell inside the scratch folder');
   assert.equal(run('Get-Content a.txt 2>$null', {}, 'PowerShell'), 'allow', 'a PowerShell read');
   assert.equal(run('echo x > notes.txt', { agent_type: 'builder' }), 'allow', 'only reviewers');
