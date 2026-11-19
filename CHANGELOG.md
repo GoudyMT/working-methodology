@@ -27,6 +27,13 @@ The owner's profile and the third-party backups leave the public kit repo, a swe
 ### Removed
 - The third-party backups move from `vendor/` to a private repo cloned beside the kit, named by `vendor.dir`; the kit keeps `vendor-index.json`, the credits and a hash of each backup.
 
+## 1.43.3 - 2026-11-19
+
+The planted-bug check reads a branch that deletes a large file as the commits they are, so a PR that removes many megabytes still has its new tests measured. Nothing a project installs changes.
+
+### Fixed
+- A scoped mutation run leaves deleted files out of the diff it reads and gives git's output room, so a large deletion no longer reads as a base that is no commit.
+
 ## 1.43.2 - 2026-11-19
 
 The seven kit test files import one shared helper module in place of the copies the 1.43.1 split left in each, so a new test in them loads on main when CI proves it fails first. Nothing a project installs changes.

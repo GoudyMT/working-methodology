@@ -211,8 +211,8 @@ test('the mutation check scoped to a base flips only the changed lines, and says
 	assert.doesNotMatch(none.stdout, /0 flips, 0 caught/);
 });
 
-// Build 18 (PR 55's CI): the branch deleted 10 MB of third-party backups, the diff overflowed git's output buffer,
-// and every scoped run said its base was no commit, so no new test was measured.
+// A branch that deletes megabytes of files overflowed git's output buffer, and every scoped run said its base was
+// no commit, so no new test was measured.
 // why: catches a scoped run that measures nothing when the branch also deletes a large file
 test('a scoped mutation run reads a branch that deletes a large file as the commits they are', () => {
 	const { dir } = repo();
@@ -228,6 +228,15 @@ test('a scoped mutation run reads a branch that deletes a large file as the comm
 	const scoped = check(dir, ['--base', 'HEAD~1', '--count']);
 	assert.equal(scoped.status, 0, scoped.stdout + scoped.stderr);
 	assert.match(scoped.stdout, /^flips: 1$/m);
+	// A large file added (no deletion to leave out) needs the room in the buffer too (the fix sweep).
+	fs.writeFileSync(path.join(dir, 'big.txt'), `${'y'.repeat(100)}\n`.repeat(20000));
+	sh(dir, 'add', '.');
+	sh(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'a large file again');
+	const again = spawnSync(process.execPath, [RUNNER, '--map', '--shards', '1', path.join(dir, 'tests', 'a.test.mjs')], { cwd: dir, encoding: 'utf8' });
+	assert.equal(again.status, 0, again.stdout + again.stderr);
+	const added = check(dir, ['--base', 'HEAD~2', '--count']);
+	assert.equal(added.status, 0, added.stdout + added.stderr);
+	assert.match(added.stdout, /^flips: 1$/m);
 });
 
 // The build 14 audit (2026-11-16): a flip in the kit's home lookup skipped the two Claude-folder settings and a test
