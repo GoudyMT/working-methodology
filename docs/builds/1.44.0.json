@@ -1,0 +1,185 @@
+{
+ "version": "1.44.0",
+ "date": "2026-11-19",
+ "level": "minor",
+ "area": "Safety",
+ "title": "feat: repo diet, read-only reviewers and a risk-based sweep floor",
+ "headline": "The owner's profile and the third-party backups leave the public kit repo, a sweep reviewer's shell can only read and write its own scratch folder, the sweep floor follows what a diff touches, and the content checks in CI run the base commit's copies.",
+ "alignment": "v1.44.0 is build 18 of the v2.0 plan: the T10 rest (backups out, one home for process skills, the sweep floor by risk, shared test helpers), K135 part (a), K136 to K141, K143 and K144, I10, and the 35 real findings of its sweep.",
+ "items": [
+  {
+   "id": "PROFILE-OUT",
+   "kind": "changed",
+   "text": "Install reads the owner's profile from `~/.claude/kit-owner-profile.md`, outside the public repo; the repo keeps a blank example, and install refuses rather than blank Owner Context lines it finds with no profile.",
+   "evidence": "scripts/kit.mjs",
+   "reach": "kit",
+   "where": "Upgrading the kit with install user",
+   "before": "Profile tracked in the public kit repo",
+   "after": "Profile in the user config folder; a blanking install refused"
+  },
+  {
+   "id": "BACKUPS-OUT",
+   "kind": "removed",
+   "text": "The third-party backups move from `vendor/` to a private repo cloned beside the kit, named by `vendor.dir`; the kit keeps `vendor-index.json`, the credits and a hash of each backup.",
+   "evidence": "vendor-index.json",
+   "reach": "kit",
+   "where": "Cloning the kit repo",
+   "before": "About 13 MB of third-party backups in the public repo",
+   "after": "An index of them; the backups in a private repo"
+  },
+  {
+   "id": "REVIEWER-FENCE",
+   "kind": "security",
+   "text": "A sweep reviewer's shell runs only known reads (git reads, grep, cat, ls and the like, a script file) and writes only to its own scratch folder, named in full; anything else is refused.",
+   "evidence": "user/kit-hooks/call-cap.cjs",
+   "reach": "projects",
+   "where": "A sweep reviewer running a shell command",
+   "before": "Brief text asked it to write nowhere else",
+   "after": "Hook refuses all but reads and scratch writes"
+  },
+  {
+   "id": "SWEEP-FLOOR",
+   "kind": "changed",
+   "text": "The sweep floor follows what the diff touches: gate code (CI and the scripts it runs, hooks, guards, the kit's install) is a feature sweep with security roles; docs, records and moved tests stay triage.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "reach": "projects",
+   "where": "Setting a sweep's tier",
+   "before": "Line counts and added files decided it",
+   "after": "What the diff touches decides it"
+  },
+  {
+   "id": "BASE-CONTENT-CHECKS",
+   "kind": "security",
+   "text": "CI's six content checks (scrub, word check, project map, rule map, link scan, build is fresh) run the base commit's copies over the PR's tree, so that job runs none of the PR's code.",
+   "evidence": ".github/workflows/ci.yml",
+   "reach": "kit"
+  },
+  {
+   "id": "PROCESS-SKILLS-HOME",
+   "kind": "changed",
+   "text": "[trial] One home for process skills: the kit's own skills; a third-party process skill set stays off, as a credited backup only.",
+   "evidence": "rules/kit-standards.md",
+   "reach": "projects"
+  },
+  {
+   "id": "POPUP-PER-QUESTION",
+   "kind": "fixed",
+   "text": "Each Yes in a pop-up of several questions unlocks its own quoted act once; a No still holds its act, and two questions of one text are no yes.",
+   "evidence": "project/.claude/owner-yes.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "READ-LOOPS",
+   "kind": "fixed",
+   "text": "The guards pass a read loop over a glob of guard files, cmp and du; a loop whose names split, set IFS, change folder or cannot be listed is still held.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "ATTRIBUTION-HIDDEN",
+   "kind": "security",
+   "text": "The PR and release attribution checks read a Requested by line or marker hidden by an HTML comment, over a line break too, or by an empty link inside the word.",
+   "evidence": "project/.claude/no-attribution.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "SUMMARY-ROWS",
+   "kind": "fixed",
+   "text": "From 1.44.0 a build record needs an item naming a where, and the PR body audits need at least one Summary row, with CRLF ends read.",
+   "evidence": "scripts/build-record.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "RECALL-CAP",
+   "kind": "added",
+   "text": "A recall run refuses rule text over its size cap before any session starts, and the scorer names the under-bar rule (decision 7).",
+   "evidence": "scripts/recall.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "MAP-INSTALLED",
+   "kind": "fixed",
+   "text": "The coverage map credits lines run from an installed guard copy to the repo file it came from, placing a filled-in copy's lines right.",
+   "evidence": "scripts/test-run.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "SHARED-HELPERS",
+   "kind": "changed",
+   "text": "The kit's test files share one helper module, `tests/kit-helpers.mjs`, in place of the copies the 1.43.1 split left in each.",
+   "evidence": "tests/kit-helpers.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "PUBLIC-REPO",
+   "kind": "changed",
+   "text": "README and the recall workflow say the kit repo is public.",
+   "evidence": "README.md",
+   "reach": "kit"
+  }
+ ],
+ "verification": [
+  "The owner's profile and the backups are gone from the tree at this commit; the secret scan over the added lines finds no shape.",
+  "The vendor index was written from the private backup clone, with a hash of each backup.",
+  "The sweep report audit is clean, and every real finding is fixed in this build."
+ ],
+ "decisions": [
+  {
+   "decision": "A read-only allowlist for the reviewer fence",
+   "why": "The owner's pop-up: each review round found a new spelling past a list of write commands, so the fence names what may run instead."
+  },
+  {
+   "decision": "Install refuses, never copies, a profile left in the kit folder",
+   "why": "The profile is never read from the public folder; refusing names the move and keeps the owner's lines."
+  },
+  {
+   "decision": "The test check's judge split stays a named limit",
+   "why": "The owner's pop-up: its results file would come from the job that runs the PR's tests, so splitting it adds no protection now."
+  },
+  {
+   "decision": "A minor release",
+   "why": "Install reads the profile from a new place, the backups move, and the sweep floor changes for every project."
+  }
+ ],
+ "upgrading": "Before checking out the 1.44.0 tag, copy the kit folder's `owner-profile.md` to `~/.claude/kit-owner-profile.md` (or print the last copy with `git show v1.43.1:owner-profile.md`), then install user and install project. To snapshot or restore backups, clone the private backup repo into the folder `vendor.dir` names first.",
+ "limits": "A script a sweep reviewer runs writes past what its command line shows, and which role's scratch folder a write lands in goes unchecked. CI's test check still runs the PR's own tests in its job. Git history before 1.44.0 still holds the old profile and backups.",
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "6f9773b",
+  "dimensions": [
+   { "name": "Privacy", "result": "The profile reaches no tracked file; two lows fixed" },
+   { "name": "Supply chain", "result": "Backups restored only as indexed and hashed; three mediums fixed" },
+   { "name": "Legal", "result": "All 11 backups credited again" },
+   { "name": "Code security", "result": "Reviewer fence rebuilt as an allowlist; four floor highs fixed" },
+   { "name": "Gaps, scaling, test value", "result": "Upgrade path, coverage map, rule text and two test rows fixed" },
+   { "name": "Alignment", "result": "YES" }
+  ],
+  "findings": { "critical": 0, "high": 7, "medium": 17, "low": 14 },
+  "fixes": [
+   { "id": "R2-1", "severity": "high", "security": true, "text": "Fence missed a write command typed with a path or .exe; now a read-only allowlist", "commit": "f24fbd5", "test": "tests/kit-sweep-budget.test.mjs::a reviewer writes only inside its sweep scratch folder; reads and other agents are left alone" },
+   { "id": "R2-2", "severity": "high", "security": true, "text": "A flag with its value attached hid a scratch write's real target", "commit": "f24fbd5", "test": "tests/kit-sweep-budget.test.mjs::a reviewer writes only inside its sweep scratch folder; reads and other agents are left alone" },
+   { "id": "R2-3", "severity": "high", "security": true, "text": "git with extra options, a prefix or bundle, or a read that writes passed the fence", "commit": "71e8996", "test": "tests/kit-sweep-budget.test.mjs::a reviewer writes only inside its sweep scratch folder; reads and other agents are left alone" },
+   { "id": "R2-4", "severity": "medium", "security": true, "text": "Redirects, a built command word and missing writers passed the fence", "commit": "a939694", "test": "tests/kit-sweep-budget.test.mjs::a reviewer writes only inside its sweep scratch folder; reads and other agents are left alone" },
+   { "id": "R3-1", "severity": "high", "security": true, "text": "A gate file renamed out of its folder got triage", "commit": "5bc392e", "test": "tests/kit-sweep.test.mjs::the floor reads the diff the way git wrote it: hunk text, nested docs code, .claude data and copied test lines count" },
+   { "id": "R3-2", "severity": "high", "security": true, "text": "Scripts CI runs, the CI templates and skill scripts were no gate code", "commit": "c2550d7", "test": "tests/kit-sweep.test.mjs::the floor reads the diff the way git wrote it: hunk text, nested docs code, .claude data and copied test lines count" },
+   { "id": "R3-3", "severity": "high", "security": true, "text": "Code git shows as binary counted as 0 lines", "commit": "5bc392e", "test": "tests/kit-sweep.test.mjs::the floor reads the diff the way git wrote it: hunk text, nested docs code, .claude data and copied test lines count" },
+   { "id": "R3-4", "severity": "medium", "security": true, "text": "Test lines moved out of a living test, and markdown under `.claude`, lowered the floor", "commit": "5bc392e", "test": "tests/kit-sweep.test.mjs::the floor reads the diff the way git wrote it: hunk text, nested docs code, .claude data and copied test lines count" },
+   { "id": "R3-5", "severity": "medium", "security": true, "text": "A comment over a line break, an empty link or a split marker hid attribution", "commit": "b30b64e", "test": "tests/kit-hooks.test.mjs::a comment inside a word cannot hide a Requested by line from the PR or release notes check" },
+   { "id": "R7-1", "severity": "high", "owner": true, "text": "The upgrade deleted the profile and install blanked the Owner Context", "commit": "795ec1d", "test": "tests/kit-install.test.mjs::install user takes the owner profile from the Claude folder, never the kit folder, and says when there is none" },
+   { "id": "R4-1", "severity": "low", "owner": true, "text": "A project install rendered the profile into a project file", "commit": "795ec1d", "test": "tests/kit-install.test.mjs::install user takes the owner profile from the Claude folder, never the kit folder, and says when there is none" },
+   { "id": "R5-1", "severity": "medium", "security": true, "text": "Snapshot with no clone shrank the index; drift trusted a stale index; restore copied any folder", "commit": "641cfce", "test": "tests/kit-install.test.mjs::snapshot and restore use the backup folder the config names, and the kit keeps an index of what it holds" },
+   { "id": "R5-2", "severity": "medium", "security": true, "text": "Restore copied from another kind's folder or through a link", "commit": "e1ac87e", "test": "tests/kit-install.test.mjs::snapshot and restore use the backup folder the config names, and the kit keeps an index of what it holds" },
+   { "id": "R6-2", "severity": "medium", "text": "The coverage map placed a filled-in copy's lines wrong", "commit": "218064c", "test": "tests/harness.test.mjs::the coverage map credits lines run from an installed copy outside the repo to the repo file it came from" },
+   { "id": "R6-4", "severity": "low", "text": "The Summary table check failed CRLF ends or a trailing space", "commit": "221daef", "test": "tests/build-record.test.mjs::from 1.44.0 a record needs a Where row, and the PR body audit refuses a Summary with no rows" },
+   { "id": "R1-1", "severity": "low", "security": true, "text": "An old tap spent under its plain id, and twin questions, read as a yes", "commit": "e374dd6", "test": "tests/guards-hold.test.mjs::one pop-up with several questions answered Yes lets each quoted act run once, and a No still holds its act" },
+   { "id": "R8-1", "severity": "low", "text": "A docs-floor test lost its nested docs data row", "commit": "5bc392e", "test": "tests/kit-sweep-budget.test.mjs::the notice prints the real modifiers, M14 leaves no docs code out, and a quoted path still counts" },
+   { "id": "R7-2", "severity": "medium", "text": "Upgrade steps, the gate tier rule line, backup credits and stale names in docs", "commit": "4fb4ea6", "test": "no test: no real input" }
+  ],
+  "accepted": []
+ },
+ "tests": {
+  "before": 941,
+  "after": 952,
+  "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
+ }
+}
