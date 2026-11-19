@@ -32,7 +32,6 @@
     "scripts/kit.mjs"
    ],
    "tests": [
-    "tests/kit-helpers.mjs",
     "tests/kit-helpers.mjs"
    ],
    "workflows": []
@@ -70,7 +69,6 @@
    ],
    "tests": [
     "tests/kit-helpers.mjs",
-    "tests/kit-helpers.mjs",
     "tests/kit-install.test.mjs",
     "tests/kit-rules.test.mjs"
    ],
@@ -88,7 +86,6 @@
     "project/.claude/size-band.mjs"
    ],
    "tests": [
-    "tests/kit-helpers.mjs",
     "tests/kit-helpers.mjs"
    ],
    "workflows": []
@@ -163,8 +160,6 @@
     "tests/kit-install.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/kit-rules.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-outcome.test.mjs",
     "tests/kit-sweep.test.mjs",
@@ -280,8 +275,6 @@
    "tests": [
     "tests/kit-recall.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
     "tests/recall-behave.test.mjs"
    ],
    "workflows": []
@@ -349,7 +342,6 @@
    ],
    "tests": [
     "tests/kit-helpers.mjs",
-    "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs"
    ],
    "workflows": []
@@ -363,7 +355,6 @@
     "user/kit-tools/audits/name-check.mjs"
    ],
    "tests": [
-    "tests/kit-helpers.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
@@ -433,7 +424,6 @@
    ],
    "tests": [
     "tests/kit-helpers.mjs",
-    "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
     "tests/kit-rules.test.mjs",
@@ -455,7 +445,6 @@
    "tests": [
     "tests/guards-hold.test.mjs",
     "tests/guards-outside.test.mjs",
-    "tests/kit-helpers.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
@@ -491,7 +480,6 @@
     "scripts/kit.mjs"
    ],
    "tests": [
-    "tests/kit-helpers.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
@@ -559,8 +547,6 @@
    "tests": [
     "tests/kit-rules.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-outcome.test.mjs"
    ],
    "workflows": []
@@ -592,8 +578,6 @@
    "tests": [
     "tests/kit-rules.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-outcome.test.mjs",
     "tests/kit-sweep.test.mjs"
    ],
@@ -610,13 +594,10 @@
    "tests": [
     "tests/guard-dispatch.test.mjs",
     "tests/kit-helpers.mjs",
-    "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/kit-rules.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-outcome.test.mjs",
     "tests/kit-sweep.test.mjs",
@@ -629,9 +610,6 @@
    "scripts": [],
    "tests": [
     "tests/kit-helpers.mjs",
-    "tests/kit-helpers.mjs",
-    "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-budget.test.mjs"
    ],
    "workflows": []
@@ -733,8 +711,6 @@
    "tests": [
     "tests/kit-hooks.test.mjs",
     "tests/kit-rules.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-budget.test.mjs"
    ],
    "workflows": []
@@ -757,8 +733,6 @@
     "tests/build-record.test.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-rules.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep.test.mjs",
     "tests/mutation-check.test.mjs",
