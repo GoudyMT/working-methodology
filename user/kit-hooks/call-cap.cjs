@@ -93,6 +93,10 @@ function fenceFault(command, tool) {
 		const cmd = base(first);
 		const valued = rest.find((w) => /^-[^=:]*[=:]/.test(w) && !/^-\w$/.test(w));
 		if (cmd === 'git') {
+			// A glob could expand to a file named like an option (--output=x), and a quote or escape joins one: git's
+			// words are plain in every shell.
+			const unplain = rest.find((w) => /[*?[\]'"\\{}~$`]/.test(w));
+			if (unplain) return `a git word the hook cannot read as written (${unplain})`;
 			let k = 0;
 			while (k < rest.length && /^-/.test(rest[k])) { if (/^-C$/.test(rest[k])) k++; else if (!/^--no-pager$/.test(rest[k])) return `git option ${rest[k]} before the subcommand`; k++; }
 			if (!GIT_READS.has(rest[k])) return `git ${rest[k] || ''} is not a read`;
