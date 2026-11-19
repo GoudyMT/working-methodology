@@ -314,7 +314,7 @@ test('the coverage map credits lines run from an installed copy outside the repo
 			"import { spawnSync } from 'node:child_process';",
 			"test('installed', () => {",
 			"  const at = fs.mkdtempSync(path.join(os.tmpdir(), 'inst-'));",
-			"  for (const [from, to] of [['project/.claude/hook.cjs', 'proj/.claude/hook.cjs'], ['user/kit-tools/tool.cjs', 'home/kit-tools/tool.cjs']]) { fs.mkdirSync(path.dirname(path.join(at, to)), { recursive: true }); fs.writeFileSync(path.join(at, to), fs.readFileSync(from, 'utf8').replaceAll('{{CLAUDE_HOME}}', 'C:/a/much/longer/claude/home/folder/than/the/placeholder/is')); }",
+			"  for (const [from, to] of [['project/.claude/hook.cjs', 'proj/.claude/hook.cjs'], ['user/kit-tools/tool.cjs', 'home/kit-tools/tool.cjs']]) { fs.mkdirSync(path.dirname(path.join(at, to)), { recursive: true }); fs.writeFileSync(path.join(at, to), fs.readFileSync(from, 'utf8').replaceAll('{{CLAUDE_HOME}}', '/opt/a/much/longer/claude/config/folder/than/the/placeholder/is')); }",
 			"  spawnSync(process.execPath, [path.join(at, 'proj/.claude/hook.cjs'), 'go'], { env: { ...process.env, NODE_OPTIONS: '' } });",
 			"  spawnSync(process.execPath, [path.join(at, 'home/kit-tools/tool.cjs')], { env: { ...process.env, NODE_OPTIONS: '' } });",
 			"  fs.rmSync(at, { recursive: true, force: true });",
