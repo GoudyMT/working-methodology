@@ -169,6 +169,12 @@ test('from 1.44.0 a record needs a Where row, and the PR body audit refuses a Su
 		const r = spawnSync(process.execPath, [path.resolve(audit), f, old.title, '31'], { encoding: 'utf8', cwd: dir });
 		assert.match(r.stdout, /FAIL\s+Summary is a before \/ after table/, audit);
 	}
+	// The build 18 sweep: a body with CRLF line ends and a space after a row's last bar still has its rows.
+	fs.writeFileSync(f, prBody(rec.version ? record() : old).replace(/\|\n/g, '| \n').replace(/\n/g, '\r\n'));
+	for (const audit of ['project/.claude/pr-body-audit.mjs', 'user/kit-tools/audits/pr-body-audit.mjs']) {
+		const r = spawnSync(process.execPath, [path.resolve(audit), f, old.title, '31'], { encoding: 'utf8', cwd: dir });
+		assert.match(r.stdout, /PASS\s+Summary is a before \/ after table/, audit);
+	}
 });
 
 // K96 (build 12, reproduced on the 1.37.0 draft): the record check reads a dash only in prose, outside code spans, so

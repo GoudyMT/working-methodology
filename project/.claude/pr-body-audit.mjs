@@ -118,7 +118,8 @@ const framing = body.slice(body.indexOf('\n') + 1, body.indexOf('### Summary')).
 row('framing of 1-3 lines before Summary', framing.length > 0 && !framing.startsWith('#') && framing.split('\n').length <= 3, `${framing.split('\n').length} lines`);
 
 // K139 (PR 53): a header with no rows passed; the table needs at least one row under its separator.
-const summaryRows = (/\n\| *Where *\| *Before *\| *After *\| *\n\|[-| :]+\|\n((?:\|.*\|\n?)+)/.exec(section('Summary') + '\n') || [])[1];
+// CRLF line ends and a space after a row's last bar are a table still (the build 18 sweep).
+const summaryRows = (/\n\| *Where *\| *Before *\| *After *\| *\n\|[-| :]+\|[ \t]*\n((?:\|.*\|[ \t]*\n?)+)/.exec(section('Summary').replace(/\r\n?/g, '\n') + '\n') || [])[1];
 row('Summary is a before / after table', Boolean(summaryRows && summaryRows.trim()), summaryRows ? `${summaryRows.trim().split('\n').length} row(s)` : 'header | Where | Before | After | and at least one row');
 
 const verification = section('Verification');
