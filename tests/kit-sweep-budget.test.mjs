@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
-import { APPROVE, FIX_EXIT, ageTranscript, agentSeq, approvalLog, approveIn, approveRun, askContract, canary, capHook, cheapRoles, commitAll, crashedSweep, driftSweep, featureContract, fixContract, fixFloor, fixRepo, g, lastClearing, leadQuestion, leadTag, logOutcome, makeTemp, nextBranch, outcome, ownerTaps, pastRole, read, recallTools, require, role, roleModel, roleModels, runHook, seedOutcomes, setBrief, status, sweepGuard, sweepLog, sweepRepo, tapEnv, threeSecurity, transcripts, usual, words } from './kit-helpers.mjs';
+import { APPROVE, FIX_EXIT, ageTranscript, nextAgentId, approvalLog, approveIn, approveRun, askContract, canary, capHook, cheapRoles, commitAll, crashedSweep, driftSweep, featureContract, fixContract, fixFloor, fixRepo, g, lastClearing, leadQuestion, leadTag, logOutcome, makeTemp, nextBranch, outcome, ownerTaps, pastRole, read, recallTools, require, role, roleModel, roleModels, runHook, seedOutcomes, setBrief, status, sweepGuard, sweepLog, sweepRepo, tapEnv, threeSecurity, transcripts, usual, words } from './kit-helpers.mjs';
 
 // why: guards rule:sweep-tiers
 test('a committed contract, the caps file and a docs json do not move a fix or triage sweep up a tier', () => {
@@ -173,7 +173,7 @@ test('the 25% trip stays on the whole sweep: one role over its own budget does n
   const r = approveRun(featureContract());
   const budget = approvalLog(r.dir).pop().budget;
   const roles = JSON.parse(read(r.f)).roles;
-  const ids = roles.map(() => `t${++agentSeq}`);
+  const ids = roles.map(() => `t${nextAgentId()}`);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [[0, i ? 1000 : Math.floor(budget * 0.9), 0, 0], [0, 1, 0, 0]]])), {}, undefined, undefined, roleModels(ids, roles));
   const o = approveIn(r.dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(o.status, 0, o.stdout);
@@ -506,7 +506,7 @@ test('the outcome counts the findings from the reviewers\' reports, writes the l
   const two = report(['high | CONFIRMED | an import writes outside | src/import.ts:12 | ran it', 'low | PLAUSIBLE | a log names a path | src/routes.ts:4 | read it']);
   const same = report(['medium | CONFIRMED | the same import write | src/import.ts:12 | ran it too']);
   const none = report(['No findings']);
-  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const ids = Array(5).fill(0).map(() => `t${nextAgentId()}`);
   const cfg = transcripts({ [ids[0]]: [[10000, 0, 0, 0], two], [ids[1]]: [[10000, 0, 0, 0], same], [ids[2]]: [[10000, 0, 0, 0], none], [ids[3]]: [[10000, 0, 0, 0], none], [ids[4]]: [[10000, 0, 0, 0], none] });
   const run = (findings) => approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', String(findings), '--real', '2', '--duplicates', '1'], { CLAUDE_CONFIG_DIR: cfg });
   const wrong = run(4);
@@ -533,7 +533,7 @@ test('the findings count reads only delivered reports, skips out-of-role notes, 
   assert.equal(r.status, 0, r.stdout);
   const shaped = (rows) => ['P', 'ROLE: a role', ...rows, 'Not checked: nothing'].join('\n');
   const one = 'high | CONFIRMED | a write outside | src/import.ts:12 | ran it';
-  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const ids = Array(5).fill(0).map(() => `t${nextAgentId()}`);
   const spec = {
     // Refused (no Not checked line), then a plain reply: nothing was delivered as a report.
     [ids[0]]: [[10000, 0, 0, 0], { handback: ['P', 'ROLE: a role', one, one, one].join('\n'), refusedWith: 'Your report is out of the shape your brief gives' }, { handback: shaped(['No findings']) }],
@@ -595,7 +595,7 @@ test('ceilings set from the budgets keep the whole-sweep trip, however many role
   assert.match(approvalLog(dir).pop().ceilingFrom, /x each role's budget/);
   // Twenty-five roles are measured after this decision and before its outcome.
   seedOutcomes(dir, Array.from({ length: 25 }, () => pastRole(200000)));
-  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const ids = Array(5).fill(0).map(() => `t${nextAgentId()}`);
   const cfg = transcripts(Object.fromEntries(ids.map((id) => [id, [[10000, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]])));
   const o = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.match(o.stdout, /paused: .*tokens 750000 ran 40% over the budget/);
@@ -761,9 +761,12 @@ test('the guard binds each start to one role\'s cap, and the owner\'s yes carrie
 });
 
 // why: guards rule:sweep-auto-approval
-test('M14 stays narrow: only docs/migrations is left out, and a contract\'s own lines never count against triage', () => {
-  const big = sweepRepo({ 'README.md': 'y\n', 'docs/site.json': '{}\n' });
+// Build 18 (I9, plan section 4): docs data is triage at any size; code under docs/ still counts as an added file.
+// renamed from: M14 stays narrow: only docs/migrations is left out, and a contract's own lines never count against triage
+test('M14 stays narrow: docs data is left out but never docs code, and a contract\'s own lines never count against triage', () => {
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  assert.equal(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/site.json': '{}\n' })).status, 0, 'a docs json is data');
+  const big = sweepRepo({ 'README.md': 'y\n', 'docs/site.mjs': 'export {};\n' });
   assert.match(approveRun(t, big).stdout, /ASK THE OWNER[\s\S]*1 added files/);
   const dir = sweepRepo({ 'README.md': 'y\n' });
   const f = path.join(dir, 'sweeps', 'contract.json');
@@ -1015,7 +1018,8 @@ test('what the rules bound stays with the owner: context over the limit, project
   commitAll(d, 'caps', true);
   assert.equal(approveRun(featureContract(), d).status, 1, 'a project cap');
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
-  assert.equal(approveRun(t, sweepRepo({ 'README.md': Array.from({ length: 30 }, (_, i) => `row ${i}`).join('\n') })).status, 1, 'a triage over its lines');
+  // Build 18 (T10): docs lines no longer count, so the over-the-lines case is code the branch changed.
+  assert.equal(approveRun(t, fixRepo({ 'src/page.ts': Array.from({ length: 30 }, (_, i) => `export const r${i} = ${i};`).join('\n') })).status, 1, 'a triage over its lines');
 });
 
 // why: guards rule:sweep-auto-approval
@@ -1170,12 +1174,14 @@ test('a branch cannot raise a cap it inherited, and the outcome holds to an owne
 });
 
 // why: guards rule:sweep-tiers
-test('the notice prints the real modifiers, M14 leaves no other docs folder out, and a quoted path still counts', () => {
+// Build 18 (I9): what docs/ leaves out is its data; code in any docs folder still asks.
+// renamed from: the notice prints the real modifiers, M14 leaves no other docs folder out, and a quoted path still counts
+test('the notice prints the real modifiers, M14 leaves no docs code out, and a quoted path still counts', () => {
   const sec = { ...featureContract(), modifiers: ['security-sensitive'] };
   assert.match(approveRun(sec).stdout, /Modifiers: security-sensitive; diff against main/);
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
-  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.json': '{}\n' })).stdout, /ASK THE OWNER/);
-  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/migrations/old/1.json': '{}\n' })).stdout, /ASK THE OWNER/);
+  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.mjs': 'export {};\n' })).stdout, /ASK THE OWNER/);
+  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/migrations/old/1.mjs': 'export {};\n' })).stdout, /ASK THE OWNER/);
   const dep = fixRepo({ [`pk${String.fromCharCode(233)}/yarn.lock`]: 'x\n' });
   const r = approveRun({ tier: 'fix', modifiers: [], roles: fixFloor() }, dep);
   assert.match(r.stdout, /supply-chain/, 'a lockfile in a non-ASCII folder is still a package file');
@@ -1512,7 +1518,12 @@ test('a reviewer writes only inside its sweep scratch folder; reads and other ag
     // A scratch name is not enough: traversal out of it, the name under another folder, and lines the hook cannot read.
     `echo x > ${scratch}/../../../x.txt`, `cp a ${scratch}/../../x`, 'echo x > /elsewhere/kit-sweep-0123abcd/role-1/x.txt', 'rm -rf repo/kit-sweep-0123abcd/role-1/',
     `echo x >| notes.txt`, `echo $(rm notes.txt) > ${scratch}/x`, 'echo `rm notes.txt`', `bash -c 'rm notes.txt'`, `node -e "require('fs').rmSync('x')"`,
-    `python3 -c "open('x','w')"`, `eval "rm notes.txt"`, `pwsh -Command Remove-Item x`]) assert.equal(run(c), 'deny', c);
+    `python3 -c "open('x','w')"`, `eval "rm notes.txt"`, `pwsh -Command Remove-Item x`,
+    // Flag clusters, glued and shortened flags, code from stdin, and paths the shell expands past what the hook read.
+    `node -pe "require('fs').rmSync('x')"`, `node --eval=x`, `echo "rm x" | bash`, `bash <<EOF`, `pwsh -Co Remove-Item x`, `pwsh -ec AAAA`,
+    `iex 'rm x'`, 'find . -name x -delete', 'ls | xargs rm', `echo x > ${scratch}/$HOME`, `echo x > ${scratch}/*`, 'echo x > ~/x',
+    `echo x > ${scratch}/\${HOME}`, `cmd /c del x`]) assert.equal(run(c), 'deny', c);
+  for (const c of ['grep -rn bash src', 'node --test tests/a.test.mjs', 'bash scripts/check.sh']) assert.equal(run(c), 'allow', c);
   for (const c of ['Set-Content x.txt y', 'Remove-Item -Recurse reports', 'echo x > out.txt', 'Copy-Item a b']) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
   for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -n x a.txt 2>/dev/null', 'node scripts/test-check.mjs main 2>&1 | tail -3',
     'git diff main...HEAD -- a.txt', 'git log --oneline -3', 'ls -la > /dev/null']) assert.equal(run(c), 'allow', c);

@@ -28,22 +28,42 @@ const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', p
 // targets the hook cannot place (no path named, or a path outside scratch) is refused too; a write made by a script
 // the reviewer runs (node x.mjs) is past what a command line shows, a limit of this fence. A scratch path is the brief's
 // own form, absolute under this machine's temp folder with no `..` step; which role's folder it is goes unchecked, a
-// limit too. A line the hook cannot read the way the shell will (a substitution, an eval, an inline interpreter, `>|`)
-// is refused whole.
+// limit too. A scratch path is plain characters only: a `$`, `~`, brace or glob could expand past what the hook read.
+// A line the hook cannot read the way the shell will (a substitution, an eval, `>|`, an interpreter given code
+// rather than a script file, find's writes, xargs) is refused whole. This is a slip net for a reviewer that drifts,
+// not a sandbox: a command that writes by a path no line names (sed's w, an awk print) is the limit it names.
 const TMP = os.tmpdir().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 const SCRATCH_TAIL = /^\/kit-sweep-[0-9a-f]{8}\/role-\d+(\/|$)/;
 const SCRATCH = { test: (w) => {
 	const p = String(w).replace(/\\/g, '/');
-	if (p.split('/').includes('..')) return false;
-	const low = p.toLowerCase();
+	if (!/^[\w/.:+@,=-]+$/.test(p) || p.split('/').includes('..')) return false;
+	const low = path.posix.normalize(p).toLowerCase();
 	return low.startsWith(TMP) && SCRATCH_TAIL.test(low.slice(TMP.length));
 } };
 const SINK = /^(\/dev\/null|nul|\$null|&\d|&-)$/i;
-const UNREADABLE = /\$\(|`|>\||<\(|\beval\b|\b(node|bun|deno|python[\d.]*|py|perl|ruby|php|bash|sh|zsh|dash|pwsh|powershell|cmd)(\.exe)?\b[^;&|\n]*?\s(-e|-c|-p|--eval|--print|-command|-encodedcommand|-ec|\/c)(\s|$)/i;
+const UNREADABLE = /\$\(|\$\{|`|>\||<\(|\beval\b|\biex\b|invoke-expression|invoke-command|start-process|\bxargs\b|\bfind\b[^;&|\n]*\s-(delete|exec|execdir|ok|okdir|fprint\w*|fls)\b|\bawk\b[^;&|\n]*system\s*\(/i;
+const INTERPRETER = /^(node|nodejs|bun|deno|python[\d.]*|py|perl|ruby|php|bash|sh|zsh|dash|ksh|fish|pwsh|powershell|cmd|osascript|wscript|cscript)(\.exe)?$/i;
+// An interpreter runs a script file it is named, after long flags only; code on its line, a short flag (-c, -e, -p,
+// a cluster such as -ec, -Command and its shortenings), an --eval or --print, or no file at all (stdin, a here-doc or
+// a pipe into it) is code the hook cannot read.
+function inlineCode(c) {
+	for (const seg of c.split(/;|&&|\|\||\||\n|\(|\)|\{|\}/)) {
+		const words = seg.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
+		// The command word: past assignments and the wrappers that run the next word (env, exec, PowerShell's &).
+		let at = 0;
+		while (at < words.length && (/^\w+=/.test(words[at]) || /^(env|exec|time|nohup|sudo|command|nice|&|\.)$/i.test(words[at]))) at++;
+		if (at >= words.length || !INTERPRETER.test(words[at].split(/[\\/]/).pop())) continue;
+		const rest = words.slice(at + 1);
+		const file = rest.findIndex((w) => !w.startsWith('-') && !/^\/c$/i.test(w));
+		const flags = file < 0 ? rest : rest.slice(0, file);
+		if (file < 0 || /^<</.test(rest[file]) || flags.some((f) => !/^--[\w-]+$/.test(f) || /^--(eval|print|command|encodedcommand|input-type)\b/i.test(f))) return true;
+	}
+	return false;
+}
 const WRITERS = /(^|[\s;&|(!{"'])(cp|mv|rm|rmdir|mkdir|touch|tee|dd|install|ln|chmod|chown|truncate|unlink|shred|rsync|out-file|set-content|sc|add-content|ac|new-item|ni|md|remove-item|ri|rd|del|erase|copy-item|cpi|copy|move-item|mi|move|rename-item|rni|ren|mklink|tar|unzip|curl|wget|invoke-webrequest|iwr)(?![\w.-])|\bsed\s+(-\w*i|--in-place)|\bsort\b[^;&|]*\s-o\b|\bgit\s+(-C\s+\S+\s+)?(commit|checkout|reset|restore|stash|clean|switch|merge|rebase|apply|am|add|rm|mv|worktree|branch|tag|push|pull|fetch|config|init|clone|cherry-pick|revert|notes|update-ref|gc|prune)\b/i;
 function writesOutsideScratch(command) {
 	const c = String(command || '');
-	if (UNREADABLE.test(c)) return true;
+	if (UNREADABLE.test(c) || inlineCode(c)) return true;
 	for (const m of c.matchAll(/(?:^|[^<>&\d-])(?:\d?>>?|&>>?)\s*("[^"]*"|'[^']*'|[^\s;&|)]+)/g)) {
 		const t = m[1].replace(/^['"]|['"]$/g, '');
 		if (!SINK.test(t) && !SCRATCH.test(t)) return true;
