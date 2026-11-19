@@ -4,7 +4,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-rules.test.mjs",
     "tests/plan-graph.test.mjs"
    ],
    "workflows": []
@@ -32,7 +32,8 @@
     "scripts/kit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-rules.test.mjs"
    ],
    "workflows": []
   },
@@ -50,7 +51,9 @@
     "user/skills/release-notes/audit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep.test.mjs"
    ],
    "workflows": []
   },
@@ -66,7 +69,8 @@
     "user/skills/release-notes/audit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-install.test.mjs",
+    "tests/kit-rules.test.mjs"
    ],
    "workflows": []
   },
@@ -82,7 +86,8 @@
     "project/.claude/size-band.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep.test.mjs"
    ],
    "workflows": []
   },
@@ -96,7 +101,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-recall.test.mjs"
    ],
    "workflows": []
   },
@@ -104,7 +109,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-install.test.mjs"
    ],
    "workflows": []
   },
@@ -112,7 +117,8 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-rules.test.mjs"
    ],
    "workflows": []
   },
@@ -126,7 +132,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-rules.test.mjs",
     "tests/state.test.mjs"
    ],
    "workflows": []
@@ -151,7 +157,13 @@
     "tests/guard-prompts.test.mjs",
     "tests/guards-hold.test.mjs",
     "tests/guards-outside.test.mjs",
-    "tests/kit.test.mjs",
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
+    "tests/kit-sweep.test.mjs",
     "tests/lane-state.test.mjs",
     "tests/launcher-verify.test.mjs",
     "tests/owner-proof.test.mjs",
@@ -248,7 +260,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-install.test.mjs"
    ],
    "workflows": []
   },
@@ -262,7 +274,8 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
     "tests/recall-behave.test.mjs"
    ],
    "workflows": []
@@ -271,8 +284,8 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit-temp.test.mjs",
-    "tests/kit.test.mjs"
+    "tests/kit-recall.test.mjs",
+    "tests/kit-temp.test.mjs"
    ],
    "workflows": []
   },
@@ -329,7 +342,13 @@
     "user/kit-tools/audits/name-check.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
+    "tests/kit-sweep.test.mjs"
    ],
    "workflows": []
   },
@@ -342,7 +361,10 @@
     "user/kit-tools/audits/name-check.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs"
    ],
    "workflows": []
   },
@@ -363,7 +385,10 @@
    "tests": [
     "tests/build-record.test.mjs",
     "tests/guards-hold.test.mjs",
-    "tests/kit.test.mjs",
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
     "tests/visuals.test.mjs"
    ],
    "workflows": []
@@ -403,7 +428,13 @@
     "scripts/kit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
+    "tests/kit-sweep.test.mjs",
     "tests/use-check.test.mjs"
    ],
    "workflows": []
@@ -422,7 +453,9 @@
    "tests": [
     "tests/guards-hold.test.mjs",
     "tests/guards-outside.test.mjs",
-    "tests/kit.test.mjs",
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-rules.test.mjs",
     "tests/merge-on-green.test.mjs"
    ],
    "workflows": []
@@ -436,7 +469,8 @@
     "user/kit-tools/merge-gate.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
     "tests/merge-gate.test.mjs",
     "tests/merge-on-green.test.mjs",
     "tests/test-value.test.mjs"
@@ -453,7 +487,10 @@
     "scripts/kit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
     "tests/use-check.test.mjs"
    ],
    "workflows": []
@@ -491,7 +528,7 @@
    ],
    "tests": [
     "tests/guards-hold.test.mjs",
-    "tests/kit.test.mjs",
+    "tests/kit-rules.test.mjs",
     "tests/loop.test.mjs"
    ],
    "workflows": []
@@ -515,7 +552,9 @@
     "user/skills/pre-pr-sweep/audit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs"
    ],
    "workflows": []
   },
@@ -544,7 +583,10 @@
     "user/skills/pre-pr-sweep/audit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
+    "tests/kit-sweep.test.mjs"
    ],
    "workflows": []
   },
@@ -558,7 +600,13 @@
    ],
    "tests": [
     "tests/guard-dispatch.test.mjs",
-    "tests/kit.test.mjs",
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
+    "tests/kit-sweep.test.mjs",
     "tests/lane-state.test.mjs"
    ],
    "workflows": []
@@ -567,7 +615,12 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
+    "tests/kit-sweep.test.mjs"
    ],
    "workflows": []
   },
@@ -589,7 +642,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs"
    ],
    "workflows": []
   },
@@ -607,7 +660,8 @@
    "tests": [
     "tests/guards-hold.test.mjs",
     "tests/guards-outside.test.mjs",
-    "tests/kit.test.mjs",
+    "tests/kit-install.test.mjs",
+    "tests/kit-recall.test.mjs",
     "tests/link-scan.test.mjs",
     "tests/owner-proof.test.mjs",
     "tests/recall-behave.test.mjs",
@@ -632,7 +686,8 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-recall.test.mjs"
    ],
    "workflows": []
   },
@@ -664,7 +719,9 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs"
    ],
    "workflows": []
   },
@@ -672,7 +729,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-recall.test.mjs"
    ],
    "workflows": []
   },
@@ -684,7 +741,10 @@
    ],
    "tests": [
     "tests/build-record.test.mjs",
-    "tests/kit.test.mjs",
+    "tests/kit-hooks.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/kit-sweep.test.mjs",
     "tests/mutation-check.test.mjs",
     "tests/pin-check.test.mjs",
     "tests/rule-map.test.mjs",
@@ -697,7 +757,9 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/kit-sweep-outcome.test.mjs",
     "tests/pin-check.test.mjs"
    ],
    "workflows": []
@@ -730,7 +792,7 @@
     "project/.claude/tracking-check.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-install.test.mjs",
     "tests/state.test.mjs"
    ],
    "workflows": []
@@ -757,7 +819,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-rules.test.mjs",
     "tests/resume-packet.test.mjs"
    ],
    "workflows": []
@@ -777,7 +839,8 @@
     "scripts/kit.mjs"
    ],
    "tests": [
-    "tests/kit.test.mjs",
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs",
     "tests/resume-packet.test.mjs"
    ],
    "workflows": []
@@ -786,7 +849,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit.test.mjs"
+    "tests/kit-rules.test.mjs"
    ],
    "workflows": []
   }
