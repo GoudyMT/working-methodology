@@ -126,22 +126,30 @@ function triageLines(base) {
 	// The whole diff, renames off: a test split reads as a rename of one file, which hides the other side's lines.
 	const d = git('diff', '-U0', '--no-color', '--no-renames', '--no-ext-diff', '--no-textconv', `${base}...HEAD`);
 	if (d.status !== 0) return Infinity;
-	// The file a hunk belongs to is read from its own header: "--- a/x" names a removed file, "+++ b/x" any other.
+	// The file a hunk belongs to is read from its own header: "--- a/x" names a removed file, "+++ b/x" any other. A
+	// header is read only before a file's first @@, since a removed line "-- x" shows as "--- x" inside a hunk. A quoted
+	// name (git quotes odd characters) is not read at all: its lines count as code.
 	let file = '';
+	let hunk = false;
 	let other = 0;
-	const gone = [];
-	const came = [];
+	const moved = new Map();
 	for (const l of d.stdout.split('\n')) {
-		if (l.startsWith('diff --git ')) { file = ''; continue; }
-		if (l.startsWith('--- ')) { if (l !== '--- /dev/null') file = l.slice(6); continue; }
-		if (l.startsWith('+++ ')) { if (l !== '+++ /dev/null') file = l.slice(6); continue; }
-		if (!/^[-+]/.test(l) || !file || DOC_FILE.test(file) || DATA_FILE.test(file) || sweepOwned(file)) continue;
-		if (!TEST_FILE.test(file)) { other++; continue; }
-		(l[0] === '-' ? gone : came).push(l.slice(1).trim());
+		if (l.startsWith('diff --git ')) { file = ''; hunk = false; continue; }
+		if (!hunk && l.startsWith('@@')) { hunk = true; continue; }
+		if (!hunk && (l.startsWith('--- ') || l.startsWith('+++ '))) {
+			if (!/^(---|\+\+\+) \/dev\/null$/.test(l)) file = l[4] === '"' ? '"' : l.slice(6);
+			continue;
+		}
+		if (!hunk || !/^[-+]/.test(l)) continue;
+		if (file !== '"' && (DOC_FILE.test(file) || DATA_FILE.test(file) || sweepOwned(file))) continue;
+		if (file === '"' || !TEST_FILE.test(file)) { other++; continue; }
+		// A moved test line cancels one of its twin on the other side, counted, so ten copies do not hide behind one.
+		const t = l.slice(1).trim();
+		moved.set(t, (moved.get(t) || 0) + (l[0] === '-' ? 1 : -1));
 	}
-	const goneSet = new Set(gone);
-	const cameSet = new Set(came);
-	return other + gone.filter((t) => !cameSet.has(t)).length + came.filter((t) => !goneSet.has(t)).length;
+	let tests = 0;
+	for (const n of moved.values()) tests += Math.abs(n);
+	return other + tests;
 }
 
 // What the diff shows. Triage is at most this many changed lines with no new file (a starting value, like the caps).
@@ -150,9 +158,11 @@ const TRIAGE_MAX_LINES = 20;
 const DEP_FILE = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt|pyproject\.toml|poetry\.lock|Pipfile(\.lock)?|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(\.lock)?|pom\.xml|(build|settings)\.gradle(\.kts)?|gradle\.lockfile|[^/]+\.csproj|packages\.lock\.json|Directory\.Packages\.props|composer\.(json|lock))$/;
 // T10 (build 18): the floor comes from what the diff touches. Gate code (CI, git hooks, a guard or hook of the project's
 // .claude folder, the kit's own hooks, tools and install, this script) is feature work with the security modifier.
-const GATE_FILE = /(^|\/)\.(github|githooks)\/|(^|\/)\.claude\/[^/]+\.(c?js|mjs)$|^user\/(kit-hooks|kit-tools)\/|^scripts\/kit\.mjs$|(^|\/)approve\.mjs$/;
-// I9 (build 18): a release's record, its changelog and version, and anything under docs/ are not source, however long.
-const DATA_FILE = /(^|\/)docs\/|^(VERSION|CHANGELOG\.md)$|^\.kit\/[^/]+\.json$/;
+// Any .claude file but its markdown counts: settings, bounds and kit json steer the guards as much as their code.
+const GATE_FILE = /(^|\/)\.(github|githooks)\/|(^|\/)\.claude\/(?!.*\.md$)|^user\/(kit-hooks|kit-tools)\/|^scripts\/kit\.mjs$|(^|\/)approve\.mjs$/;
+// I9 (build 18): a release's record, its changelog and version, and the root docs/ folder's prose, data and pictures
+// are not source, however long. Code under docs/ (a migration script, a page) still counts.
+const DATA_FILE = /^docs\/.*\.(md|json|txt|png|svg|jpe?g|gif|csv)$|^(VERSION|CHANGELOG\.md)$|^\.kit\/[^/]+\.json$/;
 const TEST_FILE = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$|_test\.[a-z]+$/;
 const DOC_FILE = /\.(md|txt|rst)$/i;
 // What a sweep or a release commits about itself is not source: a committed contract, the project's caps file

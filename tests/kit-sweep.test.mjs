@@ -1080,3 +1080,37 @@ test('the floor comes from what the diff touches: gate code is a secured feature
     assert.match(approveRun(featureContract(), sweepRepo({ 'src/sync.ts': 'x\n', [f]: '<x/>\n' })).stdout, /supply-chain/i, f);
   }
 });
+
+// Found in the build 18 security review: the floor read a removed line "-- a/docs/x.md" inside a hunk as a file header
+// and skipped the code after it; any docs/ folder, code included, was data; a .claude settings or bounds file was no
+// gate code; and moved test lines cancelled as a set, so one removed line hid any number of added copies.
+// why: guards rule:sweep-tiers (the tier follows what the change can break, and the diff is read the way git wrote it)
+test('the floor reads the diff the way git wrote it: hunk text, nested docs code, .claude data and copied test lines count', () => {
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  const asFix = { tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root, and does it hold?'), role('blast-radius', 'Which callers does the change reach?')] };
+  // A branch that changes files already on main, so no new file decides the tier on its own.
+  const changed = (base, next) => {
+    const dir = makeTemp('approve-');
+    g(dir, 'init', '-q', '-b', 'main');
+    for (const [f, text] of Object.entries(base)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); }
+    commitAll(dir, 'base', true);
+    g(dir, 'checkout', '-q', '-b', 'fix/x');
+    for (const [f, text] of Object.entries(next)) {
+      if (text === null) fs.rmSync(path.join(dir, f));
+      else { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); }
+    }
+    commitAll(dir, 'change', true);
+    fs.mkdirSync(path.join(dir, 'sweeps'));
+    return dir;
+  };
+  const code = Array.from({ length: 25 }, (_, i) => `select ${i};`).join('\n') + '\n';
+  const header = approveRun(one, changed({ 'src/q.sql': '-- a/docs/x.md\n' }, { 'src/q.sql': code }));
+  assert.equal(header.status, 1, `a removed "-- a/docs/x.md" is hunk text, not a header: ${header.stdout}`);
+  assert.match(header.stdout, /more than a triage change/);
+  const nested = approveRun(one, changed({ 'src/docs/run.mjs': 'x\n' }, { 'src/docs/run.mjs': code }));
+  assert.equal(nested.status, 1, `code under a nested docs/ folder is source: ${nested.stdout}`);
+  const settings = approveRun(asFix, changed({ '.claude/settings.json': '{}\n' }, { '.claude/settings.json': '{"hooks":{}}\n' }));
+  assert.match(settings.stdout, /\.claude\/settings\.json is gate code/);
+  const copies = approveRun(one, changed({ 'tests/a.test.mjs': 'x();\n' }, { 'tests/a.test.mjs': null, 'tests/b.test.mjs': 'x();\n'.repeat(25) }));
+  assert.equal(copies.status, 1, `one removed line cancels one added copy, not 25: ${copies.stdout}`);
+});
