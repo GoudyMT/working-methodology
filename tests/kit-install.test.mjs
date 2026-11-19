@@ -50,6 +50,21 @@ test('install user takes the owner profile from the Claude folder, never the kit
   assert.equal(read(path.join(bare.home, 'CLAUDE.md')), '# Global\nOwner: Pat\n\n');
   assert.equal(none.ownerProfile.found, false);
   assert.equal(none.ownerProfile.path, path.join(bare.home, 'kit-owner-profile.md'));
+  // The build 18 sweep: the upgrade deletes the kit-folder file, so install refuses to blank lines the owner has.
+  const kept = makeKit();
+  fs.rmSync(path.join(kept.home, 'kit-owner-profile.md'));
+  fs.writeFileSync(path.join(kept.home, 'CLAUDE.md'), '## Owner Context\n\n- Owner: Pat\n- Likes tests\n');
+  assert.throws(() => install({ kit: kept.kit, home: kept.home, target: 'user' }), /Install refused: no owner profile[\s\S]*still holds Owner Context lines/);
+  assert.equal(read(path.join(kept.home, 'CLAUDE.md')), '## Owner Context\n\n- Owner: Pat\n- Likes tests\n', 'nothing was written');
+  const left = makeKit();
+  fs.rmSync(path.join(left.home, 'kit-owner-profile.md'));
+  fs.writeFileSync(path.join(left.kit, 'owner-profile.md'), '- Likes tests\n');
+  assert.throws(() => install({ kit: left.kit, home: left.home, target: 'user' }), /the kit folder still holds/);
+  // A project install never renders the profile, whatever file names the placeholder.
+  const proj = makeKit();
+  fs.writeFileSync(path.join(proj.kit, 'project', '_Working Standards.md'), 'rules\n{{OWNER_PROFILE}}\n');
+  install({ kit: proj.kit, home: proj.home, target: 'project', projectDir: proj.proj });
+  assert.equal(read(path.join(proj.proj, '_Working Standards.md')), 'rules\n\n');
 });
 
 // why: guards rule:owners-rules

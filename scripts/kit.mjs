@@ -94,6 +94,35 @@ function loadKit(kit, checked = null, home = null) {
   return { config, ownerProfile, profile: { path: profilePath, found }, version, commit };
 }
 
+// The Owner Context lines past the name in an installed CLAUDE.md: what a blank profile would write over.
+const ownerContextLines = (text) => {
+  const m = /^## Owner Context[ \t]*\n([\s\S]*?)(?=\n---|\n## |(?![\s\S]))/m.exec(String(text));
+  return m ? m[1].split('\n').map((l) => l.trim()).filter((l) => l && !/^- Owner:/.test(l)) : [];
+};
+
+/**
+ * The build 18 sweep: the profile left the kit folder, so the upgrade that deletes it must not blank the owner's
+ * lines. Install user with no profile in the Claude folder refuses while the installed CLAUDE.md still holds Owner
+ * Context lines, or while a kit-folder owner-profile.md (an older kit's place) holds lines never moved; the profile
+ * is still never read from the kit folder. A project install never renders the profile: it is the owner's alone,
+ * and a project folder gets committed.
+ *
+ * Args:
+ *     ctx: the install context
+ *     kitInfo: what loadKit read; a project install's profile is set to nothing here
+ */
+function guardProfile(ctx, kitInfo) {
+  if (ctx.target !== 'user') { kitInfo.ownerProfile = ''; return; }
+  if (kitInfo.profile.found || !kitInfo.profile.path) return;
+  const to = toPosix(kitInfo.profile.path);
+  const old = path.join(ctx.kit, 'owner-profile.md');
+  if (fs.existsSync(old)) throw new Error(`Install refused: no owner profile at ${to}, and the kit folder still holds ${toPosix(old)}. Move it there (the kit folder is public), then install user again.`);
+  const installed = path.join(ctx.home, 'CLAUDE.md');
+  if (fs.existsSync(installed) && ownerContextLines(fs.readFileSync(installed, 'utf8')).length) {
+    throw new Error(`Install refused: no owner profile at ${to}, and ${toPosix(installed)} still holds Owner Context lines that installing would blank. Copy those lines into ${to} (git show v1.43.1:owner-profile.md in the kit folder prints the last copy the kit kept), then install user again.`);
+  }
+}
+
 // What install copies or reads: a change to any of these ships text no release holds (the owner, 2026-11-02). The
 // config and owner profile are rendered into the installed files, and the script decides what install does.
 const RELEASE_PATHS = ['user', 'project', 'memory', 'scripts', 'VERSION', 'kit.config.json'];
@@ -610,6 +639,7 @@ export function install(ctx) {
   if (releaseRun && !ctx.release.tree) throw new Error('Install refused: the release check found no tree for the release tag, so no kit file can be checked against it. Check out the release tag again, then rerun install.');
   const checked = releaseRun ? releaseBytes(ctx.kit, ctx.release.tree, [...entries, ...kitInputs(ctx.kit)]) : null;
   const kitInfo = loadKit(ctx.kit, checked, ctx.home);
+  guardProfile(ctx, kitInfo);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
   // Which guard files are a host's own (the review of 670b3a2): read from the record outside the project, never from
