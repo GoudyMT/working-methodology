@@ -1226,10 +1226,27 @@ export function vendorRoot(kit, config) {
  * Returns:
  *     { plugins, skillGroups }, each keyed by name
  */
+// The build 18 sweep: one hash over a backup folder's files (names and bytes, links refused), kept in the index, so
+// restore copies only what the kit last indexed and a folder planted or changed beside it is refused.
+function treeHash(dir) {
+  const h = crypto.createHash('sha256');
+  const walkIn = (d, rel) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const p = path.join(d, e.name);
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isSymbolicLink()) { h.update(`link\0${r}\0`); continue; }
+      if (e.isDirectory()) walkIn(p, r);
+      else { h.update(`file\0${r}\0`); h.update(fs.readFileSync(p)); h.update('\0'); }
+    }
+  };
+  walkIn(dir, '');
+  return h.digest('hex').slice(0, 32);
+}
+
 export function vendorIndex(vendor) {
   const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return {}; } };
   const skillsIn = (d) => { const names = []; const look = (x) => { let es = []; try { es = fs.readdirSync(x, { withFileTypes: true }); } catch { return; } for (const e of es) { if (!e.isDirectory()) continue; if (fs.existsSync(path.join(x, e.name, 'SKILL.md'))) names.push(e.name); look(path.join(x, e.name)); } }; look(d); return names.sort(); };
-  const entry = (dir, extra) => { const src = read(path.join(dir, 'SOURCE.json')); return { version: src.version || null, author: src.author || 'unknown', license: src.license || 'unknown', repository: src.repository || 'unknown', licenseFile: fs.existsSync(path.join(dir, 'LICENSE')), ...(src.licenseNote ? { licenseNote: src.licenseNote } : {}), ...extra }; };
+  const entry = (dir, extra) => { const src = read(path.join(dir, 'SOURCE.json')); return { version: src.version || null, author: src.author || 'unknown', license: src.license || 'unknown', repository: src.repository || 'unknown', licenseFile: fs.existsSync(path.join(dir, 'LICENSE')), ...(src.licenseNote ? { licenseNote: src.licenseNote } : {}), ...extra, hash: treeHash(dir) }; };
   const list = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch { return []; } };
   const plugins = Object.fromEntries(list(path.join(vendor, 'plugins')).map((n) => { const dir = path.join(vendor, 'plugins', n); return [n, entry(dir, { skills: skillsIn(path.join(dir, 'skills')), rootSkill: fs.existsSync(path.join(dir, 'SKILL.md')) })]; }));
   const skillGroups = Object.fromEntries(list(path.join(vendor, 'skills')).map((n) => { const dir = path.join(vendor, 'skills', n); return [n, entry(dir, { skills: skillsIn(dir) })]; }));
@@ -1252,6 +1269,9 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
   const { config } = loadKit(kit);
   const want = config.vendor || {};
   const vendor = vendorRoot(kit, config);
+  // The build 18 sweep: with the backups cloned elsewhere, a missing folder is a clone not made yet, and writing the
+  // index from it would drop every backup this machine lacks.
+  if (want.dir && !fs.existsSync(vendor)) throw new Error(`no backup folder at ${toPosix(vendor)}: clone the backups there first`);
   const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
   const installed = fs.existsSync(installedPath) ? JSON.parse(fs.readFileSync(installedPath, 'utf8')).plugins || {} : {};
   const marketsPath = path.join(home, 'plugins', 'known_marketplaces.json');
@@ -1358,6 +1378,14 @@ export function restore({ kit, home, name }) {
   const group = path.join(vendor, 'skills', name);
   const out = { restored: [], kept: [] };
   const single = path.join(vendor, 'plugins', name);
+  // The build 18 sweep: a skill is text an agent follows, and the backups now sit outside the reviewed repo, so only
+  // a backup the kit's index names, with the same files it indexed, comes back.
+  let index = {};
+  try { index = JSON.parse(fs.readFileSync(path.join(kit, 'vendor-index.json'), 'utf8')); } catch { /* none: nothing is trusted */ }
+  const kind = (index.plugins || {})[name] ? 'plugins' : (index.skillGroups || {})[name] ? 'skills' : null;
+  if (!kind) throw new Error(`${name} is not in vendor-index.json, so its backup is not restored`);
+  const folder = path.join(vendor, kind, name);
+  if (!fs.existsSync(folder) || treeHash(folder) !== index[kind === 'plugins' ? 'plugins' : 'skillGroups'][name].hash) throw new Error(`the backup of ${name} at ${toPosix(folder)} differs from what vendor-index.json recorded: check it, then run vendor-index again`);
   if (!fs.existsSync(plugin) && fs.existsSync(path.join(single, 'SKILL.md'))) {
     const dest = path.join(home, 'skills', name);
     if (fs.existsSync(dest)) out.kept.push(name);
@@ -1699,8 +1727,13 @@ export function vendorDrift({ kit, home }) {
     const sourcePath = path.join(vendorDir, 'plugins', name, 'SOURCE.json');
     if (!indexed && !fs.existsSync(sourcePath)) continue;
     const newest = [...entries].sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)))[0];
-    const backup = indexed ? indexed.version : JSON.parse(fs.readFileSync(sourcePath, 'utf8')).version;
-    if (newest.version && backup && newest.version !== backup) out.push({ name, backup, installed: newest.version });
+    // The build 18 sweep: where the backup is cloned, its own SOURCE.json is the truth, and an index that says
+    // otherwise is stale; the index answers only where the backups are not.
+    let own = null;
+    try { own = JSON.parse(fs.readFileSync(sourcePath, 'utf8')).version || null; } catch { /* not cloned here */ }
+    const stale = Boolean(indexed && own && indexed.version !== own);
+    const backup = own || (indexed && indexed.version);
+    if (stale || (newest.version && backup && newest.version !== backup)) out.push({ name, backup, installed: newest.version, ...(stale ? { staleIndex: indexed.version } : {}) });
   }
   return out;
 }
@@ -1835,7 +1868,7 @@ export function preCompactReport({ kit, home, projectDir }) {
   if (!vault.configured) lines.push('No vault backup set up for this project. Set one up (NEW-PROJECT.md step 3b) so the private notes are never lost.');
   else if (vault.committed) lines.push(`Vault backup: ${vault.changed.length} file(s) changed, committed in ${vault.dir}. Push on the owner's yes.`);
   const drift = vendorDrift({ kit, home });
-  if (drift.length) lines.push(`${drift.length} third-party plugin(s) changed since the backup: ${drift.map((d) => `${d.name} (${d.backup} -> ${d.installed})`).join(', ')}. Review, then run snapshot.`);
+  if (drift.length) lines.push(`${drift.length} third-party plugin(s) changed since the backup: ${drift.map((d) => `${d.name} (${d.backup} -> ${d.installed}${d.staleIndex ? `; vendor-index.json says ${d.staleIndex}` : ''})`).join(', ')}. Review, then run snapshot.`);
   return lines.join('\n');
 }
 

@@ -25,7 +25,8 @@
     "web-animation-design",
     "web-design-guidelines"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "141f56ec1a69d177d5050c5bd15c61db"
   },
   "claude-code-setup": {
    "version": "1.0.0",
@@ -36,7 +37,8 @@
    "skills": [
     "claude-automation-recommender"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "570fec1b64bf4cd730695e32c24d510a"
   },
   "data-engineering": {
    "version": "0.1.0",
@@ -68,7 +70,8 @@
     "troubleshooting-astro-deployments",
     "warehouse-init"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "bece56a497d404b80661801942e829a6"
   },
   "design": {
    "version": "1.2.0",
@@ -86,7 +89,8 @@
     "user-research",
     "ux-copy"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "1a6eff9440c0a9c50f5b7c2c5bd7f5c6"
   },
   "frontend-design": {
    "version": "41f619d61b99",
@@ -97,7 +101,8 @@
    "skills": [
     "frontend-design"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "32f9e6088aefe94d64436632d3df7004"
   },
   "huggingface-skills": {
    "version": "1.0.35",
@@ -132,7 +137,8 @@
     "transformers-js",
     "trl-training"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "7455153a587f254d86d129bdb84d9199"
   },
   "security-guidance": {
    "version": "2.0.17",
@@ -141,7 +147,8 @@
    "repository": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/security-guidance",
    "licenseFile": true,
    "skills": [],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "a3c15b243d407083bab5bfd4730f937b"
   },
   "skill-creator": {
    "version": "41f619d61b99",
@@ -152,7 +159,8 @@
    "skills": [
     "skill-creator"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "7b250704cbf3ec04fc1f34fcbab64661"
   },
   "superpowers": {
    "version": "7.0.0",
@@ -177,7 +185,8 @@
     "writing-plans",
     "writing-skills"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "93d7636c17be52033226db4ab72bdcd7"
   },
   "ux-ui-audit": {
    "version": "1.0.0",
@@ -186,7 +195,8 @@
    "repository": "https://github.com/uxbyissa/ux-ui-audit",
    "licenseFile": true,
    "skills": [],
-   "rootSkill": true
+   "rootSkill": true,
+   "hash": "af785ad2971a9e5874589fa127ea5a44"
   },
   "vectorlab-ux-skills": {
    "version": "1.0.0",
@@ -217,7 +227,8 @@
     "verbs",
     "viewports"
    ],
-   "rootSkill": false
+   "rootSkill": false,
+   "hash": "e44394db0df638ade6082deed7482cd2"
   }
  },
  "skillGroups": {
@@ -239,7 +250,8 @@
     "web-perf",
     "workers-best-practices",
     "wrangler"
-   ]
+   ],
+   "hash": "b7d2f955f8c0e815429aea1cccebc0b4"
   }
  }
 }

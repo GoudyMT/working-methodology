@@ -187,8 +187,12 @@ test('snapshot and restore use the backup folder the config names, and the kit k
   const config = JSON.parse(read(path.join(ctx.kit, 'kit.config.json')));
   config.vendor.dir = '../kit-vendor';
   fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify(config));
-  snapshot({ kit: ctx.kit, home: ctx.home });
   const backups = path.join(path.dirname(ctx.kit), 'kit-vendor');
+  // The build 18 sweep: before the backups are cloned, snapshot refuses rather than index only this machine's copies.
+  assert.throws(() => snapshot({ kit: ctx.kit, home: ctx.home }), /no backup folder at .*kit-vendor: clone the backups there first/);
+  assert.equal(fs.existsSync(path.join(ctx.kit, 'vendor-index.json')), false, 'no index written');
+  fs.mkdirSync(backups);
+  snapshot({ kit: ctx.kit, home: ctx.home });
   assert.ok(fs.existsSync(path.join(backups, 'skills/vendor-pack/vendor-skill/SKILL.md')), 'the copy lands in the named folder');
   assert.equal(fs.existsSync(path.join(ctx.kit, 'vendor')), false, 'nothing lands in the kit');
   const index = JSON.parse(read(path.join(ctx.kit, 'vendor-index.json')));
@@ -197,6 +201,18 @@ test('snapshot and restore use the backup folder the config names, and the kit k
   assert.ok(index.plugins.toolbox, 'the plugin is indexed');
   fs.rmSync(path.join(ctx.home, 'skills/vendor-skill'), { recursive: true });
   assert.deepEqual(restore({ kit: ctx.kit, home: ctx.home, name: 'vendor-pack' }), { restored: ['vendor-skill'], kept: [] });
+  // Only what the index names, with the files it indexed, comes back: a planted folder and a changed one are refused.
+  fs.mkdirSync(path.join(backups, 'skills/planted/evil'), { recursive: true });
+  fs.writeFileSync(path.join(backups, 'skills/planted/evil/SKILL.md'), 'evil\n');
+  assert.throws(() => restore({ kit: ctx.kit, home: ctx.home, name: 'planted' }), /planted is not in vendor-index\.json/);
+  fs.writeFileSync(path.join(backups, 'skills/vendor-pack/vendor-skill/SKILL.md'), 'changed\n');
+  fs.rmSync(path.join(ctx.home, 'skills/vendor-skill'), { recursive: true });
+  assert.throws(() => restore({ kit: ctx.kit, home: ctx.home, name: 'vendor-pack' }), /differs from what vendor-index\.json recorded/);
+  assert.equal(fs.existsSync(path.join(ctx.home, 'skills/vendor-skill')), false, 'nothing restored');
+  // Where the backups are cloned, their own SOURCE.json is read: an index left behind is named, not trusted.
+  const src = path.join(backups, 'plugins/toolbox/SOURCE.json');
+  fs.writeFileSync(src, JSON.stringify({ ...JSON.parse(read(src)), version: '9.9.9' }));
+  assert.match(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /toolbox \(9\.9\.9 -> 2\.0\.0; vendor-index\.json says 2\.0\.0\)/);
 });
 
 // why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
