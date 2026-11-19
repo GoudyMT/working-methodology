@@ -679,6 +679,16 @@ test('one pop-up with several questions answered Yes lets each quoted act run on
 	assert.equal(withYes('Bash', { command: acts[1] }, { tool_use_id: 'toolu_m1' }), 'allow', 'the second act, from the same pop-up');
 	assert.equal(withYes('Bash', { command: acts[1] }, { tool_use_id: 'toolu_m1b' }), 'deny', 'the second act, a second time');
 	assert.equal(withYes('Bash', { command: acts[2] }, { tool_use_id: 'toolu_m2' }), 'deny', 'the act answered No');
+	// The build 18 sweep: a pop-up spent before 1.44.0 sits under its plain id, so none of its questions runs again;
+	// and two questions of one text share one answer, so neither is a yes.
+	const ask = (id, qs, ans) => fs.writeFileSync(TRANSCRIPT, [...lines.slice(0, 3), { ...lines[3], message: { content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions: qs } }] } }, { ...lines[4], toolUseResult: { questions: qs, answers: ans }, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'answered' }] } }].map((l) => JSON.stringify(l)).join('\n') + '\n');
+	ask('toolu_ask_old', questions, answers);
+	fs.mkdirSync(path.join(cfg, 'kit-yes-spent'), { recursive: true });
+	fs.writeFileSync(path.join(cfg, 'kit-yes-spent', 'toolu_ask_old'), 'toolu_before_upgrade');
+	assert.equal(withYes('Bash', { command: acts[0] }, { tool_use_id: 'toolu_o0' }), 'deny', 'a pop-up spent under its plain id');
+	const twins = [questions[0], { ...questions[0], options: [{ label: 'No', description: '' }, { label: 'Yes', description: '' }] }];
+	ask('toolu_ask_twin', twins, { [questions[0].question]: 'Yes' });
+	assert.equal(withYes('Bash', { command: acts[0] }, { tool_use_id: 'toolu_t0' }), 'deny', 'two questions of one text');
 });
 
 // why: guards rule:outward-acts (a yes answers the one act the owner read). The 1.25.0 carry-overs: an edit whose text

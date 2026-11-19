@@ -89,7 +89,9 @@ function yeses(lines, { all = false } = {}) {
 			for (const [k, q] of qs.entries()) {
 				const answer = String(r.answers[q.question] ?? '');
 				const labels = (q.options || []).map((o) => String(o.label || ''));
-				const yes = YES_LABEL.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l));
+				// Answers are kept by question text, so two questions of one text share one answer: neither is a yes.
+				const twin = qs.filter((x) => x.question === q.question).length > 1;
+				const yes = !twin && YES_LABEL.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l));
 				// K144 (build 18): each question of a pop-up is its own tap, kept by the pop-up's id and the question's place;
 				// a pop-up of one question keeps the plain id, as taps spent before 1.44.0 were kept.
 				const id = qs.length > 1 ? `${b.tool_use_id}_q${k}` : String(b.tool_use_id);
@@ -156,6 +158,9 @@ function spend(popUp, call) {
 	if (!call) return true;
 	const dir = path.join(home(), 'kit-yes-spent');
 	const file = path.join(dir, String(popUp).replace(/[^A-Za-z0-9_-]/g, '_'));
+	// A pop-up spent before 1.44.0 was kept under its plain id, whatever question ran: each of its questions is spent.
+	const plain = /_q\d+$/.test(String(popUp)) && path.join(dir, String(popUp).replace(/_q\d+$/, '').replace(/[^A-Za-z0-9_-]/g, '_'));
+	if (plain && fs.existsSync(plain)) { try { return fs.readFileSync(plain, 'utf8') === String(call); } catch { return false; } }
 	try {
 		fs.mkdirSync(dir, { recursive: true });
 		fs.writeFileSync(file, String(call), { flag: 'wx' });
