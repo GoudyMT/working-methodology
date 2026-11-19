@@ -87,6 +87,11 @@ const STANDARDS = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.en
 const words = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean);
 const shingles = (w, n = 8) => { const s = new Set(); for (let i = 0; i + n <= w.length; i++) s.add(w.slice(i, i + n).join(' ')); return s; };
 
+// Plan rule-modules, Phase 1: every rule heading carries a fixed ID, so pointers survive renames and moves.
+// Headings inside code blocks (the handoff template) are examples, not rules, and carry none.
+const ruleFiles = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('rules', n));
+const moduleFiles = ruleFiles;
+
 // The kit stays local (rule:kit-stays-local): the install keeps every kit path out of git in the folder's own
 // exclude file, so the kit is there to use but never committed unless the owner tracks a file on purpose.
 const g = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });

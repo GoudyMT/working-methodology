@@ -399,6 +399,11 @@ test('status and session start flag a Claude Code under 2.1.325, and warn when u
   assert.doesNotMatch(at('2.1.325 (Claude Code)').text, /stable/);
 });
 
+// The 1.23.0 security review: on Windows cmd looks in the current folder first, and session start runs in the
+// project, so a claude.cmd planted there would run on every session start.
+// A machine as it ships: this sandbox sets NoDefaultCurrentDirectoryInExePath; most machines do not.
+const withoutSafeSearch = (env) => Object.fromEntries(Object.entries(env).filter(([k]) => k.toLowerCase() !== 'nodefaultcurrentdirectoryinexepath'));
+
 // why: catches a break only Windows shows (drive paths, Git for Windows sh, junctions)
 test('the Claude Code version read never runs a claude program planted in the current folder', { windows: true, skip: process.platform !== 'win32' }, () => {
   const dir = makeTemp('planted-');
