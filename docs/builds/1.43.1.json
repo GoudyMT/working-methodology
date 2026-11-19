@@ -25,19 +25,19 @@
  ],
  "decisions": [
   {
-   "decision": "Helpers are copied into each file, not shared",
-   "why": "A test counts as moved only when its new file brings no code of its own, so a shared helper module now would read every test as new; a later pull request in this build moves the helpers into one module."
+   "decision": "Helpers copied per file",
+   "why": "A test counts as moved only when its new file adds no code of its own, so a shared module now would make every test new; a later pull request in this build moves the helpers into one."
   },
   {
    "decision": "A patch release",
-   "why": "The split moves the version because the rule map and the project map change, and CI holds any change outside the install-safe paths to a version and a build record; nothing installed changes."
+   "why": "The rule map and project map change, and CI holds any change outside the install-safe paths to a version and a build record; nothing installed changes."
   }
  ],
  "upgrading": "Nothing to do: install copies none of the moved files. The workbench install of this version can wait for 1.44.0.",
  "limits": "The seven files repeat the helper code their tests share, so the test folder grows by about a tenth until the shared helpers move into one module later in build 18.",
  "sweep": {
   "tier": "Triage",
-  "commit": "87170ad",
+  "commit": "64079a5",
   "dimensions": [
    { "name": "Privacy", "result": "Not touched: test text moved as is" },
    { "name": "Supply chain", "result": "Not touched: no dependency" },
