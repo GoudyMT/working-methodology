@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.43.2 - 2026-11-19
+
+The seven kit test files import one shared helper module in place of the copies the 1.43.1 split left in each, so a new test in them loads on main when CI proves it fails first. Nothing a project installs changes.
+
+### Changed
+- `tests/kit-helpers.mjs` holds the helper code the seven kit test files each copied; they import what they use, and every test keeps its exact text.
+
 ## 1.43.1 - 2026-11-19
 
 The kit's largest test file is split into seven files, one per area, with every test moved word for word, so a change to one area reads and edits a file about a fifth the size. Nothing a project installs changes.

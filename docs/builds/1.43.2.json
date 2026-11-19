@@ -1,0 +1,61 @@
+{
+ "version": "1.43.2",
+ "date": "2026-11-19",
+ "level": "patch",
+ "area": "Tests",
+ "title": "refactor: share the kit test helpers from one module",
+ "headline": "The seven kit test files import one shared helper module in place of the copies the 1.43.1 split left in each, so a new test in them loads on main when CI proves it fails first. Nothing a project installs changes.",
+ "alignment": "v1.43.2 is the second pull request of build 18: the shared helpers the 1.43.1 record named as the next step, merged ahead of the rest so that build's new tests load on main.",
+ "items": [
+  {
+   "id": "T10-HELPERS",
+   "kind": "changed",
+   "text": "`tests/kit-helpers.mjs` holds the helper code the seven kit test files each copied; they import what they use, and every test keeps its exact text.",
+   "evidence": "tests/kit-helpers.mjs",
+   "reach": "kit",
+   "where": "Writing a new kit test",
+   "before": "Helper code copied in seven files",
+   "after": "One shared helper module"
+  }
+ ],
+ "verification": [
+  "Every test keeps its exact text, and each file keeps the same number of tests.",
+  "Each removed helper had an identical copy in the shared module (checked one for one by the triage review).",
+  "The rule map is written fresh for the new module."
+ ],
+ "decisions": [
+  {
+   "decision": "Its own pull request, ahead of build 18",
+   "why": "CI proves a new test fails first by running it on main, so the module those tests import must be on main first."
+  },
+  {
+   "decision": "The budget tests keep their own id counter",
+   "why": "An imported counter cannot be bumped, and starting it far from the shared one means no id repeats."
+  },
+  {
+   "decision": "A patch release",
+   "why": "The rule map changes, and CI holds any change outside the install-safe paths to a version and a build record; nothing installed changes."
+  }
+ ],
+ "upgrading": "Nothing to do: install copies none of these files. The workbench install can wait for 1.44.0.",
+ "limits": "None new.",
+ "sweep": {
+  "tier": "Triage",
+  "commit": "cf57655",
+  "dimensions": [
+   { "name": "Privacy", "result": "Not touched: test text moved as is" },
+   { "name": "Supply chain", "result": "Not touched: no dependency" },
+   { "name": "Legal", "result": "Not touched" },
+   { "name": "Code security", "result": "Not touched: no shipped code changed" },
+   { "name": "Gaps, scaling, test value", "result": "Every helper matched one for one; test counts unchanged" },
+   { "name": "Alignment", "result": "YES" }
+  ],
+  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "fixes": []
+ },
+ "tests": {
+  "before": 941,
+  "after": 941,
+  "flips": "declared tests at 4495fd0 and on this branch; the PR run gives the final count"
+ }
+}

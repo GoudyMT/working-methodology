@@ -1,118 +1,17 @@
 // Tests for the recall run, its probes, the recall gate and recall-score: moved word for word from tests/kit.test.mjs (T10, build 18).
 
-// Tests for scripts/kit.mjs - each one drives the CLI functions the way the owner does:
-// a fake kit, a fake ~/.claude and a fake project in a temp folder.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
-// The status and session-start reports read the machine's Claude Code by default; a test names its own version, so the
-// suite's result does not rest on which Claude Code is installed (the 1.23.0 sweep). A test of the version reads passes its own.
-const status = (o) => kitStatus({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
-const sessionStartReport = (o) => kitSessionStart({ claudeVersion: () => '2.1.325 (Claude Code)', ...o });
-
-// Every temp folder a test makes lands under this one root, removed at exit: os.tmpdir() reads these on each call and children inherit them.
-// kit-temp.cjs also removes it on a signal, and the next run sweeps it after a kill.
-const tmpRoot = kitTemp.sessionRoot();
-const { makeTemp } = kitTemp;
-
-// A kit folder's CLI is scripts/kit.mjs with the temp helper it imports, as in every real kit folder.
-function copyKitCli(kit) {
-  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
-  fs.mkdirSync(path.join(kit, 'project/.claude'), { recursive: true });
-  fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
-  fs.copyFileSync(path.resolve('project/.claude/kit-temp.cjs'), path.join(kit, 'project/.claude/kit-temp.cjs'));
-  // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
-  fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
-  fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
-  // The merge-on-green steps install prints (K61), which read row A27 as the merge gate does.
-  for (const f of ['merge-on-green.mjs', 'safe-git.mjs']) fs.copyFileSync(path.resolve('scripts', f), path.join(kit, 'scripts', f));
-  for (const f of ['merge-gate.mjs', 'kit-temp.cjs']) fs.copyFileSync(path.resolve('user/kit-tools', f), path.join(kit, 'user/kit-tools', f));
-}
-
-function makeKit() {
-  const root = makeTemp('kit-');
-  const kit = path.join(root, 'kit');
-  const home = path.join(root, 'home');
-  const proj = path.join(root, 'My App');
-  const files = {
-    'VERSION': '1.0.0\n',
-    'CHANGELOG.md': '# Changelog\n',
-    'kit.config.json': JSON.stringify({ ownerName: 'Pat', ownerProfileFile: 'owner-profile.md', thirdPartySkills: ['vendor-skill'] }),
-    'owner-profile.md': '- Likes tests\n',
-    'user/CLAUDE.md': '# Global\nOwner: {{OWNER_NAME}}\n{{OWNER_PROFILE}}\n',
-    'user/agents/builder.md': 'builder role\n',
-    'user/skills/human-factor/SKILL.md': 'skill\n',
-    'project/_Working Standards.md': 'rules\n',
-    'project/.claude/settings.json': '{"hook":"{{PROJECT_DIR}}/.claude/guard.cjs"}\n',
-    'memory/MEMORY.md': '- [Style](style.md)\n',
-    'memory/style.md': 'style rule\n',
-  };
-  for (const [rel, body] of Object.entries(files)) {
-    fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
-    fs.writeFileSync(path.join(kit, rel), body);
-  }
-  fs.mkdirSync(proj);
-  return { kit, home, proj };
-}
-
-const read = (p) => fs.readFileSync(p, 'utf8');
-
-// A release install checks every byte against the release tag's tree (the 1.26.0 security review, S4), so a fixture
-// that installs as a release commits its kit folder and hands over that commit's tree.
-function released(kit, describe) {
-  const g = (...a) => {
-    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-C', kit, ...a], { encoding: 'utf8' });
-    if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
-    return r.stdout.trim();
-  };
-  if (!fs.existsSync(path.join(kit, '.git'))) g('init', '-q', '-b', 'main');
-  g('add', '-A');
-  g('commit', '-q', '--allow-empty', '-m', describe);
-  return { release: true, describe, tree: g('rev-parse', 'HEAD^{tree}') };
-}
-
-// The kit's own standards, checked the way Kit Standards #3 and #5 say: one home per rule, a why in every rule
-// section, and size caps. These read the real rule modules in rules/, not a fixture.
-const STANDARDS = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).sort()
-  .map((n) => read(path.resolve('rules', n)).replace(/^---\n[\s\S]*?\n---\n/, '')).join('\n');
-const words = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean);
-const shingles = (w, n = 8) => { const s = new Set(); for (let i = 0; i + n <= w.length; i++) s.add(w.slice(i, i + n).join(' ')); return s; };
-
-// Plan rule-modules, Phase 1: every rule heading carries a fixed ID, so pointers survive renames and moves.
-// Headings inside code blocks (the handoff template) are examples, not rules, and carry none.
-const ruleFiles = () => fs.readdirSync(path.resolve('rules')).filter((n) => n.endsWith('.md')).map((n) => path.resolve('rules', n));
-const moduleFiles = ruleFiles;
-
-// The kit stays local (rule:kit-stays-local): the install keeps every kit path out of git in the folder's own
-// exclude file, so the kit is there to use but never committed unless the owner tracks a file on purpose.
-const g = (dir, ...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
-// noVerify stands for a tool that skips the git hooks, so a slip still reaches history and the first push check must find it.
-// Test commits use the house style, so the kit's commit-msg hook (rule:commit-message-format) lets them through.
-const commitAll = (dir, msg, noVerify) => { g(dir, 'add', '-A'); return g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', /^[a-z]+: /.test(msg) ? msg : `chore: ${msg}`, ...(noVerify ? ['--no-verify'] : [])); };
-function localProject() {
-  const dir = makeTemp('local-');
-  g(dir, 'init', '-q', '-b', 'main');
-  fs.writeFileSync(path.join(dir, 'main.py'), 'print(1)\n');
-  return dir;
-}
-const excludeFile = (dir) => path.join(dir, '.git', 'info', 'exclude');
-const kitInstall = (dir) => install({ kit: path.resolve('.'), target: 'project', projectDir: dir, home: makeTemp('home-') });
-
-// The recall gate: one ruler every time (versioned keys and brief), a run that records what it read, and a CI check
-// that reads the recorded median instead of only seeing that the scores file changed.
-const recallTools = () => import('../scripts/recall.mjs');
-const RECALL = path.resolve('scripts/recall.mjs');
-const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';
-const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
+import { GOOD_ENTRY, HEX6, RECALL, g, gateFacts, gateRepo, makeKit, makeTemp, probeParts, read, recallTools, recorder, released, ruleFiles, scratch, status, words } from './kit-helpers.mjs';
 
 // why: guards rule:instruments-and-evals
 test('recall v3 is v2 plus three questions, and v2 stays as it was released', async () => {
@@ -740,20 +639,6 @@ test('the scorer brief is versioned and carries the two calls the proof found bo
   assert.match(brief, /"adversarial" may be met by "security agents from distinct angles"/); // pin: 3
 });
 
-// Recall probes: the runner makes its own throwaway folder, so no folder name or label can reach the result.
-const HEX6 = '[0-9a-f]{6}';
-const probeParts = (home, p) => path.relative(home, p).split(path.sep);
-const recorder = (statuses = []) => {
-  const calls = [];
-  const run = (cmd, args, opts) => {
-    calls.push({ cmd, args: [...args], opts: { ...opts }, dirExisted: opts && opts.cwd ? fs.existsSync(opts.cwd) : null });
-    const status = statuses.length ? statuses.shift() : 0;
-    return { status, stdout: '', stderr: status === 0 ? '' : 'boom' };
-  };
-  return { calls, run };
-};
-const scratch = () => path.join(makeTemp('probe-'), 'kit-probes', 'abc123', 'pdef456');
-
 // why: guards rule:probe-scope
 test('probePath is random per call and always home/kit-probes/<6 hex>/p<6 hex>', async () => {
   const { probePath } = await recallTools();
@@ -1096,32 +981,6 @@ test('a recall run forgets its probe\'s guard record, and only that one', async 
   assert.equal(fs.existsSync(kitTools.guardDir(home, dir)), false, 'the probe\'s guard record is gone');
   assert.ok(fs.existsSync(kitTools.guardDir(home, keep)), 'a live project\'s record stays');
 });
-
-// Carry-overs closed in 1.21.0 for the recall gate and runs (S18-2, S18-3, S18-5, S18-6, S18-7, B7, I20, I27).
-// A small repo with recall.mjs, a ruler and a scores file, gated base..HEAD as CI does.
-function gateRepo({ keys = 'Current version: v4\n\n<!-- recall v4 -->\nPass: median 9 of 13.\n\n', scores = '# Scores\n', suite = null } = {}) {
-  const dir = makeTemp('gate11-');
-  const git = (...a) => { const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }); assert.equal(r.status, 0, a.join(' ') + r.stderr); return r.stdout; };
-  const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
-  git('init', '-q', '-b', 'main');
-  put('scripts/recall.mjs', read(RECALL));
-  put('docs/evals/recall-scorer-brief.md', 'Current version: v1\n');
-  put('docs/evals/recall-questions.md', keys);
-  put('docs/evals/results/recall-scores.md', scores);
-  if (suite) put('docs/evals/behaviour-scenarios.json', suite);
-  git('add', '.'); git('commit', '-qm', 'base'); git('tag', 'base');
-  // The rule edit, then the score of that commit (K116: a gate line names the commit it scored), as a real run goes.
-  const record = (line, extra = () => {}, scored = true) => {
-    put('rules/core.md', 'a rule ' + Math.random() + '\n');
-    extra(put);
-    git('add', '.'); git('commit', '-qm', 'rules');
-    const at = git('rev-parse', 'HEAD').trim();
-    put('docs/evals/results/recall-scores.md', scores + '\n' + line + '\n' + (scored ? `scored: ${at}\n` : ''));
-    git('add', '.'); git('commit', '-qm', 'record');
-  };
-  const gate = (script = path.join(dir, 'scripts/recall.mjs')) => spawnSync('node', [script, 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
-  return { dir, put, git, record, gate };
-}
 
 // K116 (1.42.0, reproduced on 1.41.0): the gate passed rule text edited after the commit its run scored. A gate line
 // now names that commit, and rule text that differs from it at the head is refused unless the owner accepts it.
