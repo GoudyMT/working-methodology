@@ -637,6 +637,26 @@ test('the owner\'s latest answer counts, a yes is for a question quoting one act
 	for (const c of [`rm -rf ${spent}`, `echo x > ${spent}/toolu_ask1`, `mv ${spent} /tmp/x`]) assert.equal(bash(c), 'deny', c);
 });
 
+// K144 (build 18, seen live on 1.43.0): one pop-up of four questions, each quoting one act and each answered Yes, let
+// only the first act run: the tap was spent by the pop-up's id, so the other three each took a pop-up of their own.
+// why: catches a pop-up with several answered Yes questions unlocking only its first quoted act
+test('one pop-up with several questions answered Yes lets each quoted act run once, and a No still holds its act', () => {
+	const acts = ['gh pr merge 21 --squash', 'gh pr merge 22 --squash', 'gh pr merge 23 --squash'];
+	const at = new Date(Date.now() - 60000).toISOString();
+	const questions = acts.map((act) => ({ question: `May I run \`${act}\`?`, header: 'Owner yes', multiSelect: false, options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }));
+	const answers = Object.fromEntries(questions.map((q, i) => [q.question, i === 2 ? 'No' : 'Yes']));
+	const lines = [
+		...acts.map((command, i) => ({ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: `toolu_tried${i}`, name: 'Bash', input: { command } }] } })),
+		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_ask_many', name: 'AskUserQuestion', input: { questions } }] } },
+		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source: 'user_temporary' }, toolUseResult: { questions, answers }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask_many', content: 'answered' }] } },
+	];
+	fs.writeFileSync(TRANSCRIPT, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+	assert.equal(withYes('Bash', { command: acts[0] }, { tool_use_id: 'toolu_m0' }), 'allow', 'the first act');
+	assert.equal(withYes('Bash', { command: acts[1] }, { tool_use_id: 'toolu_m1' }), 'allow', 'the second act, from the same pop-up');
+	assert.equal(withYes('Bash', { command: acts[1] }, { tool_use_id: 'toolu_m1b' }), 'deny', 'the second act, a second time');
+	assert.equal(withYes('Bash', { command: acts[2] }, { tool_use_id: 'toolu_m2' }), 'deny', 'the act answered No');
+});
+
 // why: guards rule:outward-acts (a yes answers the one act the owner read). The 1.25.0 carry-overs: an edit whose text
 // holds the quote's own separators reads as another edit (R1.5); a yes given after a held call in one shell let the
 // same text run in another, which reads it differently (R1.6); a yes to push a branch let a tag of that name go

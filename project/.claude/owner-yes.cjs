@@ -85,11 +85,15 @@ function yeses(lines, { all = false } = {}) {
 			if (d.decision !== 'accept' || !/^user/.test(String(d.source || '')) || !r.answers) continue;
 			const at = Date.parse(e.timestamp);
 			if (!Number.isFinite(at)) continue;
-			for (const q of asked.get(b.tool_use_id).questions) {
+			const qs = asked.get(b.tool_use_id).questions;
+			for (const [k, q] of qs.entries()) {
 				const answer = String(r.answers[q.question] ?? '');
 				const labels = (q.options || []).map((o) => String(o.label || ''));
 				const yes = YES_LABEL.test(answer) && labels.includes(answer) && labels.some((l) => /^no\b/i.test(l));
-				if (yes || all) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id: String(b.tool_use_id), yes });
+				// K144 (build 18): each question of a pop-up is its own tap, kept by the pop-up's id and the question's place;
+				// a pop-up of one question keeps the plain id, as taps spent before 1.44.0 were kept.
+				const id = qs.length > 1 ? `${b.tool_use_id}_q${k}` : String(b.tool_use_id);
+				if (yes || all) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id, yes });
 			}
 		}
 	}
