@@ -64,7 +64,9 @@ function parseArgs(argv) {
 function changedLines(root, base) {
 	const sha = git(root, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${base}^{commit}`).stdout.trim();
 	if (!/^[0-9a-f]{40,64}$/.test(sha)) return null;
-	const diff = git(root, 'diff', '-U0', `${sha}...HEAD`);
+	// Build 18: a branch that deletes 10 MB of files overflowed the output buffer, which read as no commit. A deleted
+	// file adds no line to flip, so deletions are left out, and the buffer has room for a large change.
+	const diff = spawnSync('git', ['diff', '-U0', '--no-color', '--diff-filter=d', `${sha}...HEAD`], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
 	if (diff.status !== 0) return null;
 	const out = {};
 	let file = null;
