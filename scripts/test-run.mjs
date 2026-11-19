@@ -84,13 +84,26 @@ function ranLines(result, root, into) {
 		// K136 (build 18): a test that installs the kit runs the guards from the installed copies outside the repo, which
 		// were dropped here. Such a copy counts as the repo file it came from when the repo has it (install copies these
 		// byte for byte), and that file's text places the lines, since the copy is often gone by now.
-		if (rel.startsWith('..')) rel = installedSource(posix(file), root);
+		const copy = rel.startsWith('..') ? file : null;
+		if (copy) rel = installedSource(posix(file), root);
 		if (!rel || rel.startsWith('..') || rel.startsWith('tests/') || rel.includes('node_modules/')) continue;
 		let text;
 		try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; } // a file a test made and removed
-		const count = new Int32Array(text.length);
 		const ranges = s.functions.flatMap((fn) => fn.ranges).sort((a, b) => (b.endOffset - b.startOffset) - (a.endOffset - a.startOffset));
-		for (const r of ranges) count.fill(r.count, r.startOffset, Math.min(r.endOffset, text.length));
+		// The build 18 sweep: install fills a {{...}} placeholder in (the Claude folder's path), which moves every later
+		// offset of the copy. The script's own range spans the copy, so its length less the repo text's, shared over the
+		// placeholders (all one name, one value), gives each one's growth; an offset is moved back past each it follows.
+		// A copy whose growth cannot be shared out evenly is left out rather than credited to the wrong line.
+		const at = copy ? [...text.matchAll(/\{\{([A-Z_]+)\}\}/g)] : [];
+		let back = (o) => o;
+		if (at.length) {
+			const grown = Math.max(...ranges.map((r) => r.endOffset)) - text.length;
+			if (new Set(at.map((m) => m[1])).size > 1 || grown % at.length) continue;
+			const each = grown / at.length;
+			back = (o) => { let d = 0; for (const m of at) { const end = m.index + d + m[0].length + each; if (o >= end) d += each; else if (o > m.index + d) return m.index; } return o - d; };
+		}
+		const count = new Int32Array(text.length);
+		for (const r of ranges) count.fill(r.count, back(r.startOffset), Math.min(back(r.endOffset), text.length));
 		const set = (into[rel] ||= new Set());
 		let line = 1;
 		for (let i = 0; i < text.length; i++) {

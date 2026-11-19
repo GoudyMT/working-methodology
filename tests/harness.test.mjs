@@ -303,7 +303,8 @@ function fixtureRepo() {
 test('the coverage map credits lines run from an installed copy outside the repo to the repo file it came from', () => {
 	const repo = kitTemp.makeTemp('maprepo-');
 	const files = {
-		'project/.claude/hook.cjs': "const x = 1;\nif (process.argv[2] === 'go') process.stdout.write('go');\nelse process.stdout.write('no');\n",
+		// The build 18 sweep: install fills {{CLAUDE_HOME}} in, so the copy's offsets are longer than the repo file's.
+		'project/.claude/hook.cjs': "const x = '{{CLAUDE_HOME}}';\nif (process.argv[2] === 'go') process.stdout.write('go');\nelse process.stdout.write('no');\n",
 		'user/kit-tools/tool.cjs': "process.stdout.write('t');\n",
 		'tests/x.test.mjs': [
 			`import { test } from ${HARNESS};`,
@@ -313,7 +314,7 @@ test('the coverage map credits lines run from an installed copy outside the repo
 			"import { spawnSync } from 'node:child_process';",
 			"test('installed', () => {",
 			"  const at = fs.mkdtempSync(path.join(os.tmpdir(), 'inst-'));",
-			"  for (const [from, to] of [['project/.claude/hook.cjs', 'proj/.claude/hook.cjs'], ['user/kit-tools/tool.cjs', 'home/kit-tools/tool.cjs']]) { fs.mkdirSync(path.dirname(path.join(at, to)), { recursive: true }); fs.copyFileSync(from, path.join(at, to)); }",
+			"  for (const [from, to] of [['project/.claude/hook.cjs', 'proj/.claude/hook.cjs'], ['user/kit-tools/tool.cjs', 'home/kit-tools/tool.cjs']]) { fs.mkdirSync(path.dirname(path.join(at, to)), { recursive: true }); fs.writeFileSync(path.join(at, to), fs.readFileSync(from, 'utf8').replaceAll('{{CLAUDE_HOME}}', 'C:/a/much/longer/claude/home/folder/than/the/placeholder/is')); }",
 			"  spawnSync(process.execPath, [path.join(at, 'proj/.claude/hook.cjs'), 'go'], { env: { ...process.env, NODE_OPTIONS: '' } });",
 			"  spawnSync(process.execPath, [path.join(at, 'home/kit-tools/tool.cjs')], { env: { ...process.env, NODE_OPTIONS: '' } });",
 			"  fs.rmSync(at, { recursive: true, force: true });",
