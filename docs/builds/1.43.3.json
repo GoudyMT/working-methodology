@@ -19,7 +19,7 @@
   }
  ],
  "verification": [
-  "The new test deletes a 2 MB file and changes one line; the scoped count finds the one flip.",
+  "The new test deletes a 2 MB file and changes one line, then adds a 2 MB file; each scoped count finds the one flip.",
   "The other scoped-run test still refuses a base that is no commit or reads as a git option.",
   "The rule map is unchanged."
  ],
@@ -37,7 +37,7 @@
  "limits": "None new.",
  "sweep": {
   "tier": "Fix",
-  "commit": "305c029",
+  "commit": "e81ae78",
   "dimensions": [
    {
     "name": "Privacy",
