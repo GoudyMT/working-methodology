@@ -160,8 +160,16 @@ function run(dir, keys, env, left) {
 			if (isFile(m[1])) {
 				red.set(`file:${f}`, false);
 				// Node writes the load error as comment lines before the file's result, not inside its block.
-				const miss = `${out}\n${r.stderr || ''}`.match(/Cannot find (?:module|package) '([^']+)'/);
-				if (miss) red.why.set(f, slash(miss[1]).replace(`${slash(dir)}/`, ''));
+				// The build 19 sweep: only the loader's own line counts (ERR_MODULE_NOT_FOUND ... imported from), on one line, as
+				// path characters, so a test file cannot print markup or a forged line into the step summary through it; the
+				// copy's folder is taken off as written and as the file system resolves it.
+				const miss = `${out}\n${r.stderr || ''}`.match(/ERR_MODULE_NOT_FOUND\]?:? Cannot find (module|package) '([\w./\\@~:+-]+)' imported from /);
+				if (miss) {
+					let real = dir;
+					try { real = fs.realpathSync.native(dir); } catch { /* as given */ }
+					const name = [dir, real].reduce((s, d) => s.replace(new RegExp(`^${slash(d).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`, 'i'), ''), slash(miss[2]));
+					red.why.set(f, miss[1] === 'package' ? `the package ${name}` : name);
+				}
 			}
 			else red.set(`${f}::${plain(m[1])}`, /ERR_ASSERTION|AssertionError/.test(m[2]));
 		}
@@ -307,7 +315,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 					else if (!findings.some((x) => x.key === t.file && x.rule === 'A1')) {
 						const who = /(^|\/)main$/.test(base) ? 'main' : 'the base';
 						const need = red.why.get(t.file);
-						note(t.file, 'A1', `${who} cannot load this: ${need ? `it lacks ${need}` : 'the file ended before its tests ran'}. Its tests are not measured there (the file could not load); land what it needs on main first, as its own small PR`);
+						note(t.file, 'A1', `${who} cannot load this: ${need ? `it lacks ${need}` : 'the file ended before its tests ran'}. Its tests are not measured there (the file could not load); land what it needs on ${who} first, as its own small PR`);
 					}
 				}
 				else if (!reds.length) pending.push(t);
@@ -394,7 +402,8 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			if (!mine.has(f.test)) continue;
 			// A fix's test runs against the code it fixes, so a test that is red there only because its file cannot load
 			// proves nothing about the fix (the build 14 sweep: a file made unloadable on purpose read "fails first").
-			const a1 = findings.find((x) => x.rule === 'A1' && x.key === f.test);
+			// K148 keys a file's load finding by the file (the build 19 sweep: looked up by test alone it read "fails first").
+			const a1 = findings.find((x) => x.rule === 'A1' && (x.key === f.test || x.key === f.test.slice(0, f.test.indexOf('::'))));
 			const t = mine.get(f.test);
 			let why = a1 ? a1.text : t.loadOnly ? 'fails on the base commit only because its file cannot load there' : null;
 			let ok = t.proof || 'fails first';

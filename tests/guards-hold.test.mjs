@@ -320,7 +320,10 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 	// guard; the class predates the loop reads, and every spelling of it is held while such a name is there.
 	for (const d of [proj, path.join(proj, '.claude')]) fs.writeFileSync(path.join(d, '-i'), 'x\n');
 	try {
-		for (const c of ['sed -n 1p * .claude/guard.cjs', 'for f in *; do sed -n 1p "$f" .claude/guard.cjs; done', 'cd .claude && for f in *; do sed -n 1p "$f" guard.cjs; done']) assert.equal(bash(c), 'deny', c);
+		// The commit security review: a quote beside the wildcard and a bracket class are wildcards too.
+		for (const c of ['sed -n 1p * .claude/guard.cjs', 'for f in *; do sed -n 1p "$f" .claude/guard.cjs; done', 'cd .claude && for f in *; do sed -n 1p "$f" guard.cjs; done',
+			'sed -n 1p ""* .claude/guard.cjs', 'sed -n 1p [-]i .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+		for (const c of ['if [ -f x ]; then cat x; fi', 'ls *.md', 'grep -n "a*b" a.txt']) assert.equal(bash(c), 'allow', c);
 	} finally { for (const d of [proj, path.join(proj, '.claude')]) fs.rmSync(path.join(d, '-i')); }
 	assert.equal(bash('sed -n 1p * .claude/guard.cjs'), 'allow', 'with no dash name the read passes');
 });

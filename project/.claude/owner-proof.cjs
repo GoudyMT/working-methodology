@@ -497,16 +497,23 @@ function dashGlob(command, tool, start) {
 	const c = String(command || '');
 	const from = start || (startNow && startNow.dir) || process.cwd();
 	const posixDrive = (p) => p.replace(/^\/([a-z])\//i, '$1:/');
-	const dirs = [from, ...[...c.matchAll(/(?:^|[;&|(]\s*)(?:cd|pushd)\s+([^\s;&|()`$'"]+)/g)].map((m) => path.resolve(from, posixDrive(m[1])))];
-	for (const w of c.split(/[\s;&|()<>]+/)) {
-		if (!/[*?]/.test(w) || /^['"]/.test(w)) continue;
-		const word = posixDrive(w.replace(/['"]/g, ''));
+	// The commit security review: a word is read with its quoted parts taken out, so "x"* still counts; a bracket class,
+	// a quote beside a wildcard, a folder change the guard cannot place or a folder it cannot list is held, the safe side.
+	// A lone [ or [[ is the test command, not a class.
+	const words = c.split(/[\s;&|()<>]+/).filter((w) => /[*?]|\[[^\]]*\]/.test(w.replace(/'[^']*'|"[^"]*"/g, '')));
+	if (!words.length) return false;
+	const cds = [...c.matchAll(/(?:^|[;&|(]\s*)(?:cd|pushd|popd|chdir)(?=\s|$)\s*(\S*)/g)];
+	if (cds.some((m) => !/^[^\s;&|()`$'"~\\]+$/.test(m[1]) || m[1].startsWith('-'))) return true;
+	const dirs = [from, ...cds.map((m) => path.resolve(from, posixDrive(m[1])))];
+	for (const w of words) {
+		if (/['"[\\]/.test(w)) return true;
+		const word = posixDrive(w);
 		const dir = path.dirname(word);
-		if (/[*?[]/.test(dir)) return true;
+		if (/[*?]/.test(dir)) return true;
 		const re = globRe(path.basename(word));
 		for (const d of dirs) {
-			let names = [];
-			try { names = fs.readdirSync(path.resolve(d, dir)); } catch { continue; }
+			let names;
+			try { names = fs.readdirSync(path.resolve(d, dir)); } catch { return true; }
 			if (names.some((n) => n.startsWith('-') && re.test(n))) return true;
 		}
 	}
