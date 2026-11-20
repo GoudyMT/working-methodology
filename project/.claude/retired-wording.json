@@ -1,9 +1,9 @@
 {
-  "about": "Rule wording the kit has replaced (K153, build 20). A line of the working-memory files that still says one of these fails the state check, which the closeout's release check runs, and is named at session start. A line marked (history) is skipped. When a build replaces a rule, it adds the old wording here.",
+  "about": "Rule wording the kit has replaced (K153, build 20). A line of the working-memory files that still says one of these fails the state check, which the closeout's release check runs, and is named at session start. A line that starts with (history), or says the wording is no longer the rule, is skipped. When a build replaces a rule, it adds the old wording here, with the rule id or, for a rule outside the kit's rule files, where it lives.",
   "retired": [
-    { "pattern": "cheap[- ]check[^.\\n]*\\bbefore\\b[^.\\n]*\\bpush", "rule": "test-and-review-cadence", "since": "1.44.0", "now": "no local check pass before a push: the changed test locally, CI runs the rest" },
-    { "pattern": "\\blocal(ly)?\\b[^.\\n]*test-run\\.mjs --changed|test-run\\.mjs --changed[^.\\n]*\\blocal(ly)?\\b", "rule": "test-and-review-cadence", "since": "1.46.0", "now": "locally run only the tests the branch changed; --changed is CI's" },
+    { "pattern": "cheap[- ]check[^.\\n]{0,120}\\bbefore\\b[^.\\n]{0,120}\\bpush", "rule": "test-and-review-cadence", "since": "1.44.0", "now": "no local check pass before a push: the changed test locally, CI runs the rest" },
+    { "pattern": "\\blocal(ly)?\\b[^.\\n]{0,120}test-run\\.mjs --changed|test-run\\.mjs --changed[^.\\n]{0,120}\\blocal(ly)?\\b", "rule": "test-and-review-cadence", "since": "1.46.0", "now": "locally run only the tests the branch changed; --changed is CI's" },
     { "pattern": "\\b(second|short|targeted) re-?sweep\\b", "rule": "sweep-tiers", "since": "1.42.0", "now": "one sweep per branch; every finding is fixed in the build" },
-    { "pattern": "\\b(owner|max) types? (all|every)( the)? code\\b", "rule": "owners-rules", "since": "1.41.0", "now": "Claude writes and runs the code" }
+    { "pattern": "\\b(the )?owner types? (all|every)( the)? code\\b", "where": "the owner's global standards, Collaboration Workflow", "since": "1.41.0", "now": "Claude writes and runs the code" }
   ]
 }

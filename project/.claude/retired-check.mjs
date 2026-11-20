@@ -1,8 +1,8 @@
 // The retired-wording check (K153, build 20; the owner's rule "working memory matches the kit at closeout"). Notes kept
 // a rule the kit had replaced, and later threads acted on them. A script reads the working-memory files for the old
 // wording the kit lists in retired-wording.json beside this file; state.mjs check (run by the closeout's release check)
-// fails on each hit, and the session-start report names them. A line marked (history) quotes an old rule on purpose
-// and is skipped. What it cannot see: a retired rule in other words than the pattern, and project memory outside the
+// fails on each hit, and the session-start report names them. A line that starts with (history) quotes an old rule on
+// purpose, and a sentence that says the wording is no longer the rule states the new one: both are skipped. What it cannot see: a retired rule in other words than the pattern, and project memory outside the
 // repo (a coordinator's memory folder).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,10 +33,16 @@ export function retiredHits(root, list = retiredList()) {
 		let text;
 		try { text = fs.readFileSync(path.join(root, file), 'utf8'); } catch { continue; }
 		text.split(/\r?\n/).forEach((l, i) => {
-			if (/\(history\)/i.test(l)) return;
+			// The build 20 sweep: only a line that opens with (history) is marked, and a sentence that says the old wording
+			// is no longer the rule (never, no longer, retired) is the new rule, not the old one.
+			if (/^\s*(?:[-*+]|\d+\.)?\s*\(history\)/i.test(l)) return;
 			for (const r of list) {
 				const m = r.re.exec(l);
-				if (m) { hits.push({ file, line: i + 1, text: m[0], rule: r.rule, since: r.since, now: r.now }); break; }
+				if (!m) continue;
+				const before = l.slice(0, m.index).split(/[.;!?]\s/).pop();
+				if (/\b(never|not|no longer|don't|do not|retired|replaced|instead of)\b/i.test(before)) continue;
+				hits.push({ file, line: i + 1, text: m[0], rule: r.rule, where: r.where, since: r.since, now: r.now });
+				break;
 			}
 		});
 	}
@@ -44,4 +50,4 @@ export function retiredHits(root, list = retiredList()) {
 }
 
 /** One line per hit, for the state check and the session-start report. */
-export const hitLine = (h) => `${h.file} line ${h.line}: retired wording "${h.text.slice(0, 60)}" (rule:${h.rule}, since ${h.since}); the rule now: ${h.now}. Remove the line, or mark it (history)`;
+export const hitLine = (h) => `${h.file} line ${h.line}: retired wording "${h.text.slice(0, 60)}" (${h.rule ? `rule:${h.rule}` : h.where}, since ${h.since}); the rule now: ${h.now}. Remove the line, or start it with (history)`;
