@@ -542,7 +542,8 @@ test('off CI a full or --changed run is refused without the owner\'s yes; CI, --
 	const file = path.join(dir, 'tests', 'x.test.mjs');
 	fs.writeFileSync(file, `import { test } from 'node:test';\ntest('a', () => {});\n`);
 	const refused = /test-run: refused: a full or --changed run is CI's job/;
-	for (const args of [[], ['--changed']]) {
+	// The build 20 sweep: --pick without --changed runs the whole suite, so it is refused too.
+	for (const args of [[], ['--changed'], ['--pick']]) {
 		const r = run(dir, args, { CI: '' });
 		assert.equal(r.status, 2, `${args.join(' ')}: ${r.stdout}${r.stderr}`);
 		assert.match(r.stderr, refused);
@@ -553,5 +554,6 @@ test('off CI a full or --changed run is refused without the owner\'s yes; CI, --
 	for (const [args, env] of [[[], { CI: 'true' }], [['--map'], { CI: '' }], [[file], { CI: '' }], [['--changed', '--pick'], { CI: '' }]]) {
 		const r = run(dir, args, env);
 		assert.doesNotMatch(r.stderr, refused, `${args.join(' ')} CI=${env.CI}`);
+		if (!args.length || args[0] === file) assert.equal(r.status, 0, `${args.join(' ')} CI=${env.CI}: ${r.stdout}${r.stderr}`);
 	}
 });

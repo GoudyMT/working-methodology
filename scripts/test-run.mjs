@@ -296,8 +296,9 @@ export async function main(argv) {
 	const testsDir = fs.existsSync(path.join(root, 'tests')) ? path.join(root, 'tests') : path.join(HERE, '..', 'tests');
 	// K150 (build 20): a full run, or --changed, which widens to every test the change reaches, is CI's job; on the owner's
 	// machine it costs minutes and finds what CI finds (K59 was a notice, and build 19 reran about 170 tests anyway). It
-	// runs here only with --owner-yes, given after the owner's pop-up yes. A map needs every test; --pick runs none.
-	if ((o.changed || !o.files.length) && !o.map && !o.pick && !process.env.CI) {
+	// runs here only with --owner-yes, given after the owner's pop-up yes. A map needs every test; --changed --pick runs
+	// none (--pick alone runs the whole suite, the build 20 sweep).
+	if ((o.changed || !o.files.length) && !o.map && !(o.pick && o.changed) && !process.env.CI) {
 		if (!o.ownerYes) {
 			process.stderr.write('test-run: refused: a full or --changed run is CI\'s job. Run only the tests you changed (node --test <file>); CI runs the rest after you push. With the owner\'s pop-up yes: add --owner-yes.\n');
 			process.exit(2);
