@@ -69,7 +69,8 @@ const GIT_READS = new Set(['add', 'diff', 'log', 'show', 'status', 'blame', 'ls-
 const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold the owner\'s answers, so they are protected files. Read them; Claude Code and the owner write them.';
-const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
+const GLOB_REASON = 'Held: this for loop reads its glob where the guard cannot follow it (a folder change first and a body that writes, IFS, or an unquoted name a file splits). Quote "$f", or run the loop from the folder, or one command per file.';
+const GUARD_REASON ='Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
 const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
@@ -968,6 +969,9 @@ function answer(input) {
 		return settings();
 	}
 	if (['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(input.tool_name)) {
+		// K145 (build 19): a loop held for how its glob is read names no protected file, so it says so, not the first
+		// protected place checked (a guard write was refused as a transcript write).
+		if (globSplits(t.command, input.tool_name, cwd)) return deny(GLOB_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
 		if (folders.length && shellWrites(t.command, input.tool_name, cwd, inFolders(folders))) return deny(FOLDERS_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);

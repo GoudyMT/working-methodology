@@ -306,6 +306,12 @@ test('a read loop piped on to a reader and two PowerShell read shapes pass; thei
 	for (const c of [`foreach($i in 'a','b'){ "x" | Set-Content .claude/guard.cjs }`, `foreach($i in 'a','b'){ node .claude/state.mjs item $i | Out-File .claude/guard.cjs }`,
 		'Get-ChildItem .claude -Recurse -Filter state.mjs | Remove-Item', '"$(Remove-Item .claude/guard.cjs)"; node .claude/state.mjs item O4',
 		'"x" > .claude/guard.cjs; node .claude/state.mjs item O4']) assert.equal(ps(c), 'deny', c);
+	// A loop held for how its glob is read says so; on 1.44.0 a guard write held this way named the session transcripts.
+	const r = spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: `cd ${P} && for f in .claude/guard*.cjs; do sed -i 1d "$f"; done | wc -l` }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+	const why = JSON.parse(r.stdout).hookSpecificOutput;
+	assert.equal(why.permissionDecision, 'deny');
+	assert.doesNotMatch(why.permissionDecisionReason, /transcripts/);
+	assert.match(why.permissionDecisionReason, /for loop reads its glob/);
 });
 
 // K117 rest (build 17, held live on 1.42.0 from the workbench): a kit script given a quoted note with a bracket in it,
