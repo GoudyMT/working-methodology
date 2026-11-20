@@ -251,9 +251,27 @@ test('a local test run reaches only the tests the branch changed; the rest waits
 	for (const c of ['node --test', 'node --test tests/a.test.mjs', 'node --test tests/b.test.mjs tests/a.test.mjs', 'node scripts/test-run.mjs --changed', 'node scripts/test-run.mjs',
 		'npm test', 'npx vitest run', 'pytest -k one', 'node scripts/test-check.mjs origin/main', 'git status && X=1 node --test']) assert.equal(at(c), 'deny', c);
 	assert.match(run('Bash', { command: 'node --test' }, { cwd: repo }, { CI: '' }).permissionDecisionReason, /^Owner's yes needed: .*whole suite/);
-	// CI runs everything; a throwaway clone on a tag (no branch) reproduces a bug with an unchanged test.
+	// The build 20 sweep: other spellings of a whole-suite run, a run from another shell tool, a new test that imports
+	// an unchanged one, and --pick alone are held; a cd before the run and a changed go package are read right.
+	fs.mkdirSync(path.join(repo, 'pkg'));
+	fs.writeFileSync(path.join(repo, 'pkg', 'x_test.go'), 'package pkg\n');
+	fs.writeFileSync(path.join(repo, 'tests', 'c.test.mjs'), "import './a.test.mjs';\n");
+	for (const c of ['npx --yes vitest run', 'npm --prefix . test', 'npm run-script test', '(node --test)', 'bash -c "npm test"', 'node scripts/test-run.mjs --pick', 'node --test tests/c.test.mjs']) assert.equal(at(c), 'deny', c);
+	assert.equal(run('Monitor', { command: 'node --test' }, { cwd: repo }, { CI: '' }).permissionDecision, 'deny', 'a run from the Monitor tool');
+	for (const c of ['cd tests && node --test b.test.mjs', 'go test ./pkg/', 'go test ./pkg']) assert.equal(at(c), 'allow', c);
+	// The repo's own config names no program the check runs.
+	const mark = path.join(repo, 'fsmonitor-ran');
+	fs.writeFileSync(path.join(repo, 'fsm.cjs'), `require('fs').writeFileSync(${JSON.stringify(mark)}, 'x');\n`);
+	g('config', 'core.fsmonitor', `node "${path.join(repo, 'fsm.cjs').split(path.sep).join('/')}"`);
+	at('node --test tests/b.test.mjs');
+	assert.equal(fs.existsSync(mark), false, 'fsmonitor ran from the check');
+	g('config', '--unset', 'core.fsmonitor');
+	// CI runs everything; a throwaway clone on a tag (no branch) reproduces a bug with an unchanged test; a detached
+	// feature commit is read like its branch.
 	assert.equal(at('node --test', { CI: 'true' }), 'allow');
 	g('add', '.'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'b'); g('switch', '-q', '--detach');
+	assert.equal(at('node --test tests/a.test.mjs'), 'deny', 'detached, not on a tag');
+	g('tag', 'v1.0.0');
 	assert.equal(at('node --test tests/a.test.mjs'), 'allow');
 });
 
