@@ -61,6 +61,14 @@ function auditNotes(body, version) {
 	});
 }
 
+/** The release notes a build record writes, by the kit's own script beside it, or null. */
+function notesOf(root, ver) {
+	const script = path.join(root, 'scripts', 'build-record.mjs');
+	if (!fs.existsSync(script)) return null;
+	const r = spawnSync(process.execPath, [script, 'notes', path.join(root, 'docs', 'builds', `${ver}.json`)], { cwd: root, encoding: 'utf8', timeout: 60000, env: { ...process.env, KIT_RECORD_ROOT: root } });
+	return r.status === 0 ? r.stdout : null;
+}
+
 /**
  * Check one release, every step.
  *
@@ -87,7 +95,11 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result }
 		log('MISSING the GitHub repo: the origin remote names no GitHub repo; pass --repo <owner/name>.');
 		return { ok: false, missing: ['the GitHub repo'] };
 	}
-	const steps = 5 + (copy ? 1 : 0) + (installed ? 1 : 0) + (result ? 1 : 0);
+	// Build 20: where the release's build record is (the kit's own flow), its title and notes are compared with the live
+	// release; a project with no record is not asked.
+	const ver = String(tag).replace(/^v/, '');
+	const recRoot = [copy, project].find((d) => d && fs.existsSync(path.join(d, 'docs', 'builds', `${ver}.json`)));
+	const steps = 5 + (copy ? 1 : 0) + (installed ? 1 : 0) + (result ? 1 : 0) + (recRoot ? 1 : 0);
 	const missing = [];
 	let n = 0;
 	const step = (title, why) => {
@@ -129,7 +141,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result }
 	}
 	step(`tag ${tag} on the merge`, tagged);
 
-	const rel = json(gh(['release', 'view', tag, '-R', slug, '--json', 'tagName,isDraft,body']));
+	const rel = json(gh(['release', 'view', tag, '-R', slug, '--json', 'tagName,name,isDraft,body']));
 	let notes = null;
 	if (!rel) notes = `no published release notes for ${tag} (gh release view ${tag})`;
 	else if (rel.isDraft) notes = `the release notes for ${tag} are still a draft`;
@@ -140,6 +152,15 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result }
 		else if (faults.length) notes = `the live notes fail the release-notes audit: ${faults.slice(0, 3).join('; ')}`;
 	}
 	step('release notes published and audited', notes);
+	if (recRoot) {
+		const want = (deps.notes || notesOf)(recRoot, ver);
+		const title = `Methodology Kit v${ver}`;
+		const norm = (t) => String(t || '').replace(/\r\n/g, '\n').split('\n').map((l) => l.trimEnd()).join('\n').trim();
+		step('release title and notes from the build record', !rel ? 'no release to compare'
+			: want === null ? `the build record's notes could not be written (node scripts/build-record.mjs notes docs/builds/${ver}.json)`
+				: rel.name !== title ? `the release title is "${one(rel.name)}", not "${title}"`
+					: norm(rel.body) !== norm(want) ? `the live notes are not the ones the build record writes: publish what node scripts/build-record.mjs release docs/builds/${ver}.json writes` : null);
+	}
 
 	const where = installed || project;
 	const st = state(where);

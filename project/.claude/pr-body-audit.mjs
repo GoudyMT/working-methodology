@@ -142,6 +142,14 @@ row('Review names the sweep tier', Boolean(tierLine), tierLine ? tierLine[1] : '
 const dimRows = review.split('\n').filter((l) => l.startsWith('| ') && !/^\| *(Dimension|-+) *\|/.test(l)).map((l) => l.toLowerCase());
 const missingDims = DIMENSIONS.filter((d) => !dimRows.some((l) => l.startsWith(`| ${d.toLowerCase()}`)));
 row('Review has a row for each project dimension', missingDims.length === 0, missingDims.length ? `missing ${missingDims.join(', ')}` : `all ${DIMENSIONS.length}`);
+// Build 20 (PR 58 lost its Supply chain and Legal rows and passed): a Feature, First push or Launch gate review covers
+// all six dimensions (rule:sweep-tiers); alignment is the Version alignment line, checked above. A Fix or Triage
+// names what it touched.
+const SIX = [['privacy'], ['supply chain'], ['legal'], ['code security'], ['gaps', 'test value']];
+if (tierLine && /^(Feature|First push|Launch gate)$/.test(tierLine[1])) {
+	const lack = SIX.filter((alts) => !dimRows.some((l) => alts.some((a) => l.startsWith(`| ${a}`)))).map((alts) => alts.join(' or '));
+	row(`Review covers the six dimensions a ${tierLine[1]} review must`, lack.length === 0, lack.length ? `missing ${lack.join(', ')}` : 'all six');
+} else row('Review covers the dimensions its tier needs', true, 'a Fix or Triage names what it touched');
 const missingClean = CLEAN.filter((p) => !norm(review).toLowerCase().includes(p.toLowerCase()));
 row('Review names secrets and the project lines', missingClean.length === 0, missingClean.length ? `missing: ${missingClean.join(' | ')}` : `all ${CLEAN.length}`);
 

@@ -108,6 +108,23 @@ test('notes that are missing, a draft, empty, failing the audit or never audited
 		assert.equal(r.ok, false, JSON.stringify(release));
 		assert.match(all(r), want);
 	}
+	// Build 20: where the release's build record is, the live title and notes must be the ones it writes (v1.45.0 went
+	// out with the changelog entry, and five of eleven titles were a bare tag); a project with no record is not asked.
+	const written = '# Methodology Kit v1.1.0\n\nOne thing.\n';
+	for (const [release, want] of [
+		[{ tagName: 'v1.1.0', name: 'v1.1.0', isDraft: false, body: written }, /title is "v1\.1\.0", not "Methodology Kit v1\.1\.0"/],
+		[{ tagName: 'v1.1.0', name: 'Methodology Kit v1.1.0', isDraft: false, body: '## 1.1.0 - 2026-11-20\n\n### Added\n\n- One thing.\n' }, /notes are not the ones the build record writes/],
+		[{ tagName: 'v1.1.0', name: 'Methodology Kit v1.1.0', isDraft: false, body: written.replace(/\n/g, '\r\n') }, null],
+	]) {
+		const t = setup();
+		fs.mkdirSync(path.join(t.project, 'docs', 'builds'), { recursive: true });
+		fs.writeFileSync(path.join(t.project, 'docs', 'builds', '1.1.0.json'), '{}');
+		t.facts.release = release;
+		t.deps.notes = () => written;
+		const r = releaseCheck(t.opts, t.deps);
+		if (want) assert.match(all(r), want);
+		else assert.equal(r.ok, true, all(r));
+	}
 });
 
 // why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)

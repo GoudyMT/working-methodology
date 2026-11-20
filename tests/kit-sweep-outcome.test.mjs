@@ -294,6 +294,12 @@ test('the Standard PR audit holds the Review section to the sweep summary and re
   assert.match(noTier.stdout, /FAIL\s+Review names the sweep tier/);
   assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Fix (security-sensitive) review of')).stdout, /PASS\s+Review names the sweep tier/);
   assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Featured review of')).stdout, /FAIL\s+Review names the sweep tier/);
+  // Build 20 (PR 58 lost its Supply chain and Legal rows): a Feature, First push or Launch gate review covers all six
+  // dimensions (rule:sweep-tiers); a Fix may name what it touched.
+  const four = honestBody().replace(/\| Supply chain[^\n]*\n/, '').replace(/\| Legal[^\n]*\n/, '');
+  assert.match(stdAudit(dir, four).stdout, /FAIL\s+Review covers the six dimensions a Feature review must[^\n]*supply chain, legal/i);
+  assert.match(stdAudit(dir, four.replace('Feature review of', 'Fix review of')).stdout, /PASS\s+Review covers/);
+  assert.match(ok.stdout, /PASS\s+Review covers/);
   // The build 13 sweep: only a parenthesis of modifiers sits between the tier and "review of".
   assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Feature flags stay off; a light review of')).stdout, /FAIL\s+Review names the sweep tier/);
   const linked = stdAudit(dir, honestBody().replace('- **Deferred:** none.', '- **Deferred:** see [the report](docs/sweeps/2026-05-14-pin.md).'));
