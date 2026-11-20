@@ -433,3 +433,27 @@ test('write names a cut section as cut, and only a missing label as one to fix',
 	fs.writeFileSync(memory, fs.readFileSync(memory, 'utf8').replace('## Open lessons', '## Lessons kept elsewhere'));
 	assert.match(run(dir, 'write').stdout, /fix before the next session: a section label is not found[^\n]*_Loop Learnings\.md/); // pin: 1 the closeout acts on this line
 });
+
+// CM6 (a), K170 (the S1 replay, reproduced on 1.47.0: resume-packet.mjs never names _State.json): the 1.34.0 plan said
+// the packet hashes _State.json, so a state change made with no view rendered was invisible to the check. A project
+// with a state file now has it hashed, and a change, an add or a removal names it for a read; one with none is not asked.
+// why: catches a state change after the closeout that the resume check never names
+test('the packet hashes _State.json when there is one, and the check names it when it changed (CM6)', () => {
+	const dir = project();
+	run(dir, 'write');
+	assert.doesNotMatch(fs.readFileSync(packet(dir), 'utf8'), /_State\.json/, 'no state file, nothing hashed');
+	assert.doesNotMatch(verdict(run(dir, 'check').stdout), /_State\.json/);
+	fs.writeFileSync(path.join(dir, '_State.json'), '{"next":"a"}\n');
+	assert.match(verdict(run(dir, 'check').stdout), /_State\.json/, 'a state file added since the write');
+	run(dir, 'write');
+	assert.match(fs.readFileSync(packet(dir), 'utf8'), /^[0-9a-f]{16} _State\.json$/m);
+	const same = run(dir, 'check').stdout;
+	assert.match(same, /^same _State\.json$/m);
+	assert.doesNotMatch(verdict(same), /_State\.json/);
+	fs.writeFileSync(path.join(dir, '_State.json'), '{"next":"b"}\n');
+	const changed = run(dir, 'check').stdout;
+	assert.match(changed, /^CHANGED _State\.json$/m);
+	assert.match(verdict(changed), /_State\.json/);
+	fs.rmSync(path.join(dir, '_State.json'));
+	assert.match(run(dir, 'check').stdout, /^missing _State\.json$/m);
+});
