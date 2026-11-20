@@ -808,6 +808,10 @@ export function crashedSweep() {
 export const recallTools = () => import('../scripts/recall.mjs');
 export const RECALL = path.resolve('scripts/recall.mjs');
 export const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';
+// K198 (1.48.0): the lines the fixed gate reads beside a gate line - two blind scorers, and no question worse than the
+// same-day release - and a record that passes the gate command's floor of 14.
+export const K198_LINES = 'scorers: 2\nworse: none';
+export const PASS_GATE = `${K198_LINES}\ngate: a median 14 baseline 9 brief v1 keys v4 control 0`;
 export const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
 
 // Recall probes: the runner makes its own throwaway folder, so no folder name or label can reach the result.

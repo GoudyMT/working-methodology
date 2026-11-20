@@ -17,12 +17,11 @@
 // Claude folder is a throwaway under kit-probes: a build's new skills can then be measured without touching ~/.claude.
 //
 // CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
-// last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
-// the owner's marker. A median under the current keys' own pass bar fails whatever the marker says: the marker can
-// accept a moved ruler, never a median under that bar. A new bar is a new keys version, which is the owner's. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
-// baseline may not fall under the last one recorded on the same ruler, and a PR may not move or reword its ruler,
-// unmarked. The floor is the last baseline, not the last median: one question is noise, so an honest re-measure may land
-// a point under the last score, though never under the pass bar.
+// last added gate line shows a median of 14 or more (K198), no lower than the release measured the same day, on the
+// current brief and keys, with two blind scorers and no question worse than that release; the behaviour line is held
+// the same way. No marker passes a miss (K198 removed the owner's): a miss is fixed. The numbers are typed and the runs
+// are not in the repo, so the check holds them against main: a baseline may not fall under the last one recorded on
+// the same ruler, and a PR may not move or reword its ruler.
 //
 // Usage: node scripts/recall.mjs <label> [kit folder]    (the kit folder defaults to this one)
 //        node scripts/recall.mjs <label> --no-kit        (the control: the same path, nothing installed)
@@ -62,6 +61,15 @@ const CONTROL_LINE = /^control: (\d+)$/;
 // gate line). Rule text changed after it ships unscored, so the gate refuses it.
 const SCORED_LINE = /^scored: ([0-9a-f]{40})$/;
 const CONTROL_FROM = 4;
+// K198 (Max's fixed gate, 2026-11-20): every graded PR needs a median of 14 or more on both suites, two blind scorers
+// on the wording runs, and no question or scenario worse than the release measured the same day. There is no owner
+// override: a miss is fixed, never accepted. The floor sits here, not in the keys' Pass line, so the ruler does not move;
+// CI runs the base branch's copy, so a PR cannot lower it. Each fact sits on its own line, as the control does (D1).
+export const FLOOR = 14;
+const SCORERS_LINE = /^scorers: (\d+)$/;
+const WORSE_LINE = /^worse: (.+)$/;
+const BEHAVE_WORSE_LINE = /^behaviour worse: (.+)$/;
+const OWNER_MARK = /\sowner-accepted\s*$/;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
 export function currentVersion(text) {
@@ -269,57 +277,72 @@ export function runHeader({ label, keys, facts, when, cli }) {
 // scored is the commit the run measured (null when the PR names none); left out, the caller read no scored line and
 // the K116 check is not asked for (the gate command always reads it).
 // behaviour is { suite, bar } from the head's suite when the caller reads the behaviour line; left out, it is not asked.
-export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour }) {
+// floor is the K198 floor the gate command passes; left out (a direct call), the K198 lines are not asked for.
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour, floor }) {
   const all = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   // A file with no newline at its end shows its last line removed and added back unchanged when an entry is
-  // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no drop, and
-  // the re-added copy is never the PR's own line. With no new line of its own, a re-add stays a drop.
-  const removedGate = removed.map((l) => l.trim()).filter((l) => /^gate:/i.test(l));
+  // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no
+  // drop, and the re-added copy is never the PR's own line. With no new line of its own, a re-add stays a drop.
+  const removedLines = removed.map((l) => l.trim());
+  const removedGate = removedLines.filter((l) => /^gate:/i.test(l));
   const own = all.filter((l) => !removedGate.includes(l));
   const lines = own.length ? own : all;
   const dropped = removedGate.some((l) => !(own.length && all.includes(l)));
-  if (!lines.length && !dropped && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
-  if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the floor rests on it. Only the owner may: add a current gate line ending in owner-accepted' };
+  const graded = changed.some((f) => GRADED.test(f));
+  if (!lines.length && !dropped && !graded) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
+  // K198: no line the PR adds may carry the owner's marker; a recorded line only shown again is history.
+  const marked = added.map((l) => l.trim()).filter((l) => /^(gate|behaviour):/.test(l) && OWNER_MARK.test(l) && !removedLines.includes(l));
+  if (marked.length) return { ok: false, detail: `the owner-accept override is gone (K198): a miss is fixed, never accepted, so no line may end in owner-accepted: ${marked[marked.length - 1]}` };
+  if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the floor rests on it' };
   if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it` };
   const last = lines[lines.length - 1];
   const m = last.match(GATE_LINE);
   if (!m) return { ok: false, detail: `cannot read the gate line: ${last}` };
-  const [, label, median, baseline, usedBrief, usedKeys, inline, accepted] = m;
+  const [, label, median, baseline, usedBrief, usedKeys, inline] = m;
   // CI runs the base branch's gate, which reads only the gate line, so the control sits on its own line.
   const control = inline ?? added.map((l) => l.trim().match(CONTROL_LINE)).filter(Boolean).pop()?.[1];
-  // Fixing a typed record on an older ruler is the owner's, in a PR that changes nothing the ruler grades (S18-6).
-  if ((Number(usedBrief) !== brief || Number(usedKeys) !== keys) && accepted && !changed.some((f) => GRADED.test(f))) {
-    return { ok: true, detail: `${label}: a correction to a line on brief v${usedBrief} keys v${usedKeys}; the owner accepted it` };
-  }
   if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
     return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
   }
   if (Number(usedKeys) >= CONTROL_FROM && control == null) return { ok: false, detail: `${label}: from keys v${CONTROL_FROM} a gate line names the control, on its own line beside it: "control: <n>"` };
   if (control != null && Number(control) >= Number(baseline)) return { ok: false, detail: `${label}: control ${control} is not under the baseline ${baseline}, so the score does not show the rules` };
-  if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
+  if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
-  const graded = scored !== undefined && changed.some((f) => GRADED.test(f));
-  const behave = behaviour && changed.some((f) => GRADED.test(f)) ? added.map((l) => l.trim().match(BEHAVE_LINE)).filter(Boolean).pop() : null;
-  if (behave && Number(behave[2]) < behaviour.bar) return { ok: false, detail: `${behave[1]}: behaviour median ${behave[2]} is under the suite's pass bar of ${behaviour.bar}, and owner-accepted does not pass it` };
-  const behaviourFaults = !behaviour || !changed.some((f) => GRADED.test(f)) ? [] : !behave
+  const scoredAsked = scored !== undefined && graded;
+  const behave = behaviour && graded ? added.map((l) => l.trim().match(BEHAVE_LINE)).filter(Boolean).pop() : null;
+  if (behave && Number(behave[2]) < behaviour.bar) return { ok: false, detail: `${behave[1]}: behaviour median ${behave[2]} is under the suite's pass bar of ${behaviour.bar}` };
+  const behaviourFaults = !behaviour || !graded ? [] : !behave
     ? ['it records no behaviour line: add the line recall-behave.mjs line prints for the candidate, baseline and control runs']
     : [
       Number(behave[4]) !== behaviour.suite && `the behaviour runs were on suite v${behave[4]}; the current suite is v${behaviour.suite}`,
       Number(behave[2]) < Number(behave[3]) && `behaviour median ${behave[2]} is under its baseline ${behave[3]}`,
       Number(behave[5]) >= Number(behave[3]) && `behaviour control ${behave[5]} is not under its baseline ${behave[3]}`,
     ].filter(Boolean);
+  // K198: the fixed gate's own facts, each from the line the score tools print beside the gate line.
+  const lastOf = (re) => added.map((l) => l.trim().match(re)).filter(Boolean).pop();
+  const scorers = lastOf(SCORERS_LINE);
+  const worse = lastOf(WORSE_LINE);
+  const behaveWorse = lastOf(BEHAVE_WORSE_LINE);
+  const fixed = floor == null ? [] : [
+    Number(median) < floor && `median ${median} is under the floor of ${floor}`,
+    (!scorers || Number(scorers[1]) !== 2) && 'the wording runs need two blind scorers: add "scorers: 2", as recall-score.mjs score prints it',
+    !worse ? 'add the "worse:" line recall-score.mjs score prints' : worse[1].trim() !== 'none' && `questions ${worse[1].trim()} do worse than the same-day release`,
+    behave && Number(behave[2]) < floor && `behaviour median ${behave[2]} is under the floor of ${floor}`,
+    behave && (!behaveWorse ? 'add the "behaviour worse:" line recall-behave.mjs line prints' : behaveWorse[1].trim() !== 'none' && `scenarios ${behaveWorse[1].trim()} do worse than the same-day release`),
+  ].filter(Boolean);
   const faults = [
+    ...fixed,
     ...behaviourFaults,
-    behaviour && behaviour.moved && changed.some((f) => GRADED.test(f)) && `this PR changes the behaviour suite it is graded on (suite v${behaviour.suite})`,
-    graded && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
-    graded && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
+    behaviour && behaviour.moved && graded && `this PR changes the behaviour suite it is graded on (suite v${behaviour.suite})`,
+    scoredAsked && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
+    scoredAsked && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
     dropped && 'this PR removes a recorded gate line',
     moved && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
     !moved && was.baseline != null && Number(baseline) < was.baseline && `baseline ${baseline} is under the last recorded baseline ${was.baseline}`,
     Number(median) < Number(baseline) && `median ${median} is under the baseline ${baseline}`,
   ].filter(Boolean);
   if (!faults.length) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
-  return accepted || (behave && behave[6]) ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}. Only the owner may pass this: the gate line ends in owner-accepted` };
+  return { ok: false, detail: `${label}: ${faults.join('; ')}. A miss is fixed, not accepted (K198)` };
 }
 
 function gate([base, head]) {
@@ -377,6 +400,7 @@ function gate([base, head]) {
     return { suite: s.version, bar: bar || Infinity, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
   })() : undefined;
   const r = checkGate({
+    floor: FLOOR,
     behaviour,
     scored,
     after,

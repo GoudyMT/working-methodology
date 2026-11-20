@@ -234,6 +234,10 @@ const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.lengt
  * The gate line from saved runs: the candidate's median, the released baseline's median and the control's, read from
  * each run's result.json, never typed (the wording gate's numbers are typed, which is how S18-6 slipped).
  */
+// K198 (Max's picks, 2026-11-20): 5 candidate and 5 release runs, flat, the release measured the same day; a second
+// line names each scenario the candidate passed in fewer runs than the release, for the gate's no-worse check.
+const RUNS = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
 export function behaviourLine({ label, cand, base, control }) {
 	const read = (d) => JSON.parse(fs.readFileSync(path.join(d, 'result.json'), 'utf8'));
 	const [c, b, k] = [cand.map(read), base.map(read), control.map(read)];
@@ -241,7 +245,13 @@ export function behaviourLine({ label, cand, base, control }) {
 	if (suites.size !== 1) throw new Error(`runs on more than one suite version: ${[...suites].join(', ')}`);
 	if (!c.length || !b.length || !k.length) throw new Error('a line needs candidate, baseline and control runs');
 	if (b.some((r) => !r.released) || k.some((r) => !r.noKit)) throw new Error('a baseline run is on a released kit, and the control on none');
-	return `behaviour: ${label} median ${median(c.map((r) => r.total))} baseline ${median(b.map((r) => r.total))} suite v${[...suites][0]} control ${median(k.map((r) => r.total))}`;
+	if (c.length !== RUNS || b.length !== RUNS) throw new Error(`a gate is ${RUNS} candidate runs and ${RUNS} release runs, flat; got ${c.length} and ${b.length}`);
+	const times = [...c, ...b].map((r) => Date.parse(r.when ?? ''));
+	if (times.some(Number.isNaN) || Math.max(...times) - Math.min(...times) > DAY_MS) throw new Error('the release arm must be measured the same day as the candidate: every candidate and release run needs its time, within a day of the others');
+	const passes = (runs, id) => runs.filter((r) => r.rows.some((x) => x.id === id && x.passed)).length;
+	const ids = [...new Set([...c, ...b].flatMap((r) => r.rows.map((x) => x.id)))];
+	const worse = ids.filter((id) => passes(c, id) < passes(b, id));
+	return `behaviour: ${label} median ${median(c.map((r) => r.total))} baseline ${median(b.map((r) => r.total))} suite v${[...suites][0]} control ${median(k.map((r) => r.total))}\nbehaviour worse: ${worse.join(', ') || 'none'}`;
 }
 
 async function main(argv) {
@@ -310,7 +320,7 @@ async function main(argv) {
 	const total = rows.filter((r) => r.passed).length;
 	const cost = rows.reduce((n, r) => n + r.cost, 0);
 	if (before && only && (before.released !== released || before.noKit !== noKit)) throw new Error(`--only: ${name} was run on another kit side; start a new label`);
-	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, total, cost, rows }, null, 1));
+	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, total, cost, rows, when: new Date().toISOString() }, null, 1));
 	console.log(`${name}: ${total} of ${rows.length} on suite v${suite.version}, $${cost.toFixed(2)}`);
 }
 

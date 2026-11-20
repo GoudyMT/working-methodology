@@ -207,3 +207,29 @@ test('scenarios 5 and 10 fail a session that skips the behaviour by another rout
 	assert.equal(passes('12-carry-a-high', call('PowerShell', { command: 'gh.exe pr create --fill' }), result('')), false);
 	assert.equal(passes('14-ask-for-a-yes', call('Bash', { command: 'gh -R a/b pr merge 3 --squash' }), result('')), false);
 });
+
+// K198 (Max's picks, 2026-11-20): the behaviour line is read from 5 candidate and 5 release runs measured the same
+// day, and names every scenario the candidate passed in fewer runs than the release, for the gate's no-worse check.
+// why: guards rule:ci-gate
+test('the behaviour line (K198) needs 5 runs a side from the same day and names each scenario that did worse', async () => {
+	const { behaviourLine } = await import('../scripts/recall-behave.mjs');
+	const dir = makeTemp('k198-behave-');
+	let seq = 0;
+	const save = (side, fails = [], when = '2026-11-20T10:00:00.000Z') => {
+		const d = path.join(dir, `r${++seq}`);
+		fs.mkdirSync(d);
+		const rows = ['1-a', '2-b', '3-c'].map((id) => ({ id, passed: !fails.includes(id) }));
+		fs.writeFileSync(path.join(d, 'result.json'), JSON.stringify({ suite: 2, released: side === 'base', noKit: side === 'control', total: rows.filter((r) => r.passed).length, rows, when }));
+		return d;
+	};
+	const five = (side, fails = []) => Array.from({ length: 5 }, (_, i) => save(side, i === 0 ? fails : []));
+	const control = [save('control', ['1-a', '2-b', '3-c'])];
+	assert.equal(behaviourLine({ label: 'x', cand: five('cand'), base: five('base'), control }), 'behaviour: x median 3 baseline 3 suite v2 control 0\nbehaviour worse: none');
+	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base'), control }), /\nbehaviour worse: 2-b$/);
+	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base', ['2-b']), control }), /\nbehaviour worse: none$/);
+	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand').slice(1), base: five('base'), control }), /5 candidate runs and 5 release runs/);
+	const late = [...five('base').slice(1), save('base', [], '2026-11-18T09:00:00.000Z')];
+	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand'), base: late, control }), /same day/);
+	const untimed = [...five('base').slice(1), save('base', [], null)];
+	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand'), base: untimed, control }), /same day/);
+});

@@ -104,7 +104,7 @@ jobs:
       - name: Candidate runs
         shell: bash
         run: |
-          for i in 1 2 3; do node base/scripts/recall.mjs "cand-$i" cand; done
+          for i in 1 2 3 4 5; do node base/scripts/recall.mjs "cand-$i" cand; done
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -112,7 +112,7 @@ jobs:
           path: base/reports/evals/cand-*.md
           retention-days: 1
 
-  # Three baseline runs and one control, apart from the candidate's code.
+  # Five baseline runs (K198: 5 a side, the same day) and one control, apart from the candidate's code.
   baseline:
     if: github.ref == 'refs/heads/main' && vars.ANTHROPIC_FEDERATION_RULE_ID != ''
     runs-on: ubuntu-latest
@@ -179,7 +179,7 @@ jobs:
       - name: Baseline and control runs
         shell: bash
         run: |
-          for i in 1 2 3; do node base/scripts/recall.mjs "base-$i" released; done
+          for i in 1 2 3 4 5; do node base/scripts/recall.mjs "base-$i" released; done
           node base/scripts/recall.mjs control-1 --no-kit
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -263,11 +263,11 @@ jobs:
         shell: bash
         run: |
           in="$RUNNER_TEMP/in"
-          for f in cand-1 cand-2 cand-3; do cp "$in/candidate/$f.md" base/reports/evals/ || exit 1; done
-          for f in base-1 base-2 base-3 control-1; do cp "$in/baseline/$f.md" base/reports/evals/ || exit 1; done
-          [ "$(find "$in/candidate" -mindepth 1 | wc -l)" -eq 3 ] && [ "$(find "$in/baseline" -mindepth 1 | wc -l)" -eq 4 ] || { echo "An artifact holds files no job should make."; exit 1; }
+          for f in cand-1 cand-2 cand-3 cand-4 cand-5; do cp "$in/candidate/$f.md" base/reports/evals/ || exit 1; done
+          for f in base-1 base-2 base-3 base-4 base-5 control-1; do cp "$in/baseline/$f.md" base/reports/evals/ || exit 1; done
+          [ "$(find "$in/candidate" -mindepth 1 | wc -l)" -eq 5 ] && [ "$(find "$in/baseline" -mindepth 1 | wc -l)" -eq 6 ] || { echo "An artifact holds files no job should make."; exit 1; }
 
-      # One fresh blind scorer under main's brief, then the gate line from the sealed map: no number is typed.
+      # Two fresh blind scorers under main's brief (K198), then the gate lines from the sealed map: no number is typed.
       - name: Blind score
         shell: bash
         run: |
@@ -281,10 +281,12 @@ jobs:
           deny="$(node -e "const a=(p)=>'/'+p+'/**';const [d,...no]=process.argv.slice(1);console.log(JSON.stringify({permissions:{allow:['Read('+a(d)+')','Glob('+a(d)+')'],deny:no.flatMap((p)=>['Read('+a(p)+')','Glob('+a(p)+')'])}}))" "$desk" "$out" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/oidc" /proc "$HOME/.claude")"
           brief="$(cat base/docs/evals/recall-scorer-brief.md)"
           keys="$(cat base/docs/evals/recall-questions.md)"
-          ( cd "$desk" && claude -p "$(printf '%s\n\n%s\n\n%s\n' "$brief" "$keys" 'Score every run file R*.md in this folder under the current brief and keys above.')" \
-              --setting-sources project --settings "$deny" --allowedTools 'Read,Glob' --disallowedTools 'Edit,Write,Bash,WebFetch,WebSearch,Agent' --max-turns 60 ) > "$out/scorer.txt"
+          for s in a b; do
+            ( cd "$desk" && claude -p "$(printf '%s\n\n%s\n\n%s\n' "$brief" "$keys" 'Score every run file R*.md in this folder under the current brief and keys above.')" \
+                --setting-sources project --settings "$deny" --allowedTools 'Read,Glob' --disallowedTools 'Edit,Write,Bash,WebFetch,WebSearch,Agent' --max-turns 60 ) > "$out/scorer-$s.txt" || exit 1
+          done
           label="ci-$(printf '%s' "$MEASURE_REF" | tr -c 'A-Za-z0-9.-' '-')"
-          node base/scripts/recall-score.mjs score "$out/scorer.txt" "$out/sealed-map.json" "$label" | tee -a "$GITHUB_STEP_SUMMARY"
+          node base/scripts/recall-score.mjs score "$out/scorer-a.txt" "$out/scorer-b.txt" "$out/sealed-map.json" "$label" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # The blinded runs, the scorer's output and the map: never the token folder.
       - name: Keep the runs
