@@ -71,7 +71,7 @@ const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', p
 const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold the owner\'s answers, so they are protected files. Read them; Claude Code and the owner write them.';
 const GLOB_REASON = 'Never by a tool: this for loop reads its glob where the guard cannot follow it (a folder change first and a body that writes, IFS, or an unquoted name a file splits). Quote "$f", or run the loop from the folder, or one command per file.';
 const DASH_REASON = 'Never by a tool: a wildcard here matches a file whose name starts with a dash, which the shell hands on as an option (sed -i edits in place). Rename that file, or name the files you mean.';
-const DASH_UNSURE = 'Never by a tool: a wildcard here is read in a folder the guard cannot follow (a bare cd, cd -, popd, a cd to a variable, or a substitution), so it cannot rule out a file whose name starts with a dash. Name the folder plainly, or name the files you mean.';
+const DASH_UNSURE = 'Never by a tool: part of this command is more than the guard reads as bash does (a folder change it cannot follow, a here-document, an extended pattern, a glob option, or text run as shell), so it cannot rule out a wildcard matching a file whose name starts with a dash. Run the wildcard from a plainly named folder, or name the files you mean.';
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
 const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
@@ -596,13 +596,20 @@ function dashGlob(command, tool, start) {
 	const words = read.cmds.flat();
 	// The commit security review of this fix: text run as shell (eval, bash -c, source) is read again as a command of
 	// its own, since its quotes hide its wildcards and cd's from the reading above; any of it held is held.
+	// The build 20 sweep: text run after a cd is read from the start folder below, and text from a variable is not
+	// read at all, so a wildcard in either is unsure.
+	let cdBefore = false;
 	for (const cmd of read.cmds) {
 		const names = cmd.map(wordText);
 		const k = names.findIndex((n, j) => n === 'eval' || ((/(^|\/)(ba|z|da|k)?sh(\.exe)?$/.test(n)) && names.slice(j + 1).some((x) => /^-\w*c/.test(x))));
 		if (k >= 0) {
-			const inner = dashGlob(names.slice(k + 1).filter((x) => !/^-\w*c$/.test(x)).join(' '), tool, start);
+			const text = names.slice(k + 1).filter((x) => !/^-\w*c$/.test(x)).join(' ');
+			if (cdBefore && /[*?[]/.test(text)) return 'unsure';
+			if (/[*?[]/.test(c) && cmd.slice(k + 1).some((w) => w.some(([ch]) => ch === '$'))) return 'unsure';
+			const inner = dashGlob(text, tool, start);
 			if (inner) return inner;
 		}
+		if (names.some((n) => /^(cd|pushd|popd|chdir)$/.test(n))) cdBefore = true;
 	}
 	if (read.cmds.some((cmd) => /^(source|\.)$/.test(wordText(cmd[0] || [])))) read.unsure = read.unsure || words.some(wordGlob);
 	// A cd the word split did not see (inside text run as shell, or glued to another word) is more than this follows.
@@ -617,7 +624,8 @@ function dashGlob(command, tool, start) {
 	});
 	// The second commit review: a wildcard inside a substitution and an extended pattern (cut apart by the word split) are
 	// more than this reading follows, and so are a glob option turned on, braces or a bracket class in the first part.
-	if (read.unsure || read.ext) return 'unsure';
+	// A here-document the reader cannot end hides no wildcard when the command has none (the build 20 sweep).
+	if (read.ext || (read.unsure && /[*?[]/.test(c))) return 'unsure';
 	if (!firsts.length) return false;
 	if (cdRaw > cdSeen) return 'unsure';
 	if (/(^|[^\w-])(shopt|setopt)(?![\w-])|(^|[^\w-])set\s+[-+]\w*o/.test(c)) return 'unsure';

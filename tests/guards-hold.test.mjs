@@ -345,6 +345,11 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 	fs.writeFileSync(path.join(clean, 'a/b/-i'), 'x\n');
 	const at = (command) => decide('Bash', { command }, { cwd: clean });
 	for (const c of ['cd\nsed -n 1p *', 'cd a && cd b && sed -n 1p *', 'cd a; cd b; sed -n 1p *', 'eval "cd a/b" && sed -n 1p *']) assert.equal(at(c), 'deny', c);
+	// The build 20 sweep: shell text run after a cd, and shell text from a variable, beside a wildcard, are held by the
+	// dash reading itself (other readings held them only as a guess at a protected file).
+	const dashWhy = (command) => JSON.parse(spawnSync(process.execPath, HOOKS, { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: clean }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } }).stdout || '{"hookSpecificOutput":{}}').hookSpecificOutput.permissionDecisionReason || '';
+	for (const c of ["cd a/b && bash -c 'sed -n 1p *'", "c='sed -n 1p *'; cd a/b; bash -c \"$c\""]) assert.match(dashWhy(c), /starts with a dash/, c);
+	assert.equal(at('cat <<E\nhello'), 'allow', 'a here-document with no end and no wildcard hides none');
 	assert.equal(at('cd a && cd b && ls *.md'), 'allow', 'no dash name fits *.md');
 	assert.equal(bash('sed -n 1p * .claude/guard.cjs'), 'allow', 'with no dash name the read passes');
 });
