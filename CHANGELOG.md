@@ -10,7 +10,7 @@ The guards pass a read loop piped on and a printed PowerShell string, a body tha
 ### Changed
 - The Standard PR and release notes audits need a Visuals section when a body claims a measured move (a size, tokens, time or dollars across an arrow or a Summary row); tallies never count.
 - The component spec and component security checklist install only where the project shows a UI (a UI framework in package.json, or a components folder), with `--with-templates web`, or where a copy is already in place.
-- A build pushes its branch and opens its PR as a draft right after the first commit, so main's checks run on the branch from the first push.
+- A build pushes its branch and opens its PR as a draft right after the first commit, so main's checks run on the branch from the first push; it stays a draft until the sweep, and a done feature runs its sweep before anything else on its PR.
 
 ### Fixed
 - The guards pass a read loop over guard files piped on to a reader (wc, head, tail, grep, sort with no output file), from a plain cd too; a pipe to a writer, a shell or a file, and a wildcard matching a dash-named file, are held.

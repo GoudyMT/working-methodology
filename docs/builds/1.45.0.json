@@ -57,7 +57,7 @@
   {
    "id": "DRAFT-PR-EARLY",
    "kind": "changed",
-   "text": "A build pushes its branch and opens its PR as a draft right after the first commit, so main's checks run on the branch from the first push.",
+   "text": "A build pushes its branch and opens its PR as a draft right after the first commit, so main's checks run on the branch from the first push; it stays a draft until the sweep, and a done feature runs its sweep before anything else on its PR.",
    "evidence": "user/skills/plan-feature/SKILL.md",
    "reach": "projects"
   },
