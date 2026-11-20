@@ -1241,6 +1241,41 @@ test('the prompt hook cues the closeout once per release, from a release tag at 
   assert.equal(run('and now?', '77777777-2222-3333-4444-555555555555').stdout, '', 'a tag that is not a release is no cue');
 });
 
+// K192 (the owner's pick, 2026-11-20): recall Q4, Q7 and Q9 missed one part of their rule at scorer-noise level. The
+// prompt hook cues the rule's own words when a message names its topic; each cue quotes its source word for word.
+// why: catches a message on a push, a swarm or a later idea that reaches the session with no rule in front of it
+test('the prompt hook cues a rule in its own words when a message names its topic (K192)', async () => {
+  const kitTools = await import('../scripts/kit.mjs');
+  assert.equal(typeof kitTools.ruleCues, 'function', 'K192: the rule cues');
+  const data = JSON.parse(read(path.resolve('rules/cues.json')));
+  const index = read(path.resolve('project/standards/INDEX.md'));
+  for (const c of data.cues) {
+    const src = read(path.resolve(c.source));
+    for (const q of c.quotes) assert.ok(src.includes(q), `${c.rule}: not word for word in ${c.source}: ${q}`);
+    assert.match(index, new RegExp(`^\\| ${c.rule} \\| [^|]+ \\| \`${c.home.replace(/[.]/g, '\\.')}\` \\|`, 'm'), `${c.rule} lives in ${c.home}`);
+  }
+  const cue = (prompt) => kitTools.ruleCues({ kit: path.resolve('.'), prompt });
+  // The three recall questions, and the words real work uses.
+  assert.match(cue('My branch is ready. Can I push it and open the PR?'), /^rule:outward-acts \(AGENTS\.md\): .*never main, a tag, a force or a delete/m);
+  assert.match(cue('I want to run five review agents at once. What do I do first?'), /^rule:swarm-contract \(standards\/agent-teams\.md\): .*approve\.mjs.*ASK: show the table/m);
+  assert.match(cue('While building I noticed an unrelated idea for later. Where does it go?'), /^rule:parking-lot \(standards\/reviews-and-findings\.md\): .*Parking Lot.*all gates green/m);
+  assert.match(cue('fan out three subagents over src/'), /rule:swarm-contract/);
+  for (const quiet of ['fix the greeting', 'read the agents file', 'push back on this design?'.replace('push back', 'argue')]) assert.equal(cue(quiet), '', quiet);
+  // Through the hook, beside the kit check.
+  const { kit, home, proj } = caseKit();
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  copyKitCli(kit);
+  fs.mkdirSync(path.join(kit, 'rules'), { recursive: true });
+  fs.copyFileSync(path.resolve('rules/cues.json'), path.join(kit, 'rules', 'cues.json'));
+  const r = spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: JSON.stringify({ prompt: 'Push the branch and open its PR.' }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
+  assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /rule:outward-acts/);
+  // A kit with no cues file says nothing more.
+  fs.rmSync(path.join(kit, 'rules', 'cues.json'));
+  const none = spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: JSON.stringify({ prompt: 'Push the branch.' }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
+  assert.equal(none.stdout, '');
+});
+
 // why: guards rule:outward-acts
 test('the load guard refuses a busy CPU and names what is using it', async () => {
   const { createRequire } = await import('node:module');

@@ -1,0 +1,35 @@
+{
+  "about": "K192 (the owner's pick, 2026-11-20): rule cues. When a message names one of these topics, the prompt hook puts the rule's own words in front of the session, quoted word for word from the source file named, so a cue never says more or less than its rule. A test holds each quote to its source. Recall then partly measures the cue, so behaviour scenarios 4, 7 and 9 check the same rules by acts.",
+  "cues": [
+    {
+      "rule": "outward-acts",
+      "home": "AGENTS.md",
+      "source": "rules/_parts/agents-head.md",
+      "when": "\\b(push(es|ed|ing)?|pull requests?|PRs?)\\b",
+      "quotes": [
+        "A push of a feature branch and opening its PR need no yes: do them, then tell the owner.",
+        "any push outside the push bound (its four limits: never main, a tag, a force or a delete) need the owner's yes in the choice pop-up"
+      ]
+    },
+    {
+      "rule": "swarm-contract",
+      "home": "standards/agent-teams.md",
+      "source": "rules/agent-teams.md",
+      "when": "\\b(swarm|fan-?out|sub-?agents?|review agents?|agents at once|(two|three|four|five|six|seven|eight|nine|ten|several|many|\\d+) (\\w+ )?agents)\\b",
+      "quotes": [
+        "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract.",
+        "STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs` (PowerShell: full path; or your Claude config folder), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons)."
+      ]
+    },
+    {
+      "rule": "parking-lot",
+      "home": "standards/reviews-and-findings.md",
+      "source": "rules/reviews-and-findings.md",
+      "when": "\\bparking lot\\b|\\bout of scope\\b|\\bideas?\\b[^.?!]*\\blater\\b|\\blater\\b[^.?!]*\\bideas?\\b",
+      "quotes": [
+        "**Capture:** one line under `## Parking Lot` at the top of the active plan",
+        "`build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep"
+      ]
+    }
+  ]
+}

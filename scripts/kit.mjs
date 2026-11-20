@@ -1940,6 +1940,25 @@ export function closeoutCue({ projectDir, prompt = '', session = '' }) {
 }
 
 /**
+ * K192 (the owner's pick, 2026-11-20): when a message names a topic in the kit's rules/cues.json, the rule's own
+ * words, quoted from its source, go in front of the session. A kit with no cues file, or a bad one, says nothing.
+ *
+ * Args:
+ *     ctx: { kit, prompt }
+ *
+ * Returns:
+ *     one line per matching rule, or ''
+ */
+export function ruleCues({ kit, prompt = '' }) {
+  let data;
+  try { data = JSON.parse(fs.readFileSync(path.join(kit, 'rules', 'cues.json'), 'utf8')); } catch { return ''; }
+  return (data.cues || [])
+    .filter((c) => { try { return new RegExp(c.when, 'i').test(prompt); } catch { return false; } })
+    .map((c) => `rule:${c.rule} (${c.home}): ${c.quotes.join(' ... ')}`)
+    .join('\n');
+}
+
+/**
  * What is waiting for the kit before a compact: fold-back in report mode for this project and
  * ~/.claude. It never changes a file outside the kit's reports/ folder; the owner sorts each item.
  */

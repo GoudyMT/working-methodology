@@ -94,8 +94,11 @@ async function main() {
 		if (text) emit(text);
 	} else if (MODE === 'prompt') {
 		// K191: the closeout cue rides the same message; a kit too old to have it says nothing.
-		const cue = typeof lib.closeoutCue === 'function' ? lib.closeoutCue({ ...ctx, prompt: String(INPUT.prompt || '') }) : '';
-		const text = [lib.promptCheckReport(ctx), cue].filter(Boolean).join('\n');
+		const prompt = String(INPUT.prompt || '');
+		const cue = typeof lib.closeoutCue === 'function' ? lib.closeoutCue({ ...ctx, prompt }) : '';
+		// K192: the rule a message names, in the rule's own words.
+		const rules = typeof lib.ruleCues === 'function' ? lib.ruleCues({ kit, prompt }) : '';
+		const text = [lib.promptCheckReport(ctx), cue, rules].filter(Boolean).join('\n');
 		if (text) emit(text);
 	} else if (MODE === 'pre-compact') {
 		emit(`${packet}\n${lib.preCompactReport(ctx)}`);
