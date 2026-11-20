@@ -147,7 +147,7 @@ test('send puts a scrubbed report in the PC inbox, and an issue goes only on the
 	assert.equal(issueRoute(home), null);
 	// A line that is not a row does not stop the start-up report's reads.
 	fs.appendFileSync(log, 'null\n7\n');
-	assert.equal(waiting(home).held, 0);
+	assert.doesNotThrow(() => assert.equal(waiting(home).held, 0));
 });
 
 // why: guards rule:kit-standards (a report becomes a list row marked suspect, a repeat raises a count, not a row, and a
@@ -206,8 +206,9 @@ test('a project hears which release closed its report, once', () => {
 	// A line that is not a row in the project's own records stops neither.
 	fs.appendFileSync(path.join(projectDir, '.kit', 'reports', 'heard.jsonl'), 'null\n');
 	fs.appendFileSync(path.join(projectDir, '.kit', 'reports', 'sent.jsonl'), 'null\n');
-	assert.deepEqual(unheard(home, projectDir), []);
-	assert.equal(status({ home, projectDir }).code, 0);
+	// The 1.47.0 sweep: a null line threw, and the start-up report and status stopped.
+	assert.doesNotThrow(() => assert.deepEqual(unheard(home, projectDir), []));
+	assert.doesNotThrow(() => assert.equal(status({ home, projectDir }).code, 0));
 	// The build record carries the ids, in the report shape only.
 	assert.ok(problems({ reports: ['R-1'] }).some((p) => /reports is not a list/.test(p)));
 	assert.ok(!problems({ reports: [id] }).some((p) => /reports is not a list/.test(p)));

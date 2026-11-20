@@ -49,7 +49,18 @@
       "where": "Pushing past the push bound",
       "before": "A push with neither marker went out unchecked",
       "after": "Held for every pusher; the owner has a checked way of their own",
-      "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
+      "test": "tests/kit-rules.test.mjs::the git pre-push hook stops every pusher without approval, a plain terminal included (K163)"
+    },
+    {
+      "id": "K163-PROOF",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The armed-head hold is proven by a planted bug for the project hook and the kit source hook alike, in one test with real commits.",
+      "evidence": "tests/kit-hooks.test.mjs",
+      "where": "The kit test suite",
+      "before": "Two loop-made tests on fake commits",
+      "after": "One test that fails on its planted bug",
+      "test": "tests/kit-hooks.test.mjs::the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher, in a project and in the kit source"
     },
     {
       "id": "K158",
@@ -288,6 +299,7 @@
       {
         "id": "R3-7",
         "severity": "low",
+        "reason": "a row in the report test this build item added",
         "text": "One bad inbox file is set aside with its reason; the rest are still taken in",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
@@ -310,6 +322,7 @@
       {
         "id": "R4-3",
         "severity": "medium",
+        "reason": "a row in the report test this build item added",
         "text": "A null line in a report log stops neither start-up nor status, held or release",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::a project hears which release closed its report, once"
@@ -325,6 +338,7 @@
       {
         "id": "R4-5",
         "severity": "low",
+        "reason": "a row in the report test this build item added",
         "text": "A bad recorded reply or a null issue is skipped, and intake goes on",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
@@ -347,6 +361,7 @@
       {
         "id": "R5-1",
         "severity": "medium",
+        "reason": "a row in the report test this build item added",
         "text": "A fault that comes back after its row closed opens a new row that names the old one",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
@@ -354,6 +369,7 @@
       {
         "id": "R5-2",
         "severity": "medium",
+        "reason": "a row in the report test this build item added",
         "text": "The same report from the inbox and its own issue in one run counts once",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
@@ -361,6 +377,7 @@
       {
         "id": "R5-3",
         "severity": "low",
+        "reason": "a row in the report test this build item added",
         "text": "An id already on the list adds nothing, so a crash before the move is no repeat",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
@@ -368,6 +385,7 @@
       {
         "id": "R5-5",
         "severity": "low",
+        "reason": "a row in the report test this build item added",
         "text": "A refused file moves to refused/ with a reason and is not read again",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
@@ -405,6 +423,7 @@
       {
         "id": "R6-4",
         "severity": "medium",
+        "reason": "a row in the report test this build item added",
         "text": "Intake runs only in the workbench the owner named, and only there shows the inbox line",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
@@ -494,6 +513,7 @@
       {
         "id": "R8-2",
         "severity": "low",
+        "reason": "a row in the report test this build item added",
         "text": "The scrub test tries a tab and a newline, not only a sign past ASCII",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::the report scrub passes a report about the kit and refuses every way it could name the project"

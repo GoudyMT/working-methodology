@@ -10,6 +10,7 @@ A project can now report a kit fault from its own session, scrubbed and read by 
 - A build record lists the kit reports its release closes, and a project hears it once at session start or from `kit-report.mjs status`.
 
 ### Changed
+- The armed-head hold is proven by a planted bug for the project hook and the kit source hook alike, in one test with real commits.
 - The always-loaded rules file cap is 22,000 B, down from 25,000 B; the kit's own file is 19,467 B, so about 2,500 B are left for a project's own lines. Eleven sections moved, unchanged, to the modules read at their moment.
 - The Session Log left the start-up read order, the resume packet's full list and the cross-tool map.
 
