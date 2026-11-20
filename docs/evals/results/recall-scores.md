@@ -1052,3 +1052,38 @@ control: 0
 gate: b19-1.45.0 median 14 baseline 14 brief v2 keys v12
 behaviour: b19-1.45.0 median 14 baseline 14 suite v2 control 5
 scored: ba916ff3a1aabf62c31285622f9f88162dc9f0ab
+
+## Recall v12 - 1.46.0, rule checks and tracking cuts, owner-accepted (2026-11-20)
+
+Candidate: the branch at b05ca19 (the project layer from this branch, the user layer the released 1.45.0). Baseline: the 1.45.0 final runs (b19s-c1, b19s-c2, b19s-c3), scored again here; control: the v12 control. Opus 5.5 at medium, brief v2, keys v12. The rule text this build changes is the Working Memory template (its Phase Status and Locked Architectural Decisions sections cut to one pointer line) and one session-start line naming retired rule wording. The owner approved the spend by pop-up (2026-11-20: "Run recall now").
+
+The first three runs scored 13, 11 and 13 under one blind scorer (median 13, on the bar), so runs 4 and 5 ran and one fresh blind scorer read all nine (decision 7). The first scorer marked question 13 down in every run, baseline included; the second did not, and named that call borderline.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 0, 1, 1, 1 | 1, 0, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 0, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 0, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 0, 1, 0, 0 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 12, 14, 12, 13 | 14, 12, 14 | 0 |
+
+- **Scored: five-run median 13 of 14, baseline 14, control 0.** On the bar of 13, one under the baseline.
+- **The misses:** Q9 (the parking lot: three runs left out "after the gates", each marked borderline), Q6 (one run left out "reachable"), Q4 (one run left out the tag, force and delete limits). This build did not change the rule text of any of them; the baseline misses Q4 and Q7 once each.
+- **Owner-accepted (2026-11-20, pop-up: "Accept the 13"):** the median is on the bar, the drop sits in rules this build did not touch, and behaviour held at 14.
+- **Behaviour (suite v2, pass 11):** the branch 14, 14, 14; the 1.45.0 runs 13, 14, 14 as baseline. Control 5 (the 1.43.0 control).
+- **Not measured:** the user layer's changes (the new hooks and skills), as before.
+
+control: 0
+gate: b20-1.46.0 median 13 baseline 14 brief v2 keys v12 owner-accepted
+behaviour: b20-1.46.0 median 14 baseline 14 suite v2 control 5
+scored: b05ca19fada94174a7f89497fa0dae1f82700821
