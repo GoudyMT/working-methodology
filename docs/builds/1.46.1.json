@@ -1,0 +1,74 @@
+{
+ "version": "1.46.1",
+ "date": "2026-11-20",
+ "level": "patch",
+ "area": "Release text",
+ "title": "docs: correct the 1.46.0 upgrade note and known limits",
+ "headline": "The upgrade note now says render adds the archive block itself and that a done row needs the release check run in the project, and the known limits name the test runners in plain words.",
+ "alignment": "v1.46.1 corrects the release text of build 20 (v1.46.0) after its sweep fixes; no code or rule text changes.",
+ "items": [
+  {
+   "id": "UPGRADE-NOTE",
+   "kind": "fixed",
+   "text": "The 1.46.0 upgrade note told a project to add an archive block by hand and named only the verify file for a done row; render adds the block, and a done row also needs the release check run in the project.",
+   "evidence": "docs/builds/1.46.1.json",
+   "reach": "kit",
+   "where": "Upgrading a project to 1.46",
+   "before": "Told to add the archive block by hand",
+   "after": "Told render adds it, and what a done row needs"
+  }
+ ],
+ "verification": [
+  "The build record check and the release-notes audit pass on the new text."
+ ],
+ "decisions": [
+  {
+   "decision": "A patch, not an edit of the 1.46.0 record",
+   "why": "The 1.46.0 record is what its tag shipped; a record change is install input, so the correction ships as its own version."
+  }
+ ],
+ "upgrading": "Run install user, then install project. The next render adds an archive block after the rows block where a project has none, so done and closed rows stay in sight. Marking a row done for a release now needs `item set <id> verify <result file>`, a file holding the release check's RELEASE COMPLETE line, and that check run in the project, which logs it in the project's .git folder.",
+ "limits": "The test-scope check reads the common runners (node, npm, pnpm, yarn, bun, jest, mocha, pytest, go, cargo, dotnet and the like) by name; one it does not list is not read. The pop-up check reads choice pop-ups and plan files only; a chat message is not checked. The retired-wording check reads the patterns it lists, not the same rule in other words. A done row whose release names no version (a project that ships none) needs only its verify file. The release check log is read only in a main checkout, not a worktree.",
+ "tests": {
+  "before": 958,
+  "after": 958,
+  "flips": "none: record text only"
+ },
+ "sweep": {
+  "tier": "Triage",
+  "commit": "590088c",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Not touched: release text only"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched"
+   },
+   {
+    "name": "Code security",
+    "result": "Not touched: no shipped code changed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "The upgrade note and limits checked against the 1.46.0 code"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 0,
+   "low": 0
+  },
+  "fixes": []
+ }
+}
