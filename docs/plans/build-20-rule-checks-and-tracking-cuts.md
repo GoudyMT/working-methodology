@@ -1,5 +1,14 @@
 # Build 20 plan: kit 1.46.0
 
+## Overview
+What we are looking at: four of the owner's standing rules that slipped because only prose held them, the guard
+check that names a false reason for wildcard reads, the cost of the tracking files every thread reads at start, and
+the release step whose title and notes drift from the build record.
+What was found or measured: build 19 reran about 170 unchanged tests locally and one sweep role ran 1,072,274 tokens
+against a 749,524 ceiling; the dash check held six read-only command shapes falsely; a short-view start-up cost
+$0.35 against $0.70 with the same pick; five of the last eleven release titles are a bare tag.
+What is being decided: the scope below, picked by the owner's pop-ups on 2026-11-20.
+
 Scope locked by the owner's pop-up 2026-11-20: everything offered. K150 to K153 (four starred rules held by a script or
 hook, design: the rule-enforcement brainstorm, sections A to D and the owner's pick), K155 and K156 (the dash-name
 wildcard check), and TC0 to TC5 (the tracking-cost cuts). TC4 and the start instruction of TC3 are workbench files, so

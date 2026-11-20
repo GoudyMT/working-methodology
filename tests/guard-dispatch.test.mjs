@@ -27,7 +27,7 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	}
 	if (userHooks) {
 		fs.mkdirSync(path.join(cfg, 'kit-hooks'));
-		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs', 'test-scope.cjs']) if (fs.existsSync(path.resolve('user/kit-hooks', f))) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
+		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs', 'test-scope.cjs', 'grounding.cjs']) if (fs.existsSync(path.resolve('user/kit-hooks', f))) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
 	}
 	// Recorded as install user records them: since B23 a kit hook runs only with the bytes its stamp names.
 	if (oldHook || userHooks) {
@@ -255,4 +255,25 @@ test('a local test run reaches only the tests the branch changed; the rest waits
 	assert.equal(at('node --test', { CI: 'true' }), 'allow');
 	g('add', '.'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'b'); g('switch', '-q', '--detach');
 	assert.equal(at('node --test tests/a.test.mjs'), 'allow');
+});
+
+// why: guards the owner's rule "never just item codes to pick from" (E18, build 20). The 60-second overview scored 0 of
+// 4 as rule text in 1.19.0, so the choice pop-up itself is checked: codes need plain words, and a plan asked for opens
+// with its overview.
+test('a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude', () => {
+	const run = setup({ userHooks: true });
+	const dir = kitTemp.makeTemp('ground-');
+	fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'docs', 'plans', 'bare.md'), '# Build plan\n\n## 1. Proof\n\nRows.\n');
+	fs.writeFileSync(path.join(dir, 'docs', 'plans', 'grounded.md'), '# Build plan\n\n## Overview\n\nWhat: the guards.\nFound: six false holds.\nDecided: the scope.\n\n## 1. Proof\n');
+	const ask = (question, options) => run('AskUserQuestion', { questions: [{ question, header: 'Pick', multiSelect: false, options }] }, { cwd: dir }).permissionDecision || 'allow';
+	const opt = (label, description) => ({ label, description });
+	// This build's own scope pop-up passes; the shape the owner asked to end is held.
+	assert.equal(ask('Build 20 scope: which slice do I build? All figures are estimates in plan quota, and CI runs on your PC runner at $0.', [
+		opt('Guards + checks (Recommended)', 'K150 local test runs limited to the changed test, about $6 and every project.'), opt('Everything', 'Adds TC1 done-needs-proof, a check that a row is marked done only with its proof.')]), 'allow');
+	for (const [q, o] of [['Working on M1, M2, M3: which?', [opt('Do M1', 'First one.'), opt('Do M2', 'Second one.')]],
+		['Which slice do I build next, given the measured cost of each one below?', [opt('K150 + K151', 'The guard and the meter, about $11 of quota together.'), opt('Neither', 'Build nothing now and wait for the next build.')]],
+		['Approve docs/plans/bare.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]]]) assert.equal(ask(q, o), 'deny', q);
+	assert.equal(ask('Approve docs/plans/grounded.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow');
+	assert.match(run('AskUserQuestion', { questions: [{ question: 'Working on M1, M2, M3: which?', options: [opt('Do M1', 'x')] }] }, { cwd: dir }).permissionDecisionReason, /^Held: this pop-up [^\n]*"M1"[^\n]*60-second overview/);
 });

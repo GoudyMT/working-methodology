@@ -4,7 +4,7 @@
 // for a Bash call (209 ms summed on Windows, workbench results/v2-prep B0).
 //   project guards (this folder): owner-proof, task-gate, guard-outward, guard-delete. One missing or broken refuses
 //     the call, with the fix: they hold the owner's acts, so they fail closed.
-//   user-layer checks (the Claude folder's kit-hooks): call-cap, canary, sweep-guard, test-scope. One missing is
+//   user-layer checks (the Claude folder's kit-hooks): call-cap, canary, sweep-guard, test-scope, grounding. One missing is
 //     skipped: they are slip-catchers, and a broken user layer must never stop the session (teardown, "brick mode").
 // The answers are merged the way Claude Code merges several hooks: a refusal wins, then an ask, then an allow (only an
 // owner's pop-up yes allows); the added context of each is kept.
@@ -37,6 +37,8 @@ const USER = [
 	['sweep-guard.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	// K150 (build 20): a local test run reaches only the tests the branch changed, unless the owner's pop-up says yes.
 	['test-scope.cjs', (t) => t === 'Bash' || t === 'PowerShell'],
+	// E18 (build 20): a choice pop-up opens with a plain overview, never item codes alone.
+	['grounding.cjs', (t) => t === 'AskUserQuestion'],
 ];
 
 const STARTED = Date.now();
