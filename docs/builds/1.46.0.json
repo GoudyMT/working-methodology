@@ -149,8 +149,8 @@
    "why": "The workbench checks the kit's releases by design, so its origin is never the checked repo; the log sits in the project's own .git folder, which no tool writes."
   }
  ],
- "upgrading": "Run install user, then install project. A project whose list has a rows block should add an archive block (`<!-- list:begin archive -->` and `<!-- list:end -->`) where it wants done and closed rows shown, then run `node .claude/state.mjs render`. Marking a row done now needs `item set <id> verify <result file>` first.",
- "limits": "The test-scope check reads runners from a table (node, npm, jest, vitest, mocha, pytest, go, cargo, dotnet); another runner is not read. The pop-up check reads choice pop-ups and plan files only; a chat message is not checked. The retired-wording check reads the patterns it lists, not the same rule in other words. A done row whose release names no version (a project that ships none) needs only its verify file. The release check log is read only in a main checkout, not a worktree.",
+ "upgrading": "Run install user, then install project. The next render adds an archive block after the rows block where a project has none, so done and closed rows stay in sight. Marking a row done for a release now needs `item set <id> verify <result file>`, a file holding the release check's RELEASE COMPLETE line, and that check run in the project, which logs it in the project's .git folder.",
+ "limits": "The test-scope check reads the common runners (node, npm, pnpm, yarn, bun, jest, mocha, pytest, go, cargo, dotnet and the like) by name; one it does not list is not read. The pop-up check reads choice pop-ups and plan files only; a chat message is not checked. The retired-wording check reads the patterns it lists, not the same rule in other words. A done row whose release names no version (a project that ships none) needs only its verify file. The release check log is read only in a main checkout, not a worktree.",
  "tests": {
   "before": 954,
   "after": 958,
