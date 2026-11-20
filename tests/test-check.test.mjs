@@ -209,7 +209,29 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	sh(dir, 'add', '.');
 	sh(dir, 'commit', '-qm', 'the old file reads c');
 	const r2 = spawnSync(process.execPath, [CHECK, base2], { cwd: dir, encoding: 'utf8' });
-	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
+	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs: .*could not load/);
+});
+
+// K148 (build 19): PR 55 changed test files to import a helper module main did not have yet, so main's copy of the
+// checks named every changed test as failing on the base. That reads as a broken test, and hides the one cause: main
+// cannot load the file. The check names the file once, with the module it could not find; the finding still fails CI.
+// why: catches a load failure on main reported as many failed tests
+test('a changed file main cannot load is named once, with the module main lacks, and still fails strict', () => {
+	const dir = repo();
+	const lead = ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';"];
+	const old = path.join(dir, 'tests', 'old.test.mjs');
+	fs.writeFileSync(old, [...lead, "test('one', () => { assert.equal(1, 1); });", "test('two', () => { assert.equal(2, 2); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'an old file');
+	sh(dir, 'switch', '-qc', 'feat');
+	fs.writeFileSync(path.join(dir, 'tests', 'helpers.mjs'), 'export const three = () => 3;\n');
+	fs.writeFileSync(old, [...lead, "import { three } from './helpers.mjs';", "test('one', () => { assert.equal(three(), 3); });", "test('two', () => { assert.equal(three() - 1, 2); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'the old file reads a new helper');
+	const r = spawnSync(process.execPath, [CHECK, 'main', '--strict'], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 1, `a file main cannot load is still a finding: ${r.stdout}${r.stderr}`);
+	assert.match(r.stdout, /A1 tests\/old\.test\.mjs: main cannot load this: .*helpers\.mjs/);
+	assert.doesNotMatch(r.stdout, /A1 tests\/old\.test\.mjs::/, 'each test of the file was named as failing');
 });
 
 // T10 (build 17): splitting a test file moves each test word for word into a new file. A test whose name and code
