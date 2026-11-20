@@ -1116,9 +1116,10 @@ One fresh blind scorer read all eleven runs together (decision 7). An earlier sc
 - **The misses:** Q9 (the parking lot: "after the gates" left out), Q7 (the ASK to the owner), Q4 (the tag, force and delete limits), each marked borderline. No moved section holds those rules.
 - **Recorded as measured (2026-11-20, pop-up: "Record as measured"):** the owner set a bar of 14 for keeping the moves; neither build reaches it today, and nothing dropped against the same-day baseline. Lifting Q9, Q7 and Q13 above scorer noise by scripts goes on the list.
 - **Behaviour (suite v2, pass 11):** the branch 13, 14, 13; the released 1.46.1 runs 12, 12, 12 the same day as baseline. Every run of both missed the closeout task in at least two of three; the 1.46.1 runs also missed sweep-before-PR in all three. Control 5 (the 1.43.0 control).
+- **Owner-accepted (2026-11-20, pop-up: "Yes, add owner-accepted"):** the released 1.46.1, rescored the same day by the same scorer, came in at 13 against its recorded 14, so the ruler moved, not the rules.
 - **Not measured:** the user layer changes, as before.
 
 control: 0
-gate: b21-1.47.0 median 13 baseline 13 brief v2 keys v12
+gate: b21-1.47.0 median 13 baseline 13 brief v2 keys v12 owner-accepted
 behaviour: b21-1.47.0 median 13 baseline 12 suite v2 control 5
 scored: bf6c9a03edef0ef5feee8750232f1100f12f39c6
