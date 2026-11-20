@@ -524,6 +524,7 @@ function bashWords(c) {
 				const lines = c.slice(i + 1).split('\n');
 				let k = 0;
 				while (k < lines.length && (h.strip ? lines[k].replace(/^\t+/, '') : lines[k]) !== h.tag) k++;
+				if (k >= lines.length) unsure = true;
 				i += lines.slice(0, Math.min(k + 1, lines.length)).reduce((n, l) => n + l.length + 1, 0);
 			}
 			continue;
@@ -535,8 +536,16 @@ function bashWords(c) {
 			continue;
 		}
 		if (ch === '<' && c[i + 1] === '<' && c[i + 2] !== '<') {
-			const m = /^<<(-?)\s*(['"]?)([^\s'";&|<>()]+)\2/.exec(c.slice(i));
-			if (m) { heredocs.push({ strip: m[1] === '-', tag: m[3] }); end(); i += m[0].length - 1; continue; }
+			// The end word as bash reads it: quotes and backslashes taken out (the commit security review of this fix). One
+			// the reader cannot take apart, or an end line never found below, is more than it follows.
+			const m = /^<<(-?)[ \t]*([^\s;&|<>()]+)/.exec(c.slice(i));
+			if (!m) { unsure = true; end(); i++; continue; }
+			const tag = m[2].replace(/\\(.)/g, '$1').replace(/['"]/g, '');
+			if (!tag || /[$`]/.test(m[2])) unsure = true;
+			heredocs.push({ strip: m[1] === '-', tag });
+			end();
+			i += m[0].length - 1;
+			continue;
 		}
 		if (ch === '<' || ch === '>') { end(); continue; }
 		if (ch === '#' && !word) { while (i + 1 < c.length && c[i + 1] !== '\n') i++; continue; }
@@ -585,6 +594,20 @@ function dashGlob(command, tool, start) {
 	const posixDrive = (p) => p.replace(/^\/([a-z])\//i, '$1:/');
 	const read = bashWords(c);
 	const words = read.cmds.flat();
+	// The commit security review of this fix: text run as shell (eval, bash -c, source) is read again as a command of
+	// its own, since its quotes hide its wildcards and cd's from the reading above; any of it held is held.
+	for (const cmd of read.cmds) {
+		const names = cmd.map(wordText);
+		const k = names.findIndex((n, j) => n === 'eval' || ((/(^|\/)(ba|z|da|k)?sh(\.exe)?$/.test(n)) && names.slice(j + 1).some((x) => /^-\w*c/.test(x))));
+		if (k >= 0) {
+			const inner = dashGlob(names.slice(k + 1).filter((x) => !/^-\w*c$/.test(x)).join(' '), tool, start);
+			if (inner) return inner;
+		}
+	}
+	if (read.cmds.some((cmd) => /^(source|\.)$/.test(wordText(cmd[0] || [])))) read.unsure = read.unsure || words.some(wordGlob);
+	// A cd the word split did not see (inside text run as shell, or glued to another word) is more than this follows.
+	const cdSeen = words.filter((w) => /^(cd|pushd|popd|chdir)$/.test(wordText(w))).length;
+	const cdRaw = (c.match(/(?:^|[^\w./-])(?:cd|pushd|popd|chdir)(?![\w.-])/g) || []).length;
 	// A word whose first part is the wildcard: a plain first folder, a root, a drive or a ~ never starts with a dash.
 	const firsts = words.filter((w) => {
 		if (!wordGlob(w) || (w[0] && w[0][0] === '~' && !w[0][1])) return false;
@@ -596,6 +619,7 @@ function dashGlob(command, tool, start) {
 	// more than this reading follows, and so are a glob option turned on, braces or a bracket class in the first part.
 	if (read.unsure || read.ext) return 'unsure';
 	if (!firsts.length) return false;
+	if (cdRaw > cdSeen) return 'unsure';
 	if (/(^|[^\w-])(shopt|setopt)(?![\w-])|(^|[^\w-])set\s+[-+]\w*o/.test(c)) return 'unsure';
 	// Each cd in turn, from where the last one left the shell (K156); every folder reached is read, the safe side.
 	const dirs = [from];
@@ -613,7 +637,8 @@ function dashGlob(command, tool, start) {
 	for (const w of firsts) {
 		const cut = w.findIndex(([ch]) => ch === '/');
 		const head = cut < 0 ? w : w.slice(0, cut);
-		if (head.some(([ch, q]) => !q && (ch === '[' || ch === '{' || ch === '}'))) return 'unsure';
+		// An expansion before or beside the wildcard ($X*, ${X}*, $(x)*) can give any text, a dash included.
+		if (head.some(([ch, q]) => (!q && (ch === '[' || ch === '{' || ch === '}')) || ch === '$')) return 'unsure';
 		const re = new RegExp(`^${head.map(([ch, q]) => (!q && ch === '*' ? '.*' : !q && ch === '?' ? '.' : ch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'))).join('')}$`, 'i');
 		for (const d of dirs) {
 			let names;
