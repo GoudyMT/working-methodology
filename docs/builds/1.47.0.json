@@ -118,9 +118,9 @@
     }
   ],
   "verification": [
-    "K158, K159 and K163 were reproduced on throwaway clones of the released 1.46.1 before each fix; K161 came from the mutation check on guard-read.cjs.",
-    "The report scrub was run against planted lines for each refusal, the issue route against recorded GitHub replies, and the start-up load with a context report on each side.",
-    "The rule-recall and behaviour runs on the final text are recorded in docs/evals/results/recall-scores.md."
+    "K158, K159 and K163 were reproduced on the released 1.46.1 before each fix; K161 came from the mutation check.",
+    "The scrub ran against planted lines, the issue route against recorded GitHub replies.",
+    "Accuracy held against the released 1.46.1, measured the same day and scored blind together: rule recall 13, 13, 13, 14, 14 against 12, 12, 13, 13, 13 (no question worse), behaviour 13, 14, 13 against 12, 12, 12, control 0."
   ],
   "decisions": [
     {
@@ -129,7 +129,7 @@
     },
     {
       "decision": "Free text leaves the PC only after the owner reads it",
-      "why": "A scrub cannot prove a sentence names nothing private; the owner's read is the last check, and the yes is bound to the text read."
+      "why": "A scrub cannot prove a sentence names nothing private; the yes is bound to the text read."
     },
     {
       "decision": "The owner's own push has its own marker instead of skipping the hooks",
