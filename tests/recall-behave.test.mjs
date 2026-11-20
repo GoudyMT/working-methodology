@@ -240,6 +240,7 @@ test('the behaviour line (K198) needs 5 runs a side from the same day and names 
 // why: catches a release arm run with no kit skills against a candidate that has them
 test('the release arm (K195) gets its installed kit skills and agents in the probe, as the candidate gets its own', async () => {
 	const { releasedUserLayer } = await import('../scripts/recall-behave.mjs');
+	assert.equal(typeof releasedUserLayer, 'function', 'K195: the release arm copies its kit skills');
 	const home = makeTemp('k195-home-');
 	const dir = makeTemp('k195-probe-');
 	const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(home, rel)), { recursive: true }); fs.writeFileSync(path.join(home, rel), body); };

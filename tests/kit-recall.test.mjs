@@ -11,7 +11,12 @@ import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
-import { GOOD_ENTRY, K198_LINES, PASS_GATE, HEX6, RECALL, g, gateFacts, gateRepo, makeKit, makeTemp, probeParts, read, recallTools, recorder, released, ruleFiles, scratch, status, words } from './kit-helpers.mjs';
+import { GOOD_ENTRY, HEX6, RECALL, g, gateFacts, gateRepo, makeKit, makeTemp, probeParts, read, recallTools, recorder, released, ruleFiles, scratch, status, words } from './kit-helpers.mjs';
+
+// K198 (1.48.0): the lines the fixed gate reads beside a gate line - two blind scorers, and no question worse than the
+// same-day release - and a record that passes the gate command's floor of 14.
+const K198_LINES = 'scorers: 2\nworse: none';
+const PASS_GATE = `${K198_LINES}\ngate: a median 14 baseline 9 brief v1 keys v4 control 0`;
 
 // why: guards rule:instruments-and-evals
 test('recall v3 is v2 plus three questions, and v2 stays as it was released', async () => {
@@ -1224,6 +1229,7 @@ test('recall (R2): a run on a throwaway layer records the real global layer it a
 test('recall-score blinds runs without a side marker and scores two scorers into the lines the gate reads', async () => {
   const { blind, score, scrub } = await import('../scripts/recall-score.mjs');
   const { checkGate, FLOOR } = await recallTools();
+  assert.equal(FLOOR, 14, 'K198: the floor');
   const dir = makeTemp('rscore-');
   const keysText = read(path.resolve('docs/evals/recall-questions.md'));
   const n = (await recallTools()).questionCount(keysText, (await recallTools()).currentVersion(keysText));
@@ -1281,6 +1287,7 @@ const sameDay = (map, iso = '2026-11-20T10:00:00.000Z') => Object.fromEntries(Ob
 
 // why: guards rule:ci-gate
 test('recall-score (K198): two scorers are averaged with no rounding up, against the floor of 14', async () => {
+  assert.equal((await import('../scripts/recall-score.mjs')).RUNS, 5, 'K198: 5 runs a side');
   const { summarize } = await import('../scripts/recall-score.mjs');
   const { FLOOR } = await recallTools();
   assert.equal(FLOOR, 14);
@@ -1302,6 +1309,7 @@ test('recall-score (K198): two scorers are averaged with no rounding up, against
 
 // why: guards rule:ci-gate
 test('recall-score (K198): a gate needs 5 candidate and 5 release runs, all measured the same day', async () => {
+  assert.equal((await import('../scripts/recall-score.mjs')).RUNS, 5, 'K198: 5 runs a side');
   const { summarize } = await import('../scripts/recall-score.mjs');
   const clean = [[], []];
   const four = { ...fiveEach(Array(5).fill(clean)) };
@@ -1320,6 +1328,7 @@ test('recall-score (K198): a gate needs 5 candidate and 5 release runs, all meas
 
 // why: guards rule:ci-gate
 test('recall-score (K198): a question is worse when its marks over both scorers and all runs sum under the release', async () => {
+  assert.equal((await import('../scripts/recall-score.mjs')).RUNS, 5, 'K198: 5 runs a side');
   const { summarize } = await import('../scripts/recall-score.mjs');
   const clean = [[], []];
   const run = (cand, base) => { const { map, sets } = scoreSets(fiveEach(cand, base)); return summarize(sets, map, 14, { when: sameDay(map) }); };
@@ -1501,6 +1510,7 @@ test('recall-score (T2): a notice line goes and is logged, a Key line stays, and
 
 // why: guards rule:instruments-and-evals
 test('recall-score (T2): the table keeps its columns and "worse" names only what the candidate lost', async () => {
+  assert.equal((await import('../scripts/recall-score.mjs')).RUNS, 5, 'K198: 5 runs a side');
   const { summarize } = await import('../scripts/recall-score.mjs');
   const clean = [[], []];
   const { map, sets } = scoreSets(fiveEach([[[2], [2]], clean, clean, clean, clean], [[[1], [1]], clean, clean, clean, clean]));
