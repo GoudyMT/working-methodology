@@ -1012,6 +1012,12 @@ test('V3 record: the install record and a config folder with another name are gu
 	const { home, proj, session: s } = setup({ homeAt: 'cfg' });
 	assert.equal(s.decide('Write', { file_path: path.join(home, 'kit-install.json'), content: '{"kitDir":"/tmp/evil"}' }).decision, 'deny');
 	assert.equal(s.decide('Write', { file_path: path.join(guardDir(home, proj), 'record.json'), content: '{}' }).decision, 'deny');
+	// E1 (build 21): the report channel's grant names the one intake repo, and the owner's scrub words keep a report
+	// about the kit; a tool writes neither, by the config folder's own name or by .claude.
+	for (const f of ['kit-report.json', 'kit-scrub-words.json']) {
+		assert.equal(s.decide('Write', { file_path: path.join(home, f), content: '{"repo":"x/y","issues":true}' }).decision, 'deny', f);
+		assert.equal(s.decide('Bash', { command: `echo {} > ~/.claude/${f}` }).decision, 'deny', `${f} by .claude`);
+	}
 });
 
 // why: guards rule:outward-acts
