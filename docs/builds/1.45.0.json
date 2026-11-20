@@ -1,0 +1,113 @@
+{
+ "version": "1.45.0",
+ "date": "2026-11-20",
+ "level": "minor",
+ "area": "Safety",
+ "title": "feat: guard reads, web templates and base-copy lessons",
+ "headline": "The guards pass a read loop piped on and a printed PowerShell string, a body that claims a measured move must show Visuals, the app templates install only where a project shows a UI, and a build opens its PR as a draft after the first commit.",
+ "alignment": "v1.45.0 is build 19 of the v2.0 plan: K145, K146 to K149 and the last piece of T13, each reproduced on the released 1.44.0 first.",
+ "items": [
+  {
+   "id": "READ-PIPES",
+   "kind": "fixed",
+   "text": "The guards pass a read loop over guard files piped on to a reader (wc, head, sort, grep), from a plain folder change too; the same loop piped to a writer, a shell or a file is still held.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects",
+   "where": "A read loop over guard files piped to wc",
+   "before": "Held as a protected-file write",
+   "after": "Runs; a pipe to a writer is still held"
+  },
+  {
+   "id": "PS-PRINTED-STRING",
+   "kind": "fixed",
+   "text": "A PowerShell statement that is one quoted string, beside a kit script, is read as printing it; a substitution or redirect in it keeps the strict reading.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects",
+   "where": "A PowerShell loop printing a header before each kit script call",
+   "before": "Held as a protected-file write",
+   "after": "Runs"
+  },
+  {
+   "id": "GLOB-HOLD-REASON",
+   "kind": "fixed",
+   "text": "A for loop held for how its glob is read says so and how to rerun it, instead of naming the first protected place checked (a guard write was refused as a transcript write).",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "VISUALS-REQUIRED",
+   "kind": "changed",
+   "text": "The Standard PR and release notes audits need a Visuals section when a body claims a measured move (a size, tokens, time or dollars across an arrow or a Summary row); tallies never count.",
+   "evidence": "project/.claude/visuals.mjs",
+   "reach": "projects",
+   "where": "A PR body that says a size moved",
+   "before": "Passed with no Visuals section",
+   "after": "Fails until the Visuals section is there"
+  },
+  {
+   "id": "APP-TEMPLATES",
+   "kind": "changed",
+   "text": "The component spec and component security checklist install only where the project shows a UI (a UI framework in package.json, or a components folder), with `--with-templates web`, or where a copy is already in place.",
+   "evidence": "scripts/kit.mjs",
+   "reach": "projects",
+   "where": "Installing the kit into a project with no UI",
+   "before": "Both app templates installed",
+   "after": "Neither installed unless asked"
+  },
+  {
+   "id": "DRAFT-PR-EARLY",
+   "kind": "changed",
+   "text": "A build pushes its branch and opens its PR as a draft right after the first commit, so main's checks run on the branch from the first push.",
+   "evidence": "user/skills/plan-feature/SKILL.md",
+   "reach": "projects"
+  },
+  {
+   "id": "MAIN-CHECKS-QUESTION",
+   "kind": "added",
+   "text": "The plan file and the plan gap check ask whether main's checks can read the branch, and a check change it needs ships first as its own small PR.",
+   "evidence": "user/skills/plan-feature/references/plan-format.md",
+   "reach": "projects"
+  },
+  {
+   "id": "MAIN-CANNOT-LOAD",
+   "kind": "fixed",
+   "text": "The test check names a changed test file main cannot load once, with the module main lacks, instead of each of its tests as failing; it still fails the run.",
+   "evidence": "scripts/test-check.mjs",
+   "reach": "kit"
+  }
+ ],
+ "verification": [
+  "Each row was reproduced on a throwaway clone of the released 1.44.0 before any change.",
+  "The new Visuals check, run over the last ten PR bodies, flags PR 55 and PR 51 only.",
+  "The guard tests hold every write twin beside each read the build lets through."
+ ],
+ "decisions": [
+  {
+   "decision": "A quoted wildcard stays a wildcard to the launcher",
+   "why": "It reads a command both as the shell splits it and as plain text, so a reading it gets wrong only adds a check; a quoted regex in node -e code is held, and stays a named limit."
+  },
+  {
+   "decision": "A copy already in place keeps both app templates",
+   "why": "Install never retires a template a project may be using; a project that wants them gone deletes them."
+  },
+  {
+   "decision": "A minor release",
+   "why": "Install copies a different set of templates, and every project's PR audit gains a check."
+  }
+ ],
+ "upgrading": "Install user and install project as usual. A project with no UI keeps the component templates it already has; delete them by hand if unused. Add `--with-templates web` to install project to get them where no UI shows yet.",
+ "limits": "The launcher still reads a wildcard inside quotes, so a quoted regex such as /\\*\\*/ in inline node code can hold a read. The Visuals check reads arrows and Summary rows; a move told only in a sentence is not seen.",
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "pending",
+  "dimensions": [],
+  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "fixes": [],
+  "accepted": []
+ },
+ "tests": {
+  "before": 952,
+  "after": 956,
+  "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
+ }
+}
