@@ -21,8 +21,9 @@ fi
 OWNER_WAY="The owner's own push from their own terminal has its own way (rule:outward-acts)."
 # The build 21 sweep: a url.insteadOf rewrite that matches the push URL sends every ls-remote below to another remote, so
 # the default-branch check and the secret scan would read a decoy's answer. Such a push is refused whoever runs it.
-# Each key and value read NUL-split, so a value with spaces is read whole (the commit security review).
-if git config -z --get-regexp '^url\..*\.insteadof$' 2>/dev/null | KIT_URL="$2" node -e 'let s="";process.stdin.on("data",(d)=>{s+=d;}).on("end",()=>{process.exit(s.split("\0").some((r)=>{const n=r.indexOf("\n");const v=r.slice(n+1);return n>=0&&v!==""&&process.env.KIT_URL.startsWith(v);})?0:1);})'; then
+# Each key and value read NUL-split, so a value with spaces is read whole, and an empty value, which matches every
+# URL, counts (the commit security reviews).
+if git config -z --get-regexp '^url\..*\.insteadof$' 2>/dev/null | KIT_URL="$2" node -e 'let s="";process.stdin.on("data",(d)=>{s+=d;}).on("end",()=>{process.exit(s.split("\0").some((r)=>{const n=r.indexOf("\n");const v=r.slice(n+1);return n>=0&&process.env.KIT_URL.startsWith(v);})?0:1);})'; then
   echo "Push blocked: a url.insteadOf setting rewrites $2, so the hook cannot ask the real remote what it holds. Push to the remote's own URL with that setting out of the way." >&2
   exit 1
 fi

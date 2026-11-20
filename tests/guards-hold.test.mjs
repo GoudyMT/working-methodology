@@ -664,7 +664,9 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	// A url.insteadOf rewrite would send the hook's questions to another remote.
 	g('config', 'url.file:///nowhere/.insteadOf', seeded);
 	assert.match(push(`refs/heads/feat/y ${main} refs/heads/feat/y ${Z}`).stderr, /insteadOf/);
-	g('config', '--unset', 'url.file:///nowhere/.insteadOf');
+	g('config', 'url.file:///nowhere/.insteadOf', '');
+	assert.match(push(`refs/heads/feat/y ${main} refs/heads/feat/y ${Z}`).stderr, /insteadOf/, 'an empty value matches every URL');
+	g('config', '--unset-all', 'url.file:///nowhere/.insteadOf');
 	// Two pushes on one yes: the second waits on the first one's lock.
 	fs.mkdirSync(path.join(dir, '.git', 'kit-push.lock'));
 	assert.match(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, { KIT_PUSH_APPROVED: '1' }).stderr, /another push on the owner's yes/);
