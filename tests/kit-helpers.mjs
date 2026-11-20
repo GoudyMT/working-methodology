@@ -29,6 +29,8 @@ export function copyKitCli(kit) {
   fs.mkdirSync(path.join(kit, 'project/.claude'), { recursive: true });
   fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
   fs.copyFileSync(path.resolve('project/.claude/kit-temp.cjs'), path.join(kit, 'project/.claude/kit-temp.cjs'));
+  // The retired-wording check the session-start report reads (build 20).
+  for (const f of ['retired-check.mjs', 'retired-wording.json']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(kit, 'project/.claude', f));
   // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
   fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
   fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
