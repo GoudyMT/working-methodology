@@ -411,6 +411,21 @@ test('the call-cap hook stops a reviewer before a call would take it past its to
   const grow = hook(3, {}, [10000, 10000, 30000]);
   assert.equal(grow.permissionDecision, 'deny', 'the next calls grow as the last one did');
   assert.equal(hook(3, {}, [30000, 30000, 30000], 230000).permissionDecision, 'allow', 'flat calls under the same room');
+  // K151 (build 20): build 19's role 1 ran to 1,072,274 against 749,524. Six of its calls were shell lines the fence
+  // refuses, and the fence answered before the ceiling, so each refused call (a whole context read) told it to use Read
+  // and it went on. Replayed with every call a fenced line, the ceiling answers first and the report lands under it.
+  const b19 = [14523, 21929, 22225, 23303, 43427, 60808, 69273, 74791, 82278, 83169, 85862, 88398, 92292, 95145, 106425, 108426];
+  const fenced = { tool_name: 'Bash', tool_input: { command: 'cp a b' } };
+  let k = 1;
+  while (k < b19.length && !/token ceiling/i.test(hook(k, fenced, b19, 749524).permissionDecisionReason || '')) k++;
+  assert.ok(b19.slice(0, k + 2).reduce((t, x) => t + x, 0) <= 749524, `stopped at call ${k + 1}, under the ceiling`);
+  assert.match(hook(4, { tool_name: 'Read', tool_input: { file_path: path.resolve('project/.claude/owner-proof.cjs') } }).permissionDecisionReason, /token ceiling reached/i, 'the ceiling before the large-read rule');
+  // A meter that cannot read its transcript lets the call through, and says so in the git folder's log.
+  const repo = makeTemp('open-');
+  spawnSync('git', ['init', '-q', repo]);
+  const open = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', cwd: repo, transcript_path: path.join(repo, 'gone.jsonl'), agent_id: 'r9', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
+  assert.equal(open.stdout, '');
+  assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"hook":"call-cap".*"agent":"r9"/);
 });
 
 // The build 11 sweep: the message making a call may be in the transcript when the hook reads it, or not yet. A call
@@ -582,6 +597,9 @@ test('a role past its ceiling that the hook did stop is named as stopped too lat
   const { o } = driftSweep([late, usual(), usual(), usual(), usual()]);
   assert.match(o.stdout, /ceiling did not hold[^\n]*340,000 against 200,000 \(the hook stopped it too late\)/);
   assert.doesNotMatch(o.stdout, /340,000 against 200,000 \(the hook is missing/);
+  // K151 (build 20): a meter that let a call through unread logged why; the outcome reads it, pauses and names the role.
+  const open = driftSweep([usual(), usual(), usual(), usual(), usual()], { opens: [1] });
+  assert.match(open.o.stdout, /auto-approval paused: [^\n]*the call-cap meter let 1 call\(s\) of [^\n]+ through unread \(ENOENT\)/);
 });
 
 // why: guards rule:sweep-auto-approval

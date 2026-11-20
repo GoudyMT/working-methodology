@@ -8,7 +8,8 @@
 // transcript, the unit the budget uses; the cap is the "Call cap: N" line of its brief. The hand-back is never held.
 // It sits in the project's settings, so it holds every reviewer, whatever its role file carries (role-file hooks
 // do fire: the v1.17.0 live run).
-// Anything unexpected lets the call through: the whole-sweep trip stands behind it.
+// Anything unexpected lets the call through, with one line in <git common dir>/kit-guard-open.log that the sweep's
+// outcome reads (K151): the whole-sweep trip and that line stand behind it.
 //
 // It also holds the two costs the token audit measured (workbench results/token-audit, W5 and W6). A whole file over
 // 40 KB is refused: results that size were 57% of reviewer tool bytes, re-read from cache on every later call, so a
@@ -146,6 +147,12 @@ function check(input) {
 		return deny('A builder runs its checks in the foreground: a background run or a monitor leaves it idle while its cache expires. Run the targeted tests and wait for them.');
 	}
 	if (!/(^|:)reviewer$/i.test(type)) return;
+	// K151 (build 20): the cap and the ceiling answer before any other hold. Build 19's role 1 ran to 1,072,274 against
+	// 749,524: the fence answered six calls first, each a whole context read, and told it to use Read, so it went on. A
+	// meter that cannot read its transcript lets the call through and writes why in the git folder's log.
+	let held = null;
+	try { held = meter(input); } catch (e) { logOpen(input, e); }
+	if (held) return held;
 	if (input.tool_name === 'Read' && t.offset === undefined && t.limit === undefined) {
 		let size = 0;
 		try { size = fs.statSync(String(t.file_path)).size; } catch { /* Read reports a missing file itself */ }
@@ -158,6 +165,10 @@ function check(input) {
 	if (fault) {
 		return deny(`A reviewer's shell runs reads, and writes only in its scratch folder (the Scratch line of your brief); this line has ${fault}. Read with the Read or Grep tool instead, or name your scratch folder in full as the only path.`);
 	}
+}
+
+// The cap and the ceiling, from the reviewer's own transcript: a refusal, or nothing.
+function meter(input) {
 	const file = path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents', `agent-${input.agent_id}.jsonl`);
 	// Each message id once, at its last line (streaming writes one line per content block), in the order calls began.
 	const calls = new Map();
@@ -209,8 +220,15 @@ function check(input) {
 	if (used + reserve >= ceiling) return deny(`Token ceiling reached (${n(used)} of ${n(ceiling)}): more work would take your report past it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
 }
 
+// One line per fail-open, the cause and never the content, so a gap shows in the sweep's outcome (K151).
+function logOpen(input, e) {
+	try {
+		const r = require('child_process').spawnSync('git', ['-C', String(input.cwd || process.cwd()), 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', timeout: 3000 });
+		if (r.status === 0) fs.appendFileSync(path.join(r.stdout.trim(), 'kit-guard-open.log'), `${JSON.stringify({ at: new Date().toISOString(), hook: 'call-cap', agent: String(input.agent_id || ''), cause: String((e && e.code) || (e && e.message) || e).slice(0, 120) })}\n`);
+	} catch { /* nothing more to do */ }
+}
 // Anything unexpected lets the call through.
-const safeCheck = (input) => { try { return check(input) || null; } catch { return null; } };
+const safeCheck = (input) => { try { return check(input) || null; } catch (e) { logOpen(input || {}, e); return null; } };
 if (require.main === module) {
 	let out = null;
 	try { out = safeCheck(JSON.parse(fs.readFileSync(0, 'utf8') || '{}')); } catch { /* lets it through */ }
