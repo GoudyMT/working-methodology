@@ -243,16 +243,21 @@ test('a project\'s .kit/pr-body.json sets its own review dimensions, audit line 
   }));
   const full = stdAudit(dir, read(path.resolve('user/skills/pr-body/examples/standard.md')));
   assert.equal(full.status, 0, full.stdout);
+  // The build 20 sweep: a project's own dimensions replace the kit's six; a Feature body with only its rows is not held
+  // to the kit's names.
+  assert.match(stdAudit(dir, honestBody().replace(/\| Test value.*\n/, '')).stdout, /PASS\s+Review covers the dimensions its tier needs\s+the project's own dimensions/);
   // A file from before 1.25.0 names its rows "gates": the audit says so, never falling back in silence (the sweep).
   const old = makeTemp('prb-');
   fs.mkdirSync(path.join(old, '.kit'));
   fs.writeFileSync(path.join(old, '.kit', 'pr-body.json'), JSON.stringify({ gates: ['Code security', 'Accessibility'] }));
   assert.match(stdAudit(old, honestBody()).stdout, /FAIL.*"gates" is now "dimensions"/);
-  // A project with no file needs only a code security row, so no row is written to say "not touched".
+  // A project with no file needs only a code security row in a Fix or Triage review, so no row is written to say "not
+  // touched"; build 20 holds a Feature review with no file to the six dimensions the tier names (rule:sweep-tiers).
   const plain = makeTemp('prb-');
-  const oneRow = honestBody().replace(/\| (Privacy|Supply|Legal|Test value).*\n/g, '');
+  const oneRow = honestBody().replace(/\| (Privacy|Supply|Legal|Test value).*\n/g, '').replace('Feature review of', 'Fix review of');
   assert.equal(stdAudit(plain, oneRow).status, 0, stdAudit(plain, oneRow).stdout);
   assert.match(stdAudit(plain, oneRow.replace(/\| Code security.*\n/, '')).stdout, /missing Code security/);
+  assert.match(stdAudit(plain, oneRow.replace('Fix review of', 'Feature review of')).stdout, /FAIL\s+Review covers the six dimensions/);
 });
 
 // The build 17 sweep: CI runs the base copy of the audit, but it read .kit/pr-body.json from the PR's own tree, so a
@@ -300,6 +305,9 @@ test('the Standard PR audit holds the Review section to the sweep summary and re
   assert.match(stdAudit(dir, four).stdout, /FAIL\s+Review covers the six dimensions a Feature review must[^\n]*supply chain, legal/i);
   assert.match(stdAudit(dir, four.replace('Feature review of', 'Fix review of')).stdout, /PASS\s+Review covers/);
   assert.match(ok.stdout, /PASS\s+Review covers/);
+  // The build 20 sweep: First push and Launch gate are held the same, and a row with an empty result is no row.
+  for (const tier of ['First push', 'Launch gate']) assert.match(stdAudit(dir, four.replace('Feature review of', `${tier} review of`)).stdout, new RegExp(`FAIL\\s+Review covers the six dimensions a ${tier} review must`), tier);
+  assert.match(stdAudit(dir, honestBody().replace(/(\| Legal[^|\n]*\|)[^|\n]*\|/, '$1 - |')).stdout, /FAIL\s+Review covers the six dimensions[^\n]*legal/i);
   // The build 13 sweep: only a parenthesis of modifiers sits between the tier and "review of".
   assert.match(stdAudit(dir, honestBody().replace('Feature review of', 'Feature flags stay off; a light review of')).stdout, /FAIL\s+Review names the sweep tier/);
   const linked = stdAudit(dir, honestBody().replace('- **Deferred:** none.', '- **Deferred:** see [the report](docs/sweeps/2026-05-14-pin.md).'));
