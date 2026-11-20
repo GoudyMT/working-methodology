@@ -128,6 +128,9 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	put(dir, 'results/a2.md', 'Verified.\nRELEASE COMPLETE: every step of v1.35.0 is done.\n');
 	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 0);
 	assert.equal(rows(dir)[1].verify, 'results/a2.md');
+	// The commit review: a new row added as done owes the same proof.
+	assert.match(st(dir, 'item', 'add', '--from', json(dir, { id: 'A9', title: 'Added done', tag: 'done', at: '1.35.0', severity: 'low', caught_by: 'owner' })).stdout, /A9: done needs its verify result/);
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { id: 'A9', title: 'Added done', tag: 'done', at: '1.35.0', severity: 'low', caught_by: 'owner', verify: 'results/a2.md' })).status, 0);
 
 	r = st(dir, 'item', 'add', '--from', json(dir, { id: 'K1', title: 'Start load is 64,975 B of 80,000', tag: 'later', at: 'T9', severity: 'medium', origin: 'self' }));
 	assert.equal(r.status, 1, 'a number with no label is refused');
@@ -137,9 +140,10 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 
 	// A hand edit that gets round the commands is still caught.
 	const lines = read(dir, '_List.jsonl').split('\n');
-	const k1 = JSON.parse(lines[4]);
+	const at = lines.findIndex((l) => l.includes('"id":"K1"'));
+	const k1 = JSON.parse(lines[at]);
 	delete k1.measured;
-	lines[4] = JSON.stringify(k1);
+	lines[at] = JSON.stringify(k1);
 	put(dir, '_List.jsonl', lines.join('\n'));
 	r = st(dir, 'check');
 	assert.equal(r.status, 1);
@@ -628,7 +632,7 @@ test('render writes the roadmap, counts and rows blocks from the data, and check
 	const dir = project();
 	put(dir, 'list.md', LIST);
 	st(dir, 'list', 'import', 'list.md');
-	const plan = ['# Roadmap', '', 'Owner text above.', '', '<!-- list:begin roadmap -->', '<!-- list:end -->', '', '<!-- list:begin counts -->', '<!-- list:end -->', '', '<!-- list:begin rows -->', '<!-- list:end -->', '', 'Owner text below.', ''].join('\n');
+	const plan = ['# Roadmap', '', 'Owner text above.', '', '<!-- list:begin roadmap -->', '<!-- list:end -->', '', '<!-- list:begin counts -->', '<!-- list:end -->', '', '<!-- list:begin rows -->', '<!-- list:end -->', '', '<!-- list:begin archive -->', '<!-- list:end -->', '', 'Owner text below.', ''].join('\n');
 	put(dir, '_Master Roadmap.md', plan);
 	let r = st(dir, 'check');
 	assert.equal(r.status, 1, 'empty blocks differ from the data');
@@ -641,6 +645,12 @@ test('render writes the roadmap, counts and rows blocks from the data, and check
 	// pin: 1 check compares the generated view byte for byte
 	assert.match(out, /^\| A1 \| The closeout deleted 480 items \| Source: a project \| high \| not set \| \*\*\[DONE 1\.14\.0\]\*\* fixed and probed \|$/m);
 	assert.match(out, /^\*\*C\. Found inside\*\*$/m, 'a section is a bold line, never a heading a reader takes for its own');
+	// TC3 (build 20): the rows view holds the open rows a thread reads at start, the archive view the done and closed
+	// ones; every row of the data is in exactly one of them.
+	const block = (name) => out.split(`<!-- list:begin ${name}:`)[1].split('<!-- list:end -->')[0];
+	const ids = (t) => [...t.matchAll(/^\| (\w+) \|/gm)].map((m) => m[1]).filter((x) => x !== 'ID' && x !== 'Step');
+	assert.deepEqual([...ids(block('rows')), ...ids(block('archive'))].sort(), rows(dir).map((x) => x.id).sort());
+	assert.ok(!ids(block('rows')).includes('A1') && ids(block('archive')).includes('A1'), 'a done row is in the archive only');
 	assert.match(out, /^Owner text above\.$/m);
 	assert.match(out, /^Owner text below\.$/m);
 

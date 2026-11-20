@@ -683,6 +683,33 @@ function main(argv) {
 	saveState(s);
 }
 
+/**
+ * TC1 (build 20): done needs proof, on every path that writes a row (item set and item add; the review of this fix).
+ * The row names its verify result, a file in the project, which holds the release check's RELEASE COMPLETE line for
+ * the release the row ships in; a tag set alone is refused. Closed (shown not real) needs none.
+ *
+ * Args:
+ *     row: the row as it would be written
+ *     was: the row before, or null for a new one
+ *     named: true when the verify field itself is being set
+ *
+ * Returns:
+ *     the reason it is refused, or null
+ */
+function doneProof(row, was, named) {
+	const id = clean(row.id);
+	if (named || (row.tag === 'done' && row.verify)) {
+		const rel = path.relative(ROOT, path.resolve(ROOT, String(row.verify)));
+		if (rel.startsWith('..') || path.isAbsolute(rel) || !fs.existsSync(path.join(ROOT, rel))) return `${id}: the verify result must be a file in this project`;
+	}
+	if (row.tag !== 'done' || (was && was.tag === 'done')) return null;
+	if (!row.verify) return `${id}: done needs its verify result: item set ${id} verify <result file>, a file holding the release check's RELEASE COMPLETE line`;
+	let text = '';
+	try { text = fs.readFileSync(path.resolve(ROOT, row.verify), 'utf8'); } catch { return `${id}: its verify result ${clean(row.verify)} cannot be read`; }
+	const want = row.at ? `RELEASE COMPLETE: every step of v${String(row.at).trim().replace(/^v/, '')} ` : 'RELEASE COMPLETE: every step of ';
+	return text.includes(want) ? null : `${id}: its verify result ${clean(row.verify)} has no "${want.trim()}" line: run the release check and keep its output there`;
+}
+
 /** list [text] [--all] | list caught | list audit | list import <file.md> | item add --from <file.json> | item set <id> <field> <value> */
 function listCommand(cmd, rest, { fail, usage }) {
 	const l = list.loadList(io);
@@ -812,6 +839,8 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (r && typeof r.id === 'string' && Object.hasOwn(s.list_import, r.id)) return fail(`${clean(r.id)} was moved in by the import; change it with item set`);
 		const bad = list.refuse(r, l.rows, s.list_import, { added: true });
 		if (bad) return fail(clean(bad));
+		const proof = doneProof(r, null, Boolean(r.verify));
+		if (proof) return fail(proof);
 		write(list.LIST, list.serialize([...l.rows, r]));
 		return console.log(`${r.id} added${refreshLists()}`);
 	}
@@ -826,20 +855,8 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (why) return fail(why);
 		const bad = list.refuse(ch.row, l.rows.filter((_, k) => k !== at), s.list_import);
 		if (bad) return fail(clean(bad));
-		// TC1 (build 20): done needs proof. The row names its verify result, a file in the project, and that file holds the
-		// release check's "RELEASE COMPLETE" line for the release the row ships in; a tag set alone is refused. Closed
-		// (shown not real) needs none.
-		if (field === 'verify') {
-			const rel = path.relative(ROOT, path.resolve(ROOT, ch.row.verify));
-			if (rel.startsWith('..') || path.isAbsolute(rel) || !fs.existsSync(path.join(ROOT, rel))) return fail(`${clean(id)}: the verify result must be a file in this project`);
-		}
-		if (field === 'tag' && ch.row.tag === 'done' && l.rows[at].tag !== 'done') {
-			if (!ch.row.verify) return fail(`${clean(id)}: done needs its verify result: item set ${clean(id)} verify <result file>, a file holding the release check's RELEASE COMPLETE line`);
-			let text = '';
-			try { text = fs.readFileSync(path.resolve(ROOT, ch.row.verify), 'utf8'); } catch { return fail(`${clean(id)}: its verify result ${clean(ch.row.verify)} cannot be read`); }
-			const want = ch.row.at ? `RELEASE COMPLETE: every step of v${String(ch.row.at).trim().replace(/^v/, '')} ` : 'RELEASE COMPLETE: every step of ';
-			if (!text.includes(want)) return fail(`${clean(id)}: its verify result ${clean(ch.row.verify)} has no "${want.trim()}" line: run the release check and keep its output there`);
-		}
+		const proof = doneProof(ch.row, l.rows[at], field === 'verify');
+		if (proof) return fail(proof);
 		const rows = [...l.rows];
 		rows[at] = ch.row;
 		write(list.LIST, list.serialize(rows));
