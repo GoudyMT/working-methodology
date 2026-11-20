@@ -659,6 +659,8 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`).stderr, /no branch yet/);
 	assert.equal(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1' }).status, 0, 'the owner\x27s first push');
 	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /owner-hand refs\/heads\/feat\/z/);
+	// A name built at run time could set the owner's marker past the guard, so it counts only with no AI marker.
+	assert.match(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, { KIT_OWNER_PUSH: '1' }).stderr, /this shell is an AI's/);
 	// A url.insteadOf rewrite would send the hook's questions to another remote.
 	g('config', 'url.file:///nowhere/.insteadOf', seeded);
 	assert.match(push(`refs/heads/feat/y ${main} refs/heads/feat/y ${Z}`).stderr, /insteadOf/);
