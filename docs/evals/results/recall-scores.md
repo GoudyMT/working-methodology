@@ -1016,3 +1016,39 @@ control: 0
 gate: b18-1.44.0 median 14 baseline 13 brief v2 keys v12 owner-accepted
 behaviour: b18-1.44.0 median 14 baseline 12 suite v2 control 5
 scored: 3b55d467558a1dee23fad2840e4ba623ebe781ec
+
+## Recall v12 - 1.45.0, guard reads, Visuals check, app templates and the early draft PR (2026-11-20)
+
+Candidate: the branch at ba916ff (the project layer from this branch, the user layer the released 1.44.0). Baseline: the 1.44.0 final runs (b18-c1b, b18-c2, b18-c3; main's rule text is unchanged since they ran), scored again here; control: the v12 control. Opus 5.5 at medium, brief v2, keys v12. The owner approved the spend by pop-up, and approved the second round by pop-up (2026-11-20: "Reword and rerun").
+
+Round 1, on the first wording of the early draft PR ("a draft may open first"): wording 14, 13, 13, 14, 13 (median of 5 is 13; the baseline scored 13, 14, 14), and behaviour 12, 12, 13 and 13, 13, 12; the sweep-before-PR task failed in 4 of 6, because the new line read as leave to skip the sweep. The rule text was reworded (a done feature runs its sweep first; the build's early draft is the one exception and stays a draft until then) and trimmed under the reviews rule's size cap, and every run below is on that text.
+
+Round 2: the first three runs scored 14, 12, 13 (median 13, on the bar), so runs 4 and 5 ran and one fresh blind scorer read all nine (decision 7).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 4 | 1, 0, 1, 1, 0 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 0, 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 0, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 14, 12, 14, 14, 13 | 13, 14, 14 | 0 |
+
+- **Scored: five-run median 14 of 14, baseline 14, control 0.** The bar of 13 holds.
+- **The misses:** Q4 (the push bound: one run left out opening the PR, one the tag, force and delete limits) and Q7 (one run made approve.mjs optional), all marked borderline; this build did not change their rule text. Q10, the question on the sweep this build reworded, passed in all five.
+- **Behaviour (suite v2, pass 11):** the branch 13, 14, 14 (the closeout task failed once; the sweep-before-PR task passed in all three); the 1.44.0 branch runs 14, 13, 14 as baseline. Control 5 (the 1.43.0 control).
+- **Not measured:** the user layer's changes (skills and the global file), as before.
+
+control: 0
+gate: b19-1.45.0 median 14 baseline 14 brief v2 keys v12
+behaviour: b19-1.45.0 median 14 baseline 14 suite v2 control 5
+scored: ba916ff3a1aabf62c31285622f9f88162dc9f0ab
