@@ -34,7 +34,7 @@ const launcher = () => { try { return createRequire(import.meta.url)(path.join(H
 const guardDir = () => { const L = launcher(); return L ? path.join(HOME, 'kit-guard', L.recordName(dir)) : path.join(HOME, 'kit-guard', '-'); };
 
 // T9 (1.42.0, D-2): the cap on AGENTS.md, which every session loads at start, read as the project has it on disk.
-const AGENTS_CAP = 25000;
+const AGENTS_CAP = 22000;
 // K111 (1.42.0): the compact window the kit sets, and Claude Code's floor (a value under it is ignored, not raised).
 const WINDOW_MAX = 400000;
 const WINDOW_MIN = 100000;

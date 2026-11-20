@@ -70,3 +70,16 @@ Why: an unverified fact handed on is inherited by every reader.
 Judge every recommendation on **current-version fit** (scope, locked architecture, Simplicity Lens) and **end-state fit** (the finished product per roadmap and spec): what it commits us to; which horizon it wins; the **rework cost** if they differ; **accepted debt** (documented, or a compounding trap); impact now and later. Agreed horizons -> one line. A pick a future version will FORCE to change is TEMPORARY; "durable" is defended by its mechanism.
 
 **Temporary-fix gate:** name the robust built-once option and quantify the delta (work now vs the later forced change + risk); temporary only when robustness is disproportionate AND the later change cheap, isolated and non-compounding - recorded as debt with its retirement trigger; otherwise robust. **Build seam-first:** inject the dependency a later mode will swap (local vs server), so the later arc is additive. Why: the cheap-now pick, taken by reflex, is paid repeatedly.
+
+## Goal Before Mechanism {#goal-before-mechanism}
+
+- **Explore the goal, not the named mechanism:** the goal in one line, the current state against it, then every channel.
+- **Map an experience goal to the layer that emits it:** restate it as what the user SEES and name that layer in writing before code. The knob on the surface being edited is suspect; a measurement saying it cannot reach the goal means change layer, not a middle value.
+- **Check the capability exists** (where and when the output is produced) before tuning its presentation; gated off for most people = absent.
+- **Sequence by the tier people hit first;** **run the deciding measurement first** - the cheap check that would show the goal unreachable, its bar written down before the result.
+
+Why: the named mechanism is often the nearest knob; widening to the goal finds the defect it hid.
+
+## Success Charter (Define Success Before Building) {#success-charter}
+
+The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, the tiers ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.

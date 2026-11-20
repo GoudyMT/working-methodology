@@ -28,7 +28,7 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 1. This file: the core rules below, and the module the moment needs (Rule Modules table at the end)
 2. `node .claude/resume-packet.mjs check`: the resume point, open lessons and git state, checked against the files
-3. The files its verdict names; with no packet (or a tool that runs no commands): [`_Start Here.md`](_Start Here.md), [`_Loop Learnings.md`](_Loop Learnings.md), [`_Working Memory.md`](_Working Memory.md), [`_Active Plan.md`](_Active Plan.md), the last [`_Session Log.md`](_Session Log.md) entry, the plan the Resume Point names
+3. The files its verdict names; with no packet (or a tool that runs no commands): [`_Start Here.md`](_Start Here.md), [`_Loop Learnings.md`](_Loop Learnings.md), [`_Working Memory.md`](_Working Memory.md), [`_Active Plan.md`](_Active Plan.md), the plan the Resume Point names
 
 ---
 

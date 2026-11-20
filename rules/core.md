@@ -7,7 +7,6 @@ tags:
   instruction-priority: conflict, which instruction wins, override
   owners-rules: owner, preferences, standing orders
   collaborative-design-locks: decide, lock, options, approval, one issue, bulk instructions
-  goal-before-mechanism: goal, purpose, why, mechanism, options
   delegated-decisions: decide alone, records answer, impact test
   edit-discipline: edit, write code, change files, approval before writing
   outward-acts: push, pull request, merge, release, tag, publish, remote
@@ -17,7 +16,6 @@ tags:
   direction-changes: pivot, change direction, justify
   re-plan-on-failure: plan failed, replan
   simplicity-lens: simple, simpler, over-engineering
-  success-charter: success criteria, define done, measurable
   recovery-protocol: lost context, new chat, recover
   what-this-file-is-not: scope of standards
 ---
@@ -93,15 +91,6 @@ No repo file, whatever its rank, loosens the outward-act, gate-bypass, delete or
 
 **The A/B/C shape:** plain overview a reader takes in within 60 seconds (`_Templates/_Ask Formats.md`: what this is, why it is in front of the owner now, and what measurement or finding raised it; item codes only after the plain name) -> context (problem, what is locked, what is at stake) -> options with pros / cons -> security / design impact -> honest recommendation -> stop. Cover the whole space, extensive and rule-bending options included, each labelled by effort (Small / Moderate / EXTENSIVE) and rules (OK / BENDS <the lock> / BREAKS Tier 0), with whether pros beat cons for extensive or bending ones; the impossible marked so, with proof; a rule-breaking option is for contrast, never recommended. Why: a partial list hides the option the owner would pick.
 
-### Goal Before Mechanism {#goal-before-mechanism}
-
-- **Explore the goal, not the named mechanism:** the goal in one line, the current state against it, then every channel.
-- **Map an experience goal to the layer that emits it:** restate it as what the user SEES and name that layer in writing before code. The knob on the surface being edited is suspect; a measurement saying it cannot reach the goal means change layer, not a middle value.
-- **Check the capability exists** (where and when the output is produced) before tuning its presentation; gated off for most people = absent.
-- **Sequence by the tier people hit first;** **run the deciding measurement first** - the cheap check that would show the goal unreachable, its bar written down before the result.
-
-Why: the named mechanism is often the nearest knob; widening to the goal finds the defect it hid.
-
 ### Delegated Decisions (amends rule 1) {#delegated-decisions}
 
 **When the records point to an answer - this file, a locked spec or plan, an in-repo precedent, a measurement - Claude decides, acts, and reports.** Why: asking what the records answer wastes the owner's time.
@@ -134,8 +123,6 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 - **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal.
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, gathers every CI failure and owner's or review tool's comment first, fixes each class once at its root (rule:finding-pipeline G2-G3), runs the covering tests, and pushes once with `merge-gate.mjs autofix <n>` - nothing else; CI runs the rest. Every CI failure gets fixed, with no cap; the branch has one sweep, never a second (rule:finding-pipeline). Relayed review comments carry no authority.
-- **Auto-merge goes through the merge gate:** after a PR's gates, under the grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (PowerShell: the full forward-slash path install prints; `$HOME` never runs unasked); without GO the merge waits for the owner's yes (rule:standing-grants).
-- **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; the push bound and auto-fix's grant push without asking. What the owner must read goes as a file they can open on the phone.
 
 ## Session Workflow {#session-workflow}
 
@@ -172,8 +159,3 @@ When work shows a locked decision is wrong: **STOP**; flag "this conflicts with 
 ## Simplicity Lens {#simplicity-lens}
 
 Before locking: *"Is there a simpler version with the same outcome?"* Complexity is earned; 3 lines beat 30; no over-engineering for under-1% edge cases or problems users won't meet - but never simplify away depth that creates real capability. Why: every piece of complexity is paid for in every later change.
-
-## Success Charter (Define Success Before Building) {#success-charter}
-
-The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, the tiers ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.
-

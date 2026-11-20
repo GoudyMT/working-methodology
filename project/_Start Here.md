@@ -32,8 +32,7 @@
 | **5** | [`_Active Plan.md`](_Active Plan.md) | **WHERE we are.** Current focus and the exact next action. |
 | **6** | [`_Master Roadmap.md`](_Master Roadmap.md) | **THE FULL PLAN.** Status per item across versions. Scan; dive into the current version. |
 | **7** | `<master design spec>` | **THE VISION.** Product, architecture, components, security, risks, open decisions. |
-| **8** | Last entry in [`_Session Log.md`](_Session Log.md) | **WHERE WE STOPPED.** Completed work, decisions, flagged items. |
-| **9** | The spec / ADR / plan named by the Resume Point | **THE WORK.** |
+| **8** | The spec / ADR / plan named by the Resume Point | **THE WORK.** |
 
 ---
 
