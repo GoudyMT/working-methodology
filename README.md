@@ -50,7 +50,7 @@ The full map, with the three places a rule can live and the skills by situation:
 
 | Folder / file | Installs to | What it is |
 |---|---|---|
-| `user/CLAUDE.md` | `~/.claude/CLAUDE.md` | Global rules for every project. `{{OWNER_NAME}}` and `{{OWNER_PROFILE}}` are filled at install. |
+| `user/CLAUDE.md` | `~/.claude/CLAUDE.md` | Global rules for every project. `{{OWNER_NAME}}` is filled from `kit.config.json` and `{{OWNER_PROFILE}}` from `~/.claude/kit-owner-profile.md` at install. |
 | `user/agents/` | `~/.claude/agents/` | Agent roles: builder, checker, orchestrator, scanner. |
 | `user/kit-tools/`, `user/kit-hooks/` | `~/.claude/kit-tools/`, `~/.claude/kit-hooks/` | The merge gate and its audit copies, and the sweep and call-cap hooks: outside every repo, so no branch can edit them. |
 | `user/skills/` | `~/.claude/skills/` | agent-team-build, brainstorm, teacher, teacher-sync, human-factor, methodology-kit; the format skills (pr-body, release-notes, closeout, preview-test, pre-pr-sweep, adr), each with its steps, examples and audit; and the builder and checker rules preloaded by their roles. |
@@ -60,12 +60,12 @@ The full map, with the three places a rule can live and the skills by situation:
 | `NEW-PROJECT.md` | - | Entry point for a project that starts from nothing. |
 | `EXISTING-PROJECT.md` | - | Entry point for a project that already exists: orient, map, find gaps, then adopt. |
 | `THIRD-PARTY.md` | - | The plugins and skills the kit uses, their makers and licenses, and how to restore them. |
-| `vendor/` | - | A credited backup copy of each third-party plugin and skill, with `CREDITS.md`. |
+| `vendor-index.json` | - | What the credited backup of each third-party plugin and skill holds; the copies live in a private repo the config's `vendor.dir` names. |
 | `scripts/kit.mjs` | - | The one tool: install, fold-back, bump, snapshot, restore, scrub, build, measure, find, and the hook reports. Tests in `tests/`. |
 | `docs/` | - | The plan record, the recall and lookup tests, and the 1.0.0 migration record (ledger, IDs, reworded lines). |
 | `TRIALS.md` | - | New rules on trial, until a second project uses them cleanly. |
 | `kit.config.json` | - | The owner's name (the one settings line), the size caps, retired files and the third-party backup list. |
-| `owner-profile.md` | - | A few lines about the owner, placed into the global rules. |
+| `owner-profile.example.md` | - | The shape of the owner's profile. The real one is `~/.claude/kit-owner-profile.md`, outside the repo, placed into the global rules at install. |
 
 Every rule says "the owner". The name lives only in `kit.config.json`.
 
@@ -75,9 +75,18 @@ Needs Node 20 or later and git. From a Claude Code session, say "/methodology-ki
 existing" (after the first `install user`), or follow the entry-point files by hand.
 
 Install runs only from a release: the kit folder's HEAD must be exactly at tag `v<VERSION>`, with nothing
-changed or new in what install copies or reads (`user/`, `project/`, `memory/`, `scripts/`, `VERSION`, the
-config and the owner profile); otherwise it is refused, `--dry-run` too, and names why. So check out the newest
-release tag first (`git tag --sort=-v:refname` lists it first), never `git pull`, which moves the folder onto main:
+changed or new in what install copies or reads (`user/`, `project/`, `memory/`, `scripts/`, `VERSION` and the
+config); otherwise it is refused, `--dry-run` too, and names why. So check out the newest release tag first
+(`git tag --sort=-v:refname` lists it first), never `git pull`, which moves the folder onto main.
+
+Upgrading from 1.43.x or older: the profile left the kit folder in 1.44.0, so move it before the checkout, which
+deletes it. Install user refuses rather than blank the Owner Context lines it finds with no profile:
+
+```bash
+cp owner-profile.md ~/.claude/kit-owner-profile.md
+```
+
+Already checked out? `git show v1.43.1:owner-profile.md > ~/.claude/kit-owner-profile.md` prints the last copy.
 
 ```bash
 git fetch --tags; git checkout <newest v tag>
@@ -183,7 +192,7 @@ Run a fold-back at the end of any session that changed the standards, and at the
 
 ## Privacy
 
-The repository is private. `scripts/kit.mjs scrub` checks every kit file for home-folder paths, non-ASCII
-characters and the words in `scrub.local.json` (kept out of git, so the list itself never leaks). Before any
-move to public, decide what to do with `kit.config.json` and `owner-profile.md`, which hold the owner's details
-on purpose.
+The repository is public. `scripts/kit.mjs scrub` checks every kit file for home-folder paths, non-ASCII
+characters and the words in `scrub.local.json` (kept out of git, so the list itself never leaks). The owner's profile is
+not in it: install reads `~/.claude/kit-owner-profile.md` from the owner's own Claude folder. `kit.config.json` holds
+only the owner's first name. Git history before 1.44.0 still holds the old profile file.

@@ -53,7 +53,9 @@ function homeParts() {
 	return homeMemo[1];
 }
 // Plain readers only: rg (--pre) and less (LESSOPEN) can run another program.
-const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'get-item', 'gi', 'jq', 'wc', 'stat', 'test-path', 'file', 'get-filehash']);
+const READERS = new Set(['cat', 'head', 'tail', 'type', 'gc', 'get-content', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'ls', 'dir', 'gci', 'get-childitem', 'get-item', 'gi', 'jq', 'wc', 'stat', 'test-path', 'file', 'get-filehash',
+	// K138 (build 18): cmp compares and du counts; neither has a way to write but a redirect, which is read as a write.
+	'cmp', 'du']);
 // Copiers: a transcript copied out is a read; one copied in is a write.
 const COPIERS = new Set(['cp', 'copy', 'copy-item', 'cpi']);
 // Programs that move a shell into a folder: a relative word after one is read from there.
@@ -423,8 +425,50 @@ function filterFits(pattern, cwd, pathWord = false) {
 // so it is never PATH or another name that moves a program (Bash names are case-sensitive; a PowerShell $v is no
 // environment variable); the words hold no expansion, and the body no group, substitution or second loop. The body is
 // read once for each word, the variable written out as that word, so a word that names a guard is read as written.
-const LOOP_WORDS = /^[\w.,'" /-]+$/;
+// K138 (build 18): a list word may hold a glob (* ?): each body is read with the glob in place of the name.
+const LOOP_WORDS = /^[\w.,'" /*?-]+$/;
 const LOOP_BODY = /^[^{}()`]*$/;
+// The commit review on K138: a Bash for loop whose list holds a glob gets the real names the glob matches, and a body
+// that uses the variable outside double quotes splits a name with a space (a file named "x .claude" becomes x and
+// .claude), a path no reading of the glob word sees. Such a loop is held when a name the glob matches on disk holds a
+// space or a sign the shell reads again, or when the guard cannot list what it matches. Quoted, a name stays one word,
+// and the glob word is read in its place as any loop word is.
+const globRe = (pat) => new RegExp(`^${pat.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i');
+function globNamesSplit(words, from) {
+	for (const w of words.split(/\s+/).map((x) => x.replace(/^['"]|['"]$/g, '')).filter((x) => /[*?[]/.test(x))) {
+		const dir = path.dirname(w);
+		// A wildcard in a folder part or a bracket class is more than this reading follows: held.
+		if (/[*?[]/.test(dir) || /\[/.test(w)) return true;
+		// The second commit review: a folder the guard cannot list (an MSYS /c/ path, a missing one) is held, not passed.
+		let names;
+		try { names = fs.readdirSync(path.resolve(from, dir)); } catch { return true; }
+		if (names.length > 4096) return true;
+		const re = globRe(path.basename(w));
+		if (names.some((n) => re.test(n) && /[\s*?[\]'"\\$`]/.test(n))) return true;
+	}
+	return false;
+}
+function globSplits(command, tool, start) {
+	if (tool === 'PowerShell') return false;
+	const m = /(?:^|[;&|\n(]\s*|\s)for\s+([A-Za-z_]\w*)\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b([\s\S]*?)\bdone\b/.exec(String(command || ''));
+	if (!m || !/[*?[]/.test(m[2])) return false;
+	const body = m[3];
+	// The second commit review: a reader can write through a split name too (sort -o, uniq's second file), so no body is
+	// exempt; IFS set anywhere splits names on any sign, and a folder change before the loop moves where the glob is read
+	// from, so either holds the loop whole.
+	if (/\bIFS\b/.test(command) || /(^|[\s;&|(!])(cd|pushd|popd|chdir|builtin)(?![\w-])/.test(String(command).slice(0, m.index + m[0].indexOf('for')))) return true;
+	const use = new RegExp(`^\\$(\\{${m[1]}\\b|${m[1]}(?!\\w))`);
+	let q = null;
+	for (let i = 0; i < body.length; i++) {
+		const c = body[i];
+		if (q === "'") { if (c === "'") q = null; continue; }
+		if (c === '\\') { i++; continue; }
+		if (c === '"') { q = q ? null : '"'; continue; }
+		if (!q && c === "'") { q = "'"; continue; }
+		if (!q && c === '$' && use.test(body.slice(i))) return globNamesSplit(m[2], start || (startNow && startNow.dir) || process.cwd());
+	}
+	return false;
+}
 function loopBodies(command, tool) {
 	const c = String(command || '');
 	const m = tool === 'PowerShell'
@@ -526,6 +570,7 @@ function shellWrites(command, tool, start, names = proofNames) {
 		const plain = psReads(command);
 		if (plain !== String(command || '')) return shellWrites(plain, tool, start, names);
 	}
+	if (globSplits(command, tool, start)) return true;
 	const bodies = loopBodies(command, tool);
 	if (bodies) return bodies.some((b) => shellWrites(b, tool, start, names));
 	// Each reading has its own real folder: a reading nested in this one must not leave its own behind.

@@ -534,8 +534,10 @@ test('B20 release install: a kit file changed after the release check is refused
 
 // why: guards rule:security-standards (a release install copies only the release's bytes). The 1.26.0 carry-overs: a
 // release check that found no tree id fell back to reading the folder (S4), and the config, the owner profile and
-// VERSION, which install renders into every file, were read from the folder unchecked (C4).
-test('B20 release install: no tree id is a refusal, and the config, profile and VERSION are checked too', () => {
+// VERSION, which install renders into every file, were read from the folder unchecked (C4). K141 (build 18): the
+// owner profile left the kit folder for the Claude folder, so it is no kit input to check.
+// renamed from: B20 release install: no tree id is a refusal, and the config, profile and VERSION are checked too
+test('B20 release install: no tree id is a refusal, and the config and VERSION are checked too', () => {
 	const tmp = kitTemp.makeTemp('b20cfg-');
 	const kit = path.join(tmp, 'kit');
 	fs.cpSync(KIT, kit, { recursive: true, filter: (src) => !/[\\/](\.git|reports|node_modules|tests|vendor)$/.test(src) });
@@ -545,15 +547,17 @@ test('B20 release install: no tree id is a refusal, and the config, profile and 
 	const tree = ok(git(kit, ['rev-parse', 'HEAD^{tree}']));
 	const { home, proj } = setup();
 	assert.throws(() => install({ kit, home, target: 'project', projectDir: proj, release: { release: true, tree: null } }), /Install refused/);
-	const profile = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')).ownerProfileFile || 'owner-profile.md';
-	for (const file of ['kit.config.json', profile, 'VERSION']) {
+	for (const file of ['kit.config.json', 'VERSION']) {
 		const at = path.join(kit, file);
 		const was = fs.readFileSync(at);
-		fs.writeFileSync(at, file === 'kit.config.json' ? JSON.stringify({ ...JSON.parse(was), ownerName: 'Swapped' }) : file === 'VERSION' ? '9.9.9\n' : `${was}\n- swapped after the check\n`);
+		fs.writeFileSync(at, file === 'kit.config.json' ? JSON.stringify({ ...JSON.parse(was), ownerName: 'Swapped' }) : '9.9.9\n');
 		try {
 			assert.throws(() => install({ kit, home: kitTemp.makeTemp('b20home-'), target: 'user', release: { release: true, tree } }), /changed since the release check/, file);
 		} finally { fs.writeFileSync(at, was); }
 	}
+	// A profile left in the kit folder is never read from there: a release install refuses until it moves.
+	fs.writeFileSync(path.join(kit, 'owner-profile.md'), '- Left behind\n');
+	assert.throws(() => install({ kit, home: kitTemp.makeTemp('b20home-'), target: 'user', release: { release: true, tree } }), /the kit folder still holds/);
 });
 
 // The security review on c453ec1: core.fsmonitor names a program git runs on git status and git ls-files (proven on

@@ -262,6 +262,30 @@ test('a loop of kit-script reads and a sed line range pass; a loop that could wr
 	for (const c of ["foreach ($f in 'a') { $f = '.git/config'; Set-Content $f x }", "foreach ($f in 'a') { Set-Variable f .claude/guard.cjs; Copy-Item evil $f }", "foreach ($f in '.claude') { $f += '/guard.cjs'; Copy-Item evil $f }"]) assert.equal(ps(c), 'deny', c);
 });
 
+// K138 (build 18, held live on 1.43.0 from the workbench): a loop over a glob of guard files running sed -n, cmp of a
+// file against a guard, and du on another folder joined to an ls of .claude were held as writes. node -e stays strict:
+// it can write, and the owner's row leaves it so. Each widening keeps its write twin held beside it.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('a loop over a glob of guard files that only reads, cmp against a guard and du then ls pass; their write twins hold', () => {
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x\n');
+	fs.writeFileSync(path.join(proj, '.claude', 'guard-read.cjs'), 'x\n');
+	fs.writeFileSync(path.join(proj, 'a.txt'), 'x\n');
+	for (const c of ['for f in .claude/guard*.cjs; do sed -n 1,3p "$f"; done', 'cmp a.txt .claude/guard.cjs', 'du -sh tests && ls .claude', 'du -sh tests; ls .claude']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['for f in .claude/guard*.cjs; do sed -i 1d "$f"; done', 'for f in .claude/guard*.cjs; do cp a.txt "$f"; done', 'for f in .claude/*; do rm $f; done',
+		'for f in .cl*; do rm -rf "$f"/guard.cjs; done', 'for f in .cl?ude; do echo x > "$f"/guard.cjs; done', 'for f in .*/guard.cjs; do rm "$f"; done', 'for f in .git/hooks/*; do cp a.txt "$f"; done', 'cmp a.txt .claude/guard.cjs > .claude/guard.cjs',
+		'du -sh tests && rm .claude/guard.cjs', 'du -sh tests > .claude/guard.cjs', `node -e "require('fs').readFileSync('.claude/guard.cjs')"`]) assert.equal(bash(c), 'deny', c);
+	// The commit review: the glob hands the body real names, and an unquoted $f splits one with a space ("x .claude").
+	assert.equal(bash('for f in *.txt; do cp $f b; done'), 'allow', 'no name the glob matches splits');
+	fs.writeFileSync(path.join(proj, 'x .claude'), '');
+	try {
+		for (const c of ['for f in x*; do cp a.txt $f/guard.cjs; done', 'for f in x*; do rm -rf ${f}; done', 'for f in */x*; do cp a.txt $f; done',
+			// The second commit review: a reader that writes through a split name, IFS, a folder change first, an unlistable folder.
+			'for f in x*; do sort a.txt -o $f/guard.cjs; done', 'IFS=.; for f in *.txt; do cp a.txt $f; done', 'cd sub && for f in x*; do cp a.txt "$f"; done',
+			'for f in /c/nowhere/x*; do cp a.txt $f; done']) assert.equal(bash(c), 'deny', c);
+		assert.equal(bash('for f in x*; do cp a.txt "$f"/guard.cjs; done'), 'allow', 'quoted, the name stays one word');
+	} finally { fs.rmSync(path.join(proj, 'x .claude')); }
+});
+
 // K117 rest (build 17, held live on 1.42.0 from the workbench): a kit script given a quoted note with a bracket in it,
 // a read loop followed by a sed line range, and three PowerShell reads (a variable set from a read, a Test-Path guard
 // in a loop, a property of a bracketed read) were held as writes to a protected file. Quoted text holds no code but
@@ -635,6 +659,36 @@ test('the owner\'s latest answer counts, a yes is for a question quoting one act
 	// The record of spent taps is the owner's like the transcripts: removed, a copied tap would run again.
 	const spent = path.join(cfg, 'kit-yes-spent').split(path.sep).join('/');
 	for (const c of [`rm -rf ${spent}`, `echo x > ${spent}/toolu_ask1`, `mv ${spent} /tmp/x`]) assert.equal(bash(c), 'deny', c);
+});
+
+// K144 (build 18, seen live on 1.43.0): one pop-up of four questions, each quoting one act and each answered Yes, let
+// only the first act run: the tap was spent by the pop-up's id, so the other three each took a pop-up of their own.
+// why: catches a pop-up with several answered Yes questions unlocking only its first quoted act
+test('one pop-up with several questions answered Yes lets each quoted act run once, and a No still holds its act', () => {
+	const acts = ['gh pr merge 21 --squash', 'gh pr merge 22 --squash', 'gh pr merge 23 --squash'];
+	const at = new Date(Date.now() - 60000).toISOString();
+	const questions = acts.map((act) => ({ question: `May I run \`${act}\`?`, header: 'Owner yes', multiSelect: false, options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }));
+	const answers = Object.fromEntries(questions.map((q, i) => [q.question, i === 2 ? 'No' : 'Yes']));
+	const lines = [
+		...acts.map((command, i) => ({ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: `toolu_tried${i}`, name: 'Bash', input: { command } }] } })),
+		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_ask_many', name: 'AskUserQuestion', input: { questions } }] } },
+		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source: 'user_temporary' }, toolUseResult: { questions, answers }, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_ask_many', content: 'answered' }] } },
+	];
+	fs.writeFileSync(TRANSCRIPT, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+	assert.equal(withYes('Bash', { command: acts[0] }, { tool_use_id: 'toolu_m0' }), 'allow', 'the first act');
+	assert.equal(withYes('Bash', { command: acts[1] }, { tool_use_id: 'toolu_m1' }), 'allow', 'the second act, from the same pop-up');
+	assert.equal(withYes('Bash', { command: acts[1] }, { tool_use_id: 'toolu_m1b' }), 'deny', 'the second act, a second time');
+	assert.equal(withYes('Bash', { command: acts[2] }, { tool_use_id: 'toolu_m2' }), 'deny', 'the act answered No');
+	// The build 18 sweep: a pop-up spent before 1.44.0 sits under its plain id, so none of its questions runs again;
+	// and two questions of one text share one answer, so neither is a yes.
+	const ask = (id, qs, ans) => fs.writeFileSync(TRANSCRIPT, [...lines.slice(0, 3), { ...lines[3], message: { content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions: qs } }] } }, { ...lines[4], toolUseResult: { questions: qs, answers: ans }, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'answered' }] } }].map((l) => JSON.stringify(l)).join('\n') + '\n');
+	ask('toolu_ask_old', questions, answers);
+	fs.mkdirSync(path.join(cfg, 'kit-yes-spent'), { recursive: true });
+	fs.writeFileSync(path.join(cfg, 'kit-yes-spent', 'toolu_ask_old'), 'toolu_before_upgrade');
+	assert.equal(withYes('Bash', { command: acts[0] }, { tool_use_id: 'toolu_o0' }), 'deny', 'a pop-up spent under its plain id');
+	const twins = [questions[0], { ...questions[0], options: [{ label: 'No', description: '' }, { label: 'Yes', description: '' }] }];
+	ask('toolu_ask_twin', twins, { [questions[0].question]: 'Yes' });
+	assert.equal(withYes('Bash', { command: acts[0] }, { tool_use_id: 'toolu_t0' }), 'deny', 'two questions of one text');
 });
 
 // why: guards rule:outward-acts (a yes answers the one act the owner read). The 1.25.0 carry-overs: an edit whose text

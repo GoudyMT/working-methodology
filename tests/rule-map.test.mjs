@@ -38,7 +38,7 @@ test('the rule map lists what holds each rule, names the rules nothing holds, an
 	r = run('check');
 	assert.equal(r.status, 1);
 	assert.match(r.stderr, /rule-map\.json is stale.*rule-map\.mjs write/);
-	// CI's gate holds the map fresh. pin: 1 (GitHub runs this line)
-	const gate = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8').split('\n  kit-tests:')[1];
-	assert.match(gate, /- name: Rule map is fresh\n\s+run: node scripts\/rule-map\.mjs check\n/);
+	// CI's gate holds the map fresh, with the base commit's copy of the check (K135, build 18). pin: 1 (GitHub runs these lines)
+	const gate = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
+	assert.match(gate, /- name: Rule map is fresh\n[^\n]*\n[^\n]*\n\s+M="\$RUNNER_TEMP\/base\/scripts\/rule-map\.mjs";[^\n]*\n\s+node "\$M" check\n/);
 });

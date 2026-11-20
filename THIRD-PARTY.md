@@ -1,10 +1,12 @@
 # Third-Party Plugins and Skills
 
 These are other people's work. The kit installs them from their own sources, and also keeps a credited backup
-copy in `vendor/`, so the methodology still works if a source is deleted, moved or down.
+copy in a private repo cloned beside the kit (the folder `vendor.dir` names in `kit.config.json`, `../kit-vendor`), so
+the methodology still works if a source is deleted, moved or down. The public kit repo keeps only `vendor-index.json`,
+the list of what the backup holds and its credits.
 
 **Credit always.** Each copy keeps its LICENSE and a `SOURCE.json` (author, license, source, version, date
-copied). [vendor/CREDITS.md](vendor/CREDITS.md) lists them all. A skill we build on top of one of them lives in
+copied). The backup's `CREDITS.md` lists them all. A skill we build on top of one of them lives in
 `user/skills/` under its own name, says which original it came from, and records what we changed (the Apache 2.0
 license asks for that notice; MIT asks that the copyright line travels with the copy).
 
@@ -15,7 +17,6 @@ terminal, run `/plugin` and install, or add each one under `enabledPlugins` in `
 
 | Plugin | Made by | License | Why the owner uses it |
 |---|---|---|---|
-| `superpowers` | Jesse Vincent | MIT | Process skills: brainstorming, test-driven development, systematic debugging, writing and executing plans, verification before completion, git worktrees. |
 | `frontend-design` | Anthropic | Apache-2.0 | Front-end design guidance. |
 | `skill-creator` | Anthropic | Apache-2.0 | Writing and testing new skills. |
 | `security-guidance` | David Dworken | Apache-2.0 | Security review guidance (also enabled per project in `.claude/settings.json`). |
@@ -28,6 +29,22 @@ terminal, run `/plugin` and install, or add each one under `enabledPlugins` in `
 `turnstile-spin`, `web-perf`, `workers-best-practices`, `wrangler`. Source: https://github.com/cloudflare/skills
 (follow its README to install into `~/.claude/skills/`).
 
+**Also kept in the backup**, credited the same way (`vendor-index.json` holds every entry):
+
+| Plugin | Made by | License | Note |
+|---|---|---|---|
+| `superpowers` | Jesse Vincent | MIT | Kept off, as a credited backup only: the kit's own skills (brainstorm, plan-feature, tdd, debugging) are the one home for process skills. |
+| `audit-suite` | Orbit | MIT | MIT is stated in its README, and its repository has no LICENSE file. It bundles skills credited to Vercel (vercel-react-best-practices) and Emil Kowalski (emil-design-engineering). |
+| `design` | Anthropic | Apache-2.0 | No LICENSE file ships with it; the text comes from its source repository. |
+| `ux-ui-audit` | UXBYISSA | MIT | https://github.com/uxbyissa/ux-ui-audit |
+| `vectorlab-ux-skills` | VectorLab | MIT | https://github.com/VectorLabAU/skills |
+
+## Get the backup
+
+The backup repo is the owner's and private. Clone it beside the kit, into the folder `vendor.dir` names, before a
+snapshot or a restore; snapshot refuses with no folder there, so it never writes an index of one machine's copies.
+Without it, install from the sources above as usual.
+
 ## If a source is lost: restore from the backup
 
 ```bash
@@ -39,7 +56,7 @@ node scripts/kit.mjs restore cloudflare-skills
 ```
 
 This copies the skills back into `~/.claude/skills/` and never overwrites a skill folder that is already there.
-A plugin comes back as plain skills; its hooks and commands stay in `vendor/plugins/<name>/` for reference.
+A plugin comes back as plain skills; its hooks and commands stay in the backup, under `plugins/<name>/`, for reference.
 
 ## Keep the backup current
 
@@ -47,5 +64,5 @@ A plugin comes back as plain skills; its hooks and commands stay in `vendor/plug
 node scripts/kit.mjs snapshot
 ```
 
-It copies what is installed on this machine now. Run it when a plugin updates, review the change, then commit and
-push. The list of what to copy, and any credit written in by hand, is the `vendor` block in `kit.config.json`.
+It copies what is installed on this machine now into the backup folder and writes `vendor-index.json`. Run it when a
+plugin updates, review the change, then commit and push both repos. The list of what to copy, and any credit written in by hand, is the `vendor` block in `kit.config.json`.

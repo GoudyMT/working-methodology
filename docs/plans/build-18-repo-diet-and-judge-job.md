@@ -1,6 +1,6 @@
 # Build 18 plan: kit 1.44.0 (after the 1.43.1 test split)
 
-Scope locked by Max's pop-up 2026-11-19: T10's rest, K135 to K144 (K142 is done), and the 13 parked sweep rows,
+Scope locked by the owner's pop-up 2026-11-19: T10's rest, K135 to K144 (K142 is done), and the 13 parked sweep rows,
 verified first. One branch from main after PR 54 merges, one sweep, every finding fixed in the build. Cost: $0 cash
 except one recall run (step 9, about $30 to $60 of quota, asked again with its real number first). CI is the normal
 PR run each push.
@@ -35,7 +35,7 @@ Approved by the owner's pop-up "Yes, as written" 2026-11-19. Probe scripts: thre
 |---|---|---|
 | K138 | Real | Release-copy guard in a throwaway project: a sed loop over guard files, cmp against a guard, du then ls of .claude (with && and ;), node -e reading or hashing a guard all deny; the same reads on other files allow; every write twin denies |
 | K144 | Real | `owner-yes.cjs` line 145: `spend(yes.id, ...)` spends by the pop-up's id, so the first act of a pop-up with several questions spends it for all |
-| K143 | 26 false; 25 goes with vendor/; 23 and 24 not as flagged, but a real gap beside them | Alert 26: the built pattern only holds a count from `#{1,6}`. Alerts 23/24: nested or broken comment markers still read as a Requested by line, yet `Re<!---->quested by Max` (a comment inside the word, which the page hides) passes both audits. Test alerts: each triaged in the build |
+| K143 | 26 false; 25 goes with vendor/; 23 and 24 not as flagged, but a real gap beside them | Alert 26: the built pattern only holds a count from `#{1,6}`. Alerts 23/24: nested or broken comment markers still read as a Requested by line, yet `Re<!---->quested by the owner` (a comment inside the word, which the page hides) passes both audits. Test alerts: each triaged in the build |
 | I9 | Real | The 1.43.1 sweep ask: "an added source file (docs/builds/1.43.1.json) is feature work" |
 | I7 | Dependency half real; re-sweep half closed | DEP_FILE (approve.mjs line 125) lacks pom.xml, Gradle, .csproj, composer.json; no re-sweep detector is left in the audits (re-sweeps are refused flat) |
 | I10 | Real | The brief names a scratch folder, but no hook holds a reviewer's Bash writes to it |
@@ -81,7 +81,9 @@ reached through the launcher, and `--whole` is no longer needed there.
 ## 7. Privacy (K141, K140)
 
 K141: install reads your profile from `~/.claude/kit-owner-profile.md`, outside the repo; the repo keeps a blank
-example and scrub stops skipping the file. Step 6 copies your current profile there before installing (your yes).
+example and scrub stops skipping the file. The release's install into the workbench (the last step of the release
+order, after the tag) first copies your current profile there, before the new tag is checked out (your yes);
+install user refuses rather than blank Owner Context lines it finds with no profile.
 History keeps the old file, as you chose. K140: README and recall.yml say the repo is public.
 
 ## 8. Audits and guards (K139, K143, K138, K144, K137)

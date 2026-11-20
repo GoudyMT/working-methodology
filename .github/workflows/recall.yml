@@ -10,7 +10,7 @@
 #
 # Known limit (the security review of this build): a recall run installs the candidate branch and its sessions load
 # that branch's hooks, so the branch's own code runs where the short-lived credentials are. It is bounded by the
-# owner pressing Run for a branch of this private repo, the rule admitting main only, the workspace spend limit, and
+# owner pressing Run for a branch of this repo (public, but only a user with write access can press Run), the rule admitting main only, the workspace spend limit, and
 # tokens that last minutes; it is the same code a recall run on the owner's PC runs under the owner's own login.
 # The candidate's runs, the baseline's runs and the scorer are three jobs on three machines (K7, the 1.27.0 sweep):
 # the candidate's code can reach its own job's token and files only, never the baseline runs, the sealed map or the

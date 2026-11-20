@@ -35,6 +35,39 @@ test('install user writes rendered files into ~/.claude and stamps the version',
   assert.deepEqual(r.skipped, []);
 });
 
+// K141: the kit repo is public, so the owner's profile is read from the Claude folder, never from the kit folder.
+// why: catches the owner's profile being read from the public kit repo, or lost without a word when missing
+test('install user takes the owner profile from the Claude folder, never the kit folder, and says when there is none', () => {
+  const { kit, home } = makeKit();
+  fs.writeFileSync(path.join(kit, 'owner-profile.md'), '- From the public repo\n');
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ownerName: 'Pat', ownerProfileFile: 'owner-profile.md' }));
+  const r = install({ kit, home, target: 'user' });
+  assert.equal(read(path.join(home, 'CLAUDE.md')), '# Global\nOwner: Pat\n- Likes tests\n');
+  assert.equal(r.ownerProfile.found, true);
+  const bare = makeKit();
+  fs.rmSync(path.join(bare.home, 'kit-owner-profile.md'));
+  const none = install({ kit: bare.kit, home: bare.home, target: 'user' });
+  assert.equal(read(path.join(bare.home, 'CLAUDE.md')), '# Global\nOwner: Pat\n\n');
+  assert.equal(none.ownerProfile.found, false);
+  assert.equal(none.ownerProfile.path, path.join(bare.home, 'kit-owner-profile.md'));
+  // The build 18 sweep: the upgrade deletes the kit-folder file, so install refuses to blank lines the owner has.
+  const kept = makeKit();
+  fs.rmSync(path.join(kept.home, 'kit-owner-profile.md'));
+  const owned = '## Owner Context\n\n- Owner: Pat\n- Likes tests\n';
+  fs.writeFileSync(path.join(kept.home, 'CLAUDE.md'), owned);
+  assert.throws(() => install({ kit: kept.kit, home: kept.home, target: 'user' }), /Install refused: no owner profile[\s\S]*still holds Owner Context lines/);
+  assert.equal(read(path.join(kept.home, 'CLAUDE.md')), owned, 'nothing was written');
+  const left = makeKit();
+  fs.rmSync(path.join(left.home, 'kit-owner-profile.md'));
+  fs.writeFileSync(path.join(left.kit, 'owner-profile.md'), '- Likes tests\n');
+  assert.throws(() => install({ kit: left.kit, home: left.home, target: 'user' }), /the kit folder still holds/);
+  // A project install never renders the profile, whatever file names the placeholder.
+  const proj = makeKit();
+  fs.writeFileSync(path.join(proj.kit, 'project', '_Working Standards.md'), 'rules\n{{OWNER_PROFILE}}\n');
+  install({ kit: proj.kit, home: proj.home, target: 'project', projectDir: proj.proj });
+  assert.equal(read(path.join(proj.proj, '_Working Standards.md')), 'rules\n\n');
+});
+
 // why: guards rule:owners-rules
 test('install never overwrites a file the owner changed, and says so', () => {
   const { kit, home, proj } = makeKit();
@@ -84,7 +117,7 @@ test('scrub flags personal words, paths and non-ASCII, and passes clean files', 
   const hits = scrub({ kit });
   const kinds = hits.filter((h) => h.file === 'project/leak.md').map((h) => h.kind).sort();
   assert.deepEqual(kinds, ['non-ascii', 'path', 'word:Pat', 'word:pat@example.com']);
-  // kit.config.json and owner-profile.md hold the owner's details on purpose.
+  // kit.config.json holds the owner's name on purpose.
   assert.equal(hits.filter((h) => h.file === 'kit.config.json' || h.file === 'owner-profile.md').length, 0);
   fs.rmSync(path.join(kit, 'project/leak.md'));
   assert.deepEqual(scrub({ kit }), []);
@@ -144,6 +177,52 @@ test('restore brings a lost skill back from the snapshot and never overwrites on
   assert.equal(read(path.join(ctx.home, 'skills/vendor-skill/SKILL.md')), 'vendor\n');
   assert.deepEqual(restore({ kit: ctx.kit, home: ctx.home, name: 'toolbox' }), { restored: [], kept: ['sharpen'] });
   assert.equal(read(path.join(ctx.home, 'skills/sharpen/SKILL.md')), 'mine\n');
+});
+
+// T10 (build 18): the 13 MB of backups left the public kit repo for a private repo cloned beside the kit, which
+// kit.config.json names; the kit keeps an index of them for its own checks.
+// why: catches snapshot or restore still using the kit's own vendor folder once the config names the backup folder
+test('snapshot and restore use the backup folder the config names, and the kit keeps an index of what it holds', () => {
+  const ctx = makeKit();
+  addThirdParty(ctx);
+  const config = JSON.parse(read(path.join(ctx.kit, 'kit.config.json')));
+  config.vendor.dir = '../kit-vendor';
+  fs.writeFileSync(path.join(ctx.kit, 'kit.config.json'), JSON.stringify(config));
+  const backups = path.join(path.dirname(ctx.kit), 'kit-vendor');
+  // The build 18 sweep: before the backups are cloned, snapshot refuses rather than index only this machine's copies.
+  assert.throws(() => snapshot({ kit: ctx.kit, home: ctx.home }), /no backup folder at .*kit-vendor: clone the backups there first/);
+  assert.equal(fs.existsSync(path.join(ctx.kit, 'vendor-index.json')), false, 'no index written');
+  fs.mkdirSync(backups);
+  snapshot({ kit: ctx.kit, home: ctx.home });
+  assert.ok(fs.existsSync(path.join(backups, 'skills/vendor-pack/vendor-skill/SKILL.md')), 'the copy lands in the named folder');
+  assert.equal(fs.existsSync(path.join(ctx.kit, 'vendor')), false, 'nothing lands in the kit');
+  const index = JSON.parse(read(path.join(ctx.kit, 'vendor-index.json')));
+  assert.deepEqual(index.skillGroups['vendor-pack'].skills, ['vendor-skill']);
+  assert.equal(index.skillGroups['vendor-pack'].license, 'Apache-2.0');
+  assert.ok(index.plugins.toolbox, 'the plugin is indexed');
+  fs.rmSync(path.join(ctx.home, 'skills/vendor-skill'), { recursive: true });
+  assert.deepEqual(restore({ kit: ctx.kit, home: ctx.home, name: 'vendor-pack' }), { restored: ['vendor-skill'], kept: [] });
+  // Only what the index names, with the files it indexed, comes back: a planted folder and a changed one are refused.
+  fs.mkdirSync(path.join(backups, 'skills/planted/evil'), { recursive: true });
+  fs.writeFileSync(path.join(backups, 'skills/planted/evil/SKILL.md'), 'evil\n');
+  assert.throws(() => restore({ kit: ctx.kit, home: ctx.home, name: 'planted' }), /planted is not in vendor-index\.json/);
+  fs.writeFileSync(path.join(backups, 'skills/vendor-pack/vendor-skill/SKILL.md'), 'changed\n');
+  fs.rmSync(path.join(ctx.home, 'skills/vendor-skill'), { recursive: true });
+  assert.throws(() => restore({ kit: ctx.kit, home: ctx.home, name: 'vendor-pack' }), /differs from what vendor-index\.json recorded/);
+  assert.equal(fs.existsSync(path.join(ctx.home, 'skills/vendor-skill')), false, 'nothing restored');
+  // A plugin's restore copies from its own folder only, never a skill group's folder of the same name.
+  fs.mkdirSync(path.join(backups, 'plugins/ghost'), { recursive: true });
+  fs.writeFileSync(path.join(backups, 'plugins/ghost/README.md'), 'x\n');
+  fs.mkdirSync(path.join(backups, 'skills/ghost/evil'), { recursive: true });
+  fs.writeFileSync(path.join(backups, 'skills/ghost/evil/SKILL.md'), 'evil\n');
+  fs.writeFileSync(path.join(backups, 'skills/vendor-pack/vendor-skill/SKILL.md'), 'vendor\n');
+  snapshot({ kit: ctx.kit, home: ctx.home });
+  assert.throws(() => restore({ kit: ctx.kit, home: ctx.home, name: 'ghost' }), /no snapshot named ghost/);
+  assert.equal(fs.existsSync(path.join(ctx.home, 'skills/evil')), false);
+  // Where the backups are cloned, their own SOURCE.json is read: an index left behind is named, not trusted.
+  const src = path.join(backups, 'plugins/toolbox/SOURCE.json');
+  fs.writeFileSync(src, JSON.stringify({ ...JSON.parse(read(src)), version: '9.9.9' }));
+  assert.match(preCompactReport({ kit: ctx.kit, home: ctx.home, projectDir: ctx.proj }), /toolbox \(9\.9\.9 -> 2\.0\.0; vendor-index\.json says 2\.0\.0\)/);
 });
 
 // why: catches a break in scripts/kit.mjs; the only test that caught it when tagged, others catch it too since the build 14 audit
@@ -409,19 +488,20 @@ test('the hook script prints a user message and context for Claude, and never fa
 });
 
 // why: guards rule:kit-standards
+// T10 (build 18): the backups left the public repo for a private one; the kit's index of them is what CI can read.
 test('every backup in the real kit credits its source', () => {
-  const vendor = path.resolve('vendor');
-  const credits = read(path.join(vendor, 'CREDITS.md'));
-  const dirs = ['plugins', 'skills'].flatMap((d) => fs.readdirSync(path.join(vendor, d)).map((n) => path.join(vendor, d, n)));
-  assert.ok(dirs.length > 0);
-  for (const dir of dirs) {
-    const name = path.basename(dir);
-    const src = JSON.parse(read(path.join(dir, 'SOURCE.json')));
+  assert.ok(fs.existsSync(path.resolve('vendor-index.json')), 'the kit keeps an index of its backups');
+  const index = JSON.parse(read(path.resolve('vendor-index.json')));
+  const config = JSON.parse(read(path.resolve('kit.config.json'))).vendor;
+  const entries = [...Object.entries(index.plugins), ...Object.entries(index.skillGroups)];
+  assert.ok(entries.length > 0);
+  assert.deepEqual(Object.keys(index.plugins).sort(), [...config.plugins].sort(), 'the index holds every plugin the config backs up');
+  assert.deepEqual(Object.keys(index.skillGroups).sort(), config.skillGroups.map((g) => g.name).sort());
+  for (const [name, src] of entries) {
     for (const field of ['author', 'license', 'repository']) {
       assert.ok(src[field] && src[field] !== 'unknown', `${name}: ${field} is missing`);
     }
-    assert.ok(fs.existsSync(path.join(dir, 'LICENSE')) || src.licenseNote, `${name}: no LICENSE file and no licenseNote`);
-    assert.match(credits, new RegExp(`\\| ${name} \\|`), `${name}: not in CREDITS.md`);
+    assert.ok(src.licenseFile || src.licenseNote, `${name}: no LICENSE file and no licenseNote`);
   }
 });
 
@@ -440,13 +520,16 @@ test('every skill the case map names exists in the kit, its backups or Claude Co
     return names;
   };
   const own = skillDirs(path.resolve('user/skills'));
-  const groups = skillDirs(path.resolve('vendor/skills'));
+  // T10 (build 18): the backups' skills are read from the kit's index of them.
+  assert.ok(fs.existsSync(path.resolve('vendor-index.json')), 'the kit keeps an index of its backups');
+  const index = JSON.parse(read(path.resolve('vendor-index.json')));
+  const groups = new Set(Object.values(index.skillGroups).flatMap((g) => g.skills));
   for (const c of cases) {
     for (const s of c.skills) {
       const [plugin, skill] = s.includes(':') ? s.split(':') : [null, s];
       // A one-skill plugin may keep its SKILL.md at the plugin root instead of under skills/.
-      const pluginRoot = plugin && path.resolve('vendor/plugins', plugin);
-      const found = plugin ? skillDirs(path.join(pluginRoot, 'skills')).has(skill) || (skill === plugin && fs.existsSync(path.join(pluginRoot, 'SKILL.md')))
+      const p = plugin && index.plugins[plugin];
+      const found = plugin ? Boolean(p) && (p.skills.includes(skill) || (skill === plugin && p.rootSkill))
         : own.has(skill) || groups.has(skill) || BUILT_IN.has(skill);
       assert.ok(found, `case ${c.id}: skill ${s} not found`);
     }
@@ -854,8 +937,8 @@ test('install runs from a clean release tag and stamps it as a release', () => {
 // why: guards rule:outward-acts
 test('install on the release tag itself refuses an uncommitted edit to anything it copies or reads', () => {
   const { kit, proj, git, cli } = releaseKit();
-  // The owner config and profile are rendered into the installed files, and the script decides what install does.
-  for (const f of ['project/_Working Standards.md', 'kit.config.json', 'owner-profile.md', 'scripts/kit.mjs']) {
+  // The owner config is rendered into the installed files, and the script decides what install does.
+  for (const f of ['project/_Working Standards.md', 'kit.config.json', 'scripts/kit.mjs']) {
     fs.appendFileSync(path.join(kit, f), '\n');
     const r = cli('install', 'project', proj);
     assert.equal(r.status, 1, f);
@@ -1067,13 +1150,13 @@ test('a release install over an unreleased one removes the files only that build
 // why: guards rule:outward-acts
 test('install refuses when git cannot say what changed, rather than calling the folder clean', () => {
   const { kit, proj, cli } = releaseKit();
-  // A profile path outside the repo makes git status fail; that must not read as "nothing changed".
-  const cfg = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ...cfg, ownerProfileFile: '../outside.md' }));
+  // A corrupt index makes git status fail; that must not read as "nothing changed". (K141: the profile path that made
+  // it fail before is no longer read from the kit folder.)
+  fs.writeFileSync(path.join(kit, '.git', 'index'), 'not an index');
   fs.appendFileSync(path.join(kit, 'user/CLAUDE.md'), 'INJECTED\n');
   const r = cli('install', 'user');
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stderr, /git status failed in the kit folder[\s\S]*unknown: .*outside/);
+  assert.match(r.stderr, /git status failed in the kit folder[\s\S]*unknown: .*index/);
   assert.equal(fs.existsSync(path.join(path.dirname(kit), 'home', 'kit-install.json')), false);
 });
 

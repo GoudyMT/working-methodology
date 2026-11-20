@@ -1281,6 +1281,13 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
   assert.equal(held.status, 1, held.stdout + held.stderr);
   assert.doesNotMatch(held.stdout, /^gate:/m);
   assert.match(held.stdout, new RegExp(`on the bar of ${b}[\\s\\S]*cand-4 and cand-5`));
+  const over = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([b, b + 1, b + 1]), 'kit-x'], { encoding: 'utf8' });
+  assert.equal(over.status, 0, 'a median over the bar gives its gate line and asks for no more runs');
+  assert.match(over.stdout, /^gate: kit-x median/m);
+  assert.doesNotMatch(over.stdout, /no gate line yet|extra runs/);
+  const under = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([b - 1, b - 1, b]), 'kit-x'], { encoding: 'utf8' });
+  assert.match(under.stdout, new RegExp(`median of ${b - 1} is under the bar of ${b}: by decision 7 extra runs do not count`), 'under the bar, no extra run is offered');
+  assert.doesNotMatch(under.stdout, /no gate line yet|cand-4/);
   assert.match(keysText.split('<!-- recall v')[0], /A median of 3 exactly on the bar runs 2 more, and the median of those 5 decides/); // pin: 3 (released recall keys)
 });
 
@@ -1380,4 +1387,27 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
   assert.doesNotThrow(() => checkSessionHome(home, run(JSON.stringify({ configDirectory: home }))));
   assert.throws(() => checkSessionHome(home, run('not json')), /cannot read/);
   assert.throws(() => checkSessionHome(home, () => ({ status: 1, stdout: '', stderr: 'nope' })), /cannot read/);
+});
+
+// K137 (build 18, the 1.43.0 recall rounds): a run was made on rule text over its size cap, then trimmed, then run
+// again, and extra runs were offered that decision 7 does not count. The run now refuses text over a cap before any
+// session starts, and the score says when no extra run can count.
+// why: catches a paid recall run started on rule text over its size cap
+test('a recall run refuses rule text over its size cap before any session starts', () => {
+  const kit = makeTemp('k137-');
+  fs.mkdirSync(path.join(kit, 'rules'));
+  fs.mkdirSync(path.join(kit, 'project'));
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ caps: { module: 100, agentsMd: 200 } }));
+  fs.writeFileSync(path.join(kit, 'rules', 'core.md'), 'x'.repeat(500));
+  fs.writeFileSync(path.join(kit, 'rules', 'testing.md'), 'x'.repeat(101));
+  fs.writeFileSync(path.join(kit, 'project', 'AGENTS.md'), 'x'.repeat(201));
+  const r = spawnSync(process.execPath, [path.resolve('scripts/recall.mjs'), 'cand', kit], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: path.join(kit, 'no-home') } });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /testing\.md: 101 B, over its cap of 100 B/);
+  assert.match(r.stderr, /AGENTS\.md: 201 B, over its cap of 200 B/);
+  assert.doesNotMatch(r.stderr, /core\.md/, 'core.md has its own cap, through AGENTS.md');
+  fs.writeFileSync(path.join(kit, 'rules', 'testing.md'), 'x'.repeat(100));
+  fs.writeFileSync(path.join(kit, 'project', 'AGENTS.md'), 'x'.repeat(200));
+  const ok = spawnSync(process.execPath, [path.resolve('scripts/recall.mjs'), 'cand', kit], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: path.join(kit, 'no-home') } });
+  assert.doesNotMatch(ok.stderr, /over its cap/, 'under the caps, the run goes on to its next check');
 });

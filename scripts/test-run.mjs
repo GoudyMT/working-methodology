@@ -59,6 +59,20 @@ function parseArgs(args) {
 	return o;
 }
 
+// K136: where install puts a kit code file, as the repo folder it came from: a project's .claude, and the Claude
+// folder's kit-tools, kit-hooks and skills. The first reading that names a file the repo has wins (a Claude folder is
+// itself a .claude folder, so its kit-tools are tried as project/.claude first, then as user/kit-tools).
+const INSTALLED = [[/\/\.claude\/((?:[^/]+\/)*[^/]+)$/, 'project/.claude/'], [/\/(kit-tools\/(?:[^/]+\/)*[^/]+)$/, 'user/'], [/\/(kit-hooks\/[^/]+)$/, 'user/'], [/\/(skills\/(?:[^/]+\/)*[^/]+)$/, 'user/']];
+function installedSource(file, root) {
+	for (const [re, into] of INSTALLED) {
+		const m = re.exec(file);
+		if (!m) continue;
+		const rel = into + m[1];
+		if (fs.existsSync(path.join(root, rel))) return rel;
+	}
+	return null;
+}
+
 // The lines a V8 coverage result ran, per file inside the repo. Ranges are painted outer to inner, so a function
 // that never ran inside one that did reads as not run; a line counts when any character on it ran.
 function ranLines(result, root, into) {
@@ -66,13 +80,30 @@ function ranLines(result, root, into) {
 		let file = s.url;
 		if (file.startsWith('file:')) file = fileURLToPath(file);
 		if (!path.isAbsolute(file) || !/\.(mjs|cjs|js)$/.test(file)) continue;
-		const rel = posix(path.relative(root, real(file)));
-		if (rel.startsWith('..') || rel.startsWith('tests/') || rel.includes('node_modules/')) continue;
+		let rel = posix(path.relative(root, real(file)));
+		// K136 (build 18): a test that installs the kit runs the guards from the installed copies outside the repo, which
+		// were dropped here. Such a copy counts as the repo file it came from when the repo has it (install copies these
+		// byte for byte), and that file's text places the lines, since the copy is often gone by now.
+		const copy = rel.startsWith('..') ? file : null;
+		if (copy) rel = installedSource(posix(file), root);
+		if (!rel || rel.startsWith('..') || rel.startsWith('tests/') || rel.includes('node_modules/')) continue;
 		let text;
-		try { text = fs.readFileSync(file, 'utf8'); } catch { continue; } // a file a test made and removed
-		const count = new Int32Array(text.length);
+		try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; } // a file a test made and removed
 		const ranges = s.functions.flatMap((fn) => fn.ranges).sort((a, b) => (b.endOffset - b.startOffset) - (a.endOffset - a.startOffset));
-		for (const r of ranges) count.fill(r.count, r.startOffset, Math.min(r.endOffset, text.length));
+		// The build 18 sweep: install fills a {{...}} placeholder in (the Claude folder's path), which moves every later
+		// offset of the copy. The script's own range spans the copy, so its length less the repo text's, shared over the
+		// placeholders (all one name, one value), gives each one's growth; an offset is moved back past each it follows.
+		// A copy whose growth cannot be shared out evenly is left out rather than credited to the wrong line.
+		const at = copy ? [...text.matchAll(/\{\{([A-Z_]+)\}\}/g)] : [];
+		let back = (o) => o;
+		if (at.length) {
+			const grown = Math.max(...ranges.map((r) => r.endOffset)) - text.length;
+			if (new Set(at.map((m) => m[1])).size > 1 || grown % at.length) continue;
+			const each = grown / at.length;
+			back = (o) => { let d = 0; for (const m of at) { const end = m.index + d + m[0].length + each; if (o >= end) d += each; else if (o > m.index + d) return m.index; } return o - d; };
+		}
+		const count = new Int32Array(text.length);
+		for (const r of ranges) count.fill(r.count, back(r.startOffset), Math.min(back(r.endOffset), text.length));
 		const set = (into[rel] ||= new Set());
 		let line = 1;
 		for (let i = 0; i < text.length; i++) {

@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.44.0 - 2026-11-19
+
+The owner's profile and the third-party backups leave the public kit repo, a sweep reviewer's shell can only read and write its own scratch folder, the sweep floor follows what a diff touches, and the content checks in CI run the base commit's copies.
+
+### Added
+- A recall run refuses rule text over its size cap before any session starts, and the scorer names the under-bar rule (decision 7).
+
+### Changed
+- Install reads the owner's profile from `~/.claude/kit-owner-profile.md`, outside the public repo; the repo keeps a blank example, and install refuses rather than blank Owner Context lines it finds with no profile.
+- The sweep floor follows what the diff touches: gate code (CI and the scripts it runs, hooks, guards, the kit's install) is a feature sweep with security roles; docs, records and moved tests stay triage.
+- [trial] One home for process skills: the kit's own skills; a third-party process skill set stays off, as a credited backup only.
+- README and the recall workflow say the kit repo is public.
+
+### Fixed
+- Each Yes in a pop-up of several questions unlocks its own quoted act once; a No still holds its act, and two questions of one text are no yes.
+- The guards pass a read loop over a glob of guard files, cmp and du; a loop whose names split, set IFS, change folder or cannot be listed is still held.
+- From 1.44.0 a build record needs an item naming a where, and the PR body audits need at least one Summary row, with CRLF ends read.
+- The coverage map credits lines run from an installed guard copy to the repo file it came from, placing a filled-in copy's lines right.
+
+### Security
+- A sweep reviewer's shell runs only known reads (git reads, grep, cat, ls and the like, a script file) and writes only to its own scratch folder, named in full; anything else is refused.
+- CI's six content checks (scrub, word check, project map, rule map, link scan, build is fresh) run the base commit's copies over the PR's tree, so that job runs none of the PR's code.
+- The PR and release attribution checks read a Requested by line or marker hidden by an HTML comment, over a line break too, or by an empty link inside the word.
+
+### Removed
+- The third-party backups move from `vendor/` to a private repo cloned beside the kit, named by `vendor.dir`; the kit keeps `vendor-index.json`, the credits and a hash of each backup.
+
 ## 1.43.3 - 2026-11-19
 
 The planted-bug check reads a branch that deletes a large file as the commits they are, so a PR that removes many megabytes still has its new tests measured. Nothing a project installs changes.

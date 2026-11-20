@@ -1028,3 +1028,101 @@ test('R6.2: a pop-up Yes that answered one ask does not answer the next ask of t
   assert.match(second.stdout, /that Yes already answered an ask/, again.stdout);
   assert.equal(approvalLog(r.dir).filter((e) => e.kind === 'owner-yes').length, 1);
 });
+
+// T10 sweep floor (build 18, with I9, I7 and J-R1): the floor read line counts and added files, so the 1.43.1 test
+// split (20,801 moved lines, a build record) went to the owner, and a one-line CI change could pass as a fix. The
+// floor now comes from what the diff touches: gate code (CI, git hooks, a guard, the kit's hooks and tools, install,
+// this script) is feature work with the security modifier; docs, records, maps and tests moved unchanged stay triage
+// at any size; a dependency file in any ecosystem adds the supply-chain role.
+// why: guards rule:sweep-tiers (the tier follows what the change can break, not its length)
+test('the floor comes from what the diff touches: gate code is a secured feature, records and moved tests stay triage', () => {
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  const asFix = { tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root, and does it hold?'), role('blast-radius', 'Which callers does the change reach?')] };
+  // Gate code: a fix contract asks, and a feature contract without the security roles is sent back.
+  const ci = sweepRepo({ '.github/workflows/ci.yml': 'on: push\n' });
+  const asked = approveRun(asFix, ci);
+  assert.notEqual(asked.status, 0, asked.stdout);
+  assert.match(asked.stdout, /needs 3 security role/, 'and the security roles the modifier brings');
+  assert.match(asked.stdout, /\.github\/workflows\/ci\.yml is gate code/);
+  const plain = featureContract();
+  plain.roles = plain.roles.filter((r) => r.kind !== 'security');
+  const thin = approveRun(plain, sweepRepo({ '.githooks/pre-push': 'exit 0\n' }));
+  assert.equal(thin.status, FIX_EXIT, thin.stdout);
+  assert.match(thin.stdout, /needs 3 security role/);
+  // A release's record, changelog and version, however long, are triage (I9: a json under docs/ is no source file).
+  const record = sweepRepo({ 'docs/builds/1.0.1.json': `${JSON.stringify({ lines: Array.from({ length: 80 }, (_, i) => `line ${i}`) }, null, 1)}\n`, 'CHANGELOG.md': '## 1.0.1\n', VERSION: '1.0.1\n' });
+  const rec = approveRun(one, record);
+  assert.equal(rec.status, 0, rec.stdout);
+  // A test file moved unchanged is triage at any length; a test that gains 21 new lines is not.
+  const moved = makeTemp('approve-');
+  g(moved, 'init', '-q', '-b', 'main');
+  const body = Array.from({ length: 40 }, (_, i) => `test('t${i}', () => {});`).join('\n') + '\n';
+  fs.mkdirSync(path.join(moved, 'tests'));
+  fs.writeFileSync(path.join(moved, 'tests', 'all.test.mjs'), `import { test } from 'node:test';\n${body}`);
+  commitAll(moved, 'base', true);
+  g(moved, 'checkout', '-q', '-b', 'refactor/split');
+  fs.rmSync(path.join(moved, 'tests', 'all.test.mjs'));
+  const lines = body.split('\n').filter(Boolean);
+  fs.writeFileSync(path.join(moved, 'tests', 'a.test.mjs'), `import { test } from 'node:test';\n${lines.slice(0, 20).join('\n')}\n`);
+  fs.writeFileSync(path.join(moved, 'tests', 'b.test.mjs'), `import { test } from 'node:test';\n${lines.slice(20).join('\n')}\n`);
+  commitAll(moved, 'split', true);
+  fs.mkdirSync(path.join(moved, 'sweeps'));
+  const split = approveRun(one, moved);
+  assert.equal(split.status, 0, split.stdout);
+  approveIn(moved, [split.f, '--outcome', '--none-ran']);
+  fs.appendFileSync(path.join(moved, 'tests', 'b.test.mjs'), Array.from({ length: 21 }, (_, i) => `test('new ${i}', () => {});`).join('\n') + '\n');
+  commitAll(moved, 'more', true);
+  const grown = approveRun(one, moved);
+  assert.equal(grown.status, 1, grown.stdout);
+  assert.match(grown.stdout, /more than a triage change/);
+  // I7: a Maven, Gradle, .NET or PHP dependency file needs the supply-chain role too.
+  for (const f of ['pom.xml', 'build.gradle.kts', 'src/App.csproj', 'composer.json']) {
+    assert.match(approveRun(featureContract(), sweepRepo({ 'src/sync.ts': 'x\n', [f]: '<x/>\n' })).stdout, /supply-chain/i, f);
+  }
+});
+
+// Found in the build 18 security review: the floor read a removed line "-- a/docs/x.md" inside a hunk as a file header
+// and skipped the code after it; any docs/ folder, code included, was data; a .claude settings or bounds file was no
+// gate code; and moved test lines cancelled as a set, so one removed line hid any number of added copies.
+// why: guards rule:sweep-tiers (the tier follows what the change can break, and the diff is read the way git wrote it)
+test('the floor reads the diff the way git wrote it: hunk text, nested docs code, .claude data and copied test lines count', () => {
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  const asFix = { tier: 'fix', modifiers: [], roles: [role('fix-root', 'Does the fix remove the root, and does it hold?'), role('blast-radius', 'Which callers does the change reach?')] };
+  // A branch that changes files already on main, so no new file decides the tier on its own.
+  const changed = (base, next) => {
+    const dir = makeTemp('approve-');
+    g(dir, 'init', '-q', '-b', 'main');
+    for (const [f, text] of Object.entries(base)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); }
+    commitAll(dir, 'base', true);
+    g(dir, 'checkout', '-q', '-b', 'fix/x');
+    for (const [f, text] of Object.entries(next)) {
+      if (text === null) fs.rmSync(path.join(dir, f));
+      else { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); }
+    }
+    commitAll(dir, 'change', true);
+    fs.mkdirSync(path.join(dir, 'sweeps'));
+    return dir;
+  };
+  const code = Array.from({ length: 25 }, (_, i) => `select ${i};`).join('\n') + '\n';
+  const header = approveRun(one, changed({ 'src/q.sql': '-- a/docs/x.md\n' }, { 'src/q.sql': code }));
+  assert.equal(header.status, 1, `a removed "-- a/docs/x.md" is hunk text, not a header: ${header.stdout}`);
+  assert.match(header.stdout, /more than a triage change/);
+  const nested = approveRun(one, changed({ 'src/docs/run.mjs': 'x\n' }, { 'src/docs/run.mjs': code }));
+  assert.equal(nested.status, 1, `code under a nested docs/ folder is source: ${nested.stdout}`);
+  const settings = approveRun(asFix, changed({ '.claude/settings.json': '{}\n' }, { '.claude/settings.json': '{"hooks":{}}\n' }));
+  assert.match(settings.stdout, /\.claude\/settings\.json is gate code/);
+  const copies = approveRun(one, changed({ 'tests/a.test.mjs': 'x();\n' }, { 'tests/a.test.mjs': null, 'tests/b.test.mjs': 'x();\n'.repeat(25) }));
+  assert.equal(copies.status, 1, `one removed line cancels one added copy, not 25: ${copies.stdout}`);
+  // The build 18 sweep: a gate file renamed out of its folder, a script a CI workflow runs, a .claude command file,
+  // code git shows as binary, and test lines moved out of a test file that stays.
+  const hook = '#!/bin/sh\nexit 0\n';
+  assert.match(approveRun(asFix, changed({ '.githooks/pre-push': hook }, { '.githooks/pre-push': null, 'docs/pre-push.txt': hook })).stdout, /\.githooks\/pre-push is gate code/);
+  const flow = 'on: push\njobs:\n  t:\n    steps:\n      - run: node scripts/check.mjs\n';
+  assert.match(approveRun(asFix, changed({ '.github/workflows/ci.yml': flow, 'scripts/check.mjs': 'x\n' }, { 'scripts/check.mjs': 'process.exit(0);\n' })).stdout, /scripts\/check\.mjs is gate code/);
+  assert.match(approveRun(asFix, changed({ '.claude/commands/go.md': 'x\n' }, { '.claude/commands/go.md': '---\nallowed-tools: Bash\n---\n' })).stdout, /\.claude\/commands\/go\.md is gate code/);
+  const binary = approveRun(one, changed({ 'src/a.js': 'x\n' }, { 'src/a.js': `${code}// \0\n` }));
+  assert.equal(binary.status, 1, `code with a NUL byte still counts its lines: ${binary.stdout}`);
+  const body = Array.from({ length: 25 }, (_, i) => `assert.equal(f(${i}), ${i});`).join('\n') + '\n';
+  const emptied = approveRun(one, changed({ 'tests/g.test.mjs': body }, { 'tests/g.test.mjs': 'x\n', 'tests/dead.test.mjs': `if (false) {\n${body}}\n` }));
+  assert.equal(emptied.status, 1, `lines taken out of a test that stays are a changed test: ${emptied.stdout}`);
+});

@@ -43,7 +43,7 @@ jobs:
           # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
           B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
           mkdir -p "$B"
-          git archive "$BASE_SHA" scripts project tests | tar -x -C "$B"
+          git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
 
       # The body and title come in through env, never into the script text, so a PR cannot inject commands.
       - name: PR body audit

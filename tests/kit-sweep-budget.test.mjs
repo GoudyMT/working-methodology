@@ -764,9 +764,12 @@ test('the guard binds each start to one role\'s cap, and the owner\'s yes carrie
 });
 
 // why: guards rule:sweep-auto-approval
-test('M14 stays narrow: only docs/migrations is left out, and a contract\'s own lines never count against triage', () => {
-  const big = sweepRepo({ 'README.md': 'y\n', 'docs/site.json': '{}\n' });
+// Build 18 (I9, plan section 4): docs data is triage at any size; code under docs/ still counts as an added file.
+// renamed from: M14 stays narrow: only docs/migrations is left out, and a contract's own lines never count against triage
+test('M14 stays narrow: docs data is left out but never docs code, and a contract\'s own lines never count against triage', () => {
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  assert.equal(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/site.json': '{}\n' })).status, 0, 'a docs json is data');
+  const big = sweepRepo({ 'README.md': 'y\n', 'docs/site.mjs': 'export {};\n' });
   assert.match(approveRun(t, big).stdout, /ASK THE OWNER[\s\S]*1 added files/);
   const dir = sweepRepo({ 'README.md': 'y\n' });
   const f = path.join(dir, 'sweeps', 'contract.json');
@@ -1018,7 +1021,8 @@ test('what the rules bound stays with the owner: context over the limit, project
   commitAll(d, 'caps', true);
   assert.equal(approveRun(featureContract(), d).status, 1, 'a project cap');
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
-  assert.equal(approveRun(t, sweepRepo({ 'README.md': Array.from({ length: 30 }, (_, i) => `row ${i}`).join('\n') })).status, 1, 'a triage over its lines');
+  // Build 18 (T10): docs lines no longer count, so the over-the-lines case is code the branch changed.
+  assert.equal(approveRun(t, fixRepo({ 'src/page.ts': Array.from({ length: 30 }, (_, i) => `export const r${i} = ${i};`).join('\n') })).status, 1, 'a triage over its lines');
 });
 
 // why: guards rule:sweep-auto-approval
@@ -1173,12 +1177,15 @@ test('a branch cannot raise a cap it inherited, and the outcome holds to an owne
 });
 
 // why: guards rule:sweep-tiers
-test('the notice prints the real modifiers, M14 leaves no other docs folder out, and a quoted path still counts', () => {
+// Build 18 (I9): what docs/ leaves out is its data; code in any docs folder still asks.
+// renamed from: the notice prints the real modifiers, M14 leaves no other docs folder out, and a quoted path still counts
+test('the notice prints the real modifiers, M14 leaves no docs code out, and a quoted path still counts', () => {
   const sec = { ...featureContract(), modifiers: ['security-sensitive'] };
   assert.match(approveRun(sec).stdout, /Modifiers: security-sensitive; diff against main/);
   const t = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
-  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.json': '{}\n' })).stdout, /ASK THE OWNER/);
-  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/migrations/old/1.json': '{}\n' })).stdout, /ASK THE OWNER/);
+  assert.equal(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.json': '{}\n' })).status, 0, 'docs data in a nested folder is data');
+  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/data/site.mjs': 'export {};\n' })).stdout, /ASK THE OWNER/);
+  assert.match(approveRun(t, sweepRepo({ 'README.md': 'y\n', 'docs/migrations/old/1.mjs': 'export {};\n' })).stdout, /ASK THE OWNER/);
   const dep = fixRepo({ [`pk${String.fromCharCode(233)}/yarn.lock`]: 'x\n' });
   const r = approveRun({ tier: 'fix', modifiers: [], roles: fixFloor() }, dep);
   assert.match(r.stdout, /supply-chain/, 'a lockfile in a non-ASCII folder is still a package file');
@@ -1500,4 +1507,41 @@ test('recall v1 stays byte for byte what was frozen, and v2 changes only Q3\'s q
   assert.deepEqual(changed, ['3.q', '7.key']);
   assert.match(v2[6].key, /approve\.mjs/);
   assert.match(v2[6].key, /ASK goes to the owner/);
+});
+
+// I10 (build 18, real on 1.43.0): a reviewer's brief names its scratch folder, but nothing held a Bash or PowerShell
+// write outside it; one reviewer once removed another's folder. A reviewer's write now lands in a sweep scratch folder
+// or is held; a write the hook cannot place (no path, a command it cannot read) is held too. From the owner's pop-up
+// (2026-11-19) the fence is an allowlist: one row per way a line is refused, and one per kind of line it passes.
+// why: catches a sweep reviewer writing into the repo or outside its own scratch folder
+test('a reviewer writes only inside its sweep scratch folder; reads and other agents are left alone', () => {
+  const dir = makeTemp('cap-');
+  const scratch = path.join(os.tmpdir(), 'kit-sweep-0123abcd', 'role-1').split(path.sep).join('/');
+  const run = (command, extra = {}, tool = 'Bash') => capHook(dir, 1, 12, { tool_name: tool, tool_input: { command }, ...extra }).permissionDecision;
+  for (const c of [
+    'echo $(rm notes.txt)', // a substitution the hook cannot read
+    `rm -rf ${scratch}/a{,/../../../reports}`, // a Bash brace expansion
+    'echo x > notes.txt', // a redirect outside scratch
+    'true <>notes.txt', // a redirect it cannot place
+    'c=rm; $c -rf x', // a command word built at run time
+    'git -c a=b reset --hard', // a git option before the subcommand
+    'git checkout -- x.mjs', // a git subcommand that writes
+    'git diff --out=x.patch', // a git read told to write, by the start of --output
+    'git log -po x.patch', // the same, by a bundled short flag
+    'r\\m -rf reports', // a Bash escape inside a word
+    `cp --target-directory=reports ${scratch}/a`, // a flag with its value attached
+    '/usr/bin/rm.exe -rf reports', // a write outside scratch, the command named by path and .exe
+    `cp a ${scratch}/../../x`, // traversal out of scratch
+    'rm -rf /elsewhere/kit-sweep-0123abcd/role-1/x', // the scratch name under another folder
+    `echo x > ${scratch}/*`, // a path the shell expands
+    'node -e "x"', // an interpreter given code
+    "sed -n 's/a/b/w out.txt' x.mjs", // a command off the read list (sed can write with w)
+    'find . -name x -delete', // find told to write
+  ]) assert.equal(run(c), 'deny', c);
+  for (const c of ['Set-Content x.txt y', `& ('Remove-'+'Item') x`, `[IO.File]::WriteAllText('x','y')`, `git diff --out'put'=x.patch`]) assert.equal(run(c, {}, 'PowerShell'), 'deny', `PowerShell: ${c}`);
+  for (const c of [`echo x > ${scratch}/out.txt`, `mkdir -p ${scratch}/probe`, `cp ${scratch}/a.txt ${scratch}/b.txt`, 'grep -rn x src 2>/dev/null',
+    'node scripts/test-check.mjs main 2>&1 | tail -3', 'git -C . diff main...HEAD -- a.txt']) assert.equal(run(c), 'allow', c);
+  assert.equal(run(`'y' | Out-File ${scratch}/x.txt`, {}, 'PowerShell'), 'allow', 'PowerShell inside the scratch folder');
+  assert.equal(run('Get-Content a.txt 2>$null', {}, 'PowerShell'), 'allow', 'a PowerShell read');
+  assert.equal(run('echo x > notes.txt', { agent_type: 'builder' }), 'allow', 'only reviewers');
 });

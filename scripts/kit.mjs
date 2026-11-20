@@ -29,8 +29,8 @@ import { NO_PROGRAMS, SAFE_CWD, safeGh, githubSlug } from './safe-git.mjs';
 const STAMP_USER = 'kit-install.json';
 const STAMP_PROJECT = path.join('.kit', 'kit-version.json');
 // Files that hold the owner's details on purpose, and folders that are not kit content.
-const SCRUB_SKIP = new Set(['kit.config.json', 'owner-profile.md', 'scrub.local.json']);
-// vendor/ holds third-party work kept as-is, with its own credits; it is not the owner's content.
+const SCRUB_SKIP = new Set(['kit.config.json', 'scrub.local.json']);
+// The backup folder (vendor.dir) holds third-party work kept as-is, with its own credits; it is not the owner's content.
 const SCRUB_SKIP_DIRS = new Set(['.git', 'node_modules', 'reports', 'vendor']);
 const SNAPSHOT_SKIP = new Set(['.git', 'node_modules', '.in_use']);
 const PATH_PATTERN = /[A-Za-z]:\\+Users\\+|\/Users\/[^/\s]+|\/home\/[^/\s]+/;
@@ -46,6 +46,10 @@ function walk(dir, skipDirs = new Set()) {
     return [full];
   });
 }
+
+// K135 (build 18): CI runs the base commit's kit.mjs over the PR's tree for scrub and build only, so the PR's own copy
+// never judges its content. No other command reads it: install and the rest keep the kit folder this file sits in.
+export const checkRoot = (kit) => (process.env.KIT_CHECK_ROOT ? path.resolve(process.env.KIT_CHECK_ROOT) : kit);
 
 /** Claude Code's per-project folder name: every non-alphanumeric character becomes a dash. */
 export function projectSlug(projectDir) {
@@ -71,22 +75,56 @@ const thirdPartySkills = (config) => [
 // checked against the release tag, like the files it copies (the 1.26.0 sweep, C4).
 const kitInputs = (kit) => {
   const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
-  return ['kit.config.json', config.ownerProfileFile || 'owner-profile.md', 'VERSION'].map((f) => ({ src: path.join(kit, f) })).filter((e) => fs.existsSync(e.src));
+  return ['kit.config.json', 'VERSION'].map((f) => ({ src: path.join(kit, f) })).filter((e) => fs.existsSync(e.src));
 };
 
-function loadKit(kit, checked = null) {
+// The owner's profile (K141): the kit repo is public, so it lives in the Claude folder as kit-owner-profile.md, the
+// owner's own file, and never in the kit folder. Missing, it renders as nothing and install says where it goes.
+export const PROFILE_FILE = 'kit-owner-profile.md';
+
+function loadKit(kit, checked = null, home = null) {
   const read = (p) => (checked && checked.has(p) ? checked.get(p) : fs.readFileSync(p, 'utf8'));
   const config = JSON.parse(read(path.join(kit, 'kit.config.json')));
-  const profilePath = path.join(kit, config.ownerProfileFile || 'owner-profile.md');
-  const ownerProfile = (checked && checked.has(profilePath)) || fs.existsSync(profilePath) ? read(profilePath).trimEnd() : '';
+  const profilePath = home ? path.join(home, PROFILE_FILE) : null;
+  const found = Boolean(profilePath) && fs.existsSync(profilePath);
+  const ownerProfile = found ? fs.readFileSync(profilePath, 'utf8').trimEnd() : '';
   const version = read(path.join(kit, 'VERSION')).trim();
   const git = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8', cwd: SAFE_CWD });
   const commit = git.status === 0 ? git.stdout.trim() : null;
-  return { config, ownerProfile, version, commit };
+  return { config, ownerProfile, profile: { path: profilePath, found }, version, commit };
+}
+
+// The Owner Context lines past the name in an installed CLAUDE.md: what a blank profile would write over.
+const ownerContextLines = (text) => {
+  const m = /^## Owner Context[ \t]*\n([\s\S]*?)(?=\n---|\n## |(?![\s\S]))/m.exec(String(text));
+  return m ? m[1].split('\n').map((l) => l.trim()).filter((l) => l && !/^- Owner:/.test(l)) : [];
+};
+
+/**
+ * The build 18 sweep: the profile left the kit folder, so the upgrade that deletes it must not blank the owner's
+ * lines. Install user with no profile in the Claude folder refuses while the installed CLAUDE.md still holds Owner
+ * Context lines, or while a kit-folder owner-profile.md (an older kit's place) holds lines never moved; the profile
+ * is still never read from the kit folder. A project install never renders the profile: it is the owner's alone,
+ * and a project folder gets committed.
+ *
+ * Args:
+ *     ctx: the install context
+ *     kitInfo: what loadKit read; a project install's profile is set to nothing here
+ */
+function guardProfile(ctx, kitInfo) {
+  if (ctx.target !== 'user') { kitInfo.ownerProfile = ''; return; }
+  if (kitInfo.profile.found || !kitInfo.profile.path) return;
+  const to = toPosix(kitInfo.profile.path);
+  const old = path.join(ctx.kit, 'owner-profile.md');
+  if (fs.existsSync(old)) throw new Error(`Install refused: no owner profile at ${to}, and the kit folder still holds ${toPosix(old)}. Move it there (the kit folder is public), then install user again.`);
+  const installed = path.join(ctx.home, 'CLAUDE.md');
+  if (fs.existsSync(installed) && ownerContextLines(fs.readFileSync(installed, 'utf8')).length) {
+    throw new Error(`Install refused: no owner profile at ${to}, and ${toPosix(installed)} still holds Owner Context lines that installing would blank. Copy those lines into ${to} (git show v1.43.1:owner-profile.md in the kit folder prints the last copy the kit kept), then install user again.`);
+  }
 }
 
 // What install copies or reads: a change to any of these ships text no release holds (the owner, 2026-11-02). The
-// config and owner profile are rendered into the installed files, and the script decides what install does.
+// config is rendered into the installed files, and the script decides what install does.
 const RELEASE_PATHS = ['user', 'project', 'memory', 'scripts', 'VERSION', 'kit.config.json'];
 
 /**
@@ -99,7 +137,7 @@ const RELEASE_PATHS = ['user', 'project', 'memory', 'scripts', 'VERSION', 'kit.c
 export function releaseState(kit) {
   const tag = 'v' + fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8'));
-  const paths = [...RELEASE_PATHS, config.ownerProfileFile || 'owner-profile.md'];
+  const paths = [...RELEASE_PATHS];
   // git status runs a program the config names: core.fsmonitor (off for every git install runs), or a filter that a
   // .gitattributes file names. The kit folder's own attributes and git config are in the fingerprint the held fix line
   // checks; the user's global attributes file is not read here. The rest of the global config stays (core.autocrlf
@@ -600,7 +638,8 @@ export function install(ctx) {
   const releaseRun = Boolean(ctx.release && ctx.release.release);
   if (releaseRun && !ctx.release.tree) throw new Error('Install refused: the release check found no tree for the release tag, so no kit file can be checked against it. Check out the release tag again, then rerun install.');
   const checked = releaseRun ? releaseBytes(ctx.kit, ctx.release.tree, [...entries, ...kitInputs(ctx.kit)]) : null;
-  const kitInfo = loadKit(ctx.kit, checked);
+  const kitInfo = loadKit(ctx.kit, checked, ctx.home);
+  guardProfile(ctx, kitInfo);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
   // Which guard files are a host's own (the review of 670b3a2): read from the record outside the project, never from
@@ -885,7 +924,7 @@ export function install(ctx) {
       }
     }
   }
-  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: kept || replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version };
+  return { created, updated, replaced, retired, skipped, merged, threeWayMerged, hostOwned: [...hostOwned].sort(), backupDir: kept || replaced.length || retired.length || threeWayMerged.length ? backupDir : null, version: kitInfo.version, ownerProfile: kitInfo.profile };
 }
 
 /**
@@ -1008,7 +1047,7 @@ function memoryCore(text) {
 const compared = (key, text) => (key.startsWith('memory/') ? memoryCore(text) : text);
 
 export function foldBack(ctx) {
-  const kitInfo = loadKit(ctx.kit);
+  const kitInfo = loadKit(ctx.kit, null, ctx.home);
   const { entries, stampPath, memoryDir } = plan(ctx);
   const stamp = readStamp(stampPath);
   const out = { foldBack: [], update: [], conflict: [], added: [], missing: [], guarded: [] };
@@ -1160,9 +1199,65 @@ function licenseName(dir) {
 }
 
 /**
- * Keep a credited copy of each third-party plugin and skill in vendor/, so the kit can still
+ * T10 (build 18): where the third-party backups live. The kit repo is public and the copies are other people's work,
+ * so they moved to a private repo cloned beside the kit; kit.config.json "vendor.dir" names it, relative to the kit
+ * folder. With no dir it is the kit's own vendor/, as before.
+ *
+ * Args:
+ *     kit: the kit folder
+ *     config: its kit.config.json
+ *
+ * Returns:
+ *     the backup folder's absolute path
+ */
+export function vendorRoot(kit, config) {
+  const dir = config && config.vendor && config.vendor.dir;
+  return typeof dir === 'string' && dir ? path.resolve(kit, dir) : path.join(kit, 'vendor');
+}
+
+/**
+ * What the kit keeps of its backups when they live elsewhere: vendor-index.json, one entry per plugin and skill
+ * group with its credit and the skill names it holds, so the kit's own checks (every backup credited, every skill the
+ * case map names exists) run where the backups are not, as in CI.
+ *
+ * Args:
+ *     vendor: the backup folder
+ *
+ * Returns:
+ *     { plugins, skillGroups }, each keyed by name
+ */
+// The build 18 sweep: one hash over a backup folder's files (names and bytes, links refused), kept in the index, so
+// restore copies only what the kit last indexed and a folder planted or changed beside it is refused.
+function treeHash(dir) {
+  const h = crypto.createHash('sha256');
+  const walkIn = (d, rel) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const p = path.join(d, e.name);
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isSymbolicLink()) { h.update(`link\0${r}\0${fs.readlinkSync(p)}\0`); continue; }
+      if (e.isDirectory()) walkIn(p, r);
+      else { h.update(`file\0${r}\0`); h.update(fs.readFileSync(p)); h.update('\0'); }
+    }
+  };
+  walkIn(dir, '');
+  return h.digest('hex').slice(0, 32);
+}
+
+export function vendorIndex(vendor) {
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return {}; } };
+  const skillsIn = (d) => { const names = []; const look = (x) => { let es = []; try { es = fs.readdirSync(x, { withFileTypes: true }); } catch { return; } for (const e of es) { if (!e.isDirectory()) continue; if (fs.existsSync(path.join(x, e.name, 'SKILL.md'))) names.push(e.name); look(path.join(x, e.name)); } }; look(d); return names.sort(); };
+  const entry = (dir, extra) => { const src = read(path.join(dir, 'SOURCE.json')); return { version: src.version || null, author: src.author || 'unknown', license: src.license || 'unknown', repository: src.repository || 'unknown', licenseFile: fs.existsSync(path.join(dir, 'LICENSE')), ...(src.licenseNote ? { licenseNote: src.licenseNote } : {}), ...extra, hash: treeHash(dir) }; };
+  const list = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch { return []; } };
+  const plugins = Object.fromEntries(list(path.join(vendor, 'plugins')).map((n) => { const dir = path.join(vendor, 'plugins', n); return [n, entry(dir, { skills: skillsIn(path.join(dir, 'skills')), rootSkill: fs.existsSync(path.join(dir, 'SKILL.md')) })]; }));
+  const skillGroups = Object.fromEntries(list(path.join(vendor, 'skills')).map((n) => { const dir = path.join(vendor, 'skills', n); return [n, entry(dir, { skills: skillsIn(dir) })]; }));
+  return { plugins, skillGroups };
+}
+const writeVendorIndex = (kit, vendor) => fs.writeFileSync(path.join(kit, 'vendor-index.json'), JSON.stringify(vendorIndex(vendor), null, 1) + '\n');
+
+/**
+ * Keep a credited copy of each third-party plugin and skill in the backup folder, so the kit can still
  * restore them if a source is deleted or unreachable. Each copy carries its LICENSE and a
- * SOURCE.json (version, commit, author, license, where it came from); vendor/CREDITS.md lists all.
+ * SOURCE.json (version, commit, author, license, where it came from); CREDITS.md in the backup folder lists all.
  *
  * Args:
  *     ctx: { kit, home, date } - what to copy comes from kit.config.json "vendor"
@@ -1173,7 +1268,10 @@ function licenseName(dir) {
 export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 10) }) {
   const { config } = loadKit(kit);
   const want = config.vendor || {};
-  const vendor = path.join(kit, 'vendor');
+  const vendor = vendorRoot(kit, config);
+  // The build 18 sweep: with the backups cloned elsewhere, a missing folder is a clone not made yet, and writing the
+  // index from it would drop every backup this machine lacks.
+  if (want.dir && !fs.existsSync(vendor)) throw new Error(`no backup folder at ${toPosix(vendor)}: clone the backups there first`);
   const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
   const installed = fs.existsSync(installedPath) ? JSON.parse(fs.readFileSync(installedPath, 'utf8')).plugins || {} : {};
   const marketsPath = path.join(home, 'plugins', 'known_marketplaces.json');
@@ -1262,31 +1360,55 @@ export function snapshot({ kit, home, date = new Date().toISOString().slice(0, 1
     ...rows,
     '',
   ].join('\n'));
+  writeVendorIndex(kit, vendor);
   return out;
 }
 
 /**
- * Bring a lost third-party skill back from vendor/ into ~/.claude/skills. For a plugin, its
- * skills come back as plain skills (its hooks and commands stay in vendor/plugins/<name>).
+ * Bring a lost third-party skill back from the backup folder (vendor.dir) into ~/.claude/skills. For a plugin, its
+ * skills come back as plain skills (its hooks and commands stay in the backup folder, plugins/<name>).
  * A skill folder that already exists is kept, never overwritten.
  *
  * Returns:
  *     { restored, kept } - skill names
  */
 export function restore({ kit, home, name }) {
-  const vendor = path.join(kit, 'vendor');
+  const vendor = vendorRoot(kit, loadKit(kit).config);
   const plugin = path.join(vendor, 'plugins', name, 'skills');
   const group = path.join(vendor, 'skills', name);
   const out = { restored: [], kept: [] };
   const single = path.join(vendor, 'plugins', name);
+  // The build 18 sweep: a skill is text an agent follows, and the backups now sit outside the reviewed repo, so only
+  // a backup the kit's index names, with the same files it indexed, comes back.
+  let index = {};
+  try { index = JSON.parse(fs.readFileSync(path.join(kit, 'vendor-index.json'), 'utf8')); } catch { /* none: nothing is trusted */ }
+  const has = (k) => Boolean(index[k]) && Object.hasOwn(index[k], name);
+  const kind = has('plugins') ? 'plugins' : has('skillGroups') ? 'skills' : null;
+  if (!kind) throw new Error(`${name} is not in vendor-index.json, so its backup is not restored`);
+  const folder = path.join(vendor, kind, name);
+  if (!fs.existsSync(folder) || treeHash(folder) !== index[kind === 'plugins' ? 'plugins' : 'skillGroups'][name].hash) throw new Error(`the backup of ${name} at ${toPosix(folder)} differs from what vendor-index.json recorded: check it, then run vendor-index again`);
+  // A link would copy whatever it points at now, which no hash covers.
+  const linkIn = (d) => fs.readdirSync(d, { withFileTypes: true }).some((e) => e.isSymbolicLink() || (e.isDirectory() && linkIn(path.join(d, e.name))));
+  if (linkIn(folder)) throw new Error(`the backup of ${name} at ${toPosix(folder)} holds a link, which restore never follows`);
+  // The copy comes only from the folder the index check read: a plugin's from plugins/, a skill group's from skills/.
+  if (kind === 'skills') {
+    for (const e of fs.readdirSync(group, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const dest = path.join(home, 'skills', e.name);
+      if (fs.existsSync(dest)) { out.kept.push(e.name); continue; }
+      fs.cpSync(path.join(group, e.name), dest, { recursive: true });
+      out.restored.push(e.name);
+    }
+    return out;
+  }
   if (!fs.existsSync(plugin) && fs.existsSync(path.join(single, 'SKILL.md'))) {
     const dest = path.join(home, 'skills', name);
     if (fs.existsSync(dest)) out.kept.push(name);
     else { fs.cpSync(single, dest, { recursive: true }); out.restored.push(name); }
     return out;
   }
-  const root = fs.existsSync(plugin) ? plugin : fs.existsSync(group) ? group : null;
-  if (!root) throw new Error(`no snapshot named ${name} in vendor/`);
+  const root = fs.existsSync(plugin) ? plugin : null;
+  if (!root) throw new Error(`no snapshot named ${name} in ${toPosix(vendor)}`);
   for (const e of fs.readdirSync(root, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;
     const dest = path.join(home, 'skills', e.name);
@@ -1603,19 +1725,30 @@ function useCheck(kit, projectDir, home) {
   return { code: r.status, text: String(r.stdout || r.stderr || '').trim() || 'Use check: no output' };
 }
 
-/** Installed plugins whose version differs from the backup copy in vendor/. */
+/** Installed plugins whose version differs from the backup copy in the backup folder (vendor.dir). */
 export function vendorDrift({ kit, home }) {
   const installedPath = path.join(home, 'plugins', 'installed_plugins.json');
   if (!fs.existsSync(installedPath)) return [];
   const installed = JSON.parse(fs.readFileSync(installedPath, 'utf8')).plugins || {};
+  let vendorIdx = null;
+  try { vendorIdx = JSON.parse(fs.readFileSync(path.join(kit, 'vendor-index.json'), 'utf8')); } catch { /* none: the backups' own files */ }
+  let vendorDir = path.join(kit, 'vendor');
+  try { vendorDir = vendorRoot(kit, loadKit(kit).config); } catch { /* no config: the kit's own vendor/ */ }
   const out = [];
   for (const [key, entries] of Object.entries(installed)) {
     const name = key.split('@')[0];
-    const sourcePath = path.join(kit, 'vendor', 'plugins', name, 'SOURCE.json');
-    if (!fs.existsSync(sourcePath)) continue;
+    // T10: the version comes from the kit's index, so the check works where the backups are not cloned.
+    const indexed = ((vendorIdx || {}).plugins || {})[name];
+    const sourcePath = path.join(vendorDir, 'plugins', name, 'SOURCE.json');
+    if (!indexed && !fs.existsSync(sourcePath)) continue;
     const newest = [...entries].sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)))[0];
-    const backup = JSON.parse(fs.readFileSync(sourcePath, 'utf8')).version;
-    if (newest.version && backup && newest.version !== backup) out.push({ name, backup, installed: newest.version });
+    // The build 18 sweep: where the backup is cloned, its own SOURCE.json is the truth, and an index that says
+    // otherwise is stale; the index answers only where the backups are not.
+    let own = null;
+    try { own = JSON.parse(fs.readFileSync(sourcePath, 'utf8')).version || null; } catch { /* not cloned here */ }
+    const stale = Boolean(indexed && own && indexed.version !== own);
+    const backup = own || (indexed && indexed.version);
+    if (stale || (newest.version && backup && newest.version !== backup)) out.push({ name, backup, installed: newest.version, ...(stale ? { staleIndex: indexed.version } : {}) });
   }
   return out;
 }
@@ -1750,7 +1883,7 @@ export function preCompactReport({ kit, home, projectDir }) {
   if (!vault.configured) lines.push('No vault backup set up for this project. Set one up (NEW-PROJECT.md step 3b) so the private notes are never lost.');
   else if (vault.committed) lines.push(`Vault backup: ${vault.changed.length} file(s) changed, committed in ${vault.dir}. Push on the owner's yes.`);
   const drift = vendorDrift({ kit, home });
-  if (drift.length) lines.push(`${drift.length} third-party plugin(s) changed since the backup: ${drift.map((d) => `${d.name} (${d.backup} -> ${d.installed})`).join(', ')}. Review, then run snapshot.`);
+  if (drift.length) lines.push(`${drift.length} third-party plugin(s) changed since the backup: ${drift.map((d) => `${d.name} (${d.backup} -> ${d.installed}${d.staleIndex ? `; vendor-index.json says ${d.staleIndex}` : ''})`).join(', ')}. Review, then run snapshot.`);
   return lines.join('\n');
 }
 
@@ -2208,6 +2341,7 @@ function main(argv) {
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
+    if (target === 'user' && !r.ownerProfile.found) console.log(`    no owner profile at ${toPosix(r.ownerProfile.path)}: the Owner Context in CLAUDE.md lists the name only. Write your lines there (owner-profile.example.md shows the shape), then install user again.`);
     console.log(`    created: ${r.created.length}, updated: ${r.updated.length}, merged: ${(r.threeWayMerged || []).length}, replaced: ${r.replaced.length}, retired: ${r.retired.length}, skipped: ${r.skipped.length}`);
     for (const f of r.merged) console.log(`    recorded as merged by hand: ${f}`);
     for (const f of r.threeWayMerged || []) console.log(`    ${dryRun ? "would merge" : "merged"} with your edits: ${f} (your lines and the kit's changes, line by line${dryRun ? "" : "; your copy is in the backup folder"})`);
@@ -2238,8 +2372,14 @@ function main(argv) {
     console.log(`Kit is now ${bump({ kit, level: target, note: arg })}`);
   } else if (cmd === 'snapshot') {
     const r = snapshot({ kit, home });
-    console.log(`Snapshot: ${r.plugins.length} plugin(s), ${r.skills.length} skill(s) -> vendor/`);
+    console.log(`Snapshot: ${r.plugins.length} plugin(s), ${r.skills.length} skill(s) -> ${toPosix(vendorRoot(kit, loadKit(kit).config))}; vendor-index.json written`);
     if (r.missing.length) console.log(`    not found on this machine: ${r.missing.join(', ')}`);
+  } else if (cmd === 'vendor-index') {
+    // T10: write the kit's index from the backup folder as it is, with no plugin cache needed.
+    const vendor = vendorRoot(kit, loadKit(kit).config);
+    if (!fs.existsSync(vendor)) throw new Error(`no backup folder at ${toPosix(vendor)}: clone the backups there first`);
+    writeVendorIndex(kit, vendor);
+    console.log(`vendor-index.json written from ${toPosix(vendor)}`);
   } else if (cmd === 'restore') {
     const r = restore({ kit, home, name: target });
     console.log(`restored: ${r.restored.join(', ') || 'none'}; kept (already there): ${r.kept.join(', ') || 'none'}`);
@@ -2258,10 +2398,11 @@ function main(argv) {
     for (const h of hits) console.log(`rule:${h.id}  ${h.title}  (${h.module})`);
     if (!hits.length) console.log('No rule matched. Try other words, or read project/standards/INDEX.md.');
   } else if (cmd === 'build') {
-    const out = build({ kit });
+    const tree = checkRoot(kit);
+    const out = build({ kit: tree });
     for (const [rel, text] of out) {
-      fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
-      fs.writeFileSync(path.join(kit, rel), text);
+      fs.mkdirSync(path.dirname(path.join(tree, rel)), { recursive: true });
+      fs.writeFileSync(path.join(tree, rel), text);
     }
     console.log(`build: wrote ${out.size} file(s) from rules/; commit-msg hook: ${sourceHooks(kit)}`);
   } else if (cmd === 'forget') {
@@ -2285,7 +2426,7 @@ function main(argv) {
       process.exitCode = 1;
     }
   } else if (cmd === 'scrub') {
-    const hits = scrub({ kit });
+    const hits = scrub({ kit: checkRoot(kit) });
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.kind}`);
     console.log(hits.length ? `${hits.length} hit(s)` : 'Scrub clean');
     process.exitCode = hits.length ? 1 : 0;

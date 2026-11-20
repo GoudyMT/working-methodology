@@ -20,7 +20,7 @@ Arguments: $ARGUMENTS
 - **`existing`** - follow `<kitDir>/EXISTING-PROJECT.md`. The first pass is read-only and ends with a State Map
   and Gap Report for the owner.
 - **`snapshot`** - refresh the credited backups of third-party plugins and skills: `node <kitDir>/scripts/kit.mjs
-  snapshot`, then review the diff in `vendor/` (read any new community skill) before the kit commit.
+  snapshot`, then review the diff in the backup folder (`vendor.dir`; read any new community skill) before both commits.
 - **`update`** - pull the latest kit into this project: `node <kitDir>/scripts/kit.mjs install project .`
   It runs only when `<kitDir>` sits, clean, on the release tag its VERSION names (`v<VERSION>`). A refusal names why: show it to the owner and stop;
   never add `--unreleased` to a real project (that flag is for throwaway test installs only).
@@ -68,4 +68,4 @@ Arguments: $ARGUMENTS
   step 5b). When adopting a project that keeps its own standards, add the step there.
 - Never overwrite a file the owner changed; the tool skips it, and so do you, unless the owner says so.
 - Never push, publish or make the kit's repository public without the owner's explicit go.
-- Nothing personal leaves the kit's private files (`kit.config.json`, `owner-profile.md`, `scrub.local.json`).
+- Nothing personal leaves the owner's private files (`~/.claude/kit-owner-profile.md`, `scrub.local.json`); `kit.config.json` holds the first name only.
