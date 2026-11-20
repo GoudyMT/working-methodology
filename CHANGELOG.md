@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.46.1 - 2026-11-20
+
+The upgrade note now says render adds the archive block itself and that a done row needs the release check run in the project, and the known limits name the test runners in plain words.
+
+### Fixed
+- The 1.46.0 upgrade note told a project to add an archive block by hand and named only the verify file for a done row; render adds the block, and a done row also needs the release check run in the project.
+
 ## 1.46.0 - 2026-11-20
 
 Four of the owner's standing rules are now held by checks instead of prose, the dash-name wildcard check reads a command as bash splits it, release text is written from the build record and checked against it, and the list shows open rows with an archive beside it.

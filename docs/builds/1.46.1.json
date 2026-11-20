@@ -36,7 +36,7 @@
  },
  "sweep": {
   "tier": "Triage",
-  "commit": "pending",
+  "commit": "590088c",
   "dimensions": [
    {
     "name": "Privacy",
