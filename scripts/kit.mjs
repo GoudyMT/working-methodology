@@ -1923,7 +1923,8 @@ export function promptCheckReport({ kit, projectDir }) {
  *     the cue, or '' when there is none or it was already given
  */
 export function closeoutCue({ projectDir, prompt = '', session = '' }) {
-  const git = (...a) => spawnSync('git', ['-C', projectDir, ...a], { encoding: 'utf8', timeout: 3000 });
+  // The project's own config could name a program for git to run; NO_PROGRAMS turns those off, as everywhere here.
+  const git = (...a) => spawnSync('git', ['-C', projectDir, ...NO_PROGRAMS, ...a], { encoding: 'utf8', cwd: SAFE_CWD, timeout: 3000 });
   const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
   if (common.status !== 0) return '';
   const tag = (git('tag', '--points-at', 'HEAD').stdout || '').split('\n').map((t) => t.trim()).find((t) => /^v?\d+\.\d+\.\d+$/.test(t)) || null;
