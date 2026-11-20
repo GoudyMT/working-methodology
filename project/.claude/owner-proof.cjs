@@ -69,7 +69,8 @@ const GIT_READS = new Set(['add', 'diff', 'log', 'show', 'status', 'blame', 'ls-
 const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold the owner\'s answers, so they are protected files. Read them; Claude Code and the owner write them.';
-const GLOB_REASON = 'Held: this for loop reads its glob where the guard cannot follow it (a folder change first and a body that writes, IFS, or an unquoted name a file splits). Quote "$f", or run the loop from the folder, or one command per file.';
+const GLOB_REASON = 'Never by a tool: this for loop reads its glob where the guard cannot follow it (a folder change first and a body that writes, IFS, or an unquoted name a file splits). Quote "$f", or run the loop from the folder, or one command per file.';
+const DASH_REASON = 'Never by a tool: a wildcard here matches a file whose name starts with a dash, which the shell hands on as an option (sed -i edits in place). Rename that file, or name the files you mean.';
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
 const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
@@ -484,6 +485,30 @@ function globSplits(command, tool, start) {
 		if (c === '"') { q = q ? null : '"'; continue; }
 		if (!q && c === "'") { q = "'"; continue; }
 		if (!q && c === '$' && use.test(body.slice(i))) return globNamesSplit(m[2], from);
+	}
+	return false;
+}
+// The build 19 sweep: bash hands a name the wildcard matches on as a word, and one that starts with a dash is read as an
+// option (a file named -i turns sed -n 1p * .claude/guard.cjs into an in-place edit). No reading of the wildcard as a
+// name sees that, so a Bash command whose unquoted wildcard matches such a name, in the start folder or a folder a cd
+// names, is held whole. A folder the guard cannot list is passed here; the readings after it still hold what they hold.
+function dashGlob(command, tool, start) {
+	if (tool === 'PowerShell') return false;
+	const c = String(command || '');
+	const from = start || (startNow && startNow.dir) || process.cwd();
+	const posixDrive = (p) => p.replace(/^\/([a-z])\//i, '$1:/');
+	const dirs = [from, ...[...c.matchAll(/(?:^|[;&|(]\s*)(?:cd|pushd)\s+([^\s;&|()`$'"]+)/g)].map((m) => path.resolve(from, posixDrive(m[1])))];
+	for (const w of c.split(/[\s;&|()<>]+/)) {
+		if (!/[*?]/.test(w) || /^['"]/.test(w)) continue;
+		const word = posixDrive(w.replace(/['"]/g, ''));
+		const dir = path.dirname(word);
+		if (/[*?[]/.test(dir)) return true;
+		const re = globRe(path.basename(word));
+		for (const d of dirs) {
+			let names = [];
+			try { names = fs.readdirSync(path.resolve(d, dir)); } catch { continue; }
+			if (names.some((n) => n.startsWith('-') && re.test(n))) return true;
+		}
 	}
 	return false;
 }
@@ -972,6 +997,7 @@ function answer(input) {
 		// K145 (build 19): a loop held for how its glob is read names no protected file, so it says so, not the first
 		// protected place checked (a guard write was refused as a transcript write).
 		if (globSplits(t.command, input.tool_name, cwd)) return deny(GLOB_REASON);
+		if (dashGlob(t.command, input.tool_name, cwd)) return deny(DASH_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
 		if (folders.length && shellWrites(t.command, input.tool_name, cwd, inFolders(folders))) return deny(FOLDERS_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);
