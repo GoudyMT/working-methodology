@@ -51,7 +51,7 @@ You are independently verifying an implementation. You have no prior context.
 Inputs: Spec [link] | Tests [link] | Implementation [link]
 Verify: (1) ALL spec behaviours handled, or only the tested ones? (2) Edge cases the spec implies but tests
 miss? (3) Ways to pass while subtly wrong (off-by-one, wrong default, silent failure)? (4) Security constraints
-and _Component Security Checklist.md respected? (5) Each new test guards a real use and can fail?
+and, in an app project, _Component Security Checklist.md respected? (5) Each new test guards a real use and can fail?
 Output: VERDICT PASS / FAIL / NEEDS-DISCUSSION; issues with file:line. Return findings as your final message.
 Do not edit any files.
 ```

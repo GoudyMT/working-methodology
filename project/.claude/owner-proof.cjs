@@ -500,12 +500,14 @@ function dashGlob(command, tool, start) {
 	// The commit security review: a word is read with its quoted parts taken out, so "x"* still counts; a bracket class,
 	// a quote beside a wildcard, a folder change the guard cannot place or a folder it cannot list is held, the safe side.
 	// A lone [ or [[ is the test command, not a class.
+	if (/[?*+@!]\((?=[^)]*\))/.test(c.replace(/'[^']*'|"[^"]*"/g, ''))) return true;
 	const words = c.split(/[\s;&|()<>]+/).filter((w) => /[*?]|\[[^\]]*\]/.test(w.replace(/'[^']*'|"[^"]*"/g, '')));
 	if (!words.length) return false;
 	// The second commit review: a glob option turned on (shopt, set -o), a folder change in any place (after then, do,
 	// builtin or env too) that is not a plain folder, and a glob word with braces, a variable, a substitution or an
 	// extended pattern are each more than this reading follows: held.
-	if (/(^|[^\w-])(shopt|setopt)(?![\w-])|(^|[^\w-])set\s+[-+]\w*o/.test(c)) return true;
+	// An extended pattern is cut apart by the word split below, so it is read on the whole command (the third review).
+	if (/(^|[^\w-])(shopt|setopt)(?![\w-])|(^|[^\w-])set\s+[-+]\w*o|[?*+@!]\(/.test(c)) return true;
 	const cds = [...c.matchAll(/(?:^|[^\w./-])(?:cd|pushd|popd|chdir)(?![\w.-])\s*(\S*)/g)];
 	if (cds.some((m) => !/^[^\s;&|()`$'"~\\{}]+$/.test(m[1]) || m[1].startsWith('-'))) return true;
 	const dirs = [from, ...cds.map((m) => path.resolve(from, posixDrive(m[1])))];

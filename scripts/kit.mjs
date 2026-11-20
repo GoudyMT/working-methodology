@@ -205,13 +205,27 @@ const releaseCheckout = (kit, tag) => `git -C "${toPosix(kit)}" fetch --tags; gi
 // T13 (build 19): the two templates that assume an app with a client and HTML. They install where the project shows a
 // UI, on request (--with-templates web), or where a copy is already in place, so no install retires one a project uses.
 const APP_TEMPLATES = ['_Templates/_Component Spec Template.md', '_Templates/_Component Security Checklist.md'];
-const UI_PACKAGES = /^(react|react-dom|preact|vue|nuxt|svelte|@sveltejs\/kit|solid-js|@angular\/core|next|astro|lit|@remix-run\/react|ember-source|electron|react-native|expo)$/;
-function showsUi(projectDir) {
-  for (const d of ['components', 'src/components', 'app/components']) if (fs.existsSync(path.join(projectDir, d))) return true;
+const UI_PACKAGES = /^(react|react-dom|preact|vue|nuxt|svelte|@sveltejs\/kit|solid-js|@angular\/core|next|astro|lit|@remix-run\/react|ember-source|electron|react-native|expo|gatsby|@builder\.io\/qwik|@tauri-apps\/api|alpinejs|htmx\.org|jquery)$/;
+// The build 19 sweep: a package.json is read only as a plain file under 1 MB (a link to a device would hang install),
+// with a byte-order mark taken off (PowerShell 5.1 writes one); a workspace's own package.json one level down
+// (apps/*, packages/*) and a root index.html count too.
+function uiPackage(file) {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(projectDir, 'package.json'), 'utf8'));
+    const st = fs.lstatSync(file);
+    if (!st.isFile() || st.size > 1024 * 1024) return false;
+    const pkg = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
     return ['dependencies', 'devDependencies', 'peerDependencies'].some((k) => Object.keys((pkg && pkg[k]) || {}).some((n) => UI_PACKAGES.test(n)));
   } catch { return false; }
+}
+function showsUi(projectDir) {
+  for (const d of ['components', 'src/components', 'app/components', 'index.html']) if (fs.existsSync(path.join(projectDir, d))) return true;
+  if (uiPackage(path.join(projectDir, 'package.json'))) return true;
+  for (const w of ['apps', 'packages']) {
+    let names = [];
+    try { names = fs.readdirSync(path.join(projectDir, w)).slice(0, 64); } catch { continue; }
+    if (names.some((n) => uiPackage(path.join(projectDir, w, n, 'package.json')))) return true;
+  }
+  return false;
 }
 
 function plan({ kit, home, target, projectDir, withTemplates = [] }) {
@@ -2363,6 +2377,9 @@ function main(argv) {
     for (const f of r.threeWayMerged || []) console.log(`    ${dryRun ? "would merge" : "merged"} with your edits: ${f} (your lines and the kit's changes, line by line${dryRun ? "" : "; your copy is in the backup folder"})`);
     for (const f of r.replaced) console.log(`    replaced ${f}`);
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
+    // T13: say when the app templates were left out, and name a --with-templates value install does not know.
+    for (const w of withTemplates.filter((x) => x !== 'web')) console.log(`    --with-templates ${w}: not a template set install knows (only web); nothing added for it`);
+    if (target === 'project' && !withTemplates.includes('web') && !showsUi(projectDir) && !APP_TEMPLATES.some((t) => fs.existsSync(path.join(projectDir, t)))) console.log('    app templates left out: no UI found; add --with-templates web to install them');
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
     if (target === 'project' && !dryRun) for (const l of doubleRunLines(projectDir)) console.log(`    ${l}`);

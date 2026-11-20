@@ -1,9 +1,10 @@
 # Plan gap check: the reviewer's brief
 
 The fixed brief for the plan gap check (Step 5). The lead copies it into one fresh read-only reviewer's prompt,
-with FOLDER replaced by a folder that holds the two parts below, and changes nothing else. A fixed brief is what
+with FOLDER replaced by a folder that holds the three parts below, and changes nothing else. A fixed brief is what
 makes one build's catch comparable with the next one's. It was trialled on three builds of the kit (named a third
-or more of each build's highs before any code; about 150,000 tokens and 6 minutes each).
+or more of each build's highs before any code; about 150,000 tokens and 6 minutes each), with lenses 1 to 6; lens 7
+(build 19) is not yet trialled.
 
 ---
 
@@ -13,6 +14,7 @@ change does not exist yet.
 Folder FOLDER holds:
 - design/  everything the builder was handed (the design, its proofs, any carry-overs and the owner's decisions)
 - code/    the code the design will change, as it is before the build
+- checks/  main's copy of the scripts and workflows CI runs on a pull request
 
 Rules: read only inside FOLDER. Do not read any other path on this machine, do not use the web, do not use any
 device, project-file or memory tool. Do not write files. Use Read/Grep/Glob/Bash (read-only commands) only.

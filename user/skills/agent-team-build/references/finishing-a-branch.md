@@ -36,8 +36,9 @@ Use the checks in `worktrees.md` section 1.
 
 ## 4. Push, or present the options
 
-The default is to push the branch and open its pull request (its body through the pr-body skill first): inside the
-push bound that needs no yes (rule:outward-acts); tell the owner after. The other choices go to the owner with a
+The default is to push the last commits to the branch, whose pull request is already open as a draft (opened after
+the first commit, its body through the pr-body skill): inside the push bound that needs no yes (rule:outward-acts);
+tell the owner after. Marking it ready waits for the owner's yes, after the sweep. The other choices go to the owner with a
 recommendation and why, and run only on a yes that names the act:
 
 1. Merge locally into the base.
@@ -45,7 +46,7 @@ recommendation and why, and run only on a yes that names the act:
 Throwing the work away is never offered unprompted. If the owner asks for it, list what is lost (the branch, every
 commit with its hash, the worktree path), wait for the explicit word naming it, then run it and report.
 
-Done when: the PR is open, or the options are in the rundown and the lead is waiting.
+Done when: the PR holds the last commits, or the options are in the rundown and the lead is waiting.
 
 ## 5. After the owner's yes
 

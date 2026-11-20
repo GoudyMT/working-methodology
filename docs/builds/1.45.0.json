@@ -10,7 +10,7 @@
   {
    "id": "READ-PIPES",
    "kind": "fixed",
-   "text": "The guards pass a read loop over guard files piped on to a reader (wc, head, sort, grep), from a plain folder change too; the same loop piped to a writer, a shell or a file is still held.",
+   "text": "The guards pass a read loop over guard files piped on to a reader (wc, head, tail, grep, sort with no output file), from a plain cd too; a pipe to a writer, a shell or a file, and a wildcard matching a dash-named file, are held.",
    "evidence": "project/.claude/owner-proof.cjs",
    "reach": "projects",
    "where": "A read loop over guard files piped to wc",

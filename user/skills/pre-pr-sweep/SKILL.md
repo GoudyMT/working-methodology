@@ -1,6 +1,6 @@
 ---
 name: pre-pr-sweep
-description: Run the sweep a branch needs before its pull request, at the tier its change calls for (feature, fix, triage or launch gate), and write the report the tier requires. Use before opening any PR, when a plan needs its sweep tier set, or when the owner asks for a sweep, a review or a security check. Serves rule:sweep-tiers.
+description: Run the sweep a branch needs before its pull request, at the tier its change calls for (feature, fix, triage or launch gate), and write the report the tier requires. Use before marking any PR ready (a draft may open earlier), when a plan needs its sweep tier set, or when the owner asks for a sweep, a review or a security check. Serves rule:sweep-tiers.
 ---
 
 # Pre-PR Sweep
