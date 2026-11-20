@@ -76,8 +76,8 @@ const DASH_REASON = 'Never by a tool: a wildcard here matches a file whose name 
 const DASH_UNSURE = 'Never by a tool: part of this command is more than the guard reads as bash does (a folder change it cannot follow, a here-document, an extended pattern, a glob option, or text run as shell), so it cannot rule out a wildcard matching a file whose name starts with a dash. Run the wildcard from a plainly named folder, or name the files you mean.';
 // K158 (build 21): the read itself is plain, but another command beside it (one the guard cannot read as plain, a
 // definition, a substitution) may change what it runs, so it is held; on 1.46.1 this named the guard files instead.
-const BESIDE_REASON = 'Never by a tool: this names a protected file (the kit\'s guards, git hooks, .git/config, the settings or the session transcripts) beside another command the guard cannot read as plain, which may change what the read runs. Run the read as a command of its own.';
-const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
+const BESIDE_REASON = 'Never by a tool: this names a protected file beside another command the guard cannot read as plain (a program it does not know, a definition, a substitution), which may change what the read runs. Run the read as a command of its own.';
+const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install; the report channel\'s kit-report.json and kit-scrub-words.json are the owner\'s, and kit-reports/ is written by kit-report.mjs. Read them, or ask the owner to reinstall the kit or change their own file.';
 const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
@@ -510,7 +510,8 @@ function bashWords(c) {
 	let ext = false;
 	const heredocs = [];
 	const bodies = [];
-	const put =(ch, q) => { (word ||= []).push([ch, q]); };
+	const live = [];
+	const put = (ch, q) =>{ (word ||= []).push([ch, q]); };
 	let hereString = false;
 	const end = () => { if (word) { cmds[cmds.length - 1].push(word); if (hereString) { bodies.push(wordText(word)); hereString = false; } } word = null; };
 	const next = () => { end(); if (cmds[cmds.length - 1].length) cmds.push([]); };
@@ -549,6 +550,7 @@ function bashWords(c) {
 				while (k < lines.length && (h.strip ? lines[k].replace(/^\t+/, '') : lines[k]) !== h.tag) k++;
 				if (k >= lines.length) unsure = true;
 				bodies.push(lines.slice(0, k).join('\n'));
+				if (!h.quoted) live.push(lines.slice(0, k).join('\n'));
 				i +=lines.slice(0, Math.min(k + 1, lines.length)).reduce((n, l) => n + l.length + 1, 0);
 			}
 			continue;
@@ -566,7 +568,7 @@ function bashWords(c) {
 			if (!m) { unsure = true; end(); i++; continue; }
 			const tag = m[2].replace(/\\(.)/g, '$1').replace(/['"]/g, '');
 			if (!tag || /[$`]/.test(m[2])) unsure = true;
-			heredocs.push({ strip: m[1] === '-', tag });
+			heredocs.push({ strip: m[1] === '-', tag, quoted: /['"\\]/.test(m[2]) });
 			end();
 			i += m[0].length - 1;
 			continue;
@@ -602,7 +604,7 @@ function bashWords(c) {
 		put(ch, false);
 	}
 	next();
-	return { cmds: cmds.filter((x) => x.length), unsure, ext, bodies };
+	return { cmds: cmds.filter((x) => x.length), unsure, ext, bodies, live };
 }
 const wordText = (w) => w.map(([ch]) => ch).join('');
 // A [ is a class only with a ] after it in the same word: a lone [ or [[ is the test command.
@@ -645,8 +647,12 @@ function dashGlob(command, tool, start) {
 		if (cdBefore) return 'unsure';
 		for (const b of read.bodies) { const inner = dashGlob(b, tool, start); if (inner) return inner; }
 	}
-	// A program named by a wildcard may be anything, a shell included.
-	if (/[*?[]/.test(c) && read.cmds.some((cmd) => cmd[0] && wordGlob(cmd[0]))) return 'unsure';
+	// A program named by a wildcard may be anything, a shell included; so may one named by a wildcard or an expansion
+	// behind a wrapper and given -c (env /usr/bin/s[h] -c, ${X:-sh} -c: the build 21 sweep).
+	if (/[*?[]/.test(c) && read.cmds.some((cmd) => (cmd[0] && wordGlob(cmd[0])) || cmd.some((w, j) => /^-\w*c$/.test(wordText(w)) && cmd.slice(0, j).some((x) => wordGlob(x) || wordText(x).startsWith('$'))))) return 'unsure';
+	// The build 21 sweep: a here-document whose end word is not quoted runs the substitutions in its body, whatever
+	// command reads it (cat <<E with $(sed -n 1p *) inside), so a wildcard there is more than this reading follows.
+	if (read.live.some((b) => /\$\(|`/.test(b) && /[*?[]/.test(b))) return 'unsure';
 	if (read.cmds.some((cmd) => /^(source|\.)$/.test(wordText(cmd[0] || [])))) read.unsure = read.unsure || words.some(wordGlob);
 	// A cd the word split did not see (inside text run as shell, or glued to another word) is more than this follows.
 	const cdSeen = words.filter((w) => /^(cd|pushd|popd|chdir)$/.test(wordText(w))).length;

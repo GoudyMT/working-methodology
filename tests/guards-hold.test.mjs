@@ -361,8 +361,11 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 	// of its own, and a quote or an escaped backquote inside a substitution does not end it.
 	fs.writeFileSync(path.join(clean, '-n.txt'), 'x\n');
 	try {
-		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt", "rbash <<'E'\ncat *.txt\nE", "bash <<< 'cat *.txt'", "cat <<'E' | xargs -0 sh -c\ncat *.txt\nE", "sort --compress-program=sh <<'E'\ncat *.txt\nE"]) assert.match(dashWhy(c), /starts with a dash/, c);
-		for (const c of ["cat <<'E'\ncat *.txt\nE", "cat $(echo ')') a.txt"]) assert.equal(at(c), 'allow', c);
+		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt", "rbash <<'E'\ncat *.txt\nE", "bash <<< 'cat *.txt'", "cat <<'E' | xargs -0 sh -c\ncat *.txt\nE", "sort --compress-program=sh <<'E'\ncat *.txt\nE",
+			// The build 21 sweep: an unquoted here-document runs its substitutions, and a shell named by a wildcard or an
+			// expansion behind a wrapper runs its -c text.
+			'cat <<E\n$(cat *.txt)\nE', 'cat <<E | tr a b\n`cat *.txt`\nE', "env /usr/bin/s[h] -c 'cat *.txt'", "${X:-sh} -c 'cat *.txt'"]) assert.match(dashWhy(c), /starts with a dash/, c);
+		for (const c of ["cat <<'E'\ncat *.txt\nE", "cat $(echo ')') a.txt", "cat <<'E'\n$(cat *.txt)\nE", 'grep -c x *.md']) assert.equal(at(c), 'allow', c);
 	} finally { fs.rmSync(path.join(clean, '-n.txt')); }
 	assert.equal(at('cat <<E\nhello'), 'allow', 'a here-document with no end and no wildcard hides none');
 	assert.equal(at('cd a && cd b && ls *.md'), 'allow', 'no dash name fits *.md');
