@@ -23,12 +23,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | edit-discipline | Edit Discipline | `AGENTS.md` | edit, write code, change files, approval before writing |
 | outward-acts | Git: Local Work vs Outward Acts | `AGENTS.md` | push, pull request, merge, release, tag, publish, remote |
 | session-workflow | Session Workflow | `AGENTS.md` | session, start, end, workflow |
-| recovery-protocol | Recovery Protocol | `AGENTS.md` | lost context, new chat, recover |
 | what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
-| autonomous-fixes | Autonomous Fixes | `AGENTS.md` | fix without asking, small fixes |
-| direction-changes | Justify Every Direction Change | `AGENTS.md` | pivot, change direction, justify |
-| re-plan-on-failure | Re-Plan on Failure | `AGENTS.md` | plan failed, replan |
-| simplicity-lens | Simplicity Lens | `AGENTS.md` | simple, simpler, over-engineering |
 | visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
 | craft-floor | Craft Floor | `.claude/rules/design-and-ux.md` | states, empty state, heuristics, design review score, dashboard, board, anti-patterns, slop |
 | design-for-human-error | Design for Human Error | `.claude/rules/design-and-ux.md` | mistakes, typo, mistype, forgiving, recover |
@@ -45,6 +40,9 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | dual-horizon | Dual-Horizon Recommendations | `standards/evidence-and-failures.md` | short term, long term, rework cost |
 | goal-before-mechanism | Goal Before Mechanism | `standards/evidence-and-failures.md` | goal, purpose, why, mechanism, options |
 | success-charter | Success Charter (Define Success Before Building) | `standards/evidence-and-failures.md` | success criteria, define done, measurable |
+| direction-changes | Justify Every Direction Change | `standards/evidence-and-failures.md` | pivot, change direction, justify |
+| re-plan-on-failure | Re-Plan on Failure | `standards/evidence-and-failures.md` | plan failed, replan |
+| simplicity-lens | Simplicity Lens | `standards/evidence-and-failures.md` | simple, simpler, over-engineering |
 | pre-commit | Pre-Commit Discipline | `.claude/rules/git-and-release.md` | before commit, commit checks, staged |
 | commit-message-format | Commit Message Format | `.claude/rules/git-and-release.md` | commit message, subject line, type |
 | branching | Branching | `.claude/rules/git-and-release.md` | branch name, naming, git branch |
@@ -73,6 +71,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | preview-test | Preview Test Before Merge | `standards/reviews-and-findings.md` | preview link, staging, version url |
 | visible-tracking | Visible Tracking | `standards/reviews-and-findings.md` | progress, checklist, visible |
 | parking-lot | Parking Lot + Pre-PR Idea Triage | `standards/reviews-and-findings.md` | ideas, later, out of scope, parking lot |
+| autonomous-fixes | Autonomous Fixes | `standards/reviews-and-findings.md` | fix without asking, small fixes |
 | security-standards | Security Standards | `standards/security.md` | security, secrets, privacy, owasp, keys, install from a repo, third-party plugin, prompt injection |
 | mid-design-red-team | Mid-Design Red-Team (Security Before Lock) | `standards/security.md` | red team, threat, attack, design review |
 | tdd | Test-Driven Development (TDD) | `.claude/rules/testing.md` | test first, test-driven, red green, write tests |
@@ -94,3 +93,4 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | pre-compact-scan | Pre-Compact Scan | `.claude/rules/tracking-and-handoff.md` | before compact, scan, closeout checks |
 | post-compact-orientation | Post-Compact Orientation Protocol (MANDATORY first action) | `.claude/rules/tracking-and-handoff.md` | after compact, resume, re-read, orientation |
 | handoff-message-structure | Handoff Message Structure | `.claude/rules/tracking-and-handoff.md` | handoff, continuation, summary, next session |
+| recovery-protocol | Recovery Protocol | `.claude/rules/tracking-and-handoff.md` | lost context, new chat, recover |

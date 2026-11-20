@@ -94,3 +94,7 @@ A user-facing PR is used on the host's own build of the branch before merge, on 
 - **Done** when the lot is **empty** before the sweep; non-empty = the gate was skipped.
 
 **Pipeline:** `build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep -> test-first fixes -> gate -> Pre-Push Op-Test -> fixes + gate -> PR body (carrying the sweep summary) + audit -> push + PR (no yes needed, rule:outward-acts) -> preview test -> merge (owner) -> Post-Merge Check -> release (owner's yes)`. Why: a "now" idea is built and swept inside the same PR.
+
+## Autonomous Fixes {#autonomous-fixes}
+
+**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.

@@ -139,3 +139,7 @@ Resume Point names, and any tracking file it marks CHANGED or missing)
 ## Anti-Hallucination Discipline
 - Every claim verified by file read; vault state wins over this handoff.
 ```
+
+## Recovery Protocol {#recovery-protocol}
+
+Lost context mid-session: the Start reads (rule:session-workflow), then the first OPEN issue; re-read Collaborative Design Locks; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.

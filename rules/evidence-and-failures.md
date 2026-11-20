@@ -1,7 +1,7 @@
 ---
 id: evidence-and-failures
 load: on-demand
-when: When something fails, a number surprises, a probe is planned, a fact is handed on, a choice is recommended, or a goal or success bar is set.
+when: When something fails, a number surprises, a probe is planned, a fact is handed on, a choice is recommended or a direction changes, a locked decision proves wrong, or a goal or success bar is set.
 tags:
   failure-response: failure, error, broken, triage, debug, kit status, stale kit, troubleshooting
   enumerate-before-you-count: numbers, counts, metrics, surprising results
@@ -15,6 +15,9 @@ tags:
   success-charter: success criteria, define done, measurable
   dual-horizon: short term, long term, rework cost
   fact-check: fact check, verify a document, claims, report, explainer, diagram accuracy
+  direction-changes: pivot, change direction, justify
+  re-plan-on-failure: plan failed, replan
+  simplicity-lens: simple, simpler, over-engineering
 ---
 
 # Evidence and Failures
@@ -100,3 +103,15 @@ Why: the named mechanism is often the nearest knob; widening to the goal finds t
 ## Success Charter (Define Success Before Building) {#success-charter}
 
 The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, its Ambition Tiers (the functional end goal, then the gated stretch) ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.
+
+## Justify Every Direction Change {#direction-changes}
+
+When an agreed direction changes, state (1) **why it changed** (the new information); (2) **how it is better** (the concrete difference); (3) **why it is better** (risk avoided, cost saved, quality gained); (4) **a direct reference** (file / line, standard, ADR, precedent, measurement) - never "it is cleaner". Then the owner locks it. Missing any = a **silent pivot**. Why: the owner audits the turn without re-deriving it.
+
+## Re-Plan on Failure {#re-plan-on-failure}
+
+When work shows a locked decision is wrong: **STOP**; flag "this conflicts with [decision / ADR]"; assess what depends on it; present options (unlock and re-lock if needed), the root fix scaled to stakes first-class beside any work-around; then resume. Why: items built on a flawed foundation cascade.
+
+## Simplicity Lens {#simplicity-lens}
+
+Before locking: *"Is there a simpler version with the same outcome?"* Complexity is earned; 3 lines beat 30; no over-engineering for under-1% edge cases or problems users won't meet - but never simplify away depth that creates real capability. Why: every piece of complexity is paid for in every later change.

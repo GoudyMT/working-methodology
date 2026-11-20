@@ -6,7 +6,7 @@ paths:
   - "_Working Memory.md"
   - "_Active Plan.md"
   - "_Master Roadmap.md"
-when: Before a compact or session end, after a compact, and when a tracking file is opened.
+when: Before a compact or session end, after a compact or a loss of context, and when a tracking file is opened.
 tags:
   tracking-file-size-caps: size limit, too long, line limit, log length, tracking files
   session-log-compression: compress, old entries, history, log
@@ -18,6 +18,7 @@ tags:
   pre-compact-scan: before compact, scan, closeout checks
   post-compact-orientation: after compact, resume, re-read, orientation
   handoff-message-structure: handoff, continuation, summary, next session
+  recovery-protocol: lost context, new chat, recover
 ---
 
 # Tracking Files and Handoff
@@ -152,3 +153,7 @@ Resume Point names, and any tracking file it marks CHANGED or missing)
 ## Anti-Hallucination Discipline
 - Every claim verified by file read; vault state wins over this handoff.
 ```
+
+## Recovery Protocol {#recovery-protocol}
+
+Lost context mid-session: the Start reads (rule:session-workflow), then the first OPEN issue; re-read Collaborative Design Locks; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.
