@@ -1,0 +1,447 @@
+{
+ "version": "1.46.0",
+ "date": "2026-11-20",
+ "level": "minor",
+ "area": "Safety",
+ "title": "feat: rule checks and tracking cuts",
+ "headline": "Four of the owner's standing rules are now held by checks instead of prose, the dash-name wildcard check reads a command as bash splits it, release text is written from the build record and checked against it, and the list shows open rows with an archive beside it.",
+ "alignment": "v1.46.0 is build 20 of the v2.0 plan: K150 to K153, K155, K156, E18, TC0 to TC3, part of TC5 and the release-format fix, each reproduced on the released 1.45.0 or proven by a run first.",
+ "items": [
+  {
+   "id": "TEST-SCOPE",
+   "kind": "added",
+   "text": "A local test run reaches only the test files the branch changed; a run of the whole suite, `test-run.mjs --changed`, an unchanged test file or a check that is the CI's job waits for the owner's pop-up yes.",
+   "evidence": "user/kit-hooks/test-scope.cjs",
+   "reach": "projects",
+   "where": "Running the whole suite locally on a feature branch",
+   "before": "Ran with no question",
+   "after": "Waits for the owner's yes",
+   "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+  },
+  {
+   "id": "RUNNER-BACKSTOP",
+   "kind": "changed",
+   "text": "The kit's test runner refuses a full or `--changed` run off CI unless given `--owner-yes`; a named file, `--pick` and `--map` run as before.",
+   "evidence": "scripts/test-run.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "METER-ORDER",
+   "kind": "fixed",
+   "text": "The sweep meter answers with the call cap and token ceiling before any other reviewer hold; build 19's role 1 ran to 1,072,274 tokens against 749,524 because a shell refusal answered first, six times.",
+   "evidence": "user/kit-hooks/call-cap.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "METER-FAILS-LOUD",
+   "kind": "added",
+   "text": "A meter that cannot read a reviewer's transcript lets the call through and writes the cause to the git folder's log; the sweep outcome then keeps auto-approval paused and names the role.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "TEST-BUDGET",
+   "kind": "added",
+   "text": "The test check names each new test the build record does not name, and a medium or low sweep fix that adds a new test instead of a row in an existing one, unless the fix gives a reason.",
+   "evidence": "scripts/test-check.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "RETIRED-WORDING",
+   "kind": "added",
+   "text": "A working-memory line that keeps rule wording the kit has retired fails the state check the closeout runs, and session start names it; a line marked (history) is skipped.",
+   "evidence": "project/.claude/retired-check.mjs",
+   "reach": "projects",
+   "where": "A stale rule note left in _Working Memory.md",
+   "before": "Read and acted on by later threads",
+   "after": "Fails the closeout until it goes",
+   "test": "tests/state.test.mjs::a working-memory line that keeps retired rule wording fails the check, unless marked as history"
+  },
+  {
+   "id": "DASH-READER",
+   "kind": "fixed",
+   "text": "The dash-name wildcard check reads a command as bash splits it (quotes, `$?`, here-documents), reads only a wildcard in the first path part, in each folder a cd reaches; what it cannot follow gets its own reason.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects",
+   "where": "A read such as ls with a wildcard in a folder part, or echo exit=$?",
+   "before": "Held with a false reason",
+   "after": "Runs"
+  },
+  {
+   "id": "POPUP-OVERVIEW",
+   "kind": "added",
+   "text": "A choice pop-up that names an item code with too few plain words beside it, or asks to approve a plan with no Overview, is sent back to be rewritten before the owner sees it; the plan format opens with that Overview.",
+   "evidence": "user/kit-hooks/grounding.cjs",
+   "reach": "projects",
+   "test": "tests/guard-dispatch.test.mjs::a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude"
+  },
+  {
+   "id": "RELEASE-TEXT",
+   "kind": "added",
+   "text": "`build-record.mjs release` writes the release notes file and prints the one publish line with its title, and the release check compares the live title and notes with the record.",
+   "evidence": "project/.claude/release-check.mjs",
+   "reach": "kit"
+  },
+  {
+   "id": "SIX-DIMENSIONS",
+   "kind": "changed",
+   "text": "A Feature, First push or Launch gate review must name Privacy, Supply chain, Legal, Code security and a gaps or test value row, in the build record and in the PR body audit.",
+   "evidence": "project/.claude/pr-body-audit.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "DONE-PROOF",
+   "kind": "changed",
+   "text": "A list row is marked done only with a verify file in the project that holds the release check's RELEASE COMPLETE line for its release; closed rows need none.",
+   "evidence": "project/.claude/state.mjs",
+   "reach": "projects"
+  },
+  {
+   "id": "OPEN-ROWS-VIEW",
+   "kind": "changed",
+   "text": "The list's rows view shows open rows only; done and closed rows go to a new archive view written from the same data, so each row appears in exactly one of them.",
+   "evidence": "project/.claude/list-data.mjs",
+   "reach": "projects",
+   "where": "The rows block a thread reads at start",
+   "before": "Every row, open and done",
+   "after": "Open rows; the rest in the archive block"
+  },
+  {
+   "id": "BOARD",
+   "kind": "added",
+   "text": "`state.mjs board <page.html>` writes the status board from the list data: one page, one column per tag, one card per row.",
+   "evidence": "project/.claude/state.mjs",
+   "reach": "projects",
+   "test": "tests/list.test.mjs::board writes one self-contained page from the list data, every row one card in its tag column"
+  },
+  {
+   "id": "WM-TEMPLATE",
+   "kind": "changed",
+   "text": "The Working Memory template points at the generated phase line and the decision record instead of keeping its own Phase Status and Locked Architectural Decisions sections.",
+   "evidence": "project/_Working Memory.md",
+   "reach": "projects"
+  }
+ ],
+ "verification": [
+  "Each guard row was reproduced on a throwaway clone of the released 1.45.0 first; the meter cause came from replaying build 19's role 1 transcript call by call.",
+  "A start-up run from the short list view picked the same next item, scope and tools as one from the full list, at $0.35 against $0.70.",
+  "Each changed test was run red on the code before it and green after."
+ ],
+ "decisions": [
+  {
+   "decision": "Rule prose copies are cut outside the kit text",
+   "why": "The kit's rule files hold almost no copy of these four rules; they live in memory and briefs, so no kit rule line changes and no recall run is needed."
+  },
+  {
+   "decision": "The Session Log stays in the start order for now",
+   "why": "Moving it changes the start file's read order, which needs a recall run; it rides with K118 in the next build that pays for one."
+  },
+  {
+   "decision": "Quoted inline code and here-document bodies stay held by the write reading",
+   "why": "They fail safe and are the named limit K154; the dash check itself now reads them as bash does."
+  },
+  {
+   "decision": "A minor release",
+   "why": "New checks reach every project: local test runs, pop-ups, the list views, done rows and the PR audit."
+  },
+  {
+   "decision": "The release check's log binds a version, not a repo",
+   "why": "The workbench checks the kit's releases by design, so its origin is never the checked repo; the log sits in the project's own .git folder, which no tool writes."
+  }
+ ],
+ "upgrading": "Run install user, then install project. A project whose list has a rows block should add an archive block (`<!-- list:begin archive -->` and `<!-- list:end -->`) where it wants done and closed rows shown, then run `node .claude/state.mjs render`. Marking a row done now needs `item set <id> verify <result file>` first.",
+ "limits": "The test-scope check reads runners from a table (node, npm, jest, vitest, mocha, pytest, go, cargo, dotnet); another runner is not read. The pop-up check reads choice pop-ups and plan files only; a chat message is not checked. The retired-wording check reads the patterns it lists, not the same rule in other words. A done row whose release names no version (a project that ships none) needs only its verify file. The release check log is read only in a main checkout, not a worktree.",
+ "tests": {
+  "before": 954,
+  "after": 958,
+  "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "7d466de",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "The owner's name taken out of a public pattern; no personal data elsewhere"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency added"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched: no content source or licence changed"
+   },
+   {
+    "name": "Code security",
+    "result": "Dash reader, test-scope git, done proof and pop-up plan reads fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Upgrade breaks, stale text and weak rows fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 5,
+   "medium": 18,
+   "low": 18
+  },
+  "fixes": [
+   {
+    "id": "R1-1",
+    "severity": "high",
+    "security": true,
+    "text": "Shell text run after a cd was read from the start folder; held as unsure",
+    "commit": "8a2a416",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R2-1",
+    "severity": "high",
+    "security": true,
+    "text": "The test-scope check ran the repo's fsmonitor program; git now runs with it off",
+    "commit": "6872a81",
+    "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+   },
+   {
+    "id": "R4-1",
+    "severity": "high",
+    "text": "Every go test of a changed package was held; the folder is now read as one",
+    "commit": "6872a81",
+    "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+   },
+   {
+    "id": "R4-2",
+    "severity": "high",
+    "text": "A done row named its release as a step or a bare version; both now read",
+    "commit": "5912602",
+    "test": "tests/list.test.mjs::check fails a new or changed row that closes with no catcher or holds a number with no measure label"
+   },
+   {
+    "id": "R4-3",
+    "severity": "high",
+    "text": "A project with no releases could mark no row done; it now needs only its verify file",
+    "commit": "5912602",
+    "test": "tests/list.test.mjs::check fails a new or changed row that closes with no catcher or holds a number with no measure label"
+   },
+   {
+    "id": "R2-2",
+    "severity": "medium",
+    "reason": "a row in the test this build item added",
+    "text": "Test runs from Monitor and the terminal tool now reach the test-scope check",
+    "commit": "6872a81",
+    "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+   },
+   {
+    "id": "R2-3",
+    "severity": "medium",
+    "reason": "a row in the test this build item added",
+    "text": "A detached HEAD passes only on a tag, and a new test importing an old one is held",
+    "commit": "6872a81",
+    "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+   },
+   {
+    "id": "R3-1",
+    "severity": "medium",
+    "text": "A pick run with no change named ran the whole suite; refused off CI",
+    "commit": "567faf8",
+    "test": "tests/harness.test.mjs::off CI a full or --changed run is refused without the owner's yes; CI, --map and named files run"
+   },
+   {
+    "id": "R3-2",
+    "severity": "medium",
+    "security": true,
+    "text": "A done proof was any file holding a line; it now needs the release check log in .git",
+    "commit": "767e43f",
+    "test": "tests/list.test.mjs::check fails a new or changed row that closes with no catcher or holds a number with no measure label"
+   },
+   {
+    "id": "R4-4",
+    "severity": "medium",
+    "text": "A project's own review dimensions replace the kit's six",
+    "commit": "094e56d",
+    "test": "tests/kit-sweep-outcome.test.mjs::a project's .kit/pr-body.json sets its own review dimensions, audit line and checked lines"
+   },
+   {
+    "id": "R4-5",
+    "severity": "medium",
+    "text": "A working-memory line stating the new rule failed the check; skipped",
+    "commit": "dba1785",
+    "test": "tests/state.test.mjs::a working-memory line that keeps retired rule wording fails the check, unless marked as history"
+   },
+   {
+    "id": "R4-6",
+    "severity": "medium",
+    "text": "An upgraded rows block hid done rows; render adds an archive block",
+    "commit": "fa20f5d",
+    "test": "tests/list.test.mjs::render writes the roadmap, counts and rows blocks from the data, and check catches a hand edit in one"
+   },
+   {
+    "id": "R4-7",
+    "severity": "medium",
+    "reason": "a row in the test this build item added",
+    "text": "Runner options that take a value were read as test files",
+    "commit": "6872a81",
+    "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+   },
+   {
+    "id": "R6-1",
+    "severity": "medium",
+    "text": "The outside-file row named a missing file; a real one and a link now",
+    "commit": "5912602",
+    "test": "tests/list.test.mjs::check fails a new or changed row that closes with no catcher or holds a number with no measure label"
+   },
+   {
+    "id": "R6-2",
+    "severity": "medium",
+    "text": "The notes rows never ran the real writer; a row runs it, from the copy's script",
+    "commit": "5912602",
+    "test": "tests/release-check.test.mjs::notes that are missing, a draft, empty, failing the audit or never audited are named missing"
+   },
+   {
+    "id": "R6-3",
+    "severity": "medium",
+    "text": "The runner test lost its exit checks for unrefused runs; restored",
+    "commit": "567faf8",
+    "test": "tests/harness.test.mjs::off CI a full or --changed run is refused without the owner's yes; CI, --map and named files run"
+   },
+   {
+    "id": "R1-2",
+    "severity": "low",
+    "security": true,
+    "text": "Shell text from a variable beside a wildcard is held",
+    "commit": "8a2a416",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R2-4",
+    "severity": "low",
+    "reason": "a row in the test this build item added",
+    "text": "npx with options, npm flags, run-script, a subshell and bash -c are read as test runs",
+    "commit": "6872a81",
+    "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+   },
+   {
+    "id": "R2-5",
+    "severity": "low",
+    "security": true,
+    "text": "A linked plan file leading out of the project is not opened",
+    "commit": "7aa501e",
+    "test": "tests/guard-dispatch.test.mjs::a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude"
+   },
+   {
+    "id": "R4-8",
+    "severity": "low",
+    "reason": "a row in the test this build item added",
+    "text": "Model, chip and hash names are not item codes",
+    "commit": "7aa501e",
+    "test": "tests/guard-dispatch.test.mjs::a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude"
+   },
+   {
+    "id": "R5-10",
+    "severity": "low",
+    "reason": "a row in the test this build item added",
+    "text": "A plan with no overview names the plan-file fix",
+    "commit": "7aa501e",
+    "test": "tests/guard-dispatch.test.mjs::a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude"
+   },
+   {
+    "id": "R3-3",
+    "severity": "low",
+    "text": "A six-dimension row counts only with a result",
+    "commit": "094e56d",
+    "test": "tests/kit-sweep-outcome.test.mjs::the Standard PR audit holds the Review section to the sweep summary and refuses a private report link"
+   },
+   {
+    "id": "R3-4",
+    "severity": "low",
+    "text": "A new fix test is excused only by a true security flag or a reason of words",
+    "commit": "abf7947",
+    "test": "tests/test-check.test.mjs::the test check states the verdict of each test the fix ledger names"
+   },
+   {
+    "id": "R3-5",
+    "severity": "low",
+    "text": "A reviewer brief with no cap or ceiling is logged as a meter gap",
+    "commit": "081f29d",
+    "test": "tests/kit-sweep-budget.test.mjs::the call-cap hook stops a reviewer before a call would take it past its token ceiling"
+   },
+   {
+    "id": "R3-6",
+    "severity": "low",
+    "text": "The release copy's script writes the notes the check compares",
+    "commit": "5912602",
+    "test": "tests/release-check.test.mjs::notes that are missing, a draft, empty, failing the audit or never audited are named missing"
+   },
+   {
+    "id": "R3-7",
+    "severity": "low",
+    "text": "Retired patterns are bounded, and (history) marks only from a line start",
+    "commit": "fb74b5a",
+    "test": "tests/state.test.mjs::a working-memory line that keeps retired rule wording fails the check, unless marked as history"
+   },
+   {
+    "id": "R2-6",
+    "severity": "low",
+    "text": "The plan-path pattern is bounded",
+    "commit": "7aa501e",
+    "test": "tests/guard-dispatch.test.mjs::a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude",
+    "security": true
+   },
+   {
+    "id": "R5-3",
+    "severity": "medium",
+    "text": "A public pattern held the owner's first name",
+    "commit": "fb74b5a",
+    "test": "tests/state.test.mjs::a working-memory line that keeps retired rule wording fails the check, unless marked as history"
+   },
+   {
+    "id": "R5-4",
+    "severity": "medium",
+    "text": "The fourth retired wording named a rule that does not hold it",
+    "commit": "fb74b5a",
+    "test": "tests/state.test.mjs::a working-memory line that keeps retired rule wording fails the check, unless marked as history"
+   },
+   {
+    "id": "R6-4",
+    "severity": "low",
+    "text": "First push and Launch gate six-dimension rows added",
+    "commit": "094e56d",
+    "test": "tests/kit-sweep-outcome.test.mjs::the Standard PR audit holds the Review section to the sweep summary and refuses a private report link"
+   },
+   {
+    "id": "R6-5",
+    "severity": "low",
+    "text": "The eval cd row is pinned to the dash reason",
+    "commit": "c73eef4",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R6-6",
+    "severity": "low",
+    "text": "Only the two new hooks may be missing in the dispatch setup",
+    "commit": "e8c0a08",
+    "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+   },
+   {
+    "id": "R6-7",
+    "severity": "low",
+    "text": "The test-scope test drives PowerShell too",
+    "commit": "c73eef4",
+    "test": "tests/guard-dispatch.test.mjs::a local test run reaches only the tests the branch changed; the rest waits for the owner"
+   },
+   {
+    "id": "R6-8",
+    "severity": "low",
+    "text": "The A7 rows cover a false security flag and a one-word reason",
+    "commit": "abf7947",
+    "test": "tests/test-check.test.mjs::the test check states the verdict of each test the fix ledger names"
+   }
+  ]
+ }
+}
