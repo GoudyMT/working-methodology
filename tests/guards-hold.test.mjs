@@ -364,7 +364,7 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt", "rbash <<'E'\ncat *.txt\nE", "bash <<< 'cat *.txt'", "cat <<'E' | xargs -0 sh -c\ncat *.txt\nE", "sort --compress-program=sh <<'E'\ncat *.txt\nE",
 			// The build 21 sweep: an unquoted here-document runs its substitutions, and a shell named by a wildcard or an
 			// expansion behind a wrapper runs its -c text.
-			'cat <<E\n$(cat *.txt)\nE', 'cat <<E | tr a b\n`cat *.txt`\nE', "env /usr/bin/s[h] -c 'cat *.txt'", "${X:-sh} -c 'cat *.txt'"]) assert.match(dashWhy(c), /starts with a dash/, c);
+			'cat <<E\n$(cat *.txt)\nE', 'cat <<E | tr a b\n`cat *.txt`\nE', "env /usr/bin/s[h] -c 'cat *.txt'", "${X:-sh} -c 'cat *.txt'", "env /bin/b${A}sh -ce 'cat *.txt'"]) assert.match(dashWhy(c), /starts with a dash/, c);
 		for (const c of ["cat <<'E'\ncat *.txt\nE", "cat $(echo ')') a.txt", "cat <<'E'\n$(cat *.txt)\nE", 'grep -c x *.md']) assert.equal(at(c), 'allow', c);
 	} finally { fs.rmSync(path.join(clean, '-n.txt')); }
 	assert.equal(at('cat <<E\nhello'), 'allow', 'a here-document with no end and no wildcard hides none');
@@ -632,7 +632,14 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	// An empty remote the hook can ask (C19): with no branch there, a push of main is a new repo's first push.
 	const bare = kitTemp.makeTemp('push-remote-');
 	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { encoding: 'utf8' });
-	const push = (line, env = {}) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: line + '\n', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: '', KIT_PUSH_APPROVED: '', ...env } });
+	// The build 21 sweep: a remote with no branch yet takes its default from the first push, so the feature rows push to
+	// a remote that already has main, and only the first-push rows use the empty one.
+	const seeded = kitTemp.makeTemp('push-seeded-');
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', seeded], { encoding: 'utf8' });
+	g('push', '-q', seeded, 'main');
+	const hook = (remote) => (line, env = {}) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', remote], { cwd: dir, encoding: 'utf8', input: line + '\n', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: '', KIT_PUSH_APPROVED: '', ...env } });
+	const push = hook(seeded);
+	const pushNew = hook(bare);
 	assert.equal(push(`refs/heads/feat/x ${main} refs/heads/feat/x ${Z}`).status, 0, 'a new feature branch');
 	for (const [why, line] of [['main', `refs/heads/main ${main} refs/heads/main ${Z}`], ['a tag', `refs/tags/v1 ${main} refs/tags/v1 ${Z}`], ['a delete', `(delete) ${Z} refs/heads/feat/x ${main}`]]) {
 		assert.notEqual(push(line).status, 0, why);
@@ -644,24 +651,37 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	for (const line of [`refs/heads/main ${main} refs/heads/main ${Z}`, `refs/tags/v1 ${main} refs/tags/v1 ${Z}`, `(delete) ${Z} refs/heads/feat/x ${main}`]) {
 		const r = push(line, bare0);
 		assert.notEqual(r.status, 0, `no marker: ${line}`);
-		assert.match(r.stderr, /--no-verify/);
+		assert.match(r.stderr, /its own way/);
 	}
 	assert.equal(push(`refs/heads/feat/y ${main} refs/heads/feat/y ${Z}`, bare0).status, 0, 'a feature branch with no marker');
+	// The build 21 sweep: the first branch pushed to an empty remote becomes its default, so it waits for the owner; the
+	// owner's own push (KIT_OWNER_PUSH, which the guard never lets a tool set) passes the bound.
+	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`).stderr, /no branch yet/);
+	assert.equal(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1' }).status, 0, 'the owner\x27s first push');
+	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /owner-hand refs\/heads\/feat\/z/);
+	// A url.insteadOf rewrite would send the hook's questions to another remote.
+	g('config', 'url.file:///nowhere/.insteadOf', seeded);
+	assert.match(push(`refs/heads/feat/y ${main} refs/heads/feat/y ${Z}`).stderr, /insteadOf/);
+	g('config', '--unset', 'url.file:///nowhere/.insteadOf');
+	// Two pushes on one yes: the second waits on the first one's lock.
+	fs.mkdirSync(path.join(dir, '.git', 'kit-push.lock'));
+	assert.match(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, { KIT_PUSH_APPROVED: '1' }).stderr, /another push on the owner's yes/);
+	fs.rmdirSync(path.join(dir, '.git', 'kit-push.lock'));
 	// The marker is any script's to set, so it counts only beside the owner's own pop-up yes to that push.
 	const go = { KIT_PUSH_APPROVED: '1', CLAUDE_CODE_SESSION_ID: SID, CLAUDE_CONFIG_DIR: cfg };
 	// Claude Code keeps a session's transcript in a folder named by the session's path.
 	const file = path.join(cfg, 'projects', fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`);
 	popUp({ act: 'git status', file });
-	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the marker alone');
+	assert.notEqual(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the marker alone');
 	// K124 (1.42.0): the owner's No to that push is no yes (a planted bug read every answer as one).
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', answer: 'No', file });
-	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the owner answered No');
+	assert.notEqual(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the owner answered No');
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file });
-	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, { ...go, CLAUDE_CODE_SESSION_ID: '99999999-2222-3333-4444-555555555555' }).status, 0, 'another session\'s record');
-	assert.notEqual(push(`refs/tags/v1 ${main} refs/tags/v1 ${Z}`, go).status, 0, 'a yes for main is no yes for a tag');
-	assert.notEqual(push(`refs/heads/mainline ${main} refs/heads/mainline ${Z}`, go).status, 0, 'nor for a branch whose name starts the same');
-	assert.equal(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'main after the owner\'s pop-up go');
-	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the yes is spent once the push went');
+	assert.notEqual(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, { ...go, CLAUDE_CODE_SESSION_ID: '99999999-2222-3333-4444-555555555555' }).status, 0, 'another session\'s record');
+	assert.notEqual(pushNew(`refs/tags/v1 ${main} refs/tags/v1 ${Z}`, go).status, 0, 'a yes for main is no yes for a tag');
+	assert.notEqual(pushNew(`refs/heads/mainline ${main} refs/heads/mainline ${Z}`, go).status, 0, 'nor for a branch whose name starts the same');
+	assert.equal(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'main after the owner\'s pop-up go');
+	assert.notEqual(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the yes is spent once the push went');
 	// The owner, 2026-11-11: an AI pushes to main only as a new repo's first push; once the remote has main, main takes
 	// a PR, whatever the yes. Git fills the remote's value from the remote itself, so no local ref can fake "new".
 	for (const ref of ['main', 'master']) {
@@ -682,6 +702,7 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.notEqual(r.status, 0, 'a secret in a pushed commit');
 	assert.match(r.stdout + r.stderr, /github token in b\.md/);
 	assert.doesNotMatch(r.stdout + r.stderr, /Zx9Qk2Lm/, 'the value is never printed');
+	assert.notEqual(push(`refs/heads/feat/x ${head} refs/heads/feat/x ${Z}`, { KIT_OWNER_PUSH: '1' }).status, 0, 'the owner\x27s push is scanned too');
 	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /auto refs\/heads\/feat\/x/);
 	// The 1.25.0 sweep: a decoy remote-tracking ref does not hide the commits from the scan.
 	g('update-ref', 'refs/remotes/origin/decoy', head);
@@ -710,20 +731,20 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	const sibling = path.join(cfg, 'projects', real.replace(/[^A-Za-z0-9]/g, '-').replace(/-[^-]*$/, ''), `${SID}.jsonl`);
 	fs.rmSync(file, { force: true });
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file: sibling, minutesAgo: 0 });
-	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a sibling folder\'s yes');
+	assert.notEqual(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a sibling folder\'s yes');
 	fs.rmSync(sibling, { force: true });
 	// An owner push the log cannot record does not go, so the yes cannot be used again.
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file, minutesAgo: 0 });
 	const logFile = path.join(dir, '.git', 'kit-push.log');
 	fs.chmodSync(logFile, 0o444);
 	try {
-		assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a push log that cannot be written');
+		assert.notEqual(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a push log that cannot be written');
 	} finally { fs.chmodSync(logFile, 0o644); }
-	assert.equal(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the same yes, unspent, once the log can be written');
+	assert.equal(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'the same yes, unspent, once the log can be written');
 	// A log time no reader can parse (a date without milliseconds support writes "3NZ") spends the yes.
 	popUp({ act: 'KIT_PUSH_APPROVED=1 git push origin main', file, minutesAgo: 0 });
 	fs.writeFileSync(logFile, `2026-11-10T00:00:00.3NZ owner refs/heads/main ${main}\n`);
-	assert.notEqual(push(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a log line whose time cannot be read');
+	assert.notEqual(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, go).status, 0, 'a log line whose time cannot be read');
 	assert.match(fs.readFileSync(logFile, 'utf8').split('\n')[0], /^2026-11-10T00:00:00\.3NZ/);
 });
 
@@ -1122,7 +1143,7 @@ test('reading or naming a marker runs; every way of clearing one is still never 
 		assert.doesNotMatch(reason('Bash', command), /markers/, command);
 	}
 	assert.doesNotMatch(reason('PowerShell', 'Get-Content notes.txt | Select-String CLAUDECODE'), /markers/);
-	for (const [tool, command] of [['Bash', 'unset CLAUDECODE; git push origin feat/x'], ['Bash', 'CLAUDECODE= git push origin feat/x'], ['Bash', 'grep -h CLAUDECODE notes.txt | sh'], ['Bash', 'env -u CLAUDECODE git push origin feat/x'], ['PowerShell', 'Remove-Item Env:CLAUDECODE; git push origin feat/x'], ['Bash', 'echo unset CLAUDECODE > x.sh; . ./x.sh; git push origin feat/x']]) {
+	for (const [tool, command] of [['Bash', 'unset CLAUDECODE; git push origin feat/x'], ['Bash', 'CLAUDECODE= git push origin feat/x'], ['Bash', 'grep -h CLAUDECODE notes.txt | sh'], ['Bash', 'env -u CLAUDECODE git push origin feat/x'], ['PowerShell', 'Remove-Item Env:CLAUDECODE; git push origin feat/x'], ['Bash', 'echo unset CLAUDECODE > x.sh; . ./x.sh; git push origin feat/x'], ['Bash', 'KIT_OWNER_PUSH=1 git push origin feat/x'], ['PowerShell', '$env:KIT_OWNER_PUSH = 1; git push origin main']]) {
 		assert.match(reason(tool, command), /^Never by a tool: clearing/, command);
 	}
 });

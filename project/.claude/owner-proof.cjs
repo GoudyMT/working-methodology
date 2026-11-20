@@ -649,7 +649,7 @@ function dashGlob(command, tool, start) {
 	}
 	// A program named by a wildcard may be anything, a shell included; so may one named by a wildcard or an expansion
 	// behind a wrapper and given -c (env /usr/bin/s[h] -c, ${X:-sh} -c: the build 21 sweep).
-	if (/[*?[]/.test(c) && read.cmds.some((cmd) => (cmd[0] && wordGlob(cmd[0])) || cmd.some((w, j) => /^-\w*c$/.test(wordText(w)) && cmd.slice(0, j).some((x) => wordGlob(x) || wordText(x).startsWith('$'))))) return 'unsure';
+	if (/[*?[]/.test(c) && read.cmds.some((cmd) => (cmd[0] && wordGlob(cmd[0])) || cmd.some((w, j) => /^-[A-Za-z]*c[A-Za-z]*$/.test(wordText(w)) && cmd.slice(0, j).some((x) => wordGlob(x) || x.some(([ch]) => ch === '$'))))) return 'unsure';
 	// The build 21 sweep: a here-document whose end word is not quoted runs the substitutions in its body, whatever
 	// command reads it (cat <<E with $(sed -n 1p *) inside), so a wildcard there is more than this reading follows.
 	if (read.live.some((b) => /\$\(|`/.test(b) && /[*?[]/.test(b))) return 'unsure';

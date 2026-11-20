@@ -140,7 +140,7 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
   g(dir, 'remote', 'add', 'origin', bare);
   const sha = g(dir, 'rev-parse', 'HEAD').stdout.trim();
   const hook = () => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/first ${sha} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${sha} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH, KIT_OWNER_PUSH: '1' } });
   const blocked = hook();
   assert.notEqual(blocked.status, 0);
   assert.match(blocked.stderr, /first-push-check/);
@@ -149,11 +149,11 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
   fs.writeFileSync(path.join(dir, 'main.py'), 'print(2)\n');
   commitAll(dir, 'after the check');
   const later = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH, KIT_OWNER_PUSH: '1' } });
   assert.notEqual(later.status, 0, 'a commit made after the check is checked again');
   g(dir, 'update-ref', 'refs/remotes/origin/main', sha);
   const after = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${sha}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${sha}\n`, env: { PATH: process.env.PATH, KIT_OWNER_PUSH: '1' } });
   assert.equal(after.status, 0, 'once the remote has a branch, the gate is done');
 });
 
