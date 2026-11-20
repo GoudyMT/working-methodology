@@ -708,16 +708,25 @@ function main(argv) {
  */
 function doneProof(row, was, named) {
 	const id = clean(row.id);
-	if (named || (row.tag === 'done' && row.verify)) {
-		const rel = path.relative(ROOT, path.resolve(ROOT, String(row.verify)));
-		if (rel.startsWith('..') || path.isAbsolute(rel) || !fs.existsSync(path.join(ROOT, rel))) return `${id}: the verify result must be a file in this project`;
-	}
+	// The build 20 sweep: a link or a junction on the way leads outside the project, so the file is read only through
+	// inside(), as an import is.
+	if ((named || (row.tag === 'done' && row.verify)) && !inside(String(row.verify))) return `${id}: the verify result must be a plain file in this project`;
 	if (row.tag !== 'done' || (was && was.tag === 'done')) return null;
 	if (!row.verify) return `${id}: done needs its verify result: item set ${id} verify <result file>, a file holding the release check's RELEASE COMPLETE line`;
+	// The release the row ships in: a version anywhere in its at (1.46.0, v1.46.0, "build 20 (1.46.0)"). A row with no
+	// version (a project that ships no releases) needs only its verify file.
+	const m = String(row.at || '').match(/\bv?(\d+\.\d+\.\d+)\b/);
+	if (!m) return null;
 	let text = '';
-	try { text = fs.readFileSync(path.resolve(ROOT, row.verify), 'utf8'); } catch { return `${id}: its verify result ${clean(row.verify)} cannot be read`; }
-	const want = row.at ? `RELEASE COMPLETE: every step of v${String(row.at).trim().replace(/^v/, '')} ` : 'RELEASE COMPLETE: every step of ';
-	return text.includes(want) ? null : `${id}: its verify result ${clean(row.verify)} has no "${want.trim()}" line: run the release check and keep its output there`;
+	try { text = fs.readFileSync(inside(String(row.verify)), 'utf8'); } catch { return `${id}: its verify result ${clean(row.verify)} cannot be read`; }
+	const line = new RegExp(`RELEASE COMPLETE: every step of v?${m[1].replace(/\./g, '\\.')} `);
+	if (!line.test(text)) return `${id}: its verify result ${clean(row.verify)} has no "RELEASE COMPLETE: every step of v${m[1]}" line: run the release check and keep its output there`;
+	// The release check also logs each complete run in the git folder, which no tool writes: a typed line is not one.
+	const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
+	let logged = '';
+	try { logged = fs.readFileSync(path.join(String(common.stdout).trim(), 'kit-release-checks.jsonl'), 'utf8'); } catch { /* named below */ }
+	const ran = logged.split('\n').some((l) => { try { return JSON.parse(l).version === m[1]; } catch { return false; } });
+	return ran ? null : `${id}: no complete release check of ${m[1]} is logged in this project's git folder: run the release check here`;
 }
 
 /** list [text] [--all] | list caught | list audit | list import <file.md> | item add --from <file.json> | item set <id> <field> <value> */

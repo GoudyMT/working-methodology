@@ -62,11 +62,20 @@ function auditNotes(body, version) {
 }
 
 /** The release notes a build record writes, by the kit's own script beside it, or null. */
-function notesOf(root, ver) {
-	const script = path.join(root, 'scripts', 'build-record.mjs');
+function notesOf(root, ver, scriptRoot = root) {
+	const script = path.join(scriptRoot, 'scripts', 'build-record.mjs');
 	if (!fs.existsSync(script)) return null;
 	const r = spawnSync(process.execPath, [script, 'notes', path.join(root, 'docs', 'builds', `${ver}.json`)], { cwd: root, encoding: 'utf8', timeout: 60000, env: { ...process.env, KIT_RECORD_ROOT: root } });
 	return r.status === 0 ? r.stdout : null;
+}
+
+/** Adds one line for a complete release check to <git common dir>/kit-release-checks.jsonl; a failure is not fatal. */
+function recordComplete(dir, tag, g) {
+	try {
+		const common = g(dir, 'rev-parse', '--path-format=absolute', '--git-common-dir');
+		if (common.status !== 0 || !String(common.stdout || '').trim()) return;
+		fs.appendFileSync(path.join(String(common.stdout).trim(), 'kit-release-checks.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), tag: String(tag), version: String(tag).replace(/^v/, '') })}\n`);
+	} catch { /* the done mark asks for it, and names it */ }
 }
 
 /**
@@ -153,7 +162,9 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result }
 	}
 	step('release notes published and audited', notes);
 	if (recRoot) {
-		const want = (deps.notes || notesOf)(recRoot, ver);
+		// The release copy's script writes the notes whenever there is a copy: the project's may be a branch's (the build 20 sweep).
+		const scriptRoot = copy && fs.existsSync(path.join(copy, 'scripts', 'build-record.mjs')) ? copy : recRoot;
+		const want = (deps.notes || notesOf)(recRoot, ver, scriptRoot);
 		const title = `Methodology Kit v${ver}`;
 		const norm = (t) => String(t || '').replace(/\r\n/g, '\n').split('\n').map((l) => l.trimEnd()).join('\n').trim();
 		step('release title and notes from the build record', !rel ? 'no release to compare'
@@ -188,6 +199,9 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result }
 				: num(m[2]) !== num(m[3]) ? `${one(m[1])} recorded ${m[2]}, but the re-run gave ${m[3]}: the item does not move` : null);
 	}
 	log(missing.length ? `MISSING ${missing.length} step(s): the release is not done, and the closeout does not call it done.` : `RELEASE COMPLETE: every step of ${tag} is done.`);
+	// The build 20 sweep: a text file anyone can write is no proof, so a complete check is also written to a log in the
+	// project's git folder, which no tool writes (owner-proof.cjs), and a row is marked done only with it.
+	if (!missing.length) (deps.record || recordComplete)(installed || project, tag, g);
 	return { ok: missing.length === 0, missing };
 }
 

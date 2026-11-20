@@ -124,13 +124,25 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	assert.match(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').stdout, /no "RELEASE COMPLETE: every step of v1\.35\.0" line/);
 	put(dir, 'results/a2.md', 'Verified.\nRELEASE COMPLETE: every step of v1.34.0 is done.\n');
 	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 1, 'another release\'s check is no proof');
-	assert.equal(st(dir, 'item', 'set', 'A2', 'verify', '../outside.md').status, 1, 'a result outside the project is refused');
+	// A real result outside the project, named by a climb out or through a link inside it, is refused (the build 20 sweep).
+	const outside = path.join(kitTemp.makeTemp('list-out-'), 'outside.md');
+	fs.writeFileSync(outside, 'RELEASE COMPLETE: every step of v1.35.0 is done.\n');
+	assert.equal(st(dir, 'item', 'set', 'A2', 'verify', path.relative(dir, outside)).status, 1, 'a result outside the project is refused');
+	let linked = true;
+	try { fs.symlinkSync(path.dirname(outside), path.join(dir, 'out-link'), 'junction'); } catch { linked = false; }
+	if (linked) assert.equal(st(dir, 'item', 'set', 'A2', 'verify', 'out-link/outside.md').status, 1, 'a result through a link out is refused');
 	put(dir, 'results/a2.md', 'Verified.\nRELEASE COMPLETE: every step of v1.35.0 is done.\n');
+	// The build 20 sweep: a typed line is no proof; the release check's own log in the git folder is.
+	spawnSync('git', ['-C', dir, 'init', '-q'], { encoding: 'utf8' });
+	assert.match(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').stdout, /no complete release check of 1\.35\.0 is logged/);
+	fs.appendFileSync(path.join(dir, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ tag: 'v1.35.0', version: '1.35.0' })}\n`);
 	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 0);
 	assert.equal(rows(dir)[1].verify, 'results/a2.md');
 	// The commit review: a new row added as done owes the same proof.
 	assert.match(st(dir, 'item', 'add', '--from', json(dir, { id: 'A9', title: 'Added done', tag: 'done', at: '1.35.0', severity: 'low', caught_by: 'owner' })).stdout, /A9: done needs its verify result/);
 	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { id: 'A9', title: 'Added done', tag: 'done', at: '1.35.0', severity: 'low', caught_by: 'owner', verify: 'results/a2.md' })).status, 0);
+	// The release named in a step's own words, with or without its v, is read the same (the build 20 sweep).
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { id: 'A10', title: 'Added done in step form', tag: 'done', at: 'build 20 (v1.35.0)', severity: 'low', caught_by: 'owner', verify: 'results/a2.md' })).status, 0);
 
 	r = st(dir, 'item', 'add', '--from', json(dir, { id: 'K1', title: 'Start load is 64,975 B of 80,000', tag: 'later', at: 'T9', severity: 'medium', origin: 'self' }));
 	assert.equal(r.status, 1, 'a number with no label is refused');
