@@ -320,14 +320,18 @@ test('the test check states the verdict of each test the fix ledger names', () =
 		fix('F3', 'high', 'tests/a.test.mjs::one is positive'),
 		fix('F4', 'low', 'no test: no real input'),
 		{ ...fix('F5', 'medium', 'tests/a.test.mjs::a pattern one'), reason: 'no existing test reaches the host check' },
+		// The build 20 sweep: a security flag that is not true, and a one-word reason, excuse nothing.
+		{ ...fix('F6', 'low', 'tests/a.test.mjs::a guarded one'), security: 'no' },
+		{ ...fix('F7', 'medium', 'tests/a.test.mjs::a hollow one'), reason: ' later ' },
 	] } }));
 	const r = spawnSync(process.execPath, [CHECK, 'HEAD~1', '--record', rec], { cwd: dir, encoding: 'utf8' });
 	assert.equal(r.status, 0, r.stdout + r.stderr);
-	assert.match(r.stdout, /^Fix ledger: 5 fix\(es\)$/m);
+	assert.match(r.stdout, /^Fix ledger: 7 fix\(es\)$/m);
 	// K152 (build 20, the owner's test standard): every new test is named in the build record, by an item or a fix, and
 	// a medium or low fix adds a row to an existing test unless it gives a reason.
-	for (const t of ['a guarded one', 'a browser one']) assert.match(r.stdout, new RegExp(`A7 tests/a\\.test\\.mjs::${t}: a new test the build record does not name`));
+	assert.match(r.stdout, /A7 tests\/a\.test\.mjs::a browser one: a new test the build record does not name/);
 	assert.match(r.stdout, /A7 F2: a medium fix adds a new test \(tests\/a\.test\.mjs::a hollow one\): make it a row in an existing test, or give the fix a reason/);
+	for (const id of ['F6', 'F7']) assert.match(r.stdout, new RegExp(`A7 ${id}: a (low|medium) fix adds a new test`), id);
 	assert.doesNotMatch(r.stdout, /A7 (F1|F5|tests\/b\.test\.mjs::two is two|tests\/a\.test\.mjs::(zero is not positive|a pattern one))/);
 	assert.match(r.stdout, /^ {4}F1 \(high\) tests\/a\.test\.mjs::zero.*: fails first$/m);
 	assert.match(r.stdout, /^ {4}F4 \(low\) no test: no real input$/m);

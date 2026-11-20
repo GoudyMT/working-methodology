@@ -504,7 +504,8 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 		for (const t of allNew) if (!named.has(t.key)) note(t.key, 'A7', 'a new test the build record does not name: name it under the item or sweep fix it serves');
 		const newKeys = new Set(allNew.map((t) => t.key));
 		for (const f of record) {
-			if (!newKeys.has(f.test) || f.security || /^(high|critical)$/i.test(String(f.severity)) || (typeof f.reason === 'string' && f.reason.trim())) continue;
+			// The build 20 sweep: only a security flag of true counts, and a reason is a few words, not one.
+			if (!newKeys.has(f.test) || f.security === true || /^(high|critical)$/i.test(String(f.severity)) || (typeof f.reason === 'string' && f.reason.trim().split(/\s+/).length >= 3)) continue;
 			note(f.id, 'A7', `a ${f.severity} fix adds a new test (${f.test}): make it a row in an existing test, or give the fix a reason`);
 		}
 	}
