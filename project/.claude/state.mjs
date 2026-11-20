@@ -54,6 +54,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as list from './list-data.mjs';
+import { retiredHits, retiredList, hitLine } from './retired-check.mjs';
 
 const STATE = '_State.json';
 // install project fills this in, so a caller cannot move the transcripts with CLAUDE_CONFIG_DIR (as owner-yes.cjs).
@@ -361,6 +362,10 @@ function check() {
 			else if ((dec.rows || []).some((d) => d.supersedes === id)) notes.push(`${id} in ${rel} is superseded`);
 		}
 	}
+	// K153 (build 20): a working-memory line that keeps wording the kit has retired fails here, so the closeout catches it.
+	let retired = null;
+	try { retired = retiredList(); } catch (e) { faults.push(`.claude/retired-wording.json cannot be read (${clean(e.message).slice(0, 80)}): run install project`); }
+	if (retired) for (const h of retiredHits(ROOT, retired)) faults.push(hitLine(h));
 	return { faults, notes, decisions: rows.size };
 }
 
