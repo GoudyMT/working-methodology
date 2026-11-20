@@ -28,13 +28,7 @@
 - **Target for the current version:** <one line>
 - **Build authority:** the owner, solo + AI-augmented
 
-## Phase Status
-
-<One line + link to `_Master Roadmap.md`. No task lists here.>
-
-## Locked Architectural Decisions
-
-<Pointer to the design spec architecture sections + the ADR index. No restatement.>
+The phase is the generated Current Phase line above; the owner's decisions live in `_Decisions.jsonl` (`node .claude/state.mjs decisions`) and the ADR index.
 
 ## Open Decisions
 
