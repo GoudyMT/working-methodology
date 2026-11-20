@@ -502,11 +502,15 @@ function dashGlob(command, tool, start) {
 	// A lone [ or [[ is the test command, not a class.
 	const words = c.split(/[\s;&|()<>]+/).filter((w) => /[*?]|\[[^\]]*\]/.test(w.replace(/'[^']*'|"[^"]*"/g, '')));
 	if (!words.length) return false;
-	const cds = [...c.matchAll(/(?:^|[;&|(]\s*)(?:cd|pushd|popd|chdir)(?=\s|$)\s*(\S*)/g)];
-	if (cds.some((m) => !/^[^\s;&|()`$'"~\\]+$/.test(m[1]) || m[1].startsWith('-'))) return true;
+	// The second commit review: a glob option turned on (shopt, set -o), a folder change in any place (after then, do,
+	// builtin or env too) that is not a plain folder, and a glob word with braces, a variable, a substitution or an
+	// extended pattern are each more than this reading follows: held.
+	if (/(^|[^\w-])(shopt|setopt)(?![\w-])|(^|[^\w-])set\s+[-+]\w*o/.test(c)) return true;
+	const cds = [...c.matchAll(/(?:^|[^\w./-])(?:cd|pushd|popd|chdir)(?![\w.-])\s*(\S*)/g)];
+	if (cds.some((m) => !/^[^\s;&|()`$'"~\\{}]+$/.test(m[1]) || m[1].startsWith('-'))) return true;
 	const dirs = [from, ...cds.map((m) => path.resolve(from, posixDrive(m[1])))];
 	for (const w of words) {
-		if (/['"[\\]/.test(w)) return true;
+		if (/['"[\\{}$`]|[?*+@!]\(/.test(w)) return true;
 		const word = posixDrive(w);
 		const dir = path.dirname(word);
 		if (/[*?]/.test(dir)) return true;

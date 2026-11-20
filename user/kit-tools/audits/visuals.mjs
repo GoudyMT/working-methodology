@@ -210,12 +210,36 @@ export function locateAll(text) {
 
 // K149 (build 19): a measured figure is a number with a unit a reader pays in: bytes, tokens, time or dollars. A count
 // of tests or findings has no such unit, so a tally is never one (DESIGN 5).
-const MEASURED = /\$\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)?k?\s?(?:B|KB|MB|GB|bytes|tokens|ms|s|sec|seconds|min|minutes|h|hours)\b/gi;
-const figures = (s) => (String(s).match(MEASURED) || []).map((f) => f.replace(/\s+/g, ' ').toLowerCase());
+// The build 19 sweep: the unit spellings people write (MiB, a million tokens, 1 second, 12 mins, 2 hrs, megabytes,
+// dollars), each read as one unit, and a number in groups of three so a long run of digits and commas stays linear.
+const NUM = String.raw`\d+(?:,\d{3})*(?:\.\d+)?`;
+const UNIT = String.raw`(?:[KMGT]i?B|B|bytes?|kilobytes?|megabytes?|gigabytes?|[kM]?\s?tokens?|ms|s|secs?|seconds?|mins?|minutes?|h|hrs?|hours?|dollars?)`;
+const MS = String.raw`\$\s?${NUM}[kKM]?|\b${NUM}[kKM]?\s?${UNIT}\b`;
+const MEASURED = new RegExp(MS, 'gi');
+// An arrow claims a move when a figure ends the text before it and another starts the text after it ("5 s -> then kill
+// after 30 s" shows a sequence, not a move).
+const ENDS = new RegExp(`(${MS})[^\\d$]{0,20}$`, 'i');
+const STARTS = new RegExp(`^[^\\d$]{0,12}(${MS})`, 'i');
+const SAME_UNIT = [[/^(s|secs?|seconds?)$/, 's'], [/^(mins?|minutes?)$/, 'min'], [/^(h|hrs?|hours?)$/, 'h'], [/^(bytes?|b)$/, 'b'], [/^(kilobytes?|kb|kib)$/, 'kb'],
+	[/^(megabytes?|mb|mib)$/, 'mb'], [/^(gigabytes?|gb|gib)$/, 'gb'], [/^tokens?$/, 'tokens'], [/^dollars?$/, '$']];
+// One spelling per figure, so "720 s" and "720 seconds" read the same, and an unchanged figure is no move.
+const canon = (f) => {
+	const m = /^\$\s?(.+)$/.exec(f);
+	if (m) return `$${m[1].toLowerCase()}`;
+	const n = /^([\d,.]+)\s?(.*)$/.exec(f);
+	const unit = n[2].toLowerCase().replace(/\s+/g, ' ');
+	const k = /^([km]) ?tokens?$/.exec(unit);
+	if (k) return `${n[1]}${k[1]} tokens`;
+	return `${n[1].toLowerCase()} ${(SAME_UNIT.find(([re]) => re.test(unit)) || [null, unit])[1]}`;
+};
+const figures = (s) => (String(s).match(MEASURED) || []).map(canon);
+const SAME_WORDS = /\b(same|unchanged|no change|as before)\b/i;
 
 /**
- * The measured moves a body claims outside its Visuals section (DESIGN 6, row 1): a line with a measured figure on
- * both sides of an arrow, or a Summary row (| Where | Before | After |) whose Before or After holds one and differs.
+ * The measured moves a body claims outside its Visuals section (DESIGN 6, row 1): a measured figure on both sides of an
+ * arrow or of "<figure> to <figure>" in one sentence (lines wrapped in a paragraph read as one), or a row of a table
+ * headed Before and After whose two cells differ in a measured figure. Code, fences and the Visuals section are left
+ * out; a figure that stays the same is no move.
  *
  * Args:
  *     text: the body or notes, as written
@@ -226,18 +250,46 @@ const figures = (s) => (String(s).match(MEASURED) || []).map((f) => f.replace(/\
 export function claimedMoves(text) {
 	let t = String(text).replace(/\r\n/g, '\n');
 	for (const s of locateAll(t).reverse()) t = t.slice(0, s.start) + t.slice(s.end);
-	t = t.replace(/```[\s\S]*?```/g, '');
+	t = t.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, '').replace(/`[^`\n]*`/g, ' ');
 	const out = [];
-	for (const line of t.split('\n')) {
-		const cells = line.trim().startsWith('|') ? line.split('|').slice(1, -1).map((c) => c.trim()) : null;
-		if (cells && cells.length >= 3 && !/^[-: ]+$/.test(cells[1])) {
-			const [before, after] = [figures(cells[1]), figures(cells[2])];
-			if ((before.length || after.length) && before.join() !== after.join()) out.push(line.trim().slice(0, 90));
+	const differ = (a, b) => (a.length || b.length) && a.join() !== b.join();
+	let cols = null;
+	const para = [];
+	const flush = () => {
+		for (const sentence of para.join(' ').split(/(?<=[.!?;])\s+/)) {
+			const parts = sentence.split('->');
+			let moved = parts.slice(1).some((right, i) => {
+				const [a, b] = [ENDS.exec(parts[i]), STARTS.exec(right)];
+				return a && b && canon(a[1]) !== canon(b[1]);
+			});
+			for (const m of sentence.matchAll(new RegExp(`(${MS})\\s+to\\s+(?:about\\s+|around\\s+)?(${MS})`, 'gi'))) {
+				if (canon(m[1]) !== canon(m[2])) moved = true;
+			}
+			if (moved) out.push(sentence.trim().slice(0, 90));
+		}
+		para.length = 0;
+	};
+	for (const raw of t.split('\n')) {
+		const line = raw.replace(/^\s*>\s?/, '').trim();
+		const isRow = (line.match(/\|/g) || []).length >= 2;
+		if (isRow) {
+			flush();
+			const cells = line.replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+			if (cells.every((c) => /^:?-+:?$/.test(c))) continue;
+			const b = cells.findIndex((c) => /^before$/i.test(c));
+			const a = cells.findIndex((c) => /^after$/i.test(c));
+			if (b >= 0 && a >= 0) { cols = [b, a]; continue; }
+			if (!cols) continue;
+			const [before, after] = [figures(cells[cols[0]] || ''), figures(cells[cols[1]] || '')];
+			const still = (!before.length && SAME_WORDS.test(cells[cols[0]] || '')) || (!after.length && SAME_WORDS.test(cells[cols[1]] || ''));
+			if (differ(before, after) && !still) out.push(line.slice(0, 90));
 			continue;
 		}
-		const arrow = line.indexOf('->');
-		if (arrow > 0 && figures(line.slice(0, arrow)).length && figures(line.slice(arrow + 2)).length) out.push(line.trim().slice(0, 90));
+		cols = null;
+		if (!line || /^#/.test(line) || /^([-*+]|\d+[.)])\s/.test(line)) flush();
+		if (line) para.push(line);
 	}
+	flush();
 	return out;
 }
 
