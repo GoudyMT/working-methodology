@@ -29,7 +29,7 @@
 
 A MECHANICAL GATE with a checkable done-condition, run under an approved Swarm Contract. Why: a sweep without a clear trigger never happens.
 
-**Triggers:** (1) **before any substantive PR to `main` is marked ready** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm; a draft may open earlier, so main's checks run on the branch) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.
+**Triggers:** (1) **before any substantive PR to `main`**, and when its feature is done before anything else on it (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm; the one exception is the build's draft PR, opened after its first commit so main's checks run early, which stays a draft until the sweep) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.
 
 **Done iff** a report exists at `<sweep folder>/YYYY-MM-DD-<milestone>.md` with date, milestone, branch / commit; each dimension PASS or with findings; every high / critical `FIXED <commit>` or `ACCEPTED owner <why>` (the owner then merges); for the deep tier, "still aligned with the version goals? YES/NO + evidence". <!-- PROJECT ADAPTER A22 -->
 
