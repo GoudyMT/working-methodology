@@ -426,6 +426,11 @@ test('the call-cap hook stops a reviewer before a call would take it past its to
   const open = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', cwd: repo, transcript_path: path.join(repo, 'gone.jsonl'), agent_id: 'r9', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
   assert.equal(open.stdout, '');
   assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"hook":"call-cap".*"agent":"r9"/);
+  // The build 20 sweep: a brief with no ceiling line is a meter that cannot stop the role, logged the same way.
+  fs.mkdirSync(path.join(repo, 't', 'subagents'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 't', 'subagents', 'agent-r8.jsonl'), `${JSON.stringify({ message: { role: 'user', content: 'Sweep: abc role 1\nCall cap: 15' } })}\n`);
+  assert.equal(runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', cwd: repo, transcript_path: path.join(repo, 't.jsonl'), agent_id: 'r8', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } }).stdout, '');
+  assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"agent":"r8","cause":"no Token ceiling line in the brief"/);
 });
 
 // The build 11 sweep: the message making a call may be in the transcript when the hook reads it, or not yet. A call

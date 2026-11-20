@@ -198,6 +198,9 @@ function meter(input) {
 	}
 	// The message making this call may be written before the hook runs or after it (the build 11 sweep: a race). A
 	// call still waiting on its answer is this one, so it is left out and the count is always the calls before it.
+	// The build 20 sweep: a brief with no cap or no ceiling line is a meter that cannot stop the reviewer, so it is logged
+	// as a fail-open and the sweep's outcome names the role.
+	if (cap === null || ceiling === null) logOpen(input, `no ${cap === null ? 'Call cap' : 'Token ceiling'} line in the brief`);
 	if (open.has(String(input.tool_use_id || ''))) calls.delete(open.get(String(input.tool_use_id)));
 	else if ([...open.values()].includes([...calls.keys()].pop())) calls.delete([...calls.keys()].pop());
 	// The transcript holds the calls before this one, and this one is spent already: refused, it still counts, and the
@@ -223,7 +226,8 @@ function meter(input) {
 // One line per fail-open, the cause and never the content, so a gap shows in the sweep's outcome (K151).
 function logOpen(input, e) {
 	try {
-		const r = require('child_process').spawnSync('git', ['-C', String(input.cwd || process.cwd()), 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', timeout: 3000 });
+		// git with the repo's fsmonitor off, from Node's own folder, as the other guards run it (the build 20 sweep).
+		const r = require('child_process').spawnSync('git', ['-C', String(input.cwd || process.cwd()), '-c', 'core.fsmonitor=false', 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
 		if (r.status === 0) fs.appendFileSync(path.join(r.stdout.trim(), 'kit-guard-open.log'), `${JSON.stringify({ at: new Date().toISOString(), hook: 'call-cap', agent: String(input.agent_id || ''), cause: String((e && e.code) || (e && e.message) || e).slice(0, 120) })}\n`);
 	} catch { /* nothing more to do */ }
 }
