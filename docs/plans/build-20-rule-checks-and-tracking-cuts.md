@@ -44,8 +44,8 @@ A user-layer kit hook (`kit-hooks/test-scope.cjs`, run by the one guard process,
 PowerShell test runs from a short runner table. It allows a run that names only test files in the branch's change set
 (diff against the default branch's merge base, plus uncommitted and new files), and asks the owner's pop-up for the
 rest: a run with no file, `test-run.mjs --changed` without `--pick`, a test file outside the change set, the CI-only
-scripts. No branch ahead of the default one (a throwaway clone on a tag) or no git repository: allowed. A fail-open is
-logged. `scripts/test-run.mjs` refuses a full or `--changed` run off CI unless given `--owner-yes`.
+scripts. A detached HEAD exactly on a tag (a throwaway clone of a release) or no git repository: allowed. A fail-open
+is logged. `scripts/test-run.mjs` refuses a full, `--changed` or lone `--pick` run off CI unless given `--owner-yes`.
 
 ## 4. K151: the sweep meter fails loud
 
@@ -61,17 +61,20 @@ a `reason`. Kit only.
 
 ## 6. K153: retired rule wording is caught at closeout
 
-`rules/retired.json` (old phrase, new rule id, version) and a small script that reads the working-memory files for
-retired phrases: a hit fails the closeout's release check and names the line; session start adds one line of context
-when one is found. A note marked `(history)` is skipped.
+`.claude/retired-wording.json` (old wording, the rule id or where the rule lives, version, the rule now) and
+`.claude/retired-check.mjs`, which reads the working-memory files for it: a hit fails `state.mjs check`, which the
+closeout's release check runs, and names the line; session start adds one line when one is found. A line that starts
+with `(history)`, or says the wording is no longer the rule, is skipped.
 
 ## 7. TC1 to TC3, TC5: the tracking-cost cuts
 
-TC1: `state.mjs` marks a row done only with its verify result path, a file that exists. TC2: the status board is
-built by script from the list data. TC3: the list's rows view shows open rows only; done and closed rows go to an
-archive view built from the same data, so no row is lost. TC5: the Session Log leaves the start order (or becomes one
-generated line), and the stale prose sections of the Working Memory template go. Each cut is checked lossless: every
-row of the data appears in exactly one view.
+TC1: `state.mjs` marks a row done only with its verify result, a file in the project holding the release check's
+RELEASE COMPLETE line for the row's release, and that check's line in the project's `.git/kit-release-checks.jsonl`.
+TC2: the status board is built by script from the list data. TC3: the list's rows view shows open rows only; done and
+closed rows go to an archive view built from the same data, so no row is lost. TC5, this build's part: the stale
+prose sections of the Working Memory template go. Moving the Session Log out of the start order changes AGENTS.md's
+read order, which needs a recall run, so it rides with K118. Each cut is checked lossless: every row of the data
+appears in exactly one view.
 
 ## 8. Sweep, PR
 

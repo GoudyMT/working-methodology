@@ -271,7 +271,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 	} else if (['changelog', 'pr', 'notes'].includes(cmd) && r.rec && !problems(r.rec).length) {
 		process.stdout.write({ changelog, pr: prBody, notes }[cmd](r.rec));
 	} else {
-		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>]\n');
+		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>] | release [<record>] [<file>]\n');
 		process.exitCode = r.rec ? 1 : 2;
 	}
 }
