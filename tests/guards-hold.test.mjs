@@ -325,7 +325,23 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 			'sed -n 1p ""* .claude/guard.cjs', 'sed -n 1p [-]i .claude/guard.cjs', 'shopt -s extglob; sed -n 1p @(-i|x) .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
 		// The install check's false hold V1: a wildcard into a folder that is not there stays as written.
 		for (const c of ['if [ -f x ]; then cat x; fi', 'ls *.md', 'grep -n "a*b" a.txt', 'npm test -- nowhere/*']) assert.equal(bash(c), 'allow', c);
+		// K155 (build 20, held live on 1.45.0 with no dash name there): a wildcard after a plain first folder expands to
+		// words that start with that folder, never a dash; $? is a parameter; quoted text and a quoted cd target are read
+		// as the shell reads them.
+		fs.mkdirSync(path.join(proj, 'sub dir'), { recursive: true });
+		for (const c of ['ls .claude/*/SKILL.md | wc -l', 'sed -n 1p .claude/* .claude/guard.cjs', 'git status; echo exit=$?', 'cd "sub dir" && ls *.md', "grep -nE '^\\| *K15[0-9]\\b' a.txt",
+			'node -e "const c={};c[r.s]=1"', 'sed -n 1p ~/*']) assert.equal(bash(c), 'allow', c);
+		// The first folder is the wildcard, or the folder change cannot be followed: still held.
+		for (const c of ['sed -n 1p */x .claude/guard.cjs', 'cd $D && sed -n 1p * .claude/guard.cjs', 'cd - && sed -n 1p *', 'popd; sed -n 1p *', "echo $(ls *) 'x'"]) assert.equal(bash(c), 'deny', c);
 	} finally { for (const d of [proj, path.join(proj, '.claude')]) fs.rmSync(path.join(d, '-i')); }
+	// K156 (build 20): the shell lands where each cd takes it in turn, and a bare cd lands in the home folder; a start
+	// folder with no dash name must not let a wildcard read there through.
+	const clean = kitTemp.makeTemp('clean-');
+	for (const d of ['sed', 'b', 'a/b']) fs.mkdirSync(path.join(clean, d), { recursive: true });
+	fs.writeFileSync(path.join(clean, 'a/b/-i'), 'x\n');
+	const at = (command) => decide('Bash', { command }, { cwd: clean });
+	for (const c of ['cd\nsed -n 1p *', 'cd a && cd b && sed -n 1p *', 'cd a; cd b; sed -n 1p *']) assert.equal(at(c), 'deny', c);
+	assert.equal(at('cd a && cd b && ls *.md'), 'allow', 'no dash name fits *.md');
 	assert.equal(bash('sed -n 1p * .claude/guard.cjs'), 'allow', 'with no dash name the read passes');
 });
 
