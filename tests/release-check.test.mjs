@@ -82,6 +82,7 @@ test('a release with every step done passes, names each step it read, and writes
 	assert.equal(fs.existsSync(logFile), false, 'a check with a step missing logs nothing');
 	t.facts.release = { tagName: 'v1.1.0', isDraft: false, body: 'Methodology kit 1.1.0 adds one thing.' };
 	assert.equal(releaseCheck(t.opts, t.deps).ok, true, t.lines.join('\n'));
+	assert.ok(fs.existsSync(logFile), 'a complete check is logged');
 	assert.equal(JSON.parse(fs.readFileSync(logFile, 'utf8').trim()).version, '1.1.0');
 });
 

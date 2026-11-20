@@ -27,8 +27,10 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	}
 	if (userHooks) {
 		fs.mkdirSync(path.join(cfg, 'kit-hooks'));
-		// Every hook is copied, with no existence check: a lost hook fails here, never passes as a hook with nothing to hold.
-		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs', 'test-scope.cjs', 'grounding.cjs']) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
+		// The older hooks are copied with no existence check, so a lost one fails here; the two build 20 hooks may be
+		// missing only where the test check runs a new test on the base commit, which then fails on its assertion.
+		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs']) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
+		for (const f of ['test-scope.cjs', 'grounding.cjs']) if (fs.existsSync(path.resolve('user/kit-hooks', f))) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
 	}
 	// Recorded as install user records them: since B23 a kit hook runs only with the bytes its stamp names.
 	if (oldHook || userHooks) {
