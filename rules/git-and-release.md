@@ -95,4 +95,6 @@ A standing grant (A27, the owner) lets a named outward act run without a yes per
 
 ## Remote Mode {#remote-mode}
 
-**Owner away: show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; the push bound and auto-fix's grant push without asking. What the owner must read goes as a file they can open on the phone.
+- **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; the push bound and auto-fix's grant push without asking. What the owner must read goes as a file they can open on the phone.
+
+Why: the owner away reads on a phone, so a yes covers only the commands they could see.

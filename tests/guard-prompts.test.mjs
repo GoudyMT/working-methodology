@@ -113,7 +113,7 @@ test('past the brace-group cap the rest of a command asks, and a long run of gro
 // planted: {"file":"project/.claude/guard-read.cjs","was":"x <= b : x >= b","to":"x <= b : x < b"}
 test('a sequence that counts down is read as bash reads it', () => {
 	assert.equal(hook('guard-outward.cjs', 'git pus{h..g} origin main'), 'deny');
-	assert.equal(hook('guard-delete.cjs', 'r{n..m} -rf C:/elsewhere'), 'deny');
+	assert.equal(hook('guard-delete.cjs', 'r{n..m} -rf ' + OUT), 'deny');
 });
 
 // A review lead (2026-11-18): a git subcommand held in a variable was held only where git came first, so behind a

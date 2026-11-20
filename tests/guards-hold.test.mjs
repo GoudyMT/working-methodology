@@ -1453,7 +1453,7 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
 	g('update-ref', 'refs/remotes/origin/decoy', 'HEAD');
 	const head = g('rev-parse', 'HEAD').stdout.trim();
-	const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: `refs/heads/feat/x ${head} refs/heads/feat/x ${'0'.repeat(40)}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '' } });
+	const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: `refs/heads/feat/x ${head} refs/heads/feat/x ${'0'.repeat(40)}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_OWNER_PUSH: '1' } });
 	assert.notEqual(r.status, 0, 'the first push went out past a fake remote ref');
 	assert.match(r.stderr, /First push blocked/);
 	assert.equal(fs.existsSync(path.join(dir, '.git', 'kit-first-push-done')), false);

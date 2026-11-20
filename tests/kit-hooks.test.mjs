@@ -372,7 +372,7 @@ test('a new project that pulled the host README before the install is still held
   g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '-q', '--no-verify', '--allow-unrelated-histories', '-m', 'take readme', 'origin/main');
   kitInstall(dir);
   const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.notEqual(r.status, 0, 'our own first commit is not on the host yet');
 });
 
@@ -1198,24 +1198,27 @@ function armedRepo() {
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
 // The kit source holds its own pushes the same way (.githooks/pre-push), so the gate can arm a PR there too.
 // why: guards rule:standing-grants
-for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, { windows: true }, () => {
-  const { dir, head, other, bare } = armedRepo();
-  fs.mkdirSync(path.join(dir, '.githooks'));
-  fs.copyFileSync(path.resolve(hook), path.join(dir, '.githooks', 'pre-push'));
-  const log = path.join(dir, '.git', 'kit-merge-gate.log');
-  const push = (remote) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/x ${other} refs/heads/feat/x ${remote}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '', AI_AGENT: '', CLAUDECODE: '' } });
-  assert.equal(push(head).status, 0, 'no log, no refusal');
-  fs.writeFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
-  const held = push(head);
-  assert.equal(held.status, 1, held.stderr);
-  assert.match(held.stderr, /disarm 7/);
-  assert.equal(push(other).status, 0, 'another head is not this armed one');
-  assert.equal(push('0'.repeat(40)).status, 0, 'a new branch has no armed head');
-  fs.appendFileSync(log, 't DISARMED 7\n');
-  assert.equal(push(head).status, 0, 'disarmed, it goes');
-  fs.appendFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
-  assert.equal(push(head).status, 1, 'armed again, it holds again');
+// planted: {"file":"project/.githooks/pre-push","was":"$2==\"ARMED\" && $4==sha","to":"$2==\"ARMED\" && $4==\"x\""}
+test('the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher, in a project and in the kit source', { windows: true }, () => {
+  for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) {
+    const { dir, head, other, bare } = armedRepo();
+    fs.mkdirSync(path.join(dir, '.githooks'));
+    fs.copyFileSync(path.resolve(hook), path.join(dir, '.githooks', 'pre-push'));
+    const log = path.join(dir, '.git', 'kit-merge-gate.log');
+    const push = (remote) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+      input: `refs/heads/feat/x ${other} refs/heads/feat/x ${remote}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '', AI_AGENT: '', CLAUDECODE: '' } });
+    assert.equal(push(head).status, 0, 'no log, no refusal');
+    fs.writeFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
+    const held = push(head);
+    assert.equal(held.status, 1, held.stderr);
+    assert.match(held.stderr, /disarm 7/);
+    assert.equal(push(other).status, 0, 'another head is not this armed one');
+    assert.equal(push('0'.repeat(40)).status, 0, 'a new branch has no armed head');
+    fs.appendFileSync(log, 't DISARMED 7\n');
+    assert.equal(push(head).status, 0, 'disarmed, it goes');
+    fs.appendFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
+    assert.equal(push(head).status, 1, 'armed again, it holds again');
+  }
 });
 
 // why: guards rule:outward-acts
