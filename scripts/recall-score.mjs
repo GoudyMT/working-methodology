@@ -152,7 +152,7 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
     if (r.line) console.log(`\n${r.controlLine}\n${r.line}`);
     // K137: under the bar, decision 7 counts no extra run, so none is worth offering.
     if (r.line && r.bar !== null && r.candMedian < r.bar) console.log(`\nThe candidate's median of ${r.candMedian} is under the bar of ${r.bar}: by decision 7 extra runs do not count. Change the rule text, then run a new candidate.`);
-    else {
+    else if (!r.line) {
       console.log(`\nThe candidate's median of 3 is ${r.candMedian}, on the bar of ${r.bar}: no gate line yet. Run cand-4 and cand-5, blind all 5 together and score them; the median of 5 decides.`);
       process.exitCode = 1;
     }

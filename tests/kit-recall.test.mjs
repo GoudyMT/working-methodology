@@ -1281,6 +1281,10 @@ test('a candidate median of 3 on the bar waits for 2 more runs, and the median o
   assert.equal(held.status, 1, held.stdout + held.stderr);
   assert.doesNotMatch(held.stdout, /^gate:/m);
   assert.match(held.stdout, new RegExp(`on the bar of ${b}[\\s\\S]*cand-4 and cand-5`));
+  const over = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([b, b + 1, b + 1]), 'kit-x'], { encoding: 'utf8' });
+  assert.equal(over.status, 0, 'a median over the bar gives its gate line and asks for no more runs');
+  assert.match(over.stdout, /^gate: kit-x median/m);
+  assert.doesNotMatch(over.stdout, /no gate line yet|extra runs/);
   assert.match(keysText.split('<!-- recall v')[0], /A median of 3 exactly on the bar runs 2 more, and the median of those 5 decides/); // pin: 3 (released recall keys)
 });
 
