@@ -202,7 +202,19 @@ const releaseCheckout = (kit, tag) => `git -C "${toPosix(kit)}" fetch --tags; gi
  * Returns:
  *     { entries: [{ key, src, dest }], stampPath, memoryDir }
  */
-function plan({ kit, home, target, projectDir }) {
+// T13 (build 19): the two templates that assume an app with a client and HTML. They install where the project shows a
+// UI, on request (--with-templates web), or where a copy is already in place, so no install retires one a project uses.
+const APP_TEMPLATES = ['_Templates/_Component Spec Template.md', '_Templates/_Component Security Checklist.md'];
+const UI_PACKAGES = /^(react|react-dom|preact|vue|nuxt|svelte|@sveltejs\/kit|solid-js|@angular\/core|next|astro|lit|@remix-run\/react|ember-source|electron|react-native|expo)$/;
+function showsUi(projectDir) {
+  for (const d of ['components', 'src/components', 'app/components']) if (fs.existsSync(path.join(projectDir, d))) return true;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(projectDir, 'package.json'), 'utf8'));
+    return ['dependencies', 'devDependencies', 'peerDependencies'].some((k) => Object.keys((pkg && pkg[k]) || {}).some((n) => UI_PACKAGES.test(n)));
+  } catch { return false; }
+}
+
+function plan({ kit, home, target, projectDir, withTemplates = [] }) {
   const entries = [];
   const add = (srcRoot, destRoot, prefix = '') => {
     for (const src of walk(srcRoot)) {
@@ -217,6 +229,8 @@ function plan({ kit, home, target, projectDir }) {
   if (target !== 'project' || !projectDir) throw new Error('target must be "user" or "project <folder>"');
   const memoryDir = path.join(home, 'projects', projectSlug(projectDir), 'memory');
   add(path.join(kit, 'project'), projectDir);
+  const app = withTemplates.includes('web') || showsUi(projectDir) || APP_TEMPLATES.some((t) => fs.existsSync(path.join(projectDir, t)));
+  if (!app) entries.splice(0, entries.length, ...entries.filter((e) => !APP_TEMPLATES.includes(e.key)));
   add(path.join(kit, 'memory'), memoryDir, 'memory/');
   return { entries, stampPath: path.join(projectDir, STAMP_PROJECT), memoryDir };
 }
@@ -2310,6 +2324,8 @@ function main(argv) {
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const acceptAt = argv.indexOf('--accept-host');
   const acceptHost = acceptAt >= 0 ? String(argv[acceptAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const withAt = argv.indexOf('--with-templates');
+  const withTemplates = withAt >= 0 ? String(argv[withAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   // Accepting a changed host file or folder list lifts a hold the kit set on it, so it is the owner's own act, in
   // their own terminal: a shell an AI tool started carries its marker, and is refused here whatever the command's
   // spelling was (the review of the recorded folder list: a guard that matches the flag's text can be spelled round).
@@ -2337,7 +2353,7 @@ function main(argv) {
       return;
     }
     const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty, tree: rel.tree };
-    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release, acceptHost });
+    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release, acceptHost, withTemplates });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
@@ -2431,7 +2447,7 @@ function main(argv) {
     console.log(hits.length ? `${hits.length} hit(s)` : 'Scrub clean');
     process.exitCode = hits.length ? 1 : 0;
   } else {
-    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay] [--merged <file>,<file>] [--unreleased]');
+    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay] [--merged <file>,<file>] [--with-templates web] [--unreleased]');
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');

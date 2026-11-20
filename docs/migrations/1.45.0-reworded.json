@@ -1,0 +1,8 @@
+{
+  "lines": [
+    {
+      "before": "- **Per-component checklist:** `_Templates/_Component Security Checklist.md` completed BEFORE a component is complete. Why: security reviewed last is security bolted on.",
+      "after": "- **Per-component checklist (app projects):** `_Templates/_Component Security Checklist.md`, installed where the project shows a UI or with `--with-templates web`, completed BEFORE a component is complete. Why: security reviewed last is security bolted on."
+    }
+  ]
+}
