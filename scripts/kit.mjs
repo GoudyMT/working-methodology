@@ -1911,6 +1911,34 @@ export function promptCheckReport({ kit, projectDir }) {
 }
 
 /**
+ * K191 (behaviour scenario 13 passed about 13 of 24 runs): the closeout after a merge and release rested on the
+ * session noticing. The prompt hook cues it from the repo's state, a release tag at HEAD, or from the owner's own words
+ * that the PR merged and its release is out: once per release tag, or once per session when no tag names it. The cue
+ * is recorded in git's own folder, so no tracked file changes.
+ *
+ * Args:
+ *     ctx: { projectDir, prompt, session }
+ *
+ * Returns:
+ *     the cue, or '' when there is none or it was already given
+ */
+export function closeoutCue({ projectDir, prompt = '', session = '' }) {
+  const git = (...a) => spawnSync('git', ['-C', projectDir, ...a], { encoding: 'utf8', timeout: 3000 });
+  const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
+  if (common.status !== 0) return '';
+  const tag = (git('tag', '--points-at', 'HEAD').stdout || '').split('\n').map((t) => t.trim()).find((t) => /^v?\d+\.\d+\.\d+$/.test(t)) || null;
+  const said = /\bmerged\b/i.test(prompt) && /\brelease(d|s)?\b/i.test(prompt);
+  if (!tag && !said) return '';
+  const key = tag ? `tag ${tag}` : `session ${session || 'none'}`;
+  const file = path.join(common.stdout.trim(), 'kit-closeout-cue');
+  const given = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n') : [];
+  if (given.includes(key)) return '';
+  fs.appendFileSync(file, `${key}\n`);
+  const why = tag ? `HEAD is the release ${tag}` : 'the owner says the PR merged and its release is out';
+  return `Closeout cue: ${why}. Once its Post-Merge Check has passed and this thread has no other work open, start the closeout skill now (rule:compact-ritual).`;
+}
+
+/**
  * What is waiting for the kit before a compact: fold-back in report mode for this project and
  * ~/.claude. It never changes a file outside the kit's reports/ folder; the owner sorts each item.
  */

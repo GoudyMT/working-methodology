@@ -1207,6 +1207,40 @@ test('the hook script speaks at a message only when there is news', async () => 
   assert.match(out.systemMessage, /was released while this session ran/);
 });
 
+// K191 (behaviour scenario 13 passed about 13 of 24 runs): after the merge and the release, starting the closeout was
+// left to the session noticing. The prompt hook now cues it from the repo's state (a release tag at HEAD) or the
+// owner's own words, once per release, so the step no longer rests on a coin flip.
+// why: catches a merged and released PR whose closeout the session never starts
+test('the prompt hook cues the closeout once per release, from a release tag at HEAD or the owner saying so (K191)', async () => {
+  const kitTools = await import('../scripts/kit.mjs');
+  assert.equal(typeof kitTools.closeoutCue, 'function', 'K191: the closeout cue');
+  const { kit, home, proj } = caseKit();
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  copyKitCli(kit);
+  const git = (...a) => assert.equal(spawnSync('git', ['-C', proj, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
+  git('init', '-q', '-b', 'main');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'feat: x');
+  const run = (prompt, session = '11111111-2222-3333-4444-555555555555') => spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: JSON.stringify({ prompt, session_id: session }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
+  const cue = (r) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : '');
+  // No tag and no such words: silent.
+  assert.equal(run('fix the greeting').stdout, '');
+  // The owner's words alone cue it, once per session.
+  assert.match(cue(run('My PR merged and its release is out.')), /start the closeout skill now/);
+  assert.doesNotMatch(cue(run('My PR merged and its release is out.')), /closeout/);
+  assert.equal(run('The PR merged.', '99999999-2222-3333-4444-555555555555').stdout, '', 'merged with no release named is not the cue');
+  // A release tag at HEAD cues it on any message, once for that tag.
+  git('tag', 'v1.1.0');
+  const tagged = cue(run('what next?'));
+  assert.match(tagged, /v1\.1\.0/);
+  assert.match(tagged, /start the closeout skill now/);
+  assert.equal(run('anything else?').stdout, '');
+  git('tag', 'not-a-release');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'chore: y');
+  git('tag', 'nightly');
+  assert.equal(run('and now?', '77777777-2222-3333-4444-555555555555').stdout, '', 'a tag that is not a release is no cue');
+});
+
 // why: guards rule:outward-acts
 test('the load guard refuses a busy CPU and names what is using it', async () => {
   const { createRequire } = await import('node:module');

@@ -93,7 +93,9 @@ async function main() {
 		const text = lib.sessionStartReport(ctx);
 		if (text) emit(text);
 	} else if (MODE === 'prompt') {
-		const text = lib.promptCheckReport(ctx);
+		// K191: the closeout cue rides the same message; a kit too old to have it says nothing.
+		const cue = typeof lib.closeoutCue === 'function' ? lib.closeoutCue({ ...ctx, prompt: String(INPUT.prompt || '') }) : '';
+		const text = [lib.promptCheckReport(ctx), cue].filter(Boolean).join('\n');
 		if (text) emit(text);
 	} else if (MODE === 'pre-compact') {
 		emit(`${packet}\n${lib.preCompactReport(ctx)}`);
