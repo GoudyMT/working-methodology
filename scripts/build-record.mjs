@@ -94,6 +94,8 @@ export function problems(rec) {
 	}
 	need(!(rec.verification || []).some((v) => FIX_CLAIM.test(String(v))), 'a verification line states the fix-test claim: it is written from sweep.fixes, never typed');
 	need(rec.tests && Number.isInteger(rec.tests.before) && Number.isInteger(rec.tests.after), 'tests has no before and after count');
+	// E1 (build 21): the kit reports a release closes; a project's kit-report.mjs status reads them to hear back.
+	need(rec.reports === undefined || (Array.isArray(rec.reports) && rec.reports.every((id) => /^R-\d{8}-[0-9a-f]{8}$/.test(String(id)))), 'reports is not a list of kit report ids (R-<date>-<hex>)');
 	// The record is the source of outward text: plain ASCII, as the PR body and changelog must be.
 	const nonAscii = [...JSON.stringify(rec)].find((ch) => ch.charCodeAt(0) > 126);
 	need(!nonAscii, `the record holds a non-ASCII character (code ${nonAscii ? nonAscii.charCodeAt(0) : ''})`);
@@ -212,6 +214,8 @@ export function notes(rec) {
 	if (kit.length) out.push('## What changed in the kit itself', '', 'These stay in the kit and are not installed into projects.', '', ...kit.map(bullet), '');
 	out.push('## Upgrading', '', (rec.upgrading || 'Run `install user` first, then `install project` in each project.').trim(), '');
 	if (rec.limits) out.push(`Known limits: ${rec.limits.trim()}`, '');
+	// E1 (build 21): the kit reports this release closes, so a project that sent one hears back.
+	if (rec.reports && rec.reports.length) out.push(`Kit reports closed: ${rec.reports.join(', ')}`, '');
 	if (rec.visuals) out.push(visualsBlock(rec, 'notes'));
 	// One line per paragraph and bullet, as the published notes are: GitHub keeps a wrapped line's breaks.
 	return out.join('\n');
