@@ -52,7 +52,7 @@
    "text": "A working-memory line that keeps rule wording the kit has retired fails the state check the closeout runs, and session start names it; a line marked (history) is skipped.",
    "evidence": "project/.claude/retired-check.mjs",
    "reach": "projects",
-   "where": "A stale rule note left in _Working Memory.md",
+   "where": "A stale rule note left in the working memory",
    "before": "Read and acted on by later threads",
    "after": "Fails the closeout until it goes",
    "test": "tests/state.test.mjs::a working-memory line that keeps retired rule wording fails the check, unless marked as history"
