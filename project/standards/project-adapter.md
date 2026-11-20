@@ -35,3 +35,7 @@ Leave `<...>` visible until filled, so a gap is obvious.
 | A25 | Live services a dev server can reach (block in scripted walks) | Security, Op-Test | `<fill in>` |
 | A26 | Branch rule on main: the CI gate check's name; solo (no review) or team (reviews required) | First Push Gate | `<fill in>` |
 | A27 | Standing grants: merge through the merge gate and auto-fix's push, by allow rules in the owner's own settings; none by default | Standing Grants | `none` |
+
+## Cross-Tool File Mapping (Memory-Bank Style Tools) {#cross-tool-mapping}
+
+A memory-bank tool's files live here: the brief and product context in the design spec (`_Start Here.md` links it); the active context in `_Active Plan.md`; system patterns and tech context in the ADRs and rule:project-adapter; progress in `_Master Roadmap.md` and `_Working Memory.md`. Why: a tool that keeps its own memory bank reads the project's files instead of a second copy.

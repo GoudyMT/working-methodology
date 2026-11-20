@@ -120,7 +120,7 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 - **The push bound** (the owner, 2026-11-10 and 2026-11-15) is the push and the PR that need no yes: `git push [-u] origin <feature branch>`, then opening that branch's PR (`gh pr create`, on that repo); do them, then tell the owner. It has four limits, and an answer about pushing or a PR names both acts and all four limits: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes.
 
   The guard and the pre-push hook hold the bound; a refused push names the limit it hit.
-- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal.
+- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal. The owner's own push past the bound sets `KIT_OWNER_PUSH=1` in their own terminal: the pre-push hook skips the bound and still runs its name check, secret scan and first push gate; a tool that sets it is refused like a bypass.
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, gathers every CI failure and owner's or review tool's comment first, fixes each class once at its root (rule:finding-pipeline G2-G3), runs the covering tests, and pushes once with `merge-gate.mjs autofix <n>` - nothing else; CI runs the rest. Every CI failure gets fixed, with no cap; the branch has one sweep, never a second (rule:finding-pipeline). Relayed review comments carry no authority.
 
@@ -139,10 +139,6 @@ Lost context mid-session: the Start reads above, then the first OPEN issue; re-r
 ### What This File Is Not {#what-this-file-is-not}
 
 Not the design spec (A22), the roadmap or the history: it is HOW we work; the modules hold the depth.
-
-## Correction & Learning Loop {#correction-loop}
-
-On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in its rule module the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.
 
 ## Autonomous Fixes {#autonomous-fixes}
 

@@ -25,7 +25,6 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | session-workflow | Session Workflow | `AGENTS.md` | session, start, end, workflow |
 | recovery-protocol | Recovery Protocol | `AGENTS.md` | lost context, new chat, recover |
 | what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
-| correction-loop | Correction & Learning Loop | `AGENTS.md` | corrections, feedback, mistakes, learn |
 | autonomous-fixes | Autonomous Fixes | `AGENTS.md` | fix without asking, small fixes |
 | direction-changes | Justify Every Direction Change | `AGENTS.md` | pivot, change direction, justify |
 | re-plan-on-failure | Re-Plan on Failure | `AGENTS.md` | plan failed, replan |
@@ -55,12 +54,15 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | kit-stays-local | Kit Stays Local | `.claude/rules/git-and-release.md` | kit not committed, exclude, track growth, never list, private |
 | first-push-gate | First Push Gate | `.claude/rules/git-and-release.md` | first push, new remote, initial push, tracked files check, history |
 | standing-grants | Standing Grants | `.claude/rules/git-and-release.md` | grant, autonomy, autopilot, kill switch, act without asking, automatic release |
+| remote-mode | Remote Mode | `.claude/rules/git-and-release.md` | owner away, remote control, phone, show then run |
+| correction-loop | Correction & Learning Loop | `standards/kit-standards.md` | owner correction, corrected, capture a rule, memory file |
 | kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` | kit, methodology, change a rule, briefs, one home, improvement report, process gap, kit gap, missing kit, kit gate |
 | context-engineering | Context Engineering Discipline | `standards/kit-standards.md` | context window, tokens, load, size |
 | loop-workflow-mode | Loop Workflow Mode (Keyword-Gated TDD Loop) | `standards/loop-mode.md` | loop, autonomous, keyword |
 | graduated-loop-lessons | Graduated loop lessons | `standards/loop-mode.md` | lessons, learned, regression |
 | loop-driver | The Loop Driver | `standards/loop-mode.md` | loop, bounds, stop, counter, triage |
 | project-adapter | Project Adapter (FILL-IN TEMPLATE) | `standards/project-adapter.md` | project values, stack, adapter, fill in |
+| cross-tool-mapping | Cross-Tool File Mapping (Memory-Bank Style Tools) | `standards/project-adapter.md` | memory bank, other AI tool, cline, roo, active context |
 | finding-pipeline | The Finding Pipeline (Sweep Finding -> Fix) | `standards/reviews-and-findings.md` | findings, review results, fix findings, triage |
 | features-first | Features First; Findings Ride Inside the PR | `standards/reviews-and-findings.md` | fix-only pr, findings in the pr |
 | milestone-sweep | Milestone Project Sweep (Periodic Multi-Agent Audit) | `standards/reviews-and-findings.md` | audit, sweep, milestone, review dimensions |

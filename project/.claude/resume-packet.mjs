@@ -34,7 +34,7 @@ const MAX_FILE = 1 << 20;
 // Always hashed, in this order; the plan the Resume Point names is added after them.
 const FILES = ['_Start Here.md', '_Active Plan.md', '_Working Memory.md', '_Loop Learnings.md', '_Session Log.md', '_Master Roadmap.md'];
 // The same list rule 11's fallback names (rules/_parts/agents-head.md); AGENTS.md is not in it: it loads at start.
-export const FULL = '_Start Here.md, _Loop Learnings.md, _Working Memory.md, _Active Plan.md, the last _Session Log.md entry, the plan the Resume Point names';
+export const FULL = '_Start Here.md, _Loop Learnings.md, _Working Memory.md, _Active Plan.md, the plan the Resume Point names';
 // A repo's own config must not run a program (fsmonitor, a protocol helper; a clean filter runs only under status,
 // which is not called), and git starts from Node's own folder, so a git.exe planted in the project is not the one found
 // first on Windows. No optional locks: a hook must not take index.lock while the session commits. The ceiling keeps git

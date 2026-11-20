@@ -82,4 +82,4 @@ Why: the named mechanism is often the nearest knob; widening to the goal finds t
 
 ## Success Charter (Define Success Before Building) {#success-charter}
 
-The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, the tiers ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.
+The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, its Ambition Tiers (the functional end goal, then the gated stretch) ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.

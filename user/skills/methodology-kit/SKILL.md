@@ -33,8 +33,8 @@ Arguments: $ARGUMENTS
   "Current:" is the all-clear, "Not current:" names what to run. It is the first troubleshooting step whenever
   anything in the kit misbehaves (rule:failure-response, step 0).
 - **`report`** - write up a process or method gap in the kit (rule:kit-standards item 12): `node .claude/improvement-report.mjs
-  new "<title>"`, fill every section with evidence, then `audit <file>` until PASS. Tell the owner the file path; they
-  hand it to the kit as is. On the kit side, a received report goes in `reports/improvements/`, and the release
+  new "<title>"`, fill every section with evidence, then `audit <file>` until PASS, then send it with `node .claude/kit-report.mjs send
+  --title "<title>" --area <area> --severity <severity>` (the IR file stays in the project). On the kit side, a received report goes in `reports/improvements/`, and the release
   that fixes it names its ID in the CHANGELOG.
 - **`fold-back`** (default when the owner says the standards changed) - the update pipeline below.
 

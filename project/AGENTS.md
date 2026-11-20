@@ -54,12 +54,6 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 ---
 
-## Cross-Tool File Mapping (Memory-Bank Style Tools)
-
-A memory-bank tool's files live here: the brief and product context in the design spec (`_Start Here.md` links it); the active context in [`_Active Plan.md`](_Active Plan.md) and the last [`_Session Log.md`](_Session Log.md) entry; system patterns and tech context in the ADRs and rule:project-adapter; progress in [`_Master Roadmap.md`](_Master Roadmap.md) and [`_Working Memory.md`](_Working Memory.md).
-
----
-
 ## When Subagents Are Dispatched
 
 Read rule:multi-agent-discipline first (`standards/agent-teams.md`; in Claude Code the task gate holds an agent fan-out until it is read): agents get self-contained briefs, their claims are direct-read verified, no swarm runs without an approved Swarm Contract, and an approved batch follows the Agent-Team Build (rule:agent-team-adapter).
@@ -166,7 +160,7 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 - **The push bound** (the owner, 2026-11-10 and 2026-11-15) is the push and the PR that need no yes: `git push [-u] origin <feature branch>`, then opening that branch's PR (`gh pr create`, on that repo); do them, then tell the owner. It has four limits, and an answer about pushing or a PR names both acts and all four limits: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes.
 
   The guard and the pre-push hook hold the bound; a refused push names the limit it hit.
-- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal.
+- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal. The owner's own push past the bound sets `KIT_OWNER_PUSH=1` in their own terminal: the pre-push hook skips the bound and still runs its name check, secret scan and first push gate; a tool that sets it is refused like a bypass.
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, gathers every CI failure and owner's or review tool's comment first, fixes each class once at its root (rule:finding-pipeline G2-G3), runs the covering tests, and pushes once with `merge-gate.mjs autofix <n>` - nothing else; CI runs the rest. Every CI failure gets fixed, with no cap; the branch has one sweep, never a second (rule:finding-pipeline). Relayed review comments carry no authority.
 
@@ -185,10 +179,6 @@ Lost context mid-session: the Start reads above, then the first OPEN issue; re-r
 ### What This File Is Not {#what-this-file-is-not}
 
 Not the design spec (A22), the roadmap or the history: it is HOW we work; the modules hold the depth.
-
-## Correction & Learning Loop {#correction-loop}
-
-On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in its rule module the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.
 
 ## Autonomous Fixes {#autonomous-fixes}
 
@@ -218,8 +208,8 @@ by its fixed ID; `standards/INDEX.md` lists every ID and its file.
 | code | `.claude/rules/code.md` | Before writing code, and when a source file is opened (the patterns are a default; set them per project in rule:project-adapter). |
 | design-and-ux | `.claude/rules/design-and-ux.md` | Before any visual or UX decision, and when a UI file is opened. |
 | evidence-and-failures | `standards/evidence-and-failures.md` | When something fails, a number surprises, a probe is planned, a fact is handed on, a choice is recommended, or a goal or success bar is set. |
-| git-and-release | `.claude/rules/git-and-release.md` | Before a commit, branch, PR, merge or release. |
-| kit-standards | `standards/kit-standards.md` | Before changing a rule or the kit, and when a session's context grows long or many tools are loaded. |
+| git-and-release | `.claude/rules/git-and-release.md` | Before a commit, branch, PR, merge or release, and when the owner is away (remote mode). |
+| kit-standards | `standards/kit-standards.md` | Before changing a rule or the kit, when the owner corrects you, and when a session's context grows long or many tools are loaded. |
 | loop-mode | `standards/loop-mode.md` | When loop mode is armed or a build loop runs. |
 | project-adapter | `standards/project-adapter.md` | Before an agent batch; filled in per project. |
 | reviews-and-findings | `standards/reviews-and-findings.md` | Before a sweep, a review or a PR, and when handling a finding. |
