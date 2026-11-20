@@ -38,8 +38,14 @@ function problemsOf(input) {
 				if (codes && plain(s).length < 6) out.push(`"${codes[0]}" in "${s.trim().slice(0, 60)}" has no plain words beside it`);
 			}
 		}
+		// Only a plan inside the project is read: a path elsewhere (a share named \\host\x, another drive) is never touched
+		// (the commit security review: a pop-up's text must not make the hook open a network path).
+		const root = path.resolve(String(input.cwd || process.cwd()));
 		for (const m of String(q.question || '').matchAll(/[\w./\\:-]*plans[\\/][\w.-]+\.md/g)) {
-			const file = path.resolve(String(input.cwd || process.cwd()), m[0]);
+			if (/^([\\/]{2}|[A-Za-z]:|[\\/])/.test(m[0])) continue;
+			const file = path.resolve(root, m[0]);
+			const rel = path.relative(root, file);
+			if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
 			if (fs.existsSync(file) && !overview(file)) out.push(`the plan ${m[0]} has no "## Overview" of three lines at its top`);
 		}
 	}

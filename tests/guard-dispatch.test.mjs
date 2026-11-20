@@ -275,5 +275,10 @@ test('a choice pop-up that offers item codes with no plain words, or a plan with
 		['Which slice do I build next, given the measured cost of each one below?', [opt('K150 + K151', 'The guard and the meter, about $11 of quota together.'), opt('Neither', 'Build nothing now and wait for the next build.')]],
 		['Approve docs/plans/bare.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]]]) assert.equal(ask(q, o), 'deny', q);
 	assert.equal(ask('Approve docs/plans/grounded.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow');
+	// The commit security review: a plan path outside the project (a share, another drive, a climb out) is never read.
+	const outside = path.join(kitTemp.makeTemp('ground-out-'), 'plans');
+	fs.mkdirSync(outside);
+	fs.writeFileSync(path.join(outside, 'bare.md'), '# Plan\n');
+	for (const p of [path.join(outside, 'bare.md'), `../${path.basename(path.dirname(outside))}/plans/bare.md`, '\\\\host\\share\\plans\\bare.md']) assert.equal(ask(`Approve ${p} as written, with every step it names?`, [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', p);
 	assert.match(run('AskUserQuestion', { questions: [{ question: 'Working on M1, M2, M3: which?', options: [opt('Do M1', 'x')] }] }, { cwd: dir }).permissionDecisionReason, /^Held: this pop-up [^\n]*"M1"[^\n]*60-second overview/);
 });
