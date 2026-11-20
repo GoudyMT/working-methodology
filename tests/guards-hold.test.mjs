@@ -335,7 +335,8 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 		for (const c of ['sed -n 1p */x .claude/guard.cjs', 'cd $D && sed -n 1p * .claude/guard.cjs', 'cd - && sed -n 1p *', 'popd; sed -n 1p *', "echo $(ls *) 'x'",
 			// The commit security review of this fix: an expansion before the wildcard, text run as shell, and a
 			// here-document whose end line the reader cannot match the way bash does.
-			'sed -n 1p $X* .claude/guard.cjs', "bash -c 'sed -n 1p * .claude/guard.cjs'", 'eval "sed -n 1p * .claude/guard.cjs"', 'cat <<E\\x\nEx\nsed -n 1p * .claude/guard.cjs\nE\\x']) assert.equal(bash(c), 'deny', c);
+			'sed -n 1p $X* .claude/guard.cjs', "bash -c 'sed -n 1p * .claude/guard.cjs'", 'eval "sed -n 1p * .claude/guard.cjs"', 'cat <<E\\x\nEx\nsed -n 1p * .claude/guard.cjs\nE\\x',
+			"echo 'sed -n 1p * x' | sh", "$SHELL -c 'sed -n 1p * x'", "busybox sh -c 'sed -n 1p * x'", "cat <<'E\"x\nsed -n 1p * x\nE"]) assert.equal(bash(c), 'deny', c);
 	} finally { for (const d of [proj, path.join(proj, '.claude')]) fs.rmSync(path.join(d, '-i')); }
 	// K156 (build 20): the shell lands where each cd takes it in turn, and a bare cd lands in the home folder; a start
 	// folder with no dash name must not let a wildcard read there through.
