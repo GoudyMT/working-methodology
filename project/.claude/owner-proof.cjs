@@ -77,7 +77,7 @@ const DASH_UNSURE = 'Never by a tool: part of this command is more than the guar
 // K158 (build 21): the read itself is plain, but another command beside it (one the guard cannot read as plain, a
 // definition, a substitution) may change what it runs, so it is held; on 1.46.1 this named the guard files instead.
 const BESIDE_REASON = 'Never by a tool: this names a protected file (the kit\'s guards, git hooks, .git/config, the settings or the session transcripts) beside another command the guard cannot read as plain, which may change what the read runs. Run the read as a command of its own.';
-const GUARD_REASON ='Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
+const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
 const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
@@ -259,8 +259,9 @@ function guardShape(p) {
 		// install record that names the kit folder - by the folder's own name too, when CLAUDE_CONFIG_DIR names another.
 		const h = homeParts();
 		// E1 (build 21): the report channel's grant (kit-report.json names the one intake repo and is its kill switch) and
-		// the owner's own scrub word list are the owner's to write, as the guard records are.
-		const trusted = (r) => r.length > 0 && (fits(r[0], 'kit-guard') || fits(r[0], 'kit-install.json') || fits(r[0], 'kit-tools') || fits(r[0], 'kit-hooks') || fits(r[0], 'kit-report.json') || fits(r[0], 'kit-scrub-words.json'));
+		// the owner's own scrub word list are the owner's to write, as the guard records are; so are the reports kit-report.mjs
+		// keeps (the commit security review: a report rewritten after the owner read it, or marked held again).
+		const trusted = (r) => r.length > 0 && (fits(r[0], 'kit-guard') || fits(r[0], 'kit-install.json') || fits(r[0], 'kit-tools') || fits(r[0], 'kit-hooks') || fits(r[0], 'kit-report.json') || fits(r[0], 'kit-scrub-words.json') || fits(r[0], 'kit-reports'));
 		if (h.length && p[i] === h[h.length - 1] && trusted(p.slice(i + 1))) return true;
 		// The Claude folder under a name of its own (CLAUDE_CONFIG_DIR), named as the place written to.
 		if (h.length && !fits(h[h.length - 1], '.claude') && i === p.length - 1 && p.length >= h.length && h.every((x, k) => p[p.length - h.length + k] === x)) return true;
@@ -269,7 +270,7 @@ function guardShape(p) {
 		if (rest.length === 0) return true;
 		if (rest[0] === 'worktrees' || rest[0] === 'projects') continue;
 		if (rest.length === 1 && (rest[0] === 'kit-hooks' || rest[0] === 'kit-tools')) return true;
-		if (fits(rest[0], 'kit-guard') || fits(rest[0], 'kit-install.json') || (rest.length === 1 && (fits(rest[0], 'kit-report.json') || fits(rest[0], 'kit-scrub-words.json')))) return true;
+		if (fits(rest[0], 'kit-guard') || fits(rest[0], 'kit-install.json') || (rest.length === 1 && (fits(rest[0], 'kit-report.json') || fits(rest[0], 'kit-scrub-words.json'))) || fits(rest[0], 'kit-reports')) return true;
 		const last = rest[rest.length - 1];
 		// A wildcard may name any guard the shell finds there (owner-pro* is owner-proof.cjs): it fails closed (S23-1, the
 		// mutation check showed only guard.cjs was matched).
@@ -946,8 +947,8 @@ function shellWritesFrom(command, tool, start, names) {
 		// K117 (1.42.0): echo prints its words and defines nothing (its redirect is read below like any other).
 		// K145 (build 19): a PowerShell statement that is one quoted string ("==== $i") prints it, as Write-Output does; a
 		// substitution in it ($(...)) keeps the strict reading through the check below.
-		// K158 (build 21): true, false, : and pwd print or return and define nothing.
-		return (onPath && /^(true|false|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
+		// K158 (build 21): true, : and pwd print or return and define nothing (false stays strict: false || x is a test row).
+		return (onPath && /^(true|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
 			|| (tool === 'PowerShell' && g.length === 1 && g[0].quoted === true)
 			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
 			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))

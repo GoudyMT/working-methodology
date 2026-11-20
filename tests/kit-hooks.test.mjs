@@ -140,7 +140,7 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
   g(dir, 'remote', 'add', 'origin', bare);
   const sha = g(dir, 'rev-parse', 'HEAD').stdout.trim();
   const hook = () => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/main ${sha} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${sha} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   const blocked = hook();
   assert.notEqual(blocked.status, 0);
   assert.match(blocked.stderr, /first-push-check/);
@@ -149,11 +149,11 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
   fs.writeFileSync(path.join(dir, 'main.py'), 'print(2)\n');
   commitAll(dir, 'after the check');
   const later = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.notEqual(later.status, 0, 'a commit made after the check is checked again');
   g(dir, 'update-ref', 'refs/remotes/origin/main', sha);
   const after = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${sha}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${sha}\n`, env: { PATH: process.env.PATH } });
   assert.equal(after.status, 0, 'once the remote has a branch, the gate is done');
 });
 
@@ -277,13 +277,13 @@ test('the first push gate stays on when the new remote already has a README, and
   g(seed, 'push', '-q', bare, 'main');
   g(dir, 'remote', 'add', 'origin', bare);
   g(dir, 'fetch', '-q', 'origin');
-  const push = (sha, ref = 'refs/heads/main') => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+  const push = (sha, ref = 'refs/heads/feat/first') => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
     input: `${ref} ${sha} ${ref} ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   const head = g(dir, 'rev-parse', 'HEAD').stdout.trim();
   assert.notEqual(push(head).status, 0, 'the fetched README branch does not end the gate');
   assert.equal(firstPush(dir).status, 0);
   g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'tag', '-a', 'v0.1', '-m', 'first');
-  assert.equal(push(g(dir, 'rev-parse', 'v0.1').stdout.trim(), 'refs/tags/v0.1').status, 0, 'an annotated tag of the cleared commit');
+  assert.equal(push(g(dir, 'rev-parse', 'v0.1').stdout.trim(), 'refs/heads/feat/tagged').status, 0, 'an annotated tag of the cleared commit, sent by a branch ref (a tag push itself takes a yes from the owner, K163)');
   // Once the cleared commit is on the remote, later pushes are left to the commit check.
   g(dir, 'update-ref', 'refs/remotes/origin/main', head);
   fs.writeFileSync(path.join(dir, 'main.py'), 'print(9)\n');
@@ -314,7 +314,7 @@ test('a project already pushed before the kit came is not held by the first push
   fs.writeFileSync(path.join(clone, 'main.py'), 'print(5)\n');
   commitAll(clone, 'work');
   const r = spawnSync('sh', [path.join(clone, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: clone,
-    input: `refs/heads/main ${g(clone, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${g(clone, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.equal(r.status, 0, r.stderr);
 });
 
@@ -372,7 +372,7 @@ test('a new project that pulled the host README before the install is still held
   g(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '-q', '--no-verify', '--allow-unrelated-histories', '-m', 'take readme', 'origin/main');
   kitInstall(dir);
   const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.notEqual(r.status, 0, 'our own first commit is not on the host yet');
 });
 
@@ -387,7 +387,7 @@ test('a project pushed by URL before the kit is let through once a fetch shows i
   fs.writeFileSync(path.join(dir, 'main.py'), 'print(7)\n');
   commitAll(dir, 'more');
   const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/main ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/main ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
+    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH } });
   assert.equal(r.status, 0, r.stderr);
 });
 

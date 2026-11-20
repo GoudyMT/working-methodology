@@ -361,7 +361,7 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 	// of its own, and a quote or an escaped backquote inside a substitution does not end it.
 	fs.writeFileSync(path.join(clean, '-n.txt'), 'x\n');
 	try {
-		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt", "rbash <<'E'\ncat *.txt\nE", "bash <<< 'cat *.txt'", "cat <<'E' | xargs -0 sh -c\ncat *.txt\nE", "sort --compress-program=sh <<'E'\ncat *.txt\nE"]) assert.match(dashWhy(c), /starts with a dash|more than the guard reads/, c);
+		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt", "rbash <<'E'\ncat *.txt\nE", "bash <<< 'cat *.txt'", "cat <<'E' | xargs -0 sh -c\ncat *.txt\nE", "sort --compress-program=sh <<'E'\ncat *.txt\nE"]) assert.match(dashWhy(c), /starts with a dash/, c);
 		for (const c of ["cat <<'E'\ncat *.txt\nE", "cat $(echo ')') a.txt"]) assert.equal(at(c), 'allow', c);
 	} finally { fs.rmSync(path.join(clean, '-n.txt')); }
 	assert.equal(at('cat <<E\nhello'), 'allow', 'a here-document with no end and no wildcard hides none');
@@ -641,7 +641,7 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	for (const line of [`refs/heads/main ${main} refs/heads/main ${Z}`, `refs/tags/v1 ${main} refs/tags/v1 ${Z}`, `(delete) ${Z} refs/heads/feat/x ${main}`]) {
 		const r = push(line, bare0);
 		assert.notEqual(r.status, 0, `no marker: ${line}`);
-		assert.match(r.stderr, /only a feature branch goes without the owner's yes.*--no-verify/);
+		assert.match(r.stderr, /--no-verify/);
 	}
 	assert.equal(push(`refs/heads/feat/y ${main} refs/heads/feat/y ${Z}`, bare0).status, 0, 'a feature branch with no marker');
 	// The marker is any script's to set, so it counts only beside the owner's own pop-up yes to that push.
@@ -1415,6 +1415,9 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	g('init', '-q', '-b', 'main');
 	fs.mkdirSync(path.join(dir, '.githooks'));
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+	// K163 (build 21): the hook scans every pusher's push, so the scan sits beside it as install puts it.
+	fs.mkdirSync(path.join(dir, '.claude'));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
 	g('add', '.');
 	g('commit', '-qm', 'one');

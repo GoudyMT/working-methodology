@@ -338,20 +338,20 @@ test('K29 pre-push: a remote that names no default branch is not read as having 
 // with the local origin/HEAD deleted, let a plain push land on a default branch not named main.
 test('pre-push: a remote the hook cannot ask may have any branch as its default', () => {
 	const { proj, remote } = setup();
-	ok(git(proj, ['checkout', '-q', '-b', 'develop']));
-	ok(git(proj, ['push', '-q', '--no-verify', 'origin', 'develop']));
-	ok(git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']));
+	ok(git(proj, ['checkout', '-q', '-b', 'feat/develop']));
+	ok(git(proj, ['push', '-q', '--no-verify', 'origin', 'feat/develop']));
+	ok(git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/feat/develop']));
 	fs.writeFileSync(path.join(proj, 'd.md'), 'd\n');
 	ok(git(proj, ['add', 'd.md']));
 	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: d']));
 	const url = ok(git(proj, ['remote', 'get-url', 'origin']));
 	ok(git(proj, ['config', `remote.${url}.vcs`, 'bogus']));
 	git(proj, ['branch', '-rd', 'origin/HEAD']);
-	const r = aiPush(proj, 'develop');
+	const r = aiPush(proj, 'feat/develop');
 	assert.notEqual(r.status, 0, 'a push went out to the remote\'s default branch');
 	// Held as the default branch, whether the key broke the hook's ask (Windows paths) or git refused the key (Linux).
 	assert.match(r.stderr, /default branch/);
-	assert.notEqual(ok(git(remote, ['rev-parse', 'develop'])), ok(git(proj, ['rev-parse', 'HEAD'])));
+	assert.notEqual(ok(git(remote, ['rev-parse', 'feat/develop'])), ok(git(proj, ['rev-parse', 'HEAD'])));
 });
 
 // why: guards rule:outward-acts
@@ -1014,7 +1014,7 @@ test('V3 record: the install record and a config folder with another name are gu
 	assert.equal(s.decide('Write', { file_path: path.join(guardDir(home, proj), 'record.json'), content: '{}' }).decision, 'deny');
 	// E1 (build 21): the report channel's grant names the one intake repo, and the owner's scrub words keep a report
 	// about the kit; a tool writes neither, by the config folder's own name or by .claude.
-	for (const f of ['kit-report.json', 'kit-scrub-words.json']) {
+	for (const f of ['kit-report.json', 'kit-scrub-words.json', 'kit-reports/issues.jsonl']) {
 		assert.equal(s.decide('Write', { file_path: path.join(home, f), content: '{"repo":"x/y","issues":true}' }).decision, 'deny', f);
 		assert.equal(s.decide('Bash', { command: `echo {} > ~/.claude/${f}` }).decision, 'deny', `${f} by .claude`);
 	}

@@ -35,51 +35,6 @@ remote_default() {
   fi
   printf '%s\n' "$d"
 }
-# The first push gate (rule:first-push-gate), for any pusher whose git runs this hook: until the project's first push
-# has landed, only the commit .claude/first-push-check.mjs cleared (or one of its ancestors, or a tag of it) may go
-# out. The gate is done once that commit is on a remote branch, or once every first (root) commit being pushed is
-# already on a remote (the project was pushed before the kit came; the install leaves a done mark for that too). A
-# branch the host made on its own (a README) does not end it: its root is not ours.
-common=$(git rev-parse --git-common-dir)
-if [ ! -f "$common/kit-first-push-done" ]; then
-  checked=$(cat "$common/kit-first-push-ok" 2>/dev/null)
-  if [ -n "$checked" ] && [ -n "$(git branch -r --contains "$checked" 2>/dev/null)" ]; then
-    : > "$common/kit-first-push-done"
-  else
-    # What the remote already holds, asked of the remote itself: a local remote-tracking ref is any command's to write,
-    # and a fake one ended this gate (the 1.28.0 sweep). Only the commits it names that exist here count.
-    have=$(git ls-remote "$2" 2>/dev/null | while read -r sha ref; do git cat-file -e "$sha^{commit}" 2>/dev/null && printf '%s\n' "$sha"; done)
-    while read -r lref lsha rref rsha; do
-      case "$lsha" in *[!0]*) ;; *) continue ;; esac
-      commit=$(git rev-parse -q --verify "$lsha^{commit}")
-      # shellcheck disable=SC2086
-      if [ -n "$commit" ] && [ -n "$have" ] && [ -z "$(git rev-list --max-parents=0 "$commit" --not $have)" ]; then
-        : > "$common/kit-first-push-done"
-        continue
-      fi
-      if [ -z "$checked" ] || [ -z "$commit" ] || ! git merge-base --is-ancestor "$commit" "$checked"; then
-        echo "First push blocked (rule:first-push-gate): run node .claude/first-push-check.mjs, fix what it finds, then push the commit it cleared." >&2
-        exit 1
-      fi
-    done <<EOF
-$refs
-EOF
-  fi
-fi
-# GitHub documents no head pin past a writer's push, so a push over a head still armed stops here (rule:standing-grants).
-gatelog="$common/kit-merge-gate.log"
-if [ -f "$gatelog" ]; then
-  while read -r lref lsha rref rsha; do
-    case "$rsha" in *[!0]*) ;; *) continue ;; esac
-    pr=$(awk -v sha="$rsha" '$2=="ARMED" && $4==sha { n=$3; sub(/.*\//,"",n); armed[n]=1 } $2=="DISARMED" { delete armed[$3] } END { s=""; for (n in armed) { printf "%s%s", s, n; s=" " } }' "$gatelog")
-    if [ -n "$pr" ]; then
-      echo "Push blocked: PR $pr is armed at this head. Run node ~/.claude/kit-tools/merge-gate.mjs disarm $pr first, then the gate again after the push." >&2
-      exit 1
-    fi
-  done <<EOF
-$refs
-EOF
-fi
 # The push bound and the secret scan, for every pusher (K163).
 {
   common=$(git rev-parse --git-common-dir)
@@ -162,6 +117,51 @@ EOF
   fi
   printf '%s\n' "$refs" | node "$scan" --push "$2" || { echo "Push blocked: a secret-shaped file or value is in a pushed commit. Take it out of the history, and rotate any real key." >&2; exit 1; }
 }
+# The first push gate (rule:first-push-gate), for any pusher whose git runs this hook: until the project's first push
+# has landed, only the commit .claude/first-push-check.mjs cleared (or one of its ancestors, or a tag of it) may go
+# out. The gate is done once that commit is on a remote branch, or once every first (root) commit being pushed is
+# already on a remote (the project was pushed before the kit came; the install leaves a done mark for that too). A
+# branch the host made on its own (a README) does not end it: its root is not ours.
+common=$(git rev-parse --git-common-dir)
+if [ ! -f "$common/kit-first-push-done" ]; then
+  checked=$(cat "$common/kit-first-push-ok" 2>/dev/null)
+  if [ -n "$checked" ] && [ -n "$(git branch -r --contains "$checked" 2>/dev/null)" ]; then
+    : > "$common/kit-first-push-done"
+  else
+    # What the remote already holds, asked of the remote itself: a local remote-tracking ref is any command's to write,
+    # and a fake one ended this gate (the 1.28.0 sweep). Only the commits it names that exist here count.
+    have=$(git ls-remote "$2" 2>/dev/null | while read -r sha ref; do git cat-file -e "$sha^{commit}" 2>/dev/null && printf '%s\n' "$sha"; done)
+    while read -r lref lsha rref rsha; do
+      case "$lsha" in *[!0]*) ;; *) continue ;; esac
+      commit=$(git rev-parse -q --verify "$lsha^{commit}")
+      # shellcheck disable=SC2086
+      if [ -n "$commit" ] && [ -n "$have" ] && [ -z "$(git rev-list --max-parents=0 "$commit" --not $have)" ]; then
+        : > "$common/kit-first-push-done"
+        continue
+      fi
+      if [ -z "$checked" ] || [ -z "$commit" ] || ! git merge-base --is-ancestor "$commit" "$checked"; then
+        echo "First push blocked (rule:first-push-gate): run node .claude/first-push-check.mjs, fix what it finds, then push the commit it cleared." >&2
+        exit 1
+      fi
+    done <<EOF
+$refs
+EOF
+  fi
+fi
+# GitHub documents no head pin past a writer's push, so a push over a head still armed stops here (rule:standing-grants).
+gatelog="$common/kit-merge-gate.log"
+if [ -f "$gatelog" ]; then
+  while read -r lref lsha rref rsha; do
+    case "$rsha" in *[!0]*) ;; *) continue ;; esac
+    pr=$(awk -v sha="$rsha" '$2=="ARMED" && $4==sha { n=$3; sub(/.*\//,"",n); armed[n]=1 } $2=="DISARMED" { delete armed[$3] } END { s=""; for (n in armed) { printf "%s%s", s, n; s=" " } }' "$gatelog")
+    if [ -n "$pr" ]; then
+      echo "Push blocked: PR $pr is armed at this head. Run node ~/.claude/kit-tools/merge-gate.mjs disarm $pr first, then the gate again after the push." >&2
+      exit 1
+    fi
+  done <<EOF
+$refs
+EOF
+fi
 # Every check passed: the push is logged (time to the millisecond, auto or owner, ref, commit), the record the owner
 # reads after. An owner push the log cannot record does not go: the log is what spends the owner's yes (the 1.25.0
 # sweep: a read-only log let one yes push main three times).
