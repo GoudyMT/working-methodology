@@ -350,6 +350,13 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 	const dashWhy = (command) => JSON.parse(spawnSync(process.execPath, HOOKS, { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: clean }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } }).stdout || '{"hookSpecificOutput":{}}').hookSpecificOutput.permissionDecisionReason || '';
 	// A cd inside shell text, by eval or bash -c, is held for the dash reason too, not passed by chance (the sweep).
 	for (const c of ["cd a/b && bash -c 'sed -n 1p *'", "c='sed -n 1p *'; cd a/b; bash -c \"$c\"", 'eval "cd a/b" && sed -n 1p *', 'bash -c "cd a/b" && sed -n 1p *']) assert.match(dashWhy(c), /starts with a dash/, c);
+	// K159 (build 21, both shapes passed on 1.46.1 with a -n.txt there): a here-document body a shell runs is a command
+	// of its own, and a quote or an escaped backquote inside a substitution does not end it.
+	fs.writeFileSync(path.join(clean, '-n.txt'), 'x\n');
+	try {
+		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt"]) assert.match(dashWhy(c), /starts with a dash|more than the guard reads/, c);
+		for (const c of ["cat <<'E'\ncat *.txt\nE", "cat $(echo ')') a.txt"]) assert.equal(at(c), 'allow', c);
+	} finally { fs.rmSync(path.join(clean, '-n.txt')); }
 	assert.equal(at('cat <<E\nhello'), 'allow', 'a here-document with no end and no wildcard hides none');
 	assert.equal(at('cd a && cd b && ls *.md'), 'allow', 'no dash name fits *.md');
 	assert.equal(bash('sed -n 1p * .claude/guard.cjs'), 'allow', 'with no dash name the read passes');

@@ -501,18 +501,32 @@ function bashWords(c) {
 	let unsure = false;
 	let ext = false;
 	const heredocs = [];
-	const put = (ch, q) => { (word ||= []).push([ch, q]); };
+	const bodies = [];
+	const put =(ch, q) => { (word ||= []).push([ch, q]); };
 	const end = () => { if (word) cmds[cmds.length - 1].push(word); word = null; };
 	const next = () => { end(); if (cmds[cmds.length - 1].length) cmds.push([]); };
 	// The end of a substitution that starts at i (just past "$(" or the opening backquote), and whether a wildcard is in it.
+	// K159 (build 21): a quoted or escaped ) or backquote inside does not end it; a double-quoted part that holds a
+	// substitution of its own is more than this follows.
 	const sub = (i, close) => {
 		let depth = 1;
 		let j = i;
 		for (; j < c.length && depth; j++) {
+			if (c[j] === '\\') { j++; continue; }
+			if (close === ')' && c[j] === "'") { const k = c.indexOf("'", j + 1); j = k < 0 ? c.length : k; continue; }
+			if (close === ')' && c[j] === '"') {
+				let k = j + 1;
+				for (; k < c.length && c[k] !== '"'; k++) {
+					if (c[k] === '\\') k++;
+					else if (c[k] === '`' || (c[k] === '$' && c[k + 1] === '(')) unsure = true;
+				}
+				j = k;
+				continue;
+			}
 			if (close === ')' && c[j] === '(') depth++;
 			else if (c[j] === close) depth--;
 		}
-		if (/[*?[]/.test(c.slice(i, j))) unsure = true;
+		if (depth || /[*?[]/.test(c.slice(i, j))) unsure = true;
 		return j;
 	};
 	for (let i = 0; i < c.length; i++) {
@@ -525,7 +539,8 @@ function bashWords(c) {
 				let k = 0;
 				while (k < lines.length && (h.strip ? lines[k].replace(/^\t+/, '') : lines[k]) !== h.tag) k++;
 				if (k >= lines.length) unsure = true;
-				i += lines.slice(0, Math.min(k + 1, lines.length)).reduce((n, l) => n + l.length + 1, 0);
+				bodies.push(lines.slice(0, k).join('\n'));
+				i +=lines.slice(0, Math.min(k + 1, lines.length)).reduce((n, l) => n + l.length + 1, 0);
 			}
 			continue;
 		}
@@ -576,7 +591,7 @@ function bashWords(c) {
 		put(ch, false);
 	}
 	next();
-	return { cmds: cmds.filter((x) => x.length), unsure, ext };
+	return { cmds: cmds.filter((x) => x.length), unsure, ext, bodies };
 }
 const wordText = (w) => w.map(([ch]) => ch).join('');
 // A [ is a class only with a ] after it in the same word: a lone [ or [[ is the test command.
@@ -610,6 +625,12 @@ function dashGlob(command, tool, start) {
 			if (inner) return inner;
 		}
 		if (names.some((n) => /^(cd|pushd|popd|chdir)$/.test(n))) cdBefore = true;
+	}
+	// K159 (build 21): a here-document body is text only to a reader; one a shell runs (bash <<E, cat <<E | sh, a
+	// variable that may name a shell) is a command of its own, read the same way.
+	if (read.bodies.some((b) => /[*?[]/.test(b)) && read.cmds.some((cmd) => cmd.some((w) => { const n = wordText(w); return /(^|\/)(ba|z|da|k|mk|po|y)?sh(\.exe)?$/.test(n) || /^(eval|source|\.|busybox|toybox)$/.test(n) || n.startsWith('$'); }))) {
+		if (cdBefore) return 'unsure';
+		for (const b of read.bodies) { const inner = dashGlob(b, tool, start); if (inner) return inner; }
 	}
 	if (read.cmds.some((cmd) => /^(source|\.)$/.test(wordText(cmd[0] || [])))) read.unsure = read.unsure || words.some(wordGlob);
 	// A cd the word split did not see (inside text run as shell, or glued to another word) is more than this follows.
