@@ -130,8 +130,17 @@ export function idOf(record) {
 	return `R-${String(rest.created || '').slice(0, 10).replace(/-/g, '')}-${hash}`;
 }
 
+// K197: the Claude folder a session names (its own variables), when it is not the one the project was installed for.
+function otherFolder(home, env) {
+	const norm = (p) => { const r = path.resolve(p).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? r.toLowerCase() : r; };
+	return [env.CLAUDE_CONFIG_DIR, env.KIT_CLAUDE_HOME].find((d) => d && norm(d) !== norm(home)) || null;
+}
+
 /** send: scrub, then the PC inbox; with the issue route on, the report waits there for the owner's read. */
-export function send(args, { home, projectDir, now } = {}) {
+export function send(args, { home, projectDir, now, env = {} } = {}) {
+	// K197: a test or probe session on a throwaway Claude folder must never write the owner's real inbox.
+	const other = otherFolder(home, env);
+	if (other) return { code: 1, out: [`This session runs on another Claude folder (${other}) than this project was installed for (${home}); nothing was kept or sent. Install the project with that folder set, or send from a session on ${home}.`] };
 	const p = places(home, projectDir);
 	const d = draft(args, projectDir, now, home);
 	if (d.why) return { code: 2, out: [`kit-report: ${d.why}`] };
@@ -387,7 +396,7 @@ function runState(args, cwd = process.cwd()) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 	const [cmd, ...rest] = process.argv.slice(2);
-	const ctx = { home: yes.home(), projectDir: process.cwd() };
+	const ctx = { home: yes.home(), projectDir: process.cwd(), env: process.env };
 	let res;
 	if (cmd === 'send') res = send(rest, ctx);
 	else if (cmd === 'release') res = release(rest[0], ctx);
