@@ -308,14 +308,14 @@
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
       },
       {
-        "id": "R4-2",
+        "id": "R4-3",
         "severity": "medium",
         "text": "A null line in a report log stops neither start-up nor status, held or release",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::a project hears which release closed its report, once"
       },
       {
-        "id": "R4-3",
+        "id": "R4-4",
         "severity": "low",
         "security": true,
         "text": "The replay switch is gone; tests hand the GitHub call in, so no session can fake a filing",
@@ -323,14 +323,14 @@
         "test": "tests/kit-report.test.mjs::send puts a scrubbed report in the PC inbox, and an issue goes only on the owner's read, to the named repo"
       },
       {
-        "id": "R4-4",
+        "id": "R4-5",
         "severity": "low",
         "text": "A bad recorded reply or a null issue is skipped, and intake goes on",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
       },
       {
-        "id": "R4-5",
+        "id": "R4-6",
         "severity": "low",
         "security": true,
         "text": "A repo name with a dot part is refused, so the call stays under /repos/",
@@ -338,7 +338,7 @@
         "test": "tests/kit-report.test.mjs::send puts a scrubbed report in the PC inbox, and an issue goes only on the owner's read, to the named repo"
       },
       {
-        "id": "R4-6",
+        "id": "R4-7",
         "severity": "low",
         "text": "Release and intake each hold a lock, so a report is filed once and counts are not lost",
         "commit": "447814b",
@@ -366,14 +366,14 @@
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
       },
       {
-        "id": "R5-4",
+        "id": "R5-5",
         "severity": "low",
         "text": "A refused file moves to refused/ with a reason and is not read again",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
       },
       {
-        "id": "R5-5",
+        "id": "R5-6",
         "severity": "low",
         "text": "A taken file never replaces one already in taken/",
         "commit": "447814b",
