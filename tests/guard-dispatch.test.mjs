@@ -27,7 +27,8 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	}
 	if (userHooks) {
 		fs.mkdirSync(path.join(cfg, 'kit-hooks'));
-		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs', 'test-scope.cjs', 'grounding.cjs']) if (fs.existsSync(path.resolve('user/kit-hooks', f))) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
+		// Every hook is copied, with no existence check: a lost hook fails here, never passes as a hook with nothing to hold.
+		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs', 'test-scope.cjs', 'grounding.cjs']) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
 	}
 	// Recorded as install user records them: since B23 a kit hook runs only with the bytes its stamp names.
 	if (oldHook || userHooks) {
@@ -258,6 +259,7 @@ test('a local test run reaches only the tests the branch changed; the rest waits
 	fs.writeFileSync(path.join(repo, 'tests', 'c.test.mjs'), "import './a.test.mjs';\n");
 	for (const c of ['npx --yes vitest run', 'npm --prefix . test', 'npm run-script test', '(node --test)', 'bash -c "npm test"', 'node scripts/test-run.mjs --pick', 'node --test tests/c.test.mjs']) assert.equal(at(c), 'deny', c);
 	assert.equal(run('Monitor', { command: 'node --test' }, { cwd: repo }, { CI: '' }).permissionDecision, 'deny', 'a run from the Monitor tool');
+	assert.equal(run('PowerShell', { command: 'npm test' }, { cwd: repo }, { CI: '' }).permissionDecision, 'deny', 'a run from PowerShell');
 	for (const c of ['cd tests && node --test b.test.mjs', 'go test ./pkg/', 'go test ./pkg']) assert.equal(at(c), 'allow', c);
 	// The repo's own config names no program the check runs.
 	const mark = path.join(repo, 'fsmonitor-ran');
