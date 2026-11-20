@@ -36,3 +36,11 @@ The methodology kit is the baseline every project starts from. These rules keep 
 | **Clash** - new information conflicts with old | Re-Plan on Failure; ADR supersession (link both ways, never delete) |
 
 **Tool loadout:** past ~20 active tools / skills / servers, curate per task; load deferred tools only when about to use them; child agents get only their narrow toolset. Why: everything unneeded dilutes what matters.
+
+## Recovery Protocol {#recovery-protocol}
+
+Lost context mid-session: the Start reads (rule:session-workflow), then the first OPEN issue; re-read Collaborative Design Locks; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.
+
+## Autonomous Fixes {#autonomous-fixes}
+
+**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.

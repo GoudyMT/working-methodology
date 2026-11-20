@@ -56,6 +56,8 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | correction-loop | Correction & Learning Loop | `standards/kit-standards.md` | owner correction, corrected, capture a rule, memory file |
 | kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` | kit, methodology, change a rule, briefs, one home, improvement report, process gap, kit gap, missing kit, kit gate |
 | context-engineering | Context Engineering Discipline | `standards/kit-standards.md` | context window, tokens, load, size |
+| recovery-protocol | Recovery Protocol | `standards/kit-standards.md` | lost context, new chat, recover |
+| autonomous-fixes | Autonomous Fixes | `standards/kit-standards.md` | fix without asking, small fixes |
 | loop-workflow-mode | Loop Workflow Mode (Keyword-Gated TDD Loop) | `standards/loop-mode.md` | loop, autonomous, keyword |
 | graduated-loop-lessons | Graduated loop lessons | `standards/loop-mode.md` | lessons, learned, regression |
 | loop-driver | The Loop Driver | `standards/loop-mode.md` | loop, bounds, stop, counter, triage |
@@ -71,7 +73,6 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | preview-test | Preview Test Before Merge | `standards/reviews-and-findings.md` | preview link, staging, version url |
 | visible-tracking | Visible Tracking | `standards/reviews-and-findings.md` | progress, checklist, visible |
 | parking-lot | Parking Lot + Pre-PR Idea Triage | `standards/reviews-and-findings.md` | ideas, later, out of scope, parking lot |
-| autonomous-fixes | Autonomous Fixes | `standards/reviews-and-findings.md` | fix without asking, small fixes |
 | security-standards | Security Standards | `standards/security.md` | security, secrets, privacy, owasp, keys, install from a repo, third-party plugin, prompt injection |
 | mid-design-red-team | Mid-Design Red-Team (Security Before Lock) | `standards/security.md` | red team, threat, attack, design review |
 | tdd | Test-Driven Development (TDD) | `.claude/rules/testing.md` | test first, test-driven, red green, write tests |
@@ -93,4 +94,3 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | pre-compact-scan | Pre-Compact Scan | `.claude/rules/tracking-and-handoff.md` | before compact, scan, closeout checks |
 | post-compact-orientation | Post-Compact Orientation Protocol (MANDATORY first action) | `.claude/rules/tracking-and-handoff.md` | after compact, resume, re-read, orientation |
 | handoff-message-structure | Handoff Message Structure | `.claude/rules/tracking-and-handoff.md` | handoff, continuation, summary, next session |
-| recovery-protocol | Recovery Protocol | `.claude/rules/tracking-and-handoff.md` | lost context, new chat, recover |

@@ -189,10 +189,10 @@ by its fixed ID; `standards/INDEX.md` lists every ID and its file.
 | design-and-ux | `.claude/rules/design-and-ux.md` | Before any visual or UX decision, and when a UI file is opened. |
 | evidence-and-failures | `standards/evidence-and-failures.md` | When something fails, a number surprises, a probe is planned, a fact is handed on, a choice is recommended or a direction changes, a locked decision proves wrong, or a goal or success bar is set. |
 | git-and-release | `.claude/rules/git-and-release.md` | Before a commit, branch, PR, merge or release, and when the owner is away (remote mode). |
-| kit-standards | `standards/kit-standards.md` | Before changing a rule or the kit, when the owner corrects you, and when a session's context grows long or many tools are loaded. |
+| kit-standards | `standards/kit-standards.md` | Before changing a rule or the kit, when the owner corrects you, after a loss of context, before a small fix found in passing, and when a session's context grows long or many tools are loaded. |
 | loop-mode | `standards/loop-mode.md` | When loop mode is armed or a build loop runs. |
 | project-adapter | `standards/project-adapter.md` | Before an agent batch; filled in per project. |
-| reviews-and-findings | `standards/reviews-and-findings.md` | Before a sweep, a review or a PR, and when handling a finding or a small fix found in passing. |
+| reviews-and-findings | `standards/reviews-and-findings.md` | Before a sweep, a review or a PR, and when handling a finding. |
 | security | `standards/security.md` | At a design lock, before a commit, and for any code that touches data, auth or secrets. |
 | testing | `.claude/rules/testing.md` | Before planning or writing tests, and when a test file is opened. |
-| tracking-and-handoff | `.claude/rules/tracking-and-handoff.md` | Before a compact or session end, after a compact or a loss of context, and when a tracking file is opened. |
+| tracking-and-handoff | `.claude/rules/tracking-and-handoff.md` | Before a compact or session end, after a compact, and when a tracking file is opened. |
