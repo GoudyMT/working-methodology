@@ -208,6 +208,39 @@ export function locateAll(text) {
 	return found.sort((a, b) => a.start - b.start);
 }
 
+// K149 (build 19): a measured figure is a number with a unit a reader pays in: bytes, tokens, time or dollars. A count
+// of tests or findings has no such unit, so a tally is never one (DESIGN 5).
+const MEASURED = /\$\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)?k?\s?(?:B|KB|MB|GB|bytes|tokens|ms|s|sec|seconds|min|minutes|h|hours)\b/gi;
+const figures = (s) => (String(s).match(MEASURED) || []).map((f) => f.replace(/\s+/g, ' ').toLowerCase());
+
+/**
+ * The measured moves a body claims outside its Visuals section (DESIGN 6, row 1): a line with a measured figure on
+ * both sides of an arrow, or a Summary row (| Where | Before | After |) whose Before or After holds one and differs.
+ *
+ * Args:
+ *     text: the body or notes, as written
+ *
+ * Returns:
+ *     Each claim as a short quote; empty when the body claims no measured move
+ */
+export function claimedMoves(text) {
+	let t = String(text).replace(/\r\n/g, '\n');
+	for (const s of locateAll(t).reverse()) t = t.slice(0, s.start) + t.slice(s.end);
+	t = t.replace(/```[\s\S]*?```/g, '');
+	const out = [];
+	for (const line of t.split('\n')) {
+		const cells = line.trim().startsWith('|') ? line.split('|').slice(1, -1).map((c) => c.trim()) : null;
+		if (cells && cells.length >= 3 && !/^[-: ]+$/.test(cells[1])) {
+			const [before, after] = [figures(cells[1]), figures(cells[2])];
+			if ((before.length || after.length) && before.join() !== after.join()) out.push(line.trim().slice(0, 90));
+			continue;
+		}
+		const arrow = line.indexOf('->');
+		if (arrow > 0 && figures(line.slice(0, arrow)).length && figures(line.slice(arrow + 2)).length) out.push(line.trim().slice(0, 90));
+	}
+	return out;
+}
+
 // The checks the audits run (DESIGN 6), and the writer runs on its own output: one section, at the right level; the
 // outcome sentence's numbers in the rows; every change and derived row recomputed; the chart bounded; every row given
 // its why; an image only as this repo's pinned chart; no link, no private data, the prose capped.

@@ -305,6 +305,29 @@ test('the Standard PR audit takes a checked Visuals section after Review, and re
 	}
 });
 
+// K149 (build 19): PR 55 said the repo lost about 13 MB in its Summary table, with no Visuals section, and the audit
+// passed it: the design's presence check was never built. A measured move (a size, tokens, time or money on both
+// sides of an arrow, or in a Summary row's Before or After that differs) needs the section; a tally never does.
+// why: catches a measured move shipped with no Visuals section
+test('a Standard body that claims a measured number moved must carry Visuals; a tally or an unchanged figure need not', () => {
+	const body = standard();
+	const std = (text) => audit('project/.claude/pr-body-audit.mjs', text, TITLE);
+	const row = (line) => body.replace(/(\| Where \| Before \| After \|\n\|[-| ]+\|\n)/, (head) => `${head}${line}\n`);
+	const pr55 = row('| Cloning the kit repo | About 13 MB of third-party backups in the public repo | An index of them |');
+	const arrow = body.replace('### Summary', 'The start file went from 27,609 B -> 23,834 B.\n\n### Summary');
+	for (const [name, text] of [['PR 55 row', pr55], ['an arrow', arrow], ['tokens', row('| Start | about 9.8k tokens | about 8.5k tokens |')], ['money', row('| A run | $12 | $4 |')]]) {
+		assert.match(std(text).stdout, /FAIL +a claimed measured move carries Visuals/, name);
+	}
+	for (const [name, text] of [['tallies', row('| Tests | 212 tests | 230 tests |')], ['the same figure', row('| Limit | 720 s | 720 s |')], ['no number', body]]) {
+		assert.doesNotMatch(std(text).stdout, /FAIL +a claimed measured move carries Visuals/, name);
+	}
+	assert.doesNotMatch(std(`${arrow.trimEnd()}\n\n${visualsOf('###')}`).stdout, /FAIL +a claimed measured move carries Visuals/, 'with the section');
+	const rel = (text) => audit('user/skills/release-notes/audit.mjs', text, '1.2.0');
+	const notes = (line) => `# v1.2.0\n\nOne line.\n\n## Changed\n\n- ${line}\n\n## Upgrading\n\nRun it.\n\nKnown limits: none.\n`;
+	assert.match(rel(notes('The rules file went 27,609 B -> 23,834 B.')).stdout, /a measured move .*needs a Visuals section/);
+	assert.equal(rel(notes('The rules load faster.')).status, 0);
+});
+
 // why: guards rule:release-notes (the notes carry the PR's section after the known limits, checked the same way, at
 // whatever level or in whatever form it was written)
 test('the release audit checks a Visuals section in the notes, in any form', () => {

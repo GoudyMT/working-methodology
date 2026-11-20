@@ -124,6 +124,11 @@ if (/^#{1,6}[ \t]*Visuals[ \t]*$|<summary>\s*Visuals:/im.test(text)) {
   const { checkSection, repoOf } = await import(new URL('../../kit-tools/audits/visuals.mjs', import.meta.url).href);
   const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' });
   faults.push(...checkSection(text.replace(/\r\n/g, '\n'), '##', { repo: repoOf(origin.stdout) }));
+} else if (/->|^\|/m.test(text)) {
+  // K149: notes that claim a measured number moved carry the section too.
+  const { claimedMoves } = await import(new URL('../../kit-tools/audits/visuals.mjs', import.meta.url).href);
+  const moves = claimedMoves(text);
+  if (moves.length) faults.push(`a measured move with no Visuals: "${moves[0]}" needs a Visuals section`);
 }
 
 const pkg = path.join(process.cwd(), 'package.json');

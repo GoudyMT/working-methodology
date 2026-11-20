@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { carriesPhrase } from './canary-phrase.mjs';
 import { versionBumpCheck } from './version-bump-check.mjs';
 import { attributionFaults, entities } from './no-attribution.mjs';
-import { checkSection, locateAll, CHART_LINE, repoOf } from './visuals.mjs';
+import { checkSection, locateAll, claimedMoves, CHART_LINE, repoOf } from './visuals.mjs';
 
 // The large-PR body audit: a feature or large PR body that is detailed but not a text wall. The
 // changes read as a before / after table; decisions and the review stay on screen. T13 (the owner, 2026-11-10): what
@@ -113,6 +113,9 @@ const origin = spawnSync('git', ['-c', 'core.fsmonitor=false', '-C', root, 'remo
 const visualsFaults = checkSection(body.replace(/\r\n/g, '\n'), '###', { repo: repoOf(origin.stdout) });
 const visualsSections = locateAll(body.replace(/\r\n/g, '\n'));
 row('Visuals: numbers, chart and why lines check out', visualsFaults.length === 0, visualsFaults.join('; ') || (visualsSections.length ? 'checked' : 'no section'));
+// K149: a measured move claimed in the body needs the section (PR 55 claimed 13 MB with none).
+const moves = claimedMoves(body);
+row('a claimed measured move carries Visuals', !moves.length || visualsSections.length > 0, moves.length ? `${moves.length} claimed: ${moves[0]}` : 'none claimed');
 
 const framing = body.slice(body.indexOf('\n') + 1, body.indexOf('### Summary')).trim();
 row('framing of 1-3 lines before Summary', framing.length > 0 && !framing.startsWith('#') && framing.split('\n').length <= 3, `${framing.split('\n').length} lines`);
