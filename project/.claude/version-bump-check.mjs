@@ -28,6 +28,33 @@ const GIT_SAFE = ['-c', 'core.fsmonitor=false', '-c', 'diff.external=', '-c', 'p
 	...['ext', 'file', 'ssh', 'git', 'http', 'https'].flatMap((p) => ['-c', `protocol.${p}.allow=never`])];
 const GIT_ENV = { ...process.env, GIT_NO_LAZY_FETCH: '1' };
 
+// K184: the small (Lean) body is for a chore, docs, config, a bump or a one-line change. What the diff touches may only
+// raise a body to the full (Standard) one: an added source file, a CI, git hook or .claude file (gate code, as the
+// sweep's floor reads it), or more than SMALL_LINES changed lines of code. Docs, records, tests and dependency files
+// are not the change the format follows.
+const SMALL_LINES = 20;
+const NOT_CODE = /\.(md|txt|rst)$|^docs\/.*\.(json|png|svg|jpe?g|gif|csv)$|^(VERSION|CHANGELOG\.md)$|(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$|(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|requirements[^/]*\.txt|poetry\.lock|Cargo\.lock|go\.sum|Gemfile\.lock)$/i;
+const GATE = /(^|\/)\.(github|githooks|claude)\//;
+
+/** Whether the branch's diff is a small change a Lean body may describe, as one audit row. */
+export function leanFitCheck(cwd = process.cwd()) {
+	const git = (...a) => spawnSync('git', ['-C', cwd, ...GIT_SAFE, ...a], { encoding: 'utf8', env: GIT_ENV });
+	if (git('rev-parse', '--show-toplevel').status !== 0) return { ok: true, detail: 'not a git repository' };
+	const base = [process.env.PR_BASE, 'origin/main', 'main', 'origin/master', 'master'].filter(Boolean)
+		.find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
+	if (!base) return { ok: false, detail: 'no base branch found: set PR_BASE' };
+	const range = `${base}...HEAD`;
+	const rows = git('diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--numstat', range).stdout.split('\n').filter(Boolean).map((l) => l.split('\t'));
+	const added = git('diff', '--no-ext-diff', '--no-renames', '--name-only', '--diff-filter=A', range).stdout.split('\n').filter(Boolean);
+	const gate = rows.map((r) => r[2]).find((p) => GATE.test(p));
+	if (gate) return { ok: false, detail: `${gate} is CI, hook or guard code: write the Standard body` };
+	const source = added.find((p) => !NOT_CODE.test(p));
+	if (source) return { ok: false, detail: `added source file ${source}: write the Standard body` };
+	const lines = rows.filter((r) => !NOT_CODE.test(r[2])).reduce((n, r) => n + (Number(r[0]) || 0) + (Number(r[1]) || 0), 0);
+	if (lines > SMALL_LINES) return { ok: false, detail: `${lines} changed lines of code, over ${SMALL_LINES}: write the Standard body` };
+	return { ok: true, detail: `${lines} changed lines of code, no added source or gate file` };
+}
+
 export function versionBumpCheck(body, cwd = process.cwd()) {
 	const git = (...a) => spawnSync('git', ['-C', cwd, ...GIT_SAFE, ...a], { encoding: 'utf8', env: GIT_ENV });
 	const top = git('rev-parse', '--show-toplevel');

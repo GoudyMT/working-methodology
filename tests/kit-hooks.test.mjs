@@ -601,8 +601,8 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
     'H1 area does not repeat the subject', 'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
     'Changes / Gates / Notes, in order', 'no Visuals section in a Lean body', 'every gate ticked', 'review names the dimensions', 'review names the sweep tier', 'no spaced dashes in prose',
-    'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
-  const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
+    'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change', 'small body fits the diff'];
+  const sub =(from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
   const NOTES = '**Notes** - Tooling only; the app does not change.';
   const words = lean.split(/\s+/).filter(Boolean).length;
   const lines = lean.split('\n').filter((l) => l.trim()).length;
@@ -1298,4 +1298,34 @@ test('the first push check reads only the repository it runs in, whatever KIT_HO
   delete env.KIT_HOOK_PROJECT;
   const c = run(process.execPath, [path.join(decoy, '.claude', 'first-push-check.mjs'), '--staged'], { cwd: app, encoding: 'utf8', env });
   assert.notEqual(c.status, 0, 'a copy of the script in a decoy folder read that folder\'s settings');
+});
+
+// K184 (quoted from pr-body.yml and merge-gate.mjs on 1.47.0): the audit that judges a PR body was picked by whether
+// the body has a "### Summary" heading, so a feature PR written as a small body met only the small audit. What the diff
+// touches now may raise a small body to the full one, never lower it: an added source file, a CI, hook or guard file,
+// or more than 20 changed lines of code.
+// why: catches a feature PR that passes the PR body check with a small body
+test('a small PR body is refused when the diff is more than a small change (K184)', () => {
+	const dir = makeTemp('k184-');
+	const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
+	const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+	git('init', '-q', '-b', 'main');
+	put('src/a.mjs', Array.from({ length: 40 }, (_, i) => `export const v${i} = ${i};`).join('\n') + '\n');
+	put('README.md', '# x\n');
+	git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
+	const fit = (change) => {
+		git('checkout', '-q', '-B', 'pr', 'main');
+		change();
+		git('add', '-A'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'pr', '--allow-empty');
+		const f = path.join(dir, '..', `${path.basename(dir)}-body.md`);
+		fs.writeFileSync(f, '## Docs: x\n\nA small body.\n');
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, 'docs: x'], { encoding: 'utf8', cwd: dir, env: { ...process.env, PR_BASE: 'main' } });
+		return (r.stdout.split('\n').find((l) => /small body fits the diff/.test(l)) || '').trim();
+	};
+	assert.match(fit(() => put('README.md', '# y\n'.repeat(80))), /^PASS/, 'docs of any length');
+	assert.match(fit(() => put('src/a.mjs', read(path.join(dir, 'src/a.mjs')).replace('= 1;', '= 2;'))), /^PASS/, 'a one-line code change');
+	assert.match(fit(() => put('src/b.mjs', 'export const b = 1;\n')), /^FAIL.*added source file src\/b\.mjs/);
+	assert.match(fit(() => put('.github/workflows/ci.yml', 'on: push\n')), /^FAIL.*\.github\/workflows\/ci\.yml/);
+	assert.match(fit(() => put('src/a.mjs', read(path.join(dir, 'src/a.mjs')).replace(/= (\d+);/g, '= $1 + 1;'))), /^FAIL.*changed lines of code/);
+	assert.match(fit(() => put('tests/a.test.mjs', 'x\n'.repeat(90))), /^PASS/, 'tests are not the change the format follows');
 });

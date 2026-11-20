@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { carriesPhrase } from './canary-phrase.mjs';
-import { versionBumpCheck } from './version-bump-check.mjs';
+import { versionBumpCheck, leanFitCheck } from './version-bump-check.mjs';
 import { attributionFaults, entities } from './no-attribution.mjs';
 
 const [file, title, number] = process.argv.slice(2);
@@ -86,6 +86,10 @@ row('no confirmation phrase', !carriesPhrase(body), 'rule:agent-canary');
 // Shipped code needs a version bump, or the body says none is due (rule:release-notes).
 const bump = versionBumpCheck(body);
 row('version bumped, or no user-facing change', bump.ok, bump.detail);
+
+// K184: what the diff touches may raise a small body to the full one, never lower it.
+const fit = leanFitCheck();
+row('small body fits the diff', fit.ok, fit.detail);
 
 for (const r of rows) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name.padEnd(38)} ${r.detail}`);
 console.log(rows.every((r) => r.ok) ? 'AUDIT PASSED' : 'AUDIT FAILED');
