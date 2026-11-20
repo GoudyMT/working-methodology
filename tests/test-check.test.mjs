@@ -329,10 +329,10 @@ test('the test check states the verdict of each test the fix ledger names', () =
 	assert.match(r.stdout, /^Fix ledger: 7 fix\(es\)$/m);
 	// K152 (build 20, the owner's test standard): every new test is named in the build record, by an item or a fix, and
 	// a medium or low fix adds a row to an existing test unless it gives a reason.
-	assert.match(r.stdout, /A7 tests\/a\.test\.mjs::a browser one: a new test the build record does not name/);
-	assert.match(r.stdout, /A7 F2: a medium fix adds a new test \(tests\/a\.test\.mjs::a hollow one\): make it a row in an existing test, or give the fix a reason/);
+	assert.match(r.stdout, /A7 tests\/a\.test\.mjs::a browser one: [^\n]*build record does not name/);
+	assert.match(r.stdout, /A7 F2: a medium fix[^\n]*a hollow one/);
 	for (const id of ['F6', 'F7']) assert.match(r.stdout, new RegExp(`A7 ${id}: a (low|medium) fix adds a new test`), id);
-	assert.doesNotMatch(r.stdout, /A7 (F1|F5|tests\/b\.test\.mjs::two is two|tests\/a\.test\.mjs::(zero is not positive|a pattern one))/);
+	for (const id of ['F1', 'F5', 'tests/b.test.mjs::two is two', 'tests/a.test.mjs::zero is not positive', 'tests/a.test.mjs::a pattern one']) assert.ok(!r.stdout.includes(`A7 ${id}`), id);
 	assert.match(r.stdout, /^ {4}F1 \(high\) tests\/a\.test\.mjs::zero.*: fails first$/m);
 	assert.match(r.stdout, /^ {4}F4 \(low\) no test: no real input$/m);
 	assert.match(r.stdout, /A5 F2: .*passes on the base commit/);

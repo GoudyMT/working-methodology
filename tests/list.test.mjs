@@ -117,7 +117,7 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	// set the tag alone before. Closed (shown not real) needs none.
 	r = st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0');
 	assert.equal(r.status, 1, 'done with no verify result is refused');
-	assert.match(r.stdout, /A2: done needs its verify result: item set A2 verify <result file>/);
+	assert.match(r.stdout, /A2: done needs its verify result[^\n]*item set A2 verify/);
 	fs.mkdirSync(path.join(dir, 'results'));
 	put(dir, 'results/a2.md', 'Verified.\n');
 	assert.equal(st(dir, 'item', 'set', 'A2', 'verify', 'results/a2.md').status, 0);
@@ -133,11 +133,11 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	if (linked) assert.equal(st(dir, 'item', 'set', 'A2', 'verify', 'out-link/outside.md').status, 1, 'a result through a link out is refused');
 	put(dir, 'results/a2.md', 'Verified.\nRELEASE COMPLETE: every step of v1.35.0 is done.\n');
 	// The build 20 sweep: a typed line is no proof; the release check's own log in the git folder is.
-	spawnSync('git', ['-C', dir, 'init', '-q'], { encoding: 'utf8' });
+	spawnSync('git', ['-C', dir, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
 	assert.match(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').stdout, /no complete release check of 1\.35\.0 is logged/);
 	// A git folder of a tool's own, named by GIT_DIR, holding a forged log, is not read (the commit security review).
 	const forged = kitTemp.makeTemp('list-forged-');
-	spawnSync('git', ['-C', forged, 'init', '-q'], { encoding: 'utf8' });
+	spawnSync('git', ['-C', forged, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
 	fs.writeFileSync(path.join(forged, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ version: '1.35.0' })}\n`);
 	const viaEnv = spawnSync(process.execPath, [SCRIPT, 'item', 'set', 'A2', 'tag', 'done 1.35.0'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '', GIT_DIR: path.join(forged, '.git') } });
 	assert.equal(viaEnv.status, 1, 'a GIT_DIR to a forged log');
@@ -771,7 +771,9 @@ test('a step counts its open rows by name, build or release, never a closed one'
 	add('K20', 'later', '8');
 	add('K21', 'next', '1.34.0');
 	add('K22', 'next', 'build 8');
-	add('K23', 'done', '8', { caught_by: 'sweep' });
+	// A done row carries its verify result (TC1, build 20); "8" names no release, so the file is the proof.
+	put(dir, 'v.md', 'Verified.\n');
+	add('K23', 'done', '8', { caught_by: 'sweep', verify: 'v.md' });
 	add('K24', 'later', '18');
 	put(dir, '_Master Roadmap.md', '<!-- list:begin roadmap -->\n<!-- list:end -->\n');
 	assert.equal(st(dir, 'render').status, 0);

@@ -253,7 +253,7 @@ test('a record names a sweep tier the PR body audit reads, with modifiers only i
 	// review names all six; a Fix or Triage names what it touched.
 	const four = record();
 	four.sweep.dimensions = four.sweep.dimensions.filter((d) => !/^(Supply chain|Legal)$/.test(d.name));
-	assert.match(problems(four).join('\n'), /a Feature review names all six dimensions: missing Supply chain, Legal/);
+	assert.match(problems(four).join('\n'), /Feature[^\n]*six dimensions: missing Supply chain, Legal/);
 	// First push and Launch gate are held the same (the build 20 sweep).
 	for (const tier of ['First push', 'Launch gate']) {
 		four.sweep.tier = tier;

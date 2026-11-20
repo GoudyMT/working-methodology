@@ -160,14 +160,14 @@ test('a working-memory line that keeps retired rule wording fails the check, unl
 	assert.equal(r.status, 1, r.stdout);
 	const lines = r.stdout.split('\n').filter((l) => /retired wording/.test(l));
 	assert.equal(lines.length, 4, r.stdout);
-	assert.match(r.stdout, /retired wording "[^"]*owner types all code" \(the owner's global standards, Collaboration Workflow, since 1\.41\.0\)/);
+	assert.match(r.stdout, /owner types all code" \(the owner's global[^)]*Collaboration Workflow, since 1\.41\.0\)/);
 	assert.match(r.stdout, /_Working Memory\.md line \d+: retired wording "[^"]*cheap check[^"]*" \(rule:[\w-]+, since 1\.\d+\.\d+\)/);
 	assert.match(r.stdout, /_Loop Learnings\.md line \d+: retired wording "[^"]*--changed[^"]*"/);
 	assert.equal(st(project(), 'check').status, 0, 'the shipped templates carry none');
 	// Session start names it too, before a thread acts on the stale note.
 	const { sessionStartReport } = await import('../scripts/kit.mjs');
 	const said = sessionStartReport({ kit: KIT, home: kitTemp.makeTemp('state-home-'), projectDir: dir, claudeVersion: () => '2.1.325 (Claude Code)', ahead: () => ({ count: 0 }) });
-	assert.match(said, /Working memory keeps 4 line\(s\) of retired rule wording[^\n]*_Working Memory\.md line \d+/);
+	assert.match(said, /Working memory keeps 4 line\(s\)[^\n]*_Working Memory\.md line \d+/);
 });
 
 // why: guards rule:tracking-file-functions

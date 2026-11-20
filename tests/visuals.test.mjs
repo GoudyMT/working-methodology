@@ -262,7 +262,8 @@ test('the section check fails false outcome numbers, wrong derived rows, a decoy
 
 // A plain project's Standard body (the skill's example, one review row) and the audits as CI and the release run them.
 const standard = () => fs.readFileSync(path.resolve('user/skills/pr-body/examples/standard.md'), 'utf8')
-	.replace('; the corpus and the served documents are unchanged', '').replace(/\| (Privacy|Supply|Legal|Test value).*\n/g, '');
+	// A Feature review keeps its six dimension rows (build 20); only the example project's own clean line is taken out.
+	.replace('; the corpus and the served documents are unchanged', '');
 const audit = (script, text, ...args) => {
 	const dir = kitTemp.makeTemp('vaud-');
 	fs.writeFileSync(path.join(dir, 'body.md'), text);
