@@ -456,7 +456,24 @@ function globSplits(command, tool, start) {
 	// The second commit review: a reader can write through a split name too (sort -o, uniq's second file), so no body is
 	// exempt; IFS set anywhere splits names on any sign, and a folder change before the loop moves where the glob is read
 	// from, so either holds the loop whole.
-	if (/\bIFS\b/.test(command) || /(^|[\s;&|(!])(cd|pushd|popd|chdir|builtin)(?![\w-])/.test(String(command).slice(0, m.index + m[0].indexOf('for')))) return true;
+	// K145 (build 19): one plain folder change first (cd <folder> && for ...), the loop shape loopBodies reads, moves the
+	// glob's folder there; it is read from that folder, when the body and anything piped after it only read (sed -n,
+	// head, wc, sort with no output option): a reader cannot write through a name. Any other folder change before the
+	// loop, or one before a loop that writes, still holds it (the K138 commit review).
+	const lead = String(command).slice(0, m.index + m[0].indexOf('for'));
+	const tail = String(command).slice(m.index + m[0].length);
+	const stageRead = (s) => {
+		const w = s.trim().split(/\s+/).map((x) => x.replace(/^['"]|['"]$/g, ''));
+		const p = (w[0] || '').toLowerCase();
+		if (p === 'sort') return w.slice(1).every((a) => !/^-(o|-output|-compress|-files0-from|-temporary-directory|T)/.test(a));
+		return (READERS.has(p) && p !== 'jq') || printSed(w);
+	};
+	const readsOnly = !/[<>`]|\$\(|\|\|/.test(body + tail) && `${body}${/^\s*\|/.test(tail) ? tail : ''}`.split(/;|&&|\||\n/).map((x) => x.trim()).filter(Boolean).every(stageRead)
+		&& (!tail.trim() || /^\s*\|/.test(tail));
+	const plainCd = readsOnly && /^\s*cd\s+([^;&|`$(){}\s'"]+|'[^'`$]*'|"[^"`$]*")\s*&&\s*$/.exec(lead);
+	if (/\bIFS\b/.test(command) || (!plainCd && /(^|[\s;&|(!])(cd|pushd|popd|chdir|builtin)(?![\w-])/.test(lead))) return true;
+	const base = start || (startNow && startNow.dir) || process.cwd();
+	const from = plainCd ? path.resolve(base, plainCd[1].replace(/^['"]|['"]$/g, '').replace(/^\/([a-z])\//i, '$1:/')) : base;
 	const use = new RegExp(`^\\$(\\{${m[1]}\\b|${m[1]}(?!\\w))`);
 	let q = null;
 	for (let i = 0; i < body.length; i++) {
@@ -465,7 +482,7 @@ function globSplits(command, tool, start) {
 		if (c === '\\') { i++; continue; }
 		if (c === '"') { q = q ? null : '"'; continue; }
 		if (!q && c === "'") { q = "'"; continue; }
-		if (!q && c === '$' && use.test(body.slice(i))) return globNamesSplit(m[2], start || (startNow && startNow.dir) || process.cwd());
+		if (!q && c === '$' && use.test(body.slice(i))) return globNamesSplit(m[2], from);
 	}
 	return false;
 }
@@ -473,7 +490,7 @@ function loopBodies(command, tool) {
 	const c = String(command || '');
 	const m = tool === 'PowerShell'
 		? /^(\s*(?:(?:cd|sl|set-location)\s+[^;&|`$(){}]+;\s*)?)foreach\s*\(\s*\$([A-Za-z_]\w*)\s+in\s+([^()]+?)\s*\)\s*\{([\s\S]*)\}\s*$/i.exec(c)
-		: /^(\s*(?:cd\s+[^;&|`$(){}]+&&\s*)?)for\s+([a-z_][a-z0-9_]*)\s+in\s+([^;\n]+?)\s*[;\n]\s*do\s+([\s\S]*?)[;\n]?\s*done(?:\s*(;|&&)\s*([^\n]+?))?\s*$/.exec(c);
+		: /^(\s*(?:cd\s+[^;&|`$(){}]+&&\s*)?)for\s+([a-z_][a-z0-9_]*)\s+in\s+([^;\n]+?)\s*[;\n]\s*do\s+([\s\S]*?)[;\n]?\s*done(?:\s*(;|&&|\|(?!\|))\s*([^\n]+?))?\s*$/.exec(c);
 	// zsh ties lowercase path, cdpath, fpath and others to the environment (path is PATH as a list), so those stay strict
 	// (the commit security review); _ is the last word handed on.
 	if (!m || !/^[a-z_][a-z0-9_]*$/.test(m[2]) || /^(path|cdpath|fpath|module_path|manpath|mailpath|psvar|ifs|home|pwd|oldpwd|env|_)$/.test(m[2])) return null;
@@ -481,6 +498,8 @@ function loopBodies(command, tool) {
 	let body = m[4];
 	// K117 rest (build 17): a command after the loop (for ...; done; sed -n '1,40p' x) is read after each body, with
 	// every rule a plain command meets; one that holds a second loop or names the variable keeps the strict reading.
+	// K145 (build 19): a pipe after the loop (done | wc -l) is read the same way, each body piped into it: the whole
+	// loop's output goes there, and each body's part of it is what a reader of that pipe can see or write.
 	const after = m[5] ? ` ${m[5]} ${m[6]}` : '';
 	if (after && (/\b(for|do|done|while|until)\b/.test(m[6]) || new RegExp(`\\$\\{?${name}\\b`).test(m[6]))) return null;
 	// K117 rest: a PowerShell body that only reads when the file is there (if (Test-Path $f) { Get-Content $f }) is read
@@ -719,7 +738,10 @@ function shellWritesFrom(command, tool, start, names) {
 		// writes) is a child process, so it defines nothing in this shell. Any other script may make a link a later copy
 		// reads through (the build 12 sweep), and with an option first (inline code, a file it writes) node is not plain.
 		// K117 (1.42.0): echo prints its words and defines nothing (its redirect is read below like any other).
+		// K145 (build 19): a PowerShell statement that is one quoted string ("==== $i") prints it, as Write-Output does; a
+		// substitution in it ($(...)) keeps the strict reading through the check below.
 		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
+			|| (tool === 'PowerShell' && g.length === 1 && g[0].quoted === true)
 			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
 			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
 			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));

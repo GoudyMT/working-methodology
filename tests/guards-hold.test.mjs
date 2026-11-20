@@ -286,6 +286,28 @@ test('a loop over a glob of guard files that only reads, cmp against a guard and
 	} finally { fs.rmSync(path.join(proj, 'x .claude')); }
 });
 
+// K145 (build 19, held live on 1.44.0 from the workbench and the build 19 thread): the K138 read loop piped on to a
+// counter or a filter, and two PowerShell reads (a foreach that shows each row through a kit script and Out-String; a
+// file search joined to a kit script's help piped to Select) were held as protected-file writes. Each write twin stays
+// held beside it.
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('a read loop piped on to a reader and two PowerShell read shapes pass; their write twins hold', () => {
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x\n');
+	fs.writeFileSync(path.join(proj, '.claude', 'guard-read.cjs'), 'x\n');
+	fs.writeFileSync(path.join(proj, '.claude', 'state.mjs'), 'x\n');
+	const P = proj.replace(/\\/g, '/');
+	const ps = (command) => decide('PowerShell', { command });
+	for (const c of ['for f in .claude/guard*.cjs; do sed -n 1,1p "$f"; done | wc -l', 'for f in .claude/*.cjs; do head -1 "$f"; done | head -5',
+		`cd ${P} && for f in .claude/guard*.cjs; do sed -n 1,1p "$f"; done | wc -l`, 'for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | sort | grep -c x']) assert.equal(bash(c), 'allow', c);
+	for (const c of [`cd ${proj}; foreach($i in 'O4','O2'){ "==== $i"; node .claude/state.mjs item $i | Out-String -Width 2000 }`,
+		`cd ${proj}; Get-ChildItem .claude -Recurse -Filter state.mjs | Select -Expand FullName; node .claude/state.mjs --help 2>&1 | Select -First 30`]) assert.equal(ps(c), 'allow', c);
+	for (const c of ['for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | tee .claude/guard.cjs', 'for f in .claude/guard*.cjs; do sed -i 1d "$f"; done | wc -l',
+		'for f in .claude/guard*.cjs; do cat "$f"; done | xargs rm', 'for f in .claude/guard*.cjs; do cat "$f"; done | sh', 'for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | wc -l > .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+	for (const c of [`foreach($i in 'a','b'){ "x" | Set-Content .claude/guard.cjs }`, `foreach($i in 'a','b'){ node .claude/state.mjs item $i | Out-File .claude/guard.cjs }`,
+		'Get-ChildItem .claude -Recurse -Filter state.mjs | Remove-Item', '"$(Remove-Item .claude/guard.cjs)"; node .claude/state.mjs item O4',
+		'"x" > .claude/guard.cjs; node .claude/state.mjs item O4']) assert.equal(ps(c), 'deny', c);
+});
+
 // K117 rest (build 17, held live on 1.42.0 from the workbench): a kit script given a quoted note with a bracket in it,
 // a read loop followed by a sed line range, and three PowerShell reads (a variable set from a read, a Test-Path guard
 // in a loop, a property of a bracketed read) were held as writes to a protected file. Quoted text holds no code but
