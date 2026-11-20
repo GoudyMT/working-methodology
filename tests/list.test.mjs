@@ -674,6 +674,15 @@ test('render writes the roadmap, counts and rows blocks from the data, and check
 	assert.ok(!ids(block('rows')).includes('A1') && ids(block('archive')).includes('A1'), 'a done row is in the archive only');
 	assert.match(out, /^Owner text above\.$/m);
 	assert.match(out, /^Owner text below\.$/m);
+	// The build 20 sweep: a project that upgrades with a rows block and no archive block gets one at the next render,
+	// so its done rows stay in sight.
+	const old = project();
+	put(old, 'list.md', LIST);
+	st(old, 'list', 'import', 'list.md');
+	put(old, '_Master Roadmap.md', plan.replace('<!-- list:begin archive -->\n<!-- list:end -->\n', ''));
+	assert.equal(st(old, 'render').status, 0);
+	assert.ok(read(old, '_Master Roadmap.md').split('<!-- list:begin archive:')[1].includes('| A1 |'), 'the done row shows in the added archive');
+	assert.equal(st(old, 'check').status, 0);
 
 	put(dir, '_Master Roadmap.md', out.replace('| 1.35.0 | The list as data |', '| 1.35.0 | The list as data, typed |'));
 	r = st(dir, 'check');

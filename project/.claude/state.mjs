@@ -288,6 +288,16 @@ function listBlocks(s, { overwrite = false, check = false } = {}) {
 	if (l.why) return [l.why];
 	const v = list.views(l.rows, s.roadmap || []);
 	const empty = list.views([], []);
+	// The build 20 sweep: the rows view now shows open rows only, so a project that upgrades with a rows block and no
+	// archive block would lose sight of its done rows. Render adds an empty archive block after the rows block, once.
+	const has = (name) => files.some(([, t]) => { const at = list.blocksIn(t); return !at.why && at.blocks.some((b) => b.name === name); });
+	if (!check && has('rows') && !has('archive')) {
+		const k = files.findIndex(([, t]) => { const at = list.blocksIn(t); return !at.why && at.blocks.some((b) => b.name === 'rows'); });
+		const at = list.blocksIn(files[k][1]);
+		const end = at.blocks.find((b) => b.name === 'rows').end;
+		files[k] = [files[k][0], [...at.lines.slice(0, end + 1), '', list.listBegin('archive'), at.lines[end], ...at.lines.slice(end + 1)].join(at.crlf ? '\r\n' : '\n')];
+		write(files[k][0], files[k][1]);
+	}
 	for (const [rel, text] of files) {
 		const at = list.blocksIn(text);
 		if (at.why) { out.push(`${rel}: ${at.why}`); continue; }
